@@ -8,9 +8,9 @@ This is development tooling for issue #2, not part of the API distribution. Owne
 
 - Copies the launcher/Unity native runtime files and local BepInEx core.
 - References the installed read-only game resources through directory junctions; does not redistribute them.
-- Installs only VGModAPI, the observer example, and the opt-in qualification runner.
+- Installs only VGModAPI, the observer example, and the opt-in qualification runner. Writes the inspected Doorstop 4 `[General]` / `target_assembly` format with a local preloader path.
 - Copies two provided saves into a separate `Saves` directory and creates synthetic future-version/corrupt fixtures there.
-- Records hashes of files in the **real save directory as well as fixture directories**, even when the supplied fixtures are already copies. The runner checks the protected directory against vanilla's actual pre-redirection SavesPath.
+- Records hashes of files in the **real save directory as well as fixture directories**, even when the supplied fixtures are already copies. The runner checks the protected directory against vanilla's actual pre-redirection SavesPath. Hashing covers direct files, matching the inspected flat save layout; nested directories are not covered.
 - Records plugin SHA-256 hashes and an optional BuildRevision, refusing changed prepared binaries.
 - Snapshots/restores the inspected title's shared PlayerPrefs registry key around Run. This is not full Windows-profile isolation: other persistent-profile writes are not redirected.
 

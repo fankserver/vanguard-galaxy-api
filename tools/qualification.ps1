@@ -46,8 +46,9 @@ if ($Action -eq 'Prepare') {
         if (Test-Path -LiteralPath $source) { Copy-Item -LiteralPath $source -Destination $game }
         elseif ($name -in @('VanguardGalaxy.exe','UnityPlayer.dll','winhttp.dll')) { throw "Required runtime file missing: $name" }
     }
-    # Never inherit an absolute preloader path from the installed configuration.
-    [IO.File]::WriteAllText((Join-Path $game 'doorstop_config.ini'), "[UnityDoorstop]`nenabled=true`ntargetAssembly=BepInEx\core\BepInEx.Preloader.dll`nredirectOutputLog=false`nignoreDisableSwitch=false`n")
+    # Doorstop 4 format, verified against the installed loader's configuration.
+    # Never inherit an absolute preloader path or Mono search override.
+    [IO.File]::WriteAllText((Join-Path $game 'doorstop_config.ini'), "[General]`nenabled=true`ntarget_assembly=BepInEx\core\BepInEx.Preloader.dll`nredirect_output_log=false`nboot_config_override=`nignore_disable_switch=false`n[UnityMono]`ndll_search_path_override=`ndebug_enabled=false`ndebug_suspend=false`n")
     foreach ($name in $junctions) {
         $source = Join-Path $GameDir $name
         if (Test-Path -LiteralPath $source) { New-Item -ItemType Junction -Path (Join-Path $game $name) -Target $source | Out-Null }
