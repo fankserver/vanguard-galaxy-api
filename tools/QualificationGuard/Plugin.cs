@@ -95,7 +95,21 @@ public sealed class Plugin : BaseUnityPlugin
                 Require(found == 2, "Expected capabilities missing.");
                 Require(!Harmony.GetAllPatchedMethods().Any(m => Harmony.GetPatchInfo(m)?.Owners.Contains("vgmodapi") == true), "API integration patches survived mismatch.");
             }
-            Finish(true, _scenario + " startup only; no alternate game binary or consumer qualification claimed.");
+            if (File.Exists(Path.Combine(_root!, "missionjournal.enabled")))
+            {
+                if (_scenario == "MissingApi")
+                    Require(!Chainloader.PluginInfos.ContainsKey("vgmissionjournal"), "Journal loaded without required API.");
+                else
+                {
+                    Require(Chainloader.PluginInfos.TryGetValue("vgmissionjournal", out var journal) && journal.Instance != null
+                        && !journal.Instance.enabled, "Journal did not disable itself for unavailable API.");
+                    var facade = Assembly.Load("VGMissionJournal").GetType("VGMissionJournal.Api.MissionJournalApi", true)!;
+                    Require(facade.GetProperty("Current")!.GetValue(null) == null, "Unavailable journal published a facade.");
+                    Require(!Harmony.GetAllPatchedMethods().Any(m => Harmony.GetPatchInfo(m)?.Owners.Contains("vgmissionjournal") == true), "Unavailable journal installed patches.");
+                }
+            }
+            Finish(true, _scenario + (File.Exists(Path.Combine(_root!, "missionjournal.enabled")) ? "; MissionJournal refusal checked." : "; no consumer selected.")
+                + " No alternate game binary qualification claimed.");
         }
         catch (Exception ex) { Finish(false, ex.ToString()); }
     }

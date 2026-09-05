@@ -16,7 +16,7 @@ namespace VGModAPI.Qualification;
 [BepInPlugin(Id, "VGModAPI Controlled Qualification", "0.1.0")]
 [BepInDependency(ModApi.PluginId, "0.1.0")]
 [BepInDependency("vgmodapi.qualification.guard", "0.1.0")]
-public sealed class Plugin : BaseUnityPlugin
+public sealed partial class Plugin : BaseUnityPlugin
 {
     private const string Id = "vgmodapi.qualification";
     private static string? _saveRoot;
@@ -141,6 +141,7 @@ public sealed class Plugin : BaseUnityPlugin
             var sequence = _events.Where(e => e.Session?.Id == session.Id).Select(e => e.Kind).ToArray();
             Require(sequence.SequenceEqual(new[] { LifecycleEventKind.SessionStarting, LifecycleEventKind.PlayerReady, LifecycleEventKind.GameplayInitialized }), "Unexpected load event order.");
             if (previous.HasValue) Require(_events.Any(e => e.Kind == LifecycleEventKind.SessionInvalidated && e.Session?.Id == previous), "Prior session was not invalidated.");
+            CheckJournalLoad(n == 0 ? "fixture-a" : "fixture-b");
             Passed("fixture-load-" + n);
         }
 
@@ -151,6 +152,7 @@ public sealed class Plugin : BaseUnityPlugin
         Load("qa-manual");
         foreach (var frame in Wait(() => _api.CurrentSession?.Phase == SessionPhase.GameplayInitialized && _api.CurrentSession.Id != beforeRoundtrip, "roundtrip")) yield return frame;
         foreach (var frame in Settle()) yield return frame;
+        CheckJournalLoad("qa-manual");
         Passed("saved-copy-roundtrip");
 
         object player = AccessTools.Field(_player, "current").GetValue(null)!;
@@ -237,8 +239,10 @@ public sealed class Plugin : BaseUnityPlugin
         Load("fixture-a");
         foreach (var frame in Wait(() => _api!.CurrentSession?.Phase == SessionPhase.GameplayInitialized && _api.CurrentSession.Id != beforeRecovery, "post-failure reload")) yield return frame;
         foreach (var frame in Settle()) yield return frame;
+        CheckJournalLoad("fixture-a");
         Passed("reload-after-failure");
         foreach (var frame in NewGameAndSpaceLoad()) yield return frame;
+        foreach (var frame in CheckJournalTeardown()) yield return frame;
     }
 
     private IEnumerable<object?> NewGameAndSpaceLoad()
@@ -266,6 +270,8 @@ public sealed class Plugin : BaseUnityPlugin
             && _configurationCalls == 1 && !_configuringNewGame && _newGameError == null, "New-game configuration/readiness boundary failed.");
         Require(_events.Where(e => e.Session?.Id == _api.CurrentSession.Id).Select(e => e.Kind).SequenceEqual(
             new[] { LifecycleEventKind.SessionStarting, LifecycleEventKind.PlayerReady, LifecycleEventKind.GameplayInitialized }), "Unexpected new-game event order.");
+        if (JournalSelected)
+            Require(!LiveJournalIds().Any(_previousJournalIds.Contains), "New game inherited prior journal history.");
         Passed("new-game-wizard-and-configuration-boundary");
 
         Require(InSpace(), "Native new-game setup did not produce a space fixture.");
@@ -371,6 +377,7 @@ public sealed class Plugin : BaseUnityPlugin
         Require(received.Length == 2 && received[0].Kind == LifecycleEventKind.SaveStarted && received[1].Kind == expected, "Unexpected outcome/count for " + name);
         Require(received[0].OperationId == received[1].OperationId, "Save operation identity changed.");
         Require(received.All(e => SamePath(e.Destination!, Path.Combine(_saveRoot!, name + ".save"))), "Wrong save destination.");
+        CheckJournalSave(name, expected);
     }
 
     // A harness grace period, not an API guarantee of UI/world readiness.

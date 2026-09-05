@@ -6,6 +6,7 @@ param(
     [string]$SaveA,
     [string]$SaveB,
     [string]$BuildRoot,
+    [string]$MissionJournalBin,
     [string]$BuildRevision = 'unknown',
     [switch]$Diagnostics,
     [ValidateSet('Full','MissingApi','UnavailableApi')][string]$Scenario = 'Full',
@@ -73,16 +74,37 @@ if ($Action -eq 'Prepare') {
         Copy-Item -LiteralPath (Join-Path $BuildRoot 'tools\QualificationRunner\bin\Release\netstandard2.1\QualificationRunner.dll') -Destination $plugins
         Copy-Item -LiteralPath (Join-Path $BuildRoot 'examples\LifecycleObserver\bin\Release\netstandard2.1\LifecycleObserver.dll') -Destination $plugins
     }
+    if ($MissionJournalBin) {
+        # Refuse legacy binaries whose startup sweeper can run before the guard.
+        $candidate = Join-Path $MissionJournalBin 'VGMissionJournal.dll'
+        $null = [Reflection.AssemblyName]::GetAssemblyName($candidate)
+        Add-Type -Path (Join-Path $bep 'core\Mono.Cecil.dll')
+        $assembly = [Mono.Cecil.AssemblyDefinition]::ReadAssembly($candidate)
+        try {
+            if ($assembly.Name.Name -ne 'VGMissionJournal' -or $assembly.Name.Version.Major -ne 0 -or $assembly.Name.Version.Minor -ne 2) { throw 'Only the 0.2 MissionJournal pilot shape is accepted; version is not review evidence.' }
+            $plugin = $assembly.MainModule.Types | Where-Object { $_.FullName -eq 'VGMissionJournal.Plugin' }
+            $dependency = @($plugin.CustomAttributes | Where-Object {
+                $_.AttributeType.FullName -eq 'BepInEx.BepInDependency' -and $_.ConstructorArguments.Count -eq 2 -and
+                $_.ConstructorArguments[0].Value -eq 'vgmodapi' -and $_.ConstructorArguments[1].Value -eq '0.1.0'
+            })
+            if ($dependency.Count -ne 1) { throw 'MissionJournal must require the API before its Awake.' }
+        } finally { $assembly.Dispose() }
+        foreach ($name in @('VGMissionJournal.dll','Newtonsoft.Json.dll')) {
+            Copy-Item -LiteralPath (Join-Path $MissionJournalBin $name) -Destination $plugins
+        }
+        [IO.File]::WriteAllText((Join-Path $root 'missionjournal.enabled'), 'pilot-v1')
+    }
     [IO.File]::WriteAllText((Join-Path $root 'scenario.txt'), $Scenario)
     $hashes = @{}
     Get-ChildItem -LiteralPath $plugins -File | ForEach-Object { $hashes[$_.Name] = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
-    @{ scenario=$Scenario; revision=$BuildRevision; preparedUtc=[DateTime]::UtcNow.ToString('o'); plugins=$hashes } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'build-provenance.json')
+    @{ missionJournal=[bool]$MissionJournalBin; scenario=$Scenario; revision=$BuildRevision; preparedUtc=[DateTime]::UtcNow.ToString('o'); plugins=$hashes } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'build-provenance.json')
     # Prevent Steam's restart path; the runner disables SteamManager before arming checks.
     [IO.File]::WriteAllText((Join-Path $game 'steam_appid.txt'), '3471800')
     $saves = Join-Path $root 'Saves'
     New-Item -ItemType Directory -Path $saves | Out-Null
     Copy-Item -LiteralPath $sources[0].FullName -Destination (Join-Path $saves 'fixture-a.save')
     Copy-Item -LiteralPath $sources[1].FullName -Destination (Join-Path $saves 'fixture-b.save')
+    if ($MissionJournalBin) { Copy-QualificationJournalHistory $sources $saves }
     [IO.File]::WriteAllText((Join-Path $saves 'fixture-future.save'), '{"Version":"99.0.0.0","Player":{}}', (New-Object Text.UTF8Encoding($false)))
     [IO.File]::WriteAllText((Join-Path $saves 'fixture-corrupt.save'), 'not a save', (New-Object Text.UTF8Encoding($false)))
     Write-Output "Prepared sandbox: $root"
@@ -103,6 +125,8 @@ if ($Action -eq 'Cleanup') {
 }
 Assert-QualificationUnused $root
 $provenance = Assert-QualificationInputs $root
+$negativeBefore = $null
+if ($provenance.missionJournal -and $provenance.scenario -ne 'Full') { $negativeBefore = SaveHashes @((Join-Path $root 'Saves')) }
 # Unity PlayerPrefs are shared even with a separate executable. Preserve this inspected title's key.
 $prefsNative = 'HKCU\Software\Bat Roost Games\VanguardGalaxy'
 $prefsFile = Join-Path $root 'playerprefs-before.reg'
@@ -143,6 +167,14 @@ finally {
             [IO.File]::WriteAllText((Join-Path $root 'original-saves-unchanged.txt'), 'PASS')
         }
     }
+}
+if ($null -ne $negativeBefore) {
+    $negativeAfter = SaveHashes @((Join-Path $root 'Saves'))
+    if ($negativeBefore.Count -ne $negativeAfter.Count) { throw 'Disabled consumer changed sandbox file set.' }
+    foreach ($key in $negativeBefore.Keys) {
+        if ($negativeAfter[$key] -ne $negativeBefore[$key]) { throw 'Disabled consumer changed a sandbox fixture or sidecar.' }
+    }
+    [IO.File]::WriteAllText((Join-Path $root 'negative-consumer-files-unchanged.txt'), 'PASS')
 }
 $result = Join-Path $root 'result.txt'
 if (!(Test-Path -LiteralPath $result)) { throw 'Game exited without a qualification result; inspect sandbox logs.' }
