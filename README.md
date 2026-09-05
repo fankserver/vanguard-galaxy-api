@@ -19,29 +19,12 @@ Unofficial community mod API for Vanguard Galaxy, using BepInEx 5 and HarmonyX.
 VGModAPI is an integration layer, **not another mod loader**. In the current design, both VGModAPI and consumer mods are BepInEx plugins. Players install BepInEx once; each mod does not bundle its own loader.
 
 ```mermaid
-flowchart TB
-    Game["Vanguard Galaxy / Unity process"]
-    Loader["BepInEx — shared plugin loader"]
-    API["VGModAPI plugin"]
-    Core["VGModAPI.Core — internal adapter and state machines"]
-    Harmony["HarmonyX — game hooks"]
-    Contract["VGModAPI.Abstractions — public contracts and service access"]
-    Mod["Custom mod — thin BepInEx entry point"]
-    Logic["Custom mod logic"]
-
-    Game -->|hosts| Loader
-    Loader -->|loads| API
-    Loader -->|loads after API dependency| Mod
-    API -->|owns| Core
-    API -->|installs hooks through| Harmony
-    Harmony -->|observes vanilla methods| Game
-    Core -->|implements lifecycle service| Contract
-    Mod -->|starts and stops| Logic
-    Logic -->|queries and subscribes through| Contract
-    Logic -.->|optional direct integration outside API coverage| Game
+flowchart LR
+    Mods["Custom mods"] -->|use public API| API["VGModAPI"]
+    API -->|hooks via HarmonyX| Game["Vanguard Galaxy"]
 ```
 
-The arrows describe hosting, ownership, and access—not separate processes. All of this runs inside the game; there is no IPC or security sandbox between mods.
+**BepInEx loads both VGModAPI and the custom mods.** Everything runs inside the game process; these boxes are not separate services or sandboxes. Internal assemblies are omitted to keep the main relationship clear.
 
 | Dependency | Does a consumer mod need it? |
 |---|---|
