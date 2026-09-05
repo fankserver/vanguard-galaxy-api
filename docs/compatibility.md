@@ -86,7 +86,7 @@ Arrange owner approval before deployment. Use copied/disposable saves and the op
 - [ ] Unsupported DLL safely reports unavailable capabilities with no patches applied.
 - [x] Load a mining-space save: Starting -> PlayerReady -> GameplayInitialized, one session ID. Empty-space/in-transit paths remain untested.
 - [x] Load a docked save: same core sequence; do not interpret it as station-UI readiness.
-- [x] Start a tutorial through native wizard callbacks: no premature PlayerReady during player creation/configuration. Pointer-driven UI acceptance remains separate.
+- [x] Start a tutorial through native wizard callbacks: no PlayerReady during the synchronous `NewGame.SaveInputs` call. Inspected `SaveInputs` invokes `GamePlayer.CreateNewGamePlayer` and completes wizard configuration before `GameManager.StartNewGame` calls `SceneLoader.LoadScenesOnStartGame`. The probe does not observe arbitrary asynchronous configuration outside that call. Pointer-driven UI acceptance remains separate.
 - [x] Return to menu, reload, and switch between two saves without restarting: old sessions invalidated before replacement; no stale readiness observed.
 - [ ] Explicit delayed/stale coroutine callback injection inside Unity (covered only by host tests).
 - [x] A valid-syntax newer-version fixture ends without readiness; a corrupt-JSON fixture reports failure without readiness.
