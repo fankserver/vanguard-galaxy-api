@@ -22,7 +22,7 @@ Local SDK: .NET SDK 10.0.111.
 |---|---|
 | Debug build, including example consumer | Passed, zero warnings/errors |
 | Release build/package | Passed, zero warnings/errors |
-| Pure state-machine, coroutine, reflection-adapter, and hook-order tests | 48 passed in Debug and Release |
+| Pure state-machine, coroutine, reflection-adapter, package-validator and hook-order tests | 77 passed in Debug and Release |
 | Installed assembly identity, 12 method bindings, and 5 field bindings | 7 tests passed in Debug and Release |
 | Harmony detour execution inside Unity | Exercised; missing load events fixed by callee-first installation (#27) |
 | Windows harness synthetic checks | Passed; file isolation/cleanup and typed registry snapshot/restore tested on synthetic data |
@@ -78,7 +78,17 @@ The current-version control and future-version fixture have equal empty Player o
 
 Independent inspection of qa-09 verified 54 events, nine session identities (six initialized, three rejected), ordered readiness, and 11 save operations each with one terminal outcome, including quit saving. All 37 original files still match the manifest, no direct files were added/removed, and the restored PlayerPrefs export is byte-identical to the before snapshot. Raw evidence remains private. These results do not qualify mod coexistence or replace owner acceptance.
 
-## In-game acceptance checklist — partial (qa-09)
+### Pending-player attribution follow-up (qa-10)
+
+Coverage review #4 reproduced #32 in the host adapter: an untracked player replacement before a pending new game's scene request could adopt that attempt's identity. The creation finalizer now captures the created player without publishing readiness; an unchanged pre-call player is rejected, and Poll and the scene boundary reject a later replacement. This adds no arena-ready capability.
+
+`qa-10` passed all previous scenarios plus a controlled native replacement probe and recovery (17 total). From the menu, the runner calls the normal player factory, then the arena player factory without requesting arena scenes. Poll invalidates the pending attempt without readiness. A regular copied load then succeeds. This exercises **replacement detection**, not the full arena startup path or a delayed coroutine callback.
+
+Independent inspection verified 60 events, 11 session identities, 11 paired save operations, one Starting → Invalidated replacement probe, all 37 original file hashes/direct file set unchanged, and identical before/restored PlayerPrefs exports. The pre-fix defect was reproduced under host tests; no claim is made that the pre-fix defect was reproduced in Unity. RuntimeQualified remains false.
+
+The reviewed follow-up `qa-11` repeated all 17 scenarios successfully after strengthening the invalidation-cause assertion, settling probe cleanup, and rejecting an unchanged creation result. Independent checks again found 60 events, 11 identities, 11 paired saves, exactly one identity-specific Poll invalidation, 37 unchanged originals/direct file set, and identical PlayerPrefs exports. The unchanged-result refusal itself has host regression coverage; this native run exercises normal creation and subsequent replacement.
+
+## In-game acceptance checklist — partial (qa-11)
 
 Arrange owner approval before deployment. Use copied/disposable saves and the optional compiled `LifecycleObserver` example to record events. Record game/Unity/BepInEx versions, assembly hash, enabled mods, and relevant logs for each run.
 

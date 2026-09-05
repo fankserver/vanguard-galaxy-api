@@ -1,6 +1,6 @@
 # Lifecycle contract — experimental 0.1.0
 
-Implemented and automatically tested; **not qualified inside Unity**. This contract describes the supported adapter, not every possible way other mods can manipulate the game.
+Implemented, automatically tested and partially exercised inside Unity; **not fully runtime-qualified**. This contract describes the supported adapter, not every possible way other mods can manipulate the game.
 
 ## Access and delivery
 
@@ -50,6 +50,24 @@ A tracked load request returning without its coroutine factory hook produces Ses
 An iterator factory returning is not completion. A load that rejects a future-version save and ends without reaching PlayerReady produces a failure event.
 
 Unity is not guaranteed to Dispose every stopped coroutine. A silently abandoned load may remain Starting until a tracked invalidation/replacement occurs. There is no guessed timeout or success event. Async scene failures outside the instrumented boundaries are not universally intercepted.
+
+### Path-to-boundary coverage matrix
+
+Inspected against the original assembly hash recorded in [compatibility](compatibility.md), rechecked on 2026-09-05. Member mappings are source evidence; host regressions are not Unity scheduling evidence. No new readiness capability is enabled by this matrix.
+
+| Path and consumer need | Inspected boundary / decision | Evidence and remaining limit |
+|---|---|---|
+| Normal load; journals replace per-save state | `GameManager.LoadGame` unloads scenes and calls `LoadCurrentSaveGameFile` → `SaveGameFile.LoadSaveGame`. Retain tracked iterator ownership; source path is available at Starting. | qa-09 docked/mining-space loads and failure controls; Starting is not permission to persist partial state. |
+| Stopped/abandoned coroutine; consumers must stop showing a pending load | An observed iterator's Dispose or exception can report failure. Unity need not call Dispose on every stop. Do not patch all `StopCoroutine` calls or add a time limit. | `DisposingUnfinishedRootReportsCancellationOnce`, `SilentlyAbandonedIteratorDoesNotInventATerminalSignal`; explicit stopped-coroutine Unity injection remains untested. Menu/replacement invalidates even without disposal. |
+| Direct load bypass; external mods want cache reconstruction | `SaveGame.LoadLatestSave` reaches a tracked file load. Direct calls to the staged loader without that request lack ownership; `ObserveLoad` leaves them untouched. No synthetic session. | `UntrackedIteratorIsNotWrappedOrAssignedAReadySession`; no direct-bypass runtime qualification. A caller must use the supported file-load entry or retain its own unsupported integration. |
+| Arena; ephemeral consumers want session identity | `MainMenuUI.StartTestArena` calls `CreateTestArenaPlayer`, adds storytellers, then `GameManager.StartNewGame`. The normal creator can be skipped because current player already exists. Arena remains unsupported; do not equate its later scene request with a pending unrelated new game. | #32 exposed that attribution gap in a failing host regression. Capture normal creation's player identity without readiness, then reject a foreign replacement. This does not create an arena-ready event. |
+| Hot attach; late consumers want current state | Startup Poll does not infer a session from `GamePlayer.current`. Subscribing to an already running API allows querying its tracked snapshot, without replay. Attaching the API itself mid-game remains unsupported. | `MidGameAttachDoesNotGuessReadiness`, `LateSubscribersQueryWithoutReplayAndShutdownStopsDelivery`; no hot-attach Unity qualification. |
+| New-game configuration failure; journals must not commit partially configured state | `NewGame.StartGame` yields before `SaveInputs`; that method calls `CreateNewGamePlayer`, then configures it before `GameManager.StartNewGame`. Creation finalizer captures identity, not readiness. Exceptions later in `SaveInputs` remain outside the API's failure hooks. | qa-09 validates the successful synchronous configuration path. `CreationMustCompleteBeforeNewGameCanBecomeReady` and stale-completion tests protect identity. No universal configuration-failure promise; wait for supported readiness and use invalidation to discard pending state. |
+| Async scene error; HUD/POI consumers want usable objects | `LoadScenesOnStartGame` requests scenes; `LoadSceneIfNotLoaded` awaits `AsyncOperation.AsTask`, then sets active scene. Other `LoadScene` work is async-void. The synchronous request hook cannot catch all later failures. | Retain the narrow `GameplayManager.Start` boundary. `GameplayFailureIsNotInitializationSuccess` covers that manager, not all scene tasks. Global async-error interception and `world-ready` remain unavailable. |
+| Station UI and map helpers; HUD consumers need a specific attachment target | A station interior, side panel, or POI manager has its own lifetime and can be absent after GameplayInitialized. A single global ready flag cannot express those independent lifetimes. | Defer scoped registration/teardown to milestone 05 with real UI consumers. No new signal without target lifetime, stale-target tests, and Unity evidence. |
+| Foreign worker-thread calls; all consumers need main-thread callbacks | Guard faults observation; Poll reconciles capability shutdown on the main thread. Never deliver the foreign call as an off-thread lifecycle event. | `AccessFromWrongThreadIsRejected`, `ObserverFaultIsContainedAndDisablesFutureObservations`; not a general thread marshaller. |
+
+The pending new-game identity check closes an attribution defect, not a new supported bypass path. Host tests reproduce #32; qa-10 separately exercises native factory replacement detection and normal-load recovery, not full arena startup (see compatibility evidence). Rejected paths remain explicit rather than silently widening the API.
 
 ### Unavailable coverage
 

@@ -121,7 +121,7 @@ public sealed class GameAdapterTests
     [Fact]
     public void NewGameWaitsForSceneBoundaryNotCreation()
     {
-        var id = _adapter.BeginNewPlayer(); GamePlayer.current = new GamePlayer(); _adapter.Poll();
+        var id = _adapter.BeginNewPlayer(); GamePlayer.current = new GamePlayer(); _adapter.EndNewPlayer(id, null); _adapter.Poll();
         Assert.Equal(SessionPhase.Starting, _hub.CurrentSession!.Phase);
         _adapter.PlayerReconstructed(); _adapter.GameplayCompleted(id, new GameplayManager(false), null);
         Assert.Equal(SessionPhase.PlayerReady, _hub.CurrentSession.Phase);
@@ -132,7 +132,7 @@ public sealed class GameAdapterTests
     [Fact]
     public void UntrackedReplacementInvalidatesRatherThanInventingReadiness()
     {
-        _adapter.BeginNewPlayer(); GamePlayer.current = new GamePlayer(); _adapter.PlayerReconstructed();
+        var id = _adapter.BeginNewPlayer(); GamePlayer.current = new GamePlayer(); _adapter.EndNewPlayer(id, null); _adapter.PlayerReconstructed();
         GamePlayer.current = new GamePlayer(); _adapter.Poll(); _adapter.Poll();
         Assert.Equal(SessionPhase.Invalidated, _hub.CurrentSession!.Phase);
         Assert.Single(_events, e => e.Kind == LifecycleEventKind.SessionInvalidated);
@@ -142,9 +142,114 @@ public sealed class GameAdapterTests
     [Fact]
     public void SaveSessionIsUnknownWhileAnotherSaveIsLoading()
     {
-        _adapter.BeginNewPlayer(); GamePlayer.current = new GamePlayer(); _adapter.PlayerReconstructed();
+        var id = _adapter.BeginNewPlayer(); GamePlayer.current = new GamePlayer(); _adapter.EndNewPlayer(id, null); _adapter.PlayerReconstructed();
         Assert.NotNull(_adapter.SaveSession());
         _adapter.BeginLoad(File()); Assert.Null(_adapter.SaveSession());
+    }
+
+    [Fact]
+    public void PendingNewGameCannotAdoptAnUntrackedReplacement()
+    {
+        var id = _adapter.BeginNewPlayer();
+        GamePlayer.current = new GamePlayer();
+        _adapter.EndNewPlayer(id, null);
+        // Another path replaces its player before scenes are requested.
+        GamePlayer.current = new GamePlayer();
+        Assert.Null(_adapter.PlayerReconstructed());
+        Assert.Equal(SessionPhase.Invalidated, _hub.CurrentSession!.Phase);
+        Assert.DoesNotContain(_events, e => e.Kind == LifecycleEventKind.PlayerReady);
+    }
+
+    [Fact]
+    public void CreationMustCompleteBeforeNewGameCanBecomeReady()
+    {
+        var id = _adapter.BeginNewPlayer(); GamePlayer.current = new GamePlayer();
+        Assert.Null(_adapter.PlayerReconstructed());
+        _adapter.EndNewPlayer(id, null);
+        Assert.Equal(SessionPhase.Starting, _hub.CurrentSession!.Phase);
+        Assert.Equal(id, _adapter.PlayerReconstructed());
+    }
+
+    [Fact]
+    public void StaleCreationCompletionCannotCaptureOrFailReplacement()
+    {
+        var old = _adapter.BeginNewPlayer(); GamePlayer.current = new GamePlayer();
+        var next = _adapter.BeginNewPlayer(); GamePlayer.current = new GamePlayer();
+        _adapter.EndNewPlayer(next, null);
+        _adapter.EndNewPlayer(old, new Exception());
+        Assert.Equal(next, _adapter.PlayerReconstructed());
+    }
+
+    [Fact]
+    public void PendingPlayerReplacementIsDetectedByPoll()
+    {
+        var id = _adapter.BeginNewPlayer(); GamePlayer.current = new GamePlayer(); _adapter.EndNewPlayer(id, null);
+        GamePlayer.current = null; _adapter.Poll();
+        Assert.Equal(SessionPhase.Invalidated, _hub.CurrentSession!.Phase);
+        Assert.Null(_adapter.SaveSession());
+    }
+
+    [Fact]
+    public void UntrackedIteratorIsNotWrappedOrAssignedAReadySession()
+    {
+        IEnumerator Idle() { yield return null; }
+        var routine = Idle();
+        Assert.Same(routine, _adapter.ObserveLoad(routine));
+        GamePlayer.current = new GamePlayer();
+        Assert.Null(_adapter.PlayerReconstructed());
+        Assert.Null(_hub.CurrentSession);
+    }
+
+    [Fact]
+    public void SilentlyAbandonedIteratorDoesNotInventATerminalSignal()
+    {
+        IEnumerator Idle() { yield return null; }
+        var request = _adapter.BeginLoad(File());
+        _adapter.ObserveLoad(Idle());
+        _adapter.EndLoadRequest(request, null);
+        _adapter.Poll();
+        Assert.Equal(SessionPhase.Starting, _hub.CurrentSession!.Phase);
+        Assert.Single(_events);
+    }
+
+    [Fact]
+    public void MissingNewPlayerFailsWithoutReadiness()
+    {
+        var id = _adapter.BeginNewPlayer(); GamePlayer.current = null;
+        _adapter.EndNewPlayer(id, null);
+        Assert.Equal(SessionPhase.Failed, _hub.CurrentSession!.Phase);
+        Assert.Null(_adapter.PlayerReconstructed());
+    }
+
+    [Fact]
+    public void UnchangedPlayerCannotCompleteCreation()
+    {
+        GamePlayer.current = new GamePlayer();
+        var id = _adapter.BeginNewPlayer();
+        _adapter.EndNewPlayer(id, null);
+        Assert.Equal(SessionPhase.Failed, _hub.CurrentSession!.Phase);
+        Assert.Null(_adapter.PlayerReconstructed());
+    }
+
+    [Fact]
+    public void LoadReplacesPendingCreationWithoutKeepingItsIdentityGuard()
+    {
+        var id = _adapter.BeginNewPlayer(); GamePlayer.current = new GamePlayer(); _adapter.EndNewPlayer(id, null);
+        var request = _adapter.BeginLoad(File());
+        IEnumerator Root() { yield return null; GamePlayer.current = new GamePlayer(); _adapter.PlayerReconstructed(); }
+        var routine = _adapter.ObserveLoad(Root()); _adapter.EndLoadRequest(request, null);
+        Drain(routine); _adapter.Poll();
+        Assert.Equal(request.Id, _hub.CurrentSession!.Id);
+        Assert.Equal(SessionPhase.PlayerReady, _hub.CurrentSession.Phase);
+    }
+
+    [Fact]
+    public void ExplicitInvalidationClearsPendingIdentityBeforePoll()
+    {
+        var id = _adapter.BeginNewPlayer(); GamePlayer.current = new GamePlayer(); _adapter.EndNewPlayer(id, null);
+        _adapter.Invalidate("menu"); GamePlayer.current = new GamePlayer(); _adapter.Poll();
+        Assert.Single(_events, e => e.Kind == LifecycleEventKind.SessionInvalidated);
+        Assert.Null(_adapter.PlayerReconstructed());
     }
 
     [Fact]
@@ -157,7 +262,7 @@ public sealed class GameAdapterTests
     [Fact]
     public void GameplayFailureIsNotInitializationSuccess()
     {
-        var id = _adapter.BeginNewPlayer(); GamePlayer.current = new GamePlayer(); _adapter.PlayerReconstructed();
+        var id = _adapter.BeginNewPlayer(); GamePlayer.current = new GamePlayer(); _adapter.EndNewPlayer(id, null); _adapter.PlayerReconstructed();
         _adapter.GameplayCompleted(id, new GameplayManager(true), new Exception());
         Assert.Equal(SessionPhase.Failed, _hub.CurrentSession!.Phase);
     }

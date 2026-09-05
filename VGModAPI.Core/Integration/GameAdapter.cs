@@ -14,6 +14,8 @@ internal sealed class GameAdapter
     private LoadRequest? _request;
     private Guid? _executing;
     private object? _boundPlayer;
+    private object? _pendingNewPlayer;
+    private object? _playerBeforeCreation;
     private volatile bool _faulted;
     private bool _faultReconciled;
 
@@ -48,6 +50,8 @@ internal sealed class GameAdapter
         var previous = _request;
         var path = ((FileInfo)Bindings.SaveFile.GetValue(file)!).FullName;
         _boundPlayer = null;
+        _pendingNewPlayer = null;
+        _playerBeforeCreation = null;
         var id = Hub.Begin(SessionOrigin.SaveLoad, path);
         return _request = new LoadRequest(id, previous);
     }
@@ -89,7 +93,24 @@ internal sealed class GameAdapter
     internal Guid BeginNewPlayer()
     {
         _boundPlayer = null;
+        _pendingNewPlayer = null;
+        _playerBeforeCreation = Bindings.CurrentPlayer;
         return Hub.Begin(SessionOrigin.NewGame, null);
+    }
+
+    internal void EndNewPlayer(Guid id, Exception? error)
+    {
+        if (Hub.CurrentSession?.Id != id || Hub.CurrentSession.Phase != SessionPhase.Starting) return;
+        var previous = _playerBeforeCreation;
+        _playerBeforeCreation = null;
+        if (error != null) { Hub.Fail(id, "New player creation threw " + error.GetType().Name); return; }
+        var created = Bindings.CurrentPlayer;
+        if (created == null || ReferenceEquals(created, previous))
+        {
+            Hub.Fail(id, "New player creation returned without a new player.");
+            return;
+        }
+        _pendingNewPlayer = created;
     }
 
     internal Guid? PlayerReconstructed()
@@ -98,8 +119,18 @@ internal sealed class GameAdapter
         var id = _executing ?? (current?.Origin == SessionOrigin.NewGame ? current.Id : (Guid?)null);
         if (id == null || current?.Id != id || current.Phase != SessionPhase.Starting) return null;
         var player = Bindings.CurrentPlayer;
+        if (current.Origin == SessionOrigin.NewGame)
+        {
+            if (_pendingNewPlayer == null) return null;
+            if (!ReferenceEquals(_pendingNewPlayer, player))
+            {
+                Invalidate("Player identity changed before new-game scene initialization.");
+                return null;
+            }
+        }
         if (player == null) { Hub.Fail(id.Value, "Scene loading requested without a player."); return null; }
         _boundPlayer = player;
+        _pendingNewPlayer = null;
         Hub.PlayerReady(id.Value);
         return id;
     }
@@ -119,12 +150,13 @@ internal sealed class GameAdapter
     }
 
     internal void Invalidate(string reason)
-    { _boundPlayer = null; Hub.Invalidate(reason); }
+    { _boundPlayer = null; _pendingNewPlayer = null; _playerBeforeCreation = null; Hub.Invalidate(reason); }
 
     internal void Tick()
     {
         // Unknown player replacements invalidate; they do not manufacture readiness.
-        if (_boundPlayer != null && !ReferenceEquals(_boundPlayer, Bindings.CurrentPlayer))
+        if ((_boundPlayer != null && !ReferenceEquals(_boundPlayer, Bindings.CurrentPlayer))
+            || (_pendingNewPlayer != null && !ReferenceEquals(_pendingNewPlayer, Bindings.CurrentPlayer)))
             Invalidate("Player identity changed outside the tracked initialization boundary.");
     }
 

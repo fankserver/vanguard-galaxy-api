@@ -43,8 +43,8 @@ internal static class LifecyclePatches
         }
         internal static Exception? Finalizer(Guid? __state, Exception? __exception)
         {
-            if (__state.HasValue && __exception != null)
-                Adapter?.Guard(() => Adapter.Hub.Fail(__state.Value, "New player creation threw " + __exception.GetType().Name));
+            if (__state.HasValue)
+                Adapter?.Guard(() => Adapter.EndNewPlayer(__state.Value, __exception));
             return __exception;
         }
     }
