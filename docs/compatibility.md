@@ -88,7 +88,16 @@ Independent inspection verified 60 events, 11 session identities, 11 paired save
 
 The reviewed follow-up `qa-11` repeated all 17 scenarios successfully after strengthening the invalidation-cause assertion, settling probe cleanup, and rejecting an unchanged creation result. Independent checks again found 60 events, 11 identities, 11 paired saves, exactly one identity-specific Poll invalidation, 37 unchanged originals/direct file set, and identical PlayerPrefs exports. The unchanged-result refusal itself has host regression coverage; this native run exercises normal creation and subsequent replacement.
 
-## In-game acceptance checklist — partial (qa-11)
+### Independent isolation and modal flow (qa-12 through qa-15)
+
+- `qa-12`: guard-only startup with all API DLLs absent passed; the API-independent guard redirected saves and suppressed Steam before reaching the menu.
+- `qa-13`: a deliberately injected mismatched hash result left the service available for inspection but both integration capabilities unavailable, with no API-owned patches. No game DLL was altered; this is rejection-path evidence, not testing another game build.
+- `qa-14`: the full 17-scenario baseline passed with the independent guard and optional bootstrap ordering dependency.
+- `qa-15`: after the owner's screenshot exposed a rejection popup surviving over the wizard (#35), the runner acknowledged only the expected newer-save and corrupt-load dialogs through their actual confirmation handlers. It required a closed modal before and throughout wizard progression. All 19 checks passed, with 60 events and 11 paired save operations. Earlier runs remain callback evidence, not evidence of a clean modal flow.
+
+All four runs independently passed the 37 original-file hash/direct-file-set checks and byte-identical PlayerPrefs restoration. Consumer absence/incompatibility and coexistence still require their own pilot tests. The startup-negative probes do not qualify an alternate game binary. RuntimeQualified remains false.
+
+## In-game acceptance checklist — partial (qa-15)
 
 Arrange owner approval before deployment. Use copied/disposable saves and the optional compiled `LifecycleObserver` example to record events. Record game/Unity/BepInEx versions, assembly hash, enabled mods, and relevant logs for each run.
 

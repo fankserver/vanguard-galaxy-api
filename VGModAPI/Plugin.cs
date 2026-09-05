@@ -14,6 +14,7 @@ namespace VGModAPI;
 
 [BepInPlugin(ModApi.PluginId, "Vanguard Galaxy Mod API", "0.1.0")]
 [BepInProcess("VanguardGalaxy.exe")]
+[BepInDependency("vgmodapi.qualification.guard", BepInDependency.DependencyFlags.SoftDependency)]
 public sealed class Plugin : BaseUnityPlugin
 {
     private LifecycleHub? _hub;
@@ -30,9 +31,7 @@ public sealed class Plugin : BaseUnityPlugin
         {
             var assembly = AppDomain.CurrentDomain.GetAssemblies().SingleOrDefault(a => a.GetName().Name == "Assembly-CSharp")
                 ?? Assembly.Load("Assembly-CSharp");
-            using var sha = SHA256.Create();
-            using var stream = File.OpenRead(assembly.Location);
-            var hash = BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
+            var hash = ReadAssemblyHash(assembly);
             Logger.LogInfo($"Game {UnityEngine.Application.version}, Unity {UnityEngine.Application.unityVersion}; assembly SHA-256: {hash}");
             if (hash != BindingCatalog.InspectedSha256)
                 throw new NotSupportedException("Uninspected game assembly: lifecycle hooks disabled. Reverify adapter before adding support.");
@@ -65,6 +64,13 @@ public sealed class Plugin : BaseUnityPlugin
             Logger.LogError(ex);
         }
         Logger.LogInfo("VGModAPI 0.1.0: experimental, NOT runtime-qualified. Query capabilities; startup does not prove compatibility.");
+    }
+
+    internal static string ReadAssemblyHash(Assembly assembly)
+    {
+        using var sha = SHA256.Create();
+        using var stream = File.OpenRead(assembly.Location);
+        return BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
     }
 
     private void InstallGroup(string name, GameBindings bindings, MethodBinding[] catalog, Dictionary<string, Type> patches)
