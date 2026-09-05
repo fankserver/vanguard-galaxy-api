@@ -76,8 +76,9 @@ if ($Action -eq 'Prepare') {
     }
     if ($MissionJournalBin) {
         # Refuse legacy binaries whose startup sweeper can run before the guard.
-        Add-Type -Path (Join-Path $bep 'core\Mono.Cecil.dll')
         $candidate = Join-Path $MissionJournalBin 'VGMissionJournal.dll'
+        $null = [Reflection.AssemblyName]::GetAssemblyName($candidate)
+        Add-Type -Path (Join-Path $bep 'core\Mono.Cecil.dll')
         $assembly = [Mono.Cecil.AssemblyDefinition]::ReadAssembly($candidate)
         try {
             if ($assembly.Name.Name -ne 'VGMissionJournal' -or $assembly.Name.Version.Major -ne 0 -or $assembly.Name.Version.Minor -ne 2) { throw 'Only the 0.2 MissionJournal pilot shape is accepted; version is not review evidence.' }
@@ -103,14 +104,7 @@ if ($Action -eq 'Prepare') {
     New-Item -ItemType Directory -Path $saves | Out-Null
     Copy-Item -LiteralPath $sources[0].FullName -Destination (Join-Path $saves 'fixture-a.save')
     Copy-Item -LiteralPath $sources[1].FullName -Destination (Join-Path $saves 'fixture-b.save')
-    if ($MissionJournalBin -and $Scenario -eq 'Full') {
-        for ($i = 0; $i -lt 2; $i++) {
-            $sidecar = $sources[$i].FullName + '.vgmissionjournal.json'
-            if (!(Test-Path -LiteralPath $sidecar -PathType Leaf)) { throw 'Full journal pilot requires copied history for both fixtures.' }
-            $name = if ($i -eq 0) { 'fixture-a' } else { 'fixture-b' }
-            Copy-Item -LiteralPath $sidecar -Destination (Join-Path $saves ($name + '.save.vgmissionjournal.json'))
-        }
-    }
+    if ($MissionJournalBin) { Copy-QualificationJournalHistory $sources $saves }
     [IO.File]::WriteAllText((Join-Path $saves 'fixture-future.save'), '{"Version":"99.0.0.0","Player":{}}', (New-Object Text.UTF8Encoding($false)))
     [IO.File]::WriteAllText((Join-Path $saves 'fixture-corrupt.save'), 'not a save', (New-Object Text.UTF8Encoding($false)))
     Write-Output "Prepared sandbox: $root"
@@ -131,6 +125,8 @@ if ($Action -eq 'Cleanup') {
 }
 Assert-QualificationUnused $root
 $provenance = Assert-QualificationInputs $root
+$negativeBefore = $null
+if ($provenance.missionJournal -and $provenance.scenario -ne 'Full') { $negativeBefore = SaveHashes @((Join-Path $root 'Saves')) }
 # Unity PlayerPrefs are shared even with a separate executable. Preserve this inspected title's key.
 $prefsNative = 'HKCU\Software\Bat Roost Games\VanguardGalaxy'
 $prefsFile = Join-Path $root 'playerprefs-before.reg'
@@ -171,6 +167,14 @@ finally {
             [IO.File]::WriteAllText((Join-Path $root 'original-saves-unchanged.txt'), 'PASS')
         }
     }
+}
+if ($null -ne $negativeBefore) {
+    $negativeAfter = SaveHashes @((Join-Path $root 'Saves'))
+    if ($negativeBefore.Count -ne $negativeAfter.Count) { throw 'Disabled consumer changed sandbox file set.' }
+    foreach ($key in $negativeBefore.Keys) {
+        if ($negativeAfter[$key] -ne $negativeBefore[$key]) { throw 'Disabled consumer changed a sandbox fixture or sidecar.' }
+    }
+    [IO.File]::WriteAllText((Join-Path $root 'negative-consumer-files-unchanged.txt'), 'PASS')
 }
 $result = Join-Path $root 'result.txt'
 if (!(Test-Path -LiteralPath $result)) { throw 'Game exited without a qualification result; inspect sandbox logs.' }

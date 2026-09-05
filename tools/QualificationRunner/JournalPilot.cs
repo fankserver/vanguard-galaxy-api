@@ -26,7 +26,9 @@ public sealed partial class Plugin
     {
         var schema = Assembly.Load("VGMissionJournal").GetType("VGMissionJournal.Persistence.JournalSchema", true)!;
         var json = Assembly.Load("Newtonsoft.Json").GetType("Newtonsoft.Json.JsonConvert", true)!;
-        var value = json.GetMethod("DeserializeObject", new[] { typeof(string), typeof(Type) })!.Invoke(null, new object[] { File.ReadAllText(path), schema })!;
+        var settings = schema.GetProperty("SerializerSettings")!.GetValue(null)!;
+        var value = json.GetMethod("DeserializeObject", new[] { typeof(string), typeof(Type), settings.GetType() })!
+            .Invoke(null, new[] { File.ReadAllText(path), (object)schema, settings })!;
         return JournalIds((IEnumerable)schema.GetProperty("Missions")!.GetValue(value)!);
     }
 

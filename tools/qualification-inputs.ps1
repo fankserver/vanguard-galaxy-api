@@ -1,4 +1,15 @@
-# Read-only prepared-input verification; safe to exercise with synthetic files.
+# Prepared-input helpers; safe to exercise with synthetic files.
+function Copy-QualificationJournalHistory($Sources, [string]$Saves) {
+    foreach ($source in $Sources) {
+        if (!(Test-Path -LiteralPath ($source.FullName + '.vgmissionjournal.json') -PathType Leaf)) { throw 'Journal pilot requires copied history for both fixtures.' }
+    }
+    for ($i = 0; $i -lt 2; $i++) {
+        $name = if ($i -eq 0) { 'fixture-a' } else { 'fixture-b' }
+        Copy-Item -LiteralPath ($Sources[$i].FullName + '.vgmissionjournal.json') -Destination (Join-Path $Saves ($name + '.save.vgmissionjournal.json'))
+    }
+}
+
+# Read-only verification.
 function Assert-QualificationInputs([string]$Root) {
     $provenance = Get-Content -LiteralPath (Join-Path $Root 'build-provenance.json') -Raw | ConvertFrom-Json
     if ($provenance.scenario -notin @('Full','MissingApi','UnavailableApi') -or

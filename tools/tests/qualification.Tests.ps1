@@ -73,6 +73,48 @@ try {
         [IO.File]::WriteAllText($dll, 'fake-assembly')
         [IO.File]::WriteAllText($modeFile, 'Full')
     }
+    $provPath = Join-Path $sandbox 'build-provenance.json'
+    $originalProvenance = Get-Content -LiteralPath $provPath -Raw
+    $consumerProvenance = $originalProvenance | ConvertFrom-Json
+    $consumerProvenance.missionJournal = $true
+    foreach ($name in @('VGMissionJournal.dll','Newtonsoft.Json.dll')) {
+        $file = Join-Path $sandbox ('game\BepInEx\plugins\' + $name)
+        [IO.File]::WriteAllText($file, 'synthetic')
+        $consumerProvenance.plugins | Add-Member -NotePropertyName $name -NotePropertyValue ((Get-FileHash $file -Algorithm SHA256).Hash)
+    }
+    $consumerProvenance | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $provPath
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $sandbox } catch { $rejected = $true }
+    Assert $rejected 'Consumer provenance without marker accepted.'
+    $marker = Join-Path $sandbox 'missionjournal.enabled'
+    [IO.File]::WriteAllText($marker, 'pilot-v1')
+    $null = Assert-QualificationInputs $sandbox
+    [IO.File]::WriteAllText($marker, 'invalid')
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $sandbox } catch { $rejected = $true }
+    Assert $rejected 'Invalid consumer marker accepted.'
+    Remove-Item -LiteralPath $marker -Force
+    foreach ($name in @('VGMissionJournal.dll','Newtonsoft.Json.dll')) { Remove-Item -LiteralPath (Join-Path $sandbox ('game\BepInEx\plugins\' + $name)) -Force }
+    [IO.File]::WriteAllText($provPath, $originalProvenance)
+
+    $historySources = @((Get-Item $options.SaveA), (Get-Item $options.SaveB))
+    $rejected = $false
+    try { Copy-QualificationJournalHistory $historySources (Join-Path $sandbox 'Saves') } catch { $rejected = $true }
+    Assert $rejected 'Missing journal histories were accepted.'
+    foreach ($source in $historySources) { [IO.File]::WriteAllText(($source.FullName + '.vgmissionjournal.json'), 'synthetic-history') }
+    Copy-QualificationJournalHistory $historySources (Join-Path $sandbox 'Saves')
+    Assert ((Get-Content (Join-Path $sandbox 'Saves\fixture-b.save.vgmissionjournal.json')) -eq 'synthetic-history') 'Journal history copy failed.'
+
+    $badBin = Join-Path $work 'bad-consumer'
+    New-Item -ItemType Directory -Path $badBin | Out-Null
+    [IO.File]::WriteAllText((Join-Path $badBin 'VGMissionJournal.dll'), 'not-an-assembly')
+    $badRoot = Join-Path $work 'bad-consumer-sandbox'
+    $sandboxes += $badRoot
+    $rejected = $false
+    try { & $script -Action Prepare -SandboxRoot $badRoot -MissionJournalBin $badBin @options }
+    catch { $rejected = $_.Exception.InnerException -is [BadImageFormatException] }
+    Assert $rejected 'Non-assembly consumer did not fail metadata validation.'
+
     $rejected = $false
     try { & $script -Action Prepare -SandboxRoot $sandbox @options } catch { $rejected = $true }
     Assert $rejected 'Reused sandbox was accepted.'
