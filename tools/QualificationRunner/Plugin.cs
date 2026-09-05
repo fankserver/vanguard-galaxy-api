@@ -15,6 +15,7 @@ namespace VGModAPI.Qualification;
 /// <summary>Opt-in test driver; never distributed in the API package.</summary>
 [BepInPlugin(Id, "VGModAPI Controlled Qualification", "0.1.0")]
 [BepInDependency(ModApi.PluginId, "0.1.0")]
+[BepInDependency("vgmodapi.qualification.guard", "0.1.0")]
 public sealed class Plugin : BaseUnityPlugin
 {
     private const string Id = "vgmodapi.qualification";
@@ -35,6 +36,10 @@ public sealed class Plugin : BaseUnityPlugin
     private static int _configurationCalls;
     private static string? _newGameError;
     private bool _prematureNewGameReadiness;
+    private static Type _alertType = null!;
+    private static string? _expectedAlertKey;
+    private static object? _observedAlert;
+    private static bool _alertCollision;
 
     private void Awake()
     {
@@ -59,10 +64,15 @@ public sealed class Plugin : BaseUnityPlugin
             _player = AccessTools.TypeByName("Source.Player.GamePlayer");
             _manager = AccessTools.TypeByName("Behaviour.GameManager");
             _scenes = AccessTools.TypeByName("Behaviour.Bootstrap.SceneLoader");
+            _alertType = AccessTools.TypeByName("Behaviour.UI.AlertPopup");
+            harmony.Patch(AccessTools.Method(_alertType, "ShowMessage"),
+                prefix: new HarmonyMethod(typeof(Plugin), nameof(AlertEntering)),
+                postfix: new HarmonyMethod(typeof(Plugin), nameof(AlertShown)));
             var originalSavePath = (string)AccessTools.Field(_save, "SavesPath").GetValue(null)!;
             var protectedPath = File.ReadAllText(Path.Combine(_root, "original-save-directory.txt")).Trim();
-            Require(SamePath(originalSavePath, protectedPath), "Manifest does not protect the game's actual save directory.");
-            Require(!SamePath(_saveRoot, originalSavePath), "Real save directory is not a test target.");
+            Require(SamePath(File.ReadAllText(Path.Combine(_root, "isolation-armed.txt")).Trim(), _saveRoot)
+                && SamePath(originalSavePath, _saveRoot), "Independent guard did not establish isolation.");
+            Require(!SamePath(_saveRoot, protectedPath), "Real save directory is not a test target.");
             // Defense in depth: prevent any Store/Recall outside the redirected directory.
             harmony.Patch(AccessTools.Method(_save, "Store"), prefix: new HarmonyMethod(typeof(Plugin), nameof(CheckSaveDestination)));
             harmony.Patch(AccessTools.Method(AccessTools.TypeByName("Source.Util.SaveGameFile"), "Recall"), prefix: new HarmonyMethod(typeof(Plugin), nameof(CheckLoadSource)));
@@ -199,6 +209,9 @@ public sealed class Plugin : BaseUnityPlugin
         // Equal empty Player payloads with newer/current headers distinguish rejection from deserialization failure.
         foreach (string name in new[] { "fixture-future", "fixture-current-empty", "fixture-corrupt" })
         {
+            Require(!AlertOpen(), "Unexpected modal before rejection fixture; refusing blind acknowledgement.");
+            _expectedAlertKey = name == "fixture-future" ? "@UILoadGameTooNew" : "@ELLoadGameError";
+            _observedAlert = null; _alertCollision = false;
             var previous = _api!.CurrentSession?.Id;
             Load(name);
             foreach (var frame in Wait(() => _api!.CurrentSession?.Phase == SessionPhase.Failed && _api.CurrentSession.Id != previous, name + " rejection", allowFailure: true)) yield return frame;
@@ -213,7 +226,7 @@ public sealed class Plugin : BaseUnityPlugin
                 _ => "Vanilla reported a save-load failure"
             };
             Require(failures[0].Detail?.Contains(reason) == true, "Wrong rejection path for " + name + ": " + failures[0].Detail);
-            Invoke(Instance(_scenes), "StartMenu");
+            foreach (var frame in AcknowledgeRejection(name)) yield return frame;
             // Inspected StartMenu retains only Bootstrapper, Camera, Main Menu and Backdrop.
             foreach (var frame in Wait(() => SceneManager.GetSceneByName("Main Menu").isLoaded && SceneManager.sceneCount <= 4 && !SceneManager.GetSceneByName("Gameplay").isLoaded && AccessTools.Field(_player, "current").GetValue(null) == null, "menu after rejected load", allowFailure: true)) yield return frame;
             // isLoaded alone can still refer to the pre-existing menu after a rejection.
@@ -237,11 +250,13 @@ public sealed class Plugin : BaseUnityPlugin
         Invoke(SceneComponent("Behaviour.UI.MainMenuUI"), "StartGame");
         foreach (var frame in Wait(() => SceneManager.GetSceneByName("Start - New Game").isLoaded, "new-game wizard")) yield return frame;
         foreach (var frame in Settle()) yield return frame;
+        Require(!AlertOpen(), "Unexpected modal before new-game wizard.");
         var wizard = SceneComponent("Behaviour.UI.Main.NewGame");
         var previous = _api!.CurrentSession?.Id;
         for (int step = 1; step <= 5; step++)
         {
             Require((int)AccessTools.Field(wizard.GetType(), "currentStep").GetValue(wizard)! == step, "Wizard did not reach step " + step);
+            Require(!AlertOpen(), "Unexpected modal during new-game wizard.");
             Invoke(wizard, "SubmitInput");
             if (step < 5) foreach (var frame in Settle()) yield return frame;
         }
@@ -284,6 +299,41 @@ public sealed class Plugin : BaseUnityPlugin
         foreach (var frame in Wait(() => _api.CurrentSession?.Phase == SessionPhase.GameplayInitialized && _api.CurrentSession.Id != pending.Id, "replacement probe recovery")) yield return frame;
         foreach (var frame in Settle()) yield return frame;
         Passed("reload-after-untracked-replacement");
+    }
+
+    private IEnumerable<object?> AcknowledgeRejection(string fixture)
+    {
+        // Allow the popup's Start and any resumed parent coroutine to run without overriding pause.
+        float until = Time.realtimeSinceStartup + 2;
+        do { yield return null; } while (Time.realtimeSinceStartup < until);
+        Require(!_alertCollision, "Expected rejection message collided with an existing modal.");
+        if (_observedAlert != null)
+        {
+            Require(ReferenceEquals(_observedAlert, AccessTools.Field(_alertType, "activeInstance").GetValue(null)), "Rejection modal changed before acknowledgement.");
+            var button = AccessTools.Field(_alertType, "submitButton").GetValue(_observedAlert)!;
+            var click = button.GetType().GetProperty("onClick")!.GetValue(button)!;
+            click.GetType().GetMethod("Invoke", Type.EmptyTypes)!.Invoke(click, null);
+            foreach (var frame in Wait(() => !AlertOpen(), "rejection modal destruction", allowFailure: true)) yield return frame;
+            Passed(fixture + "-alert-acknowledged");
+        }
+        else
+        {
+            Require(fixture == "fixture-current-empty" && !AlertOpen(), "Expected rejection modal was not observed.");
+            Invoke(Instance(_scenes), "StartMenu");
+        }
+        _expectedAlertKey = null;
+    }
+
+    private static bool AlertOpen() => (bool)AccessTools.Property(_alertType, "IsOpen").GetValue(null)!;
+    private static void AlertEntering(string __0, out bool __state)
+    {
+        bool expected = _expectedAlertKey != null && __0 == _expectedAlertKey;
+        __state = expected && !AlertOpen();
+        if (expected && !__state) _alertCollision = true;
+    }
+    private static void AlertShown(bool __state)
+    {
+        if (__state) _observedAlert = AccessTools.Field(_alertType, "activeInstance").GetValue(null);
     }
 
     private bool InSpace()

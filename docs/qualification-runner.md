@@ -26,7 +26,7 @@ Build from WSL/Linux with the installed reference paths available:
 make package CONFIGURATION=Release
 ```
 
-The solution builds `QualificationRunner.dll` but the API package allowlist excludes it. On Windows, run the self-authored PowerShell script from a **local** path if RemoteSigned treats a WSL UNC path as remote; do not disable machine execution policy. Keep `qualification-profile.ps1` beside the launcher; copy the test scripts with their relative directory layout.
+The solution builds `QualificationRunner.dll` and `QualificationGuard.dll`, but the API package allowlist excludes both. On Windows, run the self-authored PowerShell script from a **local** path if RemoteSigned treats a WSL UNC path as remote; do not disable machine execution policy. Keep `qualification-profile.ps1` and `qualification-inputs.ps1` beside the launcher; copy the test scripts with their relative directory layout.
 
 ```powershell
 .\qualification.ps1 -Action Prepare `
@@ -43,11 +43,27 @@ The solution builds `QualificationRunner.dll` but the API package allowlist excl
 
 `OriginalSaveDir` defaults to the inspected title's normal Windows save directory and must exist. It is independent of SaveA/SaveB. `GameDir` can override the installed game location. The game must not already be running. Every attempt requires a new directory; do not reuse failed evidence. The launcher bounds process lifetime (1800 seconds by default, configurable via TimeoutSeconds) and cleans up only processes at that sandbox's exact executable path. Keep the process budget longer than the sequence's bounded per-stage waits.
 
+## API-independent isolation and startup-negative modes
+
+`QualificationGuard.dll` is a separate development-only bootstrap with no API assembly reference. The API declares an optional BepInEx ordering dependency on its ID; the runner requires it. When the guard is absent, normal API installation is unchanged. When present with the explicit sandbox flag, it verifies the real save-directory manifest, redirects saves, guards Store/Recall, and suppresses Steam before API initialization. The runner checks its arming receipt. Both tools remain excluded from the distributed API package.
+
+Select a mode during **Prepare** using `-Scenario` (the prepared mode is recorded and checked at Run):
+
+- `Full` (default): guard, API, observer, and the full runner.
+- `MissingApi`: guard only; reach the menu, verify no API plugin loaded, then quit.
+- `UnavailableApi`: guard and API only. A scoped Harmony postfix substitutes a zero hash result from `ReadAssemblyHash` before API Awake. Require one injection, an existing service with both integration capabilities unavailable, and no API-owned Harmony patches, then quit.
+
+The mismatch is **injected input**, not an altered or alternate game DLL. It checks the live rejection path, not compatibility with another game version. Neither startup-negative mode yet tests consumer dependency refusal. Run verifies the exact flat plugin set, hashes, and scenario before launch; extra files/directories or reparse-point plugins are rejected. A guard must remain active through quit-time writes. Do not deploy legacy plugins that can write before this ordering boundary; consumer coexistence requires its own reviewed setup.
+
 ## Evidence and coverage
 
 Local output includes `events.tsv` (with failure detail/exception type when supplied by the API), `result.txt`, game/BepInEx logs, process/provenance receipts, and preservation markers. A PASS result is meaningful only together with successful save/prefs preservation and log inspection. A run-start receipt or pre-existing preference snapshot prevents retry from overwriting recovery evidence; restore failures get a separate private receipt even if save verification also fails. **Treat every raw artifact as private**, including TSV details, stack traces, receipts, and registry snapshots: they may contain usernames, full paths, or preferences. Publish only reviewed, redacted excerpts.
 
 The automated sequence checks copied loads, replacement, manual save/roundtrip, ephemeral skip, exhausted retries, subscribers and rejection/recovery. The extended sequence adds four calls through vanilla's autosave-slot selector, one narrowly scoped metadata-write exception to exercise successful retry, and equal empty-player fixtures with newer/current headers. It drives the native new-game wizard callbacks, observes its synchronous configuration boundary, and attempts a fresh space-save roundtrip. These are scripted callback checks, not pointer-driven UI acceptance; consult the recorded results before treating a new scenario as exercised. It uses vanilla GameManager.LoadGame rather than assuming an iterator factory completing means readiness. Session-id checks prevent stale-session acceptance; an unscaled two-second settle grace permits remaining startup work and time scale is not frozen for saving. This is a harness heuristic, not a universal world/UI-ready guarantee.
+
+The modal probe maps the inspected original `Behaviour.UI.AlertPopup.ShowMessage(string, string, Action)` method, private static `activeInstance`, static `IsOpen` getter, and private `submitButton` field. `CreateButton` registers `DestroyPopup` then the confirmation callback on `submitButton.onClick`; destruction clears `activeInstance` and unpauses. Reinspect the installed assembly at the recorded hash rather than relying on older workspace decompilations, which may lack these members.
+
+Expected rejection popups must be acknowledged before proceeding: observe the scoped `ShowMessage` key, invoke only that popup's actual confirmation button (including vanilla callbacks), and wait for destruction/menu cleanup. Do not dismiss unknown dialogs or advance the new-game wizard behind a modal. The owner observed a stale newer-save warning over the wizard in earlier runs (#35); those runs remain callback/event evidence, not clean modal/UI-flow acceptance.
 
 A failed check must remain failed until its cause is investigated. Record bootstrap/harness failures separately from reproduced API defects. No test edits the allowed game hash or claims all-world readiness.
 

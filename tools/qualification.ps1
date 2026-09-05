@@ -8,10 +8,13 @@ param(
     [string]$BuildRoot,
     [string]$BuildRevision = 'unknown',
     [switch]$Diagnostics,
+    [ValidateSet('Full','MissingApi','UnavailableApi')][string]$Scenario = 'Full',
     [ValidateRange(1,3600)][int]$TimeoutSeconds = 1800
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'qualification-profile.ps1')
+. (Join-Path $PSScriptRoot 'qualification-inputs.ps1')
+$Scenario = switch ($Scenario) { 'Full' { 'Full' }; 'MissingApi' { 'MissingApi' }; 'UnavailableApi' { 'UnavailableApi' } }
 $root = [IO.Path]::GetFullPath($SandboxRoot).TrimEnd('\')
 $game = Join-Path $root 'game'
 $marker = Join-Path $root 'qualification.marker'
@@ -60,14 +63,20 @@ if ($Action -eq 'Prepare') {
     Copy-Item -LiteralPath (Join-Path $GameDir 'BepInEx\core') -Destination $bep -Recurse
     $plugins = Join-Path $bep 'plugins'
     New-Item -ItemType Directory -Path $plugins | Out-Null
-    foreach ($name in @('VGModAPI.dll','VGModAPI.Core.dll','VGModAPI.Abstractions.dll')) {
-        Copy-Item -LiteralPath (Join-Path $BuildRoot "artifacts\VGModAPI\$name") -Destination $plugins
+    Copy-Item -LiteralPath (Join-Path $BuildRoot 'tools\QualificationGuard\bin\Release\netstandard2.1\QualificationGuard.dll') -Destination $plugins
+    if ($Scenario -ne 'MissingApi') {
+        foreach ($name in @('VGModAPI.dll','VGModAPI.Core.dll','VGModAPI.Abstractions.dll')) {
+            Copy-Item -LiteralPath (Join-Path $BuildRoot "artifacts\VGModAPI\$name") -Destination $plugins
+        }
     }
-    Copy-Item -LiteralPath (Join-Path $BuildRoot 'tools\QualificationRunner\bin\Release\netstandard2.1\QualificationRunner.dll') -Destination $plugins
-    Copy-Item -LiteralPath (Join-Path $BuildRoot 'examples\LifecycleObserver\bin\Release\netstandard2.1\LifecycleObserver.dll') -Destination $plugins
+    if ($Scenario -eq 'Full') {
+        Copy-Item -LiteralPath (Join-Path $BuildRoot 'tools\QualificationRunner\bin\Release\netstandard2.1\QualificationRunner.dll') -Destination $plugins
+        Copy-Item -LiteralPath (Join-Path $BuildRoot 'examples\LifecycleObserver\bin\Release\netstandard2.1\LifecycleObserver.dll') -Destination $plugins
+    }
+    [IO.File]::WriteAllText((Join-Path $root 'scenario.txt'), $Scenario)
     $hashes = @{}
     Get-ChildItem -LiteralPath $plugins -File | ForEach-Object { $hashes[$_.Name] = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
-    @{ revision=$BuildRevision; preparedUtc=[DateTime]::UtcNow.ToString('o'); plugins=$hashes } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'build-provenance.json')
+    @{ scenario=$Scenario; revision=$BuildRevision; preparedUtc=[DateTime]::UtcNow.ToString('o'); plugins=$hashes } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'build-provenance.json')
     # Prevent Steam's restart path; the runner disables SteamManager before arming checks.
     [IO.File]::WriteAllText((Join-Path $game 'steam_appid.txt'), '3471800')
     $saves = Join-Path $root 'Saves'
@@ -93,10 +102,7 @@ if ($Action -eq 'Cleanup') {
     exit 0
 }
 Assert-QualificationUnused $root
-$provenance = Get-Content -LiteralPath (Join-Path $root 'build-provenance.json') -Raw | ConvertFrom-Json
-foreach ($property in $provenance.plugins.PSObject.Properties) {
-    if ((Get-FileHash -LiteralPath (Join-Path $game "BepInEx\plugins\$($property.Name)") -Algorithm SHA256).Hash -ne $property.Value) { throw 'Prepared plugin changed; refuse stale provenance.' }
-}
+$provenance = Assert-QualificationInputs $root
 # Unity PlayerPrefs are shared even with a separate executable. Preserve this inspected title's key.
 $prefsNative = 'HKCU\Software\Bat Roost Games\VanguardGalaxy'
 $prefsFile = Join-Path $root 'playerprefs-before.reg'
