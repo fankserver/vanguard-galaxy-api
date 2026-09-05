@@ -53,7 +53,7 @@ try {
         & $script -Action Cleanup -SandboxRoot $other
     }
     $null = Assert-QualificationInputs $sandbox
-    foreach ($mutation in @('extra-file','extra-directory','changed-hash','changed-scenario')) {
+    foreach ($mutation in @('extra-file','extra-directory','changed-hash','changed-scenario','consumer-marker')) {
         $extra = Join-Path $sandbox 'game\BepInEx\plugins\extra.dll'
         $dll = Join-Path $sandbox 'game\BepInEx\plugins\VGModAPI.dll'
         $modeFile = Join-Path $sandbox 'scenario.txt'
@@ -62,11 +62,14 @@ try {
             'extra-directory' { [IO.Directory]::CreateDirectory($extra) | Out-Null }
             'changed-hash' { [IO.File]::WriteAllText($dll, 'changed') }
             'changed-scenario' { [IO.File]::WriteAllText($modeFile, 'MissingApi') }
+            'consumer-marker' { [IO.File]::WriteAllText((Join-Path $sandbox 'missionjournal.enabled'), 'pilot-v1') }
         }
         $rejected = $false
         try { $null = Assert-QualificationInputs $sandbox } catch { $rejected = $true }
         Assert $rejected "Prepared input mutation accepted: $mutation"
         if (Test-Path -LiteralPath $extra) { Remove-Item -LiteralPath $extra -Force }
+        $marker = Join-Path $sandbox 'missionjournal.enabled'
+        if (Test-Path -LiteralPath $marker) { Remove-Item -LiteralPath $marker -Force }
         [IO.File]::WriteAllText($dll, 'fake-assembly')
         [IO.File]::WriteAllText($modeFile, 'Full')
     }

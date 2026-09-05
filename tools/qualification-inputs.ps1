@@ -3,6 +3,15 @@ function Assert-QualificationInputs([string]$Root) {
     $provenance = Get-Content -LiteralPath (Join-Path $Root 'build-provenance.json') -Raw | ConvertFrom-Json
     if ($provenance.scenario -notin @('Full','MissingApi','UnavailableApi') -or
         (Get-Content -LiteralPath (Join-Path $Root 'scenario.txt') -Raw).Trim() -cne $provenance.scenario) { throw 'Prepared scenario changed.' }
+    $journalMarker = Join-Path $Root 'missionjournal.enabled'
+    if ([bool]$provenance.missionJournal -ne (Test-Path -LiteralPath $journalMarker -PathType Leaf)) { throw 'Prepared consumer selection changed.' }
+    if ($provenance.missionJournal -and (Get-Content -LiteralPath $journalMarker -Raw).Trim() -ne 'pilot-v1') { throw 'Unknown consumer pilot marker.' }
+    $expected = @('QualificationGuard.dll')
+    if ($provenance.scenario -ne 'MissingApi') { $expected += @('VGModAPI.dll','VGModAPI.Core.dll','VGModAPI.Abstractions.dll') }
+    if ($provenance.scenario -eq 'Full') { $expected += @('QualificationRunner.dll','LifecycleObserver.dll') }
+    if ($provenance.missionJournal) { $expected += @('VGMissionJournal.dll','Newtonsoft.Json.dll') }
+    if (@($provenance.plugins.PSObject.Properties).Count -ne $expected.Count -or
+        @($provenance.plugins.PSObject.Properties.Name | Where-Object { $_ -notin $expected }).Count -gt 0) { throw 'Scenario plugin allowlist mismatch.' }
     $plugins = Join-Path $Root 'game\BepInEx\plugins'
     $actual = @(Get-ChildItem -LiteralPath $plugins -Force)
     if ($actual.Count -ne @($provenance.plugins.PSObject.Properties).Count -or
