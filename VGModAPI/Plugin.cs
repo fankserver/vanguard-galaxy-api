@@ -73,16 +73,17 @@ public sealed class Plugin : BaseUnityPlugin
         try
         {
             var targets = bindings.Resolve(catalog); // Resolve whole group before touching anything.
-            foreach (var entry in targets)
+            foreach (var binding in catalog)
             {
-                var type = patches[entry.Key];
+                var target = targets[binding.Key];
+                var type = patches[binding.Key];
                 HarmonyMethod? Hook(string method)
                 {
                     var info = type.GetMethod(method, BindingFlags.NonPublic | BindingFlags.Static);
                     return info == null ? null : new HarmonyMethod(info);
                 }
-                touched.Add(entry.Value);
-                _harmony!.Patch(entry.Value, prefix: Hook("Prefix"), postfix: Hook("Postfix"), finalizer: Hook("Finalizer"));
+                touched.Add(target);
+                _harmony!.Patch(target, prefix: Hook("Prefix"), postfix: Hook("Postfix"), finalizer: Hook("Finalizer"));
             }
             _hub!.SetCapability(name, true, "Bound to inspected assembly; in-game qualification pending.");
         }
