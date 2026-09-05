@@ -261,6 +261,25 @@ public sealed class Plugin : BaseUnityPlugin
         foreach (var frame in Settle()) yield return frame;
         Require(InSpace(), "Space fixture did not reload in space.");
         Passed("mining-space-save-load");
+
+        Invoke(Instance(_scenes), "StartMenu");
+        foreach (var frame in Wait(() => SceneManager.GetSceneByName("Main Menu").isLoaded && SceneManager.sceneCount <= 4
+            && AccessTools.Field(_player, "current").GetValue(null) == null, "menu before replacement probe")) yield return frame;
+        foreach (var frame in Settle()) yield return frame;
+        AccessTools.Method(_player, "CreateNewGamePlayer").Invoke(null, new object?[] { null, false });
+        var pending = _api.CurrentSession!;
+        Require(pending.Phase == SessionPhase.Starting, "Creation prematurely became ready.");
+        AccessTools.Method(_player, "CreateTestArenaPlayer").Invoke(null, null);
+        foreach (var frame in Wait(() => _api.CurrentSession?.Phase == SessionPhase.Invalidated, "untracked replacement invalidation")) yield return frame;
+        Require(_api.CurrentSession!.Id == pending.Id && !_events.Any(e => e.Session?.Id == pending.Id
+            && (e.Kind == LifecycleEventKind.PlayerReady || e.Kind == LifecycleEventKind.GameplayInitialized)), "Replacement adopted the pending attempt.");
+        Passed("pending-new-game-replacement-invalidated");
+        Invoke(Instance(_scenes), "StartMenu");
+        foreach (var frame in Wait(() => AccessTools.Field(_player, "current").GetValue(null) == null, "replacement probe cleanup")) yield return frame;
+        Load("fixture-a");
+        foreach (var frame in Wait(() => _api.CurrentSession?.Phase == SessionPhase.GameplayInitialized && _api.CurrentSession.Id != pending.Id, "replacement probe recovery")) yield return frame;
+        foreach (var frame in Settle()) yield return frame;
+        Passed("reload-after-untracked-replacement");
     }
 
     private bool InSpace()
