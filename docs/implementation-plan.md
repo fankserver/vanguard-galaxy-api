@@ -171,13 +171,8 @@ Do not damage or deliberately corrupt the owner's real saves. Arrange live quali
 
 ## Follow-up roadmap
 
-Priorities are proposed, not implementation authorization:
+Future work is now maintained in the [pinned GitHub roadmap](https://github.com/fankserver/vanguard-galaxy-api/issues/1), with [milestones](https://github.com/fankserver/vanguard-galaxy-api/milestones), acceptance criteria, evidence, priority labels, and native blocked-by relationships. Update those issues rather than maintaining a second detailed backlog here.
 
-1. Per-save persistence coordination: distinguish installation settings, campaign identity, save snapshots, and transient state; account for rollback and autosave rotation.
-2. Verified mission transitions and stable mission/objective identity.
-3. Optional story module: registration, scripted objectives, reconstruction, migrations; use Anima and CustomMission as contrasting consumers.
-4. Optional bar contributions: ownership/exclusivity, additive providers, final-roster notifications.
-5. Optional HUD registration: shared layout and canvas lifecycle.
-6. Broader items/recipes, sectors, and encounters only after real consumer demand and save-safety design.
+This document preserves the initial implementation plan; `lifecycle-contract.md` and `compatibility.md` describe the implemented surface and evidence. Milestone placement does not authorize deployments or consumer migrations, and no release dates are promised.
 
 Keep gameplay choreography in feature mods and direct Harmony access available as an explicitly version-sensitive escape hatch.

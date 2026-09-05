@@ -90,6 +90,10 @@ A complete compiled example lives at `examples/LifecycleObserver/` in the source
 - `VGModAPI`: loader plugin and Harmony hooks.
 - `VGModAPI.Tests`: pure tests, adapter doubles, and installed-metadata checks.
 
-[Implementation plan](docs/implementation-plan.md) · [Research findings](docs/research-findings.md)
+## Roadmap
 
-Future optional modules cover persistence coordination, mission/story integration, bar policies, and HUD registration. Direct Harmony remains an escape hatch; bespoke gameplay stays in feature mods.
+The [pinned roadmap issue](https://github.com/fankserver/vanguard-galaxy-api/issues/1) links the [milestones](https://github.com/fankserver/vanguard-galaxy-api/milestones) and actionable issues, including acceptance criteria, evidence, priorities, and prerequisites. It is the source of truth for future work—not a promise of release dates.
+
+The next gate is [in-game core qualification](https://github.com/fankserver/vanguard-galaxy-api/issues/2). Optional persistence, mission/travel, story/bar, HUD/navigation, and content modules follow demonstrated consumer needs. Direct Harmony remains an escape hatch; bespoke gameplay stays in feature mods.
+
+[Initial implementation plan](docs/implementation-plan.md) · [Research findings](docs/research-findings.md)
