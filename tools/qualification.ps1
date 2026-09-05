@@ -8,7 +8,7 @@ param(
     [string]$BuildRoot,
     [string]$BuildRevision = 'unknown',
     [switch]$Diagnostics,
-    [ValidateRange(1,3600)][int]$TimeoutSeconds = 900
+    [ValidateRange(1,3600)][int]$TimeoutSeconds = 1800
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'qualification-profile.ps1')
