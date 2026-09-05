@@ -29,7 +29,7 @@ A load's `SavePath` identifies its source file. It does not change when the user
 | `SessionInvalidated` | Replacement attempt, menu/splash request, observed bound-player replacement, shutdown, or observer fault | Stop using prior session state. This may precede actual scene unloading. |
 | `PlayerReady` | Prefix of `SceneLoader.LoadScenesOnStartGame`, attributed to an observed load coroutine or pending new-game attempt | Player has been assigned/configured and vanilla is about to request initial gameplay scenes. UI and POIs are not ready. |
 | `GameplayInitialized` | Finalizer after a nonthrowing `GameplayManager.Start`, with `_initialized == true` and matching tracked player | This manager finished generating player/fleet and initializing its own gameplay state. **Not** universal world/POI/UI readiness. |
-| `SessionStartFailed` | Observed load failure, nested iterator exception/disposal, load iterator ending without PlayerReady, or captured creation/scene-request/gameplay exception | Detected failure in a tracked initialization path. Not a promise to intercept every engine/async error. |
+| `SessionStartFailed` | Unobserved load coroutine hook, observed load failure, nested iterator exception/disposal, load iterator ending without PlayerReady, or captured creation/scene-request/gameplay exception | Detected failure in a tracked initialization path. Not a promise to intercept every engine/async error. |
 
 Supported progression:
 
@@ -44,6 +44,8 @@ Repeated signals and stale attempt IDs cannot advance or fail a replacement sess
 ### Coroutine semantics
 
 The file-load iterator and yielded child iterators are observed without flattening their yields. Attempt context exists only while advancing/disposing that iterator. Exceptions are reported and rethrown unchanged; vanilla's own catch handlers remain in charge of game behavior.
+
+A tracked load request returning without its coroutine factory hook produces SessionStartFailed: observation is incomplete, even if vanilla continues running. This detects hook bypass; it does not assert that vanilla itself threw.
 
 An iterator factory returning is not completion. A load that rejects a future-version save and ends without reaching PlayerReady produces a failure event.
 

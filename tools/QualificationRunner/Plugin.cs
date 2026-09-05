@@ -40,9 +40,12 @@ public sealed class Plugin : BaseUnityPlugin
             Require(flag + 1 < args.Length, "Qualification root argument missing.");
             _root = Path.GetFullPath(args[flag + 1]);
             Require(File.ReadAllText(Path.Combine(_root, "qualification.marker")).Trim() == "vgmodapi-disposable-sandbox-v1", "Sandbox marker missing.");
+            // Disable Steam before any subsequent arming check can fail.
+            var harmony = new Harmony(Id);
+            harmony.Patch(AccessTools.Method(AccessTools.TypeByName("SteamManager"), "Awake"), prefix: new HarmonyMethod(typeof(Plugin), nameof(SkipSteam)));
+            harmony.Patch(AccessTools.PropertyGetter(AccessTools.TypeByName("SteamManager"), "Initialized"), prefix: new HarmonyMethod(typeof(Plugin), nameof(SkipSteam)));
             Require(SamePath(Path.GetDirectoryName(Application.dataPath)!, Path.Combine(_root, "game")), "Refusing to run outside the sandbox executable directory.");
             _saveRoot = Path.Combine(_root, "Saves");
-            Require(!SamePath(_saveRoot, Path.Combine(Application.persistentDataPath, "Saves")), "Real save directory is not a test target.");
             Directory.CreateDirectory(_saveRoot);
             _api = ModApi.Current ?? throw new InvalidOperationException("API unavailable.");
             Require(_api.Capabilities.Where(c => c.Name == "session-lifecycle" || c.Name == "save-outcomes").Count(c => c.Available) == 2, "API hooks did not bind; no qualification possible.");
@@ -50,21 +53,21 @@ public sealed class Plugin : BaseUnityPlugin
             _player = AccessTools.TypeByName("Source.Player.GamePlayer");
             _manager = AccessTools.TypeByName("Behaviour.GameManager");
             _scenes = AccessTools.TypeByName("Behaviour.Bootstrap.SceneLoader");
-            var harmony = new Harmony(Id);
+            var originalSavePath = (string)AccessTools.Field(_save, "SavesPath").GetValue(null)!;
+            var protectedPath = File.ReadAllText(Path.Combine(_root, "original-save-directory.txt")).Trim();
+            Require(SamePath(originalSavePath, protectedPath), "Manifest does not protect the game's actual save directory.");
+            Require(!SamePath(_saveRoot, originalSavePath), "Real save directory is not a test target.");
             // Defense in depth: prevent any Store/Recall outside the redirected directory.
             harmony.Patch(AccessTools.Method(_save, "Store"), prefix: new HarmonyMethod(typeof(Plugin), nameof(CheckSaveDestination)));
             harmony.Patch(AccessTools.Method(AccessTools.TypeByName("Source.Util.SaveGameFile"), "Recall"), prefix: new HarmonyMethod(typeof(Plugin), nameof(CheckLoadSource)));
-            // An isolated test must not relaunch the installed game or grant Steam stats/achievements.
-            harmony.Patch(AccessTools.Method(AccessTools.TypeByName("SteamManager"), "Awake"), prefix: new HarmonyMethod(typeof(Plugin), nameof(SkipSteam)));
-            harmony.Patch(AccessTools.PropertyGetter(AccessTools.TypeByName("SteamManager"), "Initialized"), prefix: new HarmonyMethod(typeof(Plugin), nameof(SkipSteam)));
             AccessTools.Field(_save, "SavesPath").SetValue(null, _saveRoot);
             AccessTools.Field(_save, "SavesDir").SetValue(null, new DirectoryInfo(_saveRoot));
             AccessTools.Field(_save, "_saves").SetValue(null, null);
-            File.WriteAllText(Path.Combine(_root, "events.tsv"), "sequence\tkind\tsession\tphase\toperation\tdestination\n");
+            File.WriteAllText(Path.Combine(_root, "events.tsv"), "sequence\tkind\tsession\tphase\toperation\tdestination\tdetail\n");
             _subscription = _api.Subscribe(Id, e =>
             {
                 _events.Add(e);
-                File.AppendAllText(Path.Combine(_root, "events.tsv"), string.Join("\t", _events.Count, e.Kind, e.Session?.Id, e.Session?.Phase, e.OperationId, e.Destination == null ? "" : Path.GetFileName(e.Destination)) + "\n");
+                File.AppendAllText(Path.Combine(_root, "events.tsv"), string.Join("\t", _events.Count, e.Kind, e.Session?.Id, e.Session?.Phase, e.OperationId, e.Destination == null ? "" : Path.GetFileName(e.Destination), (e.Detail ?? "").Replace("\t", " ").Replace("\r", " ").Replace("\n", " ")) + "\n");
             });
             _armed = true;
             Logger.LogInfo("Qualification sandbox armed; real save directory is not used. Steam integration disabled for this process.");
@@ -93,12 +96,13 @@ public sealed class Plugin : BaseUnityPlugin
     private IEnumerator Run()
     {
         foreach (var frame in Wait(() => SceneManager.GetSceneByName("Main Menu").isLoaded, "main menu")) yield return frame;
+        foreach (var frame in Settle()) yield return frame;
         for (int n = 0; n < 2; n++)
         {
             var previous = _api!.CurrentSession?.Id;
             Load(n == 0 ? "fixture-a" : "fixture-b");
             foreach (var frame in Wait(() => _api.CurrentSession?.Phase == SessionPhase.GameplayInitialized && _api.CurrentSession.Id != previous, "fixture initialization")) yield return frame;
-            Time.timeScale = 0;
+            foreach (var frame in Settle()) yield return frame;
             var session = _api.CurrentSession!;
             var sequence = _events.Where(e => e.Session?.Id == session.Id).Select(e => e.Kind).ToArray();
             Require(sequence.SequenceEqual(new[] { LifecycleEventKind.SessionStarting, LifecycleEventKind.PlayerReady, LifecycleEventKind.GameplayInitialized }), "Unexpected load event order.");
@@ -112,7 +116,7 @@ public sealed class Plugin : BaseUnityPlugin
         var beforeRoundtrip = _api!.CurrentSession?.Id;
         Load("qa-manual");
         foreach (var frame in Wait(() => _api.CurrentSession?.Phase == SessionPhase.GameplayInitialized && _api.CurrentSession.Id != beforeRoundtrip, "roundtrip")) yield return frame;
-        Time.timeScale = 0;
+        foreach (var frame in Settle()) yield return frame;
         Passed("saved-copy-roundtrip");
 
         object player = AccessTools.Field(_player, "current").GetValue(null)!;
@@ -144,17 +148,22 @@ public sealed class Plugin : BaseUnityPlugin
         // Future-version and corrupt files were created from disposable copies by the provisioning tool.
         foreach (string name in new[] { "fixture-future", "fixture-corrupt" })
         {
+            var previous = _api!.CurrentSession?.Id;
             Load(name);
-            foreach (var frame in Wait(() => _api!.CurrentSession?.Phase == SessionPhase.Failed, name + " rejection", allowFailure: true)) yield return frame;
+            foreach (var frame in Wait(() => _api!.CurrentSession?.Phase == SessionPhase.Failed && _api.CurrentSession.Id != previous, name + " rejection", allowFailure: true)) yield return frame;
             var id = _api!.CurrentSession!.Id;
             Require(!_events.Any(e => e.Session?.Id == id && e.Kind == LifecycleEventKind.GameplayInitialized), "Rejected load became initialized.");
             Require(_events.Count(e => e.Session?.Id == id && e.Kind == LifecycleEventKind.SessionStartFailed) == 1, "Failure was not reported exactly once.");
             Invoke(Instance(_scenes), "StartMenu");
-            foreach (var frame in Wait(() => SceneManager.GetSceneByName("Main Menu").isLoaded, "menu after rejected load", allowFailure: true)) yield return frame;
+            foreach (var frame in Wait(() => SceneManager.GetSceneByName("Main Menu").isLoaded && SceneManager.sceneCount <= 4 && !SceneManager.GetSceneByName("Gameplay").isLoaded, "menu after rejected load", allowFailure: true)) yield return frame;
+            // isLoaded alone can still refer to the pre-existing menu after a rejection.
+            foreach (var frame in Settle()) yield return frame;
             Passed(name + "-rejected");
         }
+        var beforeRecovery = _api!.CurrentSession?.Id;
         Load("fixture-a");
-        foreach (var frame in Wait(() => _api!.CurrentSession?.Phase == SessionPhase.GameplayInitialized, "post-failure reload")) yield return frame;
+        foreach (var frame in Wait(() => _api!.CurrentSession?.Phase == SessionPhase.GameplayInitialized && _api.CurrentSession.Id != beforeRecovery, "post-failure reload")) yield return frame;
+        foreach (var frame in Settle()) yield return frame;
         Passed("reload-after-failure");
     }
 
@@ -168,6 +177,7 @@ public sealed class Plugin : BaseUnityPlugin
 
     private void Save(string name, LifecycleEventKind expected)
     {
+        Time.timeScale = 1;
         int start = _events.Count;
         var data = AccessTools.Method(_save, "SaveCurrentState").Invoke(null, null);
         var format = Enum.Parse(AccessTools.TypeByName("Source.Util.SaveGameFormat"), "Compressed");
@@ -176,6 +186,14 @@ public sealed class Plugin : BaseUnityPlugin
         Require(received.Length == 2 && received[0].Kind == LifecycleEventKind.SaveStarted && received[1].Kind == expected, "Unexpected outcome/count for " + name);
         Require(received[0].OperationId == received[1].OperationId, "Save operation identity changed.");
         Require(received.All(e => SamePath(e.Destination!, Path.Combine(_saveRoot!, name + ".save"))), "Wrong save destination.");
+    }
+
+    // A harness grace period, not an API guarantee of UI/world readiness.
+    private static IEnumerable<object?> Settle()
+    {
+        Time.timeScale = 1;
+        float until = Time.realtimeSinceStartup + 2;
+        do { yield return null; } while (Time.realtimeSinceStartup < until);
     }
 
     private IEnumerable<object?> Wait(Func<bool> ready, string description, bool allowFailure = false)

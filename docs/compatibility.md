@@ -22,9 +22,10 @@ Local SDK: .NET SDK 10.0.111.
 |---|---|
 | Debug build, including example consumer | Passed, zero warnings/errors |
 | Release build/package | Passed, zero warnings/errors |
-| Pure state-machine, coroutine, reflection-adapter, and hook-order tests | 46 passed in Debug and Release |
+| Pure state-machine, coroutine, reflection-adapter, and hook-order tests | 48 passed in Debug and Release |
 | Installed assembly identity, 12 method bindings, and 5 field bindings | 7 tests passed in Debug and Release |
 | Harmony detour execution inside Unity | Exercised; missing load events fixed by callee-first installation (#27) |
+| Windows harness synthetic-file checks | Passed; no game launch or PlayerPrefs restore exercised |
 | Live save/load/new-game flows | **Failed qualification**: Start → PlayerReady → SessionStartFailed; startup blocker #28; remaining scenarios not reached |
 | Multi-mod behavior | **Not run** |
 
@@ -55,6 +56,8 @@ On 2026-09-05, four fresh disposable sandboxes were used:
 4. `qa-04`: installing the iterator factory before its caller corrected event delivery: SessionStarting → PlayerReady → SessionStartFailed. The original gameplay initialization still throws, so the smoke correctly fails rather than advancing to its save/subscriber scenarios. Quit-time saving was observed in the sandbox; this is not completion of the planned save matrix.
 
 This isolates the missed-hook symptom to installation order in the controlled comparison; the new ordered-catalog tests protect that ordering but do not replace live evidence. [#27](https://github.com/fankserver/vanguard-galaxy-api/issues/27) tracks the defect. [#28](https://github.com/fankserver/vanguard-galaxy-api/issues/28) tracks the still-unisolated gameplay-start failure; do not yet label it a confirmed vanilla bug.
+
+The follow-up review adds explicit failure when a load request returns without its coroutine hook, plus harness safety/sequence improvements. These follow-up changes have host/synthetic checks, not a fresh Unity run. Earlier runs shared PlayerPrefs without a before-snapshot, so their save hashes do not establish unchanged display settings.
 
 Private raw logs/fixtures remain local. The normalized event sequence above excludes original save contents and user paths. Each run's original-source hashes were rechecked unchanged. See [runner instructions and limits](qualification-runner.md) to reproduce controlled testing. The owner's full milestone test remains separate; RuntimeQualified stays false.
 

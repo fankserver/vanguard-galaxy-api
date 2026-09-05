@@ -44,6 +44,30 @@ public sealed class GameAdapterTests
     }
 
     [Fact]
+    public void MissingIteratorHookFailsInsteadOfRemainingStarting()
+    {
+        var request = _adapter.BeginLoad(File());
+        _adapter.EndLoadRequest(request, null);
+        Assert.Equal(SessionPhase.Failed, _hub.CurrentSession!.Phase);
+        Assert.Contains("not observed", Assert.Single(_events, e => e.Kind == LifecycleEventKind.SessionStartFailed).Detail);
+    }
+
+    [Fact]
+    public void NestedRequestsRestoreTheirOwnObservationFlags()
+    {
+        var outer = _adapter.BeginLoad(File("outer.save"));
+        var inner = _adapter.BeginLoad(File("inner.save"));
+        IEnumerator Root() { yield return null; }
+        _adapter.ObserveLoad(Root());
+        _adapter.EndLoadRequest(inner, null);
+        _adapter.ObserveLoad(Root());
+        _adapter.EndLoadRequest(outer, null);
+        Assert.True(outer.Observed);
+        Assert.True(inner.Observed);
+        Assert.Equal(SessionPhase.Starting, _hub.CurrentSession!.Phase);
+    }
+
+    [Fact]
     public void NestedLoadMaintainsAttemptContextAfterRequestReturned()
     {
         var request = _adapter.BeginLoad(File());
@@ -78,7 +102,8 @@ public sealed class GameAdapterTests
         var a = _adapter.BeginLoad(File("a.save"));
         IEnumerator Old() { yield return null; _adapter.PlayerReconstructed(); _adapter.LoadFailed(); }
         var old = _adapter.ObserveLoad(Old()); _adapter.EndLoadRequest(a, null);
-        var b = _adapter.BeginLoad(File("b.save")); _adapter.EndLoadRequest(b, null);
+        var b = _adapter.BeginLoad(File("b.save"));
+        _adapter.ObserveLoad(Old()); _adapter.EndLoadRequest(b, null);
         GamePlayer.current = new GamePlayer(); Drain(old);
         Assert.Equal(b.Id, _hub.CurrentSession!.Id); Assert.Equal(SessionPhase.Starting, _hub.CurrentSession.Phase);
     }
