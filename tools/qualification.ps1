@@ -92,7 +92,7 @@ if ($Action -eq 'Cleanup') {
     Write-Output 'Game-resource junctions unlinked. Private evidence and local copies retained.'
     exit 0
 }
-if ((Test-Path -LiteralPath (Join-Path $root 'result.txt')) -or (Test-Path -LiteralPath (Join-Path $root 'process.json'))) { throw 'Sandbox already ran. Prepare a fresh directory instead of reusing stale evidence.' }
+Assert-QualificationUnused $root
 $provenance = Get-Content -LiteralPath (Join-Path $root 'build-provenance.json') -Raw | ConvertFrom-Json
 foreach ($property in $provenance.plugins.PSObject.Properties) {
     if ((Get-FileHash -LiteralPath (Join-Path $game "BepInEx\plugins\$($property.Name)") -Algorithm SHA256).Hash -ne $property.Value) { throw 'Prepared plugin changed; refuse stale provenance.' }
@@ -100,6 +100,7 @@ foreach ($property in $provenance.plugins.PSObject.Properties) {
 # Unity PlayerPrefs are shared even with a separate executable. Preserve this inspected title's key.
 $prefsNative = 'HKCU\Software\Bat Roost Games\VanguardGalaxy'
 $prefsFile = Join-Path $root 'playerprefs-before.reg'
+[IO.File]::WriteAllText((Join-Path $root 'run-started.txt'), [DateTime]::UtcNow.ToString('o'))
 $hadPrefs = Save-QualificationPrefs $prefsNative $prefsFile
 $exe = Join-Path $game 'VanguardGalaxy.exe'
 $process = $null
@@ -119,6 +120,11 @@ finally {
         try {
             Restore-QualificationPrefs $prefsNative $prefsFile $hadPrefs
             [IO.File]::WriteAllText((Join-Path $root 'playerprefs-restored.txt'), 'PASS')
+        }
+        catch {
+            # Preserve this failure even if the independent save-hash check also throws.
+            try { [IO.File]::WriteAllText((Join-Path $root 'playerprefs-restore-failed.txt'), $_.Exception.ToString()) } catch { }
+            throw
         }
         finally {
             $manifest = Get-Content -LiteralPath (Join-Path $root 'original-save-hashes.json') -Raw | ConvertFrom-Json

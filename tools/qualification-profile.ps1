@@ -1,4 +1,9 @@
-# Registry helpers shared by the launcher and synthetic tests; no work on import.
+# Recovery helpers shared by the launcher and synthetic tests; no work on import.
+function Assert-QualificationUnused([string]$Root) {
+    foreach ($name in @('result.txt','process.json','run-started.txt','playerprefs-before.reg')) {
+        if (Test-Path -LiteralPath (Join-Path $Root $name)) { throw 'Sandbox already ran. Preserve recovery evidence and prepare a fresh directory.' }
+    }
+}
 function Save-QualificationPrefs([string]$Key, [string]$Snapshot) {
     if (!$Key.StartsWith('HKCU\Software\')) { throw 'Only per-user software keys are supported.' }
     $path = 'Registry::HKEY_CURRENT_USER\' + $Key.Substring(5)

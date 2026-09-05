@@ -26,7 +26,7 @@ Local SDK: .NET SDK 10.0.111.
 | Installed assembly identity, 12 method bindings, and 5 field bindings | 7 tests passed in Debug and Release |
 | Harmony detour execution inside Unity | Exercised; missing load events fixed by callee-first installation (#27) |
 | Windows harness synthetic checks | Passed; file isolation/cleanup and typed registry snapshot/restore tested on synthetic data |
-| Live save/load flows | qa-06 passed: copied docked loads, replacement, manual roundtrip, skip, exhausted retries, subscribers, valid future/corrupt rejection, recovery and quit save |
+| Live save/load flows | qa-06 passed: copied docked loads, replacement, manual roundtrip, skip, exhausted retries, subscribers, valid-syntax newer-version fixture rejection without readiness, corrupt-JSON failure, recovery and quit save |
 | New-game, space-load and remaining matrix | **Not exercised** |
 | Multi-mod behavior | **Not run** |
 
@@ -57,7 +57,7 @@ On 2026-09-05, six fresh disposable sandboxes were used:
 4. `qa-04`: installing the iterator factory before its caller corrected event delivery: SessionStarting → PlayerReady → SessionStartFailed. The original gameplay initialization still throws, so the smoke correctly fails rather than advancing to its save/subscriber scenarios. Quit-time saving was observed in the sandbox; this is not completion of the planned save matrix.
 
 5. `qa-05`: gameplay startup succeeded with read-only diagnostics (SidePanel present), and the runner reported PASS. Log inspection rejected the future-save claim: `9999.0.0` was invalid version syntax, not a genuinely newer version. Save and PlayerPrefs preservation checks passed.
-6. `qa-06`: corrected fixture `99.0.0.0`, explicit rejection-reason assertions, and **no diagnostic hooks**. All ten smoke scenarios passed. Independently checked 31 events: six unique attempts, ordered invalidation/readiness, five save operations each with one terminal outcome (including quit autosave). The only logged exceptions were intentional metadata-write, subscriber, and corrupt-JSON failures; no gameplay NRE or version-format failure. All 37 original files were unchanged and the restored PlayerPrefs export was byte-identical to its pre-run snapshot.
+6. `qa-06`: corrected fixture `99.0.0.0`, assertions separating no-readiness completion from the observed exception path, and **no diagnostic hooks**. All ten smoke scenarios passed. Independently checked 31 events: six unique attempts, ordered invalidation/readiness, five save operations each with one terminal outcome (including quit autosave). The event does not uniquely prove the too-new-version branch: that attribution is inferred from inspected code and the fixture header, not from a current-version control fixture. The only logged exceptions were intentional metadata-write, subscriber, and corrupt-JSON failures; no gameplay NRE or version-format failure. All 37 original files were unchanged and the restored PlayerPrefs export was byte-identical to its pre-run snapshot.
 
 This isolates the missed-hook symptom to installation order in the controlled comparison; the new ordered-catalog tests protect that ordering but do not replace live evidence. [#27](https://github.com/fankserver/vanguard-galaxy-api/issues/27) tracks the defect. [#28](https://github.com/fankserver/vanguard-galaxy-api/issues/28) records the earlier gameplay-start failure. It no longer reproduces after harness settling/safety changes, including in qa-06 without diagnostics. The precise original null reference is not proven; this is not evidence of a fixed vanilla-game bug.
 
@@ -76,7 +76,8 @@ Arrange owner approval before deployment. Use copied/disposable saves and the op
 - [ ] Start a new game: no premature PlayerReady during player creation/configuration.
 - [x] Return to menu, reload, and switch between two saves without restarting: old sessions invalidated before replacement; no stale readiness observed.
 - [ ] Explicit delayed/stale coroutine callback injection inside Unity (covered only by host tests).
-- [x] A future-version rejection or controlled invalid-copy load reports failure without a ready event.
+- [x] A valid-syntax newer-version fixture ends without readiness; a corrupt-JSON fixture reports failure without readiness.
+- [ ] A control fixture or direct branch observation distinguishes too-new rejection from every other non-throwing early exit.
 - [x] Manual saving produces one Started and one terminal event for the correct destination.
 - [ ] Autosave rotation reports separate correct destinations/operation IDs.
 - [x] Ephemeral-player save is skipped, not successful.

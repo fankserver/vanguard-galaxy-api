@@ -75,7 +75,9 @@ public sealed class Plugin : BaseUnityPlugin
                 _diagnostics = this;
                 harmony.Patch(AccessTools.Method(AccessTools.TypeByName("Behaviour.UI.Side_Menu.SidePanel"), "RefreshIfOpen"),
                     prefix: new HarmonyMethod(typeof(Plugin), nameof(SidePanelEntering)));
-                harmony.Patch(AccessTools.Method(AccessTools.TypeByName("GameplayManager"), "Start"),
+                var gameplayStart = AccessTools.Method(AccessTools.TypeByName("GameplayManager"), "Start");
+                Require(gameplayStart?.ReturnType == typeof(void), "Diagnostics require synchronous void GameplayManager.Start.");
+                harmony.Patch(gameplayStart,
                     prefix: new HarmonyMethod(typeof(Plugin), nameof(GameplayEntering)),
                     finalizer: new HarmonyMethod(typeof(Plugin), nameof(GameplayExited)));
             }
@@ -165,10 +167,12 @@ public sealed class Plugin : BaseUnityPlugin
             Require(!_events.Any(e => e.Session?.Id == id && e.Kind == LifecycleEventKind.GameplayInitialized), "Rejected load became initialized.");
             var failures = _events.Where(e => e.Session?.Id == id && e.Kind == LifecycleEventKind.SessionStartFailed).ToArray();
             Require(failures.Length == 1, "Failure was not reported exactly once.");
-            // This version-locked harness must distinguish a too-new save from malformed JSON/version syntax.
+            // Distinguish non-readiness from the observed exception path; this event alone
+            // cannot identify which non-throwing branch rejected the valid-syntax fixture.
             var reason = name == "fixture-future" ? "without player readiness" : "Vanilla reported a save-load failure";
             Require(failures[0].Detail?.Contains(reason) == true, "Wrong rejection path for " + name + ": " + failures[0].Detail);
             Invoke(Instance(_scenes), "StartMenu");
+            // Inspected StartMenu retains only Bootstrapper, Camera, Main Menu and Backdrop.
             foreach (var frame in Wait(() => SceneManager.GetSceneByName("Main Menu").isLoaded && SceneManager.sceneCount <= 4 && !SceneManager.GetSceneByName("Gameplay").isLoaded, "menu after rejected load", allowFailure: true)) yield return frame;
             // isLoaded alone can still refer to the pre-existing menu after a rejection.
             foreach (var frame in Settle()) yield return frame;
