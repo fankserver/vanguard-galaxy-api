@@ -18,6 +18,7 @@ namespace VGModAPI.Qualification;
 [BepInDependency("vgmodapi.qualification.guard", "0.1.0")]
 public sealed partial class Plugin : BaseUnityPlugin
 {
+    private bool _dispatchStateValid = true;
     private const string Id = "vgmodapi.qualification";
     private static string? _saveRoot;
     private string? _root;
@@ -88,6 +89,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             File.WriteAllText(Path.Combine(_root, "events.tsv"), "sequence\tkind\tsession\tphase\toperation\tdestination\tdetail\n");
             _subscription = _api.Subscribe(Id, e =>
             {
+                _dispatchStateValid &= _api is ILifecycleDispatchState state && state.IsDispatchingCallbacks;
                 _events.Add(e);
                 if (_configuringNewGame && e.Kind == LifecycleEventKind.PlayerReady) _prematureNewGameReadiness = true;
                 File.AppendAllText(Path.Combine(_root, "events.tsv"), string.Join("\t", _events.Count, e.Kind, e.Session?.Id, e.Session?.Phase, e.OperationId, e.Destination == null ? "" : Path.GetFileName(e.Destination), (e.Detail ?? "").Replace("\t", " ").Replace("\r", " ").Replace("\n", " ")) + "\n");
@@ -243,6 +245,9 @@ public sealed partial class Plugin : BaseUnityPlugin
         Passed("reload-after-failure");
         foreach (var frame in NewGameAndSpaceLoad()) yield return frame;
         foreach (var frame in CheckJournalTeardown()) yield return frame;
+        Require(_dispatchStateValid && _events.Count > 0 && _api is ILifecycleDispatchState state && !state.IsDispatchingCallbacks,
+            "Callback dispatch state did not match native delivery boundaries.");
+        Passed("callback-dispatch-state");
     }
 
     private IEnumerable<object?> NewGameAndSpaceLoad()

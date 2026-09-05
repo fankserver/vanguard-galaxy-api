@@ -5,7 +5,7 @@ using System.Threading;
 
 namespace VGModAPI.Core;
 
-internal sealed class LifecycleHub : ILifecycleApi, IDisposable
+internal sealed class LifecycleHub : ILifecycleApi, ILifecycleDispatchState, IDisposable
 {
     private readonly int _thread = Thread.CurrentThread.ManagedThreadId;
     private readonly Action<string, Exception> _report;
@@ -17,6 +17,7 @@ internal sealed class LifecycleHub : ILifecycleApi, IDisposable
     private bool _disposed;
 
     internal LifecycleHub(Action<string, Exception> report) => _report = report;
+    public bool IsDispatchingCallbacks { get { CheckThread(); return _dispatching; } }
     public SessionSnapshot? CurrentSession { get { CheckThread(); return _session; } }
     public IReadOnlyList<CapabilityStatus> Capabilities
     { get { CheckThread(); return Array.AsReadOnly(_capabilities.Values.OrderBy(c => c.Name).ToArray()); } }

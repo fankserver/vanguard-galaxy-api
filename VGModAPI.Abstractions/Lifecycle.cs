@@ -49,6 +49,13 @@ public interface ILifecycleApi
     IDisposable Subscribe(string owner, Action<LifecycleEvent> callback);
 }
 
+/// <summary>Optional since 0.1.1. Main-thread-only; false is not a readiness or mutation guarantee.</summary>
+public interface ILifecycleDispatchState
+{
+    /// <summary>True throughout callback delivery, including queued reentrant events and error reporting.</summary>
+    bool IsDispatchingCallbacks { get; }
+}
+
 /// <summary>Available after the API plugin's Awake; declare a hard BepInEx dependency on vgmodapi.</summary>
 public static class ModApi
 {
