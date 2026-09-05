@@ -14,7 +14,7 @@ namespace VGModAPI.Qualification;
 
 /// <summary>Opt-in test driver; never distributed in the API package.</summary>
 [BepInPlugin(Id, "VGModAPI Controlled Qualification", "0.1.0")]
-[BepInDependency(ModApi.PluginId, "0.1.0")]
+[BepInDependency(ModApi.PluginId, "0.1.1")]
 [BepInDependency("vgmodapi.qualification.guard", "0.1.0")]
 public sealed partial class Plugin : BaseUnityPlugin
 {

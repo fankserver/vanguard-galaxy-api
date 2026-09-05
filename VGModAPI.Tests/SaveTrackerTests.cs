@@ -97,12 +97,18 @@ public sealed class SaveTrackerTests
     public void ReentrantSaveDuringStartedEventRemainsIndependent()
     {
         bool nested = false;
+        var dispatchStates = new List<bool>();
         _hub.Subscribe("reentrant", e =>
         {
+            dispatchStates.Add(((ILifecycleDispatchState)_hub).IsDispatchingCallbacks);
             if (e.Kind != LifecycleEventKind.SaveStarted || nested) return;
             nested = true; var call = Enter(path: "b.save"); Write(call); _tracker.Exit(call, null);
+            dispatchStates.Add(_hub.IsDispatchingCallbacks);
         });
         var outer = Enter(); Write(outer); _tracker.Exit(outer, null);
+        Assert.Equal(5, dispatchStates.Count);
+        Assert.All(dispatchStates, Assert.True);
+        Assert.False(_hub.IsDispatchingCallbacks);
         Assert.Equal(2, _events.Count(e => e.Kind == LifecycleEventKind.SaveSucceeded));
         Assert.Equal(2, _events.Select(e => e.OperationId).Distinct().Count());
     }
