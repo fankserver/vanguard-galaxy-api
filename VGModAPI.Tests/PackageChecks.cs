@@ -47,12 +47,20 @@ internal static class PackageChecks
         }
     }
 
-    internal static void ValidateContract(string path)
+    internal static void ValidateContract(string path) => ValidateAssembly(path, "VGModAPI.Abstractions");
+
+    internal static void ValidateAssembly(string path, string expectedName)
     {
+        string[] allowed = expectedName switch
+        {
+            "VGModAPI.Abstractions" => new[] { "netstandard" },
+            "VGModAPI.Core" => new[] { "netstandard", "VGModAPI.Abstractions" },
+            "VGModAPI" => new[] { "netstandard", "VGModAPI.Abstractions", "VGModAPI.Core", "BepInEx", "0Harmony", "UnityEngine", "UnityEngine.CoreModule" },
+            _ => throw new InvalidOperationException("Unknown owned assembly: " + expectedName)
+        };
         using var assembly = AssemblyDefinition.ReadAssembly(path);
-        if (assembly.Name.Name != "VGModAPI.Abstractions") throw new InvalidOperationException("Wrong contract assembly identity.");
-        // The stable contract is netstandard-only, not a gateway to runtime/game dependencies.
-        var forbidden = assembly.MainModule.AssemblyReferences.Where(r => r.Name != "netstandard").Select(r => r.Name).ToArray();
-        if (forbidden.Length != 0) throw new InvalidOperationException("Unexpected contract dependencies: " + string.Join(", ", forbidden));
+        if (assembly.Name.Name != expectedName) throw new InvalidOperationException("Wrong assembly identity: " + expectedName);
+        var forbidden = assembly.MainModule.AssemblyReferences.Where(r => !allowed.Contains(r.Name)).Select(r => r.Name).ToArray();
+        if (forbidden.Length != 0) throw new InvalidOperationException("Unexpected " + expectedName + " dependencies: " + string.Join(", ", forbidden));
     }
 }

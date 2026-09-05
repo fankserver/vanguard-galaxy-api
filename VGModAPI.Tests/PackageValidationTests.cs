@@ -67,13 +67,26 @@ public sealed class PackageValidationTests : IDisposable
     public void StableContractHasOnlyFrameworkReferences() => PackageChecks.ValidateContract(typeof(ILifecycleApi).Assembly.Location);
 
     [Fact]
-    public void ForeignContractReferenceIsRejected()
+    public void CoreRemainsLoaderAndUnityFree() => PackageChecks.ValidateAssembly(typeof(Core.LifecycleHub).Assembly.Location, "VGModAPI.Core");
+
+    [Fact]
+    public void IncorrectIdentityIsRejected() => Assert.Throws<InvalidOperationException>(
+        () => PackageChecks.ValidateAssembly(typeof(ILifecycleApi).Assembly.Location, "VGModAPI.Core"));
+
+    [Theory]
+    [InlineData("VGModAPI.Abstractions", "UnityEngine")]
+    [InlineData("VGModAPI.Abstractions", "VGModAPI.Core")]
+    [InlineData("VGModAPI.Core", "UnityEngine")]
+    [InlineData("VGModAPI.Core", "BepInEx")]
+    [InlineData("VGModAPI", "Assembly-CSharp")]
+    public void ForbiddenAssemblyReferencesAreRejected(string owner, string dependency)
     {
         using var assembly = AssemblyDefinition.ReadAssembly(typeof(ILifecycleApi).Assembly.Location);
-        assembly.MainModule.AssemblyReferences.Add(new AssemblyNameReference("UnityEngine", new Version(1, 0)));
+        assembly.Name.Name = owner;
+        assembly.MainModule.AssemblyReferences.Add(new AssemblyNameReference(dependency, new Version(1, 0)));
         var altered = Path.Combine(_root, "altered.dll");
         assembly.Write(altered);
-        Assert.Throws<InvalidOperationException>(() => PackageChecks.ValidateContract(altered));
+        Assert.Throws<InvalidOperationException>(() => PackageChecks.ValidateAssembly(altered, owner));
     }
 
     public void Dispose() => Directory.Delete(_root, recursive: true);
@@ -97,10 +110,6 @@ public sealed class BuiltPackageTests
             ?? throw new InvalidOperationException("Run make package or set VG_PACKAGE_ROOT for built-package checks.");
         PackageChecks.ValidateLayout(root);
         foreach (var name in PackageChecks.Assemblies)
-        {
-            using var assembly = AssemblyDefinition.ReadAssembly(Path.Combine(root, name + ".dll"));
-            Assert.Equal(name, assembly.Name.Name);
-        }
-        PackageChecks.ValidateContract(Path.Combine(root, "VGModAPI.Abstractions.dll"));
+            PackageChecks.ValidateAssembly(Path.Combine(root, name + ".dll"), name);
     }
 }

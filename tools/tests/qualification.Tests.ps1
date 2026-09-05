@@ -1,7 +1,8 @@
 # Windows-only, fake files only. Does not launch Unity or touch real game/profile data.
 $ErrorActionPreference = 'Stop'
 $script = Join-Path $PSScriptRoot '..\qualification.ps1'
-$work = Join-Path $env:TEMP ('vgmodapi-harness-test-' + [Guid]::NewGuid().ToString('N'))
+# Hosted Windows TEMP can use an 8.3 alias; match FileInfo's canonical full paths.
+$work = [IO.Path]::GetFullPath((Join-Path $env:TEMP ('vgmodapi-harness-test-' + [Guid]::NewGuid().ToString('N'))))
 $fakeGame = Join-Path $work 'installed'
 $build = Join-Path $work 'build'
 $original = Join-Path $work 'original'
