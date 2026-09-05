@@ -7,9 +7,11 @@ param(
     [string]$SaveB,
     [string]$BuildRoot,
     [string]$BuildRevision = 'unknown',
+    [switch]$Diagnostics,
     [ValidateRange(1,3600)][int]$TimeoutSeconds = 900
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'qualification-profile.ps1')
 $root = [IO.Path]::GetFullPath($SandboxRoot).TrimEnd('\')
 $game = Join-Path $root 'game'
 $marker = Join-Path $root 'qualification.marker'
@@ -72,7 +74,7 @@ if ($Action -eq 'Prepare') {
     New-Item -ItemType Directory -Path $saves | Out-Null
     Copy-Item -LiteralPath $sources[0].FullName -Destination (Join-Path $saves 'fixture-a.save')
     Copy-Item -LiteralPath $sources[1].FullName -Destination (Join-Path $saves 'fixture-b.save')
-    [IO.File]::WriteAllText((Join-Path $saves 'fixture-future.save'), '{"Version":"9999.0.0","Player":{}}', (New-Object Text.UTF8Encoding($false)))
+    [IO.File]::WriteAllText((Join-Path $saves 'fixture-future.save'), '{"Version":"99.0.0.0","Player":{}}', (New-Object Text.UTF8Encoding($false)))
     [IO.File]::WriteAllText((Join-Path $saves 'fixture-corrupt.save'), 'not a save', (New-Object Text.UTF8Encoding($false)))
     Write-Output "Prepared sandbox: $root"
     exit 0
@@ -97,17 +99,13 @@ foreach ($property in $provenance.plugins.PSObject.Properties) {
 }
 # Unity PlayerPrefs are shared even with a separate executable. Preserve this inspected title's key.
 $prefsNative = 'HKCU\Software\Bat Roost Games\VanguardGalaxy'
-$prefs = 'Registry::HKEY_CURRENT_USER\Software\Bat Roost Games\VanguardGalaxy'
 $prefsFile = Join-Path $root 'playerprefs-before.reg'
-$hadPrefs = Test-Path -LiteralPath $prefs
-if ($hadPrefs) {
-    & reg.exe export $prefsNative $prefsFile /y | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'Cannot snapshot PlayerPrefs; refusing to launch.' }
-}
+$hadPrefs = Save-QualificationPrefs $prefsNative $prefsFile
 $exe = Join-Path $game 'VanguardGalaxy.exe'
 $process = $null
 try {
     $arguments = @('--fse-shim-applied','-screen-fullscreen','0','-logFile', ('"' + (Join-Path $root 'Player.log') + '"'), '--vgmodapi-qualification-root', ('"' + $root + '"'))
+    if ($Diagnostics) { $arguments += '--vgmodapi-qualification-diagnostics' }
     $process = Start-Process -FilePath $exe -WorkingDirectory $game -ArgumentList $arguments -PassThru
     @{ pid=$process.Id; executable=$exe } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $root 'process.json')
     if (!$process.WaitForExit($TimeoutSeconds * 1000)) { throw 'Owned game process timed out.' }
@@ -119,11 +117,7 @@ finally {
     }
     finally {
         try {
-            if (Test-Path -LiteralPath $prefs) { Remove-Item -LiteralPath $prefs -Recurse }
-            if ($hadPrefs) {
-                & reg.exe import $prefsFile | Out-Null
-                if ($LASTEXITCODE -ne 0) { throw 'PlayerPrefs restore failed; keep the private snapshot for recovery.' }
-            }
+            Restore-QualificationPrefs $prefsNative $prefsFile $hadPrefs
             [IO.File]::WriteAllText((Join-Path $root 'playerprefs-restored.txt'), 'PASS')
         }
         finally {

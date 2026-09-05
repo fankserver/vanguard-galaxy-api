@@ -29,6 +29,7 @@ public sealed class Plugin : BaseUnityPlugin
     private Type _manager = null!;
     private Type _scenes = null!;
     private bool _armed;
+    private static Plugin? _diagnostics;
 
     private void Awake()
     {
@@ -69,6 +70,15 @@ public sealed class Plugin : BaseUnityPlugin
                 _events.Add(e);
                 File.AppendAllText(Path.Combine(_root, "events.tsv"), string.Join("\t", _events.Count, e.Kind, e.Session?.Id, e.Session?.Phase, e.OperationId, e.Destination == null ? "" : Path.GetFileName(e.Destination), (e.Detail ?? "").Replace("\t", " ").Replace("\r", " ").Replace("\n", " ")) + "\n");
             });
+            if (Array.IndexOf(args, "--vgmodapi-qualification-diagnostics") >= 0)
+            {
+                _diagnostics = this;
+                harmony.Patch(AccessTools.Method(AccessTools.TypeByName("Behaviour.UI.Side_Menu.SidePanel"), "RefreshIfOpen"),
+                    prefix: new HarmonyMethod(typeof(Plugin), nameof(SidePanelEntering)));
+                harmony.Patch(AccessTools.Method(AccessTools.TypeByName("GameplayManager"), "Start"),
+                    prefix: new HarmonyMethod(typeof(Plugin), nameof(GameplayEntering)),
+                    finalizer: new HarmonyMethod(typeof(Plugin), nameof(GameplayExited)));
+            }
             _armed = true;
             Logger.LogInfo("Qualification sandbox armed; real save directory is not used. Steam integration disabled for this process.");
         }
@@ -153,7 +163,11 @@ public sealed class Plugin : BaseUnityPlugin
             foreach (var frame in Wait(() => _api!.CurrentSession?.Phase == SessionPhase.Failed && _api.CurrentSession.Id != previous, name + " rejection", allowFailure: true)) yield return frame;
             var id = _api!.CurrentSession!.Id;
             Require(!_events.Any(e => e.Session?.Id == id && e.Kind == LifecycleEventKind.GameplayInitialized), "Rejected load became initialized.");
-            Require(_events.Count(e => e.Session?.Id == id && e.Kind == LifecycleEventKind.SessionStartFailed) == 1, "Failure was not reported exactly once.");
+            var failures = _events.Where(e => e.Session?.Id == id && e.Kind == LifecycleEventKind.SessionStartFailed).ToArray();
+            Require(failures.Length == 1, "Failure was not reported exactly once.");
+            // This version-locked harness must distinguish a too-new save from malformed JSON/version syntax.
+            var reason = name == "fixture-future" ? "without player readiness" : "Vanilla reported a save-load failure";
+            Require(failures[0].Detail?.Contains(reason) == true, "Wrong rejection path for " + name + ": " + failures[0].Detail);
             Invoke(Instance(_scenes), "StartMenu");
             foreach (var frame in Wait(() => SceneManager.GetSceneByName("Main Menu").isLoaded && SceneManager.sceneCount <= 4 && !SceneManager.GetSceneByName("Gameplay").isLoaded, "menu after rejected load", allowFailure: true)) yield return frame;
             // isLoaded alone can still refer to the pre-existing menu after a rejection.
@@ -221,6 +235,27 @@ public sealed class Plugin : BaseUnityPlugin
     private static void Invoke(object instance, string name, params object[] args) => AccessTools.Method(instance.GetType(), name).Invoke(instance, args);
     private static bool SamePath(string a, string b) => string.Equals(Path.GetFullPath(a).TrimEnd(Path.DirectorySeparatorChar), Path.GetFullPath(b).TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase);
     private static void Require(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
+    private static void GameplayEntering()
+    {
+        try
+        {
+            var panel = AccessTools.Field(AccessTools.TypeByName("Behaviour.UI.Side_Menu.SidePanel"), "instance").GetValue(null) as UnityEngine.Object;
+            var owner = _diagnostics!;
+            var player = AccessTools.Field(owner._player, "current").GetValue(null);
+            var stories = player == null ? null : AccessTools.Field(owner._player, "storytellers").GetValue(player) as ICollection;
+            owner.Logger.LogInfo($"QA DIAGNOSTIC Gameplay.Start entering: sidePanelAlive={panel != null}; playerPresent={player != null}; storytellersCount={stories?.Count.ToString() ?? "null"}; frame={Time.frameCount}");
+        }
+        catch (Exception ex) { _diagnostics?.Logger.LogWarning("QA diagnostic unavailable: " + ex.GetType().Name); }
+    }
+    private static void SidePanelEntering()
+    {
+        try { _diagnostics?.Logger.LogInfo("QA DIAGNOSTIC SidePanel.RefreshIfOpen entered"); } catch { }
+    }
+    private static Exception? GameplayExited(Exception? __exception)
+    {
+        try { _diagnostics?.Logger.LogInfo("QA DIAGNOSTIC Gameplay.Start exit: " + (__exception?.ToString() ?? "success")); } catch { }
+        return __exception; // Observe only; never manufacture a successful initialization.
+    }
     private static bool SkipSteam() => false;
     private static bool CheckSaveDestination(object[] __args)
     {

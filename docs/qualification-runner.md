@@ -26,7 +26,7 @@ Build from WSL/Linux with the installed reference paths available:
 make package CONFIGURATION=Release
 ```
 
-The solution builds `QualificationRunner.dll` but the API package allowlist excludes it. On Windows, run the self-authored PowerShell script from a **local** path if RemoteSigned treats a WSL UNC path as remote; do not disable machine execution policy.
+The solution builds `QualificationRunner.dll` but the API package allowlist excludes it. On Windows, run the self-authored PowerShell script from a **local** path if RemoteSigned treats a WSL UNC path as remote; do not disable machine execution policy. Keep `qualification-profile.ps1` beside the launcher; copy the test scripts with their relative directory layout.
 
 ```powershell
 .\qualification.ps1 -Action Prepare `
@@ -51,7 +51,7 @@ The automated sequence checks two copied loads, session replacement, a manual sa
 
 A failed check must remain failed until its cause is investigated. Record bootstrap/harness failures separately from reproduced API defects. No test edits the allowed game hash or claims all-world readiness.
 
-Run `tools/tests/qualification.Tests.ps1` on Windows for synthetic-file tests of manifest coverage, the DLL allowlist, preloader configuration, provenance, path/reuse refusal, and junction cleanup. These tests do not launch Unity or exercise PlayerPrefs restoration. Follow-up hardening after qa-04 has not been rerun in Unity; the original startup blocker remains open.
+Run `tools/tests/qualification.Tests.ps1` on Windows for synthetic-file tests of manifest coverage, the DLL allowlist, preloader configuration, provenance, path/reuse refusal, and junction cleanup. These tests do not launch Unity. `tools/tests/qualification-profile.Tests.ps1` separately exercises snapshot/restore and backup verification using a unique synthetic registry key, never the real game's preferences. The corrected smoke passed in qa-06 with verified original-save and PlayerPrefs preservation. Read-only startup diagnostics can be enabled with `-Diagnostics` on Run; qa-06 deliberately omitted them. A valid too-new fixture must reach the no-player-readiness rejection, not merely throw a version-parser error.
 
 Earlier qa-01 through qa-04 runs predated PlayerPrefs snapshots. Their save checks do **not** prove unchanged settings; display preferences may have changed and no before-snapshot exists to restore them reliably.
 
