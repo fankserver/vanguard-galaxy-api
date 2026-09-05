@@ -12,7 +12,7 @@ using VGModAPI.Runtime;
 
 namespace VGModAPI;
 
-[BepInPlugin(ModApi.PluginId, "Vanguard Galaxy Mod API", "0.1.0")]
+[BepInPlugin(ModApi.PluginId, "Vanguard Galaxy Mod API", "0.1.1")]
 [BepInProcess("VanguardGalaxy.exe")]
 [BepInDependency("vgmodapi.qualification.guard", BepInDependency.DependencyFlags.SoftDependency)]
 public sealed class Plugin : BaseUnityPlugin
@@ -63,7 +63,7 @@ public sealed class Plugin : BaseUnityPlugin
             _hub.SetCapability("save-outcomes", false, ex.Message);
             Logger.LogError(ex);
         }
-        Logger.LogInfo("VGModAPI 0.1.0: experimental, NOT runtime-qualified. Query capabilities; startup does not prove compatibility.");
+        Logger.LogInfo("VGModAPI 0.1.1: experimental, NOT runtime-qualified. Query capabilities; startup does not prove compatibility.");
     }
 
     internal static string ReadAssemblyHash(Assembly assembly)

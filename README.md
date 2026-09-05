@@ -2,7 +2,7 @@
 
 Unofficial community mod API for Vanguard Galaxy, using BepInEx 5 and HarmonyX.
 
-**0.1.0 experimental: implemented and automatically tested, not yet qualified in-game.** This is a core lifecycle foundation, not a complete modding SDK. No existing mods have been migrated.
+**0.1.1 experimental: automatically tested and partially exercised in-game, not fully runtime-qualified.** This is a core lifecycle foundation, not a complete modding SDK. MissionJournal is migrated; further consumer adoption and qualification remain in progress.
 
 ## Implemented
 
@@ -37,7 +37,7 @@ flowchart LR
 
 A consumer can keep its BepInEx/Unity entry point small and put its actual logic in a separate plain .NET library that references only the public API contracts. That logic need not know about Harmony or vanilla classes. The included example remains a single project for simplicity.
 
-**The boundary is feature-specific:** version 0.1.0 exposes lifecycle observation, not a complete gameplay API. A mod that creates missions, ships, or UI will still need other integration until those optional services exist. Using VGModAPI for lifecycle does not automatically decouple the rest of that mod.
+**The boundary is feature-specific:** version 0.1.x exposes lifecycle observation, not a complete gameplay API. A mod that creates missions, ships, or UI will still need other integration until those optional services exist. Using VGModAPI for lifecycle does not automatically decouple the rest of that mod.
 
 A future official integration could replace the internal game adapter while preserving suitable public contracts, but migrating away from BepInEx would still require changing plugin entry points. We do not currently provide loader-independent discovery or a replacement loader.
 

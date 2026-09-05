@@ -1,4 +1,4 @@
-# Lifecycle contract — experimental 0.1.0
+# Lifecycle contract — experimental 0.1.1
 
 Implemented, automatically tested and partially exercised inside Unity; **not fully runtime-qualified**. This contract describes the supported adapter, not every possible way other mods can manipulate the game.
 
@@ -14,6 +14,8 @@ All service access, subscriptions, callbacks, and subscription disposal are main
 - Newly registered callbacks start with the next dispatched event. Disposing a callback before its turn suppresses that invocation.
 - Reentrant events are queued until current-event delivery finishes. Payload snapshots describe the event; querying current state can return a later state, especially during reentrant game actions.
 - Dispose subscriptions when the consumer is destroyed. API shutdown clears subscriptions and unpatches its hooks.
+
+Since 0.1.1, the service also implements `ILifecycleDispatchState`. Its main-thread-only `IsDispatchingCallbacks` stays true throughout callback delivery, queued reentrant events, diagnostic reporting, and disposal inside a callback. Mutating consumers can refuse request/cancel/tick while it is true. False is **not** permission to mutate, a readiness guarantee, or a pre-serialization boundary; consumers still need current-session and save-in-flight guards. Existing `ILifecycleApi` members and event constructors are unchanged. Require BepInEx API version 0.1.1 when using the new interface.
 
 ## Identities
 
