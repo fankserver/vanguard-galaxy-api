@@ -30,6 +30,11 @@ public sealed class Plugin : BaseUnityPlugin
     private Type _scenes = null!;
     private bool _armed;
     private static Plugin? _diagnostics;
+    private static bool _retryMetadataFailure;
+    private static bool _configuringNewGame;
+    private static int _configurationCalls;
+    private static string? _newGameError;
+    private bool _prematureNewGameReadiness;
 
     private void Awake()
     {
@@ -64,10 +69,17 @@ public sealed class Plugin : BaseUnityPlugin
             AccessTools.Field(_save, "SavesPath").SetValue(null, _saveRoot);
             AccessTools.Field(_save, "SavesDir").SetValue(null, new DirectoryInfo(_saveRoot));
             AccessTools.Field(_save, "_saves").SetValue(null, null);
+            Require(System.Text.RegularExpressions.Regex.IsMatch(Application.version, @"^\d+(\.\d+)+$"), "Unexpected game version syntax for control fixture.");
+            File.WriteAllText(Path.Combine(_saveRoot, "fixture-current-empty.save"), "{\"Version\":\"" + Application.version + "\",\"Player\":{}}");
+            harmony.Patch(AccessTools.Method(_save, "WriteVersionMetadata"), prefix: new HarmonyMethod(typeof(Plugin), nameof(InjectTransientMetadataFailure)));
+            harmony.Patch(AccessTools.Method(AccessTools.TypeByName("Behaviour.UI.Main.NewGame"), "SaveInputs"),
+                prefix: new HarmonyMethod(typeof(Plugin), nameof(NewGameConfigurationEntering)),
+                finalizer: new HarmonyMethod(typeof(Plugin), nameof(NewGameConfigurationExited)));
             File.WriteAllText(Path.Combine(_root, "events.tsv"), "sequence\tkind\tsession\tphase\toperation\tdestination\tdetail\n");
             _subscription = _api.Subscribe(Id, e =>
             {
                 _events.Add(e);
+                if (_configuringNewGame && e.Kind == LifecycleEventKind.PlayerReady) _prematureNewGameReadiness = true;
                 File.AppendAllText(Path.Combine(_root, "events.tsv"), string.Join("\t", _events.Count, e.Kind, e.Session?.Id, e.Session?.Phase, e.OperationId, e.Destination == null ? "" : Path.GetFileName(e.Destination), (e.Detail ?? "").Replace("\t", " ").Replace("\r", " ").Replace("\n", " ")) + "\n");
             });
             if (Array.IndexOf(args, "--vgmodapi-qualification-diagnostics") >= 0)
@@ -146,6 +158,29 @@ public sealed class Plugin : BaseUnityPlugin
         finally { Directory.Delete(blocked); }
         Passed("exhausted-retries");
 
+        _retryMetadataFailure = true;
+        try
+        {
+            Save("qa-retry-success", LifecycleEventKind.SaveSucceeded);
+            Require(!_retryMetadataFailure, "Transient failure injection was not exercised.");
+            Require(File.Exists(Path.Combine(_saveRoot!, "qa-retry-success.meta")), "Recovered retry did not write metadata.");
+        }
+        finally { _retryMetadataFailure = false; }
+        Passed("retry-recovered");
+
+        foreach (int slot in new[] { 0, 1, 2 })
+            Require(!File.Exists(Path.Combine(_saveRoot!, "autosave-" + slot + ".save")), "Autosave rotation requires initially empty sandbox slots.");
+        var autosaveOperations = new HashSet<Guid?>();
+        foreach (int slot in new[] { 0, 1, 2, 0 })
+        {
+            int start = _events.Count;
+            AccessTools.Method(_save, "StoreAutosaveState").Invoke(null, new object?[] { null });
+            ValidateSave(start, "autosave-" + slot, LifecycleEventKind.SaveSucceeded);
+            Require(autosaveOperations.Add(_events[start].OperationId), "Autosave reused an operation identity.");
+            yield return null;
+        }
+        Passed("autosave-rotation");
+
         int healthy = 0, disposed = 0;
         using (var broken = _api!.Subscribe(Id + ".expected-fault", _ => throw new InvalidOperationException("Expected qualification subscriber fault")))
         using (var good = _api.Subscribe(Id + ".healthy", _ => healthy++))
@@ -157,23 +192,30 @@ public sealed class Plugin : BaseUnityPlugin
         Require(healthy == 2 && disposed == 0, "Subscriber isolation/disposal failed.");
         Passed("subscriber-isolation-and-disposal");
 
-        // Future-version and corrupt files were created from disposable copies by the provisioning tool.
-        foreach (string name in new[] { "fixture-future", "fixture-corrupt" })
+        Invoke(Instance(_scenes), "StartMenu");
+        foreach (var frame in Wait(() => SceneManager.GetSceneByName("Main Menu").isLoaded && SceneManager.sceneCount <= 4
+            && AccessTools.Field(_player, "current").GetValue(null) == null, "menu before rejection controls")) yield return frame;
+        foreach (var frame in Settle()) yield return frame;
+        // Equal empty Player payloads with newer/current headers distinguish rejection from deserialization failure.
+        foreach (string name in new[] { "fixture-future", "fixture-current-empty", "fixture-corrupt" })
         {
             var previous = _api!.CurrentSession?.Id;
             Load(name);
             foreach (var frame in Wait(() => _api!.CurrentSession?.Phase == SessionPhase.Failed && _api.CurrentSession.Id != previous, name + " rejection", allowFailure: true)) yield return frame;
             var id = _api!.CurrentSession!.Id;
-            Require(!_events.Any(e => e.Session?.Id == id && e.Kind == LifecycleEventKind.GameplayInitialized), "Rejected load became initialized.");
+            Require(!_events.Any(e => e.Session?.Id == id && (e.Kind == LifecycleEventKind.PlayerReady || e.Kind == LifecycleEventKind.GameplayInitialized)), "Rejected load became ready.");
             var failures = _events.Where(e => e.Session?.Id == id && e.Kind == LifecycleEventKind.SessionStartFailed).ToArray();
             Require(failures.Length == 1, "Failure was not reported exactly once.");
-            // Distinguish non-readiness from the observed exception path; this event alone
-            // cannot identify which non-throwing branch rejected the valid-syntax fixture.
-            var reason = name == "fixture-future" ? "without player readiness" : "Vanilla reported a save-load failure";
+            var reason = name switch
+            {
+                "fixture-future" => "without player readiness",
+                "fixture-current-empty" => "Load failed or canceled: NullReferenceException",
+                _ => "Vanilla reported a save-load failure"
+            };
             Require(failures[0].Detail?.Contains(reason) == true, "Wrong rejection path for " + name + ": " + failures[0].Detail);
             Invoke(Instance(_scenes), "StartMenu");
             // Inspected StartMenu retains only Bootstrapper, Camera, Main Menu and Backdrop.
-            foreach (var frame in Wait(() => SceneManager.GetSceneByName("Main Menu").isLoaded && SceneManager.sceneCount <= 4 && !SceneManager.GetSceneByName("Gameplay").isLoaded, "menu after rejected load", allowFailure: true)) yield return frame;
+            foreach (var frame in Wait(() => SceneManager.GetSceneByName("Main Menu").isLoaded && SceneManager.sceneCount <= 4 && !SceneManager.GetSceneByName("Gameplay").isLoaded && AccessTools.Field(_player, "current").GetValue(null) == null, "menu after rejected load", allowFailure: true)) yield return frame;
             // isLoaded alone can still refer to the pre-existing menu after a rejection.
             foreach (var frame in Settle()) yield return frame;
             Passed(name + "-rejected");
@@ -183,7 +225,54 @@ public sealed class Plugin : BaseUnityPlugin
         foreach (var frame in Wait(() => _api!.CurrentSession?.Phase == SessionPhase.GameplayInitialized && _api.CurrentSession.Id != beforeRecovery, "post-failure reload")) yield return frame;
         foreach (var frame in Settle()) yield return frame;
         Passed("reload-after-failure");
+        foreach (var frame in NewGameAndSpaceLoad()) yield return frame;
     }
+
+    private IEnumerable<object?> NewGameAndSpaceLoad()
+    {
+        Invoke(Instance(_scenes), "StartMenu");
+        foreach (var frame in Wait(() => SceneManager.GetSceneByName("Main Menu").isLoaded && SceneManager.sceneCount <= 4
+            && AccessTools.Field(_player, "current").GetValue(null) == null, "menu before new game")) yield return frame;
+        foreach (var frame in Settle()) yield return frame;
+        Invoke(SceneComponent("Behaviour.UI.MainMenuUI"), "StartGame");
+        foreach (var frame in Wait(() => SceneManager.GetSceneByName("Start - New Game").isLoaded, "new-game wizard")) yield return frame;
+        foreach (var frame in Settle()) yield return frame;
+        var wizard = SceneComponent("Behaviour.UI.Main.NewGame");
+        var previous = _api!.CurrentSession?.Id;
+        for (int step = 1; step <= 5; step++)
+        {
+            Require((int)AccessTools.Field(wizard.GetType(), "currentStep").GetValue(wizard)! == step, "Wizard did not reach step " + step);
+            Invoke(wizard, "SubmitInput");
+            if (step < 5) foreach (var frame in Settle()) yield return frame;
+        }
+        foreach (var frame in Wait(() => _api.CurrentSession?.Phase == SessionPhase.GameplayInitialized && _api.CurrentSession.Id != previous, "new-game initialization")) yield return frame;
+        foreach (var frame in Settle()) yield return frame;
+        Require(_api.CurrentSession!.Origin == SessionOrigin.NewGame && !_prematureNewGameReadiness
+            && _configurationCalls == 1 && !_configuringNewGame && _newGameError == null, "New-game configuration/readiness boundary failed.");
+        Require(_events.Where(e => e.Session?.Id == _api.CurrentSession.Id).Select(e => e.Kind).SequenceEqual(
+            new[] { LifecycleEventKind.SessionStarting, LifecycleEventKind.PlayerReady, LifecycleEventKind.GameplayInitialized }), "Unexpected new-game event order.");
+        Passed("new-game-wizard-and-configuration-boundary");
+
+        Require(InSpace(), "Native new-game setup did not produce a space fixture.");
+        Save("qa-space", LifecycleEventKind.SaveSucceeded);
+        previous = _api.CurrentSession.Id;
+        Load("qa-space");
+        foreach (var frame in Wait(() => _api.CurrentSession?.Phase == SessionPhase.GameplayInitialized && _api.CurrentSession.Id != previous, "space-copy load")) yield return frame;
+        foreach (var frame in Settle()) yield return frame;
+        Require(InSpace(), "Space fixture did not reload in space.");
+        Passed("mining-space-save-load");
+    }
+
+    private bool InSpace()
+    {
+        var player = AccessTools.Field(_player, "current").GetValue(null);
+        var poi = player == null ? null : AccessTools.Field(_player, "currentPointOfInterest").GetValue(player);
+        return poi != null && SceneManager.GetSceneByName("Mining").isLoaded
+            && !SceneManager.GetSceneByName("SpacestationInterior").isLoaded;
+    }
+
+    private static Component SceneComponent(string name) => Resources.FindObjectsOfTypeAll(AccessTools.TypeByName(name))
+        .OfType<Component>().Single(c => c.gameObject.scene.IsValid() && c.gameObject.scene.isLoaded);
 
     private void Load(string name)
     {
@@ -200,6 +289,11 @@ public sealed class Plugin : BaseUnityPlugin
         var data = AccessTools.Method(_save, "SaveCurrentState").Invoke(null, null);
         var format = Enum.Parse(AccessTools.TypeByName("Source.Util.SaveGameFormat"), "Compressed");
         AccessTools.Method(_save, "Store").Invoke(null, new[] { data, name, format, (object)0 });
+        ValidateSave(start, name, expected);
+    }
+
+    private void ValidateSave(int start, string name, LifecycleEventKind expected)
+    {
         var received = _events.Skip(start).ToArray();
         Require(received.Length == 2 && received[0].Kind == LifecycleEventKind.SaveStarted && received[1].Kind == expected, "Unexpected outcome/count for " + name);
         Require(received[0].OperationId == received[1].OperationId, "Save operation identity changed.");
@@ -219,6 +313,7 @@ public sealed class Plugin : BaseUnityPlugin
         float deadline = Time.realtimeSinceStartup + 90;
         while (!ready())
         {
+            Require(_newGameError == null, "Native new-game configuration failed: " + _newGameError);
             if (!allowFailure) Require(_api!.CurrentSession?.Phase != SessionPhase.Failed, "Session failed while waiting for " + description);
             Require(Time.realtimeSinceStartup < deadline, "Timed out waiting for " + description);
             yield return null;
@@ -259,6 +354,19 @@ public sealed class Plugin : BaseUnityPlugin
     {
         try { _diagnostics?.Logger.LogInfo("QA DIAGNOSTIC Gameplay.Start exit: " + (__exception?.ToString() ?? "success")); } catch { }
         return __exception; // Observe only; never manufacture a successful initialization.
+    }
+    private static void InjectTransientMetadataFailure(string __0)
+    {
+        if (!_retryMetadataFailure || __0 != "qa-retry-success") return;
+        _retryMetadataFailure = false;
+        throw new IOException("Expected one-shot sandbox metadata failure.");
+    }
+    private static void NewGameConfigurationEntering() { _configurationCalls++; _configuringNewGame = true; _newGameError = null; }
+    private static Exception? NewGameConfigurationExited(Exception? __exception)
+    {
+        _configuringNewGame = false;
+        _newGameError = __exception?.ToString();
+        return __exception;
     }
     private static bool SkipSteam() => false;
     private static bool CheckSaveDestination(object[] __args)
