@@ -15,6 +15,7 @@ internal sealed class GameAdapter
     private Guid? _executing;
     private object? _boundPlayer;
     private object? _pendingNewPlayer;
+    private object? _playerBeforeCreation;
     private volatile bool _faulted;
     private bool _faultReconciled;
 
@@ -50,6 +51,7 @@ internal sealed class GameAdapter
         var path = ((FileInfo)Bindings.SaveFile.GetValue(file)!).FullName;
         _boundPlayer = null;
         _pendingNewPlayer = null;
+        _playerBeforeCreation = null;
         var id = Hub.Begin(SessionOrigin.SaveLoad, path);
         return _request = new LoadRequest(id, previous);
     }
@@ -92,15 +94,23 @@ internal sealed class GameAdapter
     {
         _boundPlayer = null;
         _pendingNewPlayer = null;
+        _playerBeforeCreation = Bindings.CurrentPlayer;
         return Hub.Begin(SessionOrigin.NewGame, null);
     }
 
     internal void EndNewPlayer(Guid id, Exception? error)
     {
         if (Hub.CurrentSession?.Id != id || Hub.CurrentSession.Phase != SessionPhase.Starting) return;
+        var previous = _playerBeforeCreation;
+        _playerBeforeCreation = null;
         if (error != null) { Hub.Fail(id, "New player creation threw " + error.GetType().Name); return; }
-        _pendingNewPlayer = Bindings.CurrentPlayer;
-        if (_pendingNewPlayer == null) Hub.Fail(id, "New player creation returned without a player.");
+        var created = Bindings.CurrentPlayer;
+        if (created == null || ReferenceEquals(created, previous))
+        {
+            Hub.Fail(id, "New player creation returned without a new player.");
+            return;
+        }
+        _pendingNewPlayer = created;
     }
 
     internal Guid? PlayerReconstructed()
@@ -140,7 +150,7 @@ internal sealed class GameAdapter
     }
 
     internal void Invalidate(string reason)
-    { _boundPlayer = null; _pendingNewPlayer = null; Hub.Invalidate(reason); }
+    { _boundPlayer = null; _pendingNewPlayer = null; _playerBeforeCreation = null; Hub.Invalidate(reason); }
 
     internal void Tick()
     {

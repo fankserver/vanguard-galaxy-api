@@ -222,6 +222,37 @@ public sealed class GameAdapterTests
     }
 
     [Fact]
+    public void UnchangedPlayerCannotCompleteCreation()
+    {
+        GamePlayer.current = new GamePlayer();
+        var id = _adapter.BeginNewPlayer();
+        _adapter.EndNewPlayer(id, null);
+        Assert.Equal(SessionPhase.Failed, _hub.CurrentSession!.Phase);
+        Assert.Null(_adapter.PlayerReconstructed());
+    }
+
+    [Fact]
+    public void LoadReplacesPendingCreationWithoutKeepingItsIdentityGuard()
+    {
+        var id = _adapter.BeginNewPlayer(); GamePlayer.current = new GamePlayer(); _adapter.EndNewPlayer(id, null);
+        var request = _adapter.BeginLoad(File());
+        IEnumerator Root() { yield return null; GamePlayer.current = new GamePlayer(); _adapter.PlayerReconstructed(); }
+        var routine = _adapter.ObserveLoad(Root()); _adapter.EndLoadRequest(request, null);
+        Drain(routine); _adapter.Poll();
+        Assert.Equal(request.Id, _hub.CurrentSession!.Id);
+        Assert.Equal(SessionPhase.PlayerReady, _hub.CurrentSession.Phase);
+    }
+
+    [Fact]
+    public void ExplicitInvalidationClearsPendingIdentityBeforePoll()
+    {
+        var id = _adapter.BeginNewPlayer(); GamePlayer.current = new GamePlayer(); _adapter.EndNewPlayer(id, null);
+        _adapter.Invalidate("menu"); GamePlayer.current = new GamePlayer(); _adapter.Poll();
+        Assert.Single(_events, e => e.Kind == LifecycleEventKind.SessionInvalidated);
+        Assert.Null(_adapter.PlayerReconstructed());
+    }
+
+    [Fact]
     public void MidGameAttachDoesNotGuessReadiness()
     {
         GamePlayer.current = new GamePlayer(); _adapter.Poll();

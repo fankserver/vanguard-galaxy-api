@@ -273,9 +273,13 @@ public sealed class Plugin : BaseUnityPlugin
         foreach (var frame in Wait(() => _api.CurrentSession?.Phase == SessionPhase.Invalidated, "untracked replacement invalidation")) yield return frame;
         Require(_api.CurrentSession!.Id == pending.Id && !_events.Any(e => e.Session?.Id == pending.Id
             && (e.Kind == LifecycleEventKind.PlayerReady || e.Kind == LifecycleEventKind.GameplayInitialized)), "Replacement adopted the pending attempt.");
+        Require(_events.Any(e => e.Session?.Id == pending.Id && e.Kind == LifecycleEventKind.SessionInvalidated
+            && e.Detail?.StartsWith("Player identity changed outside the tracked initialization boundary.", StringComparison.Ordinal) == true), "Poll invalidation was not observed.");
         Passed("pending-new-game-replacement-invalidated");
         Invoke(Instance(_scenes), "StartMenu");
-        foreach (var frame in Wait(() => AccessTools.Field(_player, "current").GetValue(null) == null, "replacement probe cleanup")) yield return frame;
+        foreach (var frame in Wait(() => AccessTools.Field(_player, "current").GetValue(null) == null
+            && SceneManager.GetSceneByName("Main Menu").isLoaded && SceneManager.sceneCount <= 4, "replacement probe cleanup")) yield return frame;
+        foreach (var frame in Settle()) yield return frame;
         Load("fixture-a");
         foreach (var frame in Wait(() => _api.CurrentSession?.Phase == SessionPhase.GameplayInitialized && _api.CurrentSession.Id != pending.Id, "replacement probe recovery")) yield return frame;
         foreach (var frame in Settle()) yield return frame;
