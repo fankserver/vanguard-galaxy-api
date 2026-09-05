@@ -14,6 +14,50 @@ Unofficial community mod API for Vanguard Galaxy, using BepInEx 5 and HarmonyX.
 
 `GameplayInitialized` does **not** mean every POI or UI is ready. Save success does not guarantee atomic sidecar persistence. Read the [lifecycle contract](docs/lifecycle-contract.md) before consuming events.
 
+## Architecture and coupling
+
+VGModAPI is an integration layer, **not another mod loader**. In the current design, both VGModAPI and consumer mods are BepInEx plugins. Players install BepInEx once; each mod does not bundle its own loader.
+
+```mermaid
+flowchart TB
+    Game["Vanguard Galaxy / Unity process"]
+    Loader["BepInEx — shared plugin loader"]
+    API["VGModAPI plugin"]
+    Core["VGModAPI.Core — internal adapter and state machines"]
+    Harmony["HarmonyX — game hooks"]
+    Contract["VGModAPI.Abstractions — public contracts and service access"]
+    Mod["Custom mod — thin BepInEx entry point"]
+    Logic["Custom mod logic"]
+
+    Game -->|hosts| Loader
+    Loader -->|loads| API
+    Loader -->|loads after API dependency| Mod
+    API -->|owns| Core
+    API -->|installs hooks through| Harmony
+    Harmony -->|observes vanilla methods| Game
+    Core -->|implements lifecycle service| Contract
+    Mod -->|starts and stops| Logic
+    Logic -->|queries and subscribes through| Contract
+    Logic -.->|optional direct integration outside API coverage| Game
+```
+
+The arrows describe hosting, ownership, and access—not separate processes. All of this runs inside the game; there is no IPC or security sandbox between mods.
+
+| Dependency | Does a consumer mod need it? |
+|---|---|
+| BepInEx | **Yes for its plugin entry point.** Provides loading, dependency ordering, configuration, and logging. |
+| Unity | The current `BaseUnityPlugin` entry point needs Unity compile references. Additional Unity APIs are needed only where the mod uses them, such as UI. |
+| `VGModAPI.Abstractions` | **Yes for API use.** Compile against it; the API installation supplies the runtime assembly. |
+| HarmonyX | **No direct reference for API-covered features.** Needed only if the consumer also creates its own patches. The API still uses HarmonyX at runtime. |
+| `Assembly-CSharp` / private game members | **No for API-covered features.** Direct game integration outside API coverage reintroduces this coupling. |
+| `VGModAPI.Core` / API implementation | **No direct consumer reference.** These are implementation details, not supported extension surfaces. |
+
+A consumer can keep its BepInEx/Unity entry point small and put its actual logic in a separate plain .NET library that references only the public API contracts. That logic need not know about Harmony or vanilla classes. The included example remains a single project for simplicity.
+
+**The boundary is feature-specific:** version 0.1.0 exposes lifecycle observation, not a complete gameplay API. A mod that creates missions, ships, or UI will still need other integration until those optional services exist. Using VGModAPI for lifecycle does not automatically decouple the rest of that mod.
+
+A future official integration could replace the internal game adapter while preserving suitable public contracts, but migrating away from BepInEx would still require changing plugin entry points. We do not currently provide loader-independent discovery or a replacement loader.
+
 ## Build and test
 
 Requires .NET SDK 10 for the tests; the shipped libraries target `netstandard2.1`.
