@@ -1,0 +1,54 @@
+name: Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pure-tests:
+    name: Pure tests (${{ matrix.configuration }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        configuration: [Debug, Release]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          global-json-file: global.json
+      - name: Record public toolchain
+        run: dotnet --info
+      - name: Run without installed-game references
+        run: |
+          test ! -e VGModAPI/lib
+          make test CONFIGURATION=${{ matrix.configuration }} GAME_DIR=/nonexistent/vgmodapi-game
+          test ! -e VGModAPI/lib
+
+  windows-harness:
+    name: Synthetic Windows harness
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Record PowerShell version
+        shell: powershell
+        run: $PSVersionTable
+      - name: Check fake-file isolation and cleanup
+        shell: powershell
+        run: '& ./tools/tests/qualification.Tests.ps1'
+      - name: Check synthetic registry recovery
+        shell: powershell
+        run: '& ./tools/tests/qualification-profile.Tests.ps1'

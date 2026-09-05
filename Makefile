@@ -4,7 +4,7 @@ CONFIGURATION ?= Debug
 MANAGED = $(GAME_DIR)/VanguardGalaxy_Data/Managed
 CORE = $(GAME_DIR)/BepInEx/core
 
-.PHONY: link-libs build test check-bindings package clean
+.PHONY: link-libs build test check-bindings package check-package check-local provenance clean
 link-libs:
 	@mkdir -p VGModAPI/lib
 	@set -eu; for name in BepInEx 0Harmony; do test -f "$(CORE)/$$name.dll"; ln -sfn "$(CORE)/$$name.dll" "VGModAPI/lib/$$name.dll"; done
@@ -12,7 +12,7 @@ link-libs:
 build: link-libs
 	$(DOTNET) build VGModAPI.sln -c $(CONFIGURATION)
 test:
-	$(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter 'Category!=InstalledGame'
+	$(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter 'Category!=InstalledGame&Category!=Package'
 check-bindings:
 	VG_GAME_ASSEMBLY="$(MANAGED)/Assembly-CSharp.dll" $(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter 'Category=InstalledGame'
 package: build
@@ -24,5 +24,15 @@ package: build
 	cp README.md artifacts/VGModAPI/
 	@mkdir -p artifacts/VGModAPI/docs
 	cp docs/*.md artifacts/VGModAPI/docs/
+	$(MAKE) check-package
+check-package:
+	VG_PACKAGE_ROOT="$(CURDIR)/artifacts/VGModAPI" $(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter 'Category=Package'
+check-local:
+	$(MAKE) test
+	$(MAKE) package
+	$(MAKE) check-bindings
+	$(MAKE) provenance
+provenance:
+	@python3 tools/reference-provenance.py --game-dir "$(GAME_DIR)" --dotnet "$(DOTNET)" --configuration "$(CONFIGURATION)"
 clean:
 	$(DOTNET) clean VGModAPI.sln
