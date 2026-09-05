@@ -3,6 +3,9 @@
 Unofficial Vanguard Galaxy API, first milestone: core session/load/save lifecycle. Read `docs/lifecycle-contract.md` and `docs/compatibility.md` before modifying hooks. `docs/implementation-plan.md` records scope and follow-up work.
 
 - Work in this independent Git repository; do not modify sibling mods as part of API work without authorization.
+- Assign a GitHub issue to the authenticated working account when starting it. Work task by task on a branch, commit with Conventional Commits, push completed changes, and create a PR for each delivery chunk.
+- The owner requests a read-only `claude -p` review with Fable 5.1 for each implementation. Address substantive findings; do not silently substitute a different model or claim a failed review completed.
+- The owner will perform complete acceptance testing after each milestone. Keep unexercised or failing runtime gates explicit rather than closing qualification issues on host tests alone.
 - Use `make build`, `make test`, `make check-bindings`; package with `make package CONFIGURATION=Release`.
 - Runtime libraries target netstandard2.1; tests require .NET SDK 10. Warnings are errors.
 - Never commit or package game, Unity, BepInEx, or Harmony reference DLLs. `VGModAPI/lib` holds local ignored symlinks.

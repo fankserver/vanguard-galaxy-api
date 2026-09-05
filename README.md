@@ -60,7 +60,7 @@ No automatic deploy target is provided. After approval for disposable-save testi
 
 The package contains `VGModAPI.dll`, `VGModAPI.Core.dll`, and `VGModAPI.Abstractions.dll`, plus documentation. Keep one installed copy of these assemblies. An unsupported game hash leaves the service available for diagnostics but its lifecycle/save capabilities unavailable.
 
-See [compatibility and qualification](docs/compatibility.md) for the inspected hash, completed checks, and pending in-game checklist.
+See [compatibility and qualification](docs/compatibility.md) for the inspected hash, completed checks, and pending in-game checklist. Development-only [controlled qualification tooling](docs/qualification-runner.md) uses an isolated game sandbox and copied saves; it is not included in the API package.
 
 ## Consume
 

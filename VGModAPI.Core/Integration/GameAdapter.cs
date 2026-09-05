@@ -11,7 +11,7 @@ internal sealed class GameAdapter
     internal readonly SaveTracker Saves;
     internal readonly GameBindings Bindings;
     private readonly Action<Exception> _report;
-    private Guid? _request;
+    private LoadRequest? _request;
     private Guid? _executing;
     private object? _boundPlayer;
     private volatile bool _faulted;
@@ -49,26 +49,28 @@ internal sealed class GameAdapter
         var path = ((FileInfo)Bindings.SaveFile.GetValue(file)!).FullName;
         _boundPlayer = null;
         var id = Hub.Begin(SessionOrigin.SaveLoad, path);
-        _request = id;
-        return new LoadRequest(id, previous);
+        return _request = new LoadRequest(id, previous);
     }
 
     internal void EndLoadRequest(LoadRequest request, Exception? error)
     {
         _request = request.Previous;
         if (error != null) Hub.Fail(request.Id, "Load request threw " + error.GetType().Name);
+        else if (!request.Observed) Hub.Fail(request.Id, "Load coroutine hook was not observed; lifecycle tracking cannot continue.");
     }
 
     internal IEnumerator ObserveLoad(IEnumerator routine)
     {
-        var id = _request;
-        if (!id.HasValue) return routine; // Do not guess ownership for bypass paths.
-        return new ObservedEnumerator(routine, () => Enter(id.Value),
-            ex => Guard(() => Hub.Fail(id.Value, "Load failed or canceled: " + ex.GetType().Name)),
+        var request = _request;
+        if (request == null) return routine; // Do not guess ownership for bypass paths.
+        request.Observed = true;
+        var id = request.Id;
+        return new ObservedEnumerator(routine, () => Enter(id),
+            ex => Guard(() => Hub.Fail(id, "Load failed or canceled: " + ex.GetType().Name)),
             () => Guard(() =>
             {
                 if (Hub.CurrentSession?.Id == id && Hub.CurrentSession.Phase == SessionPhase.Starting)
-                    Hub.Fail(id.Value, "Load iterator ended without player readiness (including rejected versions).");
+                    Hub.Fail(id, "Load iterator ended without player readiness (including rejected versions).");
             }));
     }
 
@@ -137,8 +139,9 @@ internal sealed class GameAdapter
     internal sealed class LoadRequest
     {
         internal readonly Guid Id;
-        internal readonly Guid? Previous;
-        internal LoadRequest(Guid id, Guid? previous) { Id = id; Previous = previous; }
+        internal readonly LoadRequest? Previous;
+        internal bool Observed;
+        internal LoadRequest(Guid id, LoadRequest? previous) { Id = id; Previous = previous; }
     }
     private sealed class Scope : IDisposable
     {

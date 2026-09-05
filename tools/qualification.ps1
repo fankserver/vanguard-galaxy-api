@@ -1,0 +1,144 @@
+param(
+    [Parameter(Mandatory=$true)][ValidateSet('Prepare','Run','Cleanup')][string]$Action,
+    [Parameter(Mandatory=$true)][string]$SandboxRoot,
+    [string]$GameDir = 'C:\Program Files (x86)\Steam\steamapps\common\Vanguard Galaxy',
+    [string]$OriginalSaveDir = "$env:USERPROFILE\AppData\LocalLow\Bat Roost Games\VanguardGalaxy\Saves",
+    [string]$SaveA,
+    [string]$SaveB,
+    [string]$BuildRoot,
+    [string]$BuildRevision = 'unknown',
+    [switch]$Diagnostics,
+    [ValidateRange(1,3600)][int]$TimeoutSeconds = 900
+)
+$ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'qualification-profile.ps1')
+$root = [IO.Path]::GetFullPath($SandboxRoot).TrimEnd('\')
+$game = Join-Path $root 'game'
+$marker = Join-Path $root 'qualification.marker'
+$markerText = 'vgmodapi-disposable-sandbox-v1'
+$junctions = @('VanguardGalaxy_Data','MonoBleedingEdge','D3D12')
+function SamePath($a, $b) { return [IO.Path]::GetFullPath($a).TrimEnd('\') -ieq [IO.Path]::GetFullPath($b).TrimEnd('\') }
+function SaveHashes($directories) {
+    $result = @{}
+    foreach ($directory in $directories) {
+        Get-ChildItem -LiteralPath $directory -File -Force | ForEach-Object {
+            $result[$_.FullName] = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash
+        }
+    }
+    return $result
+}
+if (Get-Process VanguardGalaxy -ErrorAction SilentlyContinue) { throw 'A game process is already running. Refusing concurrent qualification.' }
+if ($Action -eq 'Prepare') {
+    if (Test-Path -LiteralPath $root) { throw 'Sandbox root already exists; use a fresh directory.' }
+    if (!$SaveA -or !$SaveB -or !$BuildRoot) { throw 'Prepare requires SaveA, SaveB and BuildRoot.' }
+    if (!(Test-Path -LiteralPath $OriginalSaveDir -PathType Container)) { throw 'OriginalSaveDir must identify the existing real save directory.' }
+    $sources = @((Get-Item -LiteralPath $SaveA), (Get-Item -LiteralPath $SaveB))
+    foreach ($source in $sources) { if ($source.Extension -ne '.save') { throw 'Fixtures must be existing .save files.' } }
+    $directories = @(@([IO.Path]::GetFullPath($OriginalSaveDir)) + @($sources | ForEach-Object { $_.DirectoryName }) | Select-Object -Unique)
+    foreach ($protected in @($GameDir) + $directories) {
+        $prefix = [IO.Path]::GetFullPath($protected).TrimEnd('\')
+        if ((SamePath $root $prefix) -or $root.StartsWith($prefix + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Sandbox cannot be inside the installation or original save directory.' }
+    }
+    New-Item -ItemType Directory -Path $game | Out-Null
+    [IO.File]::WriteAllText($marker, $markerText)
+    [IO.File]::WriteAllText((Join-Path $root 'original-save-directory.txt'), [IO.Path]::GetFullPath($OriginalSaveDir))
+    @{ directories=$directories; files=(SaveHashes $directories) } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'original-save-hashes.json')
+    foreach ($name in @('VanguardGalaxy.exe','UnityPlayer.dll','winhttp.dll','UnityCrashHandler64.exe','dstorage.dll','dstoragecore.dll')) {
+        $source = Join-Path $GameDir $name
+        if (Test-Path -LiteralPath $source) { Copy-Item -LiteralPath $source -Destination $game }
+        elseif ($name -in @('VanguardGalaxy.exe','UnityPlayer.dll','winhttp.dll')) { throw "Required runtime file missing: $name" }
+    }
+    # Doorstop 4 format, verified against the installed loader's configuration.
+    # Never inherit an absolute preloader path or Mono search override.
+    [IO.File]::WriteAllText((Join-Path $game 'doorstop_config.ini'), "[General]`nenabled=true`ntarget_assembly=BepInEx\core\BepInEx.Preloader.dll`nredirect_output_log=false`nboot_config_override=`nignore_disable_switch=false`n[UnityMono]`ndll_search_path_override=`ndebug_enabled=false`ndebug_suspend=false`n")
+    foreach ($name in $junctions) {
+        $source = Join-Path $GameDir $name
+        if (Test-Path -LiteralPath $source) { New-Item -ItemType Junction -Path (Join-Path $game $name) -Target $source | Out-Null }
+    }
+    $bep = Join-Path $game 'BepInEx'
+    New-Item -ItemType Directory -Path $bep | Out-Null
+    Copy-Item -LiteralPath (Join-Path $GameDir 'BepInEx\core') -Destination $bep -Recurse
+    $plugins = Join-Path $bep 'plugins'
+    New-Item -ItemType Directory -Path $plugins | Out-Null
+    foreach ($name in @('VGModAPI.dll','VGModAPI.Core.dll','VGModAPI.Abstractions.dll')) {
+        Copy-Item -LiteralPath (Join-Path $BuildRoot "artifacts\VGModAPI\$name") -Destination $plugins
+    }
+    Copy-Item -LiteralPath (Join-Path $BuildRoot 'tools\QualificationRunner\bin\Release\netstandard2.1\QualificationRunner.dll') -Destination $plugins
+    Copy-Item -LiteralPath (Join-Path $BuildRoot 'examples\LifecycleObserver\bin\Release\netstandard2.1\LifecycleObserver.dll') -Destination $plugins
+    $hashes = @{}
+    Get-ChildItem -LiteralPath $plugins -File | ForEach-Object { $hashes[$_.Name] = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
+    @{ revision=$BuildRevision; preparedUtc=[DateTime]::UtcNow.ToString('o'); plugins=$hashes } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'build-provenance.json')
+    # Prevent Steam's restart path; the runner disables SteamManager before arming checks.
+    [IO.File]::WriteAllText((Join-Path $game 'steam_appid.txt'), '3471800')
+    $saves = Join-Path $root 'Saves'
+    New-Item -ItemType Directory -Path $saves | Out-Null
+    Copy-Item -LiteralPath $sources[0].FullName -Destination (Join-Path $saves 'fixture-a.save')
+    Copy-Item -LiteralPath $sources[1].FullName -Destination (Join-Path $saves 'fixture-b.save')
+    [IO.File]::WriteAllText((Join-Path $saves 'fixture-future.save'), '{"Version":"99.0.0.0","Player":{}}', (New-Object Text.UTF8Encoding($false)))
+    [IO.File]::WriteAllText((Join-Path $saves 'fixture-corrupt.save'), 'not a save', (New-Object Text.UTF8Encoding($false)))
+    Write-Output "Prepared sandbox: $root"
+    exit 0
+}
+if (!(Test-Path -LiteralPath $marker) -or (Get-Content -LiteralPath $marker -Raw).Trim() -ne $markerText) { throw 'Not a marked qualification sandbox.' }
+if ($Action -eq 'Cleanup') {
+    # Directory.Delete(non-recursive) unlinks a junction, never its target contents.
+    foreach ($name in $junctions) {
+        $path = Join-Path $game $name
+        if (Test-Path -LiteralPath $path) {
+            if (!((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw "Expected a junction, not an ordinary directory: $name" }
+            [IO.Directory]::Delete($path, $false)
+        }
+    }
+    Write-Output 'Game-resource junctions unlinked. Private evidence and local copies retained.'
+    exit 0
+}
+Assert-QualificationUnused $root
+$provenance = Get-Content -LiteralPath (Join-Path $root 'build-provenance.json') -Raw | ConvertFrom-Json
+foreach ($property in $provenance.plugins.PSObject.Properties) {
+    if ((Get-FileHash -LiteralPath (Join-Path $game "BepInEx\plugins\$($property.Name)") -Algorithm SHA256).Hash -ne $property.Value) { throw 'Prepared plugin changed; refuse stale provenance.' }
+}
+# Unity PlayerPrefs are shared even with a separate executable. Preserve this inspected title's key.
+$prefsNative = 'HKCU\Software\Bat Roost Games\VanguardGalaxy'
+$prefsFile = Join-Path $root 'playerprefs-before.reg'
+[IO.File]::WriteAllText((Join-Path $root 'run-started.txt'), [DateTime]::UtcNow.ToString('o'))
+$hadPrefs = Save-QualificationPrefs $prefsNative $prefsFile
+$exe = Join-Path $game 'VanguardGalaxy.exe'
+$process = $null
+try {
+    $arguments = @('--fse-shim-applied','-screen-fullscreen','0','-logFile', ('"' + (Join-Path $root 'Player.log') + '"'), '--vgmodapi-qualification-root', ('"' + $root + '"'))
+    if ($Diagnostics) { $arguments += '--vgmodapi-qualification-diagnostics' }
+    $process = Start-Process -FilePath $exe -WorkingDirectory $game -ArgumentList $arguments -PassThru
+    @{ pid=$process.Id; executable=$exe } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $root 'process.json')
+    if (!$process.WaitForExit($TimeoutSeconds * 1000)) { throw 'Owned game process timed out.' }
+}
+finally {
+    try {
+        if ($null -ne $process -and !$process.HasExited) { $process.Kill(); $process.WaitForExit() }
+        Get-Process VanguardGalaxy -ErrorAction SilentlyContinue | Where-Object { $_.Path -ieq $exe } | ForEach-Object { Stop-Process -InputObject $_; $_.WaitForExit() }
+    }
+    finally {
+        try {
+            Restore-QualificationPrefs $prefsNative $prefsFile $hadPrefs
+            [IO.File]::WriteAllText((Join-Path $root 'playerprefs-restored.txt'), 'PASS')
+        }
+        catch {
+            # Preserve this failure even if the independent save-hash check also throws.
+            try { [IO.File]::WriteAllText((Join-Path $root 'playerprefs-restore-failed.txt'), $_.Exception.ToString()) } catch { }
+            throw
+        }
+        finally {
+            $manifest = Get-Content -LiteralPath (Join-Path $root 'original-save-hashes.json') -Raw | ConvertFrom-Json
+            $after = SaveHashes $manifest.directories
+            $beforeKeys = @($manifest.files.PSObject.Properties.Name)
+            if ($beforeKeys.Count -ne $after.Count) { throw 'Original save directory file set changed during qualification.' }
+            foreach ($property in $manifest.files.PSObject.Properties) {
+                if ($after[$property.Name] -ne $property.Value) { throw "Original save changed: $($property.Name)" }
+            }
+            [IO.File]::WriteAllText((Join-Path $root 'original-saves-unchanged.txt'), 'PASS')
+        }
+    }
+}
+$result = Join-Path $root 'result.txt'
+if (!(Test-Path -LiteralPath $result)) { throw 'Game exited without a qualification result; inspect sandbox logs.' }
+Get-Content -LiteralPath $result
+if ((Get-Content -LiteralPath $result -TotalCount 1) -ne 'PASS') { throw 'Qualification failed; inspect sandbox logs.' }
