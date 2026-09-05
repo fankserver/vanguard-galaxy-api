@@ -51,6 +51,7 @@ public sealed class Plugin : BaseUnityPlugin
             Require(_scenario == "Full" || _scenario == "MissingApi" || _scenario == "UnavailableApi", "Unknown scenario.");
             if (_scenario == "UnavailableApi")
             {
+                // Relies on BepInEx's plugin resolver before API Awake; recheck on loader upgrades.
                 var api = Assembly.Load("VGModAPI").GetType("VGModAPI.Plugin", true)!;
                 harmony.Patch(AccessTools.Method(api, "ReadAssemblyHash"), postfix: new HarmonyMethod(typeof(Plugin), nameof(InjectHash)));
                 Logger.LogWarning("QA ONLY: injecting a mismatched hash result; game assembly bytes are unchanged.");
