@@ -14,6 +14,9 @@ public sealed partial class Plugin
     private const string JournalSuffix = ".vgmissionjournal.json";
     private HashSet<string> _previousJournalIds = new();
     private bool _journalDisposed;
+    private bool JournalCoordinated => File.Exists(Path.Combine(_root!, "journal-coordinated.enabled"));
+    private readonly Dictionary<string, string[]> _coordinatedJournalSnapshots = new(StringComparer.Ordinal);
+    private int _coordinatedJournalRoundtrips;
     private bool JournalSelected => File.Exists(Path.Combine(_root!, "missionjournal.enabled"));
 
     private static object? JournalFacade() => Assembly.Load("VGMissionJournal")
@@ -41,7 +44,13 @@ public sealed partial class Plugin
     private void CheckJournalLoad(string name)
     {
         if (!JournalSelected) return;
-        var expected = StoredJournalIds(Path.Combine(_saveRoot!, name + ".save" + JournalSuffix));
+        var expected = JournalCoordinated && _coordinatedJournalSnapshots.TryGetValue(name, out var captured)
+            ? captured : StoredJournalIds(Path.Combine(_saveRoot!, name + ".save" + JournalSuffix));
+        if (JournalCoordinated && _coordinatedJournalSnapshots.ContainsKey(name))
+        {
+            Require(!File.Exists(Path.Combine(_saveRoot!, name + ".save" + JournalSuffix)), "Coordinated roundtrip has a legacy fallback file.");
+            _coordinatedJournalRoundtrips++;
+        }
         Require(expected.Length > 0, "Journal pilot requires nonempty copied history.");
         var actual = new HashSet<string>(LiveJournalIds());
         Require(expected.All(actual.Contains), "Copied journal history was not restored.");
@@ -59,6 +68,14 @@ public sealed partial class Plugin
             Require(!File.Exists(path), "Journal wrote for a failed/skipped save or after teardown.");
             return;
         }
+        if (JournalCoordinated)
+        {
+            Require(!File.Exists(path), "Coordinated journal unexpectedly wrote a legacy sidecar.");
+            var controller = SpGet(Chainloader.PluginInfos["vgmissionjournal"].Instance, "_lifecycle")!;
+            Require(controller.GetType().Name == "CoordinatedPersistence" && (bool)SpGet(controller, "CanRecord")!, "Coordinated journal was not ready after save.");
+            _coordinatedJournalSnapshots[name] = LiveJournalIds();
+            return;
+        }
         Require(File.Exists(path), "Successful save has no journal sidecar: " + name);
         Require(StoredJournalIds(path).SequenceEqual(LiveJournalIds()), "Journal saved the wrong history/destination.");
     }
@@ -71,6 +88,12 @@ public sealed partial class Plugin
         foreach (var frame in Wait(() => JournalFacade() == null, "journal teardown")) yield return frame;
         _journalDisposed = true;
         Save("qa-journal-disposed", LifecycleEventKind.SaveSucceeded);
+        if (JournalCoordinated)
+        {
+            Require(_coordinatedJournalRoundtrips > 0 && _coordinatedJournalSnapshots.Count > 0, "No actual journal coordinated roundtrip observed.");
+            File.WriteAllText(Path.Combine(_root!, "journal-coordinated.txt"), "PASS\nActual MissionJournal history-ID roundtrip without legacy output sidecars; copied legacy import explicit.");
+            Passed("actual-journal-coordinated-roundtrip-and-teardown");
+        }
         Passed("journal-teardown");
     }
 }

@@ -11,6 +11,7 @@ param(
     [switch]$AssemblyOverlay,
     [switch]$VanillaLoadControl,
     [switch]$PersistenceProbe,
+    [switch]$JournalCoordinated,
     [string]$BuildRevision = 'unknown',
     [switch]$Diagnostics,
     [ValidateSet('Full','MissingApi','UnavailableApi')][string]$Scenario = 'Full',
@@ -50,6 +51,7 @@ if ($Action -eq 'Prepare') {
     if ($AssemblyOverlay -and $Scenario -ne 'UnavailableApi') { throw 'Assembly overlay requires UnavailableApi.' }
     if ($VanillaLoadControl -and $Scenario -ne 'MissingApi') { throw 'Vanilla load control requires MissingApi.' }
     if ($PersistenceProbe -and $Scenario -ne 'Full') { throw 'Persistence probe requires Full.' }
+    if ($JournalCoordinated -and (!$PersistenceProbe -or !$MissionJournalBin)) { throw 'Coordinated journal requires persistence probe and journal binary.' }
     New-Item -ItemType Directory -Path $game | Out-Null
     [IO.File]::WriteAllText($marker, $markerText)
     [IO.File]::WriteAllText((Join-Path $root 'original-save-directory.txt'), [IO.Path]::GetFullPath($OriginalSaveDir))
@@ -89,11 +91,12 @@ if ($Action -eq 'Prepare') {
         Add-Type -Path (Join-Path $bep 'core\Mono.Cecil.dll')
         $assembly = [Mono.Cecil.AssemblyDefinition]::ReadAssembly($candidate)
         try {
-            if ($assembly.Name.Name -ne 'VGMissionJournal' -or $assembly.Name.Version.Major -ne 0 -or $assembly.Name.Version.Minor -ne 2) { throw 'Only the 0.2 MissionJournal pilot shape is accepted; version is not review evidence.' }
+            if ($assembly.Name.Name -ne 'VGMissionJournal' -or $assembly.Name.Version.Major -ne 0 -or $assembly.Name.Version.Minor -notin @(2,3) -or ($JournalCoordinated -and $assembly.Name.Version.Minor -ne 3)) { throw 'Only reviewed 0.2/0.3 MissionJournal pilot shapes are accepted; coordinated mode requires 0.3.' }
+            $minimumApi = if ($assembly.Name.Version.Minor -eq 3) { '0.1.2' } else { '0.1.0' }
             $plugin = $assembly.MainModule.Types | Where-Object { $_.FullName -eq 'VGMissionJournal.Plugin' }
             $dependency = @($plugin.CustomAttributes | Where-Object {
                 $_.AttributeType.FullName -eq 'BepInEx.BepInDependency' -and $_.ConstructorArguments.Count -eq 2 -and
-                $_.ConstructorArguments[0].Value -eq 'vgmodapi' -and $_.ConstructorArguments[1].Value -eq '0.1.0'
+                $_.ConstructorArguments[0].Value -eq 'vgmodapi' -and $_.ConstructorArguments[1].Value -eq $minimumApi
             })
             if ($dependency.Count -ne 1) { throw 'MissionJournal must require the API before its Awake.' }
         } finally { $assembly.Dispose() }
@@ -126,6 +129,11 @@ if ($Action -eq 'Prepare') {
         New-Item -ItemType Directory -Path (Join-Path $bep 'config') -Force | Out-Null
         [IO.File]::WriteAllText((Join-Path $bep 'config\vgstockpile.cfg'), "[Transfers]`r`nEnabled = true`r`n")
     }
+    if ($JournalCoordinated) {
+        New-Item -ItemType Directory -Path (Join-Path $bep 'config') -Force | Out-Null
+        [IO.File]::WriteAllText((Join-Path $bep 'config\vgmissionjournal.cfg'), "[Persistence]`r`nUseCoordinatedPersistence = true`r`nImportLegacySidecars = true`r`n")
+        [IO.File]::WriteAllText((Join-Path $root 'journal-coordinated.enabled'), 'journal-v1')
+    }
     if ($PersistenceProbe) {
         New-Item -ItemType Directory -Path (Join-Path $bep 'config') -Force | Out-Null
         [IO.File]::WriteAllText((Join-Path $bep 'config\vgmodapi.cfg'), "[Persistence]`r`nEnabled = true`r`nRoot = $(Join-Path $root 'state')`r`n")
@@ -135,7 +143,7 @@ if ($Action -eq 'Prepare') {
     [IO.File]::WriteAllText((Join-Path $root 'scenario.txt'), $Scenario)
     $hashes = @{}
     Get-ChildItem -LiteralPath $plugins -File | ForEach-Object { $hashes[$_.Name] = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
-    @{ persistenceProbe=[bool]$PersistenceProbe; vanillaLoadControl=[bool]$VanillaLoadControl; assemblyOverlay=$overlay; stockpile=[bool]$StockpileBin; missionJournal=[bool]$MissionJournalBin; scenario=$Scenario; revision=$BuildRevision; preparedUtc=[DateTime]::UtcNow.ToString('o'); plugins=$hashes } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'build-provenance.json')
+    @{ journalCoordinated=[bool]$JournalCoordinated; persistenceProbe=[bool]$PersistenceProbe; vanillaLoadControl=[bool]$VanillaLoadControl; assemblyOverlay=$overlay; stockpile=[bool]$StockpileBin; missionJournal=[bool]$MissionJournalBin; scenario=$Scenario; revision=$BuildRevision; preparedUtc=[DateTime]::UtcNow.ToString('o'); plugins=$hashes } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'build-provenance.json')
     # Prevent Steam's restart path; the runner disables SteamManager before arming checks.
     [IO.File]::WriteAllText((Join-Path $game 'steam_appid.txt'), '3471800')
     $saves = Join-Path $root 'Saves'
@@ -179,6 +187,10 @@ if ($Action -eq 'Cleanup') {
 }
 Assert-QualificationUnused $root
 $provenance = Assert-QualificationInputs $root
+$journalBefore = @{}
+if ($provenance.PSObject.Properties['journalCoordinated'] -and $provenance.journalCoordinated) {
+    foreach ($file in Get-ChildItem -LiteralPath (Join-Path $root 'Saves') -Filter '*.vgmissionjournal.json' -File) { $journalBefore[$file.Name] = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash }
+}
 $negativeBefore = $null
 if (($provenance.missionJournal -or $provenance.stockpile -or ($provenance.PSObject.Properties['vanillaLoadControl'] -and $provenance.vanillaLoadControl)) -and $provenance.scenario -ne 'Full') { $negativeBefore = SaveHashes @((Join-Path $root 'Saves')) }
 # Unity PlayerPrefs are shared even with a separate executable. Preserve this inspected title's key.
@@ -236,4 +248,9 @@ $null = Assert-QualificationInputs $root
 if (!(Test-Path -LiteralPath $result)) { throw 'Game exited without a qualification result; inspect sandbox logs.' }
 Assert-VanillaControlReceipt $root $provenance
 Assert-PersistenceProbeReceipt $root $provenance
+if ($provenance.PSObject.Properties['journalCoordinated'] -and $provenance.journalCoordinated) {
+    $journalAfter = @(Get-ChildItem -LiteralPath (Join-Path $root 'Saves') -Filter '*.vgmissionjournal.json' -File)
+    if ($journalAfter.Count -ne $journalBefore.Count) { throw 'Coordinated journal changed legacy sidecar file set.' }
+    foreach ($file in $journalAfter) { if ($journalBefore[$file.Name] -ne (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash) { throw 'Coordinated journal changed legacy source bytes.' } }
+}
 if ((Get-Content -LiteralPath $result -TotalCount 1) -ne 'PASS') { throw 'Qualification failed; inspect sandbox logs.' }

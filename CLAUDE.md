@@ -15,6 +15,6 @@ Unofficial Vanguard Galaxy API, first milestone: core session/load/save lifecycl
 - Gate semantics on inspected original game code, not just signatures. The runtime currently rejects uninspected hashes. Never update the allowed hash without reinspection.
 - Coroutine factories returning are not completion. GameplayInitialized is deliberately narrower than all-world-ready. A Store return is not proof of successful disk writing.
 - Maintain tests for stale session signals, nesting/reentrancy, retries, skips, and subscriber disposal.
-- No serializer or general persistence layer is implemented. Do not assume the game provides Newtonsoft.Json; do not introduce System.Text.Json without reevaluating known Unity/Mono compatibility issues.
+- Coordinated persistence is optional and experimental, with a bounded binary owner envelope; consumers own their payload schema/serializer. Do not assume the game provides Newtonsoft.Json; do not introduce System.Text.Json without reevaluating known Unity/Mono compatibility issues.
 - No deployment, release, or destructive save testing without owner authorization. Always distinguish passing host tests from actual Unity qualification.
 - Do not redistribute decompiled game source. Preserve concise findings and member mappings in docs instead.

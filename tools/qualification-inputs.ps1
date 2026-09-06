@@ -1,5 +1,9 @@
 # Prepared-input helpers; safe to exercise with synthetic files.
 function Assert-PersistenceProbeReceipt([string]$Root, $Provenance) {
+    if ($Provenance.PSObject.Properties['journalCoordinated'] -and $Provenance.journalCoordinated) {
+        $receipt = Join-Path $Root 'journal-coordinated.txt'
+        if (!(Test-Path -LiteralPath $receipt) -or (Get-Content -LiteralPath $receipt -TotalCount 1) -ne 'PASS') { throw 'Coordinated journal probe did not complete.' }
+    }
     if ($Provenance.PSObject.Properties['persistenceProbe'] -and $Provenance.persistenceProbe) {
         $receipt = Join-Path $Root 'persistence-probe.txt'
         if (!(Test-Path -LiteralPath $receipt) -or (Get-Content -LiteralPath $receipt -TotalCount 1) -ne 'PASS') { throw 'Persistence probe did not complete.' }
@@ -65,6 +69,18 @@ function Assert-QualificationInputs([string]$Root) {
         $roots = [regex]::Matches($config, '(?m)^Root\s*=\s*([^\r\n]+)')
         $enabled = [regex]::Matches($config, '(?m)^Enabled\s*=\s*true\s*$')
         if ($roots.Count -ne 1 -or $enabled.Count -ne 1 -or [IO.Path]::GetFullPath($roots[0].Groups[1].Value.Trim()) -ine [IO.Path]::GetFullPath((Join-Path $Root 'state'))) { throw 'Persistence probe root/config changed.' }
+    }
+    $journalCoordinated = $provenance.PSObject.Properties['journalCoordinated'] -and [bool]$provenance.journalCoordinated
+    $journalMarker = Join-Path $Root 'journal-coordinated.enabled'
+    if ([bool]$journalCoordinated -ne (Test-Path -LiteralPath $journalMarker -PathType Leaf)) { throw 'Journal coordinated selection changed.' }
+    if ($journalCoordinated) {
+        if (!$probe -or !$provenance.missionJournal -or (Get-Content -LiteralPath $journalMarker -Raw).Trim() -ne 'journal-v1') { throw 'Invalid coordinated journal selection.' }
+        $config = Get-Content -LiteralPath (Join-Path $Root 'game\BepInEx\config\vgmissionjournal.cfg') -Raw
+        $sections = [regex]::Matches($config, '(?ms)^\[Persistence\]\r?\n(?<body>.*?)(?=^\[|\z)')
+        if ($sections.Count -ne 1) { throw 'Coordinated journal section changed.' }
+        foreach ($key in @('UseCoordinatedPersistence','ImportLegacySidecars')) {
+            if ([regex]::Matches($sections[0].Groups['body'].Value, "(?m)^$key\s*=").Count -ne 1 -or [regex]::Matches($sections[0].Groups['body'].Value, "(?m)^$key\s*=\s*true\s*$").Count -ne 1) { throw 'Coordinated journal config changed.' }
+        }
     }
     $vanilla = $provenance.PSObject.Properties['vanillaLoadControl'] -and [bool]$provenance.vanillaLoadControl
     $vanillaMarker = Join-Path $Root 'vanilla-load.enabled'
