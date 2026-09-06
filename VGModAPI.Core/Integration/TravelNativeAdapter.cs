@@ -10,9 +10,14 @@ namespace VGModAPI.Runtime;
 // Real native travel observer. Every observed fact must be attributed to an immutable
 // session/player/leg token captured when the hop began; stale iterators, disposed
 // coroutines, replaced sessions and nested base/override arrivals fail closed and cannot
-// touch a replacement. Method/proc returns are never readiness or completion.
+// touch a replacement. Method/proc returns and nested-child completion are never readiness,
+// departure, or completion; a verified destination-readiness / physical state boundary is.
 internal sealed class TravelNativeAdapter : IDisposable
 {
+    // Source.SpaceShip.Auto.DockingState numeric values (matching the inspected enum order).
+    private const int DockingStateDocked = 3;
+    private const int DockingStateLeaving = 5;
+
     private sealed class JumpContext
     {
         internal readonly Guid Session;
@@ -47,6 +52,7 @@ internal sealed class TravelNativeAdapter : IDisposable
     private TravelMode _pendingMode = TravelMode.Unknown;
     private CompletedRoute? _lastCompleted;
     private (object Instance, Guid Session, object Player, object? Station)? _interiorLease;
+    private bool _stationTransitionSeen;
     private volatile bool _faulted;
     private Exception? _faultDetail;
     private bool _disposed;
@@ -70,9 +76,6 @@ internal sealed class TravelNativeAdapter : IDisposable
     internal Exception? FaultDetail => _faultDetail;
     internal TravelNativeBindings Bindings => _bindings;
 
-    // Observer faults must fail closed and never propagate into vanilla; a genuine main-thread
-    // violation disables the travel group. Stale/replaced-session operation errors are reported
-    // but never disable a replacement session.
     internal void Guard(Action action)
     {
         if (_faulted || _disposed) return;
@@ -100,9 +103,15 @@ internal sealed class TravelNativeAdapter : IDisposable
     {
         Guard(() =>
         {
-            if (_sessionValue == session) return;
+            if (_sessionValue == session)
+            {
+                // Same session id: bind the FIRST non-null player, but never adopt a replacement
+                // after a binding is already held for this session id.
+                if (session != null && _boundPlayer == null) _boundPlayer = _bindings.Player;
+                return;
+            }
             if (session == null) _boundPlayer = null;
-            else if (_boundPlayer == null) _boundPlayer = _bindings.Player; // bind at session ready
+            else _boundPlayer = _bindings.Player; // bind at session ready; may be null -> retried above
             _sessionValue = session;
             _session = session ?? Guid.Empty;
             _tracker.Reset(session);
@@ -110,7 +119,7 @@ internal sealed class TravelNativeAdapter : IDisposable
             _modeByLeg.Clear(); _legMeta.Clear(); _locations.Clear();
             _routeCompleted.Clear();
             _leg = null; _pendingMode = TravelMode.Unknown;
-            _lastCompleted = null; _interiorLease = null;
+            _lastCompleted = null; _interiorLease = null; _stationTransitionSeen = false;
             Events.SetSession(session);
             Station.SetSession(session);
         });
@@ -130,8 +139,8 @@ internal sealed class TravelNativeAdapter : IDisposable
             var poi = _bindings.Poi(localManager);
             var playerPoi = _bindings.CurrentPoi(player);
             // The manager must be the one for the player's current POI. Both-null is the
-            // attributable initialized empty-space manager; not-in-transit (ready=false/pending leg)
-            // is excluded by the reducer's no-pending-leg rule and the readiness gate.
+            // attributable initialized empty-space manager; in-transit is excluded by the
+            // reducer's no-pending-leg rule and the readiness gate.
             if (!ReferenceEquals(poi, playerPoi)) return;
             if (!_bindings.Ready(localManager, poi)) return;
             Cache(actual);
@@ -144,19 +153,27 @@ internal sealed class TravelNativeAdapter : IDisposable
 
     // --- requested / cancelled ------------------------------------------------
 
-    internal void OnRouteRequested(object player, object poi)
+    // A route is a sequence of per-hop legs. Each hop is requested with its REAL waypoint:
+    // the first hop (SetRouteToPOI) and every subsequent in-system hop (TravelToNextWaypoint)
+    // request waypoints[0] when it is an actual in-system target, never the final targetPoi.
+    // A waypoint in another system is a gate/wormhole handoff; the jump iterator owns that leg.
+    internal void RequestWaypointLeg()
     {
         Guard(() =>
         {
-            if (!IsLive(player) || poi == null) return;
-            var location = _bindings.Destination(poi);
+            var player = _boundPlayer;
+            if (!IsLive(player) || _leg != null) return;
+            var waypoint = _bindings.Waypoint0(player);
+            if (waypoint == null) return;
+            if (!_bindings.InCurrentSystem(waypoint, player)) return; // jump handoff -> WrapJump owns it
+            var location = _bindings.Destination(waypoint);
             if (location == null) return;
             Cache(location);
             var place = PlaceOf(location);
             if (place == null) return;
             _pendingMode = TravelMode.InSystem;
             _leg = _tracker.Request(_session, place);
-            if (_leg != null) { _modeByLeg[_leg.Id] = _pendingMode; _legMeta[_leg.Id] = new LegMeta(_leg.Origin, place); }
+            if (_leg != null) { _modeByLeg[_leg.Id] = TravelMode.InSystem; _legMeta[_leg.Id] = new LegMeta(_leg.Origin, place); }
             Drain(_bindings.Time(player));
         });
     }
@@ -229,7 +246,10 @@ internal sealed class TravelNativeAdapter : IDisposable
 
     // --- cross-system jumps ---------------------------------------------------
 
-    internal IEnumerator WrapJump(IEnumerator? inner, TravelMode mode, object? travelManager, object? player)
+    // jumpGatePoi (or fromWormhole) is injected via Harmony; the requested destination is
+    // built from the gate's RAW targetSystemGuid/targetPoiGuid (no world/name lookup), so a
+    // nominal target absent from the current (tutorial/sandbox) map is still a valid request.
+    internal IEnumerator WrapJump(IEnumerator? inner, TravelMode mode, object? travelManager, object? player, object? jumpGatePoi)
     {
         if (inner == null) return null!; // factories always yield an iterator; defensive only
         if (player == null) return inner;
@@ -238,18 +258,25 @@ internal sealed class TravelNativeAdapter : IDisposable
         {
             if (!IsLive(player)) return;
             context = new JumpContext(_session, player, travelManager, mode);
-            // Capture the real nominal requested destination while the player is still at the
-            // gate/waypoint (never an origin proxy). If the galaxy map is not yet resolvable,
-            // the leg is created lazily on the first observed step instead.
-            var requested = ResolveJumpRequested(player, mode);
-            if (requested == null) return;
-            Cache(requested);
-            var place = PlaceOf(requested);
-            if (place == null) return;
-            _pendingMode = mode;
-            context.Leg = _tracker.Request(context.Session, place);
-            _leg = context.Leg;
-            if (context.Leg != null) { _modeByLeg[context.Leg.Id] = mode; _legMeta[context.Leg.Id] = new LegMeta(context.Leg.Origin, place); }
+            var requested = BuildJumpRequest(player, mode, jumpGatePoi);
+            if (requested == null) return; // cannot identify a nominal target; never invent a leg
+            if (_leg != null && _tracker.OwnsPending(_leg) && !_tracker.Departed(_leg)
+                && SamePlace(_bindings.CurrentLocation(player), _tracker.Current))
+            {
+                // Direct gate/wormhole handoff: reuse the pending same-origin in-system leg as this
+                // jump's leg instead of manufacturing a fictitious Cancelled/Requested pair.
+                _tracker.Upgrade(_leg, requested);
+                _modeByLeg[_leg.Id] = mode;
+                _legMeta[_leg.Id] = new LegMeta(_leg.Origin, requested);
+                context.Leg = _leg;
+            }
+            else if (_leg == null)
+            {
+                _pendingMode = mode;
+                context.Leg = _tracker.Request(context.Session, requested);
+                _leg = context.Leg;
+                if (context.Leg != null) { _modeByLeg[context.Leg.Id] = mode; _legMeta[context.Leg.Id] = new LegMeta(context.Leg.Origin, requested); }
+            }
         });
         if (context == null) return inner;
         return new TravelJumpObserver(inner, () => ObserveJumpStep(context), () => OnJumpTerminated(context));
@@ -263,21 +290,6 @@ internal sealed class TravelNativeAdapter : IDisposable
             // old iterator, even for the same player object after SetSession.
             if (_session != context.Session || !IsLive(context.Player)) return;
             var player = context.Player;
-            // Lazy fallback: if the destination wasn't resolvable at wrap construction, capture it
-            // now (never an origin proxy) before any departure/arrival evidence.
-            if (context.Leg == null)
-            {
-                var requested = ResolveJumpRequested(player, context.Mode);
-                if (requested == null) return; // galaxy/world not resolved yet; retry on next step
-                Cache(requested);
-                var place = PlaceOf(requested);
-                if (place == null) return;
-                _pendingMode = context.Mode;
-                context.Leg = _tracker.Request(context.Session, place);
-                _leg = context.Leg;
-                if (context.Leg != null) { _modeByLeg[context.Leg.Id] = context.Mode; _legMeta[context.Leg.Id] = new LegMeta(context.Leg.Origin, place); }
-                Drain(_bindings.Time(player));
-            }
             if (context.Leg == null || !_tracker.OwnsPending(context.Leg)) return;
             var current = _bindings.CurrentLocation(player);
             if (!_tracker.Departed(context.Leg) && current != null && !SamePlace(current, _tracker.Current))
@@ -310,7 +322,8 @@ internal sealed class TravelNativeAdapter : IDisposable
 
     private void OnJumpTerminated(JumpContext context)
     {
-        // Iterator disposed/ended without arrival: the leg that started this hop must not leak.
+        // Root jump iterator terminated (completed or replaced) without arrival: the hop's leg
+        // must not leak. Nested-child completion never reaches here (children carry no callback).
         Guard(() =>
         {
             if (_session != context.Session || context.Leg == null) return;
@@ -323,16 +336,20 @@ internal sealed class TravelNativeAdapter : IDisposable
         });
     }
 
-    private TravelLocation? ResolveJumpRequested(object player, TravelMode mode)
+    private TravelLegTracker.Place? BuildJumpRequest(object player, TravelMode mode, object? jumpGatePoi)
     {
         if (mode == TravelMode.Wormhole)
         {
             var waypoint = _bindings.Waypoint0(player);
-            return waypoint == null ? null : _bindings.Destination(waypoint);
+            if (waypoint == null) return null;
+            var location = _bindings.Destination(waypoint);
+            return location == null ? null : PlaceOf(location);
         }
-        // JumpGate: the player is at the gate; resolve its real target, not an origin proxy.
-        var gate = _bindings.CurrentPoi(player);
-        return gate == null ? null : _bindings.JumpTarget(gate);
+        var systemGuid = _bindings.JumpSystemGuid(jumpGatePoi);
+        if (string.IsNullOrEmpty(systemGuid)) return null;
+        var poiGuid = _bindings.JumpPoiGuid(jumpGatePoi);
+        try { return new TravelLegTracker.Place(systemGuid, string.IsNullOrEmpty(poiGuid) ? null : poiGuid); }
+        catch { return null; }
     }
 
     // --- verified final-route boundary ----------------------------------------
@@ -365,41 +382,53 @@ internal sealed class TravelNativeAdapter : IDisposable
         });
     }
 
-    private static bool SamePlace(TravelLocation a, TravelLegTracker.Place? b)
-        => b != null && a.SystemId == b.SystemId && a.PoiId == b.PoiId;
+    private static bool SamePlace(TravelLocation? a, TravelLegTracker.Place? b)
+        => a != null && b != null && a.SystemId == b.SystemId && a.PoiId == b.PoiId;
 
     // --- station facts: native dock/undock boundaries -------------------------
 
-    internal void OnDockedPhysical(object dockingOption)
+    // The ship object is captured before any dock reset, so attribution survives
+    // ResetDockingOption() nulling dockingOption.dockingSpaceship (finding 3/5).
+    internal void OnDockedPhysical(object? ship)
     {
         Guard(() =>
         {
             var player = _boundPlayer;
-            if (!IsLive(player) || dockingOption == null || !_bindings.IsPlayerShip(dockingOption, player)) return;
+            if (!IsLive(player) || ship == null || !_bindings.IsPlayerShip(ship, player)) return;
+            if (_bindings.ShipDockingState(ship) != DockingStateDocked) return; // physical state required
+            // Initial-load DockQuick (InitializePoi) emits Docked before the reducer has a
+            // placement and with no prior station transition: that is initial state, not a
+            // transition. Suppress it (finding 6). A genuine transition is preceded by a
+            // placement or a prior dock/undock boundary.
+            if (!_stationTransitionSeen && _tracker.Current == null) return;
             var station = _bindings.CurrentLocation(player);
             if (station == null) return;
             Cache(station);
             Station.Emit(_session, StationTransitionKind.DockedPhysical, station, _bindings.Time(player));
+            _stationTransitionSeen = true;
         });
     }
-    internal void OnUndocking(object dockingOption)
+    internal void OnUndocking(object? ship)
     {
         Guard(() =>
         {
             var player = _boundPlayer;
-            if (!IsLive(player) || dockingOption == null || !_bindings.IsPlayerShip(dockingOption, player)) return;
+            if (!IsLive(player) || ship == null || !_bindings.IsPlayerShip(ship, player)) return;
             var station = _bindings.CurrentLocation(player) ?? LocForPlace(_tracker.Current);
             Station.Emit(_session, StationTransitionKind.Undocking, station, _bindings.Time(player));
+            _stationTransitionSeen = true;
         });
     }
-    internal void OnLeaving(object dockingOption)
+    internal void OnLeaving(object? ship)
     {
         Guard(() =>
         {
             var player = _boundPlayer;
-            if (!IsLive(player) || dockingOption == null || !_bindings.IsPlayerShip(dockingOption, player)) return;
+            if (!IsLive(player) || ship == null || !_bindings.IsPlayerShip(ship, player)) return;
+            if (_bindings.ShipDockingState(ship) != DockingStateLeaving) return; // verified leaving
             var station = _bindings.CurrentLocation(player) ?? LocForPlace(_tracker.Current);
             Station.Emit(_session, StationTransitionKind.Leaving, station, _bindings.Time(player));
+            _stationTransitionSeen = true;
         });
     }
 
@@ -410,8 +439,6 @@ internal sealed class TravelNativeAdapter : IDisposable
         Guard(() =>
         {
             if (error != null) { if (_interiorLease?.Instance == instance) _interiorLease = null; return; }
-            // An Awake that actually claimed the live instance starts the lease; the same
-            // instance/player/session must still hold at Start for readiness.
             if (!IsLive(player) || instance == null) return;
             if (!ReferenceEquals(_bindings.InteriorInstance(), instance)) return;
             _interiorLease = (instance, _session, _boundPlayer!, _bindings.InteriorStation(instance));
@@ -436,7 +463,7 @@ internal sealed class TravelNativeAdapter : IDisposable
     {
         Guard(() =>
         {
-            if (instance == null || !ReferenceEquals(_bindings.InteriorInstance(), instance)) return; // stale old destroy: not current lease
+            if (instance == null || !ReferenceEquals(_bindings.InteriorInstance(), instance)) return;
             if (_interiorLease.HasValue && ReferenceEquals(_interiorLease.Value.Instance, instance))
             {
                 var lease = _interiorLease.Value;
@@ -454,8 +481,8 @@ internal sealed class TravelNativeAdapter : IDisposable
     {
         if (player != null && IsLive(player)) ObservePlacement(player, manager);
         // Dock/undock are observed only through native DockingOption boundaries (not polling),
-        // so same-frame Docked/Undocking/Leaving cannot be missed and initial loaded docked state
-        // is never misreported as a transition.
+        // so same-frame transitions cannot be missed and initial loaded-docked state is never
+        // misreported as a transition.
     }
 
     private void Drain(double now)
@@ -467,8 +494,6 @@ internal sealed class TravelNativeAdapter : IDisposable
         var batchSession = _session;
         foreach (var fact in facts)
         {
-            // Abort the batch if a reentrant callback changed the session: never remap stale
-            // facts onto a replacement session.
             if (batchSession != _session) break;
             if (batchSession == Guid.Empty) break;
             TravelMode mode = TravelMode.Unknown;

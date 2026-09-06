@@ -4,9 +4,10 @@ using System.Collections;
 namespace VGModAPI.Core;
 
 /// <summary>Preserves every nested Unity yield while letting the travel adapter observe each
-/// step, and reports iterator termination (normal completion or replacement disposal). The
-/// factory returning an iterator is NOT completion; only observed readiness after forwarding
-/// MoveNext is evidence. Fake/Unity scheduling is never accelerated by this wrapper.</summary>
+/// step. Children (including Unity's CustomYieldInstruction/WaitUntil IEnumerators) carry ONLY
+/// the per-step observe callback; lifecycle (termination) belongs to the root iterator alone.
+/// A completed/terminated child must never cancel the pending jump leg. Disposal of an in-flight
+/// root iterator is replacement/cancellation, not a successful arrival.</summary>
 internal sealed class TravelJumpObserver : IEnumerator, IDisposable
 {
     private readonly IEnumerator _inner;
@@ -25,7 +26,9 @@ internal sealed class TravelJumpObserver : IEnumerator, IDisposable
             _ended = true; _current = null; _terminated?.Invoke(); return false;
         }
         var value = _inner.Current;
-        _current = value is IEnumerator child ? new TravelJumpObserver(child, _observe, _terminated) : value;
+        // Children are driven by the caller (as Unity drives yielded IEnumerators) and are
+        // observed per-step only; they never carry the root lifecycle callback.
+        _current = value is IEnumerator child ? new TravelJumpObserver(child, _observe) : value;
         _observe();
         return true;
     }

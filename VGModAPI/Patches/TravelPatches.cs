@@ -11,10 +11,6 @@ internal static class TravelPatches
 
     internal static class Arrival
     {
-        // SpaceshipHasArrived is called for same-system POI arrival immediately before
-        // TravelToNextWaypoint may start the next leg; scopes coalesce nested base/override
-        // calls and suppress reentrant duplicates for one manager. The scope token is immutable
-        // per call and is closed only by the matching Exit on this adapter's main thread.
         internal static void Prefix(object __instance, out object? __state)
         {
             object? token = null;
@@ -30,17 +26,13 @@ internal static class TravelPatches
     }
     internal static class Route
     {
-        // SetRouteToPOI success is an accepted request (first waypoint is in the departure
-        // system), not departure or arrival evidence.
+        // SetRouteToPOI success accepts a route. The actual first hop is waypoints[0] (an
+        // in-system leg to a source gate or the destination), never targetPoi (the final goal).
         internal static void Postfix(object __instance, bool __result)
         {
             var adapter = Adapter;
             if (adapter == null) return;
-            adapter.Guard(() =>
-            {
-                if (__result && adapter.Bindings.Player != null)
-                    adapter.OnRouteRequested(adapter.Bindings.Player, adapter.Bindings.Target(__instance)!);
-            });
+            adapter.Guard(() => { if (__result) adapter.RequestWaypointLeg(); });
         }
     }
     internal static class Cancel
@@ -53,9 +45,6 @@ internal static class TravelPatches
     }
     internal static class Departure
     {
-        // UnloadCurrentScene clears the origin after the delegate did real work. It is a NOOP
-        // returning immediately when the local manager is already null (no origin to unload);
-        // only a real manager->null transition is departure, never a method return alone.
         internal static void Prefix(object __instance, out object? __state)
         {
             object? before = null;
@@ -75,9 +64,16 @@ internal static class TravelPatches
     }
     internal static class RouteBoundary
     {
-        // Verified final-route boundary: after TravelToNextWaypoint finishes, only a route with
-        // no remaining waypoints and TravelActive()==false has actually completed. Attribution is
-        // to the leg recorded by the last arrival; once-only via the adapter's completed set.
+        // Prefix: request the next in-system hop (TravelToNextWaypoint -> StartTravel) with the
+        // real waypoint; a cross-system waypoint is owned by the jump iterator instead.
+        // Postfix: the verified final-route boundary (no waypoints and TravelActive()==false).
+        // Children carry no lifecycle callbacks, so the per-hop request here is exactly the
+        // StartTravel a bound (non-handoff) leg about to run.
+        internal static void Prefix(object __instance)
+        {
+            var adapter = Adapter;
+            adapter?.Guard(() => adapter.RequestWaypointLeg());
+        }
         internal static void Postfix(object __instance)
         {
             var adapter = Adapter;
@@ -86,33 +82,33 @@ internal static class TravelPatches
     }
     internal static class JumpGate
     {
-        internal static void Postfix(ref IEnumerator __result, object __instance)
+        internal static void Postfix(ref IEnumerator __result, object __instance, object jumpGatePoi)
         {
             var adapter = Adapter; if (adapter == null) return;
             var result = __result;
-            adapter.Guard(() => result = adapter.WrapJump(result, TravelMode.JumpGate, __instance, adapter.Bindings.Player));
+            adapter.Guard(() => result = adapter.WrapJump(result, TravelMode.JumpGate, __instance, adapter.Bindings.Player, jumpGatePoi));
             __result = result;
         }
     }
     internal static class JumpWormhole
     {
-        internal static void Postfix(ref IEnumerator __result, object __instance)
+        internal static void Postfix(ref IEnumerator __result, object __instance, object fromWormhole)
         {
             var adapter = Adapter; if (adapter == null) return;
             var result = __result;
-            adapter.Guard(() => result = adapter.WrapJump(result, TravelMode.Wormhole, __instance, adapter.Bindings.Player));
+            adapter.Guard(() => result = adapter.WrapJump(result, TravelMode.Wormhole, __instance, adapter.Bindings.Player, fromWormhole));
             __result = result;
         }
     }
     internal static class DockQuick
     {
-        // Immediate dock: DockQuick sets dockingState=Docked synchronously; postfix is the
-        // physical boundary. Emitting only from these native boundaries never misreports the
-        // initial loaded-docked state as a transition.
+        // Immediate dock: DockQuick sets dockingState=Docked synchronously. Emitting only from
+        // these native boundaries (with physical-state verification and the initial-load guard
+        // in the adapter) never misreports initial loaded-docked state as a transition.
         internal static void Postfix(object __instance)
         {
             var adapter = Adapter;
-            adapter?.Guard(() => adapter.OnDockedPhysical(__instance));
+            adapter?.Guard(() => adapter.OnDockedPhysical(adapter.Bindings.ShipOf(__instance)!));
         }
     }
     internal static class Dock
@@ -120,10 +116,10 @@ internal static class TravelPatches
         internal static void Postfix(ref IEnumerator __result, object __instance)
         {
             var adapter = Adapter; if (adapter == null) return;
-            var result = __result; var option = __instance;
+            var result = __result; var ship = adapter.Bindings.ShipOf(__instance);
             adapter.Guard(() =>
             {
-                if (result != null) result = new CoroutineBoundaryObserver(result, onDone: () => adapter.OnDockedPhysical(option));
+                if (result != null) result = new CoroutineBoundaryObserver(result, onDone: () => adapter.OnDockedPhysical(ship));
             });
             __result = result;
         }
@@ -133,11 +129,15 @@ internal static class TravelPatches
         internal static void Postfix(ref IEnumerator __result, object __instance)
         {
             var adapter = Adapter; if (adapter == null) return;
-            var result = __result; var option = __instance;
+            var result = __result;
+            // Capture the ship object now: Undock() calls ResetDockingOption() which nulls
+            // dockingOption.dockingSpaceship before the iterator ends. The captured ship (and its
+            // dockingState==Leaving) survives for end-of-undock attribution (finding 3/5).
+            var ship = adapter.Bindings.ShipOf(__instance);
             adapter.Guard(() =>
             {
                 if (result != null) result = new CoroutineBoundaryObserver(result,
-                    onFirst: () => adapter.OnUndocking(option), onDone: () => adapter.OnLeaving(option));
+                    onFirst: () => adapter.OnUndocking(ship), onDone: () => adapter.OnLeaving(ship));
             });
             __result = result;
         }
@@ -147,16 +147,13 @@ internal static class TravelPatches
         internal static void Postfix(object __instance)
         {
             var adapter = Adapter;
-            adapter?.Guard(() => adapter.OnLeaving(__instance));
+            adapter?.Guard(() => adapter.OnLeaving(adapter.Bindings.ShipOf(__instance)!));
         }
     }
     internal static class InteriorAwake
     {
-        internal static void Postfix(object __instance)
-        {
-            var adapter = Adapter; if (adapter == null) return;
-            adapter.Guard(() => adapter.OnInteriorAwake(__instance, adapter.Bindings.Player!, null));
-        }
+        // Finalizer alone performs the nonthrowing attribution (note Postfix is deliberately
+        // absent so the lease is registered exactly once per Awake; finding 9).
         internal static Exception? Finalizer(object __instance, Exception? __exception)
         {
             var adapter = Adapter; if (adapter != null)

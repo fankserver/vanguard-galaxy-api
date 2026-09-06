@@ -3,10 +3,11 @@ using System.Collections;
 
 namespace VGModAPI.Core;
 
-/// <summary>Wraps a bound coroutine iterator so the adapter observes the first step and the
-/// verified completion boundary (MoveNext returning false, or disposal before completion).
-/// A factory returning an iterator is not itself completion; only after forwarding MoveNext is
-/// the boundary real.</summary>
+/// <summary>Wraps a bound dock/undock coroutine iterator so the adapter observes the root's
+/// FIRST step and its SUCCESSFUL root completion (MoveNext returning false). Nested children
+/// (procedures, WaitUntil) carry no lifecycle callback, so they never emit premature
+/// DockedPhysical/Undocking/Leaving. Disposal is cancellation, never a successful completion:
+/// it must not fire onDone. Callers re-verify the physical docking state themselves.</summary>
 internal sealed class CoroutineBoundaryObserver : IEnumerator, IDisposable
 {
     private readonly IEnumerator _inner;
@@ -25,7 +26,8 @@ internal sealed class CoroutineBoundaryObserver : IEnumerator, IDisposable
             _ended = true; _current = null; _onDone?.Invoke(); return false;
         }
         var value = _inner.Current;
-        _current = value is IEnumerator child ? new CoroutineBoundaryObserver(child, _onFirst, _onDone) : value;
+        // Children preserve yields but carry no onFirst/onDone; lifecycle is root-only.
+        _current = value is IEnumerator child ? new CoroutineBoundaryObserver(child) : value;
         if (_first) { _first = false; _onFirst?.Invoke(); }
         return true;
     }
@@ -35,6 +37,7 @@ internal sealed class CoroutineBoundaryObserver : IEnumerator, IDisposable
         if (_disposed) return;
         _disposed = true;
         try { (_inner as IDisposable)?.Dispose(); }
-        finally { if (!_ended) { _ended = true; _onDone?.Invoke(); } }
+        catch { /* disposal is never a successful completion boundary */ }
+        // No onDone: a stopped/disposed coroutine is cancellation, not completion.
     }
 }

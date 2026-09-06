@@ -11,13 +11,12 @@ internal sealed class TravelNativeBindings
     private const string PoiType = "Source.Galaxy.MapPointOfInterest";
     private const string SystemType = "Source.Galaxy.SystemMapData";
     private const string ManagerType = "Behaviour.Managers.BasePoiManager";
-    private const string GalaxyType = "Source.Galaxy.GalaxyMapData";
     private const string JumpGateType = "Source.Galaxy.POI.JumpGate";
     private const string DockingOptionType = "Behaviour.Spacestation.Docking.DockingOption";
     private const string SpaceShipType = "Behaviour.Unit.SpaceShip";
     private readonly FieldInfo _player, _currentSystem, _currentPoi, _system, _rawName, _waypoints, _dockingState, _interiorInstance, _travelManagerInstance, _jumpTargetSystemGuid, _jumpTargetPoiGuid;
-    private readonly PropertyInfo _guid, _time, _localManager, _managerPoi, _ready, _target, _localTarget, _currentSpaceShip, _usingJumpgate, _interiorStation, _galaxyCurrent, _dockingShip, _shipData;
-    private readonly MethodInfo _getSystem, _getPoi, _travelActive, _travelNextWaypoint;
+    private readonly PropertyInfo _guid, _time, _localManager, _managerPoi, _ready, _target, _localTarget, _currentSpaceShip, _usingJumpgate, _interiorStation, _dockingShip, _shipData;
+    private readonly MethodInfo _travelActive, _travelNextWaypoint;
     internal TravelNativeBindings(Assembly assembly)
     {
         var player = assembly.GetType(BindingCatalog.Player, true)!;
@@ -55,10 +54,6 @@ internal sealed class TravelNativeBindings
         var jumpGate = assembly.GetType(JumpGateType, true)!;
         _jumpTargetSystemGuid = Field(jumpGate, "targetSystemGuid", "System.String");
         _jumpTargetPoiGuid = Field(jumpGate, "targetPoiGuid", "System.String");
-        var galaxy = assembly.GetType(GalaxyType, true)!;
-        _galaxyCurrent = StaticProperty(galaxy, "current", galaxy.FullName);
-        _getSystem = Method(galaxy, "GetSystem", SystemType, "System.String");
-        _getPoi = Method(galaxy, "GetPointOfInterest", PoiType, "System.String");
         _travelActive = Method(travel, "TravelActive", "System.Boolean");
         _travelNextWaypoint = Method(travel, "TravelToNextWaypoint", "System.Void");
         var dockingOption = assembly.GetType(DockingOptionType, true)!;
@@ -77,28 +72,20 @@ internal sealed class TravelNativeBindings
     internal bool UsingJumpgate(object manager) => (bool)_usingJumpgate.GetValue(manager)!;
     internal bool TravelActive(object travelManager) => (bool)_travelActive.Invoke(travelManager, null)!;
     internal void NextWaypoint(object travelManager) => _travelNextWaypoint.Invoke(travelManager, null);
-    // Real nominal requested destination for a jump: resolve the current JumpGate's target via
-    // the live galaxy map (plain guid fields + current world; no lazy name/RNG generation).
-    internal TravelLocation? JumpTarget(object jumpGate)
+    // The ship object is captured before any dock reset so attribution survives
+    // ResetDockingOption() nulling dockingOption.dockingSpaceship.
+    internal object? ShipOf(object dockingOption) => dockingOption == null ? null : _dockingShip.GetValue(dockingOption);
+    internal object? ShipData(object ship) => ship == null ? null : _shipData.GetValue(ship);
+    internal int? ShipDockingState(object ship)
     {
-        if (jumpGate == null) return null;
-        var systemGuid = (string?)_jumpTargetSystemGuid.GetValue(jumpGate);
-        if (string.IsNullOrEmpty(systemGuid)) return null;
-        var galaxy = _galaxyCurrent.GetValue(null);
-        if (galaxy == null) return null;
-        var system = _getSystem.Invoke(galaxy, new object[] { systemGuid });
-        if (system == null) return null;
-        object? poi = null;
-        var poiGuid = (string?)_jumpTargetPoiGuid.GetValue(jumpGate);
-        if (!string.IsNullOrEmpty(poiGuid)) poi = _getPoi.Invoke(galaxy, new object[] { poiGuid });
-        return Location(system, poi);
+        var data = ShipData(ship);
+        if (data == null) return null;
+        var value = _dockingState.GetValue(data);
+        return value == null ? (int?)null : Convert.ToInt32(value);
     }
-    internal bool IsPlayerShip(object dockingOption, object player)
+    internal bool IsPlayerShip(object? ship, object player)
     {
-        if (dockingOption == null) return false;
-        var ship = _dockingShip.GetValue(dockingOption);
-        if (ship == null) return false;
-        var data = _shipData.GetValue(ship);
+        var data = ship == null ? null : _shipData.GetValue(ship);
         var playerData = _currentSpaceShip.GetValue(player);
         return data != null && playerData != null && ReferenceEquals(data, playerData);
     }
@@ -109,6 +96,11 @@ internal sealed class TravelNativeBindings
         if (_waypoints.GetValue(player) is System.Collections.IList list && list.Count > index) return list[index];
         return null;
     }
+    internal bool InCurrentSystem(object poi, object player) => ReferenceEquals(_system.GetValue(poi), CurrentSystem(player));
+    // Raw jump-gate target guids (plain public fields; no galaxy lookup, no lazy name/RNG).
+    // Valid even when the tutorial/sandbox target is not present in the current world map.
+    internal string? JumpSystemGuid(object? gate) => gate == null ? null : (string?)_jumpTargetSystemGuid.GetValue(gate);
+    internal string? JumpPoiGuid(object? gate) => gate == null ? null : (string?)_jumpTargetPoiGuid.GetValue(gate);
     internal object? InteriorInstance() => _interiorInstance.GetValue(null);
     internal object? InteriorStation(object interior) => _interiorStation.GetValue(interior);
     // Live TravelManager singleton (null before gameplay; avoids the Instance property's scene query).
@@ -139,13 +131,6 @@ internal sealed class TravelNativeBindings
             || !ReferenceEquals(field.FieldType.GetGenericArguments()[0], underlying))
             throw new MissingFieldException(type.FullName, name);
         return field;
-    }
-    private static PropertyInfo StaticProperty(Type type, string name, string expected)
-    {
-        var property = type.GetProperty(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly);
-        if (property == null || property.PropertyType.FullName != expected || property.GetMethod == null || !property.GetMethod.IsStatic || property.GetIndexParameters().Length != 0)
-            throw new MissingMemberException(type.FullName, name);
-        return property;
     }
     private static MethodInfo Method(Type type, string name, string returnType, params string[] parameterTypes)
     {

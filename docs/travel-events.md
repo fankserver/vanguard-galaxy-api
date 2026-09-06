@@ -4,13 +4,14 @@ Issue #12 remains open. Since 0.1.9 the real adapter is implemented and installe
 
 ## Adapter contract
 
-- Requests are captured on a successful `SetRouteToPOI` (first waypoint is in the departure system, so the initial leg is in-system); direct gate/wormhole hops are requested when their iterator is created.
+- Each hop is a leg requested with its REAL waypoint: `SetRouteToPOI` and `TravelToNextWaypoint` request `waypoints[0]` when it is an actual in-system target (never the final `targetPoi`); a cross-system waypoint is a gate/wormhole handoff owned by the jump iterator.
+- A direct gate/wormhole handoff UPGRADES a pending same-origin in-system leg into the jump leg instead of cancelling it, so consumers never see a fictitious `Requested`+`Cancelled` pair.
 - Departure is the observed vacation of the origin (in-system `UnloadCurrentScene` clears the origin POI; jump steps observe the origin changing). Iterator creation is never departure.
-- In-system arrival is observed through the `SpaceshipHasArrived` hierarchy with arrival scopes; jumpgate/wormhole arrival is observed by advancing owned nested iterators (`TravelJumpObserver`) and detecting destination manager readiness, captured before `TravelToNextWaypoint` can start the next leg.
-- `actualFinalRouteCompleted` is emitted once, from the verified `TravelToNextWaypoint` boundary (no remaining waypoints and `TravelActive()==false`), attributed to the leg recorded by the last arrival.
+- In-system arrival is observed through the `SpaceshipHasArrived` hierarchy with arrival scopes; jumpgate/wormhole arrival is observed by advancing owned nested iterators (`TravelJumpObserver`) and detecting destination manager readiness, captured before `TravelToNextWaypoint` can start the next leg. Nested child yields (Unity `WaitUntil`/`CustomYieldInstruction`) carry no lifecycle callbacks: only the root jump iterator terminal/disposal is cancellation, and a completed child never cancels a pending leg.
+- `actualFinalRouteCompleted` is emitted once, from the verified `TravelToNextWaypoint` boundary (no remaining waypoints and `TravelActive()==false`), attributed to the leg recorded by the last arrival. Legs started by `TravelToNextWaypoint` (the in-system legs after a jump or in a fast-lane chain) are requested there, so they produce their own Arrived and can close the route.
 - Departure is only a verified origin->null manager transition (`UnloadCurrentScene` NOOPs are ignored), never a method return.
-- The requested destination is the real nominal target resolved from the `JumpGate` `targetSystemGuid`/`targetPoiGuid` (via the live world) or the wormhole waypoint target; the actual destination (including tutorial rewrites) is preserved on the arrived fact, and requested/origin are retained on the leg.
-- Station facts are distinct from travel legs: physical dock/undocking/leaving are observed from native `DockQuick`/`Dock`/`Undock`/`EmergencyUndock` boundaries (initial loaded-docked state is never a transition), and interior readiness is an attributed nonthrowing `Awake`+`Start` with the exact live instance, station, player and session.
+- The requested destination of a jump is built from the `JumpGate`'s RAW `targetSystemGuid`/`targetPoiGuid` (or the wormhole waypoint target), with no world/name lookup, so a nominal target absent from the current (tutorial/sandbox) map is still a valid request; there is no lazy fallback that could misread a rewritten current POI as the gate. The actual destination (including tutorial rewrites) is preserved on the arrived fact, and requested/origin are retained on the leg.
+- Station facts are distinct from travel legs: physical dock/undocking/leaving are observed from native `DockQuick`/`Dock`/`Undock`/`EmergencyUndock` boundaries, verified by the captured player ship's `DockingState` (Docked/Leaving), and with the initial-load `DockQuick`/`InitializePoi` suppressed as initial state rather than a transition. Interior readiness is an attributed nonthrowing `Awake`+`Start` with the exact live instance, station, player and session (Finalizer-only Awake attribution).
 - Cross-session/replaced/stale evidence and nested base/override arrivals fail closed and idempotently.
 
 ## Coverage matrix
@@ -19,12 +20,12 @@ Issue #12 remains open. Since 0.1.9 the real adapter is implemented and installe
 |---|---|---|---|
 | Same-system routes | Host adapter logic + hook | UNQUALIFIED | Campaign acceptance pending |
 | In-system local POI arrival | `SpaceshipHasArrived` scopes | UNQUALIFIED | Covered by unit tests |
-| Jumpgates | Owned iterator observation | UNQUALIFIED | Cross-hop requested resolved from gate target guid |
-| Tutorial exit | Actual preserved | UNQUALIFIED | Host test only |
-| Wormholes | Owned iterator observation | UNQUALIFIED | |
-| Fast-lane chains | Arrival before next leg | UNQUALIFIED | |
+| Jumpgates | Owned iterator observation | UNQUALIFIED | Cross-hop requested built from raw gate guids (no world lookup) |
+| Tutorial exit | Actual preserved; nominal raw | UNQUALIFIED | Host test only |
+| Wormholes | Owned iterator observation | UNQUALIFIED | Nominal from waypoint target |
+| Fast-lane chains | TravelToNextWaypoint requests each in-system leg | UNQUALIFIED | Each hop has its own leg |
 | Initial load placement | Ready placement observed | UNQUALIFIED | Actively qualified by owner |
-| Dock/undock vs interior ready | Distinct stations | UNQUALIFIED | No universal ordering promise |
+| Dock/undock vs interior ready | Native boundaries + DockingState verification | UNQUALIFIED | Initial-load DockQuick suppressed; no universal ordering promise |
 | Direct field mutation/teleport/cheat | Excluded | — | Not treated as verified travel |
 
 TravelJournal remains archived and must not be edited, rebuilt, reactivated, migrated or bridged. The two active integration targets are Anima's system-visit recorder and Echo's final-route arrival-snap; Echo's distinct ETA-sync remains separate. Native API hook qualification and both consumers remain merge gates for closing #12, not gates satisfied by this reducer.
