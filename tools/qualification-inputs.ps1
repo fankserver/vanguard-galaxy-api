@@ -1,4 +1,10 @@
 # Prepared-input helpers; safe to exercise with synthetic files.
+function Assert-VanillaControlReceipt([string]$Root, $Provenance) {
+    if ($Provenance.PSObject.Properties['vanillaLoadControl'] -and $Provenance.vanillaLoadControl) {
+        $receipt = Join-Path $Root 'vanilla-load-control.txt'
+        if (!(Test-Path -LiteralPath $receipt) -or (Get-Content -LiteralPath $receipt -TotalCount 1) -ne 'PASS') { throw 'Vanilla gameplay control did not complete successfully.' }
+    }
+}
 function Initialize-QualificationAssemblyOverlay([string]$Root, [string]$GameDir) {
     $sourceData = Join-Path $GameDir 'VanguardGalaxy_Data'
     $data = Join-Path $Root 'game\VanguardGalaxy_Data'
@@ -44,6 +50,10 @@ function Assert-QualificationInputs([string]$Root) {
     $provenance = Get-Content -LiteralPath (Join-Path $Root 'build-provenance.json') -Raw | ConvertFrom-Json
     if ($provenance.scenario -notin @('Full','MissingApi','UnavailableApi') -or
         (Get-Content -LiteralPath (Join-Path $Root 'scenario.txt') -Raw).Trim() -cne $provenance.scenario) { throw 'Prepared scenario changed.' }
+    $vanilla = $provenance.PSObject.Properties['vanillaLoadControl'] -and [bool]$provenance.vanillaLoadControl
+    $vanillaMarker = Join-Path $Root 'vanilla-load.enabled'
+    if ([bool]$vanilla -ne (Test-Path -LiteralPath $vanillaMarker -PathType Leaf)) { throw 'Vanilla control selection changed.' }
+    if ($vanilla -and ($provenance.scenario -ne 'MissingApi' -or (Get-Content -LiteralPath $vanillaMarker -Raw).Trim() -ne 'control-v1')) { throw 'Invalid vanilla control marker/scenario.' }
     $overlay = if ($provenance.PSObject.Properties['assemblyOverlay']) { $provenance.assemblyOverlay } else { $null }
     $overlayMarker = Join-Path $Root 'assembly-overlay.hash'
     if ([bool]$overlay -ne (Test-Path -LiteralPath $overlayMarker -PathType Leaf)) { throw 'Assembly overlay selection changed.' }

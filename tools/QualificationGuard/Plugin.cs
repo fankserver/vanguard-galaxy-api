@@ -13,7 +13,7 @@ namespace VGModAPI.QualificationGuard;
 
 // Development-only bootstrap; deliberately has no API assembly dependency.
 [BepInPlugin(Id, "VGModAPI Qualification Isolation", "0.1.0")]
-public sealed class Plugin : BaseUnityPlugin
+public sealed partial class Plugin : BaseUnityPlugin
 {
     private const string Id = "vgmodapi.qualification.guard";
     private static string? _saves;
@@ -90,6 +90,37 @@ public sealed class Plugin : BaseUnityPlugin
             yield return null;
         }
         yield return null;
+        if (File.Exists(Path.Combine(_root!, "vanilla-load.enabled")))
+        {
+            var routine = VanillaLoadControl().GetEnumerator();
+            Exception? controlError = null;
+            while (true)
+            {
+                object? current;
+                try
+                {
+                    if (!routine.MoveNext()) break;
+                    current = routine.Current;
+                }
+                catch (Exception error) { controlError = error; break; }
+                yield return current;
+            }
+            routine.Dispose();
+            if (controlError != null)
+            {
+                var cleanup = ReturnFailedControlToMenu().GetEnumerator();
+                while (true)
+                {
+                    object? current;
+                    try { if (!cleanup.MoveNext()) break; current = cleanup.Current; }
+                    catch (Exception error) { Finish(false, controlError + "\nCleanup: " + error); yield break; }
+                    yield return current;
+                }
+                cleanup.Dispose();
+                Finish(false, controlError.ToString());
+                yield break;
+            }
+        }
         try
         {
             if (_scenario == "MissingApi")
@@ -140,7 +171,7 @@ public sealed class Plugin : BaseUnityPlugin
                 }
             }
             var consumerSelected = File.Exists(Path.Combine(_root!, "stockpile.enabled")) || File.Exists(Path.Combine(_root!, "missionjournal.enabled"));
-            Finish(true, _scenario + (consumerSelected ? "; selected consumer refusal checked." : "; no consumer selected.")
+            Finish(true, _scenario + (File.Exists(Path.Combine(_root!, "vanilla-load.enabled")) ? "; API-absent gameplay load control executed." : "") + (consumerSelected ? "; selected consumer refusal checked." : "; no consumer selected.")
                 + (_assemblyOverlay ? " Actual private modified-identity rejection; no alternate game implementation qualification claimed." : " No alternate game binary qualification claimed."));
         }
         catch (Exception ex) { Finish(false, ex.ToString()); }

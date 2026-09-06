@@ -75,6 +75,26 @@ try {
     try { & $script -Action Cleanup -SandboxRoot $sandbox } catch { $rejected = $true }
     Assert $rejected 'Overlay cleanup traversed an ordinary data junction.'
     Remove-Item -LiteralPath (Join-Path $sandbox 'assembly-overlay.hash')
+    $vanillaRoot = Join-Path $work 'vanilla-control-sandbox'
+    $sandboxes += $vanillaRoot
+    & $script -Action Prepare -SandboxRoot $vanillaRoot -Scenario MissingApi -VanillaLoadControl @options
+    $vanillaProvenance = Assert-QualificationInputs $vanillaRoot
+    $receipt = Join-Path $vanillaRoot 'vanilla-load-control.txt'
+    $rejected = $false
+    try { Assert-VanillaControlReceipt $vanillaRoot $vanillaProvenance } catch { $rejected = $true }
+    Assert $rejected 'Old guard without control receipt accepted.'
+    [IO.File]::WriteAllText($receipt, 'FAIL')
+    $rejected = $false
+    try { Assert-VanillaControlReceipt $vanillaRoot $vanillaProvenance } catch { $rejected = $true }
+    Assert $rejected 'Failed control receipt accepted.'
+    [IO.File]::WriteAllText($receipt, 'PASS')
+    Assert-VanillaControlReceipt $vanillaRoot $vanillaProvenance
+    $vanillaMarker = Join-Path $vanillaRoot 'vanilla-load.enabled'
+    [IO.File]::WriteAllText($vanillaMarker, 'tampered')
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $vanillaRoot } catch { $rejected = $true }
+    Assert $rejected 'Invalid vanilla load control marker accepted.'
+    & $script -Action Cleanup -SandboxRoot $vanillaRoot
     $future = Get-Content (Join-Path $sandbox 'Saves\fixture-future.save') -Raw | ConvertFrom-Json
     Assert ($future.Version -eq '99.0.0.0') 'Future fixture must use valid two-digit-or-shorter version segments.'
     $manifest = Get-Content (Join-Path $sandbox 'original-save-hashes.json') -Raw | ConvertFrom-Json
