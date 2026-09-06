@@ -10,10 +10,6 @@ namespace VGModAPI.Qualification;
 
 public sealed partial class Plugin
 {
-    private static object? _guildProbeMission;
-    private static Exception? _guildProbeFailure;
-    private static void StopProbeFocus(object __0)
-    { if (ReferenceEquals(__0, _guildProbeMission) && _guildProbeFailure != null) throw _guildProbeFailure; }
     private void CheckGuildLaunches()
     {
         if (!File.Exists(Path.Combine(_root!, "mission-transitions.enabled"))) return;
@@ -43,16 +39,13 @@ public sealed partial class Plugin
                 if (old != null && e.Kind == MissionTransitionKind.Removed && access.TryGetNative(e.Mission, out var native) && ReferenceEquals(native, old)) removedOld++;
             });
             var gameObject = new GameObject("VGModAPI disposable guild probe"); gameObject.SetActive(false);
-            var patcher = new Harmony("vgmodapi.qualification.guild." + Guid.NewGuid().ToString("N"));
             bool caught = false; var expected = new InvalidOperationException("VGModAPI intentional stop before focus/travel");
             try
             {
                 var boardType = AccessTools.TypeByName("Behaviour.UI.Spacestation.Location." + kind + "Board");
                 var board = gameObject.AddComponent(boardType);
                 AccessTools.Field(boardType, "selectedMission").SetValue(board, mission);
-                patcher.Patch(AccessTools.Method(AccessTools.TypeByName("FocusedMissionHandler"), "SetMission", new[] { missionBase }),
-                    prefix: new HarmonyMethod(typeof(Plugin).GetMethod(nameof(StopProbeFocus), BindingFlags.NonPublic | BindingFlags.Static)));
-                _guildProbeMission = mission; _guildProbeFailure = expected;
+                ArmNativeMissionProbe("focus", mission, expected);
                 try { boardType.GetMethod("LaunchClicked")!.Invoke(board, null); }
                 catch (TargetInvocationException error) when (ReferenceEquals(error.InnerException, expected)) { caught = true; }
                 Require(caught && ReferenceEquals(slot.GetValue(player), mission), "Guild assignment did not reach the controlled boundary: " + kind);
@@ -60,8 +53,7 @@ public sealed partial class Plugin
             }
             finally
             {
-                _guildProbeMission = null; _guildProbeFailure = null;
-                try { patcher.UnpatchSelf(); }
+                try { ArmNativeMissionProbe("focus", null, null); }
                 finally { slot.SetValue(player, old); counter.SetValue(boardData, oldCounter); UnityEngine.Object.DestroyImmediate(gameObject); }
             }
             Require(ReferenceEquals(slot.GetValue(player), old) && Equals(counter.GetValue(boardData), oldCounter), "Guild probe state restoration failed.");

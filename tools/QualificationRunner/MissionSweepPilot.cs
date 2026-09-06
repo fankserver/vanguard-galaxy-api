@@ -10,12 +10,9 @@ namespace VGModAPI.Qualification;
 
 public sealed partial class Plugin
 {
-    private static object? _clearProbeMap;
-    private static Exception? _clearProbeFailure;
-    private static void StopProbeMapClear(object __instance)
-    {
-        if (ReferenceEquals(__instance, _clearProbeMap) && _clearProbeFailure != null) throw _clearProbeFailure;
-    }
+    private static void ArmNativeMissionProbe(string boundary, object? target, Exception? error) =>
+        AccessTools.Method(AccessTools.TypeByName("VGModAPI.QualificationGuard.Plugin"), "ArmMissionProbe")
+            .Invoke(null, new object?[] { boundary, target, error });
     private void CheckMissionSweepClear()
     {
         if (!File.Exists(Path.Combine(_root!, "mission-transitions.enabled"))) return;
@@ -34,23 +31,20 @@ public sealed partial class Plugin
         AccessTools.Field(missionType, "trackedOnHud").SetValue(mission, false);
         var observed = new List<MissionTransitionKind>();
         using var subscription = api.Subscribe("qualification.mission-clear", e => { if (e.Mission.DefinitionId == id) observed.Add(e.Kind); });
-        var patcher = new Harmony("vgmodapi.qualification.clear." + Guid.NewGuid().ToString("N"));
         var expected = new InvalidOperationException("VGModAPI intentional stop before map mutation");
         bool caught = false;
         try
         {
-            patcher.Patch(AccessTools.Method(map.GetType(), "ClearSectors"), prefix: new HarmonyMethod(typeof(Plugin).GetMethod(nameof(StopProbeMapClear), BindingFlags.NonPublic | BindingFlags.Static)));
-            _clearProbeMap = map; _clearProbeFailure = expected;
+            ArmNativeMissionProbe("clear", map, expected);
             player.GetType().GetMethod("AddMissionWithLog", new[] { missionType, typeof(bool) })!.Invoke(player, new[] { mission, (object)false });
             try { player.GetType().GetMethod("TransitionTutorialToSandbox")!.Invoke(player, null); }
             catch (TargetInvocationException error) when (ReferenceEquals(error.InnerException, expected)) { caught = true; }
-            Require(caught && active.Count == 0, "Actual tutorial clear or exception identity missing.");
+            Require(caught && active.Count == 0, $"Actual tutorial clear or exception identity missing: caught={caught}, remaining={active.Count}.");
             Require(observed.SequenceEqual(new[] { MissionTransitionKind.Accepted, MissionTransitionKind.Removed }), "Bulk clear invented abandonment or lost removal.");
         }
         finally
         {
-            _clearProbeMap = null; _clearProbeFailure = null;
-            try { patcher.UnpatchSelf(); }
+            try { ArmNativeMissionProbe("clear", null, null); }
             finally { active.Clear(); foreach (var value in retained) active.Add(value); }
         }
         Require(active.Count == retained.Length && active.Cast<object>().Zip(retained, ReferenceEquals).All(equal => equal), "Copied mission membership not restored.");
