@@ -523,8 +523,11 @@ internal sealed class TravelNativeAdapter : IDisposable
             var station = _bindings.CurrentLocation(player); // actual player location, not tracking cache
             if (station == null) return;
             Cache(station);
-            // One physical dock per request: native Update can start several Dock() coroutines for the
-            // same docking, so the intent is consumed here and later completions emit nothing.
+            // One physical fact per docking request. Native PerformDocking requires CanDock()
+            // (dockingState != Docking) and sets Docking before StartCoroutine(Dock()), so one
+            // assignment normally yields exactly one coroutine; consuming the intent here is a
+            // defensive guard for any later completion on the same request, not a claim that native
+            // code runs concurrent dock coroutines.
             _dockIntent = null;
             Station.Emit(c.Session, StationTransitionKind.DockedPhysical, station, _bindings.Time(player));
         });

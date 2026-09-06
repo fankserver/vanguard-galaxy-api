@@ -768,8 +768,8 @@ public sealed class TravelNativeAdapterTests
         var ctx = w.Adapter.CaptureDock(option, owner);
         w.Adapter.OnDockedPhysical(ctx);
         Assert.Equal(StationTransitionKind.DockedPhysical, Assert.Single(w.StationFacts).Kind);
-        // Native Update can start several Dock() coroutines for one docking: the consumed intent
-        // keeps the physical fact to exactly ONE.
+        // Defensive: native CanDock()/Docking already prevents a second coroutine per assignment,
+        // but a further completion on the same consumed request must still emit nothing.
         var second = w.Adapter.CreateDockOwner(option);
         w.Adapter.OnDockedPhysical(w.Adapter.CaptureDock(option, second));
         Assert.Single(w.StationFacts);
