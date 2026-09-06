@@ -54,10 +54,15 @@ public sealed class TravelLegTrackerTests
     public void SupersededLegCannotCompleteOrCancelReplacement(bool departed)
     {
         var tracker = new TravelLegTracker(); var session = Guid.NewGuid(); tracker.Reset(session);
+        tracker.PlaceInitially(session, Origin, 0, true);
         var old = tracker.Request(session, Target)!;
         if (departed) tracker.Depart(old, 1);
         tracker.Drain(); var next = tracker.Request(session, Origin)!;
-        Assert.Equal(new[] { TravelLegTracker.Kind.Cancelled, TravelLegTracker.Kind.Requested }, tracker.Drain().Select(f => f.Transition));
+        var replacement = tracker.Drain();
+        Assert.Equal(new[] { TravelLegTracker.Kind.Cancelled, TravelLegTracker.Kind.Requested }, replacement.Select(f => f.Transition));
+        Assert.Same(departed ? null : Origin, tracker.Current);
+        Assert.Same(departed ? null : Origin, replacement[0].Location);
+        Assert.Same(departed ? null : Origin, next.Origin);
         tracker.Arrive(old, Target, 2, true); tracker.Depart(old, 2); tracker.Cancel(old); Assert.Empty(tracker.Drain());
         tracker.Depart(next, 3); tracker.Arrive(next, Origin, 4, true);
         Assert.All(tracker.Drain(), f => Assert.Equal(next.Id, f.Operation)); Assert.NotEqual(old.Id, next.Id);
@@ -87,6 +92,34 @@ public sealed class TravelLegTrackerTests
         var facts = tracker.Drain(); Assert.Equal(9, facts.Length);
         Assert.Equal(3, facts.Select(f => f.Operation).Distinct().Count());
         Assert.Equal(new[] { 1d, 0d, 0d }, facts.Where(f => f.Transition == TravelLegTracker.Kind.Departed).Select(f => f.DwellSeconds!.Value));
+    }
+
+    [Fact]
+    public void InterruptedTravelCanRecoverVerifiedPlacementWithoutFabricatingALeg()
+    {
+        var tracker = new TravelLegTracker(); var session = Guid.NewGuid(); tracker.Reset(session);
+        tracker.PlaceInitially(session, Origin, 1, true); tracker.Drain();
+        var leg = tracker.Request(session, Target)!; tracker.Depart(leg, 2);
+        tracker.RecoverPlacement(session, Target, 3, true); Assert.Null(tracker.Current);
+        tracker.Cancel(leg); Assert.Null(tracker.Drain().Last().Location);
+        tracker.RecoverPlacement(session, Target, 3, false); Assert.Null(tracker.Current);
+        tracker.RecoverPlacement(Guid.NewGuid(), Target, 3, true); Assert.Null(tracker.Current);
+        tracker.RecoverPlacement(session, Target, 4, true);
+        var recovered = Assert.Single(tracker.Drain()); Assert.Equal(TravelLegTracker.Kind.RecoveredPlacement, recovered.Transition);
+        Assert.Null(recovered.Operation); Assert.Same(Target, tracker.Current);
+        tracker.RecoverPlacement(session, Target, 5, true); tracker.Arrive(leg, Target, 5, true); Assert.Empty(tracker.Drain());
+        var next = tracker.Request(session, Origin)!; Assert.Same(Target, next.Origin); tracker.Depart(next, 6);
+        Assert.Equal(2d, tracker.Drain().Last().DwellSeconds);
+    }
+
+    [Fact]
+    public void PendingRequestDoesNotAdoptUnattributedInitialReadiness()
+    {
+        var tracker = new TravelLegTracker(); var session = Guid.NewGuid(); tracker.Reset(session);
+        var leg = tracker.Request(session, Target)!; tracker.Drain();
+        tracker.PlaceInitially(session, Origin, 1, true); Assert.Empty(tracker.Drain()); Assert.Null(leg.Origin);
+        tracker.Cancel(leg); tracker.Drain();
+        tracker.PlaceInitially(session, Origin, 2, true); Assert.Equal(TravelLegTracker.Kind.InitialPlacement, Assert.Single(tracker.Drain()).Transition);
     }
 
     [Fact]

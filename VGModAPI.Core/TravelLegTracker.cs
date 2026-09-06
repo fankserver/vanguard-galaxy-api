@@ -18,7 +18,7 @@ internal sealed class TravelLegTracker
             SystemId = systemId; PoiId = poiId;
         }
     }
-    internal enum Kind { InitialPlacement, Requested, Departed, Arrived, Cancelled }
+    internal enum Kind { InitialPlacement, Requested, Departed, Arrived, Cancelled, RecoveredPlacement }
     internal sealed class Leg
     {
         internal Guid Id { get; } = Guid.NewGuid();
@@ -32,6 +32,8 @@ internal sealed class TravelLegTracker
         internal Guid Session { get; }
         internal Guid? Operation { get; }
         internal Kind Transition { get; }
+        // Requested destination, observed departure/cancellation location, or
+        // actual placement/arrival location, according to Transition.
         internal Place? Location { get; }
         internal double? DwellSeconds { get; }
         internal Fact(Guid session, Guid? operation, Kind transition, Place? location, double? dwell = null)
@@ -55,6 +57,13 @@ internal sealed class TravelLegTracker
         CheckTime(now);
         Current = place ?? throw new ArgumentNullException(nameof(place)); _since = now; _placed = true;
         _facts.Add(new Fact(session, null, Kind.InitialPlacement, place));
+    }
+    internal void RecoverPlacement(Guid session, Place actual, double now, bool ready)
+    {
+        if (_session != session || !_placed || _pending != null || Current != null || !ready) return;
+        CheckTime(now);
+        Current = actual ?? throw new ArgumentNullException(nameof(actual)); _since = now;
+        _facts.Add(new Fact(session, null, Kind.RecoveredPlacement, actual));
     }
     internal Leg? Request(Guid session, Place requested)
     {
