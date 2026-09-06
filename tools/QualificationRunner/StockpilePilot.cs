@@ -128,9 +128,14 @@ public sealed partial class Plugin
         Require(SpCredits == creditsAfter && SpQuantity(sourceId, item) == sourceCount - 1, "Reload duplicated reservation/debit.");
         var beforeFailure = SpJson(SpCall(StockpileEngine, "Snapshot"));
         var blocked = Path.Combine(_saveRoot!, "qa-stockpile-failure.meta");
+        Require(!AlertOpen(), "Unexpected modal before controlled save failure.");
+        _expectedAlertKey = "@ELSaveGameError";
+        _observedAlert = null;
+        _alertCollision = false;
         Directory.CreateDirectory(blocked);
         try { Save("qa-stockpile-failure", LifecycleEventKind.SaveFailed); }
         finally { Directory.Delete(blocked); }
+        foreach (var frame in AcknowledgeRejection("stockpile-save-failure")) yield return frame;
         Require(!File.Exists(StockpilePath("qa-stockpile-failure")) && SpJson(SpCall(StockpileEngine, "Snapshot")) == beforeFailure, "Failed save changed transfer persistence or queue.");
         var protectedPath = StockpilePath("qa-stockpile-protected");
         const string future = "{\"Version\":99,\"Items\":[]}";
