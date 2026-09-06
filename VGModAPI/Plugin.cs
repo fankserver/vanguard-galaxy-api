@@ -12,7 +12,7 @@ using VGModAPI.Runtime;
 
 namespace VGModAPI;
 
-[BepInPlugin(ModApi.PluginId, "Vanguard Galaxy Mod API", "0.1.8")]
+[BepInPlugin(ModApi.PluginId, "Vanguard Galaxy Mod API", "0.1.9")]
 [BepInProcess("VanguardGalaxy.exe")]
 [BepInDependency("vgmodapi.qualification.guard", BepInDependency.DependencyFlags.SoftDependency)]
 public sealed class Plugin : BaseUnityPlugin
@@ -22,6 +22,7 @@ public sealed class Plugin : BaseUnityPlugin
     private GameAdapter? _adapter;
     private PersistenceService? _persistence;
     private MissionAdapter? _missions;
+    private TravelNativeAdapter? _travel;
     private bool _identityHooksBound;
     private void Awake()
     {
@@ -29,6 +30,7 @@ public sealed class Plugin : BaseUnityPlugin
         _hub.SetCapability("session-lifecycle", false, "Not bound.");
         _hub.SetCapability("save-outcomes", false, "Not bound.");
         _hub.SetCapability("world-ready", false, "No universal POI/UI-ready guarantee; GameplayInitialized is narrower.");
+        _hub.SetCapability("native-travel", false, "Not bound; experimental.");
         _hub.SetCapability("save-data", false, "Not initialized; experimental.");
         _hub.SetCapability("mission-continuity", false, "Disabled by configuration; experimental.");
         _hub.SetCapability("mission-transitions", false, "Disabled by configuration; experimental.");
@@ -68,6 +70,8 @@ public sealed class Plugin : BaseUnityPlugin
                 ["store"] = typeof(SavePatches.Store), ["writeFile"] = typeof(SavePatches.WriteFile),
                 ["writeMetadata"] = typeof(SavePatches.WriteMetadata), ["storeFailure"] = typeof(SavePatches.StoreFailure)
             });
+            if (Config.Bind("Travel", "Enabled", false, "Experimental native travel and station observation; use disposable saves until qualified.").Value)
+                InstallTravel(assembly, bindings);
         }
         catch (Exception ex)
         {
@@ -190,12 +194,112 @@ public sealed class Plugin : BaseUnityPlugin
         }
     }
 
-    private void Update() { _adapter?.Poll(); _missions?.Poll(); }
+    private void InstallTravel(Assembly assembly, GameBindings bindings)
+    {
+        _hub!.SetCapability("native-travel", false, "Not bound.");
+        var touched = new List<MethodInfo>();
+        try
+        {
+            var adapter = new TravelNativeAdapter(new TravelNativeBindings(assembly),
+                (owner, ex) => Logger.LogError($"{owner} observer fault: {ex}"));
+            TravelPatches.Adapter = adapter;
+            var resolved = bindings.Resolve(BindingCatalog.Travel);
+            var managerBase = assembly.GetType("Behaviour.Managers.BasePoiManager", true)!;
+            var arrivals = TravelArrivalBindings.Resolve(managerBase);
+            HarmonyMethod? Hook(Type holder, string method)
+            {
+                var info = holder.GetMethod(method, BindingFlags.NonPublic | BindingFlags.Static);
+                return info == null ? null : new HarmonyMethod(info);
+            }
+            void Patch(MethodInfo target, Type holder)
+            {
+                touched.Add(target);
+                _harmony!.Patch(target, prefix: Hook(holder, "Prefix"), postfix: Hook(holder, "Postfix"), finalizer: Hook(holder, "Finalizer"));
+            }
+            // Whole-group resolution before touching anything: a type-load failure must
+            // disable the entire travel group, never leave partial hooks installed.
+            foreach (var arrival in arrivals) Patch(arrival, typeof(TravelPatches.Arrival));
+            foreach (var binding in BindingCatalog.Travel)
+            {
+                var holder = binding.Key switch
+                {
+                    "route" => typeof(TravelPatches.Route),
+                    "cancel" => typeof(TravelPatches.Cancel),
+                    "unloadDeparted" => typeof(TravelPatches.Departure),
+                    "jumpGate" => typeof(TravelPatches.JumpGate),
+                    "jumpWormhole" => typeof(TravelPatches.JumpWormhole),
+                    "travelNextWaypoint" => typeof(TravelPatches.RouteBoundary),
+                    "inSystemWarp" => typeof(TravelPatches.InSystemWarp),
+                    "dockRequest" => typeof(TravelPatches.DockRequest),
+                    "dockAssign" => typeof(TravelPatches.DockAssign),
+                    "dock" => typeof(TravelPatches.Dock),
+                    "undock" => typeof(TravelPatches.Undock),
+                    "emergencyUndock" => typeof(TravelPatches.EmergencyUndock),
+                    "interiorAwake" => typeof(TravelPatches.InteriorAwake),
+                    "interiorStart" => typeof(TravelPatches.InteriorStart),
+                    "interiorDestroy" => typeof(TravelPatches.InteriorDestroy),
+                    _ => throw new InvalidOperationException("Unknown travel binding: " + binding.Key)
+                };
+                Patch(resolved[binding.Key], holder);
+            }
+            _travel = adapter;
+            ModApi.Travel = adapter.Events;
+            ModApi.Station = adapter.Station;
+            _hub!.SetCapability("native-travel", true, "Bound to inspected assembly; in-game qualification pending.");
+        }
+        catch (Exception ex)
+        {
+            foreach (var method in touched) { try { _harmony!.Unpatch(method, HarmonyPatchType.All, ModApi.PluginId); } catch { } }
+            TeardownTravel("Binding failed: " + ex.Message, ex);
+        }
+    }
+
+    private void TeardownTravel(string reason, Exception? ex = null)
+    {
+        if (_travel != null)
+        {
+            _travel.SetSession(null); _travel.Dispose(); _travel = null;
+        }
+        TravelPatches.Adapter = null;
+        ModApi.Travel = null; ModApi.Station = null;
+        _hub?.SetCapability("native-travel", false, reason);
+        Logger.LogError(ex == null ? reason : reason + " " + ex);
+    }
+
+    private void Update()
+    {
+        _adapter?.Poll(); _missions?.Poll();
+        if (_travel != null)
+        {
+            // A genuine travel adapter fault (main-thread violation) disables the whole group.
+            if (_travel.IsFaulted)
+            {
+                TeardownTravel("Travel observer fault; capability disabled.");
+                return;
+            }
+            var session = _hub?.CurrentSession;
+            var active = session != null && session.Phase is SessionPhase.PlayerReady or SessionPhase.GameplayInitialized;
+            _travel.SetSession(session != null && active ? session.Id : (Guid?)null);
+            if (active)
+            {
+                try
+                {
+                    var travel = _travel.Bindings.TravelManager();
+                    var player = travel == null ? null : _travel.Bindings.Player;
+                    var manager = travel == null ? null : _travel.Bindings.LocalManager(travel);
+                    _travel.Tick(player, manager);
+                }
+                catch (Exception error) { Logger.LogError($"Travel tick fault: {error}"); }
+            }
+        }
+    }
     private void OnDestroy()
     {
         _adapter?.Guard(() => _adapter.Invalidate("API shutting down."));
         _missions?.Dispose(); _missions = null;
         MissionPatches.Adapter = null; ModApi.Missions = null;
+        _travel?.SetSession(null); _travel?.Dispose(); _travel = null;
+        TravelPatches.Adapter = null; ModApi.Travel = null; ModApi.Station = null;
         _persistence?.Dispose();
         ModApi.Persistence = null;
         _harmony?.UnpatchSelf();

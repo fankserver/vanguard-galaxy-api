@@ -27,18 +27,21 @@ internal sealed class GameBindings
     private FieldInfo Field(string type, string name, string fieldType, bool isStatic)
     {
         var result = Assembly.GetType(type, true)!.GetField(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly);
-        if (result == null || result.FieldType.FullName != fieldType || result.IsStatic != isStatic)
+        if (result == null || !NativeTypeName.Matches(result.FieldType, fieldType) || result.IsStatic != isStatic)
             throw new MissingFieldException(type, name);
         return result;
     }
+    // Declared native type names are compared in the catalog's canonical spelling (see
+    // NativeTypeName): reflection's FullName differs for constructed generics, which is what made
+    // the CancelTravel(Nullable<Vector2>) binding unresolvable at runtime while metadata tests passed.
     internal Dictionary<string, MethodInfo> Resolve(IEnumerable<MethodBinding> bindings)
     {
         var result = new Dictionary<string, MethodInfo>();
         foreach (var b in bindings)
         {
             var target = Assembly.GetType(b.Type, true)!.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly)
-                .SingleOrDefault(m => m.Name == b.Name && m.IsStatic == b.Static && m.ReturnType.FullName == b.ReturnType
-                    && m.GetParameters().Select(p => p.ParameterType.FullName).SequenceEqual(b.Parameters));
+                .SingleOrDefault(m => m.Name == b.Name && m.IsStatic == b.Static && NativeTypeName.Matches(m.ReturnType, b.ReturnType)
+                    && m.GetParameters().Select(p => NativeTypeName.Canonical(p.ParameterType)).SequenceEqual(b.Parameters, StringComparer.Ordinal));
             result[b.Key] = target ?? throw new MissingMethodException(b.Type, b.Name);
         }
         return result;

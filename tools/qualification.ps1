@@ -19,6 +19,7 @@ param(
     [switch]$MissionTransitionsProbe,
     [switch]$MissionIdentityProbe,
     [switch]$JournalMissionEventsProbe,
+    [switch]$TravelStation,
     [string]$BuildRevision = 'unknown',
     [switch]$Diagnostics,
     [ValidateSet('Full','MissingApi','UnavailableApi')][string]$Scenario = 'Full',
@@ -63,6 +64,7 @@ if ($Action -eq 'Prepare') {
     if ($JournalMissionEventsProbe -and (!$JournalCoordinated -or !$MissionIdentityProbe)) { throw 'Journal mission events require API-managed journal and mission identity probes.' }
     if ($MissionIdentityProbe -and (!$MissionTransitionsProbe -or !$PersistenceProbe)) { throw 'Mission identity probe requires mission transitions and persistence probes.' }
     if ($MissionTransitionsProbe -and $Scenario -ne 'Full') { throw 'Mission transitions probe requires Full.' }
+    if ($TravelStation -and $Scenario -ne 'Full') { throw 'Travel/station pilot requires Full.' }
     if ($ContentReferenceProbe -and $Scenario -ne 'Full') { throw 'Content reference probe requires Full.' }
     if ($JournalCoordinated -and (!$PersistenceProbe -or !$MissionJournalBin)) { throw 'Coordinated journal requires persistence probe and journal binary.' }
     if ($StockpileCoordinated -and (!$JournalCoordinated -or !$StockpileBin)) { throw 'Coordinated Stockpile requires coordinated journal and Stockpile binary.' }
@@ -190,7 +192,11 @@ if ($Action -eq 'Prepare') {
         [IO.File]::AppendAllText((Join-Path $bep 'config\vgmissionjournal.cfg'), "`r`n[Missions]`r`nUseApiMissionEvents = true`r`n")
         [IO.File]::WriteAllText((Join-Path $root 'journal-mission-events.enabled'), 'journal-events-v1')
     }
-    @{ anima=[bool]$AnimaBin; animaRevision=$AnimaRevision; journalMissionEventsProbe=[bool]$JournalMissionEventsProbe; missionIdentityProbe=[bool]$MissionIdentityProbe; missionTransitionsProbe=[bool]$MissionTransitionsProbe; contentReferenceProbe=[bool]$ContentReferenceProbe; stockpileCoordinated=[bool]$StockpileCoordinated; journalCoordinated=[bool]$JournalCoordinated; persistenceProbe=[bool]$PersistenceProbe; vanillaLoadControl=[bool]$VanillaLoadControl; assemblyOverlay=$overlay; stockpile=[bool]$StockpileBin; missionJournal=[bool]$MissionJournalBin; scenario=$Scenario; revision=$BuildRevision; preparedUtc=[DateTime]::UtcNow.ToString('o'); plugins=$hashes } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'build-provenance.json')
+    if ($TravelStation) {
+        [IO.File]::AppendAllText((Join-Path $bep 'config\vgmodapi.cfg'), "`r`n[Travel]`r`nEnabled = true`r`n")
+        [IO.File]::WriteAllText((Join-Path $root 'travel-station.enabled'), 'travel-v1')
+    }
+    @{ anima=[bool]$AnimaBin; animaRevision=$AnimaRevision; journalMissionEventsProbe=[bool]$JournalMissionEventsProbe; missionIdentityProbe=[bool]$MissionIdentityProbe; missionTransitionsProbe=[bool]$MissionTransitionsProbe; contentReferenceProbe=[bool]$ContentReferenceProbe; stockpileCoordinated=[bool]$StockpileCoordinated; journalCoordinated=[bool]$JournalCoordinated; persistenceProbe=[bool]$PersistenceProbe; vanillaLoadControl=[bool]$VanillaLoadControl; assemblyOverlay=$overlay; stockpile=[bool]$StockpileBin; missionJournal=[bool]$MissionJournalBin; travelStation=[bool]$TravelStation; travelStationBudgetSeconds=$(if ($TravelStation) { $TravelStationBudgetSeconds } else { 0 }); scenario=$Scenario; revision=$BuildRevision; preparedUtc=[DateTime]::UtcNow.ToString('o'); plugins=$hashes } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'build-provenance.json')
     # Prevent Steam's restart path; the runner disables SteamManager before arming checks.
     [IO.File]::WriteAllText((Join-Path $game 'steam_appid.txt'), '3471800')
     $saves = Join-Path $root 'Saves'
@@ -241,6 +247,13 @@ if ($Action -eq 'Cleanup') {
 }
 Assert-QualificationUnused $root
 $provenance = Assert-QualificationInputs $root
+# The travel/station phase adds its own bounded waits on top of every existing Full pilot, so the
+# process lifetime must be reserved BEFORE launching: a launcher kill mid-phase would otherwise
+# destroy a run that cannot finish. -TimeoutSeconds is the existing lifetime knob.
+if ($provenance.PSObject.Properties['travelStation'] -and $provenance.travelStation) {
+    $required = $QualificationBaseTimeoutSeconds + $TravelStationBudgetSeconds
+    if ($TimeoutSeconds -lt $required) { throw "Travel/station runs need -TimeoutSeconds at least $required (base $QualificationBaseTimeoutSeconds + phase $TravelStationBudgetSeconds); got $TimeoutSeconds." }
+}
 $journalBefore = @{}
 if ($provenance.PSObject.Properties['journalCoordinated'] -and $provenance.journalCoordinated) {
     foreach ($file in Get-ChildItem -LiteralPath (Join-Path $root 'Saves') -Filter '*.vgmissionjournal.json' -File) { $journalBefore[$file.Name] = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash }
@@ -258,19 +271,29 @@ $prefsFile = Join-Path $root 'playerprefs-before.reg'
 $hadPrefs = Save-QualificationPrefs $prefsNative $prefsFile
 $exe = Join-Path $game 'VanguardGalaxy.exe'
 $process = $null
+$outcome = @{ timedOut = $false; killed = $false; exitCode = $null }
 try {
     $arguments = @('--fse-shim-applied','-screen-fullscreen','0','-logFile', ('"' + (Join-Path $root 'Player.log') + '"'), '--vgmodapi-qualification-root', ('"' + $root + '"'))
     if ($Diagnostics) { $arguments += '--vgmodapi-qualification-diagnostics' }
-    $process = Start-Process -FilePath $exe -WorkingDirectory $game -ArgumentList $arguments -PassThru
+    # The handle is cached inside the helper before any wait, so a genuine exit code is observable.
+    $process = Start-QualificationProcess $exe $game $arguments
     @{ pid=$process.Id; executable=$exe } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $root 'process.json')
-    if (!$process.WaitForExit($TimeoutSeconds * 1000)) { throw 'Owned game process timed out.' }
+    $outcome = Wait-QualificationProcess $process $TimeoutSeconds
 }
 finally {
     try {
-        if ($null -ne $process -and !$process.HasExited) { $process.Kill(); $process.WaitForExit() }
-        Get-Process VanguardGalaxy -ErrorAction SilentlyContinue | Where-Object { $_.Path -ieq $exe } | ForEach-Object { Stop-Process -InputObject $_; $_.WaitForExit() }
+        if ($null -ne $process -and !$process.HasExited) { $outcome.killed = $true; $process.Kill(); $null = $process.WaitForExit(30000) }
+        if ($null -ne $process -and $null -eq $outcome.exitCode -and $process.HasExited) { $outcome.exitCode = $process.ExitCode }
+        Get-Process VanguardGalaxy -ErrorAction SilentlyContinue | Where-Object { $_.Path -ieq $exe } | ForEach-Object { $outcome.killed = $true; Stop-Process -InputObject $_; $_.WaitForExit() }
     }
     finally {
+        # Diagnostic finalization: record exactly how the owned process ended, with no claim beyond
+        # it. Receipt validation refuses a terminated run, so an incomplete pilot cannot look green.
+        @{ timedOut=$outcome.timedOut; killed=$outcome.killed; exitCode=$outcome.exitCode;
+           selfTerminated=($null -ne $outcome.exitCode -and [int]$outcome.exitCode -eq $GameSelfTerminationExitCode);
+           timeoutSeconds=$TimeoutSeconds; endedUtc=[DateTime]::UtcNow.ToString('o') } |
+            ConvertTo-Json | Set-Content -LiteralPath (Join-Path $root 'run-outcome.json')
+        if ($null -ne $process) { $process.Dispose(); $process = $null }
         try {
             Restore-QualificationPrefs $prefsNative $prefsFile $hadPrefs
             [IO.File]::WriteAllText((Join-Path $root 'playerprefs-restored.txt'), 'PASS')
@@ -292,6 +315,7 @@ finally {
         }
     }
 }
+if ($outcome.timedOut) { throw 'Owned game process timed out.' }
 $result = Join-Path $root 'result.txt'
 if (Test-Path -LiteralPath $result) { Get-Content -LiteralPath $result }
 if ($null -ne $negativeBefore) {

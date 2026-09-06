@@ -65,4 +65,8 @@ public static class ModApi
     public static IPersistenceApi? Persistence { get; internal set; }
     /// <summary>Optional mission observer. Availability does not establish persistent instance continuity.</summary>
     public static IMissionEvents? Missions { get; internal set; }
+    /// <summary>Optional native travel observer; non-null only when the travel group is bound and enabled.</summary>
+    public static ITravelEvents? Travel { get; internal set; }
+    /// <summary>Optional station-lifetime observer; non-null only when the travel group is bound and enabled.</summary>
+    public static IStationEvents? Station { get; internal set; }
 }

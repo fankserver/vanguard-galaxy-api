@@ -264,6 +264,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         foreach (var frame in CheckMissionIdentity()) yield return frame;
         foreach (var frame in CheckAnimaMissions()) yield return frame;
         foreach (var frame in CheckStockpilePilot()) yield return frame;
+        foreach (var frame in CheckTravelStation()) yield return frame;
         foreach (var frame in CheckJournalTeardown()) yield return frame;
         foreach (var frame in RemainingLifecyclePilot()) yield return frame;
         foreach (var frame in PersistencePilot()) yield return frame;
@@ -408,16 +409,19 @@ public sealed partial class Plugin : BaseUnityPlugin
     }
 
     // A harness grace period, not an API guarantee of UI/world readiness.
+    // Named so a phase that has to budget process time can reference the shared values.
+    internal const float SettleSeconds = 2;
+    internal const float WaitDeadlineSeconds = 90;
     private static IEnumerable<object?> Settle()
     {
         Time.timeScale = 1;
-        float until = Time.realtimeSinceStartup + 2;
+        float until = Time.realtimeSinceStartup + SettleSeconds;
         do { yield return null; } while (Time.realtimeSinceStartup < until);
     }
 
     private IEnumerable<object?> Wait(Func<bool> ready, string description, bool allowFailure = false)
     {
-        float deadline = Time.realtimeSinceStartup + 90;
+        float deadline = Time.realtimeSinceStartup + WaitDeadlineSeconds;
         while (!ready())
         {
             Require(_newGameError == null, "Native new-game configuration failed: " + _newGameError);
@@ -434,6 +438,10 @@ public sealed partial class Plugin : BaseUnityPlugin
         if (_root != null && File.Exists(Path.Combine(_root, "qualification.marker")))
             File.WriteAllText(Path.Combine(_root, "result.txt"), (passed ? "PASS\n" : "FAIL\n") + string.Join("\n", _passed) + "\n" + detail);
         // Do not restore the original save path or unpatch safety guards before vanilla quit handling.
+        // The verdict travels in result.txt, not in this code: the game's own
+        // ApplicationQuitHandler.OnApplicationQuit autosaves and then calls
+        // Process.GetCurrentProcess().Kill(), so the process always reports the Mono Kill status
+        // (TerminateProcess(handle, -1)) and never this argument.
         Application.Quit(passed ? 0 : 1);
     }
 

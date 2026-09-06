@@ -65,3 +65,37 @@ public interface ITravelEvents
     bool IsDispatchingCallbacks { get; }
     IDisposable Subscribe(string owner, Action<TravelTransition> callback);
 }
+
+/// <summary>Station-lifetime facts are deliberately distinct from travel legs and from the
+/// physical dock state: an async dock/interior request is not readiness, and interior
+/// readiness (attributed nonthrowing Awake + Start) is not physical dock completion.</summary>
+public enum StationTransitionKind { DockedPhysical, Undocking, Leaving, InteriorReady, InteriorDestroyed }
+
+/// <summary>Immutable observed station-lifetime fact. The station location is opaque and may be
+/// null while the ship state is transitional (for example early undocking). Initial load placement
+/// is represented by travel placement facts; this surface records real dock/interior state changes.</summary>
+public sealed class StationTransition
+{
+    public Guid SessionId { get; }
+    public long Sequence { get; }
+    public StationTransitionKind Kind { get; }
+    public TravelLocation? Station { get; }
+    public double GameSeconds { get; }
+    public StationTransition(Guid sessionId, long sequence, StationTransitionKind kind, TravelLocation? station, double gameSeconds)
+    {
+        if (sessionId == Guid.Empty) throw new ArgumentException("Nonempty session identity required.", nameof(sessionId));
+        if (sequence < 1) throw new ArgumentOutOfRangeException(nameof(sequence));
+        if (!Enum.IsDefined(typeof(StationTransitionKind), kind)) throw new ArgumentOutOfRangeException(nameof(kind));
+        if (double.IsNaN(gameSeconds) || double.IsInfinity(gameSeconds) || gameSeconds < 0) throw new ArgumentOutOfRangeException(nameof(gameSeconds));
+        SessionId = sessionId; Sequence = sequence; Kind = kind; Station = station; GameSeconds = gameSeconds;
+    }
+}
+
+/// <summary>Main-thread-only station-lifetime observations. DockedPhysical reflects an observed
+/// physical dock state, not the onDocked request that fires before docking completes.</summary>
+public interface IStationEvents
+{
+    Guid? SessionId { get; }
+    bool IsDispatchingCallbacks { get; }
+    IDisposable Subscribe(string owner, Action<StationTransition> callback);
+}
