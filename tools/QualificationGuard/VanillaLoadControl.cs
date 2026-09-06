@@ -79,7 +79,11 @@ public sealed partial class Plugin
             }
             var settle = Time.realtimeSinceStartup + 2;
             while (Time.realtimeSinceStartup < settle) yield return null;
-            Require((bool)initialized.GetValue(gameplayField.GetValue(null))!, "Vanilla initialized state did not persist.");
+            var settledPlayer = playerField.GetValue(null);
+            var settledGameplay = gameplayField.GetValue(null) as UnityEngine.Object;
+            Require(settledPlayer != null && !ReferenceEquals(settledPlayer, previous) && settledGameplay
+                && SceneManager.GetSceneByName("Gameplay").isLoaded && (bool)initialized.GetValue(settledGameplay)!, "Vanilla initialized state did not persist.");
+            Require(_orbitFailure == null, "Observed vanilla orbit failure: " + _orbitFailure);
             Logger.LogInfo("QA PASS: copied gameplay initialization without API lifecycle hooks: " + name);
             previous = playerField.GetValue(null);
             // Match Full's direct replacement load; GameManager cleans the previous player.
@@ -90,11 +94,13 @@ public sealed partial class Plugin
             deadline = Time.realtimeSinceStartup + 90;
             while (playerField.GetValue(null) != null || !SceneManager.GetSceneByName("Main Menu").isLoaded || SceneManager.GetSceneByName("Gameplay").isLoaded)
             {
+                Require(_orbitFailure == null, "Observed vanilla orbit failure: " + _orbitFailure);
                 Require(Time.realtimeSinceStartup < deadline, "Vanilla control menu return timeout.");
                 yield return null;
             }
             yield return null; // Let the newly loaded menu run Start before the next load.
         }
+        Require(_orbitFailure == null, "Observed vanilla orbit failure: " + _orbitFailure);
         Require(!Chainloader.PluginInfos.ContainsKey("vgmodapi"), "API appeared during vanilla control.");
         File.WriteAllText(Path.Combine(_root!, "vanilla-load-control.txt"), "PASS\nTwo copied loads initialized without API lifecycle hooks; original historical failure cause is not established.");
     }

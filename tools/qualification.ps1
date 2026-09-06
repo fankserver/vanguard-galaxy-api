@@ -226,6 +226,6 @@ if ($null -ne $negativeBefore) {
     [IO.File]::WriteAllText((Join-Path $root 'negative-consumer-files-unchanged.txt'), 'PASS')
 }
 $null = Assert-QualificationInputs $root
-Assert-VanillaControlReceipt $root $provenance
 if (!(Test-Path -LiteralPath $result)) { throw 'Game exited without a qualification result; inspect sandbox logs.' }
+Assert-VanillaControlReceipt $root $provenance
 if ((Get-Content -LiteralPath $result -TotalCount 1) -ne 'PASS') { throw 'Qualification failed; inspect sandbox logs.' }
