@@ -12,7 +12,7 @@ using VGModAPI.Runtime;
 
 namespace VGModAPI;
 
-[BepInPlugin(ModApi.PluginId, "Vanguard Galaxy Mod API", "0.1.5")]
+[BepInPlugin(ModApi.PluginId, "Vanguard Galaxy Mod API", "0.1.6")]
 [BepInProcess("VanguardGalaxy.exe")]
 [BepInDependency("vgmodapi.qualification.guard", BepInDependency.DependencyFlags.SoftDependency)]
 public sealed class Plugin : BaseUnityPlugin
@@ -110,7 +110,7 @@ public sealed class Plugin : BaseUnityPlugin
             _missions = new MissionAdapter(_hub, new MissionBindings(assembly), ex => Logger.LogError($"Mission observer fault: {ex}"));
             MissionPatches.Adapter = _missions;
             InstallGroup("mission-transitions", new GameBindings(assembly), BindingCatalog.Missions,
-                BindingCatalog.Missions.ToDictionary(binding => binding.Key, _ => typeof(MissionPatches)));
+                BindingCatalog.Missions.ToDictionary(binding => binding.Key, binding => binding.Key.StartsWith("missionSweep", StringComparison.Ordinal) ? typeof(MissionSweepPatches) : typeof(MissionPatches)));
             if (_hub.Capabilities.Any(c => c.Name == "mission-transitions" && c.Available)) ModApi.Missions = _missions.Events;
             else { _missions.Dispose(); _missions = null; MissionPatches.Adapter = null; }
         }

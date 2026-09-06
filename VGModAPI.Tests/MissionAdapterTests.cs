@@ -16,15 +16,80 @@ public sealed class MissionAdapterTests : IDisposable
     private readonly MissionAdapter _adapter;
     private readonly GamePlayer _player = new();
     private readonly List<MissionTransition> _events = new();
+    private readonly List<Exception> _errors = new();
     public MissionAdapterTests()
     {
         GamePlayer.current = _player;
-        _adapter = new MissionAdapter(_hub, new MissionBindings(typeof(GamePlayer).Assembly), _ => { });
+        _adapter = new MissionAdapter(_hub, new MissionBindings(typeof(GamePlayer).Assembly), _errors.Add);
         _adapter.Events.Subscribe("test", _events.Add);
         var id = _hub.Begin(SessionOrigin.SaveLoad, "test.save"); _hub.PlayerReady(id); _hub.GameplayInitialized(id);
     }
     public void Dispose() { _adapter.Dispose(); _hub.Dispose(); GamePlayer.current = null; }
 
+    [Fact]
+    public void SubscriberErrorsNameOwnerWithoutFaultingObservation()
+    {
+        using var broken = _adapter.Events.Subscribe("broken-owner", _ => throw new Exception("injected"));
+        Accept(new Mission()); Accept(new Mission());
+        Assert.Equal(2, _events.Count); Assert.Equal(2, _errors.Count);
+        Assert.All(_errors, error => Assert.Contains("broken-owner", error.Message));
+    }
+    [Fact]
+    public void SweepUnwindsDanglingInnerCall()
+    {
+        var mission = new Mission(); var sweep = _adapter.BeginSweep()!;
+        var call = _adapter.Begin("accept", _player, mission)!; _player.missions.Add(mission);
+        _adapter.EndSweep(sweep); _adapter.End(call);
+        Assert.Equal(MissionTransitionKind.Accepted, Assert.Single(_events).Kind);
+    }
+    [Fact]
+    public void UnobservedReinsertionBeforeSweepIsNotAnAcceptanceInsideIt()
+    {
+        var mission = new Mission(); Accept(mission);
+        var removal = _adapter.Begin("remove", _player, mission)!; _player.missions.Remove(mission); _adapter.End(removal);
+        _player.missions.Add(mission); var sweep = _adapter.BeginSweep()!; _adapter.EndSweep(sweep);
+        Assert.Equal(2, _events.Count);
+    }
+    [Fact]
+    public void GuildWaveCompletionPrecedesNewAssignmentWithoutDuplicateRemoval()
+    {
+        var old = new Mission(); var start = _adapter.BeginSweep()!;
+        _player.currentIndustry = old; _adapter.EndSweep(start);
+        var wave = _adapter.BeginSweep()!;
+        var claim = _adapter.Begin("claim", null, old)!;
+        var removal = _adapter.Begin("remove", _player, old, true)!;
+        _player.currentIndustry = null; _adapter.End(removal); _adapter.End(claim);
+        _player.currentIndustry = new Mission(); _adapter.EndSweep(wave);
+        Assert.Equal(new[] { MissionTransitionKind.Accepted, MissionTransitionKind.Completed, MissionTransitionKind.Accepted }, _events.Select(e => e.Kind));
+        Assert.NotEqual(_events[0].Mission.InstanceId, _events[2].Mission.InstanceId);
+    }
+    [Fact]
+    public void IneligibleBaseClaimFollowedByWaveReplacementIsNotCompletion()
+    {
+        var old = new Mission(); var start = _adapter.BeginSweep()!;
+        _player.currentPatrol = old; _adapter.EndSweep(start);
+        var wave = _adapter.BeginSweep()!;
+        var claim = _adapter.Begin("claim", null, old)!; _adapter.End(claim);
+        _player.currentPatrol = new Mission(); _adapter.EndSweep(wave);
+        Assert.Equal(new[] { MissionTransitionKind.Accepted, MissionTransitionKind.Removed, MissionTransitionKind.Accepted }, _events.Select(e => e.Kind));
+    }
+    [Fact]
+    public void BulkClearReportsRemovalNotAbandonment()
+    {
+        Accept(new Mission()); Accept(new Mission()); var sweep = _adapter.BeginSweep()!;
+        _player.missions.Clear(); _adapter.EndSweep(sweep);
+        Assert.Equal(new[] { MissionTransitionKind.Removed, MissionTransitionKind.Removed }, _events.Skip(2).Select(e => e.Kind));
+    }
+    [Fact]
+    public void TransientGuildInsertionIsWitnessedBeforeFailureAndRemoval()
+    {
+        var mission = new Mission(); var sweep = _adapter.BeginSweep()!; _player.currentBounty = mission;
+        var failure = _adapter.Begin("fail", null, mission)!; mission.failed = true;
+        var removal = _adapter.Begin("remove", _player, mission)!; _player.currentBounty = null;
+        _adapter.End(removal); _adapter.End(failure); _adapter.EndSweep(sweep);
+        Assert.Equal(new[] { MissionTransitionKind.Accepted, MissionTransitionKind.Failed, MissionTransitionKind.Removed }, _events.Select(e => e.Kind));
+        Assert.Single(_events.Select(e => e.Mission.InstanceId).Distinct());
+    }
     [Fact]
     public void RestorationPrecedesLaterPlayerReadySubscribers()
     {

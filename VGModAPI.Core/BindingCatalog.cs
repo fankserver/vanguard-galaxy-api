@@ -39,7 +39,13 @@ internal static class BindingCatalog
         new("missionStart", Mission, "OnMissionStart", false, "System.Void"),
         new("missionAccept", Player, "AddMissionWithLog", false, "System.Void", Mission, "System.Boolean"),
         new("missionClaim", Mission, "ClaimRewards", false, "System.Void", "System.Boolean"),
-        new("missionFail", Mission, "MissionFailed", false, "System.Void", "System.String")
+        new("missionFail", Mission, "MissionFailed", false, "System.Void", "System.String"),
+        new("missionSweepIndustryWave", "Source.MissionSystem.IndustryMission", "ClaimRewards", false, "System.Void", "System.Boolean"),
+        new("missionSweepPatrolWave", "Source.MissionSystem.PatrolMission", "ClaimRewards", false, "System.Void", "System.Boolean"),
+        new("missionSweepBountyLaunch", "Behaviour.UI.Spacestation.Location.BountyBoard", "LaunchClicked", false, "System.Void"),
+        new("missionSweepPatrolLaunch", "Behaviour.UI.Spacestation.Location.PatrolBoard", "LaunchClicked", false, "System.Void"),
+        new("missionSweepIndustryLaunch", "Behaviour.UI.Spacestation.Location.IndustryBoard", "LaunchClicked", false, "System.Void"),
+        new("missionSweepTutorialClear", Player, "TransitionTutorialToSandbox", false, "System.Void")
     };
     internal static readonly MethodBinding[] Saves =
     {

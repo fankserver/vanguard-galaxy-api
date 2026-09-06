@@ -249,6 +249,8 @@ public sealed partial class Plugin : BaseUnityPlugin
         foreach (var frame in NewGameAndSpaceLoad()) yield return frame;
         CheckContentReferences();
         CheckMissionTransitions();
+        CheckMissionSweepClear();
+        CheckGuildLaunches();
         foreach (var frame in CheckStockpilePilot()) yield return frame;
         foreach (var frame in CheckJournalTeardown()) yield return frame;
         foreach (var frame in RemainingLifecyclePilot()) yield return frame;

@@ -2,7 +2,7 @@
 
 Unofficial community mod API for Vanguard Galaxy, using BepInEx 5 and HarmonyX.
 
-**0.1.5 development / experimental: automatically tested and partially exercised in-game, not fully runtime-qualified.** This is a core lifecycle foundation, not a complete modding SDK. MissionJournal and Stockpile use the lifecycle API; controlled qualification is recorded, with complete owner acceptance still separate.
+**0.1.6 development / experimental: automatically tested and partially exercised in-game, not fully runtime-qualified.** This is a core lifecycle foundation, not a complete modding SDK. MissionJournal and Stockpile use the lifecycle API; controlled qualification is recorded, with complete owner acceptance still separate.
 
 ## Implemented
 

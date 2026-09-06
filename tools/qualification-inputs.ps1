@@ -1,8 +1,10 @@
 # Prepared-input helpers; safe to exercise with synthetic files.
 function Assert-PersistenceProbeReceipt([string]$Root, $Provenance) {
     if ($Provenance.PSObject.Properties['missionTransitionsProbe'] -and $Provenance.missionTransitionsProbe) {
-        $receipt = Join-Path $Root 'mission-transitions.txt'
-        if (!(Test-Path -LiteralPath $receipt) -or (Get-Content -LiteralPath $receipt -TotalCount 1) -ne 'PASS') { throw 'Mission transitions probe did not complete.' }
+        foreach ($name in @('mission-transitions.txt','mission-clear.txt','mission-guild.txt')) {
+            $receipt = Join-Path $Root $name
+            if (!(Test-Path -LiteralPath $receipt) -or (Get-Content -LiteralPath $receipt -TotalCount 1) -ne 'PASS') { throw "Mission probe did not complete: $name" }
+        }
     }
     if ($Provenance.PSObject.Properties['contentReferenceProbe'] -and $Provenance.contentReferenceProbe) {
         $receipt = Join-Path $Root 'content-reference.txt'

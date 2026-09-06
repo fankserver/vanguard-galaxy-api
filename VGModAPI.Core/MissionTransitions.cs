@@ -78,6 +78,15 @@ internal sealed class MissionTransitions : IMissionEvents, IVersionSensitiveMiss
         _dispatchSnapshot = null; _dispatchIdentity = null;
         _epoch++; _session = session; _entries = new(); _pending.Clear(); _stack.Clear();
     }
+    internal bool WasRemoved(object identity)
+    { CheckThread(); return _entries.TryGetValue(identity, out var entry) && entry.Removed; }
+    internal bool WasRemovedSince(object identity, long order)
+    { CheckThread(); return _entries.TryGetValue(identity, out var entry) && entry.Removed && entry.RemovedOrder > order; }
+    internal bool HasActiveOccurrence(object identity)
+    {
+        CheckThread(); return _entries.TryGetValue(identity, out var entry) && !entry.Removed &&
+            (entry.Seen.Contains(MissionTransitionKind.Accepted) || entry.Seen.Contains(MissionTransitionKind.Restored));
+    }
     internal Observation Begin()
     {
         CheckThread(); if (_disposed) throw new ObjectDisposedException(nameof(MissionTransitions));
