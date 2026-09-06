@@ -57,7 +57,22 @@ internal static class TravelCrossSystemReceipt
     /// <summary>Bounded deadline for the opt-in native wormhole fixture creation and its verification.</summary>
     internal const float FixtureCreationSeconds = 30;
     /// <summary>Process time the launcher reserves for this phase (mirrors $TravelCrossSystemBudgetSeconds).</summary>
-    internal const float LauncherReservationSeconds = 2100;
+    internal const float LauncherReservationSeconds = 2400;
+
+    // Per-case wait multiplicities, named after the driver call sites they come from, so the plan
+    // below is DERIVED from the case count instead of hand-counted. A hand-typed occurrence is
+    // exactly how the route boundary was previously under-declared (once instead of twice per
+    // case), which understated the published budget.
+    /// <summary>Fixture load plus travel-service binding, once each per case (TravelCrossSystemDriver.Prepare).</summary>
+    internal const int LoadWaitsPerCase = 2;
+    /// <summary>The approach route boundary and the cross-system route boundary (DriveCrossSystemRoute).</summary>
+    internal const int RouteBoundariesPerCase = 2;
+    /// <summary>Settle after preparation, after the approach and after the cross hop.</summary>
+    internal const int SettlesPerCase = 3;
+    /// <summary>The restoring fixture load that follows the last case.</summary>
+    internal const int RestoringLoadWaits = 1;
+    /// <summary>Settle after the restoring load and after the opt-in fixture creation.</summary>
+    internal const int PhaseLevelSettles = 2;
 
     internal sealed class PhaseWait
     {
@@ -68,21 +83,25 @@ internal static class TravelCrossSystemReceipt
     }
 
     /// <summary>
-    /// Worst case for the whole phase: both cases load the fixture fresh (load + service binding),
-    /// undock, drive an in-system approach leg and a cross-system hop with its own route boundary,
-    /// and the phase ends with one restoring fixture load for the pilots that follow.
+    /// Worst case for the whole phase, derived from the number of required cases: each case loads
+    /// the fixture fresh (load + service binding), undocks, samples travel availability, drives an
+    /// in-system approach leg with its own route boundary and a cross-system hop with its own route
+    /// boundary, and settles three times. The phase then adds the opt-in fixture creation and the
+    /// restoring fixture load with their settles.
     /// </summary>
-    internal static readonly PhaseWait[] PhaseWaits =
+    internal static readonly PhaseWait[] PhaseWaits = BuildPhaseWaits(RequiredCases.Length);
+
+    private static PhaseWait[] BuildPhaseWaits(int cases) => new[]
     {
-        new("fixture-load-and-binding", ReadinessSeconds, 5),
-        new("undock", UndockSeconds, 2),
-        new("travel-availability", TravelReadySeconds, 2),
-        new("approach-arrival", ApproachArrivalSeconds, 2),
-        new("jump-handoff", HandoffSeconds, 2),
-        new("jump-arrival", JumpArrivalSeconds, 2),
-        new("route-boundary", BoundarySeconds, 2),
-        new("wormhole-fixture-creation", FixtureCreationSeconds, 1),
-        new("settle", SettleSeconds, 9)
+        new PhaseWait("fixture-load-and-binding", ReadinessSeconds, LoadWaitsPerCase * cases + RestoringLoadWaits),
+        new PhaseWait("undock", UndockSeconds, cases),
+        new PhaseWait("travel-availability", TravelReadySeconds, cases),
+        new PhaseWait("approach-arrival", ApproachArrivalSeconds, cases),
+        new PhaseWait("jump-handoff", HandoffSeconds, cases),
+        new PhaseWait("jump-arrival", JumpArrivalSeconds, cases),
+        new PhaseWait("route-boundary", BoundarySeconds, RouteBoundariesPerCase * cases),
+        new PhaseWait("wormhole-fixture-creation", FixtureCreationSeconds, 1),
+        new PhaseWait("settle", SettleSeconds, SettlesPerCase * cases + PhaseLevelSettles)
     };
 
     internal static readonly float PhaseBudgetSeconds = PhaseWaits.Sum(wait => wait.Seconds * wait.Occurrences);

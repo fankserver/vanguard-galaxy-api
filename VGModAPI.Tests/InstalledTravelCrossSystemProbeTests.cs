@@ -95,6 +95,10 @@ public sealed class InstalledTravelCrossSystemProbeTests
         Field("Source.Galaxy.SystemMapData", "pocketSystem", "System.Boolean");
         Field("Source.Galaxy.SystemMapData", "sector", "Source.Galaxy.SectorMapData");
         Property("Source.Galaxy.SystemMapData", "mapPosition", "UnityEngine.Vector2");
+        // Destination restriction: the same native map quadrant and a sector the player can already
+        // reach. Both are plain native members, never the lazy name generator.
+        Field("Source.Galaxy.SectorMapData", "quadrant", "System.Int32");
+        Method("Source.Galaxy.SectorMapData", "IsUnlocked", "System.Boolean");
         Assert.Single(Type("Source.Galaxy.GalaxyMapData").Properties, property => property.Name == "allSystems"
             && property.PropertyType.FullName == "System.Collections.Generic.IEnumerable`1<Source.Galaxy.SystemMapData>");
 
@@ -159,6 +163,13 @@ public sealed class InstalledTravelCrossSystemProbeTests
         Assert.DoesNotContain("SetRouteToPOI", placeWormhole);
         Assert.DoesNotContain("TryInitiateTravel", placeWormhole);
         Assert.Contains("set_system", Fields(module, "Source.Galaxy.SystemMapData", "SetupPOI"));
+        // The sector reachability check the fixture selection reuses is read-only: it only inspects
+        // gate/wormhole usability and never generates names, content or randomness.
+        var isUnlocked = Calls(module, "Source.Galaxy.SectorMapData", "IsUnlocked");
+        Assert.Contains("get_canUseJumpGate", isUnlocked);
+        Assert.Contains("get_canUseWormhole", isUnlocked);
+        foreach (var forbidden in new[] { "get_name", "GenerateDefaultName", "EnsureContentGenerated", "RandomRange", "RandomInt" })
+            Assert.DoesNotContain(forbidden, isUnlocked);
 
         // Only the native gate/wormhole objects start the jump routines.
         Assert.Contains("JumpToPOIFrom", Calls(module, "Behaviour.Travel.TheGate", "Update"));

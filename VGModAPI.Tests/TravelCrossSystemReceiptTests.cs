@@ -371,7 +371,37 @@ public sealed class TravelCrossSystemReceiptTests
         // The opt-in fixture creation adds its own bounded wait and settle to the published budget.
         Assert.Contains(TravelCrossSystemReceipt.PhaseWaits, wait => wait.Name == "wormhole-fixture-creation"
             && wait.Seconds == TravelCrossSystemReceipt.FixtureCreationSeconds && wait.Occurrences == 1);
-        Assert.Equal(9, Assert.Single(TravelCrossSystemReceipt.PhaseWaits, wait => wait.Name == "settle").Occurrences);
+    }
+
+    [Fact]
+    public void EveryPerCaseWaitIsDerivedFromTheCaseCountAndTheDriversCallSites()
+    {
+        // The defect this reproduces: the driver awaits a route boundary TWICE per case (after the
+        // in-system approach and after the cross-system hop), but the plan hand-declared one per
+        // case, so the published budget was 120s short and a worst-case run could be killed by the
+        // launcher. Every occurrence is checked against the case count and the per-call-site
+        // multiplicity here instead of a hand-copied number.
+        int cases = TravelCrossSystemReceipt.RequiredCases.Length;
+        Assert.Equal(2, cases);
+        Assert.Equal(2, TravelCrossSystemReceipt.RouteBoundariesPerCase);
+        Assert.Equal(2, TravelCrossSystemReceipt.LoadWaitsPerCase);
+        Assert.Equal(3, TravelCrossSystemReceipt.SettlesPerCase);
+        int Occurrences(string name) => Assert.Single(TravelCrossSystemReceipt.PhaseWaits, wait => wait.Name == name).Occurrences;
+        Assert.Equal(TravelCrossSystemReceipt.LoadWaitsPerCase * cases + TravelCrossSystemReceipt.RestoringLoadWaits, Occurrences("fixture-load-and-binding"));
+        Assert.Equal(cases, Occurrences("undock"));
+        Assert.Equal(cases, Occurrences("travel-availability"));
+        Assert.Equal(cases, Occurrences("approach-arrival"));
+        Assert.Equal(cases, Occurrences("jump-handoff"));
+        Assert.Equal(cases, Occurrences("jump-arrival"));
+        // One approach boundary plus one cross-system boundary, for each case.
+        Assert.Equal(4, Occurrences("route-boundary"));
+        Assert.Equal(TravelCrossSystemReceipt.RouteBoundariesPerCase * cases, Occurrences("route-boundary"));
+        Assert.Equal(1, Occurrences("wormhole-fixture-creation"));
+        Assert.Equal(8, Occurrences("settle"));
+        Assert.Equal(TravelCrossSystemReceipt.SettlesPerCase * cases + TravelCrossSystemReceipt.PhaseLevelSettles, Occurrences("settle"));
+        // The published worst case and the reservation, both explicit so neither can drift.
+        Assert.Equal(2184f, TravelCrossSystemReceipt.PhaseBudgetSeconds);
+        Assert.Equal(2400f, TravelCrossSystemReceipt.LauncherReservationSeconds);
     }
 
     [Fact]

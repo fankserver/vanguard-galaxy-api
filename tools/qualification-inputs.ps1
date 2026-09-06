@@ -64,7 +64,7 @@ $TravelStationEventHeader = @('apiSequence','surface','case','session','operatio
 # phase; it never replaces it and never turns that phase's optional NOT-RUN rows into coverage.
 $TravelCrossSystemPhase = 'travel-cross-system-v1'
 $TravelCrossSystemRequiredCases = @('cross-system-jumpgate','cross-system-wormhole')
-$TravelCrossSystemBudgetSeconds = 2100
+$TravelCrossSystemBudgetSeconds = 2400
 # Optional opt-in sandbox fixture preparation row. It is deliberately NOT a required case: creating
 # disposable native test data is never coverage of a travel routine.
 $TravelWormholeFixtureCase = 'wormhole-fixture-setup'

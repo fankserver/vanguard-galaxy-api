@@ -649,6 +649,12 @@ try {
     try { & $script -Action Run -SandboxRoot $crossTimeoutRoot -TimeoutSeconds ($QualificationBaseTimeoutSeconds + $TravelStationBudgetSeconds) @options }
     catch { $rejected = $_.Exception.Message -like '*-TimeoutSeconds at least*' }
     Assert $rejected 'Cross-system run accepted a lifetime that only covers the in-system phase.'
+    # Exactly one second under the derived minimum (base + both reservations) must still be refused.
+    $crossMinimum = $QualificationBaseTimeoutSeconds + $TravelStationBudgetSeconds + $TravelCrossSystemBudgetSeconds
+    $rejected = $false
+    try { & $script -Action Run -SandboxRoot $crossTimeoutRoot -TimeoutSeconds ($crossMinimum - 1) @options }
+    catch { $rejected = $_.Exception.Message -like "*at least $crossMinimum*" }
+    Assert $rejected 'Cross-system run accepted a lifetime one second below the derived minimum.'
     Assert (!(Test-Path -LiteralPath (Join-Path $crossTimeoutRoot 'run-started.txt'))) 'The launcher started the game despite an insufficient cross-system lifetime.'
     & $script -Action Cleanup -SandboxRoot $crossTimeoutRoot
     [IO.File]::WriteAllText($apiConfig, "[Persistence]`nEnabled = true`nRoot = C:\foreign-root`n[Missions]`nEnabled = true`nIdentityContinuity = true`n")

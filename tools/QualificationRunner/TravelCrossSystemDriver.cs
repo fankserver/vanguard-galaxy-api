@@ -32,7 +32,7 @@ public sealed partial class Plugin
         private readonly Type _systemType, _wormholeSpawnerType;
         private readonly MethodInfo _tryInitiateTravel, _canWeTravel, _travelActive, _localPoiReady, _shortestRoute;
         private readonly MethodInfo _getTargetPoi, _connectedWormholes, _startUndocking, _exitSpacestation, _getDockingOption;
-        private readonly MethodInfo _placeWormhole;
+        private readonly MethodInfo _placeWormhole, _sectorIsUnlocked;
         private readonly object _travel;
         private Guid _session;
         private string _systemId = "";
@@ -74,6 +74,7 @@ public sealed partial class Plugin
             // opt-in fixture selection. Bound by its exact declared static signature.
             _placeWormhole = BindStatic(_wormholeSpawnerType, "PlaceWormhole", _wormholeType,
                 _systemType, typeof(bool), typeof(List<>).MakeGenericType(_wormholeType));
+            _sectorIsUnlocked = TravelStationDriver.Bind(Named("Source.Galaxy.SectorMapData"), "IsUnlocked", typeof(bool));
             var travel = SpGet(_travelType, "Instance");
             Require(TravelStationDriver.Alive(travel), "Native TravelManager singleton is not live.");
             _travel = travel!;
@@ -339,33 +340,51 @@ public sealed partial class Plugin
         // are excluded because the native planner enqueues the current system's gate edges before
         // its wormhole edges, so a neighbour destination would be planned through the gate instead
         // of the created wormhole. Pocket systems, sectorless systems and systems that already own
-        // a wormhole are excluded; the remaining candidates are ordered deterministically.
+        // a wormhole are excluded, and the candidate must sit in the SAME native map quadrant as
+        // the player and in a sector the player can already reach: either the player's own sector
+        // or one the native SectorMapData.IsUnlocked() reports as unlocked. Every field read here
+        // is a plain native field/method, never the lazy name generator. The remaining candidates
+        // are ordered deterministically (map distance, then guid).
         private object? SelectFixtureDestinationSystem(out string reason)
         {
             var currentSystem = SpGet(Player, "currentSystem")!;
+            var currentSector = SpGet(currentSystem, "sector");
+            if (currentSector == null) { reason = "the player's current system has no sector"; return null; }
+            // Authoritative parent reference: a system's quadrant is its sector's quadrant field.
+            var quadrant = (int)SpGet(currentSector, "quadrant")!;
             var neighbours = new HashSet<string>(SystemPois()
                 .Where(poi => _jumpGateType.IsInstanceOfType(poi) && (bool)SpGet(poi, "canUseJumpGate")!)
                 .Select(poi => (string?)SpGet(poi, "targetSystemGuid") ?? ""), StringComparer.Ordinal);
             var map = SpGet(_mapType, "current");
             if (map == null) { reason = "no live galaxy map"; return null; }
             var origin = (Vector2)SpGet(currentSystem, "mapPosition")!;
-            var candidates = ((IEnumerable)SpGet(map, "allSystems")!).Cast<object>()
+            var sectored = ((IEnumerable)SpGet(map, "allSystems")!).Cast<object>()
                 .Where(system => SpGet(system, "sector") != null)
                 .Where(system => (string)SpGet(system, "guid")! != _systemId)
+                .ToArray();
+            var candidates = sectored
                 .Where(system => !neighbours.Contains((string)SpGet(system, "guid")!))
                 .Where(system => !(bool)SpGet(system, "pocketSystem")!)
                 .Where(system => !((IEnumerable)SpGet(system, "pointsOfInterest")!).Cast<object>().Any(poi => _wormholeType.IsInstanceOfType(poi)))
+                .Where(system => (int)SpGet(SpGet(system, "sector")!, "quadrant")! == quadrant)
+                .Where(system => SectorReachable(SpGet(system, "sector")!, currentSector))
                 .OrderBy(system => Vector2.Distance((Vector2)SpGet(system, "mapPosition")!, origin))
                 .ThenBy(system => (string)SpGet(system, "guid")!, StringComparer.Ordinal)
                 .ToArray();
             if (candidates.Length == 0)
             {
-                reason = "every native system is the current system, a direct gate neighbour, a pocket system or already owns a wormhole";
+                reason = "no native system in quadrant " + quadrant + " is a reachable non-pocket, non-neighbour, wormhole-free destination (sectoredSystems="
+                    + sectored.Length + ")";
                 return null;
             }
             reason = "";
             return candidates[0];
         }
+
+        // The player's own sector is reachable by definition; any other sector must be reported
+        // unlocked by the game's own read-only check.
+        private bool SectorReachable(object sector, object currentSector)
+            => ReferenceEquals(sector, currentSector) || (bool)_sectorIsUnlocked.Invoke(sector, null)!;
 
         // --- fixture selection ------------------------------------------------------------
 
