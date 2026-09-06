@@ -12,7 +12,7 @@ internal static class PackageChecks
     internal static readonly string[] Documents =
     {
         "checks.md", "compatibility.md", "implementation-plan.md", "lifecycle-contract.md",
-        "qualification-runner.md", "research-findings.md", "persistence-identity.md", "persistence-schema.md", "persistence-storage.md", "content-safety.md", "mission-events.md"
+        "qualification-runner.md", "research-findings.md", "persistence-identity.md", "persistence-schema.md", "persistence-storage.md", "content-safety.md", "mission-events.md", "travel-events.md"
     };
     internal static readonly string[] Files = Assemblies.Select(n => n + ".dll")
         .Concat(new[] { "README.md", "LICENSE" }).Concat(Documents.Select(n => "docs/" + n)).ToArray();
