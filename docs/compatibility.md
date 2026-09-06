@@ -2,7 +2,7 @@
 
 ## Current status
 
-**Implemented with controlled native evidence; full owner acceptance remains separate.** Isolated Windows runs now cover core load/save flows, transit/empty-space loads, scoped stale adapter signals, and both authorized consumer pilots. qa38 passes33 checks after review hardening; qa33–35 separately cover both-consumer coexistence/refusal. Normal installed plugins are untouched. All37 original files, complete direct file sets and restored preferences were independently verified unchanged. RuntimeQualified remains false; an actual alternate game binary is not qualified.
+**Implemented with controlled native evidence; full owner acceptance remains separate.** Isolated Windows runs now cover core load/save flows, transit/empty-space loads, scoped stale adapter signals, and both authorized consumer pilots. qa38 passes 33 checks after review hardening; qa33–35 separately cover both-consumer coexistence/refusal. Normal installed plugins are untouched. All 37 original files, complete direct file sets and restored preferences were independently verified unchanged. RuntimeQualified remains false; an actual alternate game binary is not qualified.
 
 The adapter accepts only this inspected original `Assembly-CSharp.dll` SHA-256:
 
@@ -29,7 +29,7 @@ Local SDK: .NET SDK 10.0.111.
 | Live save/load flows | qa-06 passed: copied docked loads, replacement, manual roundtrip, skip, exhausted retries, subscribers, valid-syntax newer-version fixture rejection without readiness, corrupt-JSON failure, recovery and quit save |
 | Extended runtime cases | qa-09 passed: tutorial wizard/configuration boundary, mining-space save/load, autosave rotation, recovered transient metadata failure, and current-version empty-player rejection control |
 | Empty-space/in-transit loads and delayed stale signals | qa38: native eligible in-system route/save/reload; controlled parked-space save/reload; Unity-driven real observed iterator with explicit stale adapter signals and unfinished disposal. Not arbitrary async engine callbacks. |
-| Multi-mod behavior | MissionJournal and Stockpile pilots: reviewed owning PRs; qa33 full30 and qa34/35 missing/unavailable API refusal, with copied-file preservation. No general mod-conflict guarantee. |
+| Multi-mod behavior | MissionJournal and Stockpile pilots: reviewed owning PRs; qa33 full 30 and qa34/35 missing/unavailable API refusal, with copied-file preservation. No general mod-conflict guarantee. |
 
 The reflection-adapter tests use explicit small doubles. They exercise the production adapter logic but do not simulate Unity scheduling. Installed binding checks use Mono.Cecil to read metadata without loading game code. They do not execute Harmony or game methods.
 
