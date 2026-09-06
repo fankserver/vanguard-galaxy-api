@@ -85,7 +85,7 @@ Prepare accepts optional `-MissionJournalBin <owner-built Release/netstandard2.1
 
 All consumer scenarios require existing companion journal sidecars for both supplied saves and copy them into the sandbox. Negative startup runs hash-check the complete sandbox save-file set after exit to verify that disabled consumers did not touch those sidecars. Reflection-only probes compare nonempty persisted history IDs with the public facade after slot switching/reload, reject prior-slot-only history, compare successful destination sidecars with live history, and reject failed/skipped-save writes. New game must not inherit old history; destroying only the journal component must unsubscribe and prevent subsequent sidecar writes. No real save/sidecar is a write target. Counts/IDs are not exported publicly.
 
-With the same optional consumer selection, MissingApi requires BepInEx dependency refusal. UnavailableApi requires a present but disabled journal, no public facade and no journal-owned patches. It remains an injected hash-rejection test, not alternate-binary compatibility. Prepared consumer markers and the scenario-specific flat plugin set are verified before launch.
+With the same optional consumer selection, MissingApi requires BepInEx dependency refusal. UnavailableApi requires a present but disabled journal, no public facade and no journal-owned patches. It uses injected hash rejection by default; `-AssemblyOverlay` verifies actual changed private identity instead. Neither qualifies another game implementation. Prepared consumer markers and the scenario-specific flat plugin set are verified before launch.
 
 ## Authorized Stockpile pilot
 

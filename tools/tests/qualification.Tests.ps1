@@ -204,7 +204,14 @@ finally {
     foreach ($root in $sandboxes) {
         foreach ($name in @('VanguardGalaxy_Data','MonoBleedingEdge','D3D12')) {
             $path = Join-Path $root "game\$name"
-            if ((Test-Path -LiteralPath $path) -and ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) { [IO.Directory]::Delete($path, $false) }
+            if (Test-Path -LiteralPath $path) {
+                if ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { [IO.Directory]::Delete($path, $false) }
+                elseif ($name -eq 'VanguardGalaxy_Data') {
+                    foreach ($child in Get-ChildItem -LiteralPath $path -Force -Directory) {
+                        if ($child.Attributes -band [IO.FileAttributes]::ReparsePoint) { [IO.Directory]::Delete($child.FullName, $false) }
+                    }
+                }
+            }
         }
     }
     if (Test-Path -LiteralPath $work) { Remove-Item -LiteralPath $work -Recurse -Force }
