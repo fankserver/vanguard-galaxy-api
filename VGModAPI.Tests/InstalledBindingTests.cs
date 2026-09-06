@@ -15,6 +15,23 @@ public sealed class InstalledBindingTests
         ?? throw new InvalidOperationException("Run make check-bindings or set VG_GAME_ASSEMBLY to the original installed Assembly-CSharp.dll.");
 
     [Fact]
+    public void WaveProbeBindingsMatchNativeGenerationAndLaunch()
+    {
+        using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
+        foreach (var kind in new[] { "Industry", "Patrol" })
+        {
+            var data = assembly.MainModule.GetType("Source.Galaxy.POI.Station." + kind + "Board");
+            Assert.Single(data.Methods, m => m.Name == "Generate" + kind + "Missions" && m.Parameters.Count == 0);
+            var ui = assembly.MainModule.GetType("Behaviour.UI.Spacestation.Location." + kind + "Board");
+            Assert.Single(ui.Methods, m => m.Name == "LaunchClicked" && m.Parameters.Count == 0);
+            var mission = assembly.MainModule.GetType("Source.MissionSystem." + kind + "Mission");
+            Assert.Single(mission.Methods, m => m.Name == "ClaimRewards" && m.Parameters.Select(p => p.ParameterType.FullName).SequenceEqual(new[] { "System.Boolean" }));
+            Assert.Contains(mission.Fields, f => f.Name == "wave" && f.FieldType.FullName == "System.Int32");
+        }
+        Assert.Contains(assembly.MainModule.GetType("Behaviour.UI.Missions.FocusedMissionHandler").Properties, p => p.Name == "focusedMission");
+    }
+
+    [Fact]
     public void AnimaProbeResolvesPlayerStoryLookupInsteadOfBareOverloadedName()
     {
         using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
