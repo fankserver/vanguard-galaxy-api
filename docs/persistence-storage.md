@@ -16,7 +16,7 @@ A failure before rename leaves an ignored stage directory; normal loading only r
 
 Same-filesystem directory rename is the publication boundary; individual files are flushed. This does not guarantee power-loss durability of directory metadata or atomicity with vanilla files. If vanilla succeeded but publication did not, report incomplete persistence and pause affected mutation; never silently attach future state. Filesystem recovery here is tested by explicit interruption exceptions, not actual power cuts.
 
-Only a missing final directory returns absence. Read errors, missing files within a published directory, schema faults, digest mismatches and unexpected entries throw and preserve data. Links in paths are refused. This is a trusted single-process owned directory, not a defense against an adversary racing path replacements; no cross-process locking or directory-fsync guarantee is claimed.
+Only a missing final directory returns absence. Read errors, missing files within a published directory, schema faults, digest mismatches and unexpected entries throw and preserve data. Links in paths are refused, including ancestor junctions and OneDrive reparse-point placeholders. Root selection must use a writable non-linked local location; a junctioned Steam library is not automatically acceptable. Benign OS files such as desktop.ini or .DS_Store also trigger the strict layout block; manually removing only the stray entry restores an otherwise intact generation. Never remove required generation files as a recovery shortcut. This is a trusted single-process owned directory, not a defense against an adversary racing path replacements; no cross-process locking or directory-fsync guarantee is claimed.
 
 ## Verification boundary
 

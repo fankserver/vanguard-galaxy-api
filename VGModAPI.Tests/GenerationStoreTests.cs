@@ -50,6 +50,7 @@ public sealed class GenerationStoreTests : IDisposable
         Assert.Throws<IOException>(() => failing.Publish("slot", H('a'), campaign, Owners(1)));
         var recovered = new GenerationStore(_root);
         Assert.Equal(published, recovered.Load("slot", H('a')) != null);
+        if (!published) Assert.NotEmpty(Directory.GetDirectories(_root, ".stage-*", SearchOption.AllDirectories));
         Assert.NotNull(recovered.Publish("slot", H('a'), campaign, Owners(1)));
     }
 
@@ -90,6 +91,52 @@ public sealed class GenerationStoreTests : IDisposable
         var payload = codec.Decode(File.ReadAllBytes(path)).Payload!;
         payload[0] = 255;
         File.WriteAllBytes(path, codec.Encode(payload));
+        Assert.Throws<InvalidDataException>(() => store.Load("slot", H('a')));
+    }
+
+    [Fact]
+    public void DeletedOwnerAndTruncatedManifestAreInvalidNotAbsent()
+    {
+        var store = new GenerationStore(_root);
+        store.Publish("slot", H('a'), Guid.NewGuid(), Owners(1));
+        var owner = Directory.GetFiles(_root, "*.vgo", SearchOption.AllDirectories).Single(p => Path.GetFileName(p) != "manifest.vgo");
+        File.Delete(owner);
+        var missing = Assert.Throws<InvalidDataException>(() => store.Load("slot", H('a')));
+        Assert.IsType<FileNotFoundException>(missing.InnerException);
+        var manifest = Directory.GetFiles(_root, "manifest.vgo", SearchOption.AllDirectories).Single();
+        var codec = new OwnerSchemaCodec("vgmodapi.manifest", 1, _ => true);
+        File.WriteAllBytes(manifest, codec.Encode(new byte[] { 64 }));
+        Assert.Throws<InvalidDataException>(() => store.Load("slot", H('a')));
+    }
+
+    [Fact]
+    public void CopiedManifestCannotCrossSlotIdentity()
+    {
+        var store = new GenerationStore(_root);
+        var first = store.Publish("first", H('a'), Guid.NewGuid(), Owners(1));
+        store.Publish("second", H('a'), first.Identity.Campaign, Owners(1));
+        var firstPath = Path.Combine(_root, GenerationStore.Hash(System.Text.Encoding.UTF8.GetBytes("first")), H('a'), "manifest.vgo");
+        var secondPath = Path.Combine(_root, GenerationStore.Hash(System.Text.Encoding.UTF8.GetBytes("second")), H('a'), "manifest.vgo");
+        File.Copy(firstPath, secondPath, true);
+        Assert.Throws<InvalidDataException>(() => store.Load("second", H('a')));
+    }
+
+    [Fact]
+    public void PublishBoundsAndRegularFileTargetAreRefused()
+    {
+        var store = new GenerationStore(_root);
+        var campaign = Guid.NewGuid();
+        var many = Enumerable.Range(0, 33).ToDictionary(i => "owner" + i, _ => new byte[] { 1 });
+        Assert.Throws<InvalidDataException>(() => store.Publish("slot", H('a'), campaign, many));
+        Assert.Throws<InvalidDataException>(() => store.Publish("slot", H('a'), campaign,
+            new Dictionary<string, byte[]> { ["owner"] = new byte[GenerationStore.MaxOwnerBytes + 1] }));
+        Assert.Throws<InvalidDataException>(() => store.Publish("slot", H('a'), campaign,
+            new Dictionary<string, byte[]> { ["owner"] = null! }));
+        Assert.Throws<ArgumentException>(() => store.Publish("slot", H('a'), campaign,
+            new Dictionary<string, byte[]> { ["../owner"] = new byte[] { 1 } }));
+        Assert.Throws<ArgumentException>(() => store.Publish("slot", "bad", campaign, Owners(1)));
+        var parent = Path.Combine(_root, GenerationStore.Hash(System.Text.Encoding.UTF8.GetBytes("slot")));
+        Directory.CreateDirectory(parent); File.WriteAllText(Path.Combine(parent, H('a')), "retain");
         Assert.Throws<InvalidDataException>(() => store.Load("slot", H('a')));
     }
 

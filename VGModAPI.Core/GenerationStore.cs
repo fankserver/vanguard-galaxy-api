@@ -168,6 +168,14 @@ internal sealed class GenerationStore
         catch (FileNotFoundException) { return null; }
         catch (DirectoryNotFoundException) { return null; }
         if ((attributes & FileAttributes.Directory) == 0) throw new InvalidDataException("Generation path is not a directory.");
+        try { return ReadGeneration(target, slot, vanillaHash); }
+        catch (InvalidDataException) { throw; }
+        catch (Exception error) when (error is IOException || error is ArgumentException || error is UnauthorizedAccessException)
+        { throw new InvalidDataException("Published generation is unreadable or invalid.", error); }
+    }
+
+    private static StoredGeneration ReadGeneration(string target, string slot, string vanillaHash)
+    {
         var decoded = Manifest.Decode(ReadBounded(Path.Combine(target, "manifest.vgo"), 16384));
         if (decoded.Status != SchemaReadStatus.Ready) throw new InvalidDataException("Manifest is protected: " + decoded.Status);
         using var reader = new BinaryReader(new MemoryStream(decoded.Payload!), Encoding.UTF8);
