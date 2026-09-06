@@ -8,6 +8,8 @@ param(
     [string]$BuildRoot,
     [string]$MissionJournalBin,
     [string]$StockpileBin,
+    [string]$AnimaBin,
+    [string]$AnimaRevision,
     [switch]$AssemblyOverlay,
     [switch]$VanillaLoadControl,
     [switch]$PersistenceProbe,
@@ -56,6 +58,7 @@ if ($Action -eq 'Prepare') {
     if ($AssemblyOverlay -and $Scenario -ne 'UnavailableApi') { throw 'Assembly overlay requires UnavailableApi.' }
     if ($VanillaLoadControl -and $Scenario -ne 'MissingApi') { throw 'Vanilla load control requires MissingApi.' }
     if ($PersistenceProbe -and $Scenario -ne 'Full') { throw 'Persistence probe requires Full.' }
+    if ($AnimaBin -and (!$MissionIdentityProbe -or !$MissionJournalBin -or $AnimaRevision -notmatch '^[0-9a-f]{40}$')) { throw 'Anima requires identity probes, journal-provided JSON runtime and exact source revision.' }
     if ($JournalMissionEventsProbe -and (!$JournalCoordinated -or !$MissionIdentityProbe)) { throw 'Journal mission events require API-managed journal and mission identity probes.' }
     if ($MissionIdentityProbe -and (!$MissionTransitionsProbe -or !$PersistenceProbe)) { throw 'Mission identity probe requires mission transitions and persistence probes.' }
     if ($MissionTransitionsProbe -and $Scenario -ne 'Full') { throw 'Mission transitions probe requires Full.' }
@@ -140,6 +143,24 @@ if ($Action -eq 'Prepare') {
         New-Item -ItemType Directory -Path (Join-Path $bep 'config') -Force | Out-Null
         [IO.File]::WriteAllText((Join-Path $bep 'config\vgstockpile.cfg'), "[Transfers]`r`nEnabled = true`r`n")
     }
+    if ($AnimaBin) {
+        $candidate = Join-Path $AnimaBin 'VGAnima.dll'
+        Add-Type -Path (Join-Path $bep 'core\Mono.Cecil.dll')
+        $assembly = [Mono.Cecil.AssemblyDefinition]::ReadAssembly($candidate)
+        try {
+            if ($assembly.Name.Name -ne 'VGAnima' -or $assembly.Name.Version.ToString() -ne '0.3.0.0') { throw 'Only Anima 0.3.0 pilot shape accepted.' }
+            $plugin = $assembly.MainModule.Types | Where-Object { $_.FullName -eq 'VGAnima.Plugin' }
+            $dependency = @($plugin.CustomAttributes | Where-Object {
+                $_.AttributeType.FullName -eq 'BepInEx.BepInDependency' -and $_.ConstructorArguments.Count -eq 2 -and
+                $_.ConstructorArguments[0].Value -eq 'vgmodapi' -and $_.ConstructorArguments[1].Value -eq '0.1.8'
+            })
+            if ($dependency.Count -ne 1) { throw 'Anima must require API before its startup sweeper.' }
+        } finally { $assembly.Dispose() }
+        Copy-Item -LiteralPath $candidate -Destination $plugins
+        New-Item -ItemType Directory -Path (Join-Path $bep 'config') -Force | Out-Null
+        [IO.File]::WriteAllText((Join-Path $bep 'config\vganima.cfg'), "[General]`r`nEnabled = true`r`n[Llm]`r`nEnabled = false`r`nBaseUrl = `r`nApiKey = `r`n")
+        [IO.File]::WriteAllText((Join-Path $root 'anima-missions.enabled'), 'anima-v1')
+    }
     # Unselected pilots explicitly use legacy mode; selected pilots exercise the new defaults.
     New-Item -ItemType Directory -Path (Join-Path $bep 'config') -Force | Out-Null
     if ($StockpileBin -and !$StockpileCoordinated) { [IO.File]::AppendAllText((Join-Path $bep 'config\vgstockpile.cfg'), "[Persistence]`r`nUseApiSaveData = false`r`n") }
@@ -176,11 +197,18 @@ if ($Action -eq 'Prepare') {
         [IO.File]::AppendAllText((Join-Path $bep 'config\vgmissionjournal.cfg'), "`r`n[Missions]`r`nUseApiMissionEvents = true`r`n")
         [IO.File]::WriteAllText((Join-Path $root 'journal-mission-events.enabled'), 'journal-events-v1')
     }
-    @{ journalMissionEventsProbe=[bool]$JournalMissionEventsProbe; missionIdentityProbe=[bool]$MissionIdentityProbe; missionTransitionsProbe=[bool]$MissionTransitionsProbe; contentReferenceProbe=[bool]$ContentReferenceProbe; stockpileCoordinated=[bool]$StockpileCoordinated; journalCoordinated=[bool]$JournalCoordinated; persistenceProbe=[bool]$PersistenceProbe; vanillaLoadControl=[bool]$VanillaLoadControl; assemblyOverlay=$overlay; stockpile=[bool]$StockpileBin; missionJournal=[bool]$MissionJournalBin; scenario=$Scenario; revision=$BuildRevision; preparedUtc=[DateTime]::UtcNow.ToString('o'); plugins=$hashes } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'build-provenance.json')
+    @{ anima=[bool]$AnimaBin; animaRevision=$AnimaRevision; journalMissionEventsProbe=[bool]$JournalMissionEventsProbe; missionIdentityProbe=[bool]$MissionIdentityProbe; missionTransitionsProbe=[bool]$MissionTransitionsProbe; contentReferenceProbe=[bool]$ContentReferenceProbe; stockpileCoordinated=[bool]$StockpileCoordinated; journalCoordinated=[bool]$JournalCoordinated; persistenceProbe=[bool]$PersistenceProbe; vanillaLoadControl=[bool]$VanillaLoadControl; assemblyOverlay=$overlay; stockpile=[bool]$StockpileBin; missionJournal=[bool]$MissionJournalBin; scenario=$Scenario; revision=$BuildRevision; preparedUtc=[DateTime]::UtcNow.ToString('o'); plugins=$hashes } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'build-provenance.json')
     # Prevent Steam's restart path; the runner disables SteamManager before arming checks.
     [IO.File]::WriteAllText((Join-Path $game 'steam_appid.txt'), '3471800')
     $saves = Join-Path $root 'Saves'
     New-Item -ItemType Directory -Path $saves | Out-Null
+    if ($AnimaBin) {
+        for ($i = 0; $i -lt 2; $i++) {
+            $name = if ($i -eq 0) { 'fixture-a' } else { 'fixture-b' }
+            $sidecar = $sources[$i].FullName + '.vganima.json'
+            if (Test-Path -LiteralPath $sidecar -PathType Leaf) { Copy-Item -LiteralPath $sidecar -Destination (Join-Path $saves ($name + '.save.vganima.json')) }
+        }
+    }
     Copy-Item -LiteralPath $sources[0].FullName -Destination (Join-Path $saves 'fixture-a.save')
     Copy-Item -LiteralPath $sources[1].FullName -Destination (Join-Path $saves 'fixture-b.save')
     if ($MissionJournalBin) { Copy-QualificationJournalHistory $sources $saves }

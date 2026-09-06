@@ -1,5 +1,9 @@
 # Prepared-input helpers; safe to exercise with synthetic files.
 function Assert-PersistenceProbeReceipt([string]$Root, $Provenance) {
+    if ($Provenance.PSObject.Properties['anima'] -and $Provenance.anima) {
+        $receipt = Join-Path $Root 'anima-missions.txt'
+        if (!(Test-Path -LiteralPath $receipt) -or (Get-Content -LiteralPath $receipt -TotalCount 1) -ne 'PASS') { throw 'Anima mission probe did not complete.' }
+    }
     if ($Provenance.PSObject.Properties['journalMissionEventsProbe'] -and $Provenance.journalMissionEventsProbe) {
         $receipt = Join-Path $Root 'journal-mission-events.txt'
         if (!(Test-Path -LiteralPath $receipt) -or (Get-Content -LiteralPath $receipt -TotalCount 1) -ne 'PASS') { throw 'Journal mission events probe did not complete.' }
@@ -97,6 +101,23 @@ function Assert-QualificationInputs([string]$Root) {
     if ($identityProbe) {
         if (!$missionProbe -or !$provenance.persistenceProbe -or (Get-Content -LiteralPath $identityMarker -Raw).Trim() -ne 'identity-v1') { throw 'Invalid mission identity selection.' }
         if ([regex]::Matches($sections[0].Groups['body'].Value, '(?m)^IdentityContinuity\s*=').Count -ne 1 -or [regex]::Matches($sections[0].Groups['body'].Value, '(?m)^IdentityContinuity\s*=\s*true\s*$').Count -ne 1) { throw 'Mission identity config changed.' }
+    }
+    $anima = $provenance.PSObject.Properties['anima'] -and [bool]$provenance.anima
+    $animaMarker = Join-Path $Root 'anima-missions.enabled'
+    if ([bool]$anima -ne (Test-Path -LiteralPath $animaMarker -PathType Leaf)) { throw 'Anima selection changed.' }
+    if ($anima) {
+        if (!$identityProbe -or !$provenance.missionJournal -or $provenance.animaRevision -notmatch '^[0-9a-f]{40}$' -or (Get-Content -LiteralPath $animaMarker -Raw).Trim() -ne 'anima-v1') { throw 'Invalid Anima selection.' }
+        $animaConfig = Get-Content -LiteralPath (Join-Path $Root 'game\BepInEx\config\vganima.cfg') -Raw
+        foreach ($section in @('General','Llm')) {
+            $blocks = [regex]::Matches($animaConfig, "(?ms)^\[$section\]\s*\r?\n(?<body>.*?)(?=^\[|\z)")
+            $value = if ($section -eq 'General') { 'true' } else { 'false' }
+            if ($blocks.Count -ne 1 -or [regex]::Matches($blocks[0].Groups['body'].Value, '(?m)^Enabled\s*=').Count -ne 1 -or [regex]::Matches($blocks[0].Groups['body'].Value, "(?m)^Enabled\s*=\s*$value\s*$").Count -ne 1) { throw 'Anima enable/network config changed.' }
+            if ($section -eq 'Llm') {
+                foreach ($key in @('BaseUrl','ApiKey')) {
+                    if ([regex]::Matches($blocks[0].Groups['body'].Value, "(?m)^$key\s*=").Count -ne 1 -or [regex]::Matches($blocks[0].Groups['body'].Value, "(?m)^$key\s*=\s*$").Count -ne 1) { throw 'Anima network settings must remain empty.' }
+                }
+            }
+        }
     }
     $journalEvents = $provenance.PSObject.Properties['journalMissionEventsProbe'] -and [bool]$provenance.journalMissionEventsProbe
     $journalEventsMarker = Join-Path $Root 'journal-mission-events.enabled'
@@ -199,6 +220,7 @@ function Assert-QualificationInputs([string]$Root) {
     if ($provenance.scenario -eq 'Full') { $expected += @('QualificationRunner.dll','LifecycleObserver.dll') }
     if ($provenance.missionJournal) { $expected += @('VGMissionJournal.dll','Newtonsoft.Json.dll') }
     if ($stockpile) { $expected += @('VGStockpile.dll','Newtonsoft.Json.dll') }
+    if ($anima) { $expected += @('VGAnima.dll') }
     $expected = @($expected | Select-Object -Unique)
     if (@($provenance.plugins.PSObject.Properties).Count -ne $expected.Count -or
         @($provenance.plugins.PSObject.Properties.Name | Where-Object { $_ -notin $expected }).Count -gt 0) { throw 'Scenario plugin allowlist mismatch.' }
