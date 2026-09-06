@@ -57,7 +57,9 @@ By default the mismatch is **injected input**, not an altered or alternate game 
 
 ### Optional persistence facade probe
 
-`-PersistenceProbe` requires Full and writes an explicit opt-in API config using only the sandbox's `state` directory. Selection/root and a fresh completion receipt are checked by the launcher. Two synthetic providers exercise native capture/save/reload, mutation gates, provider removal and retained-intent reload refusal. Existing real consumers may coexist, but remain on their own persistence paths: this is not their coordinated-storage migration qualification.
+`-PersistenceProbe` requires Full and writes an explicit opt-in API config using only the sandbox's `state` directory. Selection/root and a fresh completion receipt are checked by the launcher. Two synthetic providers exercise native capture/save/reload, mutation gates, provider removal and retained-intent reload refusal. Without additional consumer switches, real consumers may coexist but remain on their own persistence paths; this alone does not qualify their coordinated-storage migration.
+
+`-JournalCoordinated` additionally requires the 0.3 MissionJournal candidate and `-PersistenceProbe`. It explicitly enables coordinated storage and read-only legacy import in the sandbox's journal config, pins that selection, requires an actual journal save/reload without an output legacy sidecar and a separate completion receipt, and checks that copied legacy journal files remain byte-identical with no additions. Stockpile still uses its legacy path in this mode. This is controlled first-consumer adoption evidence, not complete recovery or two-consumer qualification.
 
 ### API-absent gameplay control
 

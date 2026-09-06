@@ -84,6 +84,25 @@ try {
     Assert $rejected 'Missing persistence receipt accepted.'
     [IO.File]::WriteAllText((Join-Path $probeRoot 'persistence-probe.txt'), 'PASS')
     Assert-PersistenceProbeReceipt $probeRoot $probeProvenance
+    $probeProvenance.journalCoordinated = $true; $probeProvenance.missionJournal = $true
+    $probeProvenance | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $probeRoot 'build-provenance.json')
+    [IO.File]::WriteAllText((Join-Path $probeRoot 'journal-coordinated.enabled'), 'journal-v1')
+    $journalConfig = Join-Path $probeRoot 'game\BepInEx\config\vgmissionjournal.cfg'
+    $validJournal = "[Persistence]`nUseCoordinatedPersistence = true`nImportLegacySidecars = true`n"
+    [IO.File]::WriteAllText($journalConfig, $validJournal)
+    $null = Assert-QualificationInputs $probeRoot
+    foreach ($changed in @($validJournal.Replace('true','false'), ($validJournal + "ImportLegacySidecars = false`n"), $validJournal.Replace('[Persistence]','[Other]'))) {
+        [IO.File]::WriteAllText($journalConfig, $changed)
+        $rejected = $false
+        try { $null = Assert-QualificationInputs $probeRoot } catch { $rejected = $true }
+        Assert $rejected 'Changed journal configuration accepted.'
+    }
+    [IO.File]::WriteAllText($journalConfig, $validJournal)
+    $rejected = $false
+    try { Assert-PersistenceProbeReceipt $probeRoot $probeProvenance } catch { $rejected = $true }
+    Assert $rejected 'Missing actual-journal receipt accepted.'
+    [IO.File]::WriteAllText((Join-Path $probeRoot 'journal-coordinated.txt'), 'PASS')
+    Assert-PersistenceProbeReceipt $probeRoot $probeProvenance
     [IO.File]::WriteAllText((Join-Path $probeRoot 'game\BepInEx\config\vgmodapi.cfg'), "[Persistence]`nEnabled = true`nRoot = C:\foreign-root`n")
     $rejected = $false
     try { $null = Assert-QualificationInputs $probeRoot } catch { $rejected = $true }
