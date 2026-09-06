@@ -65,11 +65,14 @@ public sealed class TravelNativeAdapterTests
         {
             Player.waypoints.Clear(); Player.waypoints.AddRange(waypoints);
         }
-        // Mirror native SceneLoader.CurrentScene. The adapter reads the PersistentSingleton backing
-        // field, so tests drive it through the same SetTestInstance seam.
-        internal void SetScene(string currentScene) =>
-            Behaviour.Util.PersistentSingleton<Behaviour.Bootstrap.SceneLoader>.SetTestInstance =
-                new Behaviour.Bootstrap.SceneLoader { CurrentScene = currentScene };
+        // The genuine native docking request scope (CheckForDocking) plus the ACTUAL assignment
+        // inside it. Anything assigned outside this helper models init/reinit/relink/NPC paths.
+        internal void RequestDock(DockingOption option, Behaviour.Unit.SpaceShip ship)
+        {
+            Adapter.EnterDockRequest();
+            Adapter.ObserveDockAssignment(option, ship, skipCoroutine: false);
+            Adapter.ExitDockRequest();
+        }
         // Park the player at a ready manager for a POI/system.
         internal void PlaceAt(MapPointOfInterest poi, SystemMapData system)
         {
@@ -83,7 +86,6 @@ public sealed class TravelNativeAdapterTests
             GamePlayer.current = null;
             SpaceStationInterior.instance = null;
             Behaviour.Util.Singleton<TravelManager>.SetTestInstance = null;
-            Behaviour.Util.PersistentSingleton<Behaviour.Bootstrap.SceneLoader>.SetTestInstance = null;
         }
     }
 
@@ -115,7 +117,8 @@ public sealed class TravelNativeAdapterTests
         var ship = UnitFor(w);
         ship.spaceShipData!.dockingState = DockingState.Docking;
         var option = OptionFor(w, ship);
-        var owner = w.Adapter.CreateDockOwner(); // factory-time ownership
+        w.RequestDock(option, ship);
+        var owner = w.Adapter.CreateDockOwner(option); // factory-time ownership + request intent
         var docket = new DockFake(ship, new FakeWaitN(1)); // procedure child, then sets Docked at root end
         object? ctx = null;
         var observer = new CoroutineBoundaryObserver(docket,
@@ -128,6 +131,8 @@ public sealed class TravelNativeAdapterTests
         // Dispose of an in-flight dock is cancellation, never DockedPhysical.
         w.StationFacts.Clear();
         ship.spaceShipData!.dockingState = DockingState.Docking;
+        w.RequestDock(option, ship);
+        owner = w.Adapter.CreateDockOwner(option);
         var inflight = new DockFake(ship, new FakeWaitN(10));
         var observer2 = new CoroutineBoundaryObserver(inflight,
             onFirst: () => ctx = w.Adapter.CaptureDock(option, owner),
@@ -151,7 +156,7 @@ public sealed class TravelNativeAdapterTests
         // Source-faithful Undock: sets Undocking, yields a nested UndockingProcedure (which yields
         // a WaitUntil child), sets Leaving, then ResetDockingOption() nulls dockingSpaceship.
         var undock = new UndockFake(ship, option, new UndockingProcedure(new FakeWaitN(2)));
-        var owner = w.Adapter.CreateDockOwner(); // factory-time ownership
+        var owner = w.Adapter.CreateUndockOwner(); // factory-time ownership
         object? ctx = null;
         var observer = new CoroutineBoundaryObserver(undock,
             onFirst: () => w.Adapter.Guard(() => { ctx = w.Adapter.CaptureDock(option, owner); w.Adapter.OnUndocking(ctx); }),
@@ -173,7 +178,7 @@ public sealed class TravelNativeAdapterTests
         w.Adapter.Tick(w.Player, w.OriginManager); w.StationFacts.Clear();
         var ship = UnitFor(w);
         ship.spaceShipData!.dockingState = DockingState.Docking; // not Leaving
-        w.Adapter.OnLeaving(w.Adapter.CaptureDock(OptionFor(w, ship), w.Adapter.CreateDockOwner()));
+        w.Adapter.OnLeaving(w.Adapter.CaptureDock(OptionFor(w, ship), w.Adapter.CreateUndockOwner()));
         Assert.Empty(w.StationFacts);
     }
 
@@ -268,7 +273,8 @@ public sealed class TravelNativeAdapterTests
         var ship = UnitFor(w);
         ship.spaceShipData!.dockingState = DockingState.Docked;
         var option = OptionFor(w, ship);
-        var owner = w.Adapter.CreateDockOwner();
+        w.RequestDock(option, ship);
+        var owner = w.Adapter.CreateDockOwner(option);
         object? ctx = null;
         var docket = new DockFake(ship, new FakeWaitN(1));
         var observer = new CoroutineBoundaryObserver(docket,
@@ -474,7 +480,7 @@ public sealed class TravelNativeAdapterTests
         var option = OptionFor(w, ship);
         // Factory (patch) time pins session A + player. First actual step (still A) verifies and
         // captures the exact ship, emitting Undocking under A.
-        var owner = w.Adapter.CreateDockOwner();
+        var owner = w.Adapter.CreateUndockOwner();
         var ctx = w.Adapter.CaptureDock(option, owner);
         w.Adapter.OnUndocking(ctx);
         Assert.Equal(w.Session, Assert.Single(w.StationFacts).SessionId);
@@ -497,7 +503,7 @@ public sealed class TravelNativeAdapterTests
         var ship = UnitFor(w); ship.spaceShipData!.dockingState = DockingState.Docked;
         var option = OptionFor(w, ship);
         // Factory (patch) time under session A pins owner A (same player object).
-        var owner = w.Adapter.CreateDockOwner();
+        var owner = w.Adapter.CreateUndockOwner();
         // Session changes to B BEFORE the first actual step (before advance). The old factory owner
         // must NOT adopt B: CaptureDock at the first step sees owner.A != current B -> ZERO facts.
         var newSession = Guid.NewGuid();
@@ -517,7 +523,7 @@ public sealed class TravelNativeAdapterTests
         w.Adapter.Tick(w.Player, w.OriginManager); w.StationFacts.Clear();
         var ship = UnitFor(w); ship.spaceShipData!.dockingState = DockingState.Docked;
         var option = OptionFor(w, ship);
-        var owner = w.Adapter.CreateDockOwner();
+        var owner = w.Adapter.CreateUndockOwner();
         // Replacement session with a DIFFERENT player object mid-operation: no facts into it.
         var other = new GamePlayer { currentSystem = w.Origin, currentPointOfInterest = w.OriginPoi, currentSpaceShip = new SpaceShipData() };
         GamePlayer.current = other;
@@ -666,8 +672,12 @@ public sealed class TravelNativeAdapterTests
         var npc = new Behaviour.Unit.SpaceShip { spaceShipData = new SpaceShipData() };
         npc.spaceShipData!.dockingState = DockingState.Docked;
         var option = new DockingOption { dockingSpaceship = npc };
-        // NPC ship: CaptureDock fails the player-ship binding, so no fact is emitted.
-        w.Adapter.OnDockedPhysical(w.Adapter.CaptureDock(option, w.Adapter.CreateDockOwner()));
+        // An NPC assignment (SpaceStationActions) inside a request scope is still not the player's
+        // ship, so no intent exists and CaptureDock also fails the player-ship binding.
+        w.Adapter.EnterDockRequest();
+        w.Adapter.ObserveDockAssignment(option, npc, skipCoroutine: false);
+        w.Adapter.ExitDockRequest();
+        w.Adapter.OnDockedPhysical(w.Adapter.CaptureDock(option, w.Adapter.CreateDockOwner(option)));
         Assert.Empty(w.StationFacts);
     }
 
@@ -739,61 +749,100 @@ public sealed class TravelNativeAdapterTests
         Assert.Contains(w.Faults, f => f.Contains("thrower"));
     }
 
-    // H1 (revised): the native discriminator is the EXACT SceneLoader.CurrentScene captured at
-    // FACTORY time, never the live interior instance/lease. Native Dock() invokes onDocked BEFORE its
-    // first yield and onDocked opens the interior asynchronously, so the interior scene can become
-    // current between Dock()'s creation and the physical Docked completion.
+    // F1 (source-attributed intent): the discriminator is the native docking REQUEST the coroutine
+    // belongs to, never scene/interior state. The genuine return-to-a-visited-station ordering is:
+    // SpaceshipHasArrived -> CheckForDocking assigns the option -> CheckForSpaceStationEnter opens
+    // the interior SYNCHRONOUSLY (the station was visited before) -> frames later
+    // DockingOption.Update -> PerformDocking -> StartCoroutine(Dock()) -> completion.
     [Fact]
-    public void GenuineDockFactoryExteriorThenInteriorOpensBeforeCompletionStillEmitsOne()
+    public void ArrivalDockAtVisitedStationEmitsOneEvenThoughInteriorOpensBeforeTheDockCoroutine()
     {
         using var w = new World();
         w.Adapter.Tick(w.Player, w.OriginManager); w.StationFacts.Clear();
-        w.SetScene("Spacestation");                          // factory: EXTERIOR (genuine arrival dock)
-        var ship = UnitFor(w); ship.spaceShipData!.dockingState = DockingState.Docked;
+        var ship = UnitFor(w); ship.spaceShipData!.dockingState = DockingState.DockingAssigned;
         var option = OptionFor(w, ship);
-        var owner = w.Adapter.CreateDockOwner();              // captures flag at FACTORY (exterior)
-        // Before the physical Docked completion, onDocked flips the scene to INTERIOR and creates the
-        // interior instance. The factory-captured flag must still emit exactly ONE arrival dock.
-        w.SetScene("SpacestationInterior");
-        SpaceStationInterior.instance = new SpaceStationInterior();
+        w.RequestDock(option, ship);                       // CheckForDocking -> actual assignment
+        SpaceStationInterior.instance = new SpaceStationInterior(); // CheckForSpaceStationEnter, same call
+        var owner = w.Adapter.CreateDockOwner(option);     // frames later: the real Dock() factory
+        ship.spaceShipData!.dockingState = DockingState.Docked;
         var ctx = w.Adapter.CaptureDock(option, owner);
         w.Adapter.OnDockedPhysical(ctx);
         Assert.Equal(StationTransitionKind.DockedPhysical, Assert.Single(w.StationFacts).Kind);
+        // Native Update can start several Dock() coroutines for one docking: the consumed intent
+        // keeps the physical fact to exactly ONE.
+        var second = w.Adapter.CreateDockOwner(option);
+        w.Adapter.OnDockedPhysical(w.Adapter.CaptureDock(option, second));
+        Assert.Single(w.StationFacts);
         Assert.Empty(w.Faults);
     }
 
     [Fact]
-    public void ShipReinitDockFactoryInteriorWhileInstanceNullEmitsZeroEvenIfSceneExits()
+    public void ReinitAndRelinkAssignmentsOutsideARequestEmitZeroEvenWithNoInteriorAtAll()
     {
         using var w = new World();
         w.Adapter.Tick(w.Player, w.OriginManager); w.StationFacts.Clear();
-        w.SetScene("SpacestationInterior");                  // factory: INTERIOR (ship re-init), instance null/loading
+        SpaceStationInterior.instance = null;                 // pure exterior, no interior anywhere
         var ship = UnitFor(w); ship.spaceShipData!.dockingState = DockingState.Docked;
         var option = OptionFor(w, ship);
-        var owner = w.Adapter.CreateDockOwner();              // restore/relink captured at FACTORY
-        // The interior scene exits BEFORE the Dock() completes; instance now created too.
-        w.SetScene("Spacestation");
-        SpaceStationInterior.instance = new SpaceStationInterior();
-        var ctx = w.Adapter.CaptureDock(option, owner);
-        w.Adapter.OnDockedPhysical(ctx);
-        Assert.Empty(w.StationFacts);                         // restore/relink dock, never an arrival dock
+        // Different-docking-size re-init (GameplayManager.ReinitPlayerSpaceshipRoutine) assigns with
+        // skipCoroutine == false and therefore takes a REAL Dock() coroutine, but never through a
+        // docking request: no intent, so no owner and no fact.
+        w.Adapter.ObserveDockAssignment(option, ship, skipCoroutine: false);
+        var owner = w.Adapter.CreateDockOwner(option);
+        Assert.Null(owner);
+        w.Adapter.OnDockedPhysical(w.Adapter.CaptureDock(option, owner));
+        // Same-size relink/init tolerance fallback (skipCoroutine: true -> DockQuick) is likewise zero.
+        w.Adapter.ObserveDockAssignment(option, ship, skipCoroutine: true);
+        Assert.Null(w.Adapter.CreateDockOwner(option));
+        Assert.Empty(w.StationFacts);
         Assert.Empty(w.Faults);
     }
 
     [Fact]
-    public void InteriorDestroyedStaleButCurrentSceneExteriorGenuineDockEmitsOne()
+    public void RestoreAssignmentAfterARequestSupersedesTheIntentAndStaleOptionsCannotConsumeIt()
     {
         using var w = new World();
         w.Adapter.Tick(w.Player, w.OriginManager); w.StationFacts.Clear();
-        w.SetScene("Spacestation");                          // factory: EXTERIOR genuine arrival dock
-        SpaceStationInterior.instance = new SpaceStationInterior(); // stale/destroyed interior reference lingers
         var ship = UnitFor(w); ship.spaceShipData!.dockingState = DockingState.Docked;
         var option = OptionFor(w, ship);
-        var owner = w.Adapter.CreateDockOwner();
-        var ctx = w.Adapter.CaptureDock(option, owner);
-        w.Adapter.OnDockedPhysical(ctx);
-        // Instance existence/lease is irrelevant; the factory CurrentScene is EXTERIOR -> emit ONE.
-        Assert.Equal(StationTransitionKind.DockedPhysical, Assert.Single(w.StationFacts).Kind);
+        w.RequestDock(option, ship);
+        // A restore/relink assignment for the SAME option supersedes the pending request intent.
+        w.Adapter.ObserveDockAssignment(option, ship, skipCoroutine: true);
+        Assert.Null(w.Adapter.CreateDockOwner(option));
+        // A different option can never consume another option's live intent.
+        w.RequestDock(option, ship);
+        var otherOption = OptionFor(w, ship);
+        Assert.Null(w.Adapter.CreateDockOwner(otherOption));
+        w.Adapter.OnDockedPhysical(w.Adapter.CaptureDock(otherOption, w.Adapter.CreateDockOwner(otherOption)));
+        Assert.Empty(w.StationFacts);
+        // A session replacement drops the intent instead of letting the old request complete.
+        var owner = w.Adapter.CreateDockOwner(option);
+        Assert.NotNull(owner);
+        w.Adapter.SetSession(Guid.NewGuid());
+        w.Adapter.OnDockedPhysical(w.Adapter.CaptureDock(option, owner));
+        Assert.Empty(w.StationFacts);
+        Assert.Empty(w.Faults);
+    }
+
+    [Fact]
+    public void CancelledOrFailedRequestNeverManufacturesACompletion()
+    {
+        using var w = new World();
+        w.Adapter.Tick(w.Player, w.OriginManager); w.StationFacts.Clear();
+        var ship = UnitFor(w); ship.spaceShipData!.dockingState = DockingState.DockingAssigned;
+        var option = OptionFor(w, ship);
+        w.RequestDock(option, ship);
+        var owner = w.Adapter.CreateDockOwner(option);
+        // The approach is cancelled (CancelDocking / travel started): the ship never reaches Docked,
+        // so a completed coroutine still emits nothing.
+        ship.spaceShipData!.dockingState = null;
+        w.Adapter.OnDockedPhysical(w.Adapter.CaptureDock(option, owner));
+        // Undocking the same ship voids any pending request intent.
+        ship.spaceShipData!.dockingState = DockingState.Undocking;
+        w.Adapter.OnUndocking(w.Adapter.CaptureDock(option, w.Adapter.CreateUndockOwner()));
+        ship.spaceShipData!.dockingState = DockingState.Docked;
+        w.Adapter.OnDockedPhysical(w.Adapter.CaptureDock(option, owner));
+        Assert.Equal(new[] { StationTransitionKind.Undocking }, w.StationFacts.Select(f => f.Kind).ToArray());
         Assert.Empty(w.Faults);
     }
 
@@ -816,7 +865,7 @@ public sealed class TravelNativeAdapterTests
     public void CaptureDockBindingFailureIsReportedNotSwallowed()
     {
         using var w = new World();
-        var owner = w.Adapter.CreateDockOwner();
+        var owner = w.Adapter.CreateUndockOwner();
         object? ctx = null;
         // A genuine binding/reflection failure (ShipOf on a non-DockingOption) must surface through
         // Guard and be logged, not be silently treated as "not a player ship" (L3).
@@ -830,7 +879,7 @@ public sealed class TravelNativeAdapterTests
     {
         using var w = new World();
         w.Adapter.Tick(w.Player, w.OriginManager); w.StationFacts.Clear();
-        var owner = w.Adapter.CreateDockOwner();                 // factory owner under session A
+        var owner = w.Adapter.CreateUndockOwner();               // factory owner under session A
         var newSession = Guid.NewGuid();
         w.Adapter.SetSession(newSession);                        // replacement session (same/diff player)
         // Invalidation of a stale owner is a normal null return, never a fault on the replacement.

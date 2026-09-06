@@ -14,9 +14,8 @@ internal sealed class TravelNativeBindings
     private const string JumpGateType = "Source.Galaxy.POI.JumpGate";
     private const string DockingOptionType = "Behaviour.Spacestation.Docking.DockingOption";
     private const string SpaceShipType = "Behaviour.Unit.SpaceShip";
-    private const string SceneLoaderType = "Behaviour.Bootstrap.SceneLoader";
-    private readonly FieldInfo _player, _currentSystem, _currentPoi, _system, _rawName, _waypoints, _dockingState, _interiorInstance, _travelManagerInstance, _jumpTargetSystemGuid, _jumpTargetPoiGuid, _sceneLoaderInstance;
-    private readonly PropertyInfo _guid, _time, _localManager, _managerPoi, _ready, _target, _localTarget, _currentSpaceShip, _usingJumpgate, _interiorStation, _dockingShip, _shipData, _sceneLoaderCurrentScene;
+    private readonly FieldInfo _player, _currentSystem, _currentPoi, _system, _rawName, _waypoints, _dockingState, _interiorInstance, _travelManagerInstance, _jumpTargetSystemGuid, _jumpTargetPoiGuid;
+    private readonly PropertyInfo _guid, _time, _localManager, _managerPoi, _ready, _target, _localTarget, _currentSpaceShip, _usingJumpgate, _interiorStation, _dockingShip, _shipData;
     private readonly MethodInfo _travelActive, _travelNextWaypoint;
     internal TravelNativeBindings(Assembly assembly)
     {
@@ -61,13 +60,6 @@ internal sealed class TravelNativeBindings
         _dockingShip = Property(dockingOption, "dockingSpaceship", SpaceShipType);
         var spaceShip = assembly.GetType(SpaceShipType, true)!;
         _shipData = Property(spaceShip, "spaceShipData", "Source.SpaceShip.SpaceShipData");
-        // Read PersistentSingleton<T>.instance backing field (not Instance/Current getters) so
-        // polling never triggers Object.FindAnyObjectByType, then read SceneLoader.CurrentScene from it.
-        var sceneLoader = assembly.GetType(SceneLoaderType, true)!;
-        var persistent = assembly.GetType("Behaviour.Util.PersistentSingleton`1", true)!.MakeGenericType(sceneLoader);
-        _sceneLoaderInstance = persistent.GetField("instance", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.FlattenHierarchy)
-            ?? throw new MissingFieldException(persistent.FullName, "instance");
-        _sceneLoaderCurrentScene = Property(sceneLoader, "CurrentScene", "System.String");
     }
     internal object? Player => _player.GetValue(null);
     internal object? CurrentPoi(object player) => _currentPoi.GetValue(player);
@@ -111,15 +103,6 @@ internal sealed class TravelNativeBindings
     internal string? JumpPoiGuid(object? gate) => gate == null ? null : (string?)_jumpTargetPoiGuid.GetValue(gate);
     internal object? InteriorInstance() => _interiorInstance.GetValue(null);
     internal object? InteriorStation(object interior) => _interiorStation.GetValue(interior);
-    // Exact native SceneLoader.CurrentScene == "SpacestationInterior" (the discriminator
-    // CheckForDocking uses for ARRIVAL dock gating). Reads the persistent-singleton backing field
-    // (no object creation) and the instance CurrentScene; a missing SceneLoader is never interior.
-    internal bool InInteriorScene()
-    {
-        var loader = _sceneLoaderInstance.GetValue(null);
-        if (loader == null) return false;
-        return string.Equals((string)_sceneLoaderCurrentScene.GetValue(loader), "SpacestationInterior", StringComparison.Ordinal);
-    }
     // Live TravelManager singleton (null before gameplay; avoids the Instance property's scene query).
     internal object? TravelManager() => _travelManagerInstance.GetValue(null);
     internal int WaypointCount(object player) => ((System.Collections.ICollection)_waypoints.GetValue(player)!).Count;

@@ -34,6 +34,8 @@ internal static class BindingCatalog
     internal const string TravelManager = "Behaviour.Managers.TravelManager";
     internal const string SpaceStationInterior = "Behaviour.UI.Spacestation.SpaceStationInterior";
     internal const string DockingOption = "Behaviour.Spacestation.Docking.DockingOption";
+    // Global-namespace native type (verified against the inspected assembly).
+    internal const string SpacestationExterior = "SpacestationExteriorManager";
     internal static readonly MethodBinding[] Travel =
     {
         new("route", TravelManager, "SetRouteToPOI", false, "System.Boolean", "Source.Galaxy.MapPointOfInterest"),
@@ -43,6 +45,10 @@ internal static class BindingCatalog
         new("jumpWormhole", TravelManager, "JumpToWormhole", false, "System.Collections.IEnumerator", "Source.Galaxy.POI.Wormhole"),
         new("travelNextWaypoint", TravelManager, "TravelToNextWaypoint", false, "System.Void"),
         new("inSystemWarp", TravelManager, "TravelInSystem", false, "System.Collections.IEnumerator"),
+        // The genuine docking-request scope and the actual assignment inside it: intent, not scene
+        // state, distinguishes an arrival/HUD/idle dock from init/reinit/relink/NPC assignments.
+        new("dockRequest", SpacestationExterior, "CheckForDocking", false, "System.Void"),
+        new("dockAssign", DockingOption, "AssignSpaceshipForDocking", false, "System.Void", "Behaviour.Unit.SpaceShip", "System.Boolean"),
         new("dock", DockingOption, "Dock", false, "System.Collections.IEnumerator", "System.Boolean"),
         new("undock", DockingOption, "Undock", false, "System.Collections.IEnumerator"),
         new("emergencyUndock", DockingOption, "EmergencyUndock", false, "System.Void"),

@@ -130,12 +130,15 @@ public sealed class InstalledBindingTests
         Property("Behaviour.Managers.TravelManager", "usingJumpgate", "System.Boolean");
         Field("Behaviour.UI.Spacestation.SpaceStationInterior", "instance", "Behaviour.UI.Spacestation.SpaceStationInterior", true);
         Property("Behaviour.UI.Spacestation.SpaceStationInterior", "spacestation", "Source.Galaxy.POI.SpaceStation");
-        // H1 native discriminator: SceneLoader.CurrentScene (read via PersistentSingleton<SceneLoader>.instance).
-        Property("Behaviour.Bootstrap.SceneLoader", "CurrentScene", "System.String");
-        var persistent = module.GetType("Behaviour.Util.PersistentSingleton`1");
-        Assert.NotNull(persistent);
-        var inst = Assert.Single(persistent.Fields, f => f.Name == "instance");
-        Assert.True(inst.IsStatic);
+        // F1 source-attributed dock intent: the request scope and the actual assignment inside it.
+        // The scene loader is deliberately NOT a discriminator any more.
+        var request = Assert.Single(module.GetType("SpacestationExteriorManager").Methods,
+            m => m.Name == "CheckForDocking" && m.Parameters.Count == 0);
+        Assert.True(request.HasBody && !request.IsStatic && request.ReturnType.FullName == "System.Void");
+        var assign = Assert.Single(module.GetType("Behaviour.Spacestation.Docking.DockingOption").Methods,
+            m => m.Name == "AssignSpaceshipForDocking");
+        Assert.Equal(new[] { "Behaviour.Unit.SpaceShip", "System.Boolean" }, assign.Parameters.Select(p => p.ParameterType.FullName));
+        Assert.True(assign.HasBody && !assign.IsStatic);
         Assert.NotNull(module.GetType("Source.SpaceShip.Auto.DockingState"));
     }
 
@@ -197,5 +200,68 @@ public sealed class InstalledBindingTests
         using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
         var field = Assert.Single(assembly.MainModule.GetType(owner).Fields, f => f.Name == name);
         Assert.Equal(fieldType, field.FieldType.FullName); Assert.Equal(isStatic, field.IsStatic);
+    }
+
+    // F1 evidence: the dock discriminator must be the docking REQUEST, because the interior can be
+    // opened synchronously by the arrival itself, long before the Dock() coroutine is created.
+    [Fact]
+    public void ArrivalOpensTheInteriorBeforeTheDockCoroutineAndOnlyCheckForDockingIsARequest()
+    {
+        using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
+        var module = assembly.MainModule;
+        // Arrival: assignment first, then the interior is entered in the SAME synchronous call.
+        var arrival = Calls(module, "SpacestationExteriorManager", "SpaceshipHasArrived");
+        Assert.Contains("CheckForDocking", arrival);
+        Assert.Contains("CheckForSpaceStationEnter", arrival);
+        var request = Calls(module, "SpacestationExteriorManager", "CheckForDocking");
+        Assert.Contains("AssignClosestDockingOption", request);
+        Assert.Contains("CheckForSpaceStationEnter", request);
+        Assert.Contains("AssignSpaceshipForDocking", Calls(module, "SpacestationExteriorManager", "AssignClosestDockingOption"));
+        Assert.Contains("EnterSpacestation", Calls(module, "SpacestationExteriorManager", "CheckForSpaceStationEnter"));
+        Assert.Contains("ToggleSpaceStationInterior", Calls(module, "SpacestationExteriorManager", "EnterSpacestation"));
+        // The actual Dock() coroutine is created later by the approach update, not by the request.
+        Assert.DoesNotContain("Dock", request);
+        var perform = Calls(module, "Behaviour.Spacestation.Docking.DockingOption", "PerformDocking");
+        Assert.Contains("Dock", perform);
+        Assert.Contains("PerformDocking", Calls(module, "Behaviour.Spacestation.Docking.DockingOption", "Update"));
+        // Every other assignment callsite is a restore/relink/NPC path that never routes through a
+        // docking request, so it carries no intent.
+        foreach (var (owner, method) in new[]
+        {
+            ("GameplayManager", "ReinitPlayerSpaceshipRoutine"),
+            ("Behaviour.Unit.SpaceShip", "RelinkDockedShipToStation"),
+            ("SpacestationExteriorManager", "InitializePoi"),
+            ("Source.SpaceShip.Auto.SpaceStationActions", "CheckDockingState")
+        })
+        {
+            var calls = Calls(module, owner, method);
+            Assert.True(calls.Contains("AssignSpaceshipForDocking") || calls.Contains("AssignClosestDockingOption"),
+                owner + "." + method + " no longer assigns a docking option");
+            Assert.DoesNotContain("CheckForDocking", calls);
+        }
+    }
+
+    // Called member names of a method, including the MoveNext of its compiler-generated iterator.
+    private static System.Collections.Generic.HashSet<string> Calls(ModuleDefinition module, string owner, string name)
+    {
+        var type = module.GetType(owner) ?? throw new InvalidOperationException("Missing type: " + owner);
+        var method = type.Methods.SingleOrDefault(m => m.Name == name)
+            ?? throw new InvalidOperationException("Missing or overloaded method: " + owner + "." + name);
+        var result = new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal);
+        void Collect(MethodDefinition target)
+        {
+            if (!target.HasBody) return;
+            foreach (var instruction in target.Body.Instructions)
+                if (instruction.Operand is MethodReference call) result.Add(call.Name);
+        }
+        Collect(method);
+        var stateMachine = type.NestedTypes.FirstOrDefault(nested => nested.Name.StartsWith("<" + name + ">d__", StringComparison.Ordinal));
+        if (stateMachine != null)
+        {
+            var moveNext = stateMachine.Methods.SingleOrDefault(m => m.Name == "MoveNext");
+            if (moveNext != null) Collect(moveNext);
+            foreach (var lambda in stateMachine.NestedTypes.SelectMany(nested => nested.Methods)) Collect(lambda);
+        }
+        return result;
     }
 }

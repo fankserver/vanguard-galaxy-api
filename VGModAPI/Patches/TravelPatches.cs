@@ -118,20 +118,50 @@ internal static class TravelPatches
             __result = result;
         }
     }
+    internal static class DockRequest
+    {
+        // SpacestationExteriorManager.CheckForDocking is the ONLY native path that represents a
+        // genuine docking request (arrival auto-dock, the HUD dock button, idle autopilot). The
+        // scope is opened here and closed by the finalizer so a native throw cannot leak it; the
+        // assignment that happens inside it is what carries the intent.
+        internal static void Prefix()
+        {
+            var adapter = Adapter;
+            adapter?.Guard(() => adapter.EnterDockRequest());
+        }
+        internal static Exception? Finalizer(Exception? __exception)
+        {
+            var adapter = Adapter;
+            adapter?.Guard(() => adapter.ExitDockRequest());
+            return __exception;
+        }
+    }
+    internal static class DockAssign
+    {
+        // The ACTUAL assignment. Recorded before the native PerformDocking call inside it can create
+        // a Dock() coroutine, so an at-the-pad dock is attributed too. Assignments outside a request
+        // scope (InitializePoi init, ship re-init, relink, NPC auto actions, dungeon operations) carry
+        // no intent and additionally clear any stale intent for the same option.
+        internal static void Prefix(object __instance, object[] __args)
+        {
+            var adapter = Adapter;
+            adapter?.Guard(() => adapter.ObserveDockAssignment(__instance, __args[0], (bool)__args[1]));
+        }
+    }
     internal static class Dock
     {
         // DockQuick (restore/relink only; never a physical transition) is deliberately not hooked.
-        // A real Dock() coroutine's completion is eligible whenever the player ship has physically
-        // reached Docked. The context (session/player/ship) is pinned at the FIRST actual step, not
-        // at factory creation, so a session/player replacement before or during the coroutine can
-        // never emit an old operation's fact into the new session.
+        // A real Dock() coroutine's completion is eligible only when it belongs to the live docking
+        // request intent for THIS option. The context (session/player/ship) is pinned at the FIRST
+        // actual step, not at factory creation, so a session/player replacement before or during the
+        // coroutine can never emit an old operation's fact into the new session.
         internal static void Postfix(ref IEnumerator __result, object __instance)
         {
             var adapter = Adapter; if (adapter == null) return;
             var inner = __result;
             if (inner == null) return;
-            // Factory time: pin immutable session+player ownership now (never adopt a later session).
-            var owner = adapter.CreateDockOwner();
+            // Factory time: pin immutable session+player+intent ownership (never adopt a later one).
+            var owner = adapter.CreateDockOwner(__instance);
             object? dockContext = null;
             IEnumerator? wrapped = null;
             adapter.Guard(() =>
@@ -151,7 +181,7 @@ internal static class TravelPatches
             var inner = __result;
             if (inner == null) return;
             // Factory time: pin immutable session+player ownership now (never adopt a later session).
-            var owner = adapter.CreateDockOwner();
+            var owner = adapter.CreateUndockOwner();
             object? dockContext = null;
             IEnumerator? wrapped = null;
             adapter.Guard(() =>
@@ -169,7 +199,7 @@ internal static class TravelPatches
         internal static void Postfix(object __instance)
         {
             var adapter = Adapter;
-            adapter?.Guard(() => adapter.OnLeaving(adapter.CaptureDock(__instance, adapter.CreateDockOwner())));
+            adapter?.Guard(() => adapter.OnLeaving(adapter.CaptureDock(__instance, adapter.CreateUndockOwner())));
         }
     }
     internal static class InteriorAwake

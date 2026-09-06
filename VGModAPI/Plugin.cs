@@ -230,6 +230,8 @@ public sealed class Plugin : BaseUnityPlugin
                     "jumpWormhole" => typeof(TravelPatches.JumpWormhole),
                     "travelNextWaypoint" => typeof(TravelPatches.RouteBoundary),
                     "inSystemWarp" => typeof(TravelPatches.InSystemWarp),
+                    "dockRequest" => typeof(TravelPatches.DockRequest),
+                    "dockAssign" => typeof(TravelPatches.DockAssign),
                     "dock" => typeof(TravelPatches.Dock),
                     "undock" => typeof(TravelPatches.Undock),
                     "emergencyUndock" => typeof(TravelPatches.EmergencyUndock),

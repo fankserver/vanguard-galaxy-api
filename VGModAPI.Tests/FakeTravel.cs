@@ -53,18 +53,6 @@ namespace Behaviour.Util
         protected static T? instance;
         public static T? SetTestInstance { set => instance = value; }
     }
-    public class PersistentSingleton<T> where T : class
-    {
-        protected static T? instance;
-        public static T? SetTestInstance { set => instance = value; }
-    }
-}
-namespace Behaviour.Bootstrap
-{
-    public sealed class SceneLoader
-    {
-        public string CurrentScene { get; set; } = "Spacestation";
-    }
 }
 namespace Behaviour.Managers
 {

@@ -38,28 +38,42 @@ internal sealed class TravelNativeAdapter : IDisposable
     // captured at the FIRST ACTUAL STEP after verifying that ownership is still current, so a
     // session/player replacement before or during the coroutine can never attribute an old operation's
     // fact to the new session (finding 4/F4/B).
-    // DockOwner pins immutable session/player at FACTORY time. RestoreOrRelink is captured from the
-    // EXACT native SceneLoader.CurrentScene at FACTORY time and is never re-evaluated later: native
-    // Dock() invokes onDocked BEFORE its first yield (and onDocked opens the interior asynchronously),
-    // so the interior scene can become current between Dock()'s creation and the physical Docked
-    // completion. CheckForDocking gates ARRIVAL docks on CurrentScene != "SpacestationInterior", so a
-    // Dock() created while CurrentScene == "SpacestationInterior" is a restore/relink dock (e.g. a
-    // different-docking-size ship re-init) and must emit nothing, regardless of the interior instance
-    // / scene state later.
+    // A dock is a PHYSICAL transition only when it started from a genuine native docking REQUEST.
+    // The native request path is SpacestationExteriorManager.CheckForDocking (arrival auto-dock, the
+    // HUD dock button and idle autopilot all route through it); every other assignment callsite is a
+    // restore/relink/NPC path: InitializePoi(init: true), GameplayManager.ReinitPlayerSpaceshipRoutine,
+    // SpaceShip.RelinkDockedShipToStation, SpaceStationActions and DungeonOperation. Intent is
+    // therefore captured at the ACTUAL assignment (DockingOption.AssignSpaceshipForDocking) inside an
+    // explicit CheckForDocking scope and retained until the Dock() coroutine completes.
+    // The scene is never used as a discriminator: CheckForDocking assigns and then, in the SAME
+    // synchronous call, CheckForSpaceStationEnter can open the interior, while the actual Dock()
+    // coroutine is created frames later by DockingOption.Update's approach, so a factory-time
+    // CurrentScene check rejects genuine arrival docks at any previously visited station.
+    private sealed class DockIntent
+    {
+        internal readonly Guid Session;
+        internal readonly object Player;
+        internal readonly object Ship;
+        internal readonly object Option;
+        internal DockIntent(Guid session, object player, object ship, object option)
+        { Session = session; Player = player; Ship = ship; Option = option; }
+    }
+    // DockOwner pins immutable session/player at FACTORY time, plus (for docks) the exact request
+    // intent the coroutine belongs to. Undock owns no intent: it is always a real physical exit.
     private sealed class DockOwner
     {
         internal readonly Guid Session;
         internal readonly object Player;
-        internal readonly bool RestoreOrRelink;
-        internal DockOwner(Guid session, object player, bool restoreOrRelink) { Session = session; Player = player; RestoreOrRelink = restoreOrRelink; }
+        internal readonly DockIntent? Intent;
+        internal DockOwner(Guid session, object player, DockIntent? intent) { Session = session; Player = player; Intent = intent; }
     }
     private sealed class DockContext
     {
         internal readonly Guid Session;
         internal readonly object Player;
         internal readonly object Ship;
-        internal readonly bool RestoreOrRelink;
-        internal DockContext(Guid session, object player, object ship, bool restoreOrRelink) { Session = session; Player = player; Ship = ship; RestoreOrRelink = restoreOrRelink; }
+        internal readonly DockIntent? Intent;
+        internal DockContext(Guid session, object player, object ship, DockIntent? intent) { Session = session; Player = player; Ship = ship; Intent = intent; }
     }
     private readonly int _thread = Thread.CurrentThread.ManagedThreadId;
     internal readonly TravelEvents Events;
@@ -78,6 +92,11 @@ internal sealed class TravelNativeAdapter : IDisposable
     private TravelLegTracker.Leg? _leg;
     private TravelMode _pendingMode = TravelMode.Unknown;
     private CompletedRoute? _lastCompleted;
+    // At most one player dock request can be pending: the player has one ship and the exterior
+    // manager tracks one current docking option, so a new request supersedes the previous intent.
+    // Bounded by construction (a single field), and dropped on session change and disposal.
+    private DockIntent? _dockIntent;
+    private int _dockRequestDepth;
     private (object Instance, Guid Session, object Player, object? Station)? _interiorLease;
     private volatile bool _faulted;
     private Exception? _faultDetail;
@@ -146,6 +165,7 @@ internal sealed class TravelNativeAdapter : IDisposable
             _routeCompleted.Clear();
             _leg = null; _pendingMode = TravelMode.Unknown;
             _lastCompleted = null; _interiorLease = null;
+            _dockIntent = null; _dockRequestDepth = 0;
             Events.SetSession(session);
             Station.SetSession(session);
         });
@@ -415,22 +435,56 @@ internal sealed class TravelNativeAdapter : IDisposable
 
     // Station facts originate ONLY from native Dock()/Undock()/EmergencyUndock() coroutine
     // boundaries. DockQuick (same-size restore/relink) is never a physical transition and is not
-    // hooked; a different-docking-size ship re-init takes a real Dock() coroutine but is created
-    // while CurrentScene == "SpacestationInterior", so the factory-captured RestoreOrRelink flag
-    // suppresses it (arrival docks never run while the interior scene is current; CheckForDocking
-    // uses SceneLoader.CurrentScene, not instance existence). A genuine arrival Dock() is eligible
-    // when the player ship has physically reached Docked and the factory CurrentScene was not the
-    // interior.
+    // hooked. A Dock() coroutine is a genuine physical dock only when it belongs to a native docking
+    // REQUEST intent captured at the actual assignment inside a CheckForDocking scope; every other
+    // assignment path (init/reinit/relink/NPC/dungeon) carries no intent and emits nothing, even when
+    // it takes a real Dock() coroutine (the different-docking-size re-init) and even when no interior
+    // exists. The interior scene/instance is never a discriminator.
     // The context pins immutable session/player at FACTORY time (owner) and captures the exact SHIP
     // at the FIRST ACTUAL STEP only after verifying that ownership is still current. The ship object
     // is read at that step (before ResetDockingOption() nulls dockingOption.dockingSpaceship) so
     // attribution survives the reset (finding 3/5). When the session/player changed before this
     // step, it returns null so the old operation produces ZERO observer facts in the new session.
-    internal object? CreateDockOwner()
+
+    // Native docking-request scope (SpacestationExteriorManager.CheckForDocking). Nested/reentrant
+    // calls are counted so an inner return cannot close an outer request.
+    internal void EnterDockRequest() => _dockRequestDepth++;
+    internal void ExitDockRequest() { if (_dockRequestDepth > 0) _dockRequestDepth--; }
+
+    // The ACTUAL assignment (DockingOption.AssignSpaceshipForDocking). Inside a request scope, for
+    // the live player ship and a coroutine dock (skipCoroutine == false, i.e. not DockQuick), this
+    // records the immutable intent the later Dock() coroutine must belong to. Any other assignment
+    // for the same option supersedes/clears a stale intent instead of leaving it consumable.
+    internal void ObserveDockAssignment(object? dockingOption, object? ship, bool skipCoroutine)
+    {
+        if (dockingOption == null) return;
+        var player = _boundPlayer;
+        bool genuine = _dockRequestDepth > 0 && !skipCoroutine && ship != null
+            && IsLive(player) && _bindings.IsPlayerShip(ship, player);
+        if (!genuine)
+        {
+            if (_dockIntent != null && ReferenceEquals(_dockIntent.Option, dockingOption)) _dockIntent = null;
+            return;
+        }
+        _dockIntent = new DockIntent(_session, player!, ship!, dockingOption);
+    }
+
+    // Undock/EmergencyUndock ownership: a physical exit needs no docking request.
+    internal object? CreateUndockOwner()
     {
         // Unowned before the player is ready: never manufacture a session token.
         if (_session == Guid.Empty || _boundPlayer == null) return null;
-        return new DockOwner(_session, _boundPlayer, _bindings.InInteriorScene());
+        return new DockOwner(_session, _boundPlayer, null);
+    }
+    // Dock() factory ownership: only the exact option whose live request intent is still current.
+    internal object? CreateDockOwner(object? dockingOption)
+    {
+        if (_session == Guid.Empty || _boundPlayer == null || dockingOption == null) return null;
+        var intent = _dockIntent;
+        if (intent == null) return null;
+        if (intent.Session != _session || !ReferenceEquals(intent.Player, _boundPlayer)) { _dockIntent = null; return null; }
+        if (!ReferenceEquals(intent.Option, dockingOption)) return null; // another option cannot consume it
+        return new DockOwner(intent.Session, intent.Player, intent);
     }
     internal object? CaptureDock(object? dockingOption, object? ownerObject)
     {
@@ -443,7 +497,9 @@ internal sealed class TravelNativeAdapter : IDisposable
         if (owner.Session != _session || !ReferenceEquals(owner.Player, _boundPlayer)) return null;
         var ship = _bindings.ShipOf(dockingOption);
         if (ship == null || !_bindings.IsPlayerShip(ship, owner.Player)) return null;
-        return new DockContext(owner.Session, owner.Player, ship, owner.RestoreOrRelink);
+        // A dock coroutine must still carry the exact ship its request intent was recorded for.
+        if (owner.Intent != null && !ReferenceEquals(owner.Intent.Ship, ship)) return null;
+        return new DockContext(owner.Session, owner.Player, ship, owner.Intent);
     }
     internal void OnDockedPhysical(object? dockContext)
     {
@@ -456,19 +512,20 @@ internal sealed class TravelNativeAdapter : IDisposable
             var player = c.Player;
             if (!IsLive(player) || !_bindings.IsPlayerShip(c.Ship, player)) return;
             if (_bindings.ShipDockingState(c.Ship) != DockingStateDocked) return; // physical state required
-            // Native discriminator (H1): a genuine ARRIVAL dock never runs while the interior scene is
-            // current (CheckForDocking refuses when SceneLoader.CurrentScene == "SpacestationInterior"),
-            // so a Dock() created while CurrentScene == "SpacestationInterior" is a restore/relink dock
-            // (e.g. a different-docking-size ship re-init takes a real Dock() coroutine) and must not
-            // emit DockedPhysical with no undock between two docked facts. The flag is captured from the
-            // exact native SceneLoader.CurrentScene at FACTORY time: native Dock() invokes onDocked
-            // BEFORE its first yield and onDocked opens the interior asynchronously, so the interior can
-            // become current between Dock()'s creation and the physical Docked completion. Never test
-            // the live interior instance/lease here.
-            if (c.RestoreOrRelink) return;
+            // Source-attributed discriminator: the coroutine must still own the live docking-request
+            // intent recorded at its assignment. A restore/relink/re-init/NPC dock carries no intent,
+            // a superseded or already-completed intent is no longer live, and a stale option/player/
+            // session can never consume another request's intent. The interior scene/instance is never
+            // tested: CheckForDocking assigns and can open the interior synchronously through
+            // CheckForSpaceStationEnter, frames before DockingOption.Update creates the actual Dock().
+            if (c.Intent == null || !ReferenceEquals(_dockIntent, c.Intent)) return;
+            if (!ReferenceEquals(c.Intent.Ship, c.Ship)) return;
             var station = _bindings.CurrentLocation(player); // actual player location, not tracking cache
             if (station == null) return;
             Cache(station);
+            // One physical dock per request: native Update can start several Dock() coroutines for the
+            // same docking, so the intent is consumed here and later completions emit nothing.
+            _dockIntent = null;
             Station.Emit(c.Session, StationTransitionKind.DockedPhysical, station, _bindings.Time(player));
         });
     }
@@ -481,6 +538,8 @@ internal sealed class TravelNativeAdapter : IDisposable
             if (_session != c.Session || !ReferenceEquals(c.Player, _boundPlayer)) return;
             var player = c.Player;
             if (!IsLive(player) || !_bindings.IsPlayerShip(c.Ship, player)) return;
+            // The ship is physically leaving: any pending dock request for it is void.
+            if (_dockIntent != null && ReferenceEquals(_dockIntent.Ship, c.Ship)) _dockIntent = null;
             var station = _bindings.CurrentLocation(player);
             if (station == null) return;
             Cache(station);
@@ -657,6 +716,9 @@ internal sealed class TravelNativeAdapter : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        // Never retain native option/ship/player references past teardown.
+        _dockIntent = null; _dockRequestDepth = 0;
+        _boundPlayer = null;
         Events.Dispose();
         Station.Dispose();
     }
