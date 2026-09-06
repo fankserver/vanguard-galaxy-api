@@ -260,6 +260,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             foreach (var frame in Settle()) yield return frame;
             CheckJournalLoad("fixture-a"); Passed("reload-after-mission-probes");
         }
+        foreach (var frame in CheckGuildWaves()) yield return frame;
         foreach (var frame in CheckMissionIdentity()) yield return frame;
         foreach (var frame in CheckAnimaMissions()) yield return frame;
         foreach (var frame in CheckStockpilePilot()) yield return frame;

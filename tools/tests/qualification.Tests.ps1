@@ -216,7 +216,7 @@ try {
     $rejected = $false
     try { Assert-PersistenceProbeReceipt $probeRoot $probeProvenance } catch { $rejected = $true }
     Assert $rejected 'Missing mission receipt accepted.'
-    foreach ($name in @('mission-transitions.txt','mission-clear.txt','mission-guild.txt')) {
+    foreach ($name in @('mission-transitions.txt','mission-clear.txt','mission-guild.txt','mission-waves.txt')) {
         $rejected = $false
         try { Assert-PersistenceProbeReceipt $probeRoot $probeProvenance } catch { $rejected = $true }
         Assert $rejected "Missing mission receipt accepted: $name"

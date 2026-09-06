@@ -23,7 +23,7 @@ function Assert-PersistenceProbeReceipt([string]$Root, $Provenance) {
         if (!(Test-Path -LiteralPath $receipt) -or (Get-Content -LiteralPath $receipt -TotalCount 1) -ne 'PASS') { throw 'Mission identity probe did not complete.' }
     }
     if ($Provenance.PSObject.Properties['missionTransitionsProbe'] -and $Provenance.missionTransitionsProbe) {
-        foreach ($name in @('mission-transitions.txt','mission-clear.txt','mission-guild.txt')) {
+        foreach ($name in @('mission-transitions.txt','mission-clear.txt','mission-guild.txt','mission-waves.txt')) {
             $receipt = Join-Path $Root $name
             if (!(Test-Path -LiteralPath $receipt) -or (Get-Content -LiteralPath $receipt -TotalCount 1) -ne 'PASS') { throw "Mission probe did not complete: $name" }
         }
