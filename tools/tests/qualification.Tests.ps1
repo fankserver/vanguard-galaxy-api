@@ -178,7 +178,28 @@ try {
         [IO.File]::WriteAllText((Join-Path $probeRoot $name), 'PASS')
     }
     Assert-PersistenceProbeReceipt $probeRoot $probeProvenance
-    [IO.File]::WriteAllText($apiConfig, "[Persistence]`nEnabled = true`nRoot = C:\foreign-root`n[Missions]`nEnabled = true`n")
+    $probeProvenance.missionIdentityProbe = $true
+    $probeProvenance | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $probeRoot 'build-provenance.json')
+    $identityMarker = Join-Path $probeRoot 'mission-identity.enabled'
+    [IO.File]::WriteAllText($identityMarker, 'identity-v1')
+    [IO.File]::AppendAllText($apiConfig, "IdentityContinuity = true`n")
+    $null = Assert-QualificationInputs $probeRoot
+    [IO.File]::WriteAllText($identityMarker, 'tampered')
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $probeRoot } catch { $rejected = $true }
+    Assert $rejected 'Changed identity marker accepted.'
+    [IO.File]::WriteAllText($identityMarker, 'identity-v1')
+    [IO.File]::WriteAllText($apiConfig, $validApi + "IdentityContinuity = false`n")
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $probeRoot } catch { $rejected = $true }
+    Assert $rejected 'Changed identity config accepted.'
+    [IO.File]::WriteAllText($apiConfig, $validApi + "IdentityContinuity = true`n")
+    $rejected = $false
+    try { Assert-PersistenceProbeReceipt $probeRoot $probeProvenance } catch { $rejected = $true }
+    Assert $rejected 'Missing identity receipt accepted.'
+    [IO.File]::WriteAllText((Join-Path $probeRoot 'mission-identity.txt'), 'PASS')
+    Assert-PersistenceProbeReceipt $probeRoot $probeProvenance
+    [IO.File]::WriteAllText($apiConfig, "[Persistence]`nEnabled = true`nRoot = C:\foreign-root`n[Missions]`nEnabled = true`nIdentityContinuity = true`n")
     $rejected = $false
     try { $null = Assert-QualificationInputs $probeRoot } catch { $rejected = $true }
     Assert $rejected 'Foreign persistence root accepted.'

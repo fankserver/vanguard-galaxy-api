@@ -42,6 +42,13 @@ internal sealed class MissionBindings
         }
         return result.ToArray();
     }
+    internal (string Container, object Mission)[] SerializationMembers(object player)
+    {
+        var result = ((IEnumerable)_missions.GetValue(player)!).Cast<object>().Select(m => ("missions", m)).ToList();
+        foreach (var field in _special)
+            if (field.GetValue(player) is { } value) result.Add((field.Name, value));
+        return result.ToArray();
+    }
     internal bool Contains(object player, object mission) => Active(player).Any(value => ReferenceEquals(value, mission));
     internal bool Failed(object mission) => (bool)_failed.GetValue(mission)!;
     internal string? Definition(object mission) => (string?)_definition.GetValue(mission);

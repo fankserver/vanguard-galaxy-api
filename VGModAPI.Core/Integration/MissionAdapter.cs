@@ -56,7 +56,8 @@ internal sealed partial class MissionAdapter : IDisposable
         _hub.CheckThread();
         if (_faulted && !_reconciled)
         {
-            _reconciled = true; Clear();
+            _reconciled = true; Clear(); _identity?.Reset();
+            if (_identity != null) _hub.SetCapability("mission-continuity", false, "Mission observer fault; restart required.");
             _hub.SetCapability("mission-transitions", false, "Mission observer fault; restart required.");
         }
     }
@@ -64,10 +65,11 @@ internal sealed partial class MissionAdapter : IDisposable
     private void ObserveLifecycle(LifecycleEvent e)
     {
         if (e.Kind is LifecycleEventKind.SessionStarting or LifecycleEventKind.SessionInvalidated or LifecycleEventKind.SessionStartFailed)
-        { Clear(); return; }
+        { Clear(); _identity?.Reset(); return; }
         if (e.Kind != LifecycleEventKind.PlayerReady || e.Session == null) return;
         Clear(); _player = _bindings.Player; _session = e.Session.Id; Events.Reset(_session);
         if (_player == null) throw new InvalidOperationException("Ready mission player missing.");
+        SeedRestoredIdentities();
         using var observation = Events.Begin();
         foreach (var mission in _bindings.Active(_player))
             Events.Record(observation, mission, MissionTransitionKind.Restored, new MissionFacts(false, true),
@@ -135,6 +137,6 @@ internal sealed partial class MissionAdapter : IDisposable
     public void Dispose()
     {
         _hub.CheckThread(); if (_disposed) return;
-        Clear(); _disposed = true; _subscription.Dispose(); Events.Dispose();
+        Clear(); DisableIdentity(); _disposed = true; _subscription.Dispose(); Events.Dispose();
     }
 }

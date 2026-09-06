@@ -4,6 +4,7 @@ namespace Source.MissionSystem
 {
     public class Mission
     {
+        public LightJson.JsonValue ToJson() => new(new LightJson.JsonObject { Text = name });
         public string name = "Test mission";
         public string? storyId;
         public bool failed;
