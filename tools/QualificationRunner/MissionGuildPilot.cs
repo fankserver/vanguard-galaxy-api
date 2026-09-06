@@ -16,7 +16,7 @@ public sealed partial class Plugin
         var player = CurrentPlayer;
         var gameplay = SpGet(AccessTools.TypeByName("GameplayManager"), "Instance")!;
         var ship = SpGet(gameplay, "spaceShip")!;
-        Require((bool)AccessTools.Method(ship.GetType(), "AmmoInCargoForTurrets").Invoke(ship, null), "Guild probe fixture has no turret ammo; native LaunchClicked would return before assignment.");
+        Require((bool)AccessTools.Method(ship.GetType(), "AmmoInCargoForTurrets", new[] { typeof(bool) }).Invoke(ship, new object[] { false }), "Guild probe fixture has no turret ammo; native LaunchClicked would return before assignment.");
         var station = SpGet(AccessTools.TypeByName("Source.Galaxy.POI.SpaceStation"), "current");
         Require(station != null, "Guild probe requires a current station.");
         var missionBase = AccessTools.TypeByName("Source.MissionSystem.Mission");
