@@ -72,6 +72,11 @@ public sealed partial class Plugin
         {
             Require(!File.Exists(path), "Coordinated journal unexpectedly wrote a legacy sidecar.");
             var controller = SpGet(Chainloader.PluginInfos["vgmissionjournal"].Instance, "_lifecycle")!;
+            if (StockpileCoordinated && (_coordinatedStorageBlocked || _stockpileDisposed))
+            {
+                Require(!(bool)SpGet(controller, "CanRecord")!, "Coordinated journal did not pause with shared storage/refused provider.");
+                return;
+            }
             Require(controller.GetType().Name == "CoordinatedPersistence" && (bool)SpGet(controller, "CanRecord")!, "Coordinated journal was not ready after save.");
             _coordinatedJournalSnapshots[name] = LiveJournalIds();
             return;

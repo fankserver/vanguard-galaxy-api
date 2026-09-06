@@ -60,11 +60,19 @@ public sealed partial class Plugin
     private object SpRead(string path) => Assembly.Load("Newtonsoft.Json").GetType("Newtonsoft.Json.JsonConvert", true)!
         .GetMethod("DeserializeObject", new[] { typeof(string), typeof(Type) })!.Invoke(null,
             new object[] { File.ReadAllText(path), _stockpileAssembly!.GetType("VGStockpile.Transfers.Persistence.TransferSidecar", true)! })!;
+    private bool StockpileCoordinated => File.Exists(Path.Combine(_root!, "stockpile-coordinated.enabled"));
+    private readonly Dictionary<string, string> _coordinatedTransferSnapshots = new(StringComparer.Ordinal);
+    private bool _coordinatedStorageBlocked, _stockpileDisposed;
     private void CheckStockpileLoad(string name)
     {
         if (!StockpileSelected) return;
         Require(Stockpile.enabled, "Stockpile disabled in full pilot.");
         var snapshot = SpCall(StockpileEngine, "Snapshot");
+        if (StockpileCoordinated && _coordinatedTransferSnapshots.TryGetValue(name, out var saved))
+        {
+            Require(!File.Exists(StockpilePath(name)) && SpJson(snapshot) == saved, "Coordinated transfer roundtrip mismatch or legacy fallback present.");
+            return;
+        }
         Require(File.Exists(StockpilePath(name)) ? SpJson(snapshot) == SpJson(SpRead(StockpilePath(name)))
             : !((IEnumerable)SpGet(snapshot, "Items")!).Cast<object>().Any(), "Stockpile copied queue restore mismatch.");
     }
@@ -120,7 +128,12 @@ public sealed partial class Plugin
         var requestId = (string)SpGet(request, "Id")!;
         var creditsAfter = SpCredits;
         Save("qa-stockpile-pending", LifecycleEventKind.SaveSucceeded);
-        Require(SpJson(SpRead(StockpilePath("qa-stockpile-pending"))) == SpJson(SpCall(StockpileEngine, "Snapshot")), "Saved transfer snapshot mismatch.");
+        if (StockpileCoordinated)
+        {
+            Require(!File.Exists(StockpilePath("qa-stockpile-pending")), "Coordinated transfer wrote legacy output.");
+            _coordinatedTransferSnapshots["qa-stockpile-pending"] = SpJson(SpCall(StockpileEngine, "Snapshot"));
+        }
+        else Require(SpJson(SpRead(StockpilePath("qa-stockpile-pending"))) == SpJson(SpCall(StockpileEngine, "Snapshot")), "Saved transfer snapshot mismatch.");
         foreach (var frame in SpLoad("qa-stockpile-pending")) yield return frame;
         foreach (var frame in Settle()) yield return frame;
         CheckStockpileLoad("qa-stockpile-pending");
@@ -139,13 +152,25 @@ public sealed partial class Plugin
         Require(!File.Exists(StockpilePath("qa-stockpile-failure")) && SpJson(SpCall(StockpileEngine, "Snapshot")) == beforeFailure, "Failed save changed transfer persistence or queue.");
         var protectedPath = StockpilePath("qa-stockpile-protected");
         const string future = "{\"Version\":99,\"Items\":[]}";
-        File.WriteAllText(protectedPath, future);
-        Save("qa-stockpile-protected", LifecycleEventKind.SaveSucceeded);
-        Require(File.ReadAllText(protectedPath) == future && !((IEnumerable)SpCall(StockpileEngine, "Tick", float.MaxValue)).Cast<object>().Any(), "Protected write did not pause mutation.");
+        if (StockpileCoordinated)
+        {
+            var stateRoot = Path.Combine(_root!, "state"); var held = stateRoot + ".write-probe";
+            Directory.Move(stateRoot, held);
+            try
+            {
+                File.WriteAllText(stateRoot, "private coordinated write refusal");
+                _coordinatedStorageBlocked = true;
+                Save("qa-stockpile-protected", LifecycleEventKind.SaveSucceeded);
+            }
+            finally { _coordinatedStorageBlocked = false; File.Delete(stateRoot); Directory.Move(held, stateRoot); }
+        }
+        else { File.WriteAllText(protectedPath, future); Save("qa-stockpile-protected", LifecycleEventKind.SaveSucceeded); }
+        Require((StockpileCoordinated || File.ReadAllText(protectedPath) == future) && !((IEnumerable)SpCall(StockpileEngine, "Tick", float.MaxValue)).Cast<object>().Any(), "Protected write did not pause mutation.");
         result = SpCall(StockpileEngine, "RequestTransfer", sourceId, destId, manifest, 0);
         Require(SpGet(result, "Error")!.ToString() == "PersistenceUnavailable", "Write pause reason missing.");
         Save("qa-stockpile-retry", LifecycleEventKind.SaveSucceeded);
-        Require(File.Exists(StockpilePath("qa-stockpile-retry")), "Retry snapshot missing.");
+        if (StockpileCoordinated) Require((bool)SpGet(StockpileEngine, "CanOperate")! && !File.Exists(StockpilePath("qa-stockpile-retry")), "Coordinated retry failed or wrote legacy sidecar.");
+        else Require(File.Exists(StockpilePath("qa-stockpile-retry")), "Retry snapshot missing.");
         // Bring only the controlled queue near completion, then exercise the actual Unity driver.
         SpCall(StockpileEngine, "Tick", Math.Max(0f, (float)SpGet(request, "RemainingSeconds")! - 0.01f));
         var nearCompletion = ((IEnumerable)SpGet(StockpileEngine, "Pending")!).Cast<object>().Single(r => (string)SpGet(r, "Id")! == requestId);
@@ -164,11 +189,18 @@ public sealed partial class Plugin
         _pauseStockpileDriver = true;
         Require(SpQuantity(destId, item) == destCount + 1 && SpQuantity(sourceId, item) == sourceCount - 1 && SpCredits == creditsAfter, "Delivery inventory/credits mismatch.");
         Passed("Stockpile real reservation/cancellation/fees, save/reload, protected-write retry, and driver delivery");
-        foreach (var frame in SpLoad("qa-stockpile-protected")) yield return frame;
+        var refusalName = "qa-stockpile-protected";
+        if (StockpileCoordinated)
+        {
+            refusalName = "qa-stockpile-import-refusal";
+            File.Copy(Path.Combine(_saveRoot!, "qa-stockpile-protected.save"), Path.Combine(_saveRoot!, refusalName + ".save"));
+            protectedPath = StockpilePath(refusalName); File.WriteAllText(protectedPath, future);
+        }
+        foreach (var frame in SpLoad(refusalName)) yield return frame;
         result = SpCall(StockpileEngine, "RequestTransfer", sourceId, destId, manifest, 0);
         Require(SpGet(result, "Error")!.ToString() == "PersistenceUnavailable" && File.ReadAllText(protectedPath) == future, "Protected restore did not disable transfers.");
         File.WriteAllText(protectedPath, "{ corrupt");
-        foreach (var frame in SpLoad("qa-stockpile-protected")) yield return frame;
+        foreach (var frame in SpLoad(refusalName)) yield return frame;
         result = SpCall(StockpileEngine, "RequestTransfer", sourceId, destId, manifest, 0);
         Require(SpGet(result, "Error")!.ToString() == "PersistenceUnavailable" && File.ReadAllText(protectedPath) == "{ corrupt", "Corrupt restore did not disable transfers.");
         foreach (var frame in SpLoad("fixture-b")) yield return frame;
@@ -188,8 +220,14 @@ public sealed partial class Plugin
         var disposedRequest = SpCall(engine, "RequestTransfer", sourceId, destId, manifest, 0);
         Require(!(bool)SpGet(disposedRequest, "IsSuccess")! && SpGet(disposedRequest, "Error")!.ToString() == "SessionUnavailable"
             && SpCredits == teardownCredits && SpQuantity(sourceId, item) == teardownSource, "Disposed engine accepted a mutation or changed inventory/credits.");
+        _stockpileDisposed = true;
         Save("qa-stockpile-disposed", LifecycleEventKind.SaveSucceeded);
         Require(!File.Exists(StockpilePath("qa-stockpile-disposed")), "Disposed Stockpile persisted.");
+        if (StockpileCoordinated)
+        {
+            File.WriteAllText(Path.Combine(_root!, "stockpile-coordinated.txt"), "PASS\nActual transfer full-queue roundtrip, economics, write-refusal/retry, protected import and teardown with coordinated journal.");
+            Passed("actual-two-consumer-coordinated-transfers");
+        }
         Passed("Stockpile protected restore, slot replacement, and teardown; journal coexistence retained");
     }
 }
