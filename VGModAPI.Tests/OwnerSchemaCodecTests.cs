@@ -74,6 +74,38 @@ public sealed class OwnerSchemaCodecTests
     }
 
     [Fact]
+    public void MigrationBoundsFailWithoutPublishingCandidates()
+    {
+        var source = Codec().Encode(new byte[] { 1 });
+        int calls = 0;
+        var tooFar = new OwnerSchemaCodec("test.owner", 66, _ => true,
+            new Dictionary<int, Func<byte[], byte[]>> { [1] = b => { calls++; return b; } });
+        Assert.Equal(SchemaReadStatus.MigrationFailed, tooFar.Decode(source).Status);
+        Assert.Equal(0, calls);
+        var oversized = new OwnerSchemaCodec("test.owner", 2, _ => true,
+            new Dictionary<int, Func<byte[], byte[]>> { [1] = _ => new byte[OwnerSchemaCodec.MaxPayload + 1] });
+        Assert.Equal(SchemaReadStatus.MigrationFailed, oversized.Decode(source).Status);
+        foreach (int key in new[] { 0, 2 })
+            Assert.Throws<ArgumentException>(() => new OwnerSchemaCodec("test.owner", 2, _ => true,
+                new Dictionary<int, Func<byte[], byte[]>> { [key] = b => b }));
+    }
+
+    [Fact]
+    public void MaximumEnvelopeRoundtripsAndMalformedVersionsOrTrailingBytesFail()
+    {
+        var codec = new OwnerSchemaCodec(new string('a', 64), 1, _ => true);
+        var payload = new byte[OwnerSchemaCodec.MaxPayload];
+        var encoded = codec.Encode(payload);
+        Assert.Equal(SchemaReadStatus.Ready, codec.Decode(encoded).Status);
+        Assert.Equal(payload, codec.Decode(encoded).Payload);
+        encoded[4] = 0;
+        Assert.Equal(SchemaReadStatus.Corrupt, codec.Decode(encoded).Status);
+        var trailing = codec.Encode(payload);
+        Array.Resize(ref trailing, trailing.Length + 1);
+        Assert.Equal(SchemaReadStatus.Corrupt, codec.Decode(trailing).Status);
+    }
+
+    [Fact]
     public void BoundsAndNamespaceAreEnforced()
     {
         Assert.Throws<ArgumentException>(() => Codec("../owner"));

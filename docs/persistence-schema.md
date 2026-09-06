@@ -10,16 +10,16 @@ For the currently inspected assembly, SaveCurrentState wraps Version and seriali
 
 OwnerSchemaCodec uses only netstandard binary IO, UTF-8/ASCII and SHA-256; no JSON library is introduced or shipped. Providers own their payload formats and runtime dependencies. A provider using Newtonsoft must arrange one compatible runtime copy; the game is not assumed to supply it. System.Text.Json is not introduced given prior Unity/Mono faults. This codec is internal until the optional persistence service exposes its registration API.
 
-Envelope v1: ASCII magic VGOS, one-byte envelope version, one-byte owner length, owner ASCII, little-endian Int32 provider-schema version, Int32 payload length, payload, then SHA-256 of all preceding bytes. SHA-256 detects corruption, not malicious authorship. Owner IDs are1–64 lowercase ASCII letters/digits/dots/hyphens, beginning with a letter. They are namespaces, never filesystem paths. A coordinator must refuse duplicate registrations.
+Envelope v1: ASCII magic VGOS, one-byte envelope version, one-byte owner length, owner ASCII, little-endian Int32 provider-schema version, Int32 payload length, payload, then SHA-256 of all preceding bytes. SHA-256 detects corruption, not malicious authorship. Owner IDs are 1–64 lowercase ASCII letters/digits/dots/hyphens, beginning with a letter. They are namespaces, never filesystem paths. A coordinator must refuse duplicate registrations.
 
-Envelope version, provider schema version, public API version and game-adapter version are independent. Schema versions are positive integers. Payloads are at most1 MiB and envelopes at most payload limit+128 bytes. Read exact framing and refuse trailing bytes, invalid lengths, incorrect owner or digest. The storage reader must enforce the envelope bound before allocating/reading the entire file.
+Envelope version, provider schema version, public API version and game-adapter version are independent. Schema versions are positive integers. Payloads are at most 1 MiB and envelopes at most payload limit+128 bytes. Read exact framing and refuse trailing bytes, invalid lengths, incorrect owner or digest. The storage reader must enforce the envelope bound before allocating/reading the entire file.
 
 ## Outcomes and migrations
 
 - Missing input yields Missing, never fabricated successful data.
 - Corrupt framing/digest/validation yields Corrupt.
-- Newer envelope or provider schema yields Unsupported, with no downgrade attempt.
-- Older data requires every explicitly registered n→n+1 migration; at most64 steps. Missing, throwing, oversized or invalid migrations yield MigrationFailed.
+- Newer envelope or provider schema yields Unsupported, with no downgrade attempt. The envelope-version discriminator is read before digest verification because future layouts may move the digest; damage to that byte can therefore report Unsupported rather than Corrupt. Both outcomes protect the source.
+- Older data requires every explicitly registered n→n+1 migration; at most 64 steps; larger version gaps fail before callbacks run. Missing, throwing, oversized or invalid migrations yield MigrationFailed.
 - Successful decoding yields Ready and a defensive payload copy; successful migration yields a candidate plus a migrated flag. It does not write files.
 
 Source bytes, callback inputs and returned payloads are isolated by copying. One owner's failure does not poison another codec. Callbacks are trusted plugin code, not a sandbox: they must return promptly; this API cannot prevent a callback's unrelated filesystem/global side effects.

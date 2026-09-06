@@ -106,6 +106,7 @@ internal sealed class OwnerSchemaCodec
         }
         catch (Exception) { return new SchemaReadResult(SchemaReadStatus.Corrupt); }
         if (version > _version) return new SchemaReadResult(SchemaReadStatus.Unsupported);
+        if (_version - version > 64) return new SchemaReadResult(SchemaReadStatus.MigrationFailed);
         bool migrated = version != _version;
         try
         {
