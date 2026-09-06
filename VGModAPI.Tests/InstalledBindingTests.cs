@@ -29,6 +29,9 @@ public sealed class InstalledBindingTests
             Assert.Contains(mission.Fields, f => f.Name == "wave" && f.FieldType.FullName == "System.Int32");
         }
         Assert.Contains(assembly.MainModule.GetType("Behaviour.UI.Missions.FocusedMissionHandler").Properties, p => p.Name == "focusedMission");
+        var travel = assembly.MainModule.GetType("Behaviour.Managers.TravelManager");
+        Assert.Contains(travel.Properties, p => p.Name == "targetPoi");
+        Assert.Single(travel.Methods, m => m.Name == "IsLocalPoiReady" && m.Parameters.Count == 0 && m.ReturnType.FullName == "System.Boolean");
     }
 
     [Fact]
