@@ -5,7 +5,7 @@ using VGModAPI.Core;
 
 namespace VGModAPI.Runtime;
 
-internal sealed class MissionAdapter : IDisposable
+internal sealed partial class MissionAdapter : IDisposable
 {
     internal sealed class Call
     {
@@ -42,7 +42,7 @@ internal sealed class MissionAdapter : IDisposable
     internal MissionAdapter(LifecycleHub hub, MissionBindings bindings, Action<Exception> report)
     {
         _hub = hub; _bindings = bindings; _report = report;
-        Events = new MissionTransitions((_, error) => report(error));
+        Events = new MissionTransitions((owner, error) => report(new InvalidOperationException("Mission subscriber '" + owner + "' failed.", error)));
         _subscription = hub.Subscribe("vgmodapi.missions", e => Guard(() => ObserveLifecycle(e)));
     }
     internal void Guard(Action action)
@@ -60,7 +60,7 @@ internal sealed class MissionAdapter : IDisposable
             _hub.SetCapability("mission-transitions", false, "Mission observer fault; restart required.");
         }
     }
-    private void Clear() { _player = null; _session = null; _calls.Clear(); Events.Reset(null); }
+    private void Clear() { _player = null; _session = null; _calls.Clear(); _sweeps.Clear(); Events.Reset(null); }
     private void ObserveLifecycle(LifecycleEvent e)
     {
         if (e.Kind is LifecycleEventKind.SessionStarting or LifecycleEventKind.SessionInvalidated or LifecycleEventKind.SessionStartFailed)
@@ -81,6 +81,7 @@ internal sealed class MissionAdapter : IDisposable
         if (kind == "archive" && string.IsNullOrEmpty(definition)) return null;
         if (kind == "archive") mission = _calls.LastOrDefault(call => call.Kind == "remove" && call.BeforeActive && call.CompletedRemoval && call.Definition == definition)?.Mission;
         if (mission == null || !_bindings.IsMission(mission)) return null;
+        WitnessSweepInsertion(mission);
         bool active = _bindings.Contains(_player!, mission);
         foreach (var pending in _calls.Where(call => call.Kind == "accept" && ReferenceEquals(call.Mission, mission)))
             pending.WitnessedInsertion |= active;
@@ -121,7 +122,13 @@ internal sealed class MissionAdapter : IDisposable
         finally
         {
             int index = _calls.IndexOf(call);
-            if (index >= 0) { foreach (var pending in _calls.Skip(index)) pending.Closed = true; _calls.RemoveRange(index, _calls.Count - index); }
+            if (index >= 0)
+            {
+                foreach (var pending in _sweeps.Where(s => s.Observation.Order > call.Observation.Order)) pending.Closed = true;
+                _sweeps.RemoveAll(s => s.Observation.Order > call.Observation.Order);
+                foreach (var pending in _calls.Skip(index)) pending.Closed = true;
+                _calls.RemoveRange(index, _calls.Count - index);
+            }
             call.Closed = true; call.Observation.Dispose();
         }
     }

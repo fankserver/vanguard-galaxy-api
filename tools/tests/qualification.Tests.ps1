@@ -171,7 +171,12 @@ try {
     $rejected = $false
     try { Assert-PersistenceProbeReceipt $probeRoot $probeProvenance } catch { $rejected = $true }
     Assert $rejected 'Missing mission receipt accepted.'
-    [IO.File]::WriteAllText((Join-Path $probeRoot 'mission-transitions.txt'), 'PASS')
+    foreach ($name in @('mission-transitions.txt','mission-clear.txt','mission-guild.txt')) {
+        $rejected = $false
+        try { Assert-PersistenceProbeReceipt $probeRoot $probeProvenance } catch { $rejected = $true }
+        Assert $rejected "Missing mission receipt accepted: $name"
+        [IO.File]::WriteAllText((Join-Path $probeRoot $name), 'PASS')
+    }
     Assert-PersistenceProbeReceipt $probeRoot $probeProvenance
     [IO.File]::WriteAllText($apiConfig, "[Persistence]`nEnabled = true`nRoot = C:\foreign-root`n[Missions]`nEnabled = true`n")
     $rejected = $false

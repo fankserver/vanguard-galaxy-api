@@ -50,6 +50,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             AccessTools.Field(save, "_saves").SetValue(null, null);
             _scenario = File.ReadAllText(Path.Combine(_root, "scenario.txt")).Trim();
             Require(_scenario == "Full" || _scenario == "MissingApi" || _scenario == "UnavailableApi", "Unknown scenario.");
+            if (_scenario == "Full" && File.Exists(Path.Combine(_root, "mission-transitions.enabled"))) InstallMissionProbeGuards(harmony);
             var overlayMarker = Path.Combine(_root, "assembly-overlay.hash");
             _assemblyOverlay = File.Exists(overlayMarker);
             if (_assemblyOverlay)

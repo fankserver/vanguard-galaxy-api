@@ -249,6 +249,17 @@ public sealed partial class Plugin : BaseUnityPlugin
         foreach (var frame in NewGameAndSpaceLoad()) yield return frame;
         CheckContentReferences();
         CheckMissionTransitions();
+        CheckMissionSweepClear();
+        CheckGuildLaunches();
+        if (File.Exists(Path.Combine(_root!, "mission-transitions.enabled")))
+        {
+            // Probe cleanup restores native references directly; reset observer identity before any later pilot.
+            var probeSession = _api!.CurrentSession?.Id;
+            Load("fixture-a");
+            foreach (var frame in Wait(() => _api!.CurrentSession?.Phase == SessionPhase.GameplayInitialized && _api.CurrentSession.Id != probeSession, "post-mission-probe reload")) yield return frame;
+            foreach (var frame in Settle()) yield return frame;
+            CheckJournalLoad("fixture-a"); Passed("reload-after-mission-probes");
+        }
         foreach (var frame in CheckStockpilePilot()) yield return frame;
         foreach (var frame in CheckJournalTeardown()) yield return frame;
         foreach (var frame in RemainingLifecyclePilot()) yield return frame;

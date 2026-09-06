@@ -37,6 +37,28 @@ public sealed class InstalledBindingTests
         }
     }
 
+    [Fact]
+    public void GuildProbeSignaturesAndConstructorsMatchInstalledAssembly()
+    {
+        using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
+        var ammo = Assert.Single(assembly.MainModule.GetType("Behaviour.Unit.AbstractUnit").Methods, m => m.Name == "AmmoInCargoForTurrets");
+        Assert.Equal("System.Boolean", ammo.ReturnType.FullName);
+        var parameter = Assert.Single(ammo.Parameters);
+        Assert.Equal("System.Boolean", parameter.ParameterType.FullName); Assert.True(parameter.HasConstant); Assert.Equal(false, parameter.Constant);
+        foreach (var kind in new[] { "Bounty", "Patrol", "Industry" })
+        {
+            var mission = assembly.MainModule.GetType("Source.MissionSystem." + kind + "Mission");
+            Assert.Contains(mission.Methods, m => m.IsConstructor && !m.IsStatic && m.IsPublic && m.Parameters.Count == 0);
+            var board = assembly.MainModule.GetType("Behaviour.UI.Spacestation.Location." + kind + "Board");
+            var selected = Assert.Single(board.Fields, f => f.Name == "selectedMission");
+            Assert.Equal(mission.FullName, selected.FieldType.FullName);
+            var data = assembly.MainModule.GetType("Source.Galaxy.POI.Station." + kind + "Board");
+            Assert.Contains(data.Methods, m => m.IsConstructor && m.IsPublic && m.Parameters.Count == 1 && m.Parameters[0].ParameterType.FullName == "Source.Galaxy.POI.SpaceStation");
+            var station = assembly.MainModule.GetType("Source.Galaxy.POI.SpaceStation");
+            Assert.Equal(data.FullName, Assert.Single(station.Fields, f => f.Name == char.ToLowerInvariant(kind[0]) + kind.Substring(1) + "Board").FieldType.FullName);
+        }
+    }
+
     [Theory]
     [InlineData(BindingCatalog.Player, "current", BindingCatalog.Player, true)]
     [InlineData(BindingCatalog.Player, "isEphemeral", "System.Boolean", false)]
