@@ -289,7 +289,9 @@ finally {
     finally {
         # Diagnostic finalization: record exactly how the owned process ended, with no claim beyond
         # it. Receipt validation refuses a terminated run, so an incomplete pilot cannot look green.
-        @{ timedOut=$outcome.timedOut; killed=$outcome.killed; exitCode=$outcome.exitCode; timeoutSeconds=$TimeoutSeconds; endedUtc=[DateTime]::UtcNow.ToString('o') } |
+        @{ timedOut=$outcome.timedOut; killed=$outcome.killed; exitCode=$outcome.exitCode;
+           selfTerminated=($null -ne $outcome.exitCode -and [int]$outcome.exitCode -eq $GameSelfTerminationExitCode);
+           timeoutSeconds=$TimeoutSeconds; endedUtc=[DateTime]::UtcNow.ToString('o') } |
             ConvertTo-Json | Set-Content -LiteralPath (Join-Path $root 'run-outcome.json')
         if ($null -ne $process) { $process.Dispose(); $process = $null }
         try {

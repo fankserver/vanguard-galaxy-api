@@ -1,6 +1,7 @@
 # Windows-only, fake files only. Does not launch Unity or touch real game/profile data.
 $ErrorActionPreference = 'Stop'
 $script = Join-Path $PSScriptRoot '..\qualification.ps1'
+. (Join-Path $PSScriptRoot '..\qualification-profile.ps1')   # exit-outcome rule and process helpers
 . (Join-Path $PSScriptRoot '..\qualification-inputs.ps1')
 # Hosted Windows TEMP can use an 8.3 alias; match FileInfo's canonical full paths.
 $work = [IO.Path]::GetFullPath((Join-Path $env:TEMP ('vgmodapi-harness-test-' + [Guid]::NewGuid().ToString('N'))))
@@ -410,16 +411,22 @@ try {
     Assert $rejected 'Changed event trace header accepted.'
     WriteTravelOutputs $validRows $validEvents (TravelSummary $validRows 'PASS')
     Assert-PersistenceProbeReceipt $travelRoot $travelProvenance
-    # A launcher-terminated or non-zero-exit run is refused even with a PASS receipt on disk.
+    # A launcher-terminated, unknown-exit or unexpected-exit run is refused even with a PASS receipt
+    # on disk. Only a clean 0 and the game's source-proven self-termination code are accepted.
     $outcomePath = Join-Path $travelRoot 'run-outcome.json'
-    foreach ($outcome in @(@{timedOut=$true;killed=$true;exitCode=$null}, @{timedOut=$false;killed=$true;exitCode=$null}, @{timedOut=$false;killed=$false;exitCode=1})) {
+    foreach ($outcome in @(@{timedOut=$true;killed=$true;exitCode=$null}, @{timedOut=$false;killed=$true;exitCode=$null},
+        @{timedOut=$false;killed=$false;exitCode=$null}, @{timedOut=$false;killed=$false;exitCode=1},
+        @{timedOut=$false;killed=$false;exitCode=3}, @{timedOut=$false;killed=$false;exitCode=-1073741819},
+        @{timedOut=$true;killed=$false;exitCode=$GameSelfTerminationExitCode})) {
         $outcome | ConvertTo-Json | Set-Content -LiteralPath $outcomePath
         $rejected = $false
         try { Assert-PersistenceProbeReceipt $travelRoot $travelProvenance } catch { $rejected = $true }
-        Assert $rejected 'Terminated or failed launcher outcome accepted.'
+        Assert $rejected ('Terminated, unknown or unexpected launcher outcome accepted: exit ' + $outcome.exitCode)
     }
-    @{timedOut=$false;killed=$false;exitCode=0} | ConvertTo-Json | Set-Content -LiteralPath $outcomePath
-    Assert-PersistenceProbeReceipt $travelRoot $travelProvenance
+    foreach ($accepted in @(0, $GameSelfTerminationExitCode)) {
+        @{timedOut=$false;killed=$false;exitCode=$accepted} | ConvertTo-Json | Set-Content -LiteralPath $outcomePath
+        Assert-PersistenceProbeReceipt $travelRoot $travelProvenance
+    }
     Remove-Item -LiteralPath $outcomePath
     # The prepared budget reservation is pinned in provenance and cannot be edited afterwards.
     Assert ($travelProvenance.travelStationBudgetSeconds -eq $TravelStationBudgetSeconds) 'Prepared travel/station budget reservation missing.'

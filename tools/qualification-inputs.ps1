@@ -67,12 +67,13 @@ function Assert-TravelStationReceipt([string]$Root) {
     foreach ($path in @($summaryPath, $receiptPath, $eventsPath)) {
         if (!(Test-Path -LiteralPath $path -PathType Leaf)) { throw "Travel/station pilot output missing: $path" }
     }
-    # Launcher outcome first: a killed or timed-out run can never be reported as a pass.
+    # Launcher outcome first: a killed, timed-out, unknown-exit or unexpected-exit run can never be
+    # reported as a pass. The game's own quit handler self-terminates with a source-proven code (see
+    # Assert-QualificationExitOutcome); any other code still refuses.
     $outcomePath = Join-Path $Root 'run-outcome.json'
     if (Test-Path -LiteralPath $outcomePath -PathType Leaf) {
         $outcome = Get-Content -LiteralPath $outcomePath -Raw | ConvertFrom-Json
-        if ($outcome.timedOut -or $outcome.killed) { throw 'Travel/station run was terminated by the launcher; its evidence is incomplete.' }
-        if ($outcome.exitCode -ne 0) { throw "Travel/station run exited with code $($outcome.exitCode)." }
+        Assert-QualificationExitOutcome $outcome 'Travel/station run'
     }
     $summary = @(Get-Content -LiteralPath $summaryPath)
     if ($summary.Count -lt 3 -or $summary[0] -cne 'PASS') { throw 'Travel/station pilot did not complete with PASS.' }

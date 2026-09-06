@@ -130,6 +130,40 @@ Reverting the resolver reproduces the exact qa-77 `MissingMethodException`. This
 about name matching only: it is not native qualification, and the installed-metadata assertions
 remain metadata evidence. Raw run logs, fixtures and sandbox paths stay private and local.
 
+### Game self-termination exit code (qa-78)
+
+`qa-78` ran the whole Full runner to `PASS`, including the native travel/station phase (all six
+required cases passed with real native facts), and preserved every original file (37 hashes,
+complete direct file sets, byte-identical PlayerPrefs). The launcher nevertheless refused the run
+because the owned process reported OS exit code `-1` while the exit gate accepted only `0`.
+
+Root cause, proven from the inspected assembly (allowed hash) and the game's own shipped Mono
+libraries, not inferred from the receipt:
+
+1. `ApplicationQuitHandler.OnApplicationQuit()` runs `SteamStatsManager.HandleApplicationQuit()` and
+   `GameManager.HandleApplicationQuit()` (the quit-time autosave logged as `Quiting, save!`), and
+   then, when not in the editor, calls `Process.GetCurrentProcess().Kill()`.
+2. The `System.dll` shipped with the game implements `Process.Kill()` as
+   `TerminateProcess(handle, -1)`.
+
+So a NORMAL quit of this game always reports `-1` (`0xFFFFFFFF`), and the value passed to
+`Application.Quit(...)` never reaches the operating system. Corroborating evidence: the two recorded
+runs whose `Application.Quit` argument differed (`0` for the passing run, `1` for the failing one)
+both reported `-1`; the owner's own non-sandbox player logs end at `Quiting, save!` exactly like the
+sandbox log; no Windows Application Error/Hang event and no Unity crash dump exist for either run;
+and the owned process slot was released with no stray process. A host control that starts a benign
+child which calls `Process.GetCurrentProcess().Kill()` reports exactly `-1` on the same machine.
+
+The gate is therefore expressed as the game's documented quit contract instead of being relaxed: a
+run is accepted only when it was neither timed out nor launcher-killed, its exit code is KNOWN, and
+that code is either a clean `0` or exactly the self-termination `-1`. Any other code — including a
+crash status such as an access violation — and an unknown code still refuse the run, and the
+receipt/result checks are unchanged. `run-outcome.json` additionally records `selfTerminated` for
+audit. Raw logs, fixtures and sandbox paths stay private and local.
+
+The travel/station phase evidence of that run (six required cases) is controlled native evidence for
+that phase only; it is not full-run qualification and does not change `RuntimeQualified`.
+
 ## In-game acceptance checklist — controlled coverage through qa38
 
 Arrange owner approval before deployment. Use copied/disposable saves and the optional compiled `LifecycleObserver` example to record events. Record game/Unity/BepInEx versions, assembly hash, enabled mods, and relevant logs for each run.

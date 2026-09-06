@@ -23,6 +23,26 @@ function Wait-QualificationProcess($Process, [int]$TimeoutSeconds) {
     if ($Process.HasExited) { $outcome.exitCode = $Process.ExitCode }
     return $outcome
 }
+# Expected exit code of a NORMAL quit of the inspected game. Source-proven, not inferred from a
+# receipt: ApplicationQuitHandler.OnApplicationQuit() runs SteamStatsManager.HandleApplicationQuit
+# and GameManager.HandleApplicationQuit (the quit-time autosave that the logs show as
+# "Quiting, save!") and then, outside the editor, calls Process.GetCurrentProcess().Kill(); the Mono
+# System.dll shipped with the game implements Process.Kill() as TerminateProcess(handle, -1), so the
+# operating system always reports -1 (0xFFFFFFFF) and the value passed to Application.Quit(...) is
+# never observable. Two runs whose Application.Quit argument differed (0 for a passing run, 1 for a
+# failing one) both reported -1, and neither produced a Windows Application Error or a Unity crash
+# dump. Only this exact value and a clean 0 are accepted; every other code, and an unknown code,
+# still refuses the run, so a crash (which reports its own status code, e.g. an access violation)
+# cannot be mistaken for the game's self-termination.
+$GameSelfTerminationExitCode = -1
+function Assert-QualificationExitOutcome($Outcome, [string]$Context) {
+    if ($null -eq $Outcome) { throw "$Context has no recorded launcher outcome." }
+    if ($Outcome.timedOut) { throw "$Context timed out; its evidence is incomplete." }
+    if ($Outcome.killed) { throw "$Context was terminated by the launcher; its evidence is incomplete." }
+    if ($null -eq $Outcome.exitCode) { throw "$Context has an unknown exit code." }
+    $code = [int]$Outcome.exitCode
+    if ($code -ne 0 -and $code -ne $GameSelfTerminationExitCode) { throw "$Context exited with code $code." }
+}
 function Save-QualificationPrefs([string]$Key, [string]$Snapshot) {
     if (!$Key.StartsWith('HKCU\Software\')) { throw 'Only per-user software keys are supported.' }
     $path = 'Registry::HKEY_CURRENT_USER\' + $Key.Substring(5)

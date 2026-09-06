@@ -438,6 +438,10 @@ public sealed partial class Plugin : BaseUnityPlugin
         if (_root != null && File.Exists(Path.Combine(_root, "qualification.marker")))
             File.WriteAllText(Path.Combine(_root, "result.txt"), (passed ? "PASS\n" : "FAIL\n") + string.Join("\n", _passed) + "\n" + detail);
         // Do not restore the original save path or unpatch safety guards before vanilla quit handling.
+        // The verdict travels in result.txt, not in this code: the game's own
+        // ApplicationQuitHandler.OnApplicationQuit autosaves and then calls
+        // Process.GetCurrentProcess().Kill(), so the process always reports the Mono Kill status
+        // (TerminateProcess(handle, -1)) and never this argument.
         Application.Quit(passed ? 0 : 1);
     }
 
