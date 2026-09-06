@@ -1,6 +1,6 @@
 # Immutable generation storage (coordinator foundation)
 
-Internal storage primitive only: lifecycle capture, public registration, consumer migration and native qualification are still pending. Calling Publish is not itself authorization to save; the later coordinator must call it only for a matching successful vanilla operation.
+Internal storage primitive and lifecycle coordinator engine only: runtime wiring, public registration, consumer migration and native qualification are still pending. Calling Publish is not itself authorization to save; the later coordinator must call it only for a matching successful vanilla operation.
 
 ## Layout and publication
 
@@ -17,6 +17,18 @@ A failure before rename leaves an ignored stage directory; normal loading only r
 Same-filesystem directory rename is the publication boundary; individual files are flushed. This does not guarantee power-loss durability of directory metadata or atomicity with vanilla files. If vanilla succeeded but publication did not, report incomplete persistence and pause affected mutation; never silently attach future state. Filesystem recovery here is tested by explicit interruption exceptions, not actual power cuts.
 
 Only a missing final directory returns absence. Read errors, missing files within a published directory, schema faults, digest mismatches and unexpected entries throw and preserve data. Links in paths are refused, including ancestor junctions and OneDrive reparse-point placeholders. Root selection must use a writable non-linked local location; a junctioned Steam library is not automatically acceptable. Benign OS files such as desktop.ini or .DS_Store also trigger the strict layout block; manually removing only the stray entry restores an otherwise intact generation. Never remove required generation files as a recovery shortcut. This is a trusted single-process owned directory, not a defense against an adversary racing path replacements; no cross-process locking or directory-fsync guarantee is claimed.
+
+## Lifecycle coordinator engine
+
+The internal coordinator subscribes before any session starts. Providers register fixed owner codecs/capture/restore callbacks before a session; dynamic provider removal is not yet implemented. All access is main-thread-only. Callbacks must affect only their own in-memory state and must not mutate vanilla operations or block.
+
+At SessionStarting, hash the canonical load source; at PlayerReady, verify it has not changed and read only the exact generation. New games or absent generations receive fresh campaign identities. Corrupt published generations block the load instead of restoring empty state. Each owner's schema/restore failure independently denies that owner's mutation; opaque inactive/unsupported owner bytes are retained.
+
+Capture begins only for a matching GameplayInitialized session and SaveStarted operation. This is after vanilla snapshot serialization, not a pre-serialization hook. Encode defensive snapshots; failed active-owner capture aborts the whole candidate and pauses mutation, rather than relabeling older bytes as current. A later save can retry capture. SaveFailed/SaveSkipped discard their candidate without publication. SaveSucceeded must match operation, current session and canonical destination; only then hash actual destination bytes and publish.
+
+Mutation permission additionally requires no lifecycle callback dispatch, no pending saves and no publication fault. Publication faults pause all mutation until a successful publication or a new load. Schema/restore failures require another load; they do not become empty success. Original opaque bytes of inactive owners may be carried forward because they were never granted mutation. Reentrant session replacement during restore/capture abandons the old attempt. Invalidation/disposal clears pending candidates without a quit flush.
+
+This engine does not validate an active game installation or provide a public API yet. It trusts the supplied canonical-path and file-hash adapters and the lifecycle hub; runtime adapters must enforce actual path/version/thread constraints. No account-wide fallback or implicit legacy-sidecar import exists.
 
 ## Verification boundary
 

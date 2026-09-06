@@ -24,6 +24,7 @@ internal sealed class OwnerSchemaCodec
     internal const int MaxPayload = 1024 * 1024;
     private const int MaxEnvelope = MaxPayload + 128;
     private readonly string _owner;
+    internal string Owner => _owner;
     private readonly int _version;
     private readonly Func<byte[], bool> _validate;
     private readonly Dictionary<int, Func<byte[], byte[]>> _migrations;
