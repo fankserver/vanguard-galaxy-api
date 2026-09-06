@@ -153,7 +153,7 @@ public sealed partial class Plugin
         foreach (var frame in Wait(() =>
         {
             Require(Time.realtimeSinceStartup < driverDeadline,
-                $"Driver diagnostic timeout: calls={_stockpileDriverCalls}, allowed={_stockpileAllowedCalls}, delta={_stockpileDriverDelta}, sameEngine={ReferenceEquals(SpGet(driver, "_engine"), StockpileEngine)}, canOperate={SpGet(StockpileEngine, "CanOperate")}, driverType={driver.GetType().FullName}");
+                $"Driver diagnostic timeout: calls={_stockpileDriverCalls}, allowed={_stockpileAllowedCalls}, delta={_stockpileDriverDelta}, scale={Time.timeScale}, unscaledDelta={Time.unscaledDeltaTime}, maximumDelta={Time.maximumDeltaTime}, pauseCount={SpGet(_manager, "pauseCount")}, alertOpen={SpGet(_alertType, "IsOpen")}, sameEngine={ReferenceEquals(SpGet(driver, "_engine"), StockpileEngine)}, canOperate={SpGet(StockpileEngine, "CanOperate")}, driverType={driver.GetType().FullName}");
             return !((IEnumerable)SpGet(StockpileEngine, "Pending")!).Cast<object>().Any(r => (string)SpGet(r, "Id")! == requestId);
         }, "Stockpile driver delivery")) yield return frame;
         _pauseStockpileDriver = true;
