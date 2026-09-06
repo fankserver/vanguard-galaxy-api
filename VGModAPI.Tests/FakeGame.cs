@@ -3,7 +3,7 @@ using System.IO;
 // Deliberately small reflection doubles; these do NOT simulate Unity scene scheduling.
 namespace Source.Player
 {
-    public sealed class GamePlayer
+    public sealed partial class GamePlayer
     {
         public static GamePlayer? current;
         public bool isEphemeral;
