@@ -130,6 +130,34 @@ public sealed class MissionTransitionsTests
     }
 
     [Fact]
+    public void OuterFinalizerUnwindsDanglingInnerAndLaterEventsStillDeliver()
+    {
+        using var hub = new MissionTransitions((_, _) => { }); hub.Reset(Guid.NewGuid());
+        var events = new List<MissionTransition>(); using var sub = hub.Subscribe("test", events.Add);
+        var outer = hub.Begin(); var inner = hub.Begin();
+        Record(hub, inner, new object(), MissionTransitionKind.Accepted, new(false, true));
+        outer.Dispose(); inner.Dispose();
+        using (var next = hub.Begin()) Record(hub, next, new object(), MissionTransitionKind.Accepted, new(false, true));
+        Assert.Equal(2, events.Count);
+    }
+
+    [Fact]
+    public void WitnessedReacceptanceAfterUnobservedClearCreatesNewIdentityButRestoredCannotFollowAcceptance()
+    {
+        using var hub = new MissionTransitions((_, _) => { }); hub.Reset(Guid.NewGuid());
+        var events = new List<MissionTransition>(); using var sub = hub.Subscribe("test", events.Add); var token = new object();
+        using (var first = hub.Begin()) Record(hub, first, token, MissionTransitionKind.Restored, new(false, true));
+        using (var next = hub.Begin())
+        {
+            Record(hub, next, token, MissionTransitionKind.Accepted, new(false, true));
+            Record(hub, next, token, MissionTransitionKind.Accepted, new(false, true));
+            Record(hub, next, token, MissionTransitionKind.Restored, new(false, true));
+        }
+        using (var next = hub.Begin()) Record(hub, next, token, MissionTransitionKind.Accepted, new(false, true));
+        Assert.Equal(3, events.Count); Assert.Equal(3, events.Select(e => e.Mission.InstanceId).Distinct().Count());
+    }
+
+    [Fact]
     public void SnapshotCopiesTagsAndRejectsInvalidIdentity()
     {
         var tags = new[] { "Mining", "category:Salvage", "Mining" };

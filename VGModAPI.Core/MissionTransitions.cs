@@ -38,7 +38,7 @@ internal sealed class MissionTransitions : IMissionEvents, IDisposable
     {
         internal readonly Guid Id = Guid.NewGuid();
         internal bool Accepted, Removed;
-        internal long RemovedOrder;
+        internal long RemovedOrder, EstablishedOrder;
         internal readonly HashSet<MissionTransitionKind> Seen = new();
     }
     private sealed class Subscription : IDisposable
@@ -93,12 +93,15 @@ internal sealed class MissionTransitions : IMissionEvents, IDisposable
             _ => false
         };
         if (!verified) return;
-        if (!_entries.TryGetValue(identity, out var entry) || (kind == MissionTransitionKind.Accepted && entry.Removed && observation.Order > entry.RemovedOrder))
+        if (!_entries.TryGetValue(identity, out var entry) || (kind == MissionTransitionKind.Accepted &&
+            ((entry.Removed && observation.Order > entry.RemovedOrder) ||
+             (!entry.Removed && (entry.Seen.Contains(MissionTransitionKind.Accepted) || entry.Seen.Contains(MissionTransitionKind.Restored)) && observation.Order > entry.EstablishedOrder))))
         { _entries.Remove(identity); entry = new Entry(); _entries.Add(identity, entry); }
-        if (entry.Seen.Contains(kind)) return;
+        if (entry.Seen.Contains(kind) || (kind == MissionTransitionKind.Restored && entry.Seen.Count != 0)) return;
         var accepted = entry.Accepted || kind == MissionTransitionKind.Accepted;
         var snapshot = new MissionSnapshot(_session.Value, entry.Id, definitionId, name, tags, accepted);
         entry.Seen.Add(kind); entry.Accepted = accepted;
+        if (kind is MissionTransitionKind.Accepted or MissionTransitionKind.Restored) entry.EstablishedOrder = observation.Order;
         if (kind is MissionTransitionKind.Completed or MissionTransitionKind.Abandoned or MissionTransitionKind.Removed)
         { entry.Removed = true; entry.RemovedOrder = Math.Max(entry.RemovedOrder, observation.Order); }
         if (kind == MissionTransitionKind.Accepted)
@@ -116,8 +119,12 @@ internal sealed class MissionTransitions : IMissionEvents, IDisposable
     {
         CheckThread(); if (observation.Closed) return;
         if (_disposed || observation.Epoch != _epoch) { observation.Closed = true; return; }
-        if (_stack.Count == 0 || _stack.Peek() != observation) throw new InvalidOperationException("Mission observations must close in nesting order.");
-        observation.Closed = true; _stack.Pop();
+        if (!_stack.Contains(observation)) { observation.Closed = true; return; }
+        while (_stack.Count > 0)
+        {
+            var closed = _stack.Pop(); closed.Closed = true;
+            if (closed == observation) break;
+        }
         if (_stack.Count == 0) Flush();
     }
     private void Flush()
