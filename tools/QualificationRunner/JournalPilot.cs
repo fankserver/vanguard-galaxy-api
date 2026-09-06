@@ -91,7 +91,7 @@ public sealed partial class Plugin
         if (JournalCoordinated)
         {
             Require(_coordinatedJournalRoundtrips > 0 && _coordinatedJournalSnapshots.Count > 0, "No actual journal coordinated roundtrip observed.");
-            File.WriteAllText(Path.Combine(_root!, "journal-coordinated.txt"), "PASS\nActual MissionJournal schema3 capture/restore without legacy output sidecars; copied legacy import explicit.");
+            File.WriteAllText(Path.Combine(_root!, "journal-coordinated.txt"), "PASS\nActual MissionJournal history-ID roundtrip without legacy output sidecars; copied legacy import explicit.");
             Passed("actual-journal-coordinated-roundtrip-and-teardown");
         }
         Passed("journal-teardown");
