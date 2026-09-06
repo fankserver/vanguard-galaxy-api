@@ -56,6 +56,9 @@ public sealed partial class Plugin
         var gameplayType = AccessTools.TypeByName("GameplayManager");
         var gameplayField = AccessTools.Field(gameplayType, "Instance");
         var initialized = AccessTools.Field(gameplayType, "_initialized");
+        Time.timeScale = 1;
+        var menuSettle = Time.realtimeSinceStartup + 2;
+        while (Time.realtimeSinceStartup < menuSettle) yield return null;
         object? previous = null;
         foreach (var name in new[] { "fixture-a", "fixture-b" })
         {
@@ -79,6 +82,8 @@ public sealed partial class Plugin
             Require((bool)initialized.GetValue(gameplayField.GetValue(null))!, "Vanilla initialized state did not persist.");
             Logger.LogInfo("QA PASS: copied gameplay initialization without API lifecycle hooks: " + name);
             previous = playerField.GetValue(null);
+            // Match Full's direct replacement load; GameManager cleans the previous player.
+            if (name == "fixture-a") continue;
             // Preserve vanilla player cleanup, but omit the options-menu save action.
             AccessTools.Method(previous!.GetType(), "Cleanup").Invoke(previous, null);
             AccessTools.Method(scenesType, "StartMenu").Invoke(AccessTools.Property(scenesType, "Instance").GetValue(null), null);
