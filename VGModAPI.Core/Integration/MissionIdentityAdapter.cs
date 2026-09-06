@@ -14,7 +14,7 @@ internal sealed partial class MissionAdapter
         if (_identity != null || _session.HasValue) throw new InvalidOperationException("Mission identity registration must precede sessions.");
         _json = json; _identity = new MissionIdentityPersistence(persistence, () => !_faulted && !_disposed && Current, detail =>
         {
-            var capability = _hub.Capabilities.FirstOrDefault(c => c.Name == "coordinated-persistence");
+            var capability = _hub.Capabilities.FirstOrDefault(c => c.Name == "save-data");
             if (capability != null) _hub.SetCapability(capability.Name, capability.Available, detail);
         });
     }

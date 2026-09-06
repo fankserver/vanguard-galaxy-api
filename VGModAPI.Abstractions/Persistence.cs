@@ -29,7 +29,7 @@ public sealed class PersistenceProvider
     }
 }
 
-/// <summary>Disposal disables this owner; active-session removal conservatively pauses coordinated persistence.</summary>
+/// <summary>Disposal disables this owner; active-session removal conservatively pauses API-managed saves for all registered mods.</summary>
 public interface IPersistenceRegistration : IDisposable
 {
     bool MutationAllowed { get; }

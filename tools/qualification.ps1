@@ -138,18 +138,23 @@ if ($Action -eq 'Prepare') {
         New-Item -ItemType Directory -Path (Join-Path $bep 'config') -Force | Out-Null
         [IO.File]::WriteAllText((Join-Path $bep 'config\vgstockpile.cfg'), "[Transfers]`r`nEnabled = true`r`n")
     }
+    # Unselected pilots explicitly use legacy mode; selected pilots exercise the new defaults.
+    New-Item -ItemType Directory -Path (Join-Path $bep 'config') -Force | Out-Null
+    if ($StockpileBin -and !$StockpileCoordinated) { [IO.File]::AppendAllText((Join-Path $bep 'config\vgstockpile.cfg'), "[Persistence]`r`nUseApiSaveData = false`r`n") }
+    if ($MissionJournalBin -and !$JournalCoordinated) { [IO.File]::WriteAllText((Join-Path $bep 'config\vgmissionjournal.cfg'), "[Persistence]`r`nUseApiSaveData = false`r`n") }
+    if (!$PersistenceProbe) { [IO.File]::WriteAllText((Join-Path $bep 'config\vgmodapi.cfg'), "[Persistence]`r`nEnabled = false`r`n") }
     if ($StockpileCoordinated) {
-        [IO.File]::AppendAllText((Join-Path $bep 'config\vgstockpile.cfg'), "[Persistence]`r`nUseCoordinatedPersistence = true`r`nImportLegacySidecars = true`r`n")
+        [IO.File]::AppendAllText((Join-Path $bep 'config\vgstockpile.cfg'), "[Persistence]`r`nImportLegacySidecars = true`r`n")
         [IO.File]::WriteAllText((Join-Path $root 'stockpile-coordinated.enabled'), 'stockpile-v1')
     }
     if ($JournalCoordinated) {
         New-Item -ItemType Directory -Path (Join-Path $bep 'config') -Force | Out-Null
-        [IO.File]::WriteAllText((Join-Path $bep 'config\vgmissionjournal.cfg'), "[Persistence]`r`nUseCoordinatedPersistence = true`r`nImportLegacySidecars = true`r`n")
+        [IO.File]::WriteAllText((Join-Path $bep 'config\vgmissionjournal.cfg'), "[Persistence]`r`nImportLegacySidecars = true`r`n")
         [IO.File]::WriteAllText((Join-Path $root 'journal-coordinated.enabled'), 'journal-v1')
     }
     if ($PersistenceProbe) {
         New-Item -ItemType Directory -Path (Join-Path $bep 'config') -Force | Out-Null
-        [IO.File]::WriteAllText((Join-Path $bep 'config\vgmodapi.cfg'), "[Persistence]`r`nEnabled = true`r`nRoot = $(Join-Path $root 'state')`r`n")
+        [IO.File]::WriteAllText((Join-Path $bep 'config\vgmodapi.cfg'), "[Persistence]`r`nRoot = $(Join-Path $root 'state')`r`n")
         [IO.File]::WriteAllText((Join-Path $root 'persistence-probe.enabled'), 'probe-v1')
     }
     if ($VanillaLoadControl) { [IO.File]::WriteAllText((Join-Path $root 'vanilla-load.enabled'), 'control-v1') }
