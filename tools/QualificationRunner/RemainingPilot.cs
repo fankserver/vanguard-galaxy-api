@@ -50,7 +50,7 @@ public sealed partial class Plugin
         travel = Instance(AccessTools.TypeByName("Behaviour.Managers.TravelManager"));
         Require(SpGet(CurrentPlayer, "currentPointOfInterest") == null, "Transit arrived before parked-space setup.");
         Require((bool)SpCall(travel, "CancelTravel", new object[] { null! }), "Native route cancellation refused.");
-        var gameplay = Instance(AccessTools.TypeByName("GameplayManager"));
+        var gameplay = SpGet(AccessTools.TypeByName("GameplayManager"), "Instance")!;
         SpCall(SpGet(gameplay, "spaceShip")!, "CompleteTravel");
         foreach (var ship in ((IEnumerable)SpGet(gameplay, "fleetSpaceShips")!).Cast<object>()) SpCall(ship, "CompleteTravel");
         Require(SpGet(CurrentPlayer, "currentPointOfInterest") == null
