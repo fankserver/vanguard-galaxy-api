@@ -5,6 +5,7 @@
     <Version>0.1.1</Version>
     <Deterministic>true</Deterministic>
     <PathMap>$(MSBuildThisFileDirectory)=/src/</PathMap>
+    <DebugType Condition="'$(Configuration)' == 'Release'">none</DebugType>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 </Project>
