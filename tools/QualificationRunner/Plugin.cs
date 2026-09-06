@@ -74,6 +74,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             Require(SamePath(File.ReadAllText(Path.Combine(_root, "isolation-armed.txt")).Trim(), _saveRoot)
                 && SamePath(originalSavePath, _saveRoot), "Independent guard did not establish isolation.");
             Require(!SamePath(_saveRoot, protectedPath), "Real save directory is not a test target.");
+            ArmStockpile(harmony);
             // Defense in depth: prevent any Store/Recall outside the redirected directory.
             harmony.Patch(AccessTools.Method(_save, "Store"), prefix: new HarmonyMethod(typeof(Plugin), nameof(CheckSaveDestination)));
             harmony.Patch(AccessTools.Method(AccessTools.TypeByName("Source.Util.SaveGameFile"), "Recall"), prefix: new HarmonyMethod(typeof(Plugin), nameof(CheckLoadSource)));
@@ -144,6 +145,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             Require(sequence.SequenceEqual(new[] { LifecycleEventKind.SessionStarting, LifecycleEventKind.PlayerReady, LifecycleEventKind.GameplayInitialized }), "Unexpected load event order.");
             if (previous.HasValue) Require(_events.Any(e => e.Kind == LifecycleEventKind.SessionInvalidated && e.Session?.Id == previous), "Prior session was not invalidated.");
             CheckJournalLoad(n == 0 ? "fixture-a" : "fixture-b");
+            CheckStockpileLoad(n == 0 ? "fixture-a" : "fixture-b");
             Passed("fixture-load-" + n);
         }
 
@@ -244,6 +246,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         CheckJournalLoad("fixture-a");
         Passed("reload-after-failure");
         foreach (var frame in NewGameAndSpaceLoad()) yield return frame;
+        foreach (var frame in CheckStockpilePilot()) yield return frame;
         foreach (var frame in CheckJournalTeardown()) yield return frame;
         Require(_dispatchStateValid && _events.Count > 0 && _api is ILifecycleDispatchState state && !state.IsDispatchingCallbacks,
             "Callback dispatch state did not match native delivery boundaries.");

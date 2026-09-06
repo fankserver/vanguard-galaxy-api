@@ -108,7 +108,19 @@ public sealed class Plugin : BaseUnityPlugin
                     Require(!Harmony.GetAllPatchedMethods().Any(m => Harmony.GetPatchInfo(m)?.Owners.Contains("vgmissionjournal") == true), "Unavailable journal installed patches.");
                 }
             }
-            Finish(true, _scenario + (File.Exists(Path.Combine(_root!, "missionjournal.enabled")) ? "; MissionJournal refusal checked." : "; no consumer selected.")
+            if (File.Exists(Path.Combine(_root!, "stockpile.enabled")))
+            {
+                if (_scenario == "MissingApi")
+                    Require(!Chainloader.PluginInfos.ContainsKey("vgstockpile"), "Stockpile loaded without required API.");
+                else
+                {
+                    Require(Chainloader.PluginInfos.TryGetValue("vgstockpile", out var stockpile) && stockpile.Instance != null
+                        && !stockpile.Instance.enabled, "Stockpile did not disable itself for unavailable API.");
+                    Require(AccessTools.Field(stockpile!.Instance!.GetType(), "_engine").GetValue(stockpile.Instance) == null, "Unavailable Stockpile created an engine.");
+                    Require(!Harmony.GetAllPatchedMethods().Any(m => Harmony.GetPatchInfo(m)?.Owners.Contains("vgstockpile") == true), "Unavailable Stockpile installed patches.");
+                }
+            }
+            Finish(true, _scenario + "; selected consumer refusal checked."
                 + " No alternate game binary qualification claimed.");
         }
         catch (Exception ex) { Finish(false, ex.ToString()); }
