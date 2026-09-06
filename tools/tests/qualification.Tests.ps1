@@ -299,6 +299,34 @@ try {
     }
     [IO.File]::WriteAllText((Join-Path $probeRoot 'anima-missions.txt'), 'PASS')
     Assert-PersistenceProbeReceipt $probeRoot $probeProvenance
+    $travelRoot = Join-Path $work 'travel-station-sandbox'
+    $sandboxes += $travelRoot
+    & $script -Action Prepare -SandboxRoot $travelRoot -TravelStation @options
+    $travelProvenance = Assert-QualificationInputs $travelRoot
+    $travelConfig = Join-Path $travelRoot 'game\BepInEx\config\vgmodapi.cfg'
+    $validTravelConfig = [IO.File]::ReadAllText($travelConfig)
+    foreach ($changed in @($validTravelConfig.Replace("[Travel]`nEnabled = true", "[Travel]`nEnabled = false"))) {
+        [IO.File]::WriteAllText($travelConfig, $changed)
+        $rejected = $false
+        try { $null = Assert-QualificationInputs $travelRoot } catch { $rejected = $true }
+        Assert $rejected 'Changed Travel enable configuration accepted.'
+    }
+    [IO.File]::WriteAllText($travelConfig, $validTravelConfig)
+    $travelMarker = Join-Path $travelRoot 'travel-station.enabled'
+    [IO.File]::WriteAllText($travelMarker, 'changed')
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $travelRoot } catch { $rejected = $true }
+    Assert $rejected 'Changed travel/station marker accepted.'
+    [IO.File]::WriteAllText($travelMarker, 'travel-v1')
+    foreach ($value in @($null,'FAIL')) {
+        if ($value) { [IO.File]::WriteAllText((Join-Path $travelRoot 'travel-station.txt'), $value) }
+        $rejected = $false
+        try { Assert-PersistenceProbeReceipt $travelRoot $travelProvenance } catch { $rejected = $true }
+        Assert $rejected 'Missing/failed travel-station receipt accepted.'
+    }
+    [IO.File]::WriteAllText((Join-Path $travelRoot 'travel-station.txt'), 'PASS')
+    Assert-PersistenceProbeReceipt $travelRoot $travelProvenance
+    & $script -Action Cleanup -SandboxRoot $travelRoot
     [IO.File]::WriteAllText($apiConfig, "[Persistence]`nEnabled = true`nRoot = C:\foreign-root`n[Missions]`nEnabled = true`nIdentityContinuity = true`n")
     $rejected = $false
     try { $null = Assert-QualificationInputs $probeRoot } catch { $rejected = $true }

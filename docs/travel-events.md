@@ -25,7 +25,7 @@ Issue #12 remains open. Since 0.1.9 the real adapter is implemented and installe
 | Wormholes | Owned iterator observation | UNQUALIFIED | Nominal from waypoint target |
 | Fast-lane chains | TravelToNextWaypoint requests each in-system leg | UNQUALIFIED | Each hop has its own leg |
 | Initial load placement | Ready placement observed | UNQUALIFIED | Actively qualified by owner |
-| Dock/undock vs interior ready | Native Dock/Undock/EmergencyUndock boundaries; DockQuick unhooked; factory-captured SceneLoader.CurrentScene discriminator | UNQUALIFIED | DockQuick/relink (incl. different-size re-init) never emits; no universal ordering promise |
+| Dock/undock vs interior ready | Native Dock/Undock/EmergencyUndock boundaries; DockQuick unhooked; factory-captured SceneLoader.CurrentScene discriminator | UNQUALIFIED | DockQuick/relink (incl. different-size re-init) never emits; no universal ordering promise. Informational caveat: restore docks are interior-current in practice but NOT by construction — when an init/relink spawn misses the docking tolerance, native DockingOption.Update can start a real Dock() later; normally the interior opens synchronously first so the flag suppresses it, but a docked load (autoPlay/umbral transponder) can still surface an initial DockedPhysical until observed in-game. |
 | Direct field mutation/teleport/cheat | Excluded | — | Not treated as verified travel |
 
 TravelJournal remains archived and must not be edited, rebuilt, reactivated, migrated or bridged. The two active integration targets are Anima's system-visit recorder and Echo's final-route arrival-snap; Echo's distinct ETA-sync remains separate. Native API hook qualification and both consumers remain merge gates for closing #12, not gates satisfied by this reducer.

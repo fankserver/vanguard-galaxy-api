@@ -552,9 +552,11 @@ internal sealed class TravelNativeAdapter : IDisposable
     internal void Tick(object? player, object? manager)
     {
         if (player != null && IsLive(player)) ObservePlacement(player, manager);
-        // Dock/undock are observed only through native DockingOption boundaries (not polling),
-        // so same-frame transitions cannot be missed and initial loaded-docked state is never
-        // misreported as a transition.
+        // Dock/undock are observed only through native DockingOption boundaries (not polling), so
+        // same-frame transitions cannot be missed and initial loaded-docked state is never
+        // misreported as a transition. This is not a universal guarantee: when an init/relink spawn
+        // misses the docking tolerance, native DockingOption.Update can start a real Dock() later, so
+        // a docked load (e.g. autoPlay or umbral transponder) can still surface one DockedPhysical.
     }
 
     // Actual in-system transport-start evidence: TravelInSystem() runs ONLY after departure
