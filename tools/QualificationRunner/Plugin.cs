@@ -261,6 +261,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             CheckJournalLoad("fixture-a"); Passed("reload-after-mission-probes");
         }
         foreach (var frame in CheckMissionIdentity()) yield return frame;
+        foreach (var frame in CheckAnimaMissions()) yield return frame;
         foreach (var frame in CheckStockpilePilot()) yield return frame;
         foreach (var frame in CheckJournalTeardown()) yield return frame;
         foreach (var frame in RemainingLifecyclePilot()) yield return frame;

@@ -15,6 +15,18 @@ public sealed class InstalledBindingTests
         ?? throw new InvalidOperationException("Run make check-bindings or set VG_GAME_ASSEMBLY to the original installed Assembly-CSharp.dll.");
 
     [Fact]
+    public void AnimaProbeResolvesPlayerStoryLookupInsteadOfBareOverloadedName()
+    {
+        using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
+        var methods = assembly.MainModule.GetType("Source.MissionSystem.StoryMission").Methods.Where(m => m.Name == "Get").ToArray();
+        Assert.True(methods.Length > 1, "Fixture no longer exercises overloaded lookup.");
+        var target = Assert.Single(methods, m => m.IsStatic && m.Parameters.Select(p => p.ParameterType.FullName)
+            .SequenceEqual(new[] { "Source.Player.GamePlayer", "System.String" }));
+        Assert.Equal("Source.MissionSystem.Mission", target.ReturnType.FullName);
+        Assert.True(target.HasBody && target.Body.Instructions.Count > 2);
+    }
+
+    [Fact]
     public void AssemblyMatchesInspectedAdapterIdentity()
     {
         using var file = File.OpenRead(AssemblyPath);

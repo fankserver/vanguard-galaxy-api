@@ -1,6 +1,19 @@
 # Implementation plan
 
-## Status and decisions
+## Current roadmap and mandatory developer contract
+
+The live [roadmap #1](https://github.com/fankserver/vanguard-galaxy-api/issues/1) and its seven milestones govern delivery. The initial-scope sections below are a historical first-milestone plan, not the current scope or completion report. Observer/storage plumbing does not complete the content modules.
+
+Owner clarification: all supported persistent content supplied by the API must save and reconstruct automatically. Mod authors register definitions/behavior and declare lifetime/retention; they must not supply save hooks, codecs, sidecars or manual restoration scheduling for API-owned fields. The generic save-data API is for **additional custom mod data**, not mandatory glue for API content.
+
+- Identity is stable provider/plugin ID plus local ID, never mutable display name or author-invented string prefixes. Two providers may both define `MissionX` or `PoiX`; repeated live instances are distinct from definitions. Namespaces prevent accidental collisions, not malicious same-process access.
+- Persistent creation defaults to saved content; unavailable required persistence must refuse or report unavailability, not silently create unsaved content. Explicitly transient effects, UI handles and observations need no permanent record.
+- Temporary missions retain necessary offered/active progress; campaign missions retain authoritative completion/outcomes and supported choices within that save, without MissionJournal. Optional narrative journal history is separate. Retention limits must fail safely rather than truncate progression.
+- Reload, new games, save-as, slot changes, older-save rollback, failed/skipped writes, provider absence and schema/content migration must preserve ownership and references. Reuse safe vanilla serialization where appropriate; do not promise cross-file atomicity or serialization of executable custom behavior.
+
+Delivery owners: #13 missions, #14 objectives, #15 patrons, #19 items, #20 recipes/jobs, #21 persistent POIs/world content; #24 requires no-save-boilerplate mission/POI examples with two providers sharing local IDs. #22/#23/#25 preserve this contract through compatibility, game updates and future adapter changes. #11/#12 remain observation prerequisites. Anima's #11 observer migration explicitly retains legacy v4 save/load/factory hooks and does **not** fulfill #13/#14; its remaining supported-state persistence must move into those content APIs later. Completed #7–#10 are supporting infrastructure/policy, not proof of managed-content delivery.
+
+## Historical initial status and decisions
 
 The owner selected **plan for approval** and **core lifecycle first**, then authorized implementation. The core is now implemented with passing automated checks; in-game qualification remains pending. See `lifecycle-contract.md` for the implemented contract and `compatibility.md` for evidence.
 

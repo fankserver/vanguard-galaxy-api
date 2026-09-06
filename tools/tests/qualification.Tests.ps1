@@ -34,6 +34,31 @@ try {
     try { & $script -Action Prepare -SandboxRoot (Join-Path $work 'invalid-journal') -JournalCoordinated @options }
     catch { $rejected = $_.Exception.Message -like '*Coordinated journal requires*' }
     Assert $rejected 'Journal coordinated selection accepted without required inputs.'
+    $rejected = $false
+    try { & $script -Action Prepare -SandboxRoot (Join-Path $work 'invalid-anima') -AnimaBin $build @options }
+    catch { $rejected = $_.Exception.Message -like '*Anima requires*' }
+    Assert $rejected 'Anima accepted without safe prerequisites.'
+    Put 'bad-anima\VGAnima.dll' 'not-an-assembly'
+    $rejected = $false
+    try { & $script -Action Prepare -SandboxRoot (Join-Path $work 'bad-anima-root') -AnimaBin (Join-Path $work 'bad-anima') -AnimaRevision ('a' * 40) -MissionIdentityProbe -MissionTransitionsProbe -PersistenceProbe -MissionJournalBin $build @options }
+    catch { $rejected = $_.Exception.ToString() -match 'GetAssemblyName|BadImageFormat|manifest' }
+    Assert $rejected 'Non-assembly Anima input was accepted or failed at an unrelated gate.'
+    Assert (!(Test-Path -LiteralPath (Join-Path $work 'bad-anima-root'))) 'Bad Anima input left a prepared sandbox.'
+    function AnimaMetadata($version, $minimum) {
+        return [pscustomobject]@{
+            Name=[pscustomobject]@{Name='VGAnima';Version=[Version]$version}
+            MainModule=[pscustomobject]@{Types=@([pscustomobject]@{FullName='VGAnima.Plugin';CustomAttributes=@([pscustomobject]@{
+                AttributeType=[pscustomobject]@{FullName='BepInEx.BepInDependency'}
+                ConstructorArguments=@([pscustomobject]@{Value='vgmodapi'},[pscustomobject]@{Value=$minimum})
+            })})}
+        }
+    }
+    Assert-AnimaAssemblyMetadata (AnimaMetadata '0.3.0.0' '0.1.8')
+    foreach ($metadata in @((AnimaMetadata '0.2.0.0' '0.1.8'), (AnimaMetadata '0.3.0.0' '0.1.1'))) {
+        $rejected = $false
+        try { Assert-AnimaAssemblyMetadata $metadata } catch { $rejected = $true }
+        Assert $rejected 'Unsupported Anima version/dependency metadata accepted.'
+    }
     & $script -Action Prepare -SandboxRoot $sandbox @options
     $legacyConfigPath = Join-Path $sandbox 'game\BepInEx\config\vgmodapi.cfg'
     $legacyConfig = [IO.File]::ReadAllText($legacyConfigPath)
@@ -241,6 +266,38 @@ try {
     try { Assert-PersistenceProbeReceipt $probeRoot $probeProvenance } catch { $rejected = $true }
     Assert $rejected 'Missing journal events receipt accepted.'
     [IO.File]::WriteAllText((Join-Path $probeRoot 'journal-mission-events.txt'), 'PASS')
+    Assert-PersistenceProbeReceipt $probeRoot $probeProvenance
+    $probeProvenance.anima = $true
+    $probeProvenance.animaRevision = 'a' * 40
+    $animaDll = Join-Path $probeRoot 'game\BepInEx\plugins\VGAnima.dll'
+    [IO.File]::WriteAllText($animaDll, 'synthetic-anima')
+    $probeProvenance.plugins | Add-Member -NotePropertyName 'VGAnima.dll' -NotePropertyValue (Get-FileHash $animaDll).Hash
+    $probeProvenance | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $probeRoot 'build-provenance.json')
+    $animaMarker = Join-Path $probeRoot 'anima-missions.enabled'
+    [IO.File]::WriteAllText($animaMarker, 'anima-v1')
+    $animaConfig = Join-Path $probeRoot 'game\BepInEx\config\vganima.cfg'
+    $validAnima = "[General]`nEnabled = true`n[Llm]`nEnabled = false`nBaseUrl = `nApiKey = `n"
+    [IO.File]::WriteAllText($animaConfig, $validAnima)
+    $null = Assert-QualificationInputs $probeRoot
+    foreach ($changed in @($validAnima.Replace('Enabled = false','Enabled = true'), $validAnima.Replace('Enabled = true','Enabled = false'), $validAnima.Replace('ApiKey = ', 'ApiKey = synthetic-key'), ($validAnima + "[Llm]`nEnabled = false`n"))) {
+        [IO.File]::WriteAllText($animaConfig, $changed)
+        $rejected = $false
+        try { $null = Assert-QualificationInputs $probeRoot } catch { $rejected = $true }
+        Assert $rejected 'Changed Anima network/enable configuration accepted.'
+    }
+    [IO.File]::WriteAllText($animaConfig, $validAnima)
+    [IO.File]::WriteAllText($animaMarker, 'changed')
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $probeRoot } catch { $rejected = $true }
+    Assert $rejected 'Changed Anima marker accepted.'
+    [IO.File]::WriteAllText($animaMarker, 'anima-v1')
+    foreach ($value in @($null,'FAIL')) {
+        if ($value) { [IO.File]::WriteAllText((Join-Path $probeRoot 'anima-missions.txt'), $value) }
+        $rejected = $false
+        try { Assert-PersistenceProbeReceipt $probeRoot $probeProvenance } catch { $rejected = $true }
+        Assert $rejected 'Missing/failed Anima receipt accepted.'
+    }
+    [IO.File]::WriteAllText((Join-Path $probeRoot 'anima-missions.txt'), 'PASS')
     Assert-PersistenceProbeReceipt $probeRoot $probeProvenance
     [IO.File]::WriteAllText($apiConfig, "[Persistence]`nEnabled = true`nRoot = C:\foreign-root`n[Missions]`nEnabled = true`nIdentityContinuity = true`n")
     $rejected = $false
