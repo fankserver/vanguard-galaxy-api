@@ -9,7 +9,7 @@ FILES = {
     'README.md', 'LICENSE',
     *('docs/' + name + '.md' for name in (
         'checks', 'compatibility', 'implementation-plan', 'lifecycle-contract',
-        'qualification-runner', 'research-findings', 'persistence-identity', 'persistence-schema')),
+        'qualification-runner', 'research-findings', 'persistence-identity', 'persistence-schema', 'persistence-storage')),
 }
 
 
