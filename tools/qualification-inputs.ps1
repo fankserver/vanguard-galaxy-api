@@ -45,8 +45,62 @@ function Assert-PersistenceProbeReceipt([string]$Root, $Provenance) {
         if (!(Test-Path -LiteralPath $receipt) -or (Get-Content -LiteralPath $receipt -TotalCount 1) -ne 'PASS') { throw 'Persistence probe did not complete.' }
     }
     if ($Provenance.PSObject.Properties['travelStation'] -and $Provenance.travelStation) {
-        $receipt = Join-Path $Root 'travel-station.txt'
-        if (!(Test-Path -LiteralPath $receipt) -or (Get-Content -LiteralPath $receipt -TotalCount 1) -ne 'PASS') { throw 'Travel/station pilot did not complete.' }
+        Assert-TravelStationReceipt $Root
+    }
+}
+$TravelStationPhase = 'travel-in-system-station-v1'
+$TravelStationRequiredCases = @('initial-placement','station-undock','in-system-route','early-cancel','chained-route','station-dock')
+$TravelStationReceiptHeader = @('case','description','status','nativeIdentity','session','operation','detail')
+$TravelStationEventHeader = @('apiSequence','surface','case','session','operation','kind','mode','origin','requested','actual','gameSeconds','dwellSeconds')
+# Independent verification of the pilot's own claim: the declared phase, every mandatory case
+# identity, the receipt/event files and the identities they share must all agree. A first line of
+# PASS is never accepted on its own.
+function Assert-TravelStationReceipt([string]$Root) {
+    $summaryPath = Join-Path $Root 'travel-station.txt'
+    $receiptPath = Join-Path $Root 'travel-station-receipt.tsv'
+    $eventsPath = Join-Path $Root 'travel-station-events.tsv'
+    foreach ($path in @($summaryPath, $receiptPath, $eventsPath)) {
+        if (!(Test-Path -LiteralPath $path -PathType Leaf)) { throw "Travel/station pilot output missing: $path" }
+    }
+    $summary = @(Get-Content -LiteralPath $summaryPath)
+    if ($summary.Count -lt 3 -or $summary[0] -cne 'PASS') { throw 'Travel/station pilot did not complete with PASS.' }
+    if ($summary -notcontains "phase=$TravelStationPhase") { throw 'Travel/station receipt does not declare the qualified phase.' }
+    if ($summary -notcontains ("required=" + ($TravelStationRequiredCases -join ','))) { throw 'Travel/station receipt declares different required cases.' }
+    if ($summary -notcontains 'fault=none') { throw 'Travel/station pilot recorded a fault.' }
+    $rows = @(Get-Content -LiteralPath $receiptPath)
+    if ($rows.Count -lt 2 -or (($rows[0] -split "`t") -join ',') -cne ($TravelStationReceiptHeader -join ',')) { throw 'Travel/station receipt header changed.' }
+    $records = @($rows[1..($rows.Count - 1)] | ForEach-Object {
+        $columns = $_ -split "`t"
+        if ($columns.Count -ne $TravelStationReceiptHeader.Count) { throw 'Malformed travel/station receipt row.' }
+        [pscustomobject]@{ Case=$columns[0]; Status=$columns[2]; Session=$columns[4]; Operation=$columns[5] }
+    })
+    if (@($records | Where-Object { $_.Status -eq 'failed' }).Count -gt 0) { throw 'Travel/station receipt contains failed cases.' }
+    if (@($records | Where-Object { $_.Status -notin @('passed','not-run') }).Count -gt 0) { throw 'Unknown travel/station case status.' }
+    $passed = @($records | Where-Object { $_.Status -eq 'passed' })
+    $notRun = @($records | Where-Object { $_.Status -eq 'not-run' })
+    if ($passed.Count -eq 0) { throw 'Travel/station receipt has no passed case; empty coverage is not a pass.' }
+    if ($summary -notcontains ("rows=" + $records.Count + " passed=" + $passed.Count + " failed=0 notRun=" + $notRun.Count)) { throw 'Travel/station summary counts disagree with the receipt.' }
+    $events = @(Get-Content -LiteralPath $eventsPath)
+    if ($events.Count -lt 2 -or (($events[0] -split "`t") -join ',') -cne ($TravelStationEventHeader -join ',')) { throw 'Travel/station event trace missing or its header changed.' }
+    $eventRows = @($events[1..($events.Count - 1)] | ForEach-Object {
+        $columns = $_ -split "`t"
+        if ($columns.Count -ne $TravelStationEventHeader.Count) { throw 'Malformed travel/station event row.' }
+        [pscustomobject]@{ Case=$columns[2]; Session=$columns[3]; Operation=$columns[4] }
+    })
+    $eventCases = @($eventRows | ForEach-Object { $_.Case } | Select-Object -Unique)
+    $eventSessions = @($eventRows | ForEach-Object { $_.Session } | Select-Object -Unique)
+    $eventOperations = @($eventRows | ForEach-Object { $_.Operation } | Select-Object -Unique)
+    foreach ($case in $TravelStationRequiredCases) {
+        $matched = @($records | Where-Object { $_.Case -eq $case })
+        if ($matched.Count -ne 1) { throw "Required travel/station case is missing or duplicated: $case" }
+        if ($matched[0].Status -ne 'passed') { throw "Required travel/station case did not pass: $case" }
+        if ($summary -notcontains "required-case $case=passed") { throw "Travel/station summary and receipt disagree about $case." }
+        if ($matched[0].Session -notmatch '^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$') { throw "Required travel/station case has no session identity: $case" }
+        if ($case -notin $eventCases) { throw "No observed public events for required travel/station case: $case" }
+    }
+    foreach ($record in $passed) {
+        if ($record.Session -notin $eventSessions) { throw "Receipt session identity is absent from the event trace: $($record.Case)" }
+        if ($record.Operation -and $record.Operation -notin $eventOperations) { throw "Receipt operation identity is absent from the event trace: $($record.Case)" }
     }
 }
 function Assert-VanillaControlReceipt([string]$Root, $Provenance) {

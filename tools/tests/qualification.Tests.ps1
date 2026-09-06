@@ -305,7 +305,12 @@ try {
     $travelProvenance = Assert-QualificationInputs $travelRoot
     $travelConfig = Join-Path $travelRoot 'game\BepInEx\config\vgmodapi.cfg'
     $validTravelConfig = [IO.File]::ReadAllText($travelConfig)
-    foreach ($changed in @($validTravelConfig.Replace("[Travel]`nEnabled = true", "[Travel]`nEnabled = false"))) {
+    # The prepared config uses CRLF, so these mutations must too or they silently change nothing.
+    Assert ($validTravelConfig -match "(?m)^\[Travel\]\r?\nEnabled = true\s*$") 'Prepared travel config shape changed.'
+    foreach ($changed in @($validTravelConfig.Replace("[Travel]`r`nEnabled = true", "[Travel]`r`nEnabled = false"),
+        $validTravelConfig.Replace("[Travel]`r`nEnabled = true", "[Travel]`r`nEnabled = true`r`nEnabled = true"),
+        $validTravelConfig.Replace("[Travel]`r`nEnabled = true", ""))) {
+        Assert ($changed -ne $validTravelConfig) 'Travel config mutation did not change the prepared file.'
         [IO.File]::WriteAllText($travelConfig, $changed)
         $rejected = $false
         try { $null = Assert-QualificationInputs $travelRoot } catch { $rejected = $true }
@@ -318,13 +323,68 @@ try {
     try { $null = Assert-QualificationInputs $travelRoot } catch { $rejected = $true }
     Assert $rejected 'Changed travel/station marker accepted.'
     [IO.File]::WriteAllText($travelMarker, 'travel-v1')
-    foreach ($value in @($null,'FAIL')) {
-        if ($value) { [IO.File]::WriteAllText((Join-Path $travelRoot 'travel-station.txt'), $value) }
+    # Synthetic receipts only: the validator must reject a claimed PASS that the rows, the case
+    # identities or the observed event trace do not actually support.
+    $travelSession = [Guid]::NewGuid().ToString()
+    $travelOperation = [Guid]::NewGuid().ToString()
+    function TravelRow($case, $status, $session) { return ($case + "`tdescription`t" + $status + "`tsystem:poi`t" + $session + "`t`tdetail") }
+    function TravelEvent($case, $session, $operation) { return ("1`ttravel`t" + $case + "`t" + $session + "`t" + $operation + "`tArrived`tInSystem`tsystem:a`tsystem:b`tsystem:b`t1.000`t") }
+    function TravelSummary($rows, $first) {
+        # The comma keeps each split row an array instead of unrolling its columns.
+        $records = @($rows | ForEach-Object { ,($_ -split "`t") })
+        $passed = @($records | Where-Object { $_[2] -eq 'passed' }).Count
+        $failed = @($records | Where-Object { $_[2] -eq 'failed' }).Count
+        $notRun = @($records | Where-Object { $_[2] -eq 'not-run' }).Count
+        $lines = @($first, "phase=$TravelStationPhase", ("required=" + ($TravelStationRequiredCases -join ',')),
+            ("rows=" + $records.Count + " passed=$passed failed=$failed notRun=$notRun"))
+        foreach ($case in $TravelStationRequiredCases) {
+            $matched = @($records | Where-Object { $_[0] -eq $case })
+            $state = if ($matched.Count -eq 1) { $matched[0][2] } elseif ($matched.Count -eq 0) { 'absent' } else { 'duplicated' }
+            $lines += "required-case $case=$state"
+        }
+        return @($lines + @('optional-not-run=', 'fault=none', 'result=phase satisfied'))
+    }
+    function WriteTravelOutputs($rows, $events, $summary) {
+        [IO.File]::WriteAllLines((Join-Path $travelRoot 'travel-station-receipt.tsv'), [string[]]@(($TravelStationReceiptHeader -join "`t")) + [string[]]$rows)
+        [IO.File]::WriteAllLines((Join-Path $travelRoot 'travel-station-events.tsv'), [string[]]@(($TravelStationEventHeader -join "`t")) + [string[]]$events)
+        [IO.File]::WriteAllLines((Join-Path $travelRoot 'travel-station.txt'), [string[]]$summary)
+    }
+    function AssertTravelRejected($rows, $events, $summary, $message) {
+        WriteTravelOutputs $rows $events $summary
         $rejected = $false
         try { Assert-PersistenceProbeReceipt $travelRoot $travelProvenance } catch { $rejected = $true }
-        Assert $rejected 'Missing/failed travel-station receipt accepted.'
+        Assert $rejected $message
     }
-    [IO.File]::WriteAllText((Join-Path $travelRoot 'travel-station.txt'), 'PASS')
+    $validRows = @($TravelStationRequiredCases | ForEach-Object { TravelRow $_ 'passed' $travelSession })
+    $validRows += (TravelRow 'cross-system-jumpgate' 'not-run' $travelSession)
+    $validEvents = @($TravelStationRequiredCases | ForEach-Object { TravelEvent $_ $travelSession $travelOperation })
+    $rejected = $false
+    try { Assert-PersistenceProbeReceipt $travelRoot $travelProvenance } catch { $rejected = $true }
+    Assert $rejected 'Missing travel/station receipt files accepted.'
+    WriteTravelOutputs $validRows $validEvents (TravelSummary $validRows 'PASS')
+    Assert-PersistenceProbeReceipt $travelRoot $travelProvenance
+    $failedRows = @($validRows[0..4]) + @(TravelRow 'station-dock' 'failed' $travelSession)
+    AssertTravelRejected $failedRows $validEvents (TravelSummary $failedRows 'PASS') 'Claimed PASS with a failed case row accepted.'
+    Assert ((Test-Path -LiteralPath (Join-Path $travelRoot 'travel-station-receipt.tsv')) -and (Test-Path -LiteralPath (Join-Path $travelRoot 'travel-station-events.tsv'))) 'A failed attempt must keep its receipt and event diagnostics.'
+    $skippedRows = @($TravelStationRequiredCases | ForEach-Object { TravelRow $_ 'not-run' $travelSession })
+    AssertTravelRejected $skippedRows $validEvents (TravelSummary $skippedRows 'PASS') 'All-skipped coverage accepted as PASS.'
+    $missingRows = @($validRows | Where-Object { $_ -notlike 'chained-route*' })
+    AssertTravelRejected $missingRows $validEvents (TravelSummary $missingRows 'PASS') 'Missing mandatory case accepted.'
+    $staleEvents = @($TravelStationRequiredCases | ForEach-Object { TravelEvent $_ ([Guid]::NewGuid().ToString()) $travelOperation })
+    AssertTravelRejected $validRows $staleEvents (TravelSummary $validRows 'PASS') 'Receipt identities absent from the event trace accepted.'
+    AssertTravelRejected $validRows @($validEvents | Where-Object { $_ -notlike '*station-dock*' }) (TravelSummary $validRows 'PASS') 'Required case without observed events accepted.'
+    AssertTravelRejected $validRows $validEvents (TravelSummary $validRows 'FAIL') 'Failed attempt summary accepted.'
+    $foreignPhase = @((TravelSummary $validRows 'PASS') | ForEach-Object { if ($_ -like 'phase=*') { 'phase=travel-other-phase' } else { $_ } })
+    AssertTravelRejected $validRows $validEvents $foreignPhase 'Foreign phase claim accepted.'
+    $wrongCounts = (TravelSummary $validRows 'PASS')
+    $wrongCounts[3] = 'rows=99 passed=99 failed=0 notRun=0'
+    AssertTravelRejected $validRows $validEvents $wrongCounts 'Summary counts disagreeing with the receipt accepted.'
+    WriteTravelOutputs $validRows $validEvents (TravelSummary $validRows 'PASS')
+    [IO.File]::WriteAllLines((Join-Path $travelRoot 'travel-station-events.tsv'), [string[]]@("sequence`tkind") + [string[]]$validEvents)
+    $rejected = $false
+    try { Assert-PersistenceProbeReceipt $travelRoot $travelProvenance } catch { $rejected = $true }
+    Assert $rejected 'Changed event trace header accepted.'
+    WriteTravelOutputs $validRows $validEvents (TravelSummary $validRows 'PASS')
     Assert-PersistenceProbeReceipt $travelRoot $travelProvenance
     & $script -Action Cleanup -SandboxRoot $travelRoot
     [IO.File]::WriteAllText($apiConfig, "[Persistence]`nEnabled = true`nRoot = C:\foreign-root`n[Missions]`nEnabled = true`nIdentityContinuity = true`n")
