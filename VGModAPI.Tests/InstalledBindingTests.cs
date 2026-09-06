@@ -52,6 +52,10 @@ public sealed class InstalledBindingTests
             var board = assembly.MainModule.GetType("Behaviour.UI.Spacestation.Location." + kind + "Board");
             var selected = Assert.Single(board.Fields, f => f.Name == "selectedMission");
             Assert.Equal(mission.FullName, selected.FieldType.FullName);
+            var data = assembly.MainModule.GetType("Source.Galaxy.POI.Station." + kind + "Board");
+            Assert.Contains(data.Methods, m => m.IsConstructor && m.IsPublic && m.Parameters.Count == 1 && m.Parameters[0].ParameterType.FullName == "Source.Galaxy.POI.SpaceStation");
+            var station = assembly.MainModule.GetType("Source.Galaxy.POI.SpaceStation");
+            Assert.Equal(data.FullName, Assert.Single(station.Fields, f => f.Name == char.ToLowerInvariant(kind[0]) + kind.Substring(1) + "Board").FieldType.FullName);
         }
     }
 

@@ -32,7 +32,9 @@ public sealed partial class Plugin
             AccessTools.Field(missionBase, "dynamicLevel").SetValue(mission, true);
             AccessTools.Field(missionBase, "trackedOnHud").SetValue(mission, false);
             var slot = AccessTools.Field(player.GetType(), "current" + kind); var old = slot.GetValue(player);
-            var boardData = SpGet(station!, char.ToLowerInvariant(kind[0]) + kind.Substring(1) + "Board")!;
+            var boardField = AccessTools.Field(station!.GetType(), char.ToLowerInvariant(kind[0]) + kind.Substring(1) + "Board");
+            var originalBoard = boardField.GetValue(station);
+            var boardData = originalBoard ?? Activator.CreateInstance(boardField.FieldType, new[] { station })!;
             var counter = AccessTools.Field(boardData.GetType(), char.ToLowerInvariant(kind[0]) + kind.Substring(1) + "Counter");
             var oldCounter = counter.GetValue(boardData);
             var observed = new List<MissionTransitionKind>(); int removedOld = 0;
@@ -45,6 +47,7 @@ public sealed partial class Plugin
             bool caught = false; var expected = new InvalidOperationException("VGModAPI intentional stop before focus/travel");
             try
             {
+                boardField.SetValue(station, boardData);
                 var boardType = AccessTools.TypeByName("Behaviour.UI.Spacestation.Location." + kind + "Board");
                 var board = gameObject.AddComponent(boardType);
                 AccessTools.Field(boardType, "selectedMission").SetValue(board, mission);
@@ -57,11 +60,11 @@ public sealed partial class Plugin
             finally
             {
                 try { ArmNativeMissionProbe("focus", null, null); }
-                finally { slot.SetValue(player, old); counter.SetValue(boardData, oldCounter); UnityEngine.Object.DestroyImmediate(gameObject); }
+                finally { slot.SetValue(player, old); counter.SetValue(boardData, oldCounter); boardField.SetValue(station, originalBoard); UnityEngine.Object.DestroyImmediate(gameObject); }
             }
-            Require(ReferenceEquals(slot.GetValue(player), old) && Equals(counter.GetValue(boardData), oldCounter), "Guild probe state restoration failed.");
+            Require(ReferenceEquals(slot.GetValue(player), old) && Equals(counter.GetValue(boardData), oldCounter) && ReferenceEquals(boardField.GetValue(station), originalBoard), "Guild probe state restoration failed.");
             Passed("native-guild-assignment-" + kind);
         }
-        File.WriteAllText(Path.Combine(_root!, "mission-guild.txt"), "PASS\nThree actual board assignment callbacks, stopped before focus/travel by injected exceptions. Not complete UI/travel qualification.");
+        File.WriteAllText(Path.Combine(_root!, "mission-guild.txt"), "PASS\nThree actual board assignment callbacks with temporary native board data where absent, stopped before focus/travel by injected exceptions. Not complete UI/travel qualification.");
     }
 }
