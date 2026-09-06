@@ -38,18 +38,28 @@ internal sealed class TravelNativeAdapter : IDisposable
     // captured at the FIRST ACTUAL STEP after verifying that ownership is still current, so a
     // session/player replacement before or during the coroutine can never attribute an old operation's
     // fact to the new session (finding 4/F4/B).
+    // DockOwner pins immutable session/player at FACTORY time. RestoreOrRelink is captured from the
+    // EXACT native SceneLoader.CurrentScene at FACTORY time and is never re-evaluated later: native
+    // Dock() invokes onDocked BEFORE its first yield (and onDocked opens the interior asynchronously),
+    // so the interior scene can become current between Dock()'s creation and the physical Docked
+    // completion. CheckForDocking gates ARRIVAL docks on CurrentScene != "SpacestationInterior", so a
+    // Dock() created while CurrentScene == "SpacestationInterior" is a restore/relink dock (e.g. a
+    // different-docking-size ship re-init) and must emit nothing, regardless of the interior instance
+    // / scene state later.
     private sealed class DockOwner
     {
         internal readonly Guid Session;
         internal readonly object Player;
-        internal DockOwner(Guid session, object player) { Session = session; Player = player; }
+        internal readonly bool RestoreOrRelink;
+        internal DockOwner(Guid session, object player, bool restoreOrRelink) { Session = session; Player = player; RestoreOrRelink = restoreOrRelink; }
     }
     private sealed class DockContext
     {
         internal readonly Guid Session;
         internal readonly object Player;
         internal readonly object Ship;
-        internal DockContext(Guid session, object player, object ship) { Session = session; Player = player; Ship = ship; }
+        internal readonly bool RestoreOrRelink;
+        internal DockContext(Guid session, object player, object ship, bool restoreOrRelink) { Session = session; Player = player; Ship = ship; RestoreOrRelink = restoreOrRelink; }
     }
     private readonly int _thread = Thread.CurrentThread.ManagedThreadId;
     internal readonly TravelEvents Events;
@@ -405,10 +415,12 @@ internal sealed class TravelNativeAdapter : IDisposable
 
     // Station facts originate ONLY from native Dock()/Undock()/EmergencyUndock() coroutine
     // boundaries. DockQuick (same-size restore/relink) is never a physical transition and is not
-    // hooked; a different-docking-size ship re-init takes a real Dock() coroutine but runs while the
-    // interior scene is current, so the interior-current discriminator in OnDockedPhysical suppresses
-    // it (arrival docks never run while the interior is current). A genuine arrival Dock() completion
-    // is eligible when the player ship has physically reached Docked and the interior is not current.
+    // hooked; a different-docking-size ship re-init takes a real Dock() coroutine but is created
+    // while CurrentScene == "SpacestationInterior", so the factory-captured RestoreOrRelink flag
+    // suppresses it (arrival docks never run while the interior scene is current; CheckForDocking
+    // uses SceneLoader.CurrentScene, not instance existence). A genuine arrival Dock() is eligible
+    // when the player ship has physically reached Docked and the factory CurrentScene was not the
+    // interior.
     // The context pins immutable session/player at FACTORY time (owner) and captures the exact SHIP
     // at the FIRST ACTUAL STEP only after verifying that ownership is still current. The ship object
     // is read at that step (before ResetDockingOption() nulls dockingOption.dockingSpaceship) so
@@ -418,7 +430,7 @@ internal sealed class TravelNativeAdapter : IDisposable
     {
         // Unowned before the player is ready: never manufacture a session token.
         if (_session == Guid.Empty || _boundPlayer == null) return null;
-        return new DockOwner(_session, _boundPlayer);
+        return new DockOwner(_session, _boundPlayer, _bindings.InInteriorScene());
     }
     internal object? CaptureDock(object? dockingOption, object? ownerObject)
     {
@@ -431,7 +443,7 @@ internal sealed class TravelNativeAdapter : IDisposable
         if (owner.Session != _session || !ReferenceEquals(owner.Player, _boundPlayer)) return null;
         var ship = _bindings.ShipOf(dockingOption);
         if (ship == null || !_bindings.IsPlayerShip(ship, owner.Player)) return null;
-        return new DockContext(owner.Session, owner.Player, ship);
+        return new DockContext(owner.Session, owner.Player, ship, owner.RestoreOrRelink);
     }
     internal void OnDockedPhysical(object? dockContext)
     {
@@ -446,10 +458,14 @@ internal sealed class TravelNativeAdapter : IDisposable
             if (_bindings.ShipDockingState(c.Ship) != DockingStateDocked) return; // physical state required
             // Native discriminator (H1): a genuine ARRIVAL dock never runs while the interior scene is
             // current (CheckForDocking refuses when SceneLoader.CurrentScene == "SpacestationInterior"),
-            // so a Dock() completion while the interior instance is live is a restore/relink dock (e.g.
-            // a different-docking-size ship re-init takes a real Dock() coroutine) and must not emit
-            // DockedPhysical with no undock between two docked facts.
-            if (_bindings.InteriorInstance() != null) return;
+            // so a Dock() created while CurrentScene == "SpacestationInterior" is a restore/relink dock
+            // (e.g. a different-docking-size ship re-init takes a real Dock() coroutine) and must not
+            // emit DockedPhysical with no undock between two docked facts. The flag is captured from the
+            // exact native SceneLoader.CurrentScene at FACTORY time: native Dock() invokes onDocked
+            // BEFORE its first yield and onDocked opens the interior asynchronously, so the interior can
+            // become current between Dock()'s creation and the physical Docked completion. Never test
+            // the live interior instance/lease here.
+            if (c.RestoreOrRelink) return;
             var station = _bindings.CurrentLocation(player); // actual player location, not tracking cache
             if (station == null) return;
             Cache(station);

@@ -130,8 +130,12 @@ public sealed class InstalledBindingTests
         Property("Behaviour.Managers.TravelManager", "usingJumpgate", "System.Boolean");
         Field("Behaviour.UI.Spacestation.SpaceStationInterior", "instance", "Behaviour.UI.Spacestation.SpaceStationInterior", true);
         Property("Behaviour.UI.Spacestation.SpaceStationInterior", "spacestation", "Source.Galaxy.POI.SpaceStation");
-        // Group-install seam: whole-assembly resolution must not end up with a partial type set.
-        Assert.NotNull(module.GetType("Behaviour.Util.Singleton`1"));
+        // H1 native discriminator: SceneLoader.CurrentScene (read via PersistentSingleton<SceneLoader>.instance).
+        Property("Behaviour.Bootstrap.SceneLoader", "CurrentScene", "System.String");
+        var persistent = module.GetType("Behaviour.Util.PersistentSingleton`1");
+        Assert.NotNull(persistent);
+        var inst = Assert.Single(persistent.Fields, f => f.Name == "instance");
+        Assert.True(inst.IsStatic);
         Assert.NotNull(module.GetType("Source.SpaceShip.Auto.DockingState"));
     }
 

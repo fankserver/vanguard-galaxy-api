@@ -65,6 +65,11 @@ public sealed class TravelNativeAdapterTests
         {
             Player.waypoints.Clear(); Player.waypoints.AddRange(waypoints);
         }
+        // Mirror native SceneLoader.CurrentScene. The adapter reads the PersistentSingleton backing
+        // field, so tests drive it through the same SetTestInstance seam.
+        internal void SetScene(string currentScene) =>
+            Behaviour.Util.PersistentSingleton<Behaviour.Bootstrap.SceneLoader>.SetTestInstance =
+                new Behaviour.Bootstrap.SceneLoader { CurrentScene = currentScene };
         // Park the player at a ready manager for a POI/system.
         internal void PlaceAt(MapPointOfInterest poi, SystemMapData system)
         {
@@ -78,6 +83,7 @@ public sealed class TravelNativeAdapterTests
             GamePlayer.current = null;
             SpaceStationInterior.instance = null;
             Behaviour.Util.Singleton<TravelManager>.SetTestInstance = null;
+            Behaviour.Util.PersistentSingleton<Behaviour.Bootstrap.SceneLoader>.SetTestInstance = null;
         }
     }
 
@@ -733,26 +739,60 @@ public sealed class TravelNativeAdapterTests
         Assert.Contains(w.Faults, f => f.Contains("thrower"));
     }
 
+    // H1 (revised): the native discriminator is the EXACT SceneLoader.CurrentScene captured at
+    // FACTORY time, never the live interior instance/lease. Native Dock() invokes onDocked BEFORE its
+    // first yield and onDocked opens the interior asynchronously, so the interior scene can become
+    // current between Dock()'s creation and the physical Docked completion.
     [Fact]
-    public void DockCompletionWhileInteriorCurrentIsRestoreNotArrival()
+    public void GenuineDockFactoryExteriorThenInteriorOpensBeforeCompletionStillEmitsOne()
     {
         using var w = new World();
         w.Adapter.Tick(w.Player, w.OriginManager); w.StationFacts.Clear();
-        // Player is docked and the interior scene is current (a different-docking-size ship re-init
-        // takes a real Dock() coroutine while the interior is live; arrival docks never run then, per
-        // CheckForDocking refusing while SceneLoader.CurrentScene == "SpacestationInterior").
+        w.SetScene("Spacestation");                          // factory: EXTERIOR (genuine arrival dock)
+        var ship = UnitFor(w); ship.spaceShipData!.dockingState = DockingState.Docked;
+        var option = OptionFor(w, ship);
+        var owner = w.Adapter.CreateDockOwner();              // captures flag at FACTORY (exterior)
+        // Before the physical Docked completion, onDocked flips the scene to INTERIOR and creates the
+        // interior instance. The factory-captured flag must still emit exactly ONE arrival dock.
+        w.SetScene("SpacestationInterior");
         SpaceStationInterior.instance = new SpaceStationInterior();
+        var ctx = w.Adapter.CaptureDock(option, owner);
+        w.Adapter.OnDockedPhysical(ctx);
+        Assert.Equal(StationTransitionKind.DockedPhysical, Assert.Single(w.StationFacts).Kind);
+        Assert.Empty(w.Faults);
+    }
+
+    [Fact]
+    public void ShipReinitDockFactoryInteriorWhileInstanceNullEmitsZeroEvenIfSceneExits()
+    {
+        using var w = new World();
+        w.Adapter.Tick(w.Player, w.OriginManager); w.StationFacts.Clear();
+        w.SetScene("SpacestationInterior");                  // factory: INTERIOR (ship re-init), instance null/loading
+        var ship = UnitFor(w); ship.spaceShipData!.dockingState = DockingState.Docked;
+        var option = OptionFor(w, ship);
+        var owner = w.Adapter.CreateDockOwner();              // restore/relink captured at FACTORY
+        // The interior scene exits BEFORE the Dock() completes; instance now created too.
+        w.SetScene("Spacestation");
+        SpaceStationInterior.instance = new SpaceStationInterior();
+        var ctx = w.Adapter.CaptureDock(option, owner);
+        w.Adapter.OnDockedPhysical(ctx);
+        Assert.Empty(w.StationFacts);                         // restore/relink dock, never an arrival dock
+        Assert.Empty(w.Faults);
+    }
+
+    [Fact]
+    public void InteriorDestroyedStaleButCurrentSceneExteriorGenuineDockEmitsOne()
+    {
+        using var w = new World();
+        w.Adapter.Tick(w.Player, w.OriginManager); w.StationFacts.Clear();
+        w.SetScene("Spacestation");                          // factory: EXTERIOR genuine arrival dock
+        SpaceStationInterior.instance = new SpaceStationInterior(); // stale/destroyed interior reference lingers
         var ship = UnitFor(w); ship.spaceShipData!.dockingState = DockingState.Docked;
         var option = OptionFor(w, ship);
         var owner = w.Adapter.CreateDockOwner();
         var ctx = w.Adapter.CaptureDock(option, owner);
         w.Adapter.OnDockedPhysical(ctx);
-        Assert.Empty(w.StationFacts);                      // restore/relink dock, not an arrival dock
-        Assert.Empty(w.Faults);
-        // A genuine exterior arrival dock (interior no longer current) still emits exactly ONE.
-        SpaceStationInterior.instance = null;
-        var ctx2 = w.Adapter.CaptureDock(option, owner);
-        w.Adapter.OnDockedPhysical(ctx2);
+        // Instance existence/lease is irrelevant; the factory CurrentScene is EXTERIOR -> emit ONE.
         Assert.Equal(StationTransitionKind.DockedPhysical, Assert.Single(w.StationFacts).Kind);
         Assert.Empty(w.Faults);
     }
