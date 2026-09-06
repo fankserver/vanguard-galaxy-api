@@ -31,7 +31,7 @@ internal sealed class PersistenceCoordinator : IDisposable
     private readonly IDisposable _subscription;
     private readonly Dictionary<string, Owner> _owners = new(StringComparer.Ordinal);
     private readonly Dictionary<Guid, Pending> _pending = new();
-    private readonly Dictionary<Guid, (string Path, Guid? Session)> _intents = new();
+    private readonly Dictionary<Guid, (string Path, Guid? Session, bool Written)> _intents = new();
     private Dictionary<string, byte[]> _known = new(StringComparer.Ordinal);
     private Guid? _session;
     private Guid _campaign;
@@ -119,8 +119,9 @@ internal sealed class PersistenceCoordinator : IDisposable
                 if (_intents.ContainsKey(e.OperationId.Value))
                 { _pending.Remove(e.OperationId.Value); throw new InvalidOperationException("Duplicate save start."); }
                 var path = _canonical(e.Destination);
-                _store.MarkIntent(path, e.OperationId.Value);
-                _intents.Add(e.OperationId.Value, (path, e.Session?.Id));
+                bool empty = _restored && _session.HasValue && Current(_session.Value) && _owners.Count == 0 && _known.Count == 0;
+                if (!empty) _store.MarkIntent(path, e.OperationId.Value);
+                _intents.Add(e.OperationId.Value, (path, e.Session?.Id, !empty));
                 if (_session.HasValue && Current(_session.Value)) Capture(e);
             }
             catch { _writeFault = true; }
@@ -207,13 +208,18 @@ internal sealed class PersistenceCoordinator : IDisposable
             if (e.Kind != LifecycleEventKind.SaveSucceeded)
             {
                 // A failed vanilla write may still have changed payload bytes before metadata failed.
-                if (e.Kind == LifecycleEventKind.SaveSkipped) _store.ClearIntent(intent.Path, e.OperationId.Value);
+                if (e.Kind == LifecycleEventKind.SaveSkipped && intent.Written) _store.ClearIntent(intent.Path, e.OperationId.Value);
                 return;
             }
             if (pending == null || !Current(pending.Session)) throw new InvalidOperationException("No publishable candidate.");
-            var generation = _store.Publish(pending.Destination, _hashFile(pending.Destination), pending.Campaign, pending.Owners);
-            _known = generation.Owners;
-            _store.ClearIntent(intent.Path, e.OperationId.Value);
+            // Keep operation/session checks, but do not accumulate empty generations for API-only installs.
+            // Retained data from uninstalled mods still requires publication.
+            if (_owners.Count != 0 || pending.Owners.Count != 0)
+            {
+                var generation = _store.Publish(pending.Destination, _hashFile(pending.Destination), pending.Campaign, pending.Owners);
+                _known = generation.Owners;
+            }
+            if (intent.Written) _store.ClearIntent(intent.Path, e.OperationId.Value);
             _writeFault = false; _faultDetail = null;
         }
         catch { _writeFault = true; }
