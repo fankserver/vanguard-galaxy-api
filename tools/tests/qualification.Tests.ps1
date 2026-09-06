@@ -84,6 +84,7 @@ try {
     Assert $rejected 'Missing persistence receipt accepted.'
     [IO.File]::WriteAllText((Join-Path $probeRoot 'persistence-probe.txt'), 'PASS')
     Assert-PersistenceProbeReceipt $probeRoot $probeProvenance
+    [IO.File]::WriteAllText((Join-Path $probeRoot 'missionjournal.enabled'), 'pilot-v1')
     $probeProvenance.journalCoordinated = $true; $probeProvenance.missionJournal = $true
     $probeProvenance | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $probeRoot 'build-provenance.json')
     [IO.File]::WriteAllText((Join-Path $probeRoot 'journal-coordinated.enabled'), 'journal-v1')
