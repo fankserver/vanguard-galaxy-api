@@ -66,9 +66,10 @@ public sealed partial class Plugin
 
         private List<TravelTransition> Travel => _p.PendingTravel!;
         private List<StationTransition> Stations => _p.PendingStation!;
-        // Case-local window: only facts observed after this case started driving, for this session.
-        private List<TravelTransition> Slice(int offset) => Travel.Skip(offset).Where(t => t.SessionId == _session).ToList();
-        private List<StationTransition> StationSlice(int offset) => Stations.Skip(offset).Where(s => s.SessionId == _session).ToList();
+        // Case-local window: every fact observed after this case started driving, INCLUDING facts of
+        // another session. Foreign facts are rejected by the validators, never filtered away here.
+        private List<TravelTransition> Slice(int offset) => TravelStationReceipt.Window(Travel, offset);
+        private List<StationTransition> StationSlice(int offset) => TravelStationReceipt.Window(Stations, offset);
         private object Player => _p.CurrentPlayer;
         private object? PlayerShip => SpGet(SpGet(_gameplayType, "Instance")!, "spaceShip");
 
@@ -76,12 +77,19 @@ public sealed partial class Plugin
         {
             yield return null;
             foreach (var frame in CaseInitialPlacement()) yield return frame;
+            EndCase();
             foreach (var frame in CaseUndock()) yield return frame;
+            EndCase();
             foreach (var frame in CaseInSystemRoute()) yield return frame;
+            EndCase();
             foreach (var frame in CaseEarlyCancel()) yield return frame;
+            EndCase();
             foreach (var frame in CaseChainedRoute()) yield return frame;
+            EndCase();
             foreach (var frame in CaseDock()) yield return frame;
+            EndCase();
             RecordResidualMatrix();
+            _p.TsCheckpoint();
         }
 
         // --- cases ------------------------------------------------------------------------
@@ -95,7 +103,13 @@ public sealed partial class Plugin
             Require(system != null, "Native player has no current system after the fixture load.");
             _systemId = (string)SpGet(system!, "guid")!;
             var poiId = poi == null ? null : (string)SpGet(poi, "guid")!;
-            var failure = TravelStationReceipt.CheckInitialPlacement(Slice(0), _session, _systemId, poiId);
+            // The load window is the one explicit boundary where facts of the REPLACED session are
+            // legitimate (the buffers are cleared before the load). They are counted, and the fresh
+            // session's own window must then contain the placement alone.
+            var boundary = TravelStationReceipt.CheckLoadBoundary(Slice(0), _session, out int freshIndex, out int priorFacts);
+            Require(boundary == null, boundary!);
+            var placementWindow = Slice(freshIndex);
+            var failure = TravelStationReceipt.CheckInitialPlacement(placementWindow, _session, _systemId, poiId);
             Require(failure == null, failure!);
             Require(TravelStationReceipt.Same(ModApi.Travel!.CurrentLocation, _systemId, poiId),
                 "Public CurrentLocation does not match the actual native location after the load.");
@@ -103,8 +117,10 @@ public sealed partial class Plugin
             _startPoiId = poiId ?? "";
             // A docked load can legitimately produce station facts (native re-init dock tolerance),
             // so they are recorded as evidence here instead of being asserted away.
-            _p.TsRecord(TravelStationReceipt.Passed, TravelStationReceipt.Location(_systemId, poiId), _session, null,
-                "travelFacts=" + Slice(0).Count + "; stationFactsAtLoad=" + StationSlice(0).Count);
+            Pass(TravelStationReceipt.Location(_systemId, poiId), null,
+                TravelStationReceipt.Evidence(placementWindow, null),
+                "travelFacts=" + placementWindow.Count + "; replacedSessionFactsBeforeLoad=" + priorFacts
+                + "; stationFactsAtLoad=" + StationSlice(0).Count);
         }
 
         private IEnumerable<object?> CaseUndock()
@@ -153,7 +169,8 @@ public sealed partial class Plugin
             Require(!Alive(_getDockingOption.Invoke(exterior!, new[] { ship })), "A native docking option still holds the player ship after undocking.");
             Require(Slice(travelOffset).Count == 0, "Undocking emitted travel facts: "
                 + string.Join(", ", Slice(travelOffset).Select(TravelStationReceipt.Describe)));
-            _p.TsRecord(TravelStationReceipt.Passed, TravelStationReceipt.Location(_systemId, _startPoiId), _session, null,
+            Pass(TravelStationReceipt.Location(_systemId, _startPoiId), null,
+                TravelStationReceipt.Evidence(null, StationSlice(stationOffset)),
                 "interiorExit=" + interiorExit + "; interiorFacts="
                 + StationSlice(stationOffset).Count(s => s.Kind is StationTransitionKind.InteriorReady or StationTransitionKind.InteriorDestroyed));
         }
@@ -202,8 +219,9 @@ public sealed partial class Plugin
             Require(((ICollection)SpGet(Player, "waypoints")!).Count == 0, "Native waypoints survived CancelTravel.");
             Require(TravelStationReceipt.Same(ModApi.Travel!.CurrentLocation, _systemId, originId), "Public CurrentLocation left the unchanged origin.");
             Require(StationSlice(stationOffset).Count == 0, "Early cancel emitted station facts.");
-            _p.TsRecord(TravelStationReceipt.Passed, TravelStationReceipt.Location(_systemId, originId), _session,
-                slice[0].OperationId, "cancelledAt=" + TravelStationReceipt.Location(slice[1].ActualLocation)
+            Pass(TravelStationReceipt.Location(_systemId, originId), slice[0].OperationId,
+                TravelStationReceipt.Evidence(slice, null),
+                "cancelledAt=" + TravelStationReceipt.Location(slice[1].ActualLocation)
                 + "; cancelledAfterSeconds=" + (slice[1].GameSeconds - slice[0].GameSeconds).ToString("F3"));
         }
 
@@ -244,7 +262,10 @@ public sealed partial class Plugin
             Require(DockingState(ship!) == "Docked", "Native ship docking state is " + (DockingState(ship!) ?? "null") + " after DockedPhysical.");
             var option = _getDockingOption.Invoke(exterior!, new[] { ship });
             Require(Alive(option) && ReferenceEquals(SpGet(option!, "dockingSpaceship"), ship), "No native docking option holds the player ship after DockedPhysical.");
-            _p.TsRecord(TravelStationReceipt.Passed, TravelStationReceipt.Location(_systemId, _startPoiId), _session, null,
+            // The dock window opens before the chained route, so these facts are observed while the
+            // chained route is still driving: evidence references them by API sequence, not by label.
+            Pass(TravelStationReceipt.Location(_systemId, _startPoiId), null,
+                TravelStationReceipt.Evidence(null, StationSlice(_dockWindow)),
                 "interiorFacts=" + StationSlice(_dockWindow).Count(s => s.Kind is StationTransitionKind.InteriorReady or StationTransitionKind.InteriorDestroyed)
                 + " (interior/physical ordering deliberately unasserted)");
         }
@@ -253,11 +274,10 @@ public sealed partial class Plugin
         // they never count as coverage and can never make the phase pass.
         private void RecordResidualMatrix()
         {
+            // Recorded with explicit case identities WITHOUT taking the active event label, so no
+            // optional cell can ever be tagged onto a mandatory case's observed facts.
             void Cell(string id, string description, string reason)
-            {
-                _p.TsCase(id, description);
-                _p.TsRecord(TravelStationReceipt.NotRun, "", _session, null, reason);
-            }
+                => _p.TsRecord(id, description, TravelStationReceipt.NotRun, "", _session, null, "", reason);
             Cell("cross-system-jumpgate", "Cross-system jump-gate leg (JumpToSystem) request/arrival and fast-lane chaining.",
                 "Out of phase " + TravelStationReceipt.Phase + ": needs a gate-route fixture and a cross-system readiness plan.");
             Cell("cross-system-wormhole", "Cross-system wormhole leg (JumpToWormhole) request/arrival.",
@@ -313,8 +333,9 @@ public sealed partial class Plugin
             Require(((ICollection)SpGet(Player, "waypoints")!).Count == 0, "Native waypoints remain after the final route boundary.");
             Require(TravelStationReceipt.Same(ModApi.Travel!.CurrentLocation, _systemId, hopIds[hops.Length - 1]),
                 "Public CurrentLocation does not match the arrived final hop.");
-            _p.TsRecord(TravelStationReceipt.Passed, TravelStationReceipt.Location(_systemId, hopIds[hops.Length - 1]), _session,
-                slice[slice.Count - 1].OperationId, "hops=" + string.Join(">", hopIds) + "; facts=" + slice.Count
+            Pass(TravelStationReceipt.Location(_systemId, hopIds[hops.Length - 1]), slice[slice.Count - 1].OperationId,
+                TravelStationReceipt.Evidence(slice, null),
+                "hops=" + string.Join(">", hopIds) + "; facts=" + slice.Count
                 + "; setupWaypoints=" + (hops.Length - 1));
             _routeDrove = true;
         }
@@ -347,7 +368,18 @@ public sealed partial class Plugin
             }
         }
 
-        private void NotRun(string reason) => _p.TsRecord(TravelStationReceipt.NotRun, "", _session, null, reason);
+        private void NotRun(string reason)
+        {
+            _p.TsRecord(_p._tsCase, _p._tsDescription, TravelStationReceipt.NotRun, "", _session, null, "", reason);
+            _p.TsCheckpoint();
+        }
+        private void Pass(string nativeIdentity, Guid? operation, string evidence, string detail)
+        {
+            _p.TsRecord(_p._tsCase, _p._tsDescription, TravelStationReceipt.Passed, nativeIdentity, _session, operation, evidence, detail);
+            _p.TsCheckpoint();
+        }
+        // The active event label belongs to a driving case only; between cases nothing may claim it.
+        private void EndCase() { _p.TsEndCase(); _p.TsCheckpoint(); }
 
         // Minimal, safe in-system targets, nearest first: visible, non-dynamic, never a gate or
         // wormhole (whose routes hand off to the cross-system machinery this phase does not

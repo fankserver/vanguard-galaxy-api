@@ -1,6 +1,6 @@
 # Recovery helpers shared by the launcher and synthetic tests; no work on import.
 function Assert-QualificationUnused([string]$Root) {
-    foreach ($name in @('result.txt','process.json','run-started.txt','playerprefs-before.reg','vanilla-load-control.txt','vanilla-orbit-failure.txt','persistence-probe.txt','journal-coordinated.txt','stockpile-coordinated.txt','content-reference.txt','mission-transitions.txt','mission-events.tsv','mission-clear.txt','mission-guild.txt','mission-waves.txt','mission-wave-events.tsv','mission-identity.txt','journal-mission-events.txt','anima-missions.txt','anima-mission-events.tsv')) {
+    foreach ($name in @('result.txt','process.json','run-started.txt','playerprefs-before.reg','vanilla-load-control.txt','vanilla-orbit-failure.txt','persistence-probe.txt','journal-coordinated.txt','stockpile-coordinated.txt','content-reference.txt','mission-transitions.txt','mission-events.tsv','mission-clear.txt','mission-guild.txt','mission-waves.txt','mission-wave-events.tsv','mission-identity.txt','journal-mission-events.txt','anima-missions.txt','anima-mission-events.tsv','travel-station.txt','travel-station-receipt.tsv','travel-station-events.tsv','run-outcome.json')) {
         if (Test-Path -LiteralPath (Join-Path $Root $name)) { throw 'Sandbox already ran. Preserve recovery evidence and prepare a fresh directory.' }
     }
 }

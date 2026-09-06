@@ -33,10 +33,34 @@ public sealed partial class Plugin
     internal string _tsCase = InitialPlacementCase;
     internal string _tsDescription = InitialPlacementDescription;
 
+    // The active label is only the observation context of the event trace; case rows always carry
+    // their own identity, and the label is reset between cases so no optional cell can claim a
+    // mandatory case's facts.
     internal void TsCase(string id, string description) { _tsCase = id; _tsDescription = description; }
-    internal void TsRecord(string status, string nativeIdentity, Guid? session, Guid? operation, string detail)
-        => _tsRows.Add(new TravelStationReceipt.Row(_tsCase, _tsDescription, status, nativeIdentity,
-            session?.ToString() ?? "", operation?.ToString() ?? "", detail));
+    internal void TsEndCase() => TsCase(TravelStationReceipt.NoActiveCase, "No case is driving.");
+    internal void TsRecord(string caseId, string description, string status, string nativeIdentity,
+        Guid? session, Guid? operation, string evidence, string detail)
+        => _tsRows.Add(new TravelStationReceipt.Row(caseId, description, status, nativeIdentity,
+            session?.ToString() ?? "", operation?.ToString() ?? "", evidence, detail));
+
+    // Incremental, atomic checkpoint after every case: an external termination (a launcher kill or
+    // timeout) can then only leave INCOMPLETE evidence behind, never a stale PASS and never an
+    // empty directory.
+    internal void TsCheckpoint()
+    {
+        WriteAtomic("travel-station-receipt.tsv", new[] { TravelStationReceipt.ReceiptHeader }.Concat(_tsRows.Select(r => r.ToTsv())));
+        WriteAtomic("travel-station-events.tsv", new[] { TravelStationReceipt.EventsHeader }.Concat(_tsEvents));
+        WriteAtomic("travel-station.txt", new[] { TravelStationReceipt.SummarizeIncomplete(_tsRows, _tsCase) });
+    }
+
+    private void WriteAtomic(string name, IEnumerable<string> lines)
+    {
+        var path = Path.Combine(_root!, name);
+        var temp = path + ".tmp";
+        File.WriteAllLines(temp, lines);
+        if (File.Exists(path)) File.Replace(temp, path, null);
+        else File.Move(temp, path);
+    }
 
     private IEnumerable<object?> CheckTravelStation()
     {
@@ -61,15 +85,15 @@ public sealed partial class Plugin
         run.Dispose();
         if (fault != null)
         {
-            TsRecord(TravelStationReceipt.Failed, "", _api?.CurrentSession?.Id, null,
+            TsRecord(_tsCase, _tsDescription, TravelStationReceipt.Failed, "", _api?.CurrentSession?.Id, null, "",
                 fault.Split('\n')[0].Trim());
         }
-        File.WriteAllLines(Path.Combine(_root!, "travel-station-receipt.tsv"),
+        WriteAtomic("travel-station-receipt.tsv",
             new[] { TravelStationReceipt.ReceiptHeader }.Concat(_tsRows.Select(r => r.ToTsv())));
-        File.WriteAllLines(Path.Combine(_root!, "travel-station-events.tsv"),
+        WriteAtomic("travel-station-events.tsv",
             new[] { TravelStationReceipt.EventsHeader }.Concat(_tsEvents));
-        var failure = TravelStationReceipt.Evaluate(_tsRows, fault);
-        File.WriteAllText(Path.Combine(_root!, "travel-station.txt"), TravelStationReceipt.Summarize(_tsRows, fault));
+        var failure = TravelStationReceipt.Evaluate(_tsRows, fault, _tsEvents);
+        WriteAtomic("travel-station.txt", new[] { TravelStationReceipt.Summarize(_tsRows, fault, _tsEvents) });
         if (fault != null) File.WriteAllText(Path.Combine(_root!, "travel-station-fault.txt"), fault);
         Require(failure == null, "Native travel/station phase " + TravelStationReceipt.Phase + " failed: " + failure);
         Passed("native-travel-station-" + TravelStationReceipt.Phase);
@@ -105,6 +129,7 @@ public sealed partial class Plugin
                 TsCase(InitialPlacementCase, InitialPlacementDescription);
                 transitions.Clear();
                 stationFacts.Clear();
+                TsCheckpoint();
                 foreach (var frame in SpLoad("fixture-a")) yield return frame;
                 foreach (var frame in Settle()) yield return frame;
                 var session = _api!.CurrentSession!.Id;

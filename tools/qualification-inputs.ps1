@@ -50,7 +50,12 @@ function Assert-PersistenceProbeReceipt([string]$Root, $Provenance) {
 }
 $TravelStationPhase = 'travel-in-system-station-v1'
 $TravelStationRequiredCases = @('initial-placement','station-undock','in-system-route','early-cancel','chained-route','station-dock')
-$TravelStationReceiptHeader = @('case','description','status','nativeIdentity','session','operation','detail')
+$TravelStationReceiptHeader = @('case','description','status','nativeIdentity','session','operation','evidence','detail')
+# Process time RESERVED for the phase on top of the base budget that covers the existing Full
+# pilots. The pilot publishes its own derived budgetSeconds; a receipt claiming more than the
+# reservation is refused, so the two cannot drift apart silently.
+$QualificationBaseTimeoutSeconds = 1800
+$TravelStationBudgetSeconds = 1500
 $TravelStationEventHeader = @('apiSequence','surface','case','session','operation','kind','mode','origin','requested','actual','gameSeconds','dwellSeconds')
 # Independent verification of the pilot's own claim: the declared phase, every mandatory case
 # identity, the receipt/event files and the identities they share must all agree. A first line of
@@ -62,8 +67,19 @@ function Assert-TravelStationReceipt([string]$Root) {
     foreach ($path in @($summaryPath, $receiptPath, $eventsPath)) {
         if (!(Test-Path -LiteralPath $path -PathType Leaf)) { throw "Travel/station pilot output missing: $path" }
     }
+    # Launcher outcome first: a killed or timed-out run can never be reported as a pass.
+    $outcomePath = Join-Path $Root 'run-outcome.json'
+    if (Test-Path -LiteralPath $outcomePath -PathType Leaf) {
+        $outcome = Get-Content -LiteralPath $outcomePath -Raw | ConvertFrom-Json
+        if ($outcome.timedOut -or $outcome.killed) { throw 'Travel/station run was terminated by the launcher; its evidence is incomplete.' }
+        if ($outcome.exitCode -ne 0) { throw "Travel/station run exited with code $($outcome.exitCode)." }
+    }
     $summary = @(Get-Content -LiteralPath $summaryPath)
     if ($summary.Count -lt 3 -or $summary[0] -cne 'PASS') { throw 'Travel/station pilot did not complete with PASS.' }
+    $budget = @($summary | Where-Object { $_ -like 'budgetSeconds=*' })
+    if ($budget.Count -ne 1) { throw 'Travel/station receipt does not declare its phase budget.' }
+    $declared = [int]($budget[0] -replace '^budgetSeconds=', '')
+    if ($declared -le 0 -or $declared -gt $TravelStationBudgetSeconds) { throw "Travel/station phase budget $declared exceeds the reserved $TravelStationBudgetSeconds seconds." }
     if ($summary -notcontains "phase=$TravelStationPhase") { throw 'Travel/station receipt does not declare the qualified phase.' }
     if ($summary -notcontains ("required=" + ($TravelStationRequiredCases -join ','))) { throw 'Travel/station receipt declares different required cases.' }
     if ($summary -notcontains 'fault=none') { throw 'Travel/station pilot recorded a fault.' }
@@ -72,7 +88,7 @@ function Assert-TravelStationReceipt([string]$Root) {
     $records = @($rows[1..($rows.Count - 1)] | ForEach-Object {
         $columns = $_ -split "`t"
         if ($columns.Count -ne $TravelStationReceiptHeader.Count) { throw 'Malformed travel/station receipt row.' }
-        [pscustomobject]@{ Case=$columns[0]; Status=$columns[2]; Session=$columns[4]; Operation=$columns[5] }
+        [pscustomobject]@{ Case=$columns[0]; Status=$columns[2]; Session=$columns[4]; Operation=$columns[5]; Evidence=$columns[6] }
     })
     if (@($records | Where-Object { $_.Status -eq 'failed' }).Count -gt 0) { throw 'Travel/station receipt contains failed cases.' }
     if (@($records | Where-Object { $_.Status -notin @('passed','not-run') }).Count -gt 0) { throw 'Unknown travel/station case status.' }
@@ -85,22 +101,35 @@ function Assert-TravelStationReceipt([string]$Root) {
     $eventRows = @($events[1..($events.Count - 1)] | ForEach-Object {
         $columns = $_ -split "`t"
         if ($columns.Count -ne $TravelStationEventHeader.Count) { throw 'Malformed travel/station event row.' }
-        [pscustomobject]@{ Case=$columns[2]; Session=$columns[3]; Operation=$columns[4] }
+        [pscustomobject]@{ Sequence=$columns[0]; Surface=$columns[1]; Case=$columns[2]; Session=$columns[3]; Operation=$columns[4] }
     })
-    $eventCases = @($eventRows | ForEach-Object { $_.Case } | Select-Object -Unique)
     $eventSessions = @($eventRows | ForEach-Object { $_.Session } | Select-Object -Unique)
     $eventOperations = @($eventRows | ForEach-Object { $_.Operation } | Select-Object -Unique)
+    # Case evidence is validated by explicit surface/apiSequence/session references, NOT by the
+    # event's case label: native cases legitimately overlap (the return hop's dock is observed while
+    # the chained route is still driving).
+    $eventKeys = @{}
+    foreach ($row in $eventRows) { $eventKeys[($row.Surface + ':' + $row.Sequence + ':' + $row.Session)] = $true }
     foreach ($case in $TravelStationRequiredCases) {
         $matched = @($records | Where-Object { $_.Case -eq $case })
         if ($matched.Count -ne 1) { throw "Required travel/station case is missing or duplicated: $case" }
         if ($matched[0].Status -ne 'passed') { throw "Required travel/station case did not pass: $case" }
         if ($summary -notcontains "required-case $case=passed") { throw "Travel/station summary and receipt disagree about $case." }
         if ($matched[0].Session -notmatch '^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$') { throw "Required travel/station case has no session identity: $case" }
-        if ($case -notin $eventCases) { throw "No observed public events for required travel/station case: $case" }
+        if (!$matched[0].Evidence) { throw "Required travel/station case references no observed public events: $case" }
     }
     foreach ($record in $passed) {
         if ($record.Session -notin $eventSessions) { throw "Receipt session identity is absent from the event trace: $($record.Case)" }
         if ($record.Operation -and $record.Operation -notin $eventOperations) { throw "Receipt operation identity is absent from the event trace: $($record.Case)" }
+        foreach ($group in @($record.Evidence -split ';' | Where-Object { $_ })) {
+            $parts = $group -split ':'
+            if ($parts.Count -ne 2 -or $parts[0] -notin @('travel','station')) { throw "Malformed evidence reference in $($record.Case): $group" }
+            foreach ($sequence in @($parts[1] -split ',' | Where-Object { $_ })) {
+                if (-not $eventKeys.ContainsKey($parts[0] + ':' + $sequence + ':' + $record.Session)) {
+                    throw "Case $($record.Case) references an event that is not in the trace for its session: $($parts[0]):$sequence"
+                }
+            }
+        }
     }
 }
 function Assert-VanillaControlReceipt([string]$Root, $Provenance) {
@@ -205,6 +234,8 @@ function Assert-QualificationInputs([string]$Root) {
     if ([bool]$travelStation -ne (Test-Path -LiteralPath $travelMarker -PathType Leaf)) { throw 'Travel/station selection changed.' }
     if ($travelStation) {
         if ($provenance.scenario -ne 'Full' -or (Get-Content -LiteralPath $travelMarker -Raw).Trim() -ne 'travel-v1') { throw 'Invalid travel/station selection.' }
+        if (!$provenance.PSObject.Properties['travelStationBudgetSeconds'] -or
+            [int]$provenance.travelStationBudgetSeconds -ne $TravelStationBudgetSeconds) { throw 'Travel/station budget reservation changed.' }
         $tsConfig = Get-Content -LiteralPath (Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg') -Raw
         $tsSections = [regex]::Matches($tsConfig, '(?ms)^\[Travel\]\s*\r?\n(?<body>.*?)(?=^\[|\z)')
         if ($tsSections.Count -ne 1 -or [regex]::Matches($tsSections[0].Groups['body'].Value, '(?m)^Enabled\s*=').Count -ne 1 -or [regex]::Matches($tsSections[0].Groups['body'].Value, '(?m)^Enabled\s*=\s*true\s*$').Count -ne 1) { throw 'Travel/station config changed.' }

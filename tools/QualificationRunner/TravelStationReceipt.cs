@@ -21,8 +21,33 @@ internal static class TravelStationReceipt
     internal const string Passed = "passed";
     internal const string Failed = "failed";
     internal const string NotRun = "not-run";
-    internal const string ReceiptHeader = "case\tdescription\tstatus\tnativeIdentity\tsession\toperation\tdetail";
+    internal const string ReceiptHeader = "case\tdescription\tstatus\tnativeIdentity\tsession\toperation\tevidence\tdetail";
     internal const string EventsHeader = "apiSequence\tsurface\tcase\tsession\toperation\tkind\tmode\torigin\trequested\tactual\tgameSeconds\tdwellSeconds";
+    /// <summary>Written while the pilot is still running; never a PASS claim.</summary>
+    internal const string Incomplete = "INCOMPLETE";
+    /// <summary>The label used for observed events while no case is driving.</summary>
+    internal const string NoActiveCase = "no-active-case";
+
+    // Declared per-wait deadlines (seconds). The phase budget is derived from them so the launcher
+    // reservation and the pilot's own bounded waits cannot drift apart silently.
+    internal const float ReadinessSeconds = 90;
+    internal const float SettleSeconds = 2;
+    internal const float TravelReadySeconds = 4;
+    internal const float InitialDockSettleSeconds = 20;
+    internal const float UndockLeavingSeconds = 60;
+    internal const float UndockRoutineSeconds = 60;
+    internal const float ArrivalSeconds = 240;
+    internal const float BoundarySeconds = 60;
+    internal const float DockSeconds = 240;
+    /// <summary>
+    /// Worst case for the whole phase: readiness, the undock case, three real arrivals (one
+    /// single-hop route plus the two chained hops), two route boundaries, the arrival dock, the
+    /// three travel-availability samples and a settle after every stage.
+    /// </summary>
+    internal const float PhaseBudgetSeconds = ReadinessSeconds
+        + InitialDockSettleSeconds + UndockLeavingSeconds + UndockRoutineSeconds
+        + 3 * ArrivalSeconds + 2 * BoundarySeconds + DockSeconds
+        + 3 * TravelReadySeconds + 12 * SettleSeconds;
 
     /// <summary>
     /// The phase passes only when every one of these case identities has exactly one PASSED row.
@@ -41,21 +66,81 @@ internal static class TravelStationReceipt
         internal string NativeIdentity { get; }
         internal string Session { get; }
         internal string Operation { get; }
+        /// <summary>
+        /// Explicit references to the public events this case validated ("travel:5,6,7;station:3").
+        /// Cases legitimately overlap in the native timeline (the return hop's dock is observed
+        /// while the chained route is still driving), so evidence is referenced by surface and API
+        /// sequence instead of by a mutually exclusive case label.
+        /// </summary>
+        internal string Evidence { get; }
         internal string Detail { get; }
-        internal Row(string caseId, string description, string status, string nativeIdentity, string session, string operation, string detail)
+        internal Row(string caseId, string description, string status, string nativeIdentity, string session, string operation, string evidence, string detail)
         {
             Case = caseId; Description = description; Status = status;
-            NativeIdentity = nativeIdentity; Session = session; Operation = operation; Detail = detail;
+            NativeIdentity = nativeIdentity; Session = session; Operation = operation; Evidence = evidence; Detail = detail;
         }
         internal string ToTsv() => string.Join("\t", Clean(Case), Clean(Description), Clean(Status),
-            Clean(NativeIdentity), Clean(Session), Clean(Operation), Clean(Detail));
+            Clean(NativeIdentity), Clean(Session), Clean(Operation), Clean(Evidence), Clean(Detail));
+    }
+
+    internal static string Evidence(IEnumerable<TravelTransition>? travel, IEnumerable<StationTransition>? station)
+    {
+        var parts = new List<string>();
+        var travelRefs = travel == null ? Array.Empty<string>() : travel.Select(f => f.Sequence.ToString(CultureInfo.InvariantCulture)).ToArray();
+        var stationRefs = station == null ? Array.Empty<string>() : station.Select(f => f.Sequence.ToString(CultureInfo.InvariantCulture)).ToArray();
+        if (travelRefs.Length > 0) parts.Add("travel:" + string.Join(",", travelRefs));
+        if (stationRefs.Length > 0) parts.Add("station:" + string.Join(",", stationRefs));
+        return string.Join(";", parts);
+    }
+
+    /// <summary>Parsed (surface, apiSequence) references of an evidence field.</summary>
+    internal static List<KeyValuePair<string, string>> EvidenceReferences(string evidence)
+    {
+        var result = new List<KeyValuePair<string, string>>();
+        foreach (var group in (evidence ?? string.Empty).Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = group.Split(':');
+            if (parts.Length != 2) continue;
+            foreach (var sequence in parts[1].Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
+                result.Add(new KeyValuePair<string, string>(parts[0].Trim(), sequence.Trim()));
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Every passed case must reference real observed events of its own session, and every required
+    /// case must reference at least one. Overlapping case labels in the trace are irrelevant.
+    /// </summary>
+    internal static string? CheckEvidence(IReadOnlyList<Row> rows, IReadOnlyList<string> eventRows)
+    {
+        var observed = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var row in eventRows)
+        {
+            var columns = row.Split('\t');
+            if (columns.Length != EventsHeader.Split('\t').Length) return "Malformed event row: " + row;
+            observed.Add(columns[1] + ":" + columns[0] + ":" + columns[3]);
+        }
+        foreach (var row in rows.Where(r => r.Status == Passed))
+        {
+            var references = EvidenceReferences(row.Evidence);
+            if (references.Count == 0)
+            {
+                if (RequiredCases.Contains(row.Case)) return "Required case has no observed public events: " + row.Case + ".";
+                continue;
+            }
+            foreach (var reference in references)
+                if (!observed.Contains(reference.Key + ":" + reference.Value + ":" + row.Session))
+                    return "Case " + row.Case + " references an event that is not in the trace for its session: "
+                        + reference.Key + ":" + reference.Value + ".";
+        }
+        return null;
     }
 
     internal static string Clean(string? value)
         => (value ?? string.Empty).Replace("\t", " ").Replace("\r", " ").Replace("\n", " ");
 
     /// <summary>Null when the phase is satisfied, otherwise the exact reason it is not.</summary>
-    internal static string? Evaluate(IReadOnlyList<Row> rows, string? fault)
+    internal static string? Evaluate(IReadOnlyList<Row> rows, string? fault, IReadOnlyList<string> eventRows)
     {
         if (rows.Count == 0) return "No case rows were recorded; empty coverage is not a pass.";
         var unknown = rows.FirstOrDefault(r => r.Status != Passed && r.Status != Failed && r.Status != NotRun);
@@ -69,17 +154,38 @@ internal static class TravelStationReceipt
             if (matches.Length > 1) return "Required case recorded " + matches.Length + " rows: " + required + ".";
             if (matches[0].Status != Passed) return "Required case is " + matches[0].Status + ": " + required + ".";
         }
+        var evidence = CheckEvidence(rows, eventRows);
+        if (evidence != null) return evidence;
         // A harness fault is reported last so an attributed failed row keeps the more precise reason.
         if (!string.IsNullOrEmpty(fault)) return "Pilot fault: " + Clean(fault);
         return null;
     }
 
-    internal static string Summarize(IReadOnlyList<Row> rows, string? fault)
+    /// <summary>
+    /// The receipt written while cases are still running: never PASS, so an external kill can only
+    /// leave INCOMPLETE evidence behind.
+    /// </summary>
+    internal static string SummarizeIncomplete(IReadOnlyList<Row> rows, string activeCase)
     {
-        var failure = Evaluate(rows, fault);
+        var text = new StringBuilder();
+        text.AppendLine(Incomplete)
+            .AppendLine("phase=" + Phase)
+            .AppendLine("required=" + string.Join(",", RequiredCases))
+            .AppendLine("budgetSeconds=" + PhaseBudgetSeconds.ToString("F0", CultureInfo.InvariantCulture))
+            .AppendLine("activeCase=" + Clean(activeCase))
+            .AppendLine("rows=" + rows.Count + " passed=" + rows.Count(r => r.Status == Passed)
+                + " failed=" + rows.Count(r => r.Status == Failed) + " notRun=" + rows.Count(r => r.Status == NotRun))
+            .AppendLine("result=pilot still running or externally terminated; this is not a pass.");
+        return text.ToString();
+    }
+
+    internal static string Summarize(IReadOnlyList<Row> rows, string? fault, IReadOnlyList<string> eventRows)
+    {
+        var failure = Evaluate(rows, fault, eventRows);
         var text = new StringBuilder();
         text.AppendLine(failure == null ? "PASS" : "FAIL")
             .AppendLine("phase=" + Phase)
+            .AppendLine("budgetSeconds=" + PhaseBudgetSeconds.ToString("F0", CultureInfo.InvariantCulture))
             .AppendLine("required=" + string.Join(",", RequiredCases))
             .AppendLine("rows=" + rows.Count
                 + " passed=" + rows.Count(r => r.Status == Passed)
@@ -100,6 +206,35 @@ internal static class TravelStationReceipt
     }
 
     // --- public-fact ordering rules ------------------------------------------------------
+
+    /// <summary>
+    /// A case window is every fact observed after the case started driving, INCLUDING facts of other
+    /// sessions: a stale-session fact leaking into a case must be rejected by the validators, never
+    /// filtered away silently.
+    /// </summary>
+    internal static List<T> Window<T>(IReadOnlyList<T> observed, int offset)
+    {
+        var result = new List<T>();
+        for (int index = Math.Max(0, offset); index < observed.Count; index++) result.Add(observed[index]);
+        return result;
+    }
+
+    /// <summary>
+    /// The load window is the one explicit boundary where older-session facts are legitimate: the
+    /// pilot clears its buffers BEFORE the load, so the previous session can still emit until the
+    /// fresh session starts. Returns the index of the fresh session's first fact; any pre-boundary
+    /// fact of the fresh session, or any foreign fact after the boundary, is rejected by the caller.
+    /// </summary>
+    internal static string? CheckLoadBoundary(IReadOnlyList<TravelTransition> observed, Guid session, out int freshIndex, out int priorSessionFacts)
+    {
+        freshIndex = 0; priorSessionFacts = 0;
+        while (freshIndex < observed.Count && observed[freshIndex].SessionId != session) freshIndex++;
+        priorSessionFacts = freshIndex;
+        if (freshIndex == observed.Count) return "No fact of the freshly loaded session was observed.";
+        for (int index = 0; index < freshIndex; index++)
+            if (observed[index].SessionId == session) return "Fresh-session fact ordered before the load boundary.";
+        return null;
+    }
 
     /// <summary>
     /// The fresh session's own placement. The pilot clears its buffers BEFORE the fixture load, so
