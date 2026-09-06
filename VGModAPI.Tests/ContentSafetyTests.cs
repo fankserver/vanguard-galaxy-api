@@ -61,6 +61,30 @@ public sealed class ContentSafetyTests
     public void IdentitiesCannotBecomePathsOrAliases(string id)
         => Assert.Throws<ArgumentException>(() => new ContentDeclaration(id, "thing", PersistentContentKind.Item, ContentPersistenceImpact.ProviderRequired));
 
+    [Theory]
+    [InlineData("1.0", "1.0.0.0")]
+    [InlineData("1.0.0", "1.0")]
+    public void VersionArityDoesNotCreateFalseDowngrade(string installed, string minimum)
+    {
+        var reference = new PersistentContentReference("owner", "thing", PersistentContentKind.Item, new Version(minimum));
+        var declaration = new ContentDeclaration("owner", "thing", reference.Kind, ContentPersistenceImpact.ProviderRequired);
+        Assert.Equal(ContentRecoveryAction.UseProvider, Assess(reference, declaration, new Version(installed), true));
+    }
+
+    [Fact]
+    public void ContradictionsBoundsDiagnosticsAndDowngradePrecedenceAreExplicit()
+    {
+        var reference = new PersistentContentReference("owner", "thing", PersistentContentKind.Item, new Version(2, 0));
+        var declaration = new ContentDeclaration("owner", "thing", reference.Kind, ContentPersistenceImpact.ApiDependent);
+        Assert.Throws<ArgumentException>(() => Assess(reference, declaration, null, true));
+        Assert.Equal(ContentRecoveryAction.RejectDowngrade, Assess(reference, declaration, new Version(1, 0), true));
+        _ = new ContentDeclaration(new string('a', 128), "thing", reference.Kind, declaration.Impact);
+        Assert.Throws<ArgumentException>(() => new ContentDeclaration(new string('a', 129), "thing", reference.Kind, declaration.Impact));
+        Assert.Equal("impact", Assert.Throws<ArgumentOutOfRangeException>(() => new ContentDeclaration("owner", "thing", reference.Kind, (ContentPersistenceImpact)99)).ParamName);
+        foreach (ContentRecoveryAction action in Enum.GetValues(typeof(ContentRecoveryAction))) Assert.False(string.IsNullOrWhiteSpace(ContentSafety.Diagnostic(action)));
+        Assert.Contains("Restore and enable", ContentSafety.Diagnostic(ContentRecoveryAction.RequireMigration));
+    }
+
     private static ContentRecoveryAction Assess(PersistentContentReference reference, ContentDeclaration? declaration, Version? version, bool enabled)
         => ContentSafety.Assess(reference, declaration, version, enabled, false, false, false);
 }

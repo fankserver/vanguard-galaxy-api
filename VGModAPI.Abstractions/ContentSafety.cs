@@ -20,8 +20,8 @@ public sealed class ContentDeclaration
     public ContentDeclaration(string owner, string localId, PersistentContentKind kind, ContentPersistenceImpact impact)
     {
         ContentSafety.ValidateIdentifier(owner); ContentSafety.ValidateIdentifier(localId);
-        if (!Enum.IsDefined(typeof(PersistentContentKind), kind) || !Enum.IsDefined(typeof(ContentPersistenceImpact), impact))
-            throw new ArgumentOutOfRangeException(nameof(kind));
+        if (!Enum.IsDefined(typeof(PersistentContentKind), kind)) throw new ArgumentOutOfRangeException(nameof(kind));
+        if (!Enum.IsDefined(typeof(ContentPersistenceImpact), impact)) throw new ArgumentOutOfRangeException(nameof(impact));
         Owner = owner; LocalId = localId; Kind = kind; Impact = impact;
     }
 }
@@ -65,9 +65,10 @@ public static class ContentSafety
         Version? installedProviderVersion, bool providerEnabled, bool apiAvailable, bool independentReconstructionAvailable, bool apiReconstructionAvailable)
     {
         if (reference == null) throw new ArgumentNullException(nameof(reference));
+        if (providerEnabled && installedProviderVersion == null) throw new ArgumentException("Enabled provider requires a verified version.", nameof(installedProviderVersion));
         if (trustedDeclaration == null || trustedDeclaration.Owner != reference.Owner || trustedDeclaration.LocalId != reference.LocalId || trustedDeclaration.Kind != reference.Kind)
             return ContentRecoveryAction.RejectUnknownReference;
-        if (installedProviderVersion != null && installedProviderVersion < reference.MinimumProviderVersion)
+        if (installedProviderVersion != null && Normalize(installedProviderVersion) < Normalize(reference.MinimumProviderVersion))
             return ContentRecoveryAction.RejectDowngrade;
         if (trustedDeclaration.Impact == ContentPersistenceImpact.ApiDependent && !apiAvailable) return ContentRecoveryAction.RequireApi;
         if (providerEnabled && installedProviderVersion != null) return ContentRecoveryAction.UseProvider;
@@ -81,6 +82,8 @@ public static class ContentSafety
         };
     }
 
+    private static Version Normalize(Version version) => new(version.Major, version.Minor, Math.Max(0, version.Build), Math.Max(0, version.Revision));
+
     public static string Diagnostic(ContentRecoveryAction action) => action switch
     {
         ContentRecoveryAction.UseProvider => "Invoke the compatible provider; preserve the original if restoration fails.",
@@ -88,7 +91,7 @@ public static class ContentSafety
         ContentRecoveryAction.UseApiReconstruction => "Invoke the compatible API reconstruction handler; this is not permission to uninstall the API.",
         ContentRecoveryAction.RequireProvider => "Restore and enable the owning provider. Keep the original save and opaque owner data unchanged.",
         ContentRecoveryAction.RequireApi => "Restore the required API and reconstruction handler before loading this content.",
-        ContentRecoveryAction.RequireMigration => "Removal requires an explicit verified migration/export on a copy; no automatic deletion or safe-uninstall promise.",
+        ContentRecoveryAction.RequireMigration => "Restore and enable the owning provider. Only if intentionally removing it, use an explicit verified migration/export on a copy; no automatic deletion or safe-uninstall promise.",
         ContentRecoveryAction.RejectDowngrade => "The installed provider is older than the saved requirement. Restore a compatible version or explicitly migrate a copy.",
         _ => "Unknown or mismatched content ownership. Refuse reinterpretation and preserve original data."
     };

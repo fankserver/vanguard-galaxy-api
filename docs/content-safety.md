@@ -15,7 +15,7 @@ Call `RequireAdmission` before accepting persistent content. API-dependent, prov
 | Provider-required | Invoke provider | Restore/enable owning provider; refuse reinterpretation |
 | Removal requires migration | Invoke provider | Require an explicit migration on a copy; do not delete references automatically |
 
-An installed version below the saved minimum is a downgrade refusal, not permission to reinterpret the state. A disabled provider is not an active factory. Unrecognized references remain opaque and protected even when no provider can describe them. `Diagnostic` provides user-facing action text; callers should include the owner/key and expose it before accepting a persistent dependency or attempting recovery.
+Version comparison zero-fills omitted build/revision components (`1.0` equals `1.0.0.0`). Enabled-without-version input is a caller error. An installed version below the saved minimum is a downgrade refusal, not permission to reinterpret the state. A disabled provider is not an active factory. Unrecognized references remain opaque and protected even when no provider can describe them. `Diagnostic` provides user-facing action text; callers should include the owner/key and expose it before accepting a persistent dependency or attempting recovery.
 
 Placeholders are permitted only as an explicit, independently retained reconstruction implementation that preserves identity and semantics. There is no generic vanilla-item/faction substitution or universal placeholder implementation here.
 
@@ -40,7 +40,14 @@ Assembly SHA256: `a2aad60bc68c31baccd636587d3c5ba4e651eacda59b0af42cd4f17f864284
 | Faction | `Faction.Get` absent ID routes to type-based `Create` | Missing type fails, not another faction |
 | World POI | `MapPointOfInterest.FromJson` type routes to `Create` | Missing type fails before world reconstruction |
 
-These findings are scoped to the inspected assembly, not all mod hooks. No external CustomMission, Silos or archived TravelJournal migration is performed.
+Source-level motivating classifications (not new consumer migrations):
+
+| Existing content | Conservative impact | Required action |
+|---|---|---|
+| CustomMission legacy faction IDs (`AbsolutionRogue`, `TerraformerColony`) retained by `LegacyFactionCompat` | Provider-required while those saved identities remain | Retain the compatibility provider; intentional removal requires a separate verified reference migration, not replacement with a vanilla faction |
+| Silos runtime items inserted into `InventoryItemType.allItems` | Provider-required while inventories/world state reference their IDs | Restore Silos registration or retain the provider until an explicitly supported migration removes every reference on a copy |
+
+These findings are scoped to the inspected assembly and named source paths, not all mod hooks. No external CustomMission, Silos or archived TravelJournal migration is performed.
 
 ## Fixtures and limits
 
