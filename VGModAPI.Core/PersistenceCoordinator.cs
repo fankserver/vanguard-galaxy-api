@@ -31,11 +31,13 @@ internal sealed class PersistenceCoordinator : IDisposable
     private readonly IDisposable _subscription;
     private readonly Dictionary<string, Owner> _owners = new(StringComparer.Ordinal);
     private readonly Dictionary<Guid, Pending> _pending = new();
+    private readonly Dictionary<Guid, (string Path, Guid? Session)> _intents = new();
     private Dictionary<string, byte[]> _known = new(StringComparer.Ordinal);
     private Guid? _session;
     private Guid _campaign;
     private string? _loadPath, _loadHash;
-    private bool _sessionFault, _writeFault, _disposed;
+    private bool _sessionFault, _writeFault, _disposed, _restored;
+    private string? _faultDetail;
 
     internal PersistenceCoordinator(LifecycleHub hub, GenerationStore store, Func<string, string> canonical, Func<string, string> hashFile)
     {
@@ -49,7 +51,8 @@ internal sealed class PersistenceCoordinator : IDisposable
     {
         _hub.CheckThread();
         if (_disposed || _hub.CurrentSession != null) throw new InvalidOperationException("Register before a session begins.");
-        if (capture == null || restore == null) throw new ArgumentNullException();
+        if (codec == null || capture == null || restore == null) throw new ArgumentNullException();
+        if (_owners.ContainsKey(codec.Owner)) throw new InvalidOperationException("Owner is already registered.");
         if (_owners.Count >= GenerationStore.MaxOwners) throw new InvalidOperationException("Owner limit reached.");
         _owners.Add(codec.Owner, new Owner(codec, capture, restore));
     }
@@ -57,7 +60,7 @@ internal sealed class PersistenceCoordinator : IDisposable
     internal bool MutationAllowed(string owner)
     {
         _hub.CheckThread();
-        return !_disposed && !_sessionFault && !_writeFault && _pending.Count == 0 && !_hub.IsDispatchingCallbacks
+        return !_disposed && !_sessionFault && !_writeFault && _pending.Count == 0 && _intents.Count == 0 && !_hub.IsDispatchingCallbacks
             && _session.HasValue && Current(_session.Value) && _hub.CurrentSession!.Phase == SessionPhase.GameplayInitialized
             && _owners.TryGetValue(owner, out var registered) && registered.Ready;
     }
@@ -67,7 +70,7 @@ internal sealed class PersistenceCoordinator : IDisposable
         _hub.CheckThread();
         if (_disposed || !_session.HasValue) return "inactive";
         if (_sessionFault) return "load-blocked";
-        if (_writeFault) return "publication-blocked";
+        if (_writeFault) return _faultDetail ?? "publication-blocked";
         return _owners.TryGetValue(owner, out var registered) ? registered.Status : "unregistered";
     }
 
@@ -77,7 +80,7 @@ internal sealed class PersistenceCoordinator : IDisposable
     private void Reset()
     {
         _session = null; _pending.Clear(); _known.Clear(); _loadPath = null; _loadHash = null;
-        _sessionFault = false; _writeFault = false;
+        _sessionFault = false; _writeFault = false; _restored = false; _faultDetail = null;
         foreach (var owner in _owners.Values) { owner.Ready = false; owner.Status = "inactive"; }
     }
 
@@ -101,15 +104,30 @@ internal sealed class PersistenceCoordinator : IDisposable
         }
         if (e.Kind == LifecycleEventKind.SessionInvalidated || e.Kind == LifecycleEventKind.SessionStartFailed)
         { if (e.Session?.Id == _session) Reset(); return; }
+        if (e.Kind == LifecycleEventKind.SaveStarted)
+        {
+            try
+            {
+                if (e.OperationId == null || e.Destination == null) throw new InvalidOperationException("Invalid save start.");
+                if (_intents.ContainsKey(e.OperationId.Value))
+                { _pending.Remove(e.OperationId.Value); throw new InvalidOperationException("Duplicate save start."); }
+                var path = _canonical(e.Destination);
+                _store.MarkIntent(path, e.OperationId.Value);
+                _intents.Add(e.OperationId.Value, (path, e.Session?.Id));
+                if (_session.HasValue && Current(_session.Value)) Capture(e);
+            }
+            catch { _writeFault = true; }
+            return;
+        }
+        if (e.Kind == LifecycleEventKind.SaveSucceeded || e.Kind == LifecycleEventKind.SaveFailed || e.Kind == LifecycleEventKind.SaveSkipped)
+        { Complete(e); return; }
         if (!_session.HasValue || !Current(_session.Value)) return;
         if (e.Kind == LifecycleEventKind.PlayerReady && e.Session?.Id == _session) RestoreOwners();
-        if (e.Kind == LifecycleEventKind.SaveStarted) Capture(e);
-        if (e.Kind == LifecycleEventKind.SaveSucceeded || e.Kind == LifecycleEventKind.SaveFailed || e.Kind == LifecycleEventKind.SaveSkipped) Complete(e);
     }
 
     private void RestoreOwners()
     {
-        if (_sessionFault) return;
+        if (_sessionFault || _restored) return;
         Guid id = _session!.Value;
         try
         {
@@ -137,12 +155,14 @@ internal sealed class PersistenceCoordinator : IDisposable
             }
             catch { owner.Ready = false; owner.Status = "restore-failed"; }
         }
+        if (Current(id)) _restored = true;
     }
 
     private void Capture(LifecycleEvent e)
     {
-        if (_sessionFault || e.Session?.Id != _session || e.OperationId == null || e.Destination == null
-            || _hub.CurrentSession!.Phase != SessionPhase.GameplayInitialized) return;
+        if (_sessionFault || !_restored || e.Session?.Id != _session || e.OperationId == null || e.Destination == null) return;
+        if (_known.Keys.Union(_owners.Keys, StringComparer.Ordinal).Count() > GenerationStore.MaxOwners)
+        { _writeFault = true; _faultDetail = "owner-union-limit"; return; }
         Guid id = _session!.Value;
         var data = _known.ToDictionary(p => p.Key, p => (byte[])p.Value.Clone(), StringComparer.Ordinal);
         bool captureFailed = false;
@@ -169,15 +189,25 @@ internal sealed class PersistenceCoordinator : IDisposable
 
     private void Complete(LifecycleEvent e)
     {
-        if (e.OperationId == null || !_pending.TryGetValue(e.OperationId.Value, out var pending)) return;
+        if (e.OperationId == null || !_intents.TryGetValue(e.OperationId.Value, out var intent)) return;
+        _intents.Remove(e.OperationId.Value);
+        _pending.TryGetValue(e.OperationId.Value, out var pending);
         _pending.Remove(e.OperationId.Value);
-        if (e.Kind != LifecycleEventKind.SaveSucceeded) return;
         try
         {
-            if (e.Session?.Id != pending.Session || !Current(pending.Session) || e.Destination == null
-                || _canonical(e.Destination) != pending.Destination) throw new InvalidOperationException("Save terminal mismatch.");
+            if (e.Session?.Id != intent.Session || e.Destination == null || _canonical(e.Destination) != intent.Path)
+                throw new InvalidOperationException("Save terminal mismatch.");
+            if (e.Kind != LifecycleEventKind.SaveSucceeded)
+            {
+                // A failed vanilla write may still have changed payload bytes before metadata failed.
+                if (e.Kind == LifecycleEventKind.SaveSkipped) _store.ClearIntent(intent.Path, e.OperationId.Value);
+                return;
+            }
+            if (pending == null || !Current(pending.Session)) throw new InvalidOperationException("No publishable candidate.");
             var generation = _store.Publish(pending.Destination, _hashFile(pending.Destination), pending.Campaign, pending.Owners);
-            _known = generation.Owners; _writeFault = false;
+            _known = generation.Owners;
+            _store.ClearIntent(intent.Path, e.OperationId.Value);
+            _writeFault = false; _faultDetail = null;
         }
         catch { _writeFault = true; }
     }

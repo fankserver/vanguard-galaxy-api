@@ -95,7 +95,7 @@ internal sealed class GenerationStore
         var identity = new SnapshotAssociation(slot, vanillaHash, StateHash(owners), campaign, Guid.NewGuid());
         var target = Location(slot, vanillaHash);
         RejectLinks(target);
-        var existing = Load(slot, vanillaHash);
+        var existing = ReadExisting(slot, vanillaHash, false);
         if (existing != null)
         {
             if (!existing.Identity.CanReuse(identity)) throw new InvalidDataException("Immutable snapshot association conflict.");
@@ -161,19 +161,49 @@ internal sealed class GenerationStore
         return Encoding.ASCII.GetString(bytes);
     }
 
-    internal StoredGeneration? Load(string slot, string vanillaHash)
+    internal void MarkIntent(string slot, Guid operation)
+    {
+        var parent = Path.GetDirectoryName(Location(slot, new string('0', 64)))!;
+        RejectLinks(parent); Directory.CreateDirectory(parent); RejectLinks(parent);
+        WriteNew(Path.Combine(parent, "intent-" + operation.ToString("N")), Encoding.ASCII.GetBytes(Hash(Encoding.UTF8.GetBytes(slot))));
+    }
+
+    internal void ClearIntent(string slot, Guid operation)
+    {
+        var parent = Path.GetDirectoryName(Location(slot, new string('0', 64)))!;
+        var path = Path.Combine(parent, "intent-" + operation.ToString("N"));
+        RejectLinks(path); File.Delete(path);
+    }
+
+    internal StoredGeneration? Load(string slot, string vanillaHash) => ReadExisting(slot, vanillaHash, true);
+
+    private StoredGeneration? ReadExisting(string slot, string vanillaHash, bool protectUnknown)
     {
         var target = Location(slot, vanillaHash);
         RejectLinks(target);
         FileAttributes attributes;
         try { attributes = File.GetAttributes(target); }
-        catch (FileNotFoundException) { return null; }
-        catch (DirectoryNotFoundException) { return null; }
+        catch (FileNotFoundException) { return Missing(target, protectUnknown); }
+        catch (DirectoryNotFoundException) { return Missing(target, protectUnknown); }
         if ((attributes & FileAttributes.Directory) == 0) throw new InvalidDataException("Generation path is not a directory.");
         try { return ReadGeneration(target, slot, vanillaHash); }
         catch (InvalidDataException) { throw; }
         catch (Exception error) when (error is IOException || error is ArgumentException || error is UnauthorizedAccessException)
         { throw new InvalidDataException("Published generation is unreadable or invalid.", error); }
+    }
+
+    private static StoredGeneration? Missing(string target, bool protectUnknown)
+    {
+        if (protectUnknown)
+        {
+            try
+            {
+                if (Directory.EnumerateFileSystemEntries(Path.GetDirectoryName(target)!).Any())
+                    throw new InvalidDataException("Unassociated snapshot in a slot with persistence history or interrupted intent.");
+            }
+            catch (DirectoryNotFoundException) { }
+        }
+        return null;
     }
 
     private static StoredGeneration ReadGeneration(string target, string slot, string vanillaHash)
