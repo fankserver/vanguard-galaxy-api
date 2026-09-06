@@ -404,11 +404,11 @@ internal sealed class TravelNativeAdapter : IDisposable
     // --- station facts: native dock/undock boundaries -------------------------
 
     // Station facts originate ONLY from native Dock()/Undock()/EmergencyUndock() coroutine
-    // boundaries. DockQuick is used by every restore/relink path (InitializePoi,
-    // SpaceShip.RelinkDockedShipToStation, GameplayManager ship re-init, NPC CheckDockingState) and
-    // is never a physical transition, so it is not hooked at all. A real Dock() coroutine's
-    // completion is always eligible when the player ship has physically reached Docked, independent
-    // of reducer placement state (finding 6/F1).
+    // boundaries. DockQuick (same-size restore/relink) is never a physical transition and is not
+    // hooked; a different-docking-size ship re-init takes a real Dock() coroutine but runs while the
+    // interior scene is current, so the interior-current discriminator in OnDockedPhysical suppresses
+    // it (arrival docks never run while the interior is current). A genuine arrival Dock() completion
+    // is eligible when the player ship has physically reached Docked and the interior is not current.
     // The context pins immutable session/player at FACTORY time (owner) and captures the exact SHIP
     // at the FIRST ACTUAL STEP only after verifying that ownership is still current. The ship object
     // is read at that step (before ResetDockingOption() nulls dockingOption.dockingSpaceship) so
@@ -422,16 +422,16 @@ internal sealed class TravelNativeAdapter : IDisposable
     }
     internal object? CaptureDock(object? dockingOption, object? ownerObject)
     {
-        try
-        {
-            if (ownerObject is not DockOwner owner) return null;
-            // Factory ownership must still be current at the first actual step.
-            if (owner.Session != _session || !ReferenceEquals(owner.Player, _boundPlayer)) return null;
-            var ship = _bindings.ShipOf(dockingOption);
-            if (ship == null || !_bindings.IsPlayerShip(ship, owner.Player)) return null;
-            return new DockContext(owner.Session, owner.Player, ship);
-        }
-        catch { return null; }
+        // No catch: a genuine current-ownership binding or reflection failure (e.g. ShipOf/IsPlayerShip
+        // after a game update) must surface through the caller's Guard so it is logged and the travel
+        // group can be torn down, rather than being masked as "not a player ship" (L3). Stale
+        // ownership (owner no longer current) deliberately returns null WITHOUT faulting a replacement.
+        if (ownerObject is not DockOwner owner) return null;
+        // Factory ownership must still be current at the first actual step.
+        if (owner.Session != _session || !ReferenceEquals(owner.Player, _boundPlayer)) return null;
+        var ship = _bindings.ShipOf(dockingOption);
+        if (ship == null || !_bindings.IsPlayerShip(ship, owner.Player)) return null;
+        return new DockContext(owner.Session, owner.Player, ship);
     }
     internal void OnDockedPhysical(object? dockContext)
     {
@@ -444,6 +444,12 @@ internal sealed class TravelNativeAdapter : IDisposable
             var player = c.Player;
             if (!IsLive(player) || !_bindings.IsPlayerShip(c.Ship, player)) return;
             if (_bindings.ShipDockingState(c.Ship) != DockingStateDocked) return; // physical state required
+            // Native discriminator (H1): a genuine ARRIVAL dock never runs while the interior scene is
+            // current (CheckForDocking refuses when SceneLoader.CurrentScene == "SpacestationInterior"),
+            // so a Dock() completion while the interior instance is live is a restore/relink dock (e.g.
+            // a different-docking-size ship re-init takes a real Dock() coroutine) and must not emit
+            // DockedPhysical with no undock between two docked facts.
+            if (_bindings.InteriorInstance() != null) return;
             var station = _bindings.CurrentLocation(player); // actual player location, not tracking cache
             if (station == null) return;
             Cache(station);
@@ -549,6 +555,12 @@ internal sealed class TravelNativeAdapter : IDisposable
             var player = _boundPlayer;
             if (!IsLive(player)) return;
             if (!_modeByLeg.TryGetValue(_leg.Id, out var mode) || mode != TravelMode.InSystem) return;
+            // A loaded origin (tracker.Current known) still has the player at the origin: departure is
+            // the verified origin->null UnloadCurrentScene transition, NOT the warp start. Use the
+            // transport-start evidence ONLY when the origin is already unknown (empty-origin / re-route
+            // hops where UnloadCurrentScene is a NOOP). Otherwise an early warp cancel would emit a
+            // Fabricated Departed(null) and split the origin visit.
+            if (_tracker.Current != null) return;
             _tracker.Depart(_leg, _bindings.Time(player));
             Drain(_bindings.Time(player));
         });

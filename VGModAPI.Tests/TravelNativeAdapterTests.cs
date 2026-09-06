@@ -345,14 +345,37 @@ public sealed class TravelNativeAdapterTests
     }
 
     [Fact]
+    public void OriginLoadedCancelAtWarpStartIsCancelledAtOrigin()
+    {
+        using var w = new World();
+        w.Adapter.Tick(w.Player, w.OriginManager); w.Transitions.Clear();
+        w.SetWaypoints(w.InSystemPoi);
+        w.Adapter.RequestWaypointLeg();          // Requested (origin still placed/known)
+        // Warp starts while the player is STILL at the loaded origin: departure must NOT fire (M1) —
+        // a loaded origin departs only on the verified UnloadCurrentScene origin->null transition.
+        w.Adapter.OnInSystemWarpStart();
+        Assert.DoesNotContain(w.Transitions, t => t.Kind == TravelTransitionKind.Departed);
+        // Early cancel (travel UI / hold-position) while at the origin: Cancelled AT the origin,
+        // with no fabricated Departed(null) and no RecoveredPlacement splitting the origin visit.
+        w.Adapter.OnTravelCancelled();
+        var kinds = w.Transitions.Select(t => t.Kind).ToArray();
+        Assert.Equal(new[] { TravelTransitionKind.Requested, TravelTransitionKind.Cancelled }, kinds);
+        Assert.Equal("poi-origin", w.Transitions.Single(t => t.Kind == TravelTransitionKind.Cancelled).ActualLocation!.PoiId);
+        w.Adapter.Tick(w.Player, w.OriginManager);
+        Assert.DoesNotContain(w.Transitions, t => t.Kind == TravelTransitionKind.RecoveredPlacement);
+        Assert.Empty(w.Faults);
+    }
+
+    [Fact]
     public void CancelledStationaryEmptySpaceNewRequestIsRequestedOnlyUntilActualWarp()
     {
         using var w = new World();
         w.Adapter.Tick(w.Player, w.OriginManager); w.Transitions.Clear();
         w.SetWaypoints(w.InSystemPoi);
         w.Adapter.RequestWaypointLeg();
-        // Real warp begins, then the player cancels while parked in empty space (Current is null).
-        w.Adapter.OnInSystemWarpStart();
+        // Real departure (UnloadCurrentScene -> origin->null), then the player cancels while parked
+        // in empty space (Current is null).
+        w.Adapter.OnDeparture(w.Player, true);
         w.Player.currentPointOfInterest = null; w.Travel.localPoiManager = null;
         w.Adapter.OnTravelCancelled();
         // New route after the parked empty-space cancel: Requested ONLY (Current==null is not warp
@@ -361,7 +384,7 @@ public sealed class TravelNativeAdapterTests
         w.SetWaypoints(w.TutorialPoi);
         w.Adapter.RequestWaypointLeg(replacePending: true);
         Assert.Equal(new[] { TravelTransitionKind.Requested }, w.Transitions.Select(t => t.Kind).ToArray());
-        // Next actual warp -> departs.
+        // Next actual warp (origin unknown) -> departs.
         w.Adapter.OnInSystemWarpStart();
         Assert.Contains(w.Transitions, t => t.Kind == TravelTransitionKind.Departed);
         Assert.Empty(w.Faults);
@@ -373,10 +396,12 @@ public sealed class TravelNativeAdapterTests
         using var w = new World();
         w.Adapter.Tick(w.Player, w.OriginManager); w.Transitions.Clear();
 
-        // Leg X: requested, then a REAL in-system transport starts (TravelInSystem first step) and the origin unloads.
+        // Leg X: requested; origin is placed (known) so departure is the verified UnloadCurrentScene
+        // origin->null transition (not the warp start, which is only used when origin is already
+        // unknown). Afterwards the origin is unloaded (Current becomes null).
         w.SetWaypoints(w.InSystemPoi);
         w.Adapter.RequestWaypointLeg();
-        w.Adapter.OnInSystemWarpStart();
+        w.Adapter.OnDeparture(w.Player, true);
         w.Player.currentPointOfInterest = null; w.Travel.localPoiManager = null; // origin unloaded
         var xId = w.Transitions.Single(t => t.Kind == TravelTransitionKind.Requested).OperationId;
         Assert.Equal(xId, w.Transitions.Single(t => t.Kind == TravelTransitionKind.Departed).OperationId);
@@ -708,6 +733,76 @@ public sealed class TravelNativeAdapterTests
         Assert.Contains(w.Faults, f => f.Contains("thrower"));
     }
 
+    [Fact]
+    public void DockCompletionWhileInteriorCurrentIsRestoreNotArrival()
+    {
+        using var w = new World();
+        w.Adapter.Tick(w.Player, w.OriginManager); w.StationFacts.Clear();
+        // Player is docked and the interior scene is current (a different-docking-size ship re-init
+        // takes a real Dock() coroutine while the interior is live; arrival docks never run then, per
+        // CheckForDocking refusing while SceneLoader.CurrentScene == "SpacestationInterior").
+        SpaceStationInterior.instance = new SpaceStationInterior();
+        var ship = UnitFor(w); ship.spaceShipData!.dockingState = DockingState.Docked;
+        var option = OptionFor(w, ship);
+        var owner = w.Adapter.CreateDockOwner();
+        var ctx = w.Adapter.CaptureDock(option, owner);
+        w.Adapter.OnDockedPhysical(ctx);
+        Assert.Empty(w.StationFacts);                      // restore/relink dock, not an arrival dock
+        Assert.Empty(w.Faults);
+        // A genuine exterior arrival dock (interior no longer current) still emits exactly ONE.
+        SpaceStationInterior.instance = null;
+        var ctx2 = w.Adapter.CaptureDock(option, owner);
+        w.Adapter.OnDockedPhysical(ctx2);
+        Assert.Equal(StationTransitionKind.DockedPhysical, Assert.Single(w.StationFacts).Kind);
+        Assert.Empty(w.Faults);
+    }
+
+    [Fact]
+    public void ZeroDistanceWarpFirstStepFalseFiresNoDeparture()
+    {
+        using var w = new World();
+        w.Adapter.Tick(w.Player, w.OriginManager); w.Transitions.Clear();
+        w.SetWaypoints(w.InSystemPoi);
+        w.Adapter.RequestWaypointLeg();
+        // Zero-distance hop: TravelInSystem's first MoveNext returns false (ship already within
+        // IsNearWorldPosition), so no warp begins: onFirst never fires and no Departed is fabricated.
+        var observer = new CoroutineBoundaryObserver(new ImmediateEnd(), onFirst: () => w.Adapter.OnInSystemWarpStart());
+        Assert.False(observer.MoveNext());
+        Assert.DoesNotContain(w.Transitions, t => t.Kind == TravelTransitionKind.Departed);
+        Assert.Empty(w.Faults);
+    }
+
+    [Fact]
+    public void CaptureDockBindingFailureIsReportedNotSwallowed()
+    {
+        using var w = new World();
+        var owner = w.Adapter.CreateDockOwner();
+        object? ctx = null;
+        // A genuine binding/reflection failure (ShipOf on a non-DockingOption) must surface through
+        // Guard and be logged, not be silently treated as "not a player ship" (L3).
+        w.Adapter.Guard(() => ctx = w.Adapter.CaptureDock("not-a-docking-option", owner));
+        Assert.Null(ctx);
+        Assert.Contains(w.Faults, f => f.StartsWith("travel:"));
+    }
+
+    [Fact]
+    public void CaptureDockStaleOwnerReturnsNullWithoutFaultingReplacement()
+    {
+        using var w = new World();
+        w.Adapter.Tick(w.Player, w.OriginManager); w.StationFacts.Clear();
+        var owner = w.Adapter.CreateDockOwner();                 // factory owner under session A
+        var newSession = Guid.NewGuid();
+        w.Adapter.SetSession(newSession);                        // replacement session (same/diff player)
+        // Invalidation of a stale owner is a normal null return, never a fault on the replacement.
+        object? ctx = null;
+        w.Adapter.Guard(() => ctx = w.Adapter.CaptureDock(OptionFor(w), owner));
+        Assert.Null(ctx);
+        Assert.Empty(w.Faults);
+        Assert.Equal(newSession, w.Adapter.CurrentSession);
+        w.Adapter.Tick(w.Player, w.OriginManager);               // replacement still functional
+        Assert.Empty(w.StationFacts);
+    }
+
     // ---------- iterator fakes and drivers ----------
 
     // Drive an iterator tree exactly as Unity drives nested IEnumerator yields (children first).
@@ -748,6 +843,14 @@ public sealed class TravelNativeAdapterTests
         public object? Current => null;
         public bool MoveNext() => ++_n <= _limit;
         public void Reset() => _n = 0;
+    }
+    // An iterator that ends immediately (first MoveNext == false): models a zero-distance hop whose
+    // TravelInSystem loop body never runs.
+    private sealed class ImmediateEnd : IEnumerator
+    {
+        public object? Current => null;
+        public bool MoveNext() => false;
+        public void Reset() { }
     }
     private static Behaviour.Unit.SpaceShip UnitFor(World w)
         => new() { spaceShipData = w.Player.currentSpaceShip };
