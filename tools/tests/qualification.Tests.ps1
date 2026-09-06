@@ -19,6 +19,8 @@ function Assert($condition, $message) { if (!$condition) { throw $message } }
 try {
     foreach ($name in @('VanguardGalaxy.exe','UnityPlayer.dll','winhttp.dll','BepInEx\core\BepInEx.Preloader.dll')) { Put "installed\$name" 'fake-not-executable' }
     foreach ($name in @('VanguardGalaxy_Data','MonoBleedingEdge','D3D12')) { Put "installed\$name\sentinel.txt" 'keep' }
+    Put 'installed\VanguardGalaxy_Data\Managed\Assembly-CSharp.dll' 'synthetic-original-assembly'
+    Put 'installed\VanguardGalaxy_Data\Resources\sentinel.txt' 'resource-keep'
     Put 'installed\doorstop_config.ini' "[General]`ntarget_assembly=C:\outside\BepInEx.Preloader.dll"
     foreach ($name in @('VGModAPI.dll','VGModAPI.Core.dll','VGModAPI.Abstractions.dll','unexpected.dll')) { Put "build\artifacts\VGModAPI\$name" 'fake-assembly' }
     Put 'build\tools\QualificationGuard\bin\Release\netstandard2.1\QualificationGuard.dll' 'fake-guard'
@@ -29,6 +31,50 @@ try {
     Put 'fixtures\b.save' 'fixture-b'
     $options = @{ GameDir=$fakeGame; OriginalSaveDir=$original; SaveA=(Join-Path $fixtures 'a.save'); SaveB=(Join-Path $fixtures 'b.save'); BuildRoot=$build; BuildRevision='fixture-test' }
     & $script -Action Prepare -SandboxRoot $sandbox @options
+    $overlayRoot = Join-Path $work 'overlay-sandbox'
+    $sandboxes += $overlayRoot
+    & $script -Action Prepare -SandboxRoot $overlayRoot -Scenario UnavailableApi -AssemblyOverlay @options
+    $overlayProvenance = Assert-QualificationInputs $overlayRoot
+    Assert ($overlayProvenance.assemblyOverlay.original -ne $overlayProvenance.assemblyOverlay.modified) 'Overlay did not change identity.'
+    Assert ((Get-Content -LiteralPath (Join-Path $fakeGame 'VanguardGalaxy_Data\Managed\Assembly-CSharp.dll')) -eq 'synthetic-original-assembly') 'Overlay changed original assembly.'
+    $overlayMarker = Join-Path $overlayRoot 'assembly-overlay.hash'
+    $markerBytes = [IO.File]::ReadAllBytes($overlayMarker)
+    [IO.File]::WriteAllText($overlayMarker, 'tampered')
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $overlayRoot } catch { $rejected = $true }
+    Assert $rejected 'Changed overlay marker accepted.'
+    [IO.File]::WriteAllBytes($overlayMarker, $markerBytes)
+    foreach ($assemblyPath in @((Join-Path $overlayRoot 'game\VanguardGalaxy_Data\Managed\Assembly-CSharp.dll'), $overlayProvenance.assemblyOverlay.source)) {
+        $bytes = [IO.File]::ReadAllBytes($assemblyPath)
+        [IO.File]::WriteAllText($assemblyPath, 'tampered-synthetic')
+        $rejected = $false
+        try { $null = Assert-QualificationInputs $overlayRoot } catch { $rejected = $true }
+        Assert $rejected 'Changed copied/source assembly accepted.'
+        [IO.File]::WriteAllBytes($assemblyPath, $bytes)
+    }
+    $overlayCopy = Join-Path $overlayRoot 'game\VanguardGalaxy_Data\Managed\Assembly-CSharp.dll'
+    $copyBytes = [IO.File]::ReadAllBytes($overlayCopy)
+    $overlayProvPath = Join-Path $overlayRoot 'build-provenance.json'
+    $overlayProvBytes = [IO.File]::ReadAllBytes($overlayProvPath)
+    [IO.File]::WriteAllText($overlayCopy, 'different-code-not-an-overlay')
+    $overlayProvenance.assemblyOverlay.modified = (Get-FileHash -LiteralPath $overlayCopy).Hash
+    $overlayProvenance | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $overlayProvPath
+    [IO.File]::WriteAllLines($overlayMarker, [string[]]@($overlayProvenance.assemblyOverlay.modified, $overlayProvenance.assemblyOverlay.original))
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $overlayRoot } catch { $rejected = $true }
+    Assert $rejected 'Consistently repinned non-overlay bytes accepted.'
+    [IO.File]::WriteAllBytes($overlayCopy, $copyBytes)
+    [IO.File]::WriteAllBytes($overlayProvPath, $overlayProvBytes)
+    [IO.File]::WriteAllBytes($overlayMarker, $markerBytes)
+    & $script -Action Cleanup -SandboxRoot $overlayRoot
+    Assert (!(Test-Path -LiteralPath (Join-Path $overlayRoot 'game\VanguardGalaxy_Data\Resources'))) 'Nested resource junction survived cleanup.'
+    Assert (Test-Path -LiteralPath (Join-Path $overlayRoot 'game\VanguardGalaxy_Data\Managed\Assembly-CSharp.dll')) 'Private Managed evidence removed.'
+    Assert ((Get-Content -LiteralPath (Join-Path $fakeGame 'VanguardGalaxy_Data\Resources\sentinel.txt')) -eq 'resource-keep') 'Cleanup modified source resource.'
+    [IO.File]::WriteAllText((Join-Path $sandbox 'assembly-overlay.hash'), 'forged')
+    $rejected = $false
+    try { & $script -Action Cleanup -SandboxRoot $sandbox } catch { $rejected = $true }
+    Assert $rejected 'Overlay cleanup traversed an ordinary data junction.'
+    Remove-Item -LiteralPath (Join-Path $sandbox 'assembly-overlay.hash')
     $future = Get-Content (Join-Path $sandbox 'Saves\fixture-future.save') -Raw | ConvertFrom-Json
     Assert ($future.Version -eq '99.0.0.0') 'Future fixture must use valid two-digit-or-shorter version segments.'
     $manifest = Get-Content (Join-Path $sandbox 'original-save-hashes.json') -Raw | ConvertFrom-Json
@@ -158,7 +204,14 @@ finally {
     foreach ($root in $sandboxes) {
         foreach ($name in @('VanguardGalaxy_Data','MonoBleedingEdge','D3D12')) {
             $path = Join-Path $root "game\$name"
-            if ((Test-Path -LiteralPath $path) -and ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) { [IO.Directory]::Delete($path, $false) }
+            if (Test-Path -LiteralPath $path) {
+                if ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { [IO.Directory]::Delete($path, $false) }
+                elseif ($name -eq 'VanguardGalaxy_Data') {
+                    foreach ($child in Get-ChildItem -LiteralPath $path -Force -Directory) {
+                        if ($child.Attributes -band [IO.FileAttributes]::ReparsePoint) { [IO.Directory]::Delete($child.FullName, $false) }
+                    }
+                }
+            }
         }
     }
     if (Test-Path -LiteralPath $work) { Remove-Item -LiteralPath $work -Recurse -Force }

@@ -102,7 +102,7 @@ All four runs independently passed the 37 original-file hash/direct-file-set che
 Arrange owner approval before deployment. Use copied/disposable saves and the optional compiled `LifecycleObserver` example to record events. Record game/Unity/BepInEx versions, assembly hash, enabled mods, and relevant logs for each run.
 
 - [x] Plugin startup reports bound capabilities on the inspected DLL; no Harmony errors.
-- [ ] Unsupported DLL safely reports unavailable capabilities with no patches applied.
+- [x] qa41 loads an actual private copy with an appended PE overlay, verifies its inspected source identity, and observes the specific uninspected-assembly refusal with zero injected hashes, unavailable capabilities, no API patches and disabled consumers. This is changed file identity, not another game implementation. Original game DLL, all 37 original files/direct file sets, preferences and copied consumer files were independently preserved.
 - [x] Load mining-space, native in-system-transit and controlled parked-empty-space saves: Starting -> PlayerReady -> GameplayInitialized, one session ID. Parked-space setup uses vanilla cancellation/completion calls, not pointer-driven UI.
 - [x] Load a docked save: same core sequence; do not interpret it as station-UI readiness.
 - [x] Start a tutorial through native wizard callbacks: no PlayerReady during the synchronous `NewGame.SaveInputs` call. Inspected `SaveInputs` invokes `GamePlayer.CreateNewGamePlayer` and completes wizard configuration before `GameManager.StartNewGame` calls `SceneLoader.LoadScenesOnStartGame`. The probe does not observe arbitrary asynchronous configuration outside that call. Pointer-driven UI acceptance remains separate.

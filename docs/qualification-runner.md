@@ -53,7 +53,13 @@ Select a mode during **Prepare** using `-Scenario` (the prepared mode is recorde
 - `MissingApi`: guard only; reach the menu, verify no API plugin loaded, then quit.
 - `UnavailableApi`: guard and API only. A scoped Harmony postfix substitutes a zero hash result from `ReadAssemblyHash` before API Awake. Require one injection, an existing service with both integration capabilities unavailable, and no API-owned Harmony patches, then quit.
 
-The mismatch is **injected input**, not an altered or alternate game DLL. It checks the live rejection path, not compatibility with another game version. Selected pilots additionally test consumer dependency refusal as described below. Run verifies the exact flat plugin set, hashes, and scenario before launch; extra files/directories or reparse-point plugins are rejected. A guard must remain active through quit-time writes. Do not deploy legacy plugins that can write before this ordering boundary; consumer coexistence requires its own reviewed setup.
+By default the mismatch is **injected input**, not an altered or alternate game DLL. It checks the live rejection path, not compatibility with another game version. Selected pilots additionally test consumer dependency refusal as described below. Run verifies the exact flat plugin set, hashes, and scenario before launch; extra files/directories or reparse-point plugins are rejected. A guard must remain active through quit-time writes. Do not deploy legacy plugins that can write before this ordering boundary; consumer coexistence requires its own reviewed setup.
+
+### Actual private assembly-identity rejection
+
+For `UnavailableApi` only, opt-in `-AssemblyOverlay` replaces the sandbox data junction with an owned data directory, copies Managed assemblies and top-level data files (including bundles/levels), and links the remaining resource directories read-only. Budget disk space for all copied data, not just the DLL. It appends a diagnostic PE overlay to the **private** Assembly-CSharp.dll without changing its IL; the original is hash-checked unchanged. The guard verifies that this private assembly really loaded and does not inject a hash result. The scenario must still refuse API capabilities/patches and selected consumers. This tests actual changed-file identity, **not compatibility with another game implementation/version**.
+
+Provenance pins both hashes and the selection marker; Run also recomputes the hash of original bytes plus the diagnostic suffix before and after launch. The guard requires the original inspected identity and the specific hash-rejection capability reason. Cleanup unlinks only direct resource junctions and retains all copied files, including Managed; it refuses an unexpectedly linked overlay root. All copied/modified assemblies remain private and must never enter Git or releases.
 
 ## Evidence and coverage
 
@@ -79,7 +85,7 @@ Prepare accepts optional `-MissionJournalBin <owner-built Release/netstandard2.1
 
 All consumer scenarios require existing companion journal sidecars for both supplied saves and copy them into the sandbox. Negative startup runs hash-check the complete sandbox save-file set after exit to verify that disabled consumers did not touch those sidecars. Reflection-only probes compare nonempty persisted history IDs with the public facade after slot switching/reload, reject prior-slot-only history, compare successful destination sidecars with live history, and reject failed/skipped-save writes. New game must not inherit old history; destroying only the journal component must unsubscribe and prevent subsequent sidecar writes. No real save/sidecar is a write target. Counts/IDs are not exported publicly.
 
-With the same optional consumer selection, MissingApi requires BepInEx dependency refusal. UnavailableApi requires a present but disabled journal, no public facade and no journal-owned patches. It remains an injected hash-rejection test, not alternate-binary compatibility. Prepared consumer markers and the scenario-specific flat plugin set are verified before launch.
+With the same optional consumer selection, MissingApi requires BepInEx dependency refusal. UnavailableApi requires a present but disabled journal, no public facade and no journal-owned patches. It uses injected hash rejection by default; `-AssemblyOverlay` verifies actual changed private identity instead. Neither qualifies another game implementation. Prepared consumer markers and the scenario-specific flat plugin set are verified before launch.
 
 ## Authorized Stockpile pilot
 
