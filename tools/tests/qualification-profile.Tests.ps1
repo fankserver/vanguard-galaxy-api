@@ -9,7 +9,7 @@ $state = Join-Path $env:TEMP "vgmodapi-recovery-$id"
 try {
     [IO.Directory]::CreateDirectory($state) | Out-Null
     Assert-QualificationUnused $state
-    foreach ($name in @('result.txt','process.json','run-started.txt','playerprefs-before.reg','vanilla-load-control.txt','vanilla-orbit-failure.txt')) {
+    foreach ($name in @('result.txt','process.json','run-started.txt','playerprefs-before.reg','vanilla-load-control.txt','vanilla-orbit-failure.txt','persistence-probe.txt')) {
         $evidence = Join-Path $state $name
         [IO.File]::WriteAllText($evidence, 'preserve')
         $refused = $false

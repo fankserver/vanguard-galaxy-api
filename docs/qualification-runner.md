@@ -55,6 +55,10 @@ Select a mode during **Prepare** using `-Scenario` (the prepared mode is recorde
 
 By default the mismatch is **injected input**, not an altered or alternate game DLL. It checks the live rejection path, not compatibility with another game version. Selected pilots additionally test consumer dependency refusal as described below. Run verifies the exact flat plugin set, hashes, and scenario before launch; extra files/directories or reparse-point plugins are rejected. A guard must remain active through quit-time writes. Do not deploy legacy plugins that can write before this ordering boundary; consumer coexistence requires its own reviewed setup.
 
+### Optional persistence facade probe
+
+`-PersistenceProbe` requires Full and writes an explicit opt-in API config using only the sandbox's `state` directory. Selection/root and a fresh completion receipt are checked by the launcher. Two synthetic providers exercise native capture/save/reload, mutation gates, provider removal and retained-intent reload refusal. Existing real consumers may coexist, but remain on their own persistence paths: this is not their coordinated-storage migration qualification.
+
 ### API-absent gameplay control
 
 `-VanillaLoadControl` is opt-in for `MissingApi`. After the menu, the API-independent guard loads both copied fixtures through vanilla GameManager, requires a new player and a live initialized GameplayManager, settles, cleans up the player, and returns through SceneLoader without the options-menu save action. Failure handling also attempts player/menu cleanup before quitting. The separate receipt records this current no-API comparison; it does not establish the cause of historical failed runs. No API lifecycle hooks or readiness events are involved. Selection and the successful completion receipt are checked independently of the guard version. Copied files are checked even without consumers. A read-only GetFreeOrbit exception finalizer records whether the world RNG was null, preserves the original exception, and does not turn a failed load into success.

@@ -75,6 +75,20 @@ try {
     try { & $script -Action Cleanup -SandboxRoot $sandbox } catch { $rejected = $true }
     Assert $rejected 'Overlay cleanup traversed an ordinary data junction.'
     Remove-Item -LiteralPath (Join-Path $sandbox 'assembly-overlay.hash')
+    $probeRoot = Join-Path $work 'persistence-probe-sandbox'
+    $sandboxes += $probeRoot
+    & $script -Action Prepare -SandboxRoot $probeRoot -PersistenceProbe @options
+    $probeProvenance = Assert-QualificationInputs $probeRoot
+    $rejected = $false
+    try { Assert-PersistenceProbeReceipt $probeRoot $probeProvenance } catch { $rejected = $true }
+    Assert $rejected 'Missing persistence receipt accepted.'
+    [IO.File]::WriteAllText((Join-Path $probeRoot 'persistence-probe.txt'), 'PASS')
+    Assert-PersistenceProbeReceipt $probeRoot $probeProvenance
+    [IO.File]::WriteAllText((Join-Path $probeRoot 'game\BepInEx\config\vgmodapi.cfg'), "[Persistence]`nEnabled = true`nRoot = C:\foreign-root`n")
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $probeRoot } catch { $rejected = $true }
+    Assert $rejected 'Foreign persistence root accepted.'
+    & $script -Action Cleanup -SandboxRoot $probeRoot
     $vanillaRoot = Join-Path $work 'vanilla-control-sandbox'
     $sandboxes += $vanillaRoot
     & $script -Action Prepare -SandboxRoot $vanillaRoot -Scenario MissingApi -VanillaLoadControl @options

@@ -2,7 +2,7 @@
 
 Unofficial community mod API for Vanguard Galaxy, using BepInEx 5 and HarmonyX.
 
-**0.1.1 experimental: automatically tested and partially exercised in-game, not fully runtime-qualified.** This is a core lifecycle foundation, not a complete modding SDK. MissionJournal and Stockpile use the lifecycle API; controlled qualification is recorded, with complete owner acceptance still separate.
+**0.1.2 development / experimental: automatically tested and partially exercised in-game, not fully runtime-qualified.** This is a core lifecycle foundation, not a complete modding SDK. MissionJournal and Stockpile use the lifecycle API; controlled qualification is recorded, with complete owner acceptance still separate.
 
 ## Implemented
 
@@ -86,6 +86,14 @@ _subscription = ModApi.Current!.Subscribe("your.mod.id", message =>
 Dispose the subscription in OnDestroy. All access is main-thread-only. Callbacks should observe, not block or mutate in-progress game operations. Do not ship a separate copy of the abstractions DLL with each consumer.
 
 A complete compiled example lives at `examples/LifecycleObserver/` in the source checkout. It is built by `make build` but is not included in the API package. Its `examples/LifecycleObserver/bin/Release/netstandard2.1/LifecycleObserver.dll` can be copied alone into a separate plugins folder for qualification event logging after `make build CONFIGURATION=Release`. Do not copy its dependency DLLs; use the single API installation.
+
+## Optional coordinated persistence (0.1.2)
+
+Disabled by default. For disposable-save testing, set `[Persistence] Enabled = true` in `BepInEx/config/vgmodapi.cfg` and choose an absolute, short, non-linked `Root`. Never share the root across installations or delete it to work around a blocked load. The default root is an owned folder under BepInEx config. Binding or path failures leave `ModApi.Persistence` null; check the `coordinated-persistence` capability.
+
+Require API 0.1.2 and register a `PersistenceProvider` before any session starts. Supply an owner namespace, schema version, capture/restore/validation callbacks and optional explicit migrations. Payloads are opaque owned bytes, at most 1 MiB. A null restore payload means genuinely absent known data, not corrupt data. No automatic import of existing sidecars is performed. Keep the returned `IPersistenceRegistration`, obey `MutationAllowed` before mutations, display `Status` on refusal, and dispose it before destroying provider state. Active-session removal pauses all coordinated persistence until a new load. Do not mutate vanilla state in these callbacks.
+
+See [identity](docs/persistence-identity.md), [schema](docs/persistence-schema.md) and [storage/recovery](docs/persistence-storage.md) for identical-byte conflicts, durable intents and explicit filesystem-failure limits. This remains experimental; synthetic provider tests are not two actual consumer migrations or a stability claim.
 
 ## Source layout
 
