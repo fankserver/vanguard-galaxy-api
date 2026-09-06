@@ -89,6 +89,6 @@ The full pilot pauses the transfer driver before gameplay to inspect copied queu
 
 ## Remaining core-path probes
 
-After consumer teardown, the full sequence attempts a normal in-system route, saves/reloads while travelling, then creates a controlled parked-space snapshot using vanilla cancellation/completion calls and verifies the empty Space load. A separate Unity-driven production observed iterator injects delayed adapter readiness/failure signals after a normal replacement load, then explicit disposal; it does not claim arbitrary asynchronous engine callback coverage. These probes are pending native verification until their recorded runs pass.
+After consumer teardown, the full sequence attempts a normal in-system route, saves/reloads while travelling, then creates a controlled parked-space snapshot using vanilla cancellation/completion calls and verifies the empty Space load. A separate Unity-driven production observed iterator injects delayed adapter readiness/failure signals after a normal replacement load, then explicit disposal; it does not claim arbitrary asynchronous engine callback coverage. The direct adapter BeginLoad/EndLoadRequest pair adds a synthetic invalidation/start to the trace and must not be counted as a vanilla load. These probes are pending native verification until their recorded runs pass.
 
 Run results and source revisions belong in the pilot PRs. This tooling does not qualify all mission domain hooks, pre-readiness starter grants, TravelJournal coexistence or the rest of milestone 01.

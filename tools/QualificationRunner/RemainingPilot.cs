@@ -13,6 +13,7 @@ namespace VGModAPI.Qualification;
 public sealed partial class Plugin
 {
     private bool _delayedSignalsRan;
+    private Exception? _delayedSignalError;
     private object CurrentPlayer => SpGet(_player, "current")!;
     private bool TransitState => SpGet(CurrentPlayer, "currentPointOfInterest") == null
         && (bool)SpGet(SpGet(CurrentPlayer, "currentSpaceShip")!, "travelling")!
@@ -37,7 +38,9 @@ public sealed partial class Plugin
         var map = SpGet(AccessTools.TypeByName("Source.Galaxy.GalaxyMapData"), "current")!;
         var target = ((IEnumerable)SpGet(map, "allPointsOfInterest")!).Cast<object>()
             .Where(p => ReferenceEquals(SpGet(p, "system"), system) && !ReferenceEquals(p, currentPoi))
-            .OrderByDescending(p => Vector2.Distance((Vector2)SpGet(p, "position")!, position)).First();
+            .OrderByDescending(p => Mathf.Min(((Vector2)SpGet(p, "position")!).magnitude,
+                Vector2.Distance((Vector2)SpGet(p, "position")!, position))).First();
+        Require((bool)SpCall(travel, "CanWeTravel", target), "Vanilla travel eligibility gate refused fixture.");
         Require((bool)SpCall(travel, "SetRouteToPOI", target), "Native in-system route refused.");
         foreach (var frame in Wait(() => TransitState, "native in-system transit")) yield return frame;
         Save("qa-in-transit", LifecycleEventKind.SaveSucceeded);
@@ -68,7 +71,7 @@ public sealed partial class Plugin
         var file = AccessTools.Method(_save, "GetSaveGame").Invoke(null, new object[] { "fixture-a" })!;
         var request = SpCall(adapter, "BeginLoad", file);
         var old = _api!.CurrentSession!.Id;
-        var observed = (IEnumerator)SpCall(adapter, "ObserveLoad", DelayedAdapterSignals(adapter).GetEnumerator());
+        var observed = (IEnumerator)SpCall(adapter, "ObserveLoad", DelayedAdapterSignals(adapter, old).GetEnumerator());
         SpCall(adapter, "EndLoadRequest", request, null!);
         foreach (var frame in LoadReady("fixture-b")) yield return frame;
         var replacement = _api.CurrentSession!.Id;
@@ -77,6 +80,7 @@ public sealed partial class Plugin
         foreach (var frame in Wait(() => _delayedSignalsRan, "delayed stale adapter signals")) yield return frame;
         StopCoroutine(coroutine);
         ((IDisposable)observed).Dispose();
+        Require(_delayedSignalError == null, "Delayed callback injection failed: " + _delayedSignalError);
         Require(_api.CurrentSession?.Id == replacement && _api.CurrentSession.Phase == SessionPhase.GameplayInitialized,
             "Stale signals or disposal changed replacement state.");
         Require(!_events.Skip(start).Any(e => e.Session?.Id == old || e.Kind == LifecycleEventKind.SessionStartFailed
@@ -84,12 +88,17 @@ public sealed partial class Plugin
         Passed("Unity-driven-stale-adapter-signals-and-disposal");
     }
 
-    private IEnumerable<object?> DelayedAdapterSignals(object adapter)
+    private IEnumerable<object?> DelayedAdapterSignals(object adapter, Guid old)
     {
         yield return null;
-        SpCall(adapter, "PlayerReconstructed");
-        SpCall(adapter, "LoadFailed");
+        try
+        {
+            Require(Equals(SpGet(adapter, "_executing"), old), "Delayed signals lack the stale attempt context.");
+            SpCall(adapter, "PlayerReconstructed");
+            SpCall(adapter, "LoadFailed");
+        }
+        catch (Exception error) { _delayedSignalError = error; }
         _delayedSignalsRan = true;
-        yield return null;
+        while (true) yield return null; // Explicit disposal must precede natural completion.
     }
 }
