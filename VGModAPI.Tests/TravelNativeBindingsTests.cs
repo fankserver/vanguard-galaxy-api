@@ -17,7 +17,7 @@ public sealed class TravelNativeBindingsTests
         var player = new GamePlayer { currentSystem = system, currentPointOfInterest = poi, elapsedTime = 7 };
         var snapshot = bindings.CurrentLocation(player)!;
         Assert.Equal("system", snapshot.SystemId); Assert.Equal("poi", snapshot.PoiId);
-        Assert.Equal("", snapshot.SystemName); Assert.Null(snapshot.PoiName);
+        Assert.Null(snapshot.SystemName); Assert.Null(snapshot.PoiName);
         Assert.Equal(0, system.NameReads); Assert.Equal(0, poi.NameReads); Assert.Equal(7d, bindings.Time(player));
         Assert.Equal("system", bindings.Destination(poi)!.SystemId);
     }

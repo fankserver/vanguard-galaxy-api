@@ -10,14 +10,14 @@ public sealed class TravelLocation
 {
     public string SystemId { get; }
     public string? PoiId { get; }
-    public string SystemName { get; }
+    public string? SystemName { get; }
     public string? PoiName { get; }
-    public TravelLocation(string systemId, string? poiId, string systemName, string? poiName)
+    public TravelLocation(string systemId, string? poiId, string? systemName, string? poiName)
     {
         if (string.IsNullOrWhiteSpace(systemId)) throw new ArgumentException("System identity required.", nameof(systemId));
         if (poiId != null && string.IsNullOrWhiteSpace(poiId)) throw new ArgumentException("Use null for empty space.", nameof(poiId));
         SystemId = systemId; PoiId = poiId;
-        SystemName = systemName ?? throw new ArgumentNullException(nameof(systemName)); PoiName = poiName;
+        SystemName = systemName; PoiName = poiName;
     }
 }
 
@@ -43,7 +43,7 @@ public sealed class TravelTransition
         if (!Enum.IsDefined(typeof(TravelMode), mode)) throw new ArgumentOutOfRangeException(nameof(mode));
         var placement = kind is TravelTransitionKind.InitialPlacement or TravelTransitionKind.RecoveredPlacement;
         if (placement == operationId.HasValue) throw new ArgumentException("Placements have no operation; travel facts require one.", nameof(operationId));
-        if ((placement || kind == TravelTransitionKind.Arrived) && actualLocation == null) throw new ArgumentNullException(nameof(actualLocation));
+        if ((placement || kind is TravelTransitionKind.Arrived or TravelTransitionKind.RouteCompleted) && actualLocation == null) throw new ArgumentNullException(nameof(actualLocation));
         if (kind == TravelTransitionKind.Requested && requestedDestination == null) throw new ArgumentNullException(nameof(requestedDestination));
         CheckTime(gameSeconds, nameof(gameSeconds));
         if (dwellSeconds.HasValue) CheckTime(dwellSeconds.Value, nameof(dwellSeconds));

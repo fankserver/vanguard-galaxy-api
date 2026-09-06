@@ -47,7 +47,7 @@ internal sealed class TravelNativeBindings
     {
         if (system == null || (poi != null && !ReferenceEquals(_system.GetValue(poi), system))) return null;
         return new TravelLocation((string)_guid.GetValue(system)!, poi == null ? null : (string?)_guid.GetValue(poi),
-            (string?)_rawName.GetValue(system) ?? "", poi == null ? null : (string?)_rawName.GetValue(poi));
+            (string?)_rawName.GetValue(system), poi == null ? null : (string?)_rawName.GetValue(poi));
     }
     private static FieldInfo Field(Type type, string name, string expected, bool isStatic = false)
     {

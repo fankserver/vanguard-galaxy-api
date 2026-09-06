@@ -47,7 +47,7 @@ public sealed class InstalledBindingTests
     public void NativePoiArrivalHierarchyHasConcreteBaseAndTrueOverrideDeclarations()
     {
         using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
-        var types = assembly.MainModule.Types.ToDictionary(type => type.FullName);
+        var types = assembly.MainModule.GetTypes().ToDictionary(type => type.FullName);
         const string rootName = "Behaviour.Managers.BasePoiManager";
         var root = types[rootName];
         var baseArrival = Assert.Single(root.Methods, method => method.Name == "SpaceshipHasArrived" && method.Parameters.Count == 0);

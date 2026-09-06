@@ -4,6 +4,8 @@ using System.Reflection;
 
 namespace VGModAPI.Runtime;
 
+// In-system arrival only. Jumpgate/wormhole routines do not call this method;
+// their location/readiness evidence requires separate iterator observation.
 internal static class TravelArrivalBindings
 {
     internal static MethodInfo[] Resolve(Type managerBase)
@@ -15,6 +17,9 @@ internal static class TravelArrivalBindings
         // Patch declarations, including the concrete implementation on the abstract
         // base. Inherited implementations need no additional detour. Base first
         // prevents an override from JIT-inlining an unpatched callee.
+        // Deliberately fail closed on ReflectionTypeLoadException: partial type
+        // enumeration could silently omit an arrival override. Installation must
+        // catch resolution failures and leave the entire travel group unavailable.
         return managerBase.Assembly.GetTypes()
             .Where(managerBase.IsAssignableFrom)
             .Select(type => type.GetMethod("SpaceshipHasArrived", flags, null, Type.EmptyTypes, null))

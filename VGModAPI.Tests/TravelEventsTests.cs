@@ -104,6 +104,18 @@ public sealed class TravelEventsTests
     }
 
     [Fact]
+    public void FinalRouteCompletionRequiresActualLocationEvenForEmptySpace()
+    {
+        var session = Guid.NewGuid(); var operation = Guid.NewGuid();
+        Assert.Throws<ArgumentNullException>(() => new TravelTransition(session, operation, 1,
+            TravelTransitionKind.RouteCompleted, TravelMode.InSystem, null, Location, null, 1, null));
+        var emptySpace = new TravelLocation("system", null, null, null);
+        var fact = new TravelTransition(session, operation, 1, TravelTransitionKind.RouteCompleted,
+            TravelMode.InSystem, null, Location, emptySpace, 1, null);
+        Assert.Same(emptySpace, fact.ActualLocation); Assert.Null(emptySpace.SystemName);
+    }
+
+    [Fact]
     public void PublicFactsRequirePlacementVersusOperationIdentityAndActualLocation()
     {
         Assert.Throws<ArgumentException>(() => new TravelTransition(Guid.NewGuid(), Guid.NewGuid(), 1,
