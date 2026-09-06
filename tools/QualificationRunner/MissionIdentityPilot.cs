@@ -46,6 +46,19 @@ public sealed partial class Plugin
             Require(ambiguous.All(e => e.Mission.IdentityEvidence == MissionIdentityEvidence.MissingOrAmbiguous && !ambiguousIds.Contains(e.Mission.InstanceId)) && ambiguous.Select(e => e.Mission.InstanceId).Distinct().Count() == 2, "Indistinguishable missions were assigned guessed identities.");
             ambiguousIds = new HashSet<Guid>(ambiguous.Select(e => e.Mission.InstanceId));
         }
+        var live = ((System.Collections.IEnumerable)SpGet(CurrentPlayer, "missions")!).Cast<object>().Single(m => (string)SpGet(m, "name")! == prefix + " unique");
+        type.GetMethod("MissionFailed", new[] { typeof(string) })!.Invoke(live, new object[] { "VGModAPI identity rollback probe" });
+        Require((bool)SpGet(live, "failed")!, "Rollback probe did not advance native failure state.");
+        Save("qa-mission-identity-advanced", LifecycleEventKind.SaveSucceeded); events.Clear();
+        foreach (var frame in SpLoad("qa-mission-identity-advanced")) yield return frame;
+        foreach (var frame in Settle()) yield return frame;
+        live = ((System.Collections.IEnumerable)SpGet(CurrentPlayer, "missions")!).Cast<object>().Single(m => (string)SpGet(m, "name")! == prefix + " unique");
+        Require((bool)SpGet(live, "failed")! && events.Any(e => e.Mission.InstanceId == unique && e.Mission.IdentityEvidence == MissionIdentityEvidence.SavedSnapshotMatch), "Advanced snapshot lost state or identity.");
+        events.Clear();
+        foreach (var frame in SpLoad("qa-mission-identity")) yield return frame;
+        foreach (var frame in Settle()) yield return frame;
+        live = ((System.Collections.IEnumerable)SpGet(CurrentPlayer, "missions")!).Cast<object>().Single(m => (string)SpGet(m, "name")! == prefix + " unique");
+        Require(!(bool)SpGet(live, "failed")! && events.Any(e => e.Mission.InstanceId == unique && e.Mission.IdentityEvidence == MissionIdentityEvidence.SavedSnapshotMatch), "Rollback did not restore earlier state and identity.");
         Save("qa-mission-identity-copy", LifecycleEventKind.SaveSucceeded); events.Clear();
         foreach (var frame in SpLoad("qa-mission-identity-copy")) yield return frame;
         foreach (var frame in Settle()) yield return frame;
@@ -53,7 +66,7 @@ public sealed partial class Plugin
         foreach (var frame in SpLoad("fixture-a")) yield return frame;
         foreach (var frame in Settle()) yield return frame;
         CheckJournalLoad("fixture-a");
-        File.WriteAllText(Path.Combine(_root!, "mission-identity.txt"), "PASS\nExact snapshot identity survived two loads and save-as; ambiguous duplicate records refused; no acceptance fabricated.");
+        File.WriteAllText(Path.Combine(_root!, "mission-identity.txt"), "PASS\nExact snapshot identity survived two loads, failure-state advancement/rollback and save-as; ambiguous duplicate records refused; no acceptance fabricated.");
         Passed("native-mission-identity-roundtrip");
     }
 }

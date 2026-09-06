@@ -12,7 +12,11 @@ internal sealed partial class MissionAdapter
     {
         _hub.CheckThread();
         if (_identity != null || _session.HasValue) throw new InvalidOperationException("Mission identity registration must precede sessions.");
-        _json = json; _identity = new MissionIdentityPersistence(persistence, () => !_faulted && !_disposed && Current);
+        _json = json; _identity = new MissionIdentityPersistence(persistence, () => !_faulted && !_disposed && Current, detail =>
+        {
+            var capability = _hub.Capabilities.FirstOrDefault(c => c.Name == "coordinated-persistence");
+            if (capability != null) _hub.SetCapability(capability.Name, capability.Available, detail);
+        });
     }
     internal void DisableIdentity()
     { _hub.CheckThread(); _identity?.Dispose(); _identity = null; _json = null; }

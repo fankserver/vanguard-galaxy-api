@@ -50,12 +50,13 @@ public sealed class MissionIdentityPersistenceTests
     [Fact]
     public void FaultedObserverCannotCaptureAnOuterStorePayload()
     {
-        bool available = true; var persistence = new Persistence(); using var owner = new MissionIdentityPersistence(persistence, () => available);
+        bool available = true; string? refusal = null; var persistence = new Persistence(); using var owner = new MissionIdentityPersistence(persistence, () => available, detail => refusal = detail);
         var mission = new object(); var json = new object();
         var capture = owner.Snapshots.Begin(new[] { mission }, _ => Guid.NewGuid(), 1);
         owner.Snapshots.Complete(capture, json, new[] { mission }, new[] { new string('a', 64) }, 1);
         using var store = owner.Snapshots.BeginStore(json); available = false;
         Assert.Throws<InvalidDataException>(() => persistence.Provider.Capture());
+        Assert.Contains("all owners paused", refusal);
         Assert.False(persistence.Provider.Validate(new byte[] { 1, 2 }));
     }
 }

@@ -79,6 +79,7 @@ public sealed class Plugin : BaseUnityPlugin
             _hub.SetCapability("save-outcomes", false, ex.Message);
             Logger.LogError(ex);
         }
+        // Subscription order is contractual: coordinated owners restore before mission PlayerReady identity seeding.
         InitializePersistence();
         InitializeMissions();
         Logger.LogInfo("VGModAPI " + Info.Metadata.Version + ": experimental, NOT runtime-qualified. Query capabilities; startup does not prove compatibility.");

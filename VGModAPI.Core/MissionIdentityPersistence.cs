@@ -10,12 +10,20 @@ internal sealed class MissionIdentityPersistence : IDisposable
     private readonly IPersistenceRegistration _registration;
     private Guid? _restoredFor;
     private MissionIdentityRecord[] _records = Array.Empty<MissionIdentityRecord>();
-    internal MissionIdentityPersistence(IPersistenceApi persistence, Func<bool> available)
+    internal MissionIdentityPersistence(IPersistenceApi persistence, Func<bool> available, Action<string>? refused = null)
     {
         _registration = persistence.Register(new PersistenceProvider(Owner, 1, () =>
             {
-                if (!available()) throw new InvalidDataException("Mission identity observation unavailable.");
-                return Snapshots.CaptureForStore();
+                try
+                {
+                    if (!available()) throw new InvalidDataException("Mission identity observation unavailable.");
+                    return Snapshots.CaptureForStore();
+                }
+                catch
+                {
+                    refused?.Invoke("Last mission identity capture refused: no coordinated owner generation published for that save; all owners paused until coordinator recovery. Observer faults require restart.");
+                    throw;
+                }
             },
             (session, bytes) => { _records = bytes == null ? Array.Empty<MissionIdentityRecord>() : MissionIdentitySnapshot.Decode(bytes); _restoredFor = session.Id; }, Validate));
     }
