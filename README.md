@@ -2,7 +2,7 @@
 
 Unofficial community mod API for Vanguard Galaxy, using BepInEx 5 and HarmonyX.
 
-**0.1.7 development / experimental: automatically tested and partially exercised in-game, not fully runtime-qualified.** This is a core lifecycle foundation, not a complete modding SDK. MissionJournal and Stockpile use the lifecycle API; controlled qualification is recorded, with complete owner acceptance still separate.
+**0.1.8 development / experimental: automatically tested and partially exercised in-game, not fully runtime-qualified.** This is a core lifecycle foundation, not a complete modding SDK. MissionJournal and Stockpile use the lifecycle API; controlled qualification is recorded, with complete owner acceptance still separate.
 
 ## Implemented
 
@@ -87,13 +87,15 @@ Dispose the subscription in OnDestroy. All access is main-thread-only. Callbacks
 
 A complete compiled example lives at `examples/LifecycleObserver/` in the source checkout. It is built by `make build` but is not included in the API package. Its `examples/LifecycleObserver/bin/Release/netstandard2.1/LifecycleObserver.dll` can be copied alone into a separate plugins folder for qualification event logging after `make build CONFIGURATION=Release`. Do not copy its dependency DLLs; use the single API installation.
 
-## Optional coordinated persistence (0.1.2)
+## Optional save data (0.1.2)
 
-Disabled by default. For disposable-save testing, set `[Persistence] Enabled = true` in `BepInEx/config/vgmodapi.cfg` and choose an absolute, short, non-linked `Root`. Never share the root across installations or delete it to work around a blocked load. The default root is an owned folder under BepInEx config. Binding or path failures leave `ModApi.Persistence` null; check the `coordinated-persistence` capability.
+The API can manage each mod's save data alongside a particular game save. It publishes mod data only after the matching game save succeeds; the game and mod files are not written as one indivisible operation.
 
-Require API 0.1.2 and register a `PersistenceProvider` before any session starts. Supply an owner namespace, schema version, capture/restore/validation callbacks and optional explicit migrations. Payloads are opaque owned bytes, at most 1 MiB. A null restore payload means genuinely absent known data, not corrupt data. No automatic import of existing sidecars is performed. Keep the returned `IPersistenceRegistration`, obey `MutationAllowed` before mutations, display `Status` on refusal, and dispose it before destroying provider state. Active-session removal pauses all coordinated persistence until a new load. Do not mutate vanilla state in these callbacks.
+Enabled by default. Set `[Persistence] Enabled = false` in `BepInEx/config/vgmodapi.cfg` to opt out. For disposable-save testing, choose an absolute, short, non-linked `Root`. Never share the root across installations or delete it to work around a blocked load. The default save-data folder is under BepInEx config. An existing explicit `Enabled = false` remains an opt-out. Binding or path failures leave `ModApi.Persistence` null; check the `save-data` capability for availability. The draft capability name `coordinated-persistence` has been replaced, without an alias.
 
-See [identity](docs/persistence-identity.md), [schema](docs/persistence-schema.md) and [storage/recovery](docs/persistence-storage.md) for identical-byte conflicts, durable intents and explicit filesystem-failure limits. This remains experimental. Actual MissionJournal0.3 and Stockpile0.7 coordinated pilots exercise the documented paths; neither these controlled runs nor synthetic provider tests are a universal stability claim.
+Require API 0.1.2 and register a `PersistenceProvider` before any session starts. Supply your mod's unique identifier (the `Owner` namespace), data schema version, callbacks to capture, restore and validate your data, and optional explicit migrations. The API stores the bytes you provide without interpreting their contents, up to 1 MiB per mod. A null restore payload means genuinely absent known data, not corrupt data. No automatic import of existing sidecars is performed. Keep the returned `IPersistenceRegistration`, obey `MutationAllowed` before mutations, display `Status` on refusal, and dispose it before destroying provider state. Active-session removal pauses API-managed saves for all registered mods until a new load. Do not mutate vanilla state in these callbacks.
+
+See [identity](docs/persistence-identity.md), [schema](docs/persistence-schema.md) and [storage/recovery](docs/persistence-storage.md) for identical-byte conflicts, durable intents and explicit filesystem-failure limits. This remains experimental. Actual MissionJournal0.3 and Stockpile0.7 API-managed save pilots exercise the documented paths; neither these controlled runs nor synthetic provider tests are a universal stability claim.
 
 API 0.1.3 also exposes the pure `ContentSafety` admission/recovery planner. See [persistent content ownership and removal](docs/content-safety.md) before accepting provider-specific item, mission, patron, faction or world references. It does not install content or promise safe uninstall.
 

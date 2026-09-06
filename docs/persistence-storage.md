@@ -1,6 +1,6 @@
 # Immutable generation storage (coordinator foundation)
 
-Internal storage and lifecycle engine have an opt-in runtime facade, exercised by MissionJournal and Stockpile coordinated pilots. Full owner acceptance remains separate. Calling Publish is not itself authorization to save; the coordinator calls it only for a matching successful vanilla operation.
+Internal storage and lifecycle engine have a default-enabled runtime facade, exercised by MissionJournal and Stockpile API-managed save pilots. Full owner acceptance remains separate. Calling Publish is not itself authorization to save; the coordinator calls it only for a matching successful vanilla operation.
 
 ## Layout and publication
 
@@ -34,7 +34,7 @@ If the filesystem cannot record even the pre-write intent for a previously unsee
 
 Inspected vanilla SideMenuOptions.MainMenu saves before player Cleanup and SceneLoader.StartMenu; the lifecycle menu-invalidation hook runs at that later transition. GameManager.HandleApplicationQuit likewise saves before clearing the player. Controlled native pilots exercise both consumer teardowns and the resulting shared persistence pause. A successful post-invalidation save retains intent and blocks unmatched reloads. Recovery is explicit: select a validated prior backup/generation; never delete intent/conflict evidence merely to force an empty load. Resolving an identical-byte conflict requires an explicit choice to retain older state and archival of evidence; no automatic resolution tool is provided here.
 
-The optional runtime facade is initialized only when both inspected lifecycle capabilities are available and configuration enables it. Its file adapter accepts direct `.save` children of the inspected SavesPath only, normalizes absolute paths/case on Windows, and rejects reparse paths and tilde/short-name forms. Arbitrary alias/hard-link imports are not supported. Public registration/handles remain main-thread-only; service disposal makes all handles inactive. No account-wide fallback or implicit legacy-sidecar import exists.
+The optional runtime facade is initialized only when both inspected lifecycle capabilities are available and configuration enables it (the default). Its file adapter accepts direct `.save` children of the inspected SavesPath only, normalizes absolute paths/case on Windows, and rejects reparse paths and tilde/short-name forms. Arbitrary alias/hard-link imports are not supported. Public registration/handles remain main-thread-only; service disposal makes all handles inactive. No account-wide fallback or implicit legacy-sidecar import exists.
 
 ## Verification boundary
 

@@ -83,6 +83,16 @@ try {
     $sandboxes += $probeRoot
     & $script -Action Prepare -SandboxRoot $probeRoot -PersistenceProbe @options
     $probeProvenance = Assert-QualificationInputs $probeRoot
+    $apiConfigPath = Join-Path $probeRoot 'game\BepInEx\config\vgmodapi.cfg'
+    $defaultApiConfig = [IO.File]::ReadAllText($apiConfigPath)
+    Assert ($defaultApiConfig -notmatch '(?m)^Enabled\s*=') 'Prepared probe does not exercise the enabled default.'
+    foreach ($setting in @("Enabled = false`n", "Enabled = true`nEnabled = false`n")) {
+        [IO.File]::WriteAllText($apiConfigPath, $defaultApiConfig + $setting)
+        $rejected = $false
+        try { $null = Assert-QualificationInputs $probeRoot } catch { $rejected = $true }
+        Assert $rejected 'Disabled or ambiguous persistence setting accepted.'
+    }
+    [IO.File]::WriteAllText($apiConfigPath, $defaultApiConfig)
     $rejected = $false
     try { Assert-PersistenceProbeReceipt $probeRoot $probeProvenance } catch { $rejected = $true }
     Assert $rejected 'Missing persistence receipt accepted.'
@@ -98,10 +108,10 @@ try {
     $probeProvenance | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $probeRoot 'build-provenance.json')
     [IO.File]::WriteAllText((Join-Path $probeRoot 'journal-coordinated.enabled'), 'journal-v1')
     $journalConfig = Join-Path $probeRoot 'game\BepInEx\config\vgmissionjournal.cfg'
-    $validJournal = "[Persistence]`nUseCoordinatedPersistence = true`nImportLegacySidecars = true`n"
+    $validJournal = "[Persistence]`nImportLegacySidecars = true`n"
     [IO.File]::WriteAllText($journalConfig, $validJournal)
     $null = Assert-QualificationInputs $probeRoot
-    foreach ($changed in @($validJournal.Replace('true','false'), ($validJournal + "ImportLegacySidecars = false`n"), $validJournal.Replace('[Persistence]','[Other]'))) {
+    foreach ($changed in @($validJournal.Replace('true','false'), ($validJournal + "UseApiSaveData = false`n"), ($validJournal + "UseApiSaveData = true`nUseApiSaveData = false`n"), ($validJournal + "ImportLegacySidecars = false`n"), $validJournal.Replace('[Persistence]','[Other]'))) {
         [IO.File]::WriteAllText($journalConfig, $changed)
         $rejected = $false
         try { $null = Assert-QualificationInputs $probeRoot } catch { $rejected = $true }
