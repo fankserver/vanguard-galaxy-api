@@ -102,7 +102,7 @@ if ($Action -eq 'Prepare') {
         $assembly = [Mono.Cecil.AssemblyDefinition]::ReadAssembly($candidate)
         try {
             if ($assembly.Name.Name -ne 'VGMissionJournal' -or $assembly.Name.Version.Major -ne 0 -or $assembly.Name.Version.Minor -notin @(2,3,4) -or ($JournalCoordinated -and $assembly.Name.Version.Minor -notin @(3,4)) -or ($JournalMissionEventsProbe -and $assembly.Name.Version.Minor -ne 4)) { throw 'Only reviewed 0.2/0.3/0.4 MissionJournal pilot shapes are accepted; API mission events require 0.4.' }
-            $minimumApi = if ($assembly.Name.Version.Minor -eq 3) { '0.1.2' } else { '0.1.0' }
+            $minimumApi = if ($assembly.Name.Version.Minor -eq 4) { '0.1.8' } elseif ($assembly.Name.Version.Minor -eq 3) { '0.1.2' } else { '0.1.0' }
             $plugin = $assembly.MainModule.Types | Where-Object { $_.FullName -eq 'VGMissionJournal.Plugin' }
             $dependency = @($plugin.CustomAttributes | Where-Object {
                 $_.AttributeType.FullName -eq 'BepInEx.BepInDependency' -and $_.ConstructorArguments.Count -eq 2 -and
