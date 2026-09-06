@@ -14,6 +14,7 @@ param(
     [switch]$JournalCoordinated,
     [switch]$StockpileCoordinated,
     [switch]$ContentReferenceProbe,
+    [switch]$MissionTransitionsProbe,
     [string]$BuildRevision = 'unknown',
     [switch]$Diagnostics,
     [ValidateSet('Full','MissingApi','UnavailableApi')][string]$Scenario = 'Full',
@@ -53,6 +54,7 @@ if ($Action -eq 'Prepare') {
     if ($AssemblyOverlay -and $Scenario -ne 'UnavailableApi') { throw 'Assembly overlay requires UnavailableApi.' }
     if ($VanillaLoadControl -and $Scenario -ne 'MissingApi') { throw 'Vanilla load control requires MissingApi.' }
     if ($PersistenceProbe -and $Scenario -ne 'Full') { throw 'Persistence probe requires Full.' }
+    if ($MissionTransitionsProbe -and $Scenario -ne 'Full') { throw 'Mission transitions probe requires Full.' }
     if ($ContentReferenceProbe -and $Scenario -ne 'Full') { throw 'Content reference probe requires Full.' }
     if ($JournalCoordinated -and (!$PersistenceProbe -or !$MissionJournalBin)) { throw 'Coordinated journal requires persistence probe and journal binary.' }
     if ($StockpileCoordinated -and (!$JournalCoordinated -or !$StockpileBin)) { throw 'Coordinated Stockpile requires coordinated journal and Stockpile binary.' }
@@ -152,8 +154,12 @@ if ($Action -eq 'Prepare') {
     [IO.File]::WriteAllText((Join-Path $root 'scenario.txt'), $Scenario)
     $hashes = @{}
     Get-ChildItem -LiteralPath $plugins -File | ForEach-Object { $hashes[$_.Name] = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
+    if ($MissionTransitionsProbe) {
+        [IO.File]::AppendAllText((Join-Path $bep 'config\vgmodapi.cfg'), "`r`n[Missions]`r`nEnabled = true`r`n")
+        [IO.File]::WriteAllText((Join-Path $root 'mission-transitions.enabled'), 'missions-v1')
+    }
     if ($ContentReferenceProbe) { [IO.File]::WriteAllText((Join-Path $root 'content-reference.enabled'), 'refs-v1') }
-    @{ contentReferenceProbe=[bool]$ContentReferenceProbe; stockpileCoordinated=[bool]$StockpileCoordinated; journalCoordinated=[bool]$JournalCoordinated; persistenceProbe=[bool]$PersistenceProbe; vanillaLoadControl=[bool]$VanillaLoadControl; assemblyOverlay=$overlay; stockpile=[bool]$StockpileBin; missionJournal=[bool]$MissionJournalBin; scenario=$Scenario; revision=$BuildRevision; preparedUtc=[DateTime]::UtcNow.ToString('o'); plugins=$hashes } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'build-provenance.json')
+    @{ missionTransitionsProbe=[bool]$MissionTransitionsProbe; contentReferenceProbe=[bool]$ContentReferenceProbe; stockpileCoordinated=[bool]$StockpileCoordinated; journalCoordinated=[bool]$JournalCoordinated; persistenceProbe=[bool]$PersistenceProbe; vanillaLoadControl=[bool]$VanillaLoadControl; assemblyOverlay=$overlay; stockpile=[bool]$StockpileBin; missionJournal=[bool]$MissionJournalBin; scenario=$Scenario; revision=$BuildRevision; preparedUtc=[DateTime]::UtcNow.ToString('o'); plugins=$hashes } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'build-provenance.json')
     # Prevent Steam's restart path; the runner disables SteamManager before arming checks.
     [IO.File]::WriteAllText((Join-Path $game 'steam_appid.txt'), '3471800')
     $saves = Join-Path $root 'Saves'

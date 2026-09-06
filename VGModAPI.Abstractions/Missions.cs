@@ -38,6 +38,13 @@ public sealed class MissionTransition
     }
 }
 
+/// <summary>Explicitly version-sensitive, read-only escape hatch. Never retain or mutate the returned object.</summary>
+public interface IVersionSensitiveMissionAccess
+{
+    /// <summary>Only resolves the exact snapshot currently being dispatched, on the main thread. No stable native shape is promised.</summary>
+    bool TryGetNative(MissionSnapshot snapshot, out object? native);
+}
+
 /// <summary>Optional observed transitions; all access is main-thread-only. History belongs to consumers.</summary>
 public interface IMissionEvents
 {

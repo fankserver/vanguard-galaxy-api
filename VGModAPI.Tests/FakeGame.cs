@@ -7,6 +7,9 @@ namespace Source.Player
     {
         public static GamePlayer? current;
         public bool isEphemeral;
+        public System.Collections.Generic.List<Source.MissionSystem.Mission> missions = new();
+        public System.Collections.Generic.List<string> missionsArchive = new();
+        public Source.MissionSystem.Mission? currentBounty, currentPatrol, currentIndustry;
     }
 }
 namespace Source.Util

@@ -1,0 +1,21 @@
+using System.Collections.Generic;
+
+namespace Source.MissionSystem
+{
+    public class Mission
+    {
+        public string name = "Test mission";
+        public string? storyId;
+        public bool failed;
+        public bool Claimable;
+        public List<MissionStep> steps { get; } = new();
+        public bool CanClaimRewards() => Claimable;
+    }
+    public class MissionStep { public List<object> objectives { get; } = new(); }
+}
+namespace Source.MissionSystem.Objectives
+{
+    public enum ItemCategory { Ore, Salvage }
+    public class Mining { public ItemCategory? itemCategory; }
+    public class Salvage : Mining { }
+}

@@ -12,7 +12,7 @@ using VGModAPI.Runtime;
 
 namespace VGModAPI;
 
-[BepInPlugin(ModApi.PluginId, "Vanguard Galaxy Mod API", "0.1.4")]
+[BepInPlugin(ModApi.PluginId, "Vanguard Galaxy Mod API", "0.1.5")]
 [BepInProcess("VanguardGalaxy.exe")]
 [BepInDependency("vgmodapi.qualification.guard", BepInDependency.DependencyFlags.SoftDependency)]
 public sealed class Plugin : BaseUnityPlugin
@@ -21,6 +21,7 @@ public sealed class Plugin : BaseUnityPlugin
     private Harmony? _harmony;
     private GameAdapter? _adapter;
     private PersistenceService? _persistence;
+    private MissionAdapter? _missions;
     private void Awake()
     {
         _hub = new LifecycleHub((owner, ex) => Logger.LogError($"Subscriber '{owner}' failed: {ex}"));
@@ -28,6 +29,8 @@ public sealed class Plugin : BaseUnityPlugin
         _hub.SetCapability("save-outcomes", false, "Not bound.");
         _hub.SetCapability("world-ready", false, "No universal POI/UI-ready guarantee; GameplayInitialized is narrower.");
         _hub.SetCapability("coordinated-persistence", false, "Disabled by configuration; experimental.");
+        _hub.SetCapability("mission-transitions", false, "Disabled by configuration; experimental.");
+        ModApi.Missions = null;
         ModApi.Current = _hub;
         ModApi.Persistence = null;
         try
@@ -67,6 +70,7 @@ public sealed class Plugin : BaseUnityPlugin
             Logger.LogError(ex);
         }
         InitializePersistence();
+        InitializeMissions();
         Logger.LogInfo("VGModAPI " + Info.Metadata.Version + ": experimental, NOT runtime-qualified. Query capabilities; startup does not prove compatibility.");
     }
 
@@ -92,6 +96,29 @@ public sealed class Plugin : BaseUnityPlugin
         {
             _hub.SetCapability("coordinated-persistence", false, "Persistence initialization failed: " + error.GetType().Name);
             Logger.LogError("Coordinated persistence unavailable: " + error.GetType().Name + ": " + error.Message);
+        }
+    }
+
+    private void InitializeMissions()
+    {
+        if (!Config.Bind("Missions", "Enabled", false, "Experimental observed mission transitions; use disposable saves until qualified.").Value) return;
+        if (!_hub!.Capabilities.Any(c => c.Name == "session-lifecycle" && c.Available))
+        { _hub.SetCapability("mission-transitions", false, "Lifecycle capability unavailable."); return; }
+        try
+        {
+            var assembly = Assembly.Load("Assembly-CSharp");
+            _missions = new MissionAdapter(_hub, new MissionBindings(assembly), ex => Logger.LogError($"Mission observer fault: {ex}"));
+            MissionPatches.Adapter = _missions;
+            InstallGroup("mission-transitions", new GameBindings(assembly), BindingCatalog.Missions,
+                BindingCatalog.Missions.ToDictionary(binding => binding.Key, _ => typeof(MissionPatches)));
+            if (_hub.Capabilities.Any(c => c.Name == "mission-transitions" && c.Available)) ModApi.Missions = _missions.Events;
+            else { _missions.Dispose(); _missions = null; MissionPatches.Adapter = null; }
+        }
+        catch (Exception error)
+        {
+            _missions?.Dispose(); _missions = null; MissionPatches.Adapter = null;
+            _hub.SetCapability("mission-transitions", false, "Mission binding failed: " + error.Message);
+            Logger.LogError(error);
         }
     }
 
@@ -130,10 +157,12 @@ public sealed class Plugin : BaseUnityPlugin
         }
     }
 
-    private void Update() => _adapter?.Poll();
+    private void Update() { _adapter?.Poll(); _missions?.Poll(); }
     private void OnDestroy()
     {
         _adapter?.Guard(() => _adapter.Invalidate("API shutting down."));
+        _missions?.Dispose(); _missions = null;
+        MissionPatches.Adapter = null; ModApi.Missions = null;
         _persistence?.Dispose();
         ModApi.Persistence = null;
         _harmony?.UnpatchSelf();

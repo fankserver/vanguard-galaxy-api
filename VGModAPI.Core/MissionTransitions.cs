@@ -24,7 +24,7 @@ internal readonly struct MissionFacts
     }
 }
 
-internal sealed class MissionTransitions : IMissionEvents, IDisposable
+internal sealed class MissionTransitions : IMissionEvents, IVersionSensitiveMissionAccess, IDisposable
 {
     internal sealed class Observation : IDisposable
     {
@@ -55,10 +55,18 @@ internal sealed class MissionTransitions : IMissionEvents, IDisposable
     private ConditionalWeakTable<object, Entry> _entries = new();
     private readonly List<Subscription> _subscriptions = new();
     private readonly Stack<Observation> _stack = new();
-    private readonly List<(long order, long epoch, MissionTransitionKind kind, MissionSnapshot snapshot)> _pending = new();
+    private readonly List<(long order, long epoch, MissionTransitionKind kind, MissionSnapshot snapshot, object identity)> _pending = new();
     private Guid? _session;
     private long _epoch, _order, _sequence;
     private bool _dispatching, _disposed;
+    private MissionSnapshot? _dispatchSnapshot;
+    private object? _dispatchIdentity;
+    public bool TryGetNative(MissionSnapshot snapshot, out object? native)
+    {
+        CheckThread();
+        native = !_disposed && ReferenceEquals(snapshot, _dispatchSnapshot) ? _dispatchIdentity : null;
+        return native != null;
+    }
 
     internal MissionTransitions(Action<string, Exception> report) { _report = report; }
     private void CheckThread()
@@ -67,6 +75,7 @@ internal sealed class MissionTransitions : IMissionEvents, IDisposable
     {
         CheckThread(); if (_disposed) return;
         if (session == Guid.Empty) throw new ArgumentException("Empty session.", nameof(session));
+        _dispatchSnapshot = null; _dispatchIdentity = null;
         _epoch++; _session = session; _entries = new(); _pending.Clear(); _stack.Clear();
     }
     internal Observation Begin()
@@ -110,10 +119,10 @@ internal sealed class MissionTransitions : IMissionEvents, IDisposable
             {
                 var item = _pending[i]; var prior = item.snapshot;
                 if (prior.InstanceId == entry.Id && item.order >= observation.Order && !prior.AcceptanceObserved)
-                    _pending[i] = (item.order, item.epoch, item.kind, new MissionSnapshot(prior.SessionId, prior.InstanceId, prior.DefinitionId, prior.Name, prior.ObjectiveTags, true));
+                    _pending[i] = (item.order, item.epoch, item.kind, new MissionSnapshot(prior.SessionId, prior.InstanceId, prior.DefinitionId, prior.Name, prior.ObjectiveTags, true), item.identity);
             }
         }
-        _pending.Add((observation.Order, _epoch, kind, snapshot));
+        _pending.Add((observation.Order, _epoch, kind, snapshot, identity));
     }
     private void End(Observation observation)
     {
@@ -139,6 +148,7 @@ internal sealed class MissionTransitions : IMissionEvents, IDisposable
                 foreach (var item in pending)
                 {
                     if (_disposed || item.epoch != _epoch) continue;
+                    _dispatchSnapshot = item.snapshot; _dispatchIdentity = item.identity;
                     var transition = new MissionTransition(item.kind, item.snapshot, ++_sequence);
                     foreach (var subscriber in _subscriptions.ToArray())
                     {
@@ -150,7 +160,7 @@ internal sealed class MissionTransitions : IMissionEvents, IDisposable
                 }
             }
         }
-        finally { _dispatching = false; }
+        finally { _dispatching = false; _dispatchSnapshot = null; _dispatchIdentity = null; }
     }
     public IDisposable Subscribe(string owner, Action<MissionTransition> callback)
     {

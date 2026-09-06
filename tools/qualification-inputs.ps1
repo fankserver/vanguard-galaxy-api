@@ -1,5 +1,9 @@
 # Prepared-input helpers; safe to exercise with synthetic files.
 function Assert-PersistenceProbeReceipt([string]$Root, $Provenance) {
+    if ($Provenance.PSObject.Properties['missionTransitionsProbe'] -and $Provenance.missionTransitionsProbe) {
+        $receipt = Join-Path $Root 'mission-transitions.txt'
+        if (!(Test-Path -LiteralPath $receipt) -or (Get-Content -LiteralPath $receipt -TotalCount 1) -ne 'PASS') { throw 'Mission transitions probe did not complete.' }
+    }
     if ($Provenance.PSObject.Properties['contentReferenceProbe'] -and $Provenance.contentReferenceProbe) {
         $receipt = Join-Path $Root 'content-reference.txt'
         if (!(Test-Path -LiteralPath $receipt) -or (Get-Content -LiteralPath $receipt -TotalCount 1) -ne 'PASS') { throw 'Content reference probe did not complete.' }
@@ -68,6 +72,15 @@ function Assert-QualificationInputs([string]$Root) {
     $provenance = Get-Content -LiteralPath (Join-Path $Root 'build-provenance.json') -Raw | ConvertFrom-Json
     if ($provenance.scenario -notin @('Full','MissingApi','UnavailableApi') -or
         (Get-Content -LiteralPath (Join-Path $Root 'scenario.txt') -Raw).Trim() -cne $provenance.scenario) { throw 'Prepared scenario changed.' }
+    $missionProbe = $provenance.PSObject.Properties['missionTransitionsProbe'] -and [bool]$provenance.missionTransitionsProbe
+    $missionMarker = Join-Path $Root 'mission-transitions.enabled'
+    if ([bool]$missionProbe -ne (Test-Path -LiteralPath $missionMarker -PathType Leaf)) { throw 'Mission probe selection changed.' }
+    if ($missionProbe) {
+        if ($provenance.scenario -ne 'Full' -or (Get-Content -LiteralPath $missionMarker -Raw).Trim() -ne 'missions-v1') { throw 'Invalid mission probe selection.' }
+        $config = Get-Content -LiteralPath (Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg') -Raw
+        $sections = [regex]::Matches($config, '(?ms)^\[Missions\]\r?\n(?<body>.*?)(?=^\[|\z)')
+        if ($sections.Count -ne 1 -or [regex]::Matches($sections[0].Groups['body'].Value, '(?m)^Enabled\s*=').Count -ne 1 -or [regex]::Matches($sections[0].Groups['body'].Value, '(?m)^Enabled\s*=\s*true\s*$').Count -ne 1) { throw 'Mission probe config changed.' }
+    }
     $contentProbe = $provenance.PSObject.Properties['contentReferenceProbe'] -and [bool]$provenance.contentReferenceProbe
     $contentMarker = Join-Path $Root 'content-reference.enabled'
     if ([bool]$contentProbe -ne (Test-Path -LiteralPath $contentMarker -PathType Leaf)) { throw 'Content reference selection changed.' }
@@ -78,6 +91,9 @@ function Assert-QualificationInputs([string]$Root) {
     if ($probe) {
         if ($provenance.scenario -ne 'Full' -or (Get-Content -LiteralPath $probeMarker -Raw).Trim() -ne 'probe-v1') { throw 'Invalid persistence probe marker.' }
         $config = Get-Content -LiteralPath (Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg') -Raw
+        $sections = [regex]::Matches($config, '(?ms)^\[Persistence\]\r?\n(?<body>.*?)(?=^\[|\z)')
+        if ($sections.Count -ne 1) { throw 'Persistence probe section changed.' }
+        $config = $sections[0].Groups['body'].Value
         $roots = [regex]::Matches($config, '(?m)^Root\s*=\s*([^\r\n]+)')
         $enabled = [regex]::Matches($config, '(?m)^Enabled\s*=\s*true\s*$')
         if ($roots.Count -ne 1 -or $enabled.Count -ne 1 -or [IO.Path]::GetFullPath($roots[0].Groups[1].Value.Trim()) -ine [IO.Path]::GetFullPath((Join-Path $Root 'state'))) { throw 'Persistence probe root/config changed.' }

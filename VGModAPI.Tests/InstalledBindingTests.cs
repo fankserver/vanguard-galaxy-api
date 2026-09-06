@@ -25,7 +25,7 @@ public sealed class InstalledBindingTests
     public void EveryPatchHasAnExactNonStubMethodBody()
     {
         using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
-        foreach (var binding in BindingCatalog.Session.Concat(BindingCatalog.Saves))
+        foreach (var binding in BindingCatalog.Session.Concat(BindingCatalog.Saves).Concat(BindingCatalog.Missions))
         {
             var type = assembly.MainModule.GetType(binding.Type);
             Assert.True(type != null, "Missing type: " + binding.Type);
@@ -43,6 +43,15 @@ public sealed class InstalledBindingTests
     [InlineData(BindingCatalog.File, "File", "System.IO.FileInfo", false)]
     [InlineData(BindingCatalog.Save, "SavesPath", "System.String", true)]
     [InlineData("GameplayManager", "_initialized", "System.Boolean", false)]
+    [InlineData(BindingCatalog.Player, "missions", "System.Collections.Generic.List`1<Source.MissionSystem.Mission>", false)]
+    [InlineData(BindingCatalog.Player, "missionsArchive", "System.Collections.Generic.List`1<System.String>", false)]
+    [InlineData(BindingCatalog.Player, "currentBounty", "Source.MissionSystem.BountyMission", false)]
+    [InlineData(BindingCatalog.Player, "currentPatrol", "Source.MissionSystem.PatrolMission", false)]
+    [InlineData(BindingCatalog.Player, "currentIndustry", "Source.MissionSystem.IndustryMission", false)]
+    [InlineData(BindingCatalog.Mission, "name", "System.String", false)]
+    [InlineData(BindingCatalog.Mission, "storyId", "System.String", false)]
+    [InlineData(BindingCatalog.Mission, "failed", "System.Boolean", false)]
+    [InlineData("Source.MissionSystem.Objectives.Mining", "itemCategory", "System.Nullable`1<Source.Item.ItemCategory>", false)]
     public void AdapterFieldsMatchInstalledAssembly(string owner, string name, string fieldType, bool isStatic)
     {
         using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
