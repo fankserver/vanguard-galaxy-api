@@ -119,7 +119,7 @@ internal sealed class PersistenceCoordinator : IDisposable
                 if (_intents.ContainsKey(e.OperationId.Value))
                 { _pending.Remove(e.OperationId.Value); throw new InvalidOperationException("Duplicate save start."); }
                 var path = _canonical(e.Destination);
-                bool empty = _restored && _session.HasValue && Current(_session.Value) && _owners.Count == 0 && _known.Count == 0;
+                bool empty = _restored && _session.HasValue && Current(_session.Value) && _owners.Count == 0 && _known.Count == 0 && !_store.HasHistory(path);
                 if (!empty) _store.MarkIntent(path, e.OperationId.Value);
                 _intents.Add(e.OperationId.Value, (path, e.Session?.Id, !empty));
                 if (_session.HasValue && Current(_session.Value)) Capture(e);
@@ -213,8 +213,8 @@ internal sealed class PersistenceCoordinator : IDisposable
             }
             if (pending == null || !Current(pending.Session)) throw new InvalidOperationException("No publishable candidate.");
             // Keep operation/session checks, but do not accumulate empty generations for API-only installs.
-            // Retained data from uninstalled mods still requires publication.
-            if (_owners.Count != 0 || pending.Owners.Count != 0)
+            // Retained data and overwritten slots with prior history still require publication.
+            if (intent.Written || _owners.Count != 0 || pending.Owners.Count != 0)
             {
                 var generation = _store.Publish(pending.Destination, _hashFile(pending.Destination), pending.Campaign, pending.Owners);
                 _known = generation.Owners;
