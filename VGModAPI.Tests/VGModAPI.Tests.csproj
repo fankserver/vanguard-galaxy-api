@@ -4,6 +4,7 @@
     <!-- The pilot's PASS/FAIL and fact-ordering rules are compiled here from their single source
          so the shipped qualification logic itself is under host regression tests. -->
     <Compile Include="../tools/QualificationRunner/TravelStationReceipt.cs" Link="TravelStationReceipt.cs" />
+    <Compile Include="../tools/QualificationRunner/TravelCrossSystemReceipt.cs" Link="TravelCrossSystemReceipt.cs" />
     <ProjectReference Include="../VGModAPI.Core/VGModAPI.Core.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
     <PackageReference Include="xunit" Version="2.9.3" />

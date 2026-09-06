@@ -455,6 +455,142 @@ try {
     Assert $rejected 'Travel/station run accepted a process lifetime shorter than the phase budget.'
     Assert (!(Test-Path -LiteralPath (Join-Path $travelTimeoutRoot 'run-started.txt'))) 'The launcher started the game despite an insufficient lifetime.'
     & $script -Action Cleanup -SandboxRoot $travelTimeoutRoot
+    # --- separate optional cross-system travel phase --------------------------------------------
+    $rejected = $false
+    try { & $script -Action Prepare -SandboxRoot (Join-Path $work 'invalid-cross-system') -TravelCrossSystem @options }
+    catch { $rejected = $_.Exception.Message -like '*requires the travel/station selection*' }
+    Assert $rejected 'Cross-system phase accepted without the travel/station selection.'
+    Assert (!(Test-Path -LiteralPath (Join-Path $work 'invalid-cross-system'))) 'Rejected cross-system selection left a prepared sandbox.'
+    $crossRoot = Join-Path $work 'travel-cross-system-sandbox'
+    $sandboxes += $crossRoot
+    & $script -Action Prepare -SandboxRoot $crossRoot -TravelStation -TravelCrossSystem @options
+    $crossProvenance = Assert-QualificationInputs $crossRoot
+    Assert ($crossProvenance.travelCrossSystem -and $crossProvenance.travelCrossSystemBudgetSeconds -eq $TravelCrossSystemBudgetSeconds) 'Prepared cross-system selection/budget missing.'
+    $crossMarker = Join-Path $crossRoot 'travel-cross-system.enabled'
+    [IO.File]::WriteAllText($crossMarker, 'changed')
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $crossRoot } catch { $rejected = $true }
+    Assert $rejected 'Changed cross-system marker accepted.'
+    [IO.File]::WriteAllText($crossMarker, 'cross-system-v1')
+    $crossProvenancePath = Join-Path $crossRoot 'build-provenance.json'
+    $crossProvenanceText = [IO.File]::ReadAllText($crossProvenancePath)
+    [IO.File]::WriteAllText($crossProvenancePath, ($crossProvenanceText -replace '"travelCrossSystemBudgetSeconds": *\d+', '"travelCrossSystemBudgetSeconds": 60'))
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $crossRoot } catch { $rejected = $true }
+    Assert $rejected 'Edited cross-system budget reservation accepted.'
+    [IO.File]::WriteAllText($crossProvenancePath, $crossProvenanceText)
+    $null = Assert-QualificationInputs $crossRoot
+    # Synthetic receipts only. Both phases are validated independently in the same sandbox, so a
+    # passing in-system receipt can never stand in for the mandatory cross-system cases.
+    $crossSession = [Guid]::NewGuid().ToString()
+    $crossOperation = [Guid]::NewGuid().ToString()
+    function CrossEvent($surface, $sequence, $caseLabel, $session) { return ("" + $sequence + "`t" + $surface + "`t" + $caseLabel + "`t" + $session + "`t" + $crossOperation + "`tArrived`tJumpGate`tsystem-1:gate-1`tsystem-2:gate-2`tsystem-2:gate-2`t1.000`t") }
+    function CrossSummary($rows, $first) {
+        $records = @($rows | ForEach-Object { ,($_ -split "`t") })
+        $passed = @($records | Where-Object { $_[2] -eq 'passed' }).Count
+        $failed = @($records | Where-Object { $_[2] -eq 'failed' }).Count
+        $notRun = @($records | Where-Object { $_[2] -eq 'not-run' }).Count
+        $lines = @($first, "phase=$TravelCrossSystemPhase", "budgetSeconds=$TravelCrossSystemBudgetSeconds",
+            ("required=" + ($TravelCrossSystemRequiredCases -join ',')),
+            ("rows=" + $records.Count + " passed=$passed failed=$failed notRun=$notRun"))
+        foreach ($case in $TravelCrossSystemRequiredCases) {
+            $matched = @($records | Where-Object { $_[0] -eq $case })
+            $state = if ($matched.Count -eq 1) { $matched[0][2] } elseif ($matched.Count -eq 0) { 'absent' } else { 'duplicated' }
+            $lines += "required-case $case=$state"
+        }
+        return @($lines + @('optional-not-run=', 'fault=none', 'result=phase satisfied'))
+    }
+    function WriteCrossOutputs($rows, $events, $summary) {
+        [IO.File]::WriteAllLines((Join-Path $crossRoot 'travel-cross-system-receipt.tsv'), [string[]]@(($TravelStationReceiptHeader -join "`t")) + [string[]]$rows)
+        [IO.File]::WriteAllLines((Join-Path $crossRoot 'travel-cross-system-events.tsv'), [string[]]@(($TravelStationEventHeader -join "`t")) + [string[]]$events)
+        [IO.File]::WriteAllLines((Join-Path $crossRoot 'travel-cross-system.txt'), [string[]]$summary)
+    }
+    function AssertCrossRejected($rows, $events, $summary, $message) {
+        WriteCrossOutputs $rows $events $summary
+        $rejected = $false
+        try { Assert-PersistenceProbeReceipt $crossRoot $crossProvenance } catch { $rejected = $true }
+        Assert $rejected $message
+    }
+    # The same sandbox also holds the in-system phase, which must keep its own required cases.
+    $stationRows = @()
+    $stationEvents = @()
+    $sequence = 0
+    foreach ($case in $TravelStationRequiredCases) {
+        $sequence++
+        $stationRows += (TravelRow $case 'passed' $crossSession ("travel:" + $sequence))
+        $stationEvents += (TravelEvent 'travel' $sequence $case $crossSession)
+    }
+    $stationRows += (TravelRow 'cross-system-jumpgate' 'not-run' $crossSession '')
+    $stationRows += (TravelRow 'cross-system-wormhole' 'not-run' $crossSession '')
+    [IO.File]::WriteAllLines((Join-Path $crossRoot 'travel-station-receipt.tsv'), [string[]]@(($TravelStationReceiptHeader -join "`t")) + [string[]]$stationRows)
+    [IO.File]::WriteAllLines((Join-Path $crossRoot 'travel-station-events.tsv'), [string[]]@(($TravelStationEventHeader -join "`t")) + [string[]]$stationEvents)
+    [IO.File]::WriteAllLines((Join-Path $crossRoot 'travel-station.txt'), [string[]](TravelSummary $stationRows 'PASS'))
+    # A complete in-system phase alone is NOT the cross-system phase.
+    $rejected = $false
+    try { Assert-PersistenceProbeReceipt $crossRoot $crossProvenance } catch { $rejected = $true }
+    Assert $rejected 'Missing cross-system receipt accepted because the in-system phase passed.'
+    $crossRows = @()
+    $crossEvents = @()
+    $sequence = 0
+    foreach ($case in $TravelCrossSystemRequiredCases) {
+        $sequence++
+        $crossRows += (TravelRow $case 'passed' $crossSession ("travel:" + $sequence))
+        $crossEvents += (CrossEvent 'travel' $sequence $case $crossSession)
+    }
+    WriteCrossOutputs $crossRows $crossEvents (CrossSummary $crossRows 'PASS')
+    Assert-PersistenceProbeReceipt $crossRoot $crossProvenance
+    # A fixture that cannot exercise a mandatory native routine is a FAIL, never an empty PASS.
+    $crossSkipped = @($TravelCrossSystemRequiredCases | ForEach-Object { TravelRow $_ 'not-run' $crossSession '' })
+    AssertCrossRejected $crossSkipped $crossEvents (CrossSummary $crossSkipped 'PASS') 'All-skipped cross-system coverage accepted as PASS.'
+    $crossWormholeSkipped = @($crossRows[0]) + @(TravelRow 'cross-system-wormhole' 'not-run' $crossSession '')
+    AssertCrossRejected $crossWormholeSkipped $crossEvents (CrossSummary $crossWormholeSkipped 'PASS') 'A not-run mandatory wormhole case accepted as PASS.'
+    $crossFailed = @($crossRows[0]) + @(TravelRow 'cross-system-wormhole' 'failed' $crossSession 'travel:2')
+    AssertCrossRejected $crossFailed $crossEvents (CrossSummary $crossFailed 'PASS') 'Claimed cross-system PASS with a failed case accepted.'
+    Assert ((Test-Path -LiteralPath (Join-Path $crossRoot 'travel-cross-system-receipt.tsv')) -and (Test-Path -LiteralPath (Join-Path $crossRoot 'travel-cross-system-events.tsv'))) 'A failed cross-system attempt must keep its receipt and event diagnostics.'
+    AssertCrossRejected @($crossRows[0]) $crossEvents (CrossSummary @($crossRows[0]) 'PASS') 'Missing mandatory cross-system case accepted.'
+    AssertCrossRejected $crossRows @($crossEvents[0]) (CrossSummary $crossRows 'PASS') 'Cross-system case referencing an unobserved event accepted.'
+    $crossForeign = @($crossEvents | ForEach-Object { $_ -replace [regex]::Escape($crossSession), ([Guid]::NewGuid().ToString()) })
+    AssertCrossRejected $crossRows $crossForeign (CrossSummary $crossRows 'PASS') 'Cross-system identities absent from the event trace accepted.'
+    AssertCrossRejected $crossRows $crossEvents (CrossSummary $crossRows 'FAIL') 'Failed cross-system attempt summary accepted.'
+    AssertCrossRejected $crossRows $crossEvents @('INCOMPLETE', "phase=$TravelCrossSystemPhase", "budgetSeconds=$TravelCrossSystemBudgetSeconds", 'activeCase=cross-system-wormhole', 'rows=2 passed=2 failed=0 notRun=0', 'result=pilot still running or externally terminated; this is not a pass.') 'Incomplete cross-system checkpoint accepted as a pass.'
+    $crossForeignPhase = @((CrossSummary $crossRows 'PASS') | ForEach-Object { if ($_ -like 'phase=*') { "phase=$TravelStationPhase" } else { $_ } })
+    AssertCrossRejected $crossRows $crossEvents $crossForeignPhase 'Cross-system receipt declaring the in-system phase accepted.'
+    $crossOverBudget = @((CrossSummary $crossRows 'PASS') | ForEach-Object { if ($_ -like 'budgetSeconds=*') { "budgetSeconds=$($TravelCrossSystemBudgetSeconds + 1)" } else { $_ } })
+    AssertCrossRejected $crossRows $crossEvents $crossOverBudget 'Cross-system budget above the launcher reservation accepted.'
+    $crossWrongCounts = (CrossSummary $crossRows 'PASS')
+    $crossWrongCounts[4] = 'rows=99 passed=99 failed=0 notRun=0'
+    AssertCrossRejected $crossRows $crossEvents $crossWrongCounts 'Cross-system summary counts disagreeing with the receipt accepted.'
+    WriteCrossOutputs $crossRows $crossEvents (CrossSummary $crossRows 'PASS')
+    [IO.File]::WriteAllLines((Join-Path $crossRoot 'travel-cross-system-events.tsv'), [string[]]@("sequence`tkind") + [string[]]$crossEvents)
+    $rejected = $false
+    try { Assert-PersistenceProbeReceipt $crossRoot $crossProvenance } catch { $rejected = $true }
+    Assert $rejected 'Changed cross-system event trace header accepted.'
+    WriteCrossOutputs $crossRows $crossEvents (CrossSummary $crossRows 'PASS')
+    Assert-PersistenceProbeReceipt $crossRoot $crossProvenance
+    $crossOutcomePath = Join-Path $crossRoot 'run-outcome.json'
+    foreach ($outcome in @(@{timedOut=$true;killed=$true;exitCode=$null}, @{timedOut=$false;killed=$true;exitCode=$null},
+        @{timedOut=$false;killed=$false;exitCode=$null}, @{timedOut=$false;killed=$false;exitCode=1})) {
+        $outcome | ConvertTo-Json | Set-Content -LiteralPath $crossOutcomePath
+        $rejected = $false
+        try { Assert-PersistenceProbeReceipt $crossRoot $crossProvenance } catch { $rejected = $true }
+        Assert $rejected ('Terminated or unexpected launcher outcome accepted for the cross-system phase: exit ' + $outcome.exitCode)
+    }
+    foreach ($accepted in @(0, $GameSelfTerminationExitCode)) {
+        @{timedOut=$false;killed=$false;exitCode=$accepted} | ConvertTo-Json | Set-Content -LiteralPath $crossOutcomePath
+        Assert-PersistenceProbeReceipt $crossRoot $crossProvenance
+    }
+    Remove-Item -LiteralPath $crossOutcomePath
+    & $script -Action Cleanup -SandboxRoot $crossRoot
+    # The launcher must reserve base + BOTH phase budgets before starting the game.
+    $crossTimeoutRoot = Join-Path $work 'travel-cross-timeout-sandbox'
+    $sandboxes += $crossTimeoutRoot
+    & $script -Action Prepare -SandboxRoot $crossTimeoutRoot -TravelStation -TravelCrossSystem @options
+    $rejected = $false
+    try { & $script -Action Run -SandboxRoot $crossTimeoutRoot -TimeoutSeconds ($QualificationBaseTimeoutSeconds + $TravelStationBudgetSeconds) @options }
+    catch { $rejected = $_.Exception.Message -like '*-TimeoutSeconds at least*' }
+    Assert $rejected 'Cross-system run accepted a lifetime that only covers the in-system phase.'
+    Assert (!(Test-Path -LiteralPath (Join-Path $crossTimeoutRoot 'run-started.txt'))) 'The launcher started the game despite an insufficient cross-system lifetime.'
+    & $script -Action Cleanup -SandboxRoot $crossTimeoutRoot
     [IO.File]::WriteAllText($apiConfig, "[Persistence]`nEnabled = true`nRoot = C:\foreign-root`n[Missions]`nEnabled = true`nIdentityContinuity = true`n")
     $rejected = $false
     try { $null = Assert-QualificationInputs $probeRoot } catch { $rejected = $true }

@@ -20,10 +20,13 @@ param(
     [switch]$MissionIdentityProbe,
     [switch]$JournalMissionEventsProbe,
     [switch]$TravelStation,
+    [switch]$TravelCrossSystem,
     [string]$BuildRevision = 'unknown',
     [switch]$Diagnostics,
     [ValidateSet('Full','MissingApi','UnavailableApi')][string]$Scenario = 'Full',
-    [ValidateRange(1,3600)][int]$TimeoutSeconds = 1800
+    # The optional native travel phases reserve their own process time on top of the base budget,
+    # so the lifetime knob must be able to cover base + every selected phase.
+    [ValidateRange(1,10800)][int]$TimeoutSeconds = 1800
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'qualification-profile.ps1')
@@ -65,6 +68,7 @@ if ($Action -eq 'Prepare') {
     if ($MissionIdentityProbe -and (!$MissionTransitionsProbe -or !$PersistenceProbe)) { throw 'Mission identity probe requires mission transitions and persistence probes.' }
     if ($MissionTransitionsProbe -and $Scenario -ne 'Full') { throw 'Mission transitions probe requires Full.' }
     if ($TravelStation -and $Scenario -ne 'Full') { throw 'Travel/station pilot requires Full.' }
+    if ($TravelCrossSystem -and !$TravelStation) { throw 'Cross-system travel phase requires the travel/station selection.' }
     if ($ContentReferenceProbe -and $Scenario -ne 'Full') { throw 'Content reference probe requires Full.' }
     if ($JournalCoordinated -and (!$PersistenceProbe -or !$MissionJournalBin)) { throw 'Coordinated journal requires persistence probe and journal binary.' }
     if ($StockpileCoordinated -and (!$JournalCoordinated -or !$StockpileBin)) { throw 'Coordinated Stockpile requires coordinated journal and Stockpile binary.' }
@@ -196,7 +200,8 @@ if ($Action -eq 'Prepare') {
         [IO.File]::AppendAllText((Join-Path $bep 'config\vgmodapi.cfg'), "`r`n[Travel]`r`nEnabled = true`r`n")
         [IO.File]::WriteAllText((Join-Path $root 'travel-station.enabled'), 'travel-v1')
     }
-    @{ anima=[bool]$AnimaBin; animaRevision=$AnimaRevision; journalMissionEventsProbe=[bool]$JournalMissionEventsProbe; missionIdentityProbe=[bool]$MissionIdentityProbe; missionTransitionsProbe=[bool]$MissionTransitionsProbe; contentReferenceProbe=[bool]$ContentReferenceProbe; stockpileCoordinated=[bool]$StockpileCoordinated; journalCoordinated=[bool]$JournalCoordinated; persistenceProbe=[bool]$PersistenceProbe; vanillaLoadControl=[bool]$VanillaLoadControl; assemblyOverlay=$overlay; stockpile=[bool]$StockpileBin; missionJournal=[bool]$MissionJournalBin; travelStation=[bool]$TravelStation; travelStationBudgetSeconds=$(if ($TravelStation) { $TravelStationBudgetSeconds } else { 0 }); scenario=$Scenario; revision=$BuildRevision; preparedUtc=[DateTime]::UtcNow.ToString('o'); plugins=$hashes } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'build-provenance.json')
+    if ($TravelCrossSystem) { [IO.File]::WriteAllText((Join-Path $root 'travel-cross-system.enabled'), 'cross-system-v1') }
+    @{ anima=[bool]$AnimaBin; animaRevision=$AnimaRevision; journalMissionEventsProbe=[bool]$JournalMissionEventsProbe; missionIdentityProbe=[bool]$MissionIdentityProbe; missionTransitionsProbe=[bool]$MissionTransitionsProbe; contentReferenceProbe=[bool]$ContentReferenceProbe; stockpileCoordinated=[bool]$StockpileCoordinated; journalCoordinated=[bool]$JournalCoordinated; persistenceProbe=[bool]$PersistenceProbe; vanillaLoadControl=[bool]$VanillaLoadControl; assemblyOverlay=$overlay; stockpile=[bool]$StockpileBin; missionJournal=[bool]$MissionJournalBin; travelStation=[bool]$TravelStation; travelStationBudgetSeconds=$(if ($TravelStation) { $TravelStationBudgetSeconds } else { 0 }); travelCrossSystem=[bool]$TravelCrossSystem; travelCrossSystemBudgetSeconds=$(if ($TravelCrossSystem) { $TravelCrossSystemBudgetSeconds } else { 0 }); scenario=$Scenario; revision=$BuildRevision; preparedUtc=[DateTime]::UtcNow.ToString('o'); plugins=$hashes } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'build-provenance.json')
     # Prevent Steam's restart path; the runner disables SteamManager before arming checks.
     [IO.File]::WriteAllText((Join-Path $game 'steam_appid.txt'), '3471800')
     $saves = Join-Path $root 'Saves'
@@ -252,7 +257,8 @@ $provenance = Assert-QualificationInputs $root
 # destroy a run that cannot finish. -TimeoutSeconds is the existing lifetime knob.
 if ($provenance.PSObject.Properties['travelStation'] -and $provenance.travelStation) {
     $required = $QualificationBaseTimeoutSeconds + $TravelStationBudgetSeconds
-    if ($TimeoutSeconds -lt $required) { throw "Travel/station runs need -TimeoutSeconds at least $required (base $QualificationBaseTimeoutSeconds + phase $TravelStationBudgetSeconds); got $TimeoutSeconds." }
+    if ($provenance.PSObject.Properties['travelCrossSystem'] -and $provenance.travelCrossSystem) { $required += $TravelCrossSystemBudgetSeconds }
+    if ($TimeoutSeconds -lt $required) { throw "Travel/station runs need -TimeoutSeconds at least $required (base $QualificationBaseTimeoutSeconds + phases); got $TimeoutSeconds." }
 }
 $journalBefore = @{}
 if ($provenance.PSObject.Properties['journalCoordinated'] -and $provenance.journalCoordinated) {
