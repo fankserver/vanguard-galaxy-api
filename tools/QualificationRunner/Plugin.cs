@@ -409,16 +409,19 @@ public sealed partial class Plugin : BaseUnityPlugin
     }
 
     // A harness grace period, not an API guarantee of UI/world readiness.
+    // Named so a phase that has to budget process time can reference the shared values.
+    internal const float SettleSeconds = 2;
+    internal const float WaitDeadlineSeconds = 90;
     private static IEnumerable<object?> Settle()
     {
         Time.timeScale = 1;
-        float until = Time.realtimeSinceStartup + 2;
+        float until = Time.realtimeSinceStartup + SettleSeconds;
         do { yield return null; } while (Time.realtimeSinceStartup < until);
     }
 
     private IEnumerable<object?> Wait(Func<bool> ready, string description, bool allowFailure = false)
     {
-        float deadline = Time.realtimeSinceStartup + 90;
+        float deadline = Time.realtimeSinceStartup + WaitDeadlineSeconds;
         while (!ready())
         {
             Require(_newGameError == null, "Native new-game configuration failed: " + _newGameError);

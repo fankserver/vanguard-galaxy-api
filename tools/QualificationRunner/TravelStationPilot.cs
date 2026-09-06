@@ -106,6 +106,12 @@ public sealed partial class Plugin
         Require(travel != null && station != null, "Travel/Station public services not exposed.");
         Require(_api!.Capabilities.Any(c => c.Name == "native-travel" && c.Available), "native-travel capability not available.");
         Require(!travel!.IsDispatchingCallbacks && !station!.IsDispatchingCallbacks, "Cannot subscribe during callback dispatch.");
+        // The published phase budget is summed from the declared deadlines, and the two shared
+        // harness waits are part of that sum: refuse to run if they no longer agree.
+        Require(TravelStationReceipt.ReadinessSeconds == WaitDeadlineSeconds && TravelStationReceipt.SettleSeconds == SettleSeconds,
+            "Shared harness wait/settle deadlines no longer match the declared phase budget terms.");
+        Require(TravelStationReceipt.PhaseBudgetSeconds <= TravelStationReceipt.LauncherReservationSeconds,
+            "Declared phase budget exceeds the launcher reservation.");
         var transitions = new List<TravelTransition>();
         var stationFacts = new List<StationTransition>();
         using (travel!.Subscribe("qualification.travel", t =>

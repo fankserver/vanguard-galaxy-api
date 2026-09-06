@@ -45,7 +45,27 @@ try {
     Restore-QualificationPrefs $key $snapshot $true
     Restore-QualificationPrefs $key $snapshot $false
     if (Test-Path -LiteralPath $path) { throw 'Originally absent key was not removed.' }
-    Write-Output 'PASS: PlayerPrefs snapshot/restore, typed values, removal of added values, absent-key cleanup, missing-backup/reused-run refusal, verification mismatch detection; synthetic registry only.'
+    # Owned-process lifetime: a benign short-lived child only (cmd.exe), never the game, never the
+    # real profile. The cached handle must make a genuine exit code observable in both directions.
+    $shell = Join-Path $env:SystemRoot 'System32\cmd.exe'
+    foreach ($expected in @(0, 3)) {
+        $child = Start-QualificationProcess $shell $env:TEMP @('/c', "exit $expected")
+        $result = Wait-QualificationProcess $child 30
+        try {
+            if ($result.timedOut -or $result.killed) { throw "Benign child process was reported as terminated (exit $expected)." }
+            if ($null -eq $result.exitCode) { throw "Exit code was unknown after waiting (exit $expected)." }
+            if ($result.exitCode -ne $expected) { throw "Wrong exit code: expected $expected, got $($result.exitCode)." }
+        } finally { $child.Dispose() }
+    }
+    # A process that outlives its deadline is killed and reported as terminated, never as success.
+    $sleeper = Start-QualificationProcess $shell $env:TEMP @('/c', 'ping -n 30 127.0.0.1 >nul')
+    $slow = Wait-QualificationProcess $sleeper 1
+    try {
+        if (!$slow.timedOut -or !$slow.killed) { throw 'A process past its deadline was not reported as terminated.' }
+        if ($slow.exitCode -eq 0) { throw 'A killed process must never report a successful exit code.' }
+    } finally { $sleeper.Dispose() }
+    if ($null -ne (Wait-QualificationProcess $null 1).exitCode) { throw 'A missing process must report an unknown exit code.' }
+    Write-Output 'PASS: PlayerPrefs snapshot/restore, typed values, removal of added values, absent-key cleanup, missing-backup/reused-run refusal, verification mismatch detection, owned-process exit-code capture and deadline kill; synthetic registry and benign child processes only.'
 }
 finally {
     if (Test-Path -LiteralPath $state) { Remove-Item -LiteralPath $state -Recurse }

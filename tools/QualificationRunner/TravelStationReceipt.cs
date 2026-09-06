@@ -28,10 +28,11 @@ internal static class TravelStationReceipt
     /// <summary>The label used for observed events while no case is driving.</summary>
     internal const string NoActiveCase = "no-active-case";
 
-    // Declared per-wait deadlines (seconds). The phase budget is derived from them so the launcher
-    // reservation and the pilot's own bounded waits cannot drift apart silently.
-    internal const float ReadinessSeconds = 90;
-    internal const float SettleSeconds = 2;
+    // Declared per-wait deadlines (seconds). These are the SINGLE source the driver's waits use, and
+    // the phase budget is summed from the plan below, so a changed deadline moves the published
+    // budget and cannot drift away from the launcher reservation silently.
+    internal const float ReadinessSeconds = 90;   // shared harness Wait deadline used for service binding
+    internal const float SettleSeconds = 2;       // shared harness Settle grace period
     internal const float TravelReadySeconds = 4;
     internal const float InitialDockSettleSeconds = 20;
     internal const float UndockLeavingSeconds = 60;
@@ -39,15 +40,36 @@ internal static class TravelStationReceipt
     internal const float ArrivalSeconds = 240;
     internal const float BoundarySeconds = 60;
     internal const float DockSeconds = 240;
+    /// <summary>Process time the launcher reserves for this phase (mirrors $TravelStationBudgetSeconds).</summary>
+    internal const float LauncherReservationSeconds = 1500;
+
+    internal sealed class PhaseWait
+    {
+        internal string Name { get; }
+        internal float Seconds { get; }
+        internal int Occurrences { get; }
+        internal PhaseWait(string name, float seconds, int occurrences) { Name = name; Seconds = seconds; Occurrences = occurrences; }
+    }
+
     /// <summary>
     /// Worst case for the whole phase: readiness, the undock case, three real arrivals (one
     /// single-hop route plus the two chained hops), two route boundaries, the arrival dock, the
     /// three travel-availability samples and a settle after every stage.
     /// </summary>
-    internal const float PhaseBudgetSeconds = ReadinessSeconds
-        + InitialDockSettleSeconds + UndockLeavingSeconds + UndockRoutineSeconds
-        + 3 * ArrivalSeconds + 2 * BoundarySeconds + DockSeconds
-        + 3 * TravelReadySeconds + 12 * SettleSeconds;
+    internal static readonly PhaseWait[] PhaseWaits =
+    {
+        new("service-readiness", ReadinessSeconds, 1),
+        new("initial-dock-settle", InitialDockSettleSeconds, 1),
+        new("undock-leaving", UndockLeavingSeconds, 1),
+        new("undock-routine", UndockRoutineSeconds, 1),
+        new("arrival", ArrivalSeconds, 3),
+        new("route-boundary", BoundarySeconds, 2),
+        new("arrival-dock", DockSeconds, 1),
+        new("travel-availability", TravelReadySeconds, 3),
+        new("settle", SettleSeconds, 12)
+    };
+
+    internal static readonly float PhaseBudgetSeconds = PhaseWaits.Sum(wait => wait.Seconds * wait.Occurrences);
 
     /// <summary>
     /// The phase passes only when every one of these case identities has exactly one PASSED row.
@@ -222,8 +244,10 @@ internal static class TravelStationReceipt
     /// <summary>
     /// The load window is the one explicit boundary where older-session facts are legitimate: the
     /// pilot clears its buffers BEFORE the load, so the previous session can still emit until the
-    /// fresh session starts. Returns the index of the fresh session's first fact; any pre-boundary
-    /// fact of the fresh session, or any foreign fact after the boundary, is rejected by the caller.
+    /// fresh session starts. Returns the index of the fresh session's first fact and the number of
+    /// replaced-session facts before it. Those facts must all be CONTIGUOUS at the front: a
+    /// replaced-session fact interleaved after the boundary is a stale-session leak and is rejected
+    /// here as well as by the case validator that owns the window.
     /// </summary>
     internal static string? CheckLoadBoundary(IReadOnlyList<TravelTransition> observed, Guid session, out int freshIndex, out int priorSessionFacts)
     {
@@ -231,8 +255,9 @@ internal static class TravelStationReceipt
         while (freshIndex < observed.Count && observed[freshIndex].SessionId != session) freshIndex++;
         priorSessionFacts = freshIndex;
         if (freshIndex == observed.Count) return "No fact of the freshly loaded session was observed.";
-        for (int index = 0; index < freshIndex; index++)
-            if (observed[index].SessionId == session) return "Fresh-session fact ordered before the load boundary.";
+        for (int index = freshIndex; index < observed.Count; index++)
+            if (observed[index].SessionId != session)
+                return "Replaced-session fact interleaved after the load boundary: " + Describe(observed[index]);
         return null;
     }
 

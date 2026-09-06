@@ -134,7 +134,7 @@ public sealed partial class Plugin
                 yield break;
             }
             // The initial dock can still be settling natively right after the load.
-            foreach (var frame in PollFor(() => DockingState(ship!) == "Docked", 20)) yield return frame;
+            foreach (var frame in PollFor(() => DockingState(ship!) == "Docked", TravelStationReceipt.InitialDockSettleSeconds)) yield return frame;
             if (DockingState(ship!) != "Docked" || !Alive(_getDockingOption.Invoke(exterior!, new[] { ship })))
             {
                 NotRun("Fixture ship state is " + (DockingState(ship!) ?? "undocked") + " with no holding docking option; no native undock to drive.");
@@ -159,8 +159,8 @@ public sealed partial class Plugin
             if (interiorExit) _exitSpacestation.Invoke(interior!, null);
             else _startUndocking.Invoke(exterior!, null);
             foreach (var frame in AwaitOrFail(() => StationSlice(stationOffset).Any(s => s.Kind == StationTransitionKind.Leaving),
-                60, "native undock Leaving fact")) yield return frame;
-            foreach (var frame in AwaitOrFail(() => !Alive(SpGet(exterior!, "undockingRoutine")), 60, "native undocking routine completion")) yield return frame;
+                TravelStationReceipt.UndockLeavingSeconds, "native undock Leaving fact")) yield return frame;
+            foreach (var frame in AwaitOrFail(() => !Alive(SpGet(exterior!, "undockingRoutine")), TravelStationReceipt.UndockRoutineSeconds, "native undocking routine completion")) yield return frame;
             foreach (var frame in Settle()) yield return frame;
             var failure = TravelStationReceipt.CheckStationPhase(StationSlice(stationOffset), _session, _systemId, _startPoiId,
                 new[] { StationTransitionKind.Undocking, StationTransitionKind.Leaving });
@@ -254,7 +254,7 @@ public sealed partial class Plugin
             // The native approach is a physical manoeuvre driven by DockingOption.Update, so the
             // deadline is generous but explicit; a timeout is a recorded failure, never a skip.
             foreach (var frame in AwaitOrFail(() => StationSlice(_dockWindow).Any(s => s.Kind == StationTransitionKind.DockedPhysical),
-                240, "native arrival DockedPhysical")) yield return frame;
+                TravelStationReceipt.DockSeconds, "native arrival DockedPhysical")) yield return frame;
             foreach (var frame in Settle()) yield return frame;
             var failure = TravelStationReceipt.CheckStationPhase(StationSlice(_dockWindow), _session, _systemId, _startPoiId,
                 new[] { StationTransitionKind.DockedPhysical });
@@ -315,10 +315,10 @@ public sealed partial class Plugin
             {
                 int arrivals = hop + 1;
                 foreach (var frame in AwaitOrFail(() => Slice(offset).Count(t => t.Kind == TravelTransitionKind.Arrived) >= arrivals,
-                    240, "native arrival " + arrivals + "/" + hops.Length + " at " + hopIds[hop])) yield return frame;
+                    TravelStationReceipt.ArrivalSeconds, "native arrival " + arrivals + "/" + hops.Length + " at " + hopIds[hop])) yield return frame;
             }
             foreach (var frame in AwaitOrFail(() => Slice(offset).Any(t => t.Kind == TravelTransitionKind.RouteCompleted),
-                60, "native final route boundary at " + hopIds[hops.Length - 1])) yield return frame;
+                TravelStationReceipt.BoundarySeconds, "native final route boundary at " + hopIds[hops.Length - 1])) yield return frame;
             foreach (var frame in Settle()) yield return frame;
             var slice = Slice(offset);
             var failure = TravelStationReceipt.CheckRoute(slice, _session, _systemId, originPoiId, hopIds);
@@ -344,7 +344,7 @@ public sealed partial class Plugin
         // availability is sampled after that window instead of being reported as a native refusal.
         private IEnumerable<object?> ReadyToTravel(object target)
         {
-            foreach (var frame in PollFor(() => false, 4)) yield return frame;
+            foreach (var frame in PollFor(() => false, TravelStationReceipt.TravelReadySeconds)) yield return frame;
             _canTravel = (bool)_canWeTravel.Invoke(_travel, new[] { target })!;
         }
 

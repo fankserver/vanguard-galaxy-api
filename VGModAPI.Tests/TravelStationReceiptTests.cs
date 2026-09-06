@@ -308,8 +308,11 @@ public sealed class TravelStationReceiptTests
         Assert.Equal(1, freshIndex);
         Assert.Equal(1, prior);
         Assert.Null(TravelStationReceipt.CheckInitialPlacement(TravelStationReceipt.Window(observed, freshIndex), Session, System, Station));
-        // A foreign fact AFTER the fresh session's first fact is never tolerated.
+        // A foreign fact AFTER the fresh session's first fact is never tolerated: the boundary rule
+        // rejects the interleaving itself, and the case validator rejects the window as well.
         observed.Add(Fact(TravelTransitionKind.Arrived, Guid.NewGuid(), Station, First, First, 3, session: other, sequence: 5));
+        Assert.Contains("interleaved after the load boundary",
+            TravelStationReceipt.CheckLoadBoundary(observed, Session, out _, out _)!);
         Assert.NotNull(TravelStationReceipt.CheckInitialPlacement(TravelStationReceipt.Window(observed, freshIndex), Session, System, Station));
         // A session that never produced a fact is a boundary failure, not a silent pass.
         Assert.NotNull(TravelStationReceipt.CheckLoadBoundary(
@@ -318,14 +321,25 @@ public sealed class TravelStationReceiptTests
 
     // F3: the declared phase budget must cover every declared bounded wait of the phase.
     [Fact]
-    public void PhaseBudgetCoversTheDeclaredBoundedWaitsAndIsPublishedInBothSummaries()
+    public void PhaseBudgetIsSummedFromTheDeclaredWaitPlanAndFitsTheLauncherReservation()
     {
-        var worstCase = TravelStationReceipt.ReadinessSeconds
-            + TravelStationReceipt.InitialDockSettleSeconds + TravelStationReceipt.UndockLeavingSeconds
-            + TravelStationReceipt.UndockRoutineSeconds + 3 * TravelStationReceipt.ArrivalSeconds
-            + 2 * TravelStationReceipt.BoundarySeconds + TravelStationReceipt.DockSeconds
-            + 3 * TravelStationReceipt.TravelReadySeconds + 12 * TravelStationReceipt.SettleSeconds;
-        Assert.Equal(TravelStationReceipt.PhaseBudgetSeconds, worstCase);
+        // Relationships, not a duplicated formula: the budget IS the plan's sum, every declared wait
+        // is positive and actually used by the plan, and the sum fits the launcher reservation.
+        Assert.All(TravelStationReceipt.PhaseWaits, wait =>
+        {
+            Assert.True(wait.Seconds > 0, wait.Name + " has no deadline");
+            Assert.True(wait.Occurrences > 0, wait.Name + " never occurs");
+        });
+        Assert.Equal(TravelStationReceipt.PhaseBudgetSeconds, TravelStationReceipt.PhaseWaits.Sum(w => w.Seconds * w.Occurrences));
+        Assert.True(TravelStationReceipt.PhaseBudgetSeconds <= TravelStationReceipt.LauncherReservationSeconds,
+            "The derived phase budget no longer fits the launcher reservation.");
+        // The dominant waits (readiness, the three real arrivals and the arrival dock) are part of it.
+        Assert.True(TravelStationReceipt.PhaseBudgetSeconds >= TravelStationReceipt.ReadinessSeconds
+            + 3 * TravelStationReceipt.ArrivalSeconds + TravelStationReceipt.DockSeconds);
+        // Changing a deadline must move the published budget, so the plan must reference the constants.
+        Assert.Contains(TravelStationReceipt.PhaseWaits, w => w.Seconds == TravelStationReceipt.ArrivalSeconds && w.Occurrences == 3);
+        Assert.Contains(TravelStationReceipt.PhaseWaits, w => w.Seconds == TravelStationReceipt.DockSeconds);
+        Assert.Contains(TravelStationReceipt.PhaseWaits, w => w.Seconds == TravelStationReceipt.ReadinessSeconds);
         var (rows, events) = CompleteReceipt();
         Assert.Contains("budgetSeconds=" + TravelStationReceipt.PhaseBudgetSeconds.ToString("F0"), TravelStationReceipt.Summarize(rows, null, events));
         var incomplete = TravelStationReceipt.SummarizeIncomplete(rows, "station-dock");

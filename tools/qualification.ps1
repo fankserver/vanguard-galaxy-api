@@ -271,27 +271,27 @@ $prefsFile = Join-Path $root 'playerprefs-before.reg'
 $hadPrefs = Save-QualificationPrefs $prefsNative $prefsFile
 $exe = Join-Path $game 'VanguardGalaxy.exe'
 $process = $null
-$timedOut = $false
-$killed = $false
-$exitCode = $null
+$outcome = @{ timedOut = $false; killed = $false; exitCode = $null }
 try {
     $arguments = @('--fse-shim-applied','-screen-fullscreen','0','-logFile', ('"' + (Join-Path $root 'Player.log') + '"'), '--vgmodapi-qualification-root', ('"' + $root + '"'))
     if ($Diagnostics) { $arguments += '--vgmodapi-qualification-diagnostics' }
-    $process = Start-Process -FilePath $exe -WorkingDirectory $game -ArgumentList $arguments -PassThru
+    # The handle is cached inside the helper before any wait, so a genuine exit code is observable.
+    $process = Start-QualificationProcess $exe $game $arguments
     @{ pid=$process.Id; executable=$exe } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $root 'process.json')
-    if (!$process.WaitForExit($TimeoutSeconds * 1000)) { $timedOut = $true }
-    else { $exitCode = $process.ExitCode }
+    $outcome = Wait-QualificationProcess $process $TimeoutSeconds
 }
 finally {
     try {
-        if ($null -ne $process -and !$process.HasExited) { $killed = $true; $process.Kill(); $process.WaitForExit() }
-        Get-Process VanguardGalaxy -ErrorAction SilentlyContinue | Where-Object { $_.Path -ieq $exe } | ForEach-Object { $killed = $true; Stop-Process -InputObject $_; $_.WaitForExit() }
+        if ($null -ne $process -and !$process.HasExited) { $outcome.killed = $true; $process.Kill(); $null = $process.WaitForExit(30000) }
+        if ($null -ne $process -and $null -eq $outcome.exitCode -and $process.HasExited) { $outcome.exitCode = $process.ExitCode }
+        Get-Process VanguardGalaxy -ErrorAction SilentlyContinue | Where-Object { $_.Path -ieq $exe } | ForEach-Object { $outcome.killed = $true; Stop-Process -InputObject $_; $_.WaitForExit() }
     }
     finally {
         # Diagnostic finalization: record exactly how the owned process ended, with no claim beyond
         # it. Receipt validation refuses a terminated run, so an incomplete pilot cannot look green.
-        @{ timedOut=$timedOut; killed=$killed; exitCode=$exitCode; timeoutSeconds=$TimeoutSeconds; endedUtc=[DateTime]::UtcNow.ToString('o') } |
+        @{ timedOut=$outcome.timedOut; killed=$outcome.killed; exitCode=$outcome.exitCode; timeoutSeconds=$TimeoutSeconds; endedUtc=[DateTime]::UtcNow.ToString('o') } |
             ConvertTo-Json | Set-Content -LiteralPath (Join-Path $root 'run-outcome.json')
+        if ($null -ne $process) { $process.Dispose(); $process = $null }
         try {
             Restore-QualificationPrefs $prefsNative $prefsFile $hadPrefs
             [IO.File]::WriteAllText((Join-Path $root 'playerprefs-restored.txt'), 'PASS')
@@ -313,7 +313,7 @@ finally {
         }
     }
 }
-if ($timedOut) { throw 'Owned game process timed out.' }
+if ($outcome.timedOut) { throw 'Owned game process timed out.' }
 $result = Join-Path $root 'result.txt'
 if (Test-Path -LiteralPath $result) { Get-Content -LiteralPath $result }
 if ($null -ne $negativeBefore) {
