@@ -4,7 +4,7 @@ Internal storage primitive only: lifecycle capture, public registration, consume
 
 ## Layout and publication
 
-Use a dedicated owned root. Each canonical slot key maps to its SHA-256 directory; exact `.save` SHA-256 selects an immutable generation directory. Full local slot paths are not stored in manifests. Owner filenames derive from namespace hashes, never provider-supplied paths.
+Use a dedicated owned root. Each canonical slot key maps to the first 32 hex characters of its SHA-256 directory; exact `.save` SHA-256 selects an immutable generation directory. Full local slot paths are not stored in manifests. Owner filenames use the first 32 hex characters of namespace hashes, never provider-supplied paths. Full slot digests and owner identities remain in the manifest: truncated-name collisions fail closed through identity checks or exclusive file creation, not silent reassignment. The constructor rejects roots whose longest generated filename would exceed 259 characters, even on non-Windows hosts. This avoids requiring long-path-aware Windows/Mono operation; choose a shorter non-linked root when refused.
 
 Each generation contains a versioned, digested manifest and opaque owner envelopes. The manifest pins campaign/snapshot identities and the digest of the complete ordered owner generation. Up to 32 owners are accepted, each bounded to the schema envelope maximum (1 MiB+128 bytes). Manifest reads are capped at 16 KiB; text fields are bounded before decoding. Unknown owner envelopes can be retained without installing their providers; interpreting them belongs to the schema/coordinator boundary.
 

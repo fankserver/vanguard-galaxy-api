@@ -30,6 +30,8 @@ internal sealed class GenerationStore
     internal GenerationStore(string root, Action<PublishBoundary>? boundary = null)
     {
         _root = Path.GetFullPath(root);
+        if (Path.Combine(_root, new string('a', 32), new string('b', 64), new string('c', 32) + ".vgo").Length > 259)
+            throw new ArgumentException("Persistence root exceeds the portable Windows path budget.", nameof(root));
         _boundary = boundary;
         RejectLinks(_root);
         Directory.CreateDirectory(_root);
@@ -46,7 +48,7 @@ internal sealed class GenerationStore
     {
         // Reuse identity validation before any untrusted hash becomes a path component.
         _ = new SnapshotAssociation(slot, vanillaHash, vanillaHash, Guid.NewGuid(), Guid.NewGuid());
-        return Path.Combine(_root, Hash(Encoding.UTF8.GetBytes(slot)), vanillaHash);
+        return Path.Combine(_root, Hash(Encoding.UTF8.GetBytes(slot)).Substring(0, 32), vanillaHash);
     }
 
     private static void RejectLinks(string path)
@@ -61,7 +63,7 @@ internal sealed class GenerationStore
         }
     }
 
-    private static string OwnerFile(string owner) => Hash(Encoding.UTF8.GetBytes(owner)) + ".vgo";
+    private static string OwnerFile(string owner) => Hash(Encoding.UTF8.GetBytes(owner)).Substring(0, 32) + ".vgo";
 
     private static Dictionary<string, byte[]> CopyOwners(IDictionary<string, byte[]> owners)
     {

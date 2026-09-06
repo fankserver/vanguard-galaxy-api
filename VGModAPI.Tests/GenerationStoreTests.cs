@@ -115,8 +115,8 @@ public sealed class GenerationStoreTests : IDisposable
         var store = new GenerationStore(_root);
         var first = store.Publish("first", H('a'), Guid.NewGuid(), Owners(1));
         store.Publish("second", H('a'), first.Identity.Campaign, Owners(1));
-        var firstPath = Path.Combine(_root, GenerationStore.Hash(System.Text.Encoding.UTF8.GetBytes("first")), H('a'), "manifest.vgo");
-        var secondPath = Path.Combine(_root, GenerationStore.Hash(System.Text.Encoding.UTF8.GetBytes("second")), H('a'), "manifest.vgo");
+        var firstPath = Path.Combine(_root, GenerationStore.Hash(System.Text.Encoding.UTF8.GetBytes("first")).Substring(0, 32), H('a'), "manifest.vgo");
+        var secondPath = Path.Combine(_root, GenerationStore.Hash(System.Text.Encoding.UTF8.GetBytes("second")).Substring(0, 32), H('a'), "manifest.vgo");
         File.Copy(firstPath, secondPath, true);
         Assert.Throws<InvalidDataException>(() => store.Load("second", H('a')));
     }
@@ -135,7 +135,7 @@ public sealed class GenerationStoreTests : IDisposable
         Assert.Throws<ArgumentException>(() => store.Publish("slot", H('a'), campaign,
             new Dictionary<string, byte[]> { ["../owner"] = new byte[] { 1 } }));
         Assert.Throws<ArgumentException>(() => store.Publish("slot", "bad", campaign, Owners(1)));
-        var parent = Path.Combine(_root, GenerationStore.Hash(System.Text.Encoding.UTF8.GetBytes("slot")));
+        var parent = Path.Combine(_root, GenerationStore.Hash(System.Text.Encoding.UTF8.GetBytes("slot")).Substring(0, 32));
         Directory.CreateDirectory(parent); File.WriteAllText(Path.Combine(parent, H('a')), "retain");
         Assert.Throws<InvalidDataException>(() => store.Load("slot", H('a')));
     }
@@ -149,6 +149,17 @@ public sealed class GenerationStoreTests : IDisposable
         data["test.owner"][0] = 0;
         result.Owners["test.owner"][0] = 0;
         Assert.Equal((byte)'V', store.Load("slot", H('a'))!.Owners["test.owner"][0]);
+    }
+
+    [Fact]
+    public void PortablePathBudgetIsEnforcedBeforeCreatingDirectories()
+    {
+        var tooLong = Path.Combine(_root, new string('x', 100));
+        Assert.Throws<ArgumentException>(() => new GenerationStore(tooLong));
+        Assert.False(Directory.Exists(tooLong));
+        var store = new GenerationStore(_root);
+        store.Publish("slot", H('a'), Guid.NewGuid(), Owners(1));
+        Assert.All(Directory.GetFiles(_root, "*", SearchOption.AllDirectories), path => Assert.True(path.Length <= 259));
     }
 
     [Fact]
