@@ -33,6 +33,7 @@ internal static class BindingCatalog
     };
     internal const string TravelManager = "Behaviour.Managers.TravelManager";
     internal const string SpaceStationInterior = "Behaviour.UI.Spacestation.SpaceStationInterior";
+    internal const string DockingOption = "Behaviour.Spacestation.Docking.DockingOption";
     internal static readonly MethodBinding[] Travel =
     {
         new("route", TravelManager, "SetRouteToPOI", false, "System.Boolean", "Source.Galaxy.MapPointOfInterest"),
@@ -40,6 +41,11 @@ internal static class BindingCatalog
         new("unloadDeparted", TravelManager, "UnloadCurrentScene", false, "System.Void"),
         new("jumpGate", TravelManager, "JumpToSystem", false, "System.Collections.IEnumerator", "Source.Galaxy.POI.JumpGate"),
         new("jumpWormhole", TravelManager, "JumpToWormhole", false, "System.Collections.IEnumerator", "Source.Galaxy.POI.Wormhole"),
+        new("travelNextWaypoint", TravelManager, "TravelToNextWaypoint", false, "System.Void"),
+        new("dockQuick", DockingOption, "DockQuick", false, "System.Void"),
+        new("dock", DockingOption, "Dock", false, "System.Collections.IEnumerator", "System.Boolean"),
+        new("undock", DockingOption, "Undock", false, "System.Collections.IEnumerator"),
+        new("emergencyUndock", DockingOption, "EmergencyUndock", false, "System.Void"),
         new("interiorAwake", SpaceStationInterior, "Awake", false, "System.Void"),
         new("interiorStart", SpaceStationInterior, "Start", false, "System.Void"),
         new("interiorDestroy", SpaceStationInterior, "OnDestroy", false, "System.Void")

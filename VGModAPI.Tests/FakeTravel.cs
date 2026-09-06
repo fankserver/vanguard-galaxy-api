@@ -20,6 +20,7 @@ namespace Source.Player
         public double elapsedTime { get; set; }
         public Source.SpaceShip.SpaceShipData? currentSpaceShip { get; set; }
         public System.Collections.Generic.List<Source.Galaxy.MapPointOfInterest> waypoints = new();
+        public Source.Galaxy.GalaxyMapData? map;
     }
 }
 namespace Source.SpaceShip.Auto
@@ -67,5 +68,46 @@ namespace Behaviour.Managers
         public Source.Galaxy.MapPointOfInterest? targetPoi { get; set; }
         public Source.Galaxy.MapPointOfInterest? localTarget { get; set; }
         public bool usingJumpgate { get; set; }
+        public bool TravelActive() => false;
+        public void TravelToNextWaypoint() { }
+    }
+}
+
+namespace Source.Galaxy
+{
+    public sealed class GalaxyMapData
+    {
+        public static GalaxyMapData? current { get; set; }
+        private readonly System.Collections.Generic.Dictionary<string, SystemMapData> _systems = new();
+        private readonly System.Collections.Generic.Dictionary<string, MapPointOfInterest> _pois = new();
+        public void AddSystem(SystemMapData s) => _systems[s.guid] = s;
+        public void AddPoi(MapPointOfInterest p) => _pois[p.guid] = p;
+        public SystemMapData? GetSystem(string guid) => _systems.TryGetValue(guid, out var s) ? s : null;
+        public MapPointOfInterest? GetPointOfInterest(string guid) => _pois.TryGetValue(guid, out var p) ? p : null;
+    }
+}
+namespace Source.Galaxy.POI
+{
+    // Mirror the game's public fields (not lazy name generation) used to resolve the real
+    // nominal requested destination of a jump.
+    public sealed class JumpGate : Source.Galaxy.MapPointOfInterest
+    {
+        public string? targetSystemGuid;
+        public string? targetPoiGuid;
+    }
+    public sealed class Wormhole : Source.Galaxy.MapPointOfInterest { }
+}
+namespace Behaviour.Unit
+{
+    public sealed class SpaceShip
+    {
+        public Source.SpaceShip.SpaceShipData? spaceShipData { get; set; }
+    }
+}
+namespace Behaviour.Spacestation.Docking
+{
+    public sealed class DockingOption
+    {
+        public Behaviour.Unit.SpaceShip? dockingSpaceship { get; set; }
     }
 }

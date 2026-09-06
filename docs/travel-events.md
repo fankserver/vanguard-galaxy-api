@@ -7,9 +7,10 @@ Issue #12 remains open. Since 0.1.9 the real adapter is implemented and installe
 - Requests are captured on a successful `SetRouteToPOI` (first waypoint is in the departure system, so the initial leg is in-system); direct gate/wormhole hops are requested when their iterator is created.
 - Departure is the observed vacation of the origin (in-system `UnloadCurrentScene` clears the origin POI; jump steps observe the origin changing). Iterator creation is never departure.
 - In-system arrival is observed through the `SpaceshipHasArrived` hierarchy with arrival scopes; jumpgate/wormhole arrival is observed by advancing owned nested iterators (`TravelJumpObserver`) and detecting destination manager readiness, captured before `TravelToNextWaypoint` can start the next leg.
-- `actualFinalRouteCompleted` is emitted only when an arrival closes the final leg with no remaining waypoints and no active gate tunnel.
-- The actual destination (including tutorial rewrites) is preserved on the arrived fact; requested is retained on the leg.
-- Station facts are distinct from travel legs: physical dock is observed from `DockingState` (not the `onDocked` request), and interior readiness is an attributed nonthrowing `Awake`+`Start` with the exact live instance, station, player and session.
+- `actualFinalRouteCompleted` is emitted once, from the verified `TravelToNextWaypoint` boundary (no remaining waypoints and `TravelActive()==false`), attributed to the leg recorded by the last arrival.
+- Departure is only a verified origin->null manager transition (`UnloadCurrentScene` NOOPs are ignored), never a method return.
+- The requested destination is the real nominal target resolved from the `JumpGate` `targetSystemGuid`/`targetPoiGuid` (via the live world) or the wormhole waypoint target; the actual destination (including tutorial rewrites) is preserved on the arrived fact, and requested/origin are retained on the leg.
+- Station facts are distinct from travel legs: physical dock/undocking/leaving are observed from native `DockQuick`/`Dock`/`Undock`/`EmergencyUndock` boundaries (initial loaded-docked state is never a transition), and interior readiness is an attributed nonthrowing `Awake`+`Start` with the exact live instance, station, player and session.
 - Cross-session/replaced/stale evidence and nested base/override arrivals fail closed and idempotently.
 
 ## Coverage matrix
@@ -18,7 +19,7 @@ Issue #12 remains open. Since 0.1.9 the real adapter is implemented and installe
 |---|---|---|---|
 | Same-system routes | Host adapter logic + hook | UNQUALIFIED | Campaign acceptance pending |
 | In-system local POI arrival | `SpaceshipHasArrived` scopes | UNQUALIFIED | Covered by unit tests |
-| Jumpgates | Owned iterator observation | UNQUALIFIED | Cross-hop requested uses departure-location proxy |
+| Jumpgates | Owned iterator observation | UNQUALIFIED | Cross-hop requested resolved from gate target guid |
 | Tutorial exit | Actual preserved | UNQUALIFIED | Host test only |
 | Wormholes | Owned iterator observation | UNQUALIFIED | |
 | Fast-lane chains | Arrival before next leg | UNQUALIFIED | |
@@ -36,7 +37,7 @@ Initial placement is explicitly not travel arrival. A verified departure ends a 
 
 Internal fact `Location` means requested destination for Requested, observed location for Departed/Cancelled, and actual location for placement/arrival. The prepared public `TravelTransition` instead exposes `Origin`, `RequestedDestination` and `ActualLocation`, session/operation identity, mode, sequence and game-time/dwell fields. Placements have no operation ID; first verified placement can occur after an interrupted initially unplaced leg and is not a session-start notification. Stale-session/leg evidence is ignored before validating its unused fields.
 
-The internal event hub enforces main-thread access, isolated subscribers/diagnostics, queued reentrancy, disposal and replacement-session rejection. `CurrentLocation == null` means unknown or in transit, not proof of departure. `RouteCompleted` is reserved for verified final-route completion, not a request or every intermediate POI arrival; native emission remains pending.
+The internal event hub enforces main-thread access, isolated subscribers/diagnostics, queued reentrancy, disposal and replacement-session rejection. `CurrentLocation == null` means unknown or in transit, not proof of departure. `RouteCompleted` is emitted from the verified `TravelToNextWaypoint` boundary and only for final-route completion, not a request or every intermediate POI arrival. A main-thread violation faults the travel group (capability/service disabled); a stale/replaced-session operation error is reported but never disables the replacement.
 
 The `SpaceshipHasArrived` binding set covers in-system arrivals only: jumpgate and wormhole routines never call it and need their own iterator/readiness observations. Binding helpers enumerate concrete method declarations on the abstract POI base and true overrides in the inspected game assembly, base-first to prevent JIT inlining gaps. Inherited implementations reuse their declaration; hidden non-overrides are not treated as overrides. Whole-assembly type-load failure deliberately aborts resolution rather than using a partial type set; installation must catch it and disable the entire travel group, not break plugin startup. Scope coalescing prevents duplicate nested/reentrant callbacks for one manager without dropping independent managers; caught nested failures cannot manufacture success. The adapter must still verify live Unity objects, readiness, player/session/leg identity and native outcomes before publishing.
 

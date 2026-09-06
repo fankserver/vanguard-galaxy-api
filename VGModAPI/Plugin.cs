@@ -228,6 +228,11 @@ public sealed class Plugin : BaseUnityPlugin
                     "unloadDeparted" => typeof(TravelPatches.Departure),
                     "jumpGate" => typeof(TravelPatches.JumpGate),
                     "jumpWormhole" => typeof(TravelPatches.JumpWormhole),
+                    "travelNextWaypoint" => typeof(TravelPatches.RouteBoundary),
+                    "dockQuick" => typeof(TravelPatches.DockQuick),
+                    "dock" => typeof(TravelPatches.Dock),
+                    "undock" => typeof(TravelPatches.Undock),
+                    "emergencyUndock" => typeof(TravelPatches.EmergencyUndock),
                     "interiorAwake" => typeof(TravelPatches.InteriorAwake),
                     "interiorStart" => typeof(TravelPatches.InteriorStart),
                     "interiorDestroy" => typeof(TravelPatches.InteriorDestroy),
@@ -243,12 +248,20 @@ public sealed class Plugin : BaseUnityPlugin
         catch (Exception ex)
         {
             foreach (var method in touched) { try { _harmony!.Unpatch(method, HarmonyPatchType.All, ModApi.PluginId); } catch { } }
-            _travel?.Dispose(); _travel = null;
-            TravelPatches.Adapter = null;
-            ModApi.Travel = null; ModApi.Station = null;
-            _hub!.SetCapability("native-travel", false, "Binding failed: " + ex.Message);
-            Logger.LogError($"Travel capability disabled: {ex}");
+            TeardownTravel("Binding failed: " + ex.Message, ex);
         }
+    }
+
+    private void TeardownTravel(string reason, Exception? ex = null)
+    {
+        if (_travel != null)
+        {
+            _travel.SetSession(null); _travel.Dispose(); _travel = null;
+        }
+        TravelPatches.Adapter = null;
+        ModApi.Travel = null; ModApi.Station = null;
+        _hub?.SetCapability("native-travel", false, reason);
+        Logger.LogError(ex == null ? reason : reason + " " + ex);
     }
 
     private void Update()
@@ -256,6 +269,12 @@ public sealed class Plugin : BaseUnityPlugin
         _adapter?.Poll(); _missions?.Poll();
         if (_travel != null)
         {
+            // A genuine travel adapter fault (main-thread violation) disables the whole group.
+            if (_travel.IsFaulted)
+            {
+                TeardownTravel("Travel observer fault; capability disabled.");
+                return;
+            }
             var session = _hub?.CurrentSession;
             var active = session != null && session.Phase is SessionPhase.PlayerReady or SessionPhase.GameplayInitialized;
             _travel.SetSession(session != null && active ? session.Id : (Guid?)null);
