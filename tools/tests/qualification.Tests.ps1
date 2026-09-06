@@ -133,6 +133,21 @@ try {
     Assert $rejected 'Missing actual transfer receipt accepted.'
     [IO.File]::WriteAllText((Join-Path $probeRoot 'stockpile-coordinated.txt'), 'PASS')
     Assert-PersistenceProbeReceipt $probeRoot $probeProvenance
+    $probeProvenance.contentReferenceProbe = $true
+    $probeProvenance | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $probeRoot 'build-provenance.json')
+    $contentMarker = Join-Path $probeRoot 'content-reference.enabled'
+    [IO.File]::WriteAllText($contentMarker, 'refs-v1')
+    $null = Assert-QualificationInputs $probeRoot
+    [IO.File]::WriteAllText($contentMarker, 'tampered')
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $probeRoot } catch { $rejected = $true }
+    Assert $rejected 'Changed content-reference marker accepted.'
+    [IO.File]::WriteAllText($contentMarker, 'refs-v1')
+    $rejected = $false
+    try { Assert-PersistenceProbeReceipt $probeRoot $probeProvenance } catch { $rejected = $true }
+    Assert $rejected 'Missing content-reference receipt accepted.'
+    [IO.File]::WriteAllText((Join-Path $probeRoot 'content-reference.txt'), 'PASS')
+    Assert-PersistenceProbeReceipt $probeRoot $probeProvenance
     [IO.File]::WriteAllText((Join-Path $probeRoot 'game\BepInEx\config\vgmodapi.cfg'), "[Persistence]`nEnabled = true`nRoot = C:\foreign-root`n")
     $rejected = $false
     try { $null = Assert-QualificationInputs $probeRoot } catch { $rejected = $true }

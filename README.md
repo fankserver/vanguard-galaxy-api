@@ -95,6 +95,8 @@ Require API 0.1.2 and register a `PersistenceProvider` before any session starts
 
 See [identity](docs/persistence-identity.md), [schema](docs/persistence-schema.md) and [storage/recovery](docs/persistence-storage.md) for identical-byte conflicts, durable intents and explicit filesystem-failure limits. This remains experimental. Actual MissionJournal0.3 and Stockpile0.7 coordinated pilots exercise the documented paths; neither these controlled runs nor synthetic provider tests are a universal stability claim.
 
+API 0.1.3 also exposes the pure `ContentSafety` admission/recovery planner. See [persistent content ownership and removal](docs/content-safety.md) before accepting provider-specific item, mission, patron, faction or world references. It does not install content or promise safe uninstall.
+
 ## Source layout
 
 - `VGModAPI.Abstractions`: consumer contract; no Unity or vanilla types.
