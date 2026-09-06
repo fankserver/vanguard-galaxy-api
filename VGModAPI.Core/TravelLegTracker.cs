@@ -58,6 +58,15 @@ internal sealed class TravelLegTracker
         Current = place ?? throw new ArgumentNullException(nameof(place)); _since = now; _placed = true;
         _facts.Add(new Fact(session, null, Kind.InitialPlacement, place));
     }
+    // Adapter-facing readiness placement: initial placement when never placed, otherwise
+    // recovery of an interrupted, previously placed leg. Both require no pending leg.
+    internal void ObservePlacement(Guid session, Place actual, double now, bool ready)
+    {
+        if (_session != session || _pending != null || !ready) return;
+        CheckTime(now);
+        if (!_placed) { PlaceInitially(session, actual, now, true); return; }
+        if (Current == null) RecoverPlacement(session, actual, now, true);
+    }
     internal void RecoverPlacement(Guid session, Place actual, double now, bool ready)
     {
         if (_session != session || !_placed || _pending != null || Current != null || !ready) return;
@@ -83,15 +92,19 @@ internal sealed class TravelLegTracker
         _facts.Add(new Fact(leg.Session, leg.Id, Kind.Departed, Current, dwell));
         Current = null; _since = null;
     }
-    internal void Arrive(Leg leg, Place actual, double now, bool ready)
+    internal bool DepartAllowed(Leg leg) => Owns(leg) && !_departed;
+    internal bool Departed(Leg leg) => Owns(leg) && _departed;
+    internal bool OwnsPending(Leg leg) => Owns(leg);
+    internal bool Arrive(Leg leg, Place actual, double now, bool ready)
     {
-        if (!Owns(leg) || !_departed || !ready) return;
+        if (!Owns(leg) || !_departed || !ready) return false;
         CheckTime(now);
         Current = actual ?? throw new ArgumentNullException(nameof(actual)); _since = now; _placed = true;
         _pending = null;
         // Tutorial redirects and other verified alternatives preserve the requested
         // destination on the leg, but report the actual observed destination here.
         _facts.Add(new Fact(leg.Session, leg.Id, Kind.Arrived, actual));
+        return true;
     }
     internal void Cancel(Leg leg)
     {

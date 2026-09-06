@@ -1,6 +1,32 @@
-# Travel observation — implementation in progress
+# Travel observation
 
-Issue #12 remains open. The payload contracts, internal reducers, dispatch hub and binding helpers are preparatory only: no discoverable travel service instance, installed native hooks, docking/interior signal or new runtime capability is shipped by this step. Host tests are not native travel qualification.
+Issue #12 remains open. Since 0.1.9 the real adapter is implemented and installed: `TravelNativeAdapter` reduces source-grounded facts, `TravelPatches` installs native hooks, and `ModApi.Travel`/`ModApi.Station` are exposed only when the group binds. This supersedes the earlier preparatory-only status, but host tests remain synthetic; native runtime qualification and consumer reconciliation are still merge gates for closing #12.
+
+## Adapter contract
+
+- Requests are captured on a successful `SetRouteToPOI` (first waypoint is in the departure system, so the initial leg is in-system); direct gate/wormhole hops are requested when their iterator is created.
+- Departure is the observed vacation of the origin (in-system `UnloadCurrentScene` clears the origin POI; jump steps observe the origin changing). Iterator creation is never departure.
+- In-system arrival is observed through the `SpaceshipHasArrived` hierarchy with arrival scopes; jumpgate/wormhole arrival is observed by advancing owned nested iterators (`TravelJumpObserver`) and detecting destination manager readiness, captured before `TravelToNextWaypoint` can start the next leg.
+- `actualFinalRouteCompleted` is emitted only when an arrival closes the final leg with no remaining waypoints and no active gate tunnel.
+- The actual destination (including tutorial rewrites) is preserved on the arrived fact; requested is retained on the leg.
+- Station facts are distinct from travel legs: physical dock is observed from `DockingState` (not the `onDocked` request), and interior readiness is an attributed nonthrowing `Awake`+`Start` with the exact live instance, station, player and session.
+- Cross-session/replaced/stale evidence and nested base/override arrivals fail closed and idempotently.
+
+## Coverage matrix
+
+| Path | Implemented | Runtime-qualified | Notes |
+|---|---|---|---|
+| Same-system routes | Host adapter logic + hook | UNQUALIFIED | Campaign acceptance pending |
+| In-system local POI arrival | `SpaceshipHasArrived` scopes | UNQUALIFIED | Covered by unit tests |
+| Jumpgates | Owned iterator observation | UNQUALIFIED | Cross-hop requested uses departure-location proxy |
+| Tutorial exit | Actual preserved | UNQUALIFIED | Host test only |
+| Wormholes | Owned iterator observation | UNQUALIFIED | |
+| Fast-lane chains | Arrival before next leg | UNQUALIFIED | |
+| Initial load placement | Ready placement observed | UNQUALIFIED | Actively qualified by owner |
+| Dock/undock vs interior ready | Distinct stations | UNQUALIFIED | No universal ordering promise |
+| Direct field mutation/teleport/cheat | Excluded | — | Not treated as verified travel |
+
+TravelJournal remains archived and must not be edited, rebuilt, reactivated, migrated or bridged. The two active integration targets are Anima's system-visit recorder and Echo's final-route arrival-snap; Echo's distinct ETA-sync remains separate. Native API hook qualification and both consumers remain merge gates for closing #12, not gates satisfied by this reducer.
 
 ## Evidence contract
 

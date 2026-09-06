@@ -109,10 +109,37 @@ public sealed class InstalledBindingTests
     }
 
     [Fact]
+    public void NativeTravelAndStationMembersHaveInspectedShapes()
+    {
+        using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
+        var module = assembly.MainModule;
+        void Field(string owner, string name, string type, bool isStatic = false)
+        {
+            var field = Assert.Single(module.GetType(owner).Fields, candidate => candidate.Name == name);
+            Assert.Equal(type, field.FieldType.FullName); Assert.Equal(isStatic, field.IsStatic);
+        }
+        void Property(string owner, string name, string type)
+        {
+            var property = Assert.Single(module.GetType(owner).Properties, candidate => candidate.Name == name);
+            Assert.Equal(type, property.PropertyType.FullName); Assert.NotNull(property.GetMethod); Assert.False(property.GetMethod.IsStatic);
+            Assert.Empty(property.Parameters);
+        }
+        Property("Source.Player.GamePlayer", "currentSpaceShip", "Source.SpaceShip.SpaceShipData");
+        Field("Source.Player.GamePlayer", "waypoints", "System.Collections.Generic.List`1<Source.Galaxy.MapPointOfInterest>");
+        Field("Source.SpaceShip.SpaceShipData", "dockingState", "System.Nullable`1<Source.SpaceShip.Auto.DockingState>");
+        Property("Behaviour.Managers.TravelManager", "usingJumpgate", "System.Boolean");
+        Field("Behaviour.UI.Spacestation.SpaceStationInterior", "instance", "Behaviour.UI.Spacestation.SpaceStationInterior", true);
+        Property("Behaviour.UI.Spacestation.SpaceStationInterior", "spacestation", "Source.Galaxy.POI.SpaceStation");
+        // Group-install seam: whole-assembly resolution must not end up with a partial type set.
+        Assert.NotNull(module.GetType("Behaviour.Util.Singleton`1"));
+        Assert.NotNull(module.GetType("Source.SpaceShip.Auto.DockingState"));
+    }
+
+    [Fact]
     public void EveryPatchHasAnExactNonStubMethodBody()
     {
         using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
-        foreach (var binding in BindingCatalog.Session.Concat(BindingCatalog.Saves).Concat(BindingCatalog.Missions).Concat(BindingCatalog.MissionSnapshots))
+        foreach (var binding in BindingCatalog.Session.Concat(BindingCatalog.Saves).Concat(BindingCatalog.Missions).Concat(BindingCatalog.MissionSnapshots).Concat(BindingCatalog.Travel))
         {
             var type = assembly.MainModule.GetType(binding.Type);
             Assert.True(type != null, "Missing type: " + binding.Type);

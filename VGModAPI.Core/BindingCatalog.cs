@@ -31,6 +31,19 @@ internal static class BindingCatalog
         new("gameplay", "GameplayManager", "Start", false, "System.Void"),
         new("load", File, "LoadSaveGame", false, "System.Void")
     };
+    internal const string TravelManager = "Behaviour.Managers.TravelManager";
+    internal const string SpaceStationInterior = "Behaviour.UI.Spacestation.SpaceStationInterior";
+    internal static readonly MethodBinding[] Travel =
+    {
+        new("route", TravelManager, "SetRouteToPOI", false, "System.Boolean", "Source.Galaxy.MapPointOfInterest"),
+        new("cancel", TravelManager, "CancelTravel", false, "System.Boolean", "System.Nullable`1<UnityEngine.Vector2>"),
+        new("unloadDeparted", TravelManager, "UnloadCurrentScene", false, "System.Void"),
+        new("jumpGate", TravelManager, "JumpToSystem", false, "System.Collections.IEnumerator", "Source.Galaxy.POI.JumpGate"),
+        new("jumpWormhole", TravelManager, "JumpToWormhole", false, "System.Collections.IEnumerator", "Source.Galaxy.POI.Wormhole"),
+        new("interiorAwake", SpaceStationInterior, "Awake", false, "System.Void"),
+        new("interiorStart", SpaceStationInterior, "Start", false, "System.Void"),
+        new("interiorDestroy", SpaceStationInterior, "OnDestroy", false, "System.Void")
+    };
     internal const string Mission = "Source.MissionSystem.Mission";
     internal static readonly MethodBinding[] Missions =
     {
