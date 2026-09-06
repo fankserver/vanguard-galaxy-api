@@ -16,6 +16,8 @@ public sealed partial class Plugin
 {
     private Assembly? _stockpileAssembly;
     private static bool _pauseStockpileDriver;
+    private static int _stockpileDriverCalls, _stockpileAllowedCalls;
+    private static float _stockpileDriverDelta;
     private bool StockpileSelected => File.Exists(Path.Combine(_root!, "stockpile.enabled"));
     private string StockpilePath(string name) => Path.Combine(_saveRoot!, name + ".vgstockpile-transfers.json");
     private BaseUnityPlugin Stockpile => Chainloader.PluginInfos["vgstockpile"].Instance;
@@ -29,7 +31,14 @@ public sealed partial class Plugin
         harmony.Patch(AccessTools.Method(_stockpileAssembly.GetType("VGStockpile.Transfers.Engine.TransferEngineDriver", true), "Update"),
             prefix: new HarmonyMethod(typeof(Plugin), nameof(AllowStockpileDriver)));
     }
-    private static bool AllowStockpileDriver() => !_pauseStockpileDriver;
+    private static bool AllowStockpileDriver()
+    {
+        _stockpileDriverCalls++;
+        if (_pauseStockpileDriver) return false;
+        _stockpileAllowedCalls++;
+        _stockpileDriverDelta = Time.deltaTime;
+        return true;
+    }
     private static object? SpGet(object target, string name)
     {
         var type = target as Type ?? target.GetType();
@@ -140,7 +149,14 @@ public sealed partial class Plugin
         var driver = (Behaviour)SpGet(Stockpile, "_driver")!;
         Logger.LogInfo($"Stockpile driver probe: paused={SpGet(_manager, "isPaused")}, pauseCount={SpGet(_manager, "pauseCount")}, enabled={driver.enabled}, active={driver.gameObject.activeInHierarchy}, timeScale={Time.timeScale}, remaining={remaining}");
         _pauseStockpileDriver = false;
-        foreach (var frame in Wait(() => !((IEnumerable)SpGet(StockpileEngine, "Pending")!).Cast<object>().Any(r => (string)SpGet(r, "Id")! == requestId), "Stockpile driver delivery")) yield return frame;
+        try
+        {
+            foreach (var frame in Wait(() => !((IEnumerable)SpGet(StockpileEngine, "Pending")!).Cast<object>().Any(r => (string)SpGet(r, "Id")! == requestId), "Stockpile driver delivery")) yield return frame;
+        }
+        finally
+        {
+            Logger.LogInfo($"Stockpile driver counters: calls={_stockpileDriverCalls}, allowed={_stockpileAllowedCalls}, delta={_stockpileDriverDelta}, sameEngine={ReferenceEquals(SpGet(driver, "_engine"), StockpileEngine)}, canOperate={SpGet(StockpileEngine, "CanOperate")}, driverType={driver.GetType().FullName}");
+        }
         _pauseStockpileDriver = true;
         Require(SpQuantity(destId, item) == destCount + 1 && SpQuantity(sourceId, item) == sourceCount - 1 && SpCredits == creditsAfter, "Delivery inventory/credits mismatch.");
         Passed("Stockpile real reservation/cancellation/fees, save/reload, protected-write retry, and driver delivery");
