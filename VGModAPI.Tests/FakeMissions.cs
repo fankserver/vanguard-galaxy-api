@@ -7,9 +7,7 @@ namespace Source.MissionSystem
         public string name = "Test mission";
         public string? storyId;
         public bool failed;
-        public bool Claimable;
         public List<MissionStep> steps { get; } = new();
-        public bool CanClaimRewards() => Claimable;
     }
     public class MissionStep { public List<object> objectives { get; } = new(); }
 }

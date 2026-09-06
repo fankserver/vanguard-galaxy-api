@@ -79,7 +79,7 @@ internal sealed class MissionAdapter : IDisposable
     {
         if (!Current || (player != null && !ReferenceEquals(player, _player))) return null;
         if (kind == "archive" && string.IsNullOrEmpty(definition)) return null;
-        if (kind == "archive") mission = _calls.LastOrDefault(call => call.Kind == "remove" && call.CompletedRemoval && call.Definition == definition)?.Mission;
+        if (kind == "archive") mission = _calls.LastOrDefault(call => call.Kind == "remove" && call.BeforeActive && call.CompletedRemoval && call.Definition == definition)?.Mission;
         if (mission == null || !_bindings.IsMission(mission)) return null;
         bool active = _bindings.Contains(_player!, mission);
         foreach (var pending in _calls.Where(call => call.Kind == "accept" && ReferenceEquals(call.Mission, mission)))

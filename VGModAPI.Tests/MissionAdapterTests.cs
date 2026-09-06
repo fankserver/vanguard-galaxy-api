@@ -26,6 +26,15 @@ public sealed class MissionAdapterTests : IDisposable
     public void Dispose() { _adapter.Dispose(); _hub.Dispose(); GamePlayer.current = null; }
 
     [Fact]
+    public void RestorationPrecedesLaterPlayerReadySubscribers()
+    {
+        var order = new List<string>(); _player.missions.Add(new Mission());
+        using var missions = _adapter.Events.Subscribe("ordering", _ => order.Add("restored"));
+        using var lifecycle = _hub.Subscribe("later", e => { if (e.Kind == LifecycleEventKind.PlayerReady) order.Add("player-ready"); });
+        var id = _hub.Begin(SessionOrigin.SaveLoad, "ordering.save"); _hub.PlayerReady(id);
+        Assert.Equal(new[] { "restored", "player-ready" }, order);
+    }
+    [Fact]
     public void NativeAccessIsExactSnapshotAndDispatchScoped()
     {
         var mission = new Mission(); bool resolved = false, rejected = false; object? native = null;
@@ -70,13 +79,20 @@ public sealed class MissionAdapterTests : IDisposable
         var call = _adapter.Begin("accept", _player, mission)!;
         _player.missions.Add(mission); _adapter.End(call);
     }
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void RewardRemovalAndNestedArchiveAreVerified(bool force)
+    [Fact]
+    public void NonActiveCompletedRemovalDoesNotInventArchiveIdentity()
     {
-        var mission = new Mission { storyId = "repeat", Claimable = !force }; Accept(mission);
-        var claim = _adapter.Begin("claim", null, mission, force)!;
+        var mission = new Mission { storyId = "not-active" };
+        var removal = _adapter.Begin("remove", _player, mission, true)!;
+        Assert.Null(_adapter.Begin("archive", _player, null, definition: mission.storyId));
+        _player.missionsArchive.Add(mission.storyId); _adapter.End(removal);
+        Assert.Empty(_events);
+    }
+    [Fact]
+    public void RewardRemovalAndNestedArchiveAreVerified()
+    {
+        var mission = new Mission { storyId = "repeat" }; Accept(mission);
+        var claim = _adapter.Begin("claim", null, mission)!;
         var removal = _adapter.Begin("remove", _player, mission, true)!;
         _player.missions.Remove(mission);
         var archive = _adapter.Begin("archive", _player, null, definition: "repeat")!;
