@@ -34,9 +34,15 @@ public sealed partial class Plugin
     {
         var type = target as Type ?? target.GetType();
         var instance = target is Type ? null : target;
-        var field = AccessTools.Field(type, name);
-        if (field != null) return field.GetValue(instance);
-        return (AccessTools.Property(type, name) ?? throw new MissingMemberException(type.FullName, name)).GetValue(instance);
+        for (var current = type; current != null; current = current.BaseType)
+        {
+            const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly;
+            var field = current.GetField(name, flags);
+            if (field != null) return field.GetValue(instance);
+            var property = current.GetProperty(name, flags);
+            if (property != null) return property.GetValue(instance);
+        }
+        throw new MissingMemberException(type.FullName, name);
     }
     private static object SpCall(object target, string method, params object[] args)
         => AccessTools.Method(target.GetType(), method).Invoke(target, args)!;
@@ -64,6 +70,14 @@ public sealed partial class Plugin
     }
     private long SpCredits => (long)SpGet(SpGet(_player, "current")!, "credits")!;
 
+    private IEnumerable<object?> SpLoad(string name)
+    {
+        var previous = _api!.CurrentSession?.Id;
+        Load(name);
+        foreach (var frame in Wait(() => _api.CurrentSession?.Phase == SessionPhase.GameplayInitialized
+            && _api.CurrentSession.Id != previous, "Stockpile load " + name)) yield return frame;
+    }
+
     private IEnumerable<object?> CheckStockpilePilot()
     {
         if (!StockpileSelected) yield break;
@@ -87,6 +101,7 @@ public sealed partial class Plugin
         Require((bool)SpGet(result, "IsSuccess")!, "Controlled transfer request refused.");
         var request = SpGet(result, "Created")!;
         var fee = (int)SpGet(request, "FeeCredits")!;
+        Require(fee > 0, "Transfer fee must be positive for debit qualification.");
         Require(SpQuantity(sourceId, item) == sourceCount - 1 && SpCredits == credits - fee, "Reservation/debit mismatch.");
         Require((bool)SpCall(StockpileEngine, "CancelTransfer", SpGet(request, "Id")!), "Cancellation refused.");
         Require(SpQuantity(sourceId, item) == sourceCount && SpCredits == credits - fee, "Cancellation changed refund/fee semantics.");
@@ -97,8 +112,7 @@ public sealed partial class Plugin
         var creditsAfter = SpCredits;
         Save("qa-stockpile-pending", LifecycleEventKind.SaveSucceeded);
         Require(SpJson(SpRead(StockpilePath("qa-stockpile-pending"))) == SpJson(SpCall(StockpileEngine, "Snapshot")), "Saved transfer snapshot mismatch.");
-        Load("qa-stockpile-pending");
-        foreach (var frame in Wait(() => _api!.CurrentSession?.Phase == SessionPhase.GameplayInitialized, "Stockpile reload")) yield return frame;
+        foreach (var frame in SpLoad("qa-stockpile-pending")) yield return frame;
         foreach (var frame in Settle()) yield return frame;
         CheckStockpileLoad("qa-stockpile-pending");
         CheckJournalLoad("qa-stockpile-pending");
@@ -120,32 +134,40 @@ public sealed partial class Plugin
         Require(File.Exists(StockpilePath("qa-stockpile-retry")), "Retry snapshot missing.");
         // Bring only the controlled queue near completion, then exercise the actual Unity driver.
         SpCall(StockpileEngine, "Tick", Math.Max(0f, (float)SpGet(request, "RemainingSeconds")! - 0.01f));
+        var nearCompletion = ((IEnumerable)SpGet(StockpileEngine, "Pending")!).Cast<object>().Single(r => (string)SpGet(r, "Id")! == requestId);
+        var remaining = (float)SpGet(nearCompletion, "RemainingSeconds")!;
+        Require(remaining > 0 && remaining <= 0.011f, "Manual near-completion tick was not applied.");
+        var driver = (Behaviour)SpGet(Stockpile, "_driver")!;
+        Logger.LogInfo($"Stockpile driver probe: paused={SpGet(_manager, "isPaused")}, pauseCount={SpGet(_manager, "pauseCount")}, enabled={driver.enabled}, active={driver.gameObject.activeInHierarchy}, timeScale={Time.timeScale}, remaining={remaining}");
         _pauseStockpileDriver = false;
         foreach (var frame in Wait(() => !((IEnumerable)SpGet(StockpileEngine, "Pending")!).Cast<object>().Any(r => (string)SpGet(r, "Id")! == requestId), "Stockpile driver delivery")) yield return frame;
         _pauseStockpileDriver = true;
         Require(SpQuantity(destId, item) == destCount + 1 && SpQuantity(sourceId, item) == sourceCount - 1 && SpCredits == creditsAfter, "Delivery inventory/credits mismatch.");
         Passed("Stockpile real reservation/cancellation/fees, save/reload, protected-write retry, and driver delivery");
-        Load("qa-stockpile-protected");
-        foreach (var frame in Wait(() => _api!.CurrentSession?.Phase == SessionPhase.GameplayInitialized, "Stockpile protected restore")) yield return frame;
+        foreach (var frame in SpLoad("qa-stockpile-protected")) yield return frame;
         result = SpCall(StockpileEngine, "RequestTransfer", sourceId, destId, manifest, 0);
         Require(SpGet(result, "Error")!.ToString() == "PersistenceUnavailable" && File.ReadAllText(protectedPath) == future, "Protected restore did not disable transfers.");
         File.WriteAllText(protectedPath, "{ corrupt");
-        Load("qa-stockpile-protected");
-        foreach (var frame in Wait(() => _api!.CurrentSession?.Phase == SessionPhase.GameplayInitialized, "Stockpile corrupt restore")) yield return frame;
+        foreach (var frame in SpLoad("qa-stockpile-protected")) yield return frame;
         result = SpCall(StockpileEngine, "RequestTransfer", sourceId, destId, manifest, 0);
         Require(SpGet(result, "Error")!.ToString() == "PersistenceUnavailable" && File.ReadAllText(protectedPath) == "{ corrupt", "Corrupt restore did not disable transfers.");
-        Load("fixture-b");
-        foreach (var frame in Wait(() => _api!.CurrentSession?.Phase == SessionPhase.GameplayInitialized, "Stockpile slot replacement")) yield return frame;
+        foreach (var frame in SpLoad("fixture-b")) yield return frame;
         CheckStockpileLoad("fixture-b"); CheckJournalLoad("fixture-b");
         Require(!((IEnumerable)SpGet(StockpileEngine, "Pending")!).Cast<object>().Any(r => (string)SpGet(r, "Id")! == requestId), "Old job leaked into replacement slot.");
+        foreach (var frame in Wait(() => (bool)SpGet(Stockpile, "IconAttached")!, "replacement Stockpile HUD")) yield return frame;
         var engine = StockpileEngine;
+        var teardownCredits = SpCredits;
+        var teardownSource = SpQuantity(sourceId, item);
         var owned = new[] { "_driver", "_icon", "_window", "_refineryIcon", "_refineryWindow" }
             .Select(name => SpGet(Stockpile, name) as UnityEngine.Object).ToArray();
+        Require(owned.All(value => value), "Expected Stockpile driver/UI absent before teardown.");
         UnityEngine.Object.Destroy(Stockpile);
         yield return null; yield return null;
         Require(owned.All(value => !value), "Stockpile driver/UI survived teardown.");
         Require(!Harmony.GetAllPatchedMethods().Any(m => Harmony.GetPatchInfo(m)?.Owners.Contains("vgstockpile") == true), "Stockpile patches survived teardown.");
-        Require(!((IEnumerable)SpCall(engine, "Tick", float.MaxValue)).Cast<object>().Any(), "Disposed engine mutated.");
+        var disposedRequest = SpCall(engine, "RequestTransfer", sourceId, destId, manifest, 0);
+        Require(!(bool)SpGet(disposedRequest, "IsSuccess")! && SpGet(disposedRequest, "Error")!.ToString() == "SessionUnavailable"
+            && SpCredits == teardownCredits && SpQuantity(sourceId, item) == teardownSource, "Disposed engine accepted a mutation or changed inventory/credits.");
         Save("qa-stockpile-disposed", LifecycleEventKind.SaveSucceeded);
         Require(!File.Exists(StockpilePath("qa-stockpile-disposed")), "Disposed Stockpile persisted.");
         Passed("Stockpile protected restore, slot replacement, and teardown; journal coexistence retained");

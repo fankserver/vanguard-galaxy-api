@@ -120,7 +120,8 @@ public sealed class Plugin : BaseUnityPlugin
                     Require(!Harmony.GetAllPatchedMethods().Any(m => Harmony.GetPatchInfo(m)?.Owners.Contains("vgstockpile") == true), "Unavailable Stockpile installed patches.");
                 }
             }
-            Finish(true, _scenario + "; selected consumer refusal checked."
+            var consumerSelected = File.Exists(Path.Combine(_root!, "stockpile.enabled")) || File.Exists(Path.Combine(_root!, "missionjournal.enabled"));
+            Finish(true, _scenario + (consumerSelected ? "; selected consumer refusal checked." : "; no consumer selected.")
                 + " No alternate game binary qualification claimed.");
         }
         catch (Exception ex) { Finish(false, ex.ToString()); }
