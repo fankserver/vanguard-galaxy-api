@@ -135,8 +135,8 @@ internal sealed class TravelNativeBindings
     private static MethodInfo Method(Type type, string name, string returnType, params string[] parameterTypes)
     {
         var matches = type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly)
-            .Where(m => m.Name == name && !m.IsStatic && m.ReturnType.FullName == returnType
-                && m.GetParameters().Select(p => p.ParameterType.FullName).SequenceEqual(parameterTypes));
+            .Where(m => m.Name == name && !m.IsStatic && NativeTypeName.Matches(m.ReturnType, returnType)
+                && m.GetParameters().Select(p => NativeTypeName.Canonical(p.ParameterType)).SequenceEqual(parameterTypes, StringComparer.Ordinal));
         var result = matches.SingleOrDefault();
         if (result == null) throw new MissingMethodException(type.FullName, name);
         return result;
@@ -153,13 +153,13 @@ internal sealed class TravelNativeBindings
     private static FieldInfo Field(Type type, string name, string expected, bool isStatic = false)
     {
         var field = type.GetField(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly);
-        if (field == null || field.FieldType.FullName != expected || field.IsStatic != isStatic) throw new MissingFieldException(type.FullName, name);
+        if (field == null || !NativeTypeName.Matches(field.FieldType, expected) || field.IsStatic != isStatic) throw new MissingFieldException(type.FullName, name);
         return field;
     }
     private static PropertyInfo Property(Type type, string name, string expected)
     {
         var property = type.GetProperty(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly);
-        if (property == null || property.PropertyType.FullName != expected || property.GetMethod == null || property.GetMethod.IsStatic || property.GetIndexParameters().Length != 0)
+        if (property == null || !NativeTypeName.Matches(property.PropertyType, expected) || property.GetMethod == null || property.GetMethod.IsStatic || property.GetIndexParameters().Length != 0)
             throw new MissingMemberException(type.FullName, name);
         return property;
     }

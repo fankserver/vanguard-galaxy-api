@@ -98,6 +98,38 @@ The reviewed follow-up `qa-11` repeated all 17 scenarios successfully after stre
 
 All four runs independently passed the 37 original-file hash/direct-file-set checks and byte-identical PlayerPrefs restoration. Consumer absence/incompatibility and coexistence still require their own pilot tests. The startup-negative probes do not qualify an alternate game binary. RuntimeQualified remains false.
 
+### Native travel binding resolution defect (qa-77)
+
+`qa-77` failed BEFORE the travel/station phase could run. The sandbox log records
+`MissingMethodException: Behaviour.Managers.TravelManager.CancelTravel` raised by the binding
+resolver during travel installation, so the whole native travel group was torn down, both public
+travel/station services stayed absent, and the phase then failed closed with its receipt, event
+trace and fault file preserved (that failing-closed behaviour is the intended outcome, not a pass).
+Original-file preservation was independently verified: 37 hashes, complete direct file sets and
+byte-identical PlayerPrefs restoration, and the owned process slot was released.
+
+Root cause: the binding catalog declares native parameter and return types in the metadata spelling
+used by the inspected assembly and by the installed-metadata tests
+(``System.Nullable`1<UnityEngine.Vector2>``), while the resolver compared reflection's
+`Type.FullName`, which spells a CONSTRUCTED generic with an assembly-qualified argument
+(``System.Nullable`1[[UnityEngine.Vector2, UnityEngine.CoreModule, Version=…]]``). The two spellings
+can never be equal, so that one binding was unresolvable at runtime. Every installed-metadata test
+reads the same assembly through Mono.Cecil, whose spelling already matches the catalog, so metadata
+checks could not observe the defect.
+
+Fix and protection: one canonical type-name function normalises SHAPE only — constructed generics,
+array rank, by-ref and pointer decoration, recursively, without assembly qualification — and the
+reflection binders compare against it. Namespace, arity, argument types, static-ness and return type
+stay exactly as declared, so overload discrimination is unchanged. The catalogs were audited: this
+was the only constructed generic; no arrays, by-refs, pointers or nested types are declared. A host
+regression now resolves the WHOLE travel catalog through the real reflection path against
+source-faithful doubles (including a `UnityEngine.Vector2` double so the assembly-qualified argument
+is reproduced), asserts the raw `FullName` still differs, rejects malformed/wrong generic arguments
+and wrong owner/name/arity/return/static shapes, and requires every catalog name to be canonical.
+Reverting the resolver reproduces the exact qa-77 `MissingMethodException`. This is host evidence
+about name matching only: it is not native qualification, and the installed-metadata assertions
+remain metadata evidence. Raw run logs, fixtures and sandbox paths stay private and local.
+
 ## In-game acceptance checklist — controlled coverage through qa38
 
 Arrange owner approval before deployment. Use copied/disposable saves and the optional compiled `LifecycleObserver` example to record events. Record game/Unity/BepInEx versions, assembly hash, enabled mods, and relevant logs for each run.

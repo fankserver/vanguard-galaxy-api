@@ -44,6 +44,9 @@ namespace Behaviour.UI.Spacestation
     {
         public static SpaceStationInterior? instance;
         public Source.Galaxy.POI.SpaceStation? spacestation { get; set; }
+        private void Awake() { }
+        private void Start() { }
+        private void OnDestroy() { }
     }
 }
 namespace Behaviour.Util
@@ -71,7 +74,30 @@ namespace Behaviour.Managers
         public bool isWarping { get; set; }
         public bool TravelActive() => false;
         public void TravelToNextWaypoint() { }
+        // Source-faithful shapes for the whole travel binding catalog, so a real reflection
+        // resolution can be exercised on this assembly. Bodies are irrelevant: only signatures are.
+        public bool SetRouteToPOI(Source.Galaxy.MapPointOfInterest poi) => false;
+        public bool CancelTravel(UnityEngine.Vector2? moveToPosition = null) => false;
+        public void UnloadCurrentScene() { }
+        private System.Collections.IEnumerator JumpToSystem(Source.Galaxy.POI.JumpGate gate) { yield break; }
+        private System.Collections.IEnumerator JumpToWormhole(Source.Galaxy.POI.Wormhole wormhole) { yield break; }
+        public System.Collections.IEnumerator TravelInSystem() { yield break; }
     }
+}
+namespace UnityEngine
+{
+    // The native parameter type of TravelManager.CancelTravel is Nullable<Vector2>; reflection
+    // spells that constructed generic with an assembly-qualified argument, which is exactly what the
+    // canonical binding comparison has to normalise.
+    public struct Vector2
+    {
+        public float x, y;
+    }
+}
+// Native global-namespace type.
+public sealed class SpacestationExteriorManager
+{
+    public void CheckForDocking() { }
 }
 
 namespace Source.Galaxy
@@ -110,5 +136,9 @@ namespace Behaviour.Spacestation.Docking
     public sealed class DockingOption
     {
         public Behaviour.Unit.SpaceShip? dockingSpaceship { get; set; }
+        public void AssignSpaceshipForDocking(Behaviour.Unit.SpaceShip spaceShip, bool skipCoroutine = false) { }
+        private System.Collections.IEnumerator Dock(bool skipCoroutine = false) { yield break; }
+        private System.Collections.IEnumerator Undock() { yield break; }
+        private void EmergencyUndock() { }
     }
 }
