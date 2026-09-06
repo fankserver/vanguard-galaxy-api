@@ -147,14 +147,20 @@ internal static class TravelCrossSystemReceipt
         internal string ManagerType { get; }
         internal string LocationKey { get; }
         internal bool ManagerReady { get; }
-        internal NativeSnapshot(bool jumpIteratorRunning, bool travelActive, string managerType, string locationKey, bool managerReady)
+        /// <summary>
+        /// The live native travel manager and player were still the exact instances this case
+        /// captured at its own fixture-load boundary, in the same session. A fact observed while
+        /// this is false belongs to a replaced or destroyed world and is not this case's evidence.
+        /// </summary>
+        internal bool OwnedByCase { get; }
+        internal NativeSnapshot(bool jumpIteratorRunning, bool travelActive, string managerType, string locationKey, bool managerReady, bool ownedByCase)
         {
             JumpIteratorRunning = jumpIteratorRunning; TravelActive = travelActive;
-            ManagerType = managerType; LocationKey = locationKey; ManagerReady = managerReady;
+            ManagerType = managerType; LocationKey = locationKey; ManagerReady = managerReady; OwnedByCase = ownedByCase;
         }
         internal string ToDetail() => "jumpIterator=" + JumpIteratorRunning + ",travelActive=" + TravelActive
             + ",manager=" + (string.IsNullOrEmpty(ManagerType) ? "<none>" : ManagerType) + ",ready=" + ManagerReady
-            + ",location=" + LocationKey;
+            + ",owned=" + OwnedByCase + ",location=" + LocationKey;
     }
 
     // --- opt-in fixture preparation rules -------------------------------------------------
@@ -304,6 +310,9 @@ internal static class TravelCrossSystemReceipt
                 continue;
             }
             if (fact.Kind != TravelTransitionKind.Departed && fact.Kind != TravelTransitionKind.Arrived) continue;
+            if (!snapshot.OwnedByCase)
+                return "Cross-system " + fact.Kind + " was observed while the live native travel manager/player was not the instance this case captured ("
+                    + snapshot.ToDetail() + ").";
             if (!snapshot.JumpIteratorRunning || !snapshot.TravelActive)
                 return "Cross-system " + fact.Kind + " was not observed from the running native jump iterator ("
                     + snapshot.ToDetail() + ").";

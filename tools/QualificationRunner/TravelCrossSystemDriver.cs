@@ -33,7 +33,10 @@ public sealed partial class Plugin
         private readonly MethodInfo _tryInitiateTravel, _canWeTravel, _travelActive, _localPoiReady, _shortestRoute;
         private readonly MethodInfo _getTargetPoi, _connectedWormholes, _startUndocking, _exitSpacestation, _getDockingOption;
         private readonly MethodInfo _placeWormhole, _sectorIsUnlocked;
-        private readonly object _travel;
+        // Captured ONLY at this case's own fresh fixture load and readiness boundary. It is never
+        // taken before a load (the load destroys the previous manager) and it is never re-bound to
+        // a replacement: a destroyed or replaced instance is a recorded failure, not a new owner.
+        private NativeCaseOwner? _owner;
         private Guid _session;
         private string _systemId = "";
         private string _startPoiId = "";
@@ -75,9 +78,22 @@ public sealed partial class Plugin
             _placeWormhole = BindStatic(_wormholeSpawnerType, "PlaceWormhole", _wormholeType,
                 _systemType, typeof(bool), typeof(List<>).MakeGenericType(_wormholeType));
             _sectorIsUnlocked = TravelStationDriver.Bind(Named("Source.Galaxy.SectorMapData"), "IsUnlocked", typeof(bool));
-            var travel = SpGet(_travelType, "Instance");
-            Require(TravelStationDriver.Alive(travel), "Native TravelManager singleton is not live.");
-            _travel = travel!;
+            // Deliberately no manager instance here: the driver is constructed before the first
+            // case loads its fixture, and that load destroys whatever manager exists now.
+        }
+
+        // The captured owner, proven to still be the live current manager/player of this case's
+        // session before every native drive and every native read. A wrong or destroyed instance
+        // fails here with identity/liveness/session diagnostics instead of reaching native code
+        // that would start a coroutine on a destroyed behaviour.
+        private object NativeTravel(string action)
+        {
+            var owner = _owner;
+            Require(owner != null, "Refusing " + action + ": this case captured no native owner at its fixture-load boundary.");
+            var failure = owner!.CheckCurrent(action, _p._api!.CurrentSession?.Id,
+                SpGet(_travelType, "Instance"), SpGet(_p._player, "current"), TravelStationDriver.Alive);
+            Require(failure == null, failure!);
+            return owner.TravelManager;
         }
 
         private List<TravelTransition> Travel => _p.PendingCrossSystemTravel!;
@@ -136,15 +152,16 @@ public sealed partial class Plugin
             bool approach = !ReferenceEquals(SpGet(Player, "currentPointOfInterest"), source);
             int offset = Travel.Count;
             var routes = new List<IReadOnlyList<TravelCrossSystemReceipt.ExpectedLeg>>();
-            Require(!(bool)_travelActive.Invoke(_travel, null)!, "Native travel was already active before the cross-system case.");
+            Require(!(bool)_travelActive.Invoke(NativeTravel("the cross-system case"), null)!, "Native travel was already active before the cross-system case.");
             if (approach)
             {
-                if (!(bool)_canWeTravel.Invoke(_travel, new[] { source })!)
+                if (!(bool)_canWeTravel.Invoke(NativeTravel("native CanWeTravel for the in-system approach"), new[] { source })!)
                 {
                     NotRun("Native CanWeTravel refused the in-system approach to " + sourceId + ".");
                     yield break;
                 }
-                Require((bool)_tryInitiateTravel.Invoke(_travel, new[] { source })!, "Native TryInitiateTravel refused the in-system approach.");
+                Require((bool)_tryInitiateTravel.Invoke(NativeTravel("native TryInitiateTravel for the in-system approach"), new[] { source })!,
+                    "Native TryInitiateTravel refused the in-system approach.");
                 var waypoints = (IList)SpGet(Player, "waypoints")!;
                 Require(waypoints.Count == 1 && ReferenceEquals(waypoints[0], source),
                     "The native in-system approach did not produce the expected single waypoint.");
@@ -174,12 +191,13 @@ public sealed partial class Plugin
             var requestedSystemId = mode == TravelMode.JumpGate ? (string)SpGet(source, "targetSystemGuid")! : destinationSystemId;
             var requestedPoiId = mode == TravelMode.JumpGate ? (string)SpGet(source, "targetPoiGuid")! : destinationId;
             int crossOffset = Travel.Count;
-            if (!(bool)_canWeTravel.Invoke(_travel, new[] { destination })!)
+            if (!(bool)_canWeTravel.Invoke(NativeTravel("native CanWeTravel for the cross-system hop"), new[] { destination })!)
             {
                 NotRun("Native CanWeTravel refused the cross-system hop to " + destinationId + ".");
                 yield break;
             }
-            Require((bool)_tryInitiateTravel.Invoke(_travel, new[] { destination })!, "Native TryInitiateTravel refused the cross-system hop.");
+            Require((bool)_tryInitiateTravel.Invoke(NativeTravel("native TryInitiateTravel for the cross-system hop"), new[] { destination })!,
+                "Native TryInitiateTravel refused the cross-system hop.");
             var crossWaypoints = (IList)SpGet(Player, "waypoints")!;
             Require(crossWaypoints.Count == 1 && ReferenceEquals(crossWaypoints[0], destination),
                 "The native cross-system route did not produce the expected single cross-system waypoint.");
@@ -208,15 +226,16 @@ public sealed partial class Plugin
             Require(failure == null, failure!);
             failure = TravelCrossSystemReceipt.CheckJumpIteratorEvidence(slice, _p._xsSnapshots, mode);
             Require(failure == null, failure!);
-            var manager = SpGet(_travel, "localPoiManager");
+            var arrivedOwner = NativeTravel("the cross-system arrival checks");
+            var manager = SpGet(arrivedOwner, "localPoiManager");
             Require(TravelStationDriver.Alive(manager) && ReferenceEquals(SpGet(manager!, "poi"), actualPoi)
                 && (bool)SpGet(manager!, "initializedAndReady")!,
                 "The native local manager is not the initialized manager of the arrived cross-system POI.");
             Require(manager!.GetType().FullName == TravelCrossSystemReceipt.ManagerTypeFor(mode),
                 "The arrived local manager is " + manager.GetType().FullName + " instead of " + TravelCrossSystemReceipt.ManagerTypeFor(mode) + ".");
-            Require((bool)_localPoiReady.Invoke(_travel, null)!, "Native IsLocalPoiReady is false after the cross-system arrival.");
-            Require(!(bool)_travelActive.Invoke(_travel, null)!, "Native travel is still active after the final route boundary.");
-            Require(!(bool)SpGet(_travel, "usingJumpgate")!, "The native jump routine is still running after the final route boundary.");
+            Require((bool)_localPoiReady.Invoke(arrivedOwner, null)!, "Native IsLocalPoiReady is false after the cross-system arrival.");
+            Require(!(bool)_travelActive.Invoke(arrivedOwner, null)!, "Native travel is still active after the final route boundary.");
+            Require(!(bool)SpGet(arrivedOwner, "usingJumpgate")!, "The native jump routine is still running after the final route boundary.");
             Require(((ICollection)SpGet(Player, "waypoints")!).Count == 0, "Native waypoints remain after the final route boundary.");
             Require(TravelStationReceipt.Same(ModApi.Travel!.CurrentLocation, actualSystemId, actualPoiId),
                 "Public CurrentLocation does not match the arrived cross-system location.");
@@ -238,7 +257,9 @@ public sealed partial class Plugin
         // undefined. This is documented fixture setup, never arrival evidence.
         private IEnumerable<object?> Prepare()
         {
-            _prepared = false; _notPrepared = "";
+            // The previous owner belongs to the session this load replaces; drop it before the
+            // load so nothing can drive a manager the load is about to destroy.
+            _prepared = false; _notPrepared = ""; _owner = null; _p.CrossSystemOwner = null;
             foreach (var frame in _p.SpLoad("fixture-a")) yield return frame;
             foreach (var frame in Settle()) yield return frame;
             _session = _p._api!.CurrentSession!.Id;
@@ -254,6 +275,18 @@ public sealed partial class Plugin
             }
             _systemId = (string)SpGet(system!, "guid")!;
             _startPoiId = (string)SpGet(poi!, "guid")!;
+            // The one and only capture boundary: this case's own freshly loaded, ready session.
+            var manager = SpGet(_travelType, "Instance");
+            var owner = SpGet(_p._player, "current");
+            if (!TravelStationDriver.Alive(manager) || !TravelStationDriver.Alive(owner))
+            {
+                _notPrepared = "The freshly loaded fixture has no live native travel manager/player to own the case (manager="
+                    + NativeCaseOwner.Identity(manager, TravelStationDriver.Alive) + ", player="
+                    + NativeCaseOwner.Identity(owner, TravelStationDriver.Alive) + ").";
+                yield break;
+            }
+            _owner = new NativeCaseOwner(_session, manager!, owner!, _systemId, _startPoiId);
+            _p.CrossSystemOwner = _owner;
             foreach (var frame in Undock(poi!)) yield return frame;
             _prepared = _notPrepared.Length == 0;
         }
@@ -391,7 +424,7 @@ public sealed partial class Plugin
         // The native route planner is a read-only BFS over the loaded map, so it selects the hop
         // without driving anything and without assuming which gate the planner prefers.
         private List<object> NativeRoute(object destination)
-            => ((IEnumerable)_shortestRoute.Invoke(_travel, new[] { destination })!).Cast<object>().ToList();
+            => ((IEnumerable)_shortestRoute.Invoke(NativeTravel("the native route planner"), new[] { destination })!).Cast<object>().ToList();
 
         // A usable, non-tutorial gate in the current system whose paired POI the native planner
         // really routes to through exactly this gate.

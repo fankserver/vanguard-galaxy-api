@@ -171,6 +171,17 @@ public sealed class InstalledTravelCrossSystemProbeTests
         foreach (var forbidden in new[] { "get_name", "GenerateDefaultName", "EnsureContentGenerated", "RandomRange", "RandomInt" })
             Assert.DoesNotContain(forbidden, isUnlocked);
 
+        // Why the probe may never hold a manager across a fixture load: TravelManager is a
+        // MonoBehaviour singleton and its route entry point starts a coroutine ON ITSELF, which
+        // throws on a destroyed behaviour. The singleton getter re-finds the live instance when its
+        // cached one is destroyed, so re-reading Instance after the load is the only correct
+        // capture; a reference captured before it stays non-null but dead.
+        var singleton = module.GetType("Behaviour.Util.Singleton`1") ?? throw new InvalidOperationException("Missing Singleton`1.");
+        Assert.Equal("UnityEngine.MonoBehaviour", singleton.BaseType.FullName);
+        Assert.Equal("Behaviour.Util.Singleton`1<" + Travel + ">", (module.GetType(Travel) ?? throw new InvalidOperationException("Missing TravelManager.")).BaseType.FullName);
+        Assert.Contains("StartCoroutine", Calls(module, Travel, "SetRouteToPOI"));
+        Assert.Contains("FindAnyObjectByType", Calls(module, "Behaviour.Util.Singleton`1", "get_Instance"));
+
         // Only the native gate/wormhole objects start the jump routines.
         Assert.Contains("JumpToPOIFrom", Calls(module, "Behaviour.Travel.TheGate", "Update"));
         Assert.Contains("JumpToWormholeFrom", Calls(module, "Behaviour.Travel.TheWormhole", "FinishDeparture"));

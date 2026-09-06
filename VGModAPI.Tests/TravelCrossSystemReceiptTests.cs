@@ -71,7 +71,7 @@ public sealed class TravelCrossSystemReceiptTests
             bool cross = fact.Mode == TravelMode.JumpGate && fact.Kind != TravelTransitionKind.RouteCompleted;
             result[fact.Sequence] = new TravelCrossSystemReceipt.NativeSnapshot(cross, cross,
                 cross ? TravelCrossSystemReceipt.ManagerTypeFor(TravelMode.JumpGate) : "Behaviour.Travel.StationManager",
-                TravelStationReceipt.Location(actualSystem, actualPoi), true);
+                TravelStationReceipt.Location(actualSystem, actualPoi), true, true);
         }
         return result;
     }
@@ -191,7 +191,7 @@ public sealed class TravelCrossSystemReceiptTests
         var facts = CrossSystemFacts(Guid.NewGuid(), Guid.NewGuid());
         var snapshots = Snapshots(facts);
         snapshots[facts[6].Sequence] = new TravelCrossSystemReceipt.NativeSnapshot(false, true,
-            TravelCrossSystemReceipt.ManagerTypeFor(TravelMode.JumpGate), TravelStationReceipt.Location(Target, PairedGate), true);
+            TravelCrossSystemReceipt.ManagerTypeFor(TravelMode.JumpGate), TravelStationReceipt.Location(Target, PairedGate), true, true);
         Assert.Contains("not observed from the running native jump iterator",
             TravelCrossSystemReceipt.CheckJumpIteratorEvidence(facts, snapshots, TravelMode.JumpGate));
     }
@@ -202,11 +202,11 @@ public sealed class TravelCrossSystemReceiptTests
         var facts = CrossSystemFacts(Guid.NewGuid(), Guid.NewGuid());
         var wrongManager = Snapshots(facts);
         wrongManager[facts[6].Sequence] = new TravelCrossSystemReceipt.NativeSnapshot(true, true,
-            TravelCrossSystemReceipt.ManagerTypeFor(TravelMode.Wormhole), TravelStationReceipt.Location(Target, PairedGate), true);
+            TravelCrossSystemReceipt.ManagerTypeFor(TravelMode.Wormhole), TravelStationReceipt.Location(Target, PairedGate), true, true);
         Assert.Contains("did not happen at an initialized", TravelCrossSystemReceipt.CheckJumpIteratorEvidence(facts, wrongManager, TravelMode.JumpGate));
         var notReady = Snapshots(facts);
         notReady[facts[6].Sequence] = new TravelCrossSystemReceipt.NativeSnapshot(true, true,
-            TravelCrossSystemReceipt.ManagerTypeFor(TravelMode.JumpGate), TravelStationReceipt.Location(Target, PairedGate), false);
+            TravelCrossSystemReceipt.ManagerTypeFor(TravelMode.JumpGate), TravelStationReceipt.Location(Target, PairedGate), false, true);
         Assert.Contains("did not happen at an initialized", TravelCrossSystemReceipt.CheckJumpIteratorEvidence(facts, notReady, TravelMode.JumpGate));
     }
 
@@ -216,7 +216,7 @@ public sealed class TravelCrossSystemReceiptTests
         var facts = CrossSystemFacts(Guid.NewGuid(), Guid.NewGuid());
         var snapshots = Snapshots(facts);
         snapshots[facts[6].Sequence] = new TravelCrossSystemReceipt.NativeSnapshot(true, true,
-            TravelCrossSystemReceipt.ManagerTypeFor(TravelMode.JumpGate), TravelStationReceipt.Location(Origin, Gate), true);
+            TravelCrossSystemReceipt.ManagerTypeFor(TravelMode.JumpGate), TravelStationReceipt.Location(Origin, Gate), true, true);
         Assert.Contains("while the loaded world reports", TravelCrossSystemReceipt.CheckJumpIteratorEvidence(facts, snapshots, TravelMode.JumpGate));
     }
 
@@ -233,7 +233,7 @@ public sealed class TravelCrossSystemReceiptTests
     {
         var facts = CrossSystemFacts(Guid.NewGuid(), Guid.NewGuid());
         var snapshots = Snapshots(facts);
-        snapshots[facts[2].Sequence] = new TravelCrossSystemReceipt.NativeSnapshot(true, true, "", TravelStationReceipt.Location(Origin, Gate), true);
+        snapshots[facts[2].Sequence] = new TravelCrossSystemReceipt.NativeSnapshot(true, true, "", TravelStationReceipt.Location(Origin, Gate), true, true);
         Assert.Contains("inside a running jump iterator", TravelCrossSystemReceipt.CheckJumpIteratorEvidence(facts, snapshots, TravelMode.JumpGate));
     }
 

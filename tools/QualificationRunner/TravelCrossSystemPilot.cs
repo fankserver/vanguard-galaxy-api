@@ -30,6 +30,9 @@ public sealed partial class Plugin
     // API sequence of that fact. It is evidence about the loaded world, never a drive.
     internal readonly Dictionary<long, TravelCrossSystemReceipt.NativeSnapshot> _xsSnapshots = new();
     internal List<TravelTransition>? PendingCrossSystemTravel;
+    // The immutable native owner of the case that is currently driving, captured at that case's own
+    // fresh fixture load. Observation snapshots record whether the live world is still that owner.
+    internal NativeCaseOwner? CrossSystemOwner;
     internal const string CrossSystemStartCase = "phase-start";
     internal string _xsCase = CrossSystemStartCase;
     internal string _xsDescription = "The phase is preparing its first case.";
@@ -97,10 +100,34 @@ public sealed partial class Plugin
     {
         try
         {
-            var snapshot = CrossSystemSnapshot();
-            return snapshot.ToDetail();
+            return CrossSystemSnapshot().ToDetail() + "; " + CrossSystemOwnership();
         }
         catch (Exception error) { return "native position unavailable: " + error.GetType().Name; }
+    }
+
+    // Identity, liveness and session of the captured owner against the live world. This is the
+    // diagnostic that distinguishes "the native call refused" from "the probe held a manager a
+    // later fixture load destroyed".
+    internal string CrossSystemOwnership()
+    {
+        var owner = CrossSystemOwner;
+        if (owner == null) return "owner=<none captured>";
+        var travelType = AccessTools.TypeByName("Behaviour.Managers.TravelManager");
+        return owner.Describe(_api?.CurrentSession?.Id,
+            travelType == null ? null : SpGet(travelType, "Instance"), SpGet(_player, "current"), TravelStationDriver.Alive);
+    }
+
+    // True only when the live native travel manager and player are still the exact instances the
+    // driving case captured, in the same session. Never throws: it is read during callbacks.
+    private bool CrossSystemOwned(object? liveManager)
+    {
+        try
+        {
+            var owner = CrossSystemOwner;
+            return owner != null && owner.CheckCurrent("an observation", _api?.CurrentSession?.Id,
+                liveManager, SpGet(_player, "current"), TravelStationDriver.Alive) == null;
+        }
+        catch { return false; }
     }
 
     // Read-only sample of the loaded world. A loaded POI and empty space (no POI) are both
@@ -110,7 +137,7 @@ public sealed partial class Plugin
     {
         var travelType = AccessTools.TypeByName("Behaviour.Managers.TravelManager");
         var manager = travelType == null ? null : SpGet(travelType, "Instance");
-        if (!TravelStationDriver.Alive(manager)) return new TravelCrossSystemReceipt.NativeSnapshot(false, false, "", "<no travel manager>", false);
+        if (!TravelStationDriver.Alive(manager)) return new TravelCrossSystemReceipt.NativeSnapshot(false, false, "", "<no travel manager>", false, false);
         var local = SpGet(manager!, "localPoiManager");
         var alive = TravelStationDriver.Alive(local);
         var player = SpGet(_player, "current");
@@ -123,7 +150,8 @@ public sealed partial class Plugin
             (bool)TravelStationDriver.CallExact(manager!, "TravelActive", typeof(bool))!,
             alive ? local!.GetType().FullName! : "",
             location,
-            alive && SpGet(local!, "poi") != null && ReferenceEquals(SpGet(local!, "poi"), poi) && (bool)SpGet(local!, "initializedAndReady")!);
+            alive && SpGet(local!, "poi") != null && ReferenceEquals(SpGet(local!, "poi"), poi) && (bool)SpGet(local!, "initializedAndReady")!,
+            CrossSystemOwned(manager));
     }
 
     private IEnumerable<object?> RunTravelCrossSystem()
@@ -149,7 +177,7 @@ public sealed partial class Plugin
             try { _xsSnapshots[fact.Sequence] = CrossSystemSnapshot(); }
             catch (Exception error)
             {
-                _xsSnapshots[fact.Sequence] = new TravelCrossSystemReceipt.NativeSnapshot(false, false, "", "<snapshot failed: " + error.GetType().Name + ">", false);
+                _xsSnapshots[fact.Sequence] = new TravelCrossSystemReceipt.NativeSnapshot(false, false, "", "<snapshot failed: " + error.GetType().Name + ">", false, false);
             }
         }))
         {
