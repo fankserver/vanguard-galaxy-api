@@ -13,7 +13,7 @@ namespace VGModAPI.QualificationGuard;
 
 // Development-only bootstrap; deliberately has no API assembly dependency.
 [BepInPlugin(Id, "VGModAPI Qualification Isolation", "0.1.0")]
-public sealed class Plugin : BaseUnityPlugin
+public sealed partial class Plugin : BaseUnityPlugin
 {
     private const string Id = "vgmodapi.qualification.guard";
     private static string? _saves;
@@ -90,6 +90,21 @@ public sealed class Plugin : BaseUnityPlugin
             yield return null;
         }
         yield return null;
+        if (File.Exists(Path.Combine(_root!, "vanilla-load.enabled")))
+        {
+            var routine = VanillaLoadControl().GetEnumerator();
+            while (true)
+            {
+                object? current;
+                try
+                {
+                    if (!routine.MoveNext()) break;
+                    current = routine.Current;
+                }
+                catch (Exception error) { Finish(false, error.ToString()); yield break; }
+                yield return current;
+            }
+        }
         try
         {
             if (_scenario == "MissingApi")
