@@ -113,6 +113,26 @@ try {
     Assert $rejected 'Missing actual-journal receipt accepted.'
     [IO.File]::WriteAllText((Join-Path $probeRoot 'journal-coordinated.txt'), 'PASS')
     Assert-PersistenceProbeReceipt $probeRoot $probeProvenance
+    $probeProvenance.stockpileCoordinated = $true; $probeProvenance.stockpile = $true
+    [IO.File]::WriteAllText((Join-Path $probeRoot 'stockpile.enabled'), 'pilot-v1')
+    [IO.File]::WriteAllText((Join-Path $probeRoot 'stockpile-coordinated.enabled'), 'stockpile-v1')
+    $fake = Join-Path $probeRoot 'game\BepInEx\plugins\VGStockpile.dll'
+    [IO.File]::WriteAllText($fake, 'synthetic-not-executable')
+    $probeProvenance.plugins | Add-Member -NotePropertyName 'VGStockpile.dll' -NotePropertyValue (Get-FileHash -LiteralPath $fake).Hash
+    $probeProvenance | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $probeRoot 'build-provenance.json')
+    $stockpileConfig = Join-Path $probeRoot 'game\BepInEx\config\vgstockpile.cfg'
+    [IO.File]::WriteAllText($stockpileConfig, $validJournal)
+    $null = Assert-QualificationInputs $probeRoot
+    [IO.File]::WriteAllText($stockpileConfig, $validJournal.Replace('true','false'))
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $probeRoot } catch { $rejected = $true }
+    Assert $rejected 'Changed coordinated transfer configuration accepted.'
+    [IO.File]::WriteAllText($stockpileConfig, $validJournal)
+    $rejected = $false
+    try { Assert-PersistenceProbeReceipt $probeRoot $probeProvenance } catch { $rejected = $true }
+    Assert $rejected 'Missing actual transfer receipt accepted.'
+    [IO.File]::WriteAllText((Join-Path $probeRoot 'stockpile-coordinated.txt'), 'PASS')
+    Assert-PersistenceProbeReceipt $probeRoot $probeProvenance
     [IO.File]::WriteAllText((Join-Path $probeRoot 'game\BepInEx\config\vgmodapi.cfg'), "[Persistence]`nEnabled = true`nRoot = C:\foreign-root`n")
     $rejected = $false
     try { $null = Assert-QualificationInputs $probeRoot } catch { $rejected = $true }

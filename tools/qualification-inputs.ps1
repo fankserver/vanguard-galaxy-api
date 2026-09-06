@@ -1,5 +1,9 @@
 # Prepared-input helpers; safe to exercise with synthetic files.
 function Assert-PersistenceProbeReceipt([string]$Root, $Provenance) {
+    if ($Provenance.PSObject.Properties['stockpileCoordinated'] -and $Provenance.stockpileCoordinated) {
+        $receipt = Join-Path $Root 'stockpile-coordinated.txt'
+        if (!(Test-Path -LiteralPath $receipt) -or (Get-Content -LiteralPath $receipt -TotalCount 1) -ne 'PASS') { throw 'Coordinated Stockpile probe did not complete.' }
+    }
     if ($Provenance.PSObject.Properties['journalCoordinated'] -and $Provenance.journalCoordinated) {
         $receipt = Join-Path $Root 'journal-coordinated.txt'
         if (!(Test-Path -LiteralPath $receipt) -or (Get-Content -LiteralPath $receipt -TotalCount 1) -ne 'PASS') { throw 'Coordinated journal probe did not complete.' }
@@ -80,6 +84,18 @@ function Assert-QualificationInputs([string]$Root) {
         if ($sections.Count -ne 1) { throw 'Coordinated journal section changed.' }
         foreach ($key in @('UseCoordinatedPersistence','ImportLegacySidecars')) {
             if ([regex]::Matches($sections[0].Groups['body'].Value, "(?m)^$key\s*=").Count -ne 1 -or [regex]::Matches($sections[0].Groups['body'].Value, "(?m)^$key\s*=\s*true\s*$").Count -ne 1) { throw 'Coordinated journal config changed.' }
+        }
+    }
+    $stockpileCoordinated = $provenance.PSObject.Properties['stockpileCoordinated'] -and [bool]$provenance.stockpileCoordinated
+    $stockpileMarker = Join-Path $Root 'stockpile-coordinated.enabled'
+    if ([bool]$stockpileCoordinated -ne (Test-Path -LiteralPath $stockpileMarker -PathType Leaf)) { throw 'Stockpile coordinated selection changed.' }
+    if ($stockpileCoordinated) {
+        if (!$journalCoordinated -or !$provenance.stockpile -or (Get-Content -LiteralPath $stockpileMarker -Raw).Trim() -ne 'stockpile-v1') { throw 'Invalid coordinated Stockpile selection.' }
+        $config = Get-Content -LiteralPath (Join-Path $Root 'game\BepInEx\config\vgstockpile.cfg') -Raw
+        $sections = [regex]::Matches($config, '(?ms)^\[Persistence\]\r?\n(?<body>.*?)(?=^\[|\z)')
+        if ($sections.Count -ne 1) { throw 'Coordinated Stockpile section changed.' }
+        foreach ($key in @('UseCoordinatedPersistence','ImportLegacySidecars')) {
+            if ([regex]::Matches($sections[0].Groups['body'].Value, "(?m)^$key\s*=").Count -ne 1 -or [regex]::Matches($sections[0].Groups['body'].Value, "(?m)^$key\s*=\s*true\s*$").Count -ne 1) { throw 'Coordinated Stockpile config changed.' }
         }
     }
     $vanilla = $provenance.PSObject.Properties['vanillaLoadControl'] -and [bool]$provenance.vanillaLoadControl
