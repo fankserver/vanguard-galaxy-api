@@ -15,6 +15,61 @@ public sealed class InstalledBindingTests
         ?? throw new InvalidOperationException("Run make check-bindings or set VG_GAME_ASSEMBLY to the original installed Assembly-CSharp.dll.");
 
     [Fact]
+    public void NativeTravelLocationAndReadinessMembersHaveInspectedShapes()
+    {
+        using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
+        var module = assembly.MainModule;
+        void Field(string owner, string name, string type, bool isStatic = false)
+        {
+            var field = Assert.Single(module.GetType(owner).Fields, candidate => candidate.Name == name);
+            Assert.Equal(type, field.FieldType.FullName); Assert.Equal(isStatic, field.IsStatic);
+        }
+        void Property(string owner, string name, string type)
+        {
+            var property = Assert.Single(module.GetType(owner).Properties, candidate => candidate.Name == name);
+            Assert.Equal(type, property.PropertyType.FullName); Assert.NotNull(property.GetMethod); Assert.False(property.GetMethod.IsStatic);
+            Assert.Empty(property.Parameters);
+        }
+        const string player = "Source.Player.GamePlayer";
+        const string element = "Source.Galaxy.MapElement";
+        const string poi = "Source.Galaxy.MapPointOfInterest";
+        const string system = "Source.Galaxy.SystemMapData";
+        const string manager = "Behaviour.Managers.BasePoiManager";
+        const string travel = "Behaviour.Managers.TravelManager";
+        Field(player, "current", player, true); Field(player, "currentSystem", system); Field(player, "currentPointOfInterest", poi);
+        Field(element, "system", system); Field(element, "_name", "System.String");
+        Property(element, "guid", "System.String"); Property(player, "elapsedTime", "System.Double");
+        Property(travel, "localPoiManager", manager); Property(travel, "localTarget", poi); Property(travel, "targetPoi", poi);
+        Property(manager, "poi", poi); Property(manager, "initializedAndReady", "System.Boolean");
+    }
+
+    [Fact]
+    public void NativePoiArrivalHierarchyHasConcreteBaseAndTrueOverrideDeclarations()
+    {
+        using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
+        var types = assembly.MainModule.Types.ToDictionary(type => type.FullName);
+        const string rootName = "Behaviour.Managers.BasePoiManager";
+        var root = types[rootName];
+        var baseArrival = Assert.Single(root.Methods, method => method.Name == "SpaceshipHasArrived" && method.Parameters.Count == 0);
+        Assert.True(root.IsAbstract); Assert.True(baseArrival.IsVirtual); Assert.True(baseArrival.HasBody);
+        bool Derived(TypeDefinition type)
+        {
+            for (TypeDefinition? cursor = type; cursor != null; cursor = cursor.BaseType != null && types.TryGetValue(cursor.BaseType.FullName, out var parent) ? parent : null)
+                if (cursor.FullName == rootName) return true;
+            return false;
+        }
+        var declarations = types.Values.Where(Derived).SelectMany(type => type.Methods)
+            .Where(method => method.Name == "SpaceshipHasArrived" && method.Parameters.Count == 0).ToArray();
+        Assert.True(declarations.Length > 1);
+        foreach (var method in declarations)
+        {
+            Assert.True(method.IsVirtual); Assert.False(method.IsAbstract); Assert.True(method.HasBody);
+            Assert.Equal("System.Void", method.ReturnType.FullName);
+            if (method != baseArrival) Assert.False(method.IsNewSlot);
+        }
+    }
+
+    [Fact]
     public void WaveProbeBindingsMatchNativeGenerationAndLaunch()
     {
         using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
