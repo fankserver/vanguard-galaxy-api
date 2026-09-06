@@ -61,10 +61,12 @@ public sealed class PersistenceIdentityTests
     public void ExplicitImportRequiresExactBytesAndFreshIdentity()
     {
         var source = State("source", 'a', '1');
-        var fork = PersistenceIdentity.Fork(source, "destination", Hash('a'), Guid.NewGuid(), Guid.NewGuid());
+        var fork = PersistenceIdentity.Fork(source, "destination", Hash('a'), Hash('1'), Guid.NewGuid(), Guid.NewGuid());
         Assert.NotEqual(source.Campaign, fork.Campaign);
         Assert.Equal(source.StateHash, fork.StateHash);
-        Assert.Throws<InvalidOperationException>(() => PersistenceIdentity.Fork(source, "destination", Hash('b'), Guid.NewGuid(), Guid.NewGuid()));
-        Assert.Throws<InvalidOperationException>(() => PersistenceIdentity.Fork(source, "destination", Hash('a'), source.Campaign, Guid.NewGuid()));
+        Assert.Throws<InvalidOperationException>(() => PersistenceIdentity.Fork(source, "destination", Hash('b'), Hash('1'), Guid.NewGuid(), Guid.NewGuid()));
+        Assert.Throws<InvalidOperationException>(() => PersistenceIdentity.Fork(source, "destination", Hash('a'), Hash('1'), source.Campaign, Guid.NewGuid()));
+        Assert.Throws<InvalidOperationException>(() => PersistenceIdentity.Fork(source, "destination", Hash('a'), Hash('2'), Guid.NewGuid(), Guid.NewGuid()));
+        Assert.Throws<InvalidOperationException>(() => PersistenceIdentity.Fork(source, "source", Hash('a'), Hash('1'), Guid.NewGuid(), Guid.NewGuid()));
     }
 }

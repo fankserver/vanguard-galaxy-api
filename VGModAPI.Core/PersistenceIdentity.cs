@@ -44,9 +44,10 @@ internal static class PersistenceIdentity
             ? IdentityLoadDisposition.Restore : IdentityLoadDisposition.Isolated;
     }
 
-    internal static SnapshotAssociation Fork(SnapshotAssociation source, string destination, string actualVanillaHash, Guid campaign, Guid snapshot)
+    internal static SnapshotAssociation Fork(SnapshotAssociation source, string destination, string actualVanillaHash, string actualStateHash, Guid campaign, Guid snapshot)
     {
-        if (source.VanillaHash != actualVanillaHash) throw new InvalidOperationException("Imported bytes do not match source generation.");
+        if (source.VanillaHash != actualVanillaHash || source.StateHash != actualStateHash) throw new InvalidOperationException("Imported bytes do not match source generation.");
+        if (source.Slot == destination) throw new InvalidOperationException("Fork requires a distinct destination slot.");
         if (campaign == source.Campaign || snapshot == source.Snapshot) throw new InvalidOperationException("Fork requires fresh identities.");
         return new SnapshotAssociation(destination, actualVanillaHash, source.StateHash, campaign, snapshot);
     }
