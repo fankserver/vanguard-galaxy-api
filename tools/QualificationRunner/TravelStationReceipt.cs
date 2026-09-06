@@ -58,7 +58,7 @@ internal static class TravelStationReceipt
     /// </summary>
     internal static readonly PhaseWait[] PhaseWaits =
     {
-        new("service-readiness", ReadinessSeconds, 1),
+        new("service-readiness", ReadinessSeconds, 2),
         new("initial-dock-settle", InitialDockSettleSeconds, 1),
         new("undock-leaving", UndockLeavingSeconds, 1),
         new("undock-routine", UndockRoutineSeconds, 1),
@@ -66,7 +66,7 @@ internal static class TravelStationReceipt
         new("route-boundary", BoundarySeconds, 2),
         new("arrival-dock", DockSeconds, 1),
         new("travel-availability", TravelReadySeconds, 3),
-        new("settle", SettleSeconds, 12)
+        new("settle", SettleSeconds, 6)
     };
 
     internal static readonly float PhaseBudgetSeconds = PhaseWaits.Sum(wait => wait.Seconds * wait.Occurrences);
