@@ -52,6 +52,20 @@ try {
         Assert $rejected 'Changed copied/source assembly accepted.'
         [IO.File]::WriteAllBytes($assemblyPath, $bytes)
     }
+    $overlayCopy = Join-Path $overlayRoot 'game\VanguardGalaxy_Data\Managed\Assembly-CSharp.dll'
+    $copyBytes = [IO.File]::ReadAllBytes($overlayCopy)
+    $overlayProvPath = Join-Path $overlayRoot 'build-provenance.json'
+    $overlayProvBytes = [IO.File]::ReadAllBytes($overlayProvPath)
+    [IO.File]::WriteAllText($overlayCopy, 'different-code-not-an-overlay')
+    $overlayProvenance.assemblyOverlay.modified = (Get-FileHash -LiteralPath $overlayCopy).Hash
+    $overlayProvenance | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $overlayProvPath
+    [IO.File]::WriteAllLines($overlayMarker, [string[]]@($overlayProvenance.assemblyOverlay.modified, $overlayProvenance.assemblyOverlay.original))
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $overlayRoot } catch { $rejected = $true }
+    Assert $rejected 'Consistently repinned non-overlay bytes accepted.'
+    [IO.File]::WriteAllBytes($overlayCopy, $copyBytes)
+    [IO.File]::WriteAllBytes($overlayProvPath, $overlayProvBytes)
+    [IO.File]::WriteAllBytes($overlayMarker, $markerBytes)
     & $script -Action Cleanup -SandboxRoot $overlayRoot
     Assert (!(Test-Path -LiteralPath (Join-Path $overlayRoot 'game\VanguardGalaxy_Data\Resources'))) 'Nested resource junction survived cleanup.'
     Assert (Test-Path -LiteralPath (Join-Path $overlayRoot 'game\VanguardGalaxy_Data\Managed\Assembly-CSharp.dll')) 'Private Managed evidence removed.'

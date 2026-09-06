@@ -57,9 +57,9 @@ By default the mismatch is **injected input**, not an altered or alternate game 
 
 ### Actual private assembly-identity rejection
 
-For `UnavailableApi` only, opt-in `-AssemblyOverlay` replaces the sandbox data junction with an owned data directory, copies Managed assemblies, and links the remaining resource directories read-only. It appends a diagnostic PE overlay to the **private** Assembly-CSharp.dll without changing its IL; the original is hash-checked unchanged. The guard verifies that this private assembly really loaded and does not inject a hash result. The scenario must still refuse API capabilities/patches and selected consumers. This tests actual changed-file identity, **not compatibility with another game implementation/version**.
+For `UnavailableApi` only, opt-in `-AssemblyOverlay` replaces the sandbox data junction with an owned data directory, copies Managed assemblies and top-level data files (including bundles/levels), and links the remaining resource directories read-only. Budget disk space for all copied data, not just the DLL. It appends a diagnostic PE overlay to the **private** Assembly-CSharp.dll without changing its IL; the original is hash-checked unchanged. The guard verifies that this private assembly really loaded and does not inject a hash result. The scenario must still refuse API capabilities/patches and selected consumers. This tests actual changed-file identity, **not compatibility with another game implementation/version**.
 
-Provenance pins both hashes and the selection marker; Run checks them before and after launch. Cleanup unlinks only direct resource junctions and retains the private Managed copy; it refuses an unexpectedly linked overlay root. All copied/modified assemblies remain private and must never enter Git or releases.
+Provenance pins both hashes and the selection marker; Run also recomputes the hash of original bytes plus the diagnostic suffix before and after launch. The guard requires the original inspected identity and the specific hash-rejection capability reason. Cleanup unlinks only direct resource junctions and retains all copied files, including Managed; it refuses an unexpectedly linked overlay root. All copied/modified assemblies remain private and must never enter Git or releases.
 
 ## Evidence and coverage
 

@@ -56,6 +56,9 @@ public sealed class Plugin : BaseUnityPlugin
             {
                 Require(_scenario == "UnavailableApi", "Overlay only supports unavailable-API qualification.");
                 var hashes = File.ReadAllLines(overlayMarker);
+                var catalog = Assembly.Load("VGModAPI.Core").GetType("VGModAPI.Core.BindingCatalog", true)!;
+                var inspected = (string)AccessTools.Field(catalog, "InspectedSha256").GetRawConstantValue()!;
+                Require(hashes.Length == 2 && string.Equals(hashes[1], inspected, StringComparison.OrdinalIgnoreCase), "Overlay source is not the API's inspected assembly.");
                 var location = save.Assembly.Location;
                 Require(Same(location, Path.Combine(_root, "game", "VanguardGalaxy_Data", "Managed", "Assembly-CSharp.dll")), "Game assembly did not load from the private copy.");
                 using var sha = System.Security.Cryptography.SHA256.Create();
@@ -106,6 +109,7 @@ public sealed class Plugin : BaseUnityPlugin
                     if (name != "session-lifecycle" && name != "save-outcomes") continue;
                     found++;
                     Require(!(bool)type.GetProperty("Available")!.GetValue(cap)!, "Capability remained available.");
+                    Require(((string)type.GetProperty("Detail")!.GetValue(cap)!).StartsWith("Uninspected game assembly:", StringComparison.Ordinal), "API refusal was not the inspected hash gate.");
                 }
                 Require(found == 2, "Expected capabilities missing.");
                 Require(!Harmony.GetAllPatchedMethods().Any(m => Harmony.GetPatchInfo(m)?.Owners.Contains("vgmodapi") == true), "API integration patches survived mismatch.");

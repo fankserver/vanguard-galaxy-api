@@ -48,6 +48,15 @@ function Assert-QualificationInputs([string]$Root) {
     $overlayMarker = Join-Path $Root 'assembly-overlay.hash'
     if ([bool]$overlay -ne (Test-Path -LiteralPath $overlayMarker -PathType Leaf)) { throw 'Assembly overlay selection changed.' }
     if ($overlay) {
+        $sha = [Security.Cryptography.SHA256]::Create()
+        try {
+            $bytes = [IO.File]::ReadAllBytes($overlay.source)
+            $suffix = [Text.Encoding]::ASCII.GetBytes('VGModAPI-private-hash-probe-v1')
+            $null = $sha.TransformBlock($bytes, 0, $bytes.Length, $bytes, 0)
+            $null = $sha.TransformFinalBlock($suffix, 0, $suffix.Length)
+            $expected = [BitConverter]::ToString($sha.Hash).Replace('-', '')
+        } finally { $sha.Dispose() }
+        if ($expected -ne $overlay.modified) { throw 'Copy is not exactly source bytes plus the diagnostic overlay.' }
         $lines = @(Get-Content -LiteralPath $overlayMarker)
         if ($provenance.scenario -ne 'UnavailableApi' -or $lines.Count -ne 2 -or $lines[0] -ne $overlay.modified -or $lines[1] -ne $overlay.original -or
             $overlay.original -eq $overlay.modified -or (Get-FileHash -LiteralPath $overlay.source).Hash -ne $overlay.original -or
