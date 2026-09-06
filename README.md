@@ -110,7 +110,7 @@ API 0.1.3 also exposes the pure `ContentSafety` admission/recovery planner. See 
 
 The [pinned roadmap issue](https://github.com/fankserver/vanguard-galaxy-api/issues/1) links the [milestones](https://github.com/fankserver/vanguard-galaxy-api/milestones) and actionable issues, including acceptance criteria, evidence, priorities, and prerequisites. It is the source of truth for future work—not a promise of release dates.
 
-[Controlled core qualification](https://github.com/fankserver/vanguard-galaxy-api/issues/2) is recorded; persistence and save safety now include the opt-in service and both authorized consumer pilots; missing-content policy remains the next milestone item. Optional persistence, mission/travel, story/bar, HUD/navigation, and content modules follow demonstrated consumer needs. Direct Harmony remains an escape hatch; bespoke gameplay stays in feature mods.
+[Controlled core qualification](https://github.com/fankserver/vanguard-galaxy-api/issues/2) is recorded; persistence and save safety now include the default-enabled save-data service and both authorized consumer pilots; missing-content policy remains the next milestone item. Optional persistence, mission/travel, story/bar, HUD/navigation, and content modules follow demonstrated consumer needs. Direct Harmony remains an escape hatch; bespoke gameplay stays in feature mods.
 
 ## License and experimental compatibility
 

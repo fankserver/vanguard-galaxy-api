@@ -35,6 +35,16 @@ try {
     catch { $rejected = $_.Exception.Message -like '*Coordinated journal requires*' }
     Assert $rejected 'Journal coordinated selection accepted without required inputs.'
     & $script -Action Prepare -SandboxRoot $sandbox @options
+    $legacyConfigPath = Join-Path $sandbox 'game\BepInEx\config\vgmodapi.cfg'
+    $legacyConfig = [IO.File]::ReadAllText($legacyConfigPath)
+    $null = Assert-QualificationInputs $sandbox
+    foreach ($changed in @('[Persistence]', $legacyConfig.Replace('false','true'), ($legacyConfig + "Enabled = false`n"))) {
+        [IO.File]::WriteAllText($legacyConfigPath, $changed)
+        $rejected = $false
+        try { $null = Assert-QualificationInputs $sandbox } catch { $rejected = $true }
+        Assert $rejected 'Missing, enabled or duplicate legacy control setting accepted.'
+    }
+    [IO.File]::WriteAllText($legacyConfigPath, $legacyConfig)
     $overlayRoot = Join-Path $work 'overlay-sandbox'
     $sandboxes += $overlayRoot
     & $script -Action Prepare -SandboxRoot $overlayRoot -Scenario UnavailableApi -AssemblyOverlay @options
