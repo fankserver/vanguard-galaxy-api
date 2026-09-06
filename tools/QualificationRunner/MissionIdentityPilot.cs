@@ -32,6 +32,7 @@ public sealed partial class Plugin
         Require(accepted.Length == 3, "Identity fixtures were not accepted.");
         var unique = accepted.Single(e => e.Mission.Name.EndsWith(" unique", StringComparison.Ordinal)).Mission.InstanceId;
         var ambiguousIds = new HashSet<Guid>(accepted.Where(e => e.Mission.Name.EndsWith(" duplicate", StringComparison.Ordinal)).Select(e => e.Mission.InstanceId));
+        CheckJournalIdentityState(unique, "Accepted");
         Save("qa-mission-identity", LifecycleEventKind.SaveSucceeded);
         foreach (string name in new[] { "qa-mission-identity", "qa-mission-identity" })
         {
@@ -45,6 +46,7 @@ public sealed partial class Plugin
             var ambiguous = restored.Where(e => e.Mission.Name.EndsWith(" duplicate", StringComparison.Ordinal)).ToArray();
             Require(ambiguous.All(e => e.Mission.IdentityEvidence == MissionIdentityEvidence.MissingOrAmbiguous && !ambiguousIds.Contains(e.Mission.InstanceId)) && ambiguous.Select(e => e.Mission.InstanceId).Distinct().Count() == 2, "Indistinguishable missions were assigned guessed identities.");
             ambiguousIds = new HashSet<Guid>(ambiguous.Select(e => e.Mission.InstanceId));
+            CheckJournalIdentityState(unique, "Accepted");
         }
         var live = ((System.Collections.IEnumerable)SpGet(CurrentPlayer, "missions")!).Cast<object>().Single(m => (string)SpGet(m, "name")! == prefix + " unique");
         type.GetMethod("MissionFailed", new[] { typeof(string) })!.Invoke(live, new object[] { "VGModAPI identity rollback probe" });
@@ -54,15 +56,19 @@ public sealed partial class Plugin
         foreach (var frame in Settle()) yield return frame;
         live = ((System.Collections.IEnumerable)SpGet(CurrentPlayer, "missions")!).Cast<object>().Single(m => (string)SpGet(m, "name")! == prefix + " unique");
         Require((bool)SpGet(live, "failed")! && events.Any(e => e.Mission.InstanceId == unique && e.Mission.IdentityEvidence == MissionIdentityEvidence.SavedSnapshotMatch), "Advanced snapshot lost state or identity.");
+        CheckJournalIdentityState(unique, "Failed");
         events.Clear();
         foreach (var frame in SpLoad("qa-mission-identity")) yield return frame;
         foreach (var frame in Settle()) yield return frame;
         live = ((System.Collections.IEnumerable)SpGet(CurrentPlayer, "missions")!).Cast<object>().Single(m => (string)SpGet(m, "name")! == prefix + " unique");
         Require(!(bool)SpGet(live, "failed")! && events.Any(e => e.Mission.InstanceId == unique && e.Mission.IdentityEvidence == MissionIdentityEvidence.SavedSnapshotMatch), "Rollback did not restore earlier state and identity.");
+        CheckJournalIdentityState(unique, "Accepted");
         Save("qa-mission-identity-copy", LifecycleEventKind.SaveSucceeded); events.Clear();
         foreach (var frame in SpLoad("qa-mission-identity-copy")) yield return frame;
         foreach (var frame in Settle()) yield return frame;
         Require(events.Any(e => e.Mission.InstanceId == unique && e.Mission.IdentityEvidence == MissionIdentityEvidence.SavedSnapshotMatch), "Save-as lost verified identity.");
+        CheckJournalIdentityState(unique, "Accepted");
+        FinishJournalMissionEvents();
         foreach (var frame in SpLoad("fixture-a")) yield return frame;
         foreach (var frame in Settle()) yield return frame;
         CheckJournalLoad("fixture-a");

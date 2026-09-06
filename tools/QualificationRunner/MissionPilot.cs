@@ -71,6 +71,7 @@ public sealed partial class Plugin
             type.GetMethod("ClaimRewards")!.Invoke(repeated, new object[] { false });
             Require(observed.Last().Kind == MissionTransitionKind.Archived, "Eligible claim did not archive.");
 
+            CheckJournalEventProjection(observed);
             observed.Clear();
             var failure = Create(prefix + "-failure"); AccessTools.Field(type, "nextMissionOnFailed").SetValue(failure, replacementId); Add(failure);
             type.GetMethod("MissionFailed")!.Invoke(failure, new object[] { "VGModAPI disposable probe" });
@@ -79,6 +80,7 @@ public sealed partial class Plugin
             remove.Invoke(player, new[] { Create(prefix + "-never-active"), (object)true });
             Require(observed.Count == count, "Non-active completed removal invented an instance.");
             Require(nativeValid, "Native access failed during observed callbacks.");
+            CheckJournalEventProjection(observed);
             File.WriteAllLines(Path.Combine(_root!, "mission-events.tsv"), trace);
             File.WriteAllLines(Path.Combine(_root!, "mission-transitions.txt"), new[] { "PASS", "Native duplicate/no-eligibility/forced/eligible/repeated/archive/failure-replacement probes passed; no cross-load identity claim." });
             Passed("native-mission-transitions");

@@ -219,6 +219,29 @@ try {
     Assert $rejected 'Missing identity receipt accepted.'
     [IO.File]::WriteAllText((Join-Path $probeRoot 'mission-identity.txt'), 'PASS')
     Assert-PersistenceProbeReceipt $probeRoot $probeProvenance
+    $probeProvenance.journalMissionEventsProbe = $true
+    $probeProvenance | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $probeRoot 'build-provenance.json')
+    $journalEventsMarker = Join-Path $probeRoot 'journal-mission-events.enabled'
+    [IO.File]::WriteAllText($journalEventsMarker, 'journal-events-v1')
+    $journalEventConfig = Join-Path $probeRoot 'game\BepInEx\config\vgmissionjournal.cfg'
+    $journalEventOriginal = Get-Content -LiteralPath $journalEventConfig -Raw
+    [IO.File]::AppendAllText($journalEventConfig, "`n[Missions]`nUseApiMissionEvents = true`n")
+    $null = Assert-QualificationInputs $probeRoot
+    [IO.File]::WriteAllText($journalEventsMarker, 'changed')
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $probeRoot } catch { $rejected = $true }
+    Assert $rejected 'Changed journal events marker accepted.'
+    [IO.File]::WriteAllText($journalEventsMarker, 'journal-events-v1')
+    [IO.File]::WriteAllText($journalEventConfig, $journalEventOriginal + "`n[Missions]`nUseApiMissionEvents = false`n")
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $probeRoot } catch { $rejected = $true }
+    Assert $rejected 'Changed journal events config accepted.'
+    [IO.File]::WriteAllText($journalEventConfig, $journalEventOriginal + "`n[Missions]`nUseApiMissionEvents = true`n")
+    $rejected = $false
+    try { Assert-PersistenceProbeReceipt $probeRoot $probeProvenance } catch { $rejected = $true }
+    Assert $rejected 'Missing journal events receipt accepted.'
+    [IO.File]::WriteAllText((Join-Path $probeRoot 'journal-mission-events.txt'), 'PASS')
+    Assert-PersistenceProbeReceipt $probeRoot $probeProvenance
     [IO.File]::WriteAllText($apiConfig, "[Persistence]`nEnabled = true`nRoot = C:\foreign-root`n[Missions]`nEnabled = true`nIdentityContinuity = true`n")
     $rejected = $false
     try { $null = Assert-QualificationInputs $probeRoot } catch { $rejected = $true }
