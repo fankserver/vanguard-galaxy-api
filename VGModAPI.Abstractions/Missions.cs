@@ -6,6 +6,8 @@ namespace VGModAPI;
 
 public enum MissionTransitionKind { Restored, Accepted, Completed, Failed, Abandoned, Removed, Archived }
 
+public enum MissionIdentityEvidence { SessionOnly, SavedSnapshotMatch, MissingOrAmbiguous, Unavailable }
+
 /// <summary>Immutable observation, not a mission factory or persistent history record.</summary>
 public sealed class MissionSnapshot
 {
@@ -15,8 +17,13 @@ public sealed class MissionSnapshot
     public string Name { get; }
     public IReadOnlyList<string> ObjectiveTags { get; }
     public bool AcceptanceObserved { get; }
+    public MissionIdentityEvidence IdentityEvidence { get; }
     public MissionSnapshot(Guid sessionId, Guid instanceId, string? definitionId, string name, IEnumerable<string> objectiveTags, bool acceptanceObserved)
+        : this(sessionId, instanceId, definitionId, name, objectiveTags, acceptanceObserved, MissionIdentityEvidence.SessionOnly) { }
+    public MissionSnapshot(Guid sessionId, Guid instanceId, string? definitionId, string name, IEnumerable<string> objectiveTags, bool acceptanceObserved, MissionIdentityEvidence identityEvidence)
     {
+        if (!Enum.IsDefined(typeof(MissionIdentityEvidence), identityEvidence)) throw new ArgumentOutOfRangeException(nameof(identityEvidence));
+        IdentityEvidence = identityEvidence;
         if (sessionId == Guid.Empty || instanceId == Guid.Empty) throw new ArgumentException("Session and live instance identities are required.");
         SessionId = sessionId; InstanceId = instanceId; DefinitionId = definitionId;
         Name = name ?? throw new ArgumentNullException(nameof(name));

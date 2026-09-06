@@ -12,7 +12,7 @@ using VGModAPI.Runtime;
 
 namespace VGModAPI;
 
-[BepInPlugin(ModApi.PluginId, "Vanguard Galaxy Mod API", "0.1.6")]
+[BepInPlugin(ModApi.PluginId, "Vanguard Galaxy Mod API", "0.1.7")]
 [BepInProcess("VanguardGalaxy.exe")]
 [BepInDependency("vgmodapi.qualification.guard", BepInDependency.DependencyFlags.SoftDependency)]
 public sealed class Plugin : BaseUnityPlugin
@@ -22,6 +22,7 @@ public sealed class Plugin : BaseUnityPlugin
     private GameAdapter? _adapter;
     private PersistenceService? _persistence;
     private MissionAdapter? _missions;
+    private bool _identityHooksBound;
     private void Awake()
     {
         _hub = new LifecycleHub((owner, ex) => Logger.LogError($"Subscriber '{owner}' failed: {ex}"));
@@ -29,6 +30,7 @@ public sealed class Plugin : BaseUnityPlugin
         _hub.SetCapability("save-outcomes", false, "Not bound.");
         _hub.SetCapability("world-ready", false, "No universal POI/UI-ready guarantee; GameplayInitialized is narrower.");
         _hub.SetCapability("coordinated-persistence", false, "Disabled by configuration; experimental.");
+        _hub.SetCapability("mission-continuity", false, "Disabled by configuration; experimental.");
         _hub.SetCapability("mission-transitions", false, "Disabled by configuration; experimental.");
         ModApi.Missions = null;
         ModApi.Current = _hub;
@@ -46,6 +48,14 @@ public sealed class Plugin : BaseUnityPlugin
             _harmony = new Harmony(ModApi.PluginId);
             LifecyclePatches.Adapter = _adapter;
             SavePatches.Adapter = _adapter;
+            if (Config.Bind("Missions", "Enabled", false, "Experimental observed mission transitions; use disposable saves until qualified.").Value &&
+                Config.Bind("Missions", "IdentityContinuity", false, "Experimental exact-snapshot identity; requires coordinated persistence.").Value)
+            {
+                InstallGroup("mission-continuity", bindings, BindingCatalog.MissionSnapshots,
+                    new Dictionary<string, Type> { ["missionSnapshot"] = typeof(MissionSerializationPatches) });
+                _identityHooksBound = _hub.Capabilities.Any(c => c.Name == "mission-continuity" && c.Available);
+                _hub.SetCapability("mission-continuity", false, "Identity provider not initialized.");
+            }
             InstallGroup("session-lifecycle", bindings, BindingCatalog.Session, new Dictionary<string, Type>
             {
                 ["load"] = typeof(LifecyclePatches.Load), ["loadRoutine"] = typeof(LifecyclePatches.LoadRoutine),
@@ -111,13 +121,34 @@ public sealed class Plugin : BaseUnityPlugin
             MissionPatches.Adapter = _missions;
             InstallGroup("mission-transitions", new GameBindings(assembly), BindingCatalog.Missions,
                 BindingCatalog.Missions.ToDictionary(binding => binding.Key, binding => binding.Key.StartsWith("missionSweep", StringComparison.Ordinal) ? typeof(MissionSweepPatches) : typeof(MissionPatches)));
-            if (_hub.Capabilities.Any(c => c.Name == "mission-transitions" && c.Available)) ModApi.Missions = _missions.Events;
+            if (_hub.Capabilities.Any(c => c.Name == "mission-transitions" && c.Available))
+            {
+                ModApi.Missions = _missions.Events;
+                InitializeMissionIdentity(assembly);
+            }
             else { _missions.Dispose(); _missions = null; MissionPatches.Adapter = null; }
         }
         catch (Exception error)
         {
             _missions?.Dispose(); _missions = null; MissionPatches.Adapter = null;
             _hub.SetCapability("mission-transitions", false, "Mission binding failed: " + error.Message);
+            Logger.LogError(error);
+        }
+    }
+
+    private void InitializeMissionIdentity(Assembly assembly)
+    {
+        if (!Config.Bind("Missions", "IdentityContinuity", false, "Experimental exact-snapshot identity; requires coordinated persistence.").Value) return;
+        if (_persistence == null) { _hub!.SetCapability("mission-continuity", false, "Coordinated persistence unavailable."); return; }
+        try
+        {
+            if (!_identityHooksBound) throw new InvalidOperationException("Early snapshot hooks unavailable.");
+            _missions!.EnableIdentity(_persistence, new MissionJsonBindings(assembly));
+            _hub!.SetCapability("mission-continuity", true, "Experimental exact-snapshot identity enabled; no persistent history ownership.");
+        }
+        catch (Exception error)
+        {
+            _missions!.DisableIdentity(); _hub!.SetCapability("mission-continuity", false, "Mission identity initialization failed: " + error.Message);
             Logger.LogError(error);
         }
     }

@@ -36,8 +36,11 @@ internal sealed class MissionTransitions : IMissionEvents, IVersionSensitiveMiss
     }
     private sealed class Entry
     {
-        internal readonly Guid Id = Guid.NewGuid();
-        internal bool Accepted, Removed;
+        internal readonly Guid Id;
+        internal readonly MissionIdentityEvidence Evidence;
+        internal Entry(Guid? id = null, MissionIdentityEvidence evidence = MissionIdentityEvidence.SessionOnly)
+        { Id = id ?? Guid.NewGuid(); Evidence = evidence; }
+        internal bool Accepted, Removed, SnapshotObserved;
         internal long RemovedOrder, EstablishedOrder;
         internal readonly HashSet<MissionTransitionKind> Seen = new();
     }
@@ -57,7 +60,26 @@ internal sealed class MissionTransitions : IMissionEvents, IVersionSensitiveMiss
     private readonly Stack<Observation> _stack = new();
     private readonly List<(long order, long epoch, MissionTransitionKind kind, MissionSnapshot snapshot, object identity)> _pending = new();
     private Guid? _session;
-    private long _epoch, _order, _sequence;
+    private long _epoch, _order, _sequence, _revision;
+    internal long Revision { get { CheckThread(); return _revision; } }
+    internal Guid SnapshotIdentity(object identity)
+    {
+        CheckThread();
+        if (_disposed || !_session.HasValue) throw new InvalidOperationException("No active mission identity session.");
+        if (!_entries.TryGetValue(identity, out var entry)) { entry = new Entry(); _entries.Add(identity, entry); }
+        if (entry.Removed) throw new InvalidOperationException("Mission reappeared without an observed new occurrence.");
+        if (!entry.SnapshotObserved && entry.Seen.Count == 0) entry.EstablishedOrder = ++_order;
+        entry.SnapshotObserved = true;
+        return entry.Id;
+    }
+    internal void SeedIdentity(object identity, Guid? id, MissionIdentityEvidence evidence)
+    {
+        CheckThread();
+        if (_disposed || !_session.HasValue || id == Guid.Empty || !Enum.IsDefined(typeof(MissionIdentityEvidence), evidence) || (evidence == MissionIdentityEvidence.SavedSnapshotMatch) != id.HasValue)
+            throw new InvalidOperationException("Invalid mission identity restoration.");
+        if (_entries.TryGetValue(identity, out _)) throw new InvalidOperationException("Mission identity already established.");
+        _entries.Add(identity, new Entry(id, evidence));
+    }
     private bool _dispatching, _disposed;
     private MissionSnapshot? _dispatchSnapshot;
     private object? _dispatchIdentity;
@@ -76,7 +98,7 @@ internal sealed class MissionTransitions : IMissionEvents, IVersionSensitiveMiss
         CheckThread(); if (_disposed) return;
         if (session == Guid.Empty) throw new ArgumentException("Empty session.", nameof(session));
         _dispatchSnapshot = null; _dispatchIdentity = null;
-        _epoch++; _session = session; _entries = new(); _pending.Clear(); _stack.Clear();
+        _revision++; _epoch++; _session = session; _entries = new(); _pending.Clear(); _stack.Clear();
     }
     internal bool WasRemoved(object identity)
     { CheckThread(); return _entries.TryGetValue(identity, out var entry) && entry.Removed; }
@@ -113,11 +135,12 @@ internal sealed class MissionTransitions : IMissionEvents, IVersionSensitiveMiss
         if (!verified) return;
         if (!_entries.TryGetValue(identity, out var entry) || (kind == MissionTransitionKind.Accepted &&
             ((entry.Removed && observation.Order > entry.RemovedOrder) ||
-             (!entry.Removed && (entry.Seen.Contains(MissionTransitionKind.Accepted) || entry.Seen.Contains(MissionTransitionKind.Restored)) && observation.Order > entry.EstablishedOrder))))
-        { _entries.Remove(identity); entry = new Entry(); _entries.Add(identity, entry); }
+             (!entry.Removed && (entry.SnapshotObserved || entry.Seen.Count != 0) && observation.Order > entry.EstablishedOrder))))
+        { _entries.Remove(identity); entry = new Entry { EstablishedOrder = observation.Order }; _entries.Add(identity, entry); }
         if (entry.Seen.Contains(kind) || (kind == MissionTransitionKind.Restored && entry.Seen.Count != 0)) return;
         var accepted = entry.Accepted || kind == MissionTransitionKind.Accepted;
-        var snapshot = new MissionSnapshot(_session.Value, entry.Id, definitionId, name, tags, accepted);
+        var snapshot = new MissionSnapshot(_session.Value, entry.Id, definitionId, name, tags, accepted, entry.Evidence);
+        _revision++;
         entry.Seen.Add(kind); entry.Accepted = accepted;
         if (kind is MissionTransitionKind.Accepted or MissionTransitionKind.Restored) entry.EstablishedOrder = observation.Order;
         if (kind is MissionTransitionKind.Completed or MissionTransitionKind.Abandoned or MissionTransitionKind.Removed)
@@ -128,7 +151,7 @@ internal sealed class MissionTransitions : IMissionEvents, IVersionSensitiveMiss
             {
                 var item = _pending[i]; var prior = item.snapshot;
                 if (prior.InstanceId == entry.Id && item.order >= observation.Order && !prior.AcceptanceObserved)
-                    _pending[i] = (item.order, item.epoch, item.kind, new MissionSnapshot(prior.SessionId, prior.InstanceId, prior.DefinitionId, prior.Name, prior.ObjectiveTags, true), item.identity);
+                    _pending[i] = (item.order, item.epoch, item.kind, new MissionSnapshot(prior.SessionId, prior.InstanceId, prior.DefinitionId, prior.Name, prior.ObjectiveTags, true, prior.IdentityEvidence), item.identity);
             }
         }
         _pending.Add((observation.Order, _epoch, kind, snapshot, identity));

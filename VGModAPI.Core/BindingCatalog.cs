@@ -47,6 +47,10 @@ internal static class BindingCatalog
         new("missionSweepIndustryLaunch", "Behaviour.UI.Spacestation.Location.IndustryBoard", "LaunchClicked", false, "System.Void"),
         new("missionSweepTutorialClear", Player, "TransitionTutorialToSandbox", false, "System.Void")
     };
+    internal static readonly MethodBinding[] MissionSnapshots =
+    {
+        new("missionSnapshot", Save, "SaveCurrentState", true, "LightJson.JsonObject")
+    };
     internal static readonly MethodBinding[] Saves =
     {
         new("writeFile", Save, "WriteSaveFile", true, "System.Void", "System.IO.FileInfo", "LightJson.JsonObject", "Source.Util.SaveGameFormat"),

@@ -9,20 +9,27 @@ internal static class SavePatches
     internal static GameAdapter? Adapter;
     internal static class Store
     {
-        internal static void Prefix(object[] __args, out SaveTracker.Call? __state)
+        internal sealed class State
         {
-            SaveTracker.Call? state = null;
+            internal SaveTracker.Call? Save;
+            internal MissionSerializationTracker.StoreScope? Identity;
+        }
+        internal static void Prefix(object[] __args, out State __state)
+        {
+            var state = new State();
+            MissionPatches.Adapter?.Guard(() => state.Identity = MissionPatches.Adapter.BeginIdentityStore(__args[0]));
             Adapter?.Guard(() =>
             {
                 var player = Adapter.Bindings.CurrentPlayer;
                 bool skipped = player != null && (bool)Adapter.Bindings.Ephemeral.GetValue(player)!;
-                state = Adapter.Saves.Enter(__args[0], Adapter.Destination((string)__args[1]), __args[2], (int)__args[3], skipped, Adapter.SaveSession());
+                state.Save = Adapter.Saves.Enter(__args[0], Adapter.Destination((string)__args[1]), __args[2], (int)__args[3], skipped, Adapter.SaveSession());
             });
             __state = state;
         }
-        internal static Exception? Finalizer(SaveTracker.Call? __state, Exception? __exception)
+        internal static Exception? Finalizer(State? __state, Exception? __exception)
         {
-            if (__state != null) Adapter?.Guard(() => Adapter.Saves.Exit(__state, __exception));
+            try { if (__state?.Save != null) Adapter?.Guard(() => Adapter.Saves.Exit(__state.Save, __exception)); }
+            finally { if (__state?.Identity != null) MissionPatches.Adapter?.Guard(__state.Identity.Dispose); }
             return __exception;
         }
     }
