@@ -47,7 +47,7 @@ public sealed partial class Plugin
             var assign = assigner.GetType().GetMethods().Single(m => m.Name == "Assign" && m.GetParameters().Length == 8);
             var id = (string)assign.Invoke(assigner, new object?[] { block, 1, station, "qa-" + Guid.NewGuid().ToString("N"), story, "Probe", "Probe", null })!;
             ids.Add(id);
-            var mission = storyType.GetMethod("Get")!.Invoke(null, new[] { CurrentPlayer, (object)id })!;
+            var mission = AccessTools.Method(storyType, "Get", new[] { _player, typeof(string) }).Invoke(null, new[] { CurrentPlayer, (object)id })!;
             AccessTools.Field(missionType, "trackedOnHud").SetValue(mission, false);
             Require(SpCall(registry, "Get", id) != null, "Real Anima assigner did not publish its offered definition.");
             return (id, mission);

@@ -38,6 +38,27 @@ try {
     try { & $script -Action Prepare -SandboxRoot (Join-Path $work 'invalid-anima') -AnimaBin $build @options }
     catch { $rejected = $_.Exception.Message -like '*Anima requires*' }
     Assert $rejected 'Anima accepted without safe prerequisites.'
+    Put 'bad-anima\VGAnima.dll' 'not-an-assembly'
+    $rejected = $false
+    try { & $script -Action Prepare -SandboxRoot (Join-Path $work 'bad-anima-root') -AnimaBin (Join-Path $work 'bad-anima') -AnimaRevision ('a' * 40) -MissionIdentityProbe -MissionTransitionsProbe -PersistenceProbe -MissionJournalBin $build @options }
+    catch { $rejected = $_.Exception.ToString() -match 'GetAssemblyName|BadImageFormat|manifest' }
+    Assert $rejected 'Non-assembly Anima input was accepted or failed at an unrelated gate.'
+    Assert (!(Test-Path -LiteralPath (Join-Path $work 'bad-anima-root'))) 'Bad Anima input left a prepared sandbox.'
+    function AnimaMetadata($version, $minimum) {
+        return [pscustomobject]@{
+            Name=[pscustomobject]@{Name='VGAnima';Version=[Version]$version}
+            MainModule=[pscustomobject]@{Types=@([pscustomobject]@{FullName='VGAnima.Plugin';CustomAttributes=@([pscustomobject]@{
+                AttributeType=[pscustomobject]@{FullName='BepInEx.BepInDependency'}
+                ConstructorArguments=@([pscustomobject]@{Value='vgmodapi'},[pscustomobject]@{Value=$minimum})
+            })})}
+        }
+    }
+    Assert-AnimaAssemblyMetadata (AnimaMetadata '0.3.0.0' '0.1.8')
+    foreach ($metadata in @((AnimaMetadata '0.2.0.0' '0.1.8'), (AnimaMetadata '0.3.0.0' '0.1.1'))) {
+        $rejected = $false
+        try { Assert-AnimaAssemblyMetadata $metadata } catch { $rejected = $true }
+        Assert $rejected 'Unsupported Anima version/dependency metadata accepted.'
+    }
     & $script -Action Prepare -SandboxRoot $sandbox @options
     $legacyConfigPath = Join-Path $sandbox 'game\BepInEx\config\vgmodapi.cfg'
     $legacyConfig = [IO.File]::ReadAllText($legacyConfigPath)

@@ -1,4 +1,14 @@
 # Prepared-input helpers; safe to exercise with synthetic files.
+function Assert-AnimaAssemblyMetadata($Assembly) {
+    if ($Assembly.Name.Name -ne 'VGAnima' -or $Assembly.Name.Version.ToString() -ne '0.3.0.0') { throw 'Only Anima 0.3.0 pilot shape accepted.' }
+    $plugin = @($Assembly.MainModule.Types | Where-Object { $_.FullName -eq 'VGAnima.Plugin' })
+    if ($plugin.Count -ne 1) { throw 'Anima plugin metadata missing or duplicated.' }
+    $dependency = @($plugin[0].CustomAttributes | Where-Object {
+        $_.AttributeType.FullName -eq 'BepInEx.BepInDependency' -and $_.ConstructorArguments.Count -eq 2 -and
+        $_.ConstructorArguments[0].Value -eq 'vgmodapi' -and $_.ConstructorArguments[1].Value -eq '0.1.8'
+    })
+    if ($dependency.Count -ne 1) { throw 'Anima must require API before its startup sweeper.' }
+}
 function Assert-PersistenceProbeReceipt([string]$Root, $Provenance) {
     if ($Provenance.PSObject.Properties['anima'] -and $Provenance.anima) {
         $receipt = Join-Path $Root 'anima-missions.txt'

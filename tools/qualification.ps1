@@ -59,6 +59,7 @@ if ($Action -eq 'Prepare') {
     if ($VanillaLoadControl -and $Scenario -ne 'MissingApi') { throw 'Vanilla load control requires MissingApi.' }
     if ($PersistenceProbe -and $Scenario -ne 'Full') { throw 'Persistence probe requires Full.' }
     if ($AnimaBin -and (!$MissionIdentityProbe -or !$MissionJournalBin -or $AnimaRevision -notmatch '^[0-9a-f]{40}$')) { throw 'Anima requires identity probes, journal-provided JSON runtime and exact source revision.' }
+    if ($AnimaBin) { $null = [Reflection.AssemblyName]::GetAssemblyName((Join-Path $AnimaBin 'VGAnima.dll')) }
     if ($JournalMissionEventsProbe -and (!$JournalCoordinated -or !$MissionIdentityProbe)) { throw 'Journal mission events require API-managed journal and mission identity probes.' }
     if ($MissionIdentityProbe -and (!$MissionTransitionsProbe -or !$PersistenceProbe)) { throw 'Mission identity probe requires mission transitions and persistence probes.' }
     if ($MissionTransitionsProbe -and $Scenario -ne 'Full') { throw 'Mission transitions probe requires Full.' }
@@ -147,15 +148,7 @@ if ($Action -eq 'Prepare') {
         $candidate = Join-Path $AnimaBin 'VGAnima.dll'
         Add-Type -Path (Join-Path $bep 'core\Mono.Cecil.dll')
         $assembly = [Mono.Cecil.AssemblyDefinition]::ReadAssembly($candidate)
-        try {
-            if ($assembly.Name.Name -ne 'VGAnima' -or $assembly.Name.Version.ToString() -ne '0.3.0.0') { throw 'Only Anima 0.3.0 pilot shape accepted.' }
-            $plugin = $assembly.MainModule.Types | Where-Object { $_.FullName -eq 'VGAnima.Plugin' }
-            $dependency = @($plugin.CustomAttributes | Where-Object {
-                $_.AttributeType.FullName -eq 'BepInEx.BepInDependency' -and $_.ConstructorArguments.Count -eq 2 -and
-                $_.ConstructorArguments[0].Value -eq 'vgmodapi' -and $_.ConstructorArguments[1].Value -eq '0.1.8'
-            })
-            if ($dependency.Count -ne 1) { throw 'Anima must require API before its startup sweeper.' }
-        } finally { $assembly.Dispose() }
+        try { Assert-AnimaAssemblyMetadata $assembly } finally { $assembly.Dispose() }
         Copy-Item -LiteralPath $candidate -Destination $plugins
         New-Item -ItemType Directory -Path (Join-Path $bep 'config') -Force | Out-Null
         [IO.File]::WriteAllText((Join-Path $bep 'config\vganima.cfg'), "[General]`r`nEnabled = true`r`n[Llm]`r`nEnabled = false`r`nBaseUrl = `r`nApiKey = `r`n")
