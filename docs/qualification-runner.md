@@ -57,7 +57,7 @@ By default the mismatch is **injected input**, not an altered or alternate game 
 
 ### API-absent gameplay control
 
-`-VanillaLoadControl` is opt-in for `MissingApi`. After the menu, the API-independent guard loads both copied fixtures through vanilla GameManager, requires a new player and a live initialized GameplayManager, settles, and returns directly through SceneLoader to avoid creating a quit save. The separate receipt records this current no-API comparison; it does not establish the cause of historical failed runs. No API lifecycle hooks or readiness events are involved. Selection is pinned and copied files/preferences remain protected.
+`-VanillaLoadControl` is opt-in for `MissingApi`. After the menu, the API-independent guard loads both copied fixtures through vanilla GameManager, requires a new player and a live initialized GameplayManager, settles, cleans up the player, and returns through SceneLoader without the options-menu save action. Failure handling also attempts player/menu cleanup before quitting. The separate receipt records this current no-API comparison; it does not establish the cause of historical failed runs. No API lifecycle hooks or readiness events are involved. Selection and the successful completion receipt are checked independently of the guard version. Copied files are checked even without consumers. A read-only GetFreeOrbit exception finalizer records whether the world RNG was null, preserves the original exception, and does not turn a failed load into success.
 
 ### Actual private assembly-identity rejection
 

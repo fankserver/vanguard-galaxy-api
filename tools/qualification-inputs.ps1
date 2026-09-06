@@ -1,4 +1,10 @@
 # Prepared-input helpers; safe to exercise with synthetic files.
+function Assert-VanillaControlReceipt([string]$Root, $Provenance) {
+    if ($Provenance.PSObject.Properties['vanillaLoadControl'] -and $Provenance.vanillaLoadControl) {
+        $receipt = Join-Path $Root 'vanilla-load-control.txt'
+        if (!(Test-Path -LiteralPath $receipt) -or (Get-Content -LiteralPath $receipt -TotalCount 1) -ne 'PASS') { throw 'Vanilla gameplay control did not complete successfully.' }
+    }
+}
 function Initialize-QualificationAssemblyOverlay([string]$Root, [string]$GameDir) {
     $sourceData = Join-Path $GameDir 'VanguardGalaxy_Data'
     $data = Join-Path $Root 'game\VanguardGalaxy_Data'

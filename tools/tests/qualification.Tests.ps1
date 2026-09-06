@@ -78,7 +78,17 @@ try {
     $vanillaRoot = Join-Path $work 'vanilla-control-sandbox'
     $sandboxes += $vanillaRoot
     & $script -Action Prepare -SandboxRoot $vanillaRoot -Scenario MissingApi -VanillaLoadControl @options
-    $null = Assert-QualificationInputs $vanillaRoot
+    $vanillaProvenance = Assert-QualificationInputs $vanillaRoot
+    $receipt = Join-Path $vanillaRoot 'vanilla-load-control.txt'
+    $rejected = $false
+    try { Assert-VanillaControlReceipt $vanillaRoot $vanillaProvenance } catch { $rejected = $true }
+    Assert $rejected 'Old guard without control receipt accepted.'
+    [IO.File]::WriteAllText($receipt, 'FAIL')
+    $rejected = $false
+    try { Assert-VanillaControlReceipt $vanillaRoot $vanillaProvenance } catch { $rejected = $true }
+    Assert $rejected 'Failed control receipt accepted.'
+    [IO.File]::WriteAllText($receipt, 'PASS')
+    Assert-VanillaControlReceipt $vanillaRoot $vanillaProvenance
     $vanillaMarker = Join-Path $vanillaRoot 'vanilla-load.enabled'
     [IO.File]::WriteAllText($vanillaMarker, 'tampered')
     $rejected = $false

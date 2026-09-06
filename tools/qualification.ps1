@@ -173,7 +173,7 @@ if ($Action -eq 'Cleanup') {
 Assert-QualificationUnused $root
 $provenance = Assert-QualificationInputs $root
 $negativeBefore = $null
-if (($provenance.missionJournal -or $provenance.stockpile) -and $provenance.scenario -ne 'Full') { $negativeBefore = SaveHashes @((Join-Path $root 'Saves')) }
+if (($provenance.missionJournal -or $provenance.stockpile -or ($provenance.PSObject.Properties['vanillaLoadControl'] -and $provenance.vanillaLoadControl)) -and $provenance.scenario -ne 'Full') { $negativeBefore = SaveHashes @((Join-Path $root 'Saves')) }
 # Unity PlayerPrefs are shared even with a separate executable. Preserve this inspected title's key.
 $prefsNative = 'HKCU\Software\Bat Roost Games\VanguardGalaxy'
 $prefsFile = Join-Path $root 'playerprefs-before.reg'
@@ -215,16 +215,17 @@ finally {
         }
     }
 }
+$result = Join-Path $root 'result.txt'
+if (Test-Path -LiteralPath $result) { Get-Content -LiteralPath $result }
 if ($null -ne $negativeBefore) {
     $negativeAfter = SaveHashes @((Join-Path $root 'Saves'))
-    if ($negativeBefore.Count -ne $negativeAfter.Count) { throw 'Disabled consumer changed sandbox file set.' }
+    if ($negativeBefore.Count -ne $negativeAfter.Count) { throw 'Negative/control run changed sandbox file set; inspect the result for vanilla failure/quit saves.' }
     foreach ($key in $negativeBefore.Keys) {
-        if ($negativeAfter[$key] -ne $negativeBefore[$key]) { throw 'Disabled consumer changed a sandbox fixture or sidecar.' }
+        if ($negativeAfter[$key] -ne $negativeBefore[$key]) { throw 'Negative/control run changed a sandbox fixture or sidecar.' }
     }
     [IO.File]::WriteAllText((Join-Path $root 'negative-consumer-files-unchanged.txt'), 'PASS')
 }
 $null = Assert-QualificationInputs $root
-$result = Join-Path $root 'result.txt'
+Assert-VanillaControlReceipt $root $provenance
 if (!(Test-Path -LiteralPath $result)) { throw 'Game exited without a qualification result; inspect sandbox logs.' }
-Get-Content -LiteralPath $result
 if ((Get-Content -LiteralPath $result -TotalCount 1) -ne 'PASS') { throw 'Qualification failed; inspect sandbox logs.' }
