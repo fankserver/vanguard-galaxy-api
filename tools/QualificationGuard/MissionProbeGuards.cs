@@ -13,7 +13,7 @@ public sealed partial class Plugin
         // Install tiny callees before the API patches/JITs their callers.
         harmony.Patch(AccessTools.Method(AccessTools.TypeByName("Source.Galaxy.GalaxyMapData"), "ClearSectors"),
             prefix: new HarmonyMethod(typeof(Plugin), nameof(StopMissionMapClear)));
-        harmony.Patch(AccessTools.Method(AccessTools.TypeByName("FocusedMissionHandler"), "SetMission", new[] { AccessTools.TypeByName("Source.MissionSystem.Mission") }),
+        harmony.Patch(AccessTools.Method(AccessTools.TypeByName("Behaviour.UI.Missions.FocusedMissionHandler"), "SetMission", new[] { AccessTools.TypeByName("Source.MissionSystem.Mission") }),
             prefix: new HarmonyMethod(typeof(Plugin), nameof(StopMissionFocus)));
         _missionProbesInstalled = true;
     }

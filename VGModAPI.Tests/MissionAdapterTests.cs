@@ -35,6 +35,25 @@ public sealed class MissionAdapterTests : IDisposable
         Assert.All(_errors, error => Assert.Contains("broken-owner", error.Message));
     }
     [Fact]
+    public void CallUnwindsYoungerSweepWithoutLateEmission()
+    {
+        var mission = new Mission(); var call = _adapter.Begin("accept", _player, mission)!;
+        var sweep = _adapter.BeginSweep()!; _player.missions.Add(mission);
+        _adapter.End(call); _adapter.EndSweep(sweep);
+        Assert.Equal(MissionTransitionKind.Accepted, Assert.Single(_events).Kind);
+        var next = _adapter.BeginSweep()!; _adapter.EndSweep(next); Assert.Single(_events);
+    }
+    [Fact]
+    public void StaleSweepDoesNotCloseReplacementSessionScopes()
+    {
+        var old = _adapter.BeginSweep()!;
+        var session = _hub.Begin(SessionOrigin.SaveLoad, "replacement-sweep.save"); _hub.PlayerReady(session);
+        var current = _adapter.BeginSweep()!; _player.currentBounty = new Mission();
+        _adapter.EndSweep(old); Assert.Empty(_events);
+        _adapter.EndSweep(current);
+        Assert.Equal(MissionTransitionKind.Accepted, Assert.Single(_events).Kind);
+    }
+    [Fact]
     public void SweepUnwindsDanglingInnerCall()
     {
         var mission = new Mission(); var sweep = _adapter.BeginSweep()!;
