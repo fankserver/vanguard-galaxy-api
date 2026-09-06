@@ -81,6 +81,23 @@ internal static class TravelPatches
             adapter?.Guard(() => adapter.CheckRouteBoundary(__instance));
         }
     }
+    internal static class InSystemWarp
+    {
+        // TravelInSystem only runs after departure preparation, so its FIRST actual step is the
+        // true warp/transport start of the requested in-system leg (robust empty-origin/re-route
+        // departure evidence, excluding preparation; TravelActive() would include it). The bound
+        // leg is already requested (SetRouteToPOI/RouteBoundary prefix) before this runs. Children
+        // carry no lifecycle callback.
+        internal static void Postfix(ref IEnumerator __result)
+        {
+            var adapter = Adapter; if (adapter == null) return;
+            var inner = __result;
+            if (inner == null) return;
+            IEnumerator? wrapped = null;
+            adapter.Guard(() => wrapped = new CoroutineBoundaryObserver(inner, onFirst: () => adapter.OnInSystemWarpStart()));
+            if (wrapped != null) __result = wrapped;
+        }
+    }
     internal static class JumpGate
     {
         internal static void Postfix(ref IEnumerator __result, object __instance, object jumpGatePoi)
@@ -113,12 +130,14 @@ internal static class TravelPatches
             var adapter = Adapter; if (adapter == null) return;
             var inner = __result;
             if (inner == null) return;
+            // Factory time: pin immutable session+player ownership now (never adopt a later session).
+            var owner = adapter.CreateDockOwner();
             object? dockContext = null;
             IEnumerator? wrapped = null;
             adapter.Guard(() =>
             {
                 wrapped = new CoroutineBoundaryObserver(inner,
-                    onFirst: () => adapter.Guard(() => dockContext = adapter.CaptureDock(__instance)),
+                    onFirst: () => adapter.Guard(() => dockContext = adapter.CaptureDock(__instance, owner)),
                     onDone: () => adapter.OnDockedPhysical(dockContext));
             });
             if (wrapped != null) __result = wrapped;
@@ -131,12 +150,14 @@ internal static class TravelPatches
             var adapter = Adapter; if (adapter == null) return;
             var inner = __result;
             if (inner == null) return;
+            // Factory time: pin immutable session+player ownership now (never adopt a later session).
+            var owner = adapter.CreateDockOwner();
             object? dockContext = null;
             IEnumerator? wrapped = null;
             adapter.Guard(() =>
             {
                 wrapped = new CoroutineBoundaryObserver(inner,
-                    onFirst: () => adapter.Guard(() => { dockContext = adapter.CaptureDock(__instance); adapter.OnUndocking(dockContext); }),
+                    onFirst: () => adapter.Guard(() => { dockContext = adapter.CaptureDock(__instance, owner); adapter.OnUndocking(dockContext); }),
                     onDone: () => adapter.OnLeaving(dockContext));
             });
             if (wrapped != null) __result = wrapped;
@@ -144,11 +165,11 @@ internal static class TravelPatches
     }
     internal static class EmergencyUndock
     {
-        // Synchronous (no coroutine): capture the context at this actual call and emit Leaving.
+        // Synchronous (no coroutine): factory time and execution coincide, so capture owner+ship here.
         internal static void Postfix(object __instance)
         {
             var adapter = Adapter;
-            adapter?.Guard(() => adapter.OnLeaving(adapter.CaptureDock(__instance)));
+            adapter?.Guard(() => adapter.OnLeaving(adapter.CaptureDock(__instance, adapter.CreateDockOwner())));
         }
     }
     internal static class InteriorAwake

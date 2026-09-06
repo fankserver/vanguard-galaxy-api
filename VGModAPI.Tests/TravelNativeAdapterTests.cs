@@ -109,10 +109,11 @@ public sealed class TravelNativeAdapterTests
         var ship = UnitFor(w);
         ship.spaceShipData!.dockingState = DockingState.Docking;
         var option = OptionFor(w, ship);
+        var owner = w.Adapter.CreateDockOwner(); // factory-time ownership
         var docket = new DockFake(ship, new FakeWaitN(1)); // procedure child, then sets Docked at root end
         object? ctx = null;
         var observer = new CoroutineBoundaryObserver(docket,
-            onFirst: () => ctx = w.Adapter.CaptureDock(option),
+            onFirst: () => ctx = w.Adapter.CaptureDock(option, owner),
             onDone: () => w.Adapter.OnDockedPhysical(ctx));
         Drive(observer);
         // Exactly one DockedPhysical (at root completion), not one per nested child.
@@ -123,7 +124,7 @@ public sealed class TravelNativeAdapterTests
         ship.spaceShipData!.dockingState = DockingState.Docking;
         var inflight = new DockFake(ship, new FakeWaitN(10));
         var observer2 = new CoroutineBoundaryObserver(inflight,
-            onFirst: () => ctx = w.Adapter.CaptureDock(option),
+            onFirst: () => ctx = w.Adapter.CaptureDock(option, owner),
             onDone: () => w.Adapter.OnDockedPhysical(ctx));
         Assert.True(observer2.MoveNext()); // first parent step runs the procedure child
         (observer2.Current as IEnumerator)?.MoveNext(); // drive child once, still in-flight
@@ -144,9 +145,10 @@ public sealed class TravelNativeAdapterTests
         // Source-faithful Undock: sets Undocking, yields a nested UndockingProcedure (which yields
         // a WaitUntil child), sets Leaving, then ResetDockingOption() nulls dockingSpaceship.
         var undock = new UndockFake(ship, option, new UndockingProcedure(new FakeWaitN(2)));
+        var owner = w.Adapter.CreateDockOwner(); // factory-time ownership
         object? ctx = null;
         var observer = new CoroutineBoundaryObserver(undock,
-            onFirst: () => w.Adapter.Guard(() => { ctx = w.Adapter.CaptureDock(option); w.Adapter.OnUndocking(ctx); }),
+            onFirst: () => w.Adapter.Guard(() => { ctx = w.Adapter.CaptureDock(option, owner); w.Adapter.OnUndocking(ctx); }),
             onDone: () => w.Adapter.OnLeaving(ctx));
         Drive(observer);
         Assert.Null(option.dockingSpaceship); // ResetDockingOption really nulled it before iterator end
@@ -165,7 +167,7 @@ public sealed class TravelNativeAdapterTests
         w.Adapter.Tick(w.Player, w.OriginManager); w.StationFacts.Clear();
         var ship = UnitFor(w);
         ship.spaceShipData!.dockingState = DockingState.Docking; // not Leaving
-        w.Adapter.OnLeaving(w.Adapter.CaptureDock(OptionFor(w, ship)));
+        w.Adapter.OnLeaving(w.Adapter.CaptureDock(OptionFor(w, ship), w.Adapter.CreateDockOwner()));
         Assert.Empty(w.StationFacts);
     }
 
@@ -260,10 +262,11 @@ public sealed class TravelNativeAdapterTests
         var ship = UnitFor(w);
         ship.spaceShipData!.dockingState = DockingState.Docked;
         var option = OptionFor(w, ship);
+        var owner = w.Adapter.CreateDockOwner();
         object? ctx = null;
         var docket = new DockFake(ship, new FakeWaitN(1));
         var observer = new CoroutineBoundaryObserver(docket,
-            onFirst: () => ctx = w.Adapter.CaptureDock(option),
+            onFirst: () => ctx = w.Adapter.CaptureDock(option, owner),
             onDone: () => w.Adapter.OnDockedPhysical(ctx));
         Drive(observer);
         Assert.Equal(StationTransitionKind.DockedPhysical, Assert.Single(w.StationFacts).Kind);
@@ -323,45 +326,94 @@ public sealed class TravelNativeAdapterTests
     }
 
     [Fact]
+    public void RequestBeforeInitialPlacementIsRequestedOnlyThenWarpDeparts()
+    {
+        using var w = new World();
+        // currentSystem is known but there is NOT yet a placement (loading / initial unknown).
+        w.Player.currentPointOfInterest = null;
+        w.Travel.localPoiManager = null;
+        w.SetWaypoints(w.InSystemPoi);
+        w.Adapter.RequestWaypointLeg();
+        // Current == null must NOT fabricate a departure: Requested only until actual warp.
+        Assert.Equal(new[] { TravelTransitionKind.Requested }, w.Transitions.Select(t => t.Kind).ToArray());
+        // A real in-system warp begins -> departure.
+        w.Adapter.OnInSystemWarpStart();
+        Assert.Equal(
+            new[] { TravelTransitionKind.Requested, TravelTransitionKind.Departed },
+            w.Transitions.Select(t => t.Kind).ToArray());
+        Assert.Empty(w.Faults);
+    }
+
+    [Fact]
+    public void CancelledStationaryEmptySpaceNewRequestIsRequestedOnlyUntilActualWarp()
+    {
+        using var w = new World();
+        w.Adapter.Tick(w.Player, w.OriginManager); w.Transitions.Clear();
+        w.SetWaypoints(w.InSystemPoi);
+        w.Adapter.RequestWaypointLeg();
+        // Real warp begins, then the player cancels while parked in empty space (Current is null).
+        w.Adapter.OnInSystemWarpStart();
+        w.Player.currentPointOfInterest = null; w.Travel.localPoiManager = null;
+        w.Adapter.OnTravelCancelled();
+        // New route after the parked empty-space cancel: Requested ONLY (Current==null is not warp
+        // evidence), until the next real warp.
+        w.Transitions.Clear();
+        w.SetWaypoints(w.TutorialPoi);
+        w.Adapter.RequestWaypointLeg(replacePending: true);
+        Assert.Equal(new[] { TravelTransitionKind.Requested }, w.Transitions.Select(t => t.Kind).ToArray());
+        // Next actual warp -> departs.
+        w.Adapter.OnInSystemWarpStart();
+        Assert.Contains(w.Transitions, t => t.Kind == TravelTransitionKind.Departed);
+        Assert.Empty(w.Faults);
+    }
+
+    [Fact]
     public void MidWarpRerouteThenSecondRerouteArrivesUnderNewIdThenJumpWorks()
     {
         using var w = new World();
         w.Adapter.Tick(w.Player, w.OriginManager); w.Transitions.Clear();
 
-        // Leg X: requested then departed; the origin scene unloads (Current becomes null).
+        // Leg X: requested, then a REAL in-system transport starts (TravelInSystem first step) and the origin unloads.
         w.SetWaypoints(w.InSystemPoi);
         w.Adapter.RequestWaypointLeg();
-        w.Adapter.OnDeparture(w.Player, true);
+        w.Adapter.OnInSystemWarpStart();
         w.Player.currentPointOfInterest = null; w.Travel.localPoiManager = null; // origin unloaded
         var xId = w.Transitions.Single(t => t.Kind == TravelTransitionKind.Requested).OperationId;
+        Assert.Equal(xId, w.Transitions.Single(t => t.Kind == TravelTransitionKind.Departed).OperationId);
 
-        // Re-route #1 while still mid-warp (origin unloaded, Current == null): CancelTravel cancels X,
-        // then the route postfix requests Y with origin unknown -> Y must be marked departed at request.
+        // Source-faithful mid-warp re-route order: SetRouteToPOI -> CancelTravel() FIRST, then the
+        // route postfix requests Y. Origin already unloaded (Current == null): Y is REQUESTED ONLY
+        // (no fabricated departure) until a real warp begins.
         w.Adapter.OnTravelCancelled();
         w.SetWaypoints(w.TutorialPoi);
         w.Adapter.RequestWaypointLeg(replacePending: true);
         Assert.Contains(w.Transitions, t => t.Kind == TravelTransitionKind.Cancelled && Equals(t.OperationId, xId));
         var yRequested = w.Transitions.Last(t => t.Kind == TravelTransitionKind.Requested);
-        var yDeparted = w.Transitions.Last(t => t.Kind == TravelTransitionKind.Departed);
         Assert.Equal("poi-tutorial", yRequested.RequestedDestination!.PoiId);
-        Assert.Null(yDeparted.ActualLocation);                       // origin unknown while warping
-        Assert.Equal(yRequested.OperationId, yDeparted.OperationId); // never departs again
+        Assert.DoesNotContain(w.Transitions, t => t.Kind == TravelTransitionKind.Departed && Equals(t.OperationId, yRequested.OperationId));
 
-        // Re-route #2 while Y is still pending (travelCoroutine null -> no CancelTravel): the route
-        // postfix must REPLACE Y (truthful Cancelled) and request Z with a fresh id + auto-depart.
+        // The actual warp for Y begins -> departs (origin unknown, Current null).
+        w.Adapter.OnInSystemWarpStart();
+        var yDeparted = w.Transitions.Last(t => t.Kind == TravelTransitionKind.Departed);
+        Assert.Equal(yRequested.OperationId, yDeparted.OperationId);
+        Assert.Null(yDeparted.ActualLocation);                       // origin unknown while warping
+
+        // Second re-route mid-warp: CancelTravel cancels Y, then request Z (Requested only until warp).
+        w.Adapter.OnTravelCancelled();
         w.SetWaypoints(w.NominalPoi);
         w.Adapter.RequestWaypointLeg(replacePending: true);
         Assert.Contains(w.Transitions, t => t.Kind == TravelTransitionKind.Cancelled && Equals(t.OperationId, yRequested.OperationId));
         var zRequested = w.Transitions.Last(t => t.Kind == TravelTransitionKind.Requested);
-        var zDeparted = w.Transitions.Single(t => t.Kind == TravelTransitionKind.Departed
-            && Equals(t.OperationId, zRequested.OperationId));
+        Assert.DoesNotContain(w.Transitions, t => t.Kind == TravelTransitionKind.Departed && Equals(t.OperationId, zRequested.OperationId));
 
-        // Arrive at Z: no UnloadCurrentScene (origin still unloaded), but Z is already departed.
+        // Actual warp for Z, then arrival under the correct new id (no false claim on an old id).
+        w.Adapter.OnInSystemWarpStart();
         w.PlaceAt(w.NominalPoi, w.Origin);
         var token = w.Adapter.OnArrivalEnter(w.OriginManager);
         w.Adapter.OnArrivalExit(token, w.OriginManager, null);
         var zArrived = w.Transitions.Single(t => t.Kind == TravelTransitionKind.Arrived);
         Assert.Equal(zRequested.OperationId, zArrived.OperationId);        // no arrival under an old id
+        Assert.Equal(zRequested.OperationId, w.Transitions.Last(t => t.Kind == TravelTransitionKind.Departed).OperationId);
         Assert.Equal("poi-nominal", zArrived.ActualLocation!.PoiId);
         w.Player.waypoints.Clear();
         w.Adapter.CheckRouteBoundary(w.Travel);
@@ -380,17 +432,19 @@ public sealed class TravelNativeAdapterTests
         Assert.Contains(w.Transitions, t => t.Kind == TravelTransitionKind.Arrived && t.Mode == TravelMode.JumpGate);
     }
 
-    // --- finding 4/LOW: dock/undock contexts pin session+player+ship at first actual step ---
+    // --- finding 4/F4/B: dock/undock factory ownership is immutable session+player @ factory time ---
 
     [Fact]
-    public void UndockContextPinnedAtFirstStepIsNotEmittedIntoSessionReplacement()
+    public void UndockFactoryOwnerSurvivesMidIteratorSessionReplacement()
     {
         using var w = new World();
         w.Adapter.Tick(w.Player, w.OriginManager); w.StationFacts.Clear();
         var ship = UnitFor(w); ship.spaceShipData!.dockingState = DockingState.Undocking;
         var option = OptionFor(w, ship);
-        // Undock begins under session A and emits Undocking on its first step.
-        var ctx = w.Adapter.CaptureDock(option);
+        // Factory (patch) time pins session A + player. First actual step (still A) verifies and
+        // captures the exact ship, emitting Undocking under A.
+        var owner = w.Adapter.CreateDockOwner();
+        var ctx = w.Adapter.CaptureDock(option, owner);
         w.Adapter.OnUndocking(ctx);
         Assert.Equal(w.Session, Assert.Single(w.StationFacts).SessionId);
         // Mid-iterator the session is replaced with the SAME player object; the old operation's
@@ -405,22 +459,44 @@ public sealed class TravelNativeAdapterTests
     }
 
     [Fact]
-    public void UndockContextCapturesFirstActualStepAfterSessionChange()
+    public void UndockFactoryOwnerBeforeFirstAdvanceSessionChangeProducesZeroFacts()
     {
         using var w = new World();
         w.Adapter.Tick(w.Player, w.OriginManager); w.StationFacts.Clear();
         var ship = UnitFor(w); ship.spaceShipData!.dockingState = DockingState.Docked;
         var option = OptionFor(w, ship);
-        // The session changes BEFORE the first actual step (before advance): CaptureDock at that
-        // first step pins the NEW session, so both facts are attributed to it.
+        // Factory (patch) time under session A pins owner A (same player object).
+        var owner = w.Adapter.CreateDockOwner();
+        // Session changes to B BEFORE the first actual step (before advance). The old factory owner
+        // must NOT adopt B: CaptureDock at the first step sees owner.A != current B -> ZERO facts.
         var newSession = Guid.NewGuid();
         w.Adapter.SetSession(newSession);
-        var ctx = w.Adapter.CaptureDock(option);
+        var ctx = w.Adapter.CaptureDock(option, owner);
         w.Adapter.OnUndocking(ctx);
         ship.spaceShipData!.dockingState = DockingState.Leaving;
         w.Adapter.OnLeaving(ctx);
-        Assert.Equal(2, w.StationFacts.Count);
-        Assert.All(w.StationFacts, f => Assert.Equal(newSession, f.SessionId));
+        Assert.Empty(w.StationFacts);            // no observer facts in the new session
+        Assert.Empty(w.Faults);
+    }
+
+    [Fact]
+    public void UndockFactoryOwnerWithDifferentReplacementPlayerProducesZeroFacts()
+    {
+        using var w = new World();
+        w.Adapter.Tick(w.Player, w.OriginManager); w.StationFacts.Clear();
+        var ship = UnitFor(w); ship.spaceShipData!.dockingState = DockingState.Docked;
+        var option = OptionFor(w, ship);
+        var owner = w.Adapter.CreateDockOwner();
+        // Replacement session with a DIFFERENT player object mid-operation: no facts into it.
+        var other = new GamePlayer { currentSystem = w.Origin, currentPointOfInterest = w.OriginPoi, currentSpaceShip = new SpaceShipData() };
+        GamePlayer.current = other;
+        var newSession = Guid.NewGuid();
+        w.Adapter.SetSession(newSession);
+        var ctx = w.Adapter.CaptureDock(option, owner);
+        w.Adapter.OnUndocking(ctx);
+        ship.spaceShipData!.dockingState = DockingState.Leaving;
+        w.Adapter.OnLeaving(ctx);
+        Assert.Empty(w.StationFacts);
         Assert.Empty(w.Faults);
     }
 
@@ -560,7 +636,7 @@ public sealed class TravelNativeAdapterTests
         npc.spaceShipData!.dockingState = DockingState.Docked;
         var option = new DockingOption { dockingSpaceship = npc };
         // NPC ship: CaptureDock fails the player-ship binding, so no fact is emitted.
-        w.Adapter.OnDockedPhysical(w.Adapter.CaptureDock(option));
+        w.Adapter.OnDockedPhysical(w.Adapter.CaptureDock(option, w.Adapter.CreateDockOwner()));
         Assert.Empty(w.StationFacts);
     }
 

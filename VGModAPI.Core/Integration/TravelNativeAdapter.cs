@@ -34,9 +34,16 @@ internal sealed class TravelNativeAdapter : IDisposable
         internal Guid LegId;
         internal TravelLegTracker.Place? Actual;
     }
-    // Session/player/ship are pinned at the FIRST ACTUAL STEP of a dock/undock coroutine (not at
-    // factory creation), so a session or player replacement before the operation runs or while it
-    // is in flight can never attribute an old operation's fact to the new session.
+    // Session/player are pinned at FACTORY/PATCH time (immutable ownership). The exact SHIP is
+    // captured at the FIRST ACTUAL STEP after verifying that ownership is still current, so a
+    // session/player replacement before or during the coroutine can never attribute an old operation's
+    // fact to the new session (finding 4/F4/B).
+    private sealed class DockOwner
+    {
+        internal readonly Guid Session;
+        internal readonly object Player;
+        internal DockOwner(Guid session, object player) { Session = session; Player = player; }
+    }
     private sealed class DockContext
     {
         internal readonly Guid Session;
@@ -191,19 +198,9 @@ internal sealed class TravelNativeAdapter : IDisposable
             {
                 _modeByLeg[_leg.Id] = TravelMode.InSystem;
                 _legMeta[_leg.Id] = new LegMeta(_leg.Origin, place);
-                // Origin already unloaded (manager null, tracker.Current null): the departure was never
-                // re-observed. Mark the leg departed at request time (origin unknown) so a later arrival
-                // is valid under this fresh id instead of being silently dropped (regression R1).
-                if (_tracker.Current == null) MarkRequestedDeparted(player);
             }
             Drain(_bindings.Time(player));
         });
-    }
-
-    private void MarkRequestedDeparted(object player)
-    {
-        if (_leg == null || !_tracker.DepartAllowed(_leg)) return;
-        _tracker.Depart(_leg, _bindings.Time(player));
     }
 
     internal void OnTravelCancelled()
@@ -412,17 +409,27 @@ internal sealed class TravelNativeAdapter : IDisposable
     // is never a physical transition, so it is not hooked at all. A real Dock() coroutine's
     // completion is always eligible when the player ship has physically reached Docked, independent
     // of reducer placement state (finding 6/F1).
-    // The context pins session/player/ship at the FIRST ACTUAL STEP. The ship object is read at that
-    // step (before ResetDockingOption() nulls dockingOption.dockingSpaceship) so attribution
-    // survives the reset (finding 3/5).
-    internal object? CaptureDock(object? dockingOption)
+    // The context pins immutable session/player at FACTORY time (owner) and captures the exact SHIP
+    // at the FIRST ACTUAL STEP only after verifying that ownership is still current. The ship object
+    // is read at that step (before ResetDockingOption() nulls dockingOption.dockingSpaceship) so
+    // attribution survives the reset (finding 3/5). When the session/player changed before this
+    // step, it returns null so the old operation produces ZERO observer facts in the new session.
+    internal object? CreateDockOwner()
+    {
+        // Unowned before the player is ready: never manufacture a session token.
+        if (_session == Guid.Empty || _boundPlayer == null) return null;
+        return new DockOwner(_session, _boundPlayer);
+    }
+    internal object? CaptureDock(object? dockingOption, object? ownerObject)
     {
         try
         {
-            var player = _boundPlayer;
+            if (ownerObject is not DockOwner owner) return null;
+            // Factory ownership must still be current at the first actual step.
+            if (owner.Session != _session || !ReferenceEquals(owner.Player, _boundPlayer)) return null;
             var ship = _bindings.ShipOf(dockingOption);
-            if (!IsLive(player) || ship == null || !_bindings.IsPlayerShip(ship, player)) return null;
-            return new DockContext(_session, player!, ship);
+            if (ship == null || !_bindings.IsPlayerShip(ship, owner.Player)) return null;
+            return new DockContext(owner.Session, owner.Player, ship);
         }
         catch { return null; }
     }
@@ -526,6 +533,25 @@ internal sealed class TravelNativeAdapter : IDisposable
         // Dock/undock are observed only through native DockingOption boundaries (not polling),
         // so same-frame transitions cannot be missed and initial loaded-docked state is never
         // misreported as a transition.
+    }
+
+    // Actual in-system transport-start evidence: TravelInSystem() runs ONLY after departure
+    // preparation (StartTravel -> PrepareAllForInSystemTravel -> Travel -> TravelInSystem), so its
+    // first actual step is the true warp start of a requested in-system leg, excluding preparation
+    // (TravelActive() covers preparation) and never firing for jump/wormhole travel. This is the
+    // reliable boundary for empty-origin/re-route hops where UnloadCurrentScene is a NOOP because
+    // the origin was already unloaded (it is robust to CancelTravel leaving isWarping stale).
+    internal void OnInSystemWarpStart()
+    {
+        Guard(() =>
+        {
+            if (_leg == null || !_tracker.DepartAllowed(_leg)) return;
+            var player = _boundPlayer;
+            if (!IsLive(player)) return;
+            if (!_modeByLeg.TryGetValue(_leg.Id, out var mode) || mode != TravelMode.InSystem) return;
+            _tracker.Depart(_leg, _bindings.Time(player));
+            Drain(_bindings.Time(player));
+        });
     }
 
     private void Drain(double now)

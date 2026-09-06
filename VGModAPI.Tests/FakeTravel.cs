@@ -68,6 +68,7 @@ namespace Behaviour.Managers
         public Source.Galaxy.MapPointOfInterest? targetPoi { get; set; }
         public Source.Galaxy.MapPointOfInterest? localTarget { get; set; }
         public bool usingJumpgate { get; set; }
+        public bool isWarping { get; set; }
         public bool TravelActive() => false;
         public void TravelToNextWaypoint() { }
     }
