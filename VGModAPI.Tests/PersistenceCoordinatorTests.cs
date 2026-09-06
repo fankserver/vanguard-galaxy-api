@@ -22,6 +22,50 @@ public sealed class PersistenceCoordinatorTests : IDisposable
     private void EndSave(Guid id, LifecycleEventKind kind = LifecycleEventKind.SaveSucceeded, string path = "slot")
         => _hub.Publish(new LifecycleEvent(kind, _hub.CurrentSession, id, path));
 
+    [Theory]
+    [InlineData(LifecycleEventKind.SaveSucceeded)]
+    [InlineData(LifecycleEventKind.SaveFailed)]
+    [InlineData(LifecycleEventKind.SaveSkipped)]
+    public void NoProvidersOrRetainedDataDoesNotWriteOrHashSaves(LifecycleEventKind outcome)
+    {
+        var store = new GenerationStore(_root);
+        int hashes = 0;
+        using var coordinator = new PersistenceCoordinator(_hub, store, s => s, _ => { hashes++; return H('a'); });
+        Start();
+        for (int i = 0; i < 3; i++) EndSave(BeginSave(), outcome);
+        Assert.Empty(Directory.GetFileSystemEntries(_root));
+        Assert.Equal(0, hashes);
+    }
+
+    [Fact]
+    public void EmptyNewGameOverwritingHistoricalSlotPublishesReloadableEmptyState()
+    {
+        var store = new GenerationStore(_root);
+        store.Publish("slot", H('a'), Guid.NewGuid(), new Dictionary<string, byte[]> { ["owner"] = Codec().Encode(new byte[] { 7 }) });
+        using (var coordinator = Coordinator(store))
+        {
+            Start(); _hashes["slot"] = H('b'); EndSave(BeginSave());
+            Assert.Empty(store.Load("slot", H('b'))!.Owners);
+        }
+        using var reloadHub = new LifecycleHub((_, error) => throw new Exception("Unexpected error", error));
+        using var reload = new PersistenceCoordinator(reloadHub, store, s => s, s => _hashes[s]);
+        byte[]? restored = new byte[] { 99 };
+        reload.Register(Codec(), () => new byte[] { 1 }, bytes => restored = bytes);
+        var id = reloadHub.Begin(SessionOrigin.SaveLoad, "slot"); reloadHub.PlayerReady(id); reloadHub.GameplayInitialized(id);
+        Assert.Null(restored); Assert.True(reload.MutationAllowed("owner"));
+    }
+
+    [Fact]
+    public void RetainedDataStillPublishesWithoutInstalledProviders()
+    {
+        var store = new GenerationStore(_root); var bytes = Codec().Encode(new byte[] { 7 });
+        store.Publish("slot", H('a'), Guid.NewGuid(), new Dictionary<string, byte[]> { ["owner"] = bytes });
+        using var coordinator = Coordinator(store);
+        Start(SessionOrigin.SaveLoad, "slot"); _hashes["other"] = H('b');
+        EndSave(BeginSave("other"), path: "other");
+        Assert.Equal(bytes, store.Load("other", H('b'))!.Owners["owner"]);
+    }
+
     [Fact]
     public void CapturesAtStartAndCommitsOnlyMatchingSuccess()
     {

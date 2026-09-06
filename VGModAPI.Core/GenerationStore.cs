@@ -166,6 +166,19 @@ internal sealed class GenerationStore
         return Encoding.ASCII.GetString(bytes);
     }
 
+    internal bool HasHistory(string slot)
+    {
+        var parent = Path.GetDirectoryName(Location(slot, new string('0', 64)))!;
+        RejectLinks(parent);
+        try
+        {
+            if ((File.GetAttributes(parent) & FileAttributes.Directory) == 0) throw new InvalidDataException("Slot path is not a directory.");
+            return Directory.EnumerateFileSystemEntries(parent).Any();
+        }
+        catch (FileNotFoundException) { return false; }
+        catch (DirectoryNotFoundException) { return false; }
+    }
+
     internal void MarkIntent(string slot, Guid operation)
     {
         var parent = Path.GetDirectoryName(Location(slot, new string('0', 64)))!;

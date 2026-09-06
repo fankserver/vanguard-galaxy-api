@@ -35,6 +35,16 @@ try {
     catch { $rejected = $_.Exception.Message -like '*Coordinated journal requires*' }
     Assert $rejected 'Journal coordinated selection accepted without required inputs.'
     & $script -Action Prepare -SandboxRoot $sandbox @options
+    $legacyConfigPath = Join-Path $sandbox 'game\BepInEx\config\vgmodapi.cfg'
+    $legacyConfig = [IO.File]::ReadAllText($legacyConfigPath)
+    $null = Assert-QualificationInputs $sandbox
+    foreach ($changed in @('[Persistence]', $legacyConfig.Replace('false','true'), ($legacyConfig + "Enabled = false`n"))) {
+        [IO.File]::WriteAllText($legacyConfigPath, $changed)
+        $rejected = $false
+        try { $null = Assert-QualificationInputs $sandbox } catch { $rejected = $true }
+        Assert $rejected 'Missing, enabled or duplicate legacy control setting accepted.'
+    }
+    [IO.File]::WriteAllText($legacyConfigPath, $legacyConfig)
     $overlayRoot = Join-Path $work 'overlay-sandbox'
     $sandboxes += $overlayRoot
     & $script -Action Prepare -SandboxRoot $overlayRoot -Scenario UnavailableApi -AssemblyOverlay @options
@@ -83,6 +93,16 @@ try {
     $sandboxes += $probeRoot
     & $script -Action Prepare -SandboxRoot $probeRoot -PersistenceProbe @options
     $probeProvenance = Assert-QualificationInputs $probeRoot
+    $apiConfigPath = Join-Path $probeRoot 'game\BepInEx\config\vgmodapi.cfg'
+    $defaultApiConfig = [IO.File]::ReadAllText($apiConfigPath)
+    Assert ($defaultApiConfig -notmatch '(?m)^Enabled\s*=') 'Prepared probe does not exercise the enabled default.'
+    foreach ($setting in @("Enabled = false`n", "Enabled = true`nEnabled = false`n")) {
+        [IO.File]::WriteAllText($apiConfigPath, $defaultApiConfig + $setting)
+        $rejected = $false
+        try { $null = Assert-QualificationInputs $probeRoot } catch { $rejected = $true }
+        Assert $rejected 'Disabled or ambiguous persistence setting accepted.'
+    }
+    [IO.File]::WriteAllText($apiConfigPath, $defaultApiConfig)
     $rejected = $false
     try { Assert-PersistenceProbeReceipt $probeRoot $probeProvenance } catch { $rejected = $true }
     Assert $rejected 'Missing persistence receipt accepted.'
@@ -98,10 +118,10 @@ try {
     $probeProvenance | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $probeRoot 'build-provenance.json')
     [IO.File]::WriteAllText((Join-Path $probeRoot 'journal-coordinated.enabled'), 'journal-v1')
     $journalConfig = Join-Path $probeRoot 'game\BepInEx\config\vgmissionjournal.cfg'
-    $validJournal = "[Persistence]`nUseCoordinatedPersistence = true`nImportLegacySidecars = true`n"
+    $validJournal = "[Persistence]`nImportLegacySidecars = true`n"
     [IO.File]::WriteAllText($journalConfig, $validJournal)
     $null = Assert-QualificationInputs $probeRoot
-    foreach ($changed in @($validJournal.Replace('true','false'), ($validJournal + "ImportLegacySidecars = false`n"), $validJournal.Replace('[Persistence]','[Other]'))) {
+    foreach ($changed in @($validJournal.Replace('true','false'), ($validJournal + "UseApiSaveData = false`n"), ($validJournal + "UseApiSaveData = true`nUseApiSaveData = false`n"), ($validJournal + "ImportLegacySidecars = false`n"), $validJournal.Replace('[Persistence]','[Other]'))) {
         [IO.File]::WriteAllText($journalConfig, $changed)
         $rejected = $false
         try { $null = Assert-QualificationInputs $probeRoot } catch { $rejected = $true }
@@ -295,6 +315,8 @@ try {
     $originalProvenance = Get-Content -LiteralPath $provPath -Raw
     $consumerProvenance = $originalProvenance | ConvertFrom-Json
     $consumerProvenance.missionJournal = $true
+    $legacyJournal = Join-Path $sandbox 'game\BepInEx\config\vgmissionjournal.cfg'
+    [IO.File]::WriteAllText($legacyJournal, "[Persistence]`nUseApiSaveData = false`n")
     foreach ($name in @('VGMissionJournal.dll','Newtonsoft.Json.dll')) {
         $file = Join-Path $sandbox ('game\BepInEx\plugins\' + $name)
         [IO.File]::WriteAllText($file, 'synthetic')
@@ -307,12 +329,20 @@ try {
     $marker = Join-Path $sandbox 'missionjournal.enabled'
     [IO.File]::WriteAllText($marker, 'pilot-v1')
     $null = Assert-QualificationInputs $sandbox
+    foreach ($changed in @('[Persistence]', "[Persistence]`nUseApiSaveData = true`n", "[Persistence]`nUseApiSaveData = false`nUseApiSaveData = false`n")) {
+        [IO.File]::WriteAllText($legacyJournal, $changed)
+        $rejected = $false
+        try { $null = Assert-QualificationInputs $sandbox } catch { $rejected = $true }
+        Assert $rejected 'Missing, enabled or duplicate legacy consumer setting accepted.'
+    }
+    [IO.File]::WriteAllText($legacyJournal, "[Persistence]`nUseApiSaveData = false`n")
     [IO.File]::WriteAllText($marker, 'invalid')
     $rejected = $false
     try { $null = Assert-QualificationInputs $sandbox } catch { $rejected = $true }
     Assert $rejected 'Invalid consumer marker accepted.'
     [IO.File]::WriteAllText($marker, 'pilot-v1')
     $consumerProvenance.stockpile = $true
+    [IO.File]::WriteAllText((Join-Path $sandbox 'game\BepInEx\config\vgstockpile.cfg'), "[Persistence]`nUseApiSaveData = false`n")
     $stockpileDll = Join-Path $sandbox 'game\BepInEx\plugins\VGStockpile.dll'
     [IO.File]::WriteAllText($stockpileDll, 'synthetic-stockpile')
     $consumerProvenance.plugins | Add-Member -NotePropertyName 'VGStockpile.dll' -NotePropertyValue ((Get-FileHash $stockpileDll).Hash)

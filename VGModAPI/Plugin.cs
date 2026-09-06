@@ -12,7 +12,7 @@ using VGModAPI.Runtime;
 
 namespace VGModAPI;
 
-[BepInPlugin(ModApi.PluginId, "Vanguard Galaxy Mod API", "0.1.7")]
+[BepInPlugin(ModApi.PluginId, "Vanguard Galaxy Mod API", "0.1.8")]
 [BepInProcess("VanguardGalaxy.exe")]
 [BepInDependency("vgmodapi.qualification.guard", BepInDependency.DependencyFlags.SoftDependency)]
 public sealed class Plugin : BaseUnityPlugin
@@ -29,7 +29,7 @@ public sealed class Plugin : BaseUnityPlugin
         _hub.SetCapability("session-lifecycle", false, "Not bound.");
         _hub.SetCapability("save-outcomes", false, "Not bound.");
         _hub.SetCapability("world-ready", false, "No universal POI/UI-ready guarantee; GameplayInitialized is narrower.");
-        _hub.SetCapability("coordinated-persistence", false, "Disabled by configuration; experimental.");
+        _hub.SetCapability("save-data", false, "Not initialized; experimental.");
         _hub.SetCapability("mission-continuity", false, "Disabled by configuration; experimental.");
         _hub.SetCapability("mission-transitions", false, "Disabled by configuration; experimental.");
         ModApi.Missions = null;
@@ -49,7 +49,7 @@ public sealed class Plugin : BaseUnityPlugin
             LifecyclePatches.Adapter = _adapter;
             SavePatches.Adapter = _adapter;
             if (Config.Bind("Missions", "Enabled", false, "Experimental observed mission transitions; use disposable saves until qualified.").Value &&
-                Config.Bind("Missions", "IdentityContinuity", false, "Experimental exact-snapshot identity; requires coordinated persistence.").Value)
+                Config.Bind("Missions", "IdentityContinuity", false, "Experimental exact-snapshot identity; requires API-managed saves.").Value)
             {
                 InstallGroup("mission-continuity", bindings, BindingCatalog.MissionSnapshots,
                     new Dictionary<string, Type> { ["missionSnapshot"] = typeof(MissionSerializationPatches) });
@@ -87,26 +87,27 @@ public sealed class Plugin : BaseUnityPlugin
 
     private void InitializePersistence()
     {
-        if (!Config.Bind("Persistence", "Enabled", false, "Experimental opt-in; use disposable saves until qualified.").Value) return;
+        if (!Config.Bind("Persistence", "Enabled", true, "Enable API-managed mod save data. Experimental; use disposable saves until qualified.").Value)
+        { _hub!.SetCapability("save-data", false, "Disabled by configuration."); return; }
         if (_hub!.Capabilities.Count(c => (c.Name == "session-lifecycle" || c.Name == "save-outcomes") && c.Available) != 2)
         {
-            _hub.SetCapability("coordinated-persistence", false, "Lifecycle capabilities unavailable.");
+            _hub.SetCapability("save-data", false, "Lifecycle capabilities unavailable.");
             return;
         }
         try
         {
-            var root = Config.Bind("Persistence", "Root", Path.Combine(Paths.ConfigPath, "VGModAPI-state"), "Short, non-linked owned storage root; do not share across installations.").Value;
+            var root = Config.Bind("Persistence", "Root", Path.Combine(Paths.ConfigPath, "VGModAPI-state"), "Folder for mod save data: use a short absolute path without links; do not share across installations.").Value;
             if (!Path.IsPathRooted(root)) throw new ArgumentException("Persistence root must be absolute.");
             var saves = (string)AccessTools.Field(AccessTools.TypeByName("Source.Util.SaveGame"), "SavesPath").GetValue(null)!;
             var files = new PersistenceFiles(saves);
             _persistence = new PersistenceService(_hub, new GenerationStore(root), files.Canonical, files.HashFile);
             ModApi.Persistence = _persistence;
-            _hub.SetCapability("coordinated-persistence", true, "Experimental owner persistence enabled; native consumer qualification pending.");
+            _hub.SetCapability("save-data", true, "Experimental API-managed saves enabled; full owner acceptance remains pending.");
         }
         catch (Exception error)
         {
-            _hub.SetCapability("coordinated-persistence", false, "Persistence initialization failed: " + error.GetType().Name);
-            Logger.LogError("Coordinated persistence unavailable: " + error.GetType().Name + ": " + error.Message);
+            _hub.SetCapability("save-data", false, "Persistence initialization failed: " + error.GetType().Name);
+            Logger.LogError("API-managed saves unavailable: " + error.GetType().Name + ": " + error.Message);
         }
     }
 
@@ -139,8 +140,8 @@ public sealed class Plugin : BaseUnityPlugin
 
     private void InitializeMissionIdentity(Assembly assembly)
     {
-        if (!Config.Bind("Missions", "IdentityContinuity", false, "Experimental exact-snapshot identity; requires coordinated persistence.").Value) return;
-        if (_persistence == null) { _hub!.SetCapability("mission-continuity", false, "Coordinated persistence unavailable."); return; }
+        if (!Config.Bind("Missions", "IdentityContinuity", false, "Experimental exact-snapshot identity; requires API-managed saves.").Value) return;
+        if (_persistence == null) { _hub!.SetCapability("mission-continuity", false, "API-managed saves unavailable."); return; }
         try
         {
             if (!_identityHooksBound) throw new InvalidOperationException("Early snapshot hooks unavailable.");
