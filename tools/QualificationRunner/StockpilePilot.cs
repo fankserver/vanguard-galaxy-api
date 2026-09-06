@@ -149,14 +149,13 @@ public sealed partial class Plugin
         var driver = (Behaviour)SpGet(Stockpile, "_driver")!;
         Logger.LogInfo($"Stockpile driver probe: paused={SpGet(_manager, "isPaused")}, pauseCount={SpGet(_manager, "pauseCount")}, enabled={driver.enabled}, active={driver.gameObject.activeInHierarchy}, timeScale={Time.timeScale}, remaining={remaining}");
         _pauseStockpileDriver = false;
-        try
+        var driverDeadline = Time.realtimeSinceStartup + 15;
+        foreach (var frame in Wait(() =>
         {
-            foreach (var frame in Wait(() => !((IEnumerable)SpGet(StockpileEngine, "Pending")!).Cast<object>().Any(r => (string)SpGet(r, "Id")! == requestId), "Stockpile driver delivery")) yield return frame;
-        }
-        finally
-        {
-            Logger.LogInfo($"Stockpile driver counters: calls={_stockpileDriverCalls}, allowed={_stockpileAllowedCalls}, delta={_stockpileDriverDelta}, sameEngine={ReferenceEquals(SpGet(driver, "_engine"), StockpileEngine)}, canOperate={SpGet(StockpileEngine, "CanOperate")}, driverType={driver.GetType().FullName}");
-        }
+            Require(Time.realtimeSinceStartup < driverDeadline,
+                $"Driver diagnostic timeout: calls={_stockpileDriverCalls}, allowed={_stockpileAllowedCalls}, delta={_stockpileDriverDelta}, sameEngine={ReferenceEquals(SpGet(driver, "_engine"), StockpileEngine)}, canOperate={SpGet(StockpileEngine, "CanOperate")}, driverType={driver.GetType().FullName}");
+            return !((IEnumerable)SpGet(StockpileEngine, "Pending")!).Cast<object>().Any(r => (string)SpGet(r, "Id")! == requestId);
+        }, "Stockpile driver delivery")) yield return frame;
         _pauseStockpileDriver = true;
         Require(SpQuantity(destId, item) == destCount + 1 && SpQuantity(sourceId, item) == sourceCount - 1 && SpCredits == creditsAfter, "Delivery inventory/credits mismatch.");
         Passed("Stockpile real reservation/cancellation/fees, save/reload, protected-write retry, and driver delivery");
