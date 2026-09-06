@@ -56,21 +56,20 @@ internal static class TravelPatches
         // UnloadCurrentScene clears the origin after the delegate did real work. It is a NOOP
         // returning immediately when the local manager is already null (no origin to unload);
         // only a real manager->null transition is departure, never a method return alone.
-        private static object? _before;
-        internal static void Prefix(object __instance)
+        internal static void Prefix(object __instance, out object? __state)
         {
-            var adapter = Adapter;
-            adapter?.Guard(() => _before = adapter.Bindings.LocalManager(__instance));
-        }
-        internal static void Postfix(object __instance)
-        {
-            var adapter = Adapter; if (adapter == null) { _before = null; return; }
             object? before = null;
+            var adapter = Adapter;
+            adapter?.Guard(() => before = adapter.Bindings.LocalManager(__instance));
+            __state = before;
+        }
+        internal static void Postfix(object __instance, object? __state)
+        {
+            var adapter = Adapter; if (adapter == null) return;
             adapter.Guard(() =>
             {
-                before = _before; _before = null;
                 var after = adapter.Bindings.LocalManager(__instance);
-                adapter.OnDeparture(adapter.Bindings.Player!, before != null && after == null);
+                adapter.OnDeparture(adapter.Bindings.Player!, __state != null && after == null);
             });
         }
     }
