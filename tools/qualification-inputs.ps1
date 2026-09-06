@@ -1,4 +1,10 @@
 # Prepared-input helpers; safe to exercise with synthetic files.
+function Assert-PersistenceProbeReceipt([string]$Root, $Provenance) {
+    if ($Provenance.PSObject.Properties['persistenceProbe'] -and $Provenance.persistenceProbe) {
+        $receipt = Join-Path $Root 'persistence-probe.txt'
+        if (!(Test-Path -LiteralPath $receipt) -or (Get-Content -LiteralPath $receipt -TotalCount 1) -ne 'PASS') { throw 'Persistence probe did not complete.' }
+    }
+}
 function Assert-VanillaControlReceipt([string]$Root, $Provenance) {
     if ($Provenance.PSObject.Properties['vanillaLoadControl'] -and $Provenance.vanillaLoadControl) {
         $receipt = Join-Path $Root 'vanilla-load-control.txt'
@@ -50,6 +56,16 @@ function Assert-QualificationInputs([string]$Root) {
     $provenance = Get-Content -LiteralPath (Join-Path $Root 'build-provenance.json') -Raw | ConvertFrom-Json
     if ($provenance.scenario -notin @('Full','MissingApi','UnavailableApi') -or
         (Get-Content -LiteralPath (Join-Path $Root 'scenario.txt') -Raw).Trim() -cne $provenance.scenario) { throw 'Prepared scenario changed.' }
+    $probe = $provenance.PSObject.Properties['persistenceProbe'] -and [bool]$provenance.persistenceProbe
+    $probeMarker = Join-Path $Root 'persistence-probe.enabled'
+    if ([bool]$probe -ne (Test-Path -LiteralPath $probeMarker -PathType Leaf)) { throw 'Persistence probe selection changed.' }
+    if ($probe) {
+        if ($provenance.scenario -ne 'Full' -or (Get-Content -LiteralPath $probeMarker -Raw).Trim() -ne 'probe-v1') { throw 'Invalid persistence probe marker.' }
+        $config = Get-Content -LiteralPath (Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg') -Raw
+        $roots = [regex]::Matches($config, '(?m)^Root\s*=\s*([^\r\n]+)')
+        $enabled = [regex]::Matches($config, '(?m)^Enabled\s*=\s*true\s*$')
+        if ($roots.Count -ne 1 -or $enabled.Count -ne 1 -or [IO.Path]::GetFullPath($roots[0].Groups[1].Value.Trim()) -ine [IO.Path]::GetFullPath((Join-Path $Root 'state'))) { throw 'Persistence probe root/config changed.' }
+    }
     $vanilla = $provenance.PSObject.Properties['vanillaLoadControl'] -and [bool]$provenance.vanillaLoadControl
     $vanillaMarker = Join-Path $Root 'vanilla-load.enabled'
     if ([bool]$vanilla -ne (Test-Path -LiteralPath $vanillaMarker -PathType Leaf)) { throw 'Vanilla control selection changed.' }

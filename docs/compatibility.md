@@ -121,4 +121,4 @@ Arrange owner approval before deployment. Use copied/disposable saves and the op
 
 Do not force disk failures, delete, or corrupt real player saves. If a scenario cannot be safely exercised, record it as unqualified rather than assuming it passed.
 
-Known contract limits and failure handling are specified in [lifecycle-contract.md](lifecycle-contract.md). Mission events, persistence coordination, and story/UI capabilities are not implemented yet.
+Known contract limits and failure handling are specified in [lifecycle-contract.md](lifecycle-contract.md). Persistence coordination is opt-in and experimental; real-consumer qualification remains pending. Mission events and story/UI capabilities are not implemented yet.

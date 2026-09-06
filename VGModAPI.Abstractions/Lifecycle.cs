@@ -61,4 +61,6 @@ public static class ModApi
 {
     public const string PluginId = "vgmodapi";
     public static ILifecycleApi? Current { get; internal set; }
+    /// <summary>Null unless experimental persistence is explicitly enabled and initialized.</summary>
+    public static IPersistenceApi? Persistence { get; internal set; }
 }

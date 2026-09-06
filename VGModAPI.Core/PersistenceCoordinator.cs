@@ -57,6 +57,13 @@ internal sealed class PersistenceCoordinator : IDisposable
         _owners.Add(codec.Owner, new Owner(codec, capture, restore));
     }
 
+    internal void Unregister(string owner)
+    {
+        _hub.CheckThread();
+        if (_disposed || !_owners.Remove(owner)) return;
+        if (_session.HasValue) { _sessionFault = true; _pending.Clear(); }
+    }
+
     internal bool MutationAllowed(string owner)
     {
         _hub.CheckThread();
@@ -74,7 +81,7 @@ internal sealed class PersistenceCoordinator : IDisposable
         return _owners.TryGetValue(owner, out var registered) ? registered.Status : "unregistered";
     }
 
-    private bool Current(Guid id) => !_disposed && _session == id && _hub.CurrentSession?.Id == id
+    private bool Current(Guid id) => !_disposed && !_sessionFault && _session == id && _hub.CurrentSession?.Id == id
         && _hub.CurrentSession.Phase != SessionPhase.Failed && _hub.CurrentSession.Phase != SessionPhase.Invalidated;
 
     private void Reset()
@@ -139,7 +146,7 @@ internal sealed class PersistenceCoordinator : IDisposable
             }
         }
         catch { _sessionFault = true; return; }
-        foreach (var pair in _owners)
+        foreach (var pair in _owners.ToArray())
         {
             if (!Current(id)) return;
             var owner = pair.Value;
@@ -166,7 +173,7 @@ internal sealed class PersistenceCoordinator : IDisposable
         Guid id = _session!.Value;
         var data = _known.ToDictionary(p => p.Key, p => (byte[])p.Value.Clone(), StringComparer.Ordinal);
         bool captureFailed = false;
-        foreach (var pair in _owners)
+        foreach (var pair in _owners.ToArray())
         {
             if (!pair.Value.Ready && pair.Value.Status != "capture-failed") continue; // Inactive owners retain their opaque bytes.
             try

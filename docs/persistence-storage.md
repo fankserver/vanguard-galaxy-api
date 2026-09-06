@@ -1,6 +1,6 @@
 # Immutable generation storage (coordinator foundation)
 
-Internal storage primitive and lifecycle coordinator engine only: runtime wiring, public registration, consumer migration and native qualification are still pending. Calling Publish is not itself authorization to save; the later coordinator must call it only for a matching successful vanilla operation.
+Internal storage and lifecycle engine now have an opt-in runtime facade. Actual consumer migration and full native qualification remain pending. Calling Publish is not itself authorization to save; the later coordinator must call it only for a matching successful vanilla operation.
 
 ## Layout and publication
 
@@ -20,7 +20,7 @@ Only a missing final directory in a slot without any persistence evidence return
 
 ## Lifecycle coordinator engine
 
-The internal coordinator subscribes before any session starts. Providers register fixed owner codecs/capture/restore callbacks before a session; dynamic provider removal is not yet implemented. All access is main-thread-only. Callbacks must affect only their own in-memory state and must not mutate vanilla operations or block.
+The internal coordinator subscribes before any session starts. Providers register owner codecs/capture/restore callbacks before a session. Disposing a registration stops its callbacks; removal during a session pauses all coordinated persistence and discards candidates until a new load. All access is main-thread-only. Callbacks must affect only their own in-memory state and must not mutate vanilla operations or block.
 
 At SessionStarting, hash the canonical load source; at PlayerReady, verify it has not changed and read only the exact generation. New games or absent generations receive fresh campaign identities. Corrupt published generations block the load instead of restoring empty state. Each owner's schema/restore failure independently denies that owner's mutation; opaque inactive/unsupported owner bytes are retained.
 
@@ -34,7 +34,7 @@ If the filesystem cannot record even the pre-write intent for a previously unsee
 
 Inspected vanilla SideMenuOptions.MainMenu saves before player Cleanup and SceneLoader.StartMenu; the lifecycle menu-invalidation hook runs at that later transition. GameManager.HandleApplicationQuit likewise saves before clearing the player. Native runtime wiring must still verify plugin teardown order. A successful post-invalidation save retains intent and blocks unmatched reloads. Recovery is explicit: select a validated prior backup/generation; never delete intent/conflict evidence merely to force an empty load. Resolving an identical-byte conflict requires an explicit choice to retain older state and archival of evidence; no automatic resolution tool is provided here.
 
-This engine does not validate an active game installation or provide a public API yet. It trusts the supplied canonical-path and file-hash adapters and the lifecycle hub; runtime adapters must enforce actual path/version/thread constraints. No account-wide fallback or implicit legacy-sidecar import exists.
+The optional runtime facade is initialized only when both inspected lifecycle capabilities are available and configuration enables it. Its file adapter accepts direct `.save` children of the inspected SavesPath only, normalizes absolute paths/case on Windows, and rejects reparse paths and tilde/short-name forms. Arbitrary alias/hard-link imports are not supported. Public registration/handles remain main-thread-only; service disposal makes all handles inactive. No account-wide fallback or implicit legacy-sidecar import exists.
 
 ## Verification boundary
 

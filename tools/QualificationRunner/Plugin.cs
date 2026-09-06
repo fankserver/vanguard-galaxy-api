@@ -75,6 +75,7 @@ public sealed partial class Plugin : BaseUnityPlugin
                 && SamePath(originalSavePath, _saveRoot), "Independent guard did not establish isolation.");
             Require(!SamePath(_saveRoot, protectedPath), "Real save directory is not a test target.");
             ArmStockpile(harmony);
+            ArmPersistencePilot();
             // Defense in depth: prevent any Store/Recall outside the redirected directory.
             harmony.Patch(AccessTools.Method(_save, "Store"), prefix: new HarmonyMethod(typeof(Plugin), nameof(CheckSaveDestination)));
             harmony.Patch(AccessTools.Method(AccessTools.TypeByName("Source.Util.SaveGameFile"), "Recall"), prefix: new HarmonyMethod(typeof(Plugin), nameof(CheckLoadSource)));
@@ -249,6 +250,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         foreach (var frame in CheckStockpilePilot()) yield return frame;
         foreach (var frame in CheckJournalTeardown()) yield return frame;
         foreach (var frame in RemainingLifecyclePilot()) yield return frame;
+        foreach (var frame in PersistencePilot()) yield return frame;
         Require(_dispatchStateValid && _events.Count > 0 && _api is ILifecycleDispatchState state && !state.IsDispatchingCallbacks,
             "Callback dispatch state did not match native delivery boundaries.");
         Passed("callback-dispatch-state");

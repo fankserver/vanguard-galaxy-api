@@ -12,7 +12,7 @@ using VGModAPI.Runtime;
 
 namespace VGModAPI;
 
-[BepInPlugin(ModApi.PluginId, "Vanguard Galaxy Mod API", "0.1.1")]
+[BepInPlugin(ModApi.PluginId, "Vanguard Galaxy Mod API", "0.1.2")]
 [BepInProcess("VanguardGalaxy.exe")]
 [BepInDependency("vgmodapi.qualification.guard", BepInDependency.DependencyFlags.SoftDependency)]
 public sealed class Plugin : BaseUnityPlugin
@@ -20,13 +20,16 @@ public sealed class Plugin : BaseUnityPlugin
     private LifecycleHub? _hub;
     private Harmony? _harmony;
     private GameAdapter? _adapter;
+    private PersistenceService? _persistence;
     private void Awake()
     {
         _hub = new LifecycleHub((owner, ex) => Logger.LogError($"Subscriber '{owner}' failed: {ex}"));
         _hub.SetCapability("session-lifecycle", false, "Not bound.");
         _hub.SetCapability("save-outcomes", false, "Not bound.");
         _hub.SetCapability("world-ready", false, "No universal POI/UI-ready guarantee; GameplayInitialized is narrower.");
+        _hub.SetCapability("coordinated-persistence", false, "Disabled by configuration; experimental.");
         ModApi.Current = _hub;
+        ModApi.Persistence = null;
         try
         {
             var assembly = AppDomain.CurrentDomain.GetAssemblies().SingleOrDefault(a => a.GetName().Name == "Assembly-CSharp")
@@ -63,7 +66,33 @@ public sealed class Plugin : BaseUnityPlugin
             _hub.SetCapability("save-outcomes", false, ex.Message);
             Logger.LogError(ex);
         }
-        Logger.LogInfo("VGModAPI 0.1.1: experimental, NOT runtime-qualified. Query capabilities; startup does not prove compatibility.");
+        InitializePersistence();
+        Logger.LogInfo("VGModAPI 0.1.2: experimental, NOT runtime-qualified. Query capabilities; startup does not prove compatibility.");
+    }
+
+    private void InitializePersistence()
+    {
+        if (!Config.Bind("Persistence", "Enabled", false, "Experimental opt-in; use disposable saves until qualified.").Value) return;
+        if (_hub!.Capabilities.Count(c => (c.Name == "session-lifecycle" || c.Name == "save-outcomes") && c.Available) != 2)
+        {
+            _hub.SetCapability("coordinated-persistence", false, "Lifecycle capabilities unavailable.");
+            return;
+        }
+        try
+        {
+            var root = Config.Bind("Persistence", "Root", Path.Combine(Paths.ConfigPath, "VGModAPI-state"), "Short, non-linked owned storage root; do not share across installations.").Value;
+            if (!Path.IsPathRooted(root)) throw new ArgumentException("Persistence root must be absolute.");
+            var saves = (string)AccessTools.Field(AccessTools.TypeByName("Source.Util.SaveGame"), "SavesPath").GetValue(null)!;
+            var files = new PersistenceFiles(saves);
+            _persistence = new PersistenceService(_hub, new GenerationStore(root), files.Canonical, files.HashFile);
+            ModApi.Persistence = _persistence;
+            _hub.SetCapability("coordinated-persistence", true, "Experimental owner persistence enabled; native consumer qualification pending.");
+        }
+        catch (Exception error)
+        {
+            _hub.SetCapability("coordinated-persistence", false, "Persistence initialization failed: " + error.GetType().Name);
+            Logger.LogError("Coordinated persistence unavailable: " + error.GetType().Name + ": " + error.Message);
+        }
     }
 
     internal static string ReadAssemblyHash(Assembly assembly)
@@ -105,6 +134,8 @@ public sealed class Plugin : BaseUnityPlugin
     private void OnDestroy()
     {
         _adapter?.Guard(() => _adapter.Invalidate("API shutting down."));
+        _persistence?.Dispose();
+        ModApi.Persistence = null;
         _harmony?.UnpatchSelf();
         LifecyclePatches.Adapter = null;
         SavePatches.Adapter = null;
