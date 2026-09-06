@@ -20,6 +20,7 @@ public sealed class Plugin : BaseUnityPlugin
     private string? _root;
     private string? _scenario;
     private bool _armed;
+    private bool _assemblyOverlay;
     private static int _injectedHashes;
 
     private void Awake()
@@ -49,7 +50,21 @@ public sealed class Plugin : BaseUnityPlugin
             AccessTools.Field(save, "_saves").SetValue(null, null);
             _scenario = File.ReadAllText(Path.Combine(_root, "scenario.txt")).Trim();
             Require(_scenario == "Full" || _scenario == "MissingApi" || _scenario == "UnavailableApi", "Unknown scenario.");
-            if (_scenario == "UnavailableApi")
+            var overlayMarker = Path.Combine(_root, "assembly-overlay.hash");
+            _assemblyOverlay = File.Exists(overlayMarker);
+            if (_assemblyOverlay)
+            {
+                Require(_scenario == "UnavailableApi", "Overlay only supports unavailable-API qualification.");
+                var hashes = File.ReadAllLines(overlayMarker);
+                var location = save.Assembly.Location;
+                Require(Same(location, Path.Combine(_root, "game", "VanguardGalaxy_Data", "Managed", "Assembly-CSharp.dll")), "Game assembly did not load from the private copy.");
+                using var sha = System.Security.Cryptography.SHA256.Create();
+                using var input = File.OpenRead(location);
+                var actual = BitConverter.ToString(sha.ComputeHash(input)).Replace("-", "");
+                Require(hashes.Length == 2 && hashes[0] != hashes[1] && actual == hashes[0], "Loaded private assembly identity mismatch.");
+                Logger.LogWarning("QA ONLY: actual private assembly has an appended PE overlay; no hash-result injection. Not a different game implementation.");
+            }
+            else if (_scenario == "UnavailableApi")
             {
                 // Relies on BepInEx's plugin resolver before API Awake; recheck on loader upgrades.
                 var api = Assembly.Load("VGModAPI").GetType("VGModAPI.Plugin", true)!;
@@ -78,7 +93,7 @@ public sealed class Plugin : BaseUnityPlugin
                 Require(!Chainloader.PluginInfos.ContainsKey("vgmodapi"), "API unexpectedly loaded.");
             else
             {
-                Require(_injectedHashes == 1, "Hash probe was not exercised exactly once.");
+                Require(_injectedHashes == (_assemblyOverlay ? 0 : 1), "Unexpected hash-result injection count.");
                 var api = Assembly.Load("VGModAPI.Abstractions").GetType("VGModAPI.ModApi", true)!;
                 var service = api.GetProperty("Current")!.GetValue(null)!;
                 Require(service != null, "Unavailable API service missing.");
@@ -122,7 +137,7 @@ public sealed class Plugin : BaseUnityPlugin
             }
             var consumerSelected = File.Exists(Path.Combine(_root!, "stockpile.enabled")) || File.Exists(Path.Combine(_root!, "missionjournal.enabled"));
             Finish(true, _scenario + (consumerSelected ? "; selected consumer refusal checked." : "; no consumer selected.")
-                + " No alternate game binary qualification claimed.");
+                + (_assemblyOverlay ? " Actual private modified-identity rejection; no alternate game implementation qualification claimed." : " No alternate game binary qualification claimed."));
         }
         catch (Exception ex) { Finish(false, ex.ToString()); }
     }

@@ -8,6 +8,7 @@ param(
     [string]$BuildRoot,
     [string]$MissionJournalBin,
     [string]$StockpileBin,
+    [switch]$AssemblyOverlay,
     [string]$BuildRevision = 'unknown',
     [switch]$Diagnostics,
     [ValidateSet('Full','MissingApi','UnavailableApi')][string]$Scenario = 'Full',
@@ -44,6 +45,7 @@ if ($Action -eq 'Prepare') {
         $prefix = [IO.Path]::GetFullPath($protected).TrimEnd('\')
         if ((SamePath $root $prefix) -or $root.StartsWith($prefix + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Sandbox cannot be inside the installation or original save directory.' }
     }
+    if ($AssemblyOverlay -and $Scenario -ne 'UnavailableApi') { throw 'Assembly overlay requires UnavailableApi.' }
     New-Item -ItemType Directory -Path $game | Out-Null
     [IO.File]::WriteAllText($marker, $markerText)
     [IO.File]::WriteAllText((Join-Path $root 'original-save-directory.txt'), [IO.Path]::GetFullPath($OriginalSaveDir))
@@ -60,6 +62,7 @@ if ($Action -eq 'Prepare') {
         $source = Join-Path $GameDir $name
         if (Test-Path -LiteralPath $source) { New-Item -ItemType Junction -Path (Join-Path $game $name) -Target $source | Out-Null }
     }
+    $overlay = if ($AssemblyOverlay) { Initialize-QualificationAssemblyOverlay $root $GameDir } else { $null }
     $bep = Join-Path $game 'BepInEx'
     New-Item -ItemType Directory -Path $bep | Out-Null
     Copy-Item -LiteralPath (Join-Path $GameDir 'BepInEx\core') -Destination $bep -Recurse
@@ -122,7 +125,7 @@ if ($Action -eq 'Prepare') {
     [IO.File]::WriteAllText((Join-Path $root 'scenario.txt'), $Scenario)
     $hashes = @{}
     Get-ChildItem -LiteralPath $plugins -File | ForEach-Object { $hashes[$_.Name] = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
-    @{ stockpile=[bool]$StockpileBin; missionJournal=[bool]$MissionJournalBin; scenario=$Scenario; revision=$BuildRevision; preparedUtc=[DateTime]::UtcNow.ToString('o'); plugins=$hashes } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'build-provenance.json')
+    @{ assemblyOverlay=$overlay; stockpile=[bool]$StockpileBin; missionJournal=[bool]$MissionJournalBin; scenario=$Scenario; revision=$BuildRevision; preparedUtc=[DateTime]::UtcNow.ToString('o'); plugins=$hashes } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'build-provenance.json')
     # Prevent Steam's restart path; the runner disables SteamManager before arming checks.
     [IO.File]::WriteAllText((Join-Path $game 'steam_appid.txt'), '3471800')
     $saves = Join-Path $root 'Saves'
@@ -150,6 +153,13 @@ if ($Action -eq 'Cleanup') {
     foreach ($name in $junctions) {
         $path = Join-Path $game $name
         if (Test-Path -LiteralPath $path) {
+            if ($name -eq 'VanguardGalaxy_Data' -and (Test-Path -LiteralPath (Join-Path $root 'assembly-overlay.hash'))) {
+                if ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Overlay data root unexpectedly linked; refusing traversal.' }
+                foreach ($child in Get-ChildItem -LiteralPath $path -Force -Directory) {
+                    if ($child.Attributes -band [IO.FileAttributes]::ReparsePoint) { [IO.Directory]::Delete($child.FullName, $false) }
+                }
+                continue # Keep the owned Managed copy; never recursively delete mixed resource trees.
+            }
             if (!((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw "Expected a junction, not an ordinary directory: $name" }
             [IO.Directory]::Delete($path, $false)
         }
@@ -210,6 +220,7 @@ if ($null -ne $negativeBefore) {
     }
     [IO.File]::WriteAllText((Join-Path $root 'negative-consumer-files-unchanged.txt'), 'PASS')
 }
+$null = Assert-QualificationInputs $root
 $result = Join-Path $root 'result.txt'
 if (!(Test-Path -LiteralPath $result)) { throw 'Game exited without a qualification result; inspect sandbox logs.' }
 Get-Content -LiteralPath $result
