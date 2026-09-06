@@ -23,7 +23,7 @@ public sealed class GenerationStoreTests : IDisposable
         store.Publish("slot-a", H('b'), campaign, Owners(2));
         store.Publish("slot-b", H('b'), campaign, Owners(2));
         Assert.Equal(old.Identity.Snapshot, store.Load("slot-a", H('a'))!.Identity.Snapshot);
-        Assert.Null(store.Load("slot-b", H('a')));
+        Assert.Throws<InvalidDataException>(() => store.Load("slot-b", H('a')));
         Assert.Equal(campaign, store.Load("slot-b", H('b'))!.Identity.Campaign);
     }
 
@@ -34,9 +34,13 @@ public sealed class GenerationStoreTests : IDisposable
         var campaign = Guid.NewGuid();
         var first = store.Publish("slot", H('a'), campaign, Owners(1));
         Assert.Equal(first.Identity.Snapshot, store.Publish("slot", H('a'), campaign, Owners(1)).Identity.Snapshot);
+        var manifest = Directory.GetFiles(_root, "manifest.vgo", SearchOption.AllDirectories).Single();
+        var original = File.ReadAllBytes(manifest);
         Assert.Throws<InvalidDataException>(() => store.Publish("slot", H('a'), campaign, Owners(2)));
-        Assert.Throws<InvalidDataException>(() => store.Publish("slot", H('a'), Guid.NewGuid(), Owners(1)));
-        Assert.Equal(first.Identity.Snapshot, store.Load("slot", H('a'))!.Identity.Snapshot);
+        Assert.Throws<InvalidDataException>(() => store.Load("slot", H('a')));
+        Assert.Equal(original, File.ReadAllBytes(manifest));
+        store.Publish("other", H('a'), campaign, Owners(1));
+        Assert.Throws<InvalidDataException>(() => store.Publish("other", H('a'), Guid.NewGuid(), Owners(1)));
     }
 
     [Theory]
@@ -49,7 +53,8 @@ public sealed class GenerationStoreTests : IDisposable
         var failing = new GenerationStore(_root, point => { if (point == (PublishBoundary)boundary) throw new IOException("simulated interruption"); });
         Assert.Throws<IOException>(() => failing.Publish("slot", H('a'), campaign, Owners(1)));
         var recovered = new GenerationStore(_root);
-        Assert.Equal(published, recovered.Load("slot", H('a')) != null);
+        if (published) Assert.NotNull(recovered.Load("slot", H('a')));
+        else Assert.Throws<InvalidDataException>(() => recovered.Load("slot", H('a')));
         if (!published) Assert.NotEmpty(Directory.GetDirectories(_root, ".stage-*", SearchOption.AllDirectories));
         Assert.NotNull(recovered.Publish("slot", H('a'), campaign, Owners(1)));
     }
