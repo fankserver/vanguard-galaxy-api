@@ -89,6 +89,26 @@ public sealed class PackageValidationTests : IDisposable
         Assert.Throws<InvalidOperationException>(() => PackageChecks.ValidateAssembly(altered, owner));
     }
 
+    [Theory]
+    [InlineData("1.2.3", true)]
+    [InlineData("1.2.2", false)]
+    public void PluginVersionMustMatchAssembly(string version, bool valid)
+    {
+        using var assembly = AssemblyDefinition.CreateAssembly(new AssemblyNameDefinition("VGModAPI", new Version(1, 2, 3, 0)), "VGModAPI", ModuleKind.Dll);
+        var module = assembly.MainModule;
+        var plugin = new TypeDefinition("VGModAPI", "Plugin", TypeAttributes.Public, module.TypeSystem.Object);
+        module.Types.Add(plugin);
+        var attributeType = new TypeReference("BepInEx", "BepInPlugin", module, new AssemblyNameReference("BepInEx", new Version(5, 0)));
+        var ctor = new MethodReference(".ctor", module.TypeSystem.Void, attributeType) { HasThis = true };
+        for (int i = 0; i < 3; i++) ctor.Parameters.Add(new ParameterDefinition(module.TypeSystem.String));
+        var attribute = new CustomAttribute(ctor);
+        foreach (var value in new[] { "vgmodapi", "API", version }) attribute.ConstructorArguments.Add(new CustomAttributeArgument(module.TypeSystem.String, value));
+        plugin.CustomAttributes.Add(attribute);
+        var file = Path.Combine(_root, "plugin.dll"); assembly.Write(file);
+        if (valid) PackageChecks.ValidatePluginVersion(file);
+        else Assert.Throws<InvalidOperationException>(() => PackageChecks.ValidatePluginVersion(file));
+    }
+
     public void Dispose() => Directory.Delete(_root, recursive: true);
 }
 
@@ -109,6 +129,7 @@ public sealed class BuiltPackageTests
         var root = Environment.GetEnvironmentVariable("VG_PACKAGE_ROOT")
             ?? throw new InvalidOperationException("Run make package or set VG_PACKAGE_ROOT for built-package checks.");
         PackageChecks.ValidateLayout(root);
+        PackageChecks.ValidatePluginVersion(Path.Combine(root, "VGModAPI.dll"));
         foreach (var name in PackageChecks.Assemblies)
             PackageChecks.ValidateAssembly(Path.Combine(root, name + ".dll"), name);
     }
