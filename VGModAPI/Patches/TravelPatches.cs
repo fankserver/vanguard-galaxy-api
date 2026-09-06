@@ -32,7 +32,8 @@ internal static class TravelPatches
         {
             var adapter = Adapter;
             if (adapter == null) return;
-            adapter.Guard(() => { if (__result) adapter.RequestWaypointLeg(); });
+            // A genuine new route supersedes any pending leg (truthful Cancelled + fresh Request).
+            adapter.Guard(() => { if (__result) adapter.RequestWaypointLeg(replacePending: true); });
         }
     }
     internal static class Cancel
@@ -100,28 +101,27 @@ internal static class TravelPatches
             __result = result;
         }
     }
-    internal static class DockQuick
-    {
-        // Immediate dock: DockQuick sets dockingState=Docked synchronously. Emitting only from
-        // these native boundaries (with physical-state verification and the initial-load guard
-        // in the adapter) never misreports initial loaded-docked state as a transition.
-        internal static void Postfix(object __instance)
-        {
-            var adapter = Adapter;
-            adapter?.Guard(() => adapter.OnDockedPhysical(adapter.Bindings.ShipOf(__instance)!));
-        }
-    }
     internal static class Dock
     {
+        // DockQuick (restore/relink only; never a physical transition) is deliberately not hooked.
+        // A real Dock() coroutine's completion is eligible whenever the player ship has physically
+        // reached Docked. The context (session/player/ship) is pinned at the FIRST actual step, not
+        // at factory creation, so a session/player replacement before or during the coroutine can
+        // never emit an old operation's fact into the new session.
         internal static void Postfix(ref IEnumerator __result, object __instance)
         {
             var adapter = Adapter; if (adapter == null) return;
-            var result = __result; var ship = adapter.Bindings.ShipOf(__instance);
+            var inner = __result;
+            if (inner == null) return;
+            object? dockContext = null;
+            IEnumerator? wrapped = null;
             adapter.Guard(() =>
             {
-                if (result != null) result = new CoroutineBoundaryObserver(result, onDone: () => adapter.OnDockedPhysical(ship));
+                wrapped = new CoroutineBoundaryObserver(inner,
+                    onFirst: () => adapter.Guard(() => dockContext = adapter.CaptureDock(__instance)),
+                    onDone: () => adapter.OnDockedPhysical(dockContext));
             });
-            __result = result;
+            if (wrapped != null) __result = wrapped;
         }
     }
     internal static class Undock
@@ -129,25 +129,26 @@ internal static class TravelPatches
         internal static void Postfix(ref IEnumerator __result, object __instance)
         {
             var adapter = Adapter; if (adapter == null) return;
-            var result = __result;
-            // Capture the ship object now: Undock() calls ResetDockingOption() which nulls
-            // dockingOption.dockingSpaceship before the iterator ends. The captured ship (and its
-            // dockingState==Leaving) survives for end-of-undock attribution (finding 3/5).
-            var ship = adapter.Bindings.ShipOf(__instance);
+            var inner = __result;
+            if (inner == null) return;
+            object? dockContext = null;
+            IEnumerator? wrapped = null;
             adapter.Guard(() =>
             {
-                if (result != null) result = new CoroutineBoundaryObserver(result,
-                    onFirst: () => adapter.OnUndocking(ship), onDone: () => adapter.OnLeaving(ship));
+                wrapped = new CoroutineBoundaryObserver(inner,
+                    onFirst: () => adapter.Guard(() => { dockContext = adapter.CaptureDock(__instance); adapter.OnUndocking(dockContext); }),
+                    onDone: () => adapter.OnLeaving(dockContext));
             });
-            __result = result;
+            if (wrapped != null) __result = wrapped;
         }
     }
     internal static class EmergencyUndock
     {
+        // Synchronous (no coroutine): capture the context at this actual call and emit Leaving.
         internal static void Postfix(object __instance)
         {
             var adapter = Adapter;
-            adapter?.Guard(() => adapter.OnLeaving(adapter.Bindings.ShipOf(__instance)!));
+            adapter?.Guard(() => adapter.OnLeaving(adapter.CaptureDock(__instance)));
         }
     }
     internal static class InteriorAwake

@@ -34,6 +34,16 @@ internal sealed class TravelNativeAdapter : IDisposable
         internal Guid LegId;
         internal TravelLegTracker.Place? Actual;
     }
+    // Session/player/ship are pinned at the FIRST ACTUAL STEP of a dock/undock coroutine (not at
+    // factory creation), so a session or player replacement before the operation runs or while it
+    // is in flight can never attribute an old operation's fact to the new session.
+    private sealed class DockContext
+    {
+        internal readonly Guid Session;
+        internal readonly object Player;
+        internal readonly object Ship;
+        internal DockContext(Guid session, object player, object ship) { Session = session; Player = player; Ship = ship; }
+    }
     private readonly int _thread = Thread.CurrentThread.ManagedThreadId;
     internal readonly TravelEvents Events;
     internal readonly StationEvents Station;
@@ -52,7 +62,6 @@ internal sealed class TravelNativeAdapter : IDisposable
     private TravelMode _pendingMode = TravelMode.Unknown;
     private CompletedRoute? _lastCompleted;
     private (object Instance, Guid Session, object Player, object? Station)? _interiorLease;
-    private bool _stationTransitionSeen;
     private volatile bool _faulted;
     private Exception? _faultDetail;
     private bool _disposed;
@@ -119,7 +128,7 @@ internal sealed class TravelNativeAdapter : IDisposable
             _modeByLeg.Clear(); _legMeta.Clear(); _locations.Clear();
             _routeCompleted.Clear();
             _leg = null; _pendingMode = TravelMode.Unknown;
-            _lastCompleted = null; _interiorLease = null; _stationTransitionSeen = false;
+            _lastCompleted = null; _interiorLease = null;
             Events.SetSession(session);
             Station.SetSession(session);
         });
@@ -157,12 +166,17 @@ internal sealed class TravelNativeAdapter : IDisposable
     // the first hop (SetRouteToPOI) and every subsequent in-system hop (TravelToNextWaypoint)
     // request waypoints[0] when it is an actual in-system target, never the final targetPoi.
     // A waypoint in another system is a gate/wormhole handoff; the jump iterator owns that leg.
-    internal void RequestWaypointLeg()
+    // SetRouteToPOI (a genuine new route) supersedes any pending leg (truthful Cancelled + fresh
+    // Request). TravelToNextWaypoint (the same-leg continuation) never replaces a pending leg, so
+    // the pending-leg guard is kept only for that entry point (source ownership distinguishes a new
+    // user request from the same-leg callback).
+    internal void RequestWaypointLeg(bool replacePending = false)
     {
         Guard(() =>
         {
             var player = _boundPlayer;
-            if (!IsLive(player) || _leg != null) return;
+            if (!IsLive(player)) return;
+            if (!replacePending && _leg != null) return;
             var waypoint = _bindings.Waypoint0(player);
             if (waypoint == null) return;
             if (!_bindings.InCurrentSystem(waypoint, player)) return; // jump handoff -> WrapJump owns it
@@ -172,10 +186,24 @@ internal sealed class TravelNativeAdapter : IDisposable
             var place = PlaceOf(location);
             if (place == null) return;
             _pendingMode = TravelMode.InSystem;
-            _leg = _tracker.Request(_session, place);
-            if (_leg != null) { _modeByLeg[_leg.Id] = TravelMode.InSystem; _legMeta[_leg.Id] = new LegMeta(_leg.Origin, place); }
+            _leg = _tracker.Request(_session, place);   // Request cancels the prior pending leg truthfully
+            if (_leg != null)
+            {
+                _modeByLeg[_leg.Id] = TravelMode.InSystem;
+                _legMeta[_leg.Id] = new LegMeta(_leg.Origin, place);
+                // Origin already unloaded (manager null, tracker.Current null): the departure was never
+                // re-observed. Mark the leg departed at request time (origin unknown) so a later arrival
+                // is valid under this fresh id instead of being silently dropped (regression R1).
+                if (_tracker.Current == null) MarkRequestedDeparted(player);
+            }
             Drain(_bindings.Time(player));
         });
+    }
+
+    private void MarkRequestedDeparted(object player)
+    {
+        if (_leg == null || !_tracker.DepartAllowed(_leg)) return;
+        _tracker.Depart(_leg, _bindings.Time(player));
     }
 
     internal void OnTravelCancelled()
@@ -260,23 +288,14 @@ internal sealed class TravelNativeAdapter : IDisposable
             context = new JumpContext(_session, player, travelManager, mode);
             var requested = BuildJumpRequest(player, mode, jumpGatePoi);
             if (requested == null) return; // cannot identify a nominal target; never invent a leg
-            if (_leg != null && _tracker.OwnsPending(_leg) && !_tracker.Departed(_leg)
-                && SamePlace(_bindings.CurrentLocation(player), _tracker.Current))
-            {
-                // Direct gate/wormhole handoff: reuse the pending same-origin in-system leg as this
-                // jump's leg instead of manufacturing a fictitious Cancelled/Requested pair.
-                _tracker.Upgrade(_leg, requested);
-                _modeByLeg[_leg.Id] = mode;
-                _legMeta[_leg.Id] = new LegMeta(_leg.Origin, requested);
-                context.Leg = _leg;
-            }
-            else if (_leg == null)
-            {
-                _pendingMode = mode;
-                context.Leg = _tracker.Request(context.Session, requested);
-                _leg = context.Leg;
-                if (context.Leg != null) { _modeByLeg[context.Leg.Id] = mode; _legMeta[context.Leg.Id] = new LegMeta(context.Leg.Origin, requested); }
-            }
+            // The current gate is never in the route list (RequestWaypointLeg's InCurrentSystem filter
+            // skips cross-system waypoints), so no pending in-system leg exists for this exact hop. If a
+            // stale unrelated pending leg lingers (re-route edge), Request truthfully supersedes it
+            // (Cancelled + fresh Request) rather than relabelling a dispatched token (finding 7/F3).
+            _pendingMode = mode;
+            context.Leg = _tracker.Request(context.Session, requested);
+            _leg = context.Leg;
+            if (context.Leg != null) { _modeByLeg[context.Leg.Id] = mode; _legMeta[context.Leg.Id] = new LegMeta(context.Leg.Origin, requested); }
         });
         if (context == null) return inner;
         return new TravelJumpObserver(inner, () => ObserveJumpStep(context), () => OnJumpTerminated(context));
@@ -387,48 +406,72 @@ internal sealed class TravelNativeAdapter : IDisposable
 
     // --- station facts: native dock/undock boundaries -------------------------
 
-    // The ship object is captured before any dock reset, so attribution survives
-    // ResetDockingOption() nulling dockingOption.dockingSpaceship (finding 3/5).
-    internal void OnDockedPhysical(object? ship)
+    // Station facts originate ONLY from native Dock()/Undock()/EmergencyUndock() coroutine
+    // boundaries. DockQuick is used by every restore/relink path (InitializePoi,
+    // SpaceShip.RelinkDockedShipToStation, GameplayManager ship re-init, NPC CheckDockingState) and
+    // is never a physical transition, so it is not hooked at all. A real Dock() coroutine's
+    // completion is always eligible when the player ship has physically reached Docked, independent
+    // of reducer placement state (finding 6/F1).
+    // The context pins session/player/ship at the FIRST ACTUAL STEP. The ship object is read at that
+    // step (before ResetDockingOption() nulls dockingOption.dockingSpaceship) so attribution
+    // survives the reset (finding 3/5).
+    internal object? CaptureDock(object? dockingOption)
+    {
+        try
+        {
+            var player = _boundPlayer;
+            var ship = _bindings.ShipOf(dockingOption);
+            if (!IsLive(player) || ship == null || !_bindings.IsPlayerShip(ship, player)) return null;
+            return new DockContext(_session, player!, ship);
+        }
+        catch { return null; }
+    }
+    internal void OnDockedPhysical(object? dockContext)
     {
         Guard(() =>
         {
-            var player = _boundPlayer;
-            if (!IsLive(player) || ship == null || !_bindings.IsPlayerShip(ship, player)) return;
-            if (_bindings.ShipDockingState(ship) != DockingStateDocked) return; // physical state required
-            // Initial-load DockQuick (InitializePoi) emits Docked before the reducer has a
-            // placement and with no prior station transition: that is initial state, not a
-            // transition. Suppress it (finding 6). A genuine transition is preceded by a
-            // placement or a prior dock/undock boundary.
-            if (!_stationTransitionSeen && _tracker.Current == null) return;
+            var c = dockContext as DockContext;
+            if (c == null) return;
+            // Session/player pinned at the first real step; a replacement since then must fail closed.
+            if (_session != c.Session || !ReferenceEquals(c.Player, _boundPlayer)) return;
+            var player = c.Player;
+            if (!IsLive(player) || !_bindings.IsPlayerShip(c.Ship, player)) return;
+            if (_bindings.ShipDockingState(c.Ship) != DockingStateDocked) return; // physical state required
+            var station = _bindings.CurrentLocation(player); // actual player location, not tracking cache
+            if (station == null) return;
+            Cache(station);
+            Station.Emit(c.Session, StationTransitionKind.DockedPhysical, station, _bindings.Time(player));
+        });
+    }
+    internal void OnUndocking(object? dockContext)
+    {
+        Guard(() =>
+        {
+            var c = dockContext as DockContext;
+            if (c == null) return;
+            if (_session != c.Session || !ReferenceEquals(c.Player, _boundPlayer)) return;
+            var player = c.Player;
+            if (!IsLive(player) || !_bindings.IsPlayerShip(c.Ship, player)) return;
             var station = _bindings.CurrentLocation(player);
             if (station == null) return;
             Cache(station);
-            Station.Emit(_session, StationTransitionKind.DockedPhysical, station, _bindings.Time(player));
-            _stationTransitionSeen = true;
+            Station.Emit(c.Session, StationTransitionKind.Undocking, station, _bindings.Time(player));
         });
     }
-    internal void OnUndocking(object? ship)
+    internal void OnLeaving(object? dockContext)
     {
         Guard(() =>
         {
-            var player = _boundPlayer;
-            if (!IsLive(player) || ship == null || !_bindings.IsPlayerShip(ship, player)) return;
-            var station = _bindings.CurrentLocation(player) ?? LocForPlace(_tracker.Current);
-            Station.Emit(_session, StationTransitionKind.Undocking, station, _bindings.Time(player));
-            _stationTransitionSeen = true;
-        });
-    }
-    internal void OnLeaving(object? ship)
-    {
-        Guard(() =>
-        {
-            var player = _boundPlayer;
-            if (!IsLive(player) || ship == null || !_bindings.IsPlayerShip(ship, player)) return;
-            if (_bindings.ShipDockingState(ship) != DockingStateLeaving) return; // verified leaving
-            var station = _bindings.CurrentLocation(player) ?? LocForPlace(_tracker.Current);
-            Station.Emit(_session, StationTransitionKind.Leaving, station, _bindings.Time(player));
-            _stationTransitionSeen = true;
+            var c = dockContext as DockContext;
+            if (c == null) return;
+            if (_session != c.Session || !ReferenceEquals(c.Player, _boundPlayer)) return;
+            var player = c.Player;
+            if (!IsLive(player) || !_bindings.IsPlayerShip(c.Ship, player)) return;
+            if (_bindings.ShipDockingState(c.Ship) != DockingStateLeaving) return; // verified leaving
+            var station = _bindings.CurrentLocation(player);
+            if (station == null) return;
+            Cache(station);
+            Station.Emit(c.Session, StationTransitionKind.Leaving, station, _bindings.Time(player));
         });
     }
 

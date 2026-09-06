@@ -74,7 +74,7 @@ internal sealed class TravelNativeBindings
     internal void NextWaypoint(object travelManager) => _travelNextWaypoint.Invoke(travelManager, null);
     // The ship object is captured before any dock reset so attribution survives
     // ResetDockingOption() nulling dockingOption.dockingSpaceship.
-    internal object? ShipOf(object dockingOption) => dockingOption == null ? null : _dockingShip.GetValue(dockingOption);
+    internal object? ShipOf(object? dockingOption) => dockingOption == null ? null : _dockingShip.GetValue(dockingOption);
     internal object? ShipData(object ship) => ship == null ? null : _shipData.GetValue(ship);
     internal int? ShipDockingState(object ship)
     {

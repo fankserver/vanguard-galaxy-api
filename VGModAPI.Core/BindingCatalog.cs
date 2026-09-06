@@ -42,7 +42,6 @@ internal static class BindingCatalog
         new("jumpGate", TravelManager, "JumpToSystem", false, "System.Collections.IEnumerator", "Source.Galaxy.POI.JumpGate"),
         new("jumpWormhole", TravelManager, "JumpToWormhole", false, "System.Collections.IEnumerator", "Source.Galaxy.POI.Wormhole"),
         new("travelNextWaypoint", TravelManager, "TravelToNextWaypoint", false, "System.Void"),
-        new("dockQuick", DockingOption, "DockQuick", false, "System.Void"),
         new("dock", DockingOption, "Dock", false, "System.Collections.IEnumerator", "System.Boolean"),
         new("undock", DockingOption, "Undock", false, "System.Collections.IEnumerator"),
         new("emergencyUndock", DockingOption, "EmergencyUndock", false, "System.Void"),

@@ -24,9 +24,8 @@ internal sealed class TravelLegTracker
         internal Guid Id { get; } = Guid.NewGuid();
         internal Guid Session { get; }
         internal Place? Origin { get; }
-        internal Place Requested { get; private set; }
+        internal Place Requested { get; }
         internal Leg(Guid session, Place? origin, Place requested) { Session = session; Origin = origin; Requested = requested; }
-        internal void ReplaceRequested(Place requested) => Requested = requested;
     }
     internal sealed class Fact
     {
@@ -112,14 +111,6 @@ internal sealed class TravelLegTracker
         if (!Owns(leg)) return;
         _pending = null;
         _facts.Add(new Fact(leg.Session, leg.Id, Kind.Cancelled, Current));
-    }
-    // Reuse a pending, not-yet-departed, same-origin leg as the current hop instead of
-    // cancelling it (direct gate/wormhole handoff): no fictitious Cancelled/Requested pair.
-    internal bool Upgrade(Leg leg, Place requested)
-    {
-        if (!Owns(leg) || _departed || requested == null) return false;
-        leg.ReplaceRequested(requested);
-        return true;
     }
     internal Fact[] Drain()
     {
