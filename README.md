@@ -93,7 +93,7 @@ Disabled by default. For disposable-save testing, set `[Persistence] Enabled = t
 
 Require API 0.1.2 and register a `PersistenceProvider` before any session starts. Supply an owner namespace, schema version, capture/restore/validation callbacks and optional explicit migrations. Payloads are opaque owned bytes, at most 1 MiB. A null restore payload means genuinely absent known data, not corrupt data. No automatic import of existing sidecars is performed. Keep the returned `IPersistenceRegistration`, obey `MutationAllowed` before mutations, display `Status` on refusal, and dispose it before destroying provider state. Active-session removal pauses all coordinated persistence until a new load. Do not mutate vanilla state in these callbacks.
 
-See [identity](docs/persistence-identity.md), [schema](docs/persistence-schema.md) and [storage/recovery](docs/persistence-storage.md) for identical-byte conflicts, durable intents and explicit filesystem-failure limits. This remains experimental; synthetic provider tests are not two actual consumer migrations or a stability claim.
+See [identity](docs/persistence-identity.md), [schema](docs/persistence-schema.md) and [storage/recovery](docs/persistence-storage.md) for identical-byte conflicts, durable intents and explicit filesystem-failure limits. This remains experimental. Actual MissionJournal0.3 and Stockpile0.7 coordinated pilots exercise the documented paths; neither these controlled runs nor synthetic provider tests are a universal stability claim.
 
 ## Source layout
 
@@ -106,7 +106,7 @@ See [identity](docs/persistence-identity.md), [schema](docs/persistence-schema.m
 
 The [pinned roadmap issue](https://github.com/fankserver/vanguard-galaxy-api/issues/1) links the [milestones](https://github.com/fankserver/vanguard-galaxy-api/milestones) and actionable issues, including acceptance criteria, evidence, priorities, and prerequisites. It is the source of truth for future work—not a promise of release dates.
 
-[Controlled core qualification](https://github.com/fankserver/vanguard-galaxy-api/issues/2) is recorded; the next implementation milestone is persistence and save safety. Optional persistence, mission/travel, story/bar, HUD/navigation, and content modules follow demonstrated consumer needs. Direct Harmony remains an escape hatch; bespoke gameplay stays in feature mods.
+[Controlled core qualification](https://github.com/fankserver/vanguard-galaxy-api/issues/2) is recorded; persistence and save safety now include the opt-in service and both authorized consumer pilots; missing-content policy remains the next milestone item. Optional persistence, mission/travel, story/bar, HUD/navigation, and content modules follow demonstrated consumer needs. Direct Harmony remains an escape hatch; bespoke gameplay stays in feature mods.
 
 ## License and experimental compatibility
 
