@@ -2,7 +2,7 @@
 
 Unofficial community mod API for Vanguard Galaxy, using BepInEx 5 and HarmonyX.
 
-**0.1.1 experimental: automatically tested and partially exercised in-game, not fully runtime-qualified.** This is a core lifecycle foundation, not a complete modding SDK. MissionJournal is migrated; further consumer adoption and qualification remain in progress.
+**0.1.1 experimental: automatically tested and partially exercised in-game, not fully runtime-qualified.** This is a core lifecycle foundation, not a complete modding SDK. MissionJournal and Stockpile use the lifecycle API; controlled qualification is recorded, with complete owner acceptance still separate.
 
 ## Implemented
 
@@ -58,7 +58,9 @@ Override `GAME_DIR` and/or `DOTNET` as needed. Game/Unity/BepInEx DLLs are never
 
 ## Experimental installation
 
-No automatic deploy target is provided. After approval for disposable-save testing, copy the generated `artifacts/VGModAPI/` folder into `<game>/BepInEx/plugins/`.
+Install BepInEx 5 once, then close the game and back up saves before changing plugins. Verify the experimental release ZIP against its adjacent SHA-256 file (`sha256sum -c *.zip.sha256`, or PowerShell `Get-FileHash`). Extract its `VGModAPI/` folder into `<game>/BepInEx/plugins/`. For source builds, use `make release-archive CONFIGURATION=Release`; this validates assembly identities/dependencies and creates a deterministic ZIP and checksum under `artifacts/`.
+
+No automatic deploy target is provided. Remove older API copies from other plugin folders before installation; consumers must not bundle another `VGModAPI.Abstractions.dll`. Do not replace BepInEx/Unity/game DLLs. Start with disposable saves and inspect `BepInEx/LogOutput.log` for the assembly identity and capability failures. If unavailable, disable dependent features rather than overriding the hash gate. To uninstall, close the game and remove the API folder and any hard-dependent consumer plugins; leave saves and sidecars intact.
 
 The package contains `VGModAPI.dll`, `VGModAPI.Core.dll`, and `VGModAPI.Abstractions.dll`, plus documentation. Keep one installed copy of these assemblies. An unsupported game hash leaves the service available for diagnostics but its lifecycle/save capabilities unavailable.
 
@@ -83,7 +85,7 @@ _subscription = ModApi.Current!.Subscribe("your.mod.id", message =>
 
 Dispose the subscription in OnDestroy. All access is main-thread-only. Callbacks should observe, not block or mutate in-progress game operations. Do not ship a separate copy of the abstractions DLL with each consumer.
 
-A complete compiled example lives at `examples/LifecycleObserver/` in the source checkout. It is built by `make build` but is not included in the API package. Its DLL can be installed separately for qualification event logging.
+A complete compiled example lives at `examples/LifecycleObserver/` in the source checkout. It is built by `make build` but is not included in the API package. Its `examples/LifecycleObserver/bin/Release/netstandard2.1/LifecycleObserver.dll` can be copied alone into a separate plugins folder for qualification event logging after `make build CONFIGURATION=Release`. Do not copy its dependency DLLs; use the single API installation.
 
 ## Source layout
 
@@ -96,6 +98,12 @@ A complete compiled example lives at `examples/LifecycleObserver/` in the source
 
 The [pinned roadmap issue](https://github.com/fankserver/vanguard-galaxy-api/issues/1) links the [milestones](https://github.com/fankserver/vanguard-galaxy-api/milestones) and actionable issues, including acceptance criteria, evidence, priorities, and prerequisites. It is the source of truth for future work—not a promise of release dates.
 
-The next gate is [in-game core qualification](https://github.com/fankserver/vanguard-galaxy-api/issues/2). Optional persistence, mission/travel, story/bar, HUD/navigation, and content modules follow demonstrated consumer needs. Direct Harmony remains an escape hatch; bespoke gameplay stays in feature mods.
+[Controlled core qualification](https://github.com/fankserver/vanguard-galaxy-api/issues/2) is recorded; the next implementation milestone is persistence and save safety. Optional persistence, mission/travel, story/bar, HUD/navigation, and content modules follow demonstrated consumer needs. Direct Harmony remains an escape hatch; bespoke gameplay stays in feature mods.
+
+## License and experimental compatibility
+
+Owned source and documentation are [MIT licensed](LICENSE). This does not license the game or its reference assemblies. Release packages contain only the three owned assemblies and owned documentation/license, not a loader, proprietary assets, qualification tools, or copied saves.
+
+`Available` means the inspected adapter bindings were installed; implemented does not mean runtime-qualified. `RuntimeQualified` remains false. Only the exact hash in the support matrix is accepted; other hashes are unsupported. The 0.1.x contract is experimental: 0.1.1 adds optional dispatch-state support without changing ILifecycleApi. Consumers requiring that capability must require 0.1.1 and check it explicitly; future incompatible contracts require explicit migration rather than silent replacement. Consult each release's limitations before upgrading.
 
 [Initial implementation plan](docs/implementation-plan.md) · [Research findings](docs/research-findings.md)

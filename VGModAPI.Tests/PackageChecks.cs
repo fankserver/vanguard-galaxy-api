@@ -15,7 +15,7 @@ internal static class PackageChecks
         "qualification-runner.md", "research-findings.md"
     };
     internal static readonly string[] Files = Assemblies.Select(n => n + ".dll")
-        .Concat(new[] { "README.md" }).Concat(Documents.Select(n => "docs/" + n)).ToArray();
+        .Concat(new[] { "README.md", "LICENSE" }).Concat(Documents.Select(n => "docs/" + n)).ToArray();
 
     internal static void ValidateLayout(string root)
     {
