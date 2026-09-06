@@ -15,7 +15,9 @@ public sealed partial class Plugin
     {
         var facade = JournalFacade(); Require(facade != null, "Journal facade unavailable during mission verification.");
         var records = (IEnumerable)facade!.GetType().GetMethod("GetAllMissions")!.Invoke(facade, null)!;
-        return records.Cast<object>().Single(r => (string)SpGet(r, "MissionInstanceId")! == id.ToString());
+        var matches = records.Cast<object>().Where(r => (string)SpGet(r, "MissionInstanceId")! == id.ToString()).ToArray();
+        Require(matches.Length == 1, "Expected one journal occurrence; history may be missing, duplicated, or unavailable for queries.");
+        return matches[0];
     }
     private static string[] JournalStates(object record) => ((IEnumerable)SpGet(record, "Timeline")!).Cast<object>().Select(e => SpGet(e, "State")!.ToString()!).ToArray();
     private void CheckJournalEventProjection(IEnumerable<MissionTransition> transitions)
