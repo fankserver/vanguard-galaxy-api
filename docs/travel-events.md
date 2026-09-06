@@ -21,13 +21,15 @@ Issue #12 remains open. Since 0.1.9 the real adapter is implemented and installe
 |---|---|---|---|
 | Same-system routes | Host adapter logic + hook | UNQUALIFIED | Campaign acceptance pending |
 | In-system local POI arrival | `SpaceshipHasArrived` scopes | UNQUALIFIED | Covered by unit tests |
-| Jumpgates | Owned iterator observation | UNQUALIFIED | Cross-hop requested built from raw gate guids (no world lookup) |
+| Jumpgates | Owned iterator observation | UNQUALIFIED | Cross-hop requested built from raw gate guids (no world lookup). Controlled phase `travel-cross-system-v1` drives the native gate hop; owner in-game acceptance still pending |
 | Tutorial exit | Actual preserved; nominal raw | UNQUALIFIED | Host test only |
-| Wormholes | Owned iterator observation | UNQUALIFIED | Nominal from waypoint target |
+| Wormholes | Owned iterator observation | UNQUALIFIED | Nominal from waypoint target. `travel-cross-system-v1` requires this case; no available fixture world contains a wormhole POI, so the opt-in `-TravelWormholeFixture` selection creates a disposable native pair with the game's own factory before the route is driven. Without that selection the case stays a mandatory NOT-RUN (a phase failure), never coverage; the created pair is fixture data, not travel evidence |
 | Fast-lane chains | TravelToNextWaypoint requests each in-system leg | UNQUALIFIED | Each hop has its own leg |
 | Initial load placement | Ready placement observed | UNQUALIFIED | Actively qualified by owner |
 | Dock/undock vs interior ready | Native Dock/Undock/EmergencyUndock boundaries; DockQuick unhooked; source-attributed docking-request intent captured at the actual assignment inside CheckForDocking | UNQUALIFIED | Restore/relink/re-init/NPC/dungeon assignments carry no intent and never emit, independently of interior scene or instance state. One physical fact per docking request (the intent is consumed at the first successful completion; native CanDock/Docking already prevents a second coroutine, so this is a defensive guard). No ordering promise between InteriorReady and DockedPhysical: the arrival opens the interior synchronously through CheckForSpaceStationEnter, frames before the Dock() coroutine exists. A docked load whose init/relink spawn misses the docking tolerance still emits nothing, because that assignment is outside a request. |
 | Direct field mutation/teleport/cheat | Excluded | — | Not treated as verified travel |
+
+Remaining after the controlled cross-system phase, and explicitly NOT fulfilled by the qualification infrastructure that exists today: the empty-origin re-route departure boundary (`TravelInSystem` warp start), the restore/relink `Dock()` suppression path, stale-session replay of an old coroutine after a replacement load, the two active consumer integrations (Anima's system-visit recorder and Echo's final-route arrival snap) and the sandbox-only comparison against the unchanged archived TravelJournal. A passing phase receipt is evidence for that phase's own case identities only; it is not owner acceptance and does not close any of these.
 
 TravelJournal remains archived and must not be edited, rebuilt, reactivated, migrated or bridged. The two active integration targets are Anima's system-visit recorder and Echo's final-route arrival-snap; Echo's distinct ETA-sync remains separate. Native API hook qualification and both consumers remain merge gates for closing #12, not gates satisfied by this reducer.
 

@@ -47,6 +47,9 @@ function Assert-PersistenceProbeReceipt([string]$Root, $Provenance) {
     if ($Provenance.PSObject.Properties['travelStation'] -and $Provenance.travelStation) {
         Assert-TravelStationReceipt $Root
     }
+    if ($Provenance.PSObject.Properties['travelCrossSystem'] -and $Provenance.travelCrossSystem) {
+        Assert-TravelCrossSystemReceipt $Root $Provenance
+    }
 }
 $TravelStationPhase = 'travel-in-system-station-v1'
 $TravelStationRequiredCases = @('initial-placement','station-undock','in-system-route','early-cancel','chained-route','station-dock')
@@ -57,15 +60,26 @@ $TravelStationReceiptHeader = @('case','description','status','nativeIdentity','
 $QualificationBaseTimeoutSeconds = 1800
 $TravelStationBudgetSeconds = 1500
 $TravelStationEventHeader = @('apiSequence','surface','case','session','operation','kind','mode','origin','requested','actual','gameSeconds','dwellSeconds')
+# The separate optional cross-system phase reserves its own process time ON TOP of the in-system
+# phase; it never replaces it and never turns that phase's optional NOT-RUN rows into coverage.
+$TravelCrossSystemPhase = 'travel-cross-system-v1'
+$TravelCrossSystemRequiredCases = @('cross-system-jumpgate','cross-system-wormhole')
+$TravelCrossSystemBudgetSeconds = 2400
+# Optional opt-in sandbox fixture preparation row. It is deliberately NOT a required case: creating
+# disposable native test data is never coverage of a travel routine.
+$TravelWormholeFixtureCase = 'wormhole-fixture-setup'
+$TravelWormholeFactorySignature = 'factory=Source.Simulation.World.WormholeSpawner.PlaceWormhole('
 # Independent verification of the pilot's own claim: the declared phase, every mandatory case
 # identity, the receipt/event files and the identities they share must all agree. A first line of
-# PASS is never accepted on its own.
-function Assert-TravelStationReceipt([string]$Root) {
-    $summaryPath = Join-Path $Root 'travel-station.txt'
-    $receiptPath = Join-Path $Root 'travel-station-receipt.tsv'
-    $eventsPath = Join-Path $Root 'travel-station-events.tsv'
+# PASS is never accepted on its own. The two travel phases publish the same receipt/event shape,
+# so they share this validator with their own file prefix, phase identity, required-case list and
+# reserved budget; neither phase can satisfy the other's mandatory cases.
+function Assert-TravelPhaseReceipt([string]$Root, [string]$Label, [string]$Prefix, [string]$Phase, [string[]]$RequiredCases, [int]$BudgetSeconds) {
+    $summaryPath = Join-Path $Root "$Prefix.txt"
+    $receiptPath = Join-Path $Root "$Prefix-receipt.tsv"
+    $eventsPath = Join-Path $Root "$Prefix-events.tsv"
     foreach ($path in @($summaryPath, $receiptPath, $eventsPath)) {
-        if (!(Test-Path -LiteralPath $path -PathType Leaf)) { throw "Travel/station pilot output missing: $path" }
+        if (!(Test-Path -LiteralPath $path -PathType Leaf)) { throw "$Label pilot output missing: $path" }
     }
     # Launcher outcome first: a killed, timed-out, unknown-exit or unexpected-exit run can never be
     # reported as a pass. The game's own quit handler self-terminates with a source-proven code (see
@@ -73,35 +87,35 @@ function Assert-TravelStationReceipt([string]$Root) {
     $outcomePath = Join-Path $Root 'run-outcome.json'
     if (Test-Path -LiteralPath $outcomePath -PathType Leaf) {
         $outcome = Get-Content -LiteralPath $outcomePath -Raw | ConvertFrom-Json
-        Assert-QualificationExitOutcome $outcome 'Travel/station run'
+        Assert-QualificationExitOutcome $outcome "$Label run"
     }
     $summary = @(Get-Content -LiteralPath $summaryPath)
-    if ($summary.Count -lt 3 -or $summary[0] -cne 'PASS') { throw 'Travel/station pilot did not complete with PASS.' }
+    if ($summary.Count -lt 3 -or $summary[0] -cne 'PASS') { throw "$Label pilot did not complete with PASS." }
     $budget = @($summary | Where-Object { $_ -like 'budgetSeconds=*' })
-    if ($budget.Count -ne 1) { throw 'Travel/station receipt does not declare its phase budget.' }
+    if ($budget.Count -ne 1) { throw "$Label receipt does not declare its phase budget." }
     $declared = [int]($budget[0] -replace '^budgetSeconds=', '')
-    if ($declared -le 0 -or $declared -gt $TravelStationBudgetSeconds) { throw "Travel/station phase budget $declared exceeds the reserved $TravelStationBudgetSeconds seconds." }
-    if ($summary -notcontains "phase=$TravelStationPhase") { throw 'Travel/station receipt does not declare the qualified phase.' }
-    if ($summary -notcontains ("required=" + ($TravelStationRequiredCases -join ','))) { throw 'Travel/station receipt declares different required cases.' }
-    if ($summary -notcontains 'fault=none') { throw 'Travel/station pilot recorded a fault.' }
+    if ($declared -le 0 -or $declared -gt $BudgetSeconds) { throw "$Label phase budget $declared exceeds the reserved $BudgetSeconds seconds." }
+    if ($summary -notcontains "phase=$Phase") { throw "$Label receipt does not declare the qualified phase." }
+    if ($summary -notcontains ("required=" + ($RequiredCases -join ','))) { throw "$Label receipt declares different required cases." }
+    if ($summary -notcontains 'fault=none') { throw "$Label pilot recorded a fault." }
     $rows = @(Get-Content -LiteralPath $receiptPath)
-    if ($rows.Count -lt 2 -or (($rows[0] -split "`t") -join ',') -cne ($TravelStationReceiptHeader -join ',')) { throw 'Travel/station receipt header changed.' }
+    if ($rows.Count -lt 2 -or (($rows[0] -split "`t") -join ',') -cne ($TravelStationReceiptHeader -join ',')) { throw "$Label receipt header changed." }
     $records = @($rows[1..($rows.Count - 1)] | ForEach-Object {
         $columns = $_ -split "`t"
-        if ($columns.Count -ne $TravelStationReceiptHeader.Count) { throw 'Malformed travel/station receipt row.' }
+        if ($columns.Count -ne $TravelStationReceiptHeader.Count) { throw "Malformed $Label receipt row." }
         [pscustomobject]@{ Case=$columns[0]; Status=$columns[2]; Session=$columns[4]; Operation=$columns[5]; Evidence=$columns[6] }
     })
-    if (@($records | Where-Object { $_.Status -eq 'failed' }).Count -gt 0) { throw 'Travel/station receipt contains failed cases.' }
-    if (@($records | Where-Object { $_.Status -notin @('passed','not-run') }).Count -gt 0) { throw 'Unknown travel/station case status.' }
+    if (@($records | Where-Object { $_.Status -eq 'failed' }).Count -gt 0) { throw "$Label receipt contains failed cases." }
+    if (@($records | Where-Object { $_.Status -notin @('passed','not-run') }).Count -gt 0) { throw "Unknown $Label case status." }
     $passed = @($records | Where-Object { $_.Status -eq 'passed' })
     $notRun = @($records | Where-Object { $_.Status -eq 'not-run' })
-    if ($passed.Count -eq 0) { throw 'Travel/station receipt has no passed case; empty coverage is not a pass.' }
-    if ($summary -notcontains ("rows=" + $records.Count + " passed=" + $passed.Count + " failed=0 notRun=" + $notRun.Count)) { throw 'Travel/station summary counts disagree with the receipt.' }
+    if ($passed.Count -eq 0) { throw "$Label receipt has no passed case; empty coverage is not a pass." }
+    if ($summary -notcontains ("rows=" + $records.Count + " passed=" + $passed.Count + " failed=0 notRun=" + $notRun.Count)) { throw "$Label summary counts disagree with the receipt." }
     $events = @(Get-Content -LiteralPath $eventsPath)
-    if ($events.Count -lt 2 -or (($events[0] -split "`t") -join ',') -cne ($TravelStationEventHeader -join ',')) { throw 'Travel/station event trace missing or its header changed.' }
+    if ($events.Count -lt 2 -or (($events[0] -split "`t") -join ',') -cne ($TravelStationEventHeader -join ',')) { throw "$Label event trace missing or its header changed." }
     $eventRows = @($events[1..($events.Count - 1)] | ForEach-Object {
         $columns = $_ -split "`t"
-        if ($columns.Count -ne $TravelStationEventHeader.Count) { throw 'Malformed travel/station event row.' }
+        if ($columns.Count -ne $TravelStationEventHeader.Count) { throw "Malformed $Label event row." }
         [pscustomobject]@{ Sequence=$columns[0]; Surface=$columns[1]; Case=$columns[2]; Session=$columns[3]; Operation=$columns[4] }
     })
     $eventSessions = @($eventRows | ForEach-Object { $_.Session } | Select-Object -Unique)
@@ -111,13 +125,13 @@ function Assert-TravelStationReceipt([string]$Root) {
     # the chained route is still driving).
     $eventKeys = @{}
     foreach ($row in $eventRows) { $eventKeys[($row.Surface + ':' + $row.Sequence + ':' + $row.Session)] = $true }
-    foreach ($case in $TravelStationRequiredCases) {
+    foreach ($case in $RequiredCases) {
         $matched = @($records | Where-Object { $_.Case -eq $case })
-        if ($matched.Count -ne 1) { throw "Required travel/station case is missing or duplicated: $case" }
-        if ($matched[0].Status -ne 'passed') { throw "Required travel/station case did not pass: $case" }
-        if ($summary -notcontains "required-case $case=passed") { throw "Travel/station summary and receipt disagree about $case." }
-        if ($matched[0].Session -notmatch '^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$') { throw "Required travel/station case has no session identity: $case" }
-        if (!$matched[0].Evidence) { throw "Required travel/station case references no observed public events: $case" }
+        if ($matched.Count -ne 1) { throw "Required $Label case is missing or duplicated: $case" }
+        if ($matched[0].Status -ne 'passed') { throw "Required $Label case did not pass: $case" }
+        if ($summary -notcontains "required-case $case=passed") { throw "$Label summary and receipt disagree about $case." }
+        if ($matched[0].Session -notmatch '^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$') { throw "Required $Label case has no session identity: $case" }
+        if (!$matched[0].Evidence) { throw "Required $Label case references no observed public events: $case" }
     }
     foreach ($record in $passed) {
         if ($record.Session -notin $eventSessions) { throw "Receipt session identity is absent from the event trace: $($record.Case)" }
@@ -131,6 +145,29 @@ function Assert-TravelStationReceipt([string]$Root) {
                 }
             }
         }
+    }
+}
+function Assert-TravelStationReceipt([string]$Root) {
+    Assert-TravelPhaseReceipt $Root 'Travel/station' 'travel-station' $TravelStationPhase $TravelStationRequiredCases $TravelStationBudgetSeconds
+}
+# The cross-system phase is validated separately and with its own mandatory cases: a passing
+# in-system receipt can never stand in for it, and its own optional NOT-RUN rows are never coverage.
+function Assert-TravelCrossSystemReceipt([string]$Root, $Provenance) {
+    Assert-TravelPhaseReceipt $Root 'Travel cross-system' 'travel-cross-system' $TravelCrossSystemPhase $TravelCrossSystemRequiredCases $TravelCrossSystemBudgetSeconds
+    if ($TravelWormholeFixtureCase -in $TravelCrossSystemRequiredCases) { throw 'Fixture preparation must never be a mandatory case.' }
+    # A fixture-preparation row is only legitimate under the explicit opt-in selection, must record
+    # the native factory it used, must claim no observed travel events and must have seen none.
+    $selected = $null -ne $Provenance -and $Provenance.PSObject.Properties['travelWormholeFixture'] -and [bool]$Provenance.travelWormholeFixture
+    $rows = @(Get-Content -LiteralPath (Join-Path $Root 'travel-cross-system-receipt.tsv'))
+    $setup = @($rows | Where-Object { ($_ -split "`t")[0] -eq $TravelWormholeFixtureCase })
+    if (!$selected -and $setup.Count -gt 0) { throw 'Wormhole fixture preparation was recorded without the explicit fixture selection.' }
+    if ($setup.Count -gt 1) { throw 'Wormhole fixture preparation recorded more than once.' }
+    if ($setup.Count -eq 1) {
+        $columns = $setup[0] -split "`t"
+        if ($columns[2] -ne 'passed') { throw 'Wormhole fixture preparation did not complete.' }
+        if ($columns[6]) { throw 'Fixture preparation must not claim observed travel events.' }
+        if ($columns[7] -notlike "*$TravelWormholeFactorySignature*") { throw 'Wormhole fixture preparation does not record the native factory it used.' }
+        if ($columns[7] -notlike '*travelFactsDuringCreation=0*') { throw 'Wormhole fixture preparation observed travel facts.' }
     }
 }
 function Assert-VanillaControlReceipt([string]$Root, $Provenance) {
@@ -240,6 +277,25 @@ function Assert-QualificationInputs([string]$Root) {
         $tsConfig = Get-Content -LiteralPath (Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg') -Raw
         $tsSections = [regex]::Matches($tsConfig, '(?ms)^\[Travel\]\s*\r?\n(?<body>.*?)(?=^\[|\z)')
         if ($tsSections.Count -ne 1 -or [regex]::Matches($tsSections[0].Groups['body'].Value, '(?m)^Enabled\s*=').Count -ne 1 -or [regex]::Matches($tsSections[0].Groups['body'].Value, '(?m)^Enabled\s*=\s*true\s*$').Count -ne 1) { throw 'Travel/station config changed.' }
+    }
+    # The cross-system phase is an ADDITIONAL selection on top of the in-system phase; it reuses the
+    # same [Travel] capability configuration and reserves its own separate process budget.
+    $travelCrossSystem = $provenance.PSObject.Properties['travelCrossSystem'] -and [bool]$provenance.travelCrossSystem
+    $crossMarker = Join-Path $Root 'travel-cross-system.enabled'
+    if ([bool]$travelCrossSystem -ne (Test-Path -LiteralPath $crossMarker -PathType Leaf)) { throw 'Travel cross-system selection changed.' }
+    if ($travelCrossSystem) {
+        if (!$travelStation -or (Get-Content -LiteralPath $crossMarker -Raw).Trim() -ne 'cross-system-v1') { throw 'Invalid travel cross-system selection.' }
+        if (!$provenance.PSObject.Properties['travelCrossSystemBudgetSeconds'] -or
+            [int]$provenance.travelCrossSystemBudgetSeconds -ne $TravelCrossSystemBudgetSeconds) { throw 'Travel cross-system budget reservation changed.' }
+    }
+    # Opt-in disposable sandbox test data for the wormhole case. It only ever creates native content
+    # in the freshly loaded sandbox fixture clone; the marker and provenance flag must agree exactly,
+    # so an unselected run can never create content and a selected run is recorded as such.
+    $wormholeFixture = $provenance.PSObject.Properties['travelWormholeFixture'] -and [bool]$provenance.travelWormholeFixture
+    $wormholeMarker = Join-Path $Root 'travel-wormhole-fixture.enabled'
+    if ([bool]$wormholeFixture -ne (Test-Path -LiteralPath $wormholeMarker -PathType Leaf)) { throw 'Wormhole fixture selection changed.' }
+    if ($wormholeFixture) {
+        if (!$travelCrossSystem -or (Get-Content -LiteralPath $wormholeMarker -Raw).Trim() -ne 'wormhole-fixture-v1') { throw 'Invalid wormhole fixture selection.' }
     }
     $probe = $provenance.PSObject.Properties['persistenceProbe'] -and [bool]$provenance.persistenceProbe
     $probeMarker = Join-Path $Root 'persistence-probe.enabled'
