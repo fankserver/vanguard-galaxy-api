@@ -248,6 +248,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         foreach (var frame in NewGameAndSpaceLoad()) yield return frame;
         foreach (var frame in CheckStockpilePilot()) yield return frame;
         foreach (var frame in CheckJournalTeardown()) yield return frame;
+        foreach (var frame in RemainingLifecyclePilot()) yield return frame;
         Require(_dispatchStateValid && _events.Count > 0 && _api is ILifecycleDispatchState state && !state.IsDispatchingCallbacks,
             "Callback dispatch state did not match native delivery boundaries.");
         Passed("callback-dispatch-state");
