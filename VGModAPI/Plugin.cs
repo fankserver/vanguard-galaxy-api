@@ -73,7 +73,11 @@ public sealed class Plugin : BaseUnityPlugin
     private void InitializePersistence()
     {
         if (!Config.Bind("Persistence", "Enabled", false, "Experimental opt-in; use disposable saves until qualified.").Value) return;
-        if (_hub!.Capabilities.Count(c => (c.Name == "session-lifecycle" || c.Name == "save-outcomes") && c.Available) != 2) return;
+        if (_hub!.Capabilities.Count(c => (c.Name == "session-lifecycle" || c.Name == "save-outcomes") && c.Available) != 2)
+        {
+            _hub.SetCapability("coordinated-persistence", false, "Lifecycle capabilities unavailable.");
+            return;
+        }
         try
         {
             var root = Config.Bind("Persistence", "Root", Path.Combine(Paths.ConfigPath, "VGModAPI-state"), "Short, non-linked owned storage root; do not share across installations.").Value;
@@ -87,7 +91,7 @@ public sealed class Plugin : BaseUnityPlugin
         catch (Exception error)
         {
             _hub.SetCapability("coordinated-persistence", false, "Persistence initialization failed: " + error.GetType().Name);
-            Logger.LogError("Coordinated persistence unavailable: " + error.GetType().Name);
+            Logger.LogError("Coordinated persistence unavailable: " + error.GetType().Name + ": " + error.Message);
         }
     }
 
