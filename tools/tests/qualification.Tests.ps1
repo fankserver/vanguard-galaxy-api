@@ -93,6 +93,23 @@ try {
     $rejected = $false
     try { $null = Assert-QualificationInputs $sandbox } catch { $rejected = $true }
     Assert $rejected 'Invalid consumer marker accepted.'
+    [IO.File]::WriteAllText($marker, 'pilot-v1')
+    $consumerProvenance.stockpile = $true
+    $stockpileDll = Join-Path $sandbox 'game\BepInEx\plugins\VGStockpile.dll'
+    [IO.File]::WriteAllText($stockpileDll, 'synthetic-stockpile')
+    $consumerProvenance.plugins | Add-Member -NotePropertyName 'VGStockpile.dll' -NotePropertyValue ((Get-FileHash $stockpileDll).Hash)
+    $consumerProvenance | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $provPath
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $sandbox } catch { $rejected = $true }
+    Assert $rejected 'Stockpile provenance without marker accepted.'
+    $stockpileMarker = Join-Path $sandbox 'stockpile.enabled'
+    [IO.File]::WriteAllText($stockpileMarker, 'pilot-v1')
+    $null = Assert-QualificationInputs $sandbox
+    [IO.File]::WriteAllText($stockpileMarker, 'invalid')
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $sandbox } catch { $rejected = $true }
+    Assert $rejected 'Invalid Stockpile marker accepted.'
+    Remove-Item -LiteralPath $stockpileMarker,$stockpileDll -Force
     Remove-Item -LiteralPath $marker -Force
     foreach ($name in @('VGMissionJournal.dll','Newtonsoft.Json.dll')) { Remove-Item -LiteralPath (Join-Path $sandbox ('game\BepInEx\plugins\' + $name)) -Force }
     [IO.File]::WriteAllText($provPath, $originalProvenance)
@@ -114,6 +131,13 @@ try {
     try { & $script -Action Prepare -SandboxRoot $badRoot -MissionJournalBin $badBin @options }
     catch { $rejected = $_.Exception.InnerException -is [BadImageFormatException] }
     Assert $rejected 'Non-assembly consumer did not fail metadata validation.'
+    [IO.File]::WriteAllText((Join-Path $badBin 'VGStockpile.dll'), 'not-an-assembly')
+    $badRoot = Join-Path $work 'bad-stockpile-sandbox'
+    $sandboxes += $badRoot
+    $rejected = $false
+    try { & $script -Action Prepare -SandboxRoot $badRoot -StockpileBin $badBin @options }
+    catch { $rejected = $_.Exception.InnerException -is [BadImageFormatException] }
+    Assert $rejected 'Non-assembly Stockpile did not fail metadata validation.'
 
     $rejected = $false
     try { & $script -Action Prepare -SandboxRoot $sandbox @options } catch { $rejected = $true }

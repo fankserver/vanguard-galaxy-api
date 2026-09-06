@@ -7,6 +7,7 @@ param(
     [string]$SaveB,
     [string]$BuildRoot,
     [string]$MissionJournalBin,
+    [string]$StockpileBin,
     [string]$BuildRevision = 'unknown',
     [switch]$Diagnostics,
     [ValidateSet('Full','MissingApi','UnavailableApi')][string]$Scenario = 'Full',
@@ -94,10 +95,34 @@ if ($Action -eq 'Prepare') {
         }
         [IO.File]::WriteAllText((Join-Path $root 'missionjournal.enabled'), 'pilot-v1')
     }
+    if ($StockpileBin) {
+        $candidate = Join-Path $StockpileBin 'VGStockpile.dll'
+        $null = [Reflection.AssemblyName]::GetAssemblyName($candidate)
+        Add-Type -Path (Join-Path $bep 'core\Mono.Cecil.dll')
+        $assembly = [Mono.Cecil.AssemblyDefinition]::ReadAssembly($candidate)
+        try {
+            if ($assembly.Name.Name -ne 'VGStockpile' -or $assembly.Name.Version.Major -ne 0 -or $assembly.Name.Version.Minor -ne 6) { throw 'Only Stockpile 0.6 pilot inputs accepted.' }
+            $plugin = $assembly.MainModule.Types | Where-Object { $_.FullName -eq 'VGStockpile.Plugin' }
+            $dependency = @($plugin.CustomAttributes | Where-Object {
+                $_.AttributeType.FullName -eq 'BepInEx.BepInDependency' -and $_.ConstructorArguments.Count -eq 2 -and
+                $_.ConstructorArguments[0].Value -eq 'vgmodapi' -and $_.ConstructorArguments[1].Value -eq '0.1.1'
+            })
+            if ($dependency.Count -ne 1) { throw 'Stockpile must hard-require API 0.1.1.' }
+        } finally { $assembly.Dispose() }
+        foreach ($name in @('VGStockpile.dll','Newtonsoft.Json.dll')) {
+            $source = Join-Path $StockpileBin $name
+            $destination = Join-Path $plugins $name
+            if ((Test-Path -LiteralPath $destination) -and (Get-FileHash $source).Hash -ne (Get-FileHash $destination).Hash) { throw 'Consumer dependency bytes disagree.' }
+            Copy-Item -LiteralPath $source -Destination $destination
+        }
+        [IO.File]::WriteAllText((Join-Path $root 'stockpile.enabled'), 'pilot-v1')
+        New-Item -ItemType Directory -Path (Join-Path $bep 'config') -Force | Out-Null
+        [IO.File]::WriteAllText((Join-Path $bep 'config\vgstockpile.cfg'), "[Transfers]`r`nEnabled = true`r`n")
+    }
     [IO.File]::WriteAllText((Join-Path $root 'scenario.txt'), $Scenario)
     $hashes = @{}
     Get-ChildItem -LiteralPath $plugins -File | ForEach-Object { $hashes[$_.Name] = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
-    @{ missionJournal=[bool]$MissionJournalBin; scenario=$Scenario; revision=$BuildRevision; preparedUtc=[DateTime]::UtcNow.ToString('o'); plugins=$hashes } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'build-provenance.json')
+    @{ stockpile=[bool]$StockpileBin; missionJournal=[bool]$MissionJournalBin; scenario=$Scenario; revision=$BuildRevision; preparedUtc=[DateTime]::UtcNow.ToString('o'); plugins=$hashes } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'build-provenance.json')
     # Prevent Steam's restart path; the runner disables SteamManager before arming checks.
     [IO.File]::WriteAllText((Join-Path $game 'steam_appid.txt'), '3471800')
     $saves = Join-Path $root 'Saves'
@@ -105,6 +130,15 @@ if ($Action -eq 'Prepare') {
     Copy-Item -LiteralPath $sources[0].FullName -Destination (Join-Path $saves 'fixture-a.save')
     Copy-Item -LiteralPath $sources[1].FullName -Destination (Join-Path $saves 'fixture-b.save')
     if ($MissionJournalBin) { Copy-QualificationJournalHistory $sources $saves }
+    if ($StockpileBin) {
+        for ($i = 0; $i -lt 2; $i++) {
+            $source = [IO.Path]::ChangeExtension($sources[$i].FullName, '.vgstockpile-transfers.json')
+            $name = if ($i -eq 0) { 'fixture-a' } else { 'fixture-b' }
+            $destination = Join-Path $saves ($name + '.vgstockpile-transfers.json')
+            if (Test-Path -LiteralPath $source -PathType Leaf) { Copy-Item -LiteralPath $source -Destination $destination }
+            else { [IO.File]::WriteAllText($destination, '{"Version":1,"Items":[]}') }
+        }
+    }
     [IO.File]::WriteAllText((Join-Path $saves 'fixture-future.save'), '{"Version":"99.0.0.0","Player":{}}', (New-Object Text.UTF8Encoding($false)))
     [IO.File]::WriteAllText((Join-Path $saves 'fixture-corrupt.save'), 'not a save', (New-Object Text.UTF8Encoding($false)))
     Write-Output "Prepared sandbox: $root"
@@ -126,7 +160,7 @@ if ($Action -eq 'Cleanup') {
 Assert-QualificationUnused $root
 $provenance = Assert-QualificationInputs $root
 $negativeBefore = $null
-if ($provenance.missionJournal -and $provenance.scenario -ne 'Full') { $negativeBefore = SaveHashes @((Join-Path $root 'Saves')) }
+if (($provenance.missionJournal -or $provenance.stockpile) -and $provenance.scenario -ne 'Full') { $negativeBefore = SaveHashes @((Join-Path $root 'Saves')) }
 # Unity PlayerPrefs are shared even with a separate executable. Preserve this inspected title's key.
 $prefsNative = 'HKCU\Software\Bat Roost Games\VanguardGalaxy'
 $prefsFile = Join-Path $root 'playerprefs-before.reg'

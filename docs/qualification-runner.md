@@ -16,7 +16,7 @@ This is development tooling for issue #2, not part of the API distribution. Owne
 
 The runner refuses an unmarked sandbox or a different executable directory. It redirects both vanilla save-directory fields before testing and guards Store/Recall against non-sandbox destinations. Steam initialization is disabled in the isolated process to avoid achievements/stat changes or relaunching the installed game. The inspected `--fse-shim-applied` bootstrap marker prevents the game's fullscreen workaround from writing a registry entry and spawning an unowned child.
 
-The game runs **windowed, not batch mode**: the inspected vanilla GlobalControls reads Mouse.current, which can be null in batch mode. This tooling is not a security sandbox against malicious plugins or paths. It intentionally omits other mods and does not qualify their coexistence. Use `-Action Cleanup` to unlink the three resource junctions non-recursively. It preserves private evidence and local copies; never recursively delete a sandbox while those junctions still exist.
+The game runs **windowed, not batch mode**: the inspected vanilla GlobalControls reads Mouse.current, which can be null in batch mode. This tooling is not a security sandbox against malicious plugins or paths. It omits other mods except the explicitly selected consumer pilots below; no general multi-mod compatibility is implied. Use `-Action Cleanup` to unlink the three resource junctions non-recursively. It preserves private evidence and local copies; never recursively delete a sandbox while those junctions still exist.
 
 ## Build and prepare
 
@@ -53,7 +53,7 @@ Select a mode during **Prepare** using `-Scenario` (the prepared mode is recorde
 - `MissingApi`: guard only; reach the menu, verify no API plugin loaded, then quit.
 - `UnavailableApi`: guard and API only. A scoped Harmony postfix substitutes a zero hash result from `ReadAssemblyHash` before API Awake. Require one injection, an existing service with both integration capabilities unavailable, and no API-owned Harmony patches, then quit.
 
-The mismatch is **injected input**, not an altered or alternate game DLL. It checks the live rejection path, not compatibility with another game version. Neither startup-negative mode yet tests consumer dependency refusal. Run verifies the exact flat plugin set, hashes, and scenario before launch; extra files/directories or reparse-point plugins are rejected. A guard must remain active through quit-time writes. Do not deploy legacy plugins that can write before this ordering boundary; consumer coexistence requires its own reviewed setup.
+The mismatch is **injected input**, not an altered or alternate game DLL. It checks the live rejection path, not compatibility with another game version. Selected pilots additionally test consumer dependency refusal as described below. Run verifies the exact flat plugin set, hashes, and scenario before launch; extra files/directories or reparse-point plugins are rejected. A guard must remain active through quit-time writes. Do not deploy legacy plugins that can write before this ordering boundary; consumer coexistence requires its own reviewed setup.
 
 ## Evidence and coverage
 
@@ -80,5 +80,11 @@ Prepare accepts optional `-MissionJournalBin <owner-built Release/netstandard2.1
 All consumer scenarios require existing companion journal sidecars for both supplied saves and copy them into the sandbox. Negative startup runs hash-check the complete sandbox save-file set after exit to verify that disabled consumers did not touch those sidecars. Reflection-only probes compare nonempty persisted history IDs with the public facade after slot switching/reload, reject prior-slot-only history, compare successful destination sidecars with live history, and reject failed/skipped-save writes. New game must not inherit old history; destroying only the journal component must unsubscribe and prevent subsequent sidecar writes. No real save/sidecar is a write target. Counts/IDs are not exported publicly.
 
 With the same optional consumer selection, MissingApi requires BepInEx dependency refusal. UnavailableApi requires a present but disabled journal, no public facade and no journal-owned patches. It remains an injected hash-rejection test, not alternate-binary compatibility. Prepared consumer markers and the scenario-specific flat plugin set are verified before launch.
+
+## Authorized Stockpile pilot
+
+Optional `-StockpileBin <owner-built Release/netstandard2.1 directory>` adds Stockpile0.6 (hard API0.1.1 dependency) and Newtonsoft. Both consumers may be selected; shared Newtonsoft bytes must agree. A sandbox-only config enables transfers. Existing transfer companions are copied; missing companions produce empty synthetic fixtures. Negative scenarios verify selection/refusal and the entire copied file set.
+
+The full pilot pauses the transfer driver before gameplay to inspect copied queues. It then explicitly clears only the disposable in-memory queue, without refunding inventory, for controlled real station request/cancel/fee tests. It checks save/reload alignment, failed-save refusal, protected/corrupt sidecars, retry, slot replacement and component/UI/driver teardown. A manual near-completion tick is followed by actual Unity driver delivery. This is not pointer-driven transfer-dialog acceptance or uncontrolled natural-time testing. Original saves, inventories and credits are never write targets.
 
 Run results and source revisions belong in the pilot PRs. This tooling does not qualify all mission domain hooks, pre-readiness starter grants, TravelJournal coexistence or the rest of milestone 01.
