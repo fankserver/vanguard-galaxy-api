@@ -54,7 +54,7 @@ public sealed class Plugin : BaseUnityPlugin
                 InstallGroup("mission-continuity", bindings, BindingCatalog.MissionSnapshots,
                     new Dictionary<string, Type> { ["missionSnapshot"] = typeof(MissionSerializationPatches) });
                 _identityHooksBound = _hub.Capabilities.Any(c => c.Name == "mission-continuity" && c.Available);
-                _hub.SetCapability("mission-continuity", false, "Identity provider not initialized.");
+                if (_identityHooksBound) _hub.SetCapability("mission-continuity", false, "Identity provider not initialized.");
             }
             InstallGroup("session-lifecycle", bindings, BindingCatalog.Session, new Dictionary<string, Type>
             {

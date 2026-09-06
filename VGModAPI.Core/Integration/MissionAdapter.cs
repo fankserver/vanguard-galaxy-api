@@ -57,7 +57,7 @@ internal sealed partial class MissionAdapter : IDisposable
         if (_faulted && !_reconciled)
         {
             _reconciled = true; Clear(); _identity?.Reset();
-            _hub.SetCapability("mission-continuity", false, "Mission observer fault; restart required.");
+            if (_identity != null) _hub.SetCapability("mission-continuity", false, "Mission observer fault; restart required.");
             _hub.SetCapability("mission-transitions", false, "Mission observer fault; restart required.");
         }
     }
