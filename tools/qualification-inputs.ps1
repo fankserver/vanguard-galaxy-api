@@ -48,7 +48,7 @@ function Assert-PersistenceProbeReceipt([string]$Root, $Provenance) {
         Assert-TravelStationReceipt $Root
     }
     if ($Provenance.PSObject.Properties['travelCrossSystem'] -and $Provenance.travelCrossSystem) {
-        Assert-TravelCrossSystemReceipt $Root
+        Assert-TravelCrossSystemReceipt $Root $Provenance
     }
 }
 $TravelStationPhase = 'travel-in-system-station-v1'
@@ -65,6 +65,10 @@ $TravelStationEventHeader = @('apiSequence','surface','case','session','operatio
 $TravelCrossSystemPhase = 'travel-cross-system-v1'
 $TravelCrossSystemRequiredCases = @('cross-system-jumpgate','cross-system-wormhole')
 $TravelCrossSystemBudgetSeconds = 2100
+# Optional opt-in sandbox fixture preparation row. It is deliberately NOT a required case: creating
+# disposable native test data is never coverage of a travel routine.
+$TravelWormholeFixtureCase = 'wormhole-fixture-setup'
+$TravelWormholeFactorySignature = 'factory=Source.Simulation.World.WormholeSpawner.PlaceWormhole('
 # Independent verification of the pilot's own claim: the declared phase, every mandatory case
 # identity, the receipt/event files and the identities they share must all agree. A first line of
 # PASS is never accepted on its own. The two travel phases publish the same receipt/event shape,
@@ -148,8 +152,23 @@ function Assert-TravelStationReceipt([string]$Root) {
 }
 # The cross-system phase is validated separately and with its own mandatory cases: a passing
 # in-system receipt can never stand in for it, and its own optional NOT-RUN rows are never coverage.
-function Assert-TravelCrossSystemReceipt([string]$Root) {
+function Assert-TravelCrossSystemReceipt([string]$Root, $Provenance) {
     Assert-TravelPhaseReceipt $Root 'Travel cross-system' 'travel-cross-system' $TravelCrossSystemPhase $TravelCrossSystemRequiredCases $TravelCrossSystemBudgetSeconds
+    if ($TravelWormholeFixtureCase -in $TravelCrossSystemRequiredCases) { throw 'Fixture preparation must never be a mandatory case.' }
+    # A fixture-preparation row is only legitimate under the explicit opt-in selection, must record
+    # the native factory it used, must claim no observed travel events and must have seen none.
+    $selected = $null -ne $Provenance -and $Provenance.PSObject.Properties['travelWormholeFixture'] -and [bool]$Provenance.travelWormholeFixture
+    $rows = @(Get-Content -LiteralPath (Join-Path $Root 'travel-cross-system-receipt.tsv'))
+    $setup = @($rows | Where-Object { ($_ -split "`t")[0] -eq $TravelWormholeFixtureCase })
+    if (!$selected -and $setup.Count -gt 0) { throw 'Wormhole fixture preparation was recorded without the explicit fixture selection.' }
+    if ($setup.Count -gt 1) { throw 'Wormhole fixture preparation recorded more than once.' }
+    if ($setup.Count -eq 1) {
+        $columns = $setup[0] -split "`t"
+        if ($columns[2] -ne 'passed') { throw 'Wormhole fixture preparation did not complete.' }
+        if ($columns[6]) { throw 'Fixture preparation must not claim observed travel events.' }
+        if ($columns[7] -notlike "*$TravelWormholeFactorySignature*") { throw 'Wormhole fixture preparation does not record the native factory it used.' }
+        if ($columns[7] -notlike '*travelFactsDuringCreation=0*') { throw 'Wormhole fixture preparation observed travel facts.' }
+    }
 }
 function Assert-VanillaControlReceipt([string]$Root, $Provenance) {
     if ($Provenance.PSObject.Properties['vanillaLoadControl'] -and $Provenance.vanillaLoadControl) {
@@ -268,6 +287,15 @@ function Assert-QualificationInputs([string]$Root) {
         if (!$travelStation -or (Get-Content -LiteralPath $crossMarker -Raw).Trim() -ne 'cross-system-v1') { throw 'Invalid travel cross-system selection.' }
         if (!$provenance.PSObject.Properties['travelCrossSystemBudgetSeconds'] -or
             [int]$provenance.travelCrossSystemBudgetSeconds -ne $TravelCrossSystemBudgetSeconds) { throw 'Travel cross-system budget reservation changed.' }
+    }
+    # Opt-in disposable sandbox test data for the wormhole case. It only ever creates native content
+    # in the freshly loaded sandbox fixture clone; the marker and provenance flag must agree exactly,
+    # so an unselected run can never create content and a selected run is recorded as such.
+    $wormholeFixture = $provenance.PSObject.Properties['travelWormholeFixture'] -and [bool]$provenance.travelWormholeFixture
+    $wormholeMarker = Join-Path $Root 'travel-wormhole-fixture.enabled'
+    if ([bool]$wormholeFixture -ne (Test-Path -LiteralPath $wormholeMarker -PathType Leaf)) { throw 'Wormhole fixture selection changed.' }
+    if ($wormholeFixture) {
+        if (!$travelCrossSystem -or (Get-Content -LiteralPath $wormholeMarker -Raw).Trim() -ne 'wormhole-fixture-v1') { throw 'Invalid wormhole fixture selection.' }
     }
     $probe = $provenance.PSObject.Properties['persistenceProbe'] -and [bool]$provenance.persistenceProbe
     $probeMarker = Join-Path $Root 'persistence-probe.enabled'

@@ -301,12 +301,77 @@ public sealed class TravelCrossSystemReceiptTests
     }
 
     [Fact]
+    public void FixturePreparationMustNotProduceAnyTravelFact()
+    {
+        // The defect: "preparing" a fixture by moving the ship, or a creation window that silently
+        // swallows a request/departure/arrival, would turn setup into fake travel evidence.
+        Assert.Null(TravelCrossSystemReceipt.CheckFixtureCreationWindow(Array.Empty<TravelTransition>()));
+        foreach (var kind in new[] { TravelTransitionKind.Requested, TravelTransitionKind.Departed,
+            TravelTransitionKind.Arrived, TravelTransitionKind.RouteCompleted })
+        {
+            var fact = Fact(kind, Guid.NewGuid(), TravelMode.Wormhole, (Origin, Station), (Target, PairedGate), (Target, PairedGate), 1);
+            Assert.Contains("Fixture preparation is not travel", TravelCrossSystemReceipt.CheckFixtureCreationWindow(new[] { fact }));
+        }
+        var placement = Fact(TravelTransitionKind.InitialPlacement, null, TravelMode.Unknown, null, null, (Origin, Station), 1);
+        Assert.NotNull(TravelCrossSystemReceipt.CheckFixtureCreationWindow(new[] { placement }));
+    }
+
+    [Fact]
+    public void FixturePreparationMustCreateExactlyTheConnectedPairItClaims()
+    {
+        Assert.Null(TravelCrossSystemReceipt.CheckFixtureCreation(0, 2, Origin, Origin, "wh-1", Target, "wh-2"));
+        Assert.Contains("instead of adding exactly two", TravelCrossSystemReceipt.CheckFixtureCreation(0, 1, Origin, Origin, "wh-1", Target, "wh-2"));
+        Assert.Contains("instead of adding exactly two", TravelCrossSystemReceipt.CheckFixtureCreation(0, 3, Origin, Origin, "wh-1", Target, "wh-2"));
+        Assert.Contains("two distinct native wormhole identities", TravelCrossSystemReceipt.CheckFixtureCreation(0, 2, Origin, Origin, "wh-1", Target, "wh-1"));
+        Assert.Contains("two distinct native wormhole identities", TravelCrossSystemReceipt.CheckFixtureCreation(0, 2, Origin, Origin, "", Target, "wh-2"));
+        Assert.Contains("two distinct native systems", TravelCrossSystemReceipt.CheckFixtureCreation(0, 2, Origin, Origin, "wh-1", Origin, "wh-2"));
+        Assert.Contains("instead of the player's current system", TravelCrossSystemReceipt.CheckFixtureCreation(0, 2, Origin, Target, "wh-1", "system-3", "wh-2"));
+        var detail = TravelCrossSystemReceipt.DescribeFixtureCreation(0, 2, Origin, "wh-1", Target, "wh-2", 0);
+        Assert.Contains("factory=" + TravelCrossSystemReceipt.WormholeFactorySignature, detail);
+        Assert.Contains("wormholesBefore=0; wormholesAfter=2", detail);
+        Assert.Contains("travelFactsDuringCreation=0", detail);
+        Assert.Contains("fixture preparation only, not travel evidence", detail);
+    }
+
+    [Fact]
+    public void FixturePreparationIsNeverCoverageAndAMissingWormholeCaseStillFails()
+    {
+        // Flag off: the phase must keep reporting the honest mandatory NOT-RUN failure, and a
+        // preparation row can never stand in for the wormhole case it prepared for.
+        Assert.DoesNotContain(TravelCrossSystemReceipt.WormholeFixtureCase, TravelCrossSystemReceipt.RequiredCases);
+        Assert.DoesNotContain(TravelCrossSystemReceipt.WormholeFixtureCase, TravelStationReceipt.RequiredCases);
+        var (rows, events) = CompleteReceipt();
+        var setup = Row(TravelCrossSystemReceipt.WormholeFixtureCase, TravelStationReceipt.Passed);
+        var withoutWormhole = rows.Where(row => row.Case != TravelCrossSystemReceipt.WormholeCase).Append(setup).ToList();
+        Assert.Contains("Required case did not run: " + TravelCrossSystemReceipt.WormholeCase,
+            TravelCrossSystemReceipt.Evaluate(withoutWormhole, null, events));
+        var skipped = rows.Where(row => row.Case != TravelCrossSystemReceipt.WormholeCase)
+            .Append(Row(TravelCrossSystemReceipt.WormholeCase, TravelStationReceipt.NotRun)).Append(setup).ToList();
+        Assert.Contains("Required case is not-run: " + TravelCrossSystemReceipt.WormholeCase,
+            TravelCrossSystemReceipt.Evaluate(skipped, null, events));
+        // With both mandatory cases genuinely passed, the extra preparation row is accepted and is
+        // reported as an optional row, never as a required one.
+        var complete = rows.Append(setup).ToList();
+        Assert.Null(TravelCrossSystemReceipt.Evaluate(complete, null, events));
+        var summary = TravelCrossSystemReceipt.Summarize(complete, null, events);
+        Assert.Contains("rows=3 passed=3 failed=0 notRun=0", summary);
+        Assert.DoesNotContain("required-case " + TravelCrossSystemReceipt.WormholeFixtureCase, summary);
+        // A failed preparation fails the phase instead of being ignored.
+        Assert.Contains("Failed cases: " + TravelCrossSystemReceipt.WormholeFixtureCase,
+            TravelCrossSystemReceipt.Evaluate(rows.Append(Row(TravelCrossSystemReceipt.WormholeFixtureCase, TravelStationReceipt.Failed)).ToList(), null, events));
+    }
+
+    [Fact]
     public void ThePhaseBudgetIsSummedFromItsDeclaredDeadlinesAndFitsTheReservation()
     {
         Assert.Equal(TravelCrossSystemReceipt.PhaseWaits.Sum(wait => wait.Seconds * wait.Occurrences), TravelCrossSystemReceipt.PhaseBudgetSeconds);
         Assert.True(TravelCrossSystemReceipt.PhaseBudgetSeconds > 0);
         Assert.True(TravelCrossSystemReceipt.PhaseBudgetSeconds <= TravelCrossSystemReceipt.LauncherReservationSeconds);
         Assert.Contains(TravelCrossSystemReceipt.PhaseWaits, wait => wait.Seconds == TravelCrossSystemReceipt.JumpArrivalSeconds);
+        // The opt-in fixture creation adds its own bounded wait and settle to the published budget.
+        Assert.Contains(TravelCrossSystemReceipt.PhaseWaits, wait => wait.Name == "wormhole-fixture-creation"
+            && wait.Seconds == TravelCrossSystemReceipt.FixtureCreationSeconds && wait.Occurrences == 1);
+        Assert.Equal(9, Assert.Single(TravelCrossSystemReceipt.PhaseWaits, wait => wait.Name == "settle").Occurrences);
     }
 
     [Fact]

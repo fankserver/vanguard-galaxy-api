@@ -29,14 +29,17 @@ public sealed partial class Plugin
         private readonly Plugin _p;
         private readonly Type _travelType, _poiType, _mapType, _gameplayType, _shipType;
         private readonly Type _jumpGateType, _wormholeType, _stationType, _exteriorType, _interiorType, _dockingOptionType;
+        private readonly Type _systemType, _wormholeSpawnerType;
         private readonly MethodInfo _tryInitiateTravel, _canWeTravel, _travelActive, _localPoiReady, _shortestRoute;
         private readonly MethodInfo _getTargetPoi, _connectedWormholes, _startUndocking, _exitSpacestation, _getDockingOption;
+        private readonly MethodInfo _placeWormhole;
         private readonly object _travel;
         private Guid _session;
         private string _systemId = "";
         private string _startPoiId = "";
         private bool _prepared;
         private string _notPrepared = "";
+        private bool _fixtureCreated;
 
         internal TravelCrossSystemDriver(Plugin p)
         {
@@ -52,6 +55,8 @@ public sealed partial class Plugin
             _exteriorType = Named("SpacestationExteriorManager");
             _interiorType = Named("Behaviour.UI.Spacestation.SpaceStationInterior");
             _dockingOptionType = Named("Behaviour.Spacestation.Docking.DockingOption");
+            _systemType = Named("Source.Galaxy.SystemMapData");
+            _wormholeSpawnerType = Named("Source.Simulation.World.WormholeSpawner");
             // Exact declared signatures: a name-only lookup can bind the wrong overload.
             _tryInitiateTravel = TravelStationDriver.Bind(_travelType, "TryInitiateTravel", typeof(bool), _poiType);
             _canWeTravel = TravelStationDriver.Bind(_travelType, "CanWeTravel", typeof(bool), _poiType);
@@ -65,6 +70,10 @@ public sealed partial class Plugin
             _startUndocking = TravelStationDriver.Bind(_exteriorType, "StartUndocking", typeof(void));
             _exitSpacestation = TravelStationDriver.Bind(_interiorType, "ExitSpacestation", typeof(void));
             _getDockingOption = TravelStationDriver.Bind(_exteriorType, "GetDockingOption", _dockingOptionType, _shipType);
+            // The ONLY native content factory this phase may call, and only under the explicit
+            // opt-in fixture selection. Bound by its exact declared static signature.
+            _placeWormhole = BindStatic(_wormholeSpawnerType, "PlaceWormhole", _wormholeType,
+                _systemType, typeof(bool), typeof(List<>).MakeGenericType(_wormholeType));
             var travel = SpGet(_travelType, "Instance");
             Require(TravelStationDriver.Alive(travel), "Native TravelManager singleton is not live.");
             _travel = travel!;
@@ -104,6 +113,13 @@ public sealed partial class Plugin
             string reason = "";
             if (mode == TravelMode.JumpGate) source = SelectJumpGate(out destination, out reason);
             else source = SelectWormhole(out destination, out reason);
+            if (source == null && mode == TravelMode.Wormhole && _p.TravelWormholeFixtureSelected)
+            {
+                // Explicit opt-in: this fixture world has no usable pair, so create one with the
+                // game's own factory BEFORE the case window opens. Preparation, never evidence.
+                foreach (var frame in CreateWormholeFixture(reason)) yield return frame;
+                if (_fixtureCreated) source = SelectWormhole(out destination, out reason);
+            }
             if (source == null || destination == null) { NotRun(reason); yield break; }
             foreach (var frame in DriveCrossSystemRoute(mode, source, destination)) yield return frame;
         }
@@ -263,6 +279,94 @@ public sealed partial class Plugin
                 TravelCrossSystemReceipt.UndockSeconds, "native undock before the cross-system route")) yield return frame;
         }
 
+        // --- opt-in native wormhole fixture preparation ------------------------------------
+
+        // Explicitly selected disposable sandbox test data, created ONLY with the game's own
+        // factory (WormholeSpawner.PlaceWormhole) in the freshly loaded fixture clone, before the
+        // case window opens and before anything is driven. It creates a connected pair between the
+        // player's actual current system and an actual other native system; it never teleports,
+        // never assigns a location, never touches the original save files and is never travel
+        // evidence. The route itself is afterwards driven exactly like the unmodified phase.
+        private IEnumerable<object?> CreateWormholeFixture(string missingReason)
+        {
+            _p.XsCase(TravelCrossSystemReceipt.WormholeFixtureCase, TravelCrossSystemReceipt.WormholeFixtureDescription);
+            int offset = Travel.Count;
+            var currentSystem = SpGet(Player, "currentSystem")!;
+            int before = AllPois().Count(poi => _wormholeType.IsInstanceOfType(poi));
+            var destinationSystem = SelectFixtureDestinationSystem(out string refusal);
+            if (destinationSystem == null)
+            {
+                NotRun("No usable destination system for the opt-in wormhole fixture: " + refusal + " (" + missingReason + ")");
+                _p.XsCase(TravelCrossSystemReceipt.WormholeCase, TravelCrossSystemReceipt.WormholeDescription);
+                yield break;
+            }
+            // Native factory only: create the destination side first, then the current-system side
+            // with the destination as its declared target, then complete the reciprocal directed
+            // link on the list the factory itself assigns. Both POIs are ours; no existing POI is
+            // relinked and no campaign-wide unlock/spawn is performed.
+            var destination = _placeWormhole.Invoke(null, new object?[] { destinationSystem, true, null })!;
+            var targets = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(_wormholeType))!;
+            targets.Add(destination);
+            var source = _placeWormhole.Invoke(null, new object?[] { currentSystem, true, targets })!;
+            ((IList)SpGet(destination, "targetWormholeGuids")!).Add((string)SpGet(source, "guid")!);
+            // Bounded verification that the native planner really routes the created pair; a
+            // timeout is a recorded failure, never a silent skip.
+            foreach (var frame in AwaitOrFail(() => SelectWormhole(out _, out _) != null,
+                TravelCrossSystemReceipt.FixtureCreationSeconds, "the created native wormhole pair to become routable")) yield return frame;
+            foreach (var frame in Settle()) yield return frame;
+            int after = AllPois().Count(poi => _wormholeType.IsInstanceOfType(poi));
+            var sourceSystemId = (string)SpGet(SpGet(source, "system")!, "guid")!;
+            var sourceId = (string)SpGet(source, "guid")!;
+            var destinationSystemId = (string)SpGet(SpGet(destination, "system")!, "guid")!;
+            var destinationId = (string)SpGet(destination, "guid")!;
+            var window = Slice(offset);
+            // Creating map data is not movement: the travel surface must have stayed silent.
+            var failure = TravelCrossSystemReceipt.CheckFixtureCreationWindow(window);
+            Require(failure == null, failure!);
+            failure = TravelCrossSystemReceipt.CheckFixtureCreation(before, after, _systemId,
+                sourceSystemId, sourceId, destinationSystemId, destinationId);
+            Require(failure == null, failure!);
+            _p.XsRecord(TravelCrossSystemReceipt.WormholeFixtureCase, TravelCrossSystemReceipt.WormholeFixtureDescription,
+                TravelStationReceipt.Passed, TravelStationReceipt.Location(sourceSystemId, sourceId), _session, null, "",
+                TravelCrossSystemReceipt.DescribeFixtureCreation(before, after, sourceSystemId, sourceId,
+                    destinationSystemId, destinationId, window.Count));
+            _p.XsCheckpoint();
+            _fixtureCreated = true;
+            _p.XsCase(TravelCrossSystemReceipt.WormholeCase, TravelCrossSystemReceipt.WormholeDescription);
+        }
+
+        // An actual other native system for the created destination. Direct jump-gate neighbours
+        // are excluded because the native planner enqueues the current system's gate edges before
+        // its wormhole edges, so a neighbour destination would be planned through the gate instead
+        // of the created wormhole. Pocket systems, sectorless systems and systems that already own
+        // a wormhole are excluded; the remaining candidates are ordered deterministically.
+        private object? SelectFixtureDestinationSystem(out string reason)
+        {
+            var currentSystem = SpGet(Player, "currentSystem")!;
+            var neighbours = new HashSet<string>(SystemPois()
+                .Where(poi => _jumpGateType.IsInstanceOfType(poi) && (bool)SpGet(poi, "canUseJumpGate")!)
+                .Select(poi => (string?)SpGet(poi, "targetSystemGuid") ?? ""), StringComparer.Ordinal);
+            var map = SpGet(_mapType, "current");
+            if (map == null) { reason = "no live galaxy map"; return null; }
+            var origin = (Vector2)SpGet(currentSystem, "mapPosition")!;
+            var candidates = ((IEnumerable)SpGet(map, "allSystems")!).Cast<object>()
+                .Where(system => SpGet(system, "sector") != null)
+                .Where(system => (string)SpGet(system, "guid")! != _systemId)
+                .Where(system => !neighbours.Contains((string)SpGet(system, "guid")!))
+                .Where(system => !(bool)SpGet(system, "pocketSystem")!)
+                .Where(system => !((IEnumerable)SpGet(system, "pointsOfInterest")!).Cast<object>().Any(poi => _wormholeType.IsInstanceOfType(poi)))
+                .OrderBy(system => Vector2.Distance((Vector2)SpGet(system, "mapPosition")!, origin))
+                .ThenBy(system => (string)SpGet(system, "guid")!, StringComparer.Ordinal)
+                .ToArray();
+            if (candidates.Length == 0)
+            {
+                reason = "every native system is the current system, a direct gate neighbour, a pocket system or already owns a wormhole";
+                return null;
+            }
+            reason = "";
+            return candidates[0];
+        }
+
         // --- fixture selection ------------------------------------------------------------
 
         // The native route planner is a read-only BFS over the loaded map, so it selects the hop
@@ -413,5 +517,15 @@ public sealed partial class Plugin
         private void EndCase() { _p.XsEndCase(); _p.XsCheckpoint(); }
 
         private static Type Named(string name) => AccessTools.TypeByName(name) ?? throw new MissingMemberException(name, "type");
+
+        // Exact declared STATIC signature; a name-only lookup can bind a different factory.
+        private static MethodInfo BindStatic(Type type, string name, Type returnType, params Type[] parameters)
+        {
+            var method = AccessTools.Method(type, name, parameters);
+            Require(method != null && method.IsStatic && method.ReturnType == returnType
+                && method.GetParameters().Select(parameter => parameter.ParameterType).SequenceEqual(parameters),
+                "Native member shape changed: " + type.FullName + "." + name);
+            return method!;
+        }
     }
 }

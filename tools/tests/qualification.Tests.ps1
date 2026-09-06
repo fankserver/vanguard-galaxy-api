@@ -500,11 +500,16 @@ try {
         }
         return @($lines + @('optional-not-run=', 'fault=none', 'result=phase satisfied'))
     }
-    function WriteCrossOutputs($rows, $events, $summary) {
-        [IO.File]::WriteAllLines((Join-Path $crossRoot 'travel-cross-system-receipt.tsv'), [string[]]@(($TravelStationReceiptHeader -join "`t")) + [string[]]$rows)
-        [IO.File]::WriteAllLines((Join-Path $crossRoot 'travel-cross-system-events.tsv'), [string[]]@(($TravelStationEventHeader -join "`t")) + [string[]]$events)
-        [IO.File]::WriteAllLines((Join-Path $crossRoot 'travel-cross-system.txt'), [string[]]$summary)
+    function WriteCrossOutputsTo($root, $rows, $events, $summary) {
+        [IO.File]::WriteAllLines((Join-Path $root 'travel-cross-system-receipt.tsv'), [string[]]@(($TravelStationReceiptHeader -join "`t")) + [string[]]$rows)
+        [IO.File]::WriteAllLines((Join-Path $root 'travel-cross-system-events.tsv'), [string[]]@(($TravelStationEventHeader -join "`t")) + [string[]]$events)
+        [IO.File]::WriteAllLines((Join-Path $root 'travel-cross-system.txt'), [string[]]$summary)
     }
+    function WriteCrossOutputs($rows, $events, $summary) { WriteCrossOutputsTo $crossRoot $rows $events $summary }
+    # A fixture-preparation row: an optional passed row with no evidence whose detail records the
+    # native factory it used and that it observed no travel facts.
+    function FixtureRow($session, $detail) { return ($TravelWormholeFixtureCase + "`tfixture preparation`tpassed`tsystem-1:wh-1`t" + $session + "`t`t`t" + $detail) }
+    $validFixtureDetail = 'selection=travel-wormhole-fixture; ' + $TravelWormholeFactorySignature + 'Source.Galaxy.SystemMapData, System.Boolean, System.Collections.Generic.List`1<Source.Galaxy.POI.Wormhole>) : Source.Galaxy.POI.Wormhole; wormholesBefore=0; wormholesAfter=2; source=system-1:wh-1; destination=system-2:wh-2; travelFactsDuringCreation=0; fixture preparation only, not travel evidence.'
     function AssertCrossRejected($rows, $events, $summary, $message) {
         WriteCrossOutputs $rows $events $summary
         $rejected = $false
@@ -580,7 +585,62 @@ try {
         Assert-PersistenceProbeReceipt $crossRoot $crossProvenance
     }
     Remove-Item -LiteralPath $crossOutcomePath
+    # Without the explicit opt-in selection the pilot must never create native content, so a
+    # preparation row in this sandbox is a tamper/misbehaviour signal.
+    AssertCrossRejected ($crossRows + @(FixtureRow $crossSession $validFixtureDetail)) $crossEvents (CrossSummary ($crossRows + @(FixtureRow $crossSession $validFixtureDetail)) 'PASS') 'Fixture preparation recorded without the fixture selection accepted.'
+    WriteCrossOutputs $crossRows $crossEvents (CrossSummary $crossRows 'PASS')
+    Assert-PersistenceProbeReceipt $crossRoot $crossProvenance
     & $script -Action Cleanup -SandboxRoot $crossRoot
+    # --- opt-in disposable native wormhole fixture ----------------------------------------------
+    $rejected = $false
+    try { & $script -Action Prepare -SandboxRoot (Join-Path $work 'invalid-wormhole-fixture') -TravelStation -TravelWormholeFixture @options }
+    catch { $rejected = $_.Exception.Message -like '*requires the cross-system travel phase*' }
+    Assert $rejected 'Wormhole fixture accepted without the cross-system phase.'
+    Assert (!(Test-Path -LiteralPath (Join-Path $work 'invalid-wormhole-fixture'))) 'Rejected wormhole fixture selection left a prepared sandbox.'
+    $fixtureRoot = Join-Path $work 'travel-wormhole-fixture-sandbox'
+    $sandboxes += $fixtureRoot
+    & $script -Action Prepare -SandboxRoot $fixtureRoot -TravelStation -TravelCrossSystem -TravelWormholeFixture @options
+    $fixtureProvenance = Assert-QualificationInputs $fixtureRoot
+    Assert ($fixtureProvenance.travelWormholeFixture) 'Prepared wormhole fixture selection missing from provenance.'
+    $fixtureMarker = Join-Path $fixtureRoot 'travel-wormhole-fixture.enabled'
+    Assert ((Get-Content -LiteralPath $fixtureMarker -Raw).Trim() -eq 'wormhole-fixture-v1') 'Unexpected wormhole fixture marker.'
+    [IO.File]::WriteAllText($fixtureMarker, 'changed')
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $fixtureRoot } catch { $rejected = $true }
+    Assert $rejected 'Changed wormhole fixture marker accepted.'
+    [IO.File]::WriteAllText($fixtureMarker, 'wormhole-fixture-v1')
+    Remove-Item -LiteralPath $fixtureMarker
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $fixtureRoot } catch { $rejected = $true }
+    Assert $rejected 'Removed wormhole fixture marker accepted while provenance still selects it.'
+    [IO.File]::WriteAllText($fixtureMarker, 'wormhole-fixture-v1')
+    $null = Assert-QualificationInputs $fixtureRoot
+    # The in-system phase is selected here too and keeps its own unchanged required cases.
+    [IO.File]::WriteAllLines((Join-Path $fixtureRoot 'travel-station-receipt.tsv'), [string[]]@(($TravelStationReceiptHeader -join "`t")) + [string[]]$stationRows)
+    [IO.File]::WriteAllLines((Join-Path $fixtureRoot 'travel-station-events.tsv'), [string[]]@(($TravelStationEventHeader -join "`t")) + [string[]]$stationEvents)
+    [IO.File]::WriteAllLines((Join-Path $fixtureRoot 'travel-station.txt'), [string[]](TravelSummary $stationRows 'PASS'))
+    function AssertFixtureRejected($rows, $message) {
+        WriteCrossOutputsTo $fixtureRoot $rows $crossEvents (CrossSummary $rows 'PASS')
+        $rejected = $false
+        try { Assert-PersistenceProbeReceipt $fixtureRoot $fixtureProvenance } catch { $rejected = $true }
+        Assert $rejected $message
+    }
+    $fixtureRows = $crossRows + @(FixtureRow $crossSession $validFixtureDetail)
+    WriteCrossOutputsTo $fixtureRoot $fixtureRows $crossEvents (CrossSummary $fixtureRows 'PASS')
+    Assert-PersistenceProbeReceipt $fixtureRoot $fixtureProvenance
+    # Preparation is never coverage: the mandatory cases must still be there and still pass.
+    $fixtureOnly = @($crossRows[0]) + @(FixtureRow $crossSession $validFixtureDetail)
+    AssertFixtureRejected $fixtureOnly 'Fixture preparation accepted in place of the mandatory wormhole case.'
+    $fixtureSkipped = @($crossRows[0], (TravelRow 'cross-system-wormhole' 'not-run' $crossSession ''), (FixtureRow $crossSession $validFixtureDetail))
+    AssertFixtureRejected $fixtureSkipped 'Prepared fixture with a not-run wormhole case accepted as PASS.'
+    AssertFixtureRejected ($crossRows + @(FixtureRow $crossSession $validFixtureDetail) + @(FixtureRow $crossSession $validFixtureDetail)) 'Duplicated fixture preparation accepted.'
+    AssertFixtureRejected ($crossRows + @(FixtureRow $crossSession ($validFixtureDetail -replace 'travelFactsDuringCreation=0','travelFactsDuringCreation=3'))) 'Fixture preparation that observed travel facts accepted.'
+    AssertFixtureRejected ($crossRows + @(FixtureRow $crossSession 'selection=travel-wormhole-fixture; wormholesBefore=0; wormholesAfter=2; travelFactsDuringCreation=0')) 'Fixture preparation without the recorded native factory accepted.'
+    AssertFixtureRejected ($crossRows + @(($TravelWormholeFixtureCase + "`tfixture preparation`tpassed`tsystem-1:wh-1`t" + $crossSession + "`t`ttravel:1`t" + $validFixtureDetail))) 'Fixture preparation claiming observed travel events accepted.'
+    AssertFixtureRejected ($crossRows + @(($TravelWormholeFixtureCase + "`tfixture preparation`tnot-run`t`t" + $crossSession + "`t`t`tno destination system"))) 'Incomplete fixture preparation accepted.'
+    WriteCrossOutputsTo $fixtureRoot $fixtureRows $crossEvents (CrossSummary $fixtureRows 'PASS')
+    Assert-PersistenceProbeReceipt $fixtureRoot $fixtureProvenance
+    & $script -Action Cleanup -SandboxRoot $fixtureRoot
     # The launcher must reserve base + BOTH phase budgets before starting the game.
     $crossTimeoutRoot = Join-Path $work 'travel-cross-timeout-sandbox'
     $sandboxes += $crossTimeoutRoot

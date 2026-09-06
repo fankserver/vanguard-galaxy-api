@@ -21,6 +21,7 @@ param(
     [switch]$JournalMissionEventsProbe,
     [switch]$TravelStation,
     [switch]$TravelCrossSystem,
+    [switch]$TravelWormholeFixture,
     [string]$BuildRevision = 'unknown',
     [switch]$Diagnostics,
     [ValidateSet('Full','MissingApi','UnavailableApi')][string]$Scenario = 'Full',
@@ -69,6 +70,9 @@ if ($Action -eq 'Prepare') {
     if ($MissionTransitionsProbe -and $Scenario -ne 'Full') { throw 'Mission transitions probe requires Full.' }
     if ($TravelStation -and $Scenario -ne 'Full') { throw 'Travel/station pilot requires Full.' }
     if ($TravelCrossSystem -and !$TravelStation) { throw 'Cross-system travel phase requires the travel/station selection.' }
+    # Opt-in disposable sandbox test data. Without it the cross-system phase never creates native
+    # content and a fixture world without a wormhole keeps reporting its honest mandatory NOT-RUN.
+    if ($TravelWormholeFixture -and !$TravelCrossSystem) { throw 'Wormhole fixture creation requires the cross-system travel phase.' }
     if ($ContentReferenceProbe -and $Scenario -ne 'Full') { throw 'Content reference probe requires Full.' }
     if ($JournalCoordinated -and (!$PersistenceProbe -or !$MissionJournalBin)) { throw 'Coordinated journal requires persistence probe and journal binary.' }
     if ($StockpileCoordinated -and (!$JournalCoordinated -or !$StockpileBin)) { throw 'Coordinated Stockpile requires coordinated journal and Stockpile binary.' }
@@ -201,7 +205,8 @@ if ($Action -eq 'Prepare') {
         [IO.File]::WriteAllText((Join-Path $root 'travel-station.enabled'), 'travel-v1')
     }
     if ($TravelCrossSystem) { [IO.File]::WriteAllText((Join-Path $root 'travel-cross-system.enabled'), 'cross-system-v1') }
-    @{ anima=[bool]$AnimaBin; animaRevision=$AnimaRevision; journalMissionEventsProbe=[bool]$JournalMissionEventsProbe; missionIdentityProbe=[bool]$MissionIdentityProbe; missionTransitionsProbe=[bool]$MissionTransitionsProbe; contentReferenceProbe=[bool]$ContentReferenceProbe; stockpileCoordinated=[bool]$StockpileCoordinated; journalCoordinated=[bool]$JournalCoordinated; persistenceProbe=[bool]$PersistenceProbe; vanillaLoadControl=[bool]$VanillaLoadControl; assemblyOverlay=$overlay; stockpile=[bool]$StockpileBin; missionJournal=[bool]$MissionJournalBin; travelStation=[bool]$TravelStation; travelStationBudgetSeconds=$(if ($TravelStation) { $TravelStationBudgetSeconds } else { 0 }); travelCrossSystem=[bool]$TravelCrossSystem; travelCrossSystemBudgetSeconds=$(if ($TravelCrossSystem) { $TravelCrossSystemBudgetSeconds } else { 0 }); scenario=$Scenario; revision=$BuildRevision; preparedUtc=[DateTime]::UtcNow.ToString('o'); plugins=$hashes } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'build-provenance.json')
+    if ($TravelWormholeFixture) { [IO.File]::WriteAllText((Join-Path $root 'travel-wormhole-fixture.enabled'), 'wormhole-fixture-v1') }
+    @{ anima=[bool]$AnimaBin; animaRevision=$AnimaRevision; journalMissionEventsProbe=[bool]$JournalMissionEventsProbe; missionIdentityProbe=[bool]$MissionIdentityProbe; missionTransitionsProbe=[bool]$MissionTransitionsProbe; contentReferenceProbe=[bool]$ContentReferenceProbe; stockpileCoordinated=[bool]$StockpileCoordinated; journalCoordinated=[bool]$JournalCoordinated; persistenceProbe=[bool]$PersistenceProbe; vanillaLoadControl=[bool]$VanillaLoadControl; assemblyOverlay=$overlay; stockpile=[bool]$StockpileBin; missionJournal=[bool]$MissionJournalBin; travelStation=[bool]$TravelStation; travelStationBudgetSeconds=$(if ($TravelStation) { $TravelStationBudgetSeconds } else { 0 }); travelCrossSystem=[bool]$TravelCrossSystem; travelCrossSystemBudgetSeconds=$(if ($TravelCrossSystem) { $TravelCrossSystemBudgetSeconds } else { 0 }); travelWormholeFixture=[bool]$TravelWormholeFixture; scenario=$Scenario; revision=$BuildRevision; preparedUtc=[DateTime]::UtcNow.ToString('o'); plugins=$hashes } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'build-provenance.json')
     # Prevent Steam's restart path; the runner disables SteamManager before arming checks.
     [IO.File]::WriteAllText((Join-Path $game 'steam_appid.txt'), '3471800')
     $saves = Join-Path $root 'Saves'

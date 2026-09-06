@@ -80,6 +80,24 @@ public sealed class InstalledTravelCrossSystemProbeTests
         // consume world randomness) while the phase excludes the one-way tutorial exit gate.
         Field("Source.Galaxy.MapElement", "_name", "System.String");
 
+        // The opt-in disposable fixture preparation: the ONLY native content factory the phase may
+        // call, pinned by its exact declared static signature, plus the map members it reads to
+        // choose an actual other native system and the list the factory itself assigns.
+        var factory = Assert.Single(Type("Source.Simulation.World.WormholeSpawner").Methods,
+            candidate => candidate.Name == "PlaceWormhole");
+        Assert.True(factory.IsStatic && factory.IsPublic);
+        Assert.Equal(Wormhole, factory.ReturnType.FullName);
+        Assert.Equal(new[] { "Source.Galaxy.SystemMapData", "System.Boolean", "System.Collections.Generic.List`1<" + Wormhole + ">" },
+            factory.Parameters.Select(parameter => parameter.ParameterType.FullName).ToArray());
+        Field(Wormhole, "targetWormholeGuids", "System.Collections.Generic.List`1<System.String>");
+        Method(Wormhole, "CanConnectTo", "System.Boolean", Wormhole);
+        Field("Source.Galaxy.SystemMapData", "pointsOfInterest", "System.Collections.Generic.List`1<" + Poi + ">");
+        Field("Source.Galaxy.SystemMapData", "pocketSystem", "System.Boolean");
+        Field("Source.Galaxy.SystemMapData", "sector", "Source.Galaxy.SectorMapData");
+        Property("Source.Galaxy.SystemMapData", "mapPosition", "UnityEngine.Vector2");
+        Assert.Single(Type("Source.Galaxy.GalaxyMapData").Properties, property => property.Name == "allSystems"
+            && property.PropertyType.FullName == "System.Collections.Generic.IEnumerable`1<Source.Galaxy.SystemMapData>");
+
         // The destination managers the phase requires at a cross-system arrival.
         Assert.Equal("Behaviour.Managers.BasePoiManager", Type(GateManager).BaseType.FullName);
         Assert.Equal("Behaviour.Managers.BasePoiManager", Type(WormholeManager).BaseType.FullName);
@@ -131,6 +149,17 @@ public sealed class InstalledTravelCrossSystemProbeTests
         // an emptied waypoint list; that is what parks the ship for the second step.
         Assert.Contains("InitiateTravelThroughGate", Calls(module, GateManager, "SpaceshipHasArrived"));
         Assert.Contains("InitiateTravelThroughWormhole", Calls(module, WormholeManager, "SpaceshipHasArrived"));
+        // The fixture factory is genuine native content creation (it sets the POI up through the
+        // system's own SetupPOI and adds it to that system), not a hand-built object the phase
+        // could shape, and it never moves the player.
+        var placeWormhole = Calls(module, "Source.Simulation.World.WormholeSpawner", "PlaceWormhole");
+        Assert.Contains("SetupPOI", placeWormhole);
+        Assert.Contains("Add", placeWormhole);
+        Assert.DoesNotContain("set_currentPointOfInterest", placeWormhole);
+        Assert.DoesNotContain("SetRouteToPOI", placeWormhole);
+        Assert.DoesNotContain("TryInitiateTravel", placeWormhole);
+        Assert.Contains("set_system", Fields(module, "Source.Galaxy.SystemMapData", "SetupPOI"));
+
         // Only the native gate/wormhole objects start the jump routines.
         Assert.Contains("JumpToPOIFrom", Calls(module, "Behaviour.Travel.TheGate", "Update"));
         Assert.Contains("JumpToWormholeFrom", Calls(module, "Behaviour.Travel.TheWormhole", "FinishDeparture"));

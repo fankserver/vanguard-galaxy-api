@@ -21,6 +21,9 @@ namespace VGModAPI.Qualification;
 public sealed partial class Plugin
 {
     private bool TravelCrossSystemSelected => File.Exists(Path.Combine(_root!, "travel-cross-system.enabled"));
+    // Explicit, separately selected opt-in: without this marker the phase never creates native
+    // content, so a fixture world without a wormhole keeps reporting an honest mandatory NOT-RUN.
+    internal bool TravelWormholeFixtureSelected => File.Exists(Path.Combine(_root!, "travel-wormhole-fixture.enabled"));
     internal readonly List<TravelStationReceipt.Row> _xsRows = new();
     internal readonly List<string> _xsEvents = new();
     // Read-only native state sampled at the moment each public fact was delivered, keyed by the

@@ -28,6 +28,15 @@ internal static class TravelCrossSystemReceipt
     internal const string WormholeDescription = "A real native wormhole hop (JumpToWormhole/TravelToWormholeDestination) emits Requested->Departed->Arrived->RouteCompleted for the cross-system leg, observed from the owned jump iterator.";
 
     /// <summary>
+    /// Optional, explicitly opt-in sandbox fixture PREPARATION row. It is recorded outside the
+    /// required-case list, so it can never be coverage: creating test data is not travel evidence.
+    /// </summary>
+    internal const string WormholeFixtureCase = "wormhole-fixture-setup";
+    internal const string WormholeFixtureDescription = "Opt-in disposable sandbox fixture preparation: a connected wormhole pair created by the game's own native factory before any route is driven. Fixture setup, never travel evidence and never coverage.";
+    /// <summary>The exact inspected native factory the preparation is allowed to call, recorded in the receipt.</summary>
+    internal const string WormholeFactorySignature = "Source.Simulation.World.WormholeSpawner.PlaceWormhole(Source.Galaxy.SystemMapData, System.Boolean, System.Collections.Generic.List`1<Source.Galaxy.POI.Wormhole>) : Source.Galaxy.POI.Wormhole";
+
+    /// <summary>
     /// The phase passes only when BOTH cross-system case identities have exactly one PASSED row.
     /// A missing, not-run or failed required case is a phase failure: a fixture that cannot
     /// exercise one of the two native routines produces a recorded FAIL, never an empty PASS.
@@ -45,6 +54,8 @@ internal static class TravelCrossSystemReceipt
     internal const float HandoffSeconds = 180;     // native gate/wormhole approach until the jump iterator starts
     internal const float JumpArrivalSeconds = 240; // jump iterator: scene load, readiness and arrival animation
     internal const float BoundarySeconds = 60;     // TravelToNextWaypoint final-route boundary
+    /// <summary>Bounded deadline for the opt-in native wormhole fixture creation and its verification.</summary>
+    internal const float FixtureCreationSeconds = 30;
     /// <summary>Process time the launcher reserves for this phase (mirrors $TravelCrossSystemBudgetSeconds).</summary>
     internal const float LauncherReservationSeconds = 2100;
 
@@ -70,7 +81,8 @@ internal static class TravelCrossSystemReceipt
         new("jump-handoff", HandoffSeconds, 2),
         new("jump-arrival", JumpArrivalSeconds, 2),
         new("route-boundary", BoundarySeconds, 2),
-        new("settle", SettleSeconds, 8)
+        new("wormhole-fixture-creation", FixtureCreationSeconds, 1),
+        new("settle", SettleSeconds, 9)
     };
 
     internal static readonly float PhaseBudgetSeconds = PhaseWaits.Sum(wait => wait.Seconds * wait.Occurrences);
@@ -125,6 +137,49 @@ internal static class TravelCrossSystemReceipt
             + ",manager=" + (string.IsNullOrEmpty(ManagerType) ? "<none>" : ManagerType) + ",ready=" + ManagerReady
             + ",location=" + LocationKey;
     }
+
+    // --- opt-in fixture preparation rules -------------------------------------------------
+
+    /// <summary>
+    /// Fixture preparation must be observably INERT on the travel surface: creating map data is not
+    /// movement, so a request, departure, arrival, completion or placement observed inside the
+    /// creation window means the preparation did something it must never do.
+    /// </summary>
+    internal static string? CheckFixtureCreationWindow(IReadOnlyList<TravelTransition> facts)
+        => facts.Count == 0 ? null
+            : "Fixture preparation is not travel: " + facts.Count + " public travel fact(s) were observed during the creation window, starting with "
+                + TravelStationReceipt.Describe(facts[0]) + ".";
+
+    /// <summary>
+    /// The created pair must be exactly two NEW native wormholes with distinct identities in two
+    /// distinct systems, one of them the player's current system. Anything else is a preparation
+    /// defect, not a fixture.
+    /// </summary>
+    internal static string? CheckFixtureCreation(int wormholesBefore, int wormholesAfter,
+        string currentSystemId, string sourceSystemId, string sourceWormholeId, string destinationSystemId, string destinationWormholeId)
+    {
+        if (wormholesAfter != wormholesBefore + 2)
+            return "Fixture preparation changed the native wormhole count from " + wormholesBefore + " to " + wormholesAfter + " instead of adding exactly two.";
+        if (string.IsNullOrEmpty(sourceWormholeId) || string.IsNullOrEmpty(destinationWormholeId) || sourceWormholeId == destinationWormholeId)
+            return "Fixture preparation did not produce two distinct native wormhole identities.";
+        if (string.IsNullOrEmpty(sourceSystemId) || string.IsNullOrEmpty(destinationSystemId) || sourceSystemId == destinationSystemId)
+            return "Fixture preparation did not place the pair in two distinct native systems.";
+        if (sourceSystemId != currentSystemId)
+            return "Fixture preparation placed the source wormhole in " + sourceSystemId + " instead of the player's current system " + currentSystemId + ".";
+        return null;
+    }
+
+    /// <summary>The recorded preparation detail: what was created, by which inspected factory.</summary>
+    internal static string DescribeFixtureCreation(int wormholesBefore, int wormholesAfter,
+        string sourceSystemId, string sourceWormholeId, string destinationSystemId, string destinationWormholeId, int observedTravelFacts)
+        => "selection=travel-wormhole-fixture; factory=" + WormholeFactorySignature
+            + "; wormholesBefore=" + wormholesBefore + "; wormholesAfter=" + wormholesAfter
+            + "; source=" + Location(sourceSystemId, sourceWormholeId)
+            + "; destination=" + Location(destinationSystemId, destinationWormholeId)
+            + "; travelFactsDuringCreation=" + observedTravelFacts
+            + "; fixture preparation only, not travel evidence.";
+
+    private static string Location(string systemId, string? poiId) => TravelStationReceipt.Location(systemId, poiId);
 
     // --- public-fact ordering rules ------------------------------------------------------
 
