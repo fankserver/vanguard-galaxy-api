@@ -2,7 +2,7 @@
 
 ## Current status
 
-**Implemented but not runtime-qualified.** Owner-authorized controlled runs have used an isolated Windows game sandbox, not the normal plugin installation. The corrected automated smoke passes in `qa-06`; the extended sequence passes in `qa-09`, both without optional startup diagnostic hooks. This is partial runtime evidence, not completion of the broader qualification matrix. Existing plugins are untouched and all 37 files in the original save directory were hash-verified unchanged.
+**Implemented with controlled native evidence; full owner acceptance remains separate.** Isolated Windows runs now cover core load/save flows, transit/empty-space loads, scoped stale adapter signals, and both authorized consumer pilots. qa38 passes33 checks after review hardening; qa33–35 separately cover both-consumer coexistence/refusal. Normal installed plugins are untouched. All37 original files, complete direct file sets and restored preferences were independently verified unchanged. RuntimeQualified remains false; an actual alternate game binary is not qualified.
 
 The adapter accepts only this inspected original `Assembly-CSharp.dll` SHA-256:
 
@@ -22,14 +22,14 @@ Local SDK: .NET SDK 10.0.111.
 |---|---|
 | Debug build, including example consumer | Passed, zero warnings/errors |
 | Release build/package | Passed, zero warnings/errors |
-| Pure state-machine, coroutine, reflection-adapter, package-validator and hook-order tests | 77 passed in Debug and Release |
+| Pure state-machine, coroutine, reflection-adapter, package-validator and hook-order tests | 80 passed in Debug and Release |
 | Installed assembly identity, 12 method bindings, and 5 field bindings | 7 tests passed in Debug and Release |
 | Harmony detour execution inside Unity | Exercised; missing load events fixed by callee-first installation (#27) |
 | Windows harness synthetic checks | Passed; file isolation/cleanup and typed registry snapshot/restore tested on synthetic data |
 | Live save/load flows | qa-06 passed: copied docked loads, replacement, manual roundtrip, skip, exhausted retries, subscribers, valid-syntax newer-version fixture rejection without readiness, corrupt-JSON failure, recovery and quit save |
 | Extended runtime cases | qa-09 passed: tutorial wizard/configuration boundary, mining-space save/load, autosave rotation, recovered transient metadata failure, and current-version empty-player rejection control |
-| Empty-space/in-transit loads and delayed stale-callback injection | **Not exercised** |
-| Multi-mod behavior | **Not run** |
+| Empty-space/in-transit loads and delayed stale signals | qa38: native eligible in-system route/save/reload; controlled parked-space save/reload; Unity-driven real observed iterator with explicit stale adapter signals and unfinished disposal. Not arbitrary async engine callbacks. |
+| Multi-mod behavior | MissionJournal and Stockpile pilots: reviewed owning PRs; qa33 full30 and qa34/35 missing/unavailable API refusal, with copied-file preservation. No general mod-conflict guarantee. |
 
 The reflection-adapter tests use explicit small doubles. They exercise the production adapter logic but do not simulate Unity scheduling. Installed binding checks use Mono.Cecil to read metadata without loading game code. They do not execute Harmony or game methods.
 
@@ -97,17 +97,17 @@ The reviewed follow-up `qa-11` repeated all 17 scenarios successfully after stre
 
 All four runs independently passed the 37 original-file hash/direct-file-set checks and byte-identical PlayerPrefs restoration. Consumer absence/incompatibility and coexistence still require their own pilot tests. The startup-negative probes do not qualify an alternate game binary. RuntimeQualified remains false.
 
-## In-game acceptance checklist — partial (qa-15)
+## In-game acceptance checklist — controlled coverage through qa38
 
 Arrange owner approval before deployment. Use copied/disposable saves and the optional compiled `LifecycleObserver` example to record events. Record game/Unity/BepInEx versions, assembly hash, enabled mods, and relevant logs for each run.
 
 - [x] Plugin startup reports bound capabilities on the inspected DLL; no Harmony errors.
 - [ ] Unsupported DLL safely reports unavailable capabilities with no patches applied.
-- [x] Load a mining-space save: Starting -> PlayerReady -> GameplayInitialized, one session ID. Empty-space/in-transit paths remain untested.
+- [x] Load mining-space, native in-system-transit and controlled parked-empty-space saves: Starting -> PlayerReady -> GameplayInitialized, one session ID. Parked-space setup uses vanilla cancellation/completion calls, not pointer-driven UI.
 - [x] Load a docked save: same core sequence; do not interpret it as station-UI readiness.
 - [x] Start a tutorial through native wizard callbacks: no PlayerReady during the synchronous `NewGame.SaveInputs` call. Inspected `SaveInputs` invokes `GamePlayer.CreateNewGamePlayer` and completes wizard configuration before `GameManager.StartNewGame` calls `SceneLoader.LoadScenesOnStartGame`. The probe does not observe arbitrary asynchronous configuration outside that call. Pointer-driven UI acceptance remains separate.
 - [x] Return to menu, reload, and switch between two saves without restarting: old sessions invalidated before replacement; no stale readiness observed.
-- [ ] Explicit delayed/stale coroutine callback injection inside Unity (covered only by host tests).
+- [x] Unity-driven stale adapter readiness/failure signals in a real observed iterator, asserting its old attempt context, followed by explicit unfinished disposal. The synthetic BeginLoad pair is not a vanilla load; arbitrary asynchronous engine callbacks remain outside this evidence.
 - [x] A valid-syntax newer-version fixture ends without readiness; a corrupt-JSON fixture reports failure without readiness.
 - [x] A current-version control with equal empty-player payload distinguishes deserialization failure from the newer-header non-readiness outcome; public events alone still do not identify a version-rejection cause.
 - [x] Manual saving produces one Started and one terminal event for the correct destination.
@@ -116,7 +116,7 @@ Arrange owner approval before deployment. Use copied/disposable saves and the op
 - [x] Controlled write failure with exhausted retries on disposable files produces one logical terminal outcome.
 - [x] A retry recovers successfully after a transient failure.
 - [x] A throwing subscriber does not suppress a healthy observer; disposal prevents future callbacks.
-- [ ] Relevant existing mods coexist without changing original-call semantics or event interpretation.
+- [x] Authorized MissionJournal/Stockpile pilots coexist under the exercised load/save/transfer paths, with dependency refusal and teardown. Unrelated mods and broader pointer-driven UI acceptance remain unqualified.
 
 Do not force disk failures, delete, or corrupt real player saves. If a scenario cannot be safely exercised, record it as unqualified rather than assuming it passed.
 
