@@ -8,7 +8,7 @@ Use a dedicated owned root. Each canonical slot key maps to the first 32 hex cha
 
 Each generation contains a versioned, digested manifest and opaque owner envelopes. The manifest pins campaign/snapshot identities and the digest of the complete ordered owner generation. Up to 32 owners are accepted, each bounded to the schema envelope maximum (1 MiB+128 bytes). Manifest reads are capped at 16 KiB; text fields are bounded before decoding. Unknown owner envelopes can be retained without installing their providers; interpreting them belongs to the schema/coordinator boundary.
 
-Publish copies inputs, checks existing immutable identity, creates a unique sibling stage directory, writes/flushed owner files and manifest, then renames the directory to the final hash. It never overwrites an existing generation. A matching retry returns the original snapshot ID; different progression or campaign under the same slot+vanilla bytes is refused. An existing corrupt/unsupported generation is protected, not a missing/empty fallback.
+Publish copies inputs, checks existing immutable identity, creates a unique sibling stage directory, writes/flushed owner files and manifest, then renames the directory to the final hash. It never overwrites an existing generation. A matching retry returns the original snapshot ID; different progression or campaign under the same slot+vanilla bytes is refused and records a conflict marker. That exact hash is thereafter load-blocked, even though the original generation remains intact, so rejected forward progress is not silently presented as restored old state. An existing corrupt/unsupported generation is protected, not a missing/empty fallback.
 
 ## Interruption and recovery
 
@@ -31,6 +31,8 @@ Mutation permission additionally requires no lifecycle callback dispatch, no pen
 Registered plus retained owner namespaces must fit the 32-owner union limit; overflow reports owner-union-limit rather than dropping unknown owners.
 
 If the filesystem cannot record even the pre-write intent for a previously unseen destination, vanilla cannot be stopped by this observer and no durable lineage proof can be guaranteed. The current session pauses, but a later process cannot distinguish wholly absent metadata from first use. Deleting all storage has the same limitation. This is an explicit unresolved cross-file availability/durability boundary, not a safe-empty recovery promise; native qualification and installation guidance must expose it. No vanilla metadata or save suppression is introduced.
+
+Inspected vanilla SideMenuOptions.MainMenu saves before player Cleanup and SceneLoader.StartMenu; the lifecycle menu-invalidation hook runs at that later transition. GameManager.HandleApplicationQuit likewise saves before clearing the player. Native runtime wiring must still verify plugin teardown order. A successful post-invalidation save retains intent and blocks unmatched reloads. Recovery is explicit: select a validated prior backup/generation; never delete intent/conflict evidence merely to force an empty load. Resolving an identical-byte conflict requires an explicit choice to retain older state and archival of evidence; no automatic resolution tool is provided here.
 
 This engine does not validate an active game installation or provide a public API yet. It trusts the supplied canonical-path and file-hash adapters and the lifecycle hub; runtime adapters must enforce actual path/version/thread constraints. No account-wide fallback or implicit legacy-sidecar import exists.
 

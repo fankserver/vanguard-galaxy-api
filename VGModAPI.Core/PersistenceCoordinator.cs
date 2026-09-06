@@ -178,7 +178,7 @@ internal sealed class PersistenceCoordinator : IDisposable
             if (!Current(id)) return;
         }
         // An active owner's failed capture must not label its older bytes as this save's state.
-        if (captureFailed) { _writeFault = true; return; }
+        if (captureFailed) { _writeFault = true; _faultDetail = "capture-failed"; return; }
         try
         {
             if (_pending.ContainsKey(e.OperationId.Value)) throw new InvalidOperationException("Duplicate save start.");

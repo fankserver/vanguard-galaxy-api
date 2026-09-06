@@ -98,7 +98,12 @@ internal sealed class GenerationStore
         var existing = ReadExisting(slot, vanillaHash, false);
         if (existing != null)
         {
-            if (!existing.Identity.CanReuse(identity)) throw new InvalidDataException("Immutable snapshot association conflict.");
+            if (!existing.Identity.CanReuse(identity))
+            {
+                var conflict = Path.Combine(Path.GetDirectoryName(target)!, "conflict-" + vanillaHash + ".vgc");
+                WriteNew(conflict, Encoding.ASCII.GetBytes("Ambiguous identical vanilla bytes; retained generation requires explicit recovery."));
+                throw new InvalidDataException("Immutable snapshot association conflict.");
+            }
             return existing;
         }
         var parent = Path.GetDirectoryName(target)!;
@@ -181,6 +186,11 @@ internal sealed class GenerationStore
     {
         var target = Location(slot, vanillaHash);
         RejectLinks(target);
+        var conflict = Path.Combine(Path.GetDirectoryName(target)!, "conflict-" + vanillaHash + ".vgc");
+        RejectLinks(conflict);
+        try { _ = File.GetAttributes(conflict); throw new InvalidDataException("Snapshot has unresolved identical-byte conflict evidence."); }
+        catch (FileNotFoundException) { }
+        catch (DirectoryNotFoundException) { }
         FileAttributes attributes;
         try { attributes = File.GetAttributes(target); }
         catch (FileNotFoundException) { return Missing(target, protectUnknown); }

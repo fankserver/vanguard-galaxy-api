@@ -34,9 +34,13 @@ public sealed class GenerationStoreTests : IDisposable
         var campaign = Guid.NewGuid();
         var first = store.Publish("slot", H('a'), campaign, Owners(1));
         Assert.Equal(first.Identity.Snapshot, store.Publish("slot", H('a'), campaign, Owners(1)).Identity.Snapshot);
+        var manifest = Directory.GetFiles(_root, "manifest.vgo", SearchOption.AllDirectories).Single();
+        var original = File.ReadAllBytes(manifest);
         Assert.Throws<InvalidDataException>(() => store.Publish("slot", H('a'), campaign, Owners(2)));
-        Assert.Throws<InvalidDataException>(() => store.Publish("slot", H('a'), Guid.NewGuid(), Owners(1)));
-        Assert.Equal(first.Identity.Snapshot, store.Load("slot", H('a'))!.Identity.Snapshot);
+        Assert.Throws<InvalidDataException>(() => store.Load("slot", H('a')));
+        Assert.Equal(original, File.ReadAllBytes(manifest));
+        store.Publish("other", H('a'), campaign, Owners(1));
+        Assert.Throws<InvalidDataException>(() => store.Publish("other", H('a'), Guid.NewGuid(), Owners(1)));
     }
 
     [Theory]

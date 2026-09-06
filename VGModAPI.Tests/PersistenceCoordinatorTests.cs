@@ -137,6 +137,21 @@ public sealed class PersistenceCoordinatorTests : IDisposable
     }
 
     [Fact]
+    public void IdenticalByteConflictCannotSilentlyRestoreOlderProgress()
+    {
+        var store = new GenerationStore(_root);
+        using var coordinator = Coordinator(store);
+        byte state = 1; int restores = 0;
+        coordinator.Register(Codec(), () => new[] { state }, _ => restores++);
+        Start(); EndSave(BeginSave());
+        state = 2; EndSave(BeginSave());
+        Assert.False(coordinator.MutationAllowed("owner"));
+        Start(SessionOrigin.SaveLoad, "slot");
+        Assert.Equal(1, restores);
+        Assert.Equal("load-blocked", coordinator.Status("owner"));
+    }
+
+    [Fact]
     public void FailedCaptureThenReloadCannotBecomeEmptySuccess()
     {
         var store = new GenerationStore(_root);
