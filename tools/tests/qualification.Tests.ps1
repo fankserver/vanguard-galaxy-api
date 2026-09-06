@@ -148,7 +148,32 @@ try {
     Assert $rejected 'Missing content-reference receipt accepted.'
     [IO.File]::WriteAllText((Join-Path $probeRoot 'content-reference.txt'), 'PASS')
     Assert-PersistenceProbeReceipt $probeRoot $probeProvenance
-    [IO.File]::WriteAllText((Join-Path $probeRoot 'game\BepInEx\config\vgmodapi.cfg'), "[Persistence]`nEnabled = true`nRoot = C:\foreign-root`n")
+    $probeProvenance.missionTransitionsProbe = $true
+    $probeProvenance | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $probeRoot 'build-provenance.json')
+    $missionMarker = Join-Path $probeRoot 'mission-transitions.enabled'
+    [IO.File]::WriteAllText($missionMarker, 'missions-v1')
+    $apiConfig = Join-Path $probeRoot 'game\BepInEx\config\vgmodapi.cfg'
+    [IO.File]::AppendAllText($apiConfig, "`n[Missions]`nEnabled = true`n")
+    $validApi = [IO.File]::ReadAllText($apiConfig)
+    $null = Assert-QualificationInputs $probeRoot
+    foreach ($changed in @($validApi.Replace('[Missions]', '[Other]'), ($validApi + "Enabled = false`n"))) {
+        [IO.File]::WriteAllText($apiConfig, $changed)
+        $rejected = $false
+        try { $null = Assert-QualificationInputs $probeRoot } catch { $rejected = $true }
+        Assert $rejected 'Changed mission config accepted.'
+    }
+    [IO.File]::WriteAllText($apiConfig, $validApi)
+    [IO.File]::WriteAllText($missionMarker, 'tampered')
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $probeRoot } catch { $rejected = $true }
+    Assert $rejected 'Changed mission marker accepted.'
+    [IO.File]::WriteAllText($missionMarker, 'missions-v1')
+    $rejected = $false
+    try { Assert-PersistenceProbeReceipt $probeRoot $probeProvenance } catch { $rejected = $true }
+    Assert $rejected 'Missing mission receipt accepted.'
+    [IO.File]::WriteAllText((Join-Path $probeRoot 'mission-transitions.txt'), 'PASS')
+    Assert-PersistenceProbeReceipt $probeRoot $probeProvenance
+    [IO.File]::WriteAllText($apiConfig, "[Persistence]`nEnabled = true`nRoot = C:\foreign-root`n[Missions]`nEnabled = true`n")
     $rejected = $false
     try { $null = Assert-QualificationInputs $probeRoot } catch { $rejected = $true }
     Assert $rejected 'Foreign persistence root accepted.'

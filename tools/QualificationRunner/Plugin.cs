@@ -248,6 +248,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         Passed("reload-after-failure");
         foreach (var frame in NewGameAndSpaceLoad()) yield return frame;
         CheckContentReferences();
+        CheckMissionTransitions();
         foreach (var frame in CheckStockpilePilot()) yield return frame;
         foreach (var frame in CheckJournalTeardown()) yield return frame;
         foreach (var frame in RemainingLifecyclePilot()) yield return frame;

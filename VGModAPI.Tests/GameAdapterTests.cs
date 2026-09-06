@@ -11,6 +11,7 @@ using Xunit;
 
 namespace VGModAPI.Tests;
 
+[Collection("game-double")]
 public sealed class GameAdapterTests
 {
     private readonly LifecycleHub _hub = new((_, _) => { });

@@ -31,6 +31,16 @@ internal static class BindingCatalog
         new("gameplay", "GameplayManager", "Start", false, "System.Void"),
         new("load", File, "LoadSaveGame", false, "System.Void")
     };
+    internal const string Mission = "Source.MissionSystem.Mission";
+    internal static readonly MethodBinding[] Missions =
+    {
+        new("missionArchive", Player, "ArchiveMission", false, "System.Void", "System.String", "System.Boolean"),
+        new("missionRemove", Player, "RemoveMission", false, "System.Void", Mission, "System.Boolean"),
+        new("missionStart", Mission, "OnMissionStart", false, "System.Void"),
+        new("missionAccept", Player, "AddMissionWithLog", false, "System.Void", Mission, "System.Boolean"),
+        new("missionClaim", Mission, "ClaimRewards", false, "System.Void", "System.Boolean"),
+        new("missionFail", Mission, "MissionFailed", false, "System.Void", "System.String")
+    };
     internal static readonly MethodBinding[] Saves =
     {
         new("writeFile", Save, "WriteSaveFile", true, "System.Void", "System.IO.FileInfo", "LightJson.JsonObject", "Source.Util.SaveGameFormat"),
