@@ -292,6 +292,8 @@ try {
     $originalProvenance = Get-Content -LiteralPath $provPath -Raw
     $consumerProvenance = $originalProvenance | ConvertFrom-Json
     $consumerProvenance.missionJournal = $true
+    $legacyJournal = Join-Path $sandbox 'game\BepInEx\config\vgmissionjournal.cfg'
+    [IO.File]::WriteAllText($legacyJournal, "[Persistence]`nUseApiSaveData = false`n")
     foreach ($name in @('VGMissionJournal.dll','Newtonsoft.Json.dll')) {
         $file = Join-Path $sandbox ('game\BepInEx\plugins\' + $name)
         [IO.File]::WriteAllText($file, 'synthetic')
@@ -304,12 +306,20 @@ try {
     $marker = Join-Path $sandbox 'missionjournal.enabled'
     [IO.File]::WriteAllText($marker, 'pilot-v1')
     $null = Assert-QualificationInputs $sandbox
+    foreach ($changed in @('[Persistence]', "[Persistence]`nUseApiSaveData = true`n", "[Persistence]`nUseApiSaveData = false`nUseApiSaveData = false`n")) {
+        [IO.File]::WriteAllText($legacyJournal, $changed)
+        $rejected = $false
+        try { $null = Assert-QualificationInputs $sandbox } catch { $rejected = $true }
+        Assert $rejected 'Missing, enabled or duplicate legacy consumer setting accepted.'
+    }
+    [IO.File]::WriteAllText($legacyJournal, "[Persistence]`nUseApiSaveData = false`n")
     [IO.File]::WriteAllText($marker, 'invalid')
     $rejected = $false
     try { $null = Assert-QualificationInputs $sandbox } catch { $rejected = $true }
     Assert $rejected 'Invalid consumer marker accepted.'
     [IO.File]::WriteAllText($marker, 'pilot-v1')
     $consumerProvenance.stockpile = $true
+    [IO.File]::WriteAllText((Join-Path $sandbox 'game\BepInEx\config\vgstockpile.cfg'), "[Persistence]`nUseApiSaveData = false`n")
     $stockpileDll = Join-Path $sandbox 'game\BepInEx\plugins\VGStockpile.dll'
     [IO.File]::WriteAllText($stockpileDll, 'synthetic-stockpile')
     $consumerProvenance.plugins | Add-Member -NotePropertyName 'VGStockpile.dll' -NotePropertyValue ((Get-FileHash $stockpileDll).Hash)
