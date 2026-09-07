@@ -11,20 +11,20 @@ namespace VGModAPI.Qualification;
 
 /// <summary>
 /// Pure receipt/phase evaluation for the ACTUAL-CONSUMER travel probe (phase <see cref="Phase"/>).
-/// It contains no Unity, BepInEx or reflection dependency, so the exact rules that decide PASS/FAIL
+/// It requires no Unity or BepInEx runtime, so the exact rules that decide PASS/FAIL
 /// — how a witnessed public arrival must appear in the installed consumer's own visit history and
 /// its own v4 sidecar — are host regressions rather than prose.
 ///
 /// This phase never widens the native travel phases. It REUSES them: the gate and wormhole
 /// arrivals it compares against are driven and asserted by <see cref="TravelCrossSystemReceipt"/>'s
-/// own qualified cases, and the non-travel facts come from <see cref="TravelStationReceipt"/>'s.
-/// A pass here is evidence that the installed consumer reduced those already-qualified public
-/// facts correctly; it is not travel coverage of its own, not automatic content persistence and
-/// not owner acceptance.
+/// own cases, and the non-travel facts come from <see cref="TravelStationReceipt"/>'s.
+/// A pass requires the underlying travel cases to pass and demonstrates consumer handling of
+/// those public facts; it is not additional travel coverage, automatic content persistence or
+/// full in-game acceptance.
 /// </summary>
 internal static class AnimaTravelReceipt
 {
-    /// <summary>Honest scope of the delivered phase; the consumer milestones stay open.</summary>
+    /// <summary>Identity of this consumer-observation phase, distinct from native travel phases.</summary>
     internal const string Phase = "anima-travel-consumer-v1";
 
     internal const string BindingCase = "consumer-binding";
@@ -435,13 +435,10 @@ internal static class AnimaTravelReceipt
     /// The element count of a consumer collection the probe read by reflection, resolved STRICTLY
     /// through that collection's own declared <c>Count</c> property.
     ///
-    /// <para>qa-85 failed here: <c>_countedLegs</c> is a <c>HashSet&lt;Guid&gt;</c>, which implements
-    /// the GENERIC <c>ICollection&lt;Guid&gt;</c> but NOT the non-generic
-    /// <c>System.Collections.ICollection</c>, so casting it to the non-generic interface threw
-    /// <see cref="InvalidCastException"/> inside the reload check and the phase lost its mandatory
-    /// reload/rollback/persistence rows. <c>Dictionary</c> and <c>List</c> do implement the
-    /// non-generic interface, which is exactly why the defect only surfaced on the one member that
-    /// is a set.</para>
+    /// <para><c>_countedLegs</c> is a <c>HashSet&lt;Guid&gt;</c>: it implements
+    /// <c>ICollection&lt;Guid&gt;</c>, not <c>System.Collections.ICollection</c>.
+    /// Its declared <c>Count</c> must be read without assuming the non-generic interface that
+    /// <c>Dictionary</c> and <c>List</c> expose.</para>
     ///
     /// <para>The resolution is deliberately unforgiving: a null member, a missing <c>Count</c> or a
     /// <c>Count</c> that is not an <see cref="int"/> throws instead of degrading to zero or to a

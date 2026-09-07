@@ -59,10 +59,8 @@ internal static class TravelCrossSystemReceipt
     /// <summary>Process time the launcher reserves for this phase (mirrors $TravelCrossSystemBudgetSeconds).</summary>
     internal const float LauncherReservationSeconds = 2400;
 
-    // Per-case wait multiplicities, named after the driver call sites they come from, so the plan
-    // below is DERIVED from the case count instead of hand-counted. A hand-typed occurrence is
-    // exactly how the route boundary was previously under-declared (once instead of twice per
-    // case), which understated the published budget.
+    // Derive the wait plan from driver call-site multiplicities and case count. Each case has
+    // two route boundaries (approach and cross-system); counting only one understates its budget.
     /// <summary>Fixture load plus travel-service binding, once each per case (TravelCrossSystemDriver.Prepare).</summary>
     internal const int LoadWaitsPerCase = 2;
     /// <summary>The approach route boundary and the cross-system route boundary (DriveCrossSystemRoute).</summary>

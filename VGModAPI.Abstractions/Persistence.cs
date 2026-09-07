@@ -43,10 +43,10 @@ public interface IPersistenceRegistration : IDisposable
 }
 
 /// <summary>
-/// Optional capability of a registration handle, additive like <c>ILifecycleDispatchState</c>: the
-/// members of <see cref="IPersistenceRegistration"/> are unchanged, so an existing implementation
-/// keeps compiling and loading. Cast the handle you were given; treat an absent capability as
-/// "readiness unknown" and refuse, rather than assuming state is readable.
+/// Optional readability capability of a registration handle; requires API 0.1.12.
+/// Cast the handle returned by <see cref="IPersistenceApi.Register"/>; an implementation of
+/// <see cref="IPersistenceRegistration"/> need not supply this capability. Treat its absence as
+/// "readiness unknown" and refuse reads rather than assuming state is readable.
 /// </summary>
 public interface IPersistenceReadiness
 {
@@ -60,7 +60,7 @@ public interface IPersistenceReadiness
     bool StateReady { get; }
 }
 
-/// <summary>Optional since 0.1.2. Register before loading a session; no implicit legacy data adoption.</summary>
+/// <summary>Optional service requiring API 0.1.2. Register before loading a session; no implicit legacy data adoption.</summary>
 public interface IPersistenceApi
 {
     IPersistenceRegistration Register(PersistenceProvider provider);

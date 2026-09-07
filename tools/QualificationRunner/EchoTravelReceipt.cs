@@ -14,14 +14,14 @@ namespace VGModAPI.Qualification;
 ///
 /// This phase never widens the native travel phases. It REUSES them: the route completions it
 /// reasons about are driven and asserted by <see cref="TravelStationReceipt"/>'s and
-/// <see cref="TravelCrossSystemReceipt"/>'s own qualified cases, plus one Echo-owned in-system route
-/// pair for the supersession and degradation cases. A pass here is evidence that the installed
-/// consumer reacted correctly to those already-qualified public facts; it is not travel coverage of
-/// its own and not owner acceptance.
+/// <see cref="TravelCrossSystemReceipt"/>'s own cases, plus one Echo-owned in-system route
+/// pair for the supersession and degradation cases. A pass requires the underlying travel cases
+/// to pass and demonstrates consumer handling of those facts; it is not additional travel
+/// coverage or full in-game acceptance.
 /// </summary>
 internal static class EchoTravelReceipt
 {
-    /// <summary>Honest scope of the delivered phase; the consumer milestones stay open.</summary>
+    /// <summary>Identity of this consumer-observation phase, distinct from native travel phases.</summary>
     internal const string Phase = "echo-travel-consumer-v1";
 
     internal const string BindingCase = "arrival-snap-binding";
@@ -328,12 +328,10 @@ internal static class EchoTravelReceipt
     /// Null when a live Harmony patch owned by the consumer is acceptable, otherwise the exact
     /// reason it is refused.
     ///
-    /// <para>Echo's arrival-snap replaced ONE timing hook: the
-    /// <c>TravelManager.TravelToNextWaypoint</c> postfix that used to zero the idle timer. Only that
-    /// hook must be gone, and only when it is declared by the timing patch class. Echo's unrelated
-    /// automation (the opt-in refinery/auto-refine routing) legitimately declares its own patch on
-    /// the same native method from a different patch class, so a blanket "no Echo patch on this
-    /// method" rule would be false. The declaring patch class is therefore part of the rule.</para>
+    /// <para>Arrival-snap must use the public travel observer, not a timing-class patch on
+    /// <c>TravelManager.TravelToNextWaypoint</c>. Unrelated refinery/auto-refine routing may patch
+    /// that method from its own class, so refusal must include the declaring patch class rather
+    /// than reject every Echo patch on the method.</para>
     /// </summary>
     internal const string TimingPatchClass = "VGEcho.Patches.AutopilotTimingPatches";
     internal static string? RefuseEchoTimingPatch(string declaringPatchClass, string patchedType, string patchedMethod)
@@ -342,9 +340,8 @@ internal static class EchoTravelReceipt
         var type = patchedType ?? string.Empty;
         var method = patchedMethod ?? string.Empty;
         if (patchClass != TimingPatchClass) return null;
-        // The one patch the timing class is still allowed to own is its ETA-sync postfix on the
-        // idle manager's own update; anything it declares on the native travel surface is the
-        // retired timing hook coming back.
+        // The timing class may patch IdleManager.Update for ETA-sync; any other patch declared
+        // by that class is refused.
         if (type == "Behaviour.Gameplay.IdleManager" && method == "Update") return null;
         return "retired timing hook restored: " + patchClass + " patches " + type + "." + method;
     }

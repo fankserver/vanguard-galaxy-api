@@ -347,7 +347,7 @@ public sealed partial class Plugin
         failure = AnimaTravelReceipt.CheckSessionReplacement(savedSession, reloadSession,
             (Guid?)SpGet(observer!, "_session"),
             // HashSet<Guid> implements only the GENERIC ICollection<Guid>; the strict counter reads
-            // the set's own Count property and refuses to guess (qa-85 InvalidCastException).
+            // the set's own Count property and refuses to guess.
             AnimaTravelReceipt.StrictCount(SpGet(observer!, "_countedLegs"), "_countedLegs"));
         Require(failure == null, failure!);
         var reloadEvidence = TravelStationReceipt.Evidence(
