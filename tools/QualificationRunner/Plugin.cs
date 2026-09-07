@@ -270,6 +270,9 @@ public sealed partial class Plugin : BaseUnityPlugin
         // The Echo consumer probe owns the same two reused phases; Prepare refuses both consumer
         // probes together, so exactly one of them can ever own that ordering in a run.
         foreach (var frame in CheckEchoTravelConsumer()) yield return frame;
+        // The archived-journal comparison owns the same two reused phases; Prepare refuses it together
+        // with either consumer travel probe, so at most one of the three owns a run's ordering.
+        foreach (var frame in CheckTravelJournalComparison()) yield return frame;
         foreach (var frame in CheckAnimaMissions()) yield return frame;
         foreach (var frame in CheckStockpilePilot()) yield return frame;
         foreach (var frame in CheckTravelStation()) yield return frame;

@@ -346,3 +346,141 @@ binder that hands it to the API observer, and that no always-JIT plugin member n
 This is controlled actual-consumer evidence for this probe's own cases only. It is not owner
 acceptance, not Echo's ETA-sync qualification, not the archived TravelJournal comparison and not any
 managed-content milestone: `RuntimeQualified=false` and #12 stays open.
+
+## Archived TravelJournal comparison (separate, optional)
+
+`-TravelJournalComparison` is an ADDITIONAL Prepare selection that requires the archived plugin
+(`-TravelJournalBin` with a mandatory `-TravelJournalRevision` and `-TravelJournalSha256`),
+`-TravelStation`, `-TravelCrossSystem`, `-TravelWormholeFixture` and Full. It is refused together
+with `-AnimaTravelProbe` or `-EchoTravelProbe`: all three own the same two reused travel phases, so
+at most one owns a run. `-TravelJournalBin` without `-TravelJournalComparison` is refused as well,
+and so are the pins without the binary: the archive patches the game, so it is never installed as a
+passive ridealong. The comparison sandbox also carries the ARCHIVE ALONE: `-AnimaBin` or `-EchoBin`
+beside it is refused by Prepare - before anything is copied - and again by provenance validation at
+Run, so the two sides can no longer disagree. That rule is about consumer plugins that observe the
+same native travel and save surfaces; the unrelated Stockpile and MissionJournal selections are not
+consumer plugins for this rule and neither side refuses them.
+
+**The archive is never touched.** It is not edited, rebuilt, reactivated, migrated or bridged, and
+nothing here calls its `IVgTravelJournal` surface, reflects into its store or invokes its patches.
+Exactly ONE binary is accepted, and the pin is a COMMITTED CONSTANT in
+`tools/qualification-inputs.ps1` (`$TravelJournalPinnedSha256`, `$TravelJournalPinnedRevision`), not
+a caller argument: `-TravelJournalSha256`/`-TravelJournalRevision` must equal those constants AND
+the bytes on disk, at Prepare and again during provenance validation, so a caller can repeat the pin
+but can never widen it. Version metadata alone is never sufficient - a rebuild keeps the same
+declared identity - but it is still required: assembly identity `VGTravelJournal 0.1.0.0` with
+BepInEx plugin version `0.2.0` (deliberately different) and embedded `AssemblyInformationalVersion`
+`0.1.0+<revision>`. Only the DLL is copied - never the PDB, never `deps.json` - and validation
+refuses a deployed PDB.
+
+`make check-archive TRAVELJOURNAL_ASSEMBLY=<dll> TRAVELJOURNAL_PDB=<pdb> [TRAVELJOURNAL_REPO=<dir>]`
+re-attests the same binary read-only outside a run. It checks that the sibling PDB belongs to it
+(CodeView id and stamp) and carries a SHA-256 hash for all 24 compiled documents, and it then
+COMPARES those hashes against the archived revision's own committed sources: each of the 22
+committed documents is read with `git show <pinned-revision>:<path>` (arguments passed as a list,
+never through a shell) and must hash equal, exactly two generated files under the project's `obj/`
+tree may have no committed source, and the compared set must equal every committed `.cs` file of the
+project. The repository is `TRAVELJOURNAL_REPO` when given, otherwise the checkout the pinned binary
+lives in; the working tree is never read, so uncommitted local drift can neither satisfy nor break
+the comparison. The archive is only read - it is never built. That attests the compiled INPUTS of
+that build, and no document path, private game code or binary content is published.
+
+Sandbox configuration is `[Journal] Verbose = true`, `MaxEvents = 0`. Zero is the archived plugin's
+own documented unbounded value, so its FIFO eviction can never silently drop a compared row. Both
+settings are pinned by provenance validation through a parsed check of the file's effective
+entries - not its bytes, because BepInEx rewrites the file at `Bind` - and a duplicated or
+conflicting entry is refused rather than resolved silently.
+
+**Isolation.** A read-only audit of the whole archived source found its entire persistence surface
+to be the live static `SaveGame.SavesPath`, the `SaveGameFile` vanilla is loading, and the sidecar,
+`.tmp` and quarantine siblings beside them - no `persistentDataPath`, no `PlayerPrefs`, no
+environment or registry root, no network, no process launch. The existing guard redirect
+(`SavesPath`/`SavesDir`/`_saves` plus the `Store`/`Recall` prefixes) therefore contains it with no
+patching of the archive. The phase additionally snapshots the sandbox save directory itself: every
+file the journal created must match its own documented patterns (`*.save.vgtraveljournal.json`,
+`*.vgtraveljournal.corrupt.*.json`, `*.vgtraveljournal.json.tmp`) and lie under the audited roots,
+which the receipt lists explicitly. That in-run case is bounded to its own phase: the archived
+plugin still flushes when the game quits, so the LAUNCHER repeats the audit after the owned process
+exited, over the explicitly named sandbox roots (`Saves`, `game`, `game\BepInEx`,
+`game\BepInEx\plugins`, `game\BepInEx\config` and the sandbox root itself), records every
+matching file as created, rewritten or unchanged against a pre-launch snapshot in
+`travel-journal-postquit-audit.txt`, and refuses any journal file outside the sandbox saves or with
+an unexpected name. The prepared plugin BINARY must hash exactly unchanged. Its configuration must
+not: BepInEx 5.4 rewrites a plugin's config file on the first `Bind` (`SaveOnConfigSet`, which the
+archive never disables), adding its own header, `##` descriptions and spacing. The audit therefore
+re-validates the configuration by its PARSED semantics - `[Journal] Verbose = true`, `MaxEvents = 0`,
+with comments and unknown keys benign but a missing, duplicated or changed effective value refused -
+records the old and new hashes plus `semantics=pass`, and claims no byte equality for it. Prepare-time
+and Run-time validation share that one parsed validator. No claim is made about locations that were not scanned.
+
+It runs as phase `travel-journal-comparison-v1` with its own receipts and nine mandatory cases:
+`legacy-binding`, `in-system-arrival-compatible`, `chained-arrival-compatible`,
+`jumpgate-prefix-lead`, `wormhole-transit-gap`, `station-interior-vs-physical`,
+`legacy-blind-concepts`, `journal-io-containment` and `api-dwell-anchored`. `Run` refuses to launch
+unless `-TimeoutSeconds` covers base 1800 + travel/station 1500 + cross-system 2400 + this phase's
+own **900**; its derived worst case is 350 seconds (3 placement waits, 10 quiescence samples and the
+one bounded in-flight departure wait), because it drives no route and performs no load of its own.
+Its eight real saves are declared in the same call-site plan, counted as actual invocations rather
+than lexical call sites (in-system ready and completion, two cancel boundaries, one baseline per
+cross-system case, the in-flight save and the wormhole completion), and carry no budget term: a save
+is synchronous and adds no wait.
+
+How the comparison works: the phase observes the PUBLIC travel and station surfaces, lets the
+qualified phases drive, and takes a real vanilla save through the harness's own helper at each
+compared boundary. The archived plugin's own postfix writes its sidecar; the phase then reads that
+FILE with its own strict reader, bounded to 8 MB and 20000 events - a document beyond either bound
+is REFUSED, never partially read - and compares by append offset relative to the baseline captured
+for that window, so no global counter monotonicity is assumed across the archive's load-time reset.
+
+Each window's baseline is a REAL save taken after placement and quiescence, never an assumed zero: a
+fresh load makes the archive append its own station-dock and POI-arrival rows before any case drives
+anything, and those rows belong to the baseline, not to the window. The baseline keeps the content
+fingerprint of every row it captured, so a store that was reset and refilled - even with the same
+number of rows - is refused instead of reading as an empty append window. Capturing a baseline is a
+pure operation that returns one: only the two Ready hooks own the window's baseline, so a boundary
+sample taken INSIDE a window (the cancel case) keeps its own and the enclosing window still
+subtracts exactly what it captured.
+
+- **Compatible pairs** (`in-system-arrival-compatible`, `chained-arrival-compatible`): the public
+  in-system arrivals and the journal's own `PoiArrival` rows must agree on native POI guid, count
+  and order. Identity only - names are NEVER compared, because the archived plugin reads the game's
+  lazy name getter (`MapElement.name` -> `GenerateDefaultName`) and is therefore **not a passive
+  observer**: installing it can generate names and perturb seeded world randomness relative to a run
+  without it. The receipt acknowledges that explicitly, and no world-RNG equality is claimed.
+- **`jumpgate-prefix-lead`** (driven): the phase waits - bounded, and declared in the call-site plan
+  - for the leg's own public `Departed` while no `Arrived` exists and the native jump iterator is
+  still running, then takes a real save. Everything the rule uses is captured AT that save on the
+  main thread and never recomputed afterwards: the leg's `Requested`, `Departed` and `Arrived`
+  booleans, whether the jump was still running, and `Time.frameCount`. "Lead" means OBSERVED EVENT
+  ORDERING, not clock advance: the legacy row was already in a file written in a frame strictly
+  before the frame in which the public arrival callback was delivered. The native clock can stand
+  still across a jump, so an equal legacy and arrival game time is accepted while a legacy time
+  after the arrival is not. If that in-flight interval never occurs the case fails honestly; no
+  native callback is invoked and the archive's store is never bridged.
+- **`wormhole-transit-gap`** (driven): the qualified wormhole hop produces a public arrival while the
+  journal, which hooks `JumpToSystem(JumpGate)` only, records no transit for it.
+- **`station-interior-vs-physical`** (driven): the journal's dock row is the interior scene toggle,
+  so it either precedes the public `DockedPhysical` game time or does not exist at all; both
+  outcomes are recorded from the observed evidence and a legacy row AFTER the physical dock fails.
+- **`legacy-blind-concepts`**: the archive has no session, request or cancellation concept. The
+  qualified in-system cancel case calls an inert boundary hook immediately before and immediately
+  after itself; each boundary takes a real save and re-reads the journal file, so the window is the
+  cancel's own and not an inference over the whole phase. The exact appended count across those two
+  boundaries must be zero and the public cancellation fact is mandatory. It records the ABSENCE of a
+  legacy concept, never a legacy truth, and it adds no load.
+- **`api-dwell-anchored`**: every reported dwell must equal the game-time difference to its own
+  same-session anchor EXACTLY, with no epsilon. That is a source fact, not an approximation: the
+  adapter reads the clock separately for the tracker call and for the drain that stamps the fact
+  (four reads per pair), but the binding is `GamePlayer.elapsedTime`, which the inspected build
+  advances once per frame in `GamePlayer.Update` and otherwise writes only on load, while all reads
+  of one pair happen synchronously inside the same patched frame - so the clock is constant across
+  the pair and the subtraction is exact. A departure whose anchor is LATER than itself (a clock
+  rollback) must report no dwell at all - unknown, not missing - and a reported dwell there fails.
+  At least one strictly positive anchored dwell is required, and the receipt publishes the anchor,
+  departure and dwell at full round-trip precision so a reader can redo the subtraction.
+
+The API's own facts are the ground truth throughout; the legacy log is the compared artefact.
+
+This phase does NOT close #12: a positively driven `RecoveredPlacement` case and the post-gate chain
+continuation stay open, the tutorial exit stays source-attested and host-tested only, and
+`RuntimeQualified=false`.

@@ -130,6 +130,7 @@ public sealed partial class Plugin
             // unless the consumer probe owns a live subscription.
             foreach (var frame in _p.AnimaTravelCrossCaseReady(caseId, _session)) yield return frame;
             foreach (var frame in _p.EchoTravelCrossCaseReady(caseId, _session)) yield return frame;
+            foreach (var frame in _p.TravelJournalCrossCaseReady(caseId, _session)) yield return frame;
             object? source = null, destination = null;
             string reason = "";
             if (mode == TravelMode.JumpGate) source = SelectJumpGate(out destination, out reason);
@@ -147,6 +148,7 @@ public sealed partial class Plugin
             // case's fresh fixture load replaces the consumer's registry.
             foreach (var frame in _p.AnimaTravelCrossCaseCompleted(caseId)) yield return frame;
             foreach (var frame in _p.EchoTravelCrossCaseCompleted(caseId)) yield return frame;
+            foreach (var frame in _p.TravelJournalCrossCaseCompleted(caseId)) yield return frame;
         }
 
         // The whole case: the window opens BEFORE anything is driven, so no earlier fact can
@@ -221,6 +223,11 @@ public sealed partial class Plugin
             // recorded failure, never a silent skip.
             foreach (var frame in AwaitOrFail(() => Slice(crossOffset).Any(fact => fact.Mode == mode),
                 TravelCrossSystemReceipt.HandoffSeconds, "native " + mode + " handoff into the jump routine")) yield return frame;
+            // Optional archived-journal observation boundary: the native jump routine is running and
+            // the public arrival has not happened yet. It drives nothing native and is inert unless
+            // the comparison phase owns a live subscription.
+            foreach (var frame in _p.TravelJournalCrossInFlight(mode == TravelMode.JumpGate
+                ? TravelCrossSystemReceipt.JumpGateCase : TravelCrossSystemReceipt.WormholeCase)) yield return frame;
             foreach (var frame in AwaitOrFail(() => Slice(crossOffset).Any(fact => fact.Mode == mode && fact.Kind == TravelTransitionKind.Arrived),
                 TravelCrossSystemReceipt.JumpArrivalSeconds, "native " + mode + " arrival in " + destinationSystemId)) yield return frame;
             foreach (var frame in AwaitOrFail(() => Slice(crossOffset).Any(fact => fact.Kind == TravelTransitionKind.RouteCompleted),

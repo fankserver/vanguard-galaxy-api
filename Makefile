@@ -5,7 +5,7 @@ RELEASE_VERSION := $(shell python3 -c 'import xml.etree.ElementTree as E; print(
 MANAGED = $(GAME_DIR)/VanguardGalaxy_Data/Managed
 CORE = $(GAME_DIR)/BepInEx/core
 
-.PHONY: link-libs build test check-bindings check-consumer package check-package check-local provenance clean release-archive
+.PHONY: link-libs build test check-bindings check-consumer check-archive package check-package check-local provenance clean release-archive
 link-libs:
 	@mkdir -p VGModAPI/lib
 	@set -eu; for name in BepInEx 0Harmony; do test -f "$(CORE)/$$name.dll"; ln -sfn "$(CORE)/$$name.dll" "VGModAPI/lib/$$name.dll"; done
@@ -14,7 +14,7 @@ build: link-libs
 	$(DOTNET) build VGModAPI.sln -c $(CONFIGURATION)
 test:
 	python3 -m unittest discover -s tools -p 'test_release_archive.py'
-	$(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter 'Category!=InstalledGame&Category!=InstalledConsumer&Category!=Package'
+	$(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter 'Category!=InstalledGame&Category!=InstalledConsumer&Category!=InstalledArchive&Category!=Package'
 check-bindings:
 	VG_GAME_ASSEMBLY="$(MANAGED)/Assembly-CSharp.dll" $(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter 'Category=InstalledGame'
 # Metadata evidence for the members the actual-consumer qualification probe reflects. Needs the
@@ -41,6 +41,17 @@ endif
 else
 CONSUMER_FILTER ?= Category=InstalledConsumer&FullyQualifiedName~InstalledEchoTravelConsumerTests
 endif
+# READ-ONLY attestation of the pinned archived TravelJournal prebuilt. It never builds, edits,
+# reactivates, migrates or bridges the archive: it reads the accepted binary (and its sibling PDB,
+# which is never deployed) and confirms the launcher's pins describe it.
+TRAVELJOURNAL_PDB ?= $(patsubst %.dll,%.pdb,$(TRAVELJOURNAL_ASSEMBLY))
+check-archive:
+	@test -n "$(TRAVELJOURNAL_ASSEMBLY)" || (echo 'Set TRAVELJOURNAL_ASSEMBLY=/path/to/VGTravelJournal.dll (and optionally TRAVELJOURNAL_PDB)'; exit 1)
+	VG_TRAVELJOURNAL_ASSEMBLY="$(TRAVELJOURNAL_ASSEMBLY)" VG_TRAVELJOURNAL_PDB="$(TRAVELJOURNAL_PDB)" \
+	VG_TRAVELJOURNAL_REPO="$(TRAVELJOURNAL_REPO)" \
+	VG_GAME_ASSEMBLY="$(MANAGED)/Assembly-CSharp.dll" \
+	VG_CONSUMER_DEPENDENCY_DIRS="$(CORE):$(MANAGED)" \
+	$(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter 'Category=InstalledArchive' -- RunConfiguration.TreatNoTestsAsError=true
 package: build
 	@rm -rf artifacts/VGModAPI
 	@mkdir -p artifacts/VGModAPI

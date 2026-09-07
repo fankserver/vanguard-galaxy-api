@@ -199,6 +199,10 @@ public sealed partial class Plugin
             // where an unsolicited native route (qa-82's emergency-jump return) appeared.
             int offset = Travel.Count;
             int stationOffset = Stations.Count;
+            // Optional archived-journal boundary sample. It drives nothing native and is inert
+            // unless the comparison phase owns a live subscription. It runs INSIDE the quiet window
+            // so its own quiesce cannot hide an unsolicited native route from the check below.
+            foreach (var frame in _p.TravelJournalCancelBoundary("before")) yield return frame;
             foreach (var frame in ReadyToTravel(target)) yield return frame;
             if (!_canTravel)
             {
@@ -224,6 +228,7 @@ public sealed partial class Plugin
                 TravelStationReceipt.Evidence(slice, null),
                 "cancelledAt=" + TravelStationReceipt.Location(slice[1].ActualLocation)
                 + "; cancelledAfterSeconds=" + (slice[1].GameSeconds - slice[0].GameSeconds).ToString("F3"));
+            foreach (var frame in _p.TravelJournalCancelBoundary("after")) yield return frame;
         }
 
         private IEnumerable<object?> CaseChainedRoute()

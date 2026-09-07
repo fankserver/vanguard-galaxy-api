@@ -15,6 +15,10 @@ param(
     [string]$EchoRevision,
     [switch]$EchoTravelProbe,
     [switch]$EchoAbsentProbe,
+    [string]$TravelJournalBin,
+    [string]$TravelJournalRevision,
+    [string]$TravelJournalSha256,
+    [switch]$TravelJournalComparison,
     [switch]$AssemblyOverlay,
     [switch]$VanillaLoadControl,
     [switch]$PersistenceProbe,
@@ -72,6 +76,20 @@ if ($Action -eq 'Prepare') {
     # The two consumer travel probes own the SAME reused native travel phases, so exactly one may
     # own a run; this conflict is checked before any per-probe prerequisite.
     if ($EchoTravelProbe -and $AnimaTravelProbe) { throw 'The Anima and Echo consumer travel probes both own the reused travel phases; select one per run.' }
+    # The archived-journal comparison owns the SAME two reused travel phases, so it is refused
+    # together with either consumer travel probe.
+    if ($TravelJournalComparison -and ($AnimaTravelProbe -or $EchoTravelProbe)) { throw 'The archived-journal comparison and a consumer travel probe both own the reused travel phases; select one per run.' }
+    if ($TravelJournalBin -and ($TravelJournalRevision -notmatch '^[0-9a-f]{40}$' -or $TravelJournalSha256 -notmatch '^[0-9a-fA-F]{64}$')) { throw 'The archived TravelJournal requires its exact source revision and binary SHA-256; the archive is never rebuilt, so exactly one binary is accepted.' }
+    if (($TravelJournalRevision -or $TravelJournalSha256) -and !$TravelJournalBin) { throw 'The archived TravelJournal pins were supplied without the archived binary.' }
+    # The archived plugin is NEVER installed as a passive ridealong: it patches the game, so it is
+    # only ever prepared for the run that compares it.
+    if ($TravelJournalBin -and !$TravelJournalComparison) { throw 'The archived TravelJournal binary is only prepared for the archived-journal comparison; it is never installed as a passive ridealong.' }
+    # ARCHIVE COMPARISON ONLY: the archived plugin patches the same native travel/save methods the
+    # consumers observe, so no consumer plugin is prepared beside it - not even for a non-travel
+    # selection. Refused here, before any file is copied, and again by provenance validation at Run.
+    if (($TravelJournalBin -or $TravelJournalComparison) -and ($AnimaBin -or $EchoBin)) { throw 'The archived-journal comparison sandbox carries the archive alone; prepare it without a consumer plugin (-AnimaBin/-EchoBin).' }
+    if ($TravelJournalComparison -and (!$TravelJournalBin -or !$TravelStation -or !$TravelCrossSystem -or !$TravelWormholeFixture)) { throw 'Archived-journal comparison requires the archived binary, both native travel phases and the wormhole fixture selection.' }
+    if ($TravelJournalComparison -and $Scenario -ne 'Full') { throw 'Archived-journal comparison requires Full.' }
     if ($AnimaBin -and (!$MissionIdentityProbe -or !$MissionJournalBin -or $AnimaRevision -notmatch '^[0-9a-f]{40}$')) { throw 'Anima requires identity probes, journal-provided JSON runtime and exact source revision.' }
     if ($AnimaBin) { $null = [Reflection.AssemblyName]::GetAssemblyName((Join-Path $AnimaBin 'VGAnima.dll')) }
     # The actual-consumer travel probe compares the installed consumer's own records against
@@ -180,6 +198,27 @@ if ($Action -eq 'Prepare') {
         New-Item -ItemType Directory -Path (Join-Path $bep 'config') -Force | Out-Null
         [IO.File]::WriteAllText((Join-Path $bep 'config\vgstockpile.cfg'), "[Transfers]`r`nEnabled = true`r`n")
     }
+    $travelJournalVersion = ''
+    if ($TravelJournalBin) {
+        # The archived plugin is installed UNCHANGED: only its prebuilt DLL is copied, never its PDB
+        # or deps.json, and only when its bytes are exactly the pinned, source-attested build.
+        $candidate = Join-Path $TravelJournalBin 'VGTravelJournal.dll'
+        $actualHash = (Get-FileHash -LiteralPath $candidate -Algorithm SHA256).Hash
+        Assert-TravelJournalPins $TravelJournalRevision $TravelJournalSha256 $actualHash
+        Add-Type -Path (Join-Path $bep 'core\Mono.Cecil.dll')
+        $reader = Read-ConsumerAssembly $candidate (Get-ConsumerMetadataReferenceDirs $TravelJournalBin $root $GameDir)
+        try {
+            Assert-TravelJournalAssemblyMetadata $reader.Assembly $TravelJournalRevision
+            $travelJournalVersion = $reader.Assembly.Name.Version.ToString()
+        } finally { Close-ConsumerAssembly $reader }
+        Copy-Item -LiteralPath $candidate -Destination $plugins
+        New-Item -ItemType Directory -Path (Join-Path $bep 'config') -Force | Out-Null
+        # Sandbox-only journal configuration. MaxEvents = 0 is the archived plugin's own documented
+        # unbounded value, so its FIFO eviction can never silently drop a compared row.
+        [IO.File]::WriteAllText((Join-Path $bep 'config\vgtraveljournal.cfg'), "[Journal]`r`nVerbose = true`r`nMaxEvents = 0`r`n")
+        [IO.File]::WriteAllText((Join-Path $root 'travel-journal-revision.txt'), $TravelJournalRevision)
+        [IO.File]::WriteAllText((Join-Path $root 'travel-journal.pinned-sha256.txt'), $actualHash)
+    }
     $echoVersion = ''
     if ($EchoBin) {
         $candidate = Join-Path $EchoBin 'VGEcho.dll'
@@ -260,7 +299,8 @@ if ($Action -eq 'Prepare') {
     if ($AnimaTravelProbe) { [IO.File]::WriteAllText((Join-Path $root 'anima-travel.enabled'), 'anima-travel-v1') }
     if ($EchoTravelProbe) { [IO.File]::WriteAllText((Join-Path $root 'echo-travel.enabled'), 'echo-travel-v1') }
     if ($EchoAbsentProbe) { [IO.File]::WriteAllText((Join-Path $root 'echo-absent.enabled'), 'echo-absent-v1') }
-    @{ echo=[bool]$EchoBin; echoRevision=$EchoRevision; echoVersion=$echoVersion; echoTravelProbe=[bool]$EchoTravelProbe; echoTravelBudgetSeconds=$(if ($EchoTravelProbe) { $EchoTravelBudgetSeconds } else { 0 }); echoAbsentProbe=[bool]$EchoAbsentProbe; anima=[bool]$AnimaBin; animaRevision=$AnimaRevision; animaVersion=$animaVersion; animaTravelProbe=[bool]$AnimaTravelProbe; animaTravelBudgetSeconds=$(if ($AnimaTravelProbe) { $AnimaTravelBudgetSeconds } else { 0 }); journalMissionEventsProbe=[bool]$JournalMissionEventsProbe; missionIdentityProbe=[bool]$MissionIdentityProbe; missionTransitionsProbe=[bool]$MissionTransitionsProbe; contentReferenceProbe=[bool]$ContentReferenceProbe; stockpileCoordinated=[bool]$StockpileCoordinated; journalCoordinated=[bool]$JournalCoordinated; persistenceProbe=[bool]$PersistenceProbe; vanillaLoadControl=[bool]$VanillaLoadControl; assemblyOverlay=$overlay; stockpile=[bool]$StockpileBin; missionJournal=[bool]$MissionJournalBin; travelStation=[bool]$TravelStation; travelStationBudgetSeconds=$(if ($TravelStation) { $TravelStationBudgetSeconds } else { 0 }); travelCrossSystem=[bool]$TravelCrossSystem; travelCrossSystemBudgetSeconds=$(if ($TravelCrossSystem) { $TravelCrossSystemBudgetSeconds } else { 0 }); travelWormholeFixture=[bool]$TravelWormholeFixture; travelResilience=[bool]$TravelResilience; travelResilienceBudgetSeconds=$(if ($TravelResilience) { $TravelResilienceBudgetSeconds } else { 0 }); scenario=$Scenario; revision=$BuildRevision; preparedUtc=[DateTime]::UtcNow.ToString('o'); plugins=$hashes } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'build-provenance.json')
+    if ($TravelJournalComparison) { [IO.File]::WriteAllText((Join-Path $root 'travel-journal.enabled'), 'travel-journal-v1') }
+    @{ travelJournal=[bool]$TravelJournalBin; travelJournalRevision=$TravelJournalRevision; travelJournalSha256=$TravelJournalSha256; travelJournalVersion=$travelJournalVersion; travelJournalComparison=[bool]$TravelJournalComparison; travelJournalBudgetSeconds=$(if ($TravelJournalComparison) { $TravelJournalBudgetSeconds } else { 0 }); echo=[bool]$EchoBin; echoRevision=$EchoRevision; echoVersion=$echoVersion; echoTravelProbe=[bool]$EchoTravelProbe; echoTravelBudgetSeconds=$(if ($EchoTravelProbe) { $EchoTravelBudgetSeconds } else { 0 }); echoAbsentProbe=[bool]$EchoAbsentProbe; anima=[bool]$AnimaBin; animaRevision=$AnimaRevision; animaVersion=$animaVersion; animaTravelProbe=[bool]$AnimaTravelProbe; animaTravelBudgetSeconds=$(if ($AnimaTravelProbe) { $AnimaTravelBudgetSeconds } else { 0 }); journalMissionEventsProbe=[bool]$JournalMissionEventsProbe; missionIdentityProbe=[bool]$MissionIdentityProbe; missionTransitionsProbe=[bool]$MissionTransitionsProbe; contentReferenceProbe=[bool]$ContentReferenceProbe; stockpileCoordinated=[bool]$StockpileCoordinated; journalCoordinated=[bool]$JournalCoordinated; persistenceProbe=[bool]$PersistenceProbe; vanillaLoadControl=[bool]$VanillaLoadControl; assemblyOverlay=$overlay; stockpile=[bool]$StockpileBin; missionJournal=[bool]$MissionJournalBin; travelStation=[bool]$TravelStation; travelStationBudgetSeconds=$(if ($TravelStation) { $TravelStationBudgetSeconds } else { 0 }); travelCrossSystem=[bool]$TravelCrossSystem; travelCrossSystemBudgetSeconds=$(if ($TravelCrossSystem) { $TravelCrossSystemBudgetSeconds } else { 0 }); travelWormholeFixture=[bool]$TravelWormholeFixture; travelResilience=[bool]$TravelResilience; travelResilienceBudgetSeconds=$(if ($TravelResilience) { $TravelResilienceBudgetSeconds } else { 0 }); scenario=$Scenario; revision=$BuildRevision; preparedUtc=[DateTime]::UtcNow.ToString('o'); plugins=$hashes } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'build-provenance.json')
     # Prevent Steam's restart path; the runner disables SteamManager before arming checks.
     [IO.File]::WriteAllText((Join-Path $game 'steam_appid.txt'), '3471800')
     $saves = Join-Path $root 'Saves'
@@ -320,11 +360,19 @@ if ($provenance.PSObject.Properties['travelStation'] -and $provenance.travelStat
     if ($provenance.PSObject.Properties['travelResilience'] -and $provenance.travelResilience) { $required += $TravelResilienceBudgetSeconds }
     if ($provenance.PSObject.Properties['animaTravelProbe'] -and $provenance.animaTravelProbe) { $required += $AnimaTravelBudgetSeconds }
     if ($provenance.PSObject.Properties['echoTravelProbe'] -and $provenance.echoTravelProbe) { $required += $EchoTravelBudgetSeconds }
+    if ($provenance.PSObject.Properties['travelJournalComparison'] -and $provenance.travelJournalComparison) { $required += $TravelJournalBudgetSeconds }
     if ($TimeoutSeconds -lt $required) { throw "Travel/station runs need -TimeoutSeconds at least $required (base $QualificationBaseTimeoutSeconds + phases); got $TimeoutSeconds." }
 }
 $journalBefore = @{}
 if ($provenance.PSObject.Properties['journalCoordinated'] -and $provenance.journalCoordinated) {
     foreach ($file in Get-ChildItem -LiteralPath (Join-Path $root 'Saves') -Filter '*.vgmissionjournal.json' -File) { $journalBefore[$file.Name] = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash }
+}
+$travelJournalRoots = @()
+$travelJournalBefore = @{}
+if ($provenance.PSObject.Properties['travelJournalComparison'] -and $provenance.travelJournalComparison) {
+    # Sampled BEFORE the launch so the post-exit audit can name exactly what this run created.
+    $travelJournalRoots = Get-TravelJournalAuditRoots $root
+    $travelJournalBefore = Get-TravelJournalFiles $travelJournalRoots
 }
 $transferBefore = @{}
 if ($provenance.PSObject.Properties['stockpileCoordinated'] -and $provenance.stockpileCoordinated) {
@@ -393,6 +441,11 @@ if ($null -ne $negativeBefore) {
         if ($negativeAfter[$key] -ne $negativeBefore[$key]) { throw 'Negative/control run changed a sandbox fixture or sidecar.' }
     }
     [IO.File]::WriteAllText((Join-Path $root 'negative-consumer-files-unchanged.txt'), 'PASS')
+}
+if ($provenance.PSObject.Properties['travelJournalComparison'] -and $provenance.travelJournalComparison) {
+    # The in-run containment case can only speak as of its own phase boundary; the archived plugin
+    # still writes when the game quits, so the final location evidence is taken here, after exit.
+    Assert-TravelJournalContainment $root $travelJournalRoots $travelJournalBefore
 }
 $null = Assert-QualificationInputs $root
 if (!(Test-Path -LiteralPath $result)) { throw 'Game exited without a qualification result; inspect sandbox logs.' }
