@@ -11,6 +11,7 @@ namespace VGModAPI.Qualification;
 
 public sealed partial class Plugin
 {
+    private CancellationTokenSource? _updateProbeStop;
     private IEnumerator RunModInformationProbe()
     {
         Require(File.ReadAllText(Path.Combine(_root!, "mod-information-probe.enabled")) == "mod-information-probe-v1", "Invalid information probe marker.");
@@ -24,15 +25,24 @@ public sealed partial class Plugin
             Require(Thread.CurrentThread.ManagedThreadId == thread, "Qualification continuation left the Unity thread.");
             evidence.AppendLine(step + "=PASS");
         }
-        var frames = Time.frameCount;
-        var controlled = ModUpdateChecks.ControlledAsync(Path.Combine(_root!, "update-check-cache"), Record);
-        while (!controlled.IsCompleted) yield return null;
-        controlled.GetAwaiter().GetResult();
-        var wire = ModUpdateWireChecks.RunAsync(revisions[0].Groups[1].Value, Record);
-        while (!wire.IsCompleted) yield return null;
-        wire.GetAwaiter().GetResult();
-        Require(Time.frameCount > frames + 2 && GameObject.Find("VGModAPI Mods") != null, "Network checks blocked or destroyed the menu.");
-        Record("unity-main-thread-menu-responsive");
+        using var lifetime = new CancellationTokenSource();
+        _updateProbeStop = lifetime;
+        var token = lifetime.Token;
+        void LiveRecord(string step) { token.ThrowIfCancellationRequested(); Record(step); }
+        try
+        {
+            var controlled = ModUpdateChecks.ControlledAsync(Path.Combine(_root!, "update-check-cache"), LiveRecord, token);
+            while (!controlled.IsCompleted) yield return null;
+            controlled.GetAwaiter().GetResult();
+            var heartbeat = new ProbeHeartbeat(Time.frameCount, Time.realtimeSinceStartup);
+            var wire = ModUpdateWireChecks.RunAsync(revisions[0].Groups[1].Value, LiveRecord, token);
+            while (!wire.IsCompleted) { heartbeat.Tick(Time.realtimeSinceStartup); yield return null; }
+            wire.GetAwaiter().GetResult();
+            heartbeat.Complete(Time.frameCount, Time.realtimeSinceStartup);
+            Require(GameObject.Find("VGModAPI Mods") != null, "Network checks destroyed the menu.");
+            LiveRecord("unity-main-thread-menu-responsive");
+        }
+        finally { lifetime.Cancel(); _updateProbeStop = null; }
         var menu = RunModMenuProbe();
         try { while (menu.MoveNext()) yield return menu.Current; }
         finally { (menu as IDisposable)?.Dispose(); }

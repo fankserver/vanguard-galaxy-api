@@ -21,19 +21,21 @@ internal static class ModUpdateChecks
         new ModInformation(Id, "Controlled qualification", Version.Parse(version), Array.Empty<ModDependencyInformation>(),
             new ModAuthorMetadata(null, null, null, source, channel), ModMetadataStatus.Available);
     private static void Check(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
-    internal static async Task Until(Func<bool> condition)
+    internal static async Task Until(Func<bool> condition, CancellationToken cancellation = default)
     {
         var until = DateTimeOffset.UtcNow.AddSeconds(12);
-        while (!condition())
+        while (true)
         {
+            cancellation.ThrowIfCancellationRequested();
+            if (condition()) break;
             if (DateTimeOffset.UtcNow > until) throw new TimeoutException("Update qualification condition timed out.");
-            await Task.Delay(10);
+            await Task.Delay(10, cancellation);
         }
     }
-    private static Task State(ModUpdateService service, ModInformation mod, ModUpdateState state) =>
-        Until(() => { service.Pump(); return service.Status(mod).State == state; });
-    private static async Task Quiet(ModUpdateService service)
-    { for (var i = 0; i < 20; i++) { service.Pump(); await Task.Delay(10); } }
+    private static Task State(ModUpdateService service, ModInformation mod, ModUpdateState state, CancellationToken cancellation) =>
+        Until(() => { service.Pump(); return service.Status(mod).State == state; }, cancellation);
+    private static async Task Quiet(ModUpdateService service, CancellationToken cancellation)
+    { for (var i = 0; i < 20; i++) { cancellation.ThrowIfCancellationRequested(); service.Pump(); await Task.Delay(10, cancellation); } }
     private static async Task Reject<T>(Func<Task> action) where T : Exception
     {
         try { await action(); }
@@ -52,8 +54,13 @@ internal static class ModUpdateChecks
     }
     private static ModFeedResponse Response(byte[] bytes) => new ModFeedResponse(200, new MemoryStream(bytes));
 
-    internal static async Task ControlledAsync(string root, Action<string> record)
+    internal static async Task ControlledAsync(string root, Action<string> record, CancellationToken cancellation = default)
     {
+        var sink = record;
+        record = step => { cancellation.ThrowIfCancellationRequested(); sink(step); };
+        Task State(ModUpdateService service, ModInformation item, ModUpdateState state) => ModUpdateChecks.State(service, item, state, cancellation);
+        Task Quiet(ModUpdateService service) => ModUpdateChecks.Quiet(service, cancellation);
+        Task Until(Func<bool> condition) => ModUpdateChecks.Until(condition, cancellation);
         var now = DateTimeOffset.UtcNow;
         var mod = Mod();
         var cache = new ModUpdateCache(Path.Combine(root, "controlled"));

@@ -527,5 +527,5 @@ public sealed partial class Plugin : BaseUnityPlugin
         var file = (FileInfo)AccessTools.Field(__instance.GetType(), "File").GetValue(__instance)!;
         Require(_saveRoot != null && SamePath(file.DirectoryName!, _saveRoot), "Refusing to load a non-sandbox save.");
     }
-    private void OnDestroy() => _subscription?.Dispose();
+    private void OnDestroy() { _updateProbeStop?.Cancel(); _subscription?.Dispose(); }
 }
