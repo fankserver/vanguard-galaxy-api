@@ -21,6 +21,8 @@ namespace VGModAPI.Qualification;
 public sealed partial class Plugin
 {
     private bool TravelCrossSystemSelected => File.Exists(Path.Combine(_root!, "travel-cross-system.enabled"));
+    // The phase runs exactly once; the actual-consumer probe owns its ordering when selected.
+    private bool _travelCrossSystemPending = true;
     // Explicit, separately selected opt-in: without this marker the phase never creates native
     // content, so a fixture world without a wormhole keeps reporting an honest mandatory NOT-RUN.
     internal bool TravelWormholeFixtureSelected => File.Exists(Path.Combine(_root!, "travel-wormhole-fixture.enabled"));
@@ -59,7 +61,8 @@ public sealed partial class Plugin
 
     private IEnumerable<object?> CheckTravelCrossSystem()
     {
-        if (!TravelCrossSystemSelected) yield break;
+        if (!TravelCrossSystemSelected || !_travelCrossSystemPending) yield break;
+        _travelCrossSystemPending = false;
         var run = RunTravelCrossSystem().GetEnumerator();
         string? fault = null;
         while (true)

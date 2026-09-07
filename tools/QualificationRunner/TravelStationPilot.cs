@@ -24,6 +24,10 @@ namespace VGModAPI.Qualification;
 public sealed partial class Plugin
 {
     private bool TravelStationSelected => File.Exists(Path.Combine(_root!, "travel-station.enabled"));
+    // The phase runs exactly once. The actual-consumer probe owns its ordering when selected (it
+    // has to observe these facts before the mission pilot disposes the consumer's observer), so the
+    // later call site becomes a no-op instead of duplicating the phase and its receipt rows.
+    private bool _travelStationPending = true;
     internal readonly List<TravelStationReceipt.Row> _tsRows = new();
     internal readonly List<string> _tsEvents = new();
     internal List<TravelTransition>? PendingTravel;
@@ -66,7 +70,8 @@ public sealed partial class Plugin
 
     private IEnumerable<object?> CheckTravelStation()
     {
-        if (!TravelStationSelected) yield break;
+        if (!TravelStationSelected || !_travelStationPending) yield break;
+        _travelStationPending = false;
         var run = RunTravelStation().GetEnumerator();
         string? fault = null;
         while (true)
@@ -146,8 +151,12 @@ public sealed partial class Plugin
                 // initialized manager of the player's actual current POI.
                 foreach (var frame in Wait(() => ModApi.Travel?.SessionId == session
                     && ModApi.Travel.CurrentLocation != null && NativeTravelReady(), "travel service binding and native POI readiness")) yield return frame;
+                // Optional actual-consumer observation boundary. It drives nothing and is inert
+                // unless the consumer probe owns a live subscription.
+                foreach (var frame in AnimaTravelInSystemReady(session)) yield return frame;
                 var driver = new TravelStationDriver(this, session);
                 foreach (var step in driver.Run()) yield return step;
+                foreach (var frame in AnimaTravelInSystemCompleted()) yield return frame;
             }
             finally
             {

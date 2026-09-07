@@ -5,7 +5,7 @@ RELEASE_VERSION := $(shell python3 -c 'import xml.etree.ElementTree as E; print(
 MANAGED = $(GAME_DIR)/VanguardGalaxy_Data/Managed
 CORE = $(GAME_DIR)/BepInEx/core
 
-.PHONY: link-libs build test check-bindings package check-package check-local provenance clean release-archive
+.PHONY: link-libs build test check-bindings check-consumer package check-package check-local provenance clean release-archive
 link-libs:
 	@mkdir -p VGModAPI/lib
 	@set -eu; for name in BepInEx 0Harmony; do test -f "$(CORE)/$$name.dll"; ln -sfn "$(CORE)/$$name.dll" "VGModAPI/lib/$$name.dll"; done
@@ -14,9 +14,23 @@ build: link-libs
 	$(DOTNET) build VGModAPI.sln -c $(CONFIGURATION)
 test:
 	python3 -m unittest discover -s tools -p 'test_release_archive.py'
-	$(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter 'Category!=InstalledGame&Category!=Package'
+	$(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter 'Category!=InstalledGame&Category!=InstalledConsumer&Category!=Package'
 check-bindings:
 	VG_GAME_ASSEMBLY="$(MANAGED)/Assembly-CSharp.dll" $(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter 'Category=InstalledGame'
+# Metadata evidence for the members the actual-consumer qualification probe reflects. Needs the
+# owner-built consumer binary; it is never part of the default test run or of check-local.
+# Cecil reads the candidate only, but decoding its custom-attribute ENUM arguments
+# (BepInDependency flags, Newtonsoft NullValueHandling) requires resolving those two compile-only
+# dependencies, so the resolver gets an explicit bounded search path: the installed BepInEx core,
+# the installed Managed references and the local package copy of Newtonsoft. Override
+# ANIMA_DEPENDENCY_DIRS (path-separator separated) when they live elsewhere; nothing is copied.
+NUGET_PACKAGES_DIR ?= $(HOME)/.nuget/packages
+NEWTONSOFT_DIR ?= $(lastword $(sort $(wildcard $(NUGET_PACKAGES_DIR)/newtonsoft.json/*/lib/netstandard2.0)))
+check-consumer:
+	@test -n "$(ANIMA_ASSEMBLY)" || (echo 'Set ANIMA_ASSEMBLY=/path/to/VGAnima.dll'; exit 1)
+	VG_ANIMA_ASSEMBLY="$(ANIMA_ASSEMBLY)" \
+	VG_CONSUMER_DEPENDENCY_DIRS="$(CORE):$(MANAGED):$(NEWTONSOFT_DIR):$(ANIMA_DEPENDENCY_DIRS)" \
+	$(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter 'Category=InstalledConsumer'
 package: build
 	@rm -rf artifacts/VGModAPI
 	@mkdir -p artifacts/VGModAPI

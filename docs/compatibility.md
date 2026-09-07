@@ -205,6 +205,42 @@ waypoints, target/local target, warping, travel-active). Unexpected routes are n
 filtered away or re-targeted. Choosing a safe target reduces, but cannot prove the absence of,
 native hostility; that is exactly why the strict unsolicited-route failure stays.
 
+### Consumer leg-latch count read through the wrong interface (qa-85)
+
+`qa-85` failed inside the actual-consumer travel probe. Everything it drove before that point
+produced real native evidence: the fresh-session binding, the whole in-system phase leaving the
+consumer's visited-system history unchanged, and BOTH cross-system arrivals incrementing the actual
+arrival system exactly once and persisting into the consumer's own v4 sidecar. The failure is in the
+probe, not in the consumer: after the saved-slot reload of each positive case, the reload check read
+the consumer's per-session leg latch as `((System.Collections.ICollection)_countedLegs).Count`.
+`SystemVisitObserver._countedLegs` is a `HashSet<Guid>`, which implements the GENERIC
+`ICollection<Guid>` but NOT the non-generic `System.Collections.ICollection`, so the cast threw
+`InvalidCastException` for both cases before their mandatory `gate-visit-reload`,
+`gate-visit-rollback` and `visit-persistence` rows could be recorded. `Dictionary` and `List` — the
+other consumer and native collections the probes read — do implement the non-generic interface,
+which is why only this one member failed.
+
+The phase behaved correctly around the defect: each failure was attributed to its own consumer case
+row instead of faulting the reused native travel phase, the hook chain continued, and the later
+`regional-history-fixture`, the positive shared-decision gather before the fault, the omitted window
+after it, and the preserved history/save plus load-safety checks all passed. The phase and the run
+still reported FAIL, which is the correct outcome for missing mandatory rows; the failed and
+duplicate-flagged rows stay in the private receipt rather than being relabelled. All 37 original-file
+hashes, the complete direct file sets and the PlayerPrefs snapshot were preserved and the owned
+process slot was released.
+
+Fix (harness only; no API runtime and no consumer change): the count is resolved by
+`AnimaTravelReceipt.StrictCount`, which reads the collection's OWN declared `Count` property and
+throws when the member is null, has no `Count`, or has a `Count` that is not an `int` — never a
+zero default and never a counted enumeration, because a silent zero would satisfy the very latch
+assertion the count exists to prove. `CheckSessionReplacement` and every other assertion are
+unchanged. Host regressions exercise the helper against a real empty and populated `HashSet<Guid>`,
+assert that the old cast really throws on that exact type, and keep the `Dictionary`/`List` cases
+working; the installed-consumer metadata test continues to pin the field's exact generic shape. The
+remaining non-generic `ICollection` casts in the travel drivers are all on native `List<T>` fields
+(`GamePlayer.waypoints`, `MapPointOfInterest.guardDescriptors`) whose declared list shape is pinned
+by installed-assembly tests, so they are unaffected and were deliberately left alone.
+
 ## In-game acceptance checklist — controlled coverage through qa38
 
 Arrange owner approval before deployment. Use copied/disposable saves and the optional compiled `LifecycleObserver` example to record events. Record game/Unity/BepInEx versions, assembly hash, enabled mods, and relevant logs for each run.

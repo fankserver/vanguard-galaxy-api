@@ -55,11 +55,18 @@ try {
         }
     }
     Assert-AnimaAssemblyMetadata (AnimaMetadata '0.3.0.0' '0.1.8')
-    foreach ($metadata in @((AnimaMetadata '0.2.0.0' '0.1.8'), (AnimaMetadata '0.3.0.0' '0.1.1'))) {
+    Assert-AnimaAssemblyMetadata (AnimaMetadata '0.4.0.0' '0.1.9')
+    foreach ($metadata in @((AnimaMetadata '0.2.0.0' '0.1.8'), (AnimaMetadata '0.3.0.0' '0.1.1'),
+        (AnimaMetadata '0.4.0.0' '0.1.8'), (AnimaMetadata '0.5.0.0' '0.1.9'))) {
         $rejected = $false
         try { Assert-AnimaAssemblyMetadata $metadata } catch { $rejected = $true }
         Assert $rejected 'Unsupported Anima version/dependency metadata accepted.'
     }
+    # The consumer travel probe needs the first shape that observes visits through the public API.
+    Assert-AnimaAssemblyMetadata (AnimaMetadata '0.4.0.0' '0.1.9') -TravelProbe
+    $rejected = $false
+    try { Assert-AnimaAssemblyMetadata (AnimaMetadata '0.3.0.0' '0.1.8') -TravelProbe } catch { $rejected = $true }
+    Assert $rejected 'Anima consumer travel probe accepted the older mission-only consumer shape.'
     & $script -Action Prepare -SandboxRoot $sandbox @options
     $legacyConfigPath = Join-Path $sandbox 'game\BepInEx\config\vgmodapi.cfg'
     $legacyConfig = [IO.File]::ReadAllText($legacyConfigPath)
@@ -813,6 +820,185 @@ try {
     Assert $rejected 'Resilience run accepted a lifetime one second below the derived minimum of all selected phases.'
     Assert (!(Test-Path -LiteralPath (Join-Path $resilienceTimeoutRoot 'run-started.txt'))) 'The launcher started the game despite an insufficient resilience lifetime.'
     & $script -Action Cleanup -SandboxRoot $resilienceTimeoutRoot
+
+    # --- separate optional actual-consumer travel probe -----------------------------------------
+    $invalidConsumerSelections = @(
+        @{ TravelStation = $true; TravelCrossSystem = $true; TravelWormholeFixture = $true },  # no consumer binary
+        @{ TravelStation = $true })                                                            # no cross-system phase
+    for ($i = 0; $i -lt $invalidConsumerSelections.Count; $i++) {
+        $invalidRoot = Join-Path $work ('invalid-anima-travel-' + $i)
+        $selection = $invalidConsumerSelections[$i]
+        $rejected = $false
+        try { & $script -Action Prepare -SandboxRoot $invalidRoot -AnimaTravelProbe @selection @options }
+        catch { $rejected = $_.Exception.Message -like '*Anima consumer travel probe requires*' }
+        Assert $rejected ('Anima consumer travel probe accepted without its prerequisites: ' + $i)
+        Assert (!(Test-Path -LiteralPath $invalidRoot)) 'Rejected consumer travel selection left a prepared sandbox.'
+    }
+    $consumerRoot = Join-Path $work 'anima-travel-sandbox'
+    $sandboxes += $consumerRoot
+    & $script -Action Prepare -SandboxRoot $consumerRoot -PersistenceProbe -MissionTransitionsProbe -MissionIdentityProbe `
+        -TravelStation -TravelCrossSystem -TravelWormholeFixture @options
+    # Synthesize the prepared consumer selections this harness cannot build without real consumer
+    # binaries; every rule exercised below is still the launcher's own.
+    $consumerProvenancePath = Join-Path $consumerRoot 'build-provenance.json'
+    $consumerProvenance = Get-Content -LiteralPath $consumerProvenancePath -Raw | ConvertFrom-Json
+    $consumerProvenance.missionJournal = $true
+    $consumerProvenance.anima = $true
+    $consumerProvenance.animaRevision = 'b' * 40
+    $consumerProvenance.animaVersion = $AnimaTravelProbeVersion
+    $consumerProvenance.animaTravelProbe = $true
+    $consumerProvenance.animaTravelBudgetSeconds = $AnimaTravelBudgetSeconds
+    foreach ($name in @('VGMissionJournal.dll','Newtonsoft.Json.dll','VGAnima.dll')) {
+        $fake = Join-Path $consumerRoot "game\BepInEx\plugins\$name"
+        [IO.File]::WriteAllText($fake, 'synthetic-not-executable')
+        $consumerProvenance.plugins | Add-Member -NotePropertyName $name -NotePropertyValue (Get-FileHash -LiteralPath $fake).Hash
+    }
+    $consumerProvenance | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $consumerProvenancePath
+    [IO.File]::WriteAllText((Join-Path $consumerRoot 'missionjournal.enabled'), 'pilot-v1')
+    [IO.File]::WriteAllText((Join-Path $consumerRoot 'game\BepInEx\config\vgmissionjournal.cfg'), "[Persistence]`nUseApiSaveData = false`n")
+    [IO.File]::WriteAllText((Join-Path $consumerRoot 'anima-missions.enabled'), 'anima-v1')
+    $consumerMarker = Join-Path $consumerRoot 'anima-travel.enabled'
+    [IO.File]::WriteAllText($consumerMarker, 'anima-travel-v1')
+    [IO.File]::WriteAllText((Join-Path $consumerRoot 'game\BepInEx\config\vganima.cfg'), "[General]`nEnabled = true`n[Llm]`nEnabled = false`nBaseUrl = `nApiKey = `n")
+    $consumerProvenance = Assert-QualificationInputs $consumerRoot
+    Assert ($consumerProvenance.animaTravelProbe -and $consumerProvenance.animaTravelBudgetSeconds -eq $AnimaTravelBudgetSeconds) 'Prepared consumer travel selection/budget missing.'
+    [IO.File]::WriteAllText($consumerMarker, 'changed')
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $consumerRoot } catch { $rejected = $true }
+    Assert $rejected 'Changed consumer travel marker accepted.'
+    [IO.File]::WriteAllText($consumerMarker, 'anima-travel-v1')
+    Remove-Item -LiteralPath $consumerMarker
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $consumerRoot } catch { $rejected = $true }
+    Assert $rejected 'Removed consumer travel marker accepted while provenance still selects it.'
+    [IO.File]::WriteAllText($consumerMarker, 'anima-travel-v1')
+    $consumerProvenanceText = [IO.File]::ReadAllText($consumerProvenancePath)
+    foreach ($edit in @(@{Pattern='"animaTravelBudgetSeconds": *\d+'; Value='"animaTravelBudgetSeconds": 60'; Message='Edited consumer travel budget reservation accepted.'},
+        @{Pattern='"animaVersion": *"[^"]*"'; Value='"animaVersion": "0.3.0.0"'; Message='Consumer travel probe accepted the older pinned consumer version.'},
+        @{Pattern='"travelWormholeFixture": *true'; Value='"travelWormholeFixture": false'; Message='Consumer travel probe accepted a run without the wormhole fixture selection.'})) {
+        [IO.File]::WriteAllText($consumerProvenancePath, ($consumerProvenanceText -replace $edit.Pattern, $edit.Value))
+        $rejected = $false
+        try { $null = Assert-QualificationInputs $consumerRoot } catch { $rejected = $true }
+        Assert $rejected $edit.Message
+    }
+    # A DELETED property must fail exactly like a wrong one: the consumer version pin is REQUIRED
+    # while the probe is selected, never "checked only when present".
+    $withoutVersion = Get-Content -LiteralPath $consumerProvenancePath -Raw | ConvertFrom-Json
+    $withoutVersion.PSObject.Properties.Remove('animaVersion')
+    Assert (!$withoutVersion.PSObject.Properties['animaVersion']) 'Consumer version pin was not removed by the test fixture.'
+    $withoutVersion | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $consumerProvenancePath
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $consumerRoot } catch { $rejected = $true }
+    Assert $rejected 'Consumer travel probe accepted provenance with the consumer version pin removed.'
+    [IO.File]::WriteAllText($consumerProvenancePath, $consumerProvenanceText)
+    $consumerProvenance = Assert-QualificationInputs $consumerRoot
+    # The launcher must reserve base + the two reused phases + this probe's own budget.
+    $consumerMinimum = $QualificationBaseTimeoutSeconds + $TravelStationBudgetSeconds + $TravelCrossSystemBudgetSeconds + $AnimaTravelBudgetSeconds
+    $rejected = $false
+    try { & $script -Action Run -SandboxRoot $consumerRoot -TimeoutSeconds ($consumerMinimum - 1) @options }
+    catch { $rejected = $_.Exception.Message -like "*at least $consumerMinimum*" }
+    Assert $rejected 'Consumer travel run accepted a lifetime one second below the derived minimum.'
+    Assert (!(Test-Path -LiteralPath (Join-Path $consumerRoot 'run-started.txt'))) 'The launcher started the game despite an insufficient consumer travel lifetime.'
+    # Synthetic receipts only. The probe reuses the two travel phases, so its own receipt must carry
+    # its own mandatory cases AND the run must prove it observed them before the mission pilot.
+    $consumerSession = [Guid]::NewGuid().ToString()
+    function ConsumerEvent($surface, $sequence, $caseLabel, $session) { return ("" + $sequence + "`t" + $surface + "`t" + $caseLabel + "`t" + $session + "`t`tArrived`tJumpGate`tsystem-1:gate`tsystem-2:poi`tsystem-2:poi`t900.000`t") }
+    function ConsumerSummary($rows, $first) {
+        $records = @($rows | ForEach-Object { ,($_ -split "`t") })
+        $passed = @($records | Where-Object { $_[2] -eq 'passed' }).Count
+        $failed = @($records | Where-Object { $_[2] -eq 'failed' }).Count
+        $notRun = @($records | Where-Object { $_[2] -eq 'not-run' }).Count
+        $lines = @($first, "phase=$AnimaTravelPhase", "budgetSeconds=$AnimaTravelBudgetSeconds",
+            ("required=" + ($AnimaTravelRequiredCases -join ',')),
+            ("required-subcases=" + ($AnimaTravelRequiredSubcaseRows -join ',')),
+            ("rows=" + $records.Count + " passed=$passed failed=$failed notRun=$notRun"))
+        foreach ($case in $AnimaTravelRequiredCases) {
+            $matched = @($records | Where-Object { $_[0] -eq $case })
+            $state = if ($matched.Count -eq 1) { $matched[0][2] } elseif ($matched.Count -eq 0) { 'absent' } else { 'duplicated' }
+            $lines += "required-case $case=$state"
+        }
+        foreach ($subcase in $AnimaTravelRequiredSubcaseRows) {
+            $matched = @($records | Where-Object { $_[0] -eq $subcase })
+            $state = if ($matched.Count -eq 1) { $matched[0][2] } elseif ($matched.Count -eq 0) { 'absent' } else { 'duplicated' }
+            $lines += "required-subcase $subcase=$state"
+        }
+        return @($lines + @('optional-not-run=', 'fault=none', 'result=phase satisfied'))
+    }
+    $consumerOrderedResult = @('PASS') + $AnimaTravelReusedPhaseScenarios + @($AnimaTravelPhase, 'native-anima-api-missions')
+    function WriteConsumerOutputs($rows, $events, $summary, $result) {
+        [IO.File]::WriteAllLines((Join-Path $consumerRoot 'anima-travel-receipt.tsv'), [string[]]@(($TravelStationReceiptHeader -join "`t")) + [string[]]$rows)
+        [IO.File]::WriteAllLines((Join-Path $consumerRoot 'anima-travel-events.tsv'), [string[]]@(($TravelStationEventHeader -join "`t")) + [string[]]$events)
+        [IO.File]::WriteAllLines((Join-Path $consumerRoot 'anima-travel.txt'), [string[]]$summary)
+        [IO.File]::WriteAllLines((Join-Path $consumerRoot 'result.txt'), [string[]]$result)
+    }
+    function AssertConsumerRejected($rows, $events, $summary, $result, $message) {
+        WriteConsumerOutputs $rows $events $summary $result
+        $rejected = $false
+        try { Assert-AnimaTravelReceipt $consumerRoot } catch { $rejected = $true }
+        Assert $rejected $message
+    }
+    # The ordering proof is the reason this probe exists, so those refusals are matched on their
+    # exact reason instead of on "something threw".
+    function AssertConsumerOrderRejected($rows, $events, $summary, $result, $expected, $message) {
+        WriteConsumerOutputs $rows $events $summary $result
+        $reason = ''
+        try { Assert-AnimaTravelReceipt $consumerRoot } catch { $reason = $_.Exception.Message }
+        Assert ($reason -like $expected) ($message + " Reason was: '$reason'")
+    }
+    # The receipt is dispatched from the shared probe validator whenever the selection is prepared.
+    $rejected = $false
+    try { Assert-PersistenceProbeReceipt $consumerRoot ([pscustomobject]@{ animaTravelProbe = $true }) } catch { $rejected = $true }
+    Assert $rejected 'Missing consumer travel receipt accepted while the probe was selected.'
+    $consumerRows = @()
+    $consumerEvents = @()
+    $sequence = 0
+    foreach ($case in @($AnimaTravelRequiredCases) + @($AnimaTravelRequiredSubcaseRows)) {
+        $sequence++
+        $consumerRows += (TravelRow $case 'passed' $consumerSession ("travel:" + $sequence))
+        $consumerEvents += (ConsumerEvent 'travel' $sequence $case $consumerSession)
+    }
+    WriteConsumerOutputs $consumerRows $consumerEvents (ConsumerSummary $consumerRows 'PASS') $consumerOrderedResult
+    Assert-AnimaTravelReceipt $consumerRoot
+    Assert-PersistenceProbeReceipt $consumerRoot ([pscustomobject]@{ animaTravelProbe = $true })
+    $consumerSkipped = @($AnimaTravelRequiredCases | ForEach-Object { TravelRow $_ 'not-run' $consumerSession '' }) + @($AnimaTravelRequiredSubcaseRows | ForEach-Object { TravelRow $_ 'passed' $consumerSession 'travel:1' })
+    AssertConsumerRejected $consumerSkipped $consumerEvents (ConsumerSummary $consumerSkipped 'PASS') $consumerOrderedResult 'All-skipped consumer coverage accepted as PASS.'
+    $lastRow = $consumerRows.Count - 1
+    $consumerFailed = @($consumerRows[0..($lastRow - 1)]) + @(TravelRow $AnimaTravelRequiredSubcaseRows[-1] 'failed' $consumerSession ("travel:" + $consumerRows.Count))
+    AssertConsumerRejected $consumerFailed $consumerEvents (ConsumerSummary $consumerFailed 'PASS') $consumerOrderedResult 'Claimed consumer PASS with a failed row accepted.'
+    $consumerMissingSubcase = @($consumerRows | Where-Object { $_ -notlike ($AnimaTravelRequiredSubcaseRows[0] + "`t*") })
+    AssertConsumerRejected $consumerMissingSubcase $consumerEvents (ConsumerSummary $consumerMissingSubcase 'PASS') $consumerOrderedResult 'Consumer receipt without a mandatory subcase row accepted.'
+    $consumerMissingCase = @($consumerRows | Where-Object { $_ -notlike "wormhole-arrival-visit`t*" })
+    AssertConsumerRejected $consumerMissingCase $consumerEvents (ConsumerSummary $consumerMissingCase 'PASS') $consumerOrderedResult 'Missing mandatory consumer case accepted.'
+    $consumerNoEvidence = @($consumerRows | Where-Object { $_ -notlike "visit-persistence`t*" }) + @(TravelRow 'visit-persistence' 'passed' $consumerSession '')
+    AssertConsumerRejected $consumerNoEvidence $consumerEvents (ConsumerSummary $consumerNoEvidence 'PASS') $consumerOrderedResult 'Consumer case without observed public events accepted.'
+    $consumerForeign = @($consumerEvents | ForEach-Object { $_ -replace [regex]::Escape($consumerSession), ([Guid]::NewGuid().ToString()) })
+    AssertConsumerRejected $consumerRows $consumerForeign (ConsumerSummary $consumerRows 'PASS') $consumerOrderedResult 'Consumer identities absent from the event trace accepted.'
+    AssertConsumerRejected $consumerRows $consumerEvents (ConsumerSummary $consumerRows 'FAIL') $consumerOrderedResult 'Failed consumer attempt summary accepted.'
+    AssertConsumerRejected $consumerRows $consumerEvents @('INCOMPLETE', "phase=$AnimaTravelPhase", "budgetSeconds=$AnimaTravelBudgetSeconds", "required-subcases=$($AnimaTravelRequiredSubcaseRows -join ',')", 'activeCase=gate-arrival-visit', ("rows=" + $consumerRows.Count + " passed=" + $consumerRows.Count + " failed=0 notRun=0"), 'result=pilot still running or externally terminated; this is not a pass.') $consumerOrderedResult 'Incomplete consumer checkpoint accepted as a pass.'
+    $consumerForeignPhase = @((ConsumerSummary $consumerRows 'PASS') | ForEach-Object { if ($_ -like 'phase=*') { "phase=$TravelCrossSystemPhase" } else { $_ } })
+    AssertConsumerRejected $consumerRows $consumerEvents $consumerForeignPhase $consumerOrderedResult 'Consumer receipt declaring a reused travel phase accepted.'
+    $consumerOverBudget = @((ConsumerSummary $consumerRows 'PASS') | ForEach-Object { if ($_ -like 'budgetSeconds=*') { "budgetSeconds=$($AnimaTravelBudgetSeconds + 1)" } else { $_ } })
+    AssertConsumerRejected $consumerRows $consumerEvents $consumerOverBudget $consumerOrderedResult 'Consumer budget above the launcher reservation accepted.'
+    # ORDERING: the probe must have observed both reused phases and finished before the mission
+    # pilot, whose StopProvider permanently disposes the consumer's visit observer.
+    $consumerSummaryLines = (ConsumerSummary $consumerRows 'PASS')
+    $lateProbe = @('PASS') + $AnimaTravelReusedPhaseScenarios + @('native-anima-api-missions', $AnimaTravelPhase)
+    AssertConsumerOrderRejected $consumerRows $consumerEvents $consumerSummaryLines $lateProbe '*mission pilot ran before the consumer travel probe*' 'Consumer probe recorded after the Anima mission pilot accepted.'
+    $missingReuse = @('PASS', $AnimaTravelReusedPhaseScenarios[0], $AnimaTravelPhase, 'native-anima-api-missions')
+    AssertConsumerOrderRejected $consumerRows $consumerEvents $consumerSummaryLines $missingReuse "*exactly one recorded '$($AnimaTravelReusedPhaseScenarios[1])'*" 'Consumer probe accepted without the reused cross-system phase.'
+    $duplicatedReuse = @('PASS') + $AnimaTravelReusedPhaseScenarios + $AnimaTravelReusedPhaseScenarios + @($AnimaTravelPhase, 'native-anima-api-missions')
+    AssertConsumerOrderRejected $consumerRows $consumerEvents $consumerSummaryLines $duplicatedReuse '*exactly one recorded*' 'A reused travel phase recorded twice was accepted.'
+    $probeAfterReuse = @('PASS', $AnimaTravelReusedPhaseScenarios[0], $AnimaTravelPhase, $AnimaTravelReusedPhaseScenarios[1], 'native-anima-api-missions')
+    AssertConsumerOrderRejected $consumerRows $consumerEvents $consumerSummaryLines $probeAfterReuse '*completed before the reused phase*' 'Consumer probe completing before a reused phase accepted.'
+    WriteConsumerOutputs $consumerRows $consumerEvents $consumerSummaryLines $consumerOrderedResult
+    Assert-AnimaTravelReceipt $consumerRoot
+    $consumerOutcomePath = Join-Path $consumerRoot 'run-outcome.json'
+    @{timedOut=$false;killed=$true;exitCode=$null} | ConvertTo-Json | Set-Content -LiteralPath $consumerOutcomePath
+    $rejected = $false
+    try { Assert-AnimaTravelReceipt $consumerRoot } catch { $rejected = $true }
+    Assert $rejected 'Terminated launcher outcome accepted for the consumer travel probe.'
+    Remove-Item -LiteralPath $consumerOutcomePath
+    & $script -Action Cleanup -SandboxRoot $consumerRoot
     [IO.File]::WriteAllText($apiConfig, "[Persistence]`nEnabled = true`nRoot = C:\foreign-root`n[Missions]`nEnabled = true`nIdentityContinuity = true`n")
     $rejected = $false
     try { $null = Assert-QualificationInputs $probeRoot } catch { $rejected = $true }

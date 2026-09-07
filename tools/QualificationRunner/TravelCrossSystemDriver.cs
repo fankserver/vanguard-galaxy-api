@@ -126,6 +126,9 @@ public sealed partial class Plugin
             _p.XsCase(caseId, description);
             foreach (var frame in Prepare()) yield return frame;
             if (!_prepared) { NotRun(_notPrepared); yield break; }
+            // Optional actual-consumer observation boundary. It drives nothing native and is inert
+            // unless the consumer probe owns a live subscription.
+            foreach (var frame in _p.AnimaTravelCrossCaseReady(caseId, _session)) yield return frame;
             object? source = null, destination = null;
             string reason = "";
             if (mode == TravelMode.JumpGate) source = SelectJumpGate(out destination, out reason);
@@ -139,6 +142,9 @@ public sealed partial class Plugin
             }
             if (source == null || destination == null) { NotRun(reason); yield break; }
             foreach (var frame in DriveCrossSystemRoute(mode, source, destination)) yield return frame;
+            // The consumer's own evidence for this qualified arrival is taken here, BEFORE the next
+            // case's fresh fixture load replaces the consumer's registry.
+            foreach (var frame in _p.AnimaTravelCrossCaseCompleted(caseId)) yield return frame;
         }
 
         // The whole case: the window opens BEFORE anything is driven, so no earlier fact can
