@@ -129,7 +129,10 @@ class GitHub:
         self.repo = repo
 
     def command(self, *args):
-        return subprocess.run(['gh', *args, '--repo', self.repo], check=True, stdout=subprocess.PIPE).stdout
+        result = subprocess.run(['gh', *args, '--repo', self.repo], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if result.returncode:
+            raise RuntimeError('GitHub release operation failed')
+        return result.stdout
 
     def get(self, tag):
         # Only a confirmed HTTP404 is absence. Auth/network failures must stop publication.
@@ -181,15 +184,7 @@ class GitHub:
         self.command('release', 'edit', tag, '--latest=true')
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description=__doc__)
-    for name in ('repo', 'tag', 'plugin', 'version', 'channel'):
-        parser.add_argument('--' + name, required=True)
-    parser.add_argument('--archive', type=Path, required=True)
-    parser.add_argument('--assembly', type=Path, required=True)
-    parser.add_argument('--dotnet', default='dotnet')
-    parser.add_argument('--publish', action='store_true')
-    args = parser.parse_args()
+def execute(args):
     numeric(args.version)
     GitHub(args.repo)  # Validate the repository even for a dry run; no request is made.
     if args.channel not in ('stable', 'experimental') or args.tag != 'v' + args.version + ('-experimental' if args.channel == 'experimental' else ''):
@@ -204,3 +199,14 @@ if __name__ == '__main__':
             print('Dry run: packaged metadata validated; no GitHub mutation or feed advertisement.')
         else:
             publish(GitHub(args.repo), args.tag, args.archive, feed_path, args.plugin, args.version, args.channel)
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    for name in ('repo', 'tag', 'plugin', 'version', 'channel'):
+        parser.add_argument('--' + name, required=True)
+    parser.add_argument('--archive', type=Path, required=True)
+    parser.add_argument('--assembly', type=Path, required=True)
+    parser.add_argument('--dotnet', default='dotnet')
+    parser.add_argument('--publish', action='store_true')
+    execute(parser.parse_args())

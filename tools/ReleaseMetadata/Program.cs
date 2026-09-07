@@ -23,11 +23,29 @@ internal static class Program
         if (plugins.Length != 1 || plugins[0].ConstructorArguments[2].Value is not string metadataVersion ||
             !ModMetadataCodec.TryVersion(metadataVersion, out var actual) || actual != expected || assembly.Name.Version != expected)
             throw new InvalidOperationException("Packaged BepInPlugin GUID/version, assembly version and release version must agree.");
+        ValidateSidecar(Path.Combine(Path.GetDirectoryName(assemblyPath)!, id + ".vgmod.json"), id, channel, releaseUrl);
         var json = "{\"schemaVersion\":1,\"pluginId\":\"" + id + "\",\"channel\":\"" + channel +
             "\",\"version\":\"" + expected + "\",\"releaseUrl\":\"" + releaseUrl.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"}\n";
         ModUpdateFeed.Parse(Encoding.UTF8.GetBytes(json), id, channel);
         return json;
     }
+    internal static void ValidateSidecar(string path, string id, string channel, string releaseUrl)
+    {
+        using var file = File.OpenRead(path);
+        if (file.Length > ModMetadataCodec.MaxBytes) throw new FormatException("Packaged metadata is oversized.");
+        using var reader = new BinaryReader(file);
+        var metadata = ModMetadataCodec.Parse(reader.ReadBytes(ModMetadataCodec.MaxBytes + 1), id);
+        if (metadata.Channel != channel || metadata.UpdateUrl == null || !ModUpdateHosts.Allowed(metadata.UpdateUrl))
+            throw new FormatException("Packaged metadata channel/source disagrees with publication.");
+        if (id == "vgmodapi")
+        {
+            var match = Regex.Match(releaseUrl, @"\A(https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/releases/tag/[^/]+\z");
+            if (!match.Success) throw new FormatException("Official release URL is not a versioned GitHub page.");
+            var expected = match.Groups[1].Value + "/releases/" + (channel == "stable" ? "latest/download/update.json" : "download/updates-experimental/update.json");
+            if (metadata.UpdateUrl != expected) throw new FormatException("Packaged official discovery URL disagrees with publication.");
+        }
+    }
+
     private static int Main(string[] args)
     {
         if (args.Length != 6)

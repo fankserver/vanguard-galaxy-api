@@ -2,8 +2,11 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
+from types import SimpleNamespace
+import subprocess
 import zipfile
-from publish_update import publish, validate_feed, validate_archive
+from publish_update import publish, validate_feed, validate_archive, execute, GitHub
 from local_update_metadata import generate
 from package_update_example import package
 
@@ -88,6 +91,30 @@ class PublicationTests(unittest.TestCase):
         with self.assertRaises(ValueError): self.run_release(remote)
         self.archive.write_bytes(b'checked archive fixture')
         with self.assertRaises(ValueError): self.run_release(remote, version='1.2.2')
+    def test_same_numeric_version_cannot_move_to_different_release(self):
+        remote = Remote(); self.run_release(remote)
+        with self.assertRaises(ValueError): self.run_release(remote, version='1.2.3.0')
+    def test_metadata_tool_rejection_occurs_before_remote_operations(self):
+        args = SimpleNamespace(repo='example/mod', tag='v1.2.3', plugin='author.mod', version='1.2.3', channel='stable',
+            archive=self.archive, assembly=self.root / 'plugin.dll', dotnet='dotnet', publish=True)
+        with patch('publish_update.validate_archive'), patch('publish_update.subprocess.run', side_effect=subprocess.CalledProcessError(1, 'metadata-validator')) as run:
+            with self.assertRaises(subprocess.CalledProcessError): execute(args)
+            self.assertEqual(run.call_count, 1)
+            self.assertEqual(run.call_args.args[0][0], 'dotnet')  # No gh lookup/upload after sidecar rejection.
+    def test_github_lookup_errors_and_publication_flags(self):
+        github = GitHub('example/mod')
+        for error in (b'HTTP 401', b'TLS failure', b'connection reset'):
+            with patch('publish_update.subprocess.run', return_value=SimpleNamespace(returncode=1, stderr=error, stdout=b'')):
+                with self.assertRaises(RuntimeError): github.get('v1.0')
+                with self.assertRaises(RuntimeError): github.latest()
+        with patch('publish_update.subprocess.run', return_value=SimpleNamespace(returncode=1, stderr=b'HTTP 404', stdout=b'')):
+            self.assertIsNone(github.get('v1.0')); self.assertIsNone(github.latest())
+        with patch('publish_update.subprocess.run', return_value=SimpleNamespace(returncode=0, stderr=b'', stdout=b'')) as run:
+            github.create('v1.0', False)
+            self.assertIn('--draft', run.call_args.args[0]); self.assertIn('--verify-tag', run.call_args.args[0]); self.assertIn('--latest=false', run.call_args.args[0])
+            github.make_public('v1.0')
+            self.assertIn('--draft=false', run.call_args.args[0]); self.assertIn('--latest=false', run.call_args.args[0])
+            github.promote('v1.0'); self.assertIn('--latest=true', run.call_args.args[0])
     def test_schema_wrong_guid_and_version_are_rejected_before_publication(self):
         remote = Remote(); self.run_release(remote)
         feed = json.loads(self.feed.read_text())
@@ -107,7 +134,7 @@ class PublicationTests(unittest.TestCase):
         with self.assertRaises(ValueError): generate(source, output, 'beta')
     def test_example_package_contains_only_owned_plugin_and_metadata(self):
         dll = self.root / 'input.dll'; dll.write_bytes(b'owned example')
-        metadata = self.root / 'input.json'; metadata.write_text('{}')
+        metadata = self.root / 'input.json'; metadata.write_text('{"schemaVersion":1,"pluginId":"vgmodapi.example.updates","channel":"stable","updateUrl":"https://github.com/example/mod/releases/latest/download/update.json"}')
         output = self.root / 'UpdateParticipant'
         archive = package(dll, metadata, output)
         validate_archive(archive, output / 'UpdateParticipant.dll', 'vgmodapi.example.updates')

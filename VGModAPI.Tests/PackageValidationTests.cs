@@ -114,6 +114,7 @@ public sealed class PackageValidationTests : IDisposable
         if (valid)
         {
             PackageChecks.ValidatePluginVersion(file);
+            File.WriteAllText(Path.Combine(_root, "vgmodapi.vgmod.json"), "{\"schemaVersion\":1,\"pluginId\":\"vgmodapi\",\"channel\":\"stable\",\"updateUrl\":\"https://github.com/example/mod/releases/latest/download/update.json\"}");
             var feed = ReleaseMetadata.Program.Generate(file, "vgmodapi", "1.2.3", "stable", "https://github.com/example/mod/releases/tag/v1.2.3");
             Assert.Equal(new Version(1, 2, 3, 0), Core.ModUpdateFeed.Parse(System.Text.Encoding.UTF8.GetBytes(feed), "vgmodapi", "stable").Version);
             Assert.Throws<InvalidOperationException>(() => ReleaseMetadata.Program.Generate(file, "wrong.guid", "1.2.3", "stable", "https://github.com/example/mod/releases/tag/v1.2.3"));

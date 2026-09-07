@@ -16,7 +16,7 @@ The resulting `artifacts/UpdateParticipant.zip` contains only `UpdateParticipant
 
 Use two-to-four numeric loader segments, such as `1.2`, `1.2.3` or `1.2.3.4`. Missing components compare as zero. Arbitrary SemVer suffixes, leading `v` inside loader metadata and label-to-number conversion are unsupported. Official release tags are exactly `v<version>` for stable or `v<version>-experimental` for experimental. The tag's separate suffix chooses the channel; it does not become part of the loader version.
 
-The `tools/ReleaseMetadata` console tool uses Mono.Cecil to read the **packaged** DLL without executing it or resolving proprietary dependencies. It requires exactly one matching BepInPlugin GUID and parity between its version, assembly version and the supplied numeric release version. It then validates the generated JSON through the same feed parser used by the checker. A mismatched package cannot announce the proposed version.
+The `tools/ReleaseMetadata` console tool uses Mono.Cecil to read the **packaged** DLL without executing it or resolving proprietary dependencies. It requires exactly one matching BepInPlugin GUID and parity between its version, assembly version and the supplied numeric release version. It parses the byte-matched packaged sidecar through the shared metadata validator, requiring the same GUID and channel and a supported source. Official packages must use the channel's discovery URL in the publication repository; other authors may select any supported GitHub feed URL, but must keep its identity/channel consistent. It then validates the generated JSON through the same feed parser used by the checker. A mismatched package cannot announce the proposed version.
 
 ## Explicit publication pipeline
 
