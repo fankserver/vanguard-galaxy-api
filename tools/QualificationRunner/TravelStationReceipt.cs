@@ -330,6 +330,25 @@ internal static class TravelStationReceipt
         return null;
     }
 
+    /// <summary>
+    /// A case may only start driving from a quiet native travel surface. A route the pilot did NOT
+    /// request (qa-82: the native emergency jump after a destroyed hull, <c>SpaceShip.TryEmergencyJump</c>
+    /// -> <c>TravelManager.TravelToClosestSpacestation</c>, which requested a return route to the home
+    /// station inside the next case's window) invalidates that window: the observed fact is reported
+    /// with the native autonomy state and the case FAILS. It is never tolerated, never filtered out
+    /// of the window and never resolved by waiting for the unexpected route to finish.
+    /// </summary>
+    internal static string? CheckNoUnsolicitedTravel(string label, IReadOnlyList<TravelTransition> facts,
+        bool nativeTravelActive, string nativeAutonomy)
+    {
+        if (facts.Count > 0)
+            return "Unsolicited native travel before " + label + ": ["
+                + string.Join(", ", facts.Select(Describe)) + "] (" + Clean(nativeAutonomy) + ").";
+        if (nativeTravelActive)
+            return "Native travel was already active before " + label + " (" + Clean(nativeAutonomy) + ").";
+        return null;
+    }
+
     /// <summary>Cancel before any departure: the origin stays current and no departure is invented.</summary>
     internal static string? CheckEarlyCancel(IReadOnlyList<TravelTransition> slice, Guid session,
         string systemId, string? originPoiId, string requestedPoiId)

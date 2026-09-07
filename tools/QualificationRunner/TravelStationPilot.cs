@@ -1,8 +1,10 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using HarmonyLib;
+using UnityEngine;
 using VGModAPI;
 
 namespace VGModAPI.Qualification;
@@ -153,6 +155,105 @@ public sealed partial class Plugin
                 PendingStation = null;
             }
         }
+    }
+
+    // Authoritative safe in-system travel targets, shared by every travel phase, nearest first.
+    //
+    // qa-82 failed here: the previous selector excluded only stations, gates, wormholes, hidden and
+    // dynamic POIs, so it picked the nearest `Source.Galaxy.POI.Combat` encounter. The native
+    // hostiles there destroyed the player hull within seconds, and vanilla's own
+    // SpaceShip.TryEmergencyJump -> TravelManager.TravelToClosestSpacestation started an
+    // UNSOLICITED return route to the home station inside the next case's window (autosave-1 of
+    // that run recorded emergencyJump=true, hull 0.1/10212 and waypoints=[home station]).
+    //
+    // The selection is therefore an explicit ALLOWLIST of the two industrial POI kinds, plus the
+    // stored owner faction and the mission relevance the game itself exposes. Every member read
+    // here is a plain field/property or a read-only lookup; MapPointOfInterest.activeEnemyCount /
+    // totalEnemyCount are deliberately NOT read, because their getters call EnsureContentGenerated
+    // and would generate native content as a side effect of observation.
+    internal object[] SafeInSystemTargets()
+    {
+        var mining = AccessTools.TypeByName("Source.Galaxy.POI.Mining") ?? throw new MissingMemberException("Source.Galaxy.POI.Mining", "type");
+        var salvage = AccessTools.TypeByName("Source.Galaxy.POI.Salvage") ?? throw new MissingMemberException("Source.Galaxy.POI.Salvage", "type");
+        var combat = AccessTools.TypeByName("Source.Galaxy.POI.Combat") ?? throw new MissingMemberException("Source.Galaxy.POI.Combat", "type");
+        var station = AccessTools.TypeByName("Source.Galaxy.POI.SpaceStation") ?? throw new MissingMemberException("Source.Galaxy.POI.SpaceStation", "type");
+        var gate = AccessTools.TypeByName("Source.Galaxy.POI.JumpGate") ?? throw new MissingMemberException("Source.Galaxy.POI.JumpGate", "type");
+        var wormhole = AccessTools.TypeByName("Source.Galaxy.POI.Wormhole") ?? throw new MissingMemberException("Source.Galaxy.POI.Wormhole", "type");
+        var factionType = AccessTools.TypeByName("Source.Galaxy.Faction") ?? throw new MissingMemberException("Source.Galaxy.Faction", "type");
+        var isEnemy = TravelStationDriver.Bind(factionType, "IsEnemy", typeof(bool), factionType);
+        var storyMission = TravelStationDriver.Bind(AccessTools.TypeByName("Source.Galaxy.MapPointOfInterest"), "IsStoryMissionPoi", typeof(bool));
+        var playerFaction = SpGet(factionType, "player");
+        var player = CurrentPlayer;
+        var system = SpGet(player, "currentSystem");
+        var current = SpGet(player, "currentPointOfInterest");
+        var position = (Vector2)SpGet(player, "mapPosition")!;
+        var map = SpGet(AccessTools.TypeByName("Source.Galaxy.GalaxyMapData"), "current");
+        if (map == null)
+        {
+            SafeTargetSelection = "no live galaxy map";
+            return Array.Empty<object>();
+        }
+        var inSystem = ((IEnumerable)SpGet(map, "allPointsOfInterest")!).Cast<object>()
+            .Where(poi => ReferenceEquals(SpGet(poi, "system"), system) && !ReferenceEquals(poi, current))
+            .ToArray();
+        var visible = inSystem
+            .Where(poi => !(bool)SpGet(poi, "hidden")! && !(bool)SpGet(poi, "isDynamicPoi")!)
+            .ToArray();
+        var targets = visible
+            // Industrial POIs only. Combat/CombatStation/Escort/LureSite are native combat
+            // encounters, stations own the phase's single dock pair, and gates/wormholes hand off
+            // to the cross-system machinery.
+            .Where(poi => mining.IsInstanceOfType(poi) || salvage.IsInstanceOfType(poi))
+            .Where(poi => !combat.IsInstanceOfType(poi) && !station.IsInstanceOfType(poi)
+                && !gate.IsInstanceOfType(poi) && !wormhole.IsInstanceOfType(poi))
+            // A site owned by a faction that is hostile to the player spawns native guards.
+            .Where(poi => SpGet(poi, "faction") is not { } owner || playerFaction == null
+                || !(bool)isEnemy.Invoke(owner, new[] { playerFaction })!)
+            // A story-mission location is never a disposable travel target.
+            .Where(poi => !(bool)storyMission.Invoke(poi, null)!)
+            .OrderBy(poi => Vector2.Distance((Vector2)SpGet(poi, "position")!, position))
+            .ToArray();
+        SafeTargetSelection = "inSystem=" + inSystem.Length + ", visible=" + visible.Length
+            + ", industrial=" + visible.Count(poi => mining.IsInstanceOfType(poi) || salvage.IsInstanceOfType(poi))
+            + ", combatEncounters=" + visible.Count(poi => combat.IsInstanceOfType(poi))
+            + ", stations=" + visible.Count(poi => station.IsInstanceOfType(poi))
+            + ", selected=" + targets.Length;
+        return targets;
+    }
+
+    /// <summary>Why the last <see cref="SafeInSystemTargets"/> call selected what it did; recorded with a NOT-RUN row.</summary>
+    internal string SafeTargetSelection { get; private set; } = "<not selected>";
+
+    // Read-only diagnostic for the source-grounded ways a native route can start without the pilot
+    // asking for one: the emergency jump after a destroyed hull
+    // (SpaceShip.TryEmergencyJump -> TravelToClosestSpacestation) and the autopilot's idle
+    // activities (IdleManager, gated on GamePlayer.autoPlay). It never throws and never generates
+    // content, so it can be recorded from a failing assertion.
+    internal string NativeAutonomyDetail()
+    {
+        try
+        {
+            var player = SpGet(_player, "current");
+            if (player == null) return "native autonomy state unavailable: no player";
+            var shipData = SpGet(player, "currentSpaceShip");
+            var waypoints = (ICollection)SpGet(player, "waypoints")!;
+            var poi = SpGet(player, "currentPointOfInterest");
+            var manager = SpGet(AccessTools.TypeByName("Behaviour.Managers.TravelManager"), "Instance");
+            string Identity(object? element) => element == null ? "<none>" : (string)SpGet(element, "guid")!;
+            var detail = "emergencyJump=" + SpGet(player, "emergencyJump")
+                + ",autoPlay=" + SpGet(player, "autoPlay")
+                + ",hull=" + (shipData == null ? "<none>" : SpGet(shipData, "currentHullHP") + "/" + SpGet(shipData, "maxHullHP"))
+                + ",shield=" + (shipData == null ? "<none>" : SpGet(shipData, "currentShieldHP") + "/" + SpGet(shipData, "maxShieldHP"))
+                + ",currentPoi=" + Identity(poi)
+                + ",waypoints=" + waypoints.Count;
+            if (!TravelStationDriver.Alive(manager)) return detail + ",travelManager=<destroyed>";
+            return detail
+                + ",targetPoi=" + Identity(SpGet(manager!, "targetPoi"))
+                + ",localTarget=" + Identity(SpGet(manager!, "localTarget"))
+                + ",warping=" + SpGet(manager!, "isWarping")
+                + ",travelActive=" + TravelStationDriver.CallExact(manager!, "TravelActive", typeof(bool));
+        }
+        catch (Exception error) { return "native autonomy state unavailable: " + error.GetType().Name; }
     }
 
     // Live, initialized local manager for the player's actual current POI, with no travel running.

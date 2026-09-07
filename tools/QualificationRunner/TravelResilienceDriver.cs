@@ -21,7 +21,7 @@ public sealed partial class Plugin
     private sealed class TravelResilienceDriver
     {
         private readonly Plugin _p;
-        private readonly Type _travelType, _poiType, _mapType, _gameplayType, _shipType, _shipDataType;
+        private readonly Type _travelType, _poiType, _gameplayType, _shipType, _shipDataType;
         private readonly Type _stationType, _exteriorType, _interiorType, _dockingOptionType, _tunnelType, _hudType;
         private readonly MethodInfo _tryInitiateTravel, _canWeTravel, _cancelTravel, _travelActive, _localPoiReady;
         private readonly MethodInfo _startUndocking, _exitSpacestation, _getDockingOption, _playerIsFriendly;
@@ -49,7 +49,6 @@ public sealed partial class Plugin
             _p = p;
             _travelType = Named("Behaviour.Managers.TravelManager");
             _poiType = Named("Source.Galaxy.MapPointOfInterest");
-            _mapType = Named("Source.Galaxy.GalaxyMapData");
             _gameplayType = Named("GameplayManager");
             _shipType = Named("Behaviour.Unit.SpaceShip");
             _shipDataType = Named("Source.SpaceShip.SpaceShipData");
@@ -144,17 +143,21 @@ public sealed partial class Plugin
             var hops = SafeTargets();
             if (hops.Length < 2)
             {
-                NotRun("Only " + hops.Length + " safe non-station in-system target(s) beside the start station; a re-route needs two distinct targets.");
+                NotRun("Only " + hops.Length + " safe in-system target(s) beside the start station; a re-route needs two distinct targets (" + _p.SafeTargetSelection + ").");
                 yield break;
             }
             var first = hops[0];
             var second = hops[1];
             var firstId = (string)SpGet(first, "guid")!;
             var secondId = (string)SpGet(second, "guid")!;
+            // The quiet window opens BEFORE the availability wait, because that wait is exactly
+            // where an unsolicited native route (qa-82's emergency-jump return) appeared.
             int offset = Travel.Count;
             int stationOffset = Stations.Count;
-            Require(!(bool)_travelActive.Invoke(NativeTravel("the re-route case"), null)!, "Native travel was already active before the re-route case.");
             foreach (var frame in PollFor(() => false, TravelResilienceReceipt.TravelReadySeconds)) yield return frame;
+            var unsolicited = TravelStationReceipt.CheckNoUnsolicitedTravel("the re-route case", Slice(offset),
+                (bool)_travelActive.Invoke(NativeTravel("the re-route case"), null)!, _p.NativeAutonomyDetail());
+            Require(unsolicited == null, unsolicited!);
             if (!(bool)_canWeTravel.Invoke(NativeTravel("native CanWeTravel for the abandoned leg"), new[] { first })!)
             {
                 NotRun("Native CanWeTravel refused the first in-system route to " + firstId + ".");
@@ -763,27 +766,10 @@ public sealed partial class Plugin
             => DockingOptions(exterior).Any(option => SpGet(option, "dockingOptionSize")!.ToString() == size
                 && !(bool)SpGet(option, "occupied")!);
 
-        // Minimal, safe in-system targets, nearest first: visible, non-dynamic, never a gate or
-        // wormhole (whose routes hand off to the cross-system machinery this phase does not
-        // qualify), and never another SpaceStation, because arriving at a friendly station makes
-        // native CheckForDocking dock there. POI danger is deliberately NOT inspected:
-        // MapPointOfInterest.totalEnemyCount forces EnsureContentGenerated().
-        private object[] SafeTargets()
-        {
-            var system = SpGet(Player, "currentSystem");
-            var current = SpGet(Player, "currentPointOfInterest");
-            var position = (Vector2)SpGet(Player, "mapPosition")!;
-            var map = SpGet(_mapType, "current");
-            if (map == null) return Array.Empty<object>();
-            var jumpGate = Named("Source.Galaxy.POI.JumpGate");
-            var wormhole = Named("Source.Galaxy.POI.Wormhole");
-            return ((IEnumerable)SpGet(map, "allPointsOfInterest")!).Cast<object>()
-                .Where(poi => ReferenceEquals(SpGet(poi, "system"), system) && !ReferenceEquals(poi, current))
-                .Where(poi => !(bool)SpGet(poi, "hidden")! && !(bool)SpGet(poi, "isDynamicPoi")!)
-                .Where(poi => !jumpGate.IsInstanceOfType(poi) && !wormhole.IsInstanceOfType(poi) && !_stationType.IsInstanceOfType(poi))
-                .OrderBy(poi => Vector2.Distance((Vector2)SpGet(poi, "position")!, position))
-                .ToArray();
-        }
+        // The shared authoritative safe-target selector (Plugin.SafeInSystemTargets): industrial
+        // POIs only, never a station/gate/wormhole and never a native combat encounter, so the
+        // re-route cannot end in a fight whose emergency jump starts an unsolicited native route.
+        private object[] SafeTargets() => _p.SafeInSystemTargets();
 
         private string? DockingState(object ship)
         {

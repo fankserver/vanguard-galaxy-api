@@ -179,6 +179,34 @@ public sealed class TravelStationReceiptTests
     }
 
     [Fact]
+    public void AnUnsolicitedNativeRouteInvalidatesTheCaseWindowAndIsReportedWithItsNativeState()
+    {
+        const string autonomy = "emergencyJump=True,autoPlay=False,hull=0.1/10212,currentPoi=poi-1,waypoints=1,targetPoi=station-1";
+        // The qa-82 signature: the pilot asked for nothing yet, but the native emergency jump
+        // requested a return route to the home station inside the case's quiet window.
+        var unsolicited = new[] { Fact(TravelTransitionKind.Requested, Guid.NewGuid(), null, Station, null, 1) };
+        var failure = TravelStationReceipt.CheckNoUnsolicitedTravel("the cancel case", unsolicited, true, autonomy);
+        Assert.Contains("Unsolicited native travel before the cancel case", failure);
+        Assert.Contains("Requested", failure);
+        Assert.Contains("emergencyJump=True", failure);
+        // The native route may also have started without a public fact of its own; an active native
+        // route before a case still fails, and the diagnostic still travels with it.
+        var active = TravelStationReceipt.CheckNoUnsolicitedTravel("the route case", Array.Empty<TravelTransition>(), true, autonomy);
+        Assert.Contains("Native travel was already active before the route case", active);
+        Assert.Contains("emergencyJump=True", active);
+        // A quiet surface is the only accepted precondition.
+        Assert.Null(TravelStationReceipt.CheckNoUnsolicitedTravel("the route case", Array.Empty<TravelTransition>(), false, autonomy));
+        // The unsolicited fact must never be filtered away: the case's own ordering rules see it too.
+        var cancelled = Guid.NewGuid();
+        var window = unsolicited.Concat(new[]
+        {
+            Fact(TravelTransitionKind.Requested, cancelled, null, First, null, 2),
+            Fact(TravelTransitionKind.Cancelled, cancelled, null, null, Station, 2)
+        }).ToArray();
+        Assert.NotNull(TravelStationReceipt.CheckEarlyCancel(window, Session, System, Station, First));
+    }
+
+    [Fact]
     public void StationPhaseChecksPhysicalFactsAndIgnoresInteriorOrdering()
     {
         var undock = new[]
