@@ -64,6 +64,33 @@ try {
         [IO.File]::WriteAllText($image, 'synthetic image placeholder, not a screenshot')
         Assert-ModMenuProbeReceipt $root $p
     }
+    $p | Add-Member -NotePropertyName modInformationProbe -NotePropertyValue $true
+    Reject { Assert-ModInformationProbeSelection $root $p } 'missing information marker'
+    [IO.File]::WriteAllText((Join-Path $root 'mod-information-probe.enabled'), 'mod-information-probe-v1')
+    Assert-ModInformationProbeSelection $root $p
+    $p.modInformationProbe = 'true'
+    Reject { Assert-ModInformationProbeSelection $root $p } 'information string Boolean'
+    $p.modInformationProbe = $true
+    $infoSnapshot = Join-Path $root 'mod-information-probe.txt'
+    $infoReceipt = Join-Path $root 'mod-information-probe.receipt'
+    $facts = @('controlled-default-manual-coalescing-cooldown','controlled-six-hour-automatic-disable','controlled-dns-tls-timeout-retain-last-success','controlled-rate-limit','controlled-disk-cache-expiry-channel-installed-version','controlled-invalid-oversized-channel-redirect-policy','controlled-quit-mid-check','wire-platform-tls-parser-stable','wire-platform-tls-parser-experimental','wire-https-redirect','wire-invalid-oversized-channel-rejected','unity-main-thread-menu-responsive')
+    function Write-InformationEvidence($selectedFacts) {
+        [IO.File]::WriteAllText($infoSnapshot, (($selectedFacts | ForEach-Object { "$_=PASS" }) -join "`n"))
+        $digest = (Get-FileHash -LiteralPath $infoSnapshot -Algorithm SHA256).Hash.ToLowerInvariant()
+        [IO.File]::WriteAllText($infoReceipt, "PASS`nmod-information-probe-v1`nsha256=$digest`n")
+    }
+    Write-InformationEvidence $facts
+    Assert-ModInformationProbeReceipt $root $p
+    foreach ($fact in $facts) {
+        Write-InformationEvidence @($facts | Where-Object { $_ -ne $fact })
+        Reject { Assert-ModInformationProbeReceipt $root $p } "missing fact $fact"
+        Write-InformationEvidence @($facts + $fact)
+        Reject { Assert-ModInformationProbeReceipt $root $p } "duplicate fact $fact"
+    }
+    Write-InformationEvidence $facts
+    [IO.File]::AppendAllText($infoSnapshot, ' changed')
+    Reject { Assert-ModInformationProbeReceipt $root $p } 'changed information evidence'
+    Write-InformationEvidence $facts
     [IO.File]::AppendAllText($snapshot, ' changed')
     Reject { Assert-ModMenuProbeReceipt $root $p } 'changed evidence'
     [IO.File]::WriteAllText($receipt, "PASS`n")

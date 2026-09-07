@@ -6,6 +6,7 @@
     <Compile Include="../tools/QualificationRunner/StoryNativeCalls.cs" Link="StoryNativeCalls.cs" />
     <Compile Include="../tools/QualificationRunner/StoryReceipt.cs" Link="StoryReceipt.cs" />
     <Compile Include="../tools/QualificationRunner/ModMenuModalChecks.cs" Link="ModMenuModalChecks.cs" />
+    <Compile Include="../tools/QualificationRunner/ModUpdateChecks.cs" Link="ModUpdateChecks.cs" />
     <Compile Include="../tools/QualificationRunner/ProbeCleanup.cs" Link="ProbeCleanup.cs" />
     <Compile Include="../tools/QualificationRunner/TravelStationReceipt.cs" Link="TravelStationReceipt.cs" />
     <Compile Include="../tools/QualificationRunner/TravelCrossSystemReceipt.cs" Link="TravelCrossSystemReceipt.cs" />

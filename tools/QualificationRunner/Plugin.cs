@@ -116,7 +116,8 @@ public sealed partial class Plugin : BaseUnityPlugin
     private IEnumerator Start()
     {
         if (!_armed) yield break;
-        var routine = File.Exists(Path.Combine(_root!, "mod-menu-probe.enabled")) ? RunModMenuProbe() : Run();
+        var routine = File.Exists(Path.Combine(_root!, "mod-information-probe.enabled")) ? RunModInformationProbe()
+            : File.Exists(Path.Combine(_root!, "mod-menu-probe.enabled")) ? RunModMenuProbe() : Run();
         while (true)
         {
             object? current;

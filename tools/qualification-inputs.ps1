@@ -148,7 +148,7 @@ function Assert-StoryAuthorMetadata($Assembly, [string]$Name, [string]$Revision)
 }
 
 function Assert-StoryIsolation($Selection) {
-    foreach ($name in @('menuInspection','modMenuProbe','travelStation','travelCrossSystem','travelWormholeFixture','travelResilience','travelRecovery','travelFastLane','missionTransitionsProbe','missionIdentityProbe','contentReferenceProbe','journalMissionEventsProbe','journalCoordinated','stockpileCoordinated','vanillaLoadControl','assemblyOverlay','echoAbsentProbe','echoTravelProbe','animaTravelProbe','travelJournalComparison')) {
+    foreach ($name in @('menuInspection','modMenuProbe','modInformationProbe','travelStation','travelCrossSystem','travelWormholeFixture','travelResilience','travelRecovery','travelFastLane','missionTransitionsProbe','missionIdentityProbe','contentReferenceProbe','journalMissionEventsProbe','journalCoordinated','stockpileCoordinated','vanillaLoadControl','assemblyOverlay','echoAbsentProbe','echoTravelProbe','animaTravelProbe','travelJournalComparison')) {
         if ($Selection.PSObject.Properties[$name] -and $Selection.$name) { throw "Story probe conflicts with $name." }
     }
 }
@@ -250,7 +250,34 @@ function Assert-TravelJournalContainment([string]$Root, [string[]]$Roots, $Befor
     $lines += 'scope=after the owned process exited and the archived plugin flushed at quit; no claim is made about locations outside the audited roots'
     [IO.File]::WriteAllLines((Join-Path $Root 'travel-journal-postquit-audit.txt'), [string[]]$lines)
 }
+function Assert-ModInformationProbeSelection([string]$Root, $Provenance) {
+    $property = $Provenance.PSObject.Properties['modInformationProbe']
+    if ($property -and $property.Value -isnot [bool]) { throw 'Invalid information probe flag.' }
+    $selected = $property -and $property.Value
+    $marker = Join-Path $Root 'mod-information-probe.enabled'
+    if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Information probe selection changed.' }
+    if (!$selected) { return }
+    if (!$Provenance.PSObject.Properties['modMenuProbe'] -or $Provenance.modMenuProbe -isnot [bool] -or !$Provenance.modMenuProbe -or $Provenance.scenario -ne 'Full' -or [IO.File]::ReadAllText($marker) -cne 'mod-information-probe-v1') { throw 'Invalid information probe selection.' }
+}
+function Assert-ModInformationProbeReceipt([string]$Root, $Provenance) {
+    Assert-ModInformationProbeSelection $Root $Provenance
+    if (!$Provenance.PSObject.Properties['modInformationProbe'] -or !$Provenance.modInformationProbe) { return }
+    Assert-ModMenuProbeReceipt $Root $Provenance
+    $receipt = Join-Path $Root 'mod-information-probe.receipt'
+    $snapshot = Join-Path $Root 'mod-information-probe.txt'
+    foreach ($path in @($receipt,$snapshot)) {
+        if (!(Test-Path -LiteralPath $path -PathType Leaf) -or (Get-Item -LiteralPath $path).Length -gt 16384 -or ((Get-Item -LiteralPath $path).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Information probe evidence missing, linked or oversized.' }
+    }
+    $lines = @(Get-Content -LiteralPath $receipt)
+    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'mod-information-probe-v1' -or $lines[2] -cnotmatch '^sha256=[0-9a-f]{64}$') { throw 'Invalid information probe receipt.' }
+    if ((Get-FileHash -LiteralPath $snapshot -Algorithm SHA256).Hash.ToLowerInvariant() -cne $lines[2].Substring(7)) { throw 'Information probe evidence changed.' }
+    $facts = @(Get-Content -LiteralPath $snapshot)
+    foreach ($fact in @('controlled-default-manual-coalescing-cooldown','controlled-six-hour-automatic-disable','controlled-dns-tls-timeout-retain-last-success','controlled-rate-limit','controlled-disk-cache-expiry-channel-installed-version','controlled-invalid-oversized-channel-redirect-policy','controlled-quit-mid-check','wire-platform-tls-parser-stable','wire-platform-tls-parser-experimental','wire-https-redirect','wire-invalid-oversized-channel-rejected','unity-main-thread-menu-responsive')) {
+        if (@($facts | Where-Object { $_ -ceq ($fact + '=PASS') }).Count -ne 1) { throw "Missing or duplicate information probe fact: $fact" }
+    }
+}
 function Assert-ModMenuProbeSelection([string]$Root, $Provenance) {
+    Assert-ModInformationProbeSelection $Root $Provenance
     $property = $Provenance.PSObject.Properties['modMenuProbe']
     if ($property -and $property.Value -isnot [bool]) { throw 'Invalid mod menu probe flag.' }
     $selected = $property -and $property.Value
@@ -306,6 +333,7 @@ function Assert-MenuInspectionReceipt([string]$Root, $Provenance) {
 function Assert-PersistenceProbeReceipt([string]$Root, $Provenance) {
     Assert-MenuInspectionReceipt $Root $Provenance
     Assert-ModMenuProbeReceipt $Root $Provenance
+    Assert-ModInformationProbeReceipt $Root $Provenance
     if ($Provenance.PSObject.Properties['anima'] -and $Provenance.anima) {
         $receipt = Join-Path $Root 'anima-missions.txt'
         if (!(Test-Path -LiteralPath $receipt) -or (Get-Content -LiteralPath $receipt -TotalCount 1) -ne 'PASS') { throw 'Anima mission probe did not complete.' }
