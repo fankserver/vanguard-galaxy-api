@@ -17,6 +17,43 @@ function Assert-AnimaAssemblyMetadata($Assembly, [switch]$TravelProbe) {
     })
     if ($dependency.Count -ne 1) { throw "Anima $version must hard-require API $minimumApi before its startup sweeper." }
 }
+# Consumer metadata is read with Mono.Cecil ONLY, but decoding a custom attribute's ENUM argument
+# forces Cecil to RESOLVE the assembly that declares the enum. Cecil's default reader has no useful
+# search path here and does not throw: it yields an attribute with ZERO constructor arguments, which
+# a naive shape check reads as "the declaration is missing". That is exactly how qa-87 refused the
+# candidate Echo build whose source really does declare
+# [BepInDependency("vgmodapi", DependencyFlags.SoftDependency)]: BepInEx.BepInDependency/DependencyFlags
+# lives in BepInEx.dll, which the reader could not resolve. Anima's declaration takes two STRINGS and
+# needs no resolution, which is why only Echo hit it.
+#
+# So every consumer metadata read goes through this bounded, explicit resolver. Required reference
+# directories: the candidate's own directory, the sandbox BepInEx core (BepInEx.dll, for the plugin
+# attributes) and the installed Managed directory (the game/Unity types a consumer signature may
+# name). Cecil's implicit "."/"bin" probing is removed so nothing outside that list is read, the
+# candidate is opened InMemory (never locked, never written) and both the assembly and the resolver
+# are disposed. Nothing is loaded into the PowerShell process and no consumer binary is copied here.
+function Get-ConsumerMetadataReferenceDirs([string]$CandidateDir, [string]$SandboxRoot, [string]$GameDir) {
+    $dirs = @($CandidateDir, (Join-Path $SandboxRoot 'game\BepInEx\core'), (Join-Path $GameDir 'VanguardGalaxy_Data\Managed'))
+    return @($dirs | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Container) } | Select-Object -Unique)
+}
+function Read-ConsumerAssembly([string]$Path, [string[]]$ReferenceDirs) {
+    $resolver = New-Object Mono.Cecil.DefaultAssemblyResolver
+    foreach ($existing in @($resolver.GetSearchDirectories())) { $resolver.RemoveSearchDirectory($existing) }
+    foreach ($directory in $ReferenceDirs) { $resolver.AddSearchDirectory($directory) }
+    $parameters = New-Object Mono.Cecil.ReaderParameters
+    $parameters.AssemblyResolver = $resolver
+    $parameters.InMemory = $true
+    $parameters.ReadSymbols = $false
+    try { $assembly = [Mono.Cecil.AssemblyDefinition]::ReadAssembly($Path, $parameters) }
+    catch { $resolver.Dispose(); throw }
+    return [pscustomobject]@{ Assembly = $assembly; Resolver = $resolver; ReferenceDirs = $ReferenceDirs }
+}
+function Close-ConsumerAssembly($Reader) {
+    if ($null -eq $Reader) { return }
+    if ($Reader.Assembly) { $Reader.Assembly.Dispose() }
+    if ($Reader.Resolver) { $Reader.Resolver.Dispose() }
+}
+
 # Accepted Echo pilot shapes. The arrival-snap probe requires 0.7.0, the first release whose
 # autopilot arrival-snap is driven by the API's RouteCompleted fact instead of a native hook.
 $EchoPilotVersions = @('0.7.0.0')
@@ -29,8 +66,16 @@ function Assert-EchoAssemblyMetadata($Assembly, [switch]$TravelProbe) {
     if ($plugin.Count -ne 1) { throw 'Echo plugin metadata missing or duplicated.' }
     # SOFT dependency (flag 2): the same build must still load with the API absent, which the
     # separate MissingApi control exercises natively.
-    $dependency = @($plugin[0].CustomAttributes | Where-Object {
-        $_.AttributeType.FullName -eq 'BepInEx.BepInDependency' -and $_.ConstructorArguments.Count -eq 2 -and
+    $declarations = @($plugin[0].CustomAttributes | Where-Object { $_.AttributeType.FullName -eq 'BepInEx.BepInDependency' })
+    # An attribute whose arguments did not decode is an UNREADABLE metadata blob, not a missing or
+    # wrong declaration; reporting it as "not soft" is a false equivalence that hid the real qa-87
+    # cause (the flags enum lives in BepInEx.dll, which the reader could not resolve).
+    $undecodable = @($declarations | Where-Object { $_.ConstructorArguments.Count -eq 0 })
+    if ($undecodable.Count -gt 0) {
+        throw 'Echo BepInDependency arguments could not be decoded; the metadata reader needs BepInEx.dll (and the installed Managed references) resolvable. This is a reader configuration failure, not a consumer shape failure.'
+    }
+    $dependency = @($declarations | Where-Object {
+        $_.ConstructorArguments.Count -eq 2 -and
         $_.ConstructorArguments[0].Value -eq 'vgmodapi' -and [int]$_.ConstructorArguments[1].Value -eq 2
     })
     if ($dependency.Count -ne 1) { throw 'Echo must declare the API as a SOFT dependency.' }

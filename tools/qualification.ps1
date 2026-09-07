@@ -184,11 +184,13 @@ if ($Action -eq 'Prepare') {
     if ($EchoBin) {
         $candidate = Join-Path $EchoBin 'VGEcho.dll'
         Add-Type -Path (Join-Path $bep 'core\Mono.Cecil.dll')
-        $assembly = [Mono.Cecil.AssemblyDefinition]::ReadAssembly($candidate)
+        # Bounded explicit resolver: Echo's dependency flags are an ENUM declared in BepInEx.dll, and
+        # an unresolved enum silently decodes to zero arguments (qa-87). See qualification-inputs.ps1.
+        $reader = Read-ConsumerAssembly $candidate (Get-ConsumerMetadataReferenceDirs $EchoBin $root $GameDir)
         try {
-            Assert-EchoAssemblyMetadata $assembly -TravelProbe:$EchoTravelProbe
-            $echoVersion = $assembly.Name.Version.ToString()
-        } finally { $assembly.Dispose() }
+            Assert-EchoAssemblyMetadata $reader.Assembly -TravelProbe:$EchoTravelProbe
+            $echoVersion = $reader.Assembly.Name.Version.ToString()
+        } finally { Close-ConsumerAssembly $reader }
         Copy-Item -LiteralPath $candidate -Destination $plugins
         New-Item -ItemType Directory -Path (Join-Path $bep 'config') -Force | Out-Null
         # Sandbox-only Echo configuration: the arrival-snap master and feature on, ETA-sync OFF so
@@ -200,11 +202,13 @@ if ($Action -eq 'Prepare') {
     if ($AnimaBin) {
         $candidate = Join-Path $AnimaBin 'VGAnima.dll'
         Add-Type -Path (Join-Path $bep 'core\Mono.Cecil.dll')
-        $assembly = [Mono.Cecil.AssemblyDefinition]::ReadAssembly($candidate)
+        # Anima's declaration takes two strings and needs no enum resolution, but it reads through
+        # the same bounded resolver so a future enum argument cannot repeat the qa-87 silent decode.
+        $reader = Read-ConsumerAssembly $candidate (Get-ConsumerMetadataReferenceDirs $AnimaBin $root $GameDir)
         try {
-            Assert-AnimaAssemblyMetadata $assembly -TravelProbe:$AnimaTravelProbe
-            $animaVersion = $assembly.Name.Version.ToString()
-        } finally { $assembly.Dispose() }
+            Assert-AnimaAssemblyMetadata $reader.Assembly -TravelProbe:$AnimaTravelProbe
+            $animaVersion = $reader.Assembly.Name.Version.ToString()
+        } finally { Close-ConsumerAssembly $reader }
         Copy-Item -LiteralPath $candidate -Destination $plugins
         New-Item -ItemType Directory -Path (Join-Path $bep 'config') -Force | Out-Null
         [IO.File]::WriteAllText((Join-Path $bep 'config\vganima.cfg'), "[General]`r`nEnabled = true`r`n[Llm]`r`nEnabled = false`r`nBaseUrl = `r`nApiKey = `r`n")

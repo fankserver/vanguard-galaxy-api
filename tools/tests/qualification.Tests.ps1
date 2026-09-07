@@ -1017,6 +1017,64 @@ try {
         try { Assert-EchoAssemblyMetadata $metadata } catch { $rejected = $true }
         Assert $rejected 'Unsupported or hard-dependency Echo metadata accepted.'
     }
+    # qa-87: an UNDECODABLE attribute blob (the flags enum could not be resolved, so Cecil yields
+    # zero arguments) must never be reported as a wrong consumer shape. The two failures are
+    # different problems and must carry different, non-equivalent diagnostics.
+    $undecodable = EchoMetadata '0.7.0.0' 2
+    $undecodable.MainModule.Types[0].CustomAttributes[0].ConstructorArguments = @()
+    $decodeMessage = ''
+    try { Assert-EchoAssemblyMetadata $undecodable } catch { $decodeMessage = $_.Exception.Message }
+    Assert ($decodeMessage -like '*could not be decoded*') "Undecodable Echo metadata was not reported as a reader failure: '$decodeMessage'"
+    Assert ($decodeMessage -like '*BepInEx.dll*') 'Undecodable Echo metadata does not name the reference the reader needs.'
+    $hardMessage = ''
+    try { Assert-EchoAssemblyMetadata (EchoMetadata '0.7.0.0' 1) } catch { $hardMessage = $_.Exception.Message }
+    Assert ($hardMessage -like '*SOFT dependency*') "Hard-dependency Echo metadata was not reported as a shape failure: '$hardMessage'"
+    Assert ($hardMessage -ne $decodeMessage) 'A hard dependency and an unreadable blob must not report the same failure.'
+    # The bounded reference set the consumer metadata reader is allowed to read, and nothing else.
+    $refRoot = Join-Path $work 'consumer-refs'
+    Put 'consumer-refs\game\BepInEx\core\marker.txt' 'core'
+    Put 'consumer-refs\candidate\marker.txt' 'candidate'
+    Put 'consumer-refs\installed\VanguardGalaxy_Data\Managed\marker.txt' 'managed'
+    $refDirs = @(Get-ConsumerMetadataReferenceDirs (Join-Path $refRoot 'candidate') $refRoot (Join-Path $refRoot 'installed'))
+    Assert ($refDirs.Count -eq 3) "Expected the candidate, sandbox BepInEx core and installed Managed directories; got $($refDirs.Count)."
+    Assert ($refDirs -contains (Join-Path $refRoot 'candidate')) 'Consumer metadata references omit the candidate directory.'
+    Assert ($refDirs -contains (Join-Path $refRoot 'game\BepInEx\core')) 'Consumer metadata references omit the sandbox BepInEx core.'
+    Assert ($refDirs -contains (Join-Path $refRoot 'installed\VanguardGalaxy_Data\Managed')) 'Consumer metadata references omit the installed Managed directory.'
+    $missingRefs = @(Get-ConsumerMetadataReferenceDirs (Join-Path $refRoot 'candidate') (Join-Path $refRoot 'absent') (Join-Path $refRoot 'absent'))
+    Assert ($missingRefs.Count -eq 1) 'A non-existent reference directory must be dropped, not searched.'
+    # OPT-IN integration regression against a REAL built consumer assembly. Host synthetics cannot
+    # reproduce a missing enum resolver, which is exactly what refused the candidate in qa-87, so the
+    # real read is the only evidence that the bounded resolver fixed it. Default runs stay
+    # self-contained: set VG_QUALIFICATION_ECHO_DLL (and optionally VG_QUALIFICATION_GAME_DIR) to
+    # enable it. Nothing is copied, nothing is launched, and the candidate is opened read-only.
+    $realEcho = $env:VG_QUALIFICATION_ECHO_DLL
+    if ($realEcho -and (Test-Path -LiteralPath $realEcho -PathType Leaf)) {
+        $realGame = if ($env:VG_QUALIFICATION_GAME_DIR) { $env:VG_QUALIFICATION_GAME_DIR } else { 'C:\Program Files (x86)\Steam\steamapps\common\Vanguard Galaxy' }
+        Add-Type -Path (Join-Path $realGame 'BepInEx\core\Mono.Cecil.dll')
+        $realDirs = @((Split-Path -Parent $realEcho), (Join-Path $realGame 'BepInEx\core'), (Join-Path $realGame 'VanguardGalaxy_Data\Managed'))
+        $reader = Read-ConsumerAssembly $realEcho $realDirs
+        try {
+            # The SOFT flag really survives the read: the enum argument is decoded, not defaulted.
+            $realPlugin = @($reader.Assembly.MainModule.Types | Where-Object { $_.FullName -eq 'VGEcho.Plugin' })
+            $realDeps = @($realPlugin[0].CustomAttributes | Where-Object { $_.AttributeType.FullName -eq 'BepInEx.BepInDependency' })
+            Assert ($realDeps.Count -ge 1) 'The real Echo assembly declares no BepInDependency.'
+            $realArgs = $realDeps[0].ConstructorArguments
+            Assert ($realArgs.Count -eq 2) "The real Echo BepInDependency decoded $($realArgs.Count) arguments; the resolver did not resolve its flags enum."
+            Assert ($realArgs[0].Value -eq 'vgmodapi') 'The real Echo BepInDependency does not name the API.'
+            Assert ($realArgs[1].Type.FullName -like '*DependencyFlags*') 'The real Echo BepInDependency flags argument is not the BepInEx enum.'
+            Assert ([int]$realArgs[1].Value -eq 2) "The real Echo BepInDependency is not SOFT: flags=$([int]$realArgs[1].Value)."
+            Assert-EchoAssemblyMetadata $reader.Assembly -TravelProbe
+        } finally { Close-ConsumerAssembly $reader }
+        # The exact qa-87 failure, as a regression: without the reference directories the flags enum
+        # cannot be decoded, and the reader must say so instead of blaming the consumer's shape.
+        $blindReader = Read-ConsumerAssembly $realEcho @((Split-Path -Parent $realEcho))
+        $blindMessage = ''
+        try { Assert-EchoAssemblyMetadata $blindReader.Assembly } catch { $blindMessage = $_.Exception.Message }
+        finally { Close-ConsumerAssembly $blindReader }
+        Assert ($blindMessage -like '*could not be decoded*') "A real read without BepInEx references did not report a reader failure: '$blindMessage'"
+        Assert ($blindMessage -notlike '*SOFT dependency*') 'An unresolvable reference must not be reported as a wrong consumer shape.'
+        Write-Output 'PASS: real consumer metadata integration regression (bounded resolver decodes the SOFT dependency flags enum).'
+    }
     # Both consumer probes own the same reused phases; they are refused together at Prepare.
     $rejected = $false
     try { & $script -Action Prepare -SandboxRoot (Join-Path $work 'invalid-both-consumers') -EchoTravelProbe -AnimaTravelProbe -TravelStation -TravelCrossSystem -TravelWormholeFixture @options }
