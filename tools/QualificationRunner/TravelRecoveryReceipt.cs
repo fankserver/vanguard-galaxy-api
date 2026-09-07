@@ -346,6 +346,13 @@ internal static class TravelRecoveryReceipt
     /// </summary>
     internal const string AttemptCleanupPendingMarker = "cleanup=pending";
 
+    // Tokens a MISS that had to close its own abandoned leg publishes. They are named here so the
+    // C# rule and the PowerShell validator check the same shape: a cleanup block, the settlement
+    // snapshot it ended in, and the recovery placement that settlement had to observe.
+    internal const string AttemptCleanupBlockMarker = "missCleanup=";
+    internal const string AttemptCleanupSettlementMarker = "settlement=";
+    internal const string AttemptCleanupPlacementToken = "RecoveredPlacement";
+
     internal static readonly string[] AttemptOutcomes =
     {
         AttemptCancelledOutcome, AttemptArrivalFirstOutcome, AttemptRouteEndedOutcome,
@@ -425,6 +432,13 @@ internal static class TravelRecoveryReceipt
             if (attempt.Detail.IndexOf(AttemptCleanupPendingMarker, StringComparison.Ordinal) >= 0)
                 return "A recovery attempt row still marks its own cleanup as pending (its known reason is '"
                     + outcome + "'); the attempt never finished, so the receipt is not a completed one.";
+            // Parity with the launcher validator: a miss that closed its own abandoned leg must also
+            // publish that the recovery its cleanup enabled actually settled inside that attempt.
+            if (AttemptMissOutcomes.Contains(outcome)
+                && attempt.Detail.IndexOf(AttemptCleanupBlockMarker, StringComparison.Ordinal) >= 0
+                && (attempt.Detail.IndexOf(AttemptCleanupSettlementMarker, StringComparison.Ordinal) < 0
+                    || attempt.Detail.IndexOf(AttemptCleanupPlacementToken, StringComparison.Ordinal) < 0))
+                return "A missed recovery attempt closed its own leg without publishing the settled cleanup recovery: " + attempt.Detail + ".";
             if (number < 1 || number > RecoveryAttempts)
                 return "A recovery attempt is numbered " + number + ", outside the committed bound of " + RecoveryAttempts + ".";
             if (numbers.Contains(number)) return "Recovery attempt " + number + " is recorded twice.";

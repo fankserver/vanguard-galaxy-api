@@ -411,6 +411,51 @@ public sealed class TravelRecoveryReceiptTests
     }
 
     /// <summary>
+    /// Exact parity with the launcher validator: a miss row that carries a cleanup block must also
+    /// publish the settlement snapshot AND the recovery placement token, so a hand-crafted receipt
+    /// cannot be accepted by the C# rule while the PowerShell validator refuses it.
+    /// </summary>
+    [Fact]
+    public void AMissRowWithACleanupBlockMustPublishItsSettlementInBothValidators()
+    {
+        string Row(string cleanup) => TravelRecoveryReceipt.DescribeAttempt(1, Target,
+            TravelRecoveryReceipt.AttemptTimeoutIdleOutcome, "timed out with no native route; " + cleanup);
+        List<TravelStationReceipt.Row> With(string cleanup)
+        {
+            var rows = CaseRowsOnly();
+            rows.Add(AttemptRow(Row(cleanup)));
+            rows.Add(AttemptRow(TravelRecoveryReceipt.DescribeAttempt(2, "poi-second", TravelRecoveryReceipt.AttemptCancelledOutcome)));
+            return rows;
+        }
+        const string closed = TravelRecoveryReceipt.AttemptCleanupBlockMarker
+            + "{nativeTravelActive=False,cancelAccepted=True,window=[Requested Departed Cancelled ";
+        // A genuine closed-and-settled miss is accepted.
+        var settled = closed + TravelRecoveryReceipt.AttemptCleanupPlacementToken + "],"
+            + TravelRecoveryReceipt.AttemptCleanupSettlementMarker + "currentPoi=known,managerReady=True}";
+        Assert.Null(TravelRecoveryReceipt.CheckAttempts(With(settled)));
+        // Missing BOTH tokens, only the settlement, and only the placement are each refused.
+        var neither = closed + "]}";
+        var placementOnly = closed + TravelRecoveryReceipt.AttemptCleanupPlacementToken + "]}";
+        var settlementOnly = closed + "]," + TravelRecoveryReceipt.AttemptCleanupSettlementMarker + "currentPoi=known}";
+        foreach (var cleanup in new[] { neither, placementOnly, settlementOnly })
+        {
+            var failure = TravelRecoveryReceipt.CheckAttempts(With(cleanup));
+            Assert.Contains("without publishing the settled cleanup recovery", failure);
+            Assert.NotNull(TravelRecoveryReceipt.Evaluate(With(cleanup), null, Trace()));
+        }
+        // A miss row with NO cleanup block at all is untouched by this rule (an arrived miss issues
+        // no cancel and opens no recovery gate).
+        var arrivedMiss = CaseRowsOnly();
+        arrivedMiss.Add(AttemptRow(TravelRecoveryReceipt.DescribeAttempt(1, Target,
+            TravelRecoveryReceipt.AttemptArrivalFirstOutcome, "the native arrival ran first")));
+        arrivedMiss.Add(AttemptRow(TravelRecoveryReceipt.DescribeAttempt(2, "poi-second", TravelRecoveryReceipt.AttemptCancelledOutcome)));
+        Assert.Null(TravelRecoveryReceipt.CheckAttempts(arrivedMiss));
+        // The whitelist the docs publish is the one both validators use, including the ninth outcome.
+        Assert.Equal(9, TravelRecoveryReceipt.AttemptOutcomes.Length);
+        Assert.Contains(TravelRecoveryReceipt.AttemptCleanupUnsettledOutcome, TravelRecoveryReceipt.AttemptOutcomes);
+    }
+
+    /// <summary>
     /// The KNOWN miss reason is persisted BEFORE the cleanup's side effect, marked pending until the
     /// cleanup finished. A receipt still carrying that marker describes an attempt that never
     /// finished and is refused, while the reason itself stays readable in the artifact.

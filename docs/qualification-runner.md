@@ -265,7 +265,8 @@ one in the same session.
   its TERMINAL outcome, so an attempt that later throws can never erase the earlier attempts'
   results. The outcomes are a committed whitelist (`cancelled-in-live-window`,
   `native-arrival-first`, `route-already-ended`, `timeout-no-route`, `timeout-route-running`,
-  `native-travel-refused`, `no-safe-target`, `abandoned-leg-not-closed`); a row still in its
+  `native-travel-refused`, `no-safe-target`, `abandoned-leg-not-closed`,
+  `cleanup-placement-unsettled`); a row still in its
   `state=started` form names no outcome and is refused, so it can only be a failure artifact.
 
   A MISSED attempt closes AND settles its own leg before the next one starts. The leg departed and
