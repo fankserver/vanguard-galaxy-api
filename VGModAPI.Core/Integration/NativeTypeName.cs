@@ -13,9 +13,8 @@ namespace VGModAPI.Runtime;
 /// <c>System.Nullable`1&lt;UnityEngine.Vector2&gt;</c>. Reflection's <see cref="Type.FullName"/>
 /// spells a CONSTRUCTED generic differently
 /// (<c>System.Nullable`1[[UnityEngine.Vector2, UnityEngine.CoreModule, Version=…]]</c>), so a raw
-/// FullName comparison can never match such a binding. That mismatch silently disabled the whole
-/// native travel group at runtime (qa-77: MissingMethodException on
-/// <c>TravelManager.CancelTravel</c>) while the Cecil-only metadata tests kept passing.
+/// FullName comparison cannot match such a binding. Cecil-only metadata checks do not exercise
+/// reflection's spelling, so runtime resolution needs the same canonical shape comparison.
 /// </para>
 /// <para>
 /// Only the shape is normalised — namespace, arity, argument types, array rank, by-ref and pointer

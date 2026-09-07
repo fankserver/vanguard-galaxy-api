@@ -19,8 +19,8 @@ namespace VGModAPI.Qualification;
 //
 // The phase passes only when every required case identity passed. Missing, not-run or failed
 // required cases are a FAIL, and the receipt/event/diagnostic files are written on every path,
-// including an exception. This is controlled evidence, not owner acceptance: RuntimeQualified
-// stays false and #12 stays open until the owner qualifies in-game.
+// including an exception. This is bounded controlled evidence, not full in-game acceptance;
+// RuntimeQualified stays false.
 public sealed partial class Plugin
 {
     private bool TravelStationSelected => File.Exists(Path.Combine(_root!, "travel-station.enabled"));
@@ -172,12 +172,9 @@ public sealed partial class Plugin
 
     // Authoritative safe in-system travel targets, shared by every travel phase, nearest first.
     //
-    // qa-82 failed here: the previous selector excluded only stations, gates, wormholes, hidden and
-    // dynamic POIs, so it picked the nearest `Source.Galaxy.POI.Combat` encounter. The native
-    // hostiles there destroyed the player hull within seconds, and vanilla's own
-    // SpaceShip.TryEmergencyJump -> TravelManager.TravelToClosestSpacestation started an
-    // UNSOLICITED return route to the home station inside the next case's window (autosave-1 of
-    // that run recorded emergencyJump=true, hull 0.1/10212 and waypoints=[home station]).
+    // Hostile encounters can destroy the hull and trigger an unsolicited return route through
+    // SpaceShip.TryEmergencyJump -> TravelManager.TravelToClosestSpacestation. Conservative
+    // target selection reduces this risk; case-owned quiet windows still reject autonomous travel.
     //
     // This method only READS the native facts of each candidate; the decision itself is the pure,
     // host-tested rule TravelStationReceipt.RefuseTravelTarget. Every member read here is a plain
