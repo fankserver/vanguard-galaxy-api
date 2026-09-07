@@ -1,3 +1,14 @@
+function Assert-StoryAbsentReceipt([string]$Root) {
+    $result = @(Get-Content -LiteralPath (Join-Path $Root 'story-absent.txt'))
+    if ($result.Count -ne 2 -or $result[0] -cne 'PASS' -or $result[1] -cne 'owned-story-absent-assemblies-v1') { throw 'Absent-story receipt incomplete.' }
+    $outcome = Get-Content -LiteralPath (Join-Path $Root 'run-outcome.json') -Raw | ConvertFrom-Json
+    foreach ($field in @('timedOut','killed','selfTerminated')) {
+        if (!$outcome.PSObject.Properties[$field] -or $outcome.$field -isnot [bool]) { throw 'Invalid absent-story exit evidence.' }
+    }
+    if ($outcome.selfTerminated -ne $true) { throw 'Absent-story process did not self-terminate.' }
+    Assert-QualificationExitOutcome $outcome 'Absent-story probe'
+}
+
 function Assert-StoryReceipt([string]$Root) {
     $outcomePath = Join-Path $Root 'run-outcome.json'
     if (!(Test-Path -LiteralPath $outcomePath -PathType Leaf)) { throw 'Missing story exit outcome.' }

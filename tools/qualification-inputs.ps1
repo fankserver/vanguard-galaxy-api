@@ -1064,7 +1064,16 @@ function Assert-QualificationInputs([string]$Root) {
             [int]$provenance.travelResilienceBudgetSeconds -ne $TravelResilienceBudgetSeconds) { throw 'Travel resilience budget reservation changed.' }
     }
     $story = $provenance.PSObject.Properties['storyProbe'] -and $provenance.storyProbe -eq $true
-    if ($story) {
+    $storyAbsent = $provenance.PSObject.Properties['storyAbsentProbe'] -and $provenance.storyAbsentProbe -eq $true
+    if ([bool]$storyAbsent -ne (Test-Path -LiteralPath (Join-Path $Root 'story-absent.enabled') -PathType Leaf)) { throw 'Absent-story selection changed.' }
+    if ($storyAbsent -and ($story -or $provenance.scenario -ne 'Full' -or $provenance.missionJournal -or $stockpile -or $anima -or $echo -or $travelJournal -or $provenance.persistenceProbe)) { throw 'Invalid absent-story isolation.' }
+    if ($storyAbsent) {
+        if (!$provenance.storyDonorRoot -or $provenance.storyDonorHash -notmatch '^[0-9a-fA-F]{64}$') { throw 'Missing absent-story donor provenance.' }
+        $donor = Join-Path $provenance.storyDonorRoot 'Saves\qa-story-active.save'
+        if ((Get-FileHash -LiteralPath $donor -Algorithm SHA256).Hash -ine $provenance.storyDonorHash -or (Get-FileHash -LiteralPath (Join-Path $Root 'Saves\fixture-a.save') -Algorithm SHA256).Hash -ine $provenance.storyDonorHash) { throw 'Absent-story source or copied native fixture changed.' }
+    }
+    if ($storyAbsent -and (Get-Content -LiteralPath (Join-Path $Root 'story-absent.enabled') -Raw).Trim() -ne 'owned-story-absent-v1') { throw 'Unknown absent-story marker.' }
+    if ($story -or $storyAbsent) {
         Assert-StoryConfiguration $Root
         Assert-StoryIsolation $provenance
     }
@@ -1082,7 +1091,7 @@ function Assert-QualificationInputs([string]$Root) {
         $enabled = [regex]::Matches($config, '(?m)^Enabled\s*=\s*true\s*$')
         if ($roots.Count -ne 1 -or $settings.Count -gt 1 -or $enabled.Count -ne $settings.Count -or [IO.Path]::GetFullPath($roots[0].Groups[1].Value.Trim()) -ine [IO.Path]::GetFullPath((Join-Path $Root 'state'))) { throw 'Persistence probe root/config changed.' }
     }
-    if (!$probe -and !$story) {
+    if (!$probe -and !$story -and !$storyAbsent) {
         $config = Get-Content -LiteralPath (Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg') -Raw
         $sections = [regex]::Matches($config, '(?ms)^\[Persistence\]\r?\n(?<body>.*?)(?=^\[|\z)')
         if ($sections.Count -ne 1 -or [regex]::Matches($sections[0].Groups['body'].Value, '(?m)^Enabled\s*=').Count -ne 1 -or [regex]::Matches($sections[0].Groups['body'].Value, '(?m)^Enabled\s*=\s*false\s*$').Count -ne 1) { throw 'Legacy control must explicitly disable API-managed saves.' }

@@ -148,6 +148,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             CheckJournalLoad(n == 0 ? "fixture-a" : "fixture-b");
             CheckStockpileLoad(n == 0 ? "fixture-a" : "fixture-b");
             Passed("fixture-load-" + n);
+            if (n == 0) foreach (var frame in CheckAbsentStoryAuthors()) yield return frame;
         }
 
         Save("qa-manual", LifecycleEventKind.SaveSucceeded);
