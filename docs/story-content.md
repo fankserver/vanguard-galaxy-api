@@ -175,13 +175,10 @@ an authoritative result, so a completed temporary job never answers `true`; it i
 | Sequence bound | The occurrence sequence is checked against a bound with reserved headroom on every offer and on decode, so the timeline can never wrap. |
 | Global bound | 2048 occurrences overall, as a backstop behind the per-provider quota. |
 
-Schema 1 is tightened by this rule, deliberately and without a compatibility claim: a payload whose
-encoded bytes fit but whose RESERVED footprint does not is now refused where an earlier experimental
-build of this unwired module would have restored it. Such a payload cannot exist in practice — the
-module is not constructed at runtime and has never written a save — and the refusal follows the
-retention policy: the owner is reported unavailable and its bytes are protected, never silently
-truncated to fit. Earlier experimental commits of this branch carry no back-compatibility promise,
-and any future change to this rule needs an explicit migration rather than a silent widening.
+All supported schemas validate the reserved footprint, not only encoded bytes. Invalid state makes
+the owner unavailable and preserves its bytes; nothing is silently truncated. Empty objective layouts
+add no wire or quota overhead, so valid schema 2 snapshots at the provider or global boundary remain
+readable and capturable.
 
 Bounds are refusals, never truncation. Exceeding one diagnoses and changes nothing, so campaign
 progression is never silently dropped, and because each provider's share is reserved, a
@@ -261,9 +258,34 @@ that the loaded save never produced. A mismatch is refused with `StaleSession`, 
 and the caller simply re-reads the current session from a query. Registration is not session-scoped;
 definitions belong to the process and its leases.
 
+## Keyed scripted objectives
+
+`StoryObjective.Scripted(key, description, requiredAmount)` uses vanilla `TriggerObjective`
+serialization with trigger `None`. Its stable identity is `StoryObjectiveId(definition, occurrence,
+key)`, not its description or step index. Vanilla broadcast triggers cannot advance API-owned scripted
+objectives; an acquired provider exposes `IStoryObjectiveProvider.SetProgress(session, identity,
+absoluteProgress)`. Progress is monotonic within an attempt. Repeated values do not increment it;
+inactive steps, stale sessions, foreign identities and replaced native objects are refused. A verified
+native retry resets progress but preserves occurrence and key identity. Mission rewards still require
+vanilla completion; setting objective progress never directly grants them.
+
+`Query` reads retained scripted progress for the requested session. Unavailable state has no numeric
+progress; it is not reported as zero. Live writes resolve the current player and held mission each time,
+so callers never keep a native objective reference across reloads.
+
+`WithRevision(newRevision, migratesFromRevision)` explicitly permits migration from one retained
+revision. Supported migrations are fully keyed scripted definitions: all old keys and required amounts
+must remain, steps may reorder, and added keys start at zero. Missing keys, changed kinds/amounts,
+unapproved revisions and insufficient retained-state capacity are refused without discarding state.
+Existing mixed or unkeyed objectives do not acquire invented migration identities. Authored narrative
+logic stays in the consumer; the API stores objective state, not campaign-specific flags.
+
+The objective integration has host and installed-shape checks, not completed native qualification.
+Non-scripted progress queries and the authored/generated native acceptance fixtures remain incomplete.
+
 ## Automatic persistence
 
-The module registers the reserved persistence owner `vgmodapi.story-content` (schema 2) with its own
+The module registers the reserved persistence owner `vgmodapi.story-content` (schema 3) with its own
 capture/restore/validate. The payload is a bounded `VSC1` binary record set written with netstandard
 binary IO and STRICT UTF-8 only (invalid bytes and unpaired surrogates are refused on both read and
 write, never decoded to replacement characters) — no JSON library is introduced. The occurrence
@@ -271,11 +293,12 @@ sequence is the authoritative timeline and must be positive, unique and strictly
 sides. Payloads are capped well below the 1 MiB
 envelope bound; truncated, extended, malformed or newer-version payloads are refused.
 
-Schema 1 is read through the registered owner migration: its occurrences have no pending choices
-or observed-failure flag. The next successful capture writes schema 2 without modifying the older
-snapshot. Host regressions exercise the actual generation store and coordinator, as well as offered
-and active service restoration, completion and older-snapshot rollback. This is host migration
-evidence, not a native migration run or support for arbitrary definition/step revisions.
+Schemas 1 and 2 are readable through registered owner migrations. Schema 1 has no pending choices
+or observed-failure flag; neither older schema carries objective layouts. Capture writes schema 3
+without modifying older snapshots. Keyed layouts retain objective positions, kinds, required amounts,
+scripted progress and content revision. Their space is charged before admission or migration.
+Host regressions cover coordinator migration at the provider/global limits, service restoration,
+completion and older-snapshot rollback. Native objective migration qualification remains pending.
 
 The codec is canonical: the encoder and the decoder run the SAME ledger bounds (per-provider quota,
 per-provider payload budget including reservations, per-definition campaign cap over retired AND
@@ -358,7 +381,7 @@ see and records the outcome the game produced for an owned occurrence:
 Choices belong with a completion the caller does not perform, so they are declared while the
 occurrence is live with `DeclareChoices`, validated exactly as a retirement validates them, and
 written when the game ends it. A completion can arrive in a later session, so a declaration is part
-of the occurrence's PERSISTED state (schema 2), inside the space its outcome already reserved: it
+of the occurrence's PERSISTED state, inside the space its outcome already reserved: it
 survives a reload, it is transferred into the record rather than kept beside it, and it belongs to
 the save it was made in — rolling back to a generation from before the declaration restores an
 occurrence with no declaration, not one carrying a newer session's choices.

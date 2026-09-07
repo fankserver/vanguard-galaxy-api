@@ -221,6 +221,12 @@ internal sealed class StoryNativeBindings
                 Field(native.GetType(), "targetPOI").SetValue(native, objective.TargetPoiId);
                 Field(native.GetType(), "requiredVisitTime").SetValue(native, objective.RequiredVisitSeconds);
                 break;
+            case StoryObjectiveKind.Scripted:
+                var trigger = Field(native.GetType(), "trigger");
+                trigger.SetValue(native, Enum.Parse(trigger.FieldType, "None"));
+                Field(native.GetType(), "description").SetValue(native, objective.Description);
+                Field(native.GetType(), "requiredAmount").SetValue(native, objective.RequiredAmount);
+                break;
             case StoryObjectiveKind.KillEnemies:
             case StoryObjectiveKind.CollectCredits:
                 Field(native.GetType(), "requiredAmount").SetValue(native, objective.RequiredAmount);
@@ -265,9 +271,10 @@ internal sealed class StoryNativeBindings
         int missions = 0, objectives = 0;
         foreach (var mission in (IEnumerable)_playerMissions.GetValue(player)!)
         {
-            missions++;
+            if (++missions > StoryQuarantine.MaxScannedMissions) return (missions, objectives);
             foreach (var step in (IEnumerable)_missionSteps.GetValue(mission)!)
-                foreach (var _ in (IEnumerable)_stepObjectives.GetValue(step)!) objectives++;
+                foreach (var _ in (IEnumerable)_stepObjectives.GetValue(step)!)
+                    if (++objectives > StoryQuarantine.MaxScannedObjectives) return (missions, objectives);
         }
         return (missions, objectives);
     }
@@ -279,6 +286,93 @@ internal sealed class StoryNativeBindings
         foreach (var step in (IEnumerable)_missionSteps.GetValue(mission)!)
             foreach (var _ in (IEnumerable)_stepObjectives.GetValue(step)!) objectives++;
         return objectives;
+    }
+
+    internal bool MigrateScripted(object mission, object player, string identifier, StoryMissionDefinition definition,
+        StoryObjectiveLayout source, StoryObjectiveLayout destination, Func<bool> stillValid)
+    {
+        var steps = (IList)_missionSteps.GetValue(mission)!;
+        if (steps.GetType() != _missionSteps.PropertyType || ObjectiveCount(mission) != source.Slots.Count) return false;
+        foreach (var slot in source.Slots)
+        {
+            if (slot.Step >= steps.Count) return false;
+            var objectives = (IList)_stepObjectives.GetValue(steps[slot.Step])!;
+            if (slot.Objective >= objectives.Count) return false;
+            var objective = objectives[slot.Objective]!;
+            if (objective.GetType().FullName != StoryContentPolicy.ObjectiveNamespace + ".TriggerObjective") return false;
+            var trigger = Field(objective.GetType(), "trigger");
+            if (!Equals(trigger.GetValue(objective), Enum.Parse(trigger.FieldType, "None"))
+                || (int)Field(objective.GetType(), "requiredAmount").GetValue(objective)! != slot.Required
+                || (int)Field(objective.GetType(), "currentAmount").GetValue(objective)! != slot.Progress) return false;
+        }
+        var originals = steps.Cast<object>().ToArray();
+        var originalObjectives = originals.Select(step => ((IList)_stepObjectives.GetValue(step)!).Cast<object>().ToArray()).ToArray();
+        var replacement = CreateMission(definition, identifier, player);
+        var replacementSteps = (IList)_missionSteps.GetValue(replacement)!;
+        foreach (var slot in destination.Slots)
+        {
+            var objectives = (IList)_stepObjectives.GetValue(replacementSteps[slot.Step])!;
+            var objective = objectives[slot.Objective]!;
+            Field(objective.GetType(), "currentAmount").SetValue(objective, slot.Progress);
+        }
+        if (!stillValid() || !ReferenceEquals(_missionSteps.GetValue(mission), steps) || steps.Count != originals.Length) return false;
+        for (int index = 0; index < originals.Length; index++)
+        {
+            if (!ReferenceEquals(steps[index], originals[index])) return false;
+            var objectives = (IList)_stepObjectives.GetValue(steps[index])!;
+            if (objectives.Count != originalObjectives[index].Length) return false;
+            for (int position = 0; position < objectives.Count; position++)
+                if (!ReferenceEquals(objectives[position], originalObjectives[index][position])) return false;
+        }
+        foreach (var slot in source.Slots)
+        {
+            var objective = originalObjectives[slot.Step][slot.Objective];
+            var trigger = Field(objective.GetType(), "trigger");
+            if (!Equals(trigger.GetValue(objective), Enum.Parse(trigger.FieldType, "None"))
+                || (int)Field(objective.GetType(), "requiredAmount").GetValue(objective)! != slot.Required
+                || (int)Field(objective.GetType(), "currentAmount").GetValue(objective)! != slot.Progress) return false;
+        }
+        try
+        {
+            steps.Clear();
+            foreach (var step in replacementSteps) steps.Add(step);
+            return true;
+        }
+        catch
+        {
+            steps.Clear();
+            foreach (var step in originals) steps.Add(step);
+            throw;
+        }
+    }
+
+    internal bool SetScriptedProgress(object mission, StoryObjectiveLayout.Slot slot, int progress, Func<bool> stillValid)
+    {
+        var steps = (IList)_missionSteps.GetValue(mission)!;
+        if (slot.Step >= steps.Count) return false;
+        var step = steps[slot.Step]!;
+        if (!ReferenceEquals(_missionSteps.GetValue(mission), steps) || slot.Step >= steps.Count || !ReferenceEquals(steps[slot.Step], step)) return false;
+        var objectives = (IList)_stepObjectives.GetValue(step)!;
+        if (slot.Objective >= objectives.Count) return false;
+        var objective = objectives[slot.Objective]!;
+        object? currentStep = null;
+        foreach (var candidate in steps)
+            if (!(bool)Property(_missionStep, "isComplete").GetValue(candidate)!) { currentStep = candidate; break; }
+        if (objective.GetType().FullName != StoryContentPolicy.ObjectiveNamespace + ".TriggerObjective") return false;
+        if ((int)Field(objective.GetType(), "requiredAmount").GetValue(objective)! != slot.Required) return false;
+        var trigger = Field(objective.GetType(), "trigger");
+        if (!Equals(trigger.GetValue(objective), Enum.Parse(trigger.FieldType, "None"))) return false;
+        var amount = Field(objective.GetType(), "currentAmount");
+        int current = (int)amount.GetValue(objective)!;
+        if (progress < current || progress > slot.Required) return false;
+        if (!stillValid() || !ReferenceEquals(_missionSteps.GetValue(mission), steps)
+            || slot.Step >= steps.Count || !ReferenceEquals(steps[slot.Step], step)
+            || !ReferenceEquals(_stepObjectives.GetValue(step), objectives)
+            || slot.Objective >= objectives.Count || !ReferenceEquals(objectives[slot.Objective], objective)) return false;
+        if (current == slot.Required && progress == current) return true;
+        if (!ReferenceEquals(currentStep, step)) return false;
+        amount.SetValue(objective, progress);
+        return (int)amount.GetValue(objective)! == progress;
     }
 
     internal void Accept(object player, object mission) => _addMission.Invoke(player, new[] { mission, (object)false });

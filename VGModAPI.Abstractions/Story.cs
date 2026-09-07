@@ -44,7 +44,7 @@ public readonly struct StoryContentId : IEquatable<StoryContentId>
 /// provider-defined objective type cannot round-trip through a vanilla save. Unsupported behaviour
 /// stays provider logic; it is never smuggled in as an opaque payload.
 /// </summary>
-public enum StoryObjectiveKind { TravelToPoi, KillEnemies, CollectCredits }
+public enum StoryObjectiveKind { TravelToPoi, KillEnemies, CollectCredits, Scripted }
 
 /// <summary>
 /// Identity of a faction this API may reference. It is the game's own faction identifier, passed as a
@@ -96,20 +96,39 @@ public sealed class StoryObjective
     public const float MaxVisitSeconds = 3600;
 
     public StoryObjectiveKind Kind { get; }
+    /// <summary>Optional stable author key, independent of display text or step position.</summary>
+    public string? LocalKey { get; }
+    public string? Description { get; }
     /// <summary>Required for <see cref="StoryObjectiveKind.TravelToPoi"/>: an existing world POI identity, never a display name.</summary>
     public string? TargetPoiId { get; }
     /// <summary>Required for the counting kinds; ignored by <see cref="StoryObjectiveKind.TravelToPoi"/>.</summary>
     public int RequiredAmount { get; }
     public float RequiredVisitSeconds { get; }
 
-    private StoryObjective(StoryObjectiveKind kind, string? targetPoiId, int requiredAmount, float requiredVisitSeconds)
-    { Kind = kind; TargetPoiId = targetPoiId; RequiredAmount = requiredAmount; RequiredVisitSeconds = requiredVisitSeconds; }
+    private StoryObjective(StoryObjectiveKind kind, string? targetPoiId, int requiredAmount, float requiredVisitSeconds, string? localKey = null, string? description = null)
+    { Kind = kind; TargetPoiId = targetPoiId; RequiredAmount = requiredAmount; RequiredVisitSeconds = requiredVisitSeconds; LocalKey = localKey; Description = description; }
+
+    /// <summary>Returns an immutable keyed copy. Keys must be unique throughout one mission definition.</summary>
+    public StoryObjective WithKey(string localKey)
+    {
+        if (!StoryContentId.IsValidSegment(localKey)) throw new ArgumentException("An objective key uses the story identity segment format.", nameof(localKey));
+        return new StoryObjective(Kind, TargetPoiId, RequiredAmount, RequiredVisitSeconds, localKey, Description);
+    }
 
     public static StoryObjective TravelTo(string targetPoiId, float requiredVisitSeconds = 0)
     {
         if (string.IsNullOrEmpty(targetPoiId) || targetPoiId.Length > 128) throw new ArgumentException("A travel objective requires a bounded target POI identity.", nameof(targetPoiId));
         if (!(requiredVisitSeconds >= 0) || requiredVisitSeconds > MaxVisitSeconds) throw new ArgumentOutOfRangeException(nameof(requiredVisitSeconds));
         return new StoryObjective(StoryObjectiveKind.TravelToPoi, targetPoiId, 0, requiredVisitSeconds);
+    }
+
+    /// <summary>An author-driven counting objective. Progress is absolute, not an incrementing narrative event.</summary>
+    public static StoryObjective Scripted(string localKey, string description, int requiredAmount = 1)
+    {
+        if (!StoryContentId.IsValidSegment(localKey)) throw new ArgumentException("Invalid objective key.", nameof(localKey));
+        if (string.IsNullOrWhiteSpace(description) || description.Length > 512) throw new ArgumentException("A bounded description is required.", nameof(description));
+        if (requiredAmount is < 1 or > MaxAmount) throw new ArgumentOutOfRangeException(nameof(requiredAmount));
+        return new StoryObjective(StoryObjectiveKind.Scripted, null, requiredAmount, 0, localKey, description);
     }
 
     public static StoryObjective KillEnemies(int requiredAmount) => Counting(StoryObjectiveKind.KillEnemies, requiredAmount);
@@ -186,6 +205,26 @@ internal static class StoryText
 /// </summary>
 public sealed class StoryMissionDefinition
 {
+    private int _contentRevision = 1;
+    private int? _migratesFromRevision;
+    public int ContentRevision => _contentRevision;
+    public int? MigratesFromRevision => _migratesFromRevision;
+
+    /// <summary>Returns a revisioned immutable copy with explicit key-preserving migration permission.
+    /// Supported migrations retain every old scripted key and required amount; new keys start empty.</summary>
+    public StoryMissionDefinition WithRevision(int revision, int? migratesFromRevision = null)
+    {
+        if (revision < 1) throw new ArgumentOutOfRangeException(nameof(revision));
+        if (migratesFromRevision.HasValue && (migratesFromRevision < 1 || migratesFromRevision >= revision))
+            throw new ArgumentOutOfRangeException(nameof(migratesFromRevision));
+        if (Steps.SelectMany(step => step.Objectives).Any(objective => objective.Kind != StoryObjectiveKind.Scripted))
+            throw new InvalidOperationException("Revision migration requires fully keyed scripted objectives.");
+        var copy = (StoryMissionDefinition)MemberwiseClone();
+        copy._contentRevision = revision;
+        copy._migratesFromRevision = migratesFromRevision;
+        return copy;
+    }
+
     public const int MaxSteps = 8;
     public const int MaxRewards = 4;
     /// <summary>Declared choice keys a campaign definition may record per occurrence.</summary>
@@ -260,6 +299,10 @@ public sealed class StoryMissionDefinition
         var stepCopy = (steps ?? throw new ArgumentNullException(nameof(steps)))
             .Select(step => step ?? throw new ArgumentException("Null step.", nameof(steps))).ToArray();
         if (stepCopy.Length is < 1 or > MaxSteps) throw new ArgumentException("A definition needs 1-" + MaxSteps + " steps.", nameof(steps));
+        var objectiveKeys = stepCopy.SelectMany(step => step.Objectives).Select(objective => objective.LocalKey)
+            .Where(key => key != null).ToArray();
+        if (objectiveKeys.Distinct(StringComparer.Ordinal).Count() != objectiveKeys.Length)
+            throw new ArgumentException("Objective keys must be unique throughout a mission definition.", nameof(steps));
         Steps = Array.AsReadOnly(stepCopy);
         var rewardCopy = (rewards ?? Array.Empty<StoryReward>())
             .Select(reward => reward ?? throw new ArgumentException("Null reward.", nameof(rewards))).ToArray();

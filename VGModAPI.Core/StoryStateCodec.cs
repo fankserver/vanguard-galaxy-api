@@ -21,7 +21,7 @@ internal static class StoryStateCodec
     /// that the game reported a mission failed while still holding it. Schema 1 is read unchanged:
     /// its rows simply have neither, which is exactly what they meant.
     /// </summary>
-    internal const int SchemaVersion = 2;
+    internal const int SchemaVersion = 3;
     internal const int FirstSchemaVersion = 1;
     private const uint Magic = 0x31435356; // VSC1, little-endian.
     /// <summary>Strict UTF-8 on BOTH sides: invalid bytes or unpaired surrogates throw instead of decoding to U+FFFD.</summary>
@@ -63,7 +63,7 @@ internal static class StoryStateCodec
     {
         if (entry == null) throw new ArgumentNullException(nameof(entry));
         // The row carries a pending-choice block and a flags byte as well since schema 2.
-        int size = 1 + entry.Id.Provider!.Length + 1 + entry.Id.LocalId.Length + 16 + 8 + 3 + 2 + 1 + 1 + 1 + PendingSize(entry);
+        int size = 1 + entry.Id.Provider!.Length + 1 + entry.Id.LocalId.Length + 16 + 8 + 3 + 2 + 1 + 1 + 1 + PendingSize(entry) + (entry.ObjectiveLayout.Slots.Count == 0 ? 0 : StoryObjectiveLayoutCodec.EncodedSize(entry.ObjectiveLayout));
         if (entry.Retention != StoryRetention.Campaign) return size;
         foreach (var pair in entry.Choices)
             // Strict UTF-8 again: text that cannot be encoded has no size, it is simply refused.
@@ -110,7 +110,9 @@ internal static class StoryStateCodec
                     WriteText(writer, pair.Key, StoryMissionDefinition.MaxChoiceKeyBytes);
                     WriteText(writer, pair.Value, StoryMissionDefinition.MaxChoiceValueBytes);
                 }
-                writer.Write((byte)(row.FailureObserved ? 1 : 0));
+                bool hasLayout = row.ObjectiveLayout.Slots.Count != 0;
+                writer.Write((byte)((row.FailureObserved ? 1 : 0) | (hasLayout ? 2 : 0)));
+                if (hasLayout) StoryObjectiveLayoutCodec.Write(writer, row.ObjectiveLayout);
             }
             writer.Flush();
         }
@@ -127,7 +129,7 @@ internal static class StoryStateCodec
         // A newer payload is never downgraded; the coordinator reports it as unsupported and protects
         // it. An OLDER one is read as what it meant: schema 1 rows carry no pending declaration and no
         // observed failure, so those are simply absent rather than guessed.
-        if (version != SchemaVersion && version != FirstSchemaVersion)
+        if (version < FirstSchemaVersion || version > SchemaVersion)
             throw new InvalidDataException("Unsupported story state version " + version + ".");
         int count = reader.ReadInt32();
         if (count < 0 || count > StoryLedger.MaxOccurrences) throw new InvalidDataException("Malformed story state count.");
@@ -173,7 +175,8 @@ internal static class StoryStateCodec
                 throw new InvalidDataException("Duplicate story choice key.");
             var pending = new List<KeyValuePair<string, string>>();
             bool failure = false;
-            if (version >= SchemaVersion)
+            bool hasLayout = false;
+            if (version >= 2)
             {
                 int pendingCount = reader.ReadByte();
                 if (pendingCount > StoryMissionDefinition.MaxChoiceKeys) throw new InvalidDataException("Malformed story choice count.");
@@ -187,10 +190,13 @@ internal static class StoryStateCodec
                 if (pending.Select(pair => pair.Key).Distinct(StringComparer.Ordinal).Count() != pending.Count)
                     throw new InvalidDataException("Duplicate story choice key.");
                 int flags = reader.ReadByte();
-                if (flags > 1) throw new InvalidDataException("Malformed story occurrence flags.");
-                failure = flags == 1;
+                if (flags > (version >= 3 ? 3 : 1)) throw new InvalidDataException("Malformed story occurrence flags.");
+                failure = (flags & 1) != 0;
+                hasLayout = (flags & 2) != 0;
             }
-            rows[index] = new StoryOccurrenceEntry(new StoryContentId(provider, local), occurrence, retention, sequence, state, outcome, choices, reservation, pending, failure);
+            var layout = hasLayout ? StoryObjectiveLayoutCodec.Read(reader) : null;
+            if (hasLayout && layout!.Slots.Count == 0) throw new InvalidDataException("Empty objective layout must omit its presence flag.");
+            rows[index] = new StoryOccurrenceEntry(new StoryContentId(provider, local), occurrence, retention, sequence, state, outcome, choices, reservation, pending, failure, layout);
         }
         if (stream.Position != bytes.Length) throw new InvalidDataException("Trailing story state bytes.");
         var refusal = StoryLedger.RefuseBounds(rows);

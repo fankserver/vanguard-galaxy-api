@@ -2157,6 +2157,69 @@ public sealed class StoryContentTests
         Assert.Throws<InvalidDataException>(() => StoryStateCodec.Decode(newer));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SchemaTwoAtLogicalBudgetRestoresAndRepublishesWithoutExtraOverhead(bool globalBoundary)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "vg-story-budget-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var owner = StoryProviderIdentity.Segment(new StoryHostPlugin(AnimaPlugin, typeof(StoryContentTests).Assembly));
+            var rows = new List<StoryOccurrenceEntry>();
+            int remaining = globalBoundary ? StoryLedger.LedgerPayloadBudget - StoryStateCodec.HeaderBytes : StoryLedger.ProviderPayloadBudget;
+            int providers = globalBoundary ? 33 : 1;
+            for (int index = 0; index < providers; index++)
+            {
+                var id = new StoryContentId(index == 0 ? owner : "provider-" + index, "salvage-run");
+                int allowance = index < 31 ? Math.Min(remaining, StoryLedger.ProviderPayloadBudget) : remaining / (providers - index);
+                var empty = Enumerable.Range(0, 20).Select(_ => new StoryOccurrenceEntry(id, Guid.NewGuid(), StoryRetention.Campaign, rows.Count + 1)).ToArray();
+                int reservation = allowance - empty.Sum(StoryStateCodec.EncodedSize);
+                Assert.True(reservation >= 0);
+                foreach (var entry in empty)
+                {
+                    int reserved = Math.Min(reservation, StoryMissionDefinition.MaxChoiceBytesPerOccurrence);
+                    rows.Add(new StoryOccurrenceEntry(id, entry.OccurrenceId, StoryRetention.Campaign, rows.Count + 1, choiceReservation: reserved));
+                    reservation -= reserved;
+                }
+                Assert.Equal(0, reservation);
+                remaining -= allowance;
+            }
+            Assert.Equal(0, remaining);
+            Assert.Null(StoryLedger.RefuseBounds(rows));
+            var legacy = StoryStateCodec.Encode(rows);
+            Array.Copy(BitConverter.GetBytes(2), 0, legacy, 4, 4);
+            var store = new GenerationStore(root);
+            var hash = new string('a', 64);
+            var oldCodec = new OwnerSchemaCodec(StoryStateCodec.Owner, 2, StoryStateCodec.Validate);
+            store.Publish("slot", hash, Guid.NewGuid(), new Dictionary<string, byte[]> { [StoryStateCodec.Owner] = oldCodec.Encode(legacy) });
+            using var hub = new LifecycleHub((_, error) => throw new Exception("Unexpected migration fault", error));
+            using var persistence = new PersistenceService(hub, store, path => path, _ => hash);
+            var host = new FakeHost();
+            using var service = new StoryContentService(persistence, hub, host.Authenticate, null, hub.CheckThread);
+            var plugin = new object();
+            host.Register(plugin, AnimaPlugin);
+            Assert.True(service.AcquireProvider(plugin).Provider!.Register(Definition(retention: StoryRetention.Campaign)).Succeeded);
+            var session = hub.Begin(SessionOrigin.SaveLoad, "slot");
+            hub.PlayerReady(session);
+            hub.GameplayInitialized(session);
+            Assert.Equal(rows.Count, service.Ledger.Entries.Count());
+            var operation = Guid.NewGuid();
+            hub.Publish(new LifecycleEvent(LifecycleEventKind.SaveStarted, hub.CurrentSession, operation, "upgraded-slot"));
+            hub.Publish(new LifecycleEvent(LifecycleEventKind.SaveSucceeded, hub.CurrentSession, operation, "upgraded-slot"));
+            var codec = new OwnerSchemaCodec(StoryStateCodec.Owner, StoryStateCodec.SchemaVersion, StoryStateCodec.Validate);
+            var payload = codec.Decode(store.Load("upgraded-slot", hash)!.Owners[StoryStateCodec.Owner]).Payload!;
+            Assert.Equal(legacy.Length, payload.Length);
+            Assert.Equal(rows.Select(row => row.OccurrenceId), StoryStateCodec.Decode(payload).Select(row => row.OccurrenceId));
+            Assert.Equal(legacy, oldCodec.Decode(store.Load("slot", hash)!.Owners[StoryStateCodec.Owner]).Payload);
+            var reloaded = hub.Begin(SessionOrigin.SaveLoad, "upgraded-slot");
+            hub.PlayerReady(reloaded);
+            hub.GameplayInitialized(reloaded);
+            Assert.Equal(rows.Count, service.Ledger.Entries.Count());
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
     [Fact]
     public void LegacyOwnerEnvelopeMigratesThroughTheRealGenerationCoordinator()
     {
@@ -2974,6 +3037,107 @@ public sealed class StoryContentTests
             => _plugins.TryGetValue(instance, out var plugin) ? new StoryHostPlugin(plugin.PluginId, plugin.Assembly) : null;
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RevisionMigrationAndRollbackUseAutomaticOccurrenceRestore(bool active)
+    {
+        var provider = Provider(out var world, out _, out _, StoryRetention.Campaign);
+        StoryMissionDefinition DefinitionFor(bool reverse) => new("conversation", "Conversation", "Description", new StoryFactionId("TradingGuild"),
+            reverse ? new[] { new StoryStep("Report", new[] { StoryObjective.Scripted("report", "Report") }),
+                new StoryStep("Talk", new[] { StoryObjective.Scripted("talk", "Talk", 5) }) }
+                : new[] { new StoryStep("Talk", new[] { StoryObjective.Scripted("talk", "Talk", 5) }),
+                new StoryStep("Report", new[] { StoryObjective.Scripted("report", "Report") }) });
+        Assert.True(provider.Register(DefinitionFor(false)).Succeeded);
+        var offered = provider.Offer("conversation");
+        var objective = new StoryObjectiveId(new StoryContentId(provider.ProviderId, "conversation"), offered.OccurrenceId, "talk");
+        if (active)
+        {
+            Assert.True(provider.Activate(offered.OccurrenceId).Accepted);
+            Assert.True(((IStoryObjectiveProvider)provider).SetProgress(world.SessionId, objective, 2).Accepted);
+        }
+        var older = world.Persistence.Provider!.Capture();
+        var later = new FakeWorld();
+        var host = new FakeHost();
+        using var service = later.Service(host);
+        var plugin = new object();
+        host.Register(plugin, AnimaPlugin);
+        var currentProvider = service.AcquireProvider(plugin).Provider!;
+        Assert.True(currentProvider.Register(DefinitionFor(true).WithRevision(2, 1)).Succeeded);
+        if (active) later.World.AdoptInWorld(FakeWorld.Native(currentProvider, "conversation", offered.OccurrenceId));
+        later.StartAndRestore(older);
+        Assert.True(service.Ledger.TryGet(offered.OccurrenceId, out var restored));
+        Assert.Equal(2, restored.ObjectiveLayout.Revision);
+        Assert.True(restored.ObjectiveLayout.TryResolve("talk", out var talk));
+        Assert.Equal(1, talk.Step);
+        Assert.Equal(active ? 2 : 0, talk.Progress);
+        if (!active) Assert.True(currentProvider.Activate(offered.OccurrenceId).Accepted);
+        Assert.True(((IStoryObjectiveProvider)currentProvider).SetProgress(later.SessionId, objective, 5).Accepted);
+        var upgraded = later.Persistence.Provider!.Capture();
+        later.StartAndRestore(upgraded);
+        Assert.True(service.Ledger.TryGet(offered.OccurrenceId, out var complete));
+        Assert.Equal(5, complete.ObjectiveLayout.Slots.Single(slot => slot.Key == "talk").Progress);
+        later.StartAndRestore(older);
+        Assert.True(service.Ledger.TryGet(offered.OccurrenceId, out var rollback));
+        Assert.Equal(active ? 2 : 0, rollback.ObjectiveLayout.Slots.Single(slot => slot.Key == "talk").Progress);
+        Assert.Equal(2, rollback.ObjectiveLayout.Revision);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ScriptedProgressDoesNotCommitAfterSessionOrLeaseInvalidation(bool disposeLease)
+    {
+        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        Assert.True(provider.Register(new StoryMissionDefinition("conversation", "Conversation", "Description", new StoryFactionId("TradingGuild"),
+            new[] { new StoryStep("Talk", new[] { StoryObjective.Scripted("answer", "Talk", 5) }) })).Succeeded);
+        var offered = provider.Offer("conversation");
+        Assert.True(provider.Activate(offered.OccurrenceId).Accepted);
+        var objective = new StoryObjectiveId(new StoryContentId(provider.ProviderId, "conversation"), offered.OccurrenceId, "answer");
+        var before = world.Persistence.Provider!.Capture();
+        Assert.True(service.Ledger.TryGet(offered.OccurrenceId, out var original));
+        world.World.DuringObjectiveWrite = () =>
+        {
+            if (disposeLease) provider.Dispose();
+            else world.StartAndRestore(before);
+        };
+        Assert.False(((IStoryObjectiveProvider)provider).SetProgress(world.SessionId, objective, 2).Accepted);
+        Assert.Equal(0, world.World.ObjectiveWrites);
+        Assert.Equal(0, Assert.Single(original.ObjectiveLayout.Slots).Progress);
+        Assert.True(service.Ledger.TryGet(offered.OccurrenceId, out var current));
+        Assert.Equal(0, Assert.Single(current.ObjectiveLayout.Slots).Progress);
+    }
+
+    [Fact]
+    public void ScriptedProgressUsesAuthenticatedSessionAndAutomaticOwnerCapture()
+    {
+        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        Assert.True(provider.Register(new StoryMissionDefinition("conversation", "Conversation", "Description", new StoryFactionId("TradingGuild"),
+            new[] { new StoryStep("Talk", new[] { StoryObjective.Scripted("answer", "Talk to the broker", 5) }) })).Succeeded);
+        var offered = provider.Offer("conversation");
+        var objective = new StoryObjectiveId(new StoryContentId(provider.ProviderId, "conversation"), offered.OccurrenceId, "answer");
+        var objectives = (IStoryObjectiveProvider)provider;
+        Assert.False(objectives.SetProgress(world.SessionId, objective, 2).Accepted);
+        Assert.True(provider.Activate(offered.OccurrenceId).Accepted);
+        Assert.True(objectives.SetProgress(world.SessionId, objective, 2).Accepted);
+        var older = world.Persistence.Provider!.Capture();
+        Assert.True(objectives.SetProgress(world.SessionId, objective, 5).Accepted);
+        var oldSession = world.SessionId;
+        world.StartAndRestore(older);
+        int writes = world.World.ObjectiveWrites;
+        Assert.False(objectives.SetProgress(oldSession, objective, 5).Accepted);
+        Assert.Equal(writes, world.World.ObjectiveWrites);
+        Assert.True(service.Ledger.TryGet(offered.OccurrenceId, out var entry));
+        Assert.Equal(2, Assert.Single(entry.ObjectiveLayout.Slots).Progress);
+        Assert.Equal(StoryKnowledge.Unavailable, objectives.Query(oldSession, objective).Knowledge);
+        Assert.Equal(StoryKnowledge.Known, objectives.Query(world.SessionId, objective).Knowledge);
+        Assert.Equal(2, objectives.Query(world.SessionId, objective).Progress);
+        Assert.True(objectives.SetProgress(world.SessionId, objective, 2).Accepted);
+        Assert.Equal(2, Assert.Single(entry.ObjectiveLayout.Slots).Progress);
+        var foreign = new StoryObjectiveId(new StoryContentId("foreign", "conversation"), offered.OccurrenceId, "answer");
+        Assert.False(objectives.SetProgress(world.SessionId, foreign, 5).Accepted);
+    }
+
     private sealed class FakeWorld
     {
         internal readonly FakePersistence Persistence;
@@ -3236,7 +3400,7 @@ public sealed class StoryContentTests
     /// native adapter verifies: a duplicate identifier is never replaced, a duplicate story mission is
     /// refused, and a completion is the WORLD's to make.
     /// </summary>
-    private sealed class FakeStoryWorld : IStoryWorld
+    private sealed class FakeStoryWorld : IStoryWorld, IStoryObjectiveWorld
     {
         private readonly Dictionary<string, StoryMissionDefinition> _installed = new(StringComparer.Ordinal);
         private readonly HashSet<string> _factions = new(StringComparer.Ordinal) { "TradingGuild", "MiningGuild" };
@@ -3262,6 +3426,20 @@ public sealed class StoryContentTests
         internal void ClearWorld() { _active.Clear(); _archived.Clear(); }
         internal bool IsInstalled(string identifier) => _installed.ContainsKey(identifier);
         internal bool IsActive(string identifier) => _active.Contains(identifier);
+
+        public StoryWorldResult MigrateScripted(string identifier, StoryMissionDefinition definition, StoryObjectiveLayout source,
+            StoryObjectiveLayout destination, Func<bool> stillValid)
+            => _active.Contains(identifier) && stillValid() ? StoryWorldResult.Ok : new StoryWorldResult(StoryWorldStatus.Refused, "unavailable");
+        internal int ObjectiveWrites;
+        internal Action? DuringObjectiveWrite;
+        public StoryWorldResult SetScriptedProgress(string identifier, StoryObjectiveLayout.Slot slot, int progress, Func<bool>? stillValid = null)
+        {
+            if (!_active.Contains(identifier) || Unavailable) return new StoryWorldResult(StoryWorldStatus.Unavailable, "no live occurrence");
+            DuringObjectiveWrite?.Invoke();
+            if (stillValid?.Invoke() == false) return new StoryWorldResult(StoryWorldStatus.Refused, "invalidated");
+            ObjectiveWrites++;
+            return StoryWorldResult.Ok;
+        }
 
         internal bool RefuseRollback;
         internal int Rollbacks;

@@ -50,13 +50,14 @@ namespace Source.MissionSystem
 {
     public enum MissionDifficulty { Easy, Normal, Hard, Skull, Insane, Faction, Tutorial, Story }
 
-    public enum MissionTrigger { Travel, Kill, Credits }
+    public enum MissionTrigger { Travel, Kill, Credits, None }
 
     public abstract class MissionObjective
     {
         /// <summary>The virtual dispatch point the game uses to advance objectives, and the guard patches.</summary>
         public virtual void ProcessMissionTrigger(MissionTrigger trigger, object data) => Progress++;
         public int Progress { get; private set; }
+        public virtual bool IsComplete() => false;
         public static MissionObjective? Create(string type)
             => Type.GetType("Source.MissionSystem.Objectives." + type)?.GetConstructor(Type.EmptyTypes)?.Invoke(null) as MissionObjective;
         /// <summary>Mirrors the game writing each objective's own data; a null dependency throws here too.</summary>
@@ -106,6 +107,17 @@ namespace Source.MissionSystem.Objectives
         public int requiredAmount;
         /// <summary>Exactly the game's dependency: a null enemy faction throws while saving.</summary>
         public override string ToJson() => "{kill:" + enemyFaction!.identifier + ":" + requiredAmount + "}";
+    }
+    public sealed class TriggerObjective : MissionObjective
+    {
+        public MissionTrigger trigger;
+        public string? description;
+        public int requiredAmount = 1;
+        public int currentAmount;
+        public override bool IsComplete() => currentAmount >= requiredAmount;
+        public override void ProcessMissionTrigger(MissionTrigger trigger, object data)
+            => currentAmount = Math.Min(currentAmount + (data is int count ? count : 1), requiredAmount);
+        public override string ToJson() => "{trigger:" + trigger + ":" + description + ":" + currentAmount + ":" + requiredAmount + "}";
     }
     public sealed class CollectCredits : MissionObjective
     {

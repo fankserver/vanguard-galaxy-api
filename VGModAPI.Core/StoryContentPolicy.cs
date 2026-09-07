@@ -36,7 +36,8 @@ internal static class StoryContentPolicy
     {
         [StoryObjectiveKind.TravelToPoi] = "TravelToPOI",
         [StoryObjectiveKind.KillEnemies] = "KillEnemies",
-        [StoryObjectiveKind.CollectCredits] = "CollectCredits"
+        [StoryObjectiveKind.CollectCredits] = "CollectCredits",
+        [StoryObjectiveKind.Scripted] = "TriggerObjective"
     };
 
     /// <summary>Vanilla reward type names, exactly as <c>MissionReward.Create</c> resolves them.</summary>

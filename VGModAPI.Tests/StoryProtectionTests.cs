@@ -466,16 +466,17 @@ public sealed class StoryProtectionTests : IDisposable
         Assert.False(guard.IsMission("not a mission"));
         Assert.Single(guard.Objectives(owned.Mission));
         Assert.ThrowsAny<Exception>(() => new StoryProtectionGuard(typeof(string).Assembly));
-        // Every kind the API can install uses the base trigger the guard patches; a kind that
-        // overrode it would refuse to bind rather than be guarded incompletely.
+        // Scripted objectives have a dedicated mandatory override guard; other installable kinds use the base guard.
         foreach (StoryObjectiveKind kind in Enum.GetValues(typeof(StoryObjectiveKind)))
         {
             if (StoryContentPolicy.RefuseObjective(kind) != null) continue;
             var type = typeof(StoryMission).Assembly.GetType(
                 StoryContentPolicy.ObjectiveNamespace + "." + StoryContentPolicy.ObjectiveTypeName(kind))!;
-            Assert.Null(type.GetMethod("ProcessMissionTrigger",
+            var method = type.GetMethod("ProcessMissionTrigger",
                 System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic
-                | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly));
+                | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly);
+            if (kind == StoryObjectiveKind.Scripted) Assert.NotNull(method);
+            else Assert.Null(method);
         }
     }
 }

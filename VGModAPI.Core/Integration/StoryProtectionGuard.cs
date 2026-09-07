@@ -47,6 +47,8 @@ internal sealed class StoryProtectionGuard
         {
             if (StoryContentPolicy.RefuseObjective(kind) != null) continue;      // not installable anyway
             var type = assembly.GetType(StoryContentPolicy.ObjectiveNamespace + "." + StoryContentPolicy.ObjectiveTypeName(kind), true)!;
+            // The scripted override has its own mandatory catalog binding and identical guard prefix.
+            if (kind == StoryObjectiveKind.Scripted) continue;
             if (type.GetMethod("ProcessMissionTrigger",
                 BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly) != null)
                 throw new NotSupportedException("Objective '" + type.FullName
@@ -57,6 +59,9 @@ internal sealed class StoryProtectionGuard
     private static PropertyInfo Property(Type type, string name) => type.GetProperty(name,
         BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)
         ?? throw new MissingMemberException(type.FullName, name);
+
+    internal bool IsScriptedObjective(object value)
+        => value.GetType().FullName == "Source.MissionSystem.Objectives.TriggerObjective";
 
     internal bool IsMission(object? value) => value != null && _mission.IsInstanceOfType(value);
 

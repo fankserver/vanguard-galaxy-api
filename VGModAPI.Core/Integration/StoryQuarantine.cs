@@ -103,7 +103,13 @@ internal sealed class StoryQuarantine
                 foreach (var candidate in _guard.Objectives(mission))
                 {
                     if (++objectives > MaxScannedObjectives) return Degrade("the player holds more objectives than the guard can scan");
-                    if (ReferenceEquals(candidate, objective)) return quarantined;
+                    if (ReferenceEquals(candidate, objective))
+                    {
+                        var storyId = _guard.StoryId(mission);
+                        // Scripted progress is set through the owner API, never by broadcast vanilla triggers.
+                        return quarantined || (storyId != null && _protection.IsOwnedNamespace(storyId)
+                            && _guard.IsScriptedObjective(candidate));
+                    }
                 }
             }
             // An objective that belongs to no mission the player holds is not ours to judge.

@@ -54,6 +54,105 @@ public sealed class StoryNativeAdapterTests : IDisposable
         => StoryContentPolicy.OccurrenceIdentifier(new StoryContentId("anima", local), occurrence ?? Guid.NewGuid());
 
     [Fact]
+    public void ScriptedProgressTargetsCurrentPlayerAndRejectsInactiveSteps()
+    {
+        using var world = World();
+        var identifier = Identifier();
+        var definition = new StoryMissionDefinition("scripted", "Title", "Description", Trading,
+            new[] {
+                new StoryStep("First", new[] { StoryObjective.Scripted("first", "Talk", 2) }),
+                new StoryStep("Next", new[] { StoryObjective.Scripted("next", "Report") }) });
+        Assert.True(world.Install(identifier, definition).Applied);
+        Assert.True(world.Accept(identifier).Applied);
+        var bindings = new StoryNativeBindings(typeof(StoryMission).Assembly);
+        var oldMission = (Mission)bindings.ActiveStory(_player, identifier)!;
+        var layout = new StoryObjectiveLayout(definition);
+        Assert.True(layout.TryResolve("first", out var first));
+        Assert.True(layout.TryResolve("next", out var next));
+        Assert.False(world.SetScriptedProgress(identifier, next, 1).Applied);
+        Assert.True(world.SetScriptedProgress(identifier, first, 1).Applied);
+        Assert.True(world.SetScriptedProgress(identifier, first, 2).Applied);
+        Assert.True(world.SetScriptedProgress(identifier, first, 2).Applied);
+        var replacement = new Source.Player.GamePlayer();
+        Source.Player.GamePlayer.current = replacement;
+        var newMission = bindings.BuildMission(replacement, identifier);
+        bindings.Accept(replacement, newMission);
+        Assert.True(world.SetScriptedProgress(identifier, first, 1).Applied);
+        Assert.Equal(2, ((Source.MissionSystem.Objectives.TriggerObjective)oldMission.steps[0].objectives[0]).currentAmount);
+        Assert.Equal(1, ((Source.MissionSystem.Objectives.TriggerObjective)((Mission)newMission).steps[0].objectives[0]).currentAmount);
+    }
+
+    [Fact]
+    public void ScriptedRevisionMigrationRebuildsStepsOnTheHeldMissionPreservingPartialProgress()
+    {
+        using var world = World();
+        var identifier = Identifier();
+        StoryMissionDefinition DefinitionFor(bool reverse) => new("scripted", "Title", "Description", Trading,
+            reverse ? new[] { new StoryStep("Report", new[] { StoryObjective.Scripted("report", "Report") }),
+                new StoryStep("Talk", new[] { StoryObjective.Scripted("talk", "Talk", 5) }) }
+                : new[] { new StoryStep("Talk", new[] { StoryObjective.Scripted("talk", "Talk", 5) }),
+                new StoryStep("Report", new[] { StoryObjective.Scripted("report", "Report") }) });
+        var original = DefinitionFor(false);
+        Assert.True(world.Install(identifier, original).Applied);
+        Assert.True(world.Accept(identifier).Applied);
+        var source = new StoryObjectiveLayout(original);
+        Assert.True(source.TryResolve("talk", out var talk));
+        Assert.True(world.SetScriptedProgress(identifier, talk, 2).Applied);
+        source = source.WithProgress("talk", 2);
+        var revised = DefinitionFor(true).WithRevision(2, 1);
+        Assert.True(source.TryMigrate(revised, out var destination));
+        var bindings = new StoryNativeBindings(typeof(StoryMission).Assembly);
+        var held = (Mission)bindings.ActiveStory(_player, identifier)!;
+        Assert.True(world.MigrateScripted(identifier, revised, source, destination, () => true).Applied);
+        Assert.Same(held, bindings.ActiveStory(_player, identifier));
+        Assert.Equal(2, ((Source.MissionSystem.Objectives.TriggerObjective)held.steps[1].objectives[0]).currentAmount);
+        Assert.Equal(0, ((Source.MissionSystem.Objectives.TriggerObjective)held.steps[0].objectives[0]).currentAmount);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    public void ScriptedMutationRefusesChangesDuringCompletionInspection(int change)
+    {
+        using var world = World();
+        var identifier = Identifier();
+        Assert.True(world.Install(identifier, Definition(objectives: new[] { StoryObjective.Scripted("beat", "Talk", 2) })).Applied);
+        Assert.True(world.Accept(identifier).Applied);
+        var bindings = new StoryNativeBindings(typeof(StoryMission).Assembly);
+        var mission = (Mission)bindings.ActiveStory(_player, identifier)!;
+        var objective = (Source.MissionSystem.Objectives.TriggerObjective)mission.steps[0].objectives[0];
+        bool valid = true;
+        mission.steps[0].DuringCompletion = () =>
+        {
+            mission.steps[0].DuringCompletion = null;
+            if (change == 0) Source.Player.GamePlayer.current = new Source.Player.GamePlayer();
+            if (change == 1) mission.steps[0].objectives[0] = new Source.MissionSystem.Objectives.TriggerObjective { requiredAmount = 2 };
+            if (change == 2) bindings.Abandon(_player, mission);
+            if (change == 3) StoryMission.allMissions.Remove(identifier);
+            if (change == 4) valid = false;
+        };
+        Assert.False(world.SetScriptedProgress(identifier, new StoryObjectiveLayout.Slot("beat", 0, 0, StoryObjectiveKind.Scripted, 2), 1, () => valid).Applied);
+        Assert.Equal(0, objective.currentAmount);
+    }
+
+    [Fact]
+    public void ScriptedMutationRefusesNonScriptedTriggerIdentity()
+    {
+        using var world = World();
+        var identifier = Identifier();
+        Assert.True(world.Install(identifier, Definition(objectives: new[] { StoryObjective.Scripted("beat", "Talk", 2) })).Applied);
+        Assert.True(world.Accept(identifier).Applied);
+        var mission = (Mission)new StoryNativeBindings(typeof(StoryMission).Assembly).ActiveStory(_player, identifier)!;
+        var objective = (Source.MissionSystem.Objectives.TriggerObjective)mission.steps[0].objectives[0];
+        objective.trigger = MissionTrigger.Travel;
+        Assert.False(world.SetScriptedProgress(identifier, new StoryObjectiveLayout.Slot("beat", 0, 0, StoryObjectiveKind.Scripted, 2), 1).Applied);
+        Assert.Equal(0, objective.currentAmount);
+    }
+
+    [Fact]
     public void TheBindingsResolveTheWholeStorySurfaceFromADeclaredShape()
     {
         var exception = Record.Exception(() => new StoryNativeBindings(typeof(StoryMission).Assembly));

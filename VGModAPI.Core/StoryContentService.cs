@@ -29,7 +29,7 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
 {
     private enum Readiness { None, Pending, Restored, Blocked }
 
-    private sealed class Lease : IStoryProvider
+    private sealed class Lease : IStoryProvider, IStoryObjectiveProvider
     {
         private readonly StoryContentService _service;
         private bool _disposed;
@@ -80,6 +80,24 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
         {
             _service.CheckThread();
             return _service.Retire(this, expectedSessionId, occurrenceId, outcome, choices);
+        }
+
+        public StoryObjectiveQuery Query(Guid expectedSessionId, StoryObjectiveId objective)
+        {
+            _service.CheckThread();
+            if (!_service.GuardStable(this, expectedSessionId, out var refusal, out _))
+                return new StoryObjectiveQuery(StoryKnowledge.Unavailable, null, null, null, refusal);
+            if (objective.Definition.Provider != ProviderId || !_service._ledger.TryGet(objective.OccurrenceId, out var entry)
+                || !entry.Id.Equals(objective.Definition) || !entry.ObjectiveLayout.TryResolve(objective.LocalKey, out var slot)
+                || slot.Kind != StoryObjectiveKind.Scripted)
+                return new StoryObjectiveQuery(StoryKnowledge.Unavailable, null, null, null, "No retained owned scripted objective matches this identity.");
+            return new StoryObjectiveQuery(StoryKnowledge.Known, slot.Progress, slot.Required, entry.ObjectiveLayout.Revision, "");
+        }
+
+        public StoryTransitionResult SetProgress(Guid expectedSessionId, StoryObjectiveId objective, int progress)
+        {
+            _service.CheckThread();
+            return _service.SetProgress(this, expectedSessionId, objective, progress);
         }
 
         public StoryOccurrenceQuery Occurrences(string localId)
@@ -205,7 +223,7 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
             // Schema 1 rows are read as what they meant: no declaration staged for a future outcome
             // and no observed failure. The bytes are handed through unchanged; the decoder does the
             // reading, so nothing is rewritten to fit a newer shape.
-            migrations: new Dictionary<int, Func<byte[], byte[]>> { [StoryStateCodec.FirstSchemaVersion] = payload => payload }));
+            migrations: new Dictionary<int, Func<byte[], byte[]>> { [StoryStateCodec.FirstSchemaVersion] = payload => payload, [2] = payload => payload }));
         // Availability is bound to the lifecycle independently of restore: a failed or invalidated
         // session never calls restore, and its queries must not answer from the previous save.
         _lifecycle = lifecycle?.Subscribe("vgmodapi.story-content", OnLifecycle);
@@ -279,6 +297,14 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
             var identifier = StoryContentPolicy.OccurrenceIdentifier(entry.Id, entry.OccurrenceId);
             if (!_registry.TryGet(entry.Id, out var definition))
             { Suspend(identifier + ": this save holds owned story content whose provider is not registered."); continue; }
+            StoryObjectiveLayout? migrated = null;
+            if (!entry.ObjectiveLayout.SamePositions(new StoryObjectiveLayout(definition))
+                && (!entry.ObjectiveLayout.TryMigrate(definition, out migrated) || !_ledger.CanReplaceObjectiveLayout(entry, migrated)))
+            {
+                _unrunnable.Add(entry.OccurrenceId);
+                _reconciliation.Add(identifier + ": objective layout differs from the retained occurrence and requires migration.");
+                continue;
+            }
             var missing = MissingTargets(definition, out var unknownWorld);
             if (unknownWorld || missing != null)
             {
@@ -291,7 +317,39 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
                 continue;
             }
             var installed = _world.Install(identifier, definition);
-            if (installed.Applied) _occurrenceIdentifiers[entry.OccurrenceId] = identifier;
+            if (installed.Applied)
+            {
+                if (migrated != null)
+                {
+                    var session = _restoredSession;
+                    bool Stable() => !_disposed && _fault == null && _restoredSession == session && _currentSession()?.Id == session
+                        && _leasesBySegment.TryGetValue(entry.Id.Provider!, out var owner) && owner.Active
+                        && _ledger.TryGet(entry.OccurrenceId, out var current) && ReferenceEquals(current, entry)
+                        && _registry.TryGet(entry.Id, out var registered) && ReferenceEquals(registered, definition);
+                    if (!BeginOperation(out _, entry.OccurrenceId))
+                    {
+                        _unrunnable.Add(entry.OccurrenceId);
+                        continue;
+                    }
+                    bool applied = false;
+                    try
+                    {
+                        applied = entry.State != StoryOccurrenceState.Active || (_world is IStoryObjectiveWorld objectiveWorld
+                            && objectiveWorld.MigrateScripted(identifier, definition, entry.ObjectiveLayout, migrated, Stable).Applied);
+                        if (!Stable()) return;
+                        if (applied) entry.ReplaceObjectiveLayout(migrated);
+                    }
+                    finally { EndOperation(); }
+                    if (!Stable()) return;
+                    if (!applied)
+                    {
+                        _unrunnable.Add(entry.OccurrenceId);
+                        _reconciliation.Add(identifier + ": scripted migration could not be verified; retained state is unchanged.");
+                        continue;
+                    }
+                }
+                _occurrenceIdentifiers[entry.OccurrenceId] = identifier;
+            }
             else Suspend(identifier + ": the world refused to reinstall this occurrence (" + installed.Detail + ").");
         }
         var snapshot = _world.Snapshot();
@@ -632,6 +690,32 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
         return new StoryProviderResult(StoryProviderStatus.Acquired, lease, "");
     }
 
+    private StoryTransitionResult SetProgress(Lease lease, Guid session, StoryObjectiveId objective, int progress)
+    {
+        if (!Guard(lease, session, out var detail, out var status)) return new StoryTransitionResult(status, objective.OccurrenceId, detail);
+        if (objective.Definition.Provider != lease.ProviderId || !_ledger.TryGet(objective.OccurrenceId, out var entry)
+            || !entry.Id.Equals(objective.Definition) || entry.State != StoryOccurrenceState.Active
+            || !entry.ObjectiveLayout.TryResolve(objective.LocalKey, out var slot) || slot.Kind != StoryObjectiveKind.Scripted
+            || progress < slot.Progress || progress > slot.Required)
+            return new StoryTransitionResult(StoryTransitionStatus.InvalidTransition, objective.OccurrenceId, "The objective is not an active owned scripted objective or progress is invalid.");
+        if (_unrunnable.Contains(objective.OccurrenceId) || _world is not IStoryObjectiveWorld world
+            || !_occurrenceIdentifiers.TryGetValue(objective.OccurrenceId, out var identifier))
+            return new StoryTransitionResult(StoryTransitionStatus.Unavailable, objective.OccurrenceId, "The live objective cannot be resolved.");
+        if (!BeginOperation(out var busy, objective.OccurrenceId)) return busy;
+        try
+        {
+            bool Stable() => GuardStable(lease, session, out _, out _) && !_unrunnable.Contains(objective.OccurrenceId)
+                && _ledger.TryGet(objective.OccurrenceId, out var current) && ReferenceEquals(current, entry)
+                && entry.State == StoryOccurrenceState.Active;
+            var result = world.SetScriptedProgress(identifier, slot, progress, Stable);
+            if (!Stable()) return new StoryTransitionResult(StoryTransitionStatus.Unavailable, objective.OccurrenceId, "The objective operation was invalidated.");
+            if (!result.Applied) return new StoryTransitionResult(StoryTransitionStatus.Unavailable, objective.OccurrenceId, result.Detail);
+            entry.SetObjectiveProgress(objective.LocalKey, progress);
+            return new StoryTransitionResult(StoryTransitionStatus.Accepted, objective.OccurrenceId, "");
+        }
+        finally { EndOperation(); }
+    }
+
     private StoryRegistrationResult Register(Lease lease, StoryMissionDefinition definition)
     {
         var id = new StoryContentId(lease.ProviderId, definition.LocalId);
@@ -726,7 +810,7 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
                 "This world holds no point of interest '" + targets + "', so the mission could never be completed.");
         var occurrenceId = _newOccurrence();
         // The outcome's worst-case payload is reserved now, so this occurrence can always be retired.
-        var result = _ledger.Offer(id, definition!.Retention, occurrenceId, definition.ReservedChoiceBytes, out var diagnostic);
+        var result = _ledger.Offer(id, definition!.Retention, occurrenceId, definition.ReservedChoiceBytes, out var diagnostic, new StoryObjectiveLayout(definition));
         if (result != StoryLedgerStatus.Accepted) return new StoryTransitionResult(Map(result), Guid.Empty, diagnostic);
         if (_world != null)
         {
@@ -862,6 +946,9 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
         // right before the game is asked to hold this mission.
         if (_registry.TryGet(entry!.Id, out var definition))
         {
+            if (!entry.ObjectiveLayout.SamePositions(new StoryObjectiveLayout(definition)))
+                return new StoryTransitionResult(StoryTransitionStatus.Unavailable, occurrenceId,
+                    "The retained objective layout requires migration before activation.");
             var missing = MissingTargets(definition, out var unknownWorld);
             if (unknownWorld)
                 return new StoryTransitionResult(StoryTransitionStatus.Unavailable, occurrenceId,
