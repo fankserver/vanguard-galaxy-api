@@ -39,8 +39,17 @@ internal sealed class StoryNativeWorld : IStoryWorld, IDisposable
         _checkThread();
         if (factionId == null) throw new ArgumentNullException(nameof(factionId));
         if (_disposed) return false;
-        try { return _bindings.Faction(factionId) != null; }
+        try { return _bindings.KnowsFaction(factionId); }
         catch (Exception error) { Report(error); return false; }
+    }
+
+    public bool? KnowsPointOfInterest(string guid)
+    {
+        _checkThread();
+        if (guid == null) throw new ArgumentNullException(nameof(guid));
+        if (_disposed) return null;
+        try { return _bindings.KnowsPointOfInterest(guid); }
+        catch (Exception error) { Report(error); return null; }
     }
 
     public IReadOnlyCollection<string> InstalledIdentifiers()

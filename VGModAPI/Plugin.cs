@@ -25,6 +25,8 @@ public sealed class Plugin : BaseUnityPlugin
     private TravelNativeAdapter? _travel;
     private StoryNativeWorld? _storyWorld;
     private StoryContentService? _story;
+    private StoryProtection? _protection;
+    private StoryQuarantine? _quarantine;
     private bool _identityHooksBound;
     private ModInformationCatalog? _modCatalog;
 
@@ -44,6 +46,7 @@ public sealed class Plugin : BaseUnityPlugin
         _hub.SetCapability("mission-continuity", false, "Disabled by configuration; experimental.");
         _hub.SetCapability("mission-transitions", false, "Disabled by configuration; experimental.");
         _hub.SetCapability("owned-story", false, "Not initialized; experimental.");
+        _hub.SetCapability("story-protection", false, "Not bound.");
         ModApi.Missions = null;
         ModApi.Story = null;
         ModApi.Current = _hub;
@@ -83,6 +86,10 @@ public sealed class Plugin : BaseUnityPlugin
                 ["store"] = typeof(SavePatches.Store), ["writeFile"] = typeof(SavePatches.WriteFile),
                 ["writeMetadata"] = typeof(SavePatches.WriteMetadata), ["storeFailure"] = typeof(SavePatches.StoreFailure)
             });
+            // Load safety, not a feature: an owned mission restored from a save must not progress or
+            // pay out while nobody vouches for it, and that is true whether or not the story module is
+            // enabled. Bound before anything else story-related, and on by default.
+            InstallStoryProtection(assembly, bindings);
             if (Config.Bind("Travel", "Enabled", false, "Experimental native travel and station observation; use disposable saves until qualified.").Value)
                 InstallTravel(assembly, bindings);
         }
@@ -180,6 +187,47 @@ public sealed class Plugin : BaseUnityPlugin
     /// installed here, ahead of any load. A binding failure leaves the capability unavailable and the
     /// public surface null; it never leaves a half-installed catalog behind.
     /// </summary>
+    /// <summary>
+    /// Installs the quarantine guards. They exist for content the API wrote into a PREVIOUS session's
+    /// save, so they are independent of Story/Enabled and of whether the story module binds at all;
+    /// with nothing admitted they refuse every owned identifier, which is the safe default.
+    /// </summary>
+    private void InstallStoryProtection(Assembly assembly, GameBindings bindings)
+    {
+        if (!Config.Bind("Story", "Protection", true,
+            "Load safety for API-owned story missions restored from a save: they cannot progress or pay out unless the owning module vouches for them. Disable only to diagnose.").Value)
+        { _hub!.SetCapability("story-protection", false, "Disabled by configuration; owned story content in a save would be unguarded."); return; }
+        try
+        {
+            var guard = new StoryProtectionGuard(assembly);
+            _protection = new StoryProtection(_hub!.CheckThread);
+            var player = AccessTools.Field(AccessTools.TypeByName(BindingCatalog.Player), "current");
+            var missions = AccessTools.Field(AccessTools.TypeByName(BindingCatalog.Player), "missions");
+            _quarantine = new StoryQuarantine(guard, _protection,
+                () => player.GetValue(null) is { } current && missions.GetValue(current) is System.Collections.IEnumerable held
+                    ? held.Cast<object>().ToArray() : Array.Empty<object>(),
+                error => Logger.LogError("Story protection fault: " + error));
+            StoryProtectionPatches.Quarantine = _quarantine;
+            InstallGroup("story-protection", bindings, BindingCatalog.StoryProtection, new Dictionary<string, Type>
+            {
+                ["storyGuardUpdate"] = typeof(StoryProtectionPatches.MissionUpdate),
+                ["storyGuardClaim"] = typeof(StoryProtectionPatches.ClaimRewards),
+                ["storyGuardComplete"] = typeof(StoryProtectionPatches.CompleteMission),
+                ["storyGuardFail"] = typeof(StoryProtectionPatches.MissionFailed),
+                ["storyGuardRetry"] = typeof(StoryProtectionPatches.RetryAsNextMission),
+                ["storyGuardTrigger"] = typeof(StoryProtectionPatches.ProcessMissionTrigger)
+            });
+            if (!_hub.Capabilities.Any(c => c.Name == "story-protection" && c.Available))
+            { StoryProtectionPatches.Quarantine = null; _quarantine = null; _protection = null; }
+        }
+        catch (Exception error)
+        {
+            StoryProtectionPatches.Quarantine = null; _quarantine = null; _protection = null;
+            _hub!.SetCapability("story-protection", false, "Story protection unavailable: " + error.Message);
+            Logger.LogError("Owned story content in a save would be unguarded: " + error);
+        }
+    }
+
     private void InitializeStory()
     {
         if (!Config.Bind("Story", "Enabled", false, "Experimental API-owned story content installed into the game's catalog; use disposable saves until qualified.").Value)
@@ -187,6 +235,10 @@ public sealed class Plugin : BaseUnityPlugin
         if (_persistence == null) { _hub!.SetCapability("owned-story", false, "API-managed saves unavailable."); return; }
         if (!_hub!.Capabilities.Any(c => c.Name == "session-lifecycle" && c.Available))
         { _hub.SetCapability("owned-story", false, "Lifecycle capability unavailable."); return; }
+        // Owning content the guards could not protect is worse than owning none: without them an
+        // orphan from a later save would run unguarded, so the module does not install content at all.
+        if (_protection == null)
+        { _hub.SetCapability("owned-story", false, "Story protection unavailable; owned content would be unguarded in a later session."); return; }
         // Without observed mission transitions a completion could never be recorded, and the only
         // alternative would be letting a caller declare one. The capability stays off instead.
         if (_missions == null || !_hub.Capabilities.Any(c => c.Name == "mission-transitions" && c.Available))
@@ -199,7 +251,8 @@ public sealed class Plugin : BaseUnityPlugin
             // Outcomes are observed through the same mission boundary consumers see; without it the
             // module can still install and offer, but completions cannot be recorded at all.
             _story = new StoryContentService(_persistence, _hub, StoryHostAuthentication.Resolve, null, _hub.CheckThread,
-                _storyWorld, _missions?.Events, detail => _hub!.SetCapability("owned-story", true, detail));
+                _storyWorld, _missions?.Events,
+                (detail, available) => _hub!.SetCapability("owned-story", available, detail), _protection);
             ModApi.Story = _story;
             _hub.SetCapability("owned-story", true, "Experimental owned story content enabled; native qualification pending.");
         }
@@ -361,6 +414,8 @@ public sealed class Plugin : BaseUnityPlugin
         // disposing the coordinator first would pause coordinated saves for every other owner.
         ModApi.Story = null;
         try { _story?.Dispose(); } catch (Exception error) { Logger.LogError("Story shutdown failed: " + error); }
+        // The guards outlive the module on purpose: content it installed may still be held.
+        _protection?.WithdrawAll("the story module was shut down");
         try { _storyWorld?.Dispose(); } catch (Exception error) { Logger.LogError("Story world shutdown failed: " + error); }
         _story = null; _storyWorld = null;
         _persistence?.Dispose();

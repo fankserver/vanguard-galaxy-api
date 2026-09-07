@@ -19,7 +19,7 @@ namespace VGModAPI.Tests;
 [Collection("story-native")]
 public sealed class StoryNativeAdapterTests : IDisposable
 {
-    private static readonly StoryFactionId Trading = new("tradingGuild");
+    private static readonly StoryFactionId Trading = new("TradingGuild");
     private readonly Source.Player.GamePlayer _player = new();
 
     public StoryNativeAdapterTests()
@@ -82,7 +82,7 @@ public sealed class StoryNativeAdapterTests : IDisposable
         Assert.True(mission.canAbandon);
         // Every vanilla generator sets these; the API sets the same ones.
         Assert.NotNull(mission.sourceFaction);
-        Assert.Equal("tradingGuild", mission.sourceFaction!.identifier);
+        Assert.Equal("TradingGuild", mission.sourceFaction!.identifier);
         Assert.True(mission.dynamicLevel);
         Assert.Equal("poi-source", mission.sourcePoi!.guid);
         Assert.Equal(MissionDifficulty.Skull, mission.difficulty);       // the API's fourth tier
@@ -101,7 +101,7 @@ public sealed class StoryNativeAdapterTests : IDisposable
 
         // The save the game would write does not throw and carries what it needs.
         var saved = mission.SerializeLikeTheGame();
-        Assert.Contains("faction:tradingGuild", saved);
+        Assert.Contains("faction:TradingGuild", saved);
         Assert.Contains("poi:poi-source", saved);
         Assert.DoesNotContain("faction:,", saved);
     }
@@ -117,10 +117,10 @@ public sealed class StoryNativeAdapterTests : IDisposable
             var mission = StoryMission.Get(_player, identifier);
             Assert.Equal(StoryContentPolicy.DifficultyName(tier), mission.difficulty.ToString());
         }
-        Assert.True(world.KnowsFaction("tradingGuild"));
-        Assert.False(world.KnowsFaction("no-such-faction"));
+        Assert.True(world.KnowsFaction("TradingGuild"));
+        Assert.False(world.KnowsFaction("NoSuchFaction"));
         // A definition naming an unknown faction cannot even build its mission.
-        var unknown = new StoryMissionDefinition("ghost", "t", "d", new StoryFactionId("no-such-faction"),
+        var unknown = new StoryMissionDefinition("ghost", "t", "d", new StoryFactionId("NoSuchFaction"),
             new[] { new StoryStep("s", new[] { StoryObjective.CollectCredits(1) }) });
         var identifierForUnknown = Identifier("ghost");
         Assert.True(world.Install(identifierForUnknown, unknown).Applied);        // installing is catalog-only

@@ -72,6 +72,21 @@ internal static class BindingCatalog
         new("missionSweepIndustryLaunch", "Behaviour.UI.Spacestation.Location.IndustryBoard", "LaunchClicked", false, "System.Void"),
         new("missionSweepTutorialClear", Player, "TransitionTutorialToSandbox", false, "System.Void")
     };
+    internal const string MissionObjective = "Source.MissionSystem.MissionObjective";
+    /// <summary>
+    /// Every way an API-owned mission can advance or pay out. These are load-safety guards, bound
+    /// independently of the story module, because an orphaned owned mission is dangerous exactly when
+    /// that module is absent, disabled or unbound.
+    /// </summary>
+    internal static readonly MethodBinding[] StoryProtection =
+    {
+        new("storyGuardUpdate", Mission, "Update", false, "System.Void", "System.Single"),
+        new("storyGuardClaim", Mission, "ClaimRewards", false, "System.Void", "System.Boolean"),
+        new("storyGuardComplete", Player, "CompleteMission", false, "System.Void", Mission, "System.Boolean"),
+        new("storyGuardFail", Mission, "MissionFailed", false, "System.Void", "System.String"),
+        new("storyGuardRetry", Mission, "RetryAsNextMission", false, "System.Void", "System.String"),
+        new("storyGuardTrigger", MissionObjective, "ProcessMissionTrigger", false, "System.Void", "Source.MissionSystem.MissionTrigger", "System.Object")
+    };
     internal static readonly MethodBinding[] MissionSnapshots =
     {
         new("missionSnapshot", Save, "SaveCurrentState", true, "LightJson.JsonObject")

@@ -16,7 +16,13 @@ internal static class StoryStateCodec
 {
     /// <summary>Reserved owner namespace of API-managed story content.</summary>
     internal const string Owner = "vgmodapi.story-content";
-    internal const int SchemaVersion = 1;
+    /// <summary>
+    /// Schema 2 adds the choices declared for an outcome the game has not produced yet, and the fact
+    /// that the game reported a mission failed while still holding it. Schema 1 is read unchanged:
+    /// its rows simply have neither, which is exactly what they meant.
+    /// </summary>
+    internal const int SchemaVersion = 2;
+    internal const int FirstSchemaVersion = 1;
     private const uint Magic = 0x31435356; // VSC1, little-endian.
     /// <summary>Strict UTF-8 on BOTH sides: invalid bytes or unpaired surrogates throw instead of decoding to U+FFFD.</summary>
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
@@ -39,10 +45,25 @@ internal static class StoryStateCodec
     /// Exact encoded cost of one occurrence, so the ledger can enforce the payload bound in the same
     /// units the codec writes. Encoding is deterministic, so this is a size, not an estimate.
     /// </summary>
+    private static readonly Dictionary<string, string> Empty = new(StringComparer.Ordinal);
+
+    /// <summary>Encoded cost of the choices staged for an outcome the game has not produced yet.</summary>
+    internal static int PendingSize(StoryOccurrenceEntry entry)
+    {
+        if (entry == null) throw new ArgumentNullException(nameof(entry));
+        if (entry.State == StoryOccurrenceState.Retired) return 0;
+        int size = 0;
+        foreach (var pair in entry.PendingChoices)
+            try { size += 2 + StrictUtf8.GetByteCount(pair.Key) + 2 + StrictUtf8.GetByteCount(pair.Value); }
+            catch (EncoderFallbackException) { throw new InvalidDataException("Invalid UTF-8 in story text."); }
+        return size;
+    }
+
     internal static int EncodedSize(StoryOccurrenceEntry entry)
     {
         if (entry == null) throw new ArgumentNullException(nameof(entry));
-        int size = 1 + entry.Id.Provider!.Length + 1 + entry.Id.LocalId.Length + 16 + 8 + 3 + 2 + 1;
+        // The row carries a pending-choice block and a flags byte as well since schema 2.
+        int size = 1 + entry.Id.Provider!.Length + 1 + entry.Id.LocalId.Length + 16 + 8 + 3 + 2 + 1 + 1 + 1 + PendingSize(entry);
         if (entry.Retention != StoryRetention.Campaign) return size;
         foreach (var pair in entry.Choices)
             // Strict UTF-8 again: text that cannot be encoded has no size, it is simply refused.
@@ -81,6 +102,15 @@ internal static class StoryStateCodec
                     WriteText(writer, pair.Key, StoryMissionDefinition.MaxChoiceKeyBytes);
                     WriteText(writer, pair.Value, StoryMissionDefinition.MaxChoiceValueBytes);
                 }
+                var pending = row.State == StoryOccurrenceState.Retired ? Empty : row.PendingChoices;
+                if (pending.Count > StoryMissionDefinition.MaxChoiceKeys) throw new InvalidDataException("Too many declared choices to persist.");
+                writer.Write((byte)pending.Count);
+                foreach (var pair in pending.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+                {
+                    WriteText(writer, pair.Key, StoryMissionDefinition.MaxChoiceKeyBytes);
+                    WriteText(writer, pair.Value, StoryMissionDefinition.MaxChoiceValueBytes);
+                }
+                writer.Write((byte)(row.FailureObserved ? 1 : 0));
             }
             writer.Flush();
         }
@@ -94,8 +124,11 @@ internal static class StoryStateCodec
         using var reader = new BinaryReader(stream, StrictUtf8, true);
         if (reader.ReadUInt32() != Magic) throw new InvalidDataException("Unsupported story state.");
         int version = reader.ReadInt32();
-        // A newer payload is never downgraded; the coordinator reports it as unsupported and protects it.
-        if (version != SchemaVersion) throw new InvalidDataException("Unsupported story state version " + version + ".");
+        // A newer payload is never downgraded; the coordinator reports it as unsupported and protects
+        // it. An OLDER one is read as what it meant: schema 1 rows carry no pending declaration and no
+        // observed failure, so those are simply absent rather than guessed.
+        if (version != SchemaVersion && version != FirstSchemaVersion)
+            throw new InvalidDataException("Unsupported story state version " + version + ".");
         int count = reader.ReadInt32();
         if (count < 0 || count > StoryLedger.MaxOccurrences) throw new InvalidDataException("Malformed story state count.");
         var rows = new StoryOccurrenceEntry[count];
@@ -138,7 +171,26 @@ internal static class StoryStateCodec
             }
             if (choices.Select(pair => pair.Key).Distinct(StringComparer.Ordinal).Count() != choices.Count)
                 throw new InvalidDataException("Duplicate story choice key.");
-            rows[index] = new StoryOccurrenceEntry(new StoryContentId(provider, local), occurrence, retention, sequence, state, outcome, choices, reservation);
+            var pending = new List<KeyValuePair<string, string>>();
+            bool failure = false;
+            if (version >= SchemaVersion)
+            {
+                int pendingCount = reader.ReadByte();
+                if (pendingCount > StoryMissionDefinition.MaxChoiceKeys) throw new InvalidDataException("Malformed story choice count.");
+                for (int choice = 0; choice < pendingCount; choice++)
+                {
+                    var key = ReadText(reader, StoryMissionDefinition.MaxChoiceKeyBytes);
+                    var value = ReadText(reader, StoryMissionDefinition.MaxChoiceValueBytes);
+                    if (key.Length == 0) throw new InvalidDataException("Malformed story choice key.");
+                    pending.Add(new KeyValuePair<string, string>(key, value));
+                }
+                if (pending.Select(pair => pair.Key).Distinct(StringComparer.Ordinal).Count() != pending.Count)
+                    throw new InvalidDataException("Duplicate story choice key.");
+                int flags = reader.ReadByte();
+                if (flags > 1) throw new InvalidDataException("Malformed story occurrence flags.");
+                failure = flags == 1;
+            }
+            rows[index] = new StoryOccurrenceEntry(new StoryContentId(provider, local), occurrence, retention, sequence, state, outcome, choices, reservation, pending, failure);
         }
         if (stream.Position != bytes.Length) throw new InvalidDataException("Trailing story state bytes.");
         var refusal = StoryLedger.RefuseBounds(rows);

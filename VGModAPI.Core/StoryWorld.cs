@@ -60,6 +60,13 @@ internal interface IStoryWorld
     bool KnowsFaction(string factionId);
 
     /// <summary>
+    /// Whether the loaded galaxy holds this point of interest, or null when no galaxy is loaded and
+    /// nothing can be asserted. A travel objective aimed at a guid the world does not have is a
+    /// mission that could never be completed.
+    /// </summary>
+    bool? KnowsPointOfInterest(string guid);
+
+    /// <summary>
     /// Installs a definition under an identifier the API owns. Vanilla's own registration REPLACES a
     /// duplicate, so an identifier the API did not install is reported as already present and left
     /// exactly as it was.

@@ -306,12 +306,18 @@ only alternative would be letting a caller declare one.
 |---|---|
 | Registration | Installs the definition into the game's story catalog under its base identifier, and resolves the definition's SOURCE FACTION against the game's own faction registry. An unknown faction refuses registration. |
 | Collision | The game's own registration REPLACES a duplicate identifier, so the adapter checks first and refuses (`IdentifierInUse`) instead. Nothing existing is ever overwritten, and a refused installation rolls back the API-side registration with it. |
-| `Offer` | Installs a catalog entry for THAT OCCURRENCE, under its own identifier. |
+| `Offer` | Installs a catalog entry for THAT OCCURRENCE, under its own identifier, and refuses a travel objective aimed at a point of interest this world does not have, which could never be completed. |
 | Generator | Builds a `Mission` through the game's own objective and reward factories, from the supported subset's fields only, and sets the context every vanilla generator sets. No consumer delegate is captured and none is ever persisted. |
 | `Activate` | Asks the game to accept the mission (`force:false`, so its own duplicate-story refusal applies), then VERIFIES the player holds exactly that mission. The occurrence is recorded active only after that. |
 | `Retire(Abandoned/Failed)` | Removes the mission from the world first (`completed:false`, so nothing is archived as finished) and records the outcome only once the world no longer holds it. |
 | `Retire(Completed)` | Refused. A completion is recorded from the OBSERVED completion in the game (see below). |
 | Release | Disposing a registration, a lease or the module uninstalls only the catalog entries this API installed, and only while the catalog still holds our own entry. An occurrence the player is still holding keeps its entry. |
+
+Faction identities are the game's own: it resolves `Source.Galaxy.Factions.<identifier>` as a TYPE,
+so the identities are those PascalCase type names (`TradingGuild`, not `tradingGuild`). Its lookup
+never returns null — it constructs and registers whatever the name resolves to, and throws otherwise —
+so the API resolves the type itself before asking, and an unknown identity is refused without ever
+touching the game's faction registry.
 
 ### Why a mission needs a source faction
 
@@ -344,8 +350,23 @@ see and records the outcome the game produced for an owned occurrence:
 
 Choices belong with a completion the caller does not perform, so they are declared while the
 occurrence is live with `DeclareChoices`, validated exactly as a retirement validates them, and
-written when the game ends it. `Retire` remains for the outcomes a caller genuinely owns — an
+written when the game ends it. A completion can arrive in a later session, so a declaration is part
+of the occurrence's PERSISTED state (schema 2), inside the space its outcome already reserved: it
+survives a reload, it is transferred into the record rather than kept beside it, and it belongs to
+the save it was made in — rolling back to a generation from before the declaration restores an
+occurrence with no declaration, not one carrying a newer session's choices.
+
+An observed FAILURE is not a terminal outcome. The game leaves a failed story mission in the player's
+list and offers to retry it, so a reported failure is recorded as a fact about a live occurrence: it
+stays active, keeps its catalog entry so the retry path still resolves, and is settled by what
+follows — a completion after a retry is a completion, and the removal of a failed mission is the
+failure becoming final. `Retire` remains for the outcomes a caller genuinely owns — an
 abandonment or a failure it decides — and those end the mission in the game first.
+
+Everything session-scoped ends with the session: catalog entries of that save's occurrences are
+uninstalled, and pending declarations, in-flight bookkeeping, suspensions and faults are cleared. A
+suspension or a fault is for THAT session, exactly as this document says; provider registrations are
+not, because they belong to the process.
 
 ### Transactions across the native boundary
 
@@ -355,11 +376,44 @@ session, availability, ownership, state, outcome, choice bounds and encodability
 afterwards. A story mutation attempted from inside such a call is refused as `Busy`, and a catalog
 removal a disposal asks for waits until the operation completes.
 
+Only STABLE facts are re-checked after the native call — the lease, the module's own state, the
+session — never transient ones. A save starting or callbacks dispatching inside a consumer's observer
+cannot make a change the game already made wrong, so they never roll back a good acceptance or block
+the module.
+
 If an acceptance can no longer be recorded (the consumer disposed its lease, the save reloaded), the
 API undoes exactly the mission that acceptance produced, without archiving it. If that undo fails, or
 if an outcome cannot be recorded after the mission was already ended in the game, the module BLOCKS
 itself for the session and says so: a mission already ended cannot be un-ended without replaying its
 acceptance side effects, so nothing further is built on a world the module cannot account for.
+
+### Quarantine: an owned mission nobody vouches for cannot advance or pay out
+
+The game saves accepted missions as full objects, so an API-owned mission comes back whether or not
+the module that owns it is present, enabled, bound or willing. Refusing API calls does nothing for
+it: the game would keep updating it, completing it and paying its rewards. So the protection is
+NATIVE and separate from the module:
+
+- It is bound under its own capability, `story-protection` (`Story/Protection`, default ON), whenever
+  the inspected assembly matches — independently of `Story/Enabled` and of whether the story module
+  binds at all, because an orphan is dangerous exactly then.
+- It guards every way such a mission can advance or pay out: the per-frame `Mission.Update` (which is
+  also the auto-complete route), `GamePlayer.CompleteMission`, `Mission.ClaimRewards`,
+  `Mission.MissionFailed`, `Mission.RetryAsNextMission` (which the game's retry button uses and which
+  throws when an orphan's catalog entry is gone), and `MissionObjective.ProcessMissionTrigger`, the
+  one virtual method every objective the supported subset can install goes through. Binding REFUSES
+  if an installable objective kind overrode that method, rather than guarding it incompletely.
+- It fails CLOSED. Only the exact occurrence identifiers the owning module vouches for, in the
+  session it vouched for them, run. With nothing admitted — module absent, disabled, unbound,
+  suspended, faulted, disposed, or a session that has not restored — every identifier this API could
+  have written is quarantined. Nothing else is ever affected: a vanilla story id, another mod's
+  mission or a mission with no identifier is not ours to judge.
+- It changes NOTHING. The mission stays in the player's list exactly as it was loaded, its objectives
+  and flags are untouched, and it serializes byte-for-byte as before, so a provider that returns
+  later finds its content intact.
+
+The module refuses to install any content at all when the guards are unavailable: owning content that
+a later session could not protect is worse than owning none.
 
 ### Load: the game restores its own missions, and orphans suspend the module
 
@@ -374,11 +428,15 @@ occurrence and correlates the ledger with the world by occurrence identifier:
 - An active occurrence whose mission the world no longer holds is REPORTED, including whether the
   world archived it, and left exactly as recorded. Nothing is deleted and no outcome is invented,
   because the archive alone cannot say whether the story was completed or abandoned.
+- A world that cannot be inspected at all suspends the module too: an orphan cannot be ruled out, so
+  nothing is run over a world this module has not actually examined.
 - An owned identifier live in the world that no admitted occurrence claims, or an unresolved
   occurrence whose provider is not registered, SUSPENDS the module for the session: every mutation is
   refused, the reason is reported for a provider-required compatibility state, the native mission is
   left exactly where the save has it, and not one persisted byte is rewritten. Nothing is adopted,
-  substituted or deleted, and no placeholder generator is ever installed.
+  substituted or deleted, and no placeholder generator is ever installed. Suspension also withdraws
+  every admission, so the native guards stop the very content the suspension is about; the capability
+  is reported as UNAVAILABLE while it lasts.
 
 ### Difficulty mapping
 

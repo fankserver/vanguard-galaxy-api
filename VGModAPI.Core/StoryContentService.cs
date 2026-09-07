@@ -65,7 +65,7 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
             _service.CheckThread();
             var result = _service.Transition(this, expectedSessionId, occurrenceId,
                 (StoryLedger ledger, StoryContentId id, out string diagnostic) => ledger.Withdraw(id, occurrenceId, out diagnostic));
-            if (result.Accepted) { _service._declaredChoices.Remove(occurrenceId); _service.ReleaseOccurrenceEntry(occurrenceId); }
+            if (result.Accepted) { _service.ReleaseOccurrenceEntry(occurrenceId); _service.PublishAdmissions(); }
             return result;
         }
 
@@ -141,10 +141,13 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
     private readonly List<string> _deferredUninstall = new();
     /// <summary>Outcomes this module itself is applying, so its own world calls are not re-observed as the game's.</summary>
     private readonly Dictionary<Guid, StoryOutcome> _intent = new();
-    /// <summary>Choices staged for an occurrence whose outcome the game will produce.</summary>
-    private readonly Dictionary<Guid, Dictionary<string, string>> _declaredChoices = new();
     private readonly IDisposable? _missionObserver;
-    private readonly Action<string>? _report;
+    private readonly Action<string, bool>? _report;
+    /// <summary>
+    /// The native quarantine's authority. It only ever advances or pays out an owned mission this
+    /// module currently vouches for, so every change to what is admitted is pushed here.
+    /// </summary>
+    private readonly StoryProtection? _protection;
     private bool _operationInFlight;
     private string? _suspended;
     private string? _fault;
@@ -163,7 +166,7 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
     /// <exception cref="InvalidOperationException">A session is already running.</exception>
     internal StoryContentService(IPersistenceApi? persistence, ILifecycleApi? lifecycle, StoryHostAuthenticator authenticate,
         Func<Guid>? newOccurrence = null, Action? checkThread = null, IStoryWorld? world = null,
-        IMissionEvents? missions = null, Action<string>? report = null)
+        IMissionEvents? missions = null, Action<string, bool>? report = null, StoryProtection? protection = null)
     {
         checkThread?.Invoke();
         if (lifecycle?.CurrentSession != null)
@@ -171,6 +174,7 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
         _authenticate = authenticate ?? throw new ArgumentNullException(nameof(authenticate));
         _world = world;
         _report = report;
+        _protection = protection;
         _newOccurrence = newOccurrence ?? Guid.NewGuid;
         _checkThread = checkThread;
         _currentSession = () => lifecycle?.CurrentSession;
@@ -179,7 +183,11 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
             StoryStateCodec.Owner, StoryStateCodec.SchemaVersion,
             capture: () => StoryStateCodec.Encode(_ledger.Entries),
             restore: OnRestore,
-            validate: StoryStateCodec.Validate));
+            validate: StoryStateCodec.Validate,
+            // Schema 1 rows are read as what they meant: no declaration staged for a future outcome
+            // and no observed failure. The bytes are handed through unchanged; the decoder does the
+            // reading, so nothing is rewritten to fit a newer shape.
+            migrations: new Dictionary<int, Func<byte[], byte[]>> { [StoryStateCodec.FirstSchemaVersion] = payload => payload }));
         // Availability is bound to the lifecycle independently of restore: a failed or invalidated
         // session never calls restore, and its queries must not answer from the previous save.
         _lifecycle = lifecycle?.Subscribe("vgmodapi.story-content", OnLifecycle);
@@ -189,6 +197,25 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
     }
 
     private void CheckThread() => _checkThread?.Invoke();
+
+    /// <summary>
+    /// Drops everything that belonged to the session that is ending: the occurrences' catalog entries,
+    /// pending choices, in-flight bookkeeping and any fault or suspension, which are per-session
+    /// states and not process-lifetime ones. Definitions registered by providers stay, because they
+    /// belong to the process; the occurrence entries do not, because they belonged to that save.
+    /// </summary>
+    private void ResetSession(string reason)
+    {
+        foreach (var identifier in _occurrenceIdentifiers.Values.ToArray()) _world?.Uninstall(identifier);
+        _occurrenceIdentifiers.Clear();
+        _deferredUninstall.Clear();
+        _intent.Clear();
+        _operationInFlight = false;
+        _fault = null;
+        _suspended = null;
+        _reconciliation.Clear();
+        _protection?.WithdrawAll(reason);
+    }
 
     private void OnRestore(SessionSnapshot session, byte[]? bytes)
     {
@@ -203,6 +230,7 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
         _readiness = Readiness.Restored;
         _readinessDetail = bytes == null ? "no stored story state for this save" : "restored";
         Reconcile();
+        PublishAdmissions();
     }
 
     /// <summary>
@@ -232,7 +260,13 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
             else Suspend(identifier + ": the world refused to reinstall this occurrence (" + installed.Detail + ").");
         }
         var snapshot = _world.Snapshot();
-        if (snapshot == null) return;
+        if (snapshot == null)
+        {
+            // The world could not be inspected, so an orphan cannot be ruled out. Fail closed rather
+            // than run over a world this module has not actually examined.
+            Suspend("the world could not be inspected, so owned content in this save cannot be accounted for");
+            return;
+        }
         var active = new HashSet<string>(snapshot.Active, StringComparer.Ordinal);
         var archived = new HashSet<string>(snapshot.Archived, StringComparer.Ordinal);
         var admitted = new HashSet<string>(StringComparer.Ordinal);
@@ -268,16 +302,44 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
     /// </summary>
     private void Suspend(string reason)
     {
-        if (_suspended == null) { _suspended = reason; Report("Owned story content is suspended for this session: " + reason); }
+        if (_suspended == null)
+        {
+            _suspended = reason;
+            // Withdrawn immediately: the guards must stop the very content this suspension is about.
+            _protection?.WithdrawAll("the owning module suspended itself: " + reason);
+            Report("Owned story content is suspended for this session: " + reason);
+        }
         if (!_reconciliation.Contains(reason)) _reconciliation.Add(reason);
     }
 
-    private void Report(string detail) { try { _report?.Invoke(detail); } catch { /* reporting must never fault the module */ } }
+    private void Report(string detail, bool available = false)
+    { try { _report?.Invoke(detail, available); } catch { /* reporting must never fault the module */ } }
+
+    /// <summary>
+    /// Tells the native guards exactly which owned missions may run right now. Anything not listed —
+    /// including everything, when this module is suspended, faulted, disposed or between sessions —
+    /// is quarantined: it stays in the player's save untouched, but it cannot progress or pay out.
+    /// </summary>
+    private void PublishAdmissions()
+    {
+        if (_protection == null) return;
+        if (_disposed || _suspended != null || _fault != null || _readiness != Readiness.Restored || _restoredSession == Guid.Empty)
+        {
+            _protection.WithdrawAll(_disposed ? "the story module is disposed"
+                : _fault ?? _suspended ?? "no session has restored owned story content");
+            return;
+        }
+        _protection.Admit(_restoredSession,
+            _ledger.Entries.Where(entry => entry.State != StoryOccurrenceState.Retired)
+                .Select(entry => StoryContentPolicy.OccurrenceIdentifier(entry.Id, entry.OccurrenceId)),
+            "admitted by the owning module for this session");
+    }
 
     /// <summary>Blocks the module after a native operation could not be undone, so nothing builds on an unknown world.</summary>
     private void Fault(string reason)
     {
         _fault = reason;
+        _protection?.WithdrawAll("the owning module blocked itself: " + reason);
         Report("Owned story content is blocked: " + reason);
     }
 
@@ -300,20 +362,33 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
         if (!_ledger.TryGet(occurrenceId, out var entry) || entry.Id != id || entry.State == StoryOccurrenceState.Retired) return;
         // A removal this module is performing is recorded by the operation that asked for it.
         if (_intent.ContainsKey(occurrenceId)) return;
+        if (transition.Kind == MissionTransitionKind.Failed)
+        {
+            // The game leaves a failed story mission in the player's list and offers to retry it, so
+            // a failure is a FACT about a live occurrence, not its terminal outcome. The occurrence
+            // stays active and owned, its catalog entry stays installed, and the removal that
+            // eventually follows is what settles it.
+            if (_ledger.ObserveFailure(entry.Id, occurrenceId, out var failureDetail) != StoryLedgerStatus.Accepted)
+                Report("An observed failure for '" + transition.Mission.DefinitionId + "' could not be recorded: " + failureDetail);
+            return;
+        }
         StoryOutcome? outcome = transition.Kind switch
         {
             MissionTransitionKind.Completed => StoryOutcome.Completed,
-            MissionTransitionKind.Failed => StoryOutcome.Failed,
             MissionTransitionKind.Abandoned => StoryOutcome.Abandoned,
+            // A neutral removal says nothing on its own; after an observed failure it says the
+            // failure is now final, because the mission the game failed is no longer held.
+            MissionTransitionKind.Removed or MissionTransitionKind.Archived
+                => entry.FailureObserved ? StoryOutcome.Failed : (StoryOutcome?)null,
             _ => null
         };
         if (outcome == null) return;
-        _declaredChoices.TryGetValue(occurrenceId, out var declared);
-        var status = _ledger.Retire(entry.Id, occurrenceId, outcome.Value, declared, out var diagnostic);
+        var status = _ledger.Retire(entry.Id, occurrenceId, outcome.Value,
+            entry.PendingChoices.Count > 0 ? entry.PendingChoices : null, out var diagnostic);
         if (status != StoryLedgerStatus.Accepted)
         { Report("An observed " + outcome + " for '" + transition.Mission.DefinitionId + "' could not be recorded: " + diagnostic); return; }
-        _declaredChoices.Remove(occurrenceId);
         ReleaseOccurrenceEntry(occurrenceId);
+        PublishAdmissions();
     }
 
     private void OnLifecycle(LifecycleEvent e)
@@ -325,6 +400,7 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
                 // A new attempt owns no earlier state, restored or not. Reservations describe the
                 // WORLD, not the process, so they are dropped with it and re-evaluated against the
                 // actual native world of the new session.
+                ResetSession("a new session started");
                 _ledger.Reset();
                 _registry.ResetWorldReservations();
                 _restoredSession = Guid.Empty;
@@ -333,6 +409,7 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
                 break;
             case LifecycleEventKind.SessionInvalidated:
             case LifecycleEventKind.SessionStartFailed:
+                ResetSession(e.Kind == LifecycleEventKind.SessionStartFailed ? "the session failed to start" : "the session was invalidated");
                 _ledger.Reset();
                 _registry.ResetWorldReservations();
                 _restoredSession = Guid.Empty;
@@ -492,6 +569,21 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
     {
         if (!TryDefinition(lease, expectedSessionId, localId, out var id, out var definition, out var refusal, out var status))
             return new StoryTransitionResult(status, Guid.Empty, refusal);
+        // A travel objective aimed at a place this world does not have could never be completed, so it
+        // is checked here, where a world exists, rather than at registration where one may not.
+        if (_world != null)
+            foreach (var target in definition!.Steps.SelectMany(step => step.Objectives)
+                .Where(objective => objective.Kind == StoryObjectiveKind.TravelToPoi)
+                .Select(objective => objective.TargetPoiId!).Distinct(StringComparer.Ordinal))
+            {
+                var known = _world.KnowsPointOfInterest(target);
+                if (known == false)
+                    return new StoryTransitionResult(StoryTransitionStatus.InvalidTransition, Guid.Empty,
+                        "This world holds no point of interest '" + target + "', so the mission could never be completed.");
+                if (known == null)
+                    return new StoryTransitionResult(StoryTransitionStatus.Unavailable, Guid.Empty,
+                        "The world could not be asked about point of interest '" + target + "'.");
+            }
         var occurrenceId = _newOccurrence();
         // The outcome's worst-case payload is reserved now, so this occurrence can always be retired.
         var result = _ledger.Offer(id, definition!.Retention, occurrenceId, definition.ReservedChoiceBytes, out var diagnostic);
@@ -512,6 +604,7 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
             }
             _occurrenceIdentifiers[occurrenceId] = identifier;
         }
+        PublishAdmissions();
         return new StoryTransitionResult(StoryTransitionStatus.Accepted, occurrenceId, diagnostic);
     }
 
@@ -598,7 +691,7 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
         // Consumer code ran inside that call and may have disposed the lease, reloaded or otherwise
         // invalidated this operation. Re-validate, and if the record can no longer be written, undo
         // the exact acceptance instead of leaving the world holding an unrecorded mission.
-        if (!Guard(lease, expectedSessionId, out refusal, out status)
+        if (!GuardStable(lease, expectedSessionId, out refusal, out status)
             || _ledger.CanActivate(caller, occurrenceId, out refusal) != StoryLedgerStatus.Accepted)
         {
             var rollback = _world.RollbackAccept(identifier);
@@ -612,6 +705,7 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
                 occurrenceId, "The acceptance was undone because it could no longer be recorded: " + refusal);
         }
         var committed = _ledger.Activate(caller, occurrenceId, out var diagnostic);
+        PublishAdmissions();
         return new StoryTransitionResult(Map(committed), occurrenceId, diagnostic);
     }
 
@@ -643,10 +737,8 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
     {
         if (!ValidateChoices(lease, expectedSessionId, occurrenceId, choices, out var owned, out var refusal)) return refusal;
         var caller = new StoryContentId(lease.ProviderId, LocalIdOf(occurrenceId));
-        var planned = _ledger.CanRetire(caller, occurrenceId, StoryOutcome.Completed, owned, out var plannedDetail);
-        if (planned != StoryLedgerStatus.Accepted) return new StoryTransitionResult(Map(planned), occurrenceId, plannedDetail);
-        _declaredChoices[occurrenceId] = owned!;
-        return new StoryTransitionResult(StoryTransitionStatus.Accepted, occurrenceId, "");
+        var declared = _ledger.DeclareChoices(caller, occurrenceId, owned, out var declaredDetail);
+        return new StoryTransitionResult(Map(declared), occurrenceId, declaredDetail);
     }
 
     /// <summary>The shared validation of a caller's choice collection: snapshot once, then check ownership and keys.</summary>
@@ -718,7 +810,8 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
         // reservation and state. Discovering any of those after the mission was already abandoned in
         // the game would leave the world and the record disagreeing with no safe way back.
         // Choices declared earlier for this occurrence apply unless this call supplies its own.
-        if (owned == null) _declaredChoices.TryGetValue(occurrenceId, out owned);
+        if (owned == null && terminal!.PendingChoices.Count > 0)
+            owned = terminal.PendingChoices.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
         var planned = _ledger.CanRetire(caller, occurrenceId, outcome, owned, out var plannedDetail);
         if (planned != StoryLedgerStatus.Accepted) return new StoryTransitionResult(Map(planned), occurrenceId, plannedDetail);
         if (!BeginOperation(out var busy, occurrenceId)) return busy;
@@ -735,7 +828,7 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
         // Re-validated after the world call, because consumer code ran inside it. A mission already
         // ended in the game cannot be un-ended without replaying its acceptance side effects, so a
         // refusal here blocks the module instead of pretending the two still agree.
-        if (!Guard(lease, expectedSessionId, out var afterRefusal, out var afterStatus))
+        if (!GuardStable(lease, expectedSessionId, out var afterRefusal, out var afterStatus))
         {
             Fault("'" + occurrenceId + "' was ended in the world but its outcome could not be recorded: " + afterRefusal);
             return new StoryTransitionResult(afterStatus, occurrenceId,
@@ -748,8 +841,8 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
             return new StoryTransitionResult(Map(committed), occurrenceId,
                 "The mission was ended in the game but the outcome was refused; owned story content is blocked for this session: " + diagnostic);
         }
-        _declaredChoices.Remove(occurrenceId);
         ReleaseOccurrenceEntry(occurrenceId);
+        PublishAdmissions();
         return new StoryTransitionResult(StoryTransitionStatus.Accepted, occurrenceId, diagnostic);
     }
 
@@ -859,6 +952,34 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
     /// would not be part of the save that is already being written. That is a temporary refusal and
     /// is reported as such.
     /// </summary>
+    /// <summary>
+    /// The STABLE half of the precondition: the things that can invalidate a native operation after
+    /// it already happened — an inactive lease, a disposed or suspended module, a session that is no
+    /// longer the restored one. It deliberately excludes the transient conditions (a save in flight,
+    /// callbacks dispatching), because those cannot make a completed world change wrong, and treating
+    /// them as failures would roll back a good acceptance or block the module over a callback.
+    /// </summary>
+    private bool GuardStable(Lease lease, Guid expectedSessionId, out string refusal, out StoryTransitionStatus status)
+    {
+        status = StoryTransitionStatus.Unavailable;
+        if (!lease.Active) { refusal = "This provider lease is no longer active."; return false; }
+        if (_disposed) { refusal = "The story module is disposed."; return false; }
+        if (_fault != null) { refusal = "Owned story content is blocked for this session: " + _fault; return false; }
+        if (_suspended != null) { refusal = "Owned story content is suspended for this session: " + _suspended; return false; }
+        if (_readiness != Readiness.Restored) { refusal = _readinessDetail; return false; }
+        var session = _currentSession();
+        if (session == null || session.Id != _restoredSession)
+        { refusal = "The restored session is no longer current."; return false; }
+        if (expectedSessionId != _restoredSession)
+        {
+            status = StoryTransitionStatus.StaleSession;
+            refusal = "This call expects a session that is not the loaded one; re-read the current state before mutating it.";
+            return false;
+        }
+        refusal = "";
+        return true;
+    }
+
     private bool Guard(Lease lease, Guid expectedSessionId, out string refusal, out StoryTransitionStatus status)
     {
         status = StoryTransitionStatus.Unavailable;
@@ -964,8 +1085,8 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
         foreach (var identifier in _occurrenceIdentifiers.Values.ToArray()) _world?.Uninstall(identifier);
         _occurrenceIdentifiers.Clear();
         _deferredUninstall.Clear();
-        _declaredChoices.Clear();
         _missionObserver?.Dispose();
+        _protection?.WithdrawAll("the story module is disposed");
         _registry.Clear();
         _registry.ResetWorldReservations();
         _ledger.Reset();

@@ -17,13 +17,16 @@ namespace VGModAPI.Runtime;
 /// </summary>
 internal sealed class StoryNativeBindings
 {
-    private readonly Type _storyMission, _createMission, _mission, _missionStep, _objective, _reward, _difficulty, _player, _faction;
+    /// <summary>Where the game resolves a faction identity from; its identifiers ARE these type names.</summary>
+    internal const string FactionNamespace = "Source.Galaxy.Factions";
+
+    private readonly Type _storyMission, _createMission, _mission, _missionStep, _objective, _reward, _difficulty, _player, _faction, _galaxy;
     private readonly FieldInfo _allMissions, _storyIdentifier, _missionStoryId, _missionName, _missionDescription,
         _missionCategory, _missionCompletionText, _missionDifficulty, _missionCanAbandon,
         _missionSourceFaction, _missionSourcePoi, _missionSourceName, _missionIconName, _missionDynamicLevel, _missionTrackedOnHud,
-        _stepDescription, _stepRequireAll, _playerCurrent, _playerMissions, _playerArchive, _playerPoi;
-    private readonly PropertyInfo _missionSteps, _missionRewards, _stepObjectives;
-    private readonly MethodInfo _storyAdd, _storyGet, _objectiveCreate, _rewardCreate, _addMission, _hasStory, _activeStory, _removeMission, _factionGet;
+        _stepDescription, _stepRequireAll, _playerCurrent, _playerMissions, _playerArchive, _playerPoi, _allFactions;
+    private readonly PropertyInfo _missionSteps, _missionRewards, _stepObjectives, _galaxyCurrent;
+    private readonly MethodInfo _storyAdd, _storyGet, _objectiveCreate, _rewardCreate, _addMission, _hasStory, _activeStory, _removeMission, _factionGet, _galaxyPoi;
     private readonly ConstructorInfo _storyCtor, _missionCtor, _stepCtor;
 
     internal StoryNativeBindings(Assembly assembly)
@@ -71,6 +74,11 @@ internal sealed class StoryNativeBindings
         _missionDynamicLevel = Field(_mission, "dynamicLevel");
         _missionTrackedOnHud = Field(_mission, "trackedOnHud");
         _factionGet = Method(_faction, "Get", new[] { typeof(string) });
+        _allFactions = Field(_faction, "allFactions");
+        _galaxy = Type(assembly, "Source.Galaxy.GalaxyMapData");
+        _galaxyCurrent = _galaxy.GetProperty("current", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly)
+            ?? throw new MissingMemberException(_galaxy.FullName, "current");
+        _galaxyPoi = Method(_galaxy, "GetPointOfInterest", new[] { typeof(string) });
         if (_factionGet.ReturnType != _faction || !_factionGet.IsStatic) throw new MissingMethodException(_faction.FullName, "Get");
         _missionSteps = Property(_mission, "steps");
         _missionRewards = Property(_mission, "rewards");
@@ -122,6 +130,22 @@ internal sealed class StoryNativeBindings
     }
 
     internal object? CurrentPlayer => _playerCurrent.GetValue(null);
+    /// <summary>
+    /// Whether the game already knows this faction, or could create it from its own factions. The
+    /// game's lookup NEVER returns null: it resolves <c>Source.Galaxy.Factions.&lt;identifier&gt;</c> and
+    /// constructs it, throwing for anything else and REGISTERING whatever it constructs. So the
+    /// question is answered by resolving the type here, without calling the lookup and without adding
+    /// anything to the game's registry.
+    /// </summary>
+    internal bool KnowsFaction(string identifier)
+    {
+        if (string.IsNullOrEmpty(identifier)) return false;
+        if (((IDictionary)_allFactions.GetValue(null)!).Contains(identifier)) return true;
+        var type = _faction.Assembly.GetType(FactionNamespace + "." + identifier, false);
+        return type != null && !type.IsAbstract && _faction.IsAssignableFrom(type) && type.GetConstructor(System.Type.EmptyTypes) != null;
+    }
+
+    /// <summary>Resolves a faction that <see cref="KnowsFaction"/> has already accepted.</summary>
     internal object? Faction(string identifier) => _factionGet.Invoke(null, new object[] { identifier });
     internal IDictionary Catalog => (IDictionary)_allMissions.GetValue(null)!;
     internal string CatalogIdentifier(object definition) => (string?)_storyIdentifier.GetValue(definition) ?? "";
@@ -209,6 +233,18 @@ internal sealed class StoryNativeBindings
         Field(native.GetType(), "amount").SetValue(native, reward.Amount);
         Field(native.GetType(), "baseAmount").SetValue(native, reward.Amount);
         return native;
+    }
+
+    /// <summary>
+    /// Whether the loaded galaxy holds this point of interest. A travel objective aimed at a guid the
+    /// world does not have is a mission that can never be completed, so it is refused rather than
+    /// offered.
+    /// </summary>
+    internal bool? KnowsPointOfInterest(string guid)
+    {
+        var galaxy = _galaxyCurrent.GetValue(null);
+        if (galaxy == null) return null;                 // No galaxy loaded: nothing can be asserted.
+        return _galaxyPoi.Invoke(galaxy, new object[] { guid }) != null;
     }
 
     internal void Accept(object player, object mission) => _addMission.Invoke(player, new[] { mission, (object)false });

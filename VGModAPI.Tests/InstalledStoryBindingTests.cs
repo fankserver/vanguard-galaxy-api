@@ -4,6 +4,7 @@ using Mono.Cecil;
 using Mono.Cecil.Cil;
 using VGModAPI;
 using VGModAPI.Core;
+using VGModAPI.Runtime;
 using Xunit;
 
 namespace VGModAPI.Tests;
@@ -299,6 +300,86 @@ public sealed class InstalledStoryBindingTests
         Assert.Contains(Calls(fromJson), name => name == "get_IsString");
         Assert.Contains(Calls(fromJson), name => name == "Get");
         Assert.Contains(Calls(fromJson), name => name == "DataFromJson");
+    }
+
+    /// <summary>
+    /// Every way a mission the game is holding can advance or pay out, which is what the quarantine
+    /// guards sit in front of. A restored owned mission runs through these whether or not the module
+    /// that owns it is present, so each one is bound by declared shape and refused for an orphan.
+    /// </summary>
+    [Fact]
+    public void EveryGuardedProgressionEntryPointHasTheShapeTheGuardsBind()
+    {
+        using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
+        var module = assembly.MainModule;
+        var mission = module.GetType(Mission)!;
+        var update = Assert.Single(mission.Methods, method => method.Name == "Update" && method.Parameters.Count == 1);
+        Assert.Equal("System.Single", update.Parameters[0].ParameterType.FullName);
+        // Per-frame progression completes the mission itself when it can be claimed.
+        Assert.Contains(Calls(update), name => name == "CanClaimRewards");
+        Assert.Contains(Calls(update), name => name == "CompleteMission");
+        var claim = Assert.Single(mission.Methods, method => method.Name == "ClaimRewards");
+        Assert.True(claim.IsVirtual);
+        Assert.Equal("System.Boolean", claim.Parameters[0].ParameterType.FullName);
+        var retry = Assert.Single(mission.Methods, method => method.Name == "RetryAsNextMission");
+        // Retry resolves the story catalog, which is what throws for an orphan whose entry is gone.
+        Assert.Contains(Calls(retry), name => name == "Get");
+        var failed = Assert.Single(mission.Methods, method => method.Name == "MissionFailed");
+        Assert.Contains(Calls(failed), name => name == "RetryAsNextMission");
+        var complete = Assert.Single(module.GetType("Source.Player.GamePlayer")!.Methods,
+            method => method.Name == "CompleteMission" && method.Parameters.Count == 2
+                && method.Parameters[0].ParameterType.FullName == Mission);
+        Assert.Contains(Calls(complete), name => name == "ClaimRewards");
+
+        // Objective progression is dispatched to each objective of each held mission through one
+        // virtual method, which is why the guard can cover the whole supported subset by patching it.
+        var objective = module.GetType(Objective)!;
+        var trigger = Assert.Single(objective.Methods,
+            method => method.Name == "ProcessMissionTrigger" && !method.IsStatic);
+        Assert.True(trigger.IsVirtual);
+        Assert.Equal(2, trigger.Parameters.Count);
+        Assert.Equal("Source.MissionSystem.MissionTrigger", trigger.Parameters[0].ParameterType.FullName);
+        Assert.Equal("System.Object", trigger.Parameters[1].ParameterType.FullName);
+        var dispatch = Assert.Single(objective.Methods, method => method.Name == "Trigger" && method.IsStatic);
+        Assert.Contains(Calls(dispatch), name => name == "ProcessMissionTrigger");
+        Assert.Contains(Calls(dispatch), name => name == "get_allMissions");
+        foreach (StoryObjectiveKind kind in Enum.GetValues(typeof(StoryObjectiveKind)))
+        {
+            if (StoryContentPolicy.RefuseObjective(kind) != null) continue;
+            var type = module.GetType(StoryContentPolicy.ObjectiveNamespace + "." + StoryContentPolicy.ObjectiveTypeName(kind))!;
+            Assert.DoesNotContain(type.Methods, method => method.Name == "ProcessMissionTrigger");
+        }
+    }
+
+    /// <summary>
+    /// The game's faction lookup never returns null: it resolves a TYPE by identifier, constructs it
+    /// and registers it, and throws for anything else. That is why the API resolves the type itself
+    /// before asking, and why faction identities are those PascalCase type names.
+    /// </summary>
+    [Fact]
+    public void TheFactionLookupCreatesFromATypeNameAndThrowsForAnythingElse()
+    {
+        using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
+        var module = assembly.MainModule;
+        var faction = module.GetType("Source.Galaxy.Faction")!;
+        var get = Assert.Single(faction.Methods, method => method.Name == "Get" && method.Parameters.Count == 1);
+        Assert.Contains(Calls(get), name => name == "TryGetValue");
+        Assert.Contains(Calls(get), name => name == "Create");
+        Assert.Contains(Calls(get), name => name == "set_Item");          // it registers what it creates
+        var create = Assert.Single(faction.Methods, method => method.Name == "Create");
+        Assert.Contains(Strings(create), text => text == StoryNativeBindings.FactionNamespace + ".");
+        Assert.Contains(Calls(create), name => name == "GetType");
+        Assert.Contains(Calls(create), name => name == "GetConstructor");
+        // The identities the API may name are exactly those types.
+        var known = module.Types.Where(type => type.Namespace == StoryNativeBindings.FactionNamespace
+            && type.BaseType?.FullName == "Source.Galaxy.Faction").Select(type => type.Name).ToArray();
+        Assert.Contains("TradingGuild", known);
+        Assert.DoesNotContain("tradingGuild", known);
+        // And the galaxy answers whether a travel target exists at all.
+        var galaxy = module.GetType("Source.Galaxy.GalaxyMapData")!;
+        Assert.Contains(galaxy.Properties, property => property.Name == "current");
+        Assert.Contains(galaxy.Methods, method => method.Name == "GetPointOfInterest" && method.Parameters.Count == 1
+            && method.Parameters[0].ParameterType.FullName == "System.String");
     }
 
     private static void AssertField(ModuleDefinition module, string owner, string field, string type)

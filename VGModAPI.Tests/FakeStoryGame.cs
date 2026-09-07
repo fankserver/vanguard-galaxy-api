@@ -10,26 +10,53 @@ using System.Linq;
 // these doubles are how the code that uses that shape is executed.
 namespace Source.Galaxy
 {
-    public sealed class Faction
+    /// <summary>
+    /// The game's own lookup NEVER returns null: it resolves Source.Galaxy.Factions.&lt;identifier&gt;,
+    /// constructs it and registers it, and throws for anything else. The double behaves the same way,
+    /// with the game's real identifiers, which are those PascalCase type names.
+    /// </summary>
+    public class Faction
     {
-        public static readonly Dictionary<string, Faction> allFactions = new(StringComparer.Ordinal)
+        public static readonly Dictionary<string, Faction> allFactions = new(StringComparer.Ordinal);
+        public string identifier { get; internal set; } = "";
+        public string name { get; internal set; } = "";
+        public static Faction Get(string id)
         {
-            ["tradingGuild"] = new Faction("tradingGuild", "Trading Guild"),
-            ["miningGuild"] = new Faction("miningGuild", "Mining Guild")
-        };
-        private Faction(string id, string label) { identifier = id; name = label; }
-        public string identifier { get; }
-        public string name { get; }
-        public static Faction? Get(string id) => id != null && allFactions.TryGetValue(id, out var faction) ? faction : null;
+            if (allFactions.TryGetValue(id, out var known)) return known;
+            var created = Create(id);
+            allFactions[id] = created;
+            return created;
+        }
+        private static Faction Create(string id)
+        {
+            // The game resolves the type by name in its own assembly; the double does the same in this one.
+            var type = typeof(Faction).Assembly.GetType("Source.Galaxy.Factions." + id);
+            var faction = (Faction)type!.GetConstructor(Type.EmptyTypes)!.Invoke(null);   // NRE for an unknown identity, as the game does
+            faction.identifier = id;
+            faction.name = id;
+            return faction;
+        }
     }
+}
+
+namespace Source.Galaxy.Factions
+{
+    public sealed class TradingGuild : Source.Galaxy.Faction { }
+    public sealed class MiningGuild : Source.Galaxy.Faction { }
+    public sealed class Player : Source.Galaxy.Faction { }
 }
 
 namespace Source.MissionSystem
 {
     public enum MissionDifficulty { Easy, Normal, Hard, Skull, Insane, Faction, Tutorial, Story }
 
+    public enum MissionTrigger { Travel, Kill, Credits }
+
     public abstract class MissionObjective
     {
+        /// <summary>The virtual dispatch point the game uses to advance objectives, and the guard patches.</summary>
+        public virtual void ProcessMissionTrigger(MissionTrigger trigger, object data) => Progress++;
+        public int Progress { get; private set; }
         public static MissionObjective? Create(string type)
             => Type.GetType("Source.MissionSystem.Objectives." + type)?.GetConstructor(Type.EmptyTypes)?.Invoke(null) as MissionObjective;
         /// <summary>Mirrors the game writing each objective's own data; a null dependency throws here too.</summary>
