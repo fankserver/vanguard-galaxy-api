@@ -28,6 +28,7 @@ public sealed class Plugin : BaseUnityPlugin
     private StoryProtection? _protection;
     private StoryQuarantine? _quarantine;
     private IDisposable? _protectionSubscription;
+    private bool _pendingProtectionRecovery;
     private bool _identityHooksBound;
     private ModInformationCatalog? _modCatalog;
 
@@ -218,14 +219,26 @@ public sealed class Plugin : BaseUnityPlugin
             // not the story module exists: a new load starts with nothing vouched for.
             _protectionSubscription = _hub!.Subscribe("vgmodapi.story-protection", e =>
             {
+                if (e.Kind == LifecycleEventKind.PlayerReady)
+                {
+                    if (!_pendingProtectionRecovery || _quarantine == null) return;
+                    if (!_quarantine.VerifyHealthy())
+                    {
+                        _hub!.SetCapability("story-protection", false,
+                            "Owned story content is refused because the guard could not decide: " + _quarantine.DegradedReason);
+                        return;
+                    }
+                    _pendingProtectionRecovery = false;
+                    _hub!.SetCapability("story-protection", true, "Bound to inspected assembly; in-game qualification pending.");
+                    return;
+                }
                 if (e.Kind is not (LifecycleEventKind.SessionStarting or LifecycleEventKind.SessionInvalidated
                     or LifecycleEventKind.SessionStartFailed)) return;
                 _protection?.WithdrawAll("a new session started; nothing has been vouched for yet");
-                if (_quarantine?.DegradedReason != null)
-                {
-                    _quarantine.ClearDegraded();
-                    _hub!.SetCapability("story-protection", true, "Bound to inspected assembly; in-game qualification pending.");
-                }
+                // A degraded guard is NOT restored by a session boundary alone: the world it failed to
+                // read is not loaded yet. Recovery is attempted when the player is ready, and only a
+                // scan that actually completes restores the capability.
+                if (e.Kind == LifecycleEventKind.SessionStarting) _pendingProtectionRecovery = _quarantine?.DegradedReason != null;
             });
             StoryProtectionPatches.Quarantine = _quarantine;
             InstallGroup("story-protection", bindings, BindingCatalog.StoryProtection, new Dictionary<string, Type>
@@ -273,7 +286,8 @@ public sealed class Plugin : BaseUnityPlugin
             // module can still install and offer, but completions cannot be recorded at all.
             _story = new StoryContentService(_persistence, _hub, StoryHostAuthentication.Resolve, null, _hub.CheckThread,
                 _storyWorld, _missions?.Events,
-                (detail, available) => _hub!.SetCapability("owned-story", available, detail), _protection);
+                (detail, available) => _hub!.SetCapability("owned-story", available, detail), _protection,
+                () => _quarantine?.Healthy ?? false);
             ModApi.Story = _story;
             // Only a module that exists can say what a UI abandon or retry of owned content means.
             if (_quarantine != null) _quarantine.Transactions = _story;

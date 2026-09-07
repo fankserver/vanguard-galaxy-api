@@ -106,6 +106,24 @@ internal interface IStoryWorld
 /// of an owned mission. The guards cannot decide that alone: only the module knows which occurrence
 /// the identifier belongs to and what its removal means.
 /// </summary>
+/// <summary>
+/// What the game was holding for an owned identifier once its own abandon/retry button finished.
+/// The difference matters: the game re-adds a NEW mission object for a retry, so finding the
+/// original one still there is not a retry at all, and finding several is a world this API cannot
+/// read unambiguously.
+/// </summary>
+internal enum StoryAbandonSettlement
+{
+    /// <summary>The exact object the button was pressed on is still held: nothing actually happened.</summary>
+    OriginalStillHeld,
+    /// <summary>Exactly one NEW object holds that identifier: the game accepted the retry.</summary>
+    OneReplacementHeld,
+    /// <summary>The identifier is no longer held at all: the removal was the ending it looked like.</summary>
+    NoneHeld,
+    /// <summary>The world could not be read, or holds more than one mission for the identifier.</summary>
+    UnknownOrAmbiguous
+}
+
 internal interface IStoryUiTransaction
 {
     /// <summary>
@@ -116,8 +134,8 @@ internal interface IStoryUiTransaction
     bool BeginAbandon(string identifier);
 
     /// <summary>
-    /// The UI operation finished. <paramref name="stillHeld"/> says whether the game holds the
-    /// mission again — a retry re-added it — which settles what the removal meant.
+    /// The UI operation finished, with what the game turned out to be holding. Called exactly once
+    /// for every accepted <see cref="BeginAbandon"/>, including when the original threw.
     /// </summary>
-    void EndAbandon(string identifier, bool stillHeld);
+    void EndAbandon(string identifier, StoryAbandonSettlement settlement);
 }

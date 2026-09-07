@@ -1,4 +1,3 @@
-using HarmonyLib;
 using VGModAPI.Runtime;
 
 namespace VGModAPI.Patches;
@@ -66,16 +65,20 @@ internal static class StoryProtectionPatches
     /// </summary>
     internal static class AbandonMission
     {
-        private static bool Prefix(object mission, out string? __state)
+        private static bool Prefix(object mission, out StoryAbandonState? __state)
         {
             __state = null;
             if (Quarantine == null) return true;
-            if (!Quarantine.AllowAbandon(mission, out var identifier)) return false;
-            __state = identifier;
+            if (!Quarantine.AllowAbandon(mission, out var state)) return false;
+            __state = state;
             return true;
         }
 
-        private static void Finalizer(string? __state)
+        /// <summary>
+        /// Runs whether the original returned or threw, and settles the transaction exactly once. It
+        /// returns nothing, so the original's exception is passed on unchanged.
+        /// </summary>
+        private static void Finalizer(StoryAbandonState? __state)
         {
             if (__state != null) Quarantine?.EndAbandon(__state);
         }

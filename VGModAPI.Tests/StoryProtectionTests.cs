@@ -29,7 +29,8 @@ public sealed class StoryProtectionTests : IDisposable
         StoryMission.allMissions.Clear();
         Source.Player.GamePlayer.current = _player;
         _quarantine = new StoryQuarantine(new StoryProtectionGuard(typeof(StoryMission).Assembly), _protection,
-            () => _player.missions.Cast<object>().ToArray());
+            // Read through the CURRENT player, exactly as the installer wires it.
+            () => Source.Player.GamePlayer.current?.missions.Cast<object>().ToArray() ?? Array.Empty<object>());
     }
 
     public void Dispose()
@@ -124,7 +125,24 @@ public sealed class StoryProtectionTests : IDisposable
     public void QuarantineLeavesTheMissionAndWhatItWouldSaveExactlyAsTheyWere()
     {
         var owned = Hold();
+        // Seeded away from every default, including the flags a guard could plausibly disturb, so the
+        // comparison below is evidence rather than a comparison of empty values. This is a HOST
+        // PROJECTION of the persisted shape; running the game's own serializer is PR3 work.
+        owned.Mission.failed = true;
+        owned.Mission.canAbandon = false;
+        owned.Mission.trackedOnHud = true;
+        owned.Mission.canBeIdled = true;
+        owned.Mission.idle = true;
+        owned.Mission.autoComplete = true;
+        owned.Mission.nextMissionOnFailed = null;                    // an owned mission never carries one
+        owned.Mission.turnIn = new Source.Galaxy.MapPointOfInterest { guid = "poi-turn-in" };
+        owned.Mission.sourceName = "Trading Guild";
+        owned.Mission.iconName = "icon";
+        foreach (var step in owned.Mission.steps) step.hidden = true;
         var before = owned.Mission.SerializeLikeTheGame();
+        Assert.Contains("failed:True", before);
+        Assert.Contains("hidden=True", before);
+        Assert.Contains("autoComplete:True", before);
         var missionCount = _player.missions.Count;
         var archived = _player.missionsArchive.ToArray();
 
@@ -139,7 +157,9 @@ public sealed class StoryProtectionTests : IDisposable
         Assert.Equal(missionCount, _player.missions.Count);
         Assert.Equal(archived, _player.missionsArchive);
         Assert.Contains(owned.Mission, _player.missions);
-        Assert.False(owned.Mission.failed);
+        // The seeded values are still exactly what they were: nothing was cleared or flipped.
+        Assert.True(owned.Mission.failed);
+        Assert.All(owned.Mission.steps, step => Assert.True(step.hidden));
     }
 
     /// <summary>
@@ -157,8 +177,8 @@ public sealed class StoryProtectionTests : IDisposable
         var before = owned.Mission.SerializeLikeTheGame();
         var ui = new Behaviour.UI.Missions.MissionDetails { Retryable = true };
 
-        Assert.False(_quarantine.AllowAbandon(owned.Mission, out var identifier));
-        Assert.Null(identifier);
+        Assert.False(_quarantine.AllowAbandon(owned.Mission, out var state));
+        Assert.Null(state);
         // The guard refuses before the game runs, so nothing of the route executes.
         Assert.Contains(owned.Mission, _player.missions);
         Assert.Equal(before, owned.Mission.SerializeLikeTheGame());
@@ -181,11 +201,12 @@ public sealed class StoryProtectionTests : IDisposable
     }
 
     /// <summary>
-    /// An admitted mission's abandon/retry is handed to the owning module, and what the game ends up
-    /// holding afterwards is what settles it. Missions that are not ours are never intercepted.
+    /// An admitted mission's abandon/retry is handed to the owning module, and what the game turned
+    /// out to be holding decides what it MEANT: the game builds a NEW object for a retry, so the
+    /// original still being there is not a retry at all, and none being there is an ending.
     /// </summary>
     [Fact]
-    public void AnAdmittedAbandonIsHandedToTheModuleAndSettledByWhatTheGameHolds()
+    public void SettlementDistinguishesARetryFromAnUnchangedOriginalAndAnEnding()
     {
         var owned = Hold();
         _protection.Admit(Guid.NewGuid(), new[] { owned.Identifier }, "admitted");
@@ -193,21 +214,25 @@ public sealed class StoryProtectionTests : IDisposable
         _quarantine.Transactions = transactions;
         var ui = new Behaviour.UI.Missions.MissionDetails { Retryable = true };
 
-        Assert.True(_quarantine.AllowAbandon(owned.Mission, out var identifier));
-        Assert.Equal(owned.Identifier, identifier);
+        Assert.True(_quarantine.AllowAbandon(owned.Mission, out var state));
+        Assert.Equal(owned.Identifier, state!.Identifier);
         ui.AbandonMission(owned.Mission);                       // remove, then re-add the same id
-        _quarantine.EndAbandon(identifier!);
-        Assert.Equal(owned.Identifier, transactions.Began);
-        Assert.True(transactions.StillHeld);                    // the retry put it back
-        Assert.Contains(_player.missions, mission => mission.storyId == owned.Identifier);
+        _quarantine.EndAbandon(state);
+        Assert.Equal(StoryAbandonSettlement.OneReplacementHeld, transactions.Settlement);
+        Assert.Equal(1, transactions.Ends);
 
-        // A non-retryable abandon of the same identifier ends it, and the module is told so.
-        var again = _player.missions.Single(mission => mission.storyId == owned.Identifier);
+        // The button pressed but nothing actually removed: NOT a retry.
+        var unchanged = _player.missions.Single(mission => mission.storyId == owned.Identifier);
+        Assert.True(_quarantine.AllowAbandon(unchanged, out var untouched));
+        _quarantine.EndAbandon(untouched!);
+        Assert.Equal(StoryAbandonSettlement.OriginalStillHeld, transactions.Settlement);
+
+        // A non-retryable abandon ends it.
         var plain = new Behaviour.UI.Missions.MissionDetails { Retryable = false };
-        Assert.True(_quarantine.AllowAbandon(again, out identifier));
-        plain.AbandonMission(again);
-        _quarantine.EndAbandon(identifier!);
-        Assert.False(transactions.StillHeld);
+        Assert.True(_quarantine.AllowAbandon(unchanged, out var ending));
+        plain.AbandonMission(unchanged);
+        _quarantine.EndAbandon(ending!);
+        Assert.Equal(StoryAbandonSettlement.NoneHeld, transactions.Settlement);
 
         // Content that is not ours never reaches the module at all.
         var vanilla = new Mission { storyId = "tutorial_11", sourceFaction = Source.Galaxy.Faction.Get("TradingGuild") };
@@ -216,6 +241,96 @@ public sealed class StoryProtectionTests : IDisposable
         Assert.True(_quarantine.AllowAbandon(vanilla, out var none));
         Assert.Null(none);
         Assert.Null(transactions.Began);
+    }
+
+    /// <summary>
+    /// The game removes BY REFERENCE and re-adds with the duplicate check forced off, so a stale
+    /// object carrying an admitted identifier would remove nothing and add a SECOND live mission for
+    /// it. Only an object the player actually holds, held exactly once, may take the button's route.
+    /// </summary>
+    [Fact]
+    public void OnlyAHeldObjectWithAnUnambiguousIdentifierMayTakeTheButtonsRoute()
+    {
+        var owned = Hold();
+        _protection.Admit(Guid.NewGuid(), new[] { owned.Identifier }, "admitted");
+        var transactions = new RecordingTransactions();
+        _quarantine.Transactions = transactions;
+
+        // A stale object from an earlier load of the same save: same identifier, different object.
+        var stale = new Mission { storyId = owned.Identifier, sourceFaction = Source.Galaxy.Faction.Get("TradingGuild") };
+        Assert.False(_quarantine.AllowAbandon(stale, out var refused));
+        Assert.Null(refused);
+        Assert.Null(transactions.Began);
+        Assert.Contains(owned.Mission, _player.missions);
+
+        // The same object against a DIFFERENT current player is not held either.
+        var otherPlayer = new Source.Player.GamePlayer();
+        Source.Player.GamePlayer.current = otherPlayer;
+        Assert.False(_quarantine.AllowAbandon(owned.Mission, out _));
+        Source.Player.GamePlayer.current = _player;
+
+        // Two live missions for one identifier is ambiguous: neither is authorised.
+        var duplicate = new Mission { storyId = owned.Identifier, sourceFaction = Source.Galaxy.Faction.Get("TradingGuild") };
+        _player.missions.Add(duplicate);
+        Assert.False(_quarantine.AllowAbandon(owned.Mission, out _));
+        Assert.False(_quarantine.AllowAbandon(duplicate, out _));
+        Assert.Null(transactions.Began);
+    }
+
+    /// <summary>
+    /// A world that cannot be read after the button ran is UNKNOWN, never "it is gone": inventing an
+    /// ending would retire an occurrence and drop its catalog entry over a world nobody could read.
+    /// </summary>
+    [Fact]
+    public void AnUnreadableOrAmbiguousWorldAfterTheButtonSettlesAsUnknown()
+    {
+        var owned = Hold();
+        _protection.Admit(Guid.NewGuid(), new[] { owned.Identifier }, "admitted");
+        var transactions = new RecordingTransactions();
+        var reports = new List<string>();
+        bool fail = false;
+        var quarantine = new StoryQuarantine(new StoryProtectionGuard(typeof(StoryMission).Assembly), _protection,
+            () => fail ? throw new InvalidOperationException("the player could not be read") : _player.missions.Cast<object>().ToArray(),
+            null, reports.Add)
+        { Transactions = transactions };
+
+        // Unreadable after the removal.
+        Assert.True(quarantine.AllowAbandon(owned.Mission, out var state));
+        _player.missions.Remove(owned.Mission);
+        fail = true;
+        quarantine.EndAbandon(state!);
+        Assert.Equal(StoryAbandonSettlement.UnknownOrAmbiguous, transactions.Settlement);
+        Assert.NotNull(quarantine.DegradedReason);
+        Assert.Single(reports);
+
+        // Degrading withdrew the admissions, as a guard that cannot decide must; a healthy scan and a
+        // fresh admission are what let the route run again.
+        Assert.Equal(0, _protection.AdmittedCount);
+        fail = false;
+        Assert.True(quarantine.VerifyHealthy());
+        _player.missions.Add(owned.Mission);
+        _protection.Admit(Guid.NewGuid(), new[] { owned.Identifier }, "admitted");
+        Assert.True(quarantine.AllowAbandon(owned.Mission, out var second));
+        var replacement = new Mission { storyId = owned.Identifier, sourceFaction = Source.Galaxy.Faction.Get("TradingGuild") };
+        _player.missions.Remove(owned.Mission);
+        _player.missions.Add(replacement);
+        fail = true;
+        quarantine.EndAbandon(second!);
+        Assert.Equal(StoryAbandonSettlement.UnknownOrAmbiguous, transactions.Settlement);
+
+        // Two replacements is ambiguous even when the world reads perfectly.
+        fail = false;
+        Assert.True(quarantine.VerifyHealthy());
+        _protection.Admit(Guid.NewGuid(), new[] { owned.Identifier }, "admitted");
+        _player.missions.Clear();
+        _player.missions.Add(owned.Mission);
+        Assert.True(quarantine.AllowAbandon(owned.Mission, out var third));
+        _player.missions.Remove(owned.Mission);
+        _player.missions.Add(replacement);
+        _player.missions.Add(new Mission { storyId = owned.Identifier, sourceFaction = Source.Galaxy.Faction.Get("TradingGuild") });
+        quarantine.EndAbandon(third!);
+        Assert.Equal(StoryAbandonSettlement.UnknownOrAmbiguous, transactions.Settlement);
+        Assert.Equal(3, transactions.Ends);
     }
 
     /// <summary>
@@ -257,11 +372,17 @@ public sealed class StoryProtectionTests : IDisposable
 
         Assert.True(failing.BlocksObjective(objective));
         Assert.NotNull(failing.DegradedReason);
+        Assert.False(failing.Healthy);
         Assert.Single(reports);
         Assert.Contains("could not read", reports[0]);
-        // It stays degraded until a session boundary clears it.
-        failing.ClearDegraded();
-        Assert.Null(failing.DegradedReason);
+        // A degraded guard is not restored by asking again while the world is still unreadable.
+        Assert.False(failing.VerifyHealthy());
+        Assert.NotNull(failing.DegradedReason);
+        // Only a scan that actually completes restores it, which is what a later healthy world gives.
+        var healthy = new StoryQuarantine(new StoryProtectionGuard(typeof(StoryMission).Assembly), _protection,
+            () => _player.missions.Cast<object>().ToArray());
+        Assert.True(healthy.VerifyHealthy());
+        Assert.True(healthy.Healthy);
     }
 
     /// <summary>The scan is bounded: a player holding more than the guard can examine is refused, not skipped.</summary>
@@ -314,9 +435,14 @@ public sealed class StoryProtectionTests : IDisposable
     private sealed class RecordingTransactions : IStoryUiTransaction
     {
         internal string? Began;
-        internal bool StillHeld;
+        internal int Ends;
+        internal StoryAbandonSettlement Settlement = StoryAbandonSettlement.UnknownOrAmbiguous;
         public bool BeginAbandon(string identifier) { Began = identifier; return true; }
-        public void EndAbandon(string identifier, bool stillHeld) => StillHeld = stillHeld;
+        public void EndAbandon(string identifier, StoryAbandonSettlement settlement)
+        {
+            Ends++;
+            Settlement = settlement;
+        }
     }
 
     /// <summary>

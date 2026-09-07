@@ -24,9 +24,9 @@ internal sealed class StoryNativeBindings
     private readonly FieldInfo _allMissions, _storyIdentifier, _missionStoryId, _missionName, _missionDescription,
         _missionCategory, _missionCompletionText, _missionDifficulty, _missionCanAbandon,
         _missionSourceFaction, _missionSourcePoi, _missionSourceName, _missionIconName, _missionDynamicLevel, _missionTrackedOnHud,
-        _stepDescription, _stepRequireAll, _playerCurrent, _playerMissions, _playerArchive, _playerPoi, _allFactions;
+        _stepDescription, _stepRequireAll, _playerCurrent, _playerMissions, _playerArchive, _playerPoi, _allFactions, _missionLimit;
     private readonly PropertyInfo _missionSteps, _missionRewards, _stepObjectives, _galaxyCurrent;
-    private readonly MethodInfo _storyAdd, _storyGet, _objectiveCreate, _rewardCreate, _addMission, _hasStory, _activeStory, _removeMission, _factionGet, _galaxyPoi;
+    private readonly MethodInfo _storyAdd, _storyGet, _objectiveCreate, _rewardCreate, _addMission, _hasStory, _activeStory, _removeMission, _factionGet, _galaxyPoi, _missionsLimitExceeded;
     private readonly ConstructorInfo _storyCtor, _missionCtor, _stepCtor;
 
     internal StoryNativeBindings(Assembly assembly)
@@ -99,6 +99,11 @@ internal sealed class StoryNativeBindings
         // force:false keeps vanilla's own duplicate-story guard, which is the refusal this API relies on.
         _addMission = Method(_player, "AddMissionWithLog", new[] { _mission, typeof(bool) });
         _hasStory = Method(_player, "HasStoryMission", new[] { typeof(string) });
+        // The game's own AcceptMission checks this before it takes a mission; AddMissionWithLog does
+        // NOT, so the adapter has to ask it itself rather than exceed the game's own limit.
+        _missionsLimitExceeded = Method(_player, "IsMissionsLimitExceeded", System.Type.EmptyTypes);
+        if (_missionsLimitExceeded.ReturnType != typeof(bool)) throw new MissingMethodException(_player.FullName, "IsMissionsLimitExceeded");
+        _missionLimit = Field(_player, "MissionLimit");
         _activeStory = Method(_player, "GetActiveStoryMission", new[] { typeof(string) });
         // completed:false abandons without archiving, so the API never claims a completion vanilla did not make.
         _removeMission = Method(_player, "RemoveMission", new[] { _mission, typeof(bool) });
@@ -245,6 +250,35 @@ internal sealed class StoryNativeBindings
         var galaxy = _galaxyCurrent.GetValue(null);
         if (galaxy == null) return null;                 // No galaxy loaded: nothing can be asserted.
         return _galaxyPoi.Invoke(galaxy, new object[] { guid }) != null;
+    }
+
+    /// <summary>
+    /// The game's own capacity question, asked with the game's own method rather than a number this
+    /// API guessed. The limit itself is exposed only for diagnostics.
+    /// </summary>
+    internal bool MissionsLimitExceeded(object player) => (bool)_missionsLimitExceeded.Invoke(player, null)!;
+    internal int MissionLimit => (int)_missionLimit.GetValue(null)!;
+
+    /// <summary>How many missions the player holds and how many objectives they carry, vanilla included.</summary>
+    internal (int Missions, int Objectives) Held(object player)
+    {
+        int missions = 0, objectives = 0;
+        foreach (var mission in (IEnumerable)_playerMissions.GetValue(player)!)
+        {
+            missions++;
+            foreach (var step in (IEnumerable)_missionSteps.GetValue(mission)!)
+                foreach (var _ in (IEnumerable)_stepObjectives.GetValue(step)!) objectives++;
+        }
+        return (missions, objectives);
+    }
+
+    /// <summary>The objectives one built mission would add, counted before it is handed to the game.</summary>
+    internal int ObjectiveCount(object mission)
+    {
+        int objectives = 0;
+        foreach (var step in (IEnumerable)_missionSteps.GetValue(mission)!)
+            foreach (var _ in (IEnumerable)_stepObjectives.GetValue(step)!) objectives++;
+        return objectives;
     }
 
     internal void Accept(object player, object mission) => _addMission.Invoke(player, new[] { mission, (object)false });

@@ -125,7 +125,22 @@ internal sealed class StoryNativeWorld : IStoryWorld, IDisposable
             // the refusal a diagnosis instead of a silently skipped call.
             if (_bindings.HasStory(player, identifier))
                 return new StoryWorldResult(StoryWorldStatus.AlreadyPresent, "The world already holds story '" + identifier + "'.");
+            // The game's own capacity check, which AddMissionWithLog does not make. Asked BEFORE the
+            // mission is handed over, so a refusal leaves the world exactly as it was.
+            if (_bindings.MissionsLimitExceeded(player))
+                return new StoryWorldResult(StoryWorldStatus.Refused,
+                    "The player already holds the game's limit of " + _bindings.MissionLimit + " missions.");
             var mission = _bindings.BuildMission(player, identifier);
+            // The guards can only protect what they can still scan. Accepting a mission that pushes the
+            // world past that bound would create content nobody could then decide about, so the
+            // capacity is checked against what the player holds — vanilla missions included.
+            var held = _bindings.Held(player);
+            if (held.Missions + 1 > StoryQuarantine.MaxScannedMissions)
+                return new StoryWorldResult(StoryWorldStatus.Refused,
+                    "Accepting this mission would leave more missions than the protection guard can scan.");
+            if (held.Objectives + _bindings.ObjectiveCount(mission) > StoryQuarantine.MaxScannedObjectives)
+                return new StoryWorldResult(StoryWorldStatus.Refused,
+                    "Accepting this mission would leave more objectives than the protection guard can scan.");
             _bindings.Accept(player, mission);
             // Verified, never assumed: AddMissionWithLog returns void and can skip.
             var active = _bindings.ActiveStory(player, identifier);

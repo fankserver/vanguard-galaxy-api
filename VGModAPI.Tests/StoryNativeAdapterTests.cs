@@ -181,6 +181,68 @@ public sealed class StoryNativeAdapterTests : IDisposable
         Assert.Equal(second, Assert.Single(_player.missions).storyId);
     }
 
+    /// <summary>
+    /// The game's own AcceptMission asks IsMissionsLimitExceeded before taking a mission;
+    /// AddMissionWithLog does not, so the adapter asks the game's own method itself rather than a
+    /// number it guessed. A refusal happens BEFORE anything is handed over.
+    /// </summary>
+    [Fact]
+    public void TheGamesOwnCapacityLimitIsAskedBeforeAMissionIsHandedOver()
+    {
+        using var world = World();
+        var identifier = Identifier();
+        Assert.True(world.Install(identifier, Definition()).Applied);
+        // One below the limit, counting the vanilla missions the player already holds.
+        for (int index = 0; index < Source.Player.GamePlayer.MissionLimit - 1; index++)
+            _player.missions.Add(new Mission { sourceFaction = Source.Galaxy.Faction.Get("TradingGuild") });
+        Assert.True(world.Accept(identifier).Applied);
+        Assert.Equal(Source.Player.GamePlayer.MissionLimit, _player.missions.Count);
+
+        // At the limit the next one is refused, and the world was never asked to add it.
+        var second = Identifier("side-run");
+        Assert.True(world.Install(second, Definition("side-run")).Applied);
+        int log = _player.AcceptanceLog.Count;
+        var refused = world.Accept(second);
+        Assert.Equal(StoryWorldStatus.Refused, refused.Status);
+        Assert.Contains("limit of " + Source.Player.GamePlayer.MissionLimit, refused.Detail);
+        Assert.Equal(log, _player.AcceptanceLog.Count);
+        Assert.Equal(Source.Player.GamePlayer.MissionLimit, _player.missions.Count);
+    }
+
+    /// <summary>
+    /// The guards can only protect what they can still scan, so a mission that would push the world
+    /// past that bound — vanilla missions and their objectives included — is refused before it is
+    /// handed over rather than accepted into a world nobody could then decide about.
+    /// </summary>
+    [Fact]
+    public void AMissionThatWouldOutgrowTheProtectionScanIsRefusedBeforeItIsHandedOver()
+    {
+        using var world = World();
+        var identifier = Identifier();
+        Assert.True(world.Install(identifier, Definition()).Applied);
+        var crowded = new Mission { sourceFaction = Source.Galaxy.Faction.Get("TradingGuild") };
+        var step = new MissionStep();
+        for (int index = 0; index < StoryQuarantine.MaxScannedObjectives; index++)
+            step.objectives.Add(new Source.MissionSystem.Objectives.CollectCredits());
+        crowded.steps.Add(step);
+        _player.missions.Add(crowded);
+        Source.Player.GamePlayer.MissionLimit = 1000;                 // isolate the scan bound
+        try
+        {
+            int log = _player.AcceptanceLog.Count;
+            var refused = world.Accept(identifier);
+            Assert.Equal(StoryWorldStatus.Refused, refused.Status);
+            Assert.Contains("objectives than the protection guard can scan", refused.Detail);
+            Assert.Equal(log, _player.AcceptanceLog.Count);
+            Assert.DoesNotContain(_player.missions, mission => mission.storyId == identifier);
+
+            // With room again the same acceptance succeeds, so the refusal was the bound and not the shape.
+            step.objectives.Clear();
+            Assert.True(world.Accept(identifier).Applied);
+        }
+        finally { Source.Player.GamePlayer.MissionLimit = 20; }
+    }
+
     [Fact]
     public void ReleaseAbandonsWithoutArchivingAndRefusesToDeclareACompletion()
     {

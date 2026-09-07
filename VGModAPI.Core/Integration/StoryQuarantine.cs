@@ -45,7 +45,34 @@ internal sealed class StoryQuarantine
     /// <summary>Non-null once a scan could not be completed; the protection is degraded until the next session.</summary>
     internal string? DegradedReason => _degradedReason;
 
-    internal void ClearDegraded() => _degradedReason = null;
+    /// <summary>
+    /// Whether the guards can currently decide about owned content. False after a scan the guard
+    /// could not complete, which is exactly when no new owned content may be installed or accepted.
+    /// </summary>
+    internal bool Healthy => _degradedReason == null;
+
+    /// <summary>
+    /// Re-establishes health by actually completing an ownership scan of what the player holds. A
+    /// degraded guard is never restored by clearing a message: it is restored by reading the world
+    /// successfully in the session that replaced the one it failed in.
+    /// </summary>
+    internal bool VerifyHealthy()
+    {
+        try
+        {
+            int missions = 0, objectives = 0;
+            foreach (var mission in Held())
+            {
+                if (++missions > MaxScannedMissions) return false;
+                _ = Blocks(mission);
+                foreach (var _ in _guard.Objectives(mission))
+                    if (++objectives > MaxScannedObjectives) return false;
+            }
+            _degradedReason = null;
+            return true;
+        }
+        catch (Exception error) { Report(error); return false; }
+    }
 
     /// <summary>
     /// True when this mission must not progress. A guard that cannot decide treats the mission as
@@ -96,6 +123,9 @@ internal sealed class StoryQuarantine
         if (_degradedReason == null)
         {
             _degradedReason = reason;
+            // A guard that cannot decide vouches for nothing: the admissions it was answering with are
+            // withdrawn at once, so owned content is quarantined rather than trusted on stale answers.
+            try { _protection.WithdrawAll("the guard could not decide: " + reason); } catch { /* never fault a guard */ }
             try { _degraded?.Invoke(reason); } catch { /* reporting must never fault a guard */ }
         }
         return true;
@@ -106,9 +136,9 @@ internal sealed class StoryQuarantine
     /// outright, so the raw object stays exactly where the save put it. An admitted one is handed to
     /// the module, which decides whether the removal it is about to see is a retry or an ending.
     /// </summary>
-    internal bool AllowAbandon(object? mission, out string? identifier)
+    internal bool AllowAbandon(object? mission, out StoryAbandonState? state)
     {
-        identifier = null;
+        state = null;
         if (mission == null) return true;
         try
         {
@@ -118,28 +148,75 @@ internal sealed class StoryQuarantine
             // The game re-adds `nextMissionOnFailed ?? storyId`. A follow-up identifier would install
             // something this module never admitted, so an owned mission carrying one is refused.
             if (_guard.NextMissionOnFailed(mission) != null) return false;
-            identifier = storyId;
-            return Transactions?.BeginAbandon(storyId) ?? false;
+            // The game removes BY REFERENCE and re-adds with the duplicate check forced off, so a
+            // stale object carrying an admitted identifier would remove nothing and add a second live
+            // mission for it. The button is therefore only allowed for an object the player actually
+            // holds, and only when that identifier is held exactly once.
+            int matches = 0;
+            bool present = false;
+            foreach (var held in Held())
+            {
+                if (ReferenceEquals(held, mission)) present = true;
+                if (string.Equals(_guard.StoryId(held), storyId, StringComparison.Ordinal)) matches++;
+            }
+            if (!present || matches != 1) return false;
+            if (Transactions?.BeginAbandon(storyId) != true) return false;
+            state = new StoryAbandonState(storyId, mission);
+            return true;
         }
-        catch (Exception error) { Report(error); identifier = null; return !_guard.IsMission(mission); }
+        catch (Exception error) { Report(error); state = null; return !_guard.IsMission(mission); }
     }
 
-    /// <summary>Settles a UI abandon or retry by looking at what the game actually holds afterwards.</summary>
-    internal void EndAbandon(string identifier)
+    /// <summary>
+    /// Settles a UI abandon or retry by looking at what the game actually holds afterwards. An
+    /// inspection failure is reported as UNKNOWN, never as an ending: inventing "it is gone" would
+    /// retire an occurrence and drop its catalog entry over a world nobody could read.
+    /// </summary>
+    internal void EndAbandon(StoryAbandonState state)
     {
+        if (state == null) throw new ArgumentNullException(nameof(state));
+        StoryAbandonSettlement settlement;
         try
         {
-            bool stillHeld = _heldMissions().Any(mission => string.Equals(_guard.StoryId(mission), identifier, StringComparison.Ordinal));
-            Transactions?.EndAbandon(identifier, stillHeld);
+            bool original = false;
+            int replacements = 0;
+            foreach (var held in Held())
+            {
+                if (ReferenceEquals(held, state.Mission)) { original = true; continue; }
+                if (string.Equals(_guard.StoryId(held), state.Identifier, StringComparison.Ordinal)) replacements++;
+            }
+            settlement = original
+                ? (replacements == 0 ? StoryAbandonSettlement.OriginalStillHeld : StoryAbandonSettlement.UnknownOrAmbiguous)
+                : replacements switch
+                {
+                    0 => StoryAbandonSettlement.NoneHeld,
+                    1 => StoryAbandonSettlement.OneReplacementHeld,
+                    _ => StoryAbandonSettlement.UnknownOrAmbiguous
+                };
         }
         catch (Exception error)
         {
             Report(error);
-            // The outcome could not be observed, so nothing is claimed about it: the module is told
-            // the mission is gone, which is the conservative reading of a removal it already saw.
-            try { Transactions?.EndAbandon(identifier, false); } catch (Exception inner) { Report(inner); }
+            Degrade("the guard could not read what the world held after an abandon (" + error.GetType().Name + ")");
+            settlement = StoryAbandonSettlement.UnknownOrAmbiguous;
         }
+        try { Transactions?.EndAbandon(state.Identifier, settlement); }
+        catch (Exception error) { Report(error); }
     }
 
+    private IEnumerable<object> Held() => _heldMissions() ?? Array.Empty<object>();
+
     private void Report(Exception error) => _fault?.Invoke(error);
+}
+
+/// <summary>
+/// What one accepted abandon/retry is about: the identifier, and the exact object the button was
+/// pressed on. The object matters because a retry produces a NEW one.
+/// </summary>
+internal sealed class StoryAbandonState
+{
+    internal string Identifier { get; }
+    internal object Mission { get; }
+    internal StoryAbandonState(string identifier, object mission)
+    { Identifier = identifier; Mission = mission; }
 }

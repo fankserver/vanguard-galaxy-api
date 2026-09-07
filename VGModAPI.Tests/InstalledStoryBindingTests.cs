@@ -387,6 +387,35 @@ public sealed class InstalledStoryBindingTests
     }
 
     /// <summary>
+    /// The capacity check the game makes for itself, and does NOT make on the route this API uses.
+    /// AcceptMission asks IsMissionsLimitExceeded; AddMissionWithLog only checks duplicates. That is
+    /// why the adapter asks the game's own method before handing a mission over.
+    /// </summary>
+    [Fact]
+    public void OnlyTheGamesOwnAcceptRouteChecksCapacitySoTheAdapterMustAskItself()
+    {
+        using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
+        var player = assembly.MainModule.GetType("Source.Player.GamePlayer")!;
+        var limit = Assert.Single(player.Methods, method => method.Name == "IsMissionsLimitExceeded");
+        Assert.Equal("System.Boolean", limit.ReturnType.FullName);
+        Assert.Empty(limit.Parameters);
+        var constant = Assert.Single(player.Fields, field => field.Name == "MissionLimit");
+        Assert.True(constant.IsStatic);
+        Assert.Equal("System.Int32", constant.FieldType.FullName);
+        Assert.True(constant.HasConstant);
+        // The check compares the held count against that same constant, which is why the adapter asks
+        // the METHOD rather than hard-coding a number of its own.
+        Assert.Contains(limit.Body.Instructions, instruction =>
+            instruction.OpCode == OpCodes.Ldc_I4_S && Convert.ToInt32(instruction.Operand) == Convert.ToInt32(constant.Constant));
+        Assert.Contains(Calls(limit), name => name == "get_Count");
+        var accept = Assert.Single(player.Methods, method => method.Name == "AcceptMission");
+        Assert.Contains(Calls(accept), name => name == "IsMissionsLimitExceeded");
+        var add = player.Methods.Single(method => method.Name == "AddMissionWithLog" && method.Parameters.Count == 2);
+        Assert.DoesNotContain(Calls(add), name => name == "IsMissionsLimitExceeded");
+        Assert.Contains(Calls(add), name => name == "HasStoryMission");
+    }
+
+    /// <summary>
     /// The game's faction lookup never returns null: it resolves a TYPE by identifier, constructs it
     /// and registers it, and throws for anything else. That is why the API resolves the type itself
     /// before asking, and why faction identities are those PascalCase type names.

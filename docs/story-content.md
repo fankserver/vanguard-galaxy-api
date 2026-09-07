@@ -309,7 +309,7 @@ only alternative would be letting a caller declare one.
 | `Offer` | Installs a catalog entry for THAT OCCURRENCE, under its own identifier, and refuses a travel objective aimed at a point of interest this world does not have, which could never be completed. |
 | Travel targets | Re-checked immediately before the game is asked to accept, because a world can lose a place in between; a restored occurrence whose destination is gone is NOT vouched for, so the guards quarantine it rather than run a mission that could never finish. Its record and its bytes are untouched, and it is vouched for again once the world has the place. |
 | Generator | Builds a `Mission` through the game's own objective and reward factories, from the supported subset's fields only, and sets the context every vanilla generator sets. No consumer delegate is captured and none is ever persisted. |
-| `Activate` | Asks the game to accept the mission (`force:false`, so its own duplicate-story refusal applies), then VERIFIES the player holds exactly that mission. The occurrence is recorded active only after that. |
+| `Activate` | Asks the game's own `IsMissionsLimitExceeded` first, because the route this API uses (`AddMissionWithLog`) does not, and refuses when accepting would leave more missions or objectives than the protection guard can scan. Then asks the game to accept the mission (`force:false`, so its own duplicate-story refusal applies) and VERIFIES the player holds exactly that mission. A refusal leaves the occurrence offered and the world untouched. |
 | `Retire(Abandoned/Failed)` | Removes the mission from the world first (`completed:false`, so nothing is archived as finished) and records the outcome only once the world no longer holds it. |
 | `Retire(Completed)` | Refused. A completion is recorded from the OBSERVED completion in the game (see below). |
 | Release | Disposing a registration, a lease or the module uninstalls only the catalog entries this API installed, and only while the catalog still holds our own entry. An occurrence the player is still holding keeps its entry. |
@@ -362,13 +362,32 @@ list and offers to retry it, so a reported failure is recorded as a fact about a
 stays active and keeps its catalog entry, and it is settled by what follows.
 
 The retry button is one operation on ONE occurrence: the game removes the mission and re-adds the
-same identifier. The guard wraps that whole method and tells the module, which suspends the outcome
-the removal would otherwise record and holds the catalog entry. Afterwards, what the game actually
-holds settles it: if the mission is back, the same occurrence simply continues and its reported
-failure is cleared, because only a re-acceptance by the game clears one; if it is not, the removal
-was the ending it looked like — a reported failure becomes final, and anything else is the
-abandonment the player asked for. A mission carrying a follow-up identifier is refused rather than
-redirected, because re-adding it would install something this module never admitted. `Retire` remains for the outcomes a caller genuinely owns — an
+same identifier. The game removes BY REFERENCE and re-adds with its duplicate check forced off, so
+the route is allowed only for an object the player ACTUALLY holds, whose identifier is held exactly
+once; a stale object carrying an admitted identifier would remove nothing and add a second live
+mission for it. The guard wraps the whole method and tells the module, which suspends the outcome the
+removal would otherwise record and holds the catalog entry.
+
+While that is open it holds the SAME boundary as this module's own native operations: no other
+mutation interleaves with it — every public call is refused as `Busy`, including one for the
+occurrence being abandoned — and no catalog entry is released underneath it, including one a provider
+teardown asked for. That is what keeps the game's own re-add from looking up an entry this module
+just removed.
+
+Afterwards, what the game turned out to be holding settles it, and the cases are distinguished:
+
+- a NEW mission for that identifier is a retry: the same occurrence continues and its reported
+  failure is cleared, because only a re-acceptance by the game clears one;
+- the ORIGINAL object still being there means nothing happened: it is not a retry, so the reported
+  failure stands and no outcome is recorded;
+- nothing held is the ending it looked like: a reported failure becomes final, anything else is the
+  abandonment the player asked for;
+- anything else — the world could not be read, or holds that identifier more than once — decides
+  NOTHING. The occurrence, its reported failure, its declared choices and its catalog entry are all
+  preserved and the module stops for the session rather than inventing an ending.
+
+A mission carrying a follow-up identifier is refused rather than redirected, because re-adding it
+would install something this module never admitted. `Retire` remains for the outcomes a caller genuinely owns — an
 abandonment or a failure it decides — and those end the mission in the game first.
 
 Everything session-scoped ends with the session: catalog entries of that save's occurrences are
@@ -428,9 +447,18 @@ NATIVE and separate from the module:
   disposed, or a session that has not restored — every identifier this API could have written is
   quarantined. Nothing else is ever affected: a vanilla story id, another mod's
   mission or a mission with no identifier is not ours to judge.
-- It changes NOTHING. The mission stays in the player's list exactly as it was loaded, its objectives
-  and flags are untouched, and it serializes byte-for-byte as before, so a provider that returns
-  later finds its content intact.
+- It changes NOTHING about the content it refuses. The mission stays in the player's list exactly as
+  it was loaded, its objectives and flags are untouched, and it projects byte-for-byte as before, so a
+  provider that returns later finds its content intact. (Host tests compare a projection of the
+  persisted shape, including the failure, abandon, tracking, idle, auto-complete, follow-up and step
+  visibility fields; running the game's own serializer is PR3 work.)
+- Its blast radius when it CANNOT decide is deliberately wider than that. Ownership is answered from
+  the player's own missions; if that cannot be read, or holds more than the guard can scan, an
+  objective trigger is refused even though the objective may belong to the game or another mod, and
+  the capability reports itself degraded. Refusing a vanilla trigger for a moment is recoverable;
+  letting an orphan pay itself out is not. While degraded, no owned content is registered, offered or
+  accepted, every admission is withdrawn, and recovery needs a NEW session in which an ownership scan
+  actually completes — not merely clearing the message.
 
 The module refuses to install any content at all when the guards are unavailable: owning content that
 a later session could not protect is worse than owning none.

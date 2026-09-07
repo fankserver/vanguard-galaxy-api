@@ -155,6 +155,9 @@ namespace Source.Player
     public sealed partial class GamePlayer
     {
         public List<string> AcceptanceLog { get; } = new();
+        /// <summary>The game's own capacity limit and the check AcceptMission makes with it.</summary>
+        public static int MissionLimit = 20;
+        public bool IsMissionsLimitExceeded() => missions.Count >= MissionLimit;
         /// <summary>force:true skips the duplicate guard, exactly as the game does.</summary>
         public void AddMissionWithLog(Source.MissionSystem.Mission mission, bool force)
         {

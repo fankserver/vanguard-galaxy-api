@@ -156,6 +156,12 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
     /// module currently vouches for, so every change to what is admitted is pushed here.
     /// </summary>
     private readonly StoryProtection? _protection;
+    /// <summary>
+    /// Whether the native guards can decide about owned content RIGHT NOW. It is asked on every path
+    /// that would create or accept owned content, because content the guards could not decide about
+    /// is content nobody could stop later.
+    /// </summary>
+    private readonly Func<bool>? _protectionHealthy;
     private bool _operationInFlight;
     private string? _suspended;
     private string? _fault;
@@ -174,7 +180,8 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
     /// <exception cref="InvalidOperationException">A session is already running.</exception>
     internal StoryContentService(IPersistenceApi? persistence, ILifecycleApi? lifecycle, StoryHostAuthenticator authenticate,
         Func<Guid>? newOccurrence = null, Action? checkThread = null, IStoryWorld? world = null,
-        IMissionEvents? missions = null, Action<string, bool>? report = null, StoryProtection? protection = null)
+        IMissionEvents? missions = null, Action<string, bool>? report = null, StoryProtection? protection = null,
+        Func<bool>? protectionHealthy = null)
     {
         checkThread?.Invoke();
         if (lifecycle?.CurrentSession != null)
@@ -183,6 +190,7 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
         _world = world;
         _report = report;
         _protection = protection;
+        _protectionHealthy = protectionHealthy;
         _newOccurrence = newOccurrence ?? Guid.NewGuid;
         _checkThread = checkThread;
         _currentSession = () => lifecycle?.CurrentSession;
@@ -345,7 +353,8 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
     private void PublishAdmissions()
     {
         if (_protection == null) return;
-        if (_disposed || _suspended != null || _fault != null || _readiness != Readiness.Restored || _restoredSession == Guid.Empty)
+        if (_disposed || _suspended != null || _fault != null || _readiness != Readiness.Restored || _restoredSession == Guid.Empty
+            || _protectionHealthy?.Invoke() == false)
         {
             _protection.WithdrawAll(_disposed ? "the story module is disposed"
                 : _fault ?? _suspended ?? "no session has restored owned story content");
@@ -438,28 +447,48 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
     /// outcome is recorded. If it does not, the removal was the ending it looked like: a failure that
     /// had been reported becomes final, anything else is the abandonment the player asked for.
     /// </summary>
-    void IStoryUiTransaction.EndAbandon(string identifier, bool stillHeld)
+    void IStoryUiTransaction.EndAbandon(string identifier, StoryAbandonSettlement settlement)
     {
         CheckThread();
         var occurrenceId = _uiAbandon;
+        // Cleared FIRST, so the shared busy boundary always closes: a fault below must not leave every
+        // later mutation refused as busy for the rest of the session.
         _uiAbandon = Guid.Empty;
-        if (_disposed || occurrenceId == Guid.Empty) return;
-        if (!_ledger.TryGet(occurrenceId, out var entry) || entry.State == StoryOccurrenceState.Retired) return;
-        if (stillHeld)
+        try
         {
-            // The game accepted it afresh, which is the only thing that clears a reported failure.
-            _ledger.ClearFailure(entry.Id, occurrenceId, out _);
-            Report("A retry of '" + identifier + "' was accepted again by the game.", true);
-            PublishAdmissions();
-            return;
+            if (_disposed || occurrenceId == Guid.Empty) return;
+            if (!_ledger.TryGet(occurrenceId, out var entry) || entry.State == StoryOccurrenceState.Retired) return;
+            switch (settlement)
+            {
+                case StoryAbandonSettlement.OneReplacementHeld:
+                    // The game built a NEW mission for the same occurrence: that, and only that, is a
+                    // retry, and it is the only thing that clears a reported failure.
+                    _ledger.ClearFailure(entry.Id, occurrenceId, out _);
+                    Report("A retry of '" + identifier + "' was accepted again by the game.", true);
+                    return;
+                case StoryAbandonSettlement.OriginalStillHeld:
+                    // Nothing actually changed. It is not a retry, so the reported failure stands and
+                    // no outcome is recorded.
+                    Report("The abandon of '" + identifier + "' left the same mission in place; nothing was recorded.", true);
+                    return;
+                case StoryAbandonSettlement.NoneHeld:
+                    var outcome = entry.FailureObserved ? StoryOutcome.Failed : StoryOutcome.Abandoned;
+                    var status = _ledger.Retire(entry.Id, occurrenceId, outcome,
+                        entry.PendingChoices.Count > 0 ? entry.PendingChoices : null, out var diagnostic);
+                    if (status != StoryLedgerStatus.Accepted)
+                    { Fault("the end of '" + identifier + "' could not be recorded: " + diagnostic); return; }
+                    ReleaseOccurrenceEntry(occurrenceId);
+                    return;
+                default:
+                    // The world could not be read, or holds this identifier more than once. Nothing is
+                    // decided from that: the occurrence, its reported failure, its declared choices and
+                    // its catalog entry are all left exactly as they are, and the module stops until a
+                    // new session can establish the truth.
+                    Fault("what the world held after the abandon of '" + identifier + "' could not be established");
+                    return;
+            }
         }
-        var outcome = entry.FailureObserved ? StoryOutcome.Failed : StoryOutcome.Abandoned;
-        var status = _ledger.Retire(entry.Id, occurrenceId, outcome,
-            entry.PendingChoices.Count > 0 ? entry.PendingChoices : null, out var diagnostic);
-        if (status != StoryLedgerStatus.Accepted)
-        { Report("The end of '" + identifier + "' could not be recorded: " + diagnostic); return; }
-        ReleaseOccurrenceEntry(occurrenceId);
-        PublishAdmissions();
+        finally { PublishAdmissions(); DrainDeferredUninstalls(); }
     }
 
     private void OnLifecycle(LifecycleEvent e)
@@ -503,6 +532,8 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
     private string? Unavailable()
     {
         if (_disposed) return "the story module is disposed";
+        if (_protectionHealthy?.Invoke() == false)
+            return "the native story protection cannot currently decide about owned content";
         if (_persistence is not IPersistenceReadiness readiness) return "story persistence does not report readiness";
         if (!readiness.StateReady) return "story persistence is " + PersistenceStatus;
         if (_readiness != Readiness.Restored) return _readinessDetail;
@@ -572,6 +603,9 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
     private StoryRegistrationResult Register(Lease lease, StoryMissionDefinition definition)
     {
         var id = new StoryContentId(lease.ProviderId, definition.LocalId);
+        if (_protectionHealthy?.Invoke() == false)
+            return new StoryRegistrationResult(StoryRegistrationStatus.Unavailable, null,
+                "The native story protection cannot currently decide about owned content, so none is installed.");
         var status = _registry.TryRegister(id, definition, out var diagnostic, out var identifier, out var entry);
         if (status != StoryRegistrationStatus.Registered) return new StoryRegistrationResult(status, null, diagnostic);
         if (_world != null)
@@ -632,7 +666,9 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
             // Even under the SAME live lease the identifier may have been registered again since this
             // handle was issued, with the same immutable definition object; only the registration this
             // handle actually made is released. Saved occurrences are never rewritten or deleted here.
-            if (_service._registry.RemoveIfMatches(Id, _entry)) _service._world?.Uninstall(NativeIdentifier);
+            if (!_service._registry.RemoveIfMatches(Id, _entry)) return;
+            if (_service.InFlight) _service._deferredUninstall.Add(NativeIdentifier);
+            else _service._world?.Uninstall(NativeIdentifier);
         }
     }
 
@@ -701,7 +737,10 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
     {
         if (!_occurrenceIdentifiers.TryGetValue(occurrenceId, out var identifier)) return;
         _occurrenceIdentifiers.Remove(occurrenceId);
-        if (_operationInFlight) { _deferredUninstall.Add(identifier); return; }
+        // Deferred while ANY operation is open, including the game's own abandon/retry: removing the
+        // catalog entry between its removal and its re-addition is exactly what makes the game's
+        // lookup throw.
+        if (InFlight) { _deferredUninstall.Add(identifier); return; }
         _world?.Uninstall(identifier);
     }
 
@@ -711,10 +750,17 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
     /// mutation from there is refused as busy rather than interleaved, and any catalog removal a
     /// disposal asks for waits until the operation this module is in the middle of has finished.
     /// </summary>
+    /// <summary>
+    /// True while a native operation this module started, or an abandon/retry the game's own button
+    /// started, is between its first and last step. Both hold the same boundary: no other mutation
+    /// interleaves with them, and no catalog entry is released underneath them.
+    /// </summary>
+    private bool InFlight => _operationInFlight || _uiAbandon != Guid.Empty;
+
     private bool BeginOperation(out StoryTransitionResult refusal, Guid occurrenceId)
     {
         refusal = default!;
-        if (_operationInFlight)
+        if (InFlight)
         {
             refusal = new StoryTransitionResult(StoryTransitionStatus.Busy, occurrenceId,
                 "Another owned-story operation is already running on this thread; retry after it completes.");
@@ -727,6 +773,13 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
     private void EndOperation()
     {
         _operationInFlight = false;
+        DrainDeferredUninstalls();
+    }
+
+    /// <summary>Performs the catalog removals that were held back while an operation was open.</summary>
+    private void DrainDeferredUninstalls()
+    {
+        if (InFlight) return;
         foreach (var identifier in _deferredUninstall) _world?.Uninstall(identifier);
         _deferredUninstall.Clear();
     }
@@ -1105,10 +1158,12 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
             refusal = "Owned story content is suspended for this session: " + _suspended;
             return false;
         }
-        if (_operationInFlight)
+        if (InFlight)
         {
             status = StoryTransitionStatus.Busy;
-            refusal = "Another owned-story operation is already running on this thread; retry after it completes.";
+            refusal = _uiAbandon != Guid.Empty
+                ? "The game is abandoning or retrying an owned mission right now; retry after that settles."
+                : "Another owned-story operation is already running on this thread; retry after it completes.";
             return false;
         }
         if (expectedSessionId != _restoredSession)
@@ -1163,7 +1218,11 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
     private void ReleaseProvider(Lease lease)
     {
         if (_disposed) return;
-        foreach (var identifier in _registry.IdentifiersOf(lease.ProviderId)) _world?.Uninstall(identifier);
+        foreach (var identifier in _registry.IdentifiersOf(lease.ProviderId))
+        {
+            // Held back while an operation is open, for the same reason an occurrence entry is.
+            if (InFlight) _deferredUninstall.Add(identifier); else _world?.Uninstall(identifier);
+        }
         _registry.RemoveProvider(lease.ProviderId);
         if (_leasesBySegment.TryGetValue(lease.ProviderId, out var current) && ReferenceEquals(current, lease))
             _leasesBySegment.Remove(lease.ProviderId);
