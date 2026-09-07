@@ -1,200 +1,38 @@
-# Implementation plan
+# Development contract and scope
 
-## Current roadmap and mandatory developer contract
+The [roadmap](https://github.com/fankserver/vanguard-galaxy-api/issues/1) tracks future work, acceptance criteria and dependencies. This document defines the implementation constraints; it is not a second backlog or a completion report.
 
-The live [roadmap #1](https://github.com/fankserver/vanguard-galaxy-api/issues/1) and its seven milestones govern delivery. The initial-scope sections below are a historical first-milestone plan, not the current scope or completion report. Observer/storage plumbing does not complete the content modules.
+## Current surface
 
-Owner clarification: all supported persistent content supplied by the API must save and reconstruct automatically. Mod authors register definitions/behavior and declare lifetime/retention; they must not supply save hooks, codecs, sidecars or manual restoration scheduling for API-owned fields. The generic save-data API is for **additional custom mod data**, not mandatory glue for API content.
+VGModAPI provides core session/load/save observation, default-enabled experimental mod save data, optional experimental mission and travel/station observation, optional experimental owned story content, and a local mod-information catalog with a main-menu interface. Availability depends on each service's configuration and prerequisites. See the [README](../README.md) for consumption and configuration, and [compatibility](compatibility.md) for qualification limits.
 
-- Identity is stable provider/plugin ID plus local ID, never mutable display name or author-invented string prefixes. Two providers may both define `MissionX` or `PoiX`; repeated live instances are distinct from definitions. Namespaces prevent accidental collisions, not malicious same-process access.
-- Persistent creation defaults to saved content; unavailable required persistence must refuse or report unavailability, not silently create unsaved content. Explicitly transient effects, UI handles and observations need no permanent record.
-- Temporary missions retain necessary offered/active progress; campaign missions retain authoritative completion/outcomes and supported choices within that save, without MissionJournal. Optional narrative journal history is separate. Retention limits must fail safely rather than truncate progression.
-- Reload, new games, save-as, slot changes, older-save rollback, failed/skipped writes, provider absence and schema/content migration must preserve ownership and references. Reuse safe vanilla serialization where appropriate; do not promise cross-file atomicity or serialization of executable custom behavior.
+Owned story content supports a closed mission subset with definition registration, native catalog installation, occurrence identity, reconstruction and automatic persistence. It is not a general scripted-objective or campaign framework. Content/schema migration and objective integration remain partial under [#13](https://github.com/fankserver/vanguard-galaxy-api/issues/13); the scripted-objective API tracked by [#14](https://github.com/fankserver/vanguard-galaxy-api/issues/14) is not implemented. See [the story contract](story-content.md) for supported behavior.
 
-Delivery owners: #13 missions, #14 objectives, #15 patrons, #19 items, #20 recipes/jobs, #21 persistent POIs/world content; #24 requires no-save-boilerplate mission/POI examples with two providers sharing local IDs. #22/#23/#25 preserve this contract through compatibility, game updates and future adapter changes. #11/#12 remain observation prerequisites. Anima's #11 observer migration explicitly retains legacy v4 save/load/factory hooks and does **not** fulfill #13/#14; its remaining supported-state persistence must move into those content APIs later. Completed #7–#10 are supporting infrastructure/policy, not proof of managed-content delivery.
+## Automatic content persistence
 
-## Historical initial status and decisions
+Supported persistent API-owned content must save and reconstruct automatically. Mod authors register definitions/behavior and declare lifetime/retention; they must not supply save hooks, codecs, sidecars or manual restoration scheduling for API-owned fields. The generic save-data API is for **additional custom mod data**, not mandatory glue for API content.
 
-The owner selected **plan for approval** and **core lifecycle first**, then authorized implementation. The core is now implemented with passing automated checks; in-game qualification remains pending. See `lifecycle-contract.md` for the implemented contract and `compatibility.md` for evidence.
+- Identity is stable provider/plugin ID plus local ID, never mutable display name or an author-invented string prefix. Two providers may define the same local ID; repeated live instances remain distinct from definitions. Namespaces prevent accidental collisions, not malicious same-process access.
+- Persistent creation defaults to saved content. Required persistence being unavailable must refuse creation or report unavailability, not silently create unsaved content. Explicitly transient effects, UI handles and observations need no permanent record.
+- Temporary missions retain necessary offered/active progress. Campaign missions retain authoritative completion/outcomes and supported choices within that save, without requiring a journal plugin. Optional narrative history is separate. Retention limits must fail safely rather than truncate progression.
+- Reload, new game, save-as, slot changes, rollback, failed/skipped writes, provider absence and supported migrations must preserve ownership and references. Reuse safe vanilla serialization where appropriate; do not promise cross-file atomicity or serialization of executable custom behavior.
 
-Name: VGModAPI. Repository: `vanguard-galaxy-api/`. First experimental version: `0.1.0`.
+These requirements apply to each content module's supported scope. Observer/storage plumbing alone does not satisfy them. Consumer integrations retaining their own save hooks are not evidence that the API manages those consumers' content.
 
-Implementation refinements:
+## Integration boundaries
 
-- Added an internal `VGModAPI.Core` assembly so state machines and the reflection adapter can be tested without Unity.
-- Narrowed proposed `GameplayReady` to `GameplayInitialized`: verified gameplay-manager initialization, not universal scene/POI readiness. `world-ready` remains explicitly unavailable.
-- Implemented assembly-hash gating, 42 pure/adapter tests, 7 installed-metadata checks, and a compiled observer example.
-- No deployment, existing-mod migration, or general persistence/story/UI services yet.
+- Inspect the original installed game implementation before changing semantic hooks. Signature matching alone is insufficient. Reject uninspected hashes until reinspection and qualification.
+- Expose verified state transitions, not renamed Harmony method-call notifications. A coroutine factory returning is not completion; `GameplayInitialized` is not universal scene/POI/UI readiness; `SaveGame.Store` returning is not proof of a successful write.
+- A runtime session ID is not a persistent campaign ID. Reject stale signals and references after session replacement.
+- Recursive save retries belong to one logical operation. Success, failure and skip remain distinct; successful vanilla saving does not imply atomic mod-sidecar persistence.
+- Keep public contracts in `VGModAPI.Abstractions` free of vanilla and Unity types. Core state machines and reflection adapters are internal implementation details. Harmony hooks belong in `VGModAPI/Patches`.
+- Consumers compile against abstractions; the API installation supplies the runtime assembly. BepInEx remains the plugin loader and dependency manager.
+- Keep combat rules, campaign choreography and other bespoke gameplay in feature mods. Direct Harmony use outside supported API coverage is explicitly version-sensitive.
 
-Work directly without subagents. Do not migrate existing mods, deploy, publish, or perform destructive save tests as part of initial implementation without further authorization.
+## Validation and delivery
 
-## Objective
+Use the [project checks](checks.md), including pure state-machine/adapter tests, installed binding checks and package validation. Cover nesting/reentrancy, stale sessions, retries, skips, subscriber disposal and individual observer failures. Test doubles do not simulate Unity scheduling; metadata checks do not execute Harmony.
 
-Provide dependable answers to three questions:
+Controlled native testing requires explicit authorization and disposable/copied saves. Record tested boundaries and remaining gaps without treating host tests or a bounded native probe as full in-game acceptance. `RuntimeQualified` remains false. Never deliberately damage real saves or redistribute game references, decompiled source, raw profiles or private fixtures.
 
-1. Which runtime session is active?
-2. What has actually finished loading?
-3. Did a logical vanilla save operation succeed, fail, or get skipped?
-
-The API must expose verified semantic boundaries, not rename Harmony prefixes/postfixes as gameplay events.
-
-## Initial scope
-
-- Session identity and invalidation.
-- Load/new-game phases, player readiness, gameplay readiness, and failure reporting where observable.
-- Logical save-operation tracking across retries.
-- Isolated, disposable subscriptions.
-- Capability/compatibility reporting.
-- Pure state-machine tests and installed-assembly binding checks.
-
-Excluded: mission events, story/objective registration, general persistence framework, sidecar rewriting, save-format changes, UI helpers, content registration, combat/autopilot rules, and automatic consumer migration.
-
-## Phase 1: verify installed-game boundaries
-
-Freshly inspect the original installed game DLL; checked-in sibling decompilation is not current enough to trust blindly.
-
-Trace:
-
-- Save-file loading, nested coroutines, rejected future-version saves, and load failures.
-- New-game creation and return to menu.
-- Player assignment versus asynchronous gameplay/scene initialization.
-- Interrupted or superseded session starts.
-- Save writes, metadata writes, ephemeral-player skips, recursive retries, and final failure.
-
-Deliver `docs/lifecycle-contract.md`: each event's exact meaning, supported paths, ordering, readiness conditions, and vanilla implementation boundary.
-
-Deliver `docs/compatibility.md`: tested assembly identity, target bindings, unsupported paths, and qualification evidence. Record an assembly hash and game version when verifiable; do not infer version from old documentation.
-
-If a promised boundary cannot be observed reliably, narrow the contract or mark the capability unavailable. Do not infer success from a method returning or a coroutine merely being created.
-
-## Phase 2: public contracts and integration split
-
-Proposed structure:
-
-```text
-VGModAPI.sln
-Makefile
-README.md
-CLAUDE.md
-.gitignore
-docs/
-VGModAPI.Abstractions/
-VGModAPI/
-  Plugin.cs
-  Lifecycle/
-  Compatibility/
-  Patches/
-VGModAPI.Tests/
-```
-
-- Runtime: BepInEx 5, HarmonyX, `netstandard2.1`.
-- No runtime dependencies on existing feature mods.
-- Abstractions: immutable payloads, session/operation identities, subscription handles, capability status, and queryable current state.
-- Keep vanilla and Unity types out of the public lifecycle contract.
-- Runtime owns all vanilla references and patches.
-- Consumers compile against abstractions; API distribution supplies the runtime copy. Define discovery and dependency instructions before shipping an example consumer.
-- Do not duplicate BepInEx's plugin loader or dependency manager.
-
-## Phase 3: session lifecycle
-
-Provisional state model:
-
-```text
-No session -> Loading/Starting -> Player ready -> Gameplay ready
-                         -> Failed
-Active session -> Invalidated
-```
-
-Provisional notifications (names are not frozen):
-
-| Notification | Contract |
-|---|---|
-| SessionInvalidated | Previous session references must no longer be used |
-| SessionStarting | A tracked load or new-game attempt began |
-| PlayerReady | Current player reconstruction/creation completed |
-| GameplayReady | Verified gameplay initialization completed |
-| SessionStartFailed | A tracked start attempt failed |
-
-Every start attempt receives an identity. Reject delayed signals belonging to superseded attempts. Define handling of repeated signals, menu transitions, partial initialization, and interruptions.
-
-A runtime session ID is not a persistent campaign ID. Do not invent campaign identity through filenames or process-global state.
-
-## Phase 4: save operations
-
-Track Started, Succeeded, Skipped, and Failed as distinct outcomes.
-
-Requirements:
-
-- Recursive retries belong to one logical operation.
-- Exactly one terminal outcome per tracked operation when its outcome is observable.
-- Ephemeral-player early return is Skipped, not Succeeded.
-- Returning from `SaveGame.Store` alone is not success.
-- Include operation identity, destination, and session identity where known.
-- Specify whether success includes metadata completion and how partial failures are represented.
-- Successful vanilla saving does not imply atomic mod-sidecar persistence.
-
-Do not alter the vanilla save format or add sidecar writes in this milestone.
-
-## Phase 5: subscription and capability safety
-
-- Explicitly disposable subscriptions with owner identity for diagnostics.
-- Dispatch independently to each subscriber; one exception must not suppress later subscribers.
-- Document callback thread, ordering, reentrancy, and subscription changes during delivery.
-- Support querying state for late subscribers; define whether registration itself replays anything.
-- Clean unsubscription and unpatching on shutdown.
-- Expose per-capability availability and reasons, rather than treating plugin startup as proof that hooks work.
-- Avoid automatically disabling consumers solely for throwing callbacks.
-- Fail locally where safe, but do not advertise dependent capabilities when prerequisites are unavailable.
-
-## Validation gates
-
-### Automated
-
-Test without constructing Unity MonoBehaviours:
-
-- Load success/failure, new game, menu return.
-- Replacement during pending initialization and stale callbacks.
-- Repeated signals and event ordering.
-- Save success/failure/skip/retry aggregation.
-- Throwing subscribers, disposal, and reentrant subscription changes.
-
-Check patch targets against the installed original assembly. Binding checks demonstrate signature compatibility, not semantic correctness or live Unity behavior.
-
-### In-game qualification
-
-Using disposable test saves:
-
-1. Load in space and docked.
-2. Start a new game.
-3. Switch saves without restarting.
-4. Return to menu and reload.
-5. Exercise manual saves and autosave rotation.
-6. Exercise controlled failures and skipped writes where feasible.
-
-Do not damage or deliberately corrupt the owner's real saves. Arrange live qualification separately if the environment cannot run the game. Until completed, label the result **implemented but not runtime-qualified**.
-
-## Build and distribution
-
-- Prefer `make build` and `make test`.
-- Resolve compile references locally; never commit game, Unity, or BepInEx DLLs.
-- Package only required API assemblies/dependencies, not broad output-directory DLL globs.
-- Do not assume the game supplies Newtonsoft.Json: workspace migration notes report its removal. Initial core should avoid introducing a serializer without need.
-- Document install, dependency declarations, compatibility limits, and a minimal lifecycle consumer.
-- No deployment or existing-mod migrations in the initial implementation.
-
-## Milestone 04 — owned story content (#13, in progress)
-
-`docs/story-content.md` records the delivered foundation: owner-scoped story identities, the
-explicitly supported mission subset (closed because vanilla resolves objective/reward types from its
-own assembly), fail-closed registration, occurrence identity with declared retention, and automatic
-persistence of the API-owned state through the module's own persistence owner. Installing definitions
-into the game, reconstructing offered/active content, the two-consumer demonstration and the native
-pilot are still outstanding, so #13 remains open and `RuntimeQualified` stays false.
-
-## Follow-up roadmap
-
-Future work is now maintained in the [pinned GitHub roadmap](https://github.com/fankserver/vanguard-galaxy-api/issues/1), with [milestones](https://github.com/fankserver/vanguard-galaxy-api/milestones), acceptance criteria, evidence, priority labels, and native blocked-by relationships. Update those issues rather than maintaining a second detailed backlog here.
-
-This document preserves the initial implementation plan; `lifecycle-contract.md` and `compatibility.md` describe the implemented surface and evidence. Milestone placement does not authorize deployments or consumer migrations, and no release dates are promised.
-
-Keep gameplay choreography in feature mods and direct Harmony access available as an explicitly version-sensitive escape hatch.
+Source and documentation describe current behavior, supported compatibility and constraints only. Development chronology and superseded decisions do not belong in the repository. Retained superseded public APIs must be explicitly deprecated with replacement guidance. Follow [contributor guidance](../CLAUDE.md) for branches, reviews and delivery permissions.

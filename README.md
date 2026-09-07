@@ -2,10 +2,14 @@
 
 Unofficial community mod API for Vanguard Galaxy, using BepInEx 5 and HarmonyX.
 
-**0.1.13 development / experimental: automatically tested and partially exercised in-game, not fully runtime-qualified.** This is a core lifecycle foundation, not a complete modding SDK. MissionJournal and Stockpile use the lifecycle API; controlled qualification is recorded, with complete owner acceptance still separate. `ModApi.Travel`/`ModApi.Station` are experimental opt-in native travel/station observers; travel qualification evidence and limits are tracked in #12.
+**0.1.13 development / experimental: automatically tested and partially exercised in-game, not fully runtime-qualified.** The API provides lifecycle, mod save data, optional mission/travel/story services and mod information, not a complete modding SDK. Controlled native evidence covers bounded paths; full in-game acceptance remains pending. See [compatibility](docs/compatibility.md) for coverage and limitations.
 
 ## Implemented
 
+- Default-enabled experimental mod save data for additional custom payloads.
+- Optional experimental mission transitions and native travel/station observations.
+- Optional experimental owned story definitions, native catalog installation, occurrence reconstruction and API-managed persistence for a closed mission subset.
+- Local mod-information catalog and a native main-menu interface; no automatic update-check service.
 - Runtime session identity, replacement/menu invalidation, player readiness, and gameplay-manager initialization.
 - Coroutine-aware file-load observation and detected failure reporting.
 - Save success/failure/skip outcomes, with recursive retries grouped into one operation.
@@ -37,9 +41,9 @@ flowchart LR
 
 A consumer can keep its BepInEx/Unity entry point small and put its actual logic in a separate plain .NET library that references only the public API contracts. That logic need not know about Harmony or vanilla classes. The included example remains a single project for simplicity.
 
-**The boundary is feature-specific:** version 0.1.x exposes lifecycle observation, not a complete gameplay API. A mod that creates missions, ships, or UI will still need other integration until those optional services exist. Using VGModAPI for lifecycle does not automatically decouple the rest of that mod.
+**The boundary is feature-specific:** the API supports lifecycle, save data and the documented optional services, not a complete gameplay SDK. Story authoring is limited to its supported mission subset; ship creation, general scripted objectives and arbitrary HUD/gameplay UI integration are not provided. Using the lifecycle API does not automatically decouple unsupported parts of a mod.
 
-A future official integration could replace the internal game adapter while preserving suitable public contracts, but migrating away from BepInEx would still require changing plugin entry points. We do not currently provide loader-independent discovery or a replacement loader.
+Plugin entry points depend on BepInEx. Loader-independent discovery and a replacement loader are not provided.
 
 ## Build and test
 
@@ -54,7 +58,7 @@ make package CONFIGURATION=Release # explicit three-assembly package in artifact
 
 Public CI runs pure tests and synthetic Windows checks without game assets. See the [check strategy](docs/checks.md) for local reference provisioning, package validation, and provenance.
 
-Override `GAME_DIR` and/or `DOTNET` as needed. Game/Unity/BepInEx DLLs are never committed or bundled. The runtime binds game internals through inspected reflection; it does not require a publicized game stub. No serializer is needed by this milestone.
+Override `GAME_DIR` and/or `DOTNET` as needed. Game/Unity/BepInEx DLLs are never committed or bundled. The runtime binds game internals through inspected reflection; it does not require a publicized game stub. The lifecycle API needs no serializer; custom save-data providers supply their own payload encoding.
 
 ## Experimental installation
 
@@ -87,13 +91,13 @@ Dispose the subscription in OnDestroy. All access is main-thread-only. Callbacks
 
 A complete compiled example lives at `examples/LifecycleObserver/` in the source checkout. It is built by `make build` but is not included in the API package. Its `examples/LifecycleObserver/bin/Release/netstandard2.1/LifecycleObserver.dll` can be copied alone into a separate plugins folder for qualification event logging after `make build CONFIGURATION=Release`. Do not copy its dependency DLLs; use the single API installation.
 
-## Optional save data (0.1.2)
+## Optional save data
 
 The API can manage each mod's save data alongside a particular game save. It publishes mod data only after the matching game save succeeds; the game and mod files are not written as one indivisible operation.
 
-Enabled by default. Set `[Persistence] Enabled = false` in `BepInEx/config/vgmodapi.cfg` to opt out. For disposable-save testing, choose an absolute, short, non-linked `Root`. Never share the root across installations or delete it to work around a blocked load. The default save-data folder is under BepInEx config. An existing explicit `Enabled = false` remains an opt-out. Binding or path failures leave `ModApi.Persistence` null; check the `save-data` capability for availability. The draft capability name `coordinated-persistence` has been replaced, without an alias.
+Enabled by default. Set `[Persistence] Enabled = false` in `BepInEx/config/vgmodapi.cfg` to opt out. For disposable-save testing, choose an absolute, short, non-linked `Root`. Never share the root across installations or delete it to work around a blocked load. The default save-data folder is under BepInEx config. An existing explicit `Enabled = false` remains an opt-out. Binding or path failures leave `ModApi.Persistence` null; check the `save-data` capability for availability.
 
-### Owned story content (experimental, 0.1.12)
+## Owned story content (experimental)
 
 Require API 0.1.12, declare a hard BepInEx dependency, and acquire a provider lease from your own
 `Awake` with `ModApi.Story?.AcquireProvider(this)`. The lease registers immutable mission definitions
@@ -103,17 +107,19 @@ save/load callback and no restoration scheduling for it. Definitions declare the
 Activating an occurrence asks the game to accept the mission and records it only if the game actually
 did; completions are recorded from the game's own observed completion, never declared by you, with
 choices you declared while the occurrence was live.
-`ModApi.Story` is null unless the story group is enabled and bound. A separate, default-on load
+`ModApi.Story` is null unless the default-off story group is enabled and bound, with its persistence, protection and mission-transition prerequisites available. A separate, default-on load
 safety guard stops API-owned missions in a save from advancing or paying out unless the owning module
 vouches for them; with an uninspected game build, or with that guard turned off, this API cannot
 refuse the load, so do not load saves containing owned story content in those states. See `docs/story-content.md`;
-nothing here is runtime-qualified.
+bounded native story paths are exercised, but full in-game acceptance remains pending.
 
-Require API 0.1.2 and register a `PersistenceProvider` before any session starts. Supply your mod's unique identifier (the `Owner` namespace), data schema version, callbacks to capture, restore and validate your data, and optional explicit migrations. The API stores the bytes you provide without interpreting their contents, up to 1 MiB per mod. A null restore payload means genuinely absent known data, not corrupt data. No automatic import of existing sidecars is performed. Keep the returned `IPersistenceRegistration`, obey `MutationAllowed` before mutations, display `Status` on refusal, and dispose it before destroying provider state. That interface is unchanged; since 0.1.12 the same handle also offers the optional `IPersistenceReadiness` capability, whose `StateReady` says whether your restored state is READABLE right now — true while callbacks dispatch and while a save is in flight, where reading is safe but mutating is not. Cast for it if you want that distinction; it is additive, so nothing is required of consumers that do not, and a handle without it means readiness is unknown rather than ready. Active-session removal pauses API-managed saves for all registered mods until a new load. Do not mutate vanilla state in these callbacks.
+## Register custom save data
+
+Require API 0.1.2 and register a `PersistenceProvider` before any session starts. Supply your mod's unique identifier (the `Owner` namespace), data schema version, callbacks to capture, restore and validate your data, and optional explicit migrations. The API stores the bytes you provide without interpreting their contents, up to 1 MiB per mod. A null restore payload means genuinely absent known data, not corrupt data. No automatic import of existing sidecars is performed. Keep the returned `IPersistenceRegistration`, obey `MutationAllowed` before mutations, display `Status` on refusal, and dispose it before destroying provider state. For API 0.1.12 or newer, the handle also exposes optional `IPersistenceReadiness`: `StateReady` indicates whether restored state is readable, including during callback dispatch and an in-flight save when mutation is unsafe. Cast the handle to query it; an absent capability means readiness is unknown, not ready. Active-session removal pauses API-managed saves for all registered mods until a new load. Do not mutate vanilla state in these callbacks.
 
 See [identity](docs/persistence-identity.md), [schema](docs/persistence-schema.md) and [storage/recovery](docs/persistence-storage.md) for identical-byte conflicts, durable intents and explicit filesystem-failure limits. This remains experimental. Actual MissionJournal0.3 and Stockpile0.7 API-managed save pilots exercise the documented paths; neither these controlled runs nor synthetic provider tests are a universal stability claim.
 
-API 0.1.3 also exposes the pure `ContentSafety` admission/recovery planner. See [persistent content ownership and removal](docs/content-safety.md) before accepting provider-specific item, mission, patron, faction or world references. It does not install content or promise safe uninstall.
+The pure `ContentSafety` admission/recovery planner requires API 0.1.3. See [persistent content ownership and removal](docs/content-safety.md) before accepting provider-specific item, mission, patron, faction or world references. It does not install content or promise safe uninstall.
 
 ## Source layout
 
@@ -126,12 +132,16 @@ API 0.1.3 also exposes the pure `ContentSafety` admission/recovery planner. See 
 
 The [pinned roadmap issue](https://github.com/fankserver/vanguard-galaxy-api/issues/1) links the [milestones](https://github.com/fankserver/vanguard-galaxy-api/milestones) and actionable issues, including acceptance criteria, evidence, priorities, and prerequisites. It is the source of truth for future work—not a promise of release dates.
 
-[Controlled core qualification](https://github.com/fankserver/vanguard-galaxy-api/issues/2) is recorded; persistence and save safety now include the default-enabled save-data service and both authorized consumer pilots; missing-content policy remains the next milestone item. Optional persistence, mission/travel, story/bar, HUD/navigation, and content modules follow demonstrated consumer needs. Direct Harmony remains an escape hatch; bespoke gameplay stays in feature mods.
+Owned story content remains partial: supported schema compatibility is not general definition migration, and a scripted-objective API is not implemented. Bar composition, HUD/navigation, item/recipe/world content and update checking are not provided by the current services. Direct Harmony remains a version-sensitive escape hatch; bespoke gameplay stays in feature mods.
+
+## Mod information
+
+`ModApi.Mods` exposes process-local mod metadata. The default-enabled main-menu entry requires inspected native binding and can be disabled with `[ModInformation] MenuEnabled = false`. The catalog remains available independently of the menu. See [mod information](docs/mod-information.md) for registration and metadata rules. Full presentation acceptance, physical gamepad behavior and browser opening remain unqualified.
 
 ## License and experimental compatibility
 
 Owned source and documentation are [MIT licensed](LICENSE). This does not license the game or its reference assemblies. Release packages contain only the three owned assemblies and owned documentation/license, not a loader, proprietary assets, qualification tools, or copied saves.
 
-`Available` means the inspected adapter bindings were installed; implemented does not mean runtime-qualified. `RuntimeQualified` remains false. Only the exact hash in the compatibility document is accepted; other hashes are unsupported. The 0.1.x contract is experimental: 0.1.1 adds optional dispatch-state support without changing ILifecycleApi. Consumers requiring that capability must require 0.1.1 and check it explicitly; future incompatible contracts require explicit migration rather than silent replacement. Consult each release's limitations before upgrading.
+`Available` means the inspected adapter bindings were installed; implemented does not mean runtime-qualified. `RuntimeQualified` remains false. Only the exact hash in the compatibility document is accepted; other hashes are unsupported. The 0.1.x contract is experimental. Optional dispatch-state support requires API 0.1.1 and an explicit capability check; it is not part of `ILifecycleApi`. Consumers must require the API version needed by their services and handle unavailable optional capabilities. Incompatible contracts require explicit migration rather than silent replacement.
 
-[Initial implementation plan](docs/implementation-plan.md) · [Research findings](docs/research-findings.md)
+[Development contract](docs/implementation-plan.md) · [Native integration constraints](docs/research-findings.md)
