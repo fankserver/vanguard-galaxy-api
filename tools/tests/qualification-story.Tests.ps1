@@ -64,7 +64,7 @@ try {
         }
     }
     Assert-StoryIsolation ([pscustomobject]@{})
-    foreach ($name in @('travelStation','travelCrossSystem','travelWormholeFixture','travelResilience','travelRecovery','travelFastLane','missionTransitionsProbe','missionIdentityProbe','contentReferenceProbe','journalMissionEventsProbe','journalCoordinated','stockpileCoordinated','vanillaLoadControl','assemblyOverlay','echoAbsentProbe','echoTravelProbe','animaTravelProbe','travelJournalComparison')) {
+    foreach ($name in @('menuInspection','modMenuProbe','travelStation','travelCrossSystem','travelWormholeFixture','travelResilience','travelRecovery','travelFastLane','missionTransitionsProbe','missionIdentityProbe','contentReferenceProbe','journalMissionEventsProbe','journalCoordinated','stockpileCoordinated','vanillaLoadControl','assemblyOverlay','echoAbsentProbe','echoTravelProbe','animaTravelProbe','travelJournalComparison')) {
         Reject { Assert-StoryIsolation ([pscustomobject]@{ $name=$true }) }
         Assert-StoryIsolation ([pscustomobject]@{ $name=$false })
     }

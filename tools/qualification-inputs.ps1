@@ -148,7 +148,7 @@ function Assert-StoryAuthorMetadata($Assembly, [string]$Name, [string]$Revision)
 }
 
 function Assert-StoryIsolation($Selection) {
-    foreach ($name in @('travelStation','travelCrossSystem','travelWormholeFixture','travelResilience','travelRecovery','travelFastLane','missionTransitionsProbe','missionIdentityProbe','contentReferenceProbe','journalMissionEventsProbe','journalCoordinated','stockpileCoordinated','vanillaLoadControl','assemblyOverlay','echoAbsentProbe','echoTravelProbe','animaTravelProbe','travelJournalComparison')) {
+    foreach ($name in @('menuInspection','modMenuProbe','travelStation','travelCrossSystem','travelWormholeFixture','travelResilience','travelRecovery','travelFastLane','missionTransitionsProbe','missionIdentityProbe','contentReferenceProbe','journalMissionEventsProbe','journalCoordinated','stockpileCoordinated','vanillaLoadControl','assemblyOverlay','echoAbsentProbe','echoTravelProbe','animaTravelProbe','travelJournalComparison')) {
         if ($Selection.PSObject.Properties[$name] -and $Selection.$name) { throw "Story probe conflicts with $name." }
     }
 }
