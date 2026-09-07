@@ -10,6 +10,12 @@ function Assert-StoryAbsentReceipt([string]$Root) {
 }
 
 function Assert-StoryReceipt([string]$Root) {
+    Assert-StoryDonorReceipt $Root
+    $objectives = @(Get-Content -LiteralPath (Join-Path $Root 'story-objectives.txt') -ErrorAction Stop)
+    if ($objectives.Count -ne 2 -or $objectives[0] -cne 'PASS' -or $objectives[1] -cne 'owners;partial-reload;stale-session;inactive-step;authored-beat;generated-objective;duplicate;native-claim;revision-reorder;repeated-instance;rollback') { throw 'Owned objective proof incomplete.' }
+}
+
+function Assert-StoryDonorReceipt([string]$Root) {
     $outcomePath = Join-Path $Root 'run-outcome.json'
     if (!(Test-Path -LiteralPath $outcomePath -PathType Leaf)) { throw 'Missing story exit outcome.' }
     $outcome = Get-Content -LiteralPath $outcomePath -Raw | ConvertFrom-Json

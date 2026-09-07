@@ -331,8 +331,7 @@ public sealed class InstalledStoryBindingTests
                 && method.Parameters[0].ParameterType.FullName == Mission);
         Assert.Contains(Calls(complete), name => name == "ClaimRewards");
 
-        // Objective progression is dispatched to each objective of each held mission through one
-        // virtual method, which is why the guard can cover the whole supported subset by patching it.
+        // Objective progression uses the base virtual dispatch plus the scripted override; both require guards.
         var objective = module.GetType(Objective)!;
         var trigger = Assert.Single(objective.Methods,
             method => method.Name == "ProcessMissionTrigger" && !method.IsStatic);
@@ -347,7 +346,15 @@ public sealed class InstalledStoryBindingTests
         {
             if (StoryContentPolicy.RefuseObjective(kind) != null) continue;
             var type = module.GetType(StoryContentPolicy.ObjectiveNamespace + "." + StoryContentPolicy.ObjectiveTypeName(kind))!;
-            Assert.DoesNotContain(type.Methods, method => method.Name == "ProcessMissionTrigger");
+            if (kind == StoryObjectiveKind.Scripted)
+            {
+                var scripted = Assert.Single(type.Methods, method => method.Name == "ProcessMissionTrigger");
+                Assert.True(scripted.IsVirtual);
+                Assert.Equal("System.Void", scripted.ReturnType.FullName);
+                Assert.Equal(new[] { "Source.MissionSystem.MissionTrigger", "System.Object" }, scripted.Parameters.Select(value => value.ParameterType.FullName));
+                Assert.Contains(BindingCatalog.StoryProtection, binding => binding.Key == "storyGuardScriptedTrigger");
+            }
+            else Assert.DoesNotContain(type.Methods, method => method.Name == "ProcessMissionTrigger");
         }
     }
 

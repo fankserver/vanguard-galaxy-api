@@ -87,7 +87,8 @@ internal static class BindingCatalog
         new("storyGuardRetry", Mission, "RetryAsNextMission", false, "System.Void", "System.String"),
         // The button the player actually presses: remove, then re-add the same story identifier.
         new("storyGuardAbandon", "Behaviour.UI.Missions.MissionDetails", "AbandonMission", false, "System.Void", Mission),
-        new("storyGuardTrigger", MissionObjective, "ProcessMissionTrigger", false, "System.Void", "Source.MissionSystem.MissionTrigger", "System.Object")
+        new("storyGuardTrigger", MissionObjective, "ProcessMissionTrigger", false, "System.Void", "Source.MissionSystem.MissionTrigger", "System.Object"),
+        new("storyGuardScriptedTrigger", "Source.MissionSystem.Objectives.TriggerObjective", "ProcessMissionTrigger", false, "System.Void", "Source.MissionSystem.MissionTrigger", "System.Object")
     };
     internal static readonly MethodBinding[] MissionSnapshots =
     {

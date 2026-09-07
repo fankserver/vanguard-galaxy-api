@@ -33,6 +33,13 @@ internal sealed class StoryOccurrenceEntry
     /// exactly the same reservation without the definition having been registered yet.
     /// </summary>
     internal int ChoiceReservation { get; }
+    internal StoryObjectiveLayout ObjectiveLayout { get; private set; }
+    internal void SetObjectiveProgress(string key, int progress) => ObjectiveLayout = ObjectiveLayout.WithProgress(key, progress);
+    internal void ReplaceObjectiveLayout(StoryObjectiveLayout layout) => ObjectiveLayout = layout;
+    internal StoryOccurrenceEntry WithObjectiveLayout(StoryObjectiveLayout layout) => new(Id, OccurrenceId, Retention, Sequence,
+        State, Outcome, Choices, ChoiceReservation, PendingChoices, FailureObserved, layout);
+    internal void ResetObjectiveProgress() => ObjectiveLayout = new StoryObjectiveLayout(ObjectiveLayout.Slots.Select(slot =>
+        new StoryObjectiveLayout.Slot(slot.Key, slot.Step, slot.Objective, slot.Kind, slot.Required)), ObjectiveLayout.Revision, ObjectiveLayout.FullyScripted);
     private readonly Dictionary<string, string> _choices = new(StringComparer.Ordinal);
     internal IReadOnlyDictionary<string, string> Choices => _choices;
     private readonly Dictionary<string, string> _pending = new(StringComparer.Ordinal);
@@ -60,13 +67,15 @@ internal sealed class StoryOccurrenceEntry
     internal StoryOccurrenceEntry(StoryContentId id, Guid occurrenceId, StoryRetention retention, long sequence,
         StoryOccurrenceState state = StoryOccurrenceState.Offered, StoryOutcome? outcome = null,
         IEnumerable<KeyValuePair<string, string>>? choices = null, int choiceReservation = 0,
-        IEnumerable<KeyValuePair<string, string>>? pendingChoices = null, bool failureObserved = false)
+        IEnumerable<KeyValuePair<string, string>>? pendingChoices = null, bool failureObserved = false,
+        StoryObjectiveLayout? objectiveLayout = null)
     {
         if (occurrenceId == Guid.Empty) throw new ArgumentException("An occurrence requires its own identity.", nameof(occurrenceId));
         if (choiceReservation is < 0 or > StoryMissionDefinition.MaxChoiceBytesPerOccurrence)
             throw new ArgumentOutOfRangeException(nameof(choiceReservation));
         Id = id; OccurrenceId = occurrenceId; Retention = retention; Sequence = sequence; State = state; Outcome = outcome;
         ChoiceReservation = choiceReservation;
+        ObjectiveLayout = objectiveLayout ?? new StoryObjectiveLayout(Array.Empty<StoryObjectiveLayout.Slot>());
         if (choices != null) foreach (var pair in choices) _choices[pair.Key] = pair.Value;
         if (pendingChoices != null) foreach (var pair in pendingChoices) _pending[pair.Key] = pair.Value;
         FailureObserved = failureObserved;
@@ -166,7 +175,7 @@ internal sealed class StoryLedger
     /// reserved from the provider's own budget here, so an accepted offer can always be retired: an
     /// occurrence is never admitted that the API could not finish.
     /// </summary>
-    internal StoryLedgerStatus Offer(StoryContentId id, StoryRetention retention, Guid occurrenceId, int choiceReservation, out string diagnostic)
+    internal StoryLedgerStatus Offer(StoryContentId id, StoryRetention retention, Guid occurrenceId, int choiceReservation, out string diagnostic, StoryObjectiveLayout? objectiveLayout = null)
     {
         diagnostic = "";
         if (occurrenceId == Guid.Empty) { diagnostic = "An occurrence requires its own identity."; return StoryLedgerStatus.InvalidTransition; }
@@ -198,7 +207,7 @@ internal sealed class StoryLedger
         }
         if (retention != StoryRetention.Campaign && choiceReservation > 0)
         { diagnostic = "Only a campaign definition reserves declared-choice space."; return StoryLedgerStatus.InvalidTransition; }
-        var candidate = new StoryOccurrenceEntry(id, occurrenceId, retention, _sequence + 1, choiceReservation: choiceReservation);
+        var candidate = new StoryOccurrenceEntry(id, occurrenceId, retention, _sequence + 1, choiceReservation: choiceReservation, objectiveLayout: objectiveLayout);
         if (ProviderFootprint(id.Provider!) + Footprint(candidate) > ProviderPayloadBudget)
         {
             diagnostic = "Provider '" + id.Provider + "' would exceed its " + ProviderPayloadBudget
@@ -311,6 +320,15 @@ internal sealed class StoryLedger
     /// Clears a reported failure, because the game accepted this occurrence again. Only a verified
     /// re-acceptance clears it; nothing else forgets that the game once failed this mission.
     /// </summary>
+    internal bool CanReplaceObjectiveLayout(StoryOccurrenceEntry entry, StoryObjectiveLayout layout)
+    {
+        if (!_byOccurrence.TryGetValue(entry.OccurrenceId, out var current) || !ReferenceEquals(current, entry)) return false;
+        var candidate = entry.WithObjectiveLayout(layout);
+        int growth = Footprint(candidate) - Footprint(entry);
+        return ProviderFootprint(entry.Id.Provider!) + growth <= ProviderPayloadBudget
+            && ReservedFootprint() + growth <= LedgerPayloadBudget;
+    }
+
     internal StoryLedgerStatus ClearFailure(StoryContentId caller, Guid occurrenceId, out string diagnostic)
     {
         var status = Resolve(caller, occurrenceId, out var entry, out diagnostic);
@@ -318,6 +336,7 @@ internal sealed class StoryLedger
         if (entry!.State == StoryOccurrenceState.Retired)
         { diagnostic = "This occurrence already reported " + entry.Outcome + "."; return StoryLedgerStatus.InvalidTransition; }
         entry.MarkFailureObserved(false);
+        entry.ResetObjectiveProgress();
         return StoryLedgerStatus.Accepted;
     }
 

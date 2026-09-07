@@ -17,7 +17,7 @@ namespace VGModAPI.Runtime;
 /// replaces a duplicate identifier, so an identifier the adapter did not install is left untouched,
 /// and an entry that someone else has since replaced is never removed.
 /// </summary>
-internal sealed class StoryNativeWorld : IStoryWorld, IDisposable
+internal sealed class StoryNativeWorld : IStoryWorld, IStoryObjectiveWorld, IDisposable
 {
     private readonly StoryNativeBindings _bindings;
     private readonly Action _checkThread;
@@ -32,6 +32,68 @@ internal sealed class StoryNativeWorld : IStoryWorld, IDisposable
         _bindings = bindings ?? throw new ArgumentNullException(nameof(bindings));
         _checkThread = checkThread ?? throw new ArgumentNullException(nameof(checkThread));
         _fault = fault;
+    }
+
+    public StoryWorldResult MigrateScripted(string identifier, StoryMissionDefinition definition, StoryObjectiveLayout source,
+        StoryObjectiveLayout destination, Func<bool> stillValid)
+    {
+        _checkThread();
+        try
+        {
+            var player = _bindings.CurrentPlayer;
+            if (_disposed || player == null || !_owned.TryGetValue(identifier, out var catalog))
+                return new StoryWorldResult(StoryWorldStatus.Unavailable, "No current owned occurrence.");
+            var held = _bindings.Held(player);
+            if (held.Missions > StoryQuarantine.MaxScannedMissions || held.Objectives > StoryQuarantine.MaxScannedObjectives)
+                return new StoryWorldResult(StoryWorldStatus.Unavailable, "Migration scan exceeds its bound.");
+            if (held.Objectives - source.Slots.Count + destination.Slots.Count > StoryQuarantine.MaxScannedObjectives)
+                return new StoryWorldResult(StoryWorldStatus.Refused, "Migrated objectives would exceed the live scan budget.");
+            var mission = _bindings.ActiveStory(player, identifier);
+            bool Stable()
+            {
+                if (!stillValid() || _disposed || !ReferenceEquals(_bindings.CurrentPlayer, player)
+                    || !ReferenceEquals(_bindings.Catalog[identifier], catalog)
+                    || !ReferenceEquals(_bindings.ActiveStory(player, identifier), mission)) return false;
+                var currentCounts = _bindings.Held(player);
+                return currentCounts.Missions <= StoryQuarantine.MaxScannedMissions
+                    && currentCounts.Objectives <= StoryQuarantine.MaxScannedObjectives
+                    && currentCounts.Objectives - source.Slots.Count + destination.Slots.Count <= StoryQuarantine.MaxScannedObjectives
+                    && _bindings.ActiveStoryIdentifiers(player).Count(value => value == identifier) == 1;
+            }
+            if (mission == null || !_bindings.MigrateScripted(mission, player, identifier, definition, source, destination, Stable))
+                return new StoryWorldResult(StoryWorldStatus.Refused, "The current scripted occurrence could not be safely migrated.");
+            return StoryWorldResult.Ok;
+        }
+        catch (Exception error) { Report(error); return new StoryWorldResult(StoryWorldStatus.Unavailable, "Scripted migration could not be verified."); }
+    }
+
+    public StoryWorldResult SetScriptedProgress(string identifier, StoryObjectiveLayout.Slot slot, int progress, Func<bool>? stillValid = null)
+    {
+        _checkThread();
+        if (_disposed) return new StoryWorldResult(StoryWorldStatus.Unavailable, "The story adapter is disposed.");
+        try
+        {
+            if (!_owned.TryGetValue(identifier, out var definition) || !ReferenceEquals(_bindings.Catalog[identifier], definition))
+                return new StoryWorldResult(StoryWorldStatus.Refused, "The occurrence catalog entry is no longer owned.");
+            var player = _bindings.CurrentPlayer;
+            if (player == null) return new StoryWorldResult(StoryWorldStatus.Unavailable, "No current player.");
+            var held = _bindings.Held(player);
+            if (held.Missions > StoryQuarantine.MaxScannedMissions || held.Objectives > StoryQuarantine.MaxScannedObjectives)
+                return new StoryWorldResult(StoryWorldStatus.Unavailable, "The live objective scan exceeds its bounds.");
+            if (_bindings.ActiveStoryIdentifiers(player).Count(value => value == identifier) != 1)
+                return new StoryWorldResult(StoryWorldStatus.Refused, "The current occurrence is missing or ambiguous.");
+            var mission = _bindings.ActiveStory(player, identifier);
+            bool Stable() => (stillValid?.Invoke() ?? true) && !_disposed
+                && ReferenceEquals(_bindings.CurrentPlayer, player)
+                && _owned.TryGetValue(identifier, out var owned) && ReferenceEquals(owned, definition)
+                && ReferenceEquals(_bindings.Catalog[identifier], definition)
+                && _bindings.ActiveStoryIdentifiers(player).Count(value => value == identifier) == 1
+                && ReferenceEquals(_bindings.ActiveStory(player, identifier), mission);
+            if (mission == null || !_bindings.SetScriptedProgress(mission, slot, progress, Stable))
+                return new StoryWorldResult(StoryWorldStatus.Refused, "The current objective is inactive or differs from retained state.");
+            return StoryWorldResult.Ok;
+        }
+        catch (Exception error) { Report(error); return new StoryWorldResult(StoryWorldStatus.Unavailable, "The current objective could not be verified."); }
     }
 
     public bool KnowsFaction(string factionId)

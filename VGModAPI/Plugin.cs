@@ -327,7 +327,8 @@ public sealed class Plugin : BaseUnityPlugin
                 ["storyGuardFail"] = typeof(StoryProtectionPatches.MissionFailed),
                 ["storyGuardRetry"] = typeof(StoryProtectionPatches.RetryAsNextMission),
                 ["storyGuardAbandon"] = typeof(StoryProtectionPatches.AbandonMission),
-                ["storyGuardTrigger"] = typeof(StoryProtectionPatches.ProcessMissionTrigger)
+                ["storyGuardTrigger"] = typeof(StoryProtectionPatches.ProcessMissionTrigger),
+                ["storyGuardScriptedTrigger"] = typeof(StoryProtectionPatches.ProcessMissionTrigger)
             });
             if (!_hub.Capabilities.Any(c => c.Name == "story-protection" && c.Available))
             { StoryProtectionPatches.Quarantine = null; _quarantine = null; _protection = null; }

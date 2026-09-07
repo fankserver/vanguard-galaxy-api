@@ -10,14 +10,35 @@ function Reject([scriptblock]$Action) {
     if (!$rejected) { throw 'Invalid story evidence was accepted.' }
 }
 try {
+    $tokens = $null; $parseErrors = $null
+    $launcher = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot '..\qualification.ps1'), [ref]$tokens, [ref]$parseErrors)
+    if ($parseErrors.Count -ne 0) { throw 'Qualification launcher does not parse.' }
+    $budgetGuard = $launcher.Find({ param($node) $node -is [System.Management.Automation.Language.IfStatementAst] -and $node.Extent.Text.Contains('$provenance.storyProbe -and $TimeoutSeconds') }, $true)
+    if (!$budgetGuard) { throw 'Missing story timeout guard.' }
+    $checkBudget = [scriptblock]::Create($budgetGuard.Extent.Text)
+    $provenance = [pscustomobject]@{ storyProbe=$true }
+    foreach ($TimeoutSeconds in @(3900,4898,5099)) { Reject { & $checkBudget } }
+    $TimeoutSeconds = 5100; & $checkBudget
+    $provenance.storyProbe = $false; $TimeoutSeconds = 0; & $checkBudget
     $cases = @('independent-authors','offered-roundtrip','active-roundtrip','native-completion','save-refusals','older-save-rollback','cross-slot-return','repeat-job','provider-unregistered-first-reload','provider-unregistered-second-reload')
     $cases | Set-Content (Join-Path $root 'story-cases.txt')
     @('PASS','owned-story-v1') | Set-Content (Join-Path $root 'story-result.txt')
     @('PASS','owned-new-game-roundtrip-v1') | Set-Content (Join-Path $root 'story-new-game.txt')
+    $objectiveCases = 'owners;partial-reload;stale-session;inactive-step;authored-beat;generated-objective;duplicate;native-claim;revision-reorder;repeated-instance;rollback'
+    @('PASS',$objectiveCases) | Set-Content (Join-Path $root 'story-objectives.txt')
     $outcome = @{ timedOut=$false; killed=$false; selfTerminated=$true; exitCode=0 }
     $outcome | ConvertTo-Json | Set-Content (Join-Path $root 'run-outcome.json')
     Assert-StoryReceipt $root
+    Remove-Item (Join-Path $root 'story-objectives.txt')
+    Assert-StoryDonorReceipt $root
+    Reject { Assert-StoryReceipt $root }
+    @('PASS','partial') | Set-Content (Join-Path $root 'story-objectives.txt')
+    Reject { Assert-StoryReceipt $root }
+    @('PASS',$objectiveCases,'extra') | Set-Content (Join-Path $root 'story-objectives.txt')
+    Reject { Assert-StoryReceipt $root }
+    @('PASS',$objectiveCases) | Set-Content (Join-Path $root 'story-objectives.txt')
     Remove-Item (Join-Path $root 'story-new-game.txt')
+    Reject { Assert-StoryDonorReceipt $root }
     Reject { Assert-StoryReceipt $root }
     @('PASS','owned-new-game-roundtrip-v1') | Set-Content (Join-Path $root 'story-new-game.txt')
     foreach ($code in @(-1,0)) {

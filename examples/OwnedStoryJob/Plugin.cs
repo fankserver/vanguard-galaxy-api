@@ -30,6 +30,27 @@ public sealed class Plugin : BaseUnityPlugin
             retention: StoryRetention.Temporary));
     }
 
+    public const string ObjectiveLocalId = "objective-x";
+
+    // Generated text and progress requirements use the same owner-scoped API as authored content.
+    public StoryRegistrationResult RegisterObjectives(string sourceFaction, string generatedDescription, int requiredReports)
+    {
+        if (_provider == null)
+        {
+            var api = ModApi.Story ?? throw new InvalidOperationException("Enable the optional story module.");
+            var acquired = api.AcquireProvider(this);
+            _provider = acquired.Provider ?? throw new InvalidOperationException(acquired.Diagnostic);
+        }
+        return _provider.Register(new StoryMissionDefinition(ObjectiveLocalId, "Generated field report", generatedDescription,
+            new StoryFactionId(sourceFaction), new[] { new StoryStep("Collect reports",
+                new[] { StoryObjective.Scripted("talk", generatedDescription, requiredReports) }) },
+            new[] { new StoryReward(StoryRewardKind.Credits, 3) }, retention: StoryRetention.Temporary));
+    }
+
+    public StoryTransitionResult ReportProgress(Guid session, Guid occurrence, int observedReports)
+        => ((IStoryObjectiveProvider)Provider).SetProgress(session,
+            new StoryObjectiveId(new StoryContentId(Provider.ProviderId, ObjectiveLocalId), occurrence, "talk"), observedReports);
+
     public void ReleaseProvider() { _provider?.Dispose(); _provider = null; }
     private void OnDestroy() => ReleaseProvider();
 }

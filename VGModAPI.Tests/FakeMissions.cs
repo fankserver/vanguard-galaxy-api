@@ -14,7 +14,7 @@ namespace Source.MissionSystem
         /// A HOST PROJECTION of the mission's persisted shape, not the game's own serializer running:
         /// it reads the same fields the game writes, including the ones a guard could plausibly
         /// disturb, so a test can show that nothing about the object changed. Native serialization
-        /// evidence remains PR3 work.
+        /// evidence requires running the actual game serializer.
         /// </summary>
         public string SerializeLikeTheGame()
             => "{name:" + name + ",story:" + storyId + ",faction:" + sourceFaction!.identifier
@@ -46,6 +46,16 @@ namespace Source.MissionSystem
         public string? description;
         public bool requireAllObjectives;
         public bool hidden;
+        public System.Action? DuringCompletion;
+        public bool isComplete
+        {
+            get
+            {
+                DuringCompletion?.Invoke();
+                return requireAllObjectives ? objectives.Cast<MissionObjective>().All(value => value.IsComplete())
+                    : objectives.Cast<MissionObjective>().Any(value => value.IsComplete());
+            }
+        }
         public string SerializeLikeTheGame()
             => "{" + description + ":" + requireAllObjectives + ":hidden=" + hidden + ":["
                + string.Join(",", objectives.Select(objective => ((MissionObjective)objective).ToJson())) + "]}";
