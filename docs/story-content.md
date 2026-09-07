@@ -290,8 +290,10 @@ Controlled in-game verification covers independently loaded authored/generated c
 objective names, partial-progress reload, stale sessions, inactive steps, scripted revision reordering,
 native payout/idempotency, repeated instances, older-save rollback and restored terminal state.
 Host regressions additionally cover reentrancy and migration quota boundaries. Non-scripted progress
-queries have host and installed-shape checks; their native acceptance remains pending. Full acceptance
-remains incomplete; this coverage does not make the entire API runtime-qualified.
+queries have host and installed-shape checks plus controlled in-game snapshot comparison and reload:
+answers match current credits/native travel completion without changing resources or serialized mission
+state. This does not cover a spending sequence or a native visit transition. Full acceptance remains
+incomplete; this coverage does not make the entire API runtime-qualified.
 
 ## Automatic persistence
 
