@@ -184,15 +184,99 @@ public sealed class StoryProtectionPatchTests : IDisposable
         Assert.Null(_transactions.Began);
     }
 
+    /// <summary>
+    /// A finalizer can arrive after a synchronous callback replaced the session. It belongs to a
+    /// transaction that no longer exists, so it must do NOTHING: not read the new world, not settle,
+    /// not degrade it, and not close a boundary another transaction now owns.
+    /// </summary>
+    [Fact]
+    public void AFinalizerWhoseSessionWasReplacedDoesNothingAtAll()
+    {
+        var owned = Hold();
+        _protection.Admit(Guid.NewGuid(), new[] { owned.Identifier }, "admitted");
+        bool scanned = false;
+        var arguments = new object?[] { owned.Mission, null };
+        Assert.True((bool)PrefixMethod.Invoke(null, arguments)!);
+        var state = arguments[1];
+
+        // The session is replaced while the game's own route is running: a different world, which
+        // cannot even be read, and a transaction that is no longer the open one.
+        var replacement = new StoryQuarantine(new StoryProtectionGuard(typeof(StoryMission).Assembly), _protection,
+            () => { scanned = true; throw new InvalidOperationException("the replacement world is unreadable"); })
+            { Transactions = _transactions };
+        StoryProtectionPatches.Quarantine = replacement;
+        _transactions.Stale = true;
+        FinalizerMethod.Invoke(null, new[] { state });
+
+        Assert.False(scanned);                       // the replacement world was never inspected
+        Assert.Equal(0, _transactions.Ends);         // and nothing was settled
+        Assert.Null(replacement.DegradedReason);     // so nothing degraded the new session either
+        Assert.True(_protection.AdmittedCount > 0);  // whose admissions are untouched
+    }
+
+    /// <summary>
+    /// A stale finalizer neither settles the transaction that IS open nor swallows the original's
+    /// exception; the transaction that owns itself still completes normally.
+    /// </summary>
+    [Fact]
+    public void AStaleFinalizerLeavesALaterTransactionAndTheOriginalExceptionAlone()
+    {
+        var owned = Hold();
+        _protection.Admit(Guid.NewGuid(), new[] { owned.Identifier }, "admitted");
+        var arguments = new object?[] { owned.Mission, null };
+        Assert.True((bool)PrefixMethod.Invoke(null, arguments)!);
+        var stale = arguments[1];
+
+        // A later session opens its own transaction for the same occurrence identity.
+        _transactions.Stale = true;
+        var later = new object?[] { owned.Mission, null };
+        Assert.True((bool)PrefixMethod.Invoke(null, later)!);
+        _transactions.Stale = false;
+
+        FinalizerMethod.Invoke(null, new[] { stale });
+        Assert.Equal(0, _transactions.Ends);          // the stale one settled nothing
+
+        var thrown = new InvalidOperationException("the game threw");
+        var caught = Assert.Throws<InvalidOperationException>((Action)(() =>
+        {
+            try { throw thrown; }
+            finally { FinalizerMethod.Invoke(null, new[] { later[1] }); }
+        }));
+        Assert.Same(thrown, caught);
+        Assert.Equal(1, _transactions.Ends);          // and only its own finalizer settled it
+    }
+
+    /// <summary>A settlement whose token nobody recognises changes nothing.</summary>
+    [Fact]
+    public void AnEndWithoutAMatchingTokenMutatesNothing()
+    {
+        var owned = Hold();
+        _protection.Admit(Guid.NewGuid(), new[] { owned.Identifier }, "admitted");
+        var foreign = new StoryAbandonState(owned.Identifier, owned.Mission,
+            new StoryUiTransactionToken(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()));
+        _quarantine.EndAbandon(foreign);
+        Assert.Equal(0, _transactions.Ends);
+        Assert.Contains(owned.Mission, _player.missions);
+    }
+
     private sealed class RecordingTransactions : IStoryUiTransaction
     {
         internal string? Began;
         internal int Ends;
         internal bool Refuse;
         internal Exception? EndFault;
+        internal bool Stale;
+        internal StoryUiTransactionToken? Open;
         internal StoryAbandonSettlement Settlement = StoryAbandonSettlement.UnknownOrAmbiguous;
-        public bool BeginAbandon(string identifier) { Began = identifier; return !Refuse; }
-        public void EndAbandon(string identifier, StoryAbandonSettlement settlement)
+        public StoryUiTransactionToken? BeginAbandon(string identifier)
+        {
+            Began = identifier;
+            if (Refuse) return null;
+            Open = new StoryUiTransactionToken(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+            return Open;
+        }
+        public bool IsTransactionCurrent(StoryUiTransactionToken token) => !Stale && ReferenceEquals(token, Open);
+        public void EndAbandon(StoryUiTransactionToken token, StoryAbandonSettlement settlement)
         {
             Ends++;
             Settlement = settlement;

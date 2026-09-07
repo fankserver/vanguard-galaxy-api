@@ -143,6 +143,8 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
     private readonly Dictionary<Guid, StoryOutcome> _intent = new();
     /// <summary>The occurrence whose removal the game's own abandon/retry button is performing right now.</summary>
     private Guid _uiAbandon;
+    /// <summary>The token of the open abandon/retry, if any. Only its own finalizer may settle it.</summary>
+    private StoryUiTransactionToken? _uiToken;
     /// <summary>
     /// Occurrences this module will not vouch for even though it owns them: their world is missing
     /// something the mission needs, so running them could never finish. They are not deleted and
@@ -227,7 +229,10 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
         _deferredUninstall.Clear();
         _unrunnable.Clear();
         _intent.Clear();
+        // A session boundary invalidates any open transaction: its finalizer, arriving later, will
+        // find its token is no longer current and do nothing.
         _uiAbandon = Guid.Empty;
+        _uiToken = null;
         _operationInFlight = false;
         _fault = null;
         _suspended = null;
@@ -430,15 +435,34 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
     /// catalog entry is held, because the very next thing that happens may be the same occurrence
     /// coming back. Only a live occurrence this module admits is allowed to take that route.
     /// </summary>
-    bool IStoryUiTransaction.BeginAbandon(string identifier)
+    StoryUiTransactionToken? IStoryUiTransaction.BeginAbandon(string identifier)
     {
         CheckThread();
-        if (_disposed || _suspended != null || _fault != null || _readiness != Readiness.Restored) return false;
-        if (!StoryContentPolicy.TryParseOccurrenceIdentifier(identifier, out var id, out var occurrenceId)) return false;
+        if (_disposed || _suspended != null || _fault != null || _readiness != Readiness.Restored) return null;
+        // The SHARED boundary, in both directions: a native operation this module started is just as
+        // much a reason to refuse the game's button as an open button is to refuse a mutation. Refused
+        // here, before the game removes anything, and without touching the open transaction.
+        if (InFlight) return null;
+        if (!StoryContentPolicy.TryParseOccurrenceIdentifier(identifier, out var id, out var occurrenceId)) return null;
         if (!_ledger.TryGet(occurrenceId, out var entry) || entry.Id != id
-            || entry.State == StoryOccurrenceState.Retired || _uiAbandon != Guid.Empty) return false;
+            || entry.State == StoryOccurrenceState.Retired) return null;
         _uiAbandon = occurrenceId;
-        return true;
+        _uiToken = new StoryUiTransactionToken(Guid.NewGuid(), _restoredSession, occurrenceId);
+        return _uiToken;
+    }
+
+    /// <summary>
+    /// Whether this token is still the transaction that is open, in the session that opened it. A
+    /// finalizer whose session was replaced, or whose transaction was superseded, is stale: it must
+    /// not settle, must not inspect the world it now finds, and must not close a boundary it does not
+    /// own.
+    /// </summary>
+    bool IStoryUiTransaction.IsTransactionCurrent(StoryUiTransactionToken token)
+    {
+        CheckThread();
+        if (token == null) throw new ArgumentNullException(nameof(token));
+        return !_disposed && _uiToken != null && ReferenceEquals(token, _uiToken)
+            && token.SessionId == _restoredSession && _uiAbandon == token.OccurrenceId;
     }
 
     /// <summary>
@@ -447,13 +471,21 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
     /// outcome is recorded. If it does not, the removal was the ending it looked like: a failure that
     /// had been reported becomes final, anything else is the abandonment the player asked for.
     /// </summary>
-    void IStoryUiTransaction.EndAbandon(string identifier, StoryAbandonSettlement settlement)
+    void IStoryUiTransaction.EndAbandon(StoryUiTransactionToken token, StoryAbandonSettlement settlement)
     {
         CheckThread();
+        if (token == null) throw new ArgumentNullException(nameof(token));
+        // Validated BEFORE the boundary is closed: a stale finalizer must not clear a transaction that
+        // belongs to a later session or a later opening, and must not drain deferred work it never
+        // queued. It simply does nothing.
+        if (!((IStoryUiTransaction)this).IsTransactionCurrent(token)) return;
+        var identifier = StoryContentPolicy.OccurrenceIdentifier(
+            _ledger.TryGet(token.OccurrenceId, out var owner) ? owner.Id : default, token.OccurrenceId);
         var occurrenceId = _uiAbandon;
-        // Cleared FIRST, so the shared busy boundary always closes: a fault below must not leave every
-        // later mutation refused as busy for the rest of the session.
+        // Cleared only once this settlement is known to own the transaction, so the shared boundary
+        // always closes for the transaction that actually opened it.
         _uiAbandon = Guid.Empty;
+        _uiToken = null;
         try
         {
             if (_disposed || occurrenceId == Guid.Empty) return;
@@ -603,6 +635,13 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
     private StoryRegistrationResult Register(Lease lease, StoryMissionDefinition definition)
     {
         var id = new StoryContentId(lease.ProviderId, definition.LocalId);
+        // Registration installs into the same catalog an open operation is holding entries in, and a
+        // teardown queued during that operation removes an identifier by NAME: registering the same
+        // local ID meanwhile would hand the queued removal a brand new entry to delete. Refused for
+        // as long as the boundary is open, before the registry or the world is touched at all.
+        if (InFlight)
+            return new StoryRegistrationResult(StoryRegistrationStatus.Unavailable, null,
+                "An owned-story operation is running right now; register again once it completes.");
         if (_protectionHealthy?.Invoke() == false)
             return new StoryRegistrationResult(StoryRegistrationStatus.Unavailable, null,
                 "The native story protection cannot currently decide about owned content, so none is installed.");

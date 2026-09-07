@@ -160,8 +160,9 @@ internal sealed class StoryQuarantine
                 if (string.Equals(_guard.StoryId(held), storyId, StringComparison.Ordinal)) matches++;
             }
             if (!present || matches != 1) return false;
-            if (Transactions?.BeginAbandon(storyId) != true) return false;
-            state = new StoryAbandonState(storyId, mission);
+            var token = Transactions?.BeginAbandon(storyId);
+            if (token == null) return false;
+            state = new StoryAbandonState(storyId, mission, token);
             return true;
         }
         catch (Exception error) { Report(error); state = null; return !_guard.IsMission(mission); }
@@ -175,6 +176,11 @@ internal sealed class StoryQuarantine
     internal void EndAbandon(StoryAbandonState state)
     {
         if (state == null) throw new ArgumentNullException(nameof(state));
+        // Checked BEFORE anything is read, settled or degraded. A finalizer can arrive after a
+        // synchronous callback replaced the session, or after another transaction opened: acting then
+        // would inspect a world this transaction never opened, and a failed read of THAT world would
+        // withdraw the new session's admissions over a transaction that no longer exists.
+        if (Transactions?.IsTransactionCurrent(state.Token) != true) return;
         StoryAbandonSettlement settlement;
         try
         {
@@ -200,7 +206,7 @@ internal sealed class StoryQuarantine
             Degrade("the guard could not read what the world held after an abandon (" + error.GetType().Name + ")");
             settlement = StoryAbandonSettlement.UnknownOrAmbiguous;
         }
-        try { Transactions?.EndAbandon(state.Identifier, settlement); }
+        try { Transactions?.EndAbandon(state.Token, settlement); }
         catch (Exception error) { Report(error); }
     }
 
@@ -217,6 +223,8 @@ internal sealed class StoryAbandonState
 {
     internal string Identifier { get; }
     internal object Mission { get; }
-    internal StoryAbandonState(string identifier, object mission)
-    { Identifier = identifier; Mission = mission; }
+    /// <summary>The transaction this state belongs to, which is what makes a late finalizer harmless.</summary>
+    internal StoryUiTransactionToken Token { get; }
+    internal StoryAbandonState(string identifier, object mission, StoryUiTransactionToken token)
+    { Identifier = identifier; Mission = mission; Token = token; }
 }

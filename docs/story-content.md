@@ -368,11 +368,22 @@ once; a stale object carrying an admitted identifier would remove nothing and ad
 mission for it. The guard wraps the whole method and tells the module, which suspends the outcome the
 removal would otherwise record and holds the catalog entry.
 
-While that is open it holds the SAME boundary as this module's own native operations: no other
-mutation interleaves with it — every public call is refused as `Busy`, including one for the
-occurrence being abandoned — and no catalog entry is released underneath it, including one a provider
-teardown asked for. That is what keeps the game's own re-add from looking up an entry this module
-just removed.
+While that is open it holds the SAME boundary as this module's own native operations, in BOTH
+directions: no other mutation interleaves with it — every public call is refused as `Busy`, including
+one for the occurrence being abandoned — and the button itself cannot open while one of this module's
+own native operations is running, which is exactly what a consumer observer inside an acceptance
+would otherwise do. No catalog entry is released underneath it, including one a provider teardown
+asked for, and registration is refused for as long as it is open: a teardown queued during the
+boundary removes an identifier by NAME later, so re-registering the same local ID meanwhile would
+hand that queued removal a brand new entry to delete. That is what keeps the game's own re-add from
+looking up an entry this module just removed.
+
+Each opening mints its own transaction token, bound to the session that opened it. A finalizer can
+arrive after a synchronous callback replaced the session — the same save, the same occurrence
+identity, a different world — and that token is what makes it harmless: it is checked BEFORE anything
+is inspected, settled or reported, so a stale finalizer reads nothing, degrades nothing, settles
+nothing and does not close a transaction the new session opened. The original's exception is still
+passed on unchanged.
 
 Afterwards, what the game turned out to be holding settles it, and the cases are distinguished:
 

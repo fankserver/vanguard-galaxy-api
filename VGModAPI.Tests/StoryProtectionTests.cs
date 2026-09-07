@@ -436,9 +436,16 @@ public sealed class StoryProtectionTests : IDisposable
     {
         internal string? Began;
         internal int Ends;
+        internal StoryUiTransactionToken? Open;
         internal StoryAbandonSettlement Settlement = StoryAbandonSettlement.UnknownOrAmbiguous;
-        public bool BeginAbandon(string identifier) { Began = identifier; return true; }
-        public void EndAbandon(string identifier, StoryAbandonSettlement settlement)
+        public StoryUiTransactionToken? BeginAbandon(string identifier)
+        {
+            Began = identifier;
+            Open = new StoryUiTransactionToken(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+            return Open;
+        }
+        public bool IsTransactionCurrent(StoryUiTransactionToken token) => ReferenceEquals(token, Open);
+        public void EndAbandon(StoryUiTransactionToken token, StoryAbandonSettlement settlement)
         {
             Ends++;
             Settlement = settlement;

@@ -124,18 +124,45 @@ internal enum StoryAbandonSettlement
     UnknownOrAmbiguous
 }
 
+/// <summary>
+/// One accepted abandon/retry, minted fresh by the owning module. It is what makes a late finalizer
+/// harmless: a transaction belongs to the session it was opened in and to that opening alone, so a
+/// finalizer arriving after a session replaced the world — or after another transaction opened — can
+/// be recognised as stale before it inspects, settles or degrades anything.
+/// </summary>
+internal sealed class StoryUiTransactionToken
+{
+    /// <summary>Distinct for every opening, so two transactions are never mistaken for each other.</summary>
+    internal Guid Id { get; }
+    /// <summary>The session this transaction belongs to; a replacement session invalidates it.</summary>
+    internal Guid SessionId { get; }
+    internal Guid OccurrenceId { get; }
+    internal StoryUiTransactionToken(Guid id, Guid sessionId, Guid occurrenceId)
+    {
+        if (id == Guid.Empty) throw new ArgumentException("A transaction requires its own identity.", nameof(id));
+        Id = id; SessionId = sessionId; OccurrenceId = occurrenceId;
+    }
+}
+
 internal interface IStoryUiTransaction
 {
     /// <summary>
-    /// A UI abandon/retry of this identifier is about to run. Returning false refuses it, so the game
-    /// does not remove the mission at all. Returning true suspends the outcome the removal would
-    /// otherwise record and holds the catalog entry, so a retry can re-add the same occurrence.
+    /// A UI abandon/retry of this identifier is about to run. A token suspends the outcome the removal
+    /// would otherwise record and holds the catalog entry, so a retry can re-add the same occurrence;
+    /// null refuses the route outright, so the game does not remove the mission at all.
     /// </summary>
-    bool BeginAbandon(string identifier);
+    StoryUiTransactionToken? BeginAbandon(string identifier);
+
+    /// <summary>
+    /// Whether this token is STILL the transaction that is open, in the session that opened it. Asked
+    /// before anything is inspected, settled or reported, so a finalizer whose session or transaction
+    /// was replaced underneath it does nothing at all rather than acting on a world it never opened.
+    /// </summary>
+    bool IsTransactionCurrent(StoryUiTransactionToken token);
 
     /// <summary>
     /// The UI operation finished, with what the game turned out to be holding. Called exactly once
     /// for every accepted <see cref="BeginAbandon"/>, including when the original threw.
     /// </summary>
-    void EndAbandon(string identifier, StoryAbandonSettlement settlement);
+    void EndAbandon(StoryUiTransactionToken token, StoryAbandonSettlement settlement);
 }

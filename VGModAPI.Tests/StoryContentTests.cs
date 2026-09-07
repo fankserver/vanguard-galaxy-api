@@ -2326,11 +2326,12 @@ public sealed class StoryContentTests
         Assert.True(failed.FailureObserved);
 
         var transactions = (IStoryUiTransaction)service;
-        Assert.True(transactions.BeginAbandon(identifier));
+        var token = transactions.BeginAbandon(identifier);
+        Assert.NotNull(token);
         // The removal the button performs is seen while the transaction is open, and settles nothing.
         world.Missions.Publish(MissionTransitionKind.Removed, identifier);
         Assert.Equal(StoryOccurrenceState.Active, failed.State);
-        transactions.EndAbandon(identifier, StoryAbandonSettlement.OneReplacementHeld);
+        transactions.EndAbandon(token!, StoryAbandonSettlement.OneReplacementHeld);
 
         Assert.Equal(StoryOccurrenceState.Active, failed.State);
         Assert.False(failed.FailureObserved);                       // the game accepted it afresh
@@ -2355,18 +2356,20 @@ public sealed class StoryContentTests
         var failingId = FakeWorld.Native(provider, "salvage-run", failing.OccurrenceId);
         world.Missions.Publish(MissionTransitionKind.Failed, failingId);
         var transactions = (IStoryUiTransaction)service;
-        Assert.True(transactions.BeginAbandon(failingId));
+        var failingToken = transactions.BeginAbandon(failingId);
+        Assert.NotNull(failingToken);
         world.World.CompleteInWorld(failingId);
-        transactions.EndAbandon(failingId, StoryAbandonSettlement.NoneHeld);
+        transactions.EndAbandon(failingToken!, StoryAbandonSettlement.NoneHeld);
         Assert.Equal(StoryOutcome.Failed, Assert.Single(provider.Occurrences("salvage-run").Records).Outcome);
         Assert.False(world.World.IsInstalled(failingId));
 
         var abandoned = provider.Offer("salvage-run");
         Assert.True(provider.Activate(abandoned.OccurrenceId).Accepted);
         var abandonedId = FakeWorld.Native(provider, "salvage-run", abandoned.OccurrenceId);
-        Assert.True(transactions.BeginAbandon(abandonedId));
+        var abandonedToken = transactions.BeginAbandon(abandonedId);
+        Assert.NotNull(abandonedToken);
         world.World.CompleteInWorld(abandonedId);
-        transactions.EndAbandon(abandonedId, StoryAbandonSettlement.NoneHeld);
+        transactions.EndAbandon(abandonedToken!, StoryAbandonSettlement.NoneHeld);
         Assert.Equal(StoryOutcome.Abandoned, provider.Occurrences("salvage-run").Records[1].Outcome);
     }
 
@@ -2380,19 +2383,20 @@ public sealed class StoryContentTests
         var identifier = FakeWorld.Native(provider, "salvage-run", occurrence.OccurrenceId);
         Assert.True(provider.Activate(occurrence.OccurrenceId).Accepted);
 
-        Assert.False(transactions.BeginAbandon("vgmodapi.story.anima.salvage-run"));      // a base identifier
-        Assert.False(transactions.BeginAbandon(identifier + "-malformed"));
-        Assert.False(transactions.BeginAbandon(
+        Assert.Null(transactions.BeginAbandon("vgmodapi.story.anima.salvage-run"));      // a base identifier
+        Assert.Null(transactions.BeginAbandon(identifier + "-malformed"));
+        Assert.Null(transactions.BeginAbandon(
             StoryContentPolicy.OccurrenceIdentifier(new StoryContentId(provider.ProviderId, "salvage-run"), Guid.NewGuid())));
         // One at a time: a second route cannot open while one is running.
-        Assert.True(transactions.BeginAbandon(identifier));
-        Assert.False(transactions.BeginAbandon(identifier));
-        transactions.EndAbandon(identifier, StoryAbandonSettlement.OneReplacementHeld);
+        var token = transactions.BeginAbandon(identifier);
+        Assert.NotNull(token);
+        Assert.Null(transactions.BeginAbandon(identifier));
+        transactions.EndAbandon(token!, StoryAbandonSettlement.OneReplacementHeld);
         // And nothing at all once the module is suspended.
         world.World.AdoptInWorld(FakeWorld.Native(provider, "salvage-run", Guid.NewGuid()));
         world.StartAndRestore();
         Assert.NotNull(service.SuspendedReason);
-        Assert.False(transactions.BeginAbandon(identifier));
+        Assert.Null(transactions.BeginAbandon(identifier));
     }
 
     /// <summary>
@@ -2457,7 +2461,8 @@ public sealed class StoryContentTests
         Assert.True(provider.Activate(occurrence.OccurrenceId).Accepted);
         var identifier = FakeWorld.Native(provider, "salvage-run", occurrence.OccurrenceId);
         var transactions = (IStoryUiTransaction)service;
-        Assert.True(transactions.BeginAbandon(identifier));
+        var token = transactions.BeginAbandon(identifier);
+        Assert.NotNull(token);
 
         // Every public mutation, including one for the very occurrence being abandoned, is busy.
         foreach (var refused in new[]
@@ -2482,7 +2487,7 @@ public sealed class StoryContentTests
         // A provider tearing itself down mid-transaction does not pull the entry either.
         provider.Dispose();
         Assert.True(world.World.IsInstalled(identifier));
-        transactions.EndAbandon(identifier, StoryAbandonSettlement.NoneHeld);
+        transactions.EndAbandon(token!, StoryAbandonSettlement.NoneHeld);
         // Once it settles, the deferred removals happen and the boundary is closed again.
         Assert.False(world.World.IsInstalled(identifier));
     }
@@ -2503,8 +2508,9 @@ public sealed class StoryContentTests
         world.Missions.Publish(MissionTransitionKind.Failed, identifier);
         var transactions = (IStoryUiTransaction)service;
 
-        Assert.True(transactions.BeginAbandon(identifier));
-        transactions.EndAbandon(identifier, StoryAbandonSettlement.UnknownOrAmbiguous);
+        var token = transactions.BeginAbandon(identifier);
+        Assert.NotNull(token);
+        transactions.EndAbandon(token!, StoryAbandonSettlement.UnknownOrAmbiguous);
 
         Assert.True(service.Ledger.TryGet(occurrence.OccurrenceId, out var kept));
         Assert.Equal(StoryOccurrenceState.Active, kept.State);
@@ -2531,8 +2537,9 @@ public sealed class StoryContentTests
         world.Missions.Publish(MissionTransitionKind.Failed, identifier);
         var transactions = (IStoryUiTransaction)service;
 
-        Assert.True(transactions.BeginAbandon(identifier));
-        transactions.EndAbandon(identifier, StoryAbandonSettlement.OriginalStillHeld);
+        var token = transactions.BeginAbandon(identifier);
+        Assert.NotNull(token);
+        transactions.EndAbandon(token!, StoryAbandonSettlement.OriginalStillHeld);
 
         Assert.True(service.Ledger.TryGet(occurrence.OccurrenceId, out var entry));
         Assert.True(entry.FailureObserved);
@@ -2574,6 +2581,116 @@ public sealed class StoryContentTests
         world.ProtectionHealthy = true;
         world.StartAndRestore();
         Assert.True(provider.Offer("salvage-run").Accepted);
+    }
+
+    /// <summary>
+    /// The boundary is shared in BOTH directions. The game's own button cannot open while a native
+    /// operation of this module is running — a consumer's observer, running inside an acceptance, is
+    /// exactly where that would happen — and it never overwrites the operation that is open.
+    /// </summary>
+    [Fact]
+    public void TheGamesButtonCannotOpenWhileThisModulesOwnOperationIsRunning()
+    {
+        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var occurrence = provider.Offer("salvage-run");
+        var identifier = FakeWorld.Native(provider, "salvage-run", occurrence.OccurrenceId);
+        var transactions = (IStoryUiTransaction)service;
+        StoryUiTransactionToken? reverse = null;
+        // The game's mission observers run consumer code inside the native acceptance; the button is
+        // pressed from there.
+        world.World.DuringAccept = () => reverse = transactions.BeginAbandon(identifier);
+        Assert.True(provider.Activate(occurrence.OccurrenceId).Accepted);
+
+        Assert.Null(reverse);
+        // The acceptance completed normally and nothing of the refused route happened.
+        Assert.True(service.Ledger.TryGet(occurrence.OccurrenceId, out var recorded));
+        Assert.Equal(StoryOccurrenceState.Active, recorded.State);
+        Assert.True(world.World.IsInstalled(identifier));
+        // And the boundary is free again afterwards, so the button works once nothing else is running.
+        Assert.NotNull(transactions.BeginAbandon(identifier));
+    }
+
+    /// <summary>
+    /// A teardown queued while the boundary is open removes an identifier by NAME later. Registering
+    /// the same local ID meanwhile would hand that queued removal a brand new entry to delete, so
+    /// registration is refused for as long as the boundary is open, and works again after it closes.
+    /// </summary>
+    [Fact]
+    public void RegisteringIsRefusedWhileTheBoundaryIsOpenSoAQueuedRemovalCannotDeleteAFreshEntry()
+    {
+        var host = new FakeHost();
+        var world = new FakeWorld();
+        using var service = world.Service(host);
+        world.StartAndRestore();
+        var plugin = new object();
+        host.Register(plugin, AnimaPlugin);
+        var provider = service.AcquireProvider(plugin).Provider!;
+        var registration = provider.Register(Definition(retention: StoryRetention.Campaign)).Registration!;
+        var baseIdentifier = StoryContentPolicy.Identifier(new StoryContentId(provider.ProviderId, "salvage-run"));
+        var occurrence = provider.Offer("salvage-run");
+        Assert.True(provider.Activate(occurrence.OccurrenceId).Accepted);
+        var transactions = (IStoryUiTransaction)service;
+        var token = transactions.BeginAbandon(FakeWorld.Native(provider, "salvage-run", occurrence.OccurrenceId));
+        Assert.NotNull(token);
+
+        // A teardown during the open boundary queues the base identifier's removal.
+        registration.Dispose();
+        Assert.True(world.World.IsInstalled(baseIdentifier));
+        // Re-registering the same local ID now would be deleted by that queued removal, so it is
+        // refused rather than accepted into a race.
+        var refused = provider.Register(Definition(retention: StoryRetention.Campaign));
+        Assert.Equal(StoryRegistrationStatus.Unavailable, refused.Status);
+        Assert.Contains("operation is running", refused.Diagnostic);
+
+        transactions.EndAbandon(token!, StoryAbandonSettlement.OriginalStillHeld);
+        // The queued removal has now happened, and a fresh registration installs its own entry.
+        Assert.False(world.World.IsInstalled(baseIdentifier));
+        var again = provider.Register(Definition(retention: StoryRetention.Campaign));
+        Assert.True(again.Succeeded);
+        Assert.True(world.World.IsInstalled(baseIdentifier));
+        Assert.True(again.Registration!.Active);
+    }
+
+    /// <summary>
+    /// A transaction belongs to the session that opened it. After a reload — the same save, the same
+    /// occurrence identity, a new session — the old finalizer's token is no longer current: it
+    /// settles nothing, and it cannot close or drain a transaction the new session opened.
+    /// </summary>
+    [Fact]
+    public void ATransactionFromAReplacedSessionSettlesNothingInTheNewOne()
+    {
+        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var occurrence = provider.Offer("salvage-run");
+        Assert.True(provider.Activate(occurrence.OccurrenceId).Accepted);
+        var identifier = FakeWorld.Native(provider, "salvage-run", occurrence.OccurrenceId);
+        world.Missions.Publish(MissionTransitionKind.Failed, identifier);
+        var transactions = (IStoryUiTransaction)service;
+        var stale = transactions.BeginAbandon(identifier);
+        Assert.NotNull(stale);
+        var bytes = world.Persistence.Provider!.Capture();
+
+        // The same save is reloaded while that transaction is open: same occurrence, new session.
+        world.StartAndRestore(bytes);
+        Assert.False(transactions.IsTransactionCurrent(stale!));
+        var fresh = transactions.BeginAbandon(identifier);
+        Assert.NotNull(fresh);
+        Assert.NotEqual(stale!.Id, fresh!.Id);
+        Assert.NotEqual(stale.SessionId, fresh.SessionId);
+
+        // The old finalizer arrives late: it settles nothing and does not close the new transaction.
+        transactions.EndAbandon(stale, StoryAbandonSettlement.NoneHeld);
+        Assert.True(transactions.IsTransactionCurrent(fresh));
+        Assert.Empty(provider.Occurrences("salvage-run").Records);
+        Assert.True(service.Ledger.TryGet(occurrence.OccurrenceId, out var untouched));
+        Assert.Equal(StoryOccurrenceState.Active, untouched.State);
+        Assert.True(untouched.FailureObserved);
+        Assert.Null(service.FaultReason);
+
+        // The new transaction's own settlement still works normally.
+        transactions.EndAbandon(fresh, StoryAbandonSettlement.OneReplacementHeld);
+        Assert.False(transactions.IsTransactionCurrent(fresh));
+        Assert.True(service.Ledger.TryGet(occurrence.OccurrenceId, out var cleared));
+        Assert.False(cleared.FailureObserved);
     }
 
     // --- automatic persistence --------------------------------------------------------------
