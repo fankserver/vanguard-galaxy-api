@@ -307,7 +307,7 @@ one in the same session.
   the harness fails and the runner quits.
   This phase does NOT reach the native fast lane (gate-to-gate, `travelMultiplier = 7`), which needs
   a route whose next waypoint is another usable gate; that cell stays an explicit required follow-up
-  and is documented as UNQUALIFIED in the coverage matrix.
+  and is documented as controlled-qualified by qa-95 in the coverage matrix.
 - `post-gate-continuation`: ONE native multi-waypoint route is requested to a safe follow-on POI in
   the system behind a usable non-tutorial gate, exactly as the map travel action does it. The native
   planner (`GenerateShortestRoute`) must really produce `[gate, follow-on]`; the in-system approach
