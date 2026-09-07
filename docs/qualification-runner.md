@@ -307,7 +307,7 @@ one in the same session.
   the harness fails and the runner quits.
   This phase does NOT reach the native fast lane (gate-to-gate, `travelMultiplier = 7`), which needs
   a route whose next waypoint is another usable gate; that cell stays an explicit required follow-up
-  and is documented as UNQUALIFIED in the coverage matrix.
+  and is documented as controlled-qualified by qa-95 in the coverage matrix.
 - `post-gate-continuation`: ONE native multi-waypoint route is requested to a safe follow-on POI in
   the system behind a usable non-tutorial gate, exactly as the map travel action does it. The native
   planner (`GenerateShortestRoute`) must really produce `[gate, follow-on]`; the in-system approach
@@ -423,6 +423,30 @@ set by its own history, and the world must offer two safe non-tutorial gates lea
 system with a safe follow-on POI the planner routes to as `[gate, gate, destination]`. A world that
 does not records the honest NOT-RUN above, which fails the phase rather than shrinking it. This
 remains controlled native evidence only: `RuntimeQualified=false`, and #12 stays open.
+
+## Not driven: the tutorial exit rewrite (bounded proposal)
+
+The tutorial exit is the one SUPPORTED travel path with no controlled native evidence, and it is
+deliberately not excluded. On the freshly inspected `Assembly-CSharp.dll`,
+`GamePlayer.TransitionTutorialToSandbox` has exactly one call site,
+`TravelManager.<JumpToSystem>d__103.MoveNext`, and taking it rewrites the gate's target and the
+player's world in one direction only. Every qualification fixture available today is already a
+sandbox-stage save (no tutorial storyteller, no `Hermetis` world), so no phase can reach the branch.
+
+The bounded proposal, if the owner wants it proven natively, is deliberately small and needs no new
+API behaviour and no flag or save mutation:
+
+1. An owner-supplied TUTORIAL-STAGE fixture save (a normal new game played to the tutorial gate).
+   Nothing is unlocked or edited; the sandbox already copies fixtures instead of using originals.
+2. An opt-in `-TravelTutorialExit` phase with one mandatory case, run on that disposable copy only.
+   The one-way transition is acceptable there precisely because the sandbox is thrown away, and the
+   protected original saves are hash-verified unchanged as in every other run.
+3. Its assertion is exactly the documented contract: the gate hop's `Requested` carries the gate's
+   RAW `targetSystemGuid`/`targetPoiGuid`, the `Arrived` reports the REWRITTEN actual destination,
+   both share one operation identity, and the raw request is never retro-fitted to the actual.
+
+Until such a fixture exists the cell stays host-tested and source-attested, and the coverage matrix
+says so instead of claiming native coverage.
 
 ## Actual-consumer travel probe (separate, optional)
 
