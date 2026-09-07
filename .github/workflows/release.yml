@@ -1,0 +1,69 @@
+name: Release metadata
+
+# Explicit owner dispatch only; PRs and branch pushes cannot publish releases.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing reviewed tag: v1.2.3 or v1.2.3-experimental'
+        required: true
+        type: string
+      publish:
+        description: 'Authorize public release and feed advancement (otherwise validation only)'
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-publication
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # A trusted runner with the lawful local game/BepInEx references. Never upload those references.
+    # No pull_request trigger: untrusted PR code must not run on this machine.
+    runs-on: [self-hosted, linux, vgmodapi-release]
+    permissions:
+      contents: write
+    steps:
+      - name: Validate numeric tag and separate channel
+        id: tag
+        env:
+          TAG: ${{ inputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^v([0-9]+\.[0-9]+(\.[0-9]+){0,2})(-experimental)?$ ]] || exit 1
+          echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          if [[ "$TAG" == *-experimental ]]; then echo 'channel=experimental' >> "$GITHUB_OUTPUT"; else echo 'channel=stable' >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          persist-credentials: false
+      - name: Build and validate owned package at reviewed tag
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+          CHANNEL: ${{ steps.tag.outputs.channel }}
+        run: |
+          set -euo pipefail
+          make check-local CONFIGURATION=Release
+          make release-archive CONFIGURATION=Release RELEASE_VERSION="$VERSION" RELEASE_CHANNEL="$CHANNEL"
+      - name: Validate or publish archive before advancing feed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+          VERSION: ${{ steps.tag.outputs.version }}
+          CHANNEL: ${{ steps.tag.outputs.channel }}
+          PUBLISH: ${{ inputs.publish }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [[ "$PUBLISH" == true ]]; then args+=(--publish); fi
+          python3 tools/publish_update.py --repo "$REPO" --tag "$TAG" --plugin vgmodapi \
+            --version "$VERSION" --channel "$CHANNEL" \
+            --archive "artifacts/VGModAPI-$VERSION-$CHANNEL.zip" \
+            --assembly artifacts/VGModAPI/VGModAPI.dll "${args[@]}"

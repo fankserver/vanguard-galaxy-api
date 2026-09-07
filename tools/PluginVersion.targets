@@ -1,0 +1,7 @@
+<Project>
+  <Target Name="GeneratePluginVersion" BeforeTargets="CoreCompile">
+    <Error Condition="!$([System.Text.RegularExpressions.Regex]::IsMatch('$(Version)', '^[0-9]+(\.[0-9]+){1,3}$'))" Text="Use a numeric loader version; release labels are separate." />
+    <WriteLinesToFile File="$(IntermediateOutputPath)PluginBuildVersion.g.cs" Lines="namespace $(RootNamespace) { internal static class PluginBuildVersion { internal const string Value = &quot;$(Version)&quot;%3B } }" Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <ItemGroup><Compile Include="$(IntermediateOutputPath)PluginBuildVersion.g.cs" /></ItemGroup>
+  </Target>
+</Project>
