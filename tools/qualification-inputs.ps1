@@ -250,7 +250,21 @@ function Assert-TravelJournalContainment([string]$Root, [string[]]$Roots, $Befor
     $lines += 'scope=after the owned process exited and the archived plugin flushed at quit; no claim is made about locations outside the audited roots'
     [IO.File]::WriteAllLines((Join-Path $Root 'travel-journal-postquit-audit.txt'), [string[]]$lines)
 }
+function Assert-MenuInspectionReceipt([string]$Root, $Provenance) {
+    if (!$Provenance.PSObject.Properties['menuInspection'] -or !$Provenance.menuInspection) { return }
+    if ($Provenance.scenario -ne 'MissingApi') { throw 'Menu inspection requires MissingApi provenance.' }
+    $marker = Join-Path $Root 'menu-inspection.enabled'
+    if (!(Test-Path -LiteralPath $marker) -or [IO.File]::ReadAllText($marker) -cne 'menu-inspection-v1') { throw 'Menu inspection selection is missing or changed.' }
+    $receipt = Join-Path $Root 'menu-inspection.receipt'
+    $snapshot = Join-Path $Root 'menu-inspection.txt'
+    if (!(Test-Path -LiteralPath $receipt) -or !(Test-Path -LiteralPath $snapshot)) { throw 'Menu inspection evidence is missing.' }
+    if ((Get-Item -LiteralPath $receipt).Length -gt 256 -or (Get-Item -LiteralPath $snapshot).Length -gt 1048576) { throw 'Menu inspection evidence exceeds its bound.' }
+    $lines = @(Get-Content -LiteralPath $receipt)
+    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'menu-inspection-v1' -or $lines[2] -cnotmatch '^sha256=[0-9a-f]{64}$') { throw 'Menu inspection receipt is invalid.' }
+    if ((Get-FileHash -LiteralPath $snapshot -Algorithm SHA256).Hash.ToLowerInvariant() -cne $lines[2].Substring(7)) { throw 'Menu inspection snapshot hash mismatch.' }
+}
 function Assert-PersistenceProbeReceipt([string]$Root, $Provenance) {
+    Assert-MenuInspectionReceipt $Root $Provenance
     if ($Provenance.PSObject.Properties['anima'] -and $Provenance.anima) {
         $receipt = Join-Path $Root 'anima-missions.txt'
         if (!(Test-Path -LiteralPath $receipt) -or (Get-Content -LiteralPath $receipt -TotalCount 1) -ne 'PASS') { throw 'Anima mission probe did not complete.' }
@@ -813,6 +827,12 @@ function Assert-QualificationInputs([string]$Root) {
     $provenance = Get-Content -LiteralPath (Join-Path $Root 'build-provenance.json') -Raw | ConvertFrom-Json
     if ($provenance.scenario -notin @('Full','MissingApi','UnavailableApi') -or
         (Get-Content -LiteralPath (Join-Path $Root 'scenario.txt') -Raw).Trim() -cne $provenance.scenario) { throw 'Prepared scenario changed.' }
+    $menuProperty = $provenance.PSObject.Properties['menuInspection']
+    if ($menuProperty -and $menuProperty.Value -isnot [bool]) { throw 'Menu inspection selection must be boolean.' }
+    $menuInspection = $menuProperty -and $menuProperty.Value
+    $menuMarker = Join-Path $Root 'menu-inspection.enabled'
+    if ([bool]$menuInspection -ne (Test-Path -LiteralPath $menuMarker -PathType Leaf)) { throw 'Menu inspection selection changed.' }
+    if ($menuInspection -and ($provenance.scenario -ne 'MissingApi' -or [IO.File]::ReadAllText($menuMarker) -cne 'menu-inspection-v1' -or $provenance.vanillaLoadControl -or $provenance.missionJournal -or $provenance.stockpile -or $provenance.anima -or $provenance.echo -or $provenance.travelJournal)) { throw 'Invalid menu-only inspection selection.' }
     $missionProbe = $provenance.PSObject.Properties['missionTransitionsProbe'] -and [bool]$provenance.missionTransitionsProbe
     $missionMarker = Join-Path $Root 'mission-transitions.enabled'
     if ([bool]$missionProbe -ne (Test-Path -LiteralPath $missionMarker -PathType Leaf)) { throw 'Mission probe selection changed.' }

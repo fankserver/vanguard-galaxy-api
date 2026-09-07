@@ -32,6 +32,33 @@ try {
     Put 'fixtures\b.save' 'fixture-b'
     $options = @{ GameDir=$fakeGame; OriginalSaveDir=$original; SaveA=(Join-Path $fixtures 'a.save'); SaveB=(Join-Path $fixtures 'b.save'); BuildRoot=$build; BuildRevision='fixture-test' }
     $rejected = $false
+    try { & $script -Action Prepare -SandboxRoot (Join-Path $work 'invalid-menu-full') -MenuInspection @options }
+    catch { $rejected = $_.Exception.Message -like '*Menu inspection requires*' }
+    Assert $rejected 'Menu inspection accepted a gameplay scenario.'
+    $inspectionRoot = Join-Path $work 'menu-inspection'
+    $sandboxes += $inspectionRoot
+    & $script -Action Prepare -SandboxRoot $inspectionRoot -Scenario MissingApi -MenuInspection @options
+    Assert-QualificationInputs $inspectionRoot
+    $inspectionProvenance = Get-Content -LiteralPath (Join-Path $inspectionRoot 'build-provenance.json') -Raw | ConvertFrom-Json
+    $rejected = $false
+    try { Assert-MenuInspectionReceipt $inspectionRoot $inspectionProvenance } catch { $rejected = $true }
+    Assert $rejected 'Missing inspection receipt accepted.'
+    $inspectionText = Join-Path $inspectionRoot 'menu-inspection.txt'
+    [IO.File]::WriteAllText($inspectionText, "menu-inspection-v1`nsynthetic-only")
+    $inspectionHash = (Get-FileHash -LiteralPath $inspectionText -Algorithm SHA256).Hash.ToLowerInvariant()
+    [IO.File]::WriteAllText((Join-Path $inspectionRoot 'menu-inspection.receipt'), "PASS`nmenu-inspection-v1`nsha256=$inspectionHash`n")
+    Assert-MenuInspectionReceipt $inspectionRoot $inspectionProvenance
+    [IO.File]::AppendAllText($inspectionText, 'changed')
+    $rejected = $false
+    try { Assert-MenuInspectionReceipt $inspectionRoot $inspectionProvenance } catch { $rejected = $true }
+    Assert $rejected 'Changed inspection snapshot accepted.'
+    [IO.File]::WriteAllText((Join-Path $inspectionRoot 'menu-inspection.enabled'), 'wrong-marker')
+    $rejected = $false
+    try { Assert-QualificationInputs $inspectionRoot } catch { $rejected = $true }
+    Assert $rejected 'Changed inspection marker accepted.'
+    [IO.File]::WriteAllText((Join-Path $inspectionRoot 'menu-inspection.enabled'), 'menu-inspection-v1')
+    Assert-QualificationInputs $inspectionRoot
+    $rejected = $false
     try { & $script -Action Prepare -SandboxRoot (Join-Path $work 'invalid-journal') -JournalCoordinated @options }
     catch { $rejected = $_.Exception.Message -like '*Coordinated journal requires*' }
     Assert $rejected 'Journal coordinated selection accepted without required inputs.'

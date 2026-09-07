@@ -727,3 +727,9 @@ The API's own facts are the ground truth throughout; the legacy log is the compa
 This phase does NOT close #12: a positively driven `RecoveredPlacement` case and the post-gate chain
 continuation stay open, the tutorial exit stays source-attested and host-tested only, and
 `RuntimeQualified=false`.
+
+## Menu-only UI inspection (milestone 08 preparation)
+
+`Prepare -Scenario MissingApi -MenuInspection` selects an opt-in read-only main-menu census. It refuses gameplay/load probes and consumer combinations. The normal isolated launcher, source-file/preferences preservation and owned-process exit checks remain mandatory. Coordinate an exclusive native run with other sessions; a free-looking process list is not a lease.
+
+The API-independent guard waits for the menu and two real-time settling seconds, verifies the inspected original game hash, then records the actual canvas hierarchy, anchors, scaler, input module, font assets and modal state. It does not click controls, change game objects or load a save. The bounded private `menu-inspection.txt` is covered by a versioned SHA-256 receipt; selection/provenance and receipt mismatches refuse the run. No screenshot or raw profile is published. This is source/UI-layout inspection, **not** acceptance of the forthcoming Mods screen, catalog, networking, or general UI readiness.

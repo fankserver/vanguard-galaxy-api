@@ -19,6 +19,7 @@ references = {
     "0Harmony.dll": root / "BepInEx/core/0Harmony.dll",
     "UnityEngine.dll": root / "VanguardGalaxy_Data/Managed/UnityEngine.dll",
     "UnityEngine.CoreModule.dll": root / "VanguardGalaxy_Data/Managed/UnityEngine.CoreModule.dll",
+    "UnityEngine.UIModule.dll": root / "VanguardGalaxy_Data/Managed/UnityEngine.UIModule.dll",
     "Assembly-CSharp.dll": root / "VanguardGalaxy_Data/Managed/Assembly-CSharp.dll",
 }
 def digest(path, label):

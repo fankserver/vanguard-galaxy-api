@@ -92,6 +92,12 @@ public sealed partial class Plugin : BaseUnityPlugin
             yield return null;
         }
         yield return null;
+        if (File.Exists(Path.Combine(_root!, "menu-inspection.enabled")))
+        {
+            yield return new WaitForSecondsRealtime(2);
+            try { InspectMenu(); }
+            catch (Exception error) { Finish(false, "Menu inspection failed: " + error); yield break; }
+        }
         if (File.Exists(Path.Combine(_root!, "vanilla-load.enabled")))
         {
             var routine = VanillaLoadControl().GetEnumerator();
