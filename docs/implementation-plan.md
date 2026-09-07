@@ -182,6 +182,15 @@ Do not damage or deliberately corrupt the owner's real saves. Arrange live quali
 - Document install, dependency declarations, compatibility limits, and a minimal lifecycle consumer.
 - No deployment or existing-mod migrations in the initial implementation.
 
+## Milestone 04 — owned story content (#13, in progress)
+
+`docs/story-content.md` records the delivered foundation: owner-scoped story identities, the
+explicitly supported mission subset (closed because vanilla resolves objective/reward types from its
+own assembly), fail-closed registration, occurrence identity with declared retention, and automatic
+persistence of the API-owned state through the module's own persistence owner. Installing definitions
+into the game, reconstructing offered/active content, the two-consumer demonstration and the native
+pilot are still outstanding, so #13 remains open and `RuntimeQualified` stays false.
+
 ## Follow-up roadmap
 
 Future work is now maintained in the [pinned GitHub roadmap](https://github.com/fankserver/vanguard-galaxy-api/issues/1), with [milestones](https://github.com/fankserver/vanguard-galaxy-api/milestones), acceptance criteria, evidence, priority labels, and native blocked-by relationships. Update those issues rather than maintaining a second detailed backlog here.
