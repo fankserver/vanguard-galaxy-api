@@ -31,17 +31,18 @@ public sealed partial class Plugin
         _expectedAlertKey = "VGModAPI isolated modal coexistence probe";
         try
         {
-            Require(!AlertOpen(), "A foreign modal is already open.");
+            Require(!AlertOpen() && Time.timeScale == 1f, "Modal probe requires the native unpaused menu.");
             AccessTools.Method(_alertType, "ShowMessage").Invoke(null, new object[] { _expectedAlertKey, "Confirm", (Action)(() => confirmed = true) });
-            var modalScale = Time.timeScale;
+            // Native AlertPopup.Start pauses on the following frame, not inside ShowMessage.
             yield return null; yield return null;
             Require(AlertOpen() && !panel!.activeSelf && !entry.interactable, "Mods did not yield to the native modal.");
-            Require(Time.timeScale == modalScale, "Mods altered native modal time scale.");
+            ModMenuModalChecks.AfterNativeStart(AlertOpen(), Time.timeScale);
             Require(!_alertCollision && _observedAlert is Component, "Native modal instance was not uniquely observed.");
             var popup = (Component)_observedAlert!;
             var confirm = popup.GetComponentsInChildren<Button>().Single(button => button.isActiveAndEnabled);
             foreach (var frame in MenuClick(mouse, confirm.transform)) yield return frame;
             foreach (var frame in Wait(() => !AlertOpen(), "native modal dismissal")) yield return frame;
+            ModMenuModalChecks.AfterNativeDestroy(AlertOpen(), Time.timeScale);
             Require(confirmed && !panel!.activeSelf && entry.interactable, "Native modal did not dismiss without reopening Mods.");
             evidence.AppendLine("native-modal-coexistence=PASS native-time-scale-preserved=PASS no-forced-reopen=PASS");
         }
