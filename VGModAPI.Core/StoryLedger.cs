@@ -113,6 +113,14 @@ internal sealed class StoryLedger
     /// provider's offer or outcome fail for space.
     /// </summary>
     internal const int ProviderPayloadBudget = (StoryStateCodec.MaxBytes - StoryStateCodec.HeaderBytes) / StoryProviderBindings.MaxProviders;
+    /// <summary>
+    /// The reserved footprint of the WHOLE ledger, header included, that a capture must still fit.
+    /// The per-provider shares only add up while the ledger holds at most
+    /// <see cref="StoryProviderBindings.MaxProviders"/> provider namespaces, and rows of providers
+    /// that are no longer loaded are neither pruned nor bound to a lease, so a restored save can hold
+    /// more namespaces than that. This bound is what keeps the guarantee true in that case.
+    /// </summary>
+    internal const int LedgerPayloadBudget = StoryStateCodec.MaxBytes;
 
     private readonly Dictionary<Guid, StoryOccurrenceEntry> _byOccurrence = new();
     private long _sequence;
@@ -167,6 +175,17 @@ internal sealed class StoryLedger
         {
             diagnostic = "Provider '" + id.Provider + "' would exceed its " + ProviderPayloadBudget
                 + "-byte payload budget, including the space reserved to record this outcome; refusing before the offer rather than stranding it later.";
+            return StoryLedgerStatus.LimitExceeded;
+        }
+        // Backstop for a save whose ledger holds MORE provider namespaces than can be bound at once:
+        // rows of providers that are no longer loaded still occupy the payload and are never pruned,
+        // so the per-provider shares alone would not add up. Refusing here keeps every occurrence that
+        // WAS admitted able to record its outcome, instead of failing a later capture and blocking
+        // coordinated saves for every registered mod.
+        if (ReservedFootprint() + Footprint(candidate) > LedgerPayloadBudget)
+        {
+            diagnostic = "The story state, including the space reserved to record outcomes for occurrences already admitted, "
+                + "would exceed its " + LedgerPayloadBudget + "-byte payload; refusing the offer rather than failing a later capture.";
             return StoryLedgerStatus.LimitExceeded;
         }
         _sequence++;
@@ -286,6 +305,9 @@ internal sealed class StoryLedger
     private int ProviderFootprint(string provider)
         => _byOccurrence.Values.Where(entry => entry.Id.Provider == provider).Sum(Footprint);
 
+    /// <summary>What a capture of this ledger must fit today, plus what every unresolved occurrence still holds back.</summary>
+    private int ReservedFootprint() => StoryStateCodec.HeaderBytes + _byOccurrence.Values.Sum(Footprint);
+
     /// <summary>
     /// Campaign slots a definition already holds: retired outcomes AND unresolved occurrences that
     /// still have their outcome to record. The bound covers both, because an unresolved occurrence
@@ -364,6 +386,11 @@ internal sealed class StoryLedger
         if (rows.Count > MaxOccurrences) return "Too many story occurrences: " + rows.Count + ".";
         if (StoryStateCodec.HeaderBytes + rows.Sum(StoryStateCodec.EncodedSize) > StoryStateCodec.MaxBytes)
             return "Story state exceeds its bounded payload size.";
+        // The RESERVED footprint, not just today's bytes: a restored ledger must still be able to
+        // record the outcome of every occurrence it restores, however many provider namespaces it
+        // holds. Encoded size alone would admit a save that can never finish its own content.
+        if (StoryStateCodec.HeaderBytes + rows.Sum(Footprint) > LedgerPayloadBudget)
+            return "Story state reserves more than its bounded payload for outcomes still to be recorded.";
         if (rows.Any(row => row.Sequence < 1 || row.Sequence > MaxSequence)) return "Story occurrence sequence out of range.";
         if (rows.Select(row => row.Sequence).Distinct().Count() != rows.Count) return "Story occurrence sequences must be unique.";
         if (rows.Select(row => row.OccurrenceId).Distinct().Count() != rows.Count) return "Duplicate story occurrence identity.";

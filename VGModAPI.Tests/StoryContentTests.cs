@@ -165,30 +165,44 @@ public sealed class StoryContentTests
     {
         var registry = new StoryDefinitionRegistry();
         var anima = new StoryContentId("anima", "salvage-run");
-        Assert.Equal(StoryRegistrationStatus.Registered, registry.TryRegister(anima, Definition(), out _, out var identifier));
-        Assert.Equal(StoryRegistrationStatus.DuplicateLocalId, registry.TryRegister(anima, Definition(), out var duplicate, out _));
+        Assert.Equal(StoryRegistrationStatus.Registered, registry.TryRegister(anima, Definition(), out _, out var identifier, out var animaEntry));
+        Assert.Equal(StoryRegistrationStatus.DuplicateLocalId, registry.TryRegister(anima, Definition(), out var duplicate, out _, out _));
         Assert.Contains("already registered local ID", duplicate);
         // A different provider with the same local ID is a different identifier and is accepted.
         var other = new StoryContentId("custommission", "salvage-run");
-        Assert.Equal(StoryRegistrationStatus.Registered, registry.TryRegister(other, Definition(), out _, out var otherIdentifier));
+        Assert.Equal(StoryRegistrationStatus.Registered, registry.TryRegister(other, Definition(), out _, out var otherIdentifier, out _));
         Assert.NotEqual(identifier, otherIdentifier);
         // A policy refusal is about the definition, NOT about someone owning the identifier.
         Assert.Equal(StoryRegistrationStatus.InvalidDefinition,
-            registry.TryRegister(new StoryContentId("anima", "mismatch"), Definition(), out var invalid, out _));
+            registry.TryRegister(new StoryContentId("anima", "mismatch"), Definition(), out var invalid, out _, out _));
         Assert.Contains("does not match its resolved identity", invalid);
         // Identifiers that already exist in the world are never replaced.
         var reserving = new StoryDefinitionRegistry();
         reserving.Reserve(new[] { StoryContentPolicy.Identifier(anima) });
-        Assert.Equal(StoryRegistrationStatus.IdentifierInUse, reserving.TryRegister(anima, Definition(), out var taken, out _));
+        Assert.Equal(StoryRegistrationStatus.IdentifierInUse, reserving.TryRegister(anima, Definition(), out var taken, out _, out _));
         Assert.Contains("never replaces existing content", taken);
         Assert.Equal(0, reserving.Count);
         var bounded = new StoryDefinitionRegistry();
         for (int index = 0; index < StoryContentPolicy.MaxDefinitions; index++)
             Assert.Equal(StoryRegistrationStatus.Registered,
-                bounded.TryRegister(new StoryContentId("anima", "m" + index), Definition("m" + index), out _, out _));
+                bounded.TryRegister(new StoryContentId("anima", "m" + index), Definition("m" + index), out _, out _, out _));
         Assert.Equal(StoryRegistrationStatus.LimitExceeded,
-            bounded.TryRegister(new StoryContentId("anima", "overflow"), Definition("overflow"), out var limit, out _));
+            bounded.TryRegister(new StoryContentId("anima", "overflow"), Definition("overflow"), out var limit, out _, out _));
         Assert.Contains("nothing was dropped", limit);
+        // A registration has its OWN identity, distinct from the definition object: unregistering and
+        // registering the very same immutable definition mints a new entry.
+        Assert.Equal(animaEntry, registry.EntryOf(anima));
+        var sameDefinition = Definition();
+        var fresh = new StoryDefinitionRegistry();
+        Assert.Equal(StoryRegistrationStatus.Registered, fresh.TryRegister(anima, sameDefinition, out _, out _, out var firstEntry));
+        Assert.True(fresh.Unregister(anima));
+        Assert.Equal(StoryRegistrationStatus.Registered, fresh.TryRegister(anima, sameDefinition, out _, out _, out var secondEntry));
+        Assert.NotEqual(firstEntry, secondEntry);
+        // The superseded entry removes nothing; only the entry that owns the identifier can release it.
+        Assert.False(fresh.RemoveIfMatches(anima, firstEntry));
+        Assert.True(fresh.Contains(anima));
+        Assert.True(fresh.RemoveIfMatches(anima, secondEntry));
+        Assert.False(fresh.Contains(anima));
     }
 
     // --- provider leases --------------------------------------------------------------------
@@ -374,6 +388,50 @@ public sealed class StoryContentTests
         Assert.False(live.Active);
     }
 
+    /// <summary>
+    /// A registration handle releases only the registration IT made. The identifier can be released
+    /// and taken again under the same live lease - with the very same immutable definition object -
+    /// and the superseded handle must not remove the live one. The public surface offers no
+    /// unregister other than disposing a handle, so this is reached here through the internal
+    /// registry entry point that the native adapter will use; the guard is what makes that future
+    /// integration safe rather than order-dependent.
+    /// </summary>
+    [Fact]
+    public void AHandleWhoseRegistrationWasSupersededDoesNotRemoveTheLiveOne()
+    {
+        var host = new FakeHost();
+        var world = new FakeWorld();
+        using var service = world.Service(host);
+        world.StartAndRestore();
+        var plugin = new object();
+        host.Register(plugin, AnimaPlugin);
+        var provider = service.AcquireProvider(plugin).Provider!;
+        var definition = Definition(retention: StoryRetention.Campaign);
+        var superseded = provider.Register(definition).Registration!;
+        var id = superseded.Id;
+
+        // The internal path a native adapter would use to release and reinstall content.
+        Assert.True(service.Registry.Unregister(id));
+        Assert.False(superseded.Active);
+        var live = provider.Register(definition).Registration!;
+        Assert.True(live.Active);
+        Assert.NotEqual(0, service.Registry.EntryOf(id));
+
+        superseded.Dispose();
+
+        Assert.True(live.Active);
+        Assert.True(service.Registry.Contains(id));
+        var occurrence = provider.Offer("salvage-run");
+        Assert.True(occurrence.Accepted);
+        Assert.True(provider.Retire(occurrence.OccurrenceId, StoryOutcome.Completed,
+            new Dictionary<string, string> { ["branch"] = "left" }).Accepted);
+        // Only its own handle releases the live registration, and history is untouched by either.
+        live.Dispose();
+        Assert.False(live.Active);
+        Assert.False(service.Registry.Contains(id));
+        Assert.Single(provider.Occurrences("salvage-run").Records);
+    }
+
     // --- availability -----------------------------------------------------------------------
 
     /// <summary>
@@ -416,7 +474,7 @@ public sealed class StoryContentTests
             // Content is not accepted while state is unavailable either.
             Assert.Equal(StoryTransitionStatus.Unavailable, provider.Offer("salvage-run").Status);
             // The retained owner bytes are never replaced by an empty capture in that state.
-            Assert.False(world.Persistence.MutationAllowed && provider.Offer("salvage-run").Accepted);
+            Assert.False(world.Persistence.StateReady && provider.Offer("salvage-run").Accepted);
         }
     }
 
@@ -440,7 +498,17 @@ public sealed class StoryContentTests
         Assert.True(provider.Retire(occurrence.OccurrenceId, StoryOutcome.Completed).Accepted);
         Assert.True(provider.IsCompleted("salvage-run").Completed);
 
-        world.Persistence.MutationAllowed = false;      // the owner is paused or blocked mid-session
+        // A transient pause is NOT a block: reads stay known, only mutations are refused, temporarily.
+        world.Persistence.MutationsPaused = true;
+        var paused = provider.IsCompleted("salvage-run");
+        Assert.Equal(StoryKnowledge.Known, paused.Knowledge);
+        Assert.True(paused.Completed);
+        var busy = provider.Offer("salvage-run");
+        Assert.Equal(StoryTransitionStatus.Busy, busy.Status);
+        Assert.Contains("mutations are paused", busy.Detail);
+        world.Persistence.MutationsPaused = false;
+
+        world.Persistence.StateReady = false;      // the owner is blocked or unreadable mid-session
         var completion = provider.IsCompleted("salvage-run");
         Assert.Equal(StoryKnowledge.Unavailable, completion.Knowledge);
         Assert.Null(completion.Completed);
@@ -450,7 +518,7 @@ public sealed class StoryContentTests
         Assert.Equal(StoryTransitionStatus.Unavailable, provider.Offer("salvage-run").Status);
 
         // Recovery answers for the SAME session again, with the history that was recorded in it.
-        world.Persistence.MutationAllowed = true;
+        world.Persistence.StateReady = true;
         var resumed = provider.IsCompleted("salvage-run");
         Assert.Equal(StoryKnowledge.Known, resumed.Knowledge);
         Assert.True(resumed.Completed);
@@ -492,6 +560,77 @@ public sealed class StoryContentTests
             Assert.Null(blocked.Completed);
             Assert.Empty(provider.Occurrences("salvage-run").Records);
             Assert.Equal(StoryTransitionStatus.Unavailable, provider.Offer("salvage-run").Status);
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    /// <summary>
+    /// Rediscovering content from a lifecycle callback is the documented way to use this API, and a
+    /// save being written is not a reason to stop answering. Both are moments where the REAL
+    /// coordinator forbids mutation while the restored state is perfectly readable, so queries stay
+    /// Known and only mutations are refused - as temporarily busy, with the real reason.
+    /// </summary>
+    [Fact]
+    public void QueriesAnswerInsideLifecycleCallbacksAndDuringASaveWhileMutationsReportBusy()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "vg-story-" + Guid.NewGuid().ToString("N"));
+        using var hub = new LifecycleHub((_, error) => throw new Exception("Unexpected subscriber fault", error));
+        try
+        {
+            using var persistence = new PersistenceService(hub, new GenerationStore(root), path => path, _ => new string('a', 64));
+            var host = new FakeHost();
+            using var service = new StoryContentService(persistence, hub, host.Authenticate, null, hub.CheckThread);
+            var session = hub.Begin(SessionOrigin.NewGame, null);
+            hub.PlayerReady(session);
+
+            var plugin = new object();
+            host.Register(plugin, AnimaPlugin);
+            var provider = service.AcquireProvider(plugin).Provider!;
+            Assert.True(provider.Register(Definition(retention: StoryRetention.Campaign)).Succeeded);
+
+            // A provider rediscovering its content from the GameplayInitialized callback.
+            StoryOccurrenceSnapshotQuery? unresolvedInCallback = null;
+            StoryOccurrenceQuery? retainedInCallback = null;
+            StoryTransitionResult mutationInCallback = default!;
+            Guid admitted = Guid.Empty;
+            using var subscription = hub.Subscribe("vgmodapi.tests.consumer", e =>
+            {
+                if (e.Kind != LifecycleEventKind.GameplayInitialized) return;
+                unresolvedInCallback = provider.Unresolved("salvage-run");
+                retainedInCallback = provider.Occurrences("salvage-run");
+                mutationInCallback = provider.Offer(unresolvedInCallback.SessionId ?? Guid.Empty, "salvage-run");
+            });
+            hub.GameplayInitialized(session);
+
+            Assert.Equal(StoryKnowledge.Known, unresolvedInCallback!.Knowledge);
+            Assert.Equal(session, unresolvedInCallback.SessionId);
+            Assert.Empty(unresolvedInCallback.Occurrences);
+            Assert.Equal(StoryKnowledge.Known, retainedInCallback!.Knowledge);
+            // Mutating from inside a dispatch is refused as BUSY, naming the real reason.
+            Assert.Equal(StoryTransitionStatus.Busy, mutationInCallback.Status);
+            Assert.Contains("mutations are paused", mutationInCallback.Detail);
+            Assert.DoesNotContain("unavailable", mutationInCallback.Detail);
+            Assert.Equal("ready", service.PersistenceStatus);
+
+            // Outside the dispatch the same call is accepted, and the state it records is queryable.
+            var offer = provider.Offer("salvage-run");
+            Assert.True(offer.Accepted);
+            admitted = offer.OccurrenceId;
+            Assert.Equal(admitted, Assert.Single(provider.Unresolved("salvage-run").Occurrences).OccurrenceId);
+
+            // With a save in flight, reads stay Known and mutations report the same busy refusal.
+            var operation = Guid.NewGuid();
+            hub.Publish(new LifecycleEvent(LifecycleEventKind.SaveStarted, hub.CurrentSession, operation, "slot"));
+            var duringSave = provider.Unresolved("salvage-run");
+            Assert.Equal(StoryKnowledge.Known, duringSave.Knowledge);
+            Assert.Equal(admitted, Assert.Single(duringSave.Occurrences).OccurrenceId);
+            Assert.Equal(StoryKnowledge.Known, provider.IsCompleted("salvage-run").Knowledge);
+            var busy = provider.Retire(admitted, StoryOutcome.Completed);
+            Assert.Equal(StoryTransitionStatus.Busy, busy.Status);
+            Assert.Contains("save is in flight", busy.Detail);
+            // The refusal changed nothing, and the outcome is recordable once the save completes.
+            hub.Publish(new LifecycleEvent(LifecycleEventKind.SaveSucceeded, hub.CurrentSession, operation, "slot"));
+            Assert.True(provider.Retire(admitted, StoryOutcome.Completed).Accepted);
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
@@ -834,9 +973,9 @@ public sealed class StoryContentTests
         Assert.Equal(stolenWithout.Detail, stolen.Detail);
 
         // A blocked owner and an inactive lease report Unavailable, not a lookup result.
-        world.Persistence.MutationAllowed = false;
+        world.Persistence.StateReady = false;
         Assert.Equal(StoryTransitionStatus.Unavailable, anima.Retire(occurrence.OccurrenceId, StoryOutcome.Completed, choices).Status);
-        world.Persistence.MutationAllowed = true;
+        world.Persistence.StateReady = true;
         var lease = service.AcquireProvider(otherPlugin).Provider;
         Assert.Null(lease);                                   // still held; use the live one
         other.Dispose();
@@ -1012,11 +1151,11 @@ public sealed class StoryContentTests
         Assert.Equal(StoryMissionDefinition.MaxChoiceKeys + 1, endless.Yielded);
         // An unavailable caller is refused BEFORE its collection is touched at all.
         var counted = new EndlessChoices();
-        world.Persistence.MutationAllowed = false;
+        world.Persistence.StateReady = false;
         Assert.Equal(StoryTransitionStatus.Unavailable,
             provider.Retire(occurrence.OccurrenceId, StoryOutcome.Completed, counted).Status);
         Assert.Equal(0, counted.Yielded);
-        world.Persistence.MutationAllowed = true;
+        world.Persistence.StateReady = true;
         // The occurrence is still perfectly retirable with a well-behaved collection.
         Assert.True(provider.Retire(occurrence.OccurrenceId, StoryOutcome.Completed,
             new Dictionary<string, string> { ["branch"] = "left" }).Accepted);
@@ -1121,7 +1260,7 @@ public sealed class StoryContentTests
         Assert.True(anima.Retire(session, active.OccurrenceId, StoryOutcome.Failed).Accepted);
         Assert.Single(anima.Unresolved("salvage-run").Occurrences);
         // Unavailable answers carry no snapshots and no session.
-        world.Persistence.MutationAllowed = false;
+        world.Persistence.StateReady = false;
         var blocked = anima.Unresolved("salvage-run");
         Assert.Equal(StoryKnowledge.Unavailable, blocked.Knowledge);
         Assert.Null(blocked.SessionId);
@@ -1176,7 +1315,7 @@ public sealed class StoryContentTests
         Assert.Equal(reloaded, current);
         Assert.True(provider.Activate(current, occurrence.OccurrenceId).Accepted);
         // An unavailable module still answers Unavailable rather than StaleSession.
-        world.Persistence.MutationAllowed = false;
+        world.Persistence.StateReady = false;
         Assert.Equal(StoryTransitionStatus.Unavailable, provider.Offer(current, "salvage-run").Status);
     }
 
@@ -1212,6 +1351,87 @@ public sealed class StoryContentTests
         Assert.Equal(StoryMissionDefinition.MaxChoiceKeys * (2 + StoryMissionDefinition.MaxChoiceKeyBytes + 2 + StoryMissionDefinition.MaxChoiceValueBytes),
             WorstDefinition().ReservedChoiceBytes);
         Assert.True(WorstDefinition().ReservedChoiceBytes <= StoryMissionDefinition.MaxChoiceBytesPerOccurrence);
+    }
+
+    /// <summary>
+    /// The per-provider shares only add up while the ledger holds at most as many provider namespaces
+    /// as can be bound at once. A restored save may hold rows from providers that are no longer
+    /// loaded: they are never pruned and hold no lease, so without a global backstop two freshly
+    /// bound providers could push a capture past the payload bound and block every mod's saves.
+    /// </summary>
+    [Fact]
+    public void HistoricalProvidersCountAgainstTheGlobalPayloadSoAnOfferIsRefusedBeforeMutating()
+    {
+        var host = new FakeHost();
+        var world = new FakeWorld();
+        using var service = world.Service(host);
+        world.StartAndRestore(StoryStateCodec.Encode(HistoricalRows(30, 19)));
+        Assert.Equal(30 * 19, service.Ledger.Count);
+
+        var admitted = new List<(IStoryProvider Provider, Guid Occurrence)>();
+        string refusal = "";
+        for (int index = 0; index < 4 && refusal.Length == 0; index++)
+        {
+            var plugin = new object();
+            host.Register(plugin, "com.test.fresh" + index);
+            var provider = service.AcquireProvider(plugin).Provider!;
+            Assert.True(provider.Register(WorstDefinition()).Succeeded);
+            while (true)
+            {
+                int before = service.Ledger.Count;
+                var offer = provider.Offer("salvage-run");
+                if (offer.Accepted) { admitted.Add((provider, offer.OccurrenceId)); continue; }
+                Assert.Equal(StoryTransitionStatus.LimitExceeded, offer.Status);
+                // Refused BEFORE mutating, whichever bound spoke.
+                Assert.Equal(before, service.Ledger.Count);
+                if (offer.Detail.Contains("would exceed its " + StoryLedger.LedgerPayloadBudget + "-byte payload")) refusal = offer.Detail;
+                break;
+            }
+        }
+        // The GLOBAL bound is what eventually refuses, not only the per-provider share.
+        Assert.Contains("space reserved to record outcomes for occurrences already admitted", refusal);
+        // Every occurrence that was admitted can still record its outcome, and the result still captures.
+        var worst = WorstChoices(WorstDefinition());
+        foreach (var (provider, occurrence) in admitted)
+            Assert.True(provider.Retire(occurrence, StoryOutcome.Completed, worst).Accepted);
+        var bytes = world.Persistence.Provider!.Capture();
+        Assert.True(bytes.Length <= StoryStateCodec.MaxBytes);
+        Assert.True(StoryStateCodec.Validate(bytes));
+    }
+
+    /// <summary>
+    /// The same sum on the decode side: a payload can be small TODAY and still reserve more than the
+    /// bounded payload for outcomes it has not recorded yet. Restoring it would admit content that
+    /// could never be finished, so it is refused by both sides of the codec.
+    /// </summary>
+    [Fact]
+    public void APayloadThatFitsTodayButReservesTooMuchIsRefusedOnBothSidesOfTheCodec()
+    {
+        var rows = HistoricalRows(33, 19);
+        int encoded = StoryStateCodec.HeaderBytes + rows.Sum(StoryStateCodec.EncodedSize);
+        int reserved = StoryStateCodec.HeaderBytes + rows.Sum(StoryLedger.Footprint);
+        Assert.True(encoded <= StoryStateCodec.MaxBytes);
+        Assert.True(reserved > StoryLedger.LedgerPayloadBudget);
+        Assert.Contains("reserves more than its bounded payload", StoryLedger.RefuseBounds(rows));
+        Assert.Throws<InvalidDataException>(() => StoryStateCodec.Encode(rows));
+        Assert.False(StoryStateCodec.Validate(Craft(rows)));
+        // A ledger just inside the bound is accepted, so the refusal is the bound and not the shape.
+        var fitting = HistoricalRows(32, 19);
+        Assert.Null(StoryLedger.RefuseBounds(fitting));
+        Assert.True(StoryStateCodec.Validate(StoryStateCodec.Encode(fitting)));
+    }
+
+    /// <summary>Unresolved campaign rows of providers that are not loaded in this session.</summary>
+    private static StoryOccurrenceEntry[] HistoricalRows(int providers, int perProvider)
+    {
+        var rows = new List<StoryOccurrenceEntry>();
+        long sequence = 0;
+        for (int provider = 0; provider < providers; provider++)
+            for (int index = 0; index < perProvider; index++)
+                rows.Add(new StoryOccurrenceEntry(new StoryContentId("historic" + provider, "salvage-run"),
+                    Guid.NewGuid(), StoryRetention.Campaign, ++sequence,
+                    choiceReservation: WorstDefinition().ReservedChoiceBytes));
+        return rows.ToArray();
     }
 
     /// <summary>
@@ -1590,7 +1810,7 @@ public sealed class StoryContentTests
         {
             try { Persistence.Provider!.Restore(Lifecycle.CurrentSession!, new byte[] { 1, 2, 3 }); }
             catch (InvalidDataException) { }
-            Persistence.MutationAllowed = false;
+            Persistence.StateReady = false;
         }
     }
 
@@ -1763,7 +1983,10 @@ public sealed class StoryContentTests
     private sealed class FakePersistence : IPersistenceApi, IPersistenceRegistration
     {
         internal PersistenceProvider? Provider;
-        internal bool MutationAllowed = true;
+        /// <summary>The owner's restored state is readable. False models blocked, unreadable or restore-failed data.</summary>
+        internal bool StateReady = true;
+        /// <summary>Transient: callbacks dispatching or a save in flight. Reading stays safe, mutating does not.</summary>
+        internal bool MutationsPaused;
         internal bool OwnerDisposed;
         public IPersistenceRegistration Register(PersistenceProvider provider)
         {
@@ -1771,8 +1994,9 @@ public sealed class StoryContentTests
             Provider = provider;
             return this;
         }
-        bool IPersistenceRegistration.MutationAllowed => !OwnerDisposed && MutationAllowed;
-        string IPersistenceRegistration.Status => OwnerDisposed ? "inactive" : MutationAllowed ? "ready" : "paused";
+        bool IPersistenceRegistration.MutationAllowed => !OwnerDisposed && StateReady && !MutationsPaused;
+        bool IPersistenceRegistration.StateReady => !OwnerDisposed && StateReady;
+        string IPersistenceRegistration.Status => OwnerDisposed ? "inactive" : StateReady ? "ready" : "load-blocked";
         public void Dispose() => OwnerDisposed = true;
     }
 }

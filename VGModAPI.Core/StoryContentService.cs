@@ -190,14 +190,20 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
         }
     }
 
-    /// <summary>Null when the module can answer for the current session, otherwise the exact reason it cannot.</summary>
+    /// <summary>
+    /// Null when the module can ANSWER for the current session, otherwise the exact reason it cannot.
+    ///
+    /// This is owner READINESS, not permission to mutate. Reading restored state is safe while
+    /// lifecycle callbacks dispatch and while a save is in flight — a provider rediscovering its
+    /// content from a GameplayInitialized callback is the documented way to use this API — whereas an
+    /// owner whose data was blocked, unreadable or restore-failed has no state to report at all. The
+    /// owner's readiness is re-read on EVERY answer, so a mid-session block still stops the module
+    /// from reporting state that will not reach disk as this save's known history.
+    /// </summary>
     private string? Unavailable()
     {
         if (_disposed) return "the story module is disposed";
-        // Owner status is re-read on EVERY answer, not only before the restore: an owner blocked or
-        // paused mid-session holds accepted state that will not reach disk, and a query must not
-        // report that state as this save's known history.
-        if (_persistence is not { MutationAllowed: true }) return "story persistence is " + PersistenceStatus;
+        if (_persistence is not { StateReady: true }) return "story persistence is " + PersistenceStatus;
         if (_readiness != Readiness.Restored) return _readinessDetail;
         var session = _currentSession();
         if (session == null || session.Id != _restoredSession) return "the restored session is no longer current";
@@ -265,21 +271,29 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
     private StoryRegistrationResult Register(Lease lease, StoryMissionDefinition definition)
     {
         var id = new StoryContentId(lease.ProviderId, definition.LocalId);
-        var status = _registry.TryRegister(id, definition, out var diagnostic, out var identifier);
+        var status = _registry.TryRegister(id, definition, out var diagnostic, out var identifier, out var entry);
         if (status != StoryRegistrationStatus.Registered) return new StoryRegistrationResult(status, null, diagnostic);
-        return new StoryRegistrationResult(status, new Registration(this, lease, id, identifier), "");
+        return new StoryRegistrationResult(status, new Registration(this, lease, id, identifier, entry), "");
     }
 
     private sealed class Registration : IStoryRegistration
     {
         private readonly StoryContentService _service;
         private readonly Lease _lease;
+        private readonly long _entry;
         private bool _disposed;
         public StoryContentId Id { get; }
         public string NativeIdentifier { get; }
-        internal Registration(StoryContentService service, Lease lease, StoryContentId id, string identifier)
-        { _service = service; _lease = lease; Id = id; NativeIdentifier = identifier; }
-        public bool Active { get { _service.CheckThread(); return !_disposed && _lease.Active && _service._registry.Contains(Id); } }
+        internal Registration(StoryContentService service, Lease lease, StoryContentId id, string identifier, long entry)
+        { _service = service; _lease = lease; Id = id; NativeIdentifier = identifier; _entry = entry; }
+        public bool Active
+        {
+            get
+            {
+                _service.CheckThread();
+                return !_disposed && _lease.Active && _service._registry.EntryOf(Id) == _entry;
+            }
+        }
         public void Dispose()
         {
             _service.CheckThread();
@@ -288,8 +302,10 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
             // A handle from a released lease is stale: the identifier may already belong to a NEW
             // registration made through a re-acquired lease, and this handle must never remove it.
             if (!_lease.Active) return;
-            // Stops offering new content; saved occurrences are never rewritten or deleted here.
-            _service._registry.Unregister(Id);
+            // Even under the SAME live lease the identifier may have been registered again since this
+            // handle was issued, with the same immutable definition object; only the registration this
+            // handle actually made is released. Saved occurrences are never rewritten or deleted here.
+            _service._registry.RemoveIfMatches(Id, _entry);
         }
     }
 
@@ -449,9 +465,15 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
     }
 
     /// <summary>
-    /// The single precondition every mutation shares: an active lease, restorable state for the
-    /// current session, a persistable owner, and the session the CALLER meant. The session check runs
-    /// before any ledger or registry lookup, so a stale call cannot even observe what exists.
+    /// The single precondition every mutation shares: an active lease, readable state for the current
+    /// session, an owner that may be mutated right now, and the session the CALLER meant. The session
+    /// check runs before any ledger or registry lookup, so a stale call cannot even observe what
+    /// exists.
+    ///
+    /// The mutability check is deliberately separate from readability: while lifecycle callbacks
+    /// dispatch or a save is in flight, reading is safe but accepting content is not, because it
+    /// would not be part of the save that is already being written. That is a temporary refusal and
+    /// is reported as such.
     /// </summary>
     private bool Guard(Lease lease, Guid expectedSessionId, out string refusal, out StoryTransitionStatus status)
     {
@@ -461,6 +483,13 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
         if (unavailable != null)
         {
             refusal = "Story state is unavailable: " + unavailable + "; refusing to accept unsaved persistent content.";
+            return false;
+        }
+        if (_persistence is not { MutationAllowed: true })
+        {
+            status = StoryTransitionStatus.Busy;
+            refusal = "Story state is readable but mutations are paused while lifecycle callbacks dispatch or a save is in flight; "
+                + "retry after the current operation, or the content would not be part of the save being written.";
             return false;
         }
         if (expectedSessionId != _restoredSession)

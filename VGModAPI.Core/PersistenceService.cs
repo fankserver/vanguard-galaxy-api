@@ -36,6 +36,8 @@ internal sealed class PersistenceService : IPersistenceApi, IDisposable
         internal Registration(PersistenceService service, string owner) { _service = service; _owner = owner; }
         public bool MutationAllowed
         { get { _service._hub.CheckThread(); return !_disposed && !_service._disposed && _service._coordinator.MutationAllowed(_owner); } }
+        public bool StateReady
+        { get { _service._hub.CheckThread(); return !_disposed && !_service._disposed && _service._coordinator.StateReady(_owner); } }
         public string Status
         { get { _service._hub.CheckThread(); return _disposed || _service._disposed ? "inactive" : _service._coordinator.Status(_owner); } }
         public void Dispose()

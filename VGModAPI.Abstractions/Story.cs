@@ -524,6 +524,12 @@ public enum StoryTransitionStatus
     /// an outcome the loaded save never produced. Re-read the state and use the current session.
     /// </summary>
     StaleSession,
+    /// <summary>
+    /// The state is readable but cannot be mutated at this instant, because lifecycle callbacks are
+    /// dispatching or a save is already in flight. Accepting content now would leave it out of the
+    /// save being written. This is temporary: the same call succeeds once the operation completes.
+    /// </summary>
+    Busy,
     /// <summary>No restored state for the current session, or the lease/module is inactive; content is never accepted unsaved.</summary>
     Unavailable
 }

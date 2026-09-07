@@ -18,6 +18,13 @@ internal sealed class StoryDefinitionRegistry
     private readonly Dictionary<string, StoryMissionDefinition> _byIdentifier = new(StringComparer.Ordinal);
     private readonly HashSet<string> _reserved = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _providerByIdentifier = new(StringComparer.Ordinal);
+    /// <summary>
+    /// Identity of each REGISTRATION, not of the definition. Registering the same immutable definition
+    /// object twice mints a new entry, so a handle from an earlier registration can be told apart from
+    /// the one that holds the identifier now.
+    /// </summary>
+    private readonly Dictionary<string, long> _entryByIdentifier = new(StringComparer.Ordinal);
+    private long _entries;
 
     /// <summary>
     /// Identifiers that already exist in the WORLD (vanilla or foreign). Reserving is not
@@ -51,9 +58,11 @@ internal sealed class StoryDefinitionRegistry
     /// providers using the same local ID cannot collide; a duplicate WITHIN one provider is
     /// diagnosed, and an identifier owned by other content is refused.
     /// </summary>
-    internal StoryRegistrationStatus TryRegister(StoryContentId id, StoryMissionDefinition definition, out string diagnostic, out string identifier)
+    internal StoryRegistrationStatus TryRegister(StoryContentId id, StoryMissionDefinition definition, out string diagnostic,
+        out string identifier, out long entry)
     {
         identifier = "";
+        entry = 0;
         // A policy refusal is about the DEFINITION, never about someone else owning the identifier.
         var refusal = StoryContentPolicy.Refuse(id, definition);
         if (refusal != null) { diagnostic = refusal; return StoryRegistrationStatus.InvalidDefinition; }
@@ -75,6 +84,8 @@ internal sealed class StoryDefinitionRegistry
         }
         _byIdentifier.Add(identifier, definition);
         _providerByIdentifier[identifier] = id.Provider;
+        entry = ++_entries;
+        _entryByIdentifier[identifier] = entry;
         diagnostic = "";
         return StoryRegistrationStatus.Registered;
     }
@@ -84,16 +95,36 @@ internal sealed class StoryDefinitionRegistry
     {
         var identifier = StoryContentPolicy.Identifier(id);
         _providerByIdentifier.Remove(identifier);
+        _entryByIdentifier.Remove(identifier);
         return _byIdentifier.Remove(identifier);
     }
+
+    /// <summary>
+    /// Removes a registration ONLY if the identifier still belongs to the entry the caller made. A
+    /// handle whose registration was already replaced — unregistered and registered again, even with
+    /// the same immutable definition object — removes nothing, so releasing a stale handle can never
+    /// take down live content.
+    /// </summary>
+    internal bool RemoveIfMatches(StoryContentId id, long entry)
+    {
+        var identifier = StoryContentPolicy.Identifier(id);
+        if (!_entryByIdentifier.TryGetValue(identifier, out var current) || current != entry) return false;
+        _entryByIdentifier.Remove(identifier);
+        _providerByIdentifier.Remove(identifier);
+        return _byIdentifier.Remove(identifier);
+    }
+
+    /// <summary>The registration entry that currently owns an identifier, or 0 when nothing does.</summary>
+    internal long EntryOf(StoryContentId id)
+        => _entryByIdentifier.TryGetValue(StoryContentPolicy.Identifier(id), out var entry) ? entry : 0;
 
     /// <summary>Releases every definition of one provider lease. Saved occurrences are untouched.</summary>
     internal void RemoveProvider(string provider)
     {
         foreach (var pair in _providerByIdentifier.Where(pair => pair.Value == provider).Select(pair => pair.Key).ToArray())
-        { _providerByIdentifier.Remove(pair); _byIdentifier.Remove(pair); }
+        { _providerByIdentifier.Remove(pair); _byIdentifier.Remove(pair); _entryByIdentifier.Remove(pair); }
     }
 
     /// <summary>Drops every registered definition. World reservations survive; they are session-scoped, not provider-scoped.</summary>
-    internal void Clear() { _byIdentifier.Clear(); _providerByIdentifier.Clear(); }
+    internal void Clear() { _byIdentifier.Clear(); _providerByIdentifier.Clear(); _entryByIdentifier.Clear(); }
 }

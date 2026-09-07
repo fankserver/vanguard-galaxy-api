@@ -107,9 +107,19 @@ with "this save's story state could not be read".
 
 The module resets its ledger on `SessionStarting` and on `SessionInvalidated` /
 `SessionStartFailed`, independently of any restore call, and reports `Known` only for a session
-whose state it actually restored AND whose owner is currently able to persist. Owner status is
-re-read on every answer, not only before the restore: an owner blocked or paused mid-session holds
-accepted state that will not reach disk, so queries report `Unavailable` until it recovers. Sessions whose owner data was blocked, corrupt, schema-unsupported
+whose state it actually restored AND whose owner still holds readable state for it. Owner readiness
+is re-read on every answer, not only before the restore: an owner whose data was blocked, unreadable
+or restore-failed holds accepted state that will not reach disk, so queries report `Unavailable`
+until it recovers.
+
+Reading and mutating are gated separately, because they are not the same risk. While lifecycle
+callbacks are dispatching, or a save is already in flight, the restored state is perfectly readable
+and queries keep answering `Known` — rediscovering content from a `GameplayInitialized` callback,
+which is the documented way to use this API after a reload, works. A MUTATION in those moments is
+refused with `StoryTransitionStatus.Busy` and a diagnostic naming the real reason, because content
+accepted then would not be part of the save being written. `Busy` is temporary: the same call
+succeeds once the callback or save completes. It is deliberately distinct from `Unavailable`, which
+means the module has no trustworthy state for this session at all. Sessions whose owner data was blocked, corrupt, schema-unsupported
 or restore-failed never receive a restore call, so they stay `Unavailable` instead of answering from
 the previously loaded save. A brand-new game with no stored generation restores as known-empty. In
 the unavailable state, offering or transitioning content is refused too, and the retained owner
@@ -158,7 +168,8 @@ an authoritative result, so a completed temporary job never answers `true`; it i
 | Never pruned | Offered and active occurrences (needed to reconstruct live content) and every campaign entry, outcome and declared choice. |
 | Beyond the horizon | A pruned occurrence reports `UnknownOccurrence`. Occurrence identities are API-generated and never reused, so a pruned job is never re-offered or resurrected under its old token. |
 | Per-provider occurrence quota | At most 64 occurrences per bound provider (2048 / 32 providers). |
-| Per-provider payload budget | 16,383 bytes of persisted state per bound provider, INCLUDING the space reserved for outcomes still to be recorded. The 32 shares plus the header fit inside the 512 KiB payload cap, so no provider's content can make another provider's `Offer` or outcome fail. |
+| Per-provider payload budget | 16,383 bytes of persisted state per bound provider, INCLUDING the space reserved for outcomes still to be recorded. The 32 shares plus the header fit inside the 512 KiB payload cap. |
+| Global payload backstop | The whole ledger's reserved footprint, header included, must stay inside the 512 KiB payload, checked at `Offer` and on decode. This is what holds when a restored save carries rows from providers that are no longer loaded: they are never pruned and hold no lease, so more provider namespaces can exist in a save than can be bound at once. |
 | Per-definition bound | At most 48 CAMPAIGN occurrences per definition, counting retired outcomes and unresolved occurrences alike, refused at `Offer`. Campaign outcomes are never pruned, so the slot is taken when the occurrence is admitted and never at retirement. |
 | Provider bound | At most 32 bound providers. A further provider is refused rather than handed a share that would come out of a bound provider's retained history; bindings last for the module's lifetime. |
 | Sequence bound | The occurrence sequence is checked against a bound with reserved headroom on every offer and on decode, so the timeline can never wrap. |
@@ -166,7 +177,11 @@ an authoritative result, so a completed temporary job never answers `true`; it i
 
 Bounds are refusals, never truncation. Exceeding one diagnoses and changes nothing, so campaign
 progression is never silently dropped, and because each provider's share is reserved, a
-generated-job consumer can exhaust only its OWN quota. Storing an outcome or a declared choice value
+generated-job consumer can exhaust only its OWN quota. That reserved share is guaranteed for up to
+32 provider namespaces IN THE SAVE, counting historical providers that are no longer loaded as well
+as the ones bound right now. Beyond that the remaining global capacity is what is left, and a new
+provider is refused rather than served by deleting another provider's campaign history, which is
+never pruned to make room. Storing an outcome or a declared choice value
 is not narrative history; mod-specific decisions stay mod logic.
 
 ### Declared choices and reserved outcome capacity
@@ -263,8 +278,10 @@ snapshot's completion cannot leak into an older loaded save. When persistence is
 paused, offering new content is refused with a diagnostic rather than silently accepting a
 persistent mission that would not be saved.
 
-Unregistering a definition stops offering new content. A registration handle from a released lease
-is stale and does nothing: it can never remove a live registration made by a re-acquired lease. It never rewrites or deletes saved
+Unregistering a definition stops offering new content. A registration handle releases only the
+registration it made: one from a released lease, or one whose identifier has since been registered
+again — even with the same immutable definition object — does nothing, so a stale handle can never
+remove live content. It never rewrites or deletes saved
 occurrences: removal of persisted references follows `content-safety.md`, and provider-required
 content still needs its provider.
 
