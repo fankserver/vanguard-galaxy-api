@@ -280,8 +280,11 @@ unapproved revisions and insufficient retained-state capacity are refused withou
 Existing mixed or unkeyed objectives do not acquire invented migration identities. Authored narrative
 logic stays in the consumer; the API stores objective state, not campaign-specific flags.
 
-The objective integration has host and installed-shape checks, not completed native qualification.
-Non-scripted progress queries and the authored/generated native acceptance fixtures remain incomplete.
+Controlled in-game verification covers independently loaded authored/generated consumers sharing local
+objective names, partial-progress reload, stale sessions, inactive steps, scripted revision reordering,
+native payout/idempotency, repeated instances, older-save rollback and restored terminal state.
+Host regressions additionally cover reentrancy and migration quota boundaries. Non-scripted progress
+queries and full acceptance remain incomplete; this coverage does not make the entire API runtime-qualified.
 
 ## Automatic persistence
 
@@ -298,7 +301,8 @@ or observed-failure flag; neither older schema carries objective layouts. Captur
 without modifying older snapshots. Keyed layouts retain objective positions, kinds, required amounts,
 scripted progress and content revision. Their space is charged before admission or migration.
 Host regressions cover coordinator migration at the provider/global limits, service restoration,
-completion and older-snapshot rollback. Native objective migration qualification remains pending.
+completion and older-snapshot rollback. Controlled in-game verification covers scripted objective revision migration; arbitrary non-scripted
+migration is not supported.
 
 The codec is canonical: the encoder and the decoder run the SAME ledger bounds (per-provider quota,
 per-provider payload budget including reservations, per-definition campaign cap over retired AND
