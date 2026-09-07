@@ -267,6 +267,9 @@ public sealed partial class Plugin : BaseUnityPlugin
         // consumer's visit observer. When it is selected it owns those two phases in place; the
         // later call sites below then no-op instead of running (and receipting) them twice.
         foreach (var frame in CheckAnimaTravelConsumer()) yield return frame;
+        // The Echo consumer probe owns the same two reused phases; Prepare refuses both consumer
+        // probes together, so exactly one of them can ever own that ordering in a run.
+        foreach (var frame in CheckEchoTravelConsumer()) yield return frame;
         foreach (var frame in CheckAnimaMissions()) yield return frame;
         foreach (var frame in CheckStockpilePilot()) yield return frame;
         foreach (var frame in CheckTravelStation()) yield return frame;

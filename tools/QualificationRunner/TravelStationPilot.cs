@@ -154,9 +154,11 @@ public sealed partial class Plugin
                 // Optional actual-consumer observation boundary. It drives nothing and is inert
                 // unless the consumer probe owns a live subscription.
                 foreach (var frame in AnimaTravelInSystemReady(session)) yield return frame;
+                foreach (var frame in EchoTravelInSystemReady(session)) yield return frame;
                 var driver = new TravelStationDriver(this, session);
                 foreach (var step in driver.Run()) yield return step;
                 foreach (var frame in AnimaTravelInSystemCompleted()) yield return frame;
+                foreach (var frame in EchoTravelInSystemCompleted()) yield return frame;
             }
             finally
             {

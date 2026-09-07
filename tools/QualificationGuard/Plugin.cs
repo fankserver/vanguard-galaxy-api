@@ -51,6 +51,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             _scenario = File.ReadAllText(Path.Combine(_root, "scenario.txt")).Trim();
             Require(_scenario == "Full" || _scenario == "MissingApi" || _scenario == "UnavailableApi", "Unknown scenario.");
             if (_scenario == "Full" && File.Exists(Path.Combine(_root, "mission-transitions.enabled"))) InstallMissionProbeGuards(harmony);
+            if (EchoAbsentSelected) InstallEchoAbsentCounter(harmony);
             var overlayMarker = Path.Combine(_root, "assembly-overlay.hash");
             _assemblyOverlay = File.Exists(overlayMarker);
             if (_assemblyOverlay)
@@ -171,6 +172,7 @@ public sealed partial class Plugin : BaseUnityPlugin
                     Require(!Harmony.GetAllPatchedMethods().Any(m => Harmony.GetPatchInfo(m)?.Owners.Contains("vgstockpile") == true), "Unavailable Stockpile installed patches.");
                 }
             }
+            CheckEchoAbsent();
             var consumerSelected = File.Exists(Path.Combine(_root!, "stockpile.enabled")) || File.Exists(Path.Combine(_root!, "missionjournal.enabled"));
             Finish(true, _scenario + (File.Exists(Path.Combine(_root!, "vanilla-load.enabled")) ? "; API-absent gameplay load control executed." : "") + (consumerSelected ? "; selected consumer refusal checked." : "; no consumer selected.")
                 + (_assemblyOverlay ? " Actual private modified-identity rejection; no alternate game implementation qualification claimed." : " No alternate game binary qualification claimed."));

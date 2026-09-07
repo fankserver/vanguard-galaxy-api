@@ -17,6 +17,69 @@ function Assert-AnimaAssemblyMetadata($Assembly, [switch]$TravelProbe) {
     })
     if ($dependency.Count -ne 1) { throw "Anima $version must hard-require API $minimumApi before its startup sweeper." }
 }
+# Consumer metadata is read with Mono.Cecil ONLY, but decoding a custom attribute's ENUM argument
+# forces Cecil to RESOLVE the assembly that declares the enum. Cecil's default reader has no useful
+# search path here and does not throw: it yields an attribute with ZERO constructor arguments, which
+# a naive shape check reads as "the declaration is missing". That is exactly how qa-87 refused the
+# candidate Echo build whose source really does declare
+# [BepInDependency("vgmodapi", DependencyFlags.SoftDependency)]: BepInEx.BepInDependency/DependencyFlags
+# lives in BepInEx.dll, which the reader could not resolve. Anima's declaration takes two STRINGS and
+# needs no resolution, which is why only Echo hit it.
+#
+# So every consumer metadata read goes through this bounded, explicit resolver. Required reference
+# directories: the candidate's own directory, the sandbox BepInEx core (BepInEx.dll, for the plugin
+# attributes) and the installed Managed directory (the game/Unity types a consumer signature may
+# name). Cecil's implicit "."/"bin" probing is removed so nothing outside that list is read, the
+# candidate is opened InMemory (never locked, never written) and both the assembly and the resolver
+# are disposed. Nothing is loaded into the PowerShell process and no consumer binary is copied here.
+function Get-ConsumerMetadataReferenceDirs([string]$CandidateDir, [string]$SandboxRoot, [string]$GameDir) {
+    $dirs = @($CandidateDir, (Join-Path $SandboxRoot 'game\BepInEx\core'), (Join-Path $GameDir 'VanguardGalaxy_Data\Managed'))
+    return @($dirs | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Container) } | Select-Object -Unique)
+}
+function Read-ConsumerAssembly([string]$Path, [string[]]$ReferenceDirs) {
+    $resolver = New-Object Mono.Cecil.DefaultAssemblyResolver
+    foreach ($existing in @($resolver.GetSearchDirectories())) { $resolver.RemoveSearchDirectory($existing) }
+    foreach ($directory in $ReferenceDirs) { $resolver.AddSearchDirectory($directory) }
+    $parameters = New-Object Mono.Cecil.ReaderParameters
+    $parameters.AssemblyResolver = $resolver
+    $parameters.InMemory = $true
+    $parameters.ReadSymbols = $false
+    try { $assembly = [Mono.Cecil.AssemblyDefinition]::ReadAssembly($Path, $parameters) }
+    catch { $resolver.Dispose(); throw }
+    return [pscustomobject]@{ Assembly = $assembly; Resolver = $resolver; ReferenceDirs = $ReferenceDirs }
+}
+function Close-ConsumerAssembly($Reader) {
+    if ($null -eq $Reader) { return }
+    if ($Reader.Assembly) { $Reader.Assembly.Dispose() }
+    if ($Reader.Resolver) { $Reader.Resolver.Dispose() }
+}
+
+# Accepted Echo pilot shapes. The arrival-snap probe requires 0.7.0, the first release whose
+# autopilot arrival-snap is driven by the API's RouteCompleted fact instead of a native hook.
+$EchoPilotVersions = @('0.7.0.0')
+$EchoTravelProbeVersion = '0.7.0.0'
+function Assert-EchoAssemblyMetadata($Assembly, [switch]$TravelProbe) {
+    $version = $Assembly.Name.Version.ToString()
+    if ($Assembly.Name.Name -ne 'VGEcho' -or $version -notin $EchoPilotVersions) { throw 'Only Echo 0.7.0 pilot shape accepted.' }
+    if ($TravelProbe -and $version -ne $EchoTravelProbeVersion) { throw "Echo consumer travel probe requires the $EchoTravelProbeVersion shape; got $version." }
+    $plugin = @($Assembly.MainModule.Types | Where-Object { $_.FullName -eq 'VGEcho.Plugin' })
+    if ($plugin.Count -ne 1) { throw 'Echo plugin metadata missing or duplicated.' }
+    # SOFT dependency (flag 2): the same build must still load with the API absent, which the
+    # separate MissingApi control exercises natively.
+    $declarations = @($plugin[0].CustomAttributes | Where-Object { $_.AttributeType.FullName -eq 'BepInEx.BepInDependency' })
+    # An attribute whose arguments did not decode is an UNREADABLE metadata blob, not a missing or
+    # wrong declaration; reporting it as "not soft" is a false equivalence that hid the real qa-87
+    # cause (the flags enum lives in BepInEx.dll, which the reader could not resolve).
+    $undecodable = @($declarations | Where-Object { $_.ConstructorArguments.Count -eq 0 })
+    if ($undecodable.Count -gt 0) {
+        throw 'Echo BepInDependency arguments could not be decoded; the metadata reader needs BepInEx.dll (and the installed Managed references) resolvable. This is a reader configuration failure, not a consumer shape failure.'
+    }
+    $dependency = @($declarations | Where-Object {
+        $_.ConstructorArguments.Count -eq 2 -and
+        $_.ConstructorArguments[0].Value -eq 'vgmodapi' -and [int]$_.ConstructorArguments[1].Value -eq 2
+    })
+    if ($dependency.Count -ne 1) { throw 'Echo must declare the API as a SOFT dependency.' }
+}
 function Assert-PersistenceProbeReceipt([string]$Root, $Provenance) {
     if ($Provenance.PSObject.Properties['anima'] -and $Provenance.anima) {
         $receipt = Join-Path $Root 'anima-missions.txt'
@@ -64,6 +127,12 @@ function Assert-PersistenceProbeReceipt([string]$Root, $Provenance) {
     if ($Provenance.PSObject.Properties['animaTravelProbe'] -and $Provenance.animaTravelProbe) {
         Assert-AnimaTravelReceipt $Root
     }
+    if ($Provenance.PSObject.Properties['echoTravelProbe'] -and $Provenance.echoTravelProbe) {
+        Assert-EchoTravelReceipt $Root
+    }
+    if ($Provenance.PSObject.Properties['echoAbsentProbe'] -and $Provenance.echoAbsentProbe) {
+        Assert-EchoAbsentReceipt $Root $Provenance
+    }
 }
 $TravelStationPhase = 'travel-in-system-station-v1'
 $TravelStationRequiredCases = @('initial-placement','station-undock','in-system-route','early-cancel','chained-route','station-dock')
@@ -100,6 +169,13 @@ $AnimaTravelRequiredSubcaseRows = @('gate-visit-reload','gate-visit-rollback','r
 $AnimaTravelBudgetSeconds = 1200
 # The scenario names the two reused phases record in result.txt, used as the ordering proof.
 $AnimaTravelReusedPhaseScenarios = @("native-travel-station-$TravelStationPhase", "native-travel-$TravelCrossSystemPhase")
+# The Echo arrival-snap probe reuses the SAME two phases and owns their ordering, so exactly one
+# consumer probe may be selected per run (refused at Prepare and re-checked in provenance).
+$EchoTravelPhase = 'echo-travel-consumer-v1'
+$EchoTravelRequiredCases = @('arrival-snap-binding','no-snap-quiet','in-system-final-snap','gate-final-snap','wormhole-final-snap','earlier-subscriber-supersession','snap-stop-degradation')
+$EchoTravelRequiredSubcaseRows = @('declared-probe-controls')
+$EchoTravelBudgetSeconds = 1800
+$EchoTravelReusedPhaseScenarios = $AnimaTravelReusedPhaseScenarios
 # Independent verification of the pilot's own claim: the declared phase, every mandatory case
 # identity, the receipt/event files and the identities they share must all agree. A first line of
 # PASS is never accepted on its own. The two travel phases publish the same receipt/event shape,
@@ -247,6 +323,54 @@ function Assert-AnimaTravelReceipt([string]$Root) {
     }
     if ([Array]::IndexOf($passed, 'native-anima-api-missions') -lt $probeIndex) { throw 'The Anima mission pilot ran before the consumer travel probe; its StopProvider disposes the observer the probe needs.' }
 }
+# The Echo arrival-snap probe is validated separately and with its own mandatory cases; it reuses
+# the two native travel phases rather than repeating them, so neither receipt can stand in for the
+# other.
+function Assert-EchoTravelReceipt([string]$Root) {
+    Assert-TravelPhaseReceipt $Root 'Echo consumer travel' 'echo-travel' $EchoTravelPhase $EchoTravelRequiredCases $EchoTravelBudgetSeconds
+    $summary = @(Get-Content -LiteralPath (Join-Path $Root 'echo-travel.txt'))
+    if ($summary -notcontains ("required-subcases=" + ($EchoTravelRequiredSubcaseRows -join ','))) { throw 'Echo consumer travel receipt declares different mandatory subcases.' }
+    $rows = @(Get-Content -LiteralPath (Join-Path $Root 'echo-travel-receipt.tsv'))
+    foreach ($subcase in $EchoTravelRequiredSubcaseRows) {
+        if ($subcase -in $EchoTravelRequiredCases) { throw 'A mandatory subcase row must not also be a case identity.' }
+        $matched = @($rows | Where-Object { ($_ -split "`t")[0] -eq $subcase })
+        if ($matched.Count -ne 1) { throw "Mandatory Echo consumer travel subcase is missing or duplicated: $subcase" }
+        if (($matched[0] -split "`t")[2] -ne 'passed') { throw "Mandatory Echo consumer travel subcase did not pass: $subcase" }
+        if ($summary -notcontains "required-subcase $subcase=passed") { throw "Echo consumer travel summary and receipt disagree about $subcase." }
+        # The declared controls row must actually name them; an empty setup row proves nothing.
+        foreach ($control in @('idleTimerSeed','suppressedFindActivityBodies','subscriptionReorderings','EtaSync=false')) {
+            if (($matched[0] -split "`t")[7] -notlike "*$control*") { throw "Echo consumer travel controls row does not declare $control." }
+        }
+    }
+    # ORDERING PROOF from the run's own result log: the probe observed both reused native travel
+    # phases, each recorded exactly once, and completed after them.
+    $passed = @(Get-Content -LiteralPath (Join-Path $Root 'result.txt'))
+    $expected = @($EchoTravelPhase) + $EchoTravelReusedPhaseScenarios
+    foreach ($name in $expected) {
+        if (@($passed | Where-Object { $_ -eq $name }).Count -ne 1) { throw "Expected exactly one recorded '$name' scenario in the run result." }
+    }
+    $probeIndex = [Array]::IndexOf($passed, $EchoTravelPhase)
+    foreach ($name in $EchoTravelReusedPhaseScenarios) {
+        if ([Array]::IndexOf($passed, $name) -gt $probeIndex) { throw "The Echo consumer probe completed before the reused phase '$name'." }
+    }
+}
+# The API-ABSENT control is its own MissingApi run: plugin load and patch installation are recorded
+# separately from observed hook invocations, which only exist with the gameplay load control.
+function Assert-EchoAbsentReceipt([string]$Root, $Provenance) {
+    $receipt = Join-Path $Root 'echo-absent.txt'
+    if (!(Test-Path -LiteralPath $receipt)) { throw 'Echo API-absent control did not complete.' }
+    $lines = @(Get-Content -LiteralPath $receipt)
+    if ($lines[0] -cne 'PASS') { throw 'Echo API-absent control did not report PASS.' }
+    if ($lines -notcontains 'arrivalSnap=unbound') { throw 'Echo API-absent control did not report an unbound arrival-snap.' }
+    if ($lines -notcontains ('echoVersion=' + $EchoTravelProbeVersion.Substring(0, 5))) { throw 'Echo API-absent control reported another consumer version.' }
+    $gameplay = $null -ne $Provenance -and $Provenance.PSObject.Properties['vanillaLoadControl'] -and [bool]$Provenance.vanillaLoadControl
+    $invocations = @($lines | Where-Object { $_ -like 'idleUpdateInvocations=*' })
+    if ($invocations.Count -ne 1) { throw 'Echo API-absent control did not record its native hook invocations.' }
+    $count = [int]($invocations[0] -replace '^idleUpdateInvocations=', '')
+    if ($gameplay -and $count -le 0) { throw 'Echo API-absent control observed no native hook invocation during the gameplay load control.' }
+    if (!$gameplay -and $count -ne 0) { throw 'Echo API-absent control claims hook invocations without a gameplay load control.' }
+    if ($lines -notcontains ('gameplayLoadControl=' + $gameplay)) { throw 'Echo API-absent control misreports its gameplay load control selection.' }
+}
 function Assert-VanillaControlReceipt([string]$Root, $Provenance) {
     if ($Provenance.PSObject.Properties['vanillaLoadControl'] -and $Provenance.vanillaLoadControl) {
         $receipt = Join-Path $Root 'vanilla-load-control.txt'
@@ -389,6 +513,40 @@ function Assert-QualificationInputs([string]$Root) {
         # never pass while the probe is selected.
         if (!$provenance.PSObject.Properties['animaVersion'] -or $provenance.animaVersion -ne $AnimaTravelProbeVersion) { throw 'Anima consumer travel probe requires the pinned consumer version in provenance.' }
     }
+    # The Echo consumer selection: its own binary, its exact source revision and the sandbox-only
+    # configuration that keeps ETA-sync off so an ETA write can never look like an arrival snap.
+    $echo = $provenance.PSObject.Properties['echo'] -and [bool]$provenance.echo
+    $echoMarker = Join-Path $Root 'echo.enabled'
+    if ([bool]$echo -ne (Test-Path -LiteralPath $echoMarker -PathType Leaf)) { throw 'Echo selection changed.' }
+    if ($echo) {
+        if ($provenance.echoRevision -notmatch '^[0-9a-f]{40}$' -or (Get-Content -LiteralPath $echoMarker -Raw).Trim() -ne 'echo-v1') { throw 'Invalid Echo selection.' }
+        $echoConfig = Get-Content -LiteralPath (Join-Path $Root 'game\BepInEx\config\vgecho.cfg') -Raw
+        $blocks = [regex]::Matches($echoConfig, '(?ms)^\[Autopilot\]\s*\r?\n(?<body>.*?)(?=^\[|\z)')
+        if ($blocks.Count -ne 1) { throw 'Echo autopilot configuration section changed.' }
+        foreach ($entry in @(@{Key='TimingEnabled';Value='true'}, @{Key='ArrivalSnap';Value='true'}, @{Key='EtaSync';Value='false'})) {
+            if ([regex]::Matches($blocks[0].Groups['body'].Value, "(?m)^$($entry.Key)\s*=").Count -ne 1 -or
+                [regex]::Matches($blocks[0].Groups['body'].Value, "(?m)^$($entry.Key)\s*=\s*$($entry.Value)\s*$").Count -ne 1) { throw 'Echo arrival-snap configuration changed.' }
+        }
+    }
+    $echoTravel = $provenance.PSObject.Properties['echoTravelProbe'] -and [bool]$provenance.echoTravelProbe
+    $echoTravelMarker = Join-Path $Root 'echo-travel.enabled'
+    if ([bool]$echoTravel -ne (Test-Path -LiteralPath $echoTravelMarker -PathType Leaf)) { throw 'Echo consumer travel selection changed.' }
+    if ($echoTravel) {
+        if (!$echo -or !$travelStation -or !$travelCrossSystem -or !$wormholeFixture -or
+            (Get-Content -LiteralPath $echoTravelMarker -Raw).Trim() -ne 'echo-travel-v1') { throw 'Invalid Echo consumer travel selection.' }
+        if (!$provenance.PSObject.Properties['echoTravelBudgetSeconds'] -or
+            [int]$provenance.echoTravelBudgetSeconds -ne $EchoTravelBudgetSeconds) { throw 'Echo consumer travel budget reservation changed.' }
+        if (!$provenance.PSObject.Properties['echoVersion'] -or $provenance.echoVersion -ne $EchoTravelProbeVersion) { throw 'Echo consumer travel probe requires the pinned consumer version in provenance.' }
+        if ($anima -and $animaTravel) { throw 'Both consumer travel probes claim the reused travel phases.' }
+        if ($provenance.scenario -ne 'Full') { throw 'Echo consumer travel probe requires Full.' }
+    }
+    $echoAbsent = $provenance.PSObject.Properties['echoAbsentProbe'] -and [bool]$provenance.echoAbsentProbe
+    $echoAbsentMarker = Join-Path $Root 'echo-absent.enabled'
+    if ([bool]$echoAbsent -ne (Test-Path -LiteralPath $echoAbsentMarker -PathType Leaf)) { throw 'Echo API-absent selection changed.' }
+    if ($echoAbsent) {
+        if (!$echo -or $provenance.scenario -ne 'MissingApi' -or $echoTravel -or
+            (Get-Content -LiteralPath $echoAbsentMarker -Raw).Trim() -ne 'echo-absent-v1') { throw 'Invalid Echo API-absent selection.' }
+    }
     # The resilience phase is an ADDITIONAL selection on top of the in-system phase; it reuses the
     # same [Travel] capability configuration and reserves its own separate process budget.
     $travelResilience = $provenance.PSObject.Properties['travelResilience'] -and [bool]$provenance.travelResilience
@@ -488,6 +646,7 @@ function Assert-QualificationInputs([string]$Root) {
     if ($provenance.missionJournal) { $expected += @('VGMissionJournal.dll','Newtonsoft.Json.dll') }
     if ($stockpile) { $expected += @('VGStockpile.dll','Newtonsoft.Json.dll') }
     if ($anima) { $expected += @('VGAnima.dll') }
+    if ($echo) { $expected += @('VGEcho.dll') }
     $expected = @($expected | Select-Object -Unique)
     if (@($provenance.plugins.PSObject.Properties).Count -ne $expected.Count -or
         @($provenance.plugins.PSObject.Properties.Name | Where-Object { $_ -notin $expected }).Count -gt 0) { throw 'Scenario plugin allowlist mismatch.' }

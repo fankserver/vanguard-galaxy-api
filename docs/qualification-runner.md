@@ -233,3 +233,116 @@ Receipts are checkpointed atomically after every case and written on every path;
 `TravelStationReceipt`/`AnimaTravelReceipt` rules (visit increment, label preservation, no-growth, history preservation, session replacement, sidecar path/version, patch refusal, evaluation) are compiled into the host test project, and `make check-consumer ANIMA_ASSEMBLY=<owner-built VGAnima.dll>` runs the installed-consumer metadata tests that pin every consumer member the probe reflects and prove the visited map can only grow inside the public-event observer. Those tests are excluded from `make test` and from `check-local` because they need a consumer binary, and they read it with Cecil against an explicit bounded dependency search path (see [checks](checks.md)); they never load it into the test process.
 
 This is controlled actual-consumer evidence for this probe's own cases only. It is NOT automatic owner-scoped content persistence (#13/#14 stay open), not Echo's integration, not the archived TravelJournal comparison and not owner acceptance: `RuntimeQualified=false` and #12 stays open.
+
+## Actual-consumer Echo arrival-snap probe (separate, optional)
+
+`-EchoTravelProbe` is an ADDITIONAL Prepare selection that requires the Echo consumer (`-EchoBin`
+with a mandatory exact `-EchoRevision`), `-TravelStation`, `-TravelCrossSystem`, `-TravelWormholeFixture`
+and Full. Only the Echo **0.7.0** metadata shape is accepted, and only with a **soft** BepInEx
+dependency on the API: the same build has to keep loading when the API is absent, which the separate
+control below exercises. Prepare writes `echo.enabled` / `echo-travel.enabled`, a sandbox-only
+`vgecho.cfg` (`TimingEnabled=true`, `ArrivalSnap=true`, **`EtaSync=false`** so an ETA write can never
+be mistaken for an arrival snap), and records `echo`, `echoRevision`, `echoVersion`,
+`echoTravelProbe` and its reservation `echoTravelBudgetSeconds` in provenance. Marker, provenance
+flag, pinned version, source revision and configuration must all agree.
+
+**One consumer probe per run.** `-AnimaTravelProbe` and `-EchoTravelProbe` both OWN the two reused
+native travel phases and their ordering, so selecting them together is refused at Prepare, refused
+again in provenance validation, and covered by launcher tests. The Anima 0.4 mission pilot is
+unaffected and can still be selected normally.
+
+It runs as phase `echo-travel-consumer-v1` with its own receipts (`echo-travel.txt`,
+`echo-travel-receipt.tsv`, `echo-travel-events.tsv`, `echo-travel-fault.txt`), the mandatory case
+identities `arrival-snap-binding`, `no-snap-quiet`, `in-system-final-snap`, `gate-final-snap`,
+`wormhole-final-snap`, `earlier-subscriber-supersession` and `snap-stop-degradation`, and the
+mandatory subcase row `declared-probe-controls`. Budgets add up: `Run` refuses to launch unless
+`-TimeoutSeconds` covers base 1800 + travel/station 1500 + cross-system 2400 + this probe's own
+**1800** (**7500** for that selection; 9900 when the resilience phase is also selected). The
+multiplicities are DERIVED from a per-method call-site plan (`EchoTravelReceipt.CallSites`) that a
+host test re-counts against the pilot source; the published worst case is **1626** seconds.
+
+**What is actually proven.** The probe calls nothing of the consumer's and nothing of the game's
+idle cycle. Read-only Harmony prefixes/postfixes around the INSTALLED consumer's own
+`AutopilotTimingPatches.ApplyArrivalSnap` and around native `IdleManager.Update` record the frame,
+the native idle timer before/after and the live travel state; a prefix on `IdleManager.FindActivity`
+counts the real native decision. A positive case therefore requires the consumer's own write to run
+in the SAME frame as the public `RouteCompleted` fact, to move the timer from strictly positive to
+exactly zero while the native world is quiet, and the NEXT native `IdleManager.Update` to start from
+that zero and reach its `FindActivity` decision.
+
+- `arrival-snap-binding`: the installed 0.7.0 consumer holds a live subscription for the freshly
+  loaded session, its three configuration gates are present in the pinned shape, and its retired
+  timing hook is absent. The rule is deliberately narrow: only a patch DECLARED BY
+  `AutopilotTimingPatches` on the native route boundary is refused. Echo's unrelated automation (the
+  opt-in refinery routing, default off) legitimately owns its own `TravelToNextWaypoint` postfix, so
+  the probe never asserts that Echo owns no native travel hook at all; every owned patch is recorded.
+- `no-snap-quiet`: with the native autopilot disengaged, the whole reused in-system phase — placement,
+  requests, cancellation, intermediate arrivals AND final route completions — produces zero consumer
+  writes and no snap-driven idle decision. The window must really carry those facts, so an empty
+  window can never satisfy it.
+- `in-system-final-snap`, `gate-final-snap`, `wormhole-final-snap`: the positive proof above, taken
+  from the reused cross-system phase's own qualified completions (its in-system approach leg and its
+  gate/wormhole hop).
+- `earlier-subscriber-supersession`: the probe disposes the consumer's own observer, registers an
+  EARLIER observer and then invokes the consumer's OWN production binder (`Plugin.BindArrivalSnap`),
+  so the consumer's fresh subscription lands after it; the reordering is recorded and one live
+  consumer observer is proven. It then drives a real owned in-system route, and from inside that
+  route completion's dispatch the earlier observer issues a REAL native `TryInitiateTravel` to a
+  safe industrial target from the shared safe-target selector. The consumer's write-time guard must
+  then refuse: the timer is left exactly as it was, no snap-driven idle decision happens while the
+  ship is busy, and the new route's own completion snaps under its own distinct operation identity.
+- `snap-stop-degradation`: stopping the subscription disables ONLY the snap. A later real route
+  completion writes no timer while the ETA-sync patch and the unrelated patches stay installed and
+  no native timing hook returns; the production binding is then restored.
+
+**Fixture preflight.** Every fixture this phase loads is checked BEFORE any unarmed setup wait: the
+loaded save's own autopilot must be disengaged, and a case that has to engage it additionally needs
+autopilot unlocked. The refusal names the slot and the session and points at the fixture, because the
+suppression accounting is only meaningful while an idle decision outside an armed window is
+impossible; an autopilot-on save would otherwise fail the phase minutes later with a diagnostic that
+looks like a suppression defect. It fails closed: the probe never disengages a state it did not
+create and never relaxes the no-autonomous-decision signal to accommodate one.
+
+**Autopilot safety cleanup.** Engaging the consumer's gate captures the EXACT player and session it
+was engaged on. A bounded cleanup then disengages only that player, only while it is still the live
+current one of the still-current session; a replaced or destroyed owner, or a replaced session, is
+left untouched and recorded as a declined release. It runs on the normal path, on the fault path of
+both cross-system consumer hooks (after the failed row and its checkpoint are written, so a cleaned
+world can never make a failed case look passed) and in the phase's outer `finally` as the last
+resort for a fault raised elsewhere, including inside a synchronous API callback. It never throws
+and is idempotent, and it adds no wait to the budget.
+
+**Declared controls (`declared-probe-controls`).** The mandatory setup row names every bounded
+control with its exact counts: the sandbox-only configuration, the autopilot releases (and any
+declined ones with their reason), the native idle-timer seeding
+(300 s, so a case never begins from an expired cycle and a natural expiry can never look like a
+snap-driven decision), the bounded autopilot engagements, the read-only observation probes, the
+counted `FindActivity` BODY suppression and the subscription reorderings. The suppression exists so
+reaching the decision boundary cannot launch an uncontrolled autonomous route; it proves the
+boundary was REACHED, never that the autonomous action executed, and the launcher refuses a controls
+row that does not declare it. `TravelActive` guards are never suppressed and no travel is ever
+manufactured.
+
+### API-absent Echo load control (`-EchoAbsentProbe`)
+
+A SEPARATE `MissingApi` sandbox selection (refused together with the Full probe) that requires
+`-EchoBin`. The API-independent guard — which has no API assembly reference and gains no Echo
+reference — checks through `Chainloader` and reflection that the same Echo 0.7.0 build loaded and
+stayed enabled with no API plugin and no API assembly in the process, that `_arrivalSnap` is
+unbound, and that its expected patches (including the autopilot timing hook on
+`Behaviour.Gameplay.IdleManager.Update`) are installed. A guard-owned counter records real native
+idle-update invocations, so plugin-load/patch evidence is reported separately from observed
+execution: invocations only happen when the existing optional `-VanillaLoadControl` is selected too,
+and the launcher refuses a receipt that claims invocations without it or reports none with it. This
+is Echo issue #9 scope — the unrelated features LOAD without the API — not a claim that every Echo
+automation feature behaves correctly without it.
+
+Consumer metadata is additionally pinned by Cecil host tests
+(`make check-consumer ECHO_ASSEMBLY=<owner-built VGEcho.dll>`), which read the candidate read-only
+with the same bounded dependency search path as the Anima tests and prove the retired timing hook is
+absent while the unrelated automation keeps its own, that the timer write is referenced only by the
+binder that hands it to the API observer, and that no always-JIT plugin member names a VGModAPI type.
+
+This is controlled actual-consumer evidence for this probe's own cases only. It is not owner
+acceptance, not Echo's ETA-sync qualification, not the archived TravelJournal comparison and not any
+managed-content milestone: `RuntimeQualified=false` and #12 stays open.

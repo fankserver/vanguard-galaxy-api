@@ -27,10 +27,20 @@ check-bindings:
 NUGET_PACKAGES_DIR ?= $(HOME)/.nuget/packages
 NEWTONSOFT_DIR ?= $(lastword $(sort $(wildcard $(NUGET_PACKAGES_DIR)/newtonsoft.json/*/lib/netstandard2.0)))
 check-consumer:
-	@test -n "$(ANIMA_ASSEMBLY)" || (echo 'Set ANIMA_ASSEMBLY=/path/to/VGAnima.dll'; exit 1)
-	VG_ANIMA_ASSEMBLY="$(ANIMA_ASSEMBLY)" \
-	VG_CONSUMER_DEPENDENCY_DIRS="$(CORE):$(MANAGED):$(NEWTONSOFT_DIR):$(ANIMA_DEPENDENCY_DIRS)" \
-	$(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter 'Category=InstalledConsumer'
+	@test -n "$(ANIMA_ASSEMBLY)$(ECHO_ASSEMBLY)" || (echo 'Set ANIMA_ASSEMBLY=/path/to/VGAnima.dll and/or ECHO_ASSEMBLY=/path/to/VGEcho.dll'; exit 1)
+	VG_ANIMA_ASSEMBLY="$(ANIMA_ASSEMBLY)" VG_ECHO_ASSEMBLY="$(ECHO_ASSEMBLY)" \
+	VG_CONSUMER_DEPENDENCY_DIRS="$(CORE):$(MANAGED):$(NEWTONSOFT_DIR):$(ANIMA_DEPENDENCY_DIRS):$(ECHO_DEPENDENCY_DIRS)" \
+	$(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter '$(CONSUMER_FILTER)' -- RunConfiguration.TreatNoTestsAsError=true
+# Select only supplied consumers; the explicit override remains useful for focused checks.
+ifneq ($(strip $(ANIMA_ASSEMBLY)),)
+ifneq ($(strip $(ECHO_ASSEMBLY)),)
+CONSUMER_FILTER ?= Category=InstalledConsumer
+else
+CONSUMER_FILTER ?= Category=InstalledConsumer&FullyQualifiedName~InstalledAnimaTravelConsumerTests
+endif
+else
+CONSUMER_FILTER ?= Category=InstalledConsumer&FullyQualifiedName~InstalledEchoTravelConsumerTests
+endif
 package: build
 	@rm -rf artifacts/VGModAPI
 	@mkdir -p artifacts/VGModAPI
