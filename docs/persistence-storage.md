@@ -36,6 +36,24 @@ If the filesystem cannot record even the pre-write intent for a previously unsee
 
 Inspected vanilla SideMenuOptions.MainMenu saves before player Cleanup and SceneLoader.StartMenu; the lifecycle menu-invalidation hook runs at that later transition. GameManager.HandleApplicationQuit likewise saves before clearing the player. Controlled native pilots exercise both consumer teardowns and the resulting shared persistence pause. A successful post-invalidation save retains intent and blocks unmatched reloads. Recovery is explicit: select a validated prior backup/generation; never delete intent/conflict evidence merely to force an empty load. Resolving an identical-byte conflict requires an explicit choice to retain older state and archival of evidence; no automatic resolution tool is provided here.
 
+### Optional readiness capability
+
+`IPersistenceRegistration` is unchanged: it still exposes exactly `MutationAllowed` and `Status` as it
+has since 0.1.2, so an existing implementation or wrapper keeps compiling and type-loading. Readiness
+is offered ADDITIVELY through the separate `IPersistenceReadiness` interface, the same pattern
+`ILifecycleDispatchState` used for the lifecycle API. Cast the handle you were given; the runtime
+registration implements it.
+
+`StateReady` answers whether this owner's restored state for the CURRENT session is READABLE, which is
+deliberately broader than `MutationAllowed`: it stays true while lifecycle callbacks dispatch and
+while a save is in flight, because reading is safe in those moments and mutating is not. It is false
+when there is no current session, when the owner's data was blocked, unreadable or restore-failed, or
+when publication is blocked. Obeying `MutationAllowed` before mutations is unchanged and still
+required; readiness never authorises a mutation. A consumer that receives a handle without the
+capability should treat readiness as UNKNOWN and refuse, not assume state exists. Using the interface
+requires the API build that introduces it; it is optional and adds no hard dependency for consumers
+that do not cast for it.
+
 The optional runtime facade is initialized only when both inspected lifecycle capabilities are available and configuration enables it (the default). Its file adapter accepts direct `.save` children of the inspected SavesPath only, normalizes absolute paths/case on Windows, and rejects reparse paths and tilde/short-name forms. Arbitrary alias/hard-link imports are not supported. Public registration/handles remain main-thread-only; service disposal makes all handles inactive. No account-wide fallback or implicit legacy-sidecar import exists.
 
 ## Verification boundary

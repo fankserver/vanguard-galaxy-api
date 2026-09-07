@@ -72,6 +72,19 @@ internal sealed class PersistenceCoordinator : IDisposable
             && _owners.TryGetValue(owner, out var registered) && registered.Ready;
     }
 
+    /// <summary>
+    /// Whether this owner's restored state can be READ for the current session. Deliberately narrower
+    /// than <see cref="MutationAllowed"/>: it ignores the transient conditions that only forbid a
+    /// mutation (callbacks dispatching, a save in flight, the pre-gameplay phase), and keeps every
+    /// condition that means the owner has no trustworthy state for this session.
+    /// </summary>
+    internal bool StateReady(string owner)
+    {
+        _hub.CheckThread();
+        return !_disposed && !_sessionFault && !_writeFault && _session.HasValue && Current(_session.Value)
+            && _owners.TryGetValue(owner, out var registered) && registered.Ready;
+    }
+
     internal string Status(string owner)
     {
         _hub.CheckThread();
