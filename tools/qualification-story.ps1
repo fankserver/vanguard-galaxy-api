@@ -11,7 +11,7 @@ function Assert-StoryReceipt([string]$Root) {
     if ($outcome.selfTerminated -ne $true) { throw 'Story process did not terminate itself.' }
     Assert-QualificationExitOutcome $outcome 'Story probe'
     $cases = @(Get-Content -LiteralPath (Join-Path $Root 'story-cases.txt'))
-    $expected = @('independent-authors','offered-roundtrip','active-roundtrip','native-completion','save-refusals','older-save-rollback','cross-slot-return','repeat-job','provider-unregistered','provider-unregistered-reload')
+    $expected = @('independent-authors','offered-roundtrip','active-roundtrip','native-completion','save-refusals','older-save-rollback','cross-slot-return','repeat-job','provider-unregistered-first-reload','provider-unregistered-second-reload')
     if (($cases -join "`n") -cne ($expected -join "`n")) { throw 'Story cases missing, duplicated or out of order.' }
     $result = @(Get-Content -LiteralPath (Join-Path $Root 'story-result.txt'))
     if ($result.Count -ne 2 -or $result[0] -cne 'PASS' -or $result[1] -cne 'owned-story-v1') { throw 'Story receipt incomplete.' }

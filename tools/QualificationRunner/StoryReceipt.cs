@@ -11,7 +11,7 @@ internal static class StoryReceipt
     {
         "independent-authors", "offered-roundtrip", "active-roundtrip", "native-completion",
         "save-refusals", "older-save-rollback", "cross-slot-return", "repeat-job",
-        "provider-unregistered", "provider-unregistered-reload"
+        "provider-unregistered-first-reload", "provider-unregistered-second-reload"
     };
 
     // Each case is recorded only after its native assertions. This phase does not claim absent

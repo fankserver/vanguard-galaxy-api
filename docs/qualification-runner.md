@@ -26,7 +26,7 @@ Build from WSL/Linux with the installed reference paths available:
 make package CONFIGURATION=Release
 ```
 
-The solution builds `QualificationRunner.dll` and `QualificationGuard.dll`, but the API package allowlist excludes both. On Windows, run the self-authored PowerShell script from a **local** path if RemoteSigned treats a WSL UNC path as remote; do not disable machine execution policy. Keep `qualification-profile.ps1` and `qualification-inputs.ps1` beside the launcher; copy the test scripts with their relative directory layout.
+The solution builds `QualificationRunner.dll` and `QualificationGuard.dll`, but the API package allowlist excludes both. On Windows, run the self-authored PowerShell script from a **local** path if RemoteSigned treats a WSL UNC path as remote; do not disable machine execution policy. Keep `qualification-profile.ps1`, `qualification-inputs.ps1` and `qualification-story.ps1` beside the launcher; copy the test scripts with their relative directory layout.
 
 ```powershell
 .\qualification.ps1 -Action Prepare `

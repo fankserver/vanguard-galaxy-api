@@ -128,6 +128,34 @@ function Assert-TravelJournalAssemblyMetadata($Assembly, [string]$Revision) {
 # is refused - a duplicate key is ambiguous and is never resolved silently.
 $TravelJournalConfigRelativePath = 'game\BepInEx\config\vgtraveljournal.cfg'
 $TravelJournalConfigRequired = @(@{Key='Journal/Verbose'; Value='true'}, @{Key='Journal/MaxEvents'; Value='0'})
+function Assert-StoryAuthorMetadata($Assembly, [string]$Name, [string]$Revision) {
+    $identities = @{ OwnedStoryCampaign='vg-story-campaign'; OwnedStoryJob='vg-story-job' }
+    if (!$identities.ContainsKey($Name) -or $Assembly.Name.Name -cne $Name -or $Revision -cnotmatch '^[0-9a-f]{40}$') { throw 'Unexpected story author identity or revision.' }
+    $versions = @($Assembly.CustomAttributes | Where-Object { $_.AttributeType.FullName -eq 'System.Reflection.AssemblyInformationalVersionAttribute' })
+    if ($versions.Count -ne 1 -or $versions[0].ConstructorArguments[0].Value -cnotmatch ('^[0-9]+\.[0-9]+\.[0-9]+\+' + $Revision + '$')) { throw 'Story author source revision mismatch.' }
+    $types = @($Assembly.MainModule.Types | Where-Object { $_.FullName -ceq ($Name + '.Plugin') })
+    if ($types.Count -ne 1) { throw 'Story author plugin type missing.' }
+    $plugins = @($types[0].CustomAttributes | Where-Object { $_.AttributeType.FullName -eq 'BepInEx.BepInPlugin' })
+    if ($plugins.Count -ne 1 -or $plugins[0].ConstructorArguments[0].Value -cne $identities[$Name] -or $plugins[0].ConstructorArguments[2].Value -cne '0.1.0') { throw 'Story author plugin metadata mismatch.' }
+    $dependencies = @($types[0].CustomAttributes | Where-Object { $_.AttributeType.FullName -eq 'BepInEx.BepInDependency' })
+    if ($dependencies.Count -ne 1 -or $dependencies[0].ConstructorArguments[0].Value -cne 'vgmodapi' -or [int]$dependencies[0].ConstructorArguments[1].Value -ne 1) { throw 'Story author requires the API hard dependency.' }
+}
+
+function Assert-StoryIsolation($Selection) {
+    foreach ($name in @('travelStation','travelCrossSystem','travelWormholeFixture','travelResilience','travelRecovery','travelFastLane','missionTransitionsProbe','missionIdentityProbe','contentReferenceProbe','journalMissionEventsProbe','journalCoordinated','stockpileCoordinated','vanillaLoadControl','assemblyOverlay','echoAbsentProbe','echoTravelProbe','animaTravelProbe','travelJournalComparison')) {
+        if ($Selection.PSObject.Properties[$name] -and $Selection.$name) { throw "Story probe conflicts with $name." }
+    }
+}
+
+function Assert-StoryConfiguration([string]$Root) {
+    $path = Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg'
+    $entries = Get-TravelJournalConfigEntries $path
+    foreach ($key in @('Persistence/Enabled','Story/Enabled','Story/Protection','Missions/Enabled')) {
+        if (!$entries.ContainsKey($key) -or $entries[$key] -ine 'true') { throw "Story configuration requires $key=true." }
+    }
+    if (!$entries.ContainsKey('Persistence/Root') -or [IO.Path]::GetFullPath($entries['Persistence/Root']) -ine [IO.Path]::GetFullPath((Join-Path $Root 'state'))) { throw 'Story persistence root changed.' }
+}
+
 function Get-TravelJournalConfigEntries([string]$Path) {
     if (!(Test-Path -LiteralPath $Path -PathType Leaf)) { throw 'The archived TravelJournal configuration file is missing.' }
     $item = Get-Item -LiteralPath $Path -Force
@@ -967,6 +995,11 @@ function Assert-QualificationInputs([string]$Root) {
         if (!$provenance.PSObject.Properties['travelResilienceBudgetSeconds'] -or
             [int]$provenance.travelResilienceBudgetSeconds -ne $TravelResilienceBudgetSeconds) { throw 'Travel resilience budget reservation changed.' }
     }
+    $story = $provenance.PSObject.Properties['storyProbe'] -and $provenance.storyProbe -eq $true
+    if ($story) {
+        Assert-StoryConfiguration $Root
+        Assert-StoryIsolation $provenance
+    }
     $probe = $provenance.PSObject.Properties['persistenceProbe'] -and [bool]$provenance.persistenceProbe
     $probeMarker = Join-Path $Root 'persistence-probe.enabled'
     if ([bool]$probe -ne (Test-Path -LiteralPath $probeMarker -PathType Leaf)) { throw 'Persistence probe selection changed.' }
@@ -981,7 +1014,7 @@ function Assert-QualificationInputs([string]$Root) {
         $enabled = [regex]::Matches($config, '(?m)^Enabled\s*=\s*true\s*$')
         if ($roots.Count -ne 1 -or $settings.Count -gt 1 -or $enabled.Count -ne $settings.Count -or [IO.Path]::GetFullPath($roots[0].Groups[1].Value.Trim()) -ine [IO.Path]::GetFullPath((Join-Path $Root 'state'))) { throw 'Persistence probe root/config changed.' }
     }
-    if (!$probe) {
+    if (!$probe -and !$story) {
         $config = Get-Content -LiteralPath (Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg') -Raw
         $sections = [regex]::Matches($config, '(?ms)^\[Persistence\]\r?\n(?<body>.*?)(?=^\[|\z)')
         if ($sections.Count -ne 1 -or [regex]::Matches($sections[0].Groups['body'].Value, '(?m)^Enabled\s*=').Count -ne 1 -or [regex]::Matches($sections[0].Groups['body'].Value, '(?m)^Enabled\s*=\s*false\s*$').Count -ne 1) { throw 'Legacy control must explicitly disable API-managed saves.' }
@@ -1050,7 +1083,6 @@ function Assert-QualificationInputs([string]$Root) {
     $stockpileMarker = Join-Path $Root 'stockpile.enabled'
     if ([bool]$stockpile -ne (Test-Path -LiteralPath $stockpileMarker -PathType Leaf)) { throw 'Prepared Stockpile selection changed.' }
     if ($stockpile -and (Get-Content -LiteralPath $stockpileMarker -Raw).Trim() -ne 'pilot-v1') { throw 'Unknown Stockpile pilot marker.' }
-    $story = $provenance.PSObject.Properties['storyProbe'] -and $provenance.storyProbe -eq $true
     if ([bool]$story -ne (Test-Path -LiteralPath (Join-Path $Root 'story.enabled') -PathType Leaf)) { throw 'Story selection changed.' }
     if ($story) {
         if ($provenance.scenario -ne 'Full' -or $provenance.missionJournal -or $stockpile -or $anima -or $echo -or $travelJournal -or $provenance.persistenceProbe) { throw 'Invalid story probe isolation.' }

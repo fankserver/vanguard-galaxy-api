@@ -100,28 +100,36 @@ public sealed partial class Plugin
         foreach (var frame in ClaimStory(b, repeat.OccurrenceId, 11)) yield return frame;
         StoryCase("repeat-job");
         foreach (var frame in LoadReady("qa-story-active")) yield return frame;
-        var held = HeldStory(a, offered.OccurrenceId);
         Invoke(campaign, "ReleaseProvider");
+        Save("qa-story-provider-unregistered", LifecycleEventKind.SaveSucceeded);
+        foreach (var frame in LoadReady("qa-story-provider-unregistered")) yield return frame;
+        var held = HeldStory(a, offered.OccurrenceId);
         var serialized = held.GetType().GetMethod("ToJson")!.Invoke(held, null)!.ToString();
         var balance = Convert.ToInt64(SpGet(CurrentPlayer, "credits"));
         Invoke(held, "Update", 1f);
-        Invoke(CurrentPlayer, "CompleteMission", held, true);
+        CompleteStoryNative(held, true);
         Invoke(held, "ClaimRewards", true);
         Require(Convert.ToInt64(SpGet(CurrentPlayer, "credits")) == balance, "Unregistered provider's held mission paid rewards.");
         Require(ReferenceEquals(held, HeldStory(a, offered.OccurrenceId)), "Quarantine deleted the held native mission.");
         Require(serialized == held.GetType().GetMethod("ToJson")!.Invoke(held, null)!.ToString(), "Quarantine changed native serialized mission state.");
-        StoryCase("provider-unregistered");
+        StoryCase("provider-unregistered-first-reload");
         Save("qa-story-provider-unregistered", LifecycleEventKind.SaveSucceeded);
         foreach (var frame in LoadReady("qa-story-provider-unregistered")) yield return frame;
         held = HeldStory(a, offered.OccurrenceId);
         balance = Convert.ToInt64(SpGet(CurrentPlayer, "credits"));
-        Invoke(CurrentPlayer, "CompleteMission", held, true);
+        CompleteStoryNative(held, true);
         Require(Convert.ToInt64(SpGet(CurrentPlayer, "credits")) == balance, "Reload released orphan payout protection.");
         Require(!a.Active && a.IsCompleted("mission-x").Knowledge == StoryKnowledge.Unavailable, "Disposed author lease answered current completion.");
-        StoryCase("provider-unregistered-reload");
+        StoryCase("provider-unregistered-second-reload");
         Require(StoryReceipt.Evaluate(_storyCases) == null, "Incomplete story receipt.");
         WriteAtomic("story-result.txt", new[] { "PASS", StoryReceipt.Phase });
         Passed(StoryReceipt.Phase);
+    }
+
+    private void CompleteStoryNative(object mission, bool force)
+    {
+        var method = StoryNativeCalls.CompleteMission(CurrentPlayer.GetType(), NativeType("Source.MissionSystem.Mission"));
+        method.Invoke(CurrentPlayer, new object[] { mission, force });
     }
 
     private object HeldStory(IStoryProvider provider, Guid occurrence)
@@ -139,10 +147,10 @@ public sealed partial class Plugin
         long before = Convert.ToInt64(SpGet(CurrentPlayer, "credits"));
         // The real native claim path evaluates objectives and pays rewards; no forced completion,
         // objective field writes or synthetic observer events are used.
-        Invoke(CurrentPlayer, "CompleteMission", mission, false);
+        CompleteStoryNative(mission, false);
         Require(Convert.ToInt64(SpGet(CurrentPlayer, "credits")) == before + expectedCredits, "Native story payout differs from the author reward.");
         Require(provider.Unresolved("mission-x").Occurrences.All(x => x.OccurrenceId != occurrence), "Native claim did not automatically retire the occurrence.");
-        Invoke(CurrentPlayer, "CompleteMission", mission, false);
+        CompleteStoryNative(mission, false);
         Require(Convert.ToInt64(SpGet(CurrentPlayer, "credits")) == before + expectedCredits, "Repeated native claim paid an owned occurrence twice.");
     }
 }

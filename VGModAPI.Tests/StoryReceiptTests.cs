@@ -7,6 +7,23 @@ namespace VGModAPI.Tests;
 
 public sealed class StoryReceiptTests
 {
+    public sealed class Mission { }
+    public sealed class Player
+    {
+        public bool Claimed;
+        public void CompleteMission(string name) => throw new InvalidOperationException("Wrong overload");
+        public void CompleteMission(Mission mission, bool force) { Assert.False(force); Claimed = true; }
+    }
+
+    [Fact]
+    public void NativeClaimUsesMissionAndBooleanOverload()
+    {
+        var player = new Player();
+        StoryNativeCalls.CompleteMission(typeof(Player), typeof(Mission)).Invoke(player, new object[] { new Mission(), false });
+        Assert.True(player.Claimed);
+        Assert.Throws<MissingMethodException>(() => StoryNativeCalls.CompleteMission(typeof(Player), typeof(object)));
+    }
+
     [Fact]
     public void RequiresEveryCaseExactlyOnceInOrder()
     {

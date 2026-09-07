@@ -1,6 +1,7 @@
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '..\qualification-profile.ps1')
 . (Join-Path $PSScriptRoot '..\qualification-story.ps1')
+. (Join-Path $PSScriptRoot '..\qualification-inputs.ps1')
 $root = Join-Path $env:TEMP ('vg-story-receipt-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory $root | Out-Null
 function Reject([scriptblock]$Action) {
@@ -9,7 +10,7 @@ function Reject([scriptblock]$Action) {
     if (!$rejected) { throw 'Invalid story evidence was accepted.' }
 }
 try {
-    $cases = @('independent-authors','offered-roundtrip','active-roundtrip','native-completion','save-refusals','older-save-rollback','cross-slot-return','repeat-job','provider-unregistered','provider-unregistered-reload')
+    $cases = @('independent-authors','offered-roundtrip','active-roundtrip','native-completion','save-refusals','older-save-rollback','cross-slot-return','repeat-job','provider-unregistered-first-reload','provider-unregistered-second-reload')
     $cases | Set-Content (Join-Path $root 'story-cases.txt')
     @('PASS','owned-story-v1') | Set-Content (Join-Path $root 'story-result.txt')
     $outcome = @{ timedOut=$false; killed=$false; selfTerminated=$true; exitCode=0 }
@@ -35,5 +36,39 @@ try {
         @($cases | Where-Object { $_ -ne $cases[$i] }) | Set-Content (Join-Path $root 'story-cases.txt')
         Reject { Assert-StoryReceipt $root }
     }
-    Write-Output 'PASS: story receipt omissions and abnormal exit rejection.'
+    $configDir = Join-Path $root 'game\BepInEx\config'
+    New-Item -ItemType Directory $configDir -Force | Out-Null
+    $configPath = Join-Path $configDir 'vgmodapi.cfg'
+    $valid = "[Persistence]`nEnabled = true`nRoot = $(Join-Path $root 'state')`n[Story]`nEnabled = true`nProtection = true`n[Missions]`nEnabled = true`n"
+    $valid | Set-Content $configPath
+    Assert-StoryConfiguration $root
+    foreach ($badConfig in @($valid.Replace('true','false'), $valid.Replace('Root =','WrongRoot ='), ($valid + "[Story]`nEnabled = true`n"), ($valid + "[Persistence]`nRoot = wrong`n"))) {
+        $badConfig | Set-Content $configPath
+        Reject { Assert-StoryConfiguration $root }
+    }
+    function Attribute($type, $values) {
+        return [pscustomobject]@{ AttributeType=[pscustomobject]@{FullName=$type}; ConstructorArguments=@($values | ForEach-Object { [pscustomobject]@{Value=$_} }) }
+    }
+    function Author($revision, $pluginId='vg-story-campaign', $dependency=1) {
+        return [pscustomobject]@{
+            Name=[pscustomobject]@{Name='OwnedStoryCampaign'}
+            CustomAttributes=@((Attribute 'System.Reflection.AssemblyInformationalVersionAttribute' @("0.1.12+$revision")))
+            MainModule=[pscustomobject]@{Types=@([pscustomobject]@{
+                FullName='OwnedStoryCampaign.Plugin'
+                CustomAttributes=@((Attribute 'BepInEx.BepInPlugin' @($pluginId,'Example','0.1.0')), (Attribute 'BepInEx.BepInDependency' @('vgmodapi',$dependency)))
+            })}
+        }
+    }
+    Assert-StoryIsolation ([pscustomobject]@{})
+    foreach ($name in @('travelStation','travelCrossSystem','travelWormholeFixture','travelResilience','travelRecovery','travelFastLane','missionTransitionsProbe','missionIdentityProbe','contentReferenceProbe','journalMissionEventsProbe','journalCoordinated','stockpileCoordinated','vanillaLoadControl','assemblyOverlay','echoAbsentProbe','echoTravelProbe','animaTravelProbe','travelJournalComparison')) {
+        Reject { Assert-StoryIsolation ([pscustomobject]@{ $name=$true }) }
+        Assert-StoryIsolation ([pscustomobject]@{ $name=$false })
+    }
+    $revision = 'a' * 40
+    Assert-StoryAuthorMetadata (Author $revision) 'OwnedStoryCampaign' $revision
+    Reject { Assert-StoryAuthorMetadata (Author ('b' * 40)) 'OwnedStoryCampaign' $revision }
+    Reject { Assert-StoryAuthorMetadata (Author $revision 'wrong-plugin') 'OwnedStoryCampaign' $revision }
+    Reject { Assert-StoryAuthorMetadata (Author $revision 'vg-story-campaign' 2) 'OwnedStoryCampaign' $revision }
+    Reject { Assert-StoryAuthorMetadata (Author $revision) 'OwnedStoryJob' $revision }
+    Write-Output 'PASS: story receipt, config and stale/wrong author rejection.'
 } finally { Remove-Item -LiteralPath $root -Recurse -Force }

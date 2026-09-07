@@ -79,6 +79,7 @@ if ($Action -eq 'Prepare') {
     if ($AssemblyOverlay -and $Scenario -ne 'UnavailableApi') { throw 'Assembly overlay requires UnavailableApi.' }
     if ($VanillaLoadControl -and $Scenario -ne 'MissingApi') { throw 'Vanilla load control requires MissingApi.' }
     if ($StoryProbe -and ($Scenario -ne 'Full' -or !$StoryCampaignBin -or !$StoryJobBin -or $MissionJournalBin -or $AnimaBin -or $StockpileBin -or $EchoBin -or $TravelJournalBin -or $PersistenceProbe)) { throw 'Story probe requires Full, both author binaries, and no consumer or synthetic persistence probe.' }
+    if ($StoryProbe -and ($TravelStation -or $TravelCrossSystem -or $TravelWormholeFixture -or $TravelResilience -or $TravelRecoveryContinuation -or $TravelFastLane -or $MissionTransitionsProbe -or $MissionIdentityProbe -or $ContentReferenceProbe -or $JournalMissionEventsProbe -or $JournalCoordinated -or $StockpileCoordinated -or $VanillaLoadControl -or $AssemblyOverlay -or $EchoAbsentProbe -or $EchoTravelProbe -or $AnimaTravelProbe -or $TravelJournalComparison)) { throw 'Story probe cannot be combined with optional probes.' }
     if (!$StoryProbe -and ($StoryCampaignBin -or $StoryJobBin)) { throw 'Story author binaries require StoryProbe.' }
     if ($PersistenceProbe -and $Scenario -ne 'Full') { throw 'Persistence probe requires Full.' }
     # The two consumer travel probes own the SAME reused native travel phases, so exactly one may
@@ -274,8 +275,14 @@ if ($Action -eq 'Prepare') {
     if ($StockpileBin -and !$StockpileCoordinated) { [IO.File]::AppendAllText((Join-Path $bep 'config\vgstockpile.cfg'), "[Persistence]`r`nUseApiSaveData = false`r`n") }
     if ($MissionJournalBin -and !$JournalCoordinated) { [IO.File]::WriteAllText((Join-Path $bep 'config\vgmissionjournal.cfg'), "[Persistence]`r`nUseApiSaveData = false`r`n") }
     if ($StoryProbe) {
-        Copy-Item -LiteralPath (Join-Path $StoryCampaignBin 'OwnedStoryCampaign.dll') -Destination $plugins
-        Copy-Item -LiteralPath (Join-Path $StoryJobBin 'OwnedStoryJob.dll') -Destination $plugins
+        Add-Type -Path (Join-Path $bep 'core\Mono.Cecil.dll')
+        foreach ($author in @(@('OwnedStoryCampaign',$StoryCampaignBin),@('OwnedStoryJob',$StoryJobBin))) {
+            $candidate = Join-Path $author[1] ($author[0] + '.dll')
+            $reader = Read-ConsumerAssembly $candidate (Get-ConsumerMetadataReferenceDirs $author[1] $root $GameDir)
+            try { Assert-StoryAuthorMetadata $reader.Assembly $author[0] $BuildRevision }
+            finally { Close-ConsumerAssembly $reader }
+            Copy-Item -LiteralPath $candidate -Destination $plugins
+        }
         [IO.File]::WriteAllText((Join-Path $bep 'config\vgmodapi.cfg'), "[Persistence]`r`nEnabled = true`r`nRoot = $(Join-Path $root 'state')`r`n[Story]`r`nEnabled = true`r`nProtection = true`r`n[Missions]`r`nEnabled = true`r`n")
         [IO.File]::WriteAllText((Join-Path $root 'story.enabled'), 'owned-story-v1')
     }
