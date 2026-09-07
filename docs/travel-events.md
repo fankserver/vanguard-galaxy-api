@@ -50,19 +50,21 @@ TravelJournal remains archived and must not be edited, rebuilt, reactivated, mig
 
 ## Controlled native evidence matrix
 
-Each phase is evidence for its OWN case identities only. Receipts are private (owner-held); the run
-identifiers below are the owner's protected-sandbox runs.
+Each phase is evidence for its OWN case identities only. The receipts themselves stay private
+(sandbox artefacts, private saves and world identities are never published); the aggregate case
+identities, statuses and counts below were read from those receipts. Every run listed here recorded
+`PASS`, an unchanged protected save set and a self-terminated game process.
 
-| Phase / probe | Mandatory case identities | Owner run |
-|---|---|---|
-| `travel-in-system-station-v1` | `initial-placement`, `station-undock`, `in-system-route`, `early-cancel`, `chained-route`, `station-dock` | qa-79 / qa-81 / qa-84 |
-| `travel-cross-system-v1` | `cross-system-jumpgate`, `cross-system-wormhole` (opt-in disposable wormhole fixture) | qa-84 |
-| `travel-resilience-v1` | `empty-origin-reroute`, `restore-relink-dock` (+ mandatory `restore-reinit-same-size`), `stale-session-replay` | qa-84 |
-| `anima-travel-consumer-v1` | `consumer-binding`, `non-travel-quiet`, `gate-arrival-visit`, `wormhole-arrival-visit`, `visit-persistence`, `recording-degraded` (+ 3 mandatory subcases) | qa-86 |
-| `echo-travel-consumer-v1` | `arrival-snap-binding`, `no-snap-quiet`, `in-system-final-snap`, `gate-final-snap`, `wormhole-final-snap`, `earlier-subscriber-supersession`, `snap-stop-degradation` (+ `declared-probe-controls`) | qa-91 (API present), qa-92 (API absent control) |
-| `travel-journal-comparison-v1` | `legacy-binding`, `in-system-arrival-compatible`, `chained-arrival-compatible`, `jumpgate-prefix-lead`, `wormhole-transit-gap`, `station-interior-vs-physical`, `legacy-blind-concepts`, `journal-io-containment`, `api-dwell-anchored` | qa-93 |
-| `travel-recovery-continuation-v1` | `recovered-placement`, `post-gate-continuation` | qa-94 |
-| `travel-fast-lane-v1` | `fast-lane-gate-chain`, `fast-lane-multiplier-observed` | qa-95 |
+| Phase / probe | Mandatory case identities | Owner run | Receipt outcome |
+|---|---|---|---|
+| `travel-in-system-station-v1` | `initial-placement`, `station-undock`, `in-system-route`, `early-cancel`, `chained-route`, `station-dock` | qa-79 (also re-run in qa-81/84/86/91/93/94/95) | 11 rows: 6 passed, 5 optional NOT-RUN (the other phases' cells), 0 failed |
+| `travel-cross-system-v1` | `cross-system-jumpgate`, `cross-system-wormhole` (opt-in disposable wormhole fixture) | qa-81 (also re-run in qa-86/91/93) | 3 rows: 3 passed (both cases plus the non-required `wormhole-fixture-setup`), 0 failed |
+| `travel-resilience-v1` | `empty-origin-reroute`, `restore-relink-dock` (+ mandatory `restore-reinit-same-size`), `stale-session-replay` | qa-84 | 4 rows: 4 passed, 0 failed |
+| `anima-travel-consumer-v1` | `consumer-binding`, `non-travel-quiet`, `gate-arrival-visit`, `wormhole-arrival-visit`, `visit-persistence`, `recording-degraded` (+ 3 mandatory subcases) | qa-86 | 9 rows: 9 passed, 0 failed |
+| `echo-travel-consumer-v1` | `arrival-snap-binding`, `no-snap-quiet`, `in-system-final-snap`, `gate-final-snap`, `wormhole-final-snap`, `earlier-subscriber-supersession`, `snap-stop-degradation` (+ `declared-probe-controls`) | qa-91 (API present), qa-92 (API-absent control) | 8 rows: 8 passed, 0 failed; the control run recorded the consumer loading and its native timing hook firing with the API absent |
+| `travel-journal-comparison-v1` | `legacy-binding`, `in-system-arrival-compatible`, `chained-arrival-compatible`, `jumpgate-prefix-lead`, `wormhole-transit-gap`, `station-interior-vs-physical`, `legacy-blind-concepts`, `journal-io-containment`, `api-dwell-anchored` | qa-93 | 9 rows: 9 passed, 0 failed; the post-quit audit recorded every archived-journal file inside the sandbox saves and the prepared binary hash unchanged |
+| `travel-recovery-continuation-v1` | `recovered-placement`, `post-gate-continuation` | qa-94 | 3 rows: 2 passed, 0 failed, plus one NOT-RUN diagnostic attempt row — the single attempt reports `cancelled-in-live-window`, so the miss-cleanup fallbacks never ran |
+| `travel-fast-lane-v1` | `fast-lane-gate-chain`, `fast-lane-multiplier-observed` | qa-95 | 2 rows: 2 passed, 0 failed; five legs / three systems / two gates / one final completion, and the native multiplier recorded at 7 on all three boundaries of the gate-to-gate leg with 1 on both control legs |
 
 Host and installed-assembly evidence backs every phase: the pure receipt rules, the reducer and the
 adapter are host regressions, and the native members and call structures each phase depends on are
