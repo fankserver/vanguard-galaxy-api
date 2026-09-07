@@ -2,7 +2,7 @@
 
 ## Current status
 
-**Implemented with controlled native evidence; full owner acceptance remains separate.** Isolated Windows runs now cover core load/save flows, transit/empty-space loads, scoped stale adapter signals, and both authorized consumer pilots. qa38 passes 33 checks after review hardening; qa33–35 separately cover both-consumer coexistence/refusal. Normal installed plugins are untouched. All 37 original files, complete direct file sets and restored preferences were independently verified unchanged. RuntimeQualified remains false; an actual alternate game binary is not qualified.
+**Experimental, with bounded controlled native evidence; full in-game acceptance remains pending.** `RuntimeQualified` is false. Controlled probes exercise specific core, persistence, mission/travel, story and menu paths. They do not qualify every configuration, consumer or source revision. Rebuilding a candidate or passing host tests does not establish native coverage for that candidate.
 
 The adapter accepts only this inspected original `Assembly-CSharp.dll` SHA-256:
 
@@ -10,31 +10,62 @@ The adapter accepts only this inspected original `Assembly-CSharp.dll` SHA-256:
 a2aad60bc68c31baccd636587d3c5ba4e651eacda59b0af42cd4f17f864284fb
 ```
 
-The controlled runtime reports **game 0.8.2.3, Unity 6000.4.7f1, BepInEx 5.4.23.5**. These labels were observed in the sandbox startup log, not inferred from older saves or assembly metadata. The assembly hash remains the adapter identity; matching it does not prove live compatibility.
+The controlled environment reports **game 0.8.2.3, Unity 6000.4.7f1, BepInEx 5.4.23.5**. The hash identifies the accepted assembly; version labels or a matching hash alone do not prove live compatibility.
 
-On a different hash, the API service loads with unavailable lifecycle/save capabilities and applies no integration patches. Do not simply update the hash: reinspect the implementation, update tests and mappings, and qualify it.
+An uninspected hash leaves the API available for diagnostics but disables game integration. The local mod-information catalog does not require native binding. Do not simply update the hash: reinspect semantics, update mappings/tests and qualify the new build. Injected hash rejection or a changed PE overlay tests refusal, not compatibility with an alternate game implementation.
 
-## Evidence recorded
+## Available surface and limits
 
-Local SDK: .NET SDK 10.0.111.
+| Surface | Current behavior | Qualification boundary |
+|---|---|---|
+| Core lifecycle/save outcomes | Session replacement, load/new-game attribution, player readiness, gameplay-manager initialization and logical save outcomes | Controlled load/save paths are exercised; no universal POI/UI readiness or arbitrary asynchronous callback guarantee |
+| Mod save data | Default-enabled experimental storage of additional custom mod payloads | MissionJournal/Stockpile pilots exercise bounded roundtrip, refusal/retry, import and teardown paths; no cross-file atomicity or exhaustive crash-recovery claim |
+| Mission observation | Optional experimental transition and identity services | Only documented hooks and identity-continuity paths are supported; observation is not automatic content persistence |
+| Travel/station observation | Optional experimental native observers | Controlled routes and consumers are exercised; tutorial rewrite, latent inherited dispatch and recovery miss-cleanup limits remain explicit in the travel contract |
+| Owned story content | Optional, default-off experimental registration, catalog installation, occurrence reconstruction and automatic persistence of a closed subset | Bounded native story, new-game and absent-author paths are exercised; content/schema migration and objective integration remain partial, and host migration tests are not native migration qualification |
+| Story load protection | Default-on guard on the inspected build, independent of story-author registration | With the guard disabled or the game uninspected, the API cannot refuse unsafe owned-story loads; do not load those saves in that state |
+| Mod information | Process-local catalog and default-on native main-menu entry when binding succeeds | Bounded menu interactions are exercised; presentation acceptance, physical gamepad behavior and browser opening are not fully qualified. No automatic update-check service is provided |
 
-| Check | Result |
-|---|---|
-| Debug build, including example consumer | Passed, zero warnings/errors |
-| Release build/package | Passed, zero warnings/errors |
-| Pure state-machine, coroutine, reflection-adapter, package-validator and hook-order tests | 80 passed in Debug and Release |
-| Installed assembly identity, 12 method bindings, and 5 field bindings | 7 tests passed in Debug and Release |
-| Harmony detour execution inside Unity | Exercised; missing load events fixed by callee-first installation (#27) |
-| Windows harness synthetic checks | Passed; file isolation/cleanup and typed registry snapshot/restore tested on synthetic data |
-| Live save/load flows | qa-06 passed: copied docked loads, replacement, manual roundtrip, skip, exhausted retries, subscribers, valid-syntax newer-version fixture rejection without readiness, corrupt-JSON failure, recovery and quit save |
-| Extended runtime cases | qa-09 passed: tutorial wizard/configuration boundary, mining-space save/load, autosave rotation, recovered transient metadata failure, and current-version empty-player rejection control |
-| Empty-space/in-transit loads and delayed stale signals | qa38: native eligible in-system route/save/reload; controlled parked-space save/reload; Unity-driven real observed iterator with explicit stale adapter signals and unfinished disposal. Not arbitrary async engine callbacks. |
-| API-absent startup comparison | qa44: both identical copied fixtures initialize with no API, using Full's two-second menu settling and direct replacement sequence. Earlier no-API controls failed in Conquest/GetFreeOrbit with a null world RNG; these remain failures, not proof of the historical #28 cause. No seed injection or exception suppression. |
-| Multi-mod behavior | MissionJournal and Stockpile pilots: reviewed owning PRs; qa33 full 30 and qa34/35 missing/unavailable API refusal, with copied-file preservation. No general mod-conflict guarantee. |
+Story remains incomplete under [#13](https://github.com/fankserver/vanguard-galaxy-api/issues/13); the general scripted-objective API in [#14](https://github.com/fankserver/vanguard-galaxy-api/issues/14) is not implemented. Supported payload-schema compatibility is separate from migration of arbitrary authored definitions or scripted objectives.
 
-The reflection-adapter tests use explicit small doubles. They exercise the production adapter logic but do not simulate Unity scheduling. Installed binding checks use Mono.Cecil to read metadata without loading game code. They do not execute Harmony or game methods.
+## Controlled coverage
 
-Fresh source inspection also covered `Behaviour.GameManager`, `Behaviour.UI.Main.NewGame`, and `GameplayManager` to verify the new-game and manager-initialization boundaries. Decompiled game source is not redistributed.
+This summary describes the scope of available controlled evidence, not a claim that the current checkout was run in Unity. Exact candidate identities, receipts and detailed execution reports belong outside this source tree. Verify their applicability before asserting a candidate is qualified.
+
+Core probes cover:
+
+- Docked, mining-space, native in-system-transit and controlled parked-empty-space loads; session replacement, return to menu and reload.
+- Tutorial creation through native wizard callbacks, with player readiness after synchronous configuration. This is not general pointer-driven new-game UI acceptance.
+- Valid-syntax newer-header rejection without readiness, corrupt-JSON failure and an equal empty-player current-header control. Public events do not themselves identify a version-rejection cause.
+- Pending-player replacement detection without claiming full arena startup.
+- Unity-driven stale adapter readiness/failure signals through a real observed iterator and unfinished disposal. Explicit synthetic adapter signals are not vanilla load events or arbitrary asynchronous engine callback coverage.
+- Manual and quit saving, autosave rotation, ephemeral-player skips, exhausted recursive retries and recovery after a transient write failure.
+- Individual throwing subscribers and disposal, plus bounded MissionJournal/Stockpile coexistence and missing/unavailable API refusal.
+
+Additional controlled probes cover documented mission/travel consumer paths, owned-story reconstruction and absent-author handling, and menu input/lifecycle interactions. Consult [mission](mission-events.md), [travel](travel-events.md), [story](story-content.md), [mod information](mod-information.md) and [runner instructions](qualification-runner.md) for their supported cases and exclusions. A phase's evidence must not be extended to unrelated phases or consumers.
+
+## Verification layers
+
+- **Pure host tests** exercise state machines, coroutine observation, reflection adapters, storage rules and package tooling. Small doubles do not simulate Unity scheduling.
+- **Installed binding checks** inspect original game metadata through Mono.Cecil without executing game code. They establish declared shapes, not live Harmony behavior.
+- **Synthetic Windows checks** exercise sandbox file isolation, cleanup and typed preference snapshot/restore against synthetic data; they do not launch Unity.
+- **Controlled native probes** run narrowly specified scenarios with copied saves and isolated preferences. Their assertions and case prerequisites bound what they demonstrate.
+- **Full in-game acceptance** remains separate, including unexercised configurations, presentation, broader input behavior and remaining content integration.
+
+No fixed test count or historical PASS table substitutes for checking the candidate being delivered.
+
+## Binding and harness invariants
+
+These constraints apply to the inspected build and current tooling:
+
+- Install coroutine factories before callers that can trigger them. A missing expected coroutine hook must fail attribution rather than manufacture readiness.
+- Reflection binding compares canonical type shapes, including generic arguments, array ranks, by-ref/pointer decoration, namespace, arity, return type and staticness. Reflection's assembly-qualified constructed-generic spelling is not directly comparable to metadata spelling.
+- New-game attribution captures the created player and rejects an unchanged or replaced player. A replacement cannot inherit a pending attempt's identity.
+- Accept a native run only when required receipts pass, the process was neither timed out nor launcher-killed, and its exit code is known and allowed. The inspected `ApplicationQuitHandler.OnApplicationQuit` calls `Process.Kill`; shipped Mono implements this as `TerminateProcess(handle, -1)`. Consequently, the runner accepts clean `0` or self-termination `-1`, not arbitrary crash codes. Exit code alone never proves success.
+- Travel probes share a conservative Mining/Salvage target allowlist, exclude known unsafe/guarded/story/dynamic destinations, and require a quiet native travel surface. The selector reduces risk but cannot prove absence of hostility. Unexpected autonomous routes fail the case; they are not filtered away or silently replaced.
+- Consumer collection observations must use verified declared members. A `HashSet<T>` does not implement non-generic `ICollection`; missing or malformed counts must fail, not default to zero.
+- Dismiss only expected rejection dialogs through their actual confirmation handlers, and require modal closure before advancing the wizard. Do not suppress vanilla exceptions.
+- The autosave selector uses the first missing slot, then the oldest modification time. A deterministic rotation assertion requires distinct timestamps; filesystem timestamp granularity can affect the fixture.
 
 ## Repeatable commands
 
@@ -47,221 +78,10 @@ make test CONFIGURATION=Release
 make check-bindings CONFIGURATION=Release
 ```
 
-Override `GAME_DIR` for another installation. `make test` needs no game installation; build/package need local BepInEx and Unity compile references, while `check-bindings` needs the original game DLL. Never use a stripped/publicized stub as proof of compatibility.
+Tests require .NET SDK 10. Override `GAME_DIR` for another installation. Pure `make test` needs no game installation; build/package need local compile references and `check-bindings` needs the original game DLL. Never use a stripped/publicized stub as compatibility evidence. See [checks](checks.md) for the complete local validation chain.
 
-## Controlled run findings
+## Native testing safety
 
-On 2026-09-05, six fresh disposable sandboxes were used:
+Explicit authorization is required before deployment or native testing. Use disposable/copied saves and an isolated sandbox; capture assembly identities, selected phases and relevant environment details. Verify original-file hashes, complete direct file sets and preference restoration independently. Do not infer preference preservation from save hashes alone.
 
-1. `qa-01`: game's fullscreen-compatibility bootstrap relaunched the process; no qualification result. The sandbox child was stopped and only its newly created FSE registry value removed.
-2. `qa-02`: batch mode produced missing-input-device errors and a load timeout. Excluded as a qualification baseline.
-3. `qa-03`: windowed baseline emitted only SessionStarting, even though vanilla reached scene/gameplay initialization and threw in GameplayManager.Start.
-4. `qa-04`: installing the iterator factory before its caller corrected event delivery: SessionStarting → PlayerReady → SessionStartFailed. The original gameplay initialization still throws, so the smoke correctly fails rather than advancing to its save/subscriber scenarios. Quit-time saving was observed in the sandbox; this is not completion of the planned save matrix.
-
-5. `qa-05`: gameplay startup succeeded with read-only diagnostics (SidePanel present), and the runner reported PASS. Log inspection rejected the future-save claim: `9999.0.0` was invalid version syntax, not a genuinely newer version. Save and PlayerPrefs preservation checks passed.
-6. `qa-06`: corrected fixture `99.0.0.0`, assertions separating no-readiness completion from the observed exception path, and **no diagnostic hooks**. All ten smoke scenarios passed. Independently checked 31 events: six unique attempts, ordered invalidation/readiness, five save operations each with one terminal outcome (including quit autosave). The event does not uniquely prove the too-new-version branch: that attribution is inferred from inspected code and the fixture header, not from a current-version control fixture. The only logged exceptions were intentional metadata-write, subscriber, and corrupt-JSON failures; no gameplay NRE or version-format failure. All 37 original files were unchanged and the restored PlayerPrefs export was byte-identical to its pre-run snapshot.
-
-This isolates the missed-hook symptom to installation order in the controlled comparison; the new ordered-catalog tests protect that ordering but do not replace live evidence. [#27](https://github.com/fankserver/vanguard-galaxy-api/issues/27) tracks the defect. [#28](https://github.com/fankserver/vanguard-galaxy-api/issues/28) records the earlier gameplay-start failure. It no longer reproduces after harness settling/safety changes, including in qa-06 without diagnostics. The precise original null reference is not proven; this is not evidence of a fixed vanilla-game bug.
-
-The follow-up review adds explicit failure when a load request returns without its coroutine hook, plus harness safety/sequence improvements. These changes now have host/synthetic checks and the qa-06 Unity run. The optional diagnostics observe only; they never suppress an exception. Earlier runs shared PlayerPrefs without a before-snapshot, so their save hashes do not establish unchanged display settings.
-
-Private raw logs/fixtures remain local. The normalized event sequence above excludes original save contents and user paths. Each run's original-source hashes were rechecked unchanged. See [runner instructions and limits](qualification-runner.md) to reproduce controlled testing. The owner's full milestone test remains separate; RuntimeQualified stays false.
-
-## Extended qualification evidence
-
-On 2026-09-05, three additional fresh sandboxes exercised the extended runner:
-
-- `qa-07` passed recovered retry and autosave rotation, then failed a harness assertion: the current-version empty-player control raised an observed nested `NullReferenceException`, not the vanilla failure callback expected by the assertion. This is an intentional malformed-data failure, distinct from #28's earlier gameplay-start exception.
-- `qa-08` passed the corrected rejection controls and native new-game wizard/configuration check. It failed the harness's assumption that a tutorial starts in the empty `Space` scene; the inspected runtime starts in `Mining`.
-- `qa-09` passed all 15 scripted scenarios, with the final case explicitly limited to **mining-space save/load**, not empty-space or in-transit loading. The new-game probe observed exactly one synchronous configuration call, no PlayerReady during it, and Starting → PlayerReady → GameplayInitialized afterward. The retry test throws one deliberate metadata-write exception for its reserved sandbox filename, then observes vanilla's successful retry; it does not bypass the retry implementation. Four native autosave calls selected slots 0, 1, 2, 0 with distinct operation IDs.
-
-The current-version control and future-version fixture have equal empty Player objects. With the current header the nested deserializer throws; with `99.0.0.0` the iterator ends without readiness. Both begin from the menu with no current player. This supplies a distinguishing control alongside source inspection, not a new public version-rejection reason contract.
-
-Independent inspection of qa-09 verified 54 events, nine session identities (six initialized, three rejected), ordered readiness, and 11 save operations each with one terminal outcome, including quit saving. All 37 original files still match the manifest, no direct files were added/removed, and the restored PlayerPrefs export is byte-identical to the before snapshot. Raw evidence remains private. These results do not qualify mod coexistence or replace owner acceptance.
-
-### Pending-player attribution follow-up (qa-10)
-
-Coverage review #4 reproduced #32 in the host adapter: an untracked player replacement before a pending new game's scene request could adopt that attempt's identity. The creation finalizer now captures the created player without publishing readiness; an unchanged pre-call player is rejected, and Poll and the scene boundary reject a later replacement. This adds no arena-ready capability.
-
-`qa-10` passed all previous scenarios plus a controlled native replacement probe and recovery (17 total). From the menu, the runner calls the normal player factory, then the arena player factory without requesting arena scenes. Poll invalidates the pending attempt without readiness. A regular copied load then succeeds. This exercises **replacement detection**, not the full arena startup path or a delayed coroutine callback.
-
-Independent inspection verified 60 events, 11 session identities, 11 paired save operations, one Starting → Invalidated replacement probe, all 37 original file hashes/direct file set unchanged, and identical before/restored PlayerPrefs exports. The pre-fix defect was reproduced under host tests; no claim is made that the pre-fix defect was reproduced in Unity. RuntimeQualified remains false.
-
-The reviewed follow-up `qa-11` repeated all 17 scenarios successfully after strengthening the invalidation-cause assertion, settling probe cleanup, and rejecting an unchanged creation result. Independent checks again found 60 events, 11 identities, 11 paired saves, exactly one identity-specific Poll invalidation, 37 unchanged originals/direct file set, and identical PlayerPrefs exports. The unchanged-result refusal itself has host regression coverage; this native run exercises normal creation and subsequent replacement.
-
-### Independent isolation and modal flow (qa-12 through qa-15)
-
-- `qa-12`: guard-only startup with all API DLLs absent passed; the API-independent guard redirected saves and suppressed Steam before reaching the menu.
-- `qa-13`: a deliberately injected mismatched hash result left the service available for inspection but both integration capabilities unavailable, with no API-owned patches. No game DLL was altered; this is rejection-path evidence, not testing another game build.
-- `qa-14`: the full 17-scenario baseline passed with the independent guard and optional bootstrap ordering dependency.
-- `qa-15`: after the owner's screenshot exposed a rejection popup surviving over the wizard (#35), the runner acknowledged only the expected newer-save and corrupt-load dialogs through their actual confirmation handlers. It required a closed modal before and throughout wizard progression. The current-version empty-player fixture produced no modal, so that case used an explicit menu transition; only the newer-save and corrupt-JSON cases added acknowledgement checks. All 19 checks passed, with 60 events and 11 paired save operations. Earlier runs remain callback evidence, not evidence of a clean modal flow.
-
-All four runs independently passed the 37 original-file hash/direct-file-set checks and byte-identical PlayerPrefs restoration. Consumer absence/incompatibility and coexistence still require their own pilot tests. The startup-negative probes do not qualify an alternate game binary. RuntimeQualified remains false.
-
-### Native travel binding resolution defect (qa-77)
-
-`qa-77` failed BEFORE the travel/station phase could run. The sandbox log records
-`MissingMethodException: Behaviour.Managers.TravelManager.CancelTravel` raised by the binding
-resolver during travel installation, so the whole native travel group was torn down, both public
-travel/station services stayed absent, and the phase then failed closed with its receipt, event
-trace and fault file preserved (that failing-closed behaviour is the intended outcome, not a pass).
-Original-file preservation was independently verified: 37 hashes, complete direct file sets and
-byte-identical PlayerPrefs restoration, and the owned process slot was released.
-
-Root cause: the binding catalog declares native parameter and return types in the metadata spelling
-used by the inspected assembly and by the installed-metadata tests
-(``System.Nullable`1<UnityEngine.Vector2>``), while the resolver compared reflection's
-`Type.FullName`, which spells a CONSTRUCTED generic with an assembly-qualified argument
-(``System.Nullable`1[[UnityEngine.Vector2, UnityEngine.CoreModule, Version=…]]``). The two spellings
-can never be equal, so that one binding was unresolvable at runtime. Every installed-metadata test
-reads the same assembly through Mono.Cecil, whose spelling already matches the catalog, so metadata
-checks could not observe the defect.
-
-Fix and protection: one canonical type-name function normalises SHAPE only — constructed generics,
-array rank, by-ref and pointer decoration, recursively, without assembly qualification — and the
-reflection binders compare against it. Namespace, arity, argument types, static-ness and return type
-stay exactly as declared, so overload discrimination is unchanged. The catalogs were audited: this
-was the only constructed generic; no arrays, by-refs, pointers or nested types are declared. A host
-regression now resolves the WHOLE travel catalog through the real reflection path against
-source-faithful doubles (including a `UnityEngine.Vector2` double so the assembly-qualified argument
-is reproduced), asserts the raw `FullName` still differs, rejects malformed/wrong generic arguments
-and wrong owner/name/arity/return/static shapes, and requires every catalog name to be canonical.
-Reverting the resolver reproduces the exact qa-77 `MissingMethodException`. This is host evidence
-about name matching only: it is not native qualification, and the installed-metadata assertions
-remain metadata evidence. Raw run logs, fixtures and sandbox paths stay private and local.
-
-### Game self-termination exit code (qa-78)
-
-`qa-78` ran the whole Full runner to `PASS`, including the native travel/station phase (all six
-required cases passed with real native facts), and preserved every original file (37 hashes,
-complete direct file sets, byte-identical PlayerPrefs). The launcher nevertheless refused the run
-because the owned process reported OS exit code `-1` while the exit gate accepted only `0`.
-
-Root cause, proven from the inspected assembly (allowed hash) and the game's own shipped Mono
-libraries, not inferred from the receipt:
-
-1. `ApplicationQuitHandler.OnApplicationQuit()` runs `SteamStatsManager.HandleApplicationQuit()` and
-   `GameManager.HandleApplicationQuit()` (the quit-time autosave logged as `Quiting, save!`), and
-   then, when not in the editor, calls `Process.GetCurrentProcess().Kill()`.
-2. The `System.dll` shipped with the game implements `Process.Kill()` as
-   `TerminateProcess(handle, -1)`.
-
-So a NORMAL quit of this game always reports `-1` (`0xFFFFFFFF`), and the value passed to
-`Application.Quit(...)` never reaches the operating system. Corroborating evidence: the two recorded
-runs whose `Application.Quit` argument differed (`0` for the passing run, `1` for the failing one)
-both reported `-1`; the owner's own non-sandbox player logs end at `Quiting, save!` exactly like the
-sandbox log; no Windows Application Error/Hang event and no Unity crash dump exist for either run;
-and the owned process slot was released with no stray process. A host control that starts a benign
-child which calls `Process.GetCurrentProcess().Kill()` reports exactly `-1` on the same machine.
-
-The gate is therefore expressed as the game's documented quit contract instead of being relaxed: a
-run is accepted only when it was neither timed out nor launcher-killed, its exit code is KNOWN, and
-that code is either a clean `0` or exactly the self-termination `-1`. Any other code — including a
-crash status such as an access violation — and an unknown code still refuse the run, and the
-receipt/result checks are unchanged. `run-outcome.json` additionally records `selfTerminated` for
-audit. Raw logs, fixtures and sandbox paths stay private and local.
-
-The travel/station phase evidence of that run (six required cases) is controlled native evidence for
-that phase only; it is not full-run qualification and does not change `RuntimeQualified`.
-
-### Unsolicited native return route after a combat target (qa-82)
-
-`qa-82` failed inside the travel/station phase, BEFORE the resilience phase could run, so that phase
-still has no native coverage. `initial-placement`, `station-undock` and `in-system-route` passed with
-real native facts; `early-cancel` then failed on its own precondition with `Native travel was already
-active before the cancel case.` Everything before the phase passed, the 37 original-file hashes,
-complete direct file sets and byte-identical PlayerPrefs were preserved, and the owned process slot
-was released.
-
-Root cause, proven from the run's own evidence and the inspected assembly rather than from the
-precondition message: the phase's target selector picked the nearest visible non-station, non-gate,
-non-wormhole POI, which in that world's seed was a `Source.Galaxy.POI.Combat` encounter (the previous
-run's nearest safe POI happened to be an industrial one). The recorded public trace shows the route
-completing at that POI and then, 4.4 game seconds later and BEFORE the pilot requested anything, a
-`Requested` fact for the START station. The sandbox log shows `SetRouteToPOi: Source.Galaxy.POI.
-SpaceStation` at the same point, and the quit-time autosave of that run records `emergencyJump=true`,
-hull `0.1/10212`, shield `1.16/…` and `waypoints=[home station]`. That is vanilla's own emergency
-jump: `AbstractUnit.TakeDamage` -> `SpaceShip.TryEmergencyJump` (hull destroyed) ->
-`TravelManager.TravelToClosestSpacestation()` -> `SetRouteToPOI(home station)`. The only other
-autonomous route source in the assembly is `IdleManager`, which is gated on `GamePlayer.autoPlay`
-(false in both the fixture and the quit-time autosave); every remaining `SetRouteToPOI` /
-`TryInitiateTravel` call site is a pointer/UI action or a gate/wormhole handoff.
-
-Fix and protection (harness only; no API runtime change): in-system targets are now chosen by an
-authoritative ALLOWLIST of the two industrial POI kinds (`Source.Galaxy.POI.Mining`,
-`Source.Galaxy.POI.Salvage`), excluding combat encounters (`Combat` and its `CombatStation`,
-`Escort`, `LureSite` subclasses), stations, gates, wormholes, hidden/dynamic POIs, sites owned by a
-faction the game itself reports hostile to the player, story-mission locations, and any POI whose
-persisted `guardDescriptors` list is non-empty - that protected list is what
-`MapPointOfInterest.RegenerateGuardUnits` spawns from, it is read by COUNT only, and it is the
-one signal that catches a mission-generated Mining POI (`MiningDeadDrop.SetupPOI`) whose mission
-faction is neutral, whose `storyId` is null and whose guards are still player-hostile. The
-content-generating `activeEnemyCount`/`totalEnemyCount` getters are still never read. Every travel
-phase shares that one selector. Independently, each case now opens its quiet window BEFORE its
-availability wait and refuses to start on anything but a silent native travel surface: an
-unsolicited fact or an already-active native route fails the case with the observed fact plus a
-read-only native autonomy diagnostic (emergency-jump flag, autopilot flag, hull/shield, current POI,
-waypoints, target/local target, warping, travel-active). Unexpected routes are never waited out,
-filtered away or re-targeted. Choosing a safe target reduces, but cannot prove the absence of,
-native hostility; that is exactly why the strict unsolicited-route failure stays.
-
-### Consumer leg-latch count read through the wrong interface (qa-85)
-
-`qa-85` failed inside the actual-consumer travel probe. Everything it drove before that point
-produced real native evidence: the fresh-session binding, the whole in-system phase leaving the
-consumer's visited-system history unchanged, and BOTH cross-system arrivals incrementing the actual
-arrival system exactly once and persisting into the consumer's own v4 sidecar. The failure is in the
-probe, not in the consumer: after the saved-slot reload of each positive case, the reload check read
-the consumer's per-session leg latch as `((System.Collections.ICollection)_countedLegs).Count`.
-`SystemVisitObserver._countedLegs` is a `HashSet<Guid>`, which implements the GENERIC
-`ICollection<Guid>` but NOT the non-generic `System.Collections.ICollection`, so the cast threw
-`InvalidCastException` for both cases before their mandatory `gate-visit-reload`,
-`gate-visit-rollback` and `visit-persistence` rows could be recorded. `Dictionary` and `List` — the
-other consumer and native collections the probes read — do implement the non-generic interface,
-which is why only this one member failed.
-
-The phase behaved correctly around the defect: each failure was attributed to its own consumer case
-row instead of faulting the reused native travel phase, the hook chain continued, and the later
-`regional-history-fixture`, the positive shared-decision gather before the fault, the omitted window
-after it, and the preserved history/save plus load-safety checks all passed. The phase and the run
-still reported FAIL, which is the correct outcome for missing mandatory rows; the failed and
-duplicate-flagged rows stay in the private receipt rather than being relabelled. All 37 original-file
-hashes, the complete direct file sets and the PlayerPrefs snapshot were preserved and the owned
-process slot was released.
-
-Fix (harness only; no API runtime and no consumer change): the count is resolved by
-`AnimaTravelReceipt.StrictCount`, which reads the collection's OWN declared `Count` property and
-throws when the member is null, has no `Count`, or has a `Count` that is not an `int` — never a
-zero default and never a counted enumeration, because a silent zero would satisfy the very latch
-assertion the count exists to prove. `CheckSessionReplacement` and every other assertion are
-unchanged. Host regressions exercise the helper against a real empty and populated `HashSet<Guid>`,
-assert that the old cast really throws on that exact type, and keep the `Dictionary`/`List` cases
-working; the installed-consumer metadata test continues to pin the field's exact generic shape. The
-remaining non-generic `ICollection` casts in the travel drivers are all on native `List<T>` fields
-(`GamePlayer.waypoints`, `MapPointOfInterest.guardDescriptors`) whose declared list shape is pinned
-by installed-assembly tests, so they are unaffected and were deliberately left alone.
-
-## In-game acceptance checklist — controlled coverage through qa38
-
-Arrange owner approval before deployment. Use copied/disposable saves and the optional compiled `LifecycleObserver` example to record events. Record game/Unity/BepInEx versions, assembly hash, enabled mods, and relevant logs for each run.
-
-- [x] Plugin startup reports bound capabilities on the inspected DLL; no Harmony errors.
-- [x] qa41 loads an actual private copy with an appended PE overlay, verifies its inspected source identity, and observes the specific uninspected-assembly refusal with zero injected hashes, unavailable capabilities, no API patches and disabled consumers. This is changed file identity, not another game implementation. Original game DLL, all 37 original files/direct file sets, preferences and copied consumer files were independently preserved.
-- [x] Load mining-space, native in-system-transit and controlled parked-empty-space saves: Starting -> PlayerReady -> GameplayInitialized, one session ID. Parked-space setup uses vanilla cancellation/completion calls, not pointer-driven UI.
-- [x] Load a docked save: same core sequence; do not interpret it as station-UI readiness.
-- [x] Start a tutorial through native wizard callbacks: no PlayerReady during the synchronous `NewGame.SaveInputs` call. Inspected `SaveInputs` invokes `GamePlayer.CreateNewGamePlayer` and completes wizard configuration before `GameManager.StartNewGame` calls `SceneLoader.LoadScenesOnStartGame`. The probe does not observe arbitrary asynchronous configuration outside that call. Pointer-driven UI acceptance remains separate.
-- [x] Return to menu, reload, and switch between two saves without restarting: old sessions invalidated before replacement; no stale readiness observed.
-- [x] Unity-driven stale adapter readiness/failure signals in a real observed iterator, asserting its old attempt context, followed by explicit unfinished disposal. The synthetic BeginLoad pair is not a vanilla load; arbitrary asynchronous engine callbacks remain outside this evidence.
-- [x] A valid-syntax newer-version fixture ends without readiness; a corrupt-JSON fixture reports failure without readiness.
-- [x] A current-version control with equal empty-player payload distinguishes deserialization failure from the newer-header non-readiness outcome; public events alone still do not identify a version-rejection cause.
-- [x] Manual saving produces one Started and one terminal event for the correct destination.
-- [x] Autosave rotation reports separate correct destinations/operation IDs.
-- [x] Ephemeral-player save is skipped, not successful.
-- [x] Controlled write failure with exhausted retries on disposable files produces one logical terminal outcome.
-- [x] A retry recovers successfully after a transient failure.
-- [x] A throwing subscriber does not suppress a healthy observer; disposal prevents future callbacks.
-- [x] Authorized MissionJournal/Stockpile pilots coexist under the exercised load/save/transfer paths, with dependency refusal and teardown. Unrelated mods and broader pointer-driven UI acceptance remain unqualified.
-
-Do not force disk failures, delete, or corrupt real player saves. If a scenario cannot be safely exercised, record it as unqualified rather than assuming it passed.
-
-Known contract limits and failure handling are specified in [lifecycle-contract.md](lifecycle-contract.md). API-managed saves are enabled by default and remain experimental. Controlled MissionJournal/Stockpile API-managed save pilots now cover queue/history roundtrips, transfer economics, shared write-refusal/retry, protected imports and teardown; full owner acceptance and unexercised recovery scenarios remain separate. Mission observation is an opt-in experimental integration; see [its contract and remaining limits](mission-events.md). Story/UI capabilities are not implemented yet.
+Never force disk failures, delete or corrupt real player saves. Raw logs, profiles, screenshots and fixtures remain private and outside the repository. A missing mandatory case, unobserved prerequisite, timeout or incomplete receipt is not a pass. Record unexercised scope as unqualified rather than inferring it from nearby successful cases.
