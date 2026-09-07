@@ -262,6 +262,11 @@ public sealed partial class Plugin : BaseUnityPlugin
         }
         foreach (var frame in CheckGuildWaves()) yield return frame;
         foreach (var frame in CheckMissionIdentity()) yield return frame;
+        // ORDERING CONTRACT: the actual-consumer travel probe must observe the native travel phases
+        // BEFORE the Anima mission pilot, whose final StopProvider permanently disposes the
+        // consumer's visit observer. When it is selected it owns those two phases in place; the
+        // later call sites below then no-op instead of running (and receipting) them twice.
+        foreach (var frame in CheckAnimaTravelConsumer()) yield return frame;
         foreach (var frame in CheckAnimaMissions()) yield return frame;
         foreach (var frame in CheckStockpilePilot()) yield return frame;
         foreach (var frame in CheckTravelStation()) yield return frame;

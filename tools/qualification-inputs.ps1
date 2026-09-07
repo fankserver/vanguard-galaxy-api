@@ -1,13 +1,21 @@
 # Prepared-input helpers; safe to exercise with synthetic files.
-function Assert-AnimaAssemblyMetadata($Assembly) {
-    if ($Assembly.Name.Name -ne 'VGAnima' -or $Assembly.Name.Version.ToString() -ne '0.3.0.0') { throw 'Only Anima 0.3.0 pilot shape accepted.' }
+# Accepted Anima pilot shapes, each pinned to the exact hard API dependency that version declares.
+# The consumer travel probe additionally requires the 0.4.0 shape, which is the first one that
+# observes system visits through the public travel surface.
+$AnimaPilotShapes = @{ '0.3.0.0' = '0.1.8'; '0.4.0.0' = '0.1.9' }
+$AnimaTravelProbeVersion = '0.4.0.0'
+function Assert-AnimaAssemblyMetadata($Assembly, [switch]$TravelProbe) {
+    $version = $Assembly.Name.Version.ToString()
+    if ($Assembly.Name.Name -ne 'VGAnima' -or !$AnimaPilotShapes.ContainsKey($version)) { throw 'Only Anima 0.3.0/0.4.0 pilot shapes accepted.' }
+    if ($TravelProbe -and $version -ne $AnimaTravelProbeVersion) { throw "Anima consumer travel probe requires the $AnimaTravelProbeVersion shape; got $version." }
     $plugin = @($Assembly.MainModule.Types | Where-Object { $_.FullName -eq 'VGAnima.Plugin' })
     if ($plugin.Count -ne 1) { throw 'Anima plugin metadata missing or duplicated.' }
+    $minimumApi = $AnimaPilotShapes[$version]
     $dependency = @($plugin[0].CustomAttributes | Where-Object {
         $_.AttributeType.FullName -eq 'BepInEx.BepInDependency' -and $_.ConstructorArguments.Count -eq 2 -and
-        $_.ConstructorArguments[0].Value -eq 'vgmodapi' -and $_.ConstructorArguments[1].Value -eq '0.1.8'
+        $_.ConstructorArguments[0].Value -eq 'vgmodapi' -and $_.ConstructorArguments[1].Value -eq $minimumApi
     })
-    if ($dependency.Count -ne 1) { throw 'Anima must require API before its startup sweeper.' }
+    if ($dependency.Count -ne 1) { throw "Anima $version must hard-require API $minimumApi before its startup sweeper." }
 }
 function Assert-PersistenceProbeReceipt([string]$Root, $Provenance) {
     if ($Provenance.PSObject.Properties['anima'] -and $Provenance.anima) {
@@ -53,6 +61,9 @@ function Assert-PersistenceProbeReceipt([string]$Root, $Provenance) {
     if ($Provenance.PSObject.Properties['travelResilience'] -and $Provenance.travelResilience) {
         Assert-TravelResilienceReceipt $Root
     }
+    if ($Provenance.PSObject.Properties['animaTravelProbe'] -and $Provenance.animaTravelProbe) {
+        Assert-AnimaTravelReceipt $Root
+    }
 }
 $TravelStationPhase = 'travel-in-system-station-v1'
 $TravelStationRequiredCases = @('initial-placement','station-undock','in-system-route','early-cancel','chained-route','station-dock')
@@ -80,6 +91,15 @@ $TravelResilienceBudgetSeconds = 2400
 # MANDATORY subcase row of restore-relink-dock: the same-docking-size branch, driven as the native
 # re-init of the CURRENT owned ship, so it needs no second owned ship and a not-run row is refused.
 $TravelResilienceRequiredSubcaseRows = @('restore-reinit-same-size')
+# The actual-consumer probe REUSES the two native travel phases in place (it must observe them
+# before the Anima mission pilot disposes the consumer's visit observer), so it reserves only its
+# own consumer loads/saves on top of their existing reservations.
+$AnimaTravelPhase = 'anima-travel-consumer-v1'
+$AnimaTravelRequiredCases = @('consumer-binding','non-travel-quiet','gate-arrival-visit','wormhole-arrival-visit','visit-persistence','recording-degraded')
+$AnimaTravelRequiredSubcaseRows = @('gate-visit-reload','gate-visit-rollback')
+$AnimaTravelBudgetSeconds = 900
+# The scenario names the two reused phases record in result.txt, used as the ordering proof.
+$AnimaTravelReusedPhaseScenarios = @("native-travel-station-$TravelStationPhase", "native-travel-$TravelCrossSystemPhase")
 # Independent verification of the pilot's own claim: the declared phase, every mandatory case
 # identity, the receipt/event files and the identities they share must all agree. A first line of
 # PASS is never accepted on its own. The two travel phases publish the same receipt/event shape,
@@ -197,6 +217,35 @@ function Assert-TravelResilienceReceipt([string]$Root) {
         if (($matched[0] -split "`t")[2] -ne 'passed') { throw "Mandatory travel resilience subcase did not pass: $subcase" }
         if ($summary -notcontains "required-subcase $subcase=passed") { throw "Travel resilience summary and receipt disagree about $subcase." }
     }
+}
+# The actual-consumer travel probe is validated separately and with its own mandatory cases. It
+# REUSES the two native travel phases rather than repeating them, so its receipt can never stand in
+# for theirs and theirs can never stand in for it.
+function Assert-AnimaTravelReceipt([string]$Root) {
+    Assert-TravelPhaseReceipt $Root 'Anima consumer travel' 'anima-travel' $AnimaTravelPhase $AnimaTravelRequiredCases $AnimaTravelBudgetSeconds
+    $summary = @(Get-Content -LiteralPath (Join-Path $Root 'anima-travel.txt'))
+    if ($summary -notcontains ("required-subcases=" + ($AnimaTravelRequiredSubcaseRows -join ','))) { throw 'Anima consumer travel receipt declares different mandatory subcases.' }
+    $rows = @(Get-Content -LiteralPath (Join-Path $Root 'anima-travel-receipt.tsv'))
+    foreach ($subcase in $AnimaTravelRequiredSubcaseRows) {
+        if ($subcase -in $AnimaTravelRequiredCases) { throw 'A mandatory subcase row must not also be a case identity.' }
+        $matched = @($rows | Where-Object { ($_ -split "`t")[0] -eq $subcase })
+        if ($matched.Count -ne 1) { throw "Mandatory Anima consumer travel subcase is missing or duplicated: $subcase" }
+        if (($matched[0] -split "`t")[2] -ne 'passed') { throw "Mandatory Anima consumer travel subcase did not pass: $subcase" }
+        if ($summary -notcontains "required-subcase $subcase=passed") { throw "Anima consumer travel summary and receipt disagree about $subcase." }
+    }
+    # ORDERING PROOF from the run's own result log: the consumer probe observed both reused native
+    # travel phases, each recorded exactly once, and completed BEFORE the Anima mission pilot, whose
+    # final StopProvider permanently disposes the consumer's visit observer.
+    $passed = @(Get-Content -LiteralPath (Join-Path $Root 'result.txt'))
+    $expected = @($AnimaTravelPhase) + $AnimaTravelReusedPhaseScenarios + @('native-anima-api-missions')
+    foreach ($name in $expected) {
+        if (@($passed | Where-Object { $_ -eq $name }).Count -ne 1) { throw "Expected exactly one recorded '$name' scenario in the run result." }
+    }
+    $probeIndex = [Array]::IndexOf($passed, $AnimaTravelPhase)
+    foreach ($name in $AnimaTravelReusedPhaseScenarios) {
+        if ([Array]::IndexOf($passed, $name) -gt $probeIndex) { throw "The consumer probe completed before the reused phase '$name'." }
+    }
+    if ([Array]::IndexOf($passed, 'native-anima-api-missions') -lt $probeIndex) { throw 'The Anima mission pilot ran before the consumer travel probe; its StopProvider disposes the observer the probe needs.' }
 }
 function Assert-VanillaControlReceipt([string]$Root, $Provenance) {
     if ($Provenance.PSObject.Properties['vanillaLoadControl'] -and $Provenance.vanillaLoadControl) {
@@ -324,6 +373,19 @@ function Assert-QualificationInputs([string]$Root) {
     if ([bool]$wormholeFixture -ne (Test-Path -LiteralPath $wormholeMarker -PathType Leaf)) { throw 'Wormhole fixture selection changed.' }
     if ($wormholeFixture) {
         if (!$travelCrossSystem -or (Get-Content -LiteralPath $wormholeMarker -Raw).Trim() -ne 'wormhole-fixture-v1') { throw 'Invalid wormhole fixture selection.' }
+    }
+    # The actual-consumer travel probe is an ADDITIONAL selection that requires the installed
+    # consumer AND both native travel phases plus the wormhole fixture, because it only compares the
+    # consumer's own records against arrivals those phases already qualified.
+    $animaTravel = $provenance.PSObject.Properties['animaTravelProbe'] -and [bool]$provenance.animaTravelProbe
+    $animaTravelMarker = Join-Path $Root 'anima-travel.enabled'
+    if ([bool]$animaTravel -ne (Test-Path -LiteralPath $animaTravelMarker -PathType Leaf)) { throw 'Anima consumer travel selection changed.' }
+    if ($animaTravel) {
+        if (!$anima -or !$travelStation -or !$travelCrossSystem -or !$wormholeFixture -or
+            (Get-Content -LiteralPath $animaTravelMarker -Raw).Trim() -ne 'anima-travel-v1') { throw 'Invalid Anima consumer travel selection.' }
+        if (!$provenance.PSObject.Properties['animaTravelBudgetSeconds'] -or
+            [int]$provenance.animaTravelBudgetSeconds -ne $AnimaTravelBudgetSeconds) { throw 'Anima consumer travel budget reservation changed.' }
+        if ($provenance.PSObject.Properties['animaVersion'] -and $provenance.animaVersion -ne $AnimaTravelProbeVersion) { throw 'Anima consumer travel probe requires the pinned consumer version.' }
     }
     # The resilience phase is an ADDITIONAL selection on top of the in-system phase; it reuses the
     # same [Travel] capability configuration and reserves its own separate process budget.

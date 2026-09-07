@@ -10,6 +10,7 @@ param(
     [string]$StockpileBin,
     [string]$AnimaBin,
     [string]$AnimaRevision,
+    [switch]$AnimaTravelProbe,
     [switch]$AssemblyOverlay,
     [switch]$VanillaLoadControl,
     [switch]$PersistenceProbe,
@@ -66,6 +67,10 @@ if ($Action -eq 'Prepare') {
     if ($PersistenceProbe -and $Scenario -ne 'Full') { throw 'Persistence probe requires Full.' }
     if ($AnimaBin -and (!$MissionIdentityProbe -or !$MissionJournalBin -or $AnimaRevision -notmatch '^[0-9a-f]{40}$')) { throw 'Anima requires identity probes, journal-provided JSON runtime and exact source revision.' }
     if ($AnimaBin) { $null = [Reflection.AssemblyName]::GetAssemblyName((Join-Path $AnimaBin 'VGAnima.dll')) }
+    # The actual-consumer travel probe compares the installed consumer's own records against
+    # arrivals the two native travel phases already qualify; the wormhole case needs the opt-in
+    # fixture, without which no wormhole arrival can ever be witnessed.
+    if ($AnimaTravelProbe -and (!$AnimaBin -or !$TravelStation -or !$TravelCrossSystem -or !$TravelWormholeFixture)) { throw 'Anima consumer travel probe requires the Anima consumer, both native travel phases and the wormhole fixture selection.' }
     if ($JournalMissionEventsProbe -and (!$JournalCoordinated -or !$MissionIdentityProbe)) { throw 'Journal mission events require API-managed journal and mission identity probes.' }
     if ($MissionIdentityProbe -and (!$MissionTransitionsProbe -or !$PersistenceProbe)) { throw 'Mission identity probe requires mission transitions and persistence probes.' }
     if ($MissionTransitionsProbe -and $Scenario -ne 'Full') { throw 'Mission transitions probe requires Full.' }
@@ -158,11 +163,15 @@ if ($Action -eq 'Prepare') {
         New-Item -ItemType Directory -Path (Join-Path $bep 'config') -Force | Out-Null
         [IO.File]::WriteAllText((Join-Path $bep 'config\vgstockpile.cfg'), "[Transfers]`r`nEnabled = true`r`n")
     }
+    $animaVersion = ''
     if ($AnimaBin) {
         $candidate = Join-Path $AnimaBin 'VGAnima.dll'
         Add-Type -Path (Join-Path $bep 'core\Mono.Cecil.dll')
         $assembly = [Mono.Cecil.AssemblyDefinition]::ReadAssembly($candidate)
-        try { Assert-AnimaAssemblyMetadata $assembly } finally { $assembly.Dispose() }
+        try {
+            Assert-AnimaAssemblyMetadata $assembly -TravelProbe:$AnimaTravelProbe
+            $animaVersion = $assembly.Name.Version.ToString()
+        } finally { $assembly.Dispose() }
         Copy-Item -LiteralPath $candidate -Destination $plugins
         New-Item -ItemType Directory -Path (Join-Path $bep 'config') -Force | Out-Null
         [IO.File]::WriteAllText((Join-Path $bep 'config\vganima.cfg'), "[General]`r`nEnabled = true`r`n[Llm]`r`nEnabled = false`r`nBaseUrl = `r`nApiKey = `r`n")
@@ -211,7 +220,8 @@ if ($Action -eq 'Prepare') {
     if ($TravelCrossSystem) { [IO.File]::WriteAllText((Join-Path $root 'travel-cross-system.enabled'), 'cross-system-v1') }
     if ($TravelWormholeFixture) { [IO.File]::WriteAllText((Join-Path $root 'travel-wormhole-fixture.enabled'), 'wormhole-fixture-v1') }
     if ($TravelResilience) { [IO.File]::WriteAllText((Join-Path $root 'travel-resilience.enabled'), 'resilience-v1') }
-    @{ anima=[bool]$AnimaBin; animaRevision=$AnimaRevision; journalMissionEventsProbe=[bool]$JournalMissionEventsProbe; missionIdentityProbe=[bool]$MissionIdentityProbe; missionTransitionsProbe=[bool]$MissionTransitionsProbe; contentReferenceProbe=[bool]$ContentReferenceProbe; stockpileCoordinated=[bool]$StockpileCoordinated; journalCoordinated=[bool]$JournalCoordinated; persistenceProbe=[bool]$PersistenceProbe; vanillaLoadControl=[bool]$VanillaLoadControl; assemblyOverlay=$overlay; stockpile=[bool]$StockpileBin; missionJournal=[bool]$MissionJournalBin; travelStation=[bool]$TravelStation; travelStationBudgetSeconds=$(if ($TravelStation) { $TravelStationBudgetSeconds } else { 0 }); travelCrossSystem=[bool]$TravelCrossSystem; travelCrossSystemBudgetSeconds=$(if ($TravelCrossSystem) { $TravelCrossSystemBudgetSeconds } else { 0 }); travelWormholeFixture=[bool]$TravelWormholeFixture; travelResilience=[bool]$TravelResilience; travelResilienceBudgetSeconds=$(if ($TravelResilience) { $TravelResilienceBudgetSeconds } else { 0 }); scenario=$Scenario; revision=$BuildRevision; preparedUtc=[DateTime]::UtcNow.ToString('o'); plugins=$hashes } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'build-provenance.json')
+    if ($AnimaTravelProbe) { [IO.File]::WriteAllText((Join-Path $root 'anima-travel.enabled'), 'anima-travel-v1') }
+    @{ anima=[bool]$AnimaBin; animaRevision=$AnimaRevision; animaVersion=$animaVersion; animaTravelProbe=[bool]$AnimaTravelProbe; animaTravelBudgetSeconds=$(if ($AnimaTravelProbe) { $AnimaTravelBudgetSeconds } else { 0 }); journalMissionEventsProbe=[bool]$JournalMissionEventsProbe; missionIdentityProbe=[bool]$MissionIdentityProbe; missionTransitionsProbe=[bool]$MissionTransitionsProbe; contentReferenceProbe=[bool]$ContentReferenceProbe; stockpileCoordinated=[bool]$StockpileCoordinated; journalCoordinated=[bool]$JournalCoordinated; persistenceProbe=[bool]$PersistenceProbe; vanillaLoadControl=[bool]$VanillaLoadControl; assemblyOverlay=$overlay; stockpile=[bool]$StockpileBin; missionJournal=[bool]$MissionJournalBin; travelStation=[bool]$TravelStation; travelStationBudgetSeconds=$(if ($TravelStation) { $TravelStationBudgetSeconds } else { 0 }); travelCrossSystem=[bool]$TravelCrossSystem; travelCrossSystemBudgetSeconds=$(if ($TravelCrossSystem) { $TravelCrossSystemBudgetSeconds } else { 0 }); travelWormholeFixture=[bool]$TravelWormholeFixture; travelResilience=[bool]$TravelResilience; travelResilienceBudgetSeconds=$(if ($TravelResilience) { $TravelResilienceBudgetSeconds } else { 0 }); scenario=$Scenario; revision=$BuildRevision; preparedUtc=[DateTime]::UtcNow.ToString('o'); plugins=$hashes } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'build-provenance.json')
     # Prevent Steam's restart path; the runner disables SteamManager before arming checks.
     [IO.File]::WriteAllText((Join-Path $game 'steam_appid.txt'), '3471800')
     $saves = Join-Path $root 'Saves'
@@ -269,6 +279,7 @@ if ($provenance.PSObject.Properties['travelStation'] -and $provenance.travelStat
     $required = $QualificationBaseTimeoutSeconds + $TravelStationBudgetSeconds
     if ($provenance.PSObject.Properties['travelCrossSystem'] -and $provenance.travelCrossSystem) { $required += $TravelCrossSystemBudgetSeconds }
     if ($provenance.PSObject.Properties['travelResilience'] -and $provenance.travelResilience) { $required += $TravelResilienceBudgetSeconds }
+    if ($provenance.PSObject.Properties['animaTravelProbe'] -and $provenance.animaTravelProbe) { $required += $AnimaTravelBudgetSeconds }
     if ($TimeoutSeconds -lt $required) { throw "Travel/station runs need -TimeoutSeconds at least $required (base $QualificationBaseTimeoutSeconds + phases); got $TimeoutSeconds." }
 }
 $journalBefore = @{}

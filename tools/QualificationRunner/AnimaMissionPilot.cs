@@ -10,9 +10,14 @@ namespace VGModAPI.Qualification;
 
 public sealed partial class Plugin
 {
+    internal bool AnimaSelected => File.Exists(Path.Combine(_root!, "anima-missions.enabled"));
+
+    // Runs LAST of the consumer pilots on purpose: its final StopProvider disposes the consumer's
+    // observers permanently, so anything that needs the live consumer (the actual-consumer travel
+    // probe) must already have run.
     private IEnumerable<object?> CheckAnimaMissions()
     {
-        if (!File.Exists(Path.Combine(_root!, "anima-missions.enabled"))) yield break;
+        if (!AnimaSelected) yield break;
         var anima = Chainloader.PluginInfos["vganima"].Instance;
         Require(anima.enabled && (bool)SpGet(anima, "_active")!, "Anima provider did not start.");
         var retiredHooks = new[] { "AddMissionWithLog", "ClaimRewards", "MissionFailed", "ArchiveMission", "RemoveMission" };

@@ -21,6 +21,14 @@ make check-local CONFIGURATION=Release
 
 This runs pure tests, the full plugin/example/runner build, clean package creation and real-package inspection, installed metadata checks, then reference provenance. Nothing deploys or launches Unity. Never run this privileged/reference-bearing path on untrusted PR code. It is intentionally not an automatic self-hosted job.
 
+The installed-CONSUMER metadata checks of the actual-consumer qualification probe need an owner-built consumer binary, so they are excluded from `make test` and from `check-local` and run separately:
+
+```sh
+make check-consumer ANIMA_ASSEMBLY=/path/to/VGAnima.dll
+```
+
+They read that assembly's metadata and IL with Cecil only: they pin every consumer member the probe reflects, the consumer's own hard API dependency, and the two structural facts the probe's conclusions rest on (the visited-system map can only grow inside the public-event observer, and the consumer owns no native travel/station Harmony patch). They launch nothing and never copy a consumer binary into this repository.
+
 After building the package, `make provenance` emits the actual SDK, source revision/dirty flag, requested configuration, and SHA-256 for each local reference and the three packaged assemblies. It refuses compile-reference links pointing at a different installation. The standalone command is an input/output snapshot, not proof of a prior compiler invocation; use `check-local` to build/check immediately before reporting. It emits neither absolute installation paths nor binary contents. Publish that bounded report and check results, not a reference bundle or raw qualification profile. A recorded hash identifies bytes; it does not establish licensing or live compatibility.
 
 ## Packaging
