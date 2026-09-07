@@ -187,7 +187,11 @@ an outcome that could never be written.
 
 Bounds are ENCODED bytes on both sides of the codec, so a byte budget means the same thing
 everywhere. A choice key the definition did not declare is refused at retirement, an oversized value
-is refused, and both refusals leave the occurrence able to record its declared outcome. The
+is refused, and both refusals leave the occurrence able to record its declared outcome. The supplied
+collection is copied ONCE, after the caller has been authorised for that occurrence and before any
+of it is validated, so what was checked is exactly what is stored: a collection whose contents change
+between reads, whose `Count` disagrees with what it yields, that repeats a key, that never ends or
+whose enumerator throws is refused outright, and nothing is recorded. The
 reservation is PERSISTED with the occurrence, so a reload restores exactly the same remaining
 capacity without needing the definition to be registered first. Recording an outcome releases
 whatever part of the reservation it did not use; a worst-case outcome releases nothing, which is the
@@ -212,8 +216,9 @@ could not finish rather than admitting it and failing later.
 
 The API owns this state, so it also hands it back. `Occurrences(localId)` returns the RETIRED
 records, and `Unresolved(localId)` returns the still offered or active ones as immutable
-`StoryOccurrenceSnapshot` values (identity, stage, retention, and — for terminal records only —
-outcome and choices). A provider therefore never has to store occurrence identities in its own save
+`StoryOccurrenceSnapshot` values carrying identity, stage and retention. An unresolved occurrence has
+no outcome and no recorded choices yet, so those snapshot fields are always empty here; recorded
+outcomes and choices come from `Occurrences`. A provider therefore never has to store occurrence identities in its own save
 data to activate, withdraw or retire its content after a reload. Both answers carry `StoryKnowledge`
 and the session they describe, and are empty when unavailable.
 

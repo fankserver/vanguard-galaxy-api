@@ -286,9 +286,6 @@ internal sealed class StoryLedger
     private int ProviderFootprint(string provider)
         => _byOccurrence.Values.Where(entry => entry.Id.Provider == provider).Sum(Footprint);
 
-    private int RetainedFor(StoryContentId id)
-        => _byOccurrence.Values.Count(entry => entry.Id == id && entry.State == StoryOccurrenceState.Retired);
-
     /// <summary>
     /// Campaign slots a definition already holds: retired outcomes AND unresolved occurrences that
     /// still have their outcome to record. The bound covers both, because an unresolved occurrence

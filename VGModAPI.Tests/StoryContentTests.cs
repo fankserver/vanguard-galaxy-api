@@ -842,6 +842,91 @@ public sealed class StoryContentTests
     }
 
     /// <summary>
+    /// The choices a caller supplies are external input. They are copied ONCE, after authorisation
+    /// and before any validation, so a collection that answers differently on a second read cannot
+    /// get past validation and into the stored record - which would make every later capture throw
+    /// and block coordinated saves for every registered mod.
+    /// </summary>
+    [Fact]
+    public void SuppliedChoicesAreSnapshotOnceSoValidationAndStorageSeeTheSameData()
+    {
+        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var first = provider.Offer("salvage-run");
+        // Reads valid data once, then would hand out an oversized value, invalid UTF-8 and an
+        // undeclared key on every later read.
+        var shifting = new ShiftingChoices(
+            new Dictionary<string, string> { ["branch"] = "left" },
+            new Dictionary<string, string>
+            {
+                ["branch"] = new string('v', StoryMissionDefinition.MaxChoiceValueBytes + 32),
+                ["ending"] = "\ud800",
+            });
+        Assert.True(provider.Retire(first.OccurrenceId, StoryOutcome.Completed, shifting).Accepted);
+        // Exactly ONE read of the caller's collection: what was validated is what was stored.
+        Assert.Equal(1, shifting.Reads);
+        var stored = Assert.Single(provider.Occurrences("salvage-run").Records);
+        Assert.Equal(new[] { "branch" }, stored.Choices.Keys.ToArray());
+        Assert.Equal("left", stored.Choices["branch"]);
+        // The state the module holds is exactly what it validated, so it still captures.
+        Assert.True(StoryStateCodec.Validate(world.Persistence.Provider!.Capture()));
+
+        // A Count that disagrees with what the collection yields decides nothing.
+        var second = provider.Offer("salvage-run");
+        var lying = new ShiftingChoices(new Dictionary<string, string> { ["branch"] = "right" },
+            new Dictionary<string, string> { ["branch"] = "right" }, reportedCount: 0);
+        Assert.True(provider.Retire(second.OccurrenceId, StoryOutcome.Failed, lying).Accepted);
+        Assert.Equal("right", provider.Occurrences("salvage-run").Records[1].Choices["branch"]);
+        Assert.True(StoryStateCodec.Validate(world.Persistence.Provider.Capture()));
+        Assert.Equal(2, service.Ledger.Count);
+    }
+
+    /// <summary>
+    /// A collection the module cannot read safely is a refusal, never a partial record and never an
+    /// exception out of a method contracted to return a result. The module and every other owner stay
+    /// healthy afterwards.
+    /// </summary>
+    [Fact]
+    public void UnreadableSuppliedChoicesAreRefusedWithoutMutatingAnything()
+    {
+        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var occurrence = provider.Offer("salvage-run");
+        foreach (var hostile in new IReadOnlyDictionary<string, string>[]
+        {
+            ThrowingChoices.OnMoveNext(new InvalidOperationException("Collection was modified.")),
+            ThrowingChoices.OnMoveNext(new NullReferenceException()),
+            ThrowingChoices.OnDispose(new InvalidOperationException("teardown")),
+            new EndlessChoices(),
+            new DuplicateKeyChoices("branch", "left", "right"),
+            new NullEntryChoices()
+        })
+        {
+            var refused = provider.Retire(occurrence.OccurrenceId, StoryOutcome.Completed, hostile);
+            Assert.Equal(StoryTransitionStatus.InvalidTransition, refused.Status);
+            Assert.True(service.Ledger.TryGet(occurrence.OccurrenceId, out var untouched));
+            Assert.Equal(StoryOccurrenceState.Offered, untouched.State);
+            Assert.Null(untouched.Outcome);
+            Assert.Empty(untouched.Choices);
+            // Capture is unaffected, so no other owner's saves are put at risk by a bad caller.
+            Assert.True(StoryStateCodec.Validate(world.Persistence.Provider!.Capture()));
+        }
+        // An endless collection is read at most one item past the supported maximum.
+        var endless = new EndlessChoices();
+        Assert.Equal(StoryTransitionStatus.InvalidTransition,
+            provider.Retire(occurrence.OccurrenceId, StoryOutcome.Completed, endless).Status);
+        Assert.Equal(StoryMissionDefinition.MaxChoiceKeys + 1, endless.Yielded);
+        // An unavailable caller is refused BEFORE its collection is touched at all.
+        var counted = new EndlessChoices();
+        world.Persistence.MutationAllowed = false;
+        Assert.Equal(StoryTransitionStatus.Unavailable,
+            provider.Retire(occurrence.OccurrenceId, StoryOutcome.Completed, counted).Status);
+        Assert.Equal(0, counted.Yielded);
+        world.Persistence.MutationAllowed = true;
+        // The occurrence is still perfectly retirable with a well-behaved collection.
+        Assert.True(provider.Retire(occurrence.OccurrenceId, StoryOutcome.Completed,
+            new Dictionary<string, string> { ["branch"] = "left" }).Accepted);
+    }
+
+    /// <summary>
     /// Only a terminal record carries choices, on both sides of the codec, and a recorded outcome
     /// REPLACES whatever the entry held. Otherwise a crafted payload could restore an unresolved row
     /// with choices, and a legitimate retirement would merge past the bound and fail every owner's
@@ -1430,6 +1515,102 @@ public sealed class StoryContentTests
             private readonly Action _dispose;
             internal Subscription(Action dispose) => _dispose = dispose;
             public void Dispose() => _dispose();
+        }
+    }
+
+    /// <summary>Yields one set of pairs on the first enumeration and another on every later one.</summary>
+    private sealed class ShiftingChoices : IReadOnlyDictionary<string, string>
+    {
+        private readonly Dictionary<string, string> _first, _later;
+        private readonly int? _reportedCount;
+        internal int Reads { get; private set; }
+        internal ShiftingChoices(Dictionary<string, string> first, Dictionary<string, string> later, int? reportedCount = null)
+        { _first = first; _later = later; _reportedCount = reportedCount; }
+        public IEnumerator<KeyValuePair<string, string>> GetEnumerator() => (Reads++ == 0 ? _first : _later).GetEnumerator();
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+        public int Count => _reportedCount ?? _first.Count;
+        public IEnumerable<string> Keys => (Reads++ == 0 ? _first : _later).Keys;
+        public IEnumerable<string> Values => (Reads++ == 0 ? _first : _later).Values;
+        public bool ContainsKey(string key) => _later.ContainsKey(key);
+        public bool TryGetValue(string key, out string value) => _later.TryGetValue(key, out value!);
+        public string this[string key] => _later[key];
+    }
+
+    /// <summary>A collection whose Count, Keys and Values must never be trusted by the module.</summary>
+    private abstract class HostileChoices : IReadOnlyDictionary<string, string>
+    {
+        public abstract IEnumerator<KeyValuePair<string, string>> GetEnumerator();
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+        public int Count => 1;
+        public IEnumerable<string> Keys => throw new InvalidOperationException("Keys must not be trusted.");
+        public IEnumerable<string> Values => throw new InvalidOperationException("Values must not be trusted.");
+        public bool ContainsKey(string key) => false;
+        public bool TryGetValue(string key, out string value) { value = ""; return false; }
+        public string this[string key] => throw new KeyNotFoundException();
+    }
+
+    private sealed class ThrowingChoices : HostileChoices
+    {
+        private readonly Exception _error;
+        private readonly bool _onDispose;
+        private ThrowingChoices(Exception error, bool onDispose) { _error = error; _onDispose = onDispose; }
+        internal static ThrowingChoices OnMoveNext(Exception error) => new(error, false);
+        internal static ThrowingChoices OnDispose(Exception error) => new(error, true);
+        public override IEnumerator<KeyValuePair<string, string>> GetEnumerator() => new Enumerator(_error, _onDispose);
+
+        private sealed class Enumerator : IEnumerator<KeyValuePair<string, string>>
+        {
+            private readonly Exception _error;
+            private readonly bool _onDispose;
+            private bool _yielded;
+            internal Enumerator(Exception error, bool onDispose) { _error = error; _onDispose = onDispose; }
+            public KeyValuePair<string, string> Current => new("branch", "left");
+            object System.Collections.IEnumerator.Current => Current;
+            public bool MoveNext()
+            {
+                if (!_onDispose) throw _error;
+                if (_yielded) return false;
+                _yielded = true;
+                return true;
+            }
+            public void Reset() { }
+            public void Dispose() { if (_onDispose) throw _error; }
+        }
+    }
+
+    /// <summary>Never ends; the module must stop after a bounded number of items.</summary>
+    private sealed class EndlessChoices : HostileChoices
+    {
+        internal int Yielded { get; private set; }
+        public override IEnumerator<KeyValuePair<string, string>> GetEnumerator() => Sequence();
+        private IEnumerator<KeyValuePair<string, string>> Sequence()
+        {
+            for (int index = 0; ; index++)
+            {
+                Yielded++;
+                yield return new KeyValuePair<string, string>("k" + index, "v");
+            }
+        }
+    }
+
+    private sealed class DuplicateKeyChoices : HostileChoices
+    {
+        private readonly string _key, _first, _second;
+        internal DuplicateKeyChoices(string key, string first, string second) { _key = key; _first = first; _second = second; }
+        public override IEnumerator<KeyValuePair<string, string>> GetEnumerator() => Sequence();
+        private IEnumerator<KeyValuePair<string, string>> Sequence()
+        {
+            yield return new KeyValuePair<string, string>(_key, _first);
+            yield return new KeyValuePair<string, string>(_key, _second);
+        }
+    }
+
+    private sealed class NullEntryChoices : HostileChoices
+    {
+        public override IEnumerator<KeyValuePair<string, string>> GetEnumerator() => Sequence();
+        private static IEnumerator<KeyValuePair<string, string>> Sequence()
+        {
+            yield return new KeyValuePair<string, string>("branch", null!);
         }
     }
 

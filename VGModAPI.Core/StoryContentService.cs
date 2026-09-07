@@ -307,32 +307,89 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
     /// Records the outcome. Declared choices must be the ones the definition DECLARED: the space for
     /// them was reserved when the occurrence was offered, so an undeclared key is refused here rather
     /// than accepted into space that was never held for it.
+    ///
+    /// The supplied collection belongs to the caller, so it is COPIED exactly once and everything
+    /// afterwards — the declared-key check, the ledger's bounds and the stored record — reads only
+    /// that copy. Validating one view of a caller collection and storing another would let stored
+    /// choices exceed the bounds that were checked, and every later capture would then fail, which
+    /// the coordinator turns into a save block for every registered mod.
     /// </summary>
     private StoryTransitionResult Retire(Lease lease, Guid expectedSessionId, Guid occurrenceId, StoryOutcome outcome,
         IReadOnlyDictionary<string, string>? choices)
     {
-        if (choices is { Count: > 0 })
+        Dictionary<string, string>? owned = null;
+        if (choices != null)
         {
             // Availability, lease and session are checked BEFORE anything is looked up, and ownership
             // is resolved by the ledger's own rules, so this path can never answer differently from
-            // the choice-free path or mention another provider's local ID.
+            // the choice-free path or mention another provider's local ID. Reading a foreign caller's
+            // collection is itself deferred until after that authorisation.
             if (!Guard(lease, expectedSessionId, out var refusal, out var status))
                 return new StoryTransitionResult(status, occurrenceId, refusal);
-            var owned = _ledger.ResolveOwned(new StoryContentId(lease.ProviderId, LocalIdOf(occurrenceId)), occurrenceId,
+            var resolved = _ledger.ResolveOwned(new StoryContentId(lease.ProviderId, LocalIdOf(occurrenceId)), occurrenceId,
                 out var entry, out var ownership);
-            if (owned != StoryLedgerStatus.Accepted) return new StoryTransitionResult(Map(owned), occurrenceId, ownership);
-            var id = new StoryContentId(lease.ProviderId, entry!.Id.LocalId);
-            if (!_registry.TryGet(id, out var definition))
-                return new StoryTransitionResult(StoryTransitionStatus.InvalidTransition, occurrenceId,
-                    "Declared choices need the definition registered in this session; '" + id.LocalId + "' is not.");
-            var undeclared = choices.Keys.FirstOrDefault(key => !definition.ChoiceKeys.Contains(key, StringComparer.Ordinal));
-            if (undeclared != null)
-                return new StoryTransitionResult(StoryTransitionStatus.InvalidTransition, occurrenceId,
-                    "Choice key '" + undeclared + "' is not declared by this definition.");
+            if (resolved != StoryLedgerStatus.Accepted) return new StoryTransitionResult(Map(resolved), occurrenceId, ownership);
+            if (!TrySnapshotChoices(choices, out owned, out var unreadable))
+                return new StoryTransitionResult(StoryTransitionStatus.InvalidTransition, occurrenceId, unreadable);
+            if (owned.Count > 0)
+            {
+                var id = new StoryContentId(lease.ProviderId, entry!.Id.LocalId);
+                if (!_registry.TryGet(id, out var definition))
+                    return new StoryTransitionResult(StoryTransitionStatus.InvalidTransition, occurrenceId,
+                        "Declared choices need the definition registered in this session; '" + id.LocalId + "' is not.");
+                var undeclared = owned.Keys.FirstOrDefault(key => !definition.ChoiceKeys.Contains(key, StringComparer.Ordinal));
+                if (undeclared != null)
+                    return new StoryTransitionResult(StoryTransitionStatus.InvalidTransition, occurrenceId,
+                        "Choice key '" + undeclared + "' is not declared by this definition.");
+            }
         }
         return Transition(lease, expectedSessionId, occurrenceId, (StoryLedger ledger, StoryContentId id, out string diagnostic)
-            => ledger.Retire(id, occurrenceId, outcome, choices, out diagnostic));
+            => ledger.Retire(id, occurrenceId, outcome, owned, out diagnostic));
     }
+
+    /// <summary>
+    /// Copies the caller's choices exactly once into the module's own dictionary. The collection is
+    /// external input: its <c>Count</c> and <c>Keys</c> are not trusted, the enumeration is bounded at
+    /// one item past the supported maximum so an endless sequence cannot hang the game, duplicate keys
+    /// are refused rather than silently collapsed, and any failure of the caller's enumerator (including
+    /// a real dictionary mutated on another thread) becomes a refusal with no mutation at all.
+    /// Values are strings, so the copy is immutable once taken.
+    /// </summary>
+    private static bool TrySnapshotChoices(IReadOnlyDictionary<string, string> choices,
+        out Dictionary<string, string> copy, out string refusal)
+    {
+        var snapshot = new Dictionary<string, string>(StringComparer.Ordinal);
+        copy = snapshot;
+        refusal = "";
+        try
+        {
+            using var pairs = choices.GetEnumerator();
+            int read = 0;
+            while (pairs.MoveNext())
+            {
+                if (++read > StoryMissionDefinition.MaxChoiceKeys)
+                {
+                    refusal = "At most " + StoryMissionDefinition.MaxChoiceKeys + " declared choices per occurrence.";
+                    return false;
+                }
+                var pair = pairs.Current;
+                if (pair.Key == null || pair.Value == null) { refusal = "A declared choice must be valid non-empty text."; return false; }
+                if (snapshot.ContainsKey(pair.Key)) { refusal = "Duplicate declared choice key '" + pair.Key + "'."; return false; }
+                snapshot.Add(pair.Key, pair.Value);
+            }
+        }
+        catch (Exception error) when (Recoverable(error))
+        {
+            // The caller's collection failed to enumerate. That is a refusal, never a partially
+            // recorded outcome and never an exception out of a method contracted to return a result.
+            refusal = "The supplied declared choices could not be read (" + error.GetType().Name + "); nothing was recorded.";
+            return false;
+        }
+        return true;
+    }
+
+    private static bool Recoverable(Exception error)
+        => error is not (OutOfMemoryException or StackOverflowException or AccessViolationException);
 
     /// <summary>
     /// The local ID recorded for an occurrence, or a placeholder that belongs to no definition. It is
@@ -398,11 +455,6 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
         if (unavailable != null)
         {
             refusal = "Story state is unavailable: " + unavailable + "; refusing to accept unsaved persistent content.";
-            return false;
-        }
-        if (_persistence is not { MutationAllowed: true })
-        {
-            refusal = "Story persistence is " + PersistenceStatus + "; refusing to accept unsaved persistent content.";
             return false;
         }
         if (expectedSessionId != _restoredSession)
