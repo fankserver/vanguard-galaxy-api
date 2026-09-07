@@ -20,6 +20,9 @@ references = {
     "UnityEngine.dll": root / "VanguardGalaxy_Data/Managed/UnityEngine.dll",
     "UnityEngine.CoreModule.dll": root / "VanguardGalaxy_Data/Managed/UnityEngine.CoreModule.dll",
     "UnityEngine.UIModule.dll": root / "VanguardGalaxy_Data/Managed/UnityEngine.UIModule.dll",
+    "UnityEngine.UI.dll": root / "VanguardGalaxy_Data/Managed/UnityEngine.UI.dll",
+    "Unity.TextMeshPro.dll": root / "VanguardGalaxy_Data/Managed/Unity.TextMeshPro.dll",
+    "Unity.InputSystem.dll": root / "VanguardGalaxy_Data/Managed/Unity.InputSystem.dll",
     "Assembly-CSharp.dll": root / "VanguardGalaxy_Data/Managed/Assembly-CSharp.dll",
 }
 def digest(path, label):

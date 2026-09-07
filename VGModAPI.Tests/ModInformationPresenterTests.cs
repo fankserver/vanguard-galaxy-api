@@ -60,6 +60,35 @@ public sealed class ModInformationPresenterTests
     }
 
     [Fact]
+    public void DetailsSeparateLoaderMetadataUpdatesAndApiDiagnosticsWithoutInventingHealth()
+    {
+        var catalog = new Catalog(); var presenter = new ModInformationPresenter(catalog);
+        presenter.Open(); Assert.Contains("No local API consumers", presenter.Details("menu unavailable"));
+        catalog.Snapshot = new[] { Row("a") }; presenter.Open();
+        var details = presenter.Details("session-lifecycle: unavailable");
+        Assert.Contains("Installed: 1.2", details);
+        Assert.Contains("Updates: No update source.", details);
+        Assert.Contains("API capabilities (not mod update status):\nsession-lifecycle: unavailable", details);
+        Assert.DoesNotContain("broken", details);
+        catalog.Fail = true; presenter.Open(); Assert.Contains("previous snapshot", presenter.Details(""));
+    }
+
+    [Fact]
+    public void PresentationBoundsLongLoaderNamesAndDependenciesAndKeepsLinksOutOfAuthorText()
+    {
+        var row = new ModInformation("a", new string('x', 1000000), new Version(1, 2),
+            Enumerable.Range(0, 1000).Select(i => new ModDependencyInformation(new string('y', 1000), null, false)),
+            new ModAuthorMetadata("Author\u202e", "<b>literal</b>", "https://github.com/example/repo", null, "stable"), ModMetadataStatus.Available);
+        var presenter = new ModInformationPresenter(new Catalog { Snapshot = new[] { row } }); presenter.Open();
+        Assert.Equal(160, ModInformationPresenter.DisplayName(row).Length);
+        var details = presenter.Details("offline");
+        Assert.True(details.Length < 15000); Assert.Contains("Additional dependencies omitted", details);
+        Assert.Contains("<b>literal</b>", details); Assert.DoesNotContain("github.com", details);
+        Assert.Equal(new string(' ', 159) + "…", ModInformationPresenter.PlainText(new string('\n', 10000), 160, false));
+        Assert.Equal("abc", ModInformationPresenter.PlainText("abc\u202e", 3, false));
+    }
+
+    [Fact]
     public void MissingUpdateMetadataIsNotABrokenModWarning()
     {
         Assert.Equal("No update source.", ModInformationPresenter.UpdateNotice(Row("a")));

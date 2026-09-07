@@ -9,7 +9,7 @@ CORE = $(GAME_DIR)/BepInEx/core
 link-libs:
 	@mkdir -p VGModAPI/lib
 	@set -eu; for name in BepInEx 0Harmony; do test -f "$(CORE)/$$name.dll"; ln -sfn "$(CORE)/$$name.dll" "VGModAPI/lib/$$name.dll"; done
-	@set -eu; for name in UnityEngine UnityEngine.CoreModule UnityEngine.UIModule; do test -f "$(MANAGED)/$$name.dll"; ln -sfn "$(MANAGED)/$$name.dll" "VGModAPI/lib/$$name.dll"; done
+	@set -eu; for name in UnityEngine UnityEngine.CoreModule UnityEngine.UIModule UnityEngine.UI Unity.TextMeshPro Unity.InputSystem; do test -f "$(MANAGED)/$$name.dll"; ln -sfn "$(MANAGED)/$$name.dll" "VGModAPI/lib/$$name.dll"; done
 build: link-libs
 	$(DOTNET) build VGModAPI.sln -c $(CONFIGURATION)
 .PHONY: build-story-authors
