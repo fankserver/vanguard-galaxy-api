@@ -15,7 +15,7 @@ def create(output):
     with tempfile.TemporaryDirectory(prefix='vg-test-tls-') as directory:
         root = Path(directory)
         subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
-                        '-subj', '/CN=localhost', '-keyout', str(root / 'key.pem'), '-out', str(root / 'cert.pem')],
+                        '-subj', '/CN=localhost', '-addext', 'subjectAltName=IP:127.0.0.1', '-keyout', str(root / 'key.pem'), '-out', str(root / 'cert.pem')],
                        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         subprocess.run(['openssl', 'pkcs12', '-export', '-legacy', '-passout', 'pass:', '-inkey', str(root / 'key.pem'),
                         '-in', str(root / 'cert.pem'), '-out', str(root / 'test.pfx')],

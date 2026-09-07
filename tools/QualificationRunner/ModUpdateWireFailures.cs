@@ -1,5 +1,6 @@
 using System;
 using System.Net;
+using System.Linq;
 using System.Net.Sockets;
 using System.Security.Authentication;
 using System.Security.Cryptography.X509Certificates;
@@ -18,6 +19,28 @@ internal static class ModUpdateWireFailures
         for (Exception? current = error; current != null; current = current.InnerException)
             if (predicate(current)) return true;
         return false;
+    }
+    internal static bool IsCertificateTrustFailure(Exception error)
+    {
+        if (Contains(error, item => item.Message.IndexOf("NameMismatch", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            item.Message.IndexOf("NotTimeValid", StringComparison.OrdinalIgnoreCase) >= 0)) return false;
+        return Contains(error, item => item is WebException web && web.Status == WebExceptionStatus.TrustFailure) ||
+            Contains(error, item => item is AuthenticationException) && Contains(error, item =>
+                item.Message.IndexOf("UntrustedRoot", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                item.Message.IndexOf("CERTIFICATE_VERIFY_FAILED", StringComparison.OrdinalIgnoreCase) >= 0);
+    }
+    internal static void ValidateCertificate(X509Certificate2 certificate)
+    {
+        var san = certificate.Extensions.Cast<X509Extension>().SingleOrDefault(extension => extension.Oid?.Value == "2.5.29.17");
+        if (!certificate.HasPrivateKey || certificate.Subject != certificate.Issuer ||
+            san == null || !san.RawData.SequenceEqual(new byte[] { 0x30, 6, 0x87, 4, 127, 0, 0, 1 }) ||
+            DateTime.UtcNow < certificate.NotBefore.ToUniversalTime() || DateTime.UtcNow >= certificate.NotAfter.ToUniversalTime())
+            throw new InvalidOperationException("TLS fixture requires a currently valid self-signed certificate with exactly the loopback IP SAN.");
+        using var chain = new X509Chain();
+        chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+        if (chain.Build(certificate) || chain.ChainStatus.Length == 0 ||
+            chain.ChainStatus.Any(status => status.Status != X509ChainStatusFlags.UntrustedRoot))
+            throw new InvalidOperationException("TLS fixture must fail chain validation only because its root is untrusted.");
     }
     internal static async Task RunAsync(string certificatePath, Action<string> record, CancellationToken cancellation)
     {
@@ -46,8 +69,7 @@ internal static class ModUpdateWireFailures
 #pragma warning disable SYSLIB0057 // Unity targets netstandard2.1, not the newer X509CertificateLoader API.
         using var certificate = new X509Certificate2(certificatePath, "", X509KeyStorageFlags.EphemeralKeySet);
 #pragma warning restore SYSLIB0057
-        if (!certificate.HasPrivateKey || certificate.Subject != certificate.Issuer)
-            throw new InvalidOperationException("TLS fixture must be an ephemeral self-signed test certificate.");
+        ValidateCertificate(certificate);
         await LocalFailure(certificate, false, cancellation);
         cancellation.ThrowIfCancellationRequested(); record("wire-tls-untrusted-certificate-rejected");
         await LocalFailure(certificate, true, cancellation);
@@ -94,7 +116,7 @@ internal static class ModUpdateWireFailures
             {
                 cancellation.ThrowIfCancellationRequested();
                 rejected = stall ? error is OperationCanceledException && deadline.IsCancellationRequested
-                    : Contains(error, item => item is AuthenticationException || item is WebException web && web.Status == WebExceptionStatus.TrustFailure);
+                    : IsCertificateTrustFailure(error);
                 if (!rejected) throw new InvalidOperationException("Native transport failure classification was not proven.", error);
             }
             cancellation.ThrowIfCancellationRequested();

@@ -12,11 +12,23 @@ namespace VGModAPI.Tests;
 
 public sealed class ModUpdateWireFailureTests
 {
+    [Theory]
+    [InlineData("TLS protocol negotiation failed")]
+    [InlineData("RemoteCertificateNameMismatch")]
+    [InlineData("CERTIFICATE_VERIFY_FAILED RemoteCertificateNameMismatch")]
+    [InlineData("CERTIFICATE_VERIFY_FAILED NotTimeValid")]
+    public void OtherTlsFailuresDoNotQualifyUntrustedRoot(string message) =>
+        Assert.False(ModUpdateWireFailures.IsCertificateTrustFailure(new System.Security.Authentication.AuthenticationException(message)));
+
     [Fact]
     public async Task LocalDriverRequiresRealCertificateRejectionAndStalledHandshakeCancellation()
     {
         using var key = RSA.Create(2048);
         var request = new CertificateRequest("CN=localhost", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        using (var wrongName = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddHours(1)))
+            Assert.Throws<InvalidOperationException>(() => ModUpdateWireFailures.ValidateCertificate(wrongName));
+        var names = new SubjectAlternativeNameBuilder(); names.AddIpAddress(System.Net.IPAddress.Loopback);
+        request.CertificateExtensions.Add(names.Build());
         using var certificate = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddHours(1));
         var path = Path.GetTempFileName();
         var facts = new List<string>();
