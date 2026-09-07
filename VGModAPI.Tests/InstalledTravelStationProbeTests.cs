@@ -103,6 +103,91 @@ public sealed class InstalledTravelStationProbeTests
         Assert.NotNull(Type("Source.Galaxy.POI.Wormhole"));
         Property("Behaviour.Managers.BasePoiManager", "poi", poi);
         Property("Behaviour.Managers.BasePoiManager", "initializedAndReady", "System.Boolean");
+
+        // Authoritative safe-target selection (Plugin.SafeInSystemTargets). The allowlist is by
+        // native POI type; the ownership and story checks are the game's own read-only members.
+        // MapPointOfInterest.activeEnemyCount / totalEnemyCount are deliberately NOT reflected,
+        // because their getters generate native content.
+        foreach (var industrial in new[] { "Source.Galaxy.POI.Mining", "Source.Galaxy.POI.Salvage" })
+            Assert.Equal(poi, Type(industrial).BaseType.FullName);
+        Assert.Equal(poi, Type("Source.Galaxy.POI.Combat").BaseType.FullName);
+        foreach (var encounter in new[] { "Source.Galaxy.POI.CombatStation", "Source.Galaxy.POI.Escort", "Source.Galaxy.POI.LureSite" })
+            Assert.Equal("Source.Galaxy.POI.Combat", Type(encounter).BaseType.FullName);
+        Method(poi, "IsStoryMissionPoi", "System.Boolean");
+        // The persisted guard list the selector reads by COUNT: the exact protected field on
+        // MapPointOfInterest that RegenerateGuardUnits spawns from.
+        var guards = Assert.Single(Type(poi).Fields, field => field.Name == "guardDescriptors");
+        Assert.Equal(poi, guards.DeclaringType.FullName);
+        Assert.Equal("System.Collections.Generic.List`1<Source.Galaxy.UnitGenerationDescriptor>", guards.FieldType.FullName);
+        Assert.True(guards.IsFamily && !guards.IsStatic);
+        Assert.Single(Type("Source.Galaxy.MapElement").Properties, property => property.Name == "faction"
+            && property.PropertyType.FullName == "Source.Galaxy.Faction" && property.GetMethod?.IsVirtual == true);
+        Method("Source.Galaxy.Faction", "IsEnemy", "System.Boolean", "Source.Galaxy.Faction");
+        Field("Source.Galaxy.Faction", "player", "Source.Galaxy.Faction", isStatic: true);
+
+        // The native autonomy diagnostic recorded with an unsolicited-route failure.
+        Field(player, "emergencyJump", "System.Boolean", isStatic: false);
+        Field(player, "autoPlay", "System.Boolean", isStatic: false);
+        Property(player, "currentSpaceShip", "Source.SpaceShip.SpaceShipData");
+        foreach (var stat in new[] { "currentHullHP", "maxHullHP", "currentShieldHP", "maxShieldHP" })
+            Field("Source.Data.AbstractUnitData", stat, "System.Single", isStatic: false);
+        Property(travel, "targetPoi", poi);
+        Property(travel, "localTarget", poi);
+        Property(travel, "isWarping", "System.Boolean");
+    }
+
+    [Fact]
+    public void ACombatPoiTargetCanStartAnUnsolicitedNativeReturnRouteSoItIsNotASafeTarget()
+    {
+        using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
+        var module = assembly.MainModule;
+        // qa-82's root cause, pinned in the inspected assembly: a destroyed player hull runs the
+        // native emergency jump, which starts a route to the closest station WITHOUT any player or
+        // pilot request. That is why the in-system target selection must never pick a native combat
+        // encounter, and why an unsolicited route fails a case instead of being waited out.
+        var emergency = Calls(module, "Behaviour.Unit.SpaceShip", "TryEmergencyJump");
+        Assert.Contains("TravelToClosestSpacestation", emergency);
+        Assert.Contains("emergencyJump", FieldRefs(module, "Behaviour.Unit.SpaceShip", "TryEmergencyJump"));
+        Assert.Contains("TryEmergencyJump", Calls(module, "Behaviour.Unit.AbstractUnit", "TakeDamage"));
+        var closest = Calls(module, "Behaviour.Managers.TravelManager", "TravelToClosestSpacestation");
+        Assert.Contains("SetRouteToPOI", closest);
+        Assert.Contains("FindClosestStation", closest);
+        Assert.Contains("PlayerIsFriendly", closest);
+        // The only other autonomous route source is the autopilot, which is gated on GamePlayer.autoPlay.
+        Assert.Contains("autoPlay", FieldRefs(module, "Behaviour.Gameplay.IdleManager", "Update"));
+        // The safe-target members must not be the content-generating counters.
+        // The persisted guard descriptors are exactly what the native regeneration spawns, so a
+        // non-empty list is a source-grounded reason to refuse a POI as a travel target - and
+        // reading it is not the content generation itself.
+        var guardRegeneration = Calls(module, "Source.Galaxy.MapPointOfInterest", "RegenerateGuardUnits");
+        Assert.Contains("guardDescriptors", FieldRefs(module, "Source.Galaxy.MapPointOfInterest", "RegenerateGuardUnits"));
+        Assert.Contains("AddGuardBatch", guardRegeneration);
+        Assert.Contains("RegenerateGuardUnits", Calls(module, "Source.Galaxy.MapPointOfInterest", "EnsureContentGenerated"));
+        // The autonomy diagnostic reads the PURE singleton accessor; Instance would search the
+        // scene and write the static cache.
+        var singleton = module.GetType("Behaviour.Util.Singleton`1") ?? throw new InvalidOperationException("Missing Singleton`1.");
+        var current = Assert.Single(singleton.Properties, property => property.Name == "Current");
+        Assert.True(current.GetMethod.IsStatic);
+        Assert.DoesNotContain("FindAnyObjectByType", Calls(module, "Behaviour.Util.Singleton`1", "get_Current"));
+        Assert.Contains("FindAnyObjectByType", Calls(module, "Behaviour.Util.Singleton`1", "get_Instance"));
+        // activeEnemyCount generates the POI's content; totalEnemyCount reaches it through that getter.
+        Assert.Contains("EnsureContentGenerated", Calls(module, "Source.Galaxy.MapPointOfInterest", "get_activeEnemyCount"));
+        Assert.Contains("get_activeEnemyCount", Calls(module, "Source.Galaxy.MapPointOfInterest", "get_totalEnemyCount"));
+        foreach (var forbidden in new[] { "EnsureContentGenerated", "RegenerateGuardUnits" })
+            Assert.DoesNotContain(forbidden, Calls(module, "Source.Galaxy.MapPointOfInterest", "IsStoryMissionPoi"));
+    }
+
+    // Field names a method references, so a plain field read or write (GamePlayer.autoPlay,
+    // GamePlayer.emergencyJump) is evidence too.
+    private static HashSet<string> FieldRefs(ModuleDefinition module, string owner, string name)
+    {
+        var type = module.GetType(owner) ?? throw new InvalidOperationException("Missing type: " + owner);
+        var result = new HashSet<string>(StringComparer.Ordinal);
+        var method = type.Methods.SingleOrDefault(candidate => candidate.Name == name);
+        if (method?.HasBody == true)
+            foreach (var instruction in method.Body.Instructions)
+                if (instruction.Operand is FieldReference field) result.Add(field.Name);
+        return result;
     }
 
     [Fact]

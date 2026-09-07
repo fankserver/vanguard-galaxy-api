@@ -178,6 +178,85 @@ public sealed class TravelStationReceiptTests
         Assert.Contains("operation identity", TravelStationReceipt.CheckEarlyCancel(foreignOperation, Session, System, Station, First)!);
     }
 
+    // One industrial POI with nothing persisted at it: the only shape the phase may travel to.
+    private static TravelStationReceipt.TravelTargetCandidate Industrial(int persistedGuards = 0,
+        bool hostileOwner = false, bool storyMission = false, bool hidden = false, bool dynamic = false)
+        => new("poi-industrial", industrial: true, combatEncounter: false, station: false, gate: false,
+            wormhole: false, hidden: hidden, dynamic: dynamic, hostileOwner: hostileOwner,
+            storyMission: storyMission, persistedGuards: persistedGuards);
+
+    [Fact]
+    public void AnEmptyIndustrialPoiIsTheOnlyAcceptedInSystemTarget()
+    {
+        Assert.Null(TravelStationReceipt.RefuseTravelTarget(Industrial()));
+        // The qa-82 shape: a native combat encounter is refused before anything else is considered.
+        Assert.Equal("native combat encounter", TravelStationReceipt.RefuseTravelTarget(
+            new("poi-combat", industrial: false, combatEncounter: true, station: false, gate: false,
+                wormhole: false, hidden: false, dynamic: false, hostileOwner: false, storyMission: false, persistedGuards: 0)));
+        Assert.Equal("space station", TravelStationReceipt.RefuseTravelTarget(
+            new("poi-station", false, false, station: true, gate: false, wormhole: false, hidden: false,
+                dynamic: false, hostileOwner: false, storyMission: false, persistedGuards: 0)));
+        Assert.Equal("jump gate", TravelStationReceipt.RefuseTravelTarget(
+            new("poi-gate", false, false, false, gate: true, wormhole: false, hidden: false,
+                dynamic: false, hostileOwner: false, storyMission: false, persistedGuards: 0)));
+        Assert.Equal("wormhole", TravelStationReceipt.RefuseTravelTarget(
+            new("poi-wormhole", false, false, false, false, wormhole: true, hidden: false,
+                dynamic: false, hostileOwner: false, storyMission: false, persistedGuards: 0)));
+        Assert.Equal("not an industrial POI", TravelStationReceipt.RefuseTravelTarget(
+            new("poi-beacon", industrial: false, combatEncounter: false, station: false, gate: false,
+                wormhole: false, hidden: false, dynamic: false, hostileOwner: false, storyMission: false, persistedGuards: 0)));
+        Assert.Equal("hidden", TravelStationReceipt.RefuseTravelTarget(Industrial(hidden: true)));
+        Assert.Equal("dynamic-event POI", TravelStationReceipt.RefuseTravelTarget(Industrial(dynamic: true)));
+        Assert.Equal("owned by a faction hostile to the player", TravelStationReceipt.RefuseTravelTarget(Industrial(hostileOwner: true)));
+        Assert.Equal("story-mission location", TravelStationReceipt.RefuseTravelTarget(Industrial(storyMission: true)));
+    }
+
+    [Fact]
+    public void ANeutralMiningPoiWithPersistedGuardsIsRefusedWhileAnEmptyOneIsAccepted()
+    {
+        // The mission-generated shape the type allowlist alone admits (MiningDeadDrop.SetupPOI): a
+        // plain Mining POI with a NEUTRAL mission faction, no storyId and no dynamic flag, whose
+        // persisted guardDescriptors are what RegenerateGuardUnits spawns as player-hostile units.
+        var deadDrop = Industrial(persistedGuards: 3);
+        Assert.False(deadDrop.HostileOwner);
+        Assert.False(deadDrop.StoryMission);
+        Assert.False(deadDrop.Dynamic);
+        Assert.True(deadDrop.Industrial);
+        var refusal = TravelStationReceipt.RefuseTravelTarget(deadDrop);
+        Assert.Equal("persisted guard descriptors (3)", refusal);
+        // The same POI kind without persisted guards stays a usable target, so the guard rule does
+        // not empty the selection of ordinary industrial sites.
+        Assert.Null(TravelStationReceipt.RefuseTravelTarget(Industrial(persistedGuards: 0)));
+    }
+
+    [Fact]
+    public void AnUnsolicitedNativeRouteInvalidatesTheCaseWindowAndIsReportedWithItsNativeState()
+    {
+        const string autonomy = "emergencyJump=True,autoPlay=False,hull=0.1/10212,currentPoi=poi-1,waypoints=1,targetPoi=station-1";
+        // The qa-82 signature: the pilot asked for nothing yet, but the native emergency jump
+        // requested a return route to the home station inside the case's quiet window.
+        var unsolicited = new[] { Fact(TravelTransitionKind.Requested, Guid.NewGuid(), null, Station, null, 1) };
+        var failure = TravelStationReceipt.CheckNoUnsolicitedTravel("the cancel case", unsolicited, true, autonomy);
+        Assert.Contains("Unsolicited native travel before the cancel case", failure);
+        Assert.Contains("Requested", failure);
+        Assert.Contains("emergencyJump=True", failure);
+        // The native route may also have started without a public fact of its own; an active native
+        // route before a case still fails, and the diagnostic still travels with it.
+        var active = TravelStationReceipt.CheckNoUnsolicitedTravel("the route case", Array.Empty<TravelTransition>(), true, autonomy);
+        Assert.Contains("Native travel was already active before the route case", active);
+        Assert.Contains("emergencyJump=True", active);
+        // A quiet surface is the only accepted precondition.
+        Assert.Null(TravelStationReceipt.CheckNoUnsolicitedTravel("the route case", Array.Empty<TravelTransition>(), false, autonomy));
+        // The unsolicited fact must never be filtered away: the case's own ordering rules see it too.
+        var cancelled = Guid.NewGuid();
+        var window = unsolicited.Concat(new[]
+        {
+            Fact(TravelTransitionKind.Requested, cancelled, null, First, null, 2),
+            Fact(TravelTransitionKind.Cancelled, cancelled, null, null, Station, 2)
+        }).ToArray();
+        Assert.NotNull(TravelStationReceipt.CheckEarlyCancel(window, Session, System, Station, First));
+    }
+
     [Fact]
     public void StationPhaseChecksPhysicalFactsAndIgnoresInteriorOrdering()
     {

@@ -164,6 +164,47 @@ audit. Raw logs, fixtures and sandbox paths stay private and local.
 The travel/station phase evidence of that run (six required cases) is controlled native evidence for
 that phase only; it is not full-run qualification and does not change `RuntimeQualified`.
 
+### Unsolicited native return route after a combat target (qa-82)
+
+`qa-82` failed inside the travel/station phase, BEFORE the resilience phase could run, so that phase
+still has no native coverage. `initial-placement`, `station-undock` and `in-system-route` passed with
+real native facts; `early-cancel` then failed on its own precondition with `Native travel was already
+active before the cancel case.` Everything before the phase passed, the 37 original-file hashes,
+complete direct file sets and byte-identical PlayerPrefs were preserved, and the owned process slot
+was released.
+
+Root cause, proven from the run's own evidence and the inspected assembly rather than from the
+precondition message: the phase's target selector picked the nearest visible non-station, non-gate,
+non-wormhole POI, which in that world's seed was a `Source.Galaxy.POI.Combat` encounter (the previous
+run's nearest safe POI happened to be an industrial one). The recorded public trace shows the route
+completing at that POI and then, 4.4 game seconds later and BEFORE the pilot requested anything, a
+`Requested` fact for the START station. The sandbox log shows `SetRouteToPOi: Source.Galaxy.POI.
+SpaceStation` at the same point, and the quit-time autosave of that run records `emergencyJump=true`,
+hull `0.1/10212`, shield `1.16/…` and `waypoints=[home station]`. That is vanilla's own emergency
+jump: `AbstractUnit.TakeDamage` -> `SpaceShip.TryEmergencyJump` (hull destroyed) ->
+`TravelManager.TravelToClosestSpacestation()` -> `SetRouteToPOI(home station)`. The only other
+autonomous route source in the assembly is `IdleManager`, which is gated on `GamePlayer.autoPlay`
+(false in both the fixture and the quit-time autosave); every remaining `SetRouteToPOI` /
+`TryInitiateTravel` call site is a pointer/UI action or a gate/wormhole handoff.
+
+Fix and protection (harness only; no API runtime change): in-system targets are now chosen by an
+authoritative ALLOWLIST of the two industrial POI kinds (`Source.Galaxy.POI.Mining`,
+`Source.Galaxy.POI.Salvage`), excluding combat encounters (`Combat` and its `CombatStation`,
+`Escort`, `LureSite` subclasses), stations, gates, wormholes, hidden/dynamic POIs, sites owned by a
+faction the game itself reports hostile to the player, story-mission locations, and any POI whose
+persisted `guardDescriptors` list is non-empty - that protected list is what
+`MapPointOfInterest.RegenerateGuardUnits` spawns from, it is read by COUNT only, and it is the
+one signal that catches a mission-generated Mining POI (`MiningDeadDrop.SetupPOI`) whose mission
+faction is neutral, whose `storyId` is null and whose guards are still player-hostile. The
+content-generating `activeEnemyCount`/`totalEnemyCount` getters are still never read. Every travel
+phase shares that one selector. Independently, each case now opens its quiet window BEFORE its
+availability wait and refuses to start on anything but a silent native travel surface: an
+unsolicited fact or an already-active native route fails the case with the observed fact plus a
+read-only native autonomy diagnostic (emergency-jump flag, autopilot flag, hull/shield, current POI,
+waypoints, target/local target, warping, travel-active). Unexpected routes are never waited out,
+filtered away or re-targeted. Choosing a safe target reduces, but cannot prove the absence of,
+native hostility; that is exactly why the strict unsolicited-route failure stays.
+
 ## In-game acceptance checklist — controlled coverage through qa38
 
 Arrange owner approval before deployment. Use copied/disposable saves and the optional compiled `LifecycleObserver` example to record events. Record game/Unity/BepInEx versions, assembly hash, enabled mods, and relevant logs for each run.

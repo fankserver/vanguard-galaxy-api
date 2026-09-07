@@ -152,7 +152,9 @@ public sealed partial class Plugin
             bool approach = !ReferenceEquals(SpGet(Player, "currentPointOfInterest"), source);
             int offset = Travel.Count;
             var routes = new List<IReadOnlyList<TravelCrossSystemReceipt.ExpectedLeg>>();
-            Require(!(bool)_travelActive.Invoke(NativeTravel("the cross-system case"), null)!, "Native travel was already active before the cross-system case.");
+            var unsolicited = TravelStationReceipt.CheckNoUnsolicitedTravel("the cross-system case", Slice(offset),
+                (bool)_travelActive.Invoke(NativeTravel("the cross-system case"), null)!, _p.NativeAutonomyDetail());
+            Require(unsolicited == null, unsolicited!);
             if (approach)
             {
                 if (!(bool)_canWeTravel.Invoke(NativeTravel("native CanWeTravel for the in-system approach"), new[] { source })!)
@@ -175,7 +177,10 @@ public sealed partial class Plugin
                     _systemId, _startPoiId, _systemId, sourceId, _systemId, sourceId) });
             }
             // Native travel refuses for three real seconds after a warp start (delayTravelAttempt),
-            // so availability is sampled after that window instead of being read as a refusal.
+            // so availability is sampled after that window instead of being read as a refusal. The
+            // quiet window opens BEFORE that wait, because that wait is exactly where an unsolicited
+            // native route (qa-82's emergency-jump return) appeared.
+            int crossOffset = Travel.Count;
             foreach (var frame in PollFor(() => false, TravelCrossSystemReceipt.TravelReadySeconds)) yield return frame;
             var direct = NativeRoute(destination);
             if (direct.Count != 1 || !ReferenceEquals(direct[0], destination))
@@ -190,7 +195,9 @@ public sealed partial class Plugin
             // jump can rewrite anything (the tutorial exit rewrites a gate's target in flight).
             var requestedSystemId = mode == TravelMode.JumpGate ? (string)SpGet(source, "targetSystemGuid")! : destinationSystemId;
             var requestedPoiId = mode == TravelMode.JumpGate ? (string)SpGet(source, "targetPoiGuid")! : destinationId;
-            int crossOffset = Travel.Count;
+            var unsolicitedCross = TravelStationReceipt.CheckNoUnsolicitedTravel("the cross-system hop", Slice(crossOffset),
+                (bool)_travelActive.Invoke(NativeTravel("the cross-system hop"), null)!, _p.NativeAutonomyDetail());
+            Require(unsolicitedCross == null, unsolicitedCross!);
             if (!(bool)_canWeTravel.Invoke(NativeTravel("native CanWeTravel for the cross-system hop"), new[] { destination })!)
             {
                 NotRun("Native CanWeTravel refused the cross-system hop to " + destinationId + ".");
