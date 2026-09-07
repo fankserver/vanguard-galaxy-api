@@ -13,7 +13,7 @@ using VGModAPI.Runtime;
 
 namespace VGModAPI;
 
-[BepInPlugin(ModApi.PluginId, "Vanguard Galaxy Mod API", "0.1.12")]
+[BepInPlugin(ModApi.PluginId, "Vanguard Galaxy Mod API", "0.1.13")]
 [BepInProcess("VanguardGalaxy.exe")]
 [BepInDependency("vgmodapi.qualification.guard", BepInDependency.DependencyFlags.SoftDependency)]
 public sealed class Plugin : BaseUnityPlugin
@@ -33,6 +33,7 @@ public sealed class Plugin : BaseUnityPlugin
     private bool _identityHooksBound;
     private ModInformationCatalog? _modCatalog;
     private ModMenuModule? _modMenu;
+    private Assembly? _inspectedGameAssembly;
 
     private void Start()
     {
@@ -65,6 +66,7 @@ public sealed class Plugin : BaseUnityPlugin
             Logger.LogInfo($"Game {UnityEngine.Application.version}, Unity {UnityEngine.Application.unityVersion}; assembly SHA-256: {hash}");
             if (hash != BindingCatalog.InspectedSha256)
                 throw new NotSupportedException("Uninspected game assembly: lifecycle hooks disabled. Reverify adapter before adding support.");
+            _inspectedGameAssembly = assembly;
             var bindings = new GameBindings(assembly);
             _adapter = new GameAdapter(_hub, bindings, ex => Logger.LogError($"Observer fault: {ex}"));
             _harmony = new Harmony(ModApi.PluginId);
@@ -126,9 +128,8 @@ public sealed class Plugin : BaseUnityPlugin
                 Logger.LogInfo("Mods menu disabled by configuration; ModApi.Mods remains available.");
                 return;
             }
-            var assembly = Assembly.Load("Assembly-CSharp");
-            if (ReadAssemblyHash(assembly) != BindingCatalog.InspectedSha256)
-                throw new NotSupportedException("Uninspected game assembly; local catalog remains available.");
+            var assembly = _inspectedGameAssembly
+                ?? throw new NotSupportedException("No inspected game assembly; local catalog remains available.");
             _modMenu = new ModMenuModule(assembly, _modCatalog!, () => string.Join("\n", _hub.Capabilities.Select(capability =>
                 capability.Name + ": " + (capability.Available ? "available, not runtime-qualified" : "unavailable") + " — " + capability.Detail)), DisableModMenu);
             _hub.SetCapability("mod-information-menu", true, "Inspected native menu binding; UI qualification pending.");
