@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Mono.Cecil;
 using VGModAPI.Qualification;
@@ -19,12 +20,95 @@ namespace VGModAPI.Tests;
 ///    direct hook that could record a visit behind the public API.
 ///
 /// Run with VG_ANIMA_ASSEMBLY pointing at the owner-built VGAnima.dll (make check-consumer).
+///
+/// Reading is Cecil-only and read-only: the candidate is opened in memory, nothing is loaded into
+/// this process and no consumer or dependency binary is ever copied into this repository. Cecil
+/// still has to RESOLVE a few referenced assemblies to decode custom-attribute enum arguments
+/// (<c>BepInEx.BepInDependency.DependencyFlags</c>, <c>Newtonsoft.Json.NullValueHandling</c>), so
+/// the resolver gets an explicit, bounded search path instead of Cecil's implicit defaults; see
+/// <see cref="SearchDirectories"/> and docs/checks.md.
 /// </summary>
 [Trait("Category", "InstalledConsumer")]
 public sealed class InstalledAnimaTravelConsumerTests
 {
     private static string AssemblyPath => Environment.GetEnvironmentVariable("VG_ANIMA_ASSEMBLY")
         ?? throw new InvalidOperationException("Run make check-consumer or set VG_ANIMA_ASSEMBLY to the built VGAnima.dll.");
+
+    /// <summary>Extra dependency directories, supplied by make check-consumer (see docs/checks.md).</summary>
+    private const string DependencyDirectoriesVariable = "VG_CONSUMER_DEPENDENCY_DIRS";
+
+    /// <summary>
+    /// The bounded, explicit directories the Cecil resolver may read, in order: the candidate's own
+    /// output directory, the consumer project's own reference-link directory, this test assembly's
+    /// output directory, and every existing directory named by <see cref="DependencyDirectoriesVariable"/>
+    /// (the installed BepInEx core, the installed Managed references and any owner override). Cecil's
+    /// implicit "."/"bin" probing is removed, so nothing outside this list is ever read.
+    /// </summary>
+    private static IReadOnlyList<string> SearchDirectories(string consumerPath)
+    {
+        var directories = new List<string>();
+        void Add(string? candidate)
+        {
+            if (string.IsNullOrWhiteSpace(candidate)) return;
+            var full = Path.GetFullPath(candidate!);
+            if (Directory.Exists(full) && !directories.Contains(full, StringComparer.Ordinal)) directories.Add(full);
+        }
+        var output = Path.GetDirectoryName(Path.GetFullPath(consumerPath));
+        Add(output);
+        // bin/<configuration>/<targetFramework> -> the project's own lib directory, which is where
+        // the consumer's local reference links (game assembly, API abstractions, journal) live.
+        if (output != null) Add(Path.Combine(output, "..", "..", "..", "lib"));
+        Add(AppContext.BaseDirectory);
+        foreach (var directory in (Environment.GetEnvironmentVariable(DependencyDirectoriesVariable) ?? string.Empty)
+            .Split(Path.PathSeparator))
+            Add(directory);
+        return directories;
+    }
+
+    /// <summary>
+    /// Resolves ONLY from <see cref="SearchDirectories"/> and reports a miss as an actionable
+    /// harness failure (what was needed, what was searched, how to extend it) instead of a bare
+    /// Cecil resolution stack trace.
+    /// </summary>
+    private sealed class BoundedConsumerResolver : DefaultAssemblyResolver
+    {
+        private readonly IReadOnlyList<string> _directories;
+        internal BoundedConsumerResolver(IReadOnlyList<string> directories)
+        {
+            _directories = directories;
+            // Drop Cecil's implicit "."/"bin" probing so nothing outside the explicit list is read.
+            foreach (var directory in GetSearchDirectories()) RemoveSearchDirectory(directory);
+            foreach (var directory in directories) AddSearchDirectory(directory);
+        }
+        public override AssemblyDefinition Resolve(AssemblyNameReference name)
+        {
+            try { return base.Resolve(name); }
+            catch (AssemblyResolutionException error)
+            {
+                throw new InvalidOperationException("Cecil could not resolve the consumer dependency '"
+                    + name.FullName + "' that decoding this metadata requires. Searched: "
+                    + string.Join(", ", _directories)
+                    + ". Point ANIMA_DEPENDENCY_DIRS at the directory holding it (see docs/checks.md).", error);
+            }
+        }
+    }
+
+    /// <summary>The candidate opened read-only with the bounded resolver; disposes both.</summary>
+    private sealed class ConsumerRead : IDisposable
+    {
+        private readonly BoundedConsumerResolver _resolver;
+        internal AssemblyDefinition Assembly { get; }
+        internal ConsumerRead(string path)
+        {
+            _resolver = new BoundedConsumerResolver(SearchDirectories(path));
+            // InMemory keeps the candidate file unlocked and guarantees it is never written.
+            Assembly = AssemblyDefinition.ReadAssembly(path,
+                new ReaderParameters { AssemblyResolver = _resolver, InMemory = true, ReadSymbols = false });
+        }
+        public void Dispose() { Assembly.Dispose(); _resolver.Dispose(); }
+    }
+
+    private static ConsumerRead ReadConsumer() => new(AssemblyPath);
 
     private const string Plugin = "VGAnima.Plugin";
     private const string Observer = "VGAnima.Persistence.SystemVisitObserver";
@@ -37,7 +121,8 @@ public sealed class InstalledAnimaTravelConsumerTests
     [Fact]
     public void ConsumerIdentityAndApiDependencyAreThePinnedTravelObservingShape()
     {
-        using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
+        using var consumer = ReadConsumer();
+        var assembly = consumer.Assembly;
         Assert.Equal("VGAnima", assembly.Name.Name);
         Assert.Equal("0.4.0.0", assembly.Name.Version.ToString());
         var plugin = assembly.MainModule.GetType(Plugin) ?? throw new InvalidOperationException("Missing VGAnima.Plugin.");
@@ -51,7 +136,8 @@ public sealed class InstalledAnimaTravelConsumerTests
     [Fact]
     public void EveryConsumerMemberTheProbeReflectsHasItsDeclaredShape()
     {
-        using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
+        using var consumer = ReadConsumer();
+        var assembly = consumer.Assembly;
         var module = assembly.MainModule;
         TypeDefinition Type(string name) => module.GetType(name) ?? throw new InvalidOperationException("Missing type: " + name);
         void Field(string owner, string name, string type, bool isStatic = false)
@@ -142,7 +228,8 @@ public sealed class InstalledAnimaTravelConsumerTests
     [Fact]
     public void TheVisitedSystemMapCanOnlyGrowInsideThePublicEventObserver()
     {
-        using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
+        using var consumer = ReadConsumer();
+        var assembly = consumer.Assembly;
         var module = assembly.MainModule;
         var callers = Callers(module, "NoteSystemVisit").ToArray();
         Assert.Equal(new[] { Observer + ".Observe" }, callers);
@@ -154,7 +241,8 @@ public sealed class InstalledAnimaTravelConsumerTests
     [Fact]
     public void TheConsumerOwnsNoDirectNativeTravelOrStationHarmonyPatch()
     {
-        using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
+        using var consumer = ReadConsumer();
+        var assembly = consumer.Assembly;
         var refusals = new List<string>();
         foreach (var type in AllTypes(assembly.MainModule))
         {

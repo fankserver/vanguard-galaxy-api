@@ -27,7 +27,15 @@ The installed-CONSUMER metadata checks of the actual-consumer qualification prob
 make check-consumer ANIMA_ASSEMBLY=/path/to/VGAnima.dll
 ```
 
-They read that assembly's metadata and IL with Cecil only: they pin every consumer member the probe reflects, the consumer's own hard API dependency, and the two structural facts the probe's conclusions rest on (the visited-system map can only grow inside the public-event observer, and the consumer owns no native travel/station Harmony patch). They launch nothing and never copy a consumer binary into this repository.
+They read that assembly's metadata and IL with Cecil only: they pin every consumer member the probe reflects, the consumer's own hard API dependency, and the two structural facts the probe's conclusions rest on (the visited-system map can only grow inside the public-event observer, and the consumer owns no native travel/station Harmony patch). They launch nothing, load nothing into the test process and never copy a consumer or dependency binary into this repository.
+
+Decoding the consumer's custom-attribute ENUM arguments (`BepInDependency`'s dependency flags and `JsonProperty`'s `NullValueHandling`) forces Cecil to RESOLVE two of the consumer's compile-only references, so the resolver gets an explicit bounded search path instead of Cecil's implicit `.`/`bin` probing: the candidate's own output directory, the consumer project's `lib` reference-link directory, this test project's output directory, and the directories the target passes in `VG_CONSUMER_DEPENDENCY_DIRS` — the installed `BepInEx/core` (BepInEx.dll), the installed `VanguardGalaxy_Data/Managed` references, and the local NuGet copy of Newtonsoft.Json (`NUGET_PACKAGES_DIR`/`NEWTONSOFT_DIR`, both overridable). Nothing outside that list is read. When a dependency lives elsewhere, add its directory instead of moving files:
+
+```sh
+make check-consumer ANIMA_ASSEMBLY=/path/to/VGAnima.dll ANIMA_DEPENDENCY_DIRS=/path/with/Newtonsoft.Json.dll:/path/with/BepInEx.dll
+```
+
+An unresolvable dependency fails with the exact assembly name, the directories that were searched and that override, never with a bare Cecil stack trace. Resolution matches by assembly NAME (Cecil does not compare versions), so a locally cached 13.0.x Newtonsoft stands in for the exact compile-time patch version; that is metadata decoding only and never a compatibility claim.
 
 After building the package, `make provenance` emits the actual SDK, source revision/dirty flag, requested configuration, and SHA-256 for each local reference and the three packaged assemblies. It refuses compile-reference links pointing at a different installation. The standalone command is an input/output snapshot, not proof of a prior compiler invocation; use `check-local` to build/check immediately before reporting. It emits neither absolute installation paths nor binary contents. Publish that bounded report and check results, not a reference bundle or raw qualification profile. A recorded hash identifies bytes; it does not establish licensing or live compatibility.
 
