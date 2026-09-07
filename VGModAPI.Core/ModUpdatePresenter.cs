@@ -30,10 +30,9 @@ internal sealed class ModUpdatePresenter
     internal string Text(ModInformation mod, DateTimeOffset now)
     {
         if (Confirming)
-            return "NETWORK CONFIRMATION\n" + (_confirmation == "automatic" ? "Enable automatic checks for declared feeds of all API consumers.\n" : "Check this mod's declared feed once.\n") +
+            return "NETWORK CONFIRMATION\nSelected feed host: " + FeedHost(mod) + "\n" + (_confirmation == "automatic" ? "Enable automatic checks for declared feeds of all API consumers.\n" : "Check this mod's declared feed once.\n") +
                 "Requests expose your IP address and requested feed path to GitHub hosts and validated GitHub redirects. No saves, profile, machine ID or full inventory is sent.\n" +
                 "Supported hosts: github.com, raw.githubusercontent.com, objects.githubusercontent.com, release-assets.githubusercontent.com.\n" +
-                "Selected feed host: " + FeedHost(mod) + "\n" +
                 "Automatic checks repeat at most every six hours after success. Disabling stops future checks; in-flight checks may finish.\n" +
                 "Press the same button again to confirm. Select another mod or close to cancel. No downloads or installations.";
         var status = _service.Status(mod);

@@ -17,11 +17,13 @@ public sealed class ModUpdateServiceTests : IDisposable
     private sealed class Transport : IModFeedTransport
     {
         internal int Calls;
+        internal Func<Uri, CancellationToken, Task<ModFeedResponse>>? Handler;
         internal int Code = 200;
         internal TaskCompletionSource<bool>? Wait;
         public async Task<ModFeedResponse> GetAsync(Uri uri, CancellationToken cancellation)
         {
             Interlocked.Increment(ref Calls);
+            if (Handler != null) return await Handler(uri, cancellation);
             if (Wait != null) await Wait.Task.WaitAsync(cancellation);
             return new ModFeedResponse(Code, new MemoryStream(Encoding.UTF8.GetBytes("{\"schemaVersion\":1,\"pluginId\":\"a\",\"channel\":\"stable\",\"version\":\"2.0\",\"releaseUrl\":\"https://github.com/a/b/releases\"}")), retryAfter: TimeSpan.FromMinutes(5));
         }
@@ -106,7 +108,10 @@ public sealed class ModUpdateServiceTests : IDisposable
         await Until(service, () => transport.Calls == 2);
         for (var i = 0; i < 5; ++i) { service.Pump(); await Task.Delay(5); }
         Assert.Equal(2, transport.Calls);
-        service.Enabled = false; transport.Wait.SetResult(true);
+        service.Enabled = false;
+        service.Pump(); // Both workers still occupied: pending cancellation cannot depend on capacity.
+        service.Enabled = true;
+        transport.Wait.SetResult(true);
         for (var i = 0; i < 20; ++i) { service.Pump(); await Task.Delay(5); }
         Assert.Equal(2, transport.Calls);
     }
@@ -119,6 +124,77 @@ public sealed class ModUpdateServiceTests : IDisposable
         Assert.Equal(128, Directory.GetFiles(_root, "*.cache").Length);
         File.WriteAllBytes(Path.Combine(_root, ModUpdateCache.Key(Mod(id: "id129")) + ".cache"), new byte[17000]);
         Assert.Null(cache.Read(Mod(id: "id129"), Now));
+    }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ConcurrentRateLimitsKeepLongestSourceAndRedirectDeadline(bool redirect)
+    {
+        var now = Now;
+        var first = new TaskCompletionSource<ModFeedResponse>();
+        var second = new TaskCompletionSource<ModFeedResponse>();
+        var transport = new Transport { Handler = (uri, _) => uri.AbsolutePath.EndsWith("first") ? first.Task : second.Task };
+        using var service = new ModUpdateService(transport, new ModUpdateCache(_root), () => now);
+        var a = Mod(source: "https://github.com/first");
+        var b = Mod(source: "https://github.com/second", id: "b");
+        service.Sync(new[] { a, b }); service.Request("a"); service.Request("b");
+        await Until(service, () => transport.Calls == 2);
+        if (redirect)
+        {
+            first.SetException(new ModFeedRequestException(true, TimeSpan.FromDays(1), "release-assets.githubusercontent.com"));
+            await Until(service, () => service.Status(a).State == ModUpdateState.RateLimited);
+            second.SetException(new ModFeedRequestException(true, TimeSpan.FromMinutes(1), "release-assets.githubusercontent.com"));
+        }
+        else
+        {
+            first.SetResult(new ModFeedResponse(429, Stream.Null, retryAfter: TimeSpan.FromDays(1)));
+            await Until(service, () => service.Status(a).State == ModUpdateState.RateLimited);
+            second.SetResult(new ModFeedResponse(429, Stream.Null, retryAfter: TimeSpan.FromMinutes(1)));
+        }
+        await Until(service, () => service.Status(b).State == ModUpdateState.RateLimited);
+        now = now.AddMinutes(2);
+        var c = Mod(source: redirect ? "https://release-assets.githubusercontent.com/third" : "https://github.com/third", id: "c");
+        service.Sync(new[] { a, b, c }); service.Request("c");
+        await Until(service, () => service.Status(c).State == ModUpdateState.RateLimited);
+        Assert.Equal(Now.AddDays(1), service.Status(c).RetryAt);
+        Assert.Equal(2, transport.Calls);
+    }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MalformedUnicodeIsInvalidFeed(bool escapedSurrogate)
+    {
+        var bytes = escapedSurrogate ? Encoding.UTF8.GetBytes("{\"schemaVersion\":1,\"pluginId\":\"\\uD800\",\"channel\":\"stable\",\"version\":\"2.0\",\"releaseUrl\":\"https://github.com/a\"}") : new byte[] { 0xff };
+        var transport = new Transport { Handler = (_, _) => Task.FromResult(new ModFeedResponse(200, new MemoryStream(bytes))) };
+        using var service = new ModUpdateService(transport, new ModUpdateCache(_root), () => Now);
+        var mod = Mod(); service.Sync(new[] { mod }); service.Request("a");
+        await Until(service, () => service.Status(mod).State == ModUpdateState.Invalid);
+    }
+    [Fact]
+    public async Task AutomaticSuccessWaitsSixHoursAndUnavailableHostIsFailure()
+    {
+        var now = Now; var transport = new Transport(); var mod = Mod();
+        using var service = new ModUpdateService(transport, new ModUpdateCache(_root), () => now) { Automatic = true };
+        service.Sync(new[] { mod });
+        await Until(service, () => service.Status(mod).State == ModUpdateState.Available);
+        now = now.AddHours(5); service.Pump(); Assert.Equal(1, transport.Calls);
+        transport.Handler = (_, _) => throw new System.Net.Http.HttpRequestException("unavailable");
+        now = now.AddHours(1);
+        await Until(service, () => service.Status(mod).State == ModUpdateState.Failed);
+        Assert.Equal(2, transport.Calls); Assert.NotNull(service.Status(mod).LastSuccess);
+    }
+    [Fact]
+    public async Task ReplacedContextRejectsCompletionWithoutDisposingService()
+    {
+        var transport = new Transport { Wait = new TaskCompletionSource<bool>() };
+        using var service = new ModUpdateService(transport, new ModUpdateCache(_root), () => Now);
+        var mod = Mod(); service.Sync(new[] { mod }); service.Request("a");
+        await Until(service, () => transport.Calls == 1);
+        var changed = Mod(source: "https://github.com/a/new/feed"); service.Sync(new[] { changed });
+        transport.Wait.SetResult(true);
+        for (var i = 0; i < 30; ++i) { service.Pump(); await Task.Delay(5); }
+        Assert.Equal(ModUpdateState.NotChecked, service.Status(changed).State);
+        Assert.Null(service.Status(changed).LastSuccess);
     }
     public void Dispose() { if (Directory.Exists(_root)) Directory.Delete(_root, true); }
 }

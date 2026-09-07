@@ -174,6 +174,7 @@ public sealed class Plugin : BaseUnityPlugin
             if (_updates != null)
             {
                 _updates.Enabled = _updatesEnabled!.Value;
+                if (!_updates.Enabled) _updatePresenter?.Cancel();
                 _updates.Automatic = _automaticUpdates!.Value;
                 _updates.Pump();
             }
@@ -182,6 +183,7 @@ public sealed class Plugin : BaseUnityPlugin
         {
             try { _updates?.Dispose(); } catch (Exception) { }
             _updates = null;
+            _updatePresenter?.Cancel();
             Logger.LogWarning("Update checker stopped (" + error.GetType().Name + "); offline inventory remains available.");
         }
         try { _modMenu?.Poll(); }

@@ -114,6 +114,28 @@ public sealed class ModUpdateFeedTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => new ModFeedClient(transport, TimeSpan.FromMilliseconds(20)).FetchAsync(Url, "author.mod", "stable", default));
     }
 
+    private sealed class StalledBody : MemoryStream
+    {
+        private readonly TaskCompletionSource<bool> _closed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal bool WasDisposed;
+        public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        {
+            // Simulate a body stream which ignores ReadAsync cancellation but aborts when disposed.
+            await _closed.Task.ConfigureAwait(false);
+            throw new ObjectDisposedException(nameof(StalledBody));
+        }
+        protected override void Dispose(bool disposing) { WasDisposed = true; _closed.TrySetResult(true); base.Dispose(disposing); }
+    }
+    [Fact]
+    public async Task DeadlineDisposesStalledBodyEvenWhenReadIgnoresCancellation()
+    {
+        var body = new StalledBody();
+        using var transport = new Transport { Handler = (_, _) => Task.FromResult(new ModFeedResponse(200, body)) };
+        var request = new ModFeedClient(transport, TimeSpan.FromMilliseconds(100)).FetchAsync(Url, "author.mod", "stable", default);
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => request.WaitAsync(TimeSpan.FromSeconds(3)));
+        Assert.True(body.WasDisposed);
+    }
+
     [Fact]
     public async Task ShutdownCancellationStartsNoRequest()
     {

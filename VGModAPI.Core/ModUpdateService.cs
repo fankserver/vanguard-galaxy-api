@@ -50,7 +50,17 @@ internal sealed class ModUpdateService : IDisposable
     private int _running;
     private bool _disposed;
     internal bool Automatic { get; set; }
-    internal bool Enabled { get; set; } = true;
+    private bool _enabled = true;
+    internal bool Enabled
+    {
+        get => _enabled;
+        set
+        {
+            if (_enabled == value) return;
+            _enabled = value;
+            if (!value) foreach (var entry in _entries.Values) entry.Wanted = false;
+        }
+    }
     internal ModUpdateService(IModFeedTransport transport, ModUpdateCache cache, Func<DateTimeOffset>? clock = null)
     {
         _transport = transport; _cache = cache; _clock = clock ?? (() => DateTimeOffset.UtcNow);
@@ -90,8 +100,8 @@ internal sealed class ModUpdateService : IDisposable
             entry.Running = false;
             if (result.Network && result.Status.State == ModUpdateState.RateLimited)
             {
-                _backoff[new Uri(entry.Mod.Metadata!.UpdateUrl!).Host] = result.Status.RetryAt!.Value;
-                if (result.Origin != null) _backoff[result.Origin] = result.Status.RetryAt!.Value;
+                ExtendBackoff(new Uri(entry.Mod.Metadata!.UpdateUrl!).Host, result.Status.RetryAt!.Value);
+                if (result.Origin != null) ExtendBackoff(result.Origin, result.Status.RetryAt!.Value);
             }
             if (!_entries.TryGetValue(entry.Mod.PluginId, out var current) || !ReferenceEquals(entry, current)) continue;
             entry.Status = result.Status;
@@ -127,6 +137,9 @@ internal sealed class ModUpdateService : IDisposable
         }
     }
 
+    private void ExtendBackoff(string host, DateTimeOffset until) =>
+        _backoff.AddOrUpdate(host, until, (_, current) => current > until ? current : until);
+
     private Task Work(Entry entry, bool network, ModUpdateStatus previous) => Task.Run(async () =>
     {
         ModUpdateStatus status;
@@ -147,7 +160,7 @@ internal sealed class ModUpdateService : IDisposable
                 _cache.Write(entry.Mod, feed, time);
             }
         }
-        catch (FormatException) { status = new ModUpdateStatus(ModUpdateState.Invalid, previous.LastSuccess, previous.CheckedAt, _clock().AddMinutes(15)); }
+        catch (Exception error) when (error is FormatException || error is System.Text.DecoderFallbackException || error is System.Text.EncoderFallbackException) { status = new ModUpdateStatus(ModUpdateState.Invalid, previous.LastSuccess, previous.CheckedAt, _clock().AddMinutes(15)); }
         catch (ModFeedRequestException ex) { origin = ex.Origin; status = new ModUpdateStatus(ex.RateLimited ? ModUpdateState.RateLimited : ModUpdateState.Failed, previous.LastSuccess, previous.CheckedAt, _clock().Add(ex.RetryAfter)); }
         catch (Exception) { status = new ModUpdateStatus(ModUpdateState.Failed, previous.LastSuccess, previous.CheckedAt, _clock().AddMinutes(15)); }
         _completed.Enqueue(new Completion(entry, network, status, origin));
