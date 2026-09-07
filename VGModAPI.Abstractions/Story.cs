@@ -47,6 +47,28 @@ public readonly struct StoryContentId : IEquatable<StoryContentId>
 public enum StoryObjectiveKind { TravelToPoi, KillEnemies, CollectCredits }
 
 /// <summary>
+/// Identity of a faction this API may reference. It is the game's own faction identifier, passed as a
+/// string so no vanilla type reaches this contract, and it is RESOLVED against the game's faction
+/// registry when content is registered: an identifier the game does not know refuses registration
+/// rather than producing a mission the game cannot serialize.
+/// </summary>
+public readonly struct StoryFactionId : IEquatable<StoryFactionId>
+{
+    public string Value { get; }
+    public StoryFactionId(string value)
+    {
+        if (value == null) throw new ArgumentNullException(nameof(value));
+        if (value.Length is < 1 or > 64 || !value.All(c => c is >= 'a' and <= 'z' or >= 'A' and <= 'Z' or >= '0' and <= '9' or '-' or '_' or '.'))
+            throw new ArgumentException("A faction identity is 1-64 ASCII letters, digits, dots, hyphens or underscores.", nameof(value));
+        Value = value;
+    }
+    public bool Equals(StoryFactionId other) => string.Equals(Value, other.Value, StringComparison.Ordinal);
+    public override bool Equals(object? obj) => obj is StoryFactionId other && Equals(other);
+    public override int GetHashCode() => Value?.GetHashCode() ?? 0;
+    public override string ToString() => Value ?? "";
+}
+
+/// <summary>
 /// Reward kinds this API supports today. Vanilla SKIPS an unresolvable reward with a log line, so
 /// the API refuses unsupported rewards at registration instead of letting them disappear on load.
 /// Item/reputation rewards need owner-scoped item/faction identities and are deliberately absent.
@@ -196,6 +218,13 @@ public sealed class StoryMissionDefinition
     public StoryDifficulty Difficulty { get; }
     public bool CanAbandon { get; }
     public StoryRetention Retention { get; }
+    /// <summary>
+    /// The faction this mission comes FROM. It is required because the game writes
+    /// <c>sourceFaction.identifier</c> unconditionally when it saves a held mission: a mission without
+    /// one makes the player's save throw. It is resolved against the game's own registry at
+    /// registration, so an unknown identity refuses instead of producing that mission.
+    /// </summary>
+    public StoryFactionId SourceFaction { get; }
     public IReadOnlyList<StoryStep> Steps { get; }
     public IReadOnlyList<StoryReward> Rewards { get; }
     /// <summary>
@@ -212,12 +241,14 @@ public sealed class StoryMissionDefinition
     /// </summary>
     public int ReservedChoiceBytes { get; }
 
-    public StoryMissionDefinition(string localId, string title, string description, IEnumerable<StoryStep> steps,
+    public StoryMissionDefinition(string localId, string title, string description, StoryFactionId sourceFaction, IEnumerable<StoryStep> steps,
         IEnumerable<StoryReward>? rewards = null, StoryDifficulty difficulty = StoryDifficulty.Normal,
         StoryRetention retention = StoryRetention.Temporary, bool canAbandon = true,
         string? category = null, string? completionText = null, IEnumerable<string>? choiceKeys = null)
     {
         if (!StoryContentId.IsValidSegment(localId)) throw new ArgumentException("A local ID is 1-48 lowercase ASCII letters/digits/hyphens starting with a letter.", nameof(localId));
+        if (sourceFaction.Value == null) throw new ArgumentException("A source faction identity is required.", nameof(sourceFaction));
+        SourceFaction = sourceFaction;
         if (!Enum.IsDefined(typeof(StoryDifficulty), difficulty)) throw new ArgumentOutOfRangeException(nameof(difficulty));
         if (!Enum.IsDefined(typeof(StoryRetention), retention)) throw new ArgumentOutOfRangeException(nameof(retention));
         LocalId = localId;
@@ -494,7 +525,23 @@ public interface IStoryProvider : IDisposable
     /// <summary>Withdraws an offered occurrence that was never accepted; it leaves no tombstone.</summary>
     StoryTransitionResult Withdraw(Guid expectedSessionId, Guid occurrenceId);
 
-    /// <summary>Records the single terminal outcome of an occurrence, with declared choices for campaign content.</summary>
+    /// <summary>
+    /// Declares the choices to record WITH this occurrence's outcome. Completions come from the game,
+    /// so the choices that belong to one are declared while the occurrence is still live and are
+    /// written when the game ends it. They are validated here, against the same declared keys and
+    /// bounds a retirement uses, so nothing unrecordable is ever staged. Declaring again replaces the
+    /// previous declaration; it never merges into it.
+    /// </summary>
+    StoryTransitionResult DeclareChoices(Guid expectedSessionId, Guid occurrenceId, IReadOnlyDictionary<string, string> choices);
+
+    /// <summary>
+    /// Records a terminal outcome the CALLER owns: an abandonment or a failure it decides. The mission
+    /// is ended in the game first and the outcome is recorded only if that succeeded.
+    ///
+    /// <see cref="StoryOutcome.Completed"/> is NOT a caller-declared outcome and is refused here: a
+    /// completion is recorded only when the game is observed completing the mission, so no caller can
+    /// claim one for content that was never accepted or that the player abandoned.
+    /// </summary>
     StoryTransitionResult Retire(Guid expectedSessionId, Guid occurrenceId, StoryOutcome outcome, IReadOnlyDictionary<string, string>? choices = null);
 
     /// <summary>Retained (retired) occurrences of one of this provider's definitions, scoped to the session that answered.</summary>

@@ -53,6 +53,13 @@ internal interface IStoryWorld
     IReadOnlyCollection<string> InstalledIdentifiers();
 
     /// <summary>
+    /// Whether the game knows this faction identity. A mission must carry a real source faction: the
+    /// game writes it unconditionally when it saves, so an unknown identity is refused at
+    /// registration instead of producing a mission that breaks the player's save.
+    /// </summary>
+    bool KnowsFaction(string factionId);
+
+    /// <summary>
     /// Installs a definition under an identifier the API owns. Vanilla's own registration REPLACES a
     /// duplicate, so an identifier the API did not install is reported as already present and left
     /// exactly as it was.
@@ -75,6 +82,13 @@ internal interface IStoryWorld
     /// not performed is never fabricated and no reward is granted by the API.
     /// </summary>
     StoryWorldResult Release(string identifier, StoryOutcome outcome);
+
+    /// <summary>
+    /// Undoes an acceptance this API just made, because the record could not be committed after it.
+    /// It targets the EXACT mission object that acceptance produced, removes it without archiving,
+    /// and verifies the world no longer holds it. A failed rollback is reported, never assumed.
+    /// </summary>
+    StoryWorldResult RollbackAccept(string identifier);
 
     /// <summary>The world's current view of API-owned identifiers, or null when there is no usable world.</summary>
     StoryWorldSnapshot? Snapshot();

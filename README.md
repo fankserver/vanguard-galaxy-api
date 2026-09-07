@@ -99,8 +99,10 @@ Require API 0.1.10, declare a hard BepInEx dependency, and acquire a provider le
 `Awake` with `ModApi.Story?.AcquireProvider(this)`. The lease registers immutable mission definitions
 from a closed supported subset; the API installs them into the game's own story catalog, mints and
 persists occurrence identity, and captures/restores that state itself, so you write no codec, no
-save/load callback and no restoration scheduling for it. Activating an occurrence asks the game to
-accept the mission and records it only if the game actually did; a completion is the game's to make.
+save/load callback and no restoration scheduling for it. Definitions declare their source faction, because the game requires one to save a held mission.
+Activating an occurrence asks the game to accept the mission and records it only if the game actually
+did; completions are recorded from the game's own observed completion, never declared by you, with
+choices you declared while the occurrence was live.
 `ModApi.Story` is null unless the story group is enabled and bound. See `docs/story-content.md`;
 nothing here is runtime-qualified.
 

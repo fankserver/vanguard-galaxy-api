@@ -293,38 +293,92 @@ remove live content. It never rewrites or deletes saved
 occurrences: removal of persisted references follows `content-safety.md`, and provider-required
 content still needs its provider.
 
-## The native slice: installing into the game and reconciling on load
+## The native slice: installing into the game, and what the game decides
 
-Since 0.1.10 the module is actually wired to the game, behind `Story/Enabled` (default off) and the
-same inspected-assembly gate as every other adapter. `ModApi.Story` is non-null only when that group
-binds; a binding failure leaves it null and the `owned-story` capability unavailable rather than
-half-installed.
+Since 0.1.10 the module is actually wired to the game, behind `Story/Enabled` (default off), the
+inspected-assembly gate every other adapter uses, API-managed saves, and observed mission
+transitions. `ModApi.Story` is non-null only when all of those are available; a binding failure
+leaves it null and the `owned-story` capability unavailable rather than half-installed. Observed
+transitions are required, not optional: without them a completion could never be recorded, and the
+only alternative would be letting a caller declare one.
 
 | Moment | What the API does natively |
 |---|---|
-| Registration | Installs a vanilla story definition under the namespaced identifier. It happens at REGISTRATION, not at session start, because vanilla resolves a saved story payload out of its catalog while it deserializes: a definition registered later would arrive after the load that needs it. |
-| Collision | Vanilla's own registration REPLACES a duplicate identifier, so the adapter checks first and refuses (`IdentifierInUse`) instead. Nothing existing is ever overwritten, and a refused installation also rolls back the API-side registration. |
-| Generator | The installed definition's generator builds a `Mission` through vanilla's own objective and reward factories, with the supported subset's fields only. No consumer delegate is captured and none is ever persisted. |
-| `Activate` | Asks vanilla to accept the mission (`force:false`, so vanilla's own duplicate-story refusal applies), then VERIFIES the player actually holds it. The occurrence is recorded active only after that; a refusal records nothing. |
-| `Retire(Completed)` | Refused while the world still holds the mission. A completion belongs to the game, with the game's rewards; the API never fabricates one. |
+| Registration | Installs the definition into the game's story catalog under its base identifier, and resolves the definition's SOURCE FACTION against the game's own faction registry. An unknown faction refuses registration. |
+| Collision | The game's own registration REPLACES a duplicate identifier, so the adapter checks first and refuses (`IdentifierInUse`) instead. Nothing existing is ever overwritten, and a refused installation rolls back the API-side registration with it. |
+| `Offer` | Installs a catalog entry for THAT OCCURRENCE, under its own identifier. |
+| Generator | Builds a `Mission` through the game's own objective and reward factories, from the supported subset's fields only, and sets the context every vanilla generator sets. No consumer delegate is captured and none is ever persisted. |
+| `Activate` | Asks the game to accept the mission (`force:false`, so its own duplicate-story refusal applies), then VERIFIES the player holds exactly that mission. The occurrence is recorded active only after that. |
 | `Retire(Abandoned/Failed)` | Removes the mission from the world first (`completed:false`, so nothing is archived as finished) and records the outcome only once the world no longer holds it. |
-| Release | Disposing a registration, a provider lease or the module uninstalls ONLY the catalog entries this API installed, and only while the catalog still holds our own entry. |
+| `Retire(Completed)` | Refused. A completion is recorded from the OBSERVED completion in the game (see below). |
+| Release | Disposing a registration, a lease or the module uninstalls only the catalog entries this API installed, and only while the catalog still holds our own entry. An occurrence the player is still holding keeps its entry. |
 
-### Reconciliation on load
+### Why a mission needs a source faction
 
-Vanilla persists accepted missions itself, as full objects carrying `storyId`, so after a reload the
-ledger and the world can legitimately disagree. When the module's own state is restored it correlates
-the two by identifier and REPORTS what it finds; it repairs nothing:
+The game writes `sourceFaction.identifier` unconditionally when it saves a held mission, and reads it
+back through its own faction registry. A mission without one makes the player's save throw, which is
+why `StoryMissionDefinition` requires a `StoryFactionId` and why the adapter also sets the source
+location (the player's current point of interest, which the game tolerates being absent) and the
+dynamic level flag every vanilla generator sets. For the same reason the `KillEnemies` objective kind
+is REFUSED at registration: it serializes an enemy faction's identifier, counts kills against that
+faction and renders its name, and this subset has no owner-scoped faction identity for objectives.
+The kind stays in the vocabulary and is refused with that reason rather than installed unsafely.
 
-- An active occurrence whose mission the world no longer holds is reported (including whether the
-  world archived it) and left exactly as recorded. Nothing is deleted and no outcome is invented,
+### One catalog entry per occurrence
+
+The game archives a completed story identifier and its duplicate check consults that archive, so a
+single shared identifier could be accepted exactly ONCE per save. Each occurrence therefore gets its
+own catalog entry, `vgmodapi.story.<provider>.<local>.<occurrence>`, derived deterministically from
+the content identity and the occurrence so a reload reinstalls exactly the same entries without
+storing the string. A repeated occurrence of a completed definition is accepted normally.
+
+### Outcomes come from the game
+
+A completion is never declared by a caller. The module watches the same mission boundary consumers
+see and records the outcome the game produced for an owned occurrence:
+
+- an observed completion or failure records that outcome, once;
+- an observed abandonment records an abandonment;
+- a NEUTRAL removal says nothing about why the mission ended, so the occurrence stays unresolved
+  rather than being called complete or failed.
+
+Choices belong with a completion the caller does not perform, so they are declared while the
+occurrence is live with `DeclareChoices`, validated exactly as a retirement validates them, and
+written when the game ends it. `Retire` remains for the outcomes a caller genuinely owns — an
+abandonment or a failure it decides — and those end the mission in the game first.
+
+### Transactions across the native boundary
+
+Accepting or ending a mission dispatches the game's own mission observers synchronously, so consumer
+code runs INSIDE those calls. Everything is therefore validated before the world is touched — lease,
+session, availability, ownership, state, outcome, choice bounds and encodability — and re-validated
+afterwards. A story mutation attempted from inside such a call is refused as `Busy`, and a catalog
+removal a disposal asks for waits until the operation completes.
+
+If an acceptance can no longer be recorded (the consumer disposed its lease, the save reloaded), the
+API undoes exactly the mission that acceptance produced, without archiving it. If that undo fails, or
+if an outcome cannot be recorded after the mission was already ended in the game, the module BLOCKS
+itself for the session and says so: a mission already ended cannot be un-ended without replaying its
+acceptance side effects, so nothing further is built on a world the module cannot account for.
+
+### Load: the game restores its own missions, and orphans suspend the module
+
+The game saves the player's held missions as full OBJECTS (`missions` written from `Mission.ToJson`)
+and only resolves the story catalog for a string element, which its own saves never write. So a
+missing provider does NOT stop a load and is NOT protected by the game: the mission would simply come
+back orphaned, with live objectives and rewards. That is what this policy exists for.
+
+When the module's own state is restored it reinstalls the catalog entry of every unresolved
+occurrence and correlates the ledger with the world by occurrence identifier:
+
+- An active occurrence whose mission the world no longer holds is REPORTED, including whether the
+  world archived it, and left exactly as recorded. Nothing is deleted and no outcome is invented,
   because the archive alone cannot say whether the story was completed or abandoned.
-- One of our identifiers live in the world with no admitted occurrence is reported and NOT adopted:
-  an occurrence identity is minted by this API, never inferred from a save.
-
-A saved payload whose definition is not registered stays vanilla's own refusal: `StoryMission.Get`
-throws for an unknown identifier, so a missing provider surfaces as protected content rather than a
-substituted mission. The API never installs a placeholder generator to make such a save load.
+- An owned identifier live in the world that no admitted occurrence claims, or an unresolved
+  occurrence whose provider is not registered, SUSPENDS the module for the session: every mutation is
+  refused, the reason is reported for a provider-required compatibility state, the native mission is
+  left exactly where the save has it, and not one persisted byte is rewritten. Nothing is adopted,
+  substituted or deleted, and no placeholder generator is ever installed.
 
 ### Difficulty mapping
 
@@ -338,9 +392,9 @@ installation instead of guessing.
 Delivered here: public contracts, authenticated provider leases, session-scoped availability and
 session-scoped mutations, unresolved-occurrence discovery, identity policy, registry, occurrence
 ledger with its retention policy, bounded codec, automatic persistence registration, the native
-install/accept/abandon adapter with load-time reconciliation, the `ModApi.Story` surface behind the
-inspected-assembly gate, host tests and installed-assembly pins. **Not** delivered here: driving
-occurrence outcomes from the observed mission boundaries (a completion is currently recorded by the
-consumer once the world has ended the mission, not detected from a mission event), the qualification
-probe phase, and the two-consumer demonstration. Those remain required for #13, no case has been run
-in the game, and `RuntimeQualified` stays false.
+install/accept/abandon adapter with per-occurrence catalog entries and rollback, observed outcomes
+from the game's own mission boundary, the orphan suspension policy, the `ModApi.Story` surface behind
+the inspected-assembly gate, host tests against the production adapter and installed-assembly pins.
+**Not** delivered here: the qualification probe phase and the two-consumer demonstration. Those remain
+required for #13, NO case has been run in the game — every native claim here is metadata, IL and host
+doubles — and `RuntimeQualified` stays false.

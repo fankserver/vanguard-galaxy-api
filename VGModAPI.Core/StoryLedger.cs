@@ -227,7 +227,13 @@ internal sealed class StoryLedger
     /// Records the terminal outcome once. A second terminal call is refused rather than rewriting an
     /// authoritative result, and a temporary definition retains only the tombstone.
     /// </summary>
-    internal StoryLedgerStatus Retire(StoryContentId caller, Guid occurrenceId, StoryOutcome outcome,
+    /// <summary>
+    /// Every check <see cref="Retire"/> makes, with NO mutation. It exists because the world is
+    /// changed before the record is written: a refusal discovered after the mission was already
+    /// abandoned in the game would leave the two disagreeing, so the whole retirement is validated
+    /// first and the world is only touched once it is known to be recordable.
+    /// </summary>
+    internal StoryLedgerStatus CanRetire(StoryContentId caller, Guid occurrenceId, StoryOutcome outcome,
         IReadOnlyDictionary<string, string>? choices, out string diagnostic)
     {
         var status = Resolve(caller, occurrenceId, out var entry, out diagnostic);
@@ -238,8 +244,31 @@ internal sealed class StoryLedger
             diagnostic = "This occurrence already reported " + entry.Outcome + "; an outcome is recorded once.";
             return StoryLedgerStatus.InvalidTransition;
         }
-        var refusal = CheckChoices(entry, choices);
-        if (refusal != null) { diagnostic = refusal; return StoryLedgerStatus.LimitExceeded; }
+        var precondition = CheckChoices(entry, choices);
+        if (precondition != null) { diagnostic = precondition; return StoryLedgerStatus.LimitExceeded; }
+        return StoryLedgerStatus.Accepted;
+    }
+
+    /// <summary>Every check <see cref="Activate"/> makes, with no mutation, for the same reason.</summary>
+    internal StoryLedgerStatus CanActivate(StoryContentId caller, Guid occurrenceId, out string diagnostic)
+    {
+        var status = Resolve(caller, occurrenceId, out var entry, out diagnostic);
+        if (status != StoryLedgerStatus.Accepted) return status;
+        if (entry!.State != StoryOccurrenceState.Offered)
+        {
+            diagnostic = "Only an offered occurrence becomes active; this one is " + entry.State + ".";
+            return StoryLedgerStatus.InvalidTransition;
+        }
+        return StoryLedgerStatus.Accepted;
+    }
+
+    internal StoryLedgerStatus Retire(StoryContentId caller, Guid occurrenceId, StoryOutcome outcome,
+        IReadOnlyDictionary<string, string>? choices, out string diagnostic)
+    {
+        var status = CanRetire(caller, occurrenceId, outcome, choices, out diagnostic);
+        if (status != StoryLedgerStatus.Accepted) return status;
+        Resolve(caller, occurrenceId, out var entry, out _);
+        if (entry == null) { diagnostic = "Unknown occurrence."; return StoryLedgerStatus.UnknownOccurrence; }
         // No per-definition bound is applied here: the slot was reserved when the occurrence was
         // offered, so recording ITS outcome is always possible. Checking again would strand it.
         entry.Retire(outcome, choices);

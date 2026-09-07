@@ -187,12 +187,19 @@ public sealed class Plugin : BaseUnityPlugin
         if (_persistence == null) { _hub!.SetCapability("owned-story", false, "API-managed saves unavailable."); return; }
         if (!_hub!.Capabilities.Any(c => c.Name == "session-lifecycle" && c.Available))
         { _hub.SetCapability("owned-story", false, "Lifecycle capability unavailable."); return; }
+        // Without observed mission transitions a completion could never be recorded, and the only
+        // alternative would be letting a caller declare one. The capability stays off instead.
+        if (_missions == null || !_hub.Capabilities.Any(c => c.Name == "mission-transitions" && c.Available))
+        { _hub.SetCapability("owned-story", false, "Observed mission transitions unavailable; owned story outcomes could not be recorded."); return; }
         try
         {
             var assembly = Assembly.Load("Assembly-CSharp");
             _storyWorld = new StoryNativeWorld(new StoryNativeBindings(assembly), _hub.CheckThread,
                 error => Logger.LogError("Story world fault: " + error));
-            _story = new StoryContentService(_persistence, _hub, StoryHostAuthentication.Resolve, null, _hub.CheckThread, _storyWorld);
+            // Outcomes are observed through the same mission boundary consumers see; without it the
+            // module can still install and offer, but completions cannot be recorded at all.
+            _story = new StoryContentService(_persistence, _hub, StoryHostAuthentication.Resolve, null, _hub.CheckThread,
+                _storyWorld, _missions?.Events, detail => _hub!.SetCapability("owned-story", true, detail));
             ModApi.Story = _story;
             _hub.SetCapability("owned-story", true, "Experimental owned story content enabled; native qualification pending.");
         }

@@ -23,6 +23,8 @@ internal sealed class StoryNativeWorld : IStoryWorld, IDisposable
     private readonly Action _checkThread;
     private readonly Action<Exception>? _fault;
     private readonly Dictionary<string, object> _owned = new(StringComparer.Ordinal);
+    /// <summary>The exact mission object each acceptance produced, so a rollback removes THAT object.</summary>
+    private readonly Dictionary<string, object> _accepted = new(StringComparer.Ordinal);
     private bool _disposed;
 
     internal StoryNativeWorld(StoryNativeBindings bindings, Action checkThread, Action<Exception>? fault = null)
@@ -30,6 +32,15 @@ internal sealed class StoryNativeWorld : IStoryWorld, IDisposable
         _bindings = bindings ?? throw new ArgumentNullException(nameof(bindings));
         _checkThread = checkThread ?? throw new ArgumentNullException(nameof(checkThread));
         _fault = fault;
+    }
+
+    public bool KnowsFaction(string factionId)
+    {
+        _checkThread();
+        if (factionId == null) throw new ArgumentNullException(nameof(factionId));
+        if (_disposed) return false;
+        try { return _bindings.Faction(factionId) != null; }
+        catch (Exception error) { Report(error); return false; }
     }
 
     public IReadOnlyCollection<string> InstalledIdentifiers()
@@ -56,8 +67,10 @@ internal sealed class StoryNativeWorld : IStoryWorld, IDisposable
                 if (_owned.TryGetValue(identifier, out var mine) && ReferenceEquals(mine, existing)) return StoryWorldResult.Ok;
                 return new StoryWorldResult(StoryWorldStatus.AlreadyPresent, "Identifier '" + identifier + "' already exists in the world catalog.");
             }
+            // The generator receives the player the game is building the mission for, which is where
+            // the source location comes from; nothing else about the caller is captured.
             var native = _bindings.CreateDefinition(identifier,
-                _ => _bindings.CreateMission(definition, identifier), definition.Title);
+                player => _bindings.CreateMission(definition, identifier, player), definition.Title);
             _bindings.AddDefinition(native);
             var installed = catalog.Contains(identifier) ? catalog[identifier] : null;
             if (installed == null || !ReferenceEquals(installed, native))
@@ -109,6 +122,7 @@ internal sealed class StoryNativeWorld : IStoryWorld, IDisposable
             var active = _bindings.ActiveStory(player, identifier);
             if (active == null || !ReferenceEquals(active, mission))
                 return new StoryWorldResult(StoryWorldStatus.Refused, "The world did not hold the accepted mission afterwards.");
+            _accepted[identifier] = mission;
             return StoryWorldResult.Ok;
         }
         catch (Exception error)
@@ -131,19 +145,50 @@ internal sealed class StoryNativeWorld : IStoryWorld, IDisposable
             var player = _bindings.CurrentPlayer;
             if (player == null) return new StoryWorldResult(StoryWorldStatus.Unavailable, "No current player.");
             var mission = _bindings.ActiveStory(player, identifier);
-            if (mission == null) return StoryWorldResult.Ok;                 // The world already ended it.
+            if (mission == null) { _accepted.Remove(identifier); return StoryWorldResult.Ok; }   // The world already ended it.
             if (outcome == StoryOutcome.Completed)
                 // A completion is the world's to make, with the world's rewards. The API never fabricates it.
                 return new StoryWorldResult(StoryWorldStatus.Refused, "The world still holds this mission; a completion is not the API's to declare.");
             _bindings.Abandon(player, mission);
             if (_bindings.ActiveStory(player, identifier) != null)
                 return new StoryWorldResult(StoryWorldStatus.Refused, "The world still held the mission after abandonment.");
+            _accepted.Remove(identifier);
             return StoryWorldResult.Ok;
         }
         catch (Exception error)
         {
             Report(error);
             return new StoryWorldResult(StoryWorldStatus.Refused, "Native release failed: " + error.GetType().Name + ".");
+        }
+    }
+
+    public StoryWorldResult RollbackAccept(string identifier)
+    {
+        _checkThread();
+        if (identifier == null) throw new ArgumentNullException(nameof(identifier));
+        if (_disposed) return new StoryWorldResult(StoryWorldStatus.Unavailable, "The story world adapter is disposed.");
+        if (!_accepted.TryGetValue(identifier, out var mission))
+            return new StoryWorldResult(StoryWorldStatus.Refused, "No acceptance of '" + identifier + "' is known to this adapter.");
+        try
+        {
+            var player = _bindings.CurrentPlayer;
+            if (player == null) return new StoryWorldResult(StoryWorldStatus.Unavailable, "No current player.");
+            var held = _bindings.ActiveStory(player, identifier);
+            if (held == null) { _accepted.Remove(identifier); return StoryWorldResult.Ok; }
+            // Only the exact object this adapter's acceptance produced is ever removed, and it is
+            // removed WITHOUT archiving, so the undone acceptance leaves no completed story behind.
+            if (!ReferenceEquals(held, mission))
+                return new StoryWorldResult(StoryWorldStatus.Refused, "The world holds a different mission for '" + identifier + "'.");
+            _bindings.Abandon(player, mission);
+            if (_bindings.ActiveStory(player, identifier) != null)
+                return new StoryWorldResult(StoryWorldStatus.Refused, "The world still held the mission after the rollback.");
+            _accepted.Remove(identifier);
+            return StoryWorldResult.Ok;
+        }
+        catch (Exception error)
+        {
+            Report(error);
+            return new StoryWorldResult(StoryWorldStatus.Refused, "Native rollback failed: " + error.GetType().Name + ".");
         }
     }
 

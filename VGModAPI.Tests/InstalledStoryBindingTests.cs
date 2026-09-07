@@ -229,6 +229,78 @@ public sealed class InstalledStoryBindingTests
         }
     }
 
+    /// <summary>
+    /// The dependencies a mission MUST carry to survive the game's own save. sourceFaction.identifier
+    /// is read unconditionally, so a mission without a source faction throws while the player saves;
+    /// sourcePoi and turnIn are null-tolerant. This is why the definition requires a faction and why
+    /// the adapter sets one.
+    /// </summary>
+    [Fact]
+    public void SavingAMissionDereferencesItsSourceFactionUnconditionally()
+    {
+        using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
+        var module = assembly.MainModule;
+        var toJson = Method(module, Mission, "ToJson");
+        var instructions = toJson.Body.Instructions.ToArray();
+        int faction = Array.FindIndex(instructions, instruction =>
+            instruction.OpCode == OpCodes.Ldstr && (string)instruction.Operand == "sourceFaction");
+        Assert.True(faction >= 0);
+        // Load the field, then call get_identifier on it, with no null branch in between.
+        var window = instructions.Skip(faction).Take(5).ToArray();
+        Assert.Contains(window, instruction => instruction.Operand is FieldReference field && field.Name == "sourceFaction");
+        Assert.Contains(window, instruction => instruction.Operand is MethodReference method && method.Name == "get_identifier");
+        Assert.DoesNotContain(window, instruction => instruction.OpCode == OpCodes.Brtrue || instruction.OpCode == OpCodes.Brtrue_S);
+        // The POI fields ARE null-tolerant, which is why a source location is optional.
+        int poi = Array.FindIndex(instructions, instruction =>
+            instruction.OpCode == OpCodes.Ldstr && (string)instruction.Operand == "sourcePoi");
+        Assert.Contains(instructions.Skip(poi).Take(6), instruction => instruction.OpCode == OpCodes.Brtrue_S || instruction.OpCode == OpCodes.Brtrue);
+        // Loading resolves the faction back through the game's own registry.
+        Assert.Contains(Calls(Method(module, Mission, "DataFromJson")), name => name == "Get");
+        var factionType = module.GetType("Source.Galaxy.Faction")!;
+        var get = Assert.Single(factionType.Methods, method => method.Name == "Get" && method.Parameters.Count == 1);
+        Assert.True(get.IsStatic);
+        Assert.Equal("Source.Galaxy.Faction", get.ReturnType.FullName);
+        Assert.Contains(factionType.Properties, property => property.Name == "identifier");
+    }
+
+    /// <summary>
+    /// Why KillEnemies is refused: the objective serializes its enemy faction's identifier, so an
+    /// objective without one breaks the save exactly as a missing source faction does.
+    /// </summary>
+    [Fact]
+    public void TheRefusedObjectiveKindDependsOnAFactionThisSubsetCannotSupply()
+    {
+        using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
+        var module = assembly.MainModule;
+        var kill = module.GetType(StoryContentPolicy.ObjectiveNamespace + ".KillEnemies")!;
+        Assert.Contains(kill.Fields, field => field.Name == "enemyFaction" && field.FieldType.FullName == "Source.Galaxy.Faction");
+        var data = kill.Methods.Single(method => method.Name == "DataToJson");
+        Assert.Contains(Calls(data), name => name == "get_identifier");
+        Assert.NotNull(StoryContentPolicy.RefuseObjective(StoryObjectiveKind.KillEnemies));
+        Assert.Null(StoryContentPolicy.RefuseObjective(StoryObjectiveKind.TravelToPoi));
+        Assert.Null(StoryContentPolicy.RefuseObjective(StoryObjectiveKind.CollectCredits));
+    }
+
+    /// <summary>
+    /// The load path a saved mission actually takes: the player's missions are full OBJECTS, and the
+    /// catalog lookup only happens for a string element, which the game never writes. A missing
+    /// provider therefore does not throw on load, which is why owned orphans need their own policy.
+    /// </summary>
+    [Fact]
+    public void SavedMissionsAreFullObjectsSoAMissingProviderDoesNotStopTheLoad()
+    {
+        using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
+        var module = assembly.MainModule;
+        var toJson = Method(module, "Source.Player.GamePlayer", "ToJson");
+        // The player writes its missions as an array built from Mission.ToJson, never as identifiers.
+        Assert.Contains(Strings(toJson), text => text == "missions");
+        Assert.Contains(Calls(toJson), name => name == "ToJsonArray");
+        var fromJson = Method(module, Mission, "FromJson");
+        Assert.Contains(Calls(fromJson), name => name == "get_IsString");
+        Assert.Contains(Calls(fromJson), name => name == "Get");
+        Assert.Contains(Calls(fromJson), name => name == "DataFromJson");
+    }
+
     private static void AssertField(ModuleDefinition module, string owner, string field, string type)
     {
         var declared = module.GetType(owner) ?? throw new InvalidOperationException("Missing type: " + owner);

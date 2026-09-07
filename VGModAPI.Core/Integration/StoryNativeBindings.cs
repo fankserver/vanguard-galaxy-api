@@ -17,12 +17,13 @@ namespace VGModAPI.Runtime;
 /// </summary>
 internal sealed class StoryNativeBindings
 {
-    private readonly Type _storyMission, _createMission, _mission, _missionStep, _objective, _reward, _difficulty, _player;
+    private readonly Type _storyMission, _createMission, _mission, _missionStep, _objective, _reward, _difficulty, _player, _faction;
     private readonly FieldInfo _allMissions, _storyIdentifier, _missionStoryId, _missionName, _missionDescription,
         _missionCategory, _missionCompletionText, _missionDifficulty, _missionCanAbandon,
-        _stepDescription, _stepRequireAll, _playerCurrent, _playerMissions, _playerArchive;
+        _missionSourceFaction, _missionSourcePoi, _missionSourceName, _missionIconName, _missionDynamicLevel, _missionTrackedOnHud,
+        _stepDescription, _stepRequireAll, _playerCurrent, _playerMissions, _playerArchive, _playerPoi;
     private readonly PropertyInfo _missionSteps, _missionRewards, _stepObjectives;
-    private readonly MethodInfo _storyAdd, _storyGet, _objectiveCreate, _rewardCreate, _addMission, _hasStory, _activeStory, _removeMission;
+    private readonly MethodInfo _storyAdd, _storyGet, _objectiveCreate, _rewardCreate, _addMission, _hasStory, _activeStory, _removeMission, _factionGet;
     private readonly ConstructorInfo _storyCtor, _missionCtor, _stepCtor;
 
     internal StoryNativeBindings(Assembly assembly)
@@ -37,6 +38,7 @@ internal sealed class StoryNativeBindings
         _reward = Type(assembly, "Source.MissionSystem.MissionReward");
         _difficulty = Type(assembly, "Source.MissionSystem.MissionDifficulty");
         _player = Type(assembly, BindingCatalog.Player);
+        _faction = Type(assembly, "Source.Galaxy.Faction");
 
         _allMissions = Field(_storyMission, "allMissions");
         if (_allMissions.FieldType != typeof(Dictionary<,>).MakeGenericType(typeof(string), _storyMission))
@@ -59,6 +61,17 @@ internal sealed class StoryNativeBindings
         _missionCompletionText = Field(_mission, "completionText");
         _missionDifficulty = Field(_mission, "difficulty");
         _missionCanAbandon = Field(_mission, "canAbandon");
+        // The game writes sourceFaction.identifier unconditionally when it saves a held mission, so the
+        // faction is REQUIRED; sourcePoi, turnIn and the text fields are null-tolerant there.
+        _missionSourceFaction = Field(_mission, "sourceFaction");
+        if (_missionSourceFaction.FieldType != _faction) throw new MissingFieldException(_mission.FullName, "sourceFaction");
+        _missionSourcePoi = Field(_mission, "sourcePoi");
+        _missionSourceName = Field(_mission, "sourceName");
+        _missionIconName = Field(_mission, "iconName");
+        _missionDynamicLevel = Field(_mission, "dynamicLevel");
+        _missionTrackedOnHud = Field(_mission, "trackedOnHud");
+        _factionGet = Method(_faction, "Get", new[] { typeof(string) });
+        if (_factionGet.ReturnType != _faction || !_factionGet.IsStatic) throw new MissingMethodException(_faction.FullName, "Get");
         _missionSteps = Property(_mission, "steps");
         _missionRewards = Property(_mission, "rewards");
 
@@ -73,6 +86,8 @@ internal sealed class StoryNativeBindings
         _playerCurrent = Field(_player, "current");
         _playerMissions = Field(_player, "missions");
         _playerArchive = Field(_player, "missionsArchive");
+        _playerPoi = Field(_player, "currentPointOfInterest");
+        if (_playerPoi.FieldType != _missionSourcePoi.FieldType) throw new MissingFieldException(_player.FullName, "currentPointOfInterest");
         // force:false keeps vanilla's own duplicate-story guard, which is the refusal this API relies on.
         _addMission = Method(_player, "AddMissionWithLog", new[] { _mission, typeof(bool) });
         _hasStory = Method(_player, "HasStoryMission", new[] { typeof(string) });
@@ -107,6 +122,7 @@ internal sealed class StoryNativeBindings
     }
 
     internal object? CurrentPlayer => _playerCurrent.GetValue(null);
+    internal object? Faction(string identifier) => _factionGet.Invoke(null, new object[] { identifier });
     internal IDictionary Catalog => (IDictionary)_allMissions.GetValue(null)!;
     internal string CatalogIdentifier(object definition) => (string?)_storyIdentifier.GetValue(definition) ?? "";
 
@@ -129,9 +145,20 @@ internal sealed class StoryNativeBindings
     internal object BuildMission(object player, string identifier) => _storyGet.Invoke(null, new[] { player, (object)identifier })!;
 
     /// <summary>Builds the mission body from a definition using vanilla's own factories only.</summary>
-    internal object CreateMission(StoryMissionDefinition definition, string identifier)
+    internal object CreateMission(StoryMissionDefinition definition, string identifier, object? player)
     {
+        var faction = Faction(definition.SourceFaction.Value)
+            ?? throw new InvalidOperationException("The game does not know faction '" + definition.SourceFaction + "'.");
         var mission = _missionCtor.Invoke(null);
+        // Every vanilla generator sets these; without a source faction the game cannot even save.
+        _missionSourceFaction.SetValue(mission, faction);
+        _missionSourceName.SetValue(mission, "");
+        _missionIconName.SetValue(mission, "");
+        _missionDynamicLevel.SetValue(mission, true);
+        _missionTrackedOnHud.SetValue(mission, false);
+        // The location the mission is taken FROM, which is where the player is when it is accepted.
+        // The game tolerates a null source POI on save; it is never invented from elsewhere.
+        if (player != null) _missionSourcePoi.SetValue(mission, _playerPoi.GetValue(player));
         _missionName.SetValue(mission, definition.Title);
         _missionDescription.SetValue(mission, definition.Description);
         _missionCategory.SetValue(mission, definition.Category ?? "");
