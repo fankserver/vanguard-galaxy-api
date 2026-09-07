@@ -114,6 +114,13 @@ internal sealed class StoryDefinitionRegistry
         return _byIdentifier.Remove(identifier);
     }
 
+    /// <summary>Every registered identifier, for a caller that must release what it installed.</summary>
+    internal IReadOnlyList<string> Identifiers() => _byIdentifier.Keys.ToArray();
+
+    /// <summary>The identifiers one provider registered, in no particular order.</summary>
+    internal IReadOnlyList<string> IdentifiersOf(string provider)
+        => _providerByIdentifier.Where(pair => pair.Value == provider).Select(pair => pair.Key).ToArray();
+
     /// <summary>The registration entry that currently owns an identifier, or 0 when nothing does.</summary>
     internal long EntryOf(StoryContentId id)
         => _entryByIdentifier.TryGetValue(StoryContentPolicy.Identifier(id), out var entry) ? entry : 0;

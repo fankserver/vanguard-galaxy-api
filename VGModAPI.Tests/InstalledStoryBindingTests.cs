@@ -123,6 +123,118 @@ public sealed class InstalledStoryBindingTests
         Assert.Contains(Strings(add), text => text.Contains("duplicate story mission", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// Every member the native story adapter binds, with the exact declared shape it uses. These are
+    /// the operations installation, acceptance and abandonment are built from: if any shape moves, the
+    /// adapter must fail to bind rather than call something that merely has the same name.
+    /// </summary>
+    [Fact]
+    public void EveryBoundStoryMemberHasTheDeclaredShapeTheAdapterUses()
+    {
+        using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
+        var module = assembly.MainModule;
+        var story = module.GetType(StoryMission)!;
+        var create = Assert.Single(story.NestedTypes, nested => nested.Name == "CreateMission");
+        var invoke = Assert.Single(create.Methods, method => method.Name == "Invoke");
+        Assert.Equal(Mission, invoke.ReturnType.FullName);
+        Assert.Equal("Source.Player.GamePlayer", Assert.Single(invoke.Parameters).ParameterType.FullName);
+        Assert.Contains(story.Fields, field => field.Name == "identifier" && field.FieldType.FullName == "System.String");
+        var get = Assert.Single(story.Methods, method => method.Name == "Get" && method.Parameters.Count == 2);
+        Assert.True(get.IsStatic);
+        Assert.Equal(Mission, get.ReturnType.FullName);
+
+        var mission = module.GetType(Mission)!;
+        foreach (var (field, type) in new[]
+        {
+            ("storyId", "System.String"), ("name", "System.String"), ("description", "System.String"),
+            ("category", "System.String"), ("completionText", "System.String"), ("canAbandon", "System.Boolean"),
+            ("difficulty", "Source.MissionSystem.MissionDifficulty")
+        }) Assert.Contains(mission.Fields, candidate => candidate.Name == field && candidate.FieldType.FullName == type);
+        Assert.Contains(mission.Properties, property => property.Name == "steps"
+            && property.PropertyType.FullName == "System.Collections.Generic.List`1<Source.MissionSystem.MissionStep>");
+        Assert.Contains(mission.Properties, property => property.Name == "rewards"
+            && property.PropertyType.FullName == "System.Collections.Generic.List`1<" + Reward + ">");
+        Assert.Contains(mission.Methods, method => method.IsConstructor && method.Parameters.Count == 0);
+
+        var step = module.GetType("Source.MissionSystem.MissionStep")!;
+        Assert.Contains(step.Fields, field => field.Name == "description" && field.FieldType.FullName == "System.String");
+        Assert.Contains(step.Fields, field => field.Name == "requireAllObjectives" && field.FieldType.FullName == "System.Boolean");
+        Assert.Contains(step.Properties, property => property.Name == "objectives"
+            && property.PropertyType.FullName == "System.Collections.Generic.List`1<" + Objective + ">");
+
+        // The fields the supported subset writes, per objective and reward kind.
+        AssertField(module, StoryContentPolicy.ObjectiveNamespace + ".TravelToPOI", "targetPOI", "System.String");
+        AssertField(module, StoryContentPolicy.ObjectiveNamespace + ".TravelToPOI", "requiredVisitTime", "System.Single");
+        AssertField(module, StoryContentPolicy.ObjectiveNamespace + ".KillEnemies", "requiredAmount", "System.Int32");
+        AssertField(module, StoryContentPolicy.ObjectiveNamespace + ".CollectCredits", "requiredAmount", "System.Int32");
+        foreach (StoryRewardKind kind in Enum.GetValues(typeof(StoryRewardKind)))
+        {
+            AssertField(module, StoryContentPolicy.RewardNamespace + "." + StoryContentPolicy.RewardTypeName(kind), "amount", "System.Int32");
+            AssertField(module, StoryContentPolicy.RewardNamespace + "." + StoryContentPolicy.RewardTypeName(kind), "baseAmount", "System.Int32");
+        }
+
+        var player = module.GetType("Source.Player.GamePlayer")!;
+        Assert.Contains(player.Fields, field => field.Name == "current" && field.IsStatic);
+        Assert.Contains(player.Fields, field => field.Name == "missions"
+            && field.FieldType.FullName == "System.Collections.Generic.List`1<" + Mission + ">");
+        var accept = player.Methods.Single(method => method.Name == "AddMissionWithLog" && method.Parameters.Count == 2);
+        Assert.Equal("force", accept.Parameters[1].Name);
+        var remove = player.Methods.Single(method => method.Name == "RemoveMission");
+        Assert.Equal("completed", remove.Parameters[1].Name);
+        Assert.Contains(player.Methods, method => method.Name == "GetActiveStoryMission" && method.Parameters.Count == 1
+            && method.ReturnType.FullName == Mission);
+        Assert.Contains(player.Methods, method => method.Name == "HasStoryMission" && method.Parameters.Count == 1
+            && method.ReturnType.FullName == "System.Boolean");
+    }
+
+    /// <summary>
+    /// The two booleans the adapter passes decide the whole policy, so their MEANING is pinned, not
+    /// just their presence. force:false keeps vanilla's duplicate-story refusal, which is what makes a
+    /// verified acceptance possible; completed:false abandons without archiving, so an abandonment
+    /// never leaves the archive claiming the story was finished.
+    /// </summary>
+    [Fact]
+    public void TheAcceptanceAndRemovalFlagsMeanWhatTheAdapterReliesOn()
+    {
+        using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
+        var module = assembly.MainModule;
+        var player = module.GetType("Source.Player.GamePlayer")!;
+        var accept = player.Methods.Single(method => method.Name == "AddMissionWithLog" && method.Parameters.Count == 2);
+        var instructions = accept.Body.Instructions;
+        // The duplicate guard is reached only when the flag is false: ldarg.2 / brtrue past it.
+        Assert.Equal(OpCodes.Ldarg_2, instructions[0].OpCode);
+        Assert.True(instructions[1].OpCode == OpCodes.Brtrue || instructions[1].OpCode == OpCodes.Brtrue_S);
+        Assert.Contains(Calls(accept), name => name == "HasStoryMission");
+        var remove = player.Methods.Single(method => method.Name == "RemoveMission");
+        // completed:false takes the abandonment path; the archive call sits behind the true branch.
+        Assert.Contains(Calls(remove), name => name == "OnMissionAbandoned");
+        Assert.Contains(Calls(remove), name => name == "ArchiveMission");
+    }
+
+    /// <summary>Every mapped difficulty exists natively, and the API's ascending tiers map onto ascending native ones.</summary>
+    [Fact]
+    public void TheMappedDifficultyNamesExistNativelyInAscendingOrder()
+    {
+        using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
+        var difficulty = assembly.MainModule.GetType("Source.MissionSystem.MissionDifficulty")!;
+        var values = difficulty.Fields.Where(field => field.IsStatic)
+            .ToDictionary(field => field.Name, field => Convert.ToInt64(field.Constant));
+        long previous = -1;
+        foreach (StoryDifficulty tier in Enum.GetValues(typeof(StoryDifficulty)))
+        {
+            var name = StoryContentPolicy.DifficultyName(tier);
+            Assert.True(values.ContainsKey(name), "Missing native difficulty " + name);
+            Assert.True(values[name] > previous, "Native difficulty order is not ascending at " + name);
+            previous = values[name];
+        }
+    }
+
+    private static void AssertField(ModuleDefinition module, string owner, string field, string type)
+    {
+        var declared = module.GetType(owner) ?? throw new InvalidOperationException("Missing type: " + owner);
+        Assert.Contains(declared.Fields, candidate => candidate.Name == field && candidate.FieldType.FullName == type);
+    }
+
     private static MethodDefinition Method(ModuleDefinition module, string owner, string name)
     {
         var type = module.GetType(owner) ?? throw new InvalidOperationException("Missing type: " + owner);

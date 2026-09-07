@@ -293,15 +293,54 @@ remove live content. It never rewrites or deletes saved
 occurrences: removal of persisted references follows `content-safety.md`, and provider-required
 content still needs its provider.
 
+## The native slice: installing into the game and reconciling on load
+
+Since 0.1.10 the module is actually wired to the game, behind `Story/Enabled` (default off) and the
+same inspected-assembly gate as every other adapter. `ModApi.Story` is non-null only when that group
+binds; a binding failure leaves it null and the `owned-story` capability unavailable rather than
+half-installed.
+
+| Moment | What the API does natively |
+|---|---|
+| Registration | Installs a vanilla story definition under the namespaced identifier. It happens at REGISTRATION, not at session start, because vanilla resolves a saved story payload out of its catalog while it deserializes: a definition registered later would arrive after the load that needs it. |
+| Collision | Vanilla's own registration REPLACES a duplicate identifier, so the adapter checks first and refuses (`IdentifierInUse`) instead. Nothing existing is ever overwritten, and a refused installation also rolls back the API-side registration. |
+| Generator | The installed definition's generator builds a `Mission` through vanilla's own objective and reward factories, with the supported subset's fields only. No consumer delegate is captured and none is ever persisted. |
+| `Activate` | Asks vanilla to accept the mission (`force:false`, so vanilla's own duplicate-story refusal applies), then VERIFIES the player actually holds it. The occurrence is recorded active only after that; a refusal records nothing. |
+| `Retire(Completed)` | Refused while the world still holds the mission. A completion belongs to the game, with the game's rewards; the API never fabricates one. |
+| `Retire(Abandoned/Failed)` | Removes the mission from the world first (`completed:false`, so nothing is archived as finished) and records the outcome only once the world no longer holds it. |
+| Release | Disposing a registration, a provider lease or the module uninstalls ONLY the catalog entries this API installed, and only while the catalog still holds our own entry. |
+
+### Reconciliation on load
+
+Vanilla persists accepted missions itself, as full objects carrying `storyId`, so after a reload the
+ledger and the world can legitimately disagree. When the module's own state is restored it correlates
+the two by identifier and REPORTS what it finds; it repairs nothing:
+
+- An active occurrence whose mission the world no longer holds is reported (including whether the
+  world archived it) and left exactly as recorded. Nothing is deleted and no outcome is invented,
+  because the archive alone cannot say whether the story was completed or abandoned.
+- One of our identifiers live in the world with no admitted occurrence is reported and NOT adopted:
+  an occurrence identity is minted by this API, never inferred from a save.
+
+A saved payload whose definition is not registered stays vanilla's own refusal: `StoryMission.Get`
+throws for an unknown identifier, so a missing provider surfaces as protected content rather than a
+substituted mission. The API never installs a placeholder generator to make such a save load.
+
+### Difficulty mapping
+
+The game's scale is `Easy, Normal, Hard, Skull, Insane` plus non-scalar tiers, so this API's fourth
+tier maps onto `Skull` rather than inventing a name. The mapping is pinned against the installed
+assembly, including that the mapped names exist and stay in ascending order; an unmapped tier refuses
+installation instead of guessing.
+
 ## Boundary and status
 
 Delivered here: public contracts, authenticated provider leases, session-scoped availability and
 session-scoped mutations, unresolved-occurrence discovery, identity policy, registry, occurrence
-ledger with its retention policy, bounded codec, automatic persistence registration, host tests and
-installed-assembly pins. Nothing constructs the module at
-runtime yet, so no consumer is exposed to this surface until the native slice lands. **Not** delivered here:
-installing definitions into `StoryMission`, reconstructing offered/active content in a live session
-(the ledger records what must be reconstructed; the native bindings that would do it do not exist),
-driving acceptance/outcome transitions from observed native boundaries, the two-consumer
-demonstration and the native qualification pilot. Those remain required for #13, and
-`RuntimeQualified` stays false.
+ledger with its retention policy, bounded codec, automatic persistence registration, the native
+install/accept/abandon adapter with load-time reconciliation, the `ModApi.Story` surface behind the
+inspected-assembly gate, host tests and installed-assembly pins. **Not** delivered here: driving
+occurrence outcomes from the observed mission boundaries (a completion is currently recorded by the
+consumer once the world has ended the mission, not detected from a mission event), the qualification
+probe phase, and the two-consumer demonstration. Those remain required for #13, no case has been run
+in the game, and `RuntimeQualified` stays false.

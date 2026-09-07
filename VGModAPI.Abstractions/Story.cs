@@ -260,19 +260,24 @@ public sealed class StoryMissionDefinition
     }
 }
 
-/// <summary>Why a registration was refused. Refusal is fail-closed: nothing is overwritten or stolen.</summary>
+/// <summary>
+/// Why a registration was refused. Refusal is fail-closed: nothing is overwritten or stolen. The
+/// numeric values are explicit and keep the numbers this enum already had, so appending a member can
+/// never renumber an existing one; the gap before <see cref="Unavailable"/> is preserved rather than
+/// closed, because closing it would change a value that is now exposed.
+/// </summary>
 public enum StoryRegistrationStatus
 {
-    Registered,
+    Registered = 0,
     /// <summary>The definition itself is not admissible (an unsupported kind or an over-long identity).</summary>
-    InvalidDefinition,
+    InvalidDefinition = 1,
     /// <summary>The same provider already registered this local ID in this process.</summary>
-    DuplicateLocalId,
+    DuplicateLocalId = 2,
     /// <summary>The derived native identifier is already taken by other content; the API never overwrites it.</summary>
-    IdentifierInUse,
+    IdentifierInUse = 3,
     /// <summary>The registry's bounded capacity would be exceeded; nothing is silently dropped.</summary>
     LimitExceeded = 4,
-    /// <summary>The story module or this provider lease is no longer active.</summary>
+    /// <summary>The story module or this provider lease is no longer active, or the world refused the installation.</summary>
     Unavailable = 7
 }
 

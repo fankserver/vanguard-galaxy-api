@@ -45,6 +45,23 @@ internal static class StoryContentPolicy
         [StoryRewardKind.Experience] = "Experience"
     };
 
+    /// <summary>
+    /// Vanilla difficulty names, by ASCENDING native tier. The game's own scale is Easy, Normal, Hard,
+    /// Skull, Insane plus the non-scalar Faction/Tutorial/Story tiers, so this API's fourth tier maps
+    /// onto Skull rather than inventing a name the enum does not have. The mapping is pinned against
+    /// the installed assembly; an unmapped or absent name refuses installation instead of guessing.
+    /// </summary>
+    private static readonly Dictionary<StoryDifficulty, string> DifficultyNames = new()
+    {
+        [StoryDifficulty.Easy] = "Easy",
+        [StoryDifficulty.Normal] = "Normal",
+        [StoryDifficulty.Hard] = "Hard",
+        [StoryDifficulty.VeryHard] = "Skull"
+    };
+
+    internal static string DifficultyName(StoryDifficulty difficulty)
+        => DifficultyNames.TryGetValue(difficulty, out var name) ? name : throw new ArgumentOutOfRangeException(nameof(difficulty), "Unsupported difficulty.");
+
     internal const string ObjectiveNamespace = "Source.MissionSystem.Objectives";
     internal const string RewardNamespace = "Source.MissionSystem.Rewards";
 

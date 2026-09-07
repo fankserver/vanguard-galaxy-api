@@ -555,6 +555,23 @@ public sealed class StoryContentTests
         Assert.Empty(service.Ledger.Entries);
     }
 
+    /// <summary>
+    /// Registration statuses are exposed now, so their numbers are pinned as they already are, gap
+    /// included: closing the gap would change a value rather than preserve it.
+    /// </summary>
+    [Fact]
+    public void TheRegistrationStatusNumbersAreStable()
+    {
+        Assert.Equal(0, (int)StoryRegistrationStatus.Registered);
+        Assert.Equal(1, (int)StoryRegistrationStatus.InvalidDefinition);
+        Assert.Equal(2, (int)StoryRegistrationStatus.DuplicateLocalId);
+        Assert.Equal(3, (int)StoryRegistrationStatus.IdentifierInUse);
+        Assert.Equal(4, (int)StoryRegistrationStatus.LimitExceeded);
+        Assert.Equal(7, (int)StoryRegistrationStatus.Unavailable);
+        Assert.Equal(new[] { 0, 1, 2, 3, 4, 7 },
+            Enum.GetValues(typeof(StoryRegistrationStatus)).Cast<int>().OrderBy(value => value).ToArray());
+    }
+
     /// <summary>The refusal vocabulary is a contract: members keep their numbers, new ones are appended.</summary>
     [Fact]
     public void TheTransitionStatusNumbersAreStable()
@@ -834,9 +851,11 @@ public sealed class StoryContentTests
     [Fact]
     public void RepeatedOccurrencesKeepSeparateIdentityAndASingleTerminalOutcome()
     {
-        var provider = Provider(out _, out _, out _, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out _, StoryRetention.Campaign);
         var first = provider.Offer("salvage-run");
         Assert.True(provider.Activate(first.OccurrenceId).Accepted);
+        // The game ends the mission; only then is a completion the API's to record.
+        world.World.CompleteInWorld(StoryContentPolicy.Identifier(new StoryContentId(provider.ProviderId, "salvage-run")));
         Assert.True(provider.Retire(first.OccurrenceId, StoryOutcome.Completed).Accepted);
         var second = provider.Offer("salvage-run");
         Assert.NotEqual(first.OccurrenceId, second.OccurrenceId);
@@ -1303,9 +1322,11 @@ public sealed class StoryContentTests
         Assert.DoesNotContain(foreign.OccurrenceId, unresolved.Occurrences.Select(item => item.OccurrenceId));
         Assert.Equal(foreign.OccurrenceId, Assert.Single(other.Unresolved("salvage-run").Occurrences).OccurrenceId);
 
-        // The listed identities are usable: they are what a provider transitions after a reload.
+        // The listed identities are usable: they are what a provider transitions after a reload. One
+        // story identifier can only be live once, so activating a SECOND restored occurrence of the
+        // same definition is refused by the world, exactly as vanilla refuses a duplicate story id.
         var session = unresolved.SessionId!.Value;
-        Assert.True(anima.Activate(session, offered.OccurrenceId).Accepted);
+        Assert.Equal(StoryTransitionStatus.InvalidTransition, anima.Activate(session, offered.OccurrenceId).Status);
         Assert.True(anima.Retire(session, active.OccurrenceId, StoryOutcome.Failed).Accepted);
         Assert.Single(anima.Unresolved("salvage-run").Occurrences);
         // Unavailable answers carry no snapshots and no session.
@@ -1620,6 +1641,201 @@ public sealed class StoryContentTests
         Assert.Contains("never taken away", refused.Diagnostic);
     }
 
+    // --- native world ------------------------------------------------------------------------
+
+    /// <summary>
+    /// Registration is what installs content into the game, because vanilla resolves a saved story
+    /// payload out of its catalog while it deserializes. An identifier the world already holds is
+    /// never replaced, and a refused installation leaves nothing registered either.
+    /// </summary>
+    [Fact]
+    public void RegistrationInstallsIntoTheWorldAndNeverReplacesWhatIsAlreadyThere()
+    {
+        var host = new FakeHost();
+        var world = new FakeWorld();
+        using var service = world.Service(host);
+        world.StartAndRestore();
+        var plugin = new object();
+        host.Register(plugin, AnimaPlugin);
+        var provider = service.AcquireProvider(plugin).Provider!;
+        var identifier = StoryContentPolicy.Identifier(new StoryContentId(provider.ProviderId, "salvage-run"));
+
+        world.World.AddForeign(identifier);
+        var refused = provider.Register(Definition());
+        Assert.Equal(StoryRegistrationStatus.IdentifierInUse, refused.Status);
+        Assert.Contains("never replaces existing content", refused.Diagnostic);
+        // The registry was rolled back with the world: nothing half-registered survives.
+        Assert.False(service.Registry.Contains(new StoryContentId(provider.ProviderId, "salvage-run")));
+        Assert.Equal(StoryTransitionStatus.InvalidTransition, provider.Offer("salvage-run").Status);
+
+        // The same definition installs once the world no longer holds that identifier.
+        var clean = new FakeWorld();
+        using var second = clean.Service(host);
+        clean.StartAndRestore();
+        var owner = second.AcquireProvider(plugin).Provider!;
+        Assert.True(owner.Register(Definition()).Succeeded);
+        Assert.True(clean.World.IsInstalled(StoryContentPolicy.Identifier(new StoryContentId(owner.ProviderId, "salvage-run"))));
+
+        // A world that cannot install anything registers nothing either.
+        var blocked = new FakeWorld();
+        blocked.World.Unavailable = true;
+        using var third = blocked.Service(host);
+        blocked.StartAndRestore();
+        var refusedOwner = third.AcquireProvider(plugin).Provider!;
+        var unavailable = refusedOwner.Register(Definition());
+        Assert.Equal(StoryRegistrationStatus.Unavailable, unavailable.Status);
+        Assert.False(third.Registry.Contains(new StoryContentId(refusedOwner.ProviderId, "salvage-run")));
+    }
+
+    /// <summary>
+    /// An activation is an acceptance IN THE GAME first. If the world refuses or cannot be reached,
+    /// nothing is recorded, so a caller can never hold an activation the game never made.
+    /// </summary>
+    [Fact]
+    public void ActivationIsRecordedOnlyAfterTheWorldAcceptsTheMission()
+    {
+        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var identifier = StoryContentPolicy.Identifier(new StoryContentId(provider.ProviderId, "salvage-run"));
+        var occurrence = provider.Offer("salvage-run");
+        Assert.True(occurrence.Accepted);
+
+        world.World.RefuseAccept = true;
+        var refused = provider.Activate(occurrence.OccurrenceId);
+        Assert.Equal(StoryTransitionStatus.InvalidTransition, refused.Status);
+        Assert.Contains("did not accept", refused.Detail);
+        Assert.True(service.Ledger.TryGet(occurrence.OccurrenceId, out var untouched));
+        Assert.Equal(StoryOccurrenceState.Offered, untouched.State);
+
+        world.World.RefuseAccept = false;
+        world.World.Unavailable = true;
+        Assert.Equal(StoryTransitionStatus.Unavailable, provider.Activate(occurrence.OccurrenceId).Status);
+        Assert.Equal(StoryOccurrenceState.Offered, untouched.State);
+
+        world.World.Unavailable = false;
+        Assert.True(provider.Activate(occurrence.OccurrenceId).Accepted);
+        Assert.True(world.World.IsActive(identifier));
+        Assert.Equal(StoryOccurrenceState.Active, untouched.State);
+        // The world refuses a second mission for the same story identifier, so the API does too.
+        var again = provider.Offer("salvage-run");
+        Assert.Equal(StoryTransitionStatus.InvalidTransition, provider.Activate(again.OccurrenceId).Status);
+    }
+
+    /// <summary>
+    /// A completion belongs to the game, with the game's rewards: while the world still holds the
+    /// mission the API refuses to record one. An abandonment the caller declares is applied to the
+    /// world first and recorded only once the world no longer holds it.
+    /// </summary>
+    [Fact]
+    public void ACompletionIsTheWorldsToMakeAndAnAbandonmentEndsTheMissionFirst()
+    {
+        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var identifier = StoryContentPolicy.Identifier(new StoryContentId(provider.ProviderId, "salvage-run"));
+        var first = provider.Offer("salvage-run");
+        Assert.True(provider.Activate(first.OccurrenceId).Accepted);
+
+        var premature = provider.Retire(first.OccurrenceId, StoryOutcome.Completed);
+        Assert.Equal(StoryTransitionStatus.InvalidTransition, premature.Status);
+        Assert.Contains("still holds this mission", premature.Detail);
+        Assert.True(service.Ledger.TryGet(first.OccurrenceId, out var pending));
+        Assert.Equal(StoryOccurrenceState.Active, pending.State);
+
+        world.World.CompleteInWorld(identifier);                  // the game ended it, as it does
+        Assert.True(provider.Retire(first.OccurrenceId, StoryOutcome.Completed,
+            new Dictionary<string, string> { ["branch"] = "left" }).Accepted);
+        Assert.True(provider.IsCompleted("salvage-run").Completed);
+
+        // Abandonment: the mission is removed from the world before the outcome is recorded.
+        var second = provider.Offer("salvage-run");
+        Assert.Equal(StoryTransitionStatus.InvalidTransition, provider.Activate(second.OccurrenceId).Status); // archived there
+        var other = provider.Register(Definition("side-run", StoryRetention.Campaign)).Registration;
+        Assert.NotNull(other);
+        var job = provider.Offer("side-run");
+        Assert.True(provider.Activate(job.OccurrenceId).Accepted);
+        var sideIdentifier = StoryContentPolicy.Identifier(new StoryContentId(provider.ProviderId, "side-run"));
+        Assert.True(world.World.IsActive(sideIdentifier));
+        Assert.True(provider.Retire(job.OccurrenceId, StoryOutcome.Abandoned).Accepted);
+        Assert.False(world.World.IsActive(sideIdentifier));
+    }
+
+    /// <summary>
+    /// Vanilla persists accepted missions itself, so a reload can disagree with the ledger. The module
+    /// correlates the two by story identifier and REPORTS the disagreement; it repairs nothing,
+    /// invents no acceptance and adopts no mission whose occurrence it never minted.
+    /// </summary>
+    [Fact]
+    public void ReloadCorrelatesTheLedgerWithTheWorldWithoutInventingOrAdoptingState()
+    {
+        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var identifier = StoryContentPolicy.Identifier(new StoryContentId(provider.ProviderId, "salvage-run"));
+        var occurrence = provider.Offer("salvage-run");
+        Assert.True(provider.Activate(occurrence.OccurrenceId).Accepted);
+        var bytes = world.Persistence.Provider!.Capture();
+
+        // Agreement: the world still holds it, so there is nothing to report.
+        world.StartAndRestore(bytes);
+        Assert.Empty(service.Reconciliation);
+        Assert.Equal(occurrence.OccurrenceId, Assert.Single(provider.Unresolved("salvage-run").Occurrences).OccurrenceId);
+
+        // The world ended it while this module was not the one observing: reported, never rewritten.
+        world.World.CompleteInWorld(identifier);
+        world.StartAndRestore(bytes);
+        var reported = Assert.Single(service.Reconciliation);
+        Assert.Contains(identifier, reported);
+        Assert.Contains("holds no such mission", reported);
+        Assert.Contains("archived", reported);
+        Assert.True(service.Ledger.TryGet(occurrence.OccurrenceId, out var kept));
+        Assert.Equal(StoryOccurrenceState.Active, kept.State);
+
+        // One of our identifiers live in the world with no admitted occurrence is reported, not adopted.
+        var empty = new FakeWorld();
+        var host = new FakeHost();
+        using var fresh = empty.Service(host);
+        var plugin = new object();
+        host.Register(plugin, AnimaPlugin);
+        empty.StartAndRestore();
+        var owner = fresh.AcquireProvider(plugin).Provider!;
+        Assert.True(owner.Register(Definition(retention: StoryRetention.Campaign)).Succeeded);
+        empty.World.AdoptInWorld(StoryContentPolicy.Identifier(new StoryContentId(owner.ProviderId, "salvage-run")));
+        empty.StartAndRestore();
+        Assert.Contains("no admitted occurrence claims it", Assert.Single(fresh.Reconciliation));
+        Assert.Empty(fresh.Ledger.Entries);
+    }
+
+    /// <summary>Releasing a registration or a provider removes ITS world entries and nothing else.</summary>
+    [Fact]
+    public void ReleasingRegistrationsUninstallsOnlyTheirOwnWorldEntries()
+    {
+        var host = new FakeHost();
+        var world = new FakeWorld();
+        using var service = world.Service(host);
+        world.StartAndRestore();
+        var animaPlugin = new object();
+        var otherPlugin = new object();
+        host.Register(animaPlugin, AnimaPlugin);
+        host.Register(otherPlugin, OtherPlugin);
+        var anima = service.AcquireProvider(animaPlugin).Provider!;
+        var other = service.AcquireProvider(otherPlugin).Provider!;
+        var registration = anima.Register(Definition()).Registration!;
+        Assert.True(other.Register(Definition()).Succeeded);
+        var animaIdentifier = StoryContentPolicy.Identifier(new StoryContentId(anima.ProviderId, "salvage-run"));
+        var otherIdentifier = StoryContentPolicy.Identifier(new StoryContentId(other.ProviderId, "salvage-run"));
+        Assert.True(world.World.IsInstalled(animaIdentifier));
+        Assert.True(world.World.IsInstalled(otherIdentifier));
+
+        registration.Dispose();
+        Assert.False(world.World.IsInstalled(animaIdentifier));
+        Assert.True(world.World.IsInstalled(otherIdentifier));
+
+        var again = anima.Register(Definition()).Registration!;
+        Assert.True(world.World.IsInstalled(animaIdentifier));
+        other.Dispose();
+        Assert.False(world.World.IsInstalled(otherIdentifier));
+        Assert.True(world.World.IsInstalled(animaIdentifier));
+        Assert.True(again.Active);
+        service.Dispose();
+        Assert.False(world.World.IsInstalled(animaIdentifier));
+    }
+
     // --- automatic persistence --------------------------------------------------------------
 
     [Fact]
@@ -1831,8 +2047,9 @@ public sealed class StoryContentTests
         internal readonly FakeLifecycle Lifecycle = new();
         internal Guid SessionId => Lifecycle.CurrentSession?.Id ?? Guid.Empty;
 
+        internal readonly FakeStoryWorld World = new();
         internal StoryContentService Service(FakeHost host, Action? checkThread = null)
-            => new(Persistence, Lifecycle, host.Authenticate, null, checkThread);
+            => new(Persistence, Lifecycle, host.Authenticate, null, checkThread, World);
 
         internal void StartSession()
         {
@@ -2028,6 +2245,71 @@ public sealed class StoryContentTests
         {
             yield return new KeyValuePair<string, string>("branch", null!);
         }
+    }
+
+    /// <summary>
+    /// Stands in for the game's story catalog and the player's mission list, with the same rules the
+    /// native adapter verifies: a duplicate identifier is never replaced, a duplicate story mission is
+    /// refused, and a completion is the WORLD's to make.
+    /// </summary>
+    private sealed class FakeStoryWorld : IStoryWorld
+    {
+        private readonly Dictionary<string, StoryMissionDefinition> _installed = new(StringComparer.Ordinal);
+        private readonly HashSet<string> _foreign = new(StringComparer.Ordinal);
+        private readonly HashSet<string> _active = new(StringComparer.Ordinal);
+        private readonly HashSet<string> _archived = new(StringComparer.Ordinal);
+        internal bool Unavailable;
+        internal bool RefuseAccept;
+        internal int Installs, Uninstalls, Accepts, Releases;
+
+        /// <summary>Content the world already holds, which this API must never replace.</summary>
+        internal void AddForeign(string identifier) => _foreign.Add(identifier);
+        /// <summary>The world's own outcome: the mission ends and its story identifier is archived.</summary>
+        internal void CompleteInWorld(string identifier) { _active.Remove(identifier); _archived.Add(identifier); }
+        /// <summary>A mission the world holds for one of our identifiers without this API admitting it.</summary>
+        internal void AdoptInWorld(string identifier) => _active.Add(identifier);
+        internal bool IsInstalled(string identifier) => _installed.ContainsKey(identifier);
+        internal bool IsActive(string identifier) => _active.Contains(identifier);
+
+        public IReadOnlyCollection<string> InstalledIdentifiers() => _installed.Keys.Concat(_foreign).ToArray();
+
+        public StoryWorldResult Install(string identifier, StoryMissionDefinition definition)
+        {
+            Installs++;
+            if (Unavailable) return new StoryWorldResult(StoryWorldStatus.Unavailable, "no world");
+            if (_foreign.Contains(identifier)) return new StoryWorldResult(StoryWorldStatus.AlreadyPresent, "already in the catalog");
+            _installed[identifier] = definition;
+            return StoryWorldResult.Ok;
+        }
+
+        public bool Uninstall(string identifier) { Uninstalls++; return _installed.Remove(identifier); }
+
+        public StoryWorldResult Accept(string identifier)
+        {
+            Accepts++;
+            if (Unavailable) return new StoryWorldResult(StoryWorldStatus.Unavailable, "no current player");
+            if (RefuseAccept) return new StoryWorldResult(StoryWorldStatus.Refused, "the world did not hold the accepted mission afterwards");
+            if (!_installed.ContainsKey(identifier)) return new StoryWorldResult(StoryWorldStatus.Refused, "not installed by this API");
+            if (_active.Contains(identifier) || _archived.Contains(identifier))
+                return new StoryWorldResult(StoryWorldStatus.AlreadyPresent, "already active or archived");
+            _active.Add(identifier);
+            return StoryWorldResult.Ok;
+        }
+
+        public StoryWorldResult Release(string identifier, StoryOutcome outcome)
+        {
+            Releases++;
+            if (Unavailable) return new StoryWorldResult(StoryWorldStatus.Unavailable, "no current player");
+            if (!_installed.ContainsKey(identifier)) return new StoryWorldResult(StoryWorldStatus.Refused, "not installed by this API");
+            if (!_active.Contains(identifier)) return StoryWorldResult.Ok;
+            if (outcome == StoryOutcome.Completed)
+                return new StoryWorldResult(StoryWorldStatus.Refused, "the world still holds this mission");
+            _active.Remove(identifier);
+            return StoryWorldResult.Ok;
+        }
+
+        public StoryWorldSnapshot? Snapshot()
+            => Unavailable ? null : new StoryWorldSnapshot(InstalledIdentifiers(), _active.ToArray(), _archived.ToArray());
     }
 
     /// <summary>A handle that implements only the SHIPPED registration interface, with no readiness capability.</summary>

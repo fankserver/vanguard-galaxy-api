@@ -12,7 +12,7 @@ using VGModAPI.Runtime;
 
 namespace VGModAPI;
 
-[BepInPlugin(ModApi.PluginId, "Vanguard Galaxy Mod API", "0.1.11")]
+[BepInPlugin(ModApi.PluginId, "Vanguard Galaxy Mod API", "0.1.12")]
 [BepInProcess("VanguardGalaxy.exe")]
 [BepInDependency("vgmodapi.qualification.guard", BepInDependency.DependencyFlags.SoftDependency)]
 public sealed class Plugin : BaseUnityPlugin
@@ -23,6 +23,8 @@ public sealed class Plugin : BaseUnityPlugin
     private PersistenceService? _persistence;
     private MissionAdapter? _missions;
     private TravelNativeAdapter? _travel;
+    private StoryNativeWorld? _storyWorld;
+    private StoryContentService? _story;
     private bool _identityHooksBound;
     private ModInformationCatalog? _modCatalog;
 
@@ -41,7 +43,9 @@ public sealed class Plugin : BaseUnityPlugin
         _hub.SetCapability("save-data", false, "Not initialized; experimental.");
         _hub.SetCapability("mission-continuity", false, "Disabled by configuration; experimental.");
         _hub.SetCapability("mission-transitions", false, "Disabled by configuration; experimental.");
+        _hub.SetCapability("owned-story", false, "Not initialized; experimental.");
         ModApi.Missions = null;
+        ModApi.Story = null;
         ModApi.Current = _hub;
         ModApi.Persistence = null;
         _modCatalog = new ModInformationCatalog(ModInformationSource.Snapshot);
@@ -95,6 +99,7 @@ public sealed class Plugin : BaseUnityPlugin
         // Subscription order is contractual: coordinated owners restore before mission PlayerReady identity seeding.
         InitializePersistence();
         InitializeMissions();
+        InitializeStory();
         Logger.LogInfo("VGModAPI " + Info.Metadata.Version + ": experimental, NOT runtime-qualified. Query capabilities; startup does not prove compatibility.");
     }
 
@@ -164,6 +169,39 @@ public sealed class Plugin : BaseUnityPlugin
         catch (Exception error)
         {
             _missions!.DisableIdentity(); _hub!.SetCapability("mission-continuity", false, "Mission identity initialization failed: " + error.Message);
+            Logger.LogError(error);
+        }
+    }
+
+    /// <summary>
+    /// Binds the owned-story module. It is constructed BEFORE any session, because its persistence
+    /// owner cannot be registered once one is live, and because vanilla resolves saved story payloads
+    /// out of its catalog while it deserializes: definitions registered from a consumer's Awake are
+    /// installed here, ahead of any load. A binding failure leaves the capability unavailable and the
+    /// public surface null; it never leaves a half-installed catalog behind.
+    /// </summary>
+    private void InitializeStory()
+    {
+        if (!Config.Bind("Story", "Enabled", false, "Experimental API-owned story content installed into the game's catalog; use disposable saves until qualified.").Value)
+        { _hub!.SetCapability("owned-story", false, "Disabled by configuration."); return; }
+        if (_persistence == null) { _hub!.SetCapability("owned-story", false, "API-managed saves unavailable."); return; }
+        if (!_hub!.Capabilities.Any(c => c.Name == "session-lifecycle" && c.Available))
+        { _hub.SetCapability("owned-story", false, "Lifecycle capability unavailable."); return; }
+        try
+        {
+            var assembly = Assembly.Load("Assembly-CSharp");
+            _storyWorld = new StoryNativeWorld(new StoryNativeBindings(assembly), _hub.CheckThread,
+                error => Logger.LogError("Story world fault: " + error));
+            _story = new StoryContentService(_persistence, _hub, StoryHostAuthentication.Resolve, null, _hub.CheckThread, _storyWorld);
+            ModApi.Story = _story;
+            _hub.SetCapability("owned-story", true, "Experimental owned story content enabled; native qualification pending.");
+        }
+        catch (Exception error)
+        {
+            ModApi.Story = null;
+            _story?.Dispose(); _story = null;
+            _storyWorld?.Dispose(); _storyWorld = null;
+            _hub!.SetCapability("owned-story", false, "Story binding failed: " + error.Message);
             Logger.LogError(error);
         }
     }
@@ -311,6 +349,13 @@ public sealed class Plugin : BaseUnityPlugin
         MissionPatches.Adapter = null; ModApi.Missions = null;
         _travel?.SetSession(null); _travel?.Dispose(); _travel = null;
         TravelPatches.Adapter = null; ModApi.Travel = null; ModApi.Station = null;
+        // The story module owns catalog entries AND a persistence owner, so it is torn down before
+        // the coordinator: uninstalling its content cannot race an owner that is already gone, and
+        // disposing the coordinator first would pause coordinated saves for every other owner.
+        ModApi.Story = null;
+        try { _story?.Dispose(); } catch (Exception error) { Logger.LogError("Story shutdown failed: " + error); }
+        try { _storyWorld?.Dispose(); } catch (Exception error) { Logger.LogError("Story world shutdown failed: " + error); }
+        _story = null; _storyWorld = null;
         _persistence?.Dispose();
         ModApi.Persistence = null;
         _harmony?.UnpatchSelf();

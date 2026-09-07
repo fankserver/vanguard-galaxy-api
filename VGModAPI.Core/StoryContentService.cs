@@ -57,8 +57,7 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
         public StoryTransitionResult Activate(Guid expectedSessionId, Guid occurrenceId)
         {
             _service.CheckThread();
-            return _service.Transition(this, expectedSessionId, occurrenceId,
-                (StoryLedger ledger, StoryContentId id, out string diagnostic) => ledger.Activate(id, occurrenceId, out diagnostic));
+            return _service.Activate(this, expectedSessionId, occurrenceId);
         }
 
         public StoryTransitionResult Withdraw(Guid expectedSessionId, Guid occurrenceId)
@@ -120,6 +119,13 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
     /// unavailable rather than assuming restored state exists.
     /// </summary>
     private readonly IPersistenceRegistration? _persistence;
+    /// <summary>
+    /// The native world this module installs into and drives. Without it the module owns definitions
+    /// and state but nothing exists in the game, so accepting content is refused rather than recorded:
+    /// a caller must never be able to claim an acceptance the world never made.
+    /// </summary>
+    private readonly IStoryWorld? _world;
+    private readonly List<string> _reconciliation = new();
     private readonly IDisposable? _lifecycle;
     private Readiness _readiness = Readiness.None;
     private Guid _restoredSession;
@@ -134,12 +140,13 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
     /// </summary>
     /// <exception cref="InvalidOperationException">A session is already running.</exception>
     internal StoryContentService(IPersistenceApi? persistence, ILifecycleApi? lifecycle, StoryHostAuthenticator authenticate,
-        Func<Guid>? newOccurrence = null, Action? checkThread = null)
+        Func<Guid>? newOccurrence = null, Action? checkThread = null, IStoryWorld? world = null)
     {
         checkThread?.Invoke();
         if (lifecycle?.CurrentSession != null)
             throw new InvalidOperationException("The story module must be constructed before a session begins.");
         _authenticate = authenticate ?? throw new ArgumentNullException(nameof(authenticate));
+        _world = world;
         _newOccurrence = newOccurrence ?? Guid.NewGuid;
         _checkThread = checkThread;
         _currentSession = () => lifecycle?.CurrentSession;
@@ -168,7 +175,45 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
         }
         _readiness = Readiness.Restored;
         _readinessDetail = bytes == null ? "no stored story state for this save" : "restored";
+        Reconcile();
     }
+
+    /// <summary>
+    /// Correlates the restored ledger with what the world actually holds, by story identifier. Vanilla
+    /// persists ACCEPTED missions itself, so the two can legitimately disagree: the world may have
+    /// ended a mission while this module was not the one observing it, and a save may carry one of our
+    /// identifiers that this ledger never admitted. Neither is repaired by inventing state. Nothing is
+    /// deleted, no acceptance is fabricated, and the disagreement is recorded so a refusal can explain
+    /// itself instead of pretending the two agree.
+    /// </summary>
+    private void Reconcile()
+    {
+        _reconciliation.Clear();
+        var snapshot = _world?.Snapshot();
+        if (snapshot == null) return;
+        var active = new HashSet<string>(snapshot.Active, StringComparer.Ordinal);
+        var archived = new HashSet<string>(snapshot.Archived, StringComparer.Ordinal);
+        var admitted = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var entry in _ledger.Entries)
+        {
+            if (entry.State != StoryOccurrenceState.Active) continue;
+            var identifier = StoryContentPolicy.Identifier(entry.Id);
+            admitted.Add(identifier);
+            if (active.Contains(identifier)) continue;
+            _reconciliation.Add(identifier + ": recorded active, but the world holds no such mission"
+                + (archived.Contains(identifier) ? " (it is archived there)" : "") + ".");
+        }
+        foreach (var identifier in active)
+        {
+            if (!StoryContentPolicy.TryParseIdentifier(identifier, out _) || admitted.Contains(identifier)) continue;
+            // One of OUR identifiers is live in the world without an active occurrence here. It is not
+            // adopted: an occurrence identity is minted by this API, never inferred from a save.
+            _reconciliation.Add(identifier + ": the world holds this mission, but no admitted occurrence claims it.");
+        }
+    }
+
+    /// <summary>Disagreements found when the restored ledger was correlated with the world, if any.</summary>
+    internal IReadOnlyList<string> Reconciliation => _reconciliation.ToArray();
 
     private void OnLifecycle(LifecycleEvent e)
     {
@@ -280,6 +325,22 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
         var id = new StoryContentId(lease.ProviderId, definition.LocalId);
         var status = _registry.TryRegister(id, definition, out var diagnostic, out var identifier, out var entry);
         if (status != StoryRegistrationStatus.Registered) return new StoryRegistrationResult(status, null, diagnostic);
+        if (_world != null)
+        {
+            // Installation happens HERE, at registration, because vanilla resolves a saved story
+            // payload out of its catalog while it deserializes: a definition registered later would
+            // arrive after the load that needs it.
+            var installed = _world.Install(identifier, definition);
+            if (!installed.Applied)
+            {
+                _registry.RemoveIfMatches(id, entry);
+                return installed.Status == StoryWorldStatus.AlreadyPresent
+                    ? new StoryRegistrationResult(StoryRegistrationStatus.IdentifierInUse, null,
+                        "Identifier '" + identifier + "' already exists in this world; the API never replaces existing content.")
+                    : new StoryRegistrationResult(StoryRegistrationStatus.Unavailable, null,
+                        "The story world refused this definition: " + installed.Detail);
+            }
+        }
         return new StoryRegistrationResult(status, new Registration(this, lease, id, identifier, entry), "");
     }
 
@@ -312,7 +373,7 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
             // Even under the SAME live lease the identifier may have been registered again since this
             // handle was issued, with the same immutable definition object; only the registration this
             // handle actually made is released. Saved occurrences are never rewritten or deleted here.
-            _service._registry.RemoveIfMatches(Id, _entry);
+            if (_service._registry.RemoveIfMatches(Id, _entry)) _service._world?.Uninstall(NativeIdentifier);
         }
     }
 
@@ -337,6 +398,54 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
     /// choices exceed the bounds that were checked, and every later capture would then fail, which
     /// the coordinator turns into a save block for every registered mod.
     /// </summary>
+    /// <summary>
+    /// Accepting an offered occurrence is a WORLD operation first and a record second: the API asks
+    /// vanilla to accept the mission it installed, verifies that the world actually holds it, and only
+    /// then records the activation. A world refusal — no player, a duplicate story identifier, an
+    /// unverifiable result — leaves the ledger exactly as it was, so a caller can never hold an
+    /// activation the game never made.
+    /// </summary>
+    private StoryTransitionResult Activate(Lease lease, Guid expectedSessionId, Guid occurrenceId)
+    {
+        if (!Guard(lease, expectedSessionId, out var refusal, out var status))
+            return new StoryTransitionResult(status, occurrenceId, refusal);
+        var resolved = _ledger.ResolveOwned(new StoryContentId(lease.ProviderId, LocalIdOf(occurrenceId)), occurrenceId,
+            out var entry, out var ownership);
+        if (resolved != StoryLedgerStatus.Accepted) return new StoryTransitionResult(Map(resolved), occurrenceId, ownership);
+        if (entry!.State != StoryOccurrenceState.Offered)
+            return new StoryTransitionResult(StoryTransitionStatus.InvalidTransition, occurrenceId,
+                "Only an offered occurrence becomes active; this one is " + entry.State + ".");
+        if (_world == null)
+            return new StoryTransitionResult(StoryTransitionStatus.Unavailable, occurrenceId,
+                "No story world is bound, so this acceptance cannot be made in the game and is not recorded.");
+        var identifier = StoryContentPolicy.Identifier(entry.Id);
+        var accepted = _world.Accept(identifier);
+        if (!accepted.Applied)
+            return new StoryTransitionResult(
+                accepted.Status == StoryWorldStatus.Unavailable ? StoryTransitionStatus.Unavailable : StoryTransitionStatus.InvalidTransition,
+                occurrenceId, "The world did not accept this mission: " + accepted.Detail);
+        // Recorded only after the world verified it; the transition below cannot fail for state, since
+        // ownership and the offered state were both resolved above under the same guard.
+        return Transition(lease, expectedSessionId, occurrenceId,
+            (StoryLedger ledger, StoryContentId id, out string diagnostic) => ledger.Activate(id, occurrenceId, out diagnostic));
+    }
+
+    /// <summary>
+    /// What the world must do before a terminal outcome is recorded. A completion belongs to the game:
+    /// while the world still holds the mission the API refuses rather than claiming one and granting no
+    /// reward. An abandonment or failure the caller declares is applied to the world first, only for a
+    /// mission this API installed, and only recorded once the world no longer holds it.
+    /// </summary>
+    private string? ReleaseInWorld(StoryOccurrenceEntry entry, StoryOutcome outcome, out bool unavailable)
+    {
+        unavailable = false;
+        if (_world == null || entry.State != StoryOccurrenceState.Active) return null;
+        var released = _world.Release(StoryContentPolicy.Identifier(entry.Id), outcome);
+        if (released.Applied) return null;
+        unavailable = released.Status == StoryWorldStatus.Unavailable;
+        return "The world did not end this mission: " + released.Detail;
+    }
+
     private StoryTransitionResult Retire(Lease lease, Guid expectedSessionId, Guid occurrenceId, StoryOutcome outcome,
         IReadOnlyDictionary<string, string>? choices)
     {
@@ -372,6 +481,15 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
                         "Choice key '" + undeclared + "' is not declared by this definition.");
             }
         }
+        if (!Guard(lease, expectedSessionId, out var guardRefusal, out var guardStatus))
+            return new StoryTransitionResult(guardStatus, occurrenceId, guardRefusal);
+        var terminalOwner = _ledger.ResolveOwned(new StoryContentId(lease.ProviderId, LocalIdOf(occurrenceId)), occurrenceId,
+            out var terminal, out var terminalOwnership);
+        if (terminalOwner != StoryLedgerStatus.Accepted) return new StoryTransitionResult(Map(terminalOwner), occurrenceId, terminalOwnership);
+        var worldRefusal = ReleaseInWorld(terminal!, outcome, out var unavailable);
+        if (worldRefusal != null)
+            return new StoryTransitionResult(unavailable ? StoryTransitionStatus.Unavailable : StoryTransitionStatus.InvalidTransition,
+                occurrenceId, worldRefusal);
         return Transition(lease, expectedSessionId, occurrenceId, (StoryLedger ledger, StoryContentId id, out string diagnostic)
             => ledger.Retire(id, occurrenceId, outcome, owned, out diagnostic));
     }
@@ -546,6 +664,7 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
     private void ReleaseProvider(Lease lease)
     {
         if (_disposed) return;
+        foreach (var identifier in _registry.IdentifiersOf(lease.ProviderId)) _world?.Uninstall(identifier);
         _registry.RemoveProvider(lease.ProviderId);
         if (_leasesBySegment.TryGetValue(lease.ProviderId, out var current) && ReferenceEquals(current, lease))
             _leasesBySegment.Remove(lease.ProviderId);
@@ -561,6 +680,7 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
         _persistence?.Dispose();
         _leasesBySegment.Clear();
         _bindings.Clear();
+        foreach (var identifier in _registry.Identifiers()) _world?.Uninstall(identifier);
         _registry.Clear();
         _registry.ResetWorldReservations();
         _ledger.Reset();
