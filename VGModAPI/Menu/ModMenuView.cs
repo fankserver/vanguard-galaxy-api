@@ -152,6 +152,10 @@ internal sealed class ModMenuView : IModMenuView
         var width = Mathf.Max(1, Mathf.Min(1120, _viewport.rect.width - 16));
         Stretch(_body, .5f, 0, .5f, 1, -width / 2, 0, width / 2, 0);
         _listContent.sizeDelta = new Vector2(0, _presenter.Rows.Count * ModMenuRows.Height);
+        var caption = _close.GetComponentInChildren<TMP_Text>();
+        var closeWidth = Mathf.Max(104, Mathf.Ceil(caption.GetPreferredValues(caption.text).x) + 24);
+        Stretch((RectTransform)_close.transform, 1, 1, 1, 1, -closeWidth - 4, -36, -4, -4);
+        Stretch(_heading.rectTransform, 0, 1, 1, 1, 8, -36, -closeWidth - 12, -4);
         var height = _viewport.rect.height;
         if (Math.Abs(_width - width) > .5f || Math.Abs(_height - height) > .5f)
         {

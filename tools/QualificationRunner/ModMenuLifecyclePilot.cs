@@ -107,6 +107,10 @@ public sealed partial class Plugin
         var viewport = (RectTransform)rect.parent;
         Require(Math.Abs(rect.rect.width - viewport.rect.width) < 1 && Math.Abs(rect.rect.height - viewport.rect.height) < 1,
             "Resized panel no longer covers its viewport.");
+        var caption = panel.GetComponentsInChildren<Button>().Single(button => button.name == "Close").GetComponentInChildren<TMP_Text>();
+        caption.ForceMeshUpdate();
+        Require(!caption.isTextTruncated && caption.GetPreferredValues(caption.text).x <= caption.rectTransform.rect.width,
+            "Close/Escape caption is truncated at this resolution.");
         var path = Path.Combine(_root!, name);
         Require(!File.Exists(path), "Refusing to overwrite screenshot evidence.");
         ScreenCapture.CaptureScreenshot(path);
