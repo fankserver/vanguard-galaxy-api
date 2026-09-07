@@ -6,7 +6,7 @@
 
 Every persistent reference carries an exact owner, local ID, kind and minimum provider version. The separately trusted declaration classifies its persistence impact. Identity matching is ordinal and kind-sensitive; paths and aliases are rejected. Unknown ownership or mismatched declarations are protected refusals, never another vanilla item/faction. A declaration must not be inferred solely from save-controlled fields.
 
-Call `RequireAdmission` before accepting persistent content. API-dependent, provider-required and migration-only content require an explicitly acknowledged dependency. Future registry/factory APIs must enforce this boundary; the planner alone does not make arbitrary third-party content safe. Provider package metadata and feature availability must be verified before passing availability to `Assess`.
+Call `RequireAdmission` before accepting persistent content. API-dependent, provider-required and migration-only content require an explicitly acknowledged dependency. Registry/factory integrations must enforce this boundary; the planner alone does not make arbitrary third-party content safe. Provider package metadata and feature availability must be verified before passing availability to `Assess`.
 
 | Impact | Compatible enabled provider | Absent/disabled/removed provider |
 |---|---|---|
@@ -40,7 +40,7 @@ Assembly SHA256: `a2aad60bc68c31baccd636587d3c5ba4e651eacda59b0af42cd4f17f864284
 | Faction | `Faction.Get` absent ID routes to type-based `Create` | Missing type fails, not another faction |
 | World POI | `MapPointOfInterest.FromJson` type routes to `Create` | Missing type fails before world reconstruction |
 
-Source-level motivating classifications (not new consumer migrations):
+Example provider dependencies (not migration support):
 
 | Existing content | Conservative impact | Required action |
 |---|---|---|

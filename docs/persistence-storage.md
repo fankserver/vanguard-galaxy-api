@@ -1,6 +1,6 @@
-# Immutable generation storage (coordinator foundation)
+# Immutable generation storage
 
-Internal storage and lifecycle engine have a default-enabled runtime facade, exercised by MissionJournal and Stockpile API-managed save pilots. Full owner acceptance remains separate. Calling Publish is not itself authorization to save; the coordinator calls it only for a matching successful vanilla operation.
+Internal storage and lifecycle engine have a default-enabled runtime facade, exercised by MissionJournal and Stockpile API-managed save pilots. Full in-game acceptance remains pending. Calling Publish is not itself authorization to save; the coordinator calls it only for a matching successful vanilla operation.
 
 ## Layout and publication
 
@@ -38,21 +38,17 @@ Inspected vanilla SideMenuOptions.MainMenu saves before player Cleanup and Scene
 
 ### Optional readiness capability
 
-`IPersistenceRegistration` is unchanged: it still exposes exactly `MutationAllowed` and `Status` as it
-has since 0.1.2, so an existing implementation or wrapper keeps compiling and type-loading. Readiness
-is offered ADDITIVELY through the separate `IPersistenceReadiness` interface, the same pattern
-`ILifecycleDispatchState` used for the lifecycle API. Cast the handle you were given; the runtime
-registration implements it.
+`IPersistenceRegistration` exposes `MutationAllowed`, `Status` and disposal. Readability is a separate
+optional capability, `IPersistenceReadiness`, implemented by the runtime registration. Cast the
+returned handle to query it; wrappers need not implement that optional interface.
 
 `StateReady` answers whether this owner's restored state for the CURRENT session is READABLE, which is
 deliberately broader than `MutationAllowed`: it stays true while lifecycle callbacks dispatch and
 while a save is in flight, because reading is safe in those moments and mutating is not. It is false
 when there is no current session, when the owner's data was blocked, unreadable or restore-failed, or
-when publication is blocked. Obeying `MutationAllowed` before mutations is unchanged and still
-required; readiness never authorises a mutation. A consumer that receives a handle without the
-capability should treat readiness as UNKNOWN and refuse, not assume state exists. Using the interface
-requires the API build that introduces it; it is optional and adds no hard dependency for consumers
-that do not cast for it.
+when publication is blocked. Obey `MutationAllowed` before mutations; readiness never authorises a mutation. A consumer that receives a handle without the
+capability should treat readiness as UNKNOWN and refuse, not assume state exists. Using this interface requires API 0.1.12 or newer. Consumers that do not query it need not require
+that capability.
 
 The optional runtime facade is initialized only when both inspected lifecycle capabilities are available and configuration enables it (the default). Its file adapter accepts direct `.save` children of the inspected SavesPath only, normalizes absolute paths/case on Windows, and rejects reparse paths and tilde/short-name forms. Arbitrary alias/hard-link imports are not supported. Public registration/handles remain main-thread-only; service disposal makes all handles inactive. No account-wide fallback or implicit legacy-sidecar import exists.
 

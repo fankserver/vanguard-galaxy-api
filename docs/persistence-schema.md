@@ -1,6 +1,6 @@
 # Namespaced schema and recovery policy
 
-Milestone02 schema delivery: a pure codec and migration boundary, not coordinated disk storage. The later coordinator must enforce the publication rules below. No existing consumer sidecar is automatically adopted or rewritten.
+The schema codec validates and migrates provider payloads in memory. The [persistence coordinator](persistence-storage.md) enforces disk-publication rules. No existing consumer sidecar is automatically adopted or rewritten.
 
 ## Inspected vanilla format
 
@@ -8,7 +8,7 @@ For the currently inspected assembly, SaveCurrentState wraps Version and seriali
 
 ## Owner envelope
 
-OwnerSchemaCodec uses only netstandard binary IO, UTF-8/ASCII and SHA-256; no JSON library is introduced or shipped. Providers own their payload formats and runtime dependencies. A provider using Newtonsoft must arrange one compatible runtime copy; the game is not assumed to supply it. System.Text.Json is not introduced given prior Unity/Mono faults. This codec is internal until the optional persistence service exposes its registration API.
+OwnerSchemaCodec uses only netstandard binary IO, UTF-8/ASCII and SHA-256; no JSON library is introduced or shipped. Providers own their payload formats and runtime dependencies. A provider using Newtonsoft must arrange one compatible runtime copy; the game is not assumed to supply it. System.Text.Json is not used because its Unity/Mono compatibility is not established. The codec is internal; consumers register through the public `PersistenceProvider` and `IPersistenceApi` contracts.
 
 Envelope v1: ASCII magic VGOS, one-byte envelope version, one-byte owner length, owner ASCII, little-endian Int32 provider-schema version, Int32 payload length, payload, then SHA-256 of all preceding bytes. SHA-256 detects corruption, not malicious authorship. Owner IDs are 1–64 lowercase ASCII letters/digits/dots/hyphens, beginning with a letter. They are namespaces, never filesystem paths. A coordinator must refuse duplicate registrations.
 
@@ -28,8 +28,8 @@ Source bytes, callback inputs and returned payloads are isolated by copying. One
 
 Never rename/delete a source merely because reading or migration failed. No automatic destructive quarantine. Retain immutable known-good generations; a diagnostic or optional copied quarantine artifact may reference the fault without replacing its source. Migration is an all-or-nothing in-memory candidate: publish only through the coordinator after its matching successful vanilla save, never during a read. Unrelated owners may be decoded independently, but publication must preserve unavailable/unknown owners rather than silently omit them.
 
-Report owner, status and expected schema without payloads or raw provider exceptions. Corrupt/unsupported/migration-failed state blocks that owner's mutation/publication, not an empty fallback. Retention has no automatic expiry; manual deletion explicitly loses recovery. No cross-file atomicity is claimed. Crash staging, atomic replacement, owner registration ownership and actual consumer tests remain the coordinated persistence issue's work.
+Report owner, status and expected schema without payloads or raw provider exceptions. Corrupt/unsupported/migration-failed state blocks that owner's mutation/publication, not an empty fallback. Retention has no automatic expiry; manual deletion explicitly loses recovery. No cross-file atomicity is claimed. See [storage and recovery](persistence-storage.md) for staging, publication, registration lifetime and consumer-testing limits.
 
 ## Verification boundary
 
-Deterministic fixtures cover missing/corrupt/future states, digest coverage, exact owner matching, chained migrations, mutating/throwing migrations, unrelated-owner success, missing steps, invalid output and allocation bounds. These are pure codec tests; filesystem recovery and native Mono consumer use are not claimed by this delivery.
+Deterministic fixtures cover missing/corrupt/future states, digest coverage, exact owner matching, chained migrations, mutating/throwing migrations, unrelated-owner success, missing steps, invalid output and allocation bounds. These are pure codec tests, not filesystem recovery or native Mono tests. Storage and actual-consumer evidence have separate verification boundaries.
