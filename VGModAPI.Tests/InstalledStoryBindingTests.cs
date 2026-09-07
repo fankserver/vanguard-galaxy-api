@@ -312,6 +312,14 @@ public sealed class InstalledStoryBindingTests
     {
         using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
         var module = assembly.MainModule;
+        var creditBalance = Assert.Single(module.GetType("Source.Player.GamePlayer")!.Properties, property => property.Name == "credits");
+        Assert.Equal("System.Int64", creditBalance.PropertyType.FullName);
+        var creditObjective = module.GetType("Source.MissionSystem.Objectives.CollectCredits")!;
+        Assert.Equal("System.Int32", Assert.Single(creditObjective.Fields, field => field.Name == "requiredAmount").FieldType.FullName);
+        var travelObjective = module.GetType("Source.MissionSystem.Objectives.TravelToPOI")!;
+        Assert.Equal("System.String", Assert.Single(travelObjective.Fields, field => field.Name == "targetPOI").FieldType.FullName);
+        Assert.Equal("System.Single", Assert.Single(travelObjective.Fields, field => field.Name == "requiredVisitTime").FieldType.FullName);
+        Assert.Equal("System.Boolean", Assert.Single(travelObjective.Methods, method => method.Name == "IsComplete").ReturnType.FullName);
         var mission = module.GetType(Mission)!;
         var update = Assert.Single(mission.Methods, method => method.Name == "Update" && method.Parameters.Count == 1);
         Assert.Equal("System.Single", update.Parameters[0].ParameterType.FullName);

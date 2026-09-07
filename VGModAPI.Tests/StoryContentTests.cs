@@ -3037,6 +3037,31 @@ public sealed class StoryContentTests
             => _plugins.TryGetValue(instance, out var plugin) ? new StoryHostPlugin(plugin.PluginId, plugin.Assembly) : null;
     }
 
+    [Fact]
+    public void NativeProgressQueriesResolveAfterReloadWithoutWritingRetainedState()
+    {
+        var provider = Provider(out var world, out _, out _, StoryRetention.Campaign);
+        Assert.True(provider.Register(new StoryMissionDefinition("observed", "Observe", "Description", new StoryFactionId("TradingGuild"),
+            new[] { new StoryStep("Credits", new[] { StoryObjective.CollectCredits(100).WithKey("balance") }) })).Succeeded);
+        var offered = provider.Offer("observed");
+        var objective = new StoryObjectiveId(new StoryContentId(provider.ProviderId, "observed"), offered.OccurrenceId, "balance");
+        var query = (IStoryObjectiveProvider)provider;
+        Assert.Equal(StoryKnowledge.Unavailable, query.Query(world.SessionId, objective).Knowledge);
+        Assert.True(provider.Activate(offered.OccurrenceId).Accepted);
+        world.World.ObservedObjectiveProgress = 20;
+        var before = world.Persistence.Provider!.Capture();
+        Assert.Equal(20, query.Query(world.SessionId, objective).Progress);
+        Assert.Equal(before, world.Persistence.Provider!.Capture());
+        var session = world.SessionId;
+        world.StartAndRestore(before);
+        world.World.ObservedObjectiveProgress = 10;
+        Assert.Equal(StoryKnowledge.Unavailable, query.Query(session, objective).Knowledge);
+        Assert.Equal(10, query.Query(world.SessionId, objective).Progress);
+        Assert.False(query.SetProgress(world.SessionId, objective, 100).Accepted);
+        world.Persistence.StateReady = false;
+        Assert.Null(query.Query(world.SessionId, objective).Progress);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -3446,7 +3471,7 @@ public sealed class StoryContentTests
     /// native adapter verifies: a duplicate identifier is never replaced, a duplicate story mission is
     /// refused, and a completion is the WORLD's to make.
     /// </summary>
-    private sealed class FakeStoryWorld : IStoryWorld, IStoryObjectiveWorld
+    private sealed class FakeStoryWorld : IStoryWorld, IStoryObjectiveWorld, IStoryObjectiveObservationWorld
     {
         private readonly Dictionary<string, StoryMissionDefinition> _installed = new(StringComparer.Ordinal);
         private readonly HashSet<string> _factions = new(StringComparer.Ordinal) { "TradingGuild", "MiningGuild" };
@@ -3476,6 +3501,9 @@ public sealed class StoryContentTests
         public StoryWorldResult MigrateScripted(string identifier, StoryMissionDefinition definition, StoryObjectiveLayout source,
             StoryObjectiveLayout destination, Func<bool> stillValid)
             => _active.Contains(identifier) && stillValid() ? StoryWorldResult.Ok : new StoryWorldResult(StoryWorldStatus.Refused, "unavailable");
+        internal int? ObservedObjectiveProgress;
+        public int? ReadProgress(string identifier, StoryObjectiveLayout.Slot slot, StoryObjective expected, Func<bool> stillValid)
+            => _active.Contains(identifier) && stillValid() ? ObservedObjectiveProgress : null;
         internal int ObjectiveWrites;
         internal Action? DuringObjectiveWrite;
         public StoryWorldResult SetScriptedProgress(string identifier, StoryObjectiveLayout.Slot slot, int progress, Func<bool>? stillValid = null)

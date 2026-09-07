@@ -269,9 +269,15 @@ inactive steps, stale sessions, foreign identities and replaced native objects a
 native retry resets progress but preserves occurrence and key identity. Mission rewards still require
 vanilla completion; setting objective progress never directly grants them.
 
-`Query` reads retained scripted progress for the requested session. Unavailable state has no numeric
-progress; it is not reported as zero. Live writes resolve the current player and held mission each time,
-so callers never keep a native objective reference across reloads.
+`Query` reads retained scripted progress for the requested session. For active keyed vanilla objectives,
+credit progress is the current nonnegative credit balance capped at the required amount, not cumulative
+earnings; travel progress is 0 or 1 from vanilla completion (a visit timestamp threshold, not dwell time).
+Vanilla retains those resource/visit facts with the save; the API does not copy them into a competing
+progress counter. Queries re-resolve the held mission and verify its shape, never write resources or
+visit history, and do not return stale pre-load progress. Offered or retired non-scripted objectives
+have no live progress answer. Unavailable state has no numeric progress; it is not reported as zero.
+Live writes resolve the current player and held mission each time, so callers never keep a native
+objective reference across reloads.
 
 `WithRevision(newRevision, migratesFromRevision)` explicitly permits migration from one retained
 revision. Supported migrations are fully keyed scripted definitions: all old keys and required amounts
@@ -284,7 +290,8 @@ Controlled in-game verification covers independently loaded authored/generated c
 objective names, partial-progress reload, stale sessions, inactive steps, scripted revision reordering,
 native payout/idempotency, repeated instances, older-save rollback and restored terminal state.
 Host regressions additionally cover reentrancy and migration quota boundaries. Non-scripted progress
-queries and full acceptance remain incomplete; this coverage does not make the entire API runtime-qualified.
+queries have host and installed-shape checks; their native acceptance remains pending. Full acceptance
+remains incomplete; this coverage does not make the entire API runtime-qualified.
 
 ## Automatic persistence
 

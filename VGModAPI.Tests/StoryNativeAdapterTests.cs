@@ -83,6 +83,57 @@ public sealed class StoryNativeAdapterTests : IDisposable
         Assert.Equal(1, ((Source.MissionSystem.Objectives.TriggerObjective)((Mission)newMission).steps[0].objectives[0]).currentAmount);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void TravelObservationRejectsChangesDuringCompletionCallback(int change)
+    {
+        using var world = World();
+        var identifier = Identifier();
+        var expected = StoryObjective.TravelTo("poi-guid-1", 5).WithKey("visit");
+        var definition = Definition(objectives: new[] { expected });
+        Assert.True(world.Install(identifier, definition).Applied);
+        Assert.True(world.Accept(identifier).Applied);
+        Assert.True(new StoryObjectiveLayout(definition).TryResolve("visit", out var slot));
+        var bindings = new StoryNativeBindings(typeof(StoryMission).Assembly);
+        var mission = (Mission)bindings.ActiveStory(_player, identifier)!;
+        var objective = (Source.MissionSystem.Objectives.TravelToPOI)mission.steps[0].objectives[0];
+        Assert.Equal(0, world.ReadProgress(identifier, slot, expected, () => true));
+        objective.Completion = () => true;
+        Assert.Equal(1, world.ReadProgress(identifier, slot, expected, () => true));
+        objective.Completion = () =>
+        {
+            if (change == 0) Source.Player.GamePlayer.current = new Source.Player.GamePlayer();
+            if (change == 1) mission.steps[0].objectives[0] = new Source.MissionSystem.Objectives.TravelToPOI();
+            if (change == 2) objective.targetPOI = "changed";
+            return true;
+        };
+        Assert.Null(world.ReadProgress(identifier, slot, expected, () => true));
+    }
+
+    [Fact]
+    public void NativeCreditProgressReadsCurrentResourcesWithoutWritingThem()
+    {
+        using var world = World();
+        var identifier = Identifier();
+        var objective = StoryObjective.CollectCredits(100).WithKey("credits");
+        var definition = Definition(objectives: new[] { objective });
+        Assert.True(world.Install(identifier, definition).Applied);
+        Assert.True(world.Accept(identifier).Applied);
+        var layout = new StoryObjectiveLayout(definition);
+        Assert.True(layout.TryResolve("credits", out var slot));
+        _player.credits = 40;
+        Assert.Equal(40, world.ReadProgress(identifier, slot, objective, () => true));
+        Assert.Equal(40, _player.credits);
+        _player.credits = 12;
+        Assert.Equal(12, world.ReadProgress(identifier, slot, objective, () => true));
+        _player.credits = 200;
+        Assert.Equal(100, world.ReadProgress(identifier, slot, objective, () => true));
+        Assert.Null(world.ReadProgress(identifier, slot, objective, () => false));
+        Assert.Null(world.ReadProgress(identifier, slot, StoryObjective.CollectCredits(99).WithKey("credits"), () => true));
+    }
+
     [Fact]
     public void MigrationRechecksObjectiveBudgetAfterFactoryCallbacks()
     {

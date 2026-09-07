@@ -288,6 +288,41 @@ internal sealed class StoryNativeBindings
         return objectives;
     }
 
+    internal int? ReadProgress(object mission, object player, StoryObjectiveLayout.Slot slot, StoryObjective expected, Func<bool> stillValid)
+    {
+        var steps = (IList)_missionSteps.GetValue(mission)!;
+        if (slot.Step >= steps.Count) return null;
+        var step = steps[slot.Step]!;
+        var objectives = (IList)_stepObjectives.GetValue(step)!;
+        if (slot.Objective >= objectives.Count) return null;
+        var objective = objectives[slot.Objective]!;
+        if (expected.Kind != slot.Kind || expected.LocalKey != slot.Key
+            || objective.GetType().FullName != StoryContentPolicy.ObjectiveNamespace + "." + StoryContentPolicy.ObjectiveTypeName(slot.Kind)) return null;
+        int progress;
+        switch (slot.Kind)
+        {
+            case StoryObjectiveKind.CollectCredits:
+                if ((int)Field(objective.GetType(), "requiredAmount").GetValue(objective)! != expected.RequiredAmount) return null;
+                progress = (int)Math.Min(expected.RequiredAmount, Math.Max(0L, (long)Property(_player, "credits").GetValue(player)!));
+                break;
+            case StoryObjectiveKind.TravelToPoi:
+                if ((string?)Field(objective.GetType(), "targetPOI").GetValue(objective) != expected.TargetPoiId
+                    || (float)Field(objective.GetType(), "requiredVisitTime").GetValue(objective)! != expected.RequiredVisitSeconds) return null;
+                progress = (bool)objective.GetType().GetMethod("IsComplete", System.Type.EmptyTypes)!.Invoke(objective, null)! ? 1 : 0;
+                break;
+            default: return null;
+        }
+        if (!stillValid() || !ReferenceEquals(_missionSteps.GetValue(mission), steps) || slot.Step >= steps.Count
+            || !ReferenceEquals(steps[slot.Step], step) || !ReferenceEquals(_stepObjectives.GetValue(step), objectives)
+            || slot.Objective >= objectives.Count || !ReferenceEquals(objectives[slot.Objective], objective)) return null;
+        if (slot.Kind == StoryObjectiveKind.CollectCredits
+            && (int)Field(objective.GetType(), "requiredAmount").GetValue(objective)! != expected.RequiredAmount) return null;
+        if (slot.Kind == StoryObjectiveKind.TravelToPoi
+            && ((string?)Field(objective.GetType(), "targetPOI").GetValue(objective) != expected.TargetPoiId
+                || (float)Field(objective.GetType(), "requiredVisitTime").GetValue(objective)! != expected.RequiredVisitSeconds)) return null;
+        return progress;
+    }
+
     internal bool MigrateScripted(object mission, object player, string identifier, StoryMissionDefinition definition,
         StoryObjectiveLayout source, StoryObjectiveLayout destination, Func<bool> stillValid)
     {

@@ -7,7 +7,8 @@ public interface IStoryObjectiveProvider
 {
     /// <summary>Sets absolute progress on the current live objective. Replayed values never increment progress.</summary>
     StoryTransitionResult SetProgress(Guid expectedSessionId, StoryObjectiveId objective, int progress);
-    /// <summary>Reads the retained scripted objective in the requested session; unavailable is never zero progress.</summary>
+    /// <summary>Reads retained scripted progress or the current active vanilla credit/travel objective.
+    /// Native credit progress follows current resources, not cumulative earnings. Unavailable is never zero progress.</summary>
     StoryObjectiveQuery Query(Guid expectedSessionId, StoryObjectiveId objective);
 }
 

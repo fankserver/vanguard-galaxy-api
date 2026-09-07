@@ -90,9 +90,9 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
             if (!_service.GuardStable(this, expectedSessionId, out var refusal, out _))
                 return new StoryObjectiveQuery(StoryKnowledge.Unavailable, null, null, null, refusal);
             if (objective.Definition.Provider != ProviderId || !_service._ledger.TryGet(objective.OccurrenceId, out var entry)
-                || !entry.Id.Equals(objective.Definition) || !entry.ObjectiveLayout.TryResolve(objective.LocalKey, out var slot)
-                || slot.Kind != StoryObjectiveKind.Scripted)
+                || !entry.Id.Equals(objective.Definition) || !entry.ObjectiveLayout.TryResolve(objective.LocalKey, out var slot))
                 return new StoryObjectiveQuery(StoryKnowledge.Unavailable, null, null, null, "No retained owned scripted objective matches this identity.");
+            if (slot.Kind != StoryObjectiveKind.Scripted) return _service.ObserveObjective(this, expectedSessionId, entry, slot);
             return new StoryObjectiveQuery(StoryKnowledge.Known, slot.Progress, slot.Required, entry.ObjectiveLayout.Revision, "", entry.Outcome);
         }
 
@@ -690,6 +690,27 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
         var lease = new Lease(this, plugin, segment);
         _leasesBySegment[segment] = lease;
         return new StoryProviderResult(StoryProviderStatus.Acquired, lease, "");
+    }
+
+    private StoryObjectiveQuery ObserveObjective(Lease lease, Guid session, StoryOccurrenceEntry entry, StoryObjectiveLayout.Slot slot)
+    {
+        StoryObjectiveQuery Refused() => new(StoryKnowledge.Unavailable, null, null, null, "The current native objective cannot be verified.");
+        if (entry.State != StoryOccurrenceState.Active || _world is not IStoryObjectiveObservationWorld world
+            || _unrunnable.Contains(entry.OccurrenceId) || !_registry.TryGet(entry.Id, out var definition)
+            || !entry.ObjectiveLayout.SamePositions(new StoryObjectiveLayout(definition))
+            || !_occurrenceIdentifiers.TryGetValue(entry.OccurrenceId, out var identifier)) return Refused();
+        if (!BeginOperation(out _, entry.OccurrenceId)) return Refused();
+        try
+        {
+            bool Stable() => Unavailable() == null && GuardStable(lease, session, out _, out _)
+                && _ledger.TryGet(entry.OccurrenceId, out var current) && ReferenceEquals(entry, current)
+                && _registry.TryGet(entry.Id, out var registered) && ReferenceEquals(registered, definition);
+            var expected = definition.Steps[slot.Step].Objectives[slot.Objective];
+            var progress = world.ReadProgress(identifier, slot, expected, Stable);
+            if (!Stable() || !progress.HasValue) return Refused();
+            return new StoryObjectiveQuery(StoryKnowledge.Known, progress, slot.Required, entry.ObjectiveLayout.Revision, "current vanilla objective");
+        }
+        finally { EndOperation(); }
     }
 
     private StoryTransitionResult SetProgress(Lease lease, Guid session, StoryObjectiveId objective, int progress)
