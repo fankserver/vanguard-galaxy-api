@@ -1040,6 +1040,154 @@ try {
     Assert (!(Test-Path -LiteralPath (Join-Path $recoveryTimeoutRoot 'run-started.txt'))) 'The launcher started the game despite an insufficient recovery lifetime.'
     & $script -Action Cleanup -SandboxRoot $recoveryTimeoutRoot
 
+    # --- separate optional native fast-lane phase ------------------------------------------------
+    $rejected = $false
+    try { & $script -Action Prepare -SandboxRoot (Join-Path $work 'invalid-fast-lane') -TravelFastLane @options }
+    catch { $rejected = $_.Exception.Message -like '*requires the travel/station selection*' }
+    Assert $rejected 'Fast-lane phase accepted without the travel/station selection.'
+    Assert (!(Test-Path -LiteralPath (Join-Path $work 'invalid-fast-lane'))) 'Rejected fast-lane selection left a prepared sandbox.'
+    $rejected = $false
+    try { & $script -Action Prepare -SandboxRoot (Join-Path $work 'invalid-fast-lane-scenario') -Scenario MissingApi -TravelFastLane @options }
+    catch { $rejected = $true }
+    Assert $rejected 'Fast-lane phase accepted outside Full.'
+    $fastLaneRoot = Join-Path $work 'travel-fast-lane-sandbox'
+    $sandboxes += $fastLaneRoot
+    & $script -Action Prepare -SandboxRoot $fastLaneRoot -TravelStation -TravelFastLane @options
+    $fastLaneProvenance = Assert-QualificationInputs $fastLaneRoot
+    Assert ($fastLaneProvenance.travelFastLane -and $fastLaneProvenance.travelFastLaneBudgetSeconds -eq $TravelFastLaneBudgetSeconds) 'Prepared fast-lane selection/budget missing.'
+    $fastLaneMarker = Join-Path $fastLaneRoot 'travel-fast-lane.enabled'
+    [IO.File]::WriteAllText($fastLaneMarker, 'changed')
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $fastLaneRoot } catch { $rejected = $true }
+    Assert $rejected 'Changed fast-lane marker accepted.'
+    [IO.File]::WriteAllText($fastLaneMarker, 'fast-lane-v1')
+    Remove-Item -LiteralPath $fastLaneMarker
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $fastLaneRoot } catch { $rejected = $true }
+    Assert $rejected 'Removed fast-lane marker accepted while provenance still selects it.'
+    [IO.File]::WriteAllText($fastLaneMarker, 'fast-lane-v1')
+    $fastLaneProvenancePath = Join-Path $fastLaneRoot 'build-provenance.json'
+    $fastLaneProvenanceText = [IO.File]::ReadAllText($fastLaneProvenancePath)
+    [IO.File]::WriteAllText($fastLaneProvenancePath, ($fastLaneProvenanceText -replace '"travelFastLaneBudgetSeconds": *\d+', '"travelFastLaneBudgetSeconds": 60'))
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $fastLaneRoot } catch { $rejected = $true }
+    Assert $rejected 'Edited fast-lane budget reservation accepted.'
+    [IO.File]::WriteAllText($fastLaneProvenancePath, $fastLaneProvenanceText)
+    $fastLaneProvenance = Assert-QualificationInputs $fastLaneRoot
+    # Synthetic receipts only. The in-system phase is selected here too and keeps its own required
+    # cases; a passing in-system receipt can never stand in for these two.
+    $fastLaneSession = [Guid]::NewGuid().ToString()
+    $fastLaneChainDetail = 'firstGate=system-a:gate-a; secondGate=system-b:gate-b2; destination=system-c:poi-destination; systems=3; gates=2; legs=5; routeCompletions=1; completionSnapshot=currentPoi=known,managerReady=True,travelActive=False,usingJumpgate=False,multiplier=1,fastLaneActive=False,waypoints=0,owned=True,location=system-c:poi-destination'
+    $fastLaneSnapshot = 'currentPoi=known,managerReady=True,travelActive=True,usingJumpgate=False,multiplier=7,fastLaneActive=True,waypoints=1,owned=True,location=system-b:gate-b2'
+    $fastLaneMultiplierDetail = "fastLaneUnlocked=True (read-only; never written); fastLaneLeg=system-b:gate-b1->system-b:gate-b2; fastLaneMultiplier=7; fastLaneActive=True; approachMultiplier=1; postFastLaneMultiplier=1; requestedSnapshot=$fastLaneSnapshot; departedSnapshot=$fastLaneSnapshot; arrivedSnapshot=$fastLaneSnapshot"
+    function FastLaneRow($case, $status, $session, $evidence, $detail) { return ($case + "`tdescription`t" + $status + "`tsystem:poi`t" + $session + "`t`t" + $evidence + "`t" + $detail) }
+    function FastLaneEvent($surface, $sequence, $caseLabel, $session) { return ("" + $sequence + "`t" + $surface + "`t" + $caseLabel + "`t" + $session + "`t`tArrived`tInSystem`tsystem-b:gate-b1`tsystem-b:gate-b2`tsystem-b:gate-b2`t1.000`t") }
+    function FastLaneSummary($rows, $first) {
+        $records = @($rows | ForEach-Object { ,($_ -split "`t") })
+        $passed = @($records | Where-Object { $_[2] -eq 'passed' }).Count
+        $failed = @($records | Where-Object { $_[2] -eq 'failed' }).Count
+        $notRun = @($records | Where-Object { $_[2] -eq 'not-run' }).Count
+        $lines = @($first, "phase=$TravelFastLanePhase", "budgetSeconds=$TravelFastLaneBudgetSeconds",
+            ("required=" + ($TravelFastLaneRequiredCases -join ',')), "fast-lane-multiplier=$TravelFastLaneMultiplier",
+            ("rows=" + $records.Count + " passed=$passed failed=$failed notRun=$notRun"))
+        foreach ($case in $TravelFastLaneRequiredCases) {
+            $matched = @($records | Where-Object { $_[0] -eq $case })
+            $state = if ($matched.Count -eq 1) { $matched[0][2] } elseif ($matched.Count -eq 0) { 'absent' } else { 'duplicated' }
+            $lines += "required-case $case=$state"
+        }
+        return @($lines + @('optional-not-run=', 'fault=none', 'result=phase satisfied'))
+    }
+    function WriteFastLaneOutputs($rows, $events, $summary) {
+        [IO.File]::WriteAllLines((Join-Path $fastLaneRoot 'travel-fast-lane-receipt.tsv'), [string[]]@(($TravelStationReceiptHeader -join "`t")) + [string[]]$rows)
+        [IO.File]::WriteAllLines((Join-Path $fastLaneRoot 'travel-fast-lane-events.tsv'), [string[]]@(($TravelStationEventHeader -join "`t")) + [string[]]$events)
+        [IO.File]::WriteAllLines((Join-Path $fastLaneRoot 'travel-fast-lane.txt'), [string[]]$summary)
+    }
+    function AssertFastLaneRejected($rows, $events, $summary, $message) {
+        WriteFastLaneOutputs $rows $events $summary
+        $rejected = $false
+        try { Assert-PersistenceProbeReceipt $fastLaneRoot $fastLaneProvenance } catch { $rejected = $true }
+        Assert $rejected $message
+    }
+    $fastLaneStationRows = @()
+    $fastLaneStationEvents = @()
+    $sequence = 0
+    foreach ($case in $TravelStationRequiredCases) {
+        $sequence++
+        $fastLaneStationRows += (TravelRow $case 'passed' $fastLaneSession ("travel:" + $sequence))
+        $fastLaneStationEvents += (TravelEvent 'travel' $sequence $case $fastLaneSession)
+    }
+    [IO.File]::WriteAllLines((Join-Path $fastLaneRoot 'travel-station-receipt.tsv'), [string[]]@(($TravelStationReceiptHeader -join "`t")) + [string[]]$fastLaneStationRows)
+    [IO.File]::WriteAllLines((Join-Path $fastLaneRoot 'travel-station-events.tsv'), [string[]]@(($TravelStationEventHeader -join "`t")) + [string[]]$fastLaneStationEvents)
+    [IO.File]::WriteAllLines((Join-Path $fastLaneRoot 'travel-station.txt'), [string[]](TravelSummary $fastLaneStationRows 'PASS'))
+    # A complete in-system phase alone is NOT the fast-lane phase.
+    $rejected = $false
+    try { Assert-PersistenceProbeReceipt $fastLaneRoot $fastLaneProvenance } catch { $rejected = $true }
+    Assert $rejected 'Missing fast-lane receipt accepted because the in-system phase passed.'
+    $fastLaneRows = @(
+        (FastLaneRow 'fast-lane-gate-chain' 'passed' $fastLaneSession 'travel:1' $fastLaneChainDetail),
+        (FastLaneRow 'fast-lane-multiplier-observed' 'passed' $fastLaneSession 'travel:2' $fastLaneMultiplierDetail))
+    $fastLaneEvents = @((FastLaneEvent 'travel' 1 'fast-lane-gate-chain' $fastLaneSession),
+        (FastLaneEvent 'travel' 2 'fast-lane-multiplier-observed' $fastLaneSession))
+    WriteFastLaneOutputs $fastLaneRows $fastLaneEvents (FastLaneSummary $fastLaneRows 'PASS')
+    Assert-PersistenceProbeReceipt $fastLaneRoot $fastLaneProvenance
+    # The chain row must publish the two gates, three systems, five legs and the single completion.
+    foreach ($broken in @(
+        @{Detail=($fastLaneChainDetail -replace 'gates=2','gates=1'); Message='Fast-lane chain with a single gate accepted.'},
+        @{Detail=($fastLaneChainDetail -replace 'systems=3','systems=2'); Message='Fast-lane chain that never reached a third system accepted.'},
+        @{Detail=($fastLaneChainDetail -replace 'legs=5','legs=3'); Message='Fast-lane chain with three legs accepted.'},
+        @{Detail=($fastLaneChainDetail -replace 'routeCompletions=1','routeCompletions=2'); Message='Fast-lane chain with two route completions accepted.'},
+        @{Detail=($fastLaneChainDetail -replace 'completionSnapshot=currentPoi=known,managerReady=True,travelActive=False','completionSnapshot=currentPoi=known,managerReady=True,travelActive=True'); Message='Fast-lane completion recorded during an active native route accepted.'})) {
+        $mutated = @((FastLaneRow 'fast-lane-gate-chain' 'passed' $fastLaneSession 'travel:1' $broken.Detail), $fastLaneRows[1])
+        AssertFastLaneRejected $mutated $fastLaneEvents (FastLaneSummary $mutated 'PASS') $broken.Message
+    }
+    # The multiplier row must publish the observed native transient, at every boundary of the
+    # gate-to-gate leg, with the surrounding legs at the resting value and a read-only precondition.
+    foreach ($broken in @(
+        @{Detail=($fastLaneMultiplierDetail -replace 'fastLaneMultiplier=7','fastLaneMultiplier=1'); Message='Fast-lane case without the observed native multiplier accepted.'},
+        @{Detail=($fastLaneMultiplierDetail -replace 'approachMultiplier=1','approachMultiplier=7'); Message='Permanent fast-lane state accepted as the charge transient.'},
+        @{Detail=($fastLaneMultiplierDetail -replace 'postFastLaneMultiplier=1','postFastLaneMultiplier=7'); Message='Fast-lane state that never reset accepted.'},
+        @{Detail=($fastLaneMultiplierDetail -replace 'fastLaneUnlocked=True \(read-only; never written\)','fastLaneUnlocked=True'); Message='Fast-lane case without the read-only unlock precondition accepted.'},
+        @{Detail=($fastLaneMultiplierDetail -replace 'departedSnapshot=currentPoi=known,managerReady=True,travelActive=True,usingJumpgate=False,multiplier=7','departedSnapshot=currentPoi=known,managerReady=True,travelActive=True,usingJumpgate=False,multiplier=1'); Message='Fast-lane leg whose departure was not at the charge multiplier accepted.'})) {
+        $mutated = @($fastLaneRows[0], (FastLaneRow 'fast-lane-multiplier-observed' 'passed' $fastLaneSession 'travel:2' $broken.Detail))
+        AssertFastLaneRejected $mutated $fastLaneEvents (FastLaneSummary $mutated 'PASS') $broken.Message
+    }
+    $fastLaneSkipped = @($TravelFastLaneRequiredCases | ForEach-Object { FastLaneRow $_ 'not-run' $fastLaneSession '' 'no native two-gate chain' })
+    AssertFastLaneRejected $fastLaneSkipped $fastLaneEvents (FastLaneSummary $fastLaneSkipped 'PASS') 'All-skipped fast-lane coverage accepted as PASS.'
+    $fastLaneMissing = @($fastLaneRows[0])
+    AssertFastLaneRejected $fastLaneMissing $fastLaneEvents (FastLaneSummary $fastLaneMissing 'PASS') 'Missing mandatory fast-lane case accepted.'
+    $fastLaneDuplicated = $fastLaneRows + @($fastLaneRows[0])
+    AssertFastLaneRejected $fastLaneDuplicated $fastLaneEvents (FastLaneSummary $fastLaneDuplicated 'PASS') 'Duplicated fast-lane case accepted.'
+    $fastLaneExtra = $fastLaneRows + @((FastLaneRow 'fast-lane-bonus' 'passed' $fastLaneSession 'travel:1' 'detail'))
+    AssertFastLaneRejected $fastLaneExtra $fastLaneEvents (FastLaneSummary $fastLaneExtra 'PASS') 'A fabricated fast-lane case identity accepted.'
+    $fastLaneFailed = @($fastLaneRows[0], (FastLaneRow 'fast-lane-multiplier-observed' 'failed' $fastLaneSession 'travel:2' $fastLaneMultiplierDetail))
+    AssertFastLaneRejected $fastLaneFailed $fastLaneEvents (FastLaneSummary $fastLaneFailed 'PASS') 'Claimed fast-lane PASS with a failed case accepted.'
+    $fastLaneForeign = @($fastLaneEvents | ForEach-Object { $_ -replace [regex]::Escape($fastLaneSession), ([Guid]::NewGuid().ToString()) })
+    AssertFastLaneRejected $fastLaneRows $fastLaneForeign (FastLaneSummary $fastLaneRows 'PASS') 'Fast-lane identities absent from the event trace accepted.'
+    AssertFastLaneRejected $fastLaneRows $fastLaneEvents (FastLaneSummary $fastLaneRows 'FAIL') 'Failed fast-lane attempt summary accepted.'
+    AssertFastLaneRejected $fastLaneRows $fastLaneEvents @('INCOMPLETE', "phase=$TravelFastLanePhase", "budgetSeconds=$TravelFastLaneBudgetSeconds",
+        "fast-lane-multiplier=$TravelFastLaneMultiplier", 'activeCase=fast-lane-gate-chain', 'rows=2 passed=2 failed=0 notRun=0',
+        'result=pilot still running or externally terminated; this is not a pass.') 'Incomplete fast-lane checkpoint accepted as a pass.'
+    $fastLaneOverBudget = @((FastLaneSummary $fastLaneRows 'PASS') | ForEach-Object { if ($_ -like 'budgetSeconds=*') { "budgetSeconds=$($TravelFastLaneBudgetSeconds + 1)" } else { $_ } })
+    AssertFastLaneRejected $fastLaneRows $fastLaneEvents $fastLaneOverBudget 'Fast-lane budget above the launcher reservation accepted.'
+    $fastLaneForgedMultiplier = @((FastLaneSummary $fastLaneRows 'PASS') | ForEach-Object { if ($_ -like 'fast-lane-multiplier=*') { 'fast-lane-multiplier=2' } else { $_ } })
+    AssertFastLaneRejected $fastLaneRows $fastLaneEvents $fastLaneForgedMultiplier 'A forged fast-lane multiplier declaration accepted.'
+    $fastLaneForeignPhase = @((FastLaneSummary $fastLaneRows 'PASS') | ForEach-Object { if ($_ -like 'phase=*') { "phase=$TravelRecoveryPhase" } else { $_ } })
+    AssertFastLaneRejected $fastLaneRows $fastLaneEvents $fastLaneForeignPhase 'Fast-lane receipt declaring another phase accepted.'
+    WriteFastLaneOutputs $fastLaneRows $fastLaneEvents (FastLaneSummary $fastLaneRows 'PASS')
+    Assert-PersistenceProbeReceipt $fastLaneRoot $fastLaneProvenance
+    & $script -Action Cleanup -SandboxRoot $fastLaneRoot
+    # The launcher must reserve base + EVERY selected phase budget before starting the game.
+    $fastLaneTimeoutRoot = Join-Path $work 'travel-fast-lane-timeout-sandbox'
+    $sandboxes += $fastLaneTimeoutRoot
+    & $script -Action Prepare -SandboxRoot $fastLaneTimeoutRoot -TravelStation -TravelFastLane @options
+    $fastLaneMinimum = $QualificationBaseTimeoutSeconds + $TravelStationBudgetSeconds + $TravelFastLaneBudgetSeconds
+    $rejected = $false
+    try { & $script -Action Run -SandboxRoot $fastLaneTimeoutRoot -TimeoutSeconds ($fastLaneMinimum - 1) @options }
+    catch { $rejected = $_.Exception.Message -like "*at least $fastLaneMinimum*" }
+    Assert $rejected 'Fast-lane run accepted a lifetime one second below the derived minimum.'
+    Assert (!(Test-Path -LiteralPath (Join-Path $fastLaneTimeoutRoot 'run-started.txt'))) 'The launcher started the game despite an insufficient fast-lane lifetime.'
+    & $script -Action Cleanup -SandboxRoot $fastLaneTimeoutRoot
+
     # --- separate optional actual-consumer travel probe -----------------------------------------
     $invalidConsumerSelections = @(
         @{ TravelStation = $true; TravelCrossSystem = $true; TravelWormholeFixture = $true },  # no consumer binary
