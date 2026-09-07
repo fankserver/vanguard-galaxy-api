@@ -179,7 +179,7 @@ if ($Action -eq 'Prepare') {
     New-Item -ItemType Directory -Path $plugins | Out-Null
     Copy-Item -LiteralPath (Join-Path $BuildRoot 'tools\QualificationGuard\bin\Release\netstandard2.1\QualificationGuard.dll') -Destination $plugins
     if ($Scenario -ne 'MissingApi') {
-        foreach ($name in @('VGModAPI.dll','VGModAPI.Core.dll','VGModAPI.Abstractions.dll')) {
+        foreach ($name in @('VGModAPI.dll','VGModAPI.Core.dll','VGModAPI.Abstractions.dll','vgmodapi.vgmod.json')) {
             Copy-Item -LiteralPath (Join-Path $BuildRoot "artifacts\VGModAPI\$name") -Destination $plugins
         }
     }

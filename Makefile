@@ -62,7 +62,7 @@ package: build
 	cp VGModAPI/bin/$(CONFIGURATION)/netstandard2.1/VGModAPI.dll artifacts/VGModAPI/
 	cp VGModAPI/bin/$(CONFIGURATION)/netstandard2.1/VGModAPI.Core.dll artifacts/VGModAPI/
 	cp VGModAPI/bin/$(CONFIGURATION)/netstandard2.1/VGModAPI.Abstractions.dll artifacts/VGModAPI/
-	cp README.md LICENSE artifacts/VGModAPI/
+	cp README.md LICENSE vgmodapi.vgmod.json artifacts/VGModAPI/
 	@mkdir -p artifacts/VGModAPI/docs
 	cp docs/*.md artifacts/VGModAPI/docs/
 	$(MAKE) check-package

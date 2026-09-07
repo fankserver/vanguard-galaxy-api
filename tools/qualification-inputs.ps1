@@ -1167,7 +1167,7 @@ function Assert-QualificationInputs([string]$Root) {
     }
     $expected = @('QualificationGuard.dll')
     if ($story) { $expected += @('OwnedStoryCampaign.dll','OwnedStoryJob.dll') }
-    if ($provenance.scenario -ne 'MissingApi') { $expected += @('VGModAPI.dll','VGModAPI.Core.dll','VGModAPI.Abstractions.dll') }
+    if ($provenance.scenario -ne 'MissingApi') { $expected += @('VGModAPI.dll','VGModAPI.Core.dll','VGModAPI.Abstractions.dll','vgmodapi.vgmod.json') }
     if ($provenance.scenario -eq 'Full') { $expected += @('QualificationRunner.dll','LifecycleObserver.dll') }
     if ($provenance.missionJournal) { $expected += @('VGMissionJournal.dll','Newtonsoft.Json.dll') }
     if ($stockpile) { $expected += @('VGStockpile.dll','Newtonsoft.Json.dll') }

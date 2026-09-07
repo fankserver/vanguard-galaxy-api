@@ -15,7 +15,7 @@ internal static class PackageChecks
         "qualification-runner.md", "research-findings.md", "persistence-identity.md", "persistence-schema.md", "persistence-storage.md", "content-safety.md", "mission-events.md", "travel-events.md", "story-content.md", "mod-information.md"
     };
     internal static readonly string[] Files = Assemblies.Select(n => n + ".dll")
-        .Concat(new[] { "README.md", "LICENSE" }).Concat(Documents.Select(n => "docs/" + n)).ToArray();
+        .Concat(new[] { "README.md", "LICENSE", "vgmodapi.vgmod.json" }).Concat(Documents.Select(n => "docs/" + n)).ToArray();
 
     internal static void ValidateLayout(string root)
     {

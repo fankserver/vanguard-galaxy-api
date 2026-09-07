@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "pluginId": "vgmodapi",
+  "author": "Florian Kinder",
+  "description": "Shared lifecycle, save-data and content services for Vanguard Galaxy mods.",
+  "projectUrl": "https://github.com/fankserver/vanguard-galaxy-api",
+  "channel": "experimental"
+}

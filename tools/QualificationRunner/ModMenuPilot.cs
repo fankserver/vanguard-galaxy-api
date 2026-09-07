@@ -23,6 +23,7 @@ public sealed partial class Plugin
         foreach (var frame in Wait(() => GameObject.Find("VGModAPI Mods") != null, "owned Mods entry")) yield return frame;
         Require(_api!.CurrentSession == null, "Menu probe must not enter gameplay.");
         var entry = GameObject.Find("VGModAPI Mods").GetComponent<Button>();
+        Require(entry.GetComponentInChildren<TMP_Text>().alignment == TextAlignmentOptions.Center, "Mods entry is not centered.");
         var menu = entry.transform.parent.gameObject;
         var canvas = entry.GetComponentInParent<Canvas>();
         var events = EventSystem.current;
@@ -58,7 +59,22 @@ public sealed partial class Plugin
             var list = panel.GetComponentsInChildren<ScrollRect>().Single(item => item.name == "Local mods");
             Require(panel.transform.parent.name == "Gameview", "Panel escaped the inspected viewport.");
             Require(panel.GetComponentsInChildren<TMP_Text>().All(text => !text.richText && !text.parseCtrlCharacters), "Unsafe rich text enabled.");
-            evidence.AppendLine("keyboard-open=PASS plain-text=PASS viewport=Gameview");
+            evidence.AppendLine("keyboard-open=PASS plain-text=PASS viewport=Gameview entry-centered=PASS");
+            var detailLabel = details.content.Find("Plain details").GetComponent<TMP_Text>();
+            Require(!detailLabel.text.Contains("API capabilities") && !detailLabel.text.Contains("Declared dependencies"), "Default details expose advanced diagnostics.");
+            var diagnostic = panel.GetComponentsInChildren<Button>().Single(button => button.name == "Diagnostics");
+            foreach (var label in new[] { diagnostic.GetComponentInChildren<TMP_Text>(), panel.transform.Find("Content/Title").GetComponent<TMP_Text>() })
+                foreach (var character in label.text)
+                    Require(character < 128 && label.font.HasCharacter(character), "UI-owned heading uses an unsupported native glyph.");
+            events.SetSelectedGameObject(diagnostic.gameObject);
+            foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
+            Require(detailLabel.text.Contains("API capabilities") && detailLabel.text.Contains("Declared dependencies"), "Diagnostics toggle did not reveal details.");
+            Require(!detailLabel.text.Contains("\u2014") && !detailLabel.text.Contains("\u2026"), "UI-generated diagnostics contain unsupported punctuation.");
+            foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
+            Require(!detailLabel.text.Contains("API capabilities"), "Diagnostics toggle did not hide details.");
+            var apiRow = ModApi.Mods!.Snapshot.Single(item => item.PluginId == ModApi.PluginId);
+            Require(apiRow.Metadata?.ProjectUrl == "https://github.com/fankserver/vanguard-galaxy-api", "Official API project metadata is missing.");
+            evidence.AppendLine("diagnostics-toggle=PASS owned-heading-glyphs=PASS official-metadata=PASS");
 
             // Select the genuine loaded driver through its native row, not a presenter backdoor.
             var row = list.GetComponentsInChildren<Button>().Single(button => button.GetComponentInChildren<TMP_Text>().text.Contains("Controlled Qualification"));
