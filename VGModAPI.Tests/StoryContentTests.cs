@@ -2157,6 +2157,80 @@ public sealed class StoryContentTests
         Assert.Throws<InvalidDataException>(() => StoryStateCodec.Decode(newer));
     }
 
+    [Fact]
+    public void LegacyOwnerEnvelopeMigratesThroughTheRealGenerationCoordinator()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "vg-story-migration-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var occurrence = Guid.NewGuid();
+            var id = new StoryContentId(StoryProviderIdentity.Segment(new StoryHostPlugin(AnimaPlugin, typeof(StoryContentTests).Assembly)), "salvage-run");
+            var current = StoryStateCodec.Encode(new[] { new StoryOccurrenceEntry(id, occurrence, StoryRetention.Campaign, 1) });
+            var legacy = current.Take(current.Length - 2).ToArray();
+            Array.Copy(BitConverter.GetBytes(1), 0, legacy, 4, 4);
+            var store = new GenerationStore(root);
+            var hash = new string('a', 64);
+            var oldCodec = new OwnerSchemaCodec(StoryStateCodec.Owner, 1, StoryStateCodec.Validate);
+            store.Publish("slot", hash, Guid.NewGuid(), new Dictionary<string, byte[]> { [StoryStateCodec.Owner] = oldCodec.Encode(legacy) });
+            using var hub = new LifecycleHub((_, error) => throw new Exception("Unexpected migration fault", error));
+            using var persistence = new PersistenceService(hub, store, path => path, _ => hash);
+            var host = new FakeHost();
+            using var service = new StoryContentService(persistence, hub, host.Authenticate, null, hub.CheckThread);
+            var plugin = new object();
+            host.Register(plugin, AnimaPlugin);
+            var provider = service.AcquireProvider(plugin).Provider!;
+            Assert.True(provider.Register(Definition(retention: StoryRetention.Campaign)).Succeeded);
+            var session = hub.Begin(SessionOrigin.SaveLoad, "slot");
+            hub.PlayerReady(session);
+            hub.GameplayInitialized(session);
+            var restored = provider.Unresolved("salvage-run");
+            Assert.Equal(StoryKnowledge.Known, restored.Knowledge);
+            Assert.Equal(occurrence, Assert.Single(restored.Occurrences).OccurrenceId);
+            var operation = Guid.NewGuid();
+            hub.Publish(new LifecycleEvent(LifecycleEventKind.SaveStarted, hub.CurrentSession, operation, "upgraded-slot"));
+            hub.Publish(new LifecycleEvent(LifecycleEventKind.SaveSucceeded, hub.CurrentSession, operation, "upgraded-slot"));
+            var upgraded = store.Load("upgraded-slot", hash)!;
+            var currentCodec = new OwnerSchemaCodec(StoryStateCodec.Owner, StoryStateCodec.SchemaVersion, StoryStateCodec.Validate);
+            var payload = currentCodec.Decode(upgraded.Owners[StoryStateCodec.Owner]).Payload!;
+            Assert.Equal(StoryStateCodec.SchemaVersion, BitConverter.ToInt32(payload, 4));
+            Assert.Equal(occurrence, Assert.Single(StoryStateCodec.Decode(payload)).OccurrenceId);
+            Assert.Equal(legacy, oldCodec.Decode(store.Load("slot", hash)!.Owners[StoryStateCodec.Owner]).Payload);
+            Assert.True(provider.Withdraw(occurrence).Accepted);
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void LegacyCampaignOccurrenceMigratesThroughTheServiceAndCanStillComplete(bool active)
+    {
+        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var offered = provider.Offer("salvage-run");
+        Assert.True(offered.Accepted);
+        if (active) Assert.True(provider.Activate(offered.OccurrenceId).Accepted);
+        var current = world.Persistence.Provider!.Capture();
+        // One schema1 row has no pending choices or failure byte. This fixture represents
+        // that historical layout; migration is performed by the real service restore callback.
+        var legacy = current.Take(current.Length - 2).ToArray();
+        Array.Copy(BitConverter.GetBytes(1), 0, legacy, 4, 4);
+        world.StartAndRestore(legacy);
+        var restored = Assert.Single(provider.Unresolved("salvage-run").Occurrences);
+        Assert.Equal(offered.OccurrenceId, restored.OccurrenceId);
+        Assert.Equal(active ? StoryOccurrenceStage.Active : StoryOccurrenceStage.Offered, restored.Stage);
+        Assert.Null(service.SuspendedReason);
+        if (!active) Assert.True(provider.Activate(restored.OccurrenceId).Accepted);
+        world.CompleteInGame(provider, "salvage-run", restored.OccurrenceId);
+        Assert.True(provider.IsCompleted("salvage-run").Completed);
+        var upgraded = world.Persistence.Provider.Capture();
+        Assert.Equal(StoryStateCodec.SchemaVersion, BitConverter.ToInt32(upgraded, 4));
+        world.StartAndRestore(upgraded);
+        Assert.True(provider.IsCompleted("salvage-run").Completed);
+        world.StartAndRestore(legacy);
+        Assert.False(provider.IsCompleted("salvage-run").Completed);
+        Assert.Equal(offered.OccurrenceId, Assert.Single(provider.Unresolved("salvage-run").Occurrences).OccurrenceId);
+    }
+
     /// <summary>
     /// The game leaves a failed story mission in the player's list and offers to retry it, so a
     /// reported failure is a fact about a live occurrence, not its terminal outcome: the occurrence
