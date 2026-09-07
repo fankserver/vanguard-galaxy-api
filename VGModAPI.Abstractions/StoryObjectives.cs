@@ -18,8 +18,12 @@ public sealed class StoryObjectiveQuery
     public int? Required { get; }
     public int? ContentRevision { get; }
     public string Diagnostic { get; }
+    /// <summary>Retained terminal outcome, or null while unresolved. Temporary outcomes expire with their tombstones.</summary>
+    public StoryOutcome? Outcome { get; }
     public StoryObjectiveQuery(StoryKnowledge knowledge, int? progress, int? required, int? contentRevision, string diagnostic)
-    { Knowledge = knowledge; Progress = progress; Required = required; ContentRevision = contentRevision; Diagnostic = diagnostic; }
+        : this(knowledge, progress, required, contentRevision, diagnostic, null) { }
+    public StoryObjectiveQuery(StoryKnowledge knowledge, int? progress, int? required, int? contentRevision, string diagnostic, StoryOutcome? outcome)
+    { Knowledge = knowledge; Progress = progress; Required = required; ContentRevision = contentRevision; Diagnostic = diagnostic; Outcome = outcome; }
 }
 
 /// <summary>Stable objective identity within one provider-owned mission occurrence.</summary>

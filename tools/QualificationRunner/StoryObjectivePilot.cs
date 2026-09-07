@@ -63,6 +63,18 @@ public sealed partial class Plugin
         Require(qa.Query(session, talk).Progress == 1 && qa.Query(session, talk).ContentRevision == 2
             && qb.Query(session, report).Progress == 1, "Older objective save inherited newer completion or failed revision migration.");
         foreach (var frame in StoryLoadReady("qa-objective-completed")) yield return frame;
+        session = _api.CurrentSession!.Id;
+        var restoredCampaign = qa.Query(session, talk);
+        var restoredJob = qb.Query(session, report);
+        var restoredRepeat = qb.Query(session, repeatKey);
+        Require(a.IsCompleted(local).Completed == true && restoredCampaign.Knowledge == StoryKnowledge.Known
+            && restoredCampaign.ContentRevision == 2 && restoredCampaign.Progress == 3 && restoredCampaign.Outcome == StoryOutcome.Completed,
+            "Completed campaign objective state did not restore.");
+        Require(restoredJob.Knowledge == StoryKnowledge.Known && restoredRepeat.Knowledge == StoryKnowledge.Known
+            && restoredJob.Progress == 2 && restoredRepeat.Progress == 2
+            && restoredJob.ContentRevision == 1 && restoredRepeat.ContentRevision == 1
+            && restoredJob.Outcome == StoryOutcome.Completed && restoredRepeat.Outcome == StoryOutcome.Completed,
+            "Completed generated objective occurrences did not independently restore.");
         WriteAtomic("story-objectives.txt", new[] { "PASS", "owners;partial-reload;stale-session;inactive-step;authored-beat;generated-objective;duplicate;native-claim;revision-reorder;repeated-instance;rollback" });
     }
 }

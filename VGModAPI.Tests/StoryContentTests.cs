@@ -3176,6 +3176,12 @@ public sealed class StoryContentTests
         Assert.Equal(2, Assert.Single(entry.ObjectiveLayout.Slots).Progress);
         var foreign = new StoryObjectiveId(new StoryContentId("foreign", "conversation"), offered.OccurrenceId, "answer");
         Assert.False(objectives.SetProgress(world.SessionId, foreign, 5).Accepted);
+        Assert.True(objectives.SetProgress(world.SessionId, objective, 5).Accepted);
+        world.CompleteInGame(provider, "conversation", offered.OccurrenceId);
+        var completed = world.Persistence.Provider!.Capture();
+        world.StartAndRestore(completed);
+        Assert.Equal(StoryOutcome.Completed, objectives.Query(world.SessionId, objective).Outcome);
+        Assert.Equal(5, objectives.Query(world.SessionId, objective).Progress);
     }
 
     private sealed class FakeWorld

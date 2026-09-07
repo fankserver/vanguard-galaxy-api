@@ -84,7 +84,7 @@ if ($Action -eq 'Prepare') {
     if ($VanillaLoadControl -and $Scenario -ne 'MissingApi') { throw 'Vanilla load control requires MissingApi.' }
     if ($StoryAbsentProbe) {
         if (!$StoryDonorRoot) { throw 'Absent-story probe requires a completed story donor sandbox.' }
-        Assert-StoryReceipt $StoryDonorRoot
+        Assert-StoryDonorReceipt $StoryDonorRoot
         if (!(SamePath $SaveA (Join-Path $StoryDonorRoot 'Saves\qa-story-active.save'))) { throw 'Absent-story fixture must be the donor active snapshot.' }
         $donorResult = @(Get-Content -LiteralPath (Join-Path $StoryDonorRoot 'result.txt'))
         if ($donorResult[0] -cne 'PASS') { throw 'Story donor did not finish successfully.' }
@@ -409,7 +409,7 @@ if ($Action -eq 'Cleanup') {
 Assert-QualificationUnused $root
 $provenance = Assert-QualificationInputs $root
 if ($provenance.PSObject.Properties['storyAbsentProbe'] -and $provenance.storyAbsentProbe -and $TimeoutSeconds -lt 2100) { throw 'Absent-story probe requires base plus300seconds (2100 total).' }
-if ($provenance.PSObject.Properties['storyProbe'] -and $provenance.storyProbe -and $TimeoutSeconds -lt 3900) { throw 'Story probe requires base plus 2100-second story budget (3900 seconds total).' }
+if ($provenance.PSObject.Properties['storyProbe'] -and $provenance.storyProbe -and $TimeoutSeconds -lt 5100) { throw 'Story probe requires 5100 seconds including objective reload/claim waits and execution margin.' }
 # The travel/station phase adds its own bounded waits on top of every existing Full pilot, so the
 # process lifetime must be reserved BEFORE launching: a launcher kill mid-phase would otherwise
 # destroy a run that cannot finish. -TimeoutSeconds is the existing lifetime knob.

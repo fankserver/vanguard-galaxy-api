@@ -93,7 +93,7 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
                 || !entry.Id.Equals(objective.Definition) || !entry.ObjectiveLayout.TryResolve(objective.LocalKey, out var slot)
                 || slot.Kind != StoryObjectiveKind.Scripted)
                 return new StoryObjectiveQuery(StoryKnowledge.Unavailable, null, null, null, "No retained owned scripted objective matches this identity.");
-            return new StoryObjectiveQuery(StoryKnowledge.Known, slot.Progress, slot.Required, entry.ObjectiveLayout.Revision, "");
+            return new StoryObjectiveQuery(StoryKnowledge.Known, slot.Progress, slot.Required, entry.ObjectiveLayout.Revision, "", entry.Outcome);
         }
 
         public StoryTransitionResult SetProgress(Guid expectedSessionId, StoryObjectiveId objective, int progress)
