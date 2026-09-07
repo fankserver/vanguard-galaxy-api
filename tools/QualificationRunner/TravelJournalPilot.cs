@@ -36,8 +36,12 @@ public sealed partial class Plugin
     private readonly List<string> _tjAuditedRoots = new();
     /// <summary>Unity frame in which each public fact's callback was delivered, read on the main thread.</summary>
     private readonly Dictionary<long, int> _tjFactFrames = new();
-    /// <summary>The REAL baseline of the window that is currently open; never assumed to be empty.</summary>
-    private TravelJournalReceipt.LegacyBaseline? _tjBaseline;
+    /// <summary>
+    /// The REAL baseline of the WHOLE window that is currently open, captured by its own Ready hook
+    /// and never assumed to be empty. Only a Ready hook assigns it; boundary samples taken inside
+    /// the window keep their own baselines, so the window's own prefix and count survive them.
+    /// </summary>
+    private TravelJournalReceipt.LegacyBaseline? _tjWindowBaseline;
 
     private void TjCase(string id, string description) { _tjCase = id; _tjDescription = description; }
     private void TjEndCase() { TjCase(TravelStationReceipt.NoActiveCase, "No archived-journal case is observing."); TjCheckpoint(); }
@@ -183,23 +187,24 @@ public sealed partial class Plugin
 
     /// <summary>
     /// Takes a real vanilla save through the harness helper; the archived plugin's own postfix writes
-    /// its sidecar. The result is validated against the REAL baseline of the open window, so a fresh
-    /// load's own rows can never sit inside a compared append set and a reset store is refused.
+    /// its sidecar. The result is validated against the baseline the CALLER names, so a fresh load's
+    /// own rows can never sit inside a compared append set and a reset store is refused. The
+    /// baseline is always passed in: nothing here reads or writes an ambient "current" baseline.
     /// </summary>
-    private TravelJournalReceipt.LegacySidecar SaveAndReadLegacy(string slot)
+    private TravelJournalReceipt.LegacySidecar SaveAndReadLegacy(string slot, TravelJournalReceipt.LegacyBaseline? baseline)
     {
         Save(slot, LifecycleEventKind.SaveSucceeded);
         var sidecar = ReadLegacySidecar(slot);
-        Require(_tjBaseline != null, "No legacy baseline was captured for this window; a zero baseline is never assumed.");
-        var failure = TravelJournalReceipt.CheckAppendBaseline(sidecar, _tjBaseline!);
+        Require(baseline != null, "No legacy baseline was captured for this window; a zero baseline is never assumed.");
+        var failure = TravelJournalReceipt.CheckAppendBaseline(sidecar, baseline!);
         Require(failure == null, failure!);
         return sidecar;
     }
 
     /// <summary>
-    /// Captures the window's own baseline with a real save AFTER placement and quiescence, so every
-    /// later comparison in that window subtracts exactly what the archived plugin had already
-    /// written - including anything its load-time patches appended.
+    /// Captures ONE baseline with a real save and returns it. This is deliberately pure with respect
+    /// to the phase's state: it assigns nothing, so a nested boundary sample can never replace the
+    /// enclosing window's baseline. Only the two Ready hooks own <c>_tjWindowBaseline</c>.
     /// </summary>
     private TravelJournalReceipt.LegacyBaseline CaptureLegacyBaseline(string slot)
     {
@@ -207,9 +212,7 @@ public sealed partial class Plugin
         var sidecar = ReadLegacySidecar(slot);
         Require(sidecar.Version == TravelJournalReceipt.LegacySchemaVersion,
             "The legacy baseline sidecar declares schema version " + sidecar.Version + ".");
-        var baseline = new TravelJournalReceipt.LegacyBaseline(slot, sidecar);
-        _tjBaseline = baseline;
-        return baseline;
+        return new TravelJournalReceipt.LegacyBaseline(slot, sidecar);
     }
 
     // --- hooks called by the reused native travel phases ---------------------------------------
@@ -276,7 +279,8 @@ public sealed partial class Plugin
         Require(owned.Length > 0, "The archived plugin installed no patches; its startup bindings did not resolve.");
         // The window's REAL baseline: whatever the archived plugin already wrote for this freshly
         // loaded session, including anything its load-time patches appended.
-        var baseline = CaptureLegacyBaseline("qa-journal-baseline-in-system");
+        _tjWindowBaseline = CaptureLegacyBaseline("qa-journal-baseline-in-system");
+        var baseline = _tjWindowBaseline;
         var placements = JournalWindow(_tjWindowOffset).Where(fact => fact.Kind == TravelTransitionKind.InitialPlacement).ToArray();
         TjRecord(TravelJournalReceipt.BindingCase, TravelJournalReceipt.BindingDescription, TravelStationReceipt.Passed,
             "archive=" + LegacyPluginId + " " + legacy.Info.Metadata.Version, session, null,
@@ -304,8 +308,8 @@ public sealed partial class Plugin
     {
         foreach (var frame in JournalQuiesce()) yield return frame;
         var window = JournalWindow(_tjWindowOffset).Where(fact => fact.SessionId == _tjWindowSession).ToArray();
-        var sidecar = SaveAndReadLegacy("qa-journal-in-system");
-        var appended = TravelJournalReceipt.Appended(sidecar, _tjBaseline!);
+        var sidecar = SaveAndReadLegacy("qa-journal-in-system", _tjWindowBaseline);
+        var appended = TravelJournalReceipt.Appended(sidecar, _tjWindowBaseline!);
 
         // Compatible pair: every in-system arrival of the window, in order, by native POI guid.
         var arrivals = window.Where(fact => fact.Kind == TravelTransitionKind.Arrived && fact.Mode == TravelMode.InSystem
@@ -389,17 +393,14 @@ public sealed partial class Plugin
         foreach (var frame in JournalQuiesce()) yield return frame;
         if (boundary == "before")
         {
-            // A boundary baseline of its own: the cancel window subtracts exactly this.
+            // A SEPARATE baseline of its own: the cancel window subtracts exactly this one, while
+            // the enclosing in-system window keeps _tjWindowBaseline untouched.
             _tjCancelBefore = CaptureLegacyBaseline("qa-journal-cancel-before");
         }
         else
         {
             Require(_tjCancelBefore != null, "The cancel window was closed without an opening sample.");
-            var previous = _tjBaseline;
-            _tjBaseline = _tjCancelBefore;
-            _tjCancelAfter = SaveAndReadLegacy("qa-journal-cancel-after");
-            // The enclosing window keeps its own baseline; the cancel sample never replaces it.
-            _tjBaseline = previous;
+            _tjCancelAfter = SaveAndReadLegacy("qa-journal-cancel-after", _tjCancelBefore);
         }
     }
 
@@ -420,7 +421,7 @@ public sealed partial class Plugin
         _tjInFlight = null;
         _tjInFlightCapture = null;
         // Each cross-system case loads its own fixture, so it captures its own REAL baseline.
-        CaptureLegacyBaseline("qa-journal-baseline-" + crossCase);
+        _tjWindowBaseline = CaptureLegacyBaseline("qa-journal-baseline-" + crossCase);
         _tjOpenCase = crossCase;
     }
 
@@ -468,8 +469,8 @@ public sealed partial class Plugin
             savedFrame: Time.frameCount,
             nativeJumpRunning: CrossSystemSnapshot().JumpIteratorRunning);
         _tjInFlightCapture = capture;
-        var sidecar = SaveAndReadLegacy("qa-journal-in-flight");
-        _tjInFlight = (TravelJournalReceipt.Appended(sidecar, _tjBaseline!), "qa-journal-in-flight");
+        var sidecar = SaveAndReadLegacy("qa-journal-in-flight", _tjWindowBaseline);
+        _tjInFlight = (TravelJournalReceipt.Appended(sidecar, _tjWindowBaseline!), "qa-journal-in-flight");
     }
 
     internal IEnumerable<object?> TravelJournalCrossCaseCompleted(string crossCase)
@@ -512,8 +513,8 @@ public sealed partial class Plugin
         }
         else
         {
-            var sidecar = SaveAndReadLegacy("qa-journal-wormhole");
-            var appended = TravelJournalReceipt.Appended(sidecar, _tjBaseline!);
+            var sidecar = SaveAndReadLegacy("qa-journal-wormhole", _tjWindowBaseline);
+            var appended = TravelJournalReceipt.Appended(sidecar, _tjWindowBaseline!);
             var failure = TravelJournalReceipt.CheckWormholeGap(appended, destination, apiWormholeArrivalObserved: true);
             Require(failure == null, failure!);
             TjRecord(TravelJournalReceipt.WormholeGapCase, TravelJournalReceipt.WormholeGapDescription, TravelStationReceipt.Passed,
@@ -561,7 +562,7 @@ public sealed partial class Plugin
             TravelStationReceipt.Evidence(departures.Where(fact => fact.SessionId == departure.SessionId), null),
             "largestDwellSeconds=" + TravelJournalReceipt.Exact(largest)
             + "; toleranceSeconds=" + TravelJournalReceipt.Exact(TravelJournalReceipt.DwellToleranceSeconds)
-            + " (exact: the adapter subtracts the same doubles the two facts carry)"
+            + " (exact: the game clock is frame-constant and both reads of a pair are synchronous)"
             + "; anchorGameSeconds=" + TravelJournalReceipt.Exact(anchor)
             + "; departureGameSeconds=" + TravelJournalReceipt.Exact(departure.GameSeconds)
             + "; dwellSeconds=" + TravelJournalReceipt.Exact(departure.DwellSeconds!.Value)

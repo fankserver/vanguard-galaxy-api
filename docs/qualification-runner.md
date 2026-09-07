@@ -355,7 +355,11 @@ managed-content milestone: `RuntimeQualified=false` and #12 stays open.
 with `-AnimaTravelProbe` or `-EchoTravelProbe`: all three own the same two reused travel phases, so
 at most one owns a run. `-TravelJournalBin` without `-TravelJournalComparison` is refused as well,
 and so are the pins without the binary: the archive patches the game, so it is never installed as a
-passive ridealong or beside a consumer plugin - Prepare and provenance validation both enforce that.
+passive ridealong. The comparison sandbox also carries the ARCHIVE ALONE: `-AnimaBin` or `-EchoBin`
+beside it is refused by Prepare - before anything is copied - and again by provenance validation at
+Run, so the two sides can no longer disagree. That rule is about consumer plugins that observe the
+same native travel and save surfaces; the unrelated Stockpile and MissionJournal selections are not
+consumer plugins for this rule and neither side refuses them.
 
 **The archive is never touched.** It is not edited, rebuilt, reactivated, migrated or bridged, and
 nothing here calls its `IVgTravelJournal` surface, reflects into its store or invokes its patches.
@@ -382,8 +386,10 @@ the comparison. The archive is only read - it is never built. That attests the c
 that build, and no document path, private game code or binary content is published.
 
 Sandbox configuration is `[Journal] Verbose = true`, `MaxEvents = 0`. Zero is the archived plugin's
-own documented unbounded value, so its FIFO eviction can never silently drop a compared row; both
-settings are pinned by provenance validation.
+own documented unbounded value, so its FIFO eviction can never silently drop a compared row. Both
+settings are pinned by provenance validation through a parsed check of the file's effective
+entries - not its bytes, because BepInEx rewrites the file at `Bind` - and a duplicated or
+conflicting entry is refused rather than resolved silently.
 
 **Isolation.** A read-only audit of the whole archived source found its entire persistence surface
 to be the live static `SaveGame.SavesPath`, the `SaveGameFile` vanilla is loading, and the sidecar,
@@ -399,7 +405,13 @@ exited, over the explicitly named sandbox roots (`Saves`, `game`, `game\BepInEx`
 `game\BepInEx\plugins`, `game\BepInEx\config` and the sandbox root itself), records every
 matching file as created, rewritten or unchanged against a pre-launch snapshot in
 `travel-journal-postquit-audit.txt`, and refuses any journal file outside the sandbox saves or with
-an unexpected name. No claim is made about locations that were not scanned.
+an unexpected name. The prepared plugin BINARY must hash exactly unchanged. Its configuration must
+not: BepInEx 5.4 rewrites a plugin's config file on the first `Bind` (`SaveOnConfigSet`, which the
+archive never disables), adding its own header, `##` descriptions and spacing. The audit therefore
+re-validates the configuration by its PARSED semantics - `[Journal] Verbose = true`, `MaxEvents = 0`,
+with comments and unknown keys benign but a missing, duplicated or changed effective value refused -
+records the old and new hashes plus `semantics=pass`, and claims no byte equality for it. Prepare-time
+and Run-time validation share that one parsed validator. No claim is made about locations that were not scanned.
 
 It runs as phase `travel-journal-comparison-v1` with its own receipts and nine mandatory cases:
 `legacy-binding`, `in-system-arrival-compatible`, `chained-arrival-compatible`,
@@ -408,8 +420,10 @@ It runs as phase `travel-journal-comparison-v1` with its own receipts and nine m
 unless `-TimeoutSeconds` covers base 1800 + travel/station 1500 + cross-system 2400 + this phase's
 own **900**; its derived worst case is 350 seconds (3 placement waits, 10 quiescence samples and the
 one bounded in-flight departure wait), because it drives no route and performs no load of its own.
-Its seven real saves are declared in the same call-site plan but carry no budget term: a save is
-synchronous and adds no wait.
+Its eight real saves are declared in the same call-site plan, counted as actual invocations rather
+than lexical call sites (in-system ready and completion, two cancel boundaries, one baseline per
+cross-system case, the in-flight save and the wormhole completion), and carry no budget term: a save
+is synchronous and adds no wait.
 
 How the comparison works: the phase observes the PUBLIC travel and station surfaces, lets the
 qualified phases drive, and takes a real vanilla save through the harness's own helper at each
@@ -422,7 +436,10 @@ Each window's baseline is a REAL save taken after placement and quiescence, neve
 fresh load makes the archive append its own station-dock and POI-arrival rows before any case drives
 anything, and those rows belong to the baseline, not to the window. The baseline keeps the content
 fingerprint of every row it captured, so a store that was reset and refilled - even with the same
-number of rows - is refused instead of reading as an empty append window.
+number of rows - is refused instead of reading as an empty append window. Capturing a baseline is a
+pure operation that returns one: only the two Ready hooks own the window's baseline, so a boundary
+sample taken INSIDE a window (the cancel case) keeps its own and the enclosing window still
+subtracts exactly what it captured.
 
 - **Compatible pairs** (`in-system-arrival-compatible`, `chained-arrival-compatible`): the public
   in-system arrivals and the journal's own `PoiArrival` rows must agree on native POI guid, count
@@ -453,9 +470,11 @@ number of rows - is refused instead of reading as an empty append window.
   legacy concept, never a legacy truth, and it adds no load.
 - **`api-dwell-anchored`**: every reported dwell must equal the game-time difference to its own
   same-session anchor EXACTLY, with no epsilon. That is a source fact, not an approximation: the
-  adapter stores `_since = now` in the call that emits the anchor with that same `now`, and computes
-  `dwell = now - _since` from the same double it stamps on the departure, so both operands are the
-  values the two public facts carry. A departure whose anchor is LATER than itself (a clock
+  adapter reads the clock separately for the tracker call and for the drain that stamps the fact
+  (four reads per pair), but the binding is `GamePlayer.elapsedTime`, which the inspected build
+  advances once per frame in `GamePlayer.Update` and otherwise writes only on load, while all reads
+  of one pair happen synchronously inside the same patched frame - so the clock is constant across
+  the pair and the subtraction is exact. A departure whose anchor is LATER than itself (a clock
   rollback) must report no dwell at all - unknown, not missing - and a reported dwell there fails.
   At least one strictly positive anchored dwell is required, and the receipt publishes the anchor,
   departure and dwell at full round-trip precision so a reader can redo the subtraction.

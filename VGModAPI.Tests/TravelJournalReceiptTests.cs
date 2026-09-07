@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using VGModAPI.Qualification;
 using Xunit;
 
@@ -373,11 +375,14 @@ public sealed class TravelJournalReceiptTests
     }
 
     [Fact]
-    public void TheDwellComparisonIsExactBecauseTheAdapterSubtractsTheSameDoublesTheFactsCarry()
+    public void TheDwellComparisonIsExactBecauseTheGameClockIsConstantAcrossOnePairsReads()
     {
+        // The adapter reads GamePlayer.elapsedTime separately for the tracker call and for the
+        // emitted fact; that clock advances once per frame, and both reads of one pair happen in the
+        // same frame, so the difference is exact and no epsilon is warranted.
         Assert.Equal(0, TravelJournalReceipt.DwellToleranceSeconds);
         // Values whose difference is not representable at F3 precision: the rule compares the raw
-        // doubles, so the exact subtraction the adapter performs passes with no epsilon...
+        // doubles, so the exact difference passes with no epsilon...
         const double anchor = 1234.5678901234;
         const double departure = 1300.1234567891;
         var exact = new List<TravelTransition>
@@ -487,8 +492,131 @@ public sealed class TravelJournalReceiptTests
         // The phase drives no route and performs no load of its own; it reuses the qualified phases.
         Assert.All(TravelJournalReceipt.CallSites.Where(site => site.Method is "JournalCrossCaseReady" or "JournalCrossCaseCompleted"),
             site => Assert.Equal(TravelJournalReceipt.CrossSystemCases, site.Invocations));
-        // Every real save the phase takes is declared. Saves are synchronous, so they carry no wait.
-        Assert.Equal(7, TravelJournalReceipt.Saves);
+        // Every real save the phase takes is declared, counted by ACTUAL invocations rather than by
+        // lexical call site: 1 in-system ready + 1 in-system completed + 2 cancel boundaries
+        // + 2 cross ready (one per case) + 1 in-flight + 1 wormhole completion = 8. Saves are
+        // synchronous, so they carry no wait and no budget term.
+        Assert.Equal(8, TravelJournalReceipt.Saves);
+        Assert.Equal(new[] { 1, 1, 2, 2, 1, 1, 0 }, TravelJournalReceipt.CallSites.Select(site => site.SavingInvocations).ToArray());
+        // A site never claims more saving invocations than it has invocations, and the completion
+        // site saves on the wormhole case only.
+        Assert.All(TravelJournalReceipt.CallSites, site => Assert.True(site.SavingInvocations <= site.Invocations));
+        var completed = TravelJournalReceipt.CallSites.Single(site => site.Method == "JournalCrossCaseCompleted");
+        Assert.Equal(TravelJournalReceipt.CrossSystemCases, completed.Invocations);
+        Assert.Equal(1, completed.SavingInvocations);
         Assert.All(TravelJournalReceipt.PhaseWaits, wait => Assert.True(wait.Seconds > 0));
+    }
+
+    /// <summary>
+    /// The cancel boundary samples sit INSIDE the in-system window. Its own baseline must survive
+    /// them: the enclosing window still subtracts what it captured at its Ready hook, so all three
+    /// in-system arrivals (route plus two chained hops) still pair with all three legacy rows. This
+    /// is the shape the pilot links together, expressed over the rules the pilot calls.
+    /// </summary>
+    [Fact]
+    public void ACancelBoundarySampleNeverBecomesTheEnclosingWindowsBaseline()
+    {
+        // What the fresh load itself wrote, before any case drove anything.
+        var windowBaseline = Baseline(Document(DockRow("station-a"), PoiRow("poi-loaded")), "qa-journal-baseline-in-system");
+        // The in-system route ran; the cancel case then sampled its own two boundaries.
+        var atCancel = Document(DockRow("station-a"), PoiRow("poi-loaded"), PoiRow("poi-route", 120));
+        var cancelBaseline = Baseline(atCancel, "qa-journal-cancel-before");
+        var afterCancel = TravelJournalReceipt.ReadSidecar(atCancel);
+        Assert.Null(TravelJournalReceipt.CheckAppendBaseline(afterCancel, cancelBaseline));
+        Assert.Empty(TravelJournalReceipt.Appended(afterCancel, cancelBaseline));
+        Assert.Null(TravelJournalReceipt.CheckLegacyBlind(TravelJournalReceipt.Appended(afterCancel, cancelBaseline),
+            apiCancellationObserved: true, boundarySampled: true));
+        // The chained route then added its two hops and the window closed.
+        var atCompletion = TravelJournalReceipt.ReadSidecar(Document(DockRow("station-a"), PoiRow("poi-loaded"),
+            PoiRow("poi-route", 120), PoiRow("poi-hop-1", 200), PoiRow("poi-hop-2", 260)));
+        var arrivals = new[] { "poi-route", "poi-hop-1", "poi-hop-2" };
+        // The window's OWN baseline still applies across the cancel: prefix and count are unchanged.
+        Assert.Equal(2, windowBaseline.Count);
+        Assert.Null(TravelJournalReceipt.CheckAppendBaseline(atCompletion, windowBaseline));
+        var windowAppended = TravelJournalReceipt.Appended(atCompletion, windowBaseline);
+        Assert.Equal(arrivals, windowAppended.Select(row => row.PoiGuid).ToArray());
+        Assert.Null(TravelJournalReceipt.CheckArrivalPair(arrivals, windowAppended));
+        // The defect this guards against: closing the window against the CANCEL sample drops the
+        // route row, so three public arrivals face two legacy rows and the required case fails.
+        var clobbered = TravelJournalReceipt.Appended(atCompletion, cancelBaseline);
+        Assert.Equal(2, clobbered.Count);
+        Assert.NotNull(TravelJournalReceipt.CheckArrivalPair(arrivals, clobbered));
+    }
+
+    /// <summary>
+    /// The rules above only hold if the pilot really keeps the two baselines in separate state. The
+    /// pilot needs Unity, so its wiring is asserted over its source: the capture helper assigns no
+    /// phase state, only the two Ready hooks own the window baseline, and every compared save names
+    /// the baseline it is checked against.
+    /// </summary>
+    [Fact]
+    public void ThePilotKeepsTheWindowBaselineAndTheCancelSampleInSeparateState()
+    {
+        var source = File.ReadAllText(JournalPilotSourcePath());
+        int capture = source.IndexOf("private TravelJournalReceipt.LegacyBaseline CaptureLegacyBaseline(", StringComparison.Ordinal);
+        Assert.True(capture > 0, "The pilot must still capture baselines through one helper.");
+        var helper = source.Substring(capture, source.IndexOf("\n    }", capture, StringComparison.Ordinal) - capture);
+        // Pure with respect to phase state: a nested sample can never replace an enclosing baseline.
+        Assert.DoesNotContain("_tjWindowBaseline", helper);
+        Assert.DoesNotContain("_tjCancelBefore", helper);
+        // Exactly the two Ready hooks assign the window baseline; nothing else writes it.
+        Assert.Equal(2, Regex.Matches(source, @"_tjWindowBaseline = ").Count);
+        Assert.Contains("_tjWindowBaseline = CaptureLegacyBaseline(\"qa-journal-baseline-in-system\")", source);
+        Assert.Contains("_tjWindowBaseline = CaptureLegacyBaseline(\"qa-journal-baseline-\" + crossCase)", source);
+        // The cancel boundary owns a SEPARATE baseline and restores no global one.
+        Assert.Contains("_tjCancelBefore = CaptureLegacyBaseline(\"qa-journal-cancel-before\")", source);
+        Assert.Contains("SaveAndReadLegacy(\"qa-journal-cancel-after\", _tjCancelBefore)", source);
+        // Every compared save names its baseline explicitly; none reads an ambient "current" one.
+        var compared = Regex.Matches(source, "SaveAndReadLegacy\\(\"[^\"]+\", _tj\\w+\\)").Count;
+        Assert.Equal(4, compared);
+        Assert.Equal(compared + 1, Regex.Matches(source, @"SaveAndReadLegacy\(").Count);
+        // Declared saving invocations equal the pilot's real ones: three lexical capture sites, of
+        // which the cross-system one runs once per case, plus the four compared saves.
+        Assert.Equal(3, Regex.Matches(source, "CaptureLegacyBaseline\\(\"").Count);
+        Assert.Equal(TravelJournalReceipt.Saves, 2 + TravelJournalReceipt.CrossSystemCases + compared);
+    }
+
+    /// <summary>
+    /// The cancel boundary hook must sit INSIDE the cancel case's quiet window, so an unsolicited
+    /// native route during its own quiesce is still caught by that case's unsolicited-travel check
+    /// instead of escaping it.
+    /// </summary>
+    [Fact]
+    public void TheCancelBoundaryHookRunsInsideTheCancelCasesQuietWindow()
+    {
+        var source = File.ReadAllText(StationDriverSourcePath());
+        int start = source.IndexOf("private IEnumerable<object?> CaseEarlyCancel()", StringComparison.Ordinal);
+        Assert.True(start > 0, "The qualified cancel case must still exist.");
+        var body = source.Substring(start, source.IndexOf("private IEnumerable<object?> CaseChainedRoute()", start, StringComparison.Ordinal) - start);
+        int offset = body.IndexOf("int offset = Travel.Count;", StringComparison.Ordinal);
+        int hook = body.IndexOf("TravelJournalCancelBoundary(\"before\")", StringComparison.Ordinal);
+        int ready = body.IndexOf("foreach (var frame in ReadyToTravel(target))", StringComparison.Ordinal);
+        int check = body.IndexOf("CheckNoUnsolicitedTravel(", StringComparison.Ordinal);
+        Assert.True(offset > 0 && hook > offset, "The quiet window must open before the boundary sample.");
+        Assert.True(hook < ready && ready < check, "The boundary sample must stay inside the checked quiet window.");
+        int after = body.IndexOf("TravelJournalCancelBoundary(\"after\")", StringComparison.Ordinal);
+        Assert.True(after > check, "The closing boundary sample must run after the case's own assertions.");
+    }
+
+    /// <summary>A travel fact inside that quiet window is a failure, never an ignored sample.</summary>
+    [Fact]
+    public void AnUnsolicitedTravelFactInsideTheCancelWindowIsRefused()
+    {
+        var unsolicited = new[] { Fact(TravelTransitionKind.Departed, TravelMode.InSystem, "poi-x", seconds: 5) };
+        Assert.NotNull(TravelStationReceipt.CheckNoUnsolicitedTravel("the cancel case", unsolicited, false, "detail"));
+        Assert.Null(TravelStationReceipt.CheckNoUnsolicitedTravel("the cancel case", Array.Empty<TravelTransition>(), false, "detail"));
+    }
+
+    private static string JournalPilotSourcePath() => QualificationSourcePath("TravelJournalPilot.cs");
+    private static string StationDriverSourcePath() => QualificationSourcePath("TravelStationDriver.cs");
+
+    private static string QualificationSourcePath(string fileName)
+    {
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory != null; directory = directory.Parent)
+        {
+            var candidate = Path.Combine(directory.FullName, "tools", "QualificationRunner", fileName);
+            if (File.Exists(candidate)) return candidate;
+        }
+        throw new InvalidOperationException("Could not locate tools/QualificationRunner/" + fileName + " from " + AppContext.BaseDirectory + ".");
     }
 }

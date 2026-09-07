@@ -1314,6 +1314,17 @@ try {
     $rejected = $false
     try { Assert-TravelJournalPins $journalRevision $TravelJournalPinnedSha256 ('f' * 64) } catch { $rejected = $true }
     Assert $rejected 'Archived TravelJournal accepted matching metadata with unpinned bytes.'
+    # ARCHIVE COMPARISON ONLY: no consumer plugin is prepared beside the archive, not even a
+    # non-travel selection. Prepare refuses it before creating anything, so Prepare and the Run-time
+    # provenance check can no longer disagree.
+    foreach ($consumer in @(@{AnimaBin=$build; AnimaRevision=('a' * 40)}, @{EchoBin=$build; EchoRevision=('b' * 40)})) {
+        $consumerSandbox = Join-Path $work ('invalid-journal-consumer-' + ($consumer.Keys | Sort-Object)[0])
+        $rejected = $false
+        try { & $script -Action Prepare -SandboxRoot $consumerSandbox -TravelJournalComparison -TravelJournalBin $build -TravelJournalRevision $TravelJournalPinnedRevision -TravelJournalSha256 $TravelJournalPinnedSha256 -TravelStation -TravelCrossSystem -TravelWormholeFixture @consumer @options }
+        catch { $rejected = $_.Exception.Message -like '*carries the archive alone*' }
+        Assert $rejected ('Archived-journal comparison accepted beside ' + ($consumer.Keys -join ','))
+        Assert (!(Test-Path -LiteralPath $consumerSandbox)) 'The refused archive/consumer Prepare created sandbox files.'
+    }
     # The archive patches the game, so it is never installed without the comparison that owns it.
     $rejected = $false
     try { & $script -Action Prepare -SandboxRoot (Join-Path $work 'invalid-journal-ridealong') -TravelJournalBin $build -TravelJournalRevision $TravelJournalPinnedRevision -TravelJournalSha256 $TravelJournalPinnedSha256 -TravelStation -TravelCrossSystem -TravelWormholeFixture @options }
@@ -1371,15 +1382,33 @@ try {
     [IO.File]::WriteAllText($journalConfigPath, $validJournalConfig)
     $journalProvenance = Assert-QualificationInputs $journalRoot
     Assert ($journalProvenance.travelJournalComparison -and $journalProvenance.travelJournalBudgetSeconds -eq $TravelJournalBudgetSeconds) 'Prepared archive selection/budget missing.'
-    # MaxEvents must stay unbounded so the archived FIFO can never silently evict a compared row.
+    # BepInEx 5.4 rewrites a plugin's config on its first Bind (SaveOnConfigSet), adding a header,
+    # '##' descriptions and its own spacing. That rewrite is expected and must still pass, because
+    # the SEMANTICS are what is pinned, not the bytes.
+    $bepJournalConfig = "## Settings file was created by plugin Vanguard Galaxy Travel Journal v0.2.0`r`n## Plugin GUID: vgtraveljournal`r`n`r`n[Journal]`r`n`r`n## Log every recorded travel event.`r`n# Setting type: Boolean`r`n# Default value: false`r`nVerbose = true`r`n`r`n## Maximum retained events; 0 keeps every event.`r`n# Setting type: Int32`r`n# Default value: 500`r`nMaxEvents = 0`r`n"
+    [IO.File]::WriteAllText($journalConfigPath, $bepJournalConfig)
+    $null = Assert-QualificationInputs $journalRoot
+    # MaxEvents must stay unbounded so the archived FIFO can never silently evict a compared row,
+    # and an ambiguous (duplicated or conflicting) entry is never resolved silently.
     foreach ($changed in @($validJournalConfig.Replace('MaxEvents = 0','MaxEvents = 50000'),
         $validJournalConfig.Replace('Verbose = true','Verbose = false'),
-        ($validJournalConfig + "MaxEvents = 0`n"))) {
+        ($validJournalConfig + "MaxEvents = 0`n"),
+        ($validJournalConfig + "MaxEvents = 500`n"),
+        ($bepJournalConfig + "MaxEvents = 500`r`n"),
+        $bepJournalConfig.Replace('MaxEvents = 0','MaxEvents = 500'),
+        $bepJournalConfig.Replace('Verbose = true','Verbose = false'),
+        $validJournalConfig.Replace('MaxEvents = 0',''),
+        $validJournalConfig.Replace('[Journal]','[Other]'))) {
         [IO.File]::WriteAllText($journalConfigPath, $changed)
         $rejected = $false
         try { $null = Assert-QualificationInputs $journalRoot } catch { $rejected = $true }
         Assert $rejected 'Changed archived journal configuration accepted.'
     }
+    # A commented-out value is a comment, not a binding.
+    [IO.File]::WriteAllText($journalConfigPath, $validJournalConfig.Replace('MaxEvents = 0','## MaxEvents = 0'))
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $journalRoot } catch { $rejected = $true }
+    Assert $rejected 'A commented-out archived journal binding accepted.'
     [IO.File]::WriteAllText($journalConfigPath, $validJournalConfig)
     # The deployed binary must remain exactly the pinned build, and the PDB must never be deployed.
     [IO.File]::WriteAllText($journalDll, 'tampered')
@@ -1528,11 +1557,29 @@ try {
         Remove-Item -LiteralPath $stray.Path
     }
     Assert-TravelJournalContainment $journalRoot $journalAuditRoots $journalFilesBefore
-    # A prepared archive input that the run rewrote is refused, not reported as containment.
-    [IO.File]::WriteAllText($journalConfigPath, ($validJournalConfig + "`n"))
+    # The config REWRITE BepInEx performs at Bind is expected: the audit revalidates its semantics
+    # and records both hashes instead of claiming the bytes were unchanged.
+    [IO.File]::WriteAllText($journalConfigPath, $bepJournalConfig)
+    Assert-TravelJournalContainment $journalRoot $journalAuditRoots $journalFilesBefore
+    $journalAudit = Get-Content -LiteralPath (Join-Path $journalRoot 'travel-journal-postquit-audit.txt')
+    Assert (@($journalAudit | Where-Object { $_ -like "config-rewrite`told=*`tnew=*`tsemantics=pass" }).Count -eq 1) 'The post-quit audit did not record the expected BepInEx config rewrite.'
+    Assert (@($journalAudit | Where-Object { $_ -like '*preparedBinaryHash=unchanged preparedConfig=semantics-revalidated*' }).Count -eq 1) 'The post-quit audit did not state what it actually verified for the prepared inputs.'
+    # A rewrite that changes the pinned semantics is still refused.
+    foreach ($broken in @($bepJournalConfig.Replace('MaxEvents = 0','MaxEvents = 500'),
+        $bepJournalConfig.Replace('Verbose = true','Verbose = false'),
+        ($bepJournalConfig + "MaxEvents = 500`r`n"))) {
+        [IO.File]::WriteAllText($journalConfigPath, $broken)
+        $rejected = $false
+        try { Assert-TravelJournalContainment $journalRoot $journalAuditRoots $journalFilesBefore } catch { $rejected = $true }
+        Assert $rejected 'A post-quit archived journal configuration with changed semantics was accepted.'
+    }
+    [IO.File]::WriteAllText($journalConfigPath, $bepJournalConfig)
+    # The prepared BINARY, by contrast, must hash exactly unchanged.
+    [IO.File]::WriteAllText($journalDll, 'rewritten-binary')
     $rejected = $false
-    try { Assert-TravelJournalContainment $journalRoot $journalAuditRoots $journalFilesBefore } catch { $rejected = $true }
-    Assert $rejected 'A rewritten prepared archive input was accepted after quit.'
+    try { Assert-TravelJournalContainment $journalRoot $journalAuditRoots $journalFilesBefore } catch { $rejected = $_.Exception.Message -like '*prepared archive binary changed*' }
+    Assert $rejected 'A rewritten prepared archive binary was accepted after quit.'
+    [IO.File]::WriteAllText($journalDll, 'synthetic-not-executable')
     [IO.File]::WriteAllText($journalConfigPath, $validJournalConfig)
     Assert-TravelJournalContainment $journalRoot $journalAuditRoots $journalFilesBefore
     Remove-Item -LiteralPath (Join-Path $journalRoot 'travel-journal-postquit-audit.txt')

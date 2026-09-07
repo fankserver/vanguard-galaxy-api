@@ -83,13 +83,17 @@ internal static class TravelJournalReceipt
         internal int Quiescences { get; }
         /// <summary>Bounded in-flight departure waits; the only wait this phase adds beyond its own sampling.</summary>
         internal int InFlightDepartures { get; }
-        /// <summary>Real vanilla saves the phase performs. They are synchronous and add NO wait, but they are declared.</summary>
-        internal int Saves { get; }
+        /// <summary>
+        /// How many of this site's invocations take a real vanilla save. It is a count of
+        /// INVOCATIONS, not a per-invocation rate, because a site can save on some of its cases
+        /// only. Saves are synchronous and add no wait, but they are declared.
+        /// </summary>
+        internal int SavingInvocations { get; }
         internal CallSitePlan(string method, int invocations, int placements = 0, int quiescences = 0,
-            int inFlightDepartures = 0, int saves = 0)
+            int inFlightDepartures = 0, int savingInvocations = 0)
         {
             Method = method; Invocations = invocations; Placements = placements; Quiescences = quiescences;
-            InFlightDepartures = inFlightDepartures; Saves = saves;
+            InFlightDepartures = inFlightDepartures; SavingInvocations = savingInvocations;
         }
     }
 
@@ -102,15 +106,17 @@ internal static class TravelJournalReceipt
     {
         // Each Ready hook takes its OWN real baseline save, so nothing the fresh load wrote can sit
         // inside a compared window.
-        new("JournalInSystemReady", 1, placements: 1, quiescences: 1, saves: 1),
-        new("JournalInSystemCompleted", 1, quiescences: 1, saves: 1),
-        // The cancel boundary is sampled before and after the qualified cancel case.
-        new("JournalCancelBoundary", 2, quiescences: 1, saves: 1),
-        new("JournalCrossCaseReady", CrossSystemCases, placements: 1, quiescences: 1, saves: 1),
+        new("JournalInSystemReady", 1, placements: 1, quiescences: 1, savingInvocations: 1),
+        new("JournalInSystemCompleted", 1, quiescences: 1, savingInvocations: 1),
+        // The cancel boundary is sampled before and after the qualified cancel case, each with its
+        // own separate baseline; the enclosing in-system window keeps its own.
+        new("JournalCancelBoundary", 2, quiescences: 1, savingInvocations: 2),
+        new("JournalCrossCaseReady", CrossSystemCases, placements: 1, quiescences: 1, savingInvocations: CrossSystemCases),
         // Only the jump-gate case is driven in flight; the wormhole case has no prefix hook.
-        new("JournalCrossInFlight", 1, quiescences: 1, inFlightDepartures: 1, saves: 1),
-        // Only the wormhole case saves at completion; the gate case compares its in-flight snapshot.
-        new("JournalCrossCaseCompleted", CrossSystemCases, quiescences: 1),
+        new("JournalCrossInFlight", 1, quiescences: 1, inFlightDepartures: 1, savingInvocations: 1),
+        // Only the WORMHOLE case saves at completion; the gate case compares its in-flight snapshot,
+        // so this site runs twice and saves once.
+        new("JournalCrossCaseCompleted", CrossSystemCases, quiescences: 1, savingInvocations: 1),
         new("RecordClosingCases", 1, quiescences: 1)
     };
 
@@ -118,7 +124,7 @@ internal static class TravelJournalReceipt
     internal static readonly int QuiescenceSamples = CallSites.Sum(site => site.Invocations * site.Quiescences);
     internal static readonly int InFlightDepartureWaits = CallSites.Sum(site => site.Invocations * site.InFlightDepartures);
     /// <summary>Declared real saves. They perform no wait, so they carry no budget term.</summary>
-    internal static readonly int Saves = CallSites.Sum(site => site.Invocations * site.Saves);
+    internal static readonly int Saves = CallSites.Sum(site => site.SavingInvocations);
 
     internal sealed class PhaseWait
     {
@@ -581,13 +587,15 @@ internal static class TravelJournalReceipt
     /// <summary>
     /// The reported dwell is EXACT, not approximate, so the comparison uses no epsilon.
     ///
-    /// <para>Source: the adapter's leg tracker stores <c>_since = now</c> in the very call that
-    /// emits the anchor fact with that same <c>now</c>, and later computes
-    /// <c>dwell = _since.HasValue &amp;&amp; now &gt;= _since.Value ? now - _since.Value : null</c>
-    /// with the same <c>now</c> it stamps on the departure. Both operands are therefore the exact
-    /// doubles the two public facts carry, and the receipt compares the raw values, never the
-    /// formatted ones. There are no two independent clock reads to tolerate, so an epsilon would
-    /// only hide a real defect.</para>
+    /// <para>Source: the adapter does NOT reuse one captured double per pair. It reads the clock
+    /// separately for the tracker call and for the drain that stamps the emitted fact
+    /// (<c>_tracker.Depart(_leg, _bindings.Time(player)); Drain(_bindings.Time(player));</c>), so a
+    /// dwell pair involves four reads in total. They are nevertheless equal because the binding is
+    /// <c>Source.Player.GamePlayer.elapsedTime</c>, which the inspected build advances exactly once
+    /// per frame in <c>GamePlayer.Update</c> and otherwise writes only on load, while all reads of
+    /// one pair happen synchronously inside the same patched frame. The clock is therefore constant
+    /// across the pair, the subtraction is exact, and the receipt compares the raw values, never the
+    /// formatted ones - an epsilon would only hide a real defect.</para>
     /// </summary>
     internal const double DwellToleranceSeconds = 0;
 

@@ -195,13 +195,14 @@ public sealed partial class Plugin
                 yield break;
             }
             var originId = (string)SpGet(origin, "guid")!;
-            // Optional archived-journal boundary sample. It drives nothing native and is inert
-            // unless the comparison phase owns a live subscription.
-            foreach (var frame in _p.TravelJournalCancelBoundary("before")) yield return frame;
             // The quiet window opens BEFORE the availability wait, because that wait is exactly
             // where an unsolicited native route (qa-82's emergency-jump return) appeared.
             int offset = Travel.Count;
             int stationOffset = Stations.Count;
+            // Optional archived-journal boundary sample. It drives nothing native and is inert
+            // unless the comparison phase owns a live subscription. It runs INSIDE the quiet window
+            // so its own quiesce cannot hide an unsolicited native route from the check below.
+            foreach (var frame in _p.TravelJournalCancelBoundary("before")) yield return frame;
             foreach (var frame in ReadyToTravel(target)) yield return frame;
             if (!_canTravel)
             {

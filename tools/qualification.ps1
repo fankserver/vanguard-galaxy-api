@@ -84,6 +84,10 @@ if ($Action -eq 'Prepare') {
     # The archived plugin is NEVER installed as a passive ridealong: it patches the game, so it is
     # only ever prepared for the run that compares it.
     if ($TravelJournalBin -and !$TravelJournalComparison) { throw 'The archived TravelJournal binary is only prepared for the archived-journal comparison; it is never installed as a passive ridealong.' }
+    # ARCHIVE COMPARISON ONLY: the archived plugin patches the same native travel/save methods the
+    # consumers observe, so no consumer plugin is prepared beside it - not even for a non-travel
+    # selection. Refused here, before any file is copied, and again by provenance validation at Run.
+    if (($TravelJournalBin -or $TravelJournalComparison) -and ($AnimaBin -or $EchoBin)) { throw 'The archived-journal comparison sandbox carries the archive alone; prepare it without a consumer plugin (-AnimaBin/-EchoBin).' }
     if ($TravelJournalComparison -and (!$TravelJournalBin -or !$TravelStation -or !$TravelCrossSystem -or !$TravelWormholeFixture)) { throw 'Archived-journal comparison requires the archived binary, both native travel phases and the wormhole fixture selection.' }
     if ($TravelJournalComparison -and $Scenario -ne 'Full') { throw 'Archived-journal comparison requires Full.' }
     if ($AnimaBin -and (!$MissionIdentityProbe -or !$MissionJournalBin -or $AnimaRevision -notmatch '^[0-9a-f]{40}$')) { throw 'Anima requires identity probes, journal-provided JSON runtime and exact source revision.' }

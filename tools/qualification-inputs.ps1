@@ -121,6 +121,42 @@ function Assert-TravelJournalAssemblyMetadata($Assembly, [string]$Revision) {
         throw "The archived plugin must declare vgtraveljournal $TravelJournalPluginVersion."
     }
 }
+# The sandbox-only journal configuration is validated by its PARSED SEMANTICS, never by its bytes:
+# BepInEx 5.4 rewrites a plugin's config file on the first Bind (SaveOnConfigSet is on by default and
+# the archive never disables it), adding its own header, '##' descriptions and spacing. Comments and
+# unknown sections/keys are therefore benign, while a missing, duplicated or changed effective value
+# is refused - a duplicate key is ambiguous and is never resolved silently.
+$TravelJournalConfigRelativePath = 'game\BepInEx\config\vgtraveljournal.cfg'
+$TravelJournalConfigRequired = @(@{Key='Journal/Verbose'; Value='true'}, @{Key='Journal/MaxEvents'; Value='0'})
+function Get-TravelJournalConfigEntries([string]$Path) {
+    if (!(Test-Path -LiteralPath $Path -PathType Leaf)) { throw 'The archived TravelJournal configuration file is missing.' }
+    $item = Get-Item -LiteralPath $Path -Force
+    if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'The archived TravelJournal configuration must be a regular file, not a link.' }
+    $entries = @{}
+    $section = ''
+    foreach ($line in [IO.File]::ReadAllLines($Path)) {
+        $text = $line.Trim()
+        if ($text -eq '' -or $text.StartsWith('#')) { continue }   # BepInEx's own header/descriptions
+        if ($text -match '^\[(?<name>[^\]]+)\]$') { $section = $Matches['name'].Trim(); continue }
+        $split = $text.IndexOf('=')
+        if ($split -lt 1) { throw 'Unparseable entry in the archived TravelJournal configuration.' }
+        $key = $section + '/' + $text.Substring(0, $split).Trim()
+        if ($entries.ContainsKey($key)) { throw "Duplicate '$key' entry in the archived TravelJournal configuration; its effective value is ambiguous." }
+        $entries[$key] = $text.Substring($split + 1).Trim()
+    }
+    return $entries
+}
+function Assert-TravelJournalConfigSemantics([string]$Root) {
+    $path = Join-Path $Root $TravelJournalConfigRelativePath
+    $entries = Get-TravelJournalConfigEntries $path
+    foreach ($required in $TravelJournalConfigRequired) {
+        if (!$entries.ContainsKey($required.Key)) { throw "The archived TravelJournal configuration no longer binds $($required.Key)." }
+        if ($entries[$required.Key] -ne $required.Value) {
+            throw "Archived TravelJournal configuration changed; $($required.Key) must stay $($required.Value) (MaxEvents 0 is unbounded, so no compared row can be evicted)."
+        }
+    }
+    return $path
+}
 # The archived plugin flushes its own journal at QUIT, after every in-run case has closed. These
 # helpers therefore audit file locations only AFTER the owned process exited, over the explicitly
 # named roots below; nothing is ever claimed about the rest of the file system.
@@ -142,11 +178,12 @@ function Get-TravelJournalFiles([string[]]$Roots) {
 function Assert-TravelJournalContainment([string]$Root, [string[]]$Roots, $Before) {
     $saves = [IO.Path]::GetFullPath((Join-Path $Root 'Saves'))
     # The two PREPARED archive inputs. They carry the plugin's name but are the launcher's own
-    # deployment, so they may exist outside the saves - as long as this run left them untouched.
-    $prepared = @{
-        ([IO.Path]::GetFullPath((Join-Path $Root 'game\BepInEx\plugins\VGTravelJournal.dll'))) = $true
-        ([IO.Path]::GetFullPath((Join-Path $Root 'game\BepInEx\config\vgtraveljournal.cfg'))) = $true
-    }
+    # deployment, so they may exist outside the saves. The BINARY must still hash exactly unchanged.
+    # The configuration must not: BepInEx rewrites it on the archive's first Bind, so it is
+    # re-validated by its parsed semantics and its old/new hashes are recorded instead.
+    $binary = [IO.Path]::GetFullPath((Join-Path $Root 'game\BepInEx\plugins\VGTravelJournal.dll'))
+    $config = [IO.Path]::GetFullPath((Join-Path $Root $TravelJournalConfigRelativePath))
+    $null = Assert-TravelJournalConfigSemantics $Root
     $after = Get-TravelJournalFiles $Roots
     $created = 0
     $lines = @('POST-QUIT ARCHIVED JOURNAL AUDIT', ('audited-roots=' + ($Roots -join ';')),
@@ -155,16 +192,27 @@ function Assert-TravelJournalContainment([string]$Root, [string[]]$Roots, $Befor
         $name = Split-Path -Leaf $path
         $full = [IO.Path]::GetFullPath($path)
         $directory = [IO.Path]::GetFullPath((Split-Path -Parent $path))
-        $state = if (!$Before.ContainsKey($path)) { $created++; 'created' } elseif ($Before[$path] -eq $after[$path]) { 'unchanged' } else { 'rewritten' }
-        $lines += ("file`t" + $name + "`t" + $state + "`t" + $directory)
-        if ($prepared.ContainsKey($full)) {
-            if ($state -ne 'unchanged') { throw "The prepared archive input changed during the run: $name" }
+        $state = if (!$Before.ContainsKey($path)) { 'created' } elseif ($Before[$path] -eq $after[$path]) { 'unchanged' } else { 'rewritten' }
+        if ($full -eq $binary) {
+            if ($state -ne 'unchanged') { throw "The prepared archive binary changed during the run: $name" }
+            $lines += ("file`t" + $name + "`t" + $state + "`tprepared-binary`t" + $directory)
             continue
         }
+        if ($full -eq $config) {
+            # Expected: a BepInEx rewrite on the archive's first Bind. Byte equality is NOT claimed;
+            # the parsed semantics were revalidated above and both hashes are recorded.
+            $lines += ("file`t" + $name + "`t" + $state + "`tprepared-config (BepInEx rewrite permitted; semantics revalidated)`t" + $directory)
+            if ($state -ne 'unchanged') {
+                $lines += ("config-rewrite`told=" + $Before[$path] + "`tnew=" + $after[$path] + "`tsemantics=pass")
+            }
+            continue
+        }
+        if ($state -eq 'created') { $created++ }
+        $lines += ("file`t" + $name + "`t" + $state + "`tjournal-output`t" + $directory)
         if ($directory -ne $saves) { throw "The archived journal left a file outside the sandbox saves after quit: $name" }
         if (@($TravelJournalFilePatterns | Where-Object { $name.Contains($_) }).Count -eq 0) { throw "Unexpected archived journal file after quit: $name" }
     }
-    $lines += ('files=' + $after.Count + ' created=' + $created)
+    $lines += ('files=' + $after.Count + ' created=' + $created + ' preparedBinaryHash=unchanged preparedConfig=semantics-revalidated')
     $lines += 'scope=after the owned process exited and the archived plugin flushed at quit; no claim is made about locations outside the audited roots'
     [IO.File]::WriteAllLines((Join-Path $Root 'travel-journal-postquit-audit.txt'), [string[]]$lines)
 }
@@ -708,13 +756,7 @@ function Assert-QualificationInputs([string]$Root) {
         Assert-TravelJournalPins $provenance.travelJournalRevision $provenance.travelJournalSha256 (Get-FileHash -LiteralPath $journalDll -Algorithm SHA256).Hash
         if ($provenance.travelJournalVersion -ne $TravelJournalAssemblyVersion) { throw 'The archived TravelJournal assembly version pin changed.' }
         if (Test-Path -LiteralPath (Join-Path $Root 'game\BepInEx\plugins\VGTravelJournal.pdb')) { throw 'The archived TravelJournal PDB must never be deployed.' }
-        $journalConfig = Get-Content -LiteralPath (Join-Path $Root 'game\BepInEx\config\vgtraveljournal.cfg') -Raw
-        $journalBlocks = [regex]::Matches($journalConfig, '(?ms)^\[Journal\]\s*\r?\n(?<body>.*?)(?=^\[|\z)')
-        if ($journalBlocks.Count -ne 1) { throw 'Archived TravelJournal configuration section changed.' }
-        foreach ($entry in @(@{Key='Verbose';Value='true'}, @{Key='MaxEvents';Value='0'})) {
-            if ([regex]::Matches($journalBlocks[0].Groups['body'].Value, "(?m)^$($entry.Key)\s*=").Count -ne 1 -or
-                [regex]::Matches($journalBlocks[0].Groups['body'].Value, "(?m)^$($entry.Key)\s*=\s*$($entry.Value)\s*$").Count -ne 1) { throw 'Archived TravelJournal configuration changed; MaxEvents must stay 0 (unbounded) so no compared row can be evicted.' }
-        }
+        $null = Assert-TravelJournalConfigSemantics $Root
     }
     $travelJournalComparison = $provenance.PSObject.Properties['travelJournalComparison'] -and [bool]$provenance.travelJournalComparison
     $journalMarker = Join-Path $Root 'travel-journal.enabled'
