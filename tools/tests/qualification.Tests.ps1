@@ -41,14 +41,16 @@ try {
     Assert-QualificationInputs $menuProbeRoot
     $menuProbeProvenancePath = Join-Path $menuProbeRoot 'build-provenance.json'
     $menuProbeProvenance = Get-Content -LiteralPath $menuProbeProvenancePath -Raw | ConvertFrom-Json
-    foreach ($invalid in @('true', 1, 'false', 0)) {
-        $menuProbeProvenance.missionJournal = $invalid
-        $menuProbeProvenance | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $menuProbeProvenancePath
-        $rejected = $false
-        try { Assert-QualificationInputs $menuProbeRoot } catch { $rejected = $_.Exception.Message -like '*selection fields must be Boolean false*' }
-        Assert $rejected 'Full input validation did not reject malformed conflicting menu selection at its isolation gate.'
+    foreach ($selection in @('missionJournal','storyProbe')) {
+        foreach ($invalid in @('true', 1, 'false', 0, $true)) {
+            $menuProbeProvenance.$selection = $invalid
+            $menuProbeProvenance | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $menuProbeProvenancePath
+            $rejected = $false
+            try { Assert-QualificationInputs $menuProbeRoot } catch { $rejected = $_.Exception.Message -like '*selection fields must be Boolean false*' }
+            Assert $rejected 'Full input validation did not reject malformed conflicting menu selection at its isolation gate.'
+        }
+        $menuProbeProvenance.$selection = $false
     }
-    $menuProbeProvenance.missionJournal = $false
     $menuProbeProvenance | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $menuProbeProvenancePath
     Assert-QualificationInputs $menuProbeRoot
     $inspectionRoot = Join-Path $work 'menu-inspection'

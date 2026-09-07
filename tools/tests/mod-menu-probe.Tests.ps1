@@ -9,7 +9,7 @@ function Reject($action, $label) {
 $root = Join-Path ([IO.Path]::GetTempPath()) ('vg-menu-synthetic-' + [guid]::NewGuid())
 New-Item -ItemType Directory -Path $root | Out-Null
 try {
-    $p = [pscustomobject]@{ scenario='Full'; modMenuProbe=$true; menuInspection=$false; missionJournal=$false }
+    $p = [pscustomobject]@{ scenario='Full'; modMenuProbe=$true; menuInspection=$false; missionJournal=$false; storyProbe=$false }
     Reject { Assert-ModMenuProbeSelection $root $p } 'missing marker'
     [IO.File]::WriteAllText((Join-Path $root 'mod-menu-probe.enabled'), 'mod-menu-probe-v2')
     Assert-ModMenuProbeSelection $root $p
@@ -22,11 +22,14 @@ try {
     Reject { Assert-ModMenuProbeSelection $root $p } 'wrong scenario'
     $p.scenario = 'Full'; $p.missionJournal = $true
     Reject { Assert-ModMenuProbeSelection $root $p } 'consumer conflict'
-    foreach ($invalid in @('true', 1, 'false', 0)) {
-        $p.missionJournal = $invalid
-        Reject { Assert-ModMenuProbeSelection $root $p } 'malformed conflicting selection'
-    }
     $p.missionJournal = $false
+    foreach ($selection in @('missionJournal','storyProbe')) {
+        foreach ($invalid in @('true', 1, 'false', 0, $true)) {
+            $p.$selection = $invalid
+            Reject { Assert-ModMenuProbeSelection $root $p } 'malformed conflicting selection'
+        }
+        $p.$selection = $false
+    }
     Reject { Assert-ModMenuProbeReceipt $root $p } 'missing outcome'
     $outcome = Join-Path $root 'run-outcome.json'
     $snapshot = Join-Path $root 'mod-menu-probe.txt'

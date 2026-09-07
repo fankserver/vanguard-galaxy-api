@@ -258,7 +258,7 @@ function Assert-ModMenuProbeSelection([string]$Root, $Provenance) {
     if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Mod menu probe selection changed.' }
     if (!$selected) { return }
     if ($Provenance.scenario -ne 'Full' -or [IO.File]::ReadAllText($marker) -cne 'mod-menu-probe-v2') { throw 'Invalid mod menu probe selection.' }
-    $selections = @('menuInspection','travelJournal','travelJournalComparison','echo','echoTravelProbe','echoAbsentProbe','anima','animaTravelProbe','journalMissionEventsProbe','missionIdentityProbe','missionTransitionsProbe','contentReferenceProbe','stockpileCoordinated','journalCoordinated','persistenceProbe','vanillaLoadControl','stockpile','missionJournal','travelStation','travelCrossSystem','travelWormholeFixture','travelResilience','travelRecovery','travelFastLane')
+    $selections = @('storyProbe','menuInspection','travelJournal','travelJournalComparison','echo','echoTravelProbe','echoAbsentProbe','anima','animaTravelProbe','journalMissionEventsProbe','missionIdentityProbe','missionTransitionsProbe','contentReferenceProbe','stockpileCoordinated','journalCoordinated','persistenceProbe','vanillaLoadControl','stockpile','missionJournal','travelStation','travelCrossSystem','travelWormholeFixture','travelResilience','travelRecovery','travelFastLane')
     if ($null -ne $Provenance.assemblyOverlay) { throw 'Mod menu probe cannot use an assembly overlay.' }
     foreach ($name in $selections) {
         $item = $Provenance.PSObject.Properties[$name]
