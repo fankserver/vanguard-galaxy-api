@@ -63,6 +63,12 @@ public sealed partial class Plugin
     private static readonly List<EchoTravelReceipt.SnapObservation> _echoSnaps = new();
     private static readonly List<EchoTravelReceipt.IdleObservation> _echoIdle = new();
     private static int _echoFindActivityInvocations, _echoSuppressedBodies, _echoSeededWrites, _echoAutopilotEngagements, _echoReorderings;
+    private static int _echoAutopilotReleases;
+    private static readonly List<string> _echoReleasesDeclined = new();
+    // The EXACT player and session the probe engaged the native autopilot on; the safety cleanup
+    // may write to nothing else.
+    private object? _etAutopilotOwner;
+    private Guid _etAutopilotSession;
     private static bool _echoFindActivityInWindow;
 
     private readonly struct EchoApplyEntry
@@ -170,6 +176,10 @@ public sealed partial class Plugin
         }
         finally
         {
+            // Last-resort safety cleanup for any path that skipped the per-case release, including a
+            // fault raised inside a synchronous API callback. It runs AFTER the case rows and
+            // checkpoints are written, so it can never turn a genuinely failed case into a pass.
+            ReleaseAutopilotSafely();
             EchoDisarm();
             _echoRecording = false;
             _echoOwner = null;
@@ -187,6 +197,9 @@ public sealed partial class Plugin
         _echoSnaps.Clear();
         _echoIdle.Clear();
         _echoFindActivityInvocations = _echoSuppressedBodies = _echoSeededWrites = _echoAutopilotEngagements = _echoReorderings = 0;
+        _echoAutopilotReleases = 0;
+        _echoReleasesDeclined.Clear();
+        _etAutopilotOwner = null;
         var idleType = AccessTools.TypeByName("Behaviour.Gameplay.IdleManager") ?? throw new MissingMemberException("Behaviour.Gameplay.IdleManager", "type");
         _echoIdleTimerGet = AccessTools.PropertyGetter(idleType, "updateTimer") ?? throw new MissingMemberException(idleType.FullName, "get_updateTimer");
         _echoIdleTimerSet = AccessTools.PropertySetter(idleType, "updateTimer") ?? throw new MissingMemberException(idleType.FullName, "set_updateTimer");
@@ -311,12 +324,65 @@ public sealed partial class Plugin
         _echoSeededWrites++;
     }
 
-    /// <summary>Engages or releases the native autopilot, the consumer's own arrival-snap gate.</summary>
-    private void SetAutopilot(bool engaged)
+    /// <summary>
+    /// Every fixture this phase loads must arrive with the native autopilot disengaged, checked
+    /// BEFORE any unarmed setup wait: the suppression accounting is only meaningful while an idle
+    /// decision outside an armed window is impossible. Reads are the pure current statics only, no
+    /// lazy singleton getter, and the probe never disengages a state it did not create.
+    /// </summary>
+    private void RequireFixturePreflight(string slot, Guid session, bool requiresEngagement)
+    {
+        var player = SpGet(_player, "current");
+        Require(TravelStationDriver.Alive(player), "Fixture '" + slot + "' (session " + session + ") has no live player to preflight.");
+        var failure = EchoTravelReceipt.CheckFixturePreflight(slot, session,
+            (bool)SpGet(player!, "autoPlay")!, (bool)SpGet(player!, "autoPlayUnlocked")!, requiresEngagement);
+        Require(failure == null, failure!);
+    }
+
+    /// <summary>
+    /// Engages the consumer's own arrival-snap gate and CAPTURES the exact player and session it was
+    /// engaged on, so the safety cleanup can never write to a replacement.
+    /// </summary>
+    private void EngageAutopilot(Guid session)
     {
         var player = CurrentPlayer;
-        AccessTools.Field(_player, "autoPlay").SetValue(player, engaged);
-        if (engaged) _echoAutopilotEngagements++;
+        AccessTools.Field(_player, "autoPlay").SetValue(player, true);
+        _etAutopilotOwner = player;
+        _etAutopilotSession = session;
+        _echoAutopilotEngagements++;
+    }
+
+    /// <summary>
+    /// Safety cleanup: disengages ONLY the exact player this probe engaged, while that player is
+    /// still the live current one of the still-current session. A replaced or destroyed owner, or a
+    /// replaced session, is left untouched and recorded. It never throws, so it is safe from a
+    /// fault path, and it is idempotent, so the normal path and the fault path can both call it.
+    /// </summary>
+    private void ReleaseAutopilotSafely()
+    {
+        var owner = _etAutopilotOwner;
+        _etAutopilotOwner = null;
+        try
+        {
+            object? live = null;
+            Guid? current = null;
+            try { live = SpGet(_player, "current"); current = _api?.CurrentSession?.Id; }
+            catch (Exception error) { Logger.LogWarning("Echo autopilot cleanup could not read the live world: " + error.GetType().Name); }
+            var decision = EchoTravelReceipt.DecideAutopilotRelease(owner != null,
+                owner != null && ReferenceEquals(owner, live), TravelStationDriver.Alive(owner),
+                _etAutopilotSession, current);
+            if (decision == EchoTravelReceipt.AutopilotRelease.Release)
+            {
+                AccessTools.Field(_player, "autoPlay").SetValue(owner, false);
+                _echoAutopilotReleases++;
+            }
+            else if (decision != EchoTravelReceipt.AutopilotRelease.NothingEngaged)
+            {
+                _echoReleasesDeclined.Add(decision.ToString());
+                Logger.LogWarning("Echo probe left a foreign native autopilot state untouched: " + decision);
+            }
+        }
+        catch (Exception error) { Logger.LogWarning("Echo autopilot cleanup failed: " + error.GetType().Name); }
     }
 
     // --- consumer reads -----------------------------------------------------------------------
@@ -355,7 +421,7 @@ public sealed partial class Plugin
 
     // --- hooks called by the reused native travel phases ---------------------------------------
 
-    private IEnumerable<object?> EtGuarded(string caseId, string description, IEnumerable<object?> body)
+    private IEnumerable<object?> EtGuarded(string caseId, string description, IEnumerable<object?> body, Action? onFault = null)
     {
         var run = body.GetEnumerator();
         Exception? fault = null;
@@ -374,9 +440,12 @@ public sealed partial class Plugin
         }
         run.Dispose();
         if (fault == null) yield break;
+        // The failure row and its checkpoint are written FIRST; only then may the safety cleanup
+        // touch native state, so a cleaned-up world can never make a failed case look passed.
         EtRecord(caseId, description, TravelStationReceipt.Failed, "", _api?.CurrentSession?.Id, null, "",
             fault.Message.Split('\n')[0].Trim());
         File.WriteAllText(Path.Combine(_root!, "echo-travel-fault.txt"), fault.ToString());
+        onFault?.Invoke();
     }
 
     internal IEnumerable<object?> EchoTravelInSystemReady(Guid session)
@@ -395,6 +464,10 @@ public sealed partial class Plugin
         _etWindowOffset = SessionWindowOffset(session, _etFacts!);
         _etSnapOffset = _echoSnaps.Count;
         _etIdleOffset = _echoIdle.Count;
+        // BEFORE the unarmed in-system phase: an autopilot-on fixture would take native idle
+        // decisions throughout it, and the suppression accounting would fail much later with a
+        // misleading diagnostic.
+        RequireFixturePreflight("fixture-a (in-system phase)", session, requiresEngagement: false);
         var echo = EchoPlugin;
         Require(echo.enabled, "The installed Echo consumer is disabled.");
         Require(echo.Info.Metadata.Version.ToString(3) == EchoPinnedVersion,
@@ -451,7 +524,7 @@ public sealed partial class Plugin
         var consumerCase = EchoCaseFor(crossCase);
         if (consumerCase == null) yield break;
         foreach (var frame in EtGuarded(consumerCase, EchoDescriptionFor(consumerCase),
-            EchoCrossCaseReady(consumerCase, session))) yield return frame;
+            EchoCrossCaseReady(consumerCase, session), ReleaseAutopilotSafely)) yield return frame;
     }
 
     private IEnumerable<object?> EchoCrossCaseReady(string consumerCase, Guid session)
@@ -464,9 +537,8 @@ public sealed partial class Plugin
         _etSnapOffset = _echoSnaps.Count;
         _etIdleOffset = _echoIdle.Count;
         Require(EchoListening, "The consumer stopped listening before the cross-system case.");
-        Require((bool)SpGet(CurrentPlayer, "autoPlayUnlocked")!,
-            "The fixture player has never unlocked autopilot, so the consumer's own gate can never open; this case cannot be qualified on this save.");
-        SetAutopilot(true);
+        RequireFixturePreflight(consumerCase + " fixture", session, requiresEngagement: true);
+        EngageAutopilot(session);
         EchoArm(session);
         _etOpenCase = consumerCase;
     }
@@ -478,7 +550,7 @@ public sealed partial class Plugin
         if (consumerCase == null || _etOpenCase != consumerCase) yield break;
         _etOpenCase = null;
         foreach (var frame in EtGuarded(consumerCase, EchoDescriptionFor(consumerCase),
-            EchoCrossCaseCompleted(consumerCase))) yield return frame;
+            EchoCrossCaseCompleted(consumerCase), ReleaseAutopilotSafely)) yield return frame;
     }
 
     private IEnumerable<object?> EchoCrossCaseCompleted(string consumerCase)
@@ -509,7 +581,7 @@ public sealed partial class Plugin
             "mode=" + mode, session, crossing!.OperationId,
             TravelStationReceipt.Evidence(new[] { crossing }, null), DescribeSnap(EchoFact(crossing)));
         EchoDisarm();
-        SetAutopilot(false);
+        ReleaseAutopilotSafely();
         EtEndCase();
     }
 
@@ -532,15 +604,14 @@ public sealed partial class Plugin
         _etSnapOffset = _echoSnaps.Count;
         _etIdleOffset = _echoIdle.Count;
         _etWindowSession = session;
-        Require((bool)SpGet(CurrentPlayer, "autoPlayUnlocked")!,
-            "The fixture player has never unlocked autopilot; the owned Echo cases cannot be qualified on this save.");
+        RequireFixturePreflight("fixture-a (owned Echo routes)", session, requiresEngagement: true);
         var targets = SafeInSystemTargets();
         Require(targets.Length >= 2, "The owned Echo cases need two safe in-system targets (" + SafeTargetSelection + ").");
         _etTargetA = targets[0];
         _etTargetB = targets[1];
         _etTargetC = targets[0];
         foreach (var frame in UndockForEcho()) yield return frame;
-        SetAutopilot(true);
+        EngageAutopilot(session);
         EchoArm(session);
     }
 
@@ -670,7 +741,7 @@ public sealed partial class Plugin
         AccessTools.Method(EchoPlugin.GetType(), "BindArrivalSnap").Invoke(EchoPlugin, null);
         _echoReorderings++;
         EchoDisarm();
-        SetAutopilot(false);
+        ReleaseAutopilotSafely();
         EtEndCase();
     }
 
@@ -687,7 +758,8 @@ public sealed partial class Plugin
         EtRecord(EchoTravelReceipt.ControlsSubcase, EchoTravelReceipt.ControlsDescription, TravelStationReceipt.Passed,
             "controls=declared", session, null, evidence,
             EchoTravelReceipt.DescribeControls(_echoSeededWrites, _echoSuppressedBodies, _echoAutopilotEngagements,
-                _echoReorderings, etaSyncDisabled: true, EchoTravelReceipt.IdleTimerSeedSeconds));
+                _echoReorderings, etaSyncDisabled: true, EchoTravelReceipt.IdleTimerSeedSeconds,
+                _echoAutopilotReleases, _echoReleasesDeclined));
         EtEndCase();
     }
 

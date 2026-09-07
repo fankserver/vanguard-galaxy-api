@@ -25,7 +25,7 @@ namespace VGModAPI.Tests;
 /// Anima consumer tests use (see docs/checks.md). Run with VG_ECHO_ASSEMBLY (make check-consumer).
 /// </summary>
 [Trait("Category", "InstalledConsumer")]
-public sealed class InstalledEchoConsumerTests
+public sealed class InstalledEchoTravelConsumerTests
 {
     private static string AssemblyPath => Environment.GetEnvironmentVariable("VG_ECHO_ASSEMBLY")
         ?? throw new InvalidOperationException("Run make check-consumer or set VG_ECHO_ASSEMBLY to the built VGEcho.dll.");

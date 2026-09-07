@@ -295,8 +295,26 @@ that zero and reach its `FindActivity` decision.
   completion writes no timer while the ETA-sync patch and the unrelated patches stay installed and
   no native timing hook returns; the production binding is then restored.
 
+**Fixture preflight.** Every fixture this phase loads is checked BEFORE any unarmed setup wait: the
+loaded save's own autopilot must be disengaged, and a case that has to engage it additionally needs
+autopilot unlocked. The refusal names the slot and the session and points at the fixture, because the
+suppression accounting is only meaningful while an idle decision outside an armed window is
+impossible; an autopilot-on save would otherwise fail the phase minutes later with a diagnostic that
+looks like a suppression defect. It fails closed: the probe never disengages a state it did not
+create and never relaxes the no-autonomous-decision signal to accommodate one.
+
+**Autopilot safety cleanup.** Engaging the consumer's gate captures the EXACT player and session it
+was engaged on. A bounded cleanup then disengages only that player, only while it is still the live
+current one of the still-current session; a replaced or destroyed owner, or a replaced session, is
+left untouched and recorded as a declined release. It runs on the normal path, on the fault path of
+both cross-system consumer hooks (after the failed row and its checkpoint are written, so a cleaned
+world can never make a failed case look passed) and in the phase's outer `finally` as the last
+resort for a fault raised elsewhere, including inside a synchronous API callback. It never throws
+and is idempotent, and it adds no wait to the budget.
+
 **Declared controls (`declared-probe-controls`).** The mandatory setup row names every bounded
-control with its exact counts: the sandbox-only configuration, the native idle-timer seeding
+control with its exact counts: the sandbox-only configuration, the autopilot releases (and any
+declined ones with their reason), the native idle-timer seeding
 (300 s, so a case never begins from an expired cycle and a natural expiry can never look like a
 snap-driven decision), the bounded autopilot engagements, the read-only observation probes, the
 counted `FindActivity` BODY suppression and the subscription reorderings. The suppression exists so

@@ -174,10 +174,89 @@ public sealed class EchoTravelReceiptTests
         Assert.Contains("unaccounted", EchoTravelReceipt.CheckSuppressionAccounting(0, 1));
     }
 
+    // --- fixture preflight and the autopilot safety cleanup ----------------------------------
+
+    [Fact]
+    public void AFixtureThatLoadsWithAutopilotEngagedIsRefusedBeforeAnyUnarmedSetup()
+    {
+        var session = Guid.NewGuid();
+        Assert.Null(EchoTravelReceipt.CheckFixturePreflight("fixture-a", session,
+            autoPlayEngaged: false, autoPlayUnlocked: true, requiresEngagement: true));
+        var refusal = EchoTravelReceipt.CheckFixturePreflight("fixture-a", session,
+            autoPlayEngaged: true, autoPlayUnlocked: true, requiresEngagement: false);
+        // The diagnostic names the fixture and session and points at the FIXTURE, not at the
+        // suppression accounting that would otherwise fail minutes later.
+        Assert.Contains("fixture-a", refusal);
+        Assert.Contains(session.ToString(), refusal);
+        Assert.Contains("ALREADY ENGAGED", refusal);
+        Assert.Contains("refuses to disengage a state it did not create", refusal);
+    }
+
+    [Fact]
+    public void OnlyACaseThatMustEngageAutopilotRequiresItUnlocked()
+    {
+        var session = Guid.NewGuid();
+        Assert.Contains("never unlocked autopilot", EchoTravelReceipt.CheckFixturePreflight("gate", session,
+            autoPlayEngaged: false, autoPlayUnlocked: false, requiresEngagement: true));
+        // The quiet window never engages it, so a locked fixture is not refused there.
+        Assert.Null(EchoTravelReceipt.CheckFixturePreflight("fixture-a", session,
+            autoPlayEngaged: false, autoPlayUnlocked: false, requiresEngagement: false));
+    }
+
+    [Fact]
+    public void TheAutopilotCleanupWritesOnlyToTheExactOwnedPlayerOfTheOwningSession()
+    {
+        var owned = Guid.NewGuid();
+        Assert.Equal(EchoTravelReceipt.AutopilotRelease.Release, EchoTravelReceipt.DecideAutopilotRelease(
+            engagedByProbe: true, ownerStillCurrent: true, ownerAlive: true, owned, owned));
+        Assert.Equal(EchoTravelReceipt.AutopilotRelease.NothingEngaged, EchoTravelReceipt.DecideAutopilotRelease(
+            engagedByProbe: false, ownerStillCurrent: true, ownerAlive: true, owned, owned));
+        // A replacement is never adopted, a destroyed owner is never written, and a replaced
+        // session's world is left exactly as the probe found it.
+        Assert.Equal(EchoTravelReceipt.AutopilotRelease.OwnerReplaced, EchoTravelReceipt.DecideAutopilotRelease(
+            engagedByProbe: true, ownerStillCurrent: false, ownerAlive: true, owned, owned));
+        Assert.Equal(EchoTravelReceipt.AutopilotRelease.OwnerDestroyed, EchoTravelReceipt.DecideAutopilotRelease(
+            engagedByProbe: true, ownerStillCurrent: true, ownerAlive: false, owned, owned));
+        Assert.Equal(EchoTravelReceipt.AutopilotRelease.SessionReplaced, EchoTravelReceipt.DecideAutopilotRelease(
+            engagedByProbe: true, ownerStillCurrent: true, ownerAlive: true, owned, Guid.NewGuid()));
+        Assert.Equal(EchoTravelReceipt.AutopilotRelease.SessionReplaced, EchoTravelReceipt.DecideAutopilotRelease(
+            engagedByProbe: true, ownerStillCurrent: true, ownerAlive: true, owned, null));
+    }
+
+    /// <summary>
+    /// The cleanup only matters if it is really wired to every path that can leave the autopilot
+    /// engaged: both cross-system consumer hooks' fault paths and the phase's own outer finally,
+    /// after the failure row is written.
+    /// </summary>
+    [Fact]
+    public void TheAutopilotCleanupIsWiredToTheHookFaultPathsAndTheOuterFinally()
+    {
+        var source = File.ReadAllText(PilotSourcePath());
+        Assert.Equal(2, Regex.Matches(source, @"EchoCrossCase\w+\(consumerCase[^)]*\), ReleaseAutopilotSafely\)").Count);
+        // EtGuarded writes the failed row and the fault file BEFORE invoking the cleanup.
+        var guard = source.Substring(source.IndexOf("if (fault == null) yield break;", StringComparison.Ordinal));
+        int row = guard.IndexOf("EtRecord(caseId", StringComparison.Ordinal);
+        int cleanup = guard.IndexOf("onFault?.Invoke();", StringComparison.Ordinal);
+        Assert.True(row >= 0 && cleanup > row, "The guard must record the failure before cleaning native state.");
+        // The outer finally is the last resort for a fault that skipped a hook, including one raised
+        // inside a synchronous API callback.
+        int outerFinally = source.IndexOf("        finally\n        {\n            // Last-resort safety cleanup", StringComparison.Ordinal);
+        Assert.True(outerFinally > 0, "The phase's outer finally must run the safety cleanup.");
+        Assert.Contains("ReleaseAutopilotSafely();\n            EchoDisarm();", source);
+        // Every fixture load the phase performs is preflighted before its unarmed setup.
+        Assert.Equal(3, Regex.Matches(source, @"RequireFixturePreflight\(").Count - 1);
+        // The engagement captures its owner; nothing else writes the native autopilot field.
+        Assert.Equal(2, Regex.Matches(source, @"AccessTools\.Field\(_player, ""autoPlay""\)\.SetValue").Count);
+    }
+
     [Fact]
     public void TheDeclaredControlsAreNamedInTheReceiptRow()
     {
-        var controls = EchoTravelReceipt.DescribeControls(6, 4, 2, 2, etaSyncDisabled: true, EchoTravelReceipt.IdleTimerSeedSeconds);
+        var controls = EchoTravelReceipt.DescribeControls(6, 4, 2, 2, etaSyncDisabled: true,
+            EchoTravelReceipt.IdleTimerSeedSeconds, autopilotReleases: 2,
+            releasesDeclined: new[] { "SessionReplaced" });
+        Assert.Contains("autopilotReleases=2", controls);
+        Assert.Contains("autopilotReleasesDeclined=[SessionReplaced]", controls);
         Assert.Contains("EtaSync=false", controls);
         Assert.Contains("idleTimerSeed=300s x6", controls);
         Assert.Contains("suppressedFindActivityBodies=4", controls);

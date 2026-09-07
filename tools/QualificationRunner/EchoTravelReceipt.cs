@@ -349,10 +349,71 @@ internal static class EchoTravelReceipt
         return "retired timing hook restored: " + patchClass + " patches " + type + "." + method;
     }
 
+    /// <summary>
+    /// PREFLIGHT for every fixture this phase loads, evaluated BEFORE any unarmed setup wait.
+    ///
+    /// <para>The suppression accounting (<see cref="CheckSuppressionAccounting"/>) is only meaningful
+    /// while every native idle decision outside an armed window is impossible, which requires the
+    /// loaded fixture's own autopilot to be disengaged. A save that loads with autopilot ENGAGED
+    /// would take autonomous decisions during the multi-minute unarmed setup, and the phase would
+    /// fail much later with a diagnostic pointing at the suppression logic instead of at the
+    /// fixture. So it is refused here, with the slot and session named.</para>
+    ///
+    /// <para>It fails CLOSED: the probe never disengages an autopilot state it did not create, and
+    /// never relaxes the no-autonomous-decision signal to accommodate one.</para>
+    /// </summary>
+    internal static string? CheckFixturePreflight(string slot, Guid session, bool autoPlayEngaged,
+        bool autoPlayUnlocked, bool requiresEngagement)
+    {
+        if (autoPlayEngaged)
+            return "Fixture '" + slot + "' (session " + session + ") loaded with the native autopilot ALREADY ENGAGED. "
+                + "This phase requires an autopilot-off fixture: every idle decision outside its own armed windows must be "
+                + "impossible, and the probe refuses to disengage a state it did not create. Prepare a save whose autopilot "
+                + "is off, or qualify this consumer on a different fixture.";
+        if (requiresEngagement && !autoPlayUnlocked)
+            return "Fixture '" + slot + "' (session " + session + ") has never unlocked autopilot, so the consumer's own "
+                + "arrival-snap gate can never open; this case cannot be qualified on this save.";
+        return null;
+    }
+
+    /// <summary>What the probe may do with the autopilot it engaged, when a case ends or faults.</summary>
+    internal enum AutopilotRelease
+    {
+        /// <summary>The probe never engaged it; nothing to undo.</summary>
+        NothingEngaged,
+        /// <summary>The exact owned player is still the live current one in the owning session.</summary>
+        Release,
+        /// <summary>Another player object is current now; a replacement is never adopted.</summary>
+        OwnerReplaced,
+        /// <summary>The owned player was destroyed (Unity fake-null); nothing to write.</summary>
+        OwnerDestroyed,
+        /// <summary>The session was replaced; the live world is not the one the probe engaged.</summary>
+        SessionReplaced,
+    }
+
+    /// <summary>
+    /// Safety cleanup decision for the autopilot the probe engaged. A failure inside a consumer hook
+    /// must not leave the native autopilot running past the case, but the cleanup may only write to
+    /// the EXACT player it engaged, while that player is still the live current one and its session
+    /// is still current. A replaced or destroyed owner, or a replaced session, is left untouched.
+    /// </summary>
+    internal static AutopilotRelease DecideAutopilotRelease(bool engagedByProbe, bool ownerStillCurrent,
+        bool ownerAlive, Guid ownedSession, Guid? currentSession)
+    {
+        if (!engagedByProbe) return AutopilotRelease.NothingEngaged;
+        if (!ownerAlive) return AutopilotRelease.OwnerDestroyed;
+        if (currentSession == null || currentSession.Value != ownedSession) return AutopilotRelease.SessionReplaced;
+        if (!ownerStillCurrent) return AutopilotRelease.OwnerReplaced;
+        return AutopilotRelease.Release;
+    }
+
     /// <summary>The declared, bounded controls this phase used, recorded as a mandatory setup row.</summary>
     internal static string DescribeControls(int seededTimerWrites, int suppressedFindActivity, int autopilotEngagements,
-        int reorderings, bool etaSyncDisabled, float seedSeconds)
-        => "sandboxConfig=[TimingEnabled=true,ArrivalSnap=true,EtaSync=" + (etaSyncDisabled ? "false" : "true")
+        int reorderings, bool etaSyncDisabled, float seedSeconds, int autopilotReleases = 0,
+        IReadOnlyList<string>? releasesDeclined = null)
+        => "autopilotReleases=" + autopilotReleases.ToString(CultureInfo.InvariantCulture)
+            + "; autopilotReleasesDeclined=[" + string.Join(",", releasesDeclined ?? Array.Empty<string>()) + "]"
+            + "; sandboxConfig=[TimingEnabled=true,ArrivalSnap=true,EtaSync=" + (etaSyncDisabled ? "false" : "true")
             + "]; idleTimerSeed=" + seedSeconds.ToString("F0", CultureInfo.InvariantCulture) + "s x" + seededTimerWrites
             + "; autopilotEngagements=" + autopilotEngagements
             + "; suppressedFindActivityBodies=" + suppressedFindActivity
