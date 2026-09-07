@@ -64,7 +64,7 @@ try {
         }
     }
     Assert-StoryIsolation ([pscustomobject]@{})
-    foreach ($name in @('travelStation','travelCrossSystem','travelWormholeFixture','travelResilience','travelRecovery','travelFastLane','missionTransitionsProbe','missionIdentityProbe','contentReferenceProbe','journalMissionEventsProbe','journalCoordinated','stockpileCoordinated','vanillaLoadControl','assemblyOverlay','echoAbsentProbe','echoTravelProbe','animaTravelProbe','travelJournalComparison')) {
+    foreach ($name in @('menuInspection','modMenuProbe','travelStation','travelCrossSystem','travelWormholeFixture','travelResilience','travelRecovery','travelFastLane','missionTransitionsProbe','missionIdentityProbe','contentReferenceProbe','journalMissionEventsProbe','journalCoordinated','stockpileCoordinated','vanillaLoadControl','assemblyOverlay','echoAbsentProbe','echoTravelProbe','animaTravelProbe','travelJournalComparison')) {
         Reject { Assert-StoryIsolation ([pscustomobject]@{ $name=$true }) }
         Assert-StoryIsolation ([pscustomobject]@{ $name=$false })
     }
@@ -77,5 +77,16 @@ try {
     Reject { Assert-StoryAuthorMetadata (Author $revision 'wrong-plugin') 'OwnedStoryCampaign' $revision }
     Reject { Assert-StoryAuthorMetadata (Author $revision 'vg-story-campaign' 2) 'OwnedStoryCampaign' $revision }
     Reject { Assert-StoryAuthorMetadata (Author $revision) 'OwnedStoryJob' $revision }
-    Write-Output 'PASS: story receipt, config and stale/wrong author rejection.'
+    $outcome | ConvertTo-Json | Set-Content (Join-Path $root 'run-outcome.json')
+    @('PASS','owned-story-absent-assemblies-v1') | Set-Content (Join-Path $root 'story-absent.txt')
+    Assert-StoryAbsentReceipt $root
+    Remove-Item (Join-Path $root 'story-absent.txt')
+    Reject { Assert-StoryAbsentReceipt $root }
+    @('PASS','owned-story-absent-assemblies-v1') | Set-Content (Join-Path $root 'story-absent.txt')
+    foreach ($field in @('timedOut','killed','selfTerminated','exitCode')) {
+        $bad=$outcome.Clone(); $bad.Remove($field)
+        $bad | ConvertTo-Json | Set-Content (Join-Path $root 'run-outcome.json')
+        Reject { Assert-StoryAbsentReceipt $root }
+    }
+    Write-Output 'PASS: story receipt, config, absent-author outcome and stale/wrong author rejection.'
 } finally { Remove-Item -LiteralPath $root -Recurse -Force }
