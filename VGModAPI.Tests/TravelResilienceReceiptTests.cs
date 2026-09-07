@@ -90,6 +90,10 @@ public sealed class TravelResilienceReceiptTests
             rows.Add(Row(id, TravelStationReceipt.Passed, "travel:" + sequence));
             events.Add(EventRow("travel", sequence));
         }
+        // The mandatory subcase row is part of every complete receipt.
+        foreach (var id in TravelResilienceReceipt.RequiredSubcaseRows)
+            rows.Add(Row(id, TravelStationReceipt.Passed, "station:1"));
+        events.Add(EventRow("station", 1));
         return (rows, events);
     }
 
@@ -365,7 +369,8 @@ public sealed class TravelResilienceReceiptTests
     public void ARequiredCaseWithoutObservedEventsOrWithUnobservedEvidenceIsAFailure()
     {
         var (rows, events) = CompleteReceipt();
-        var withoutEvidence = rows.Take(2).Append(Row(TravelResilienceReceipt.StaleReplayCase, TravelStationReceipt.Passed)).ToArray();
+        var withoutEvidence = rows.Take(2).Append(Row(TravelResilienceReceipt.StaleReplayCase, TravelStationReceipt.Passed))
+            .Append(Row(TravelResilienceReceipt.SameSizeReinitCase, TravelStationReceipt.Passed, "station:1")).ToArray();
         Assert.Contains("no observed public events", TravelResilienceReceipt.Evaluate(withoutEvidence, null, events));
         Assert.Contains("not in the trace for its session",
             TravelResilienceReceipt.Evaluate(rows, null, events.Take(1).ToArray()));
@@ -374,14 +379,38 @@ public sealed class TravelResilienceReceiptTests
     }
 
     [Fact]
-    public void AnOptionalRowWithoutEvidenceIsAllowedButIsNeverCoverage()
+    public void TheSameSizeReinitSubcaseIsMandatoryAndNeverAnOptionalNotRun()
     {
         var (rows, events) = CompleteReceipt();
-        rows.Add(Row(TravelResilienceReceipt.SameSizeReinitCase, TravelStationReceipt.Passed));
-        Assert.Null(TravelResilienceReceipt.Evaluate(rows, null, events));
+        Assert.Contains(TravelResilienceReceipt.SameSizeReinitCase, TravelResilienceReceipt.RequiredSubcaseRows);
         Assert.DoesNotContain(TravelResilienceReceipt.SameSizeReinitCase, TravelResilienceReceipt.RequiredCases);
+        Assert.Null(TravelResilienceReceipt.Evaluate(rows, null, events));
+        var missing = rows.Where(row => row.Case != TravelResilienceReceipt.SameSizeReinitCase).ToArray();
+        Assert.Contains("Required subcase did not run", TravelResilienceReceipt.Evaluate(missing, null, events));
+        var notRun = missing.Append(Row(TravelResilienceReceipt.SameSizeReinitCase, TravelStationReceipt.NotRun)).ToArray();
+        Assert.Contains("Required subcase is not-run", TravelResilienceReceipt.Evaluate(notRun, null, events));
+        var duplicated = rows.Append(Row(TravelResilienceReceipt.SameSizeReinitCase, TravelStationReceipt.Passed, "station:1")).ToArray();
+        Assert.Contains("Required subcase recorded 2 rows", TravelResilienceReceipt.Evaluate(duplicated, null, events));
+        var summary = TravelResilienceReceipt.Summarize(rows, null, events);
+        Assert.Contains("required-subcases=" + TravelResilienceReceipt.SameSizeReinitCase, summary);
+        Assert.Contains("required-subcase " + TravelResilienceReceipt.SameSizeReinitCase + "=passed", summary);
+        // A mandatory subcase row is never coverage of a required case identity.
         var withoutRequired = rows.Where(row => row.Case != TravelResilienceReceipt.RestoreDockCase).ToArray();
         Assert.Contains("did not run", TravelResilienceReceipt.Evaluate(withoutRequired, null, events));
+    }
+
+    [Fact]
+    public void TheCurrentShipReinitMustReplaceTheUnitAndKeepItsOptionAndData()
+    {
+        Assert.Null(TravelResilienceReceipt.CheckCurrentShipReinit(true, true, false, "small", "small"));
+        Assert.Contains("changed the player's native ship data",
+            TravelResilienceReceipt.CheckCurrentShipReinit(true, false, false, "small", "small"));
+        Assert.Contains("did not replace the native ship unit",
+            TravelResilienceReceipt.CheckCurrentShipReinit(false, true, false, "small", "small"));
+        Assert.Contains("did not take the same-size branch",
+            TravelResilienceReceipt.CheckCurrentShipReinit(true, true, true, "small", "small"));
+        Assert.Contains("instead of the unchanged small one",
+            TravelResilienceReceipt.CheckCurrentShipReinit(true, true, false, "small", "large"));
     }
 
     [Fact]

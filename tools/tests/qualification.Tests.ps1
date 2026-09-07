@@ -698,11 +698,17 @@ try {
         $notRun = @($records | Where-Object { $_[2] -eq 'not-run' }).Count
         $lines = @($first, "phase=$TravelResiliencePhase", "budgetSeconds=$TravelResilienceBudgetSeconds",
             ("required=" + ($TravelResilienceRequiredCases -join ',')),
+            ("required-subcases=" + ($TravelResilienceRequiredSubcaseRows -join ',')),
             ("rows=" + $records.Count + " passed=$passed failed=$failed notRun=$notRun"))
         foreach ($case in $TravelResilienceRequiredCases) {
             $matched = @($records | Where-Object { $_[0] -eq $case })
             $state = if ($matched.Count -eq 1) { $matched[0][2] } elseif ($matched.Count -eq 0) { 'absent' } else { 'duplicated' }
             $lines += "required-case $case=$state"
+        }
+        foreach ($subcase in $TravelResilienceRequiredSubcaseRows) {
+            $matched = @($records | Where-Object { $_[0] -eq $subcase })
+            $state = if ($matched.Count -eq 1) { $matched[0][2] } elseif ($matched.Count -eq 0) { 'absent' } else { 'duplicated' }
+            $lines += "required-subcase $subcase=$state"
         }
         return @($lines + @('optional-not-run=', 'fault=none', 'result=phase satisfied'))
     }
@@ -736,42 +742,49 @@ try {
     $rejected = $false
     try { Assert-PersistenceProbeReceipt $resilienceRoot $resilienceProvenance } catch { $rejected = $true }
     Assert $rejected 'Missing resilience receipt accepted because the in-system phase passed.'
-    $resilienceRows = @()
+    $resilienceCaseRows = @()
     $resilienceEvents = @()
     $sequence = 0
     foreach ($case in $TravelResilienceRequiredCases) {
         $sequence++
-        $resilienceRows += (TravelRow $case 'passed' $resilienceSession ("travel:" + $sequence))
+        $resilienceCaseRows += (TravelRow $case 'passed' $resilienceSession ("travel:" + $sequence))
         $resilienceEvents += (ResilienceEvent 'travel' $sequence $case $resilienceSession)
     }
+    # The mandatory same-size subcase row belongs to every complete receipt: it is not a case
+    # identity, but a missing/not-run/duplicated row is refused.
+    Assert (@($TravelResilienceRequiredSubcaseRows | Where-Object { $_ -in $TravelResilienceRequiredCases }).Count -eq 0) 'A mandatory subcase row must not also be a case identity.'
+    $sameSizeCase = $TravelResilienceRequiredSubcaseRows[0]
+    $sameSizeRow = (TravelRow $sameSizeCase 'passed' $resilienceSession 'station:9')
+    $resilienceEvents += (ResilienceEvent 'station' 9 $sameSizeCase $resilienceSession)
+    $resilienceRows = $resilienceCaseRows + @($sameSizeRow)
     WriteResilienceOutputs $resilienceRows $resilienceEvents (ResilienceSummary $resilienceRows 'PASS')
     Assert-PersistenceProbeReceipt $resilienceRoot $resilienceProvenance
-    # The optional same-size re-init row is never coverage and never mandatory.
-    Assert ($TravelResilienceSameSizeCase -notin $TravelResilienceRequiredCases) 'The optional same-size row must not be a mandatory case.'
-    $sameSizeRow = ($TravelResilienceSameSizeCase + "`toptional`tnot-run`t`t" + $resilienceSession + "`t`t`tno owned same-size ship")
-    WriteResilienceOutputs ($resilienceRows + @($sameSizeRow)) $resilienceEvents (ResilienceSummary ($resilienceRows + @($sameSizeRow)) 'PASS')
-    Assert-PersistenceProbeReceipt $resilienceRoot $resilienceProvenance
-    $optionalOnly = @($resilienceRows[0], $resilienceRows[2], $sameSizeRow)
-    AssertResilienceRejected $optionalOnly $resilienceEvents (ResilienceSummary $optionalOnly 'PASS') 'Optional same-size row accepted in place of the mandatory restore/relink case.'
-    $resilienceSkipped = @($TravelResilienceRequiredCases | ForEach-Object { TravelRow $_ 'not-run' $resilienceSession '' })
+    AssertResilienceRejected $resilienceCaseRows $resilienceEvents (ResilienceSummary $resilienceCaseRows 'PASS') 'Receipt without the mandatory same-size subcase row accepted.'
+    $sameSizeNotRun = $resilienceCaseRows + @((TravelRow $sameSizeCase 'not-run' $resilienceSession ''))
+    AssertResilienceRejected $sameSizeNotRun $resilienceEvents (ResilienceSummary $sameSizeNotRun 'PASS') 'Not-run mandatory same-size subcase accepted.'
+    $sameSizeDuplicated = $resilienceRows + @($sameSizeRow)
+    AssertResilienceRejected $sameSizeDuplicated $resilienceEvents (ResilienceSummary $sameSizeDuplicated 'PASS') 'Duplicated mandatory same-size subcase accepted.'
+    $subcaseOnly = @($resilienceCaseRows[0], $resilienceCaseRows[2], $sameSizeRow)
+    AssertResilienceRejected $subcaseOnly $resilienceEvents (ResilienceSummary $subcaseOnly 'PASS') 'Mandatory subcase row accepted in place of the required restore/relink case.'
+    $resilienceSkipped = @($TravelResilienceRequiredCases | ForEach-Object { TravelRow $_ 'not-run' $resilienceSession '' }) + @($sameSizeRow)
     AssertResilienceRejected $resilienceSkipped $resilienceEvents (ResilienceSummary $resilienceSkipped 'PASS') 'All-skipped resilience coverage accepted as PASS.'
-    $resilienceFailed = @($resilienceRows[0], $resilienceRows[1]) + @(TravelRow 'stale-session-replay' 'failed' $resilienceSession 'travel:3')
+    $resilienceFailed = @($resilienceCaseRows[0], $resilienceCaseRows[1], $sameSizeRow) + @(TravelRow 'stale-session-replay' 'failed' $resilienceSession 'travel:3')
     AssertResilienceRejected $resilienceFailed $resilienceEvents (ResilienceSummary $resilienceFailed 'PASS') 'Claimed resilience PASS with a failed case accepted.'
     Assert ((Test-Path -LiteralPath (Join-Path $resilienceRoot 'travel-resilience-receipt.tsv')) -and (Test-Path -LiteralPath (Join-Path $resilienceRoot 'travel-resilience-events.tsv'))) 'A failed resilience attempt must keep its receipt and event diagnostics.'
-    AssertResilienceRejected @($resilienceRows[0]) $resilienceEvents (ResilienceSummary @($resilienceRows[0]) 'PASS') 'Missing mandatory resilience case accepted.'
+    AssertResilienceRejected @($resilienceCaseRows[0], $sameSizeRow) $resilienceEvents (ResilienceSummary @($resilienceCaseRows[0], $sameSizeRow) 'PASS') 'Missing mandatory resilience case accepted.'
     AssertResilienceRejected $resilienceRows @($resilienceEvents[0]) (ResilienceSummary $resilienceRows 'PASS') 'Resilience case referencing an unobserved event accepted.'
     $resilienceForeign = @($resilienceEvents | ForEach-Object { $_ -replace [regex]::Escape($resilienceSession), ([Guid]::NewGuid().ToString()) })
     AssertResilienceRejected $resilienceRows $resilienceForeign (ResilienceSummary $resilienceRows 'PASS') 'Resilience identities absent from the event trace accepted.'
-    $noEvidence = @($resilienceRows[0], $resilienceRows[1]) + @(TravelRow 'stale-session-replay' 'passed' $resilienceSession '')
+    $noEvidence = @($resilienceCaseRows[0], $resilienceCaseRows[1], $sameSizeRow) + @(TravelRow 'stale-session-replay' 'passed' $resilienceSession '')
     AssertResilienceRejected $noEvidence $resilienceEvents (ResilienceSummary $noEvidence 'PASS') 'Required resilience case without evidence accepted.'
     AssertResilienceRejected $resilienceRows $resilienceEvents (ResilienceSummary $resilienceRows 'FAIL') 'Failed resilience attempt summary accepted.'
-    AssertResilienceRejected $resilienceRows $resilienceEvents @('INCOMPLETE', "phase=$TravelResiliencePhase", "budgetSeconds=$TravelResilienceBudgetSeconds", 'activeCase=stale-session-replay', 'rows=3 passed=3 failed=0 notRun=0', 'result=pilot still running or externally terminated; this is not a pass.') 'Incomplete resilience checkpoint accepted as a pass.'
+    AssertResilienceRejected $resilienceRows $resilienceEvents @('INCOMPLETE', "phase=$TravelResiliencePhase", "budgetSeconds=$TravelResilienceBudgetSeconds", 'activeCase=stale-session-replay', 'rows=4 passed=4 failed=0 notRun=0', 'result=pilot still running or externally terminated; this is not a pass.') 'Incomplete resilience checkpoint accepted as a pass.'
     $resilienceForeignPhase = @((ResilienceSummary $resilienceRows 'PASS') | ForEach-Object { if ($_ -like 'phase=*') { "phase=$TravelStationPhase" } else { $_ } })
     AssertResilienceRejected $resilienceRows $resilienceEvents $resilienceForeignPhase 'Resilience receipt declaring the in-system phase accepted.'
     $resilienceOverBudget = @((ResilienceSummary $resilienceRows 'PASS') | ForEach-Object { if ($_ -like 'budgetSeconds=*') { "budgetSeconds=$($TravelResilienceBudgetSeconds + 1)" } else { $_ } })
     AssertResilienceRejected $resilienceRows $resilienceEvents $resilienceOverBudget 'Resilience budget above the launcher reservation accepted.'
     $resilienceWrongCounts = (ResilienceSummary $resilienceRows 'PASS')
-    $resilienceWrongCounts[4] = 'rows=99 passed=99 failed=0 notRun=0'
+    $resilienceWrongCounts[5] = 'rows=99 passed=99 failed=0 notRun=0'
     AssertResilienceRejected $resilienceRows $resilienceEvents $resilienceWrongCounts 'Resilience summary counts disagreeing with the receipt accepted.'
     WriteResilienceOutputs $resilienceRows $resilienceEvents (ResilienceSummary $resilienceRows 'PASS')
     Assert-PersistenceProbeReceipt $resilienceRoot $resilienceProvenance

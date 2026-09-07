@@ -26,18 +26,22 @@ internal static class TravelResilienceReceipt
     internal const string RestoreDockCase = "restore-relink-dock";
     internal const string StaleReplayCase = "stale-session-replay";
     internal const string EmptyOriginDescription = "A real native in-system re-route requested while the origin scene is already unloaded emits Requested->Cancelled for the abandoned leg and Requested->Departed->Arrived->RouteCompleted for the new leg, with the new departure observed at the actual warp start from an unknown origin.";
-    internal const string RestoreDockDescription = "The native restore/relink/re-init docking assignments (load restore, RelinkDockedShipToStation and the ship re-init that takes a real Dock() coroutine) emit no physical station fact, while a genuine native docking request in the same session still emits exactly one DockedPhysical.";
+    internal const string RestoreDockDescription = "The native restore/relink/re-init docking assignments (load restore, RelinkDockedShipToStation, the same-docking-size re-init of the current ship and the different-size re-init that takes a real Dock() coroutine) emit no physical station fact, while a genuine native docking request in the same session still emits exactly one DockedPhysical.";
     internal const string StaleReplayDescription = "Old-session dock/undock coroutines captured before a replacement load emit nothing into the replacement session when they are advanced afterwards, and the replacement session's own native operation still works.";
 
     /// <summary>
-    /// Optional row for the same-docking-size ship re-init. It is deliberately NOT required: a
-    /// fixture world without a second owned ship of the current docking size cannot exercise it,
-    /// and the same-size assignment branch is already covered by the required relink subcase. The
-    /// DIFFERENT-size branch (the one that takes a real <c>Dock()</c> coroutine) is required, so a
-    /// same-size-only run can never be reported as two-size coverage.
+    /// MANDATORY subcase row of <see cref="RestoreDockCase"/>: the same-docking-size branch of the
+    /// native ship re-init. It needs no second owned ship, because the inspected
+    /// <c>ReinitPlayerSpaceshipRoutine</c> re-initializes whatever <c>GamePlayer.currentSpaceShip</c>
+    /// is (its identity comparison against the live unit is a DISCARDED expression, not an early
+    /// return), and vanilla itself calls <c>GameplayManager.ReinitPlayerSpaceship()</c> for the
+    /// CURRENT ship from the hangar's equipment/module actions. Re-initializing the current ship
+    /// therefore takes the same-size branch by construction: the docking option keeps its identity
+    /// and size and the assignment is the <c>skipCoroutine: true</c> one. It is recorded as its own
+    /// row so the branch is independently verifiable, and a not-run row is never accepted.
     /// </summary>
     internal const string SameSizeReinitCase = "restore-reinit-same-size";
-    internal const string SameSizeReinitDescription = "Optional: the same-docking-size ship re-init assignment (DockQuick) emits no physical station fact. Recorded separately; never coverage of the required different-size branch.";
+    internal const string SameSizeReinitDescription = "Mandatory subcase of restore-relink-dock: the native re-init of the CURRENT owned ship at its dock takes the same-docking-size assignment branch (unchanged docking option, skipCoroutine) and emits no physical station fact, while the case's genuine docking request proves the observer was live in the same window.";
 
     /// <summary>
     /// The phase passes only when EVERY one of these case identities has exactly one PASSED row.
@@ -45,6 +49,14 @@ internal static class TravelResilienceReceipt
     /// exercise one of them produces a recorded row, never an empty PASS.
     /// </summary>
     internal static readonly string[] RequiredCases = { EmptyOriginCase, RestoreDockCase, StaleReplayCase };
+
+    /// <summary>
+    /// Mandatory SUBCASE rows: they belong to a required case's contract rather than being separate
+    /// coverage identities, but the phase still fails when one is missing, duplicated, not-run or
+    /// failed. They keep the phase's own case identities stable while making the subcase a receipt
+    /// fact an external validator can check instead of prose.
+    /// </summary>
+    internal static readonly string[] RequiredSubcaseRows = { SameSizeReinitCase };
 
     // Declared per-wait deadlines (seconds). These are the SINGLE source the driver's waits use,
     // and the phase budget is summed from the plan below, so a changed deadline moves the
@@ -92,7 +104,10 @@ internal static class TravelResilienceReceipt
     internal const int TravelReadySamples = 2;
     /// <summary>Undock waits: re-route preparation 1, restore positive control 2, stale new operation 1.</summary>
     internal const int UndockWaits = 4;
-    /// <summary>Restore/relink/re-init assignments awaited: relink, optional same size, different size.</summary>
+    /// <summary>
+    /// Restore/relink/re-init assignments awaited, all of them mandatory: the relink, the same-size
+    /// current-ship re-init and the different-size ship re-init.
+    /// </summary>
     internal const int RestoreDockWaits = 3;
     /// <summary>Captured stale coroutines advanced after the replacement load.</summary>
     internal const int ReplayedCoroutines = 2;
@@ -359,6 +374,28 @@ internal static class TravelResilienceReceipt
         return null;
     }
 
+    /// <summary>
+    /// The mandatory same-size subcase, driven as the native re-init of the CURRENT owned ship (the
+    /// hangar's own equipment/module path). It really ran when the native routine replaced the ship
+    /// UNIT while keeping the player's ship DATA, and it took the same-size branch when the docking
+    /// option kept its identity and its size. Keeping the data is what proves no second owned ship
+    /// and no inventory transfer were involved; replacing the unit is what proves the routine
+    /// actually completed instead of returning early on the identity comparison it discards.
+    /// </summary>
+    internal static string? CheckCurrentShipReinit(bool unitReplaced, bool shipDataPreserved,
+        bool optionInstanceChanged, string optionSizeBefore, string optionSizeAfter)
+    {
+        if (!shipDataPreserved)
+            return "The current-ship re-init changed the player's native ship data, so it was a ship swap and not a current-ship re-init.";
+        if (!unitReplaced)
+            return "The current-ship re-init did not replace the native ship unit, so the native routine never completed its re-spawn.";
+        if (optionInstanceChanged)
+            return "The current-ship re-init changed the native docking option, so it did not take the same-size branch.";
+        if (optionSizeAfter != optionSizeBefore)
+            return "The current-ship re-init docked at a " + optionSizeAfter + " option instead of the unchanged " + optionSizeBefore + " one.";
+        return null;
+    }
+
     // --- stale-session replay rules -------------------------------------------------------
 
     /// <summary>
@@ -442,6 +479,13 @@ internal static class TravelResilienceReceipt
             if (matches.Length > 1) return "Required case recorded " + matches.Length + " rows: " + required + ".";
             if (matches[0].Status != TravelStationReceipt.Passed) return "Required case is " + matches[0].Status + ": " + required + ".";
         }
+        foreach (var subcase in RequiredSubcaseRows)
+        {
+            var matches = rows.Where(row => row.Case == subcase).ToArray();
+            if (matches.Length == 0) return "Required subcase did not run: " + subcase + ".";
+            if (matches.Length > 1) return "Required subcase recorded " + matches.Length + " rows: " + subcase + ".";
+            if (matches[0].Status != TravelStationReceipt.Passed) return "Required subcase is " + matches[0].Status + ": " + subcase + ".";
+        }
         var evidence = CheckEvidence(rows, eventRows);
         if (evidence != null) return evidence;
         // A harness fault is reported last so an attributed failed row keeps the more precise reason.
@@ -460,6 +504,7 @@ internal static class TravelResilienceReceipt
             .AppendLine("phase=" + Phase)
             .AppendLine("required=" + string.Join(",", RequiredCases))
             .AppendLine("budgetSeconds=" + PhaseBudgetSeconds.ToString("F0", CultureInfo.InvariantCulture))
+            .AppendLine("required-subcases=" + string.Join(",", RequiredSubcaseRows))
             .AppendLine("activeCase=" + TravelStationReceipt.Clean(activeCase))
             .AppendLine("rows=" + rows.Count + " passed=" + rows.Count(row => row.Status == TravelStationReceipt.Passed)
                 + " failed=" + rows.Count(row => row.Status == TravelStationReceipt.Failed)
@@ -476,6 +521,7 @@ internal static class TravelResilienceReceipt
             .AppendLine("phase=" + Phase)
             .AppendLine("budgetSeconds=" + PhaseBudgetSeconds.ToString("F0", CultureInfo.InvariantCulture))
             .AppendLine("required=" + string.Join(",", RequiredCases))
+            .AppendLine("required-subcases=" + string.Join(",", RequiredSubcaseRows))
             .AppendLine("rows=" + rows.Count
                 + " passed=" + rows.Count(row => row.Status == TravelStationReceipt.Passed)
                 + " failed=" + rows.Count(row => row.Status == TravelStationReceipt.Failed)
@@ -485,7 +531,12 @@ internal static class TravelResilienceReceipt
             var matches = rows.Where(row => row.Case == required).ToArray();
             text.AppendLine("required-case " + required + "=" + (matches.Length == 1 ? matches[0].Status : matches.Length == 0 ? "absent" : "duplicated"));
         }
-        var optional = rows.Where(row => !RequiredCases.Contains(row.Case)).ToArray();
+        foreach (var subcase in RequiredSubcaseRows)
+        {
+            var matches = rows.Where(row => row.Case == subcase).ToArray();
+            text.AppendLine("required-subcase " + subcase + "=" + (matches.Length == 1 ? matches[0].Status : matches.Length == 0 ? "absent" : "duplicated"));
+        }
+        var optional = rows.Where(row => !RequiredCases.Contains(row.Case) && !RequiredSubcaseRows.Contains(row.Case)).ToArray();
         text.AppendLine("optional-not-run=" + string.Join(",", optional.Where(row => row.Status == TravelStationReceipt.NotRun).Select(row => row.Case)));
         text.AppendLine("fault=" + (string.IsNullOrEmpty(fault) ? "none" : TravelStationReceipt.Clean(fault)));
         text.AppendLine("result=" + (failure ?? "phase satisfied"));

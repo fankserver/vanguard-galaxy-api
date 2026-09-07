@@ -132,6 +132,26 @@ public sealed class InstalledTravelResilienceProbeTests
         // the routine assigns the exterior manager's current option to the newly found one.
         Assert.Contains("set_currentDockingOption", Fields(module, "GameplayManager", "ReinitPlayerSpaceshipRoutine"));
         Assert.Contains("ReinitPlayerSpaceshipRoutine", Calls(module, "GameplayManager", "ReinitPlayerSpaceship"));
+        // The MANDATORY same-size subcase needs no second owned ship: the routine re-initializes
+        // whatever GamePlayer.currentSpaceShip is, and it really re-spawns the unit (destroy plus
+        // instantiate) instead of returning early on the identity comparison it discards.
+        Assert.Contains("get_currentSpaceShip", reinit);
+        Assert.Contains("GenerateSpaceship", reinit);
+        var generate = Calls(module, "GameplayManager", "GenerateSpaceship");
+        Assert.Contains("DestroyCurrentShip", generate);
+        Assert.Contains("InstantiateShip", generate);
+        Assert.Contains("SetSpaceShipData", generate);
+        Assert.Contains("Destroy", Calls(module, "GameplayManager", "DestroyCurrentShip"));
+        Assert.Contains("Instantiate", Calls(module, "GameplayManager", "InstantiateShip"));
+        // Vanilla itself calls this entry point for the CURRENT ship, without swapping ship data,
+        // from the hangar's equipment/module actions: that is the drive the same-size subcase uses.
+        foreach (var action in new[] { "DeleteTurret", "DeleteModule" })
+        {
+            var hangar = Calls(module, "Behaviour.UI.Spacestation.Location.PersonalHangar", action);
+            Assert.Contains("ReinitPlayerSpaceship", hangar);
+            Assert.Contains("get_currentSpaceShip", hangar);
+            Assert.DoesNotContain("SetSpaceShipData", hangar);
+        }
         // Only the skipCoroutine argument decides whether a real (hooked) Dock() coroutine exists,
         // so the same-size branch cannot produce one and the different-size branch can.
         var perform = Calls(module, Option, "PerformDocking");

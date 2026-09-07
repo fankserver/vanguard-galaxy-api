@@ -298,28 +298,25 @@ public sealed partial class Plugin
             Require(Slice(controlTravel).Count == 0, "The genuine dock request emitted travel facts: "
                 + string.Join(", ", Slice(controlTravel).Select(TravelStationReceipt.Describe)));
 
-            // Subcases 4 and 5: the native ship re-init. The same-size branch keeps the current
-            // docking option (DockQuick); the different-size branch finds a new option and takes a
-            // REAL Dock() coroutine outside any docking request. Neither may emit a physical fact.
-            var candidates = SwapCandidates(out string swapReason);
-            string sameSizeDetail;
-            var sameSize = candidates.FirstOrDefault(candidate => !candidate.DifferentSize);
-            if (sameSize == null)
-            {
-                sameSizeDetail = "not attempted: " + swapReason;
-                _p.RsRecord(TravelResilienceReceipt.SameSizeReinitCase, TravelResilienceReceipt.SameSizeReinitDescription,
-                    TravelStationReceipt.NotRun, "", _session, null, "",
-                    "No owned ship of the current docking option size is available for a same-size re-init: " + swapReason);
-                _p.RsCheckpoint();
-            }
-            else
-            {
-                foreach (var frame in DriveReinit(sameSize, exterior!)) yield return frame;
-                sameSizeDetail = _reinitDetail;
-                _p.RsRecord(TravelResilienceReceipt.SameSizeReinitCase, TravelResilienceReceipt.SameSizeReinitDescription,
-                    TravelStationReceipt.Passed, TravelStationReceipt.Location(_systemId, _startPoiId), _session, null, "", _reinitDetail);
-                _p.RsCheckpoint();
-            }
+            // Subcases 4 and 5: the native ship re-init. The MANDATORY same-size branch keeps the
+            // current docking option (skipCoroutine assignment) and needs no second owned ship: the
+            // native routine re-initializes whatever GamePlayer.currentSpaceShip is, exactly as the
+            // hangar's own equipment/module actions do for the current ship. The different-size
+            // branch finds a new option and takes a REAL Dock() coroutine outside any docking
+            // request. Neither may emit a physical fact.
+            var controlSlice = StationSlice(controlStation);
+            var controlEvidence = TravelStationReceipt.Evidence(null, controlSlice.Where(fact => fact.Kind == StationTransitionKind.DockedPhysical
+                || fact.Kind == StationTransitionKind.Undocking || fact.Kind == StationTransitionKind.Leaving));
+            foreach (var frame in DriveCurrentShipReinit(exterior!)) yield return frame;
+            var sameSizeDetail = _reinitDetail;
+            // Mandatory subcase row: the same-size branch is receipt evidence in its own right, and
+            // a not-run row is never accepted. Its evidence references the case's own genuine
+            // docking request, which proves the observer was live in this very window while the
+            // re-init stayed silent.
+            _p.RsRecord(TravelResilienceReceipt.SameSizeReinitCase, TravelResilienceReceipt.SameSizeReinitDescription,
+                TravelStationReceipt.Passed, TravelStationReceipt.Location(_systemId, _startPoiId), _session, null,
+                controlEvidence, sameSizeDetail + "; positiveControl=" + controlEvidence);
+            _p.RsCheckpoint();
             var differentSize = SwapCandidates(out string differentReason).FirstOrDefault(candidate => candidate.DifferentSize);
             if (differentSize == null)
             {
@@ -329,10 +326,7 @@ public sealed partial class Plugin
                 yield break;
             }
             foreach (var frame in DriveReinit(differentSize, exterior!)) yield return frame;
-            var controlSlice = StationSlice(controlStation);
-            Pass(TravelStationReceipt.Location(_systemId, _startPoiId), null,
-                TravelStationReceipt.Evidence(null, controlSlice.Where(fact => fact.Kind == StationTransitionKind.DockedPhysical
-                    || fact.Kind == StationTransitionKind.Undocking || fact.Kind == StationTransitionKind.Leaving)),
+            Pass(TravelStationReceipt.Location(_systemId, _startPoiId), null, controlEvidence,
                 "replacedSessionFactsBeforeLoad=" + priorFacts + "/" + priorStationFacts
                 + "; initialRestore={interiorFacts=" + restoreInterior + "}"
                 + "; relink={interiorFacts=" + relinkInterior + "}"
@@ -373,6 +367,60 @@ public sealed partial class Plugin
             var option = _getDockingOption.Invoke(exterior, new[] { ship });
             Require(TravelStationDriver.Alive(option) && ReferenceEquals(SpGet(option!, "dockingSpaceship"), ship),
                 "No native docking option holds the player ship after the genuine docking request.");
+        }
+
+        // The MANDATORY same-docking-size branch, driven without any second owned ship and without
+        // moving any inventory: the native re-init of the CURRENT owned ship, exactly as the
+        // hangar's own equipment/module actions call it (GameplayManager.ReinitPlayerSpaceship when
+        // the changed ship data IS GamePlayer.currentSpaceShip). The inspected
+        // ReinitPlayerSpaceshipRoutine compares the current data against the live unit only in a
+        // DISCARDED expression, so it re-spawns the ship anyway; its docking size therefore equals
+        // the current option's size and it takes the skipCoroutine assignment branch. Nothing is
+        // written here: the pilot invokes the native entry point and then waits for the actual new
+        // unit and physical dock state.
+        private IEnumerable<object?> DriveCurrentShipReinit(object exterior)
+        {
+            _reinitDetail = "";
+            RequireOwned("the native current-ship re-init");
+            var previousShip = PlayerShip;
+            Require(TravelStationDriver.Alive(previousShip), "No live native player ship to re-initialize.");
+            var shipData = SpGet(Player, "currentSpaceShip")!;
+            Require(ReferenceEquals(SpGet(previousShip!, "spaceShipData"), shipData),
+                "The live native player ship does not carry the player's current ship data.");
+            var optionBefore = _getDockingOption.Invoke(exterior, new[] { previousShip })!;
+            var sizeBefore = SpGet(optionBefore, "dockingOptionSize")!.ToString()!;
+            int travelOffset = Travel.Count, stationOffset = Stations.Count;
+            bool coroutineObserved = false;
+            _reinitPlayerSpaceship.Invoke(SpGet(_gameplayType, "Instance")!, null);
+            foreach (var frame in AwaitOrFail(() =>
+                {
+                    coroutineObserved |= DockingOptions(exterior).Any(option => SpGet(option, "dockingCoroutine") != null);
+                    var live = PlayerShip;
+                    return TravelStationDriver.Alive(live) && !ReferenceEquals(live, previousShip)
+                        && ReferenceEquals(SpGet(live!, "spaceShipData"), shipData)
+                        && DockingState(live!) == "Docked"
+                        && TravelStationDriver.Alive(_getDockingOption.Invoke(exterior, new[] { live }));
+                }, TravelResilienceReceipt.RestoreDockSeconds,
+                "the native current-ship re-init to replace the unit and reach physical Docked")) yield return frame;
+            foreach (var frame in Settle()) yield return frame;
+            var newShip = PlayerShip!;
+            var optionAfter = _getDockingOption.Invoke(exterior, new[] { newShip })!;
+            var sizeAfter = SpGet(optionAfter, "dockingOptionSize")!.ToString()!;
+            var branch = TravelResilienceReceipt.CheckCurrentShipReinit(!ReferenceEquals(newShip, previousShip),
+                ReferenceEquals(SpGet(Player, "currentSpaceShip"), shipData),
+                !ReferenceEquals(optionAfter, optionBefore), sizeBefore, sizeAfter);
+            Require(branch == null, branch!);
+            Require(ReferenceEquals(SpGet(exterior, "currentDockingOption"), optionBefore),
+                "The native exterior manager's current docking option changed during the same-size current-ship re-init.");
+            Require(ReferenceEquals(SpGet(optionAfter, "dockingSpaceship"), newShip),
+                "The unchanged native docking option does not hold the re-initialized ship.");
+            var suppressed = TravelResilienceReceipt.CheckSuppressed("current-ship (same-size) re-init",
+                Slice(travelOffset), StationSlice(stationOffset), out int interiorFacts);
+            Require(suppressed == null, suppressed!);
+            _reinitDetail = "{drive=native ReinitPlayerSpaceship on the current ship,unitReplaced=True,shipDataPreserved=True"
+                + ",optionSizeBefore=" + sizeBefore + ",optionSizeAfter=" + sizeAfter
+                + ",optionInstanceChanged=False,dockCoroutineObserved=" + coroutineObserved
+                + ",interiorFacts=" + interiorFacts + "}";
         }
 
         // One native ship swap exactly as the personal hangar performs it (SetSpaceShipData then

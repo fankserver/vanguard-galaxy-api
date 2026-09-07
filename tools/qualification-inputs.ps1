@@ -77,9 +77,9 @@ $TravelWormholeFactorySignature = 'factory=Source.Simulation.World.WormholeSpawn
 $TravelResiliencePhase = 'travel-resilience-v1'
 $TravelResilienceRequiredCases = @('empty-origin-reroute','restore-relink-dock','stale-session-replay')
 $TravelResilienceBudgetSeconds = 2400
-# Optional row for the same-docking-size re-init. It is deliberately not required, so a fixture
-# without a second owned ship of the current size can never make the phase claim two-size coverage.
-$TravelResilienceSameSizeCase = 'restore-reinit-same-size'
+# MANDATORY subcase row of restore-relink-dock: the same-docking-size branch, driven as the native
+# re-init of the CURRENT owned ship, so it needs no second owned ship and a not-run row is refused.
+$TravelResilienceRequiredSubcaseRows = @('restore-reinit-same-size')
 # Independent verification of the pilot's own claim: the declared phase, every mandatory case
 # identity, the receipt/event files and the identities they share must all agree. A first line of
 # PASS is never accepted on its own. The two travel phases publish the same receipt/event shape,
@@ -185,7 +185,18 @@ function Assert-TravelCrossSystemReceipt([string]$Root, $Provenance) {
 # in-system or cross-system receipt can never stand in for it.
 function Assert-TravelResilienceReceipt([string]$Root) {
     Assert-TravelPhaseReceipt $Root 'Travel resilience' 'travel-resilience' $TravelResiliencePhase $TravelResilienceRequiredCases $TravelResilienceBudgetSeconds
-    if ($TravelResilienceSameSizeCase -in $TravelResilienceRequiredCases) { throw 'The optional same-size re-init row must never be a mandatory case.' }
+    # Mandatory subcase rows are checked independently of the case identities: they are not coverage
+    # of a case, but a missing, duplicated, not-run or failed subcase row is never accepted.
+    $summary = @(Get-Content -LiteralPath (Join-Path $Root 'travel-resilience.txt'))
+    if ($summary -notcontains ("required-subcases=" + ($TravelResilienceRequiredSubcaseRows -join ','))) { throw 'Travel resilience receipt declares different mandatory subcases.' }
+    $rows = @(Get-Content -LiteralPath (Join-Path $Root 'travel-resilience-receipt.tsv'))
+    foreach ($subcase in $TravelResilienceRequiredSubcaseRows) {
+        if ($subcase -in $TravelResilienceRequiredCases) { throw 'A mandatory subcase row must not also be a case identity.' }
+        $matched = @($rows | Where-Object { ($_ -split "`t")[0] -eq $subcase })
+        if ($matched.Count -ne 1) { throw "Mandatory travel resilience subcase is missing or duplicated: $subcase" }
+        if (($matched[0] -split "`t")[2] -ne 'passed') { throw "Mandatory travel resilience subcase did not pass: $subcase" }
+        if ($summary -notcontains "required-subcase $subcase=passed") { throw "Travel resilience summary and receipt disagree about $subcase." }
+    }
 }
 function Assert-VanillaControlReceipt([string]$Root, $Provenance) {
     if ($Provenance.PSObject.Properties['vanillaLoadControl'] -and $Provenance.vanillaLoadControl) {
