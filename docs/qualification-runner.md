@@ -205,6 +205,152 @@ Receipts are checkpointed atomically after every case and written on every path 
 
 **Fixture requirement.** All three cases need `fixture-a` to load docked at a player-friendly station; the re-route case additionally needs two targets from the shared safe in-system selector (industrial POIs only, see the in-system phase above) and the restore case needs an eligible owned ship of a different native docking size. A read-only scan of the prepared fixture found 25 owned ships, so no content-creating ship fixture selection is offered; a world without such a ship records the honest NOT-RUN above instead. This remains controlled native evidence only: `RuntimeQualified=false`, and #12 stays open.
 
+## Native travel recovery/continuation phase (separate, optional)
+
+`-TravelRecoveryContinuation` is an ADDITIONAL Prepare selection that requires `-TravelStation`
+(it reuses the same `[Travel]` capability configuration) and Full, writes `travel-recovery.enabled`,
+and records its own reservation (`travelRecoveryBudgetSeconds`) in provenance. It is independent of
+`-TravelCrossSystem` and of `-TravelResilience`: it drives its own routes, including its own gate
+route. It runs as its own phase `travel-recovery-continuation-v1` with its own receipts
+(`travel-recovery.txt`, `travel-recovery-receipt.tsv`, `travel-recovery-events.tsv`,
+`travel-recovery-fault.txt`) and its two mandatory case identities `recovered-placement` and
+`post-gate-continuation` — the two travel-matrix cells the earlier phases deliberately left open. It
+never widens them, and their optional rows for these cells stay NOT-RUN.
+
+Budgets add up rather than replace: `Run` refuses to launch unless `-TimeoutSeconds` covers base
+1800 + every selected phase reservation (travel/station 1500, recovery/continuation **4200**;
+**7500** for the minimal selection this phase needs, 9900 with the cross-system phase). The
+published `budgetSeconds` is SUMMED from the same per-wait deadline constants the driver uses (two
+fixture-load/binding waits per case plus the restoring load, one undock per case, one availability
+sample per recovery attempt and one for the continuation route, one departure per recovery attempt
+plus the continuation's three legs, the arrival-or-cancel-window waits, one readiness placement, the
+gate handoff, the jump arrival, the route boundaries and every settle), so a hand-typed occurrence
+cannot understate it; the published worst case is 4112 seconds against the 4200 reservation (the
+3932 s of the driven waits plus the bounded cleanup-settlement wait of 60 s, declared at most once
+per attempt). Both
+cases load `fixture-a` themselves and capture their native owner only at their own load/readiness
+boundary, and every native drive and observation first proves that owner is still the live current
+one in the same session.
+
+- `recovered-placement`: the POSITIVE native `RecoveredPlacement` case. A real in-system route to a
+  safe target is driven to its verified origin unload (the public `Departed`), and the pilot then
+  samples the loaded world every frame until the native travel routine has assigned the destination
+  POI to the player, its manager reports `initializedAndReady` and the native route is STILL RUNNING
+  (`TravelActive()`), while `SpaceshipHasArrived` has NOT run (no public `Arrived`). In exactly that
+  window it takes the player's own cancel action (`TravelManager.CancelTravel(null)`). The
+  live-route requirement is load-bearing and is asserted by the pure rule from an ACQUISITION
+  snapshot taken in the frame the cancel is about to be issued: on the inspected build the routine's
+  own wait predicate (`<Travel>b__84_0`) returns TRUE when no local manager is registered, so a
+  route can end silently without an arrival and the destination manager can initialize afterwards -
+  readiness alone would then look identical to this window while nothing was travelling, and a
+  cancel there would publish a `Cancelled` that interrupted nothing. Such an acquisition is
+  classified as a MISS and no cancel is issued. An installed-assembly test pins that predicate
+  shape. The API then has a placed session, no pending leg and an
+  unknown location while the world reports a loaded, ready POI, and the adapter's own per-frame
+  readiness observation (`Tick` -> `ObservePlacement`) publishes the placement. The asserted stream
+  is exactly `Requested`->`Departed`->`Cancelled`->`RecoveredPlacement`, with the cancellation at an
+  UNKNOWN location, and the placement carrying no operation identity, no origin, no requested
+  destination, no dwell and mode `Unknown`; the native snapshots must show the departure with the
+  origin unloaded and both the cancel and the placement at the destination POI with its manager
+  initialized, no native route running and no waypoint left. Nothing is injected: no adapter
+  callback is invoked, no location, waypoint or docking state is written, and no production hook is
+  disabled. Whether the window is observable at all is NOT asserted: the installed-assembly test
+  pins the native predicate SHAPE only, not Unity's coroutine or `CustomYieldInstruction`
+  scheduling, and the window depends on when the destination manager finishes its own `Init`
+  coroutine relative to the POI assignment. The bounded three attempts exist for exactly that
+  fixture/readiness/scheduling variability, and every miss is recorded with its own reason; no
+  "never misses" claim is made anywhere.
+
+  Each attempt is persisted as its own NOT-RUN receipt row the moment it starts and rewritten with
+  its TERMINAL outcome, so an attempt that later throws can never erase the earlier attempts'
+  results. The outcomes are a committed whitelist (`cancelled-in-live-window`,
+  `native-arrival-first`, `route-already-ended`, `timeout-no-route`, `timeout-route-running`,
+  `native-travel-refused`, `no-safe-target`, `abandoned-leg-not-closed`,
+  `cleanup-placement-unsettled`); a row still in its
+  `state=started` form names no outcome and is refused, so it can only be a failure artifact.
+
+  A MISSED attempt closes AND settles its own leg before the next one starts. The leg departed and
+  never arrived, so it is still pending; left open, the next route request would supersede it and the
+  tracker would truthfully publish that leg's `Cancelled` INSIDE the next attempt's window, failing
+  an otherwise good attempt on the exact four-fact rule. The miss therefore issues the player's own
+  `CancelTravel(null)` inside its own window and PROVES the observed closure is its own operation's
+  (`Requested`->`Departed`->`Cancelled`).
+
+  Closing that leg also OPENS the reducer's recovery gate (no pending leg, no current place), so the
+  adapter publishes one `RecoveredPlacement` as soon as the native manager reports readiness —
+  exactly the readiness the miss did not observe. Left unsettled it would land in a later attempt's
+  quiet window and fail that attempt through the harness's own doing, so the miss waits for it,
+  bounded (60 s, declared in the plan), and requires the placement to be observed at a manager the
+  case still owns, reporting readiness, with no native route running again. That placement is never
+  counted as coverage: the attempt never acquired a live window, so its acquisition can never satisfy
+  the positive rule. Nothing is reset in the API or in native state and no late event is ignored. If
+  the closure cannot be proven, or the placement does not settle within the bound, the case ends
+  immediately with a NOT-RUN (`abandoned-leg-not-closed` / `cleanup-placement-unsettled`) instead of
+  retrying on a window the harness itself could contaminate.
+
+  Each miss persists its KNOWN reason BEFORE that cleanup's side effect, marked `cleanup=pending`,
+  and rewrites the same row with the cleanup result afterwards, so a throw inside the cleanup cannot
+  lose the reason. A receipt still carrying the pending marker describes an attempt that never
+  finished and is refused by both validators; `state=started` stays reserved for a genuinely unknown
+  failure.
+
+  If no attempt observes the window the case records a mandatory NOT-RUN — a phase FAILURE by
+  design — and never a pass. A window wait that expires while the native route is STILL RUNNING is
+  not a clean miss and is never retried: the outcome and the residual observed AT the fault are
+  persisted before any cleanup, the ordinary player cancel is then issued within the captured owner,
+  and the post-cleanup residual is added beside it — the receipt publishes both
+  (`preCleanupResidual=` and `postCleanupResidual=`), neither overwriting the other — and the case
+  fails at the timeout. That cleanup is honest, not a claim of a quiet world: the vanilla
+  cancel does not reset `isWarping` (only the end of `TravelInSystem` does), so a mid-warp timeout
+  leaves that flag stale and the receipt says so. Nothing is written to hide it — no position, no
+  warp state, no native field — and a failed phase leaves no world a later phase may continue from;
+  the harness fails and the runner quits.
+  This phase does NOT reach the native fast lane (gate-to-gate, `travelMultiplier = 7`), which needs
+  a route whose next waypoint is another usable gate; that cell stays an explicit required follow-up
+  and is documented as UNQUALIFIED in the coverage matrix.
+- `post-gate-continuation`: ONE native multi-waypoint route is requested to a safe follow-on POI in
+  the system behind a usable non-tutorial gate, exactly as the map travel action does it. The native
+  planner (`GenerateShortestRoute`) must really produce `[gate, follow-on]`; the in-system approach
+  leg reaches the gate, the gate's own arrival hands the ship to the jump routine
+  (`JumpGateManager.SpaceshipHasArrived` -> `InitiateTravelThroughGate`), and the jump routine ends
+  with `TravelToNextWaypoint`, which starts the post-gate in-system leg. The asserted stream is three
+  legs with distinct operation identities and exactly ONE `RouteCompleted`, at the end, belonging to
+  the post-gate leg — the cross-system phase's own route rules are reused for the per-leg identity,
+  mode and origin/requested/actual checks. The decisive native evidence is the snapshot at the gate
+  arrival: a waypoint still remained and the jump routine still owned the transition, so withholding
+  the completion there is observed truth rather than a timing artefact. The pilot additionally
+  refuses any completion observed before the native route really ended (waypoints empty, no
+  `TravelActive()`, no `usingJumpgate`). The follow-on POI is chosen with the SAME shared refusal
+  rule the in-system phases use, applied to the destination system, so the chain cannot end in a
+  station, another gate, a dynamic event or a native combat encounter. The one-way tutorial exit gate
+  (`Hermetis` -> `Canis Majoris`) is excluded by identity and stays source-attested only.
+
+Receipts are checkpointed atomically after every case and written on every path (an exception is
+recorded as a failed row for the running case plus `travel-recovery-fault.txt`); a checkpoint always
+says `INCOMPLETE`. `Assert-TravelRecoveryReceipt` re-checks the outputs exactly like the other phases
+and additionally requires each case to PUBLISH the native evidence it claims: the recovery row must
+carry a recovered location, an ACQUISITION snapshot with `travelActive=True` and `managerReady=True`
+(the live route the cancel interrupted) and a placement snapshot with `managerReady=True`,
+`travelActive=False` and `waypoints=0`, and the continuation row must carry `legs=3`, `routeCompletions=1`, a gate-arrival
+snapshot with `usingJumpgate=True` and a remaining waypoint, and a completion snapshot with no
+waypoints and no active native travel. The attempt log is validated too: at least one persisted
+attempt row, never more than the declared bound the receipt itself publishes (`recovery-attempts=`),
+every row NOT-RUN with a named outcome, and exactly one row reporting the live-route cancel whenever
+the case passed, no attempt still marking its own cleanup pending, a settled cleanup recovery
+published by every miss that closed its own leg, plus contiguous unique numbering from 1 within the
+COMMITTED bound (never a bound
+the receipt declares for itself), the case's own session on every attempt row, whitelisted outcomes
+only, and the single success as the LAST attempt with every earlier attempt a continuable miss.
+After the last case the phase reloads `fixture-a` so the later
+pilots see the same world state; that restoring load is harness cleanup and is never coverage.
+
+**Fixture requirement.** Both cases need `fixture-a` to load at a known native system/POI (docked is
+fine: the phase uses the player's own exit action first). The recovery case needs at least one, and
+preferably three, safe in-system targets; the continuation case needs a usable non-tutorial gate whose
+destination system contains a safe follow-on POI the planner routes to as `[gate, follow-on]`. A world
+that offers neither records the honest NOT-RUN above, which fails the phase rather than shrinking it.
+This remains controlled native evidence only: `RuntimeQualified=false`, and #12 stays open.
+
 ## Actual-consumer travel probe (separate, optional)
 
 `-AnimaTravelProbe` is an ADDITIONAL Prepare selection that requires the authorized Anima consumer pilot (`-AnimaBin` / `-AnimaRevision` and therefore `-MissionTransitionsProbe -MissionIdentityProbe -PersistenceProbe -MissionJournalBin`), `-TravelStation`, `-TravelCrossSystem` and `-TravelWormholeFixture`. It writes the marker `anima-travel.enabled` and records `animaTravelProbe`, `animaVersion` and its own reservation (`animaTravelBudgetSeconds`) in provenance. Only the Anima **0.4.0 / hard API 0.1.9** metadata shape is accepted for it (the earlier 0.3.0 / 0.1.8 mission-only shape stays accepted for the mission pilot alone), and the marker, the provenance flag, the pinned consumer version and the wormhole-fixture selection must all agree.

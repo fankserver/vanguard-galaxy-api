@@ -278,6 +278,9 @@ public sealed partial class Plugin : BaseUnityPlugin
         foreach (var frame in CheckTravelStation()) yield return frame;
         foreach (var frame in CheckTravelCrossSystem()) yield return frame;
         foreach (var frame in CheckTravelResilience()) yield return frame;
+        // The recovery/continuation phase runs last of the travel phases: its cases end in another
+        // world state and it restores the fixture itself, exactly like the resilience phase.
+        foreach (var frame in CheckTravelRecovery()) yield return frame;
         foreach (var frame in CheckJournalTeardown()) yield return frame;
         foreach (var frame in RemainingLifecyclePilot()) yield return frame;
         foreach (var frame in PersistencePilot()) yield return frame;
