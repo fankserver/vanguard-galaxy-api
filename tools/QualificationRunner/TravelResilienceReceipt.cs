@@ -25,7 +25,7 @@ internal static class TravelResilienceReceipt
     internal const string EmptyOriginCase = "empty-origin-reroute";
     internal const string RestoreDockCase = "restore-relink-dock";
     internal const string StaleReplayCase = "stale-session-replay";
-    internal const string EmptyOriginDescription = "A real native in-system re-route requested while the origin scene is already unloaded emits Requested->Cancelled for the abandoned leg and Requested->Departed->Arrived->RouteCompleted for the new leg, with the new departure observed at the actual warp start from an unknown origin.";
+    internal const string EmptyOriginDescription = "A real native in-system re-route requested while the origin scene is already unloaded emits Requested->Departed->Cancelled for the abandoned leg and Requested->Departed->Arrived->RouteCompleted for the new leg, with the new departure observed at the actual warp start from an unknown origin.";
     internal const string RestoreDockDescription = "The native restore/relink/re-init docking assignments (load restore, RelinkDockedShipToStation, the same-docking-size re-init of the current ship and the different-size re-init that takes a real Dock() coroutine) emit no physical station fact, while a genuine native docking request in the same session still emits exactly one DockedPhysical.";
     internal const string StaleReplayDescription = "Old-session dock/undock coroutines captured before a replacement load emit nothing into the replacement session when they are advanced afterwards, and the replacement session's own native operation still works.";
 
@@ -252,6 +252,30 @@ internal static class TravelResilienceReceipt
         if (!TravelStationReceipt.Same(slice[6].ActualLocation, systemId, secondHopId))
             return "RouteCompleted reports " + TravelStationReceipt.Location(slice[6].ActualLocation)
                 + " instead of the re-routed destination " + TravelStationReceipt.Location(systemId, secondHopId) + ".";
+        return null;
+    }
+
+    /// <summary>
+    /// The frame in which a native travel request was just accepted: nothing can have been
+    /// transported yet, so the window must END with that <c>Requested</c> fact and must contain no
+    /// transport fact at all (a <c>Departed</c>, <c>Arrived</c> or <c>RouteCompleted</c> here could
+    /// only be fabricated). Null when the frame is healthy.
+    ///
+    /// The rule is pure so the failure message is built ONLY from facts that actually exist. The
+    /// qa-83 probe defect was exactly the opposite shape: the driver passed an eagerly formatted
+    /// message that described a fact which is null on the SUCCESS path, so a healthy request frame
+    /// threw a NullReferenceException and failed the case. The assertion itself is unchanged and is
+    /// not relaxed here.
+    /// </summary>
+    internal static string? CheckRequestFrame(IReadOnlyList<TravelTransition> slice, string label)
+    {
+        if (slice.Count == 0 || slice[slice.Count - 1].Kind != TravelTransitionKind.Requested)
+            return "Expected " + label + " to end the window with Requested, observed ["
+                + string.Join(", ", slice.Select(TravelStationReceipt.Describe)) + "].";
+        var fabricated = slice.FirstOrDefault(fact => fact.Kind == TravelTransitionKind.Departed
+            || fact.Kind == TravelTransitionKind.Arrived || fact.Kind == TravelTransitionKind.RouteCompleted);
+        if (fabricated != null)
+            return "A transport fact was published for " + label + ": " + TravelStationReceipt.Describe(fabricated) + ".";
         return null;
     }
 

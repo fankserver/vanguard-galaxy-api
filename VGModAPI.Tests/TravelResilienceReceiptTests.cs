@@ -99,6 +99,57 @@ public sealed class TravelResilienceReceiptTests
 
     // --- empty-origin re-route ------------------------------------------------------------
 
+    // --- accepted-request frame -----------------------------------------------------------
+
+    [Fact]
+    public void AnOrdinaryAcceptedRequestFrameIsAcceptedWithoutThrowing()
+    {
+        // The qa-83 probe defect: this healthy frame threw a NullReferenceException because the
+        // driver formatted a failure message from a fact that does not exist on the success path.
+        var accepted = new List<TravelTransition>
+        {
+            Fact(TravelTransitionKind.Requested, Guid.NewGuid(), null, (System1, HopA), null, 1)
+        };
+        Assert.Null(TravelResilienceReceipt.CheckRequestFrame(accepted, "the accepted request"));
+        // A window that already carried an earlier cancelled leg still ends with the new request.
+        var abandoned = Guid.NewGuid();
+        var afterCancel = new List<TravelTransition>
+        {
+            Fact(TravelTransitionKind.Cancelled, abandoned, null, null, null, 1),
+            Fact(TravelTransitionKind.Requested, Guid.NewGuid(), null, (System1, HopB), null, 2)
+        };
+        Assert.Null(TravelResilienceReceipt.CheckRequestFrame(afterCancel, "the accepted re-route request"));
+    }
+
+    [Fact]
+    public void AnEmptyWronglyEndedOrTransportingRequestFrameFailsWithItsOwnDiagnostic()
+    {
+        var empty = TravelResilienceReceipt.CheckRequestFrame(Array.Empty<TravelTransition>(), "the accepted request");
+        Assert.Contains("end the window with Requested", empty);
+        Assert.Contains("observed []", empty);
+        var wrongLast = TravelResilienceReceipt.CheckRequestFrame(new[]
+        {
+            Fact(TravelTransitionKind.Requested, Guid.NewGuid(), null, (System1, HopA), null, 1),
+            Fact(TravelTransitionKind.Cancelled, Guid.NewGuid(), null, null, null, 2)
+        }, "the accepted request");
+        Assert.Contains("end the window with Requested", wrongLast);
+        Assert.Contains("Cancelled", wrongLast);
+        // A transport fact in the accepted-request frame could only be fabricated, even when the
+        // window still ends with the request itself.
+        foreach (var fabricated in new[] { TravelTransitionKind.Departed, TravelTransitionKind.Arrived, TravelTransitionKind.RouteCompleted })
+        {
+            var operation = Guid.NewGuid();
+            var window = new[]
+            {
+                Fact(fabricated, operation, (System1, Station), (System1, HopA), (System1, HopA), 1),
+                Fact(TravelTransitionKind.Requested, Guid.NewGuid(), null, (System1, HopA), null, 2)
+            };
+            var failure = TravelResilienceReceipt.CheckRequestFrame(window, "the accepted request");
+            Assert.Contains("A transport fact was published for the accepted request", failure);
+            Assert.Contains(fabricated.ToString(), failure);
+        }
+    }
+
     [Fact]
     public void GenuineEmptyOriginRerouteStreamPasses()
     {

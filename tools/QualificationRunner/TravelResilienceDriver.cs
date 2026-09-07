@@ -780,16 +780,14 @@ public sealed partial class Plugin
         // --- shared waiting and recording -------------------------------------------------
 
         // An accepted native request is not a departure: nothing has been transported in the same
-        // frame, so a Departed here could only be fabricated.
+        // frame, so a Departed here could only be fabricated. The decision and its message are the
+        // pure TravelResilienceReceipt.CheckRequestFrame rule, so the diagnostic is built only from
+        // facts that exist; C# evaluates a Require message eagerly, and formatting a missing fact on
+        // the success path is what aborted the healthy qa-83 case.
         private void RequireNoFabricatedDeparture(int offset, string label)
         {
-            var slice = Slice(offset);
-            Require(slice.Count >= 1 && slice[slice.Count - 1].Kind == TravelTransitionKind.Requested,
-                "Expected " + label + " to end the window with Requested, observed ["
-                    + string.Join(", ", slice.Select(TravelStationReceipt.Describe)) + "].");
-            var fabricated = slice.FirstOrDefault(fact => fact.Kind == TravelTransitionKind.Departed
-                || fact.Kind == TravelTransitionKind.Arrived || fact.Kind == TravelTransitionKind.RouteCompleted);
-            Require(fabricated == null, "A transport fact was published for " + label + ": " + TravelStationReceipt.Describe(fabricated!));
+            var frame = TravelResilienceReceipt.CheckRequestFrame(Slice(offset), label);
+            Require(frame == null, frame ?? "");
         }
 
         private static IEnumerable<object?> PollFor(Func<bool> ready, float seconds)
