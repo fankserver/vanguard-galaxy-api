@@ -21,6 +21,7 @@ public sealed partial class Plugin
     {
         if (!File.Exists(Path.Combine(_root!, "story.enabled"))) yield break;
         Require(ModApi.Story != null, "Story module unavailable.");
+        foreach (var frame in Wait(NativeTravelReady, "initial story world ready")) yield return frame;
         Require(!Chainloader.PluginInfos.ContainsKey("vgmissionjournal"), "Story campaign must be demonstrated without MissionJournal.");
         var campaign = Chainloader.PluginInfos["vg-story-campaign"].Instance;
         var job = Chainloader.PluginInfos["vg-story-job"].Instance;
@@ -46,7 +47,7 @@ public sealed partial class Plugin
         Require(offered.Accepted && generated.Accepted && offered.OccurrenceId != generated.OccurrenceId, "Independent offers failed.");
         Require(!b.Withdraw(session, offered.OccurrenceId).Accepted, "A foreign author withdrew campaign content.");
         Save("qa-story-offered", LifecycleEventKind.SaveSucceeded);
-        foreach (var frame in LoadReady("qa-story-offered")) yield return frame;
+        foreach (var frame in StoryLoadReady("qa-story-offered")) yield return frame;
         Require(a.Unresolved("mission-x").Occurrences.Any(x => x.OccurrenceId == offered.OccurrenceId && x.Stage == StoryOccurrenceStage.Offered)
             && b.Unresolved("mission-x").Occurrences.Any(x => x.OccurrenceId == generated.OccurrenceId), "Offered definitions did not reconstruct automatically.");
         Require(a.Activate(session, offered.OccurrenceId).Status == StoryTransitionStatus.StaleSession, "Pre-load callback crossed session boundary.");
@@ -56,7 +57,7 @@ public sealed partial class Plugin
             "Campaign decision staging failed.");
         Require(a.Activate(session, offered.OccurrenceId).Accepted && b.Activate(session, generated.OccurrenceId).Accepted, "Native acceptance failed.");
         Save("qa-story-active", LifecycleEventKind.SaveSucceeded);
-        foreach (var frame in LoadReady("qa-story-active")) yield return frame;
+        foreach (var frame in StoryLoadReady("qa-story-active")) yield return frame;
         Require(a.Unresolved("mission-x").Occurrences.Any(x => x.OccurrenceId == offered.OccurrenceId && x.Stage == StoryOccurrenceStage.Active)
             && b.Unresolved("mission-x").Occurrences.Any(x => x.OccurrenceId == generated.OccurrenceId && x.Stage == StoryOccurrenceStage.Active),
             "Active occurrences failed native save/load reconstruction.");
@@ -85,12 +86,12 @@ public sealed partial class Plugin
         Require(a.IsCompleted("mission-x").Completed == true, "Failed save corrupted live campaign state.");
         StoryCase("save-refusals");
         Save("qa-story-completed", LifecycleEventKind.SaveSucceeded);
-        foreach (var frame in LoadReady("qa-story-offered")) yield return frame;
+        foreach (var frame in StoryLoadReady("qa-story-offered")) yield return frame;
         Require(a.IsCompleted("mission-x").Completed == false && a.Occurrences("mission-x").Records.Count == 0,
             "Newer completion leaked into the older save.");
         Require(a.Unresolved("mission-x").Occurrences.Single().Stage == StoryOccurrenceStage.Offered, "Rollback did not restore the offered stage.");
         StoryCase("older-save-rollback");
-        foreach (var frame in LoadReady("qa-story-completed")) yield return frame;
+        foreach (var frame in StoryLoadReady("qa-story-completed")) yield return frame;
         Require(a.IsCompleted("mission-x").Completed == true, "Cross-slot return lost the saved completion.");
         session = _api.CurrentSession!.Id;
         StoryCase("cross-slot-return");
@@ -99,10 +100,10 @@ public sealed partial class Plugin
             "Archived definition blocked a distinct repeated job.");
         foreach (var frame in ClaimStory(b, repeat.OccurrenceId, 11)) yield return frame;
         StoryCase("repeat-job");
-        foreach (var frame in LoadReady("qa-story-active")) yield return frame;
+        foreach (var frame in StoryLoadReady("qa-story-active")) yield return frame;
         Invoke(campaign, "ReleaseProvider");
         Save("qa-story-provider-unregistered", LifecycleEventKind.SaveSucceeded);
-        foreach (var frame in LoadReady("qa-story-provider-unregistered")) yield return frame;
+        foreach (var frame in StoryLoadReady("qa-story-provider-unregistered")) yield return frame;
         var held = HeldStory(a, offered.OccurrenceId);
         var serialized = held.GetType().GetMethod("ToJson")!.Invoke(held, null)!.ToString();
         var balance = Convert.ToInt64(SpGet(CurrentPlayer, "credits"));
@@ -114,7 +115,7 @@ public sealed partial class Plugin
         Require(serialized == held.GetType().GetMethod("ToJson")!.Invoke(held, null)!.ToString(), "Quarantine changed native serialized mission state.");
         StoryCase("provider-unregistered-first-reload");
         Save("qa-story-provider-unregistered", LifecycleEventKind.SaveSucceeded);
-        foreach (var frame in LoadReady("qa-story-provider-unregistered")) yield return frame;
+        foreach (var frame in StoryLoadReady("qa-story-provider-unregistered")) yield return frame;
         held = HeldStory(a, offered.OccurrenceId);
         balance = Convert.ToInt64(SpGet(CurrentPlayer, "credits"));
         CompleteStoryNative(held, true);
@@ -124,6 +125,16 @@ public sealed partial class Plugin
         Require(StoryReceipt.Evaluate(_storyCases) == null, "Incomplete story receipt.");
         WriteAtomic("story-result.txt", new[] { "PASS", StoryReceipt.Phase });
         Passed(StoryReceipt.Phase);
+    }
+
+    private IEnumerable<object?> StoryLoadReady(string name)
+    {
+        foreach (var frame in LoadReady(name)) yield return frame;
+        // GameplayInitialized precedes native POI initialization. Starting another load or save
+        // there raced the old manager's initialization coroutine in qa97.
+        foreach (var frame in Wait(NativeTravelReady, "story world ready after " + name)) yield return frame;
+        foreach (var frame in Settle()) yield return frame;
+        Require(NativeTravelReady(), "Story world lost readiness before the next operation.");
     }
 
     private void CompleteStoryNative(object mission, bool force)
