@@ -263,13 +263,19 @@ definitions belong to the process and its leases.
 
 ## Automatic persistence
 
-The module registers the reserved persistence owner `vgmodapi.story-content` (schema 1) with its own
+The module registers the reserved persistence owner `vgmodapi.story-content` (schema 2) with its own
 capture/restore/validate. The payload is a bounded `VSC1` binary record set written with netstandard
 binary IO and STRICT UTF-8 only (invalid bytes and unpaired surrogates are refused on both read and
 write, never decoded to replacement characters) — no JSON library is introduced. The occurrence
 sequence is the authoritative timeline and must be positive, unique and strictly increasing on both
 sides. Payloads are capped well below the 1 MiB
 envelope bound; truncated, extended, malformed or newer-version payloads are refused.
+
+Schema 1 is read through the registered owner migration: its occurrences have no pending choices
+or observed-failure flag. The next successful capture writes schema 2 without modifying the older
+snapshot. Host regressions exercise the actual generation store and coordinator, as well as offered
+and active service restoration, completion and older-snapshot rollback. This is host migration
+evidence, not a native migration run or support for arbitrary definition/step revisions.
 
 The codec is canonical: the encoder and the decoder run the SAME ledger bounds (per-provider quota,
 per-provider payload budget including reservations, per-definition campaign cap over retired AND
