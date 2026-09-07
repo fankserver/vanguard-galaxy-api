@@ -7,6 +7,7 @@
     <Compile Include="../tools/QualificationRunner/TravelCrossSystemReceipt.cs" Link="TravelCrossSystemReceipt.cs" />
     <Compile Include="../tools/QualificationRunner/TravelResilienceReceipt.cs" Link="TravelResilienceReceipt.cs" />
     <Compile Include="../tools/QualificationRunner/AnimaTravelReceipt.cs" Link="AnimaTravelReceipt.cs" />
+    <Compile Include="../tools/QualificationRunner/EchoTravelReceipt.cs" Link="EchoTravelReceipt.cs" />
     <Compile Include="../tools/QualificationRunner/TravelCrossSystemOwnership.cs" Link="TravelCrossSystemOwnership.cs" />
     <ProjectReference Include="../VGModAPI.Core/VGModAPI.Core.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />

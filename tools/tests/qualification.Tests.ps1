@@ -999,6 +999,211 @@ try {
     Assert $rejected 'Terminated launcher outcome accepted for the consumer travel probe.'
     Remove-Item -LiteralPath $consumerOutcomePath
     & $script -Action Cleanup -SandboxRoot $consumerRoot
+
+    # --- separate optional actual-consumer Echo arrival-snap probe --------------------------------
+    function EchoMetadata($version, $flags) {
+        return [pscustomobject]@{
+            Name=[pscustomobject]@{Name='VGEcho';Version=[Version]$version}
+            MainModule=[pscustomobject]@{Types=@([pscustomobject]@{FullName='VGEcho.Plugin';CustomAttributes=@([pscustomobject]@{
+                AttributeType=[pscustomobject]@{FullName='BepInEx.BepInDependency'}
+                ConstructorArguments=@([pscustomobject]@{Value='vgmodapi'},[pscustomobject]@{Value=$flags})
+            })})}
+        }
+    }
+    Assert-EchoAssemblyMetadata (EchoMetadata '0.7.0.0' 2)
+    Assert-EchoAssemblyMetadata (EchoMetadata '0.7.0.0' 2) -TravelProbe
+    foreach ($metadata in @((EchoMetadata '0.6.0.0' 2), (EchoMetadata '0.7.0.0' 1), (EchoMetadata '0.8.0.0' 2))) {
+        $rejected = $false
+        try { Assert-EchoAssemblyMetadata $metadata } catch { $rejected = $true }
+        Assert $rejected 'Unsupported or hard-dependency Echo metadata accepted.'
+    }
+    # Both consumer probes own the same reused phases; they are refused together at Prepare.
+    $rejected = $false
+    try { & $script -Action Prepare -SandboxRoot (Join-Path $work 'invalid-both-consumers') -EchoTravelProbe -AnimaTravelProbe -TravelStation -TravelCrossSystem -TravelWormholeFixture @options }
+    catch { $rejected = $_.Exception.Message -like '*both own the reused travel phases*' }
+    Assert $rejected 'Both consumer travel probes accepted in one run.'
+    foreach ($invalid in @(@{TravelStation=$true;TravelCrossSystem=$true;TravelWormholeFixture=$true}, @{TravelStation=$true})) {
+        $rejected = $false
+        try { & $script -Action Prepare -SandboxRoot (Join-Path $work 'invalid-echo-travel') -EchoTravelProbe @invalid @options }
+        catch { $rejected = $_.Exception.Message -like '*Echo consumer travel probe requires*' }
+        Assert $rejected 'Echo consumer travel probe accepted without its prerequisites.'
+    }
+    $rejected = $false
+    try { & $script -Action Prepare -SandboxRoot (Join-Path $work 'invalid-echo-absent') -Scenario MissingApi -EchoAbsentProbe @options }
+    catch { $rejected = $_.Exception.Message -like '*Echo API-absent control requires*' }
+    Assert $rejected 'Echo API-absent control accepted without the Echo consumer.'
+    $echoRoot = Join-Path $work 'echo-travel-sandbox'
+    $sandboxes += $echoRoot
+    & $script -Action Prepare -SandboxRoot $echoRoot -TravelStation -TravelCrossSystem -TravelWormholeFixture @options
+    $echoProvenancePath = Join-Path $echoRoot 'build-provenance.json'
+    $echoProvenance = Get-Content -LiteralPath $echoProvenancePath -Raw | ConvertFrom-Json
+    $echoProvenance.echo = $true
+    $echoProvenance.echoRevision = 'c' * 40
+    $echoProvenance.echoVersion = $EchoTravelProbeVersion
+    $echoProvenance.echoTravelProbe = $true
+    $echoProvenance.echoTravelBudgetSeconds = $EchoTravelBudgetSeconds
+    $echoDll = Join-Path $echoRoot 'game\BepInEx\plugins\VGEcho.dll'
+    [IO.File]::WriteAllText($echoDll, 'synthetic-not-executable')
+    $echoProvenance.plugins | Add-Member -NotePropertyName 'VGEcho.dll' -NotePropertyValue (Get-FileHash -LiteralPath $echoDll).Hash
+    $echoProvenance | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $echoProvenancePath
+    [IO.File]::WriteAllText((Join-Path $echoRoot 'echo.enabled'), 'echo-v1')
+    $echoMarker = Join-Path $echoRoot 'echo-travel.enabled'
+    [IO.File]::WriteAllText($echoMarker, 'echo-travel-v1')
+    $validEchoConfig = "[Autopilot]`nTimingEnabled = true`nEtaSync = false`nArrivalSnap = true`n"
+    $echoConfigPath = Join-Path $echoRoot 'game\BepInEx\config\vgecho.cfg'
+    [IO.File]::WriteAllText($echoConfigPath, $validEchoConfig)
+    $echoProvenance = Assert-QualificationInputs $echoRoot
+    Assert ($echoProvenance.echoTravelProbe -and $echoProvenance.echoTravelBudgetSeconds -eq $EchoTravelBudgetSeconds) 'Prepared Echo selection/budget missing.'
+    # ETA-sync ON would let an ETA write masquerade as an arrival snap during the isolated positives.
+    foreach ($changed in @($validEchoConfig.Replace('EtaSync = false','EtaSync = true'),
+        $validEchoConfig.Replace('ArrivalSnap = true','ArrivalSnap = false'),
+        $validEchoConfig.Replace('TimingEnabled = true','TimingEnabled = false'),
+        ($validEchoConfig + "EtaSync = false`n"))) {
+        [IO.File]::WriteAllText($echoConfigPath, $changed)
+        $rejected = $false
+        try { $null = Assert-QualificationInputs $echoRoot } catch { $rejected = $true }
+        Assert $rejected 'Changed Echo arrival-snap configuration accepted.'
+    }
+    [IO.File]::WriteAllText($echoConfigPath, $validEchoConfig)
+    [IO.File]::WriteAllText($echoMarker, 'changed')
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $echoRoot } catch { $rejected = $true }
+    Assert $rejected 'Changed Echo consumer travel marker accepted.'
+    [IO.File]::WriteAllText($echoMarker, 'echo-travel-v1')
+    $echoProvenanceText = [IO.File]::ReadAllText($echoProvenancePath)
+    foreach ($edit in @(@{Pattern='"echoTravelBudgetSeconds": *\d+'; Value='"echoTravelBudgetSeconds": 60'; Message='Edited Echo budget reservation accepted.'},
+        @{Pattern='"echoVersion": *"[^"]*"'; Value='"echoVersion": "0.6.0.0"'; Message='Echo probe accepted another pinned consumer version.'},
+        @{Pattern='"echoRevision": *"[^"]*"'; Value='"echoRevision": "not-a-revision"'; Message='Echo selection accepted an invalid source revision.'},
+        @{Pattern='"travelWormholeFixture": *true'; Value='"travelWormholeFixture": false'; Message='Echo probe accepted a run without the wormhole fixture selection.'})) {
+        [IO.File]::WriteAllText($echoProvenancePath, ($echoProvenanceText -replace $edit.Pattern, $edit.Value))
+        $rejected = $false
+        try { $null = Assert-QualificationInputs $echoRoot } catch { $rejected = $true }
+        Assert $rejected $edit.Message
+    }
+    # A DELETED version pin must fail exactly like a wrong one.
+    $withoutEchoVersion = Get-Content -LiteralPath $echoProvenancePath -Raw | ConvertFrom-Json
+    $withoutEchoVersion.PSObject.Properties.Remove('echoVersion')
+    $withoutEchoVersion | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $echoProvenancePath
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $echoRoot } catch { $rejected = $true }
+    Assert $rejected 'Echo probe accepted provenance with the consumer version pin removed.'
+    [IO.File]::WriteAllText($echoProvenancePath, $echoProvenanceText)
+    $echoProvenance = Assert-QualificationInputs $echoRoot
+    $echoMinimum = $QualificationBaseTimeoutSeconds + $TravelStationBudgetSeconds + $TravelCrossSystemBudgetSeconds + $EchoTravelBudgetSeconds
+    $rejected = $false
+    try { & $script -Action Run -SandboxRoot $echoRoot -TimeoutSeconds ($echoMinimum - 1) @options }
+    catch { $rejected = $_.Exception.Message -like "*at least $echoMinimum*" }
+    Assert $rejected 'Echo run accepted a lifetime one second below the derived minimum.'
+    Assert (!(Test-Path -LiteralPath (Join-Path $echoRoot 'run-started.txt'))) 'The launcher started the game despite an insufficient Echo lifetime.'
+    # Synthetic receipts only.
+    $echoSession = [Guid]::NewGuid().ToString()
+    function EchoEvent($surface, $sequence, $caseLabel, $session) { return ("" + $sequence + "`t" + $surface + "`t" + $caseLabel + "`t" + $session + "`t`tRouteCompleted`tInSystem`tsystem-1:a`tsystem-1:b`tsystem-1:b`t1.000`t") }
+    function EchoRow($case, $status, $session, $evidence, $detail) { return ($case + "`tdescription`t" + $status + "`tidentity`t" + $session + "`t`t" + $evidence + "`t" + $detail) }
+    $echoControls = 'sandboxConfig=[TimingEnabled=true,ArrivalSnap=true,EtaSync=false]; idleTimerSeed=300s x6; autopilotEngagements=2; suppressedFindActivityBodies=4; subscriptionReorderings=2'
+    function EchoSummary($rows, $first) {
+        $records = @($rows | ForEach-Object { ,($_ -split "`t") })
+        $passed = @($records | Where-Object { $_[2] -eq 'passed' }).Count
+        $failed = @($records | Where-Object { $_[2] -eq 'failed' }).Count
+        $notRun = @($records | Where-Object { $_[2] -eq 'not-run' }).Count
+        $lines = @($first, "phase=$EchoTravelPhase", "budgetSeconds=$EchoTravelBudgetSeconds",
+            ("required=" + ($EchoTravelRequiredCases -join ',')),
+            ("required-subcases=" + ($EchoTravelRequiredSubcaseRows -join ',')),
+            ("rows=" + $records.Count + " passed=$passed failed=$failed notRun=$notRun"))
+        foreach ($case in $EchoTravelRequiredCases) {
+            $matched = @($records | Where-Object { $_[0] -eq $case })
+            $state = if ($matched.Count -eq 1) { $matched[0][2] } elseif ($matched.Count -eq 0) { 'absent' } else { 'duplicated' }
+            $lines += "required-case $case=$state"
+        }
+        foreach ($subcase in $EchoTravelRequiredSubcaseRows) {
+            $matched = @($records | Where-Object { $_[0] -eq $subcase })
+            $state = if ($matched.Count -eq 1) { $matched[0][2] } elseif ($matched.Count -eq 0) { 'absent' } else { 'duplicated' }
+            $lines += "required-subcase $subcase=$state"
+        }
+        return @($lines + @('optional-not-run=', 'fault=none', 'result=phase satisfied'))
+    }
+    $echoOrderedResult = @('PASS') + $EchoTravelReusedPhaseScenarios + @($EchoTravelPhase)
+    function WriteEchoOutputs($rows, $events, $summary, $result) {
+        [IO.File]::WriteAllLines((Join-Path $echoRoot 'echo-travel-receipt.tsv'), [string[]]@(($TravelStationReceiptHeader -join "`t")) + [string[]]$rows)
+        [IO.File]::WriteAllLines((Join-Path $echoRoot 'echo-travel-events.tsv'), [string[]]@(($TravelStationEventHeader -join "`t")) + [string[]]$events)
+        [IO.File]::WriteAllLines((Join-Path $echoRoot 'echo-travel.txt'), [string[]]$summary)
+        [IO.File]::WriteAllLines((Join-Path $echoRoot 'result.txt'), [string[]]$result)
+    }
+    function AssertEchoRejected($rows, $events, $summary, $result, $message) {
+        WriteEchoOutputs $rows $events $summary $result
+        $rejected = $false
+        try { Assert-EchoTravelReceipt $echoRoot } catch { $rejected = $true }
+        Assert $rejected $message
+    }
+    $rejected = $false
+    try { Assert-PersistenceProbeReceipt $echoRoot ([pscustomobject]@{ echoTravelProbe = $true }) } catch { $rejected = $true }
+    Assert $rejected 'Missing Echo consumer receipt accepted while the probe was selected.'
+    $echoRows = @()
+    $echoEvents = @()
+    $sequence = 0
+    foreach ($case in @($EchoTravelRequiredCases)) {
+        $sequence++
+        $echoRows += (EchoRow $case 'passed' $echoSession ("travel:" + $sequence) 'detail')
+        $echoEvents += (EchoEvent 'travel' $sequence $case $echoSession)
+    }
+    $sequence++
+    $echoRows += (EchoRow $EchoTravelRequiredSubcaseRows[0] 'passed' $echoSession ("travel:" + $sequence) $echoControls)
+    $echoEvents += (EchoEvent 'travel' $sequence $EchoTravelRequiredSubcaseRows[0] $echoSession)
+    WriteEchoOutputs $echoRows $echoEvents (EchoSummary $echoRows 'PASS') $echoOrderedResult
+    Assert-EchoTravelReceipt $echoRoot
+    Assert-PersistenceProbeReceipt $echoRoot ([pscustomobject]@{ echoTravelProbe = $true })
+    $echoSkipped = @($EchoTravelRequiredCases | ForEach-Object { EchoRow $_ 'not-run' $echoSession '' 'detail' }) + @($echoRows[-1])
+    AssertEchoRejected $echoSkipped $echoEvents (EchoSummary $echoSkipped 'PASS') $echoOrderedResult 'All-skipped Echo coverage accepted as PASS.'
+    $echoFailed = @($echoRows[0..5]) + @(EchoRow $EchoTravelRequiredCases[-1] 'failed' $echoSession 'travel:7' 'detail') + @($echoRows[-1])
+    AssertEchoRejected $echoFailed $echoEvents (EchoSummary $echoFailed 'PASS') $echoOrderedResult 'Claimed Echo PASS with a failed row accepted.'
+    $echoNoControls = @($echoRows[0..6])
+    AssertEchoRejected $echoNoControls $echoEvents (EchoSummary $echoNoControls 'PASS') $echoOrderedResult 'Echo receipt without the mandatory declared-controls row accepted.'
+    $echoEmptyControls = @($echoRows[0..6]) + @(EchoRow $EchoTravelRequiredSubcaseRows[0] 'passed' $echoSession 'travel:8' 'nothing declared')
+    AssertEchoRejected $echoEmptyControls $echoEvents (EchoSummary $echoEmptyControls 'PASS') $echoOrderedResult 'Echo controls row without the declared controls accepted.'
+    $echoForeign = @($echoEvents | ForEach-Object { $_ -replace [regex]::Escape($echoSession), ([Guid]::NewGuid().ToString()) })
+    AssertEchoRejected $echoRows $echoForeign (EchoSummary $echoRows 'PASS') $echoOrderedResult 'Echo identities absent from the event trace accepted.'
+    AssertEchoRejected $echoRows $echoEvents (EchoSummary $echoRows 'FAIL') $echoOrderedResult 'Failed Echo attempt summary accepted.'
+    $echoForeignPhase = @((EchoSummary $echoRows 'PASS') | ForEach-Object { if ($_ -like 'phase=*') { "phase=$TravelCrossSystemPhase" } else { $_ } })
+    AssertEchoRejected $echoRows $echoEvents $echoForeignPhase $echoOrderedResult 'Echo receipt declaring a reused travel phase accepted.'
+    $echoOverBudget = @((EchoSummary $echoRows 'PASS') | ForEach-Object { if ($_ -like 'budgetSeconds=*') { "budgetSeconds=$($EchoTravelBudgetSeconds + 1)" } else { $_ } })
+    AssertEchoRejected $echoRows $echoEvents $echoOverBudget $echoOrderedResult 'Echo budget above the launcher reservation accepted.'
+    $echoLate = @('PASS', $EchoTravelReusedPhaseScenarios[0], $EchoTravelPhase, $EchoTravelReusedPhaseScenarios[1])
+    AssertEchoRejected $echoRows $echoEvents (EchoSummary $echoRows 'PASS') $echoLate 'Echo probe completing before a reused phase accepted.'
+    $echoMissingReuse = @('PASS', $EchoTravelReusedPhaseScenarios[0], $EchoTravelPhase)
+    AssertEchoRejected $echoRows $echoEvents (EchoSummary $echoRows 'PASS') $echoMissingReuse 'Echo probe accepted without the reused cross-system phase.'
+    WriteEchoOutputs $echoRows $echoEvents (EchoSummary $echoRows 'PASS') $echoOrderedResult
+    Assert-EchoTravelReceipt $echoRoot
+    & $script -Action Cleanup -SandboxRoot $echoRoot
+    # The API-absent control is its own MissingApi run with its own receipt shape.
+    $echoAbsentRoot = Join-Path $work 'echo-absent-sandbox'
+    $sandboxes += $echoAbsentRoot
+    & $script -Action Prepare -SandboxRoot $echoAbsentRoot -Scenario MissingApi @options
+    $absentProvenance = [pscustomobject]@{ echoAbsentProbe = $true; vanillaLoadControl = $false }
+    $absentReceipt = Join-Path $echoAbsentRoot 'echo-absent.txt'
+    $rejected = $false
+    try { Assert-PersistenceProbeReceipt $echoAbsentRoot $absentProvenance } catch { $rejected = $true }
+    Assert $rejected 'Missing Echo API-absent receipt accepted.'
+    [IO.File]::WriteAllLines($absentReceipt, [string[]]@('PASS','echoVersion=0.7.0','arrivalSnap=unbound','ownedPatches=6','idleUpdateInvocations=0','gameplayLoadControl=False'))
+    Assert-PersistenceProbeReceipt $echoAbsentRoot $absentProvenance
+    foreach ($broken in @(
+        @('FAIL','echoVersion=0.7.0','arrivalSnap=unbound','idleUpdateInvocations=0','gameplayLoadControl=False'),
+        @('PASS','echoVersion=0.7.0','arrivalSnap=bound','idleUpdateInvocations=0','gameplayLoadControl=False'),
+        @('PASS','echoVersion=0.6.0','arrivalSnap=unbound','idleUpdateInvocations=0','gameplayLoadControl=False'),
+        @('PASS','echoVersion=0.7.0','arrivalSnap=unbound','gameplayLoadControl=False'),
+        @('PASS','echoVersion=0.7.0','arrivalSnap=unbound','idleUpdateInvocations=12','gameplayLoadControl=False'))) {
+        [IO.File]::WriteAllLines($absentReceipt, [string[]]$broken)
+        $rejected = $false
+        try { Assert-PersistenceProbeReceipt $echoAbsentRoot $absentProvenance } catch { $rejected = $true }
+        Assert $rejected 'Broken Echo API-absent receipt accepted.'
+    }
+    # With the gameplay load control selected, an unexercised hook is refused.
+    $absentWithGameplay = [pscustomobject]@{ echoAbsentProbe = $true; vanillaLoadControl = $true }
+    [IO.File]::WriteAllLines($absentReceipt, [string[]]@('PASS','echoVersion=0.7.0','arrivalSnap=unbound','idleUpdateInvocations=0','gameplayLoadControl=True'))
+    $rejected = $false
+    try { Assert-PersistenceProbeReceipt $echoAbsentRoot $absentWithGameplay } catch { $rejected = $true }
+    Assert $rejected 'Echo API-absent control accepted without an observed native hook invocation.'
+    [IO.File]::WriteAllLines($absentReceipt, [string[]]@('PASS','echoVersion=0.7.0','arrivalSnap=unbound','idleUpdateInvocations=42','gameplayLoadControl=True'))
+    Assert-PersistenceProbeReceipt $echoAbsentRoot $absentWithGameplay
+    & $script -Action Cleanup -SandboxRoot $echoAbsentRoot
     [IO.File]::WriteAllText($apiConfig, "[Persistence]`nEnabled = true`nRoot = C:\foreign-root`n[Missions]`nEnabled = true`nIdentityContinuity = true`n")
     $rejected = $false
     try { $null = Assert-QualificationInputs $probeRoot } catch { $rejected = $true }

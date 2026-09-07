@@ -11,6 +11,10 @@ param(
     [string]$AnimaBin,
     [string]$AnimaRevision,
     [switch]$AnimaTravelProbe,
+    [string]$EchoBin,
+    [string]$EchoRevision,
+    [switch]$EchoTravelProbe,
+    [switch]$EchoAbsentProbe,
     [switch]$AssemblyOverlay,
     [switch]$VanillaLoadControl,
     [switch]$PersistenceProbe,
@@ -65,12 +69,25 @@ if ($Action -eq 'Prepare') {
     if ($AssemblyOverlay -and $Scenario -ne 'UnavailableApi') { throw 'Assembly overlay requires UnavailableApi.' }
     if ($VanillaLoadControl -and $Scenario -ne 'MissingApi') { throw 'Vanilla load control requires MissingApi.' }
     if ($PersistenceProbe -and $Scenario -ne 'Full') { throw 'Persistence probe requires Full.' }
+    # The two consumer travel probes own the SAME reused native travel phases, so exactly one may
+    # own a run; this conflict is checked before any per-probe prerequisite.
+    if ($EchoTravelProbe -and $AnimaTravelProbe) { throw 'The Anima and Echo consumer travel probes both own the reused travel phases; select one per run.' }
     if ($AnimaBin -and (!$MissionIdentityProbe -or !$MissionJournalBin -or $AnimaRevision -notmatch '^[0-9a-f]{40}$')) { throw 'Anima requires identity probes, journal-provided JSON runtime and exact source revision.' }
     if ($AnimaBin) { $null = [Reflection.AssemblyName]::GetAssemblyName((Join-Path $AnimaBin 'VGAnima.dll')) }
     # The actual-consumer travel probe compares the installed consumer's own records against
     # arrivals the two native travel phases already qualify; the wormhole case needs the opt-in
     # fixture, without which no wormhole arrival can ever be witnessed.
     if ($AnimaTravelProbe -and (!$AnimaBin -or !$TravelStation -or !$TravelCrossSystem -or !$TravelWormholeFixture)) { throw 'Anima consumer travel probe requires the Anima consumer, both native travel phases and the wormhole fixture selection.' }
+    # The Echo arrival-snap probe consumes the SAME two reused native travel phases as the Anima
+    # consumer probe and owns their ordering, so exactly one consumer probe may own a run.
+    if ($EchoBin -and $EchoRevision -notmatch '^[0-9a-f]{40}$') { throw 'Echo requires its exact source revision.' }
+    if ($EchoBin) { $null = [Reflection.AssemblyName]::GetAssemblyName((Join-Path $EchoBin 'VGEcho.dll')) }
+    if ($EchoTravelProbe -and (!$EchoBin -or !$TravelStation -or !$TravelCrossSystem -or !$TravelWormholeFixture)) { throw 'Echo consumer travel probe requires the Echo consumer, both native travel phases and the wormhole fixture selection.' }
+    if ($EchoTravelProbe -and $Scenario -ne 'Full') { throw 'Echo consumer travel probe requires Full.' }
+    # The API-ABSENT control is a separate selection in its own MissingApi sandbox; it never runs
+    # beside the Full probe.
+    if ($EchoAbsentProbe -and (!$EchoBin -or $Scenario -ne 'MissingApi')) { throw 'Echo API-absent control requires the Echo consumer and the MissingApi scenario.' }
+    if ($EchoAbsentProbe -and $EchoTravelProbe) { throw 'The Echo API-absent control and the Full arrival-snap probe are separate runs.' }
     if ($JournalMissionEventsProbe -and (!$JournalCoordinated -or !$MissionIdentityProbe)) { throw 'Journal mission events require API-managed journal and mission identity probes.' }
     if ($MissionIdentityProbe -and (!$MissionTransitionsProbe -or !$PersistenceProbe)) { throw 'Mission identity probe requires mission transitions and persistence probes.' }
     if ($MissionTransitionsProbe -and $Scenario -ne 'Full') { throw 'Mission transitions probe requires Full.' }
@@ -163,6 +180,22 @@ if ($Action -eq 'Prepare') {
         New-Item -ItemType Directory -Path (Join-Path $bep 'config') -Force | Out-Null
         [IO.File]::WriteAllText((Join-Path $bep 'config\vgstockpile.cfg'), "[Transfers]`r`nEnabled = true`r`n")
     }
+    $echoVersion = ''
+    if ($EchoBin) {
+        $candidate = Join-Path $EchoBin 'VGEcho.dll'
+        Add-Type -Path (Join-Path $bep 'core\Mono.Cecil.dll')
+        $assembly = [Mono.Cecil.AssemblyDefinition]::ReadAssembly($candidate)
+        try {
+            Assert-EchoAssemblyMetadata $assembly -TravelProbe:$EchoTravelProbe
+            $echoVersion = $assembly.Name.Version.ToString()
+        } finally { $assembly.Dispose() }
+        Copy-Item -LiteralPath $candidate -Destination $plugins
+        New-Item -ItemType Directory -Path (Join-Path $bep 'config') -Force | Out-Null
+        # Sandbox-only Echo configuration: the arrival-snap master and feature on, ETA-sync OFF so
+        # an ETA write can never be mistaken for an arrival snap during the isolated positives.
+        [IO.File]::WriteAllText((Join-Path $bep 'config\vgecho.cfg'), "[Autopilot]`r`nTimingEnabled = true`r`nEtaSync = false`r`nArrivalSnap = true`r`n")
+        [IO.File]::WriteAllText((Join-Path $root 'echo.enabled'), 'echo-v1')
+    }
     $animaVersion = ''
     if ($AnimaBin) {
         $candidate = Join-Path $AnimaBin 'VGAnima.dll'
@@ -221,7 +254,9 @@ if ($Action -eq 'Prepare') {
     if ($TravelWormholeFixture) { [IO.File]::WriteAllText((Join-Path $root 'travel-wormhole-fixture.enabled'), 'wormhole-fixture-v1') }
     if ($TravelResilience) { [IO.File]::WriteAllText((Join-Path $root 'travel-resilience.enabled'), 'resilience-v1') }
     if ($AnimaTravelProbe) { [IO.File]::WriteAllText((Join-Path $root 'anima-travel.enabled'), 'anima-travel-v1') }
-    @{ anima=[bool]$AnimaBin; animaRevision=$AnimaRevision; animaVersion=$animaVersion; animaTravelProbe=[bool]$AnimaTravelProbe; animaTravelBudgetSeconds=$(if ($AnimaTravelProbe) { $AnimaTravelBudgetSeconds } else { 0 }); journalMissionEventsProbe=[bool]$JournalMissionEventsProbe; missionIdentityProbe=[bool]$MissionIdentityProbe; missionTransitionsProbe=[bool]$MissionTransitionsProbe; contentReferenceProbe=[bool]$ContentReferenceProbe; stockpileCoordinated=[bool]$StockpileCoordinated; journalCoordinated=[bool]$JournalCoordinated; persistenceProbe=[bool]$PersistenceProbe; vanillaLoadControl=[bool]$VanillaLoadControl; assemblyOverlay=$overlay; stockpile=[bool]$StockpileBin; missionJournal=[bool]$MissionJournalBin; travelStation=[bool]$TravelStation; travelStationBudgetSeconds=$(if ($TravelStation) { $TravelStationBudgetSeconds } else { 0 }); travelCrossSystem=[bool]$TravelCrossSystem; travelCrossSystemBudgetSeconds=$(if ($TravelCrossSystem) { $TravelCrossSystemBudgetSeconds } else { 0 }); travelWormholeFixture=[bool]$TravelWormholeFixture; travelResilience=[bool]$TravelResilience; travelResilienceBudgetSeconds=$(if ($TravelResilience) { $TravelResilienceBudgetSeconds } else { 0 }); scenario=$Scenario; revision=$BuildRevision; preparedUtc=[DateTime]::UtcNow.ToString('o'); plugins=$hashes } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'build-provenance.json')
+    if ($EchoTravelProbe) { [IO.File]::WriteAllText((Join-Path $root 'echo-travel.enabled'), 'echo-travel-v1') }
+    if ($EchoAbsentProbe) { [IO.File]::WriteAllText((Join-Path $root 'echo-absent.enabled'), 'echo-absent-v1') }
+    @{ echo=[bool]$EchoBin; echoRevision=$EchoRevision; echoVersion=$echoVersion; echoTravelProbe=[bool]$EchoTravelProbe; echoTravelBudgetSeconds=$(if ($EchoTravelProbe) { $EchoTravelBudgetSeconds } else { 0 }); echoAbsentProbe=[bool]$EchoAbsentProbe; anima=[bool]$AnimaBin; animaRevision=$AnimaRevision; animaVersion=$animaVersion; animaTravelProbe=[bool]$AnimaTravelProbe; animaTravelBudgetSeconds=$(if ($AnimaTravelProbe) { $AnimaTravelBudgetSeconds } else { 0 }); journalMissionEventsProbe=[bool]$JournalMissionEventsProbe; missionIdentityProbe=[bool]$MissionIdentityProbe; missionTransitionsProbe=[bool]$MissionTransitionsProbe; contentReferenceProbe=[bool]$ContentReferenceProbe; stockpileCoordinated=[bool]$StockpileCoordinated; journalCoordinated=[bool]$JournalCoordinated; persistenceProbe=[bool]$PersistenceProbe; vanillaLoadControl=[bool]$VanillaLoadControl; assemblyOverlay=$overlay; stockpile=[bool]$StockpileBin; missionJournal=[bool]$MissionJournalBin; travelStation=[bool]$TravelStation; travelStationBudgetSeconds=$(if ($TravelStation) { $TravelStationBudgetSeconds } else { 0 }); travelCrossSystem=[bool]$TravelCrossSystem; travelCrossSystemBudgetSeconds=$(if ($TravelCrossSystem) { $TravelCrossSystemBudgetSeconds } else { 0 }); travelWormholeFixture=[bool]$TravelWormholeFixture; travelResilience=[bool]$TravelResilience; travelResilienceBudgetSeconds=$(if ($TravelResilience) { $TravelResilienceBudgetSeconds } else { 0 }); scenario=$Scenario; revision=$BuildRevision; preparedUtc=[DateTime]::UtcNow.ToString('o'); plugins=$hashes } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'build-provenance.json')
     # Prevent Steam's restart path; the runner disables SteamManager before arming checks.
     [IO.File]::WriteAllText((Join-Path $game 'steam_appid.txt'), '3471800')
     $saves = Join-Path $root 'Saves'
@@ -280,6 +315,7 @@ if ($provenance.PSObject.Properties['travelStation'] -and $provenance.travelStat
     if ($provenance.PSObject.Properties['travelCrossSystem'] -and $provenance.travelCrossSystem) { $required += $TravelCrossSystemBudgetSeconds }
     if ($provenance.PSObject.Properties['travelResilience'] -and $provenance.travelResilience) { $required += $TravelResilienceBudgetSeconds }
     if ($provenance.PSObject.Properties['animaTravelProbe'] -and $provenance.animaTravelProbe) { $required += $AnimaTravelBudgetSeconds }
+    if ($provenance.PSObject.Properties['echoTravelProbe'] -and $provenance.echoTravelProbe) { $required += $EchoTravelBudgetSeconds }
     if ($TimeoutSeconds -lt $required) { throw "Travel/station runs need -TimeoutSeconds at least $required (base $QualificationBaseTimeoutSeconds + phases); got $TimeoutSeconds." }
 }
 $journalBefore = @{}
