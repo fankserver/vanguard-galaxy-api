@@ -295,7 +295,7 @@ content still needs its provider.
 
 ## The native slice: installing into the game, and what the game decides
 
-Since 0.1.10 the module is actually wired to the game, behind `Story/Enabled` (default off), the
+Since 0.1.12 the module is actually wired to the game, behind `Story/Enabled` (default off), the
 inspected-assembly gate every other adapter uses, API-managed saves, and observed mission
 transitions. `ModApi.Story` is non-null only when all of those are available; a binding failure
 leaves it null and the `owned-story` capability unavailable rather than half-installed. Observed

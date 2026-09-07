@@ -72,7 +72,7 @@ public static class ModApi
     /// <summary>Optional station-lifetime observer; non-null only when the travel group is bound and enabled.</summary>
     public static IStationEvents? Station { get; internal set; }
     /// <summary>
-    /// Optional owned-story surface (since 0.1.10); non-null only when the story group is bound and
+    /// Optional owned-story surface (since 0.1.12); non-null only when the story group is bound and
     /// enabled, which requires the inspected assembly, API-managed saves and the native story
     /// catalog. Acquire a provider lease from your plugin's own Awake, before any session begins.
     /// </summary>
