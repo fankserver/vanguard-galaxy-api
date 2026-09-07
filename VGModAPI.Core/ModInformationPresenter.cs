@@ -56,7 +56,7 @@ internal sealed class ModInformationPresenter
         open(Selected!.Metadata!.ProjectUrl!); return true;
     }
 
-    internal string Details(string diagnostics)
+    internal string Details(string diagnostics, bool showDiagnostics = false)
     {
         var text = new StringBuilder("Loader presence only; not initialization or compatibility.\n");
         if (RefreshWarning != null) text.Append(RefreshWarning).Append('\n');
@@ -72,13 +72,17 @@ internal sealed class ModInformationPresenter
                 if (row.Metadata.Author != null) text.Append("Author: ").Append(PlainText(row.Metadata.Author, 256, false)).Append('\n');
                 if (row.Metadata.Description != null) text.Append("Description:\n").Append(PlainText(row.Metadata.Description, 4096, true)).Append('\n');
             }
-            text.Append("Declared dependencies: ").Append(row.Dependencies.Count).Append('\n');
-            foreach (var dependency in row.Dependencies.Take(64))
-                text.Append(PlainText(dependency.PluginId, 128, false)).Append(dependency.HardDependency ? " (hard)" : " (soft)")
-                    .Append(dependency.MinimumVersion == null ? "" : " >= " + dependency.MinimumVersion).Append('\n');
-            if (row.Dependencies.Count > 64) text.Append("Additional dependencies omitted from this display.\n");
+            if (showDiagnostics)
+            {
+                text.Append("Declared dependencies: ").Append(row.Dependencies.Count).Append('\n');
+                foreach (var dependency in row.Dependencies.Take(64))
+                    text.Append(PlainText(dependency.PluginId, 128, false)).Append(dependency.HardDependency ? " (hard)" : " (soft)")
+                        .Append(dependency.MinimumVersion == null ? "" : " >= " + dependency.MinimumVersion).Append('\n');
+                if (row.Dependencies.Count > 64) text.Append("Additional dependencies omitted from this display.\n");
+            }
         }
-        text.Append("\nAPI capabilities (not mod update status):\n").Append(PlainText(diagnostics, 4096, true));
+        if (showDiagnostics)
+            text.Append("\nAPI capabilities (not mod update status):\n").Append(PlainText(diagnostics, 4096, true));
         return text.ToString();
     }
 
@@ -101,8 +105,9 @@ internal sealed class ModInformationPresenter
             if (result.Length > limit) break;
         }
         if (result.Length <= limit) return result.ToString();
-        var take = limit - 1;
+        var suffix = new string('.', Math.Min(3, limit));
+        var take = limit - suffix.Length;
         if (take > 0 && char.IsHighSurrogate(result[take - 1])) --take;
-        return result.ToString(0, take) + "…";
+        return result.ToString(0, take) + suffix;
     }
 }

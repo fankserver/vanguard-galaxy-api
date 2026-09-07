@@ -24,7 +24,7 @@ internal sealed class ModMenuView : IModMenuView
     private readonly List<Selectable> _navigation = new();
     private readonly List<Action> _removeListeners = new();
     private readonly List<GameObject> _ownedRoots = new();
-    private Button _entry = null!, _close = null!, _previous = null!, _next = null!, _project = null!;
+    private Button _entry = null!, _close = null!, _diagnosticToggle = null!, _previous = null!, _next = null!, _project = null!;
     private RectTransform _panel = null!, _body = null!, _listContent = null!, _detailsContent = null!;
     private ScrollRect _list = null!, _details = null!;
     private TMP_Text _heading = null!, _destination = null!, _detailText = null!;
@@ -38,6 +38,7 @@ internal sealed class ModMenuView : IModMenuView
     private bool _rowsDirty = true;
     private float _width = -1, _height = -1;
     private bool _disposed;
+    private bool _showDiagnostics;
 
     private ModMenuView(MonoBehaviour menu, RectTransform viewport, Canvas canvas, ModMenuBindings bindings,
         ModInformationPresenter presenter, Func<string> diagnostics, Action<Exception> fault)
@@ -67,6 +68,7 @@ internal sealed class ModMenuView : IModMenuView
         _sprite = image.sprite; _buttonColor = image.color; _colors = native.colors;
         _textColor = label != null ? label.color : Color.white;
         _entry = Button(_menu.transform, "VGModAPI Mods", "Mods", OpenPanel);
+        _entry.GetComponentInChildren<TMP_Text>().alignment = TextAlignmentOptions.Center;
         var entryLayout = _entry.gameObject.AddComponent<LayoutElement>();
         entryLayout.minHeight = 28; entryLayout.preferredHeight = 34; entryLayout.flexibleHeight = 1;
         // Let the native layout own its column. Only our new child participates in layout.
@@ -79,9 +81,15 @@ internal sealed class ModMenuView : IModMenuView
         var backdrop = _panel.gameObject.AddComponent<Image>();
         backdrop.color = new Color(.035f, .045f, .06f, 1); backdrop.raycastTarget = true;
         _body = Rect(_panel, "Content");
-        _heading = Text(_body, "Title", "Mods — local API consumers");
+        _heading = Text(_body, "Title", "Mods - local API consumers");
         Stretch(_heading.rectTransform, 0, 1, 1, 1, 8, -36, -112, -4);
         _close = Button(_body, "Close", "Close [Esc]", () => Close(true));
+        _diagnosticToggle = Button(_body, "Diagnostics", "Show diagnostics", () =>
+        {
+            _showDiagnostics = !_showDiagnostics;
+            _diagnosticToggle.GetComponentInChildren<TMP_Text>().text = _showDiagnostics ? "Hide diagnostics" : "Show diagnostics";
+            RenderDetails();
+        });
         Stretch((RectTransform)_close.transform, 1, 1, 1, 1, -108, -36, -4, -4);
 
         _list = Scroll(_body, "Local mods", out _listContent);
@@ -120,7 +128,7 @@ internal sealed class ModMenuView : IModMenuView
         _panel.gameObject.SetActive(true); _panel.SetAsLastSibling();
         _entry.interactable = false;
         _listContent.anchoredPosition = Vector2.zero; _first = -1;
-        _heading.text = "Mods — " + _presenter.Rows.Count + " local API consumers";
+        _heading.text = "Mods - " + _presenter.Rows.Count + " local API consumers";
         Layout(); RenderDetails(); RefreshRows();
         Select(_close.gameObject);
     }
@@ -155,7 +163,10 @@ internal sealed class ModMenuView : IModMenuView
         var caption = _close.GetComponentInChildren<TMP_Text>();
         var closeWidth = Mathf.Max(104, Mathf.Ceil(caption.GetPreferredValues(caption.text).x) + 24);
         Stretch((RectTransform)_close.transform, 1, 1, 1, 1, -closeWidth - 4, -36, -4, -4);
-        Stretch(_heading.rectTransform, 0, 1, 1, 1, 8, -36, -closeWidth - 12, -4);
+        var diagnosticCaption = _diagnosticToggle.GetComponentInChildren<TMP_Text>();
+        var diagnosticWidth = Mathf.Ceil(diagnosticCaption.GetPreferredValues("Show diagnostics").x) + 24;
+        Stretch((RectTransform)_diagnosticToggle.transform, 1, 1, 1, 1, -closeWidth - diagnosticWidth - 12, -36, -closeWidth - 12, -4);
+        Stretch(_heading.rectTransform, 0, 1, 1, 1, 8, -36, -closeWidth - diagnosticWidth - 20, -4);
         var height = _viewport.rect.height;
         if (Math.Abs(_width - width) > .5f || Math.Abs(_height - height) > .5f)
         {
@@ -220,7 +231,7 @@ internal sealed class ModMenuView : IModMenuView
     private void RenderDetails()
     {
         _rowsDirty = true;
-        _detailText.text = _presenter.Details(_diagnostics());
+        _detailText.text = _presenter.Details(_showDiagnostics ? _diagnostics() : "", _showDiagnostics);
         _project.interactable = _presenter.TryProjectDestination(out var host);
         _destination.text = _project.interactable ? "Project destination (HTTPS):\n" + host : "No validated project link.";
         _previous.interactable = _next.interactable = _presenter.Rows.Count > 1;
@@ -240,7 +251,7 @@ internal sealed class ModMenuView : IModMenuView
 
     private void RebuildNavigation()
     {
-        _navigation.Clear(); _navigation.Add(_close);
+        _navigation.Clear(); _navigation.Add(_close); _navigation.Add(_diagnosticToggle);
         foreach (var row in _rows) if (row.gameObject.activeSelf) _navigation.Add(row);
         if (_previous.interactable) _navigation.Add(_previous);
         if (_next.interactable) _navigation.Add(_next);
@@ -314,7 +325,7 @@ internal sealed class ModMenuView : IModMenuView
         var label = Rect(parent, name).gameObject.AddComponent<TextMeshProUGUI>();
         label.font = _font; label.fontSize = 16; label.color = _textColor;
         label.richText = false; label.parseCtrlCharacters = false; label.raycastTarget = false;
-        label.textWrappingMode = TextWrappingModes.NoWrap; label.overflowMode = TextOverflowModes.Ellipsis;
+        label.textWrappingMode = TextWrappingModes.NoWrap; label.overflowMode = TextOverflowModes.Truncate;
         label.alignment = TextAlignmentOptions.MidlineLeft; label.text = value;
         return label;
     }

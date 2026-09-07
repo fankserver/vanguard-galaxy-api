@@ -23,7 +23,7 @@ try {
     Put 'installed\VanguardGalaxy_Data\Managed\Assembly-CSharp.dll' 'synthetic-original-assembly'
     Put 'installed\VanguardGalaxy_Data\Resources\sentinel.txt' 'resource-keep'
     Put 'installed\doorstop_config.ini' "[General]`ntarget_assembly=C:\outside\BepInEx.Preloader.dll"
-    foreach ($name in @('VGModAPI.dll','VGModAPI.Core.dll','VGModAPI.Abstractions.dll','unexpected.dll')) { Put "build\artifacts\VGModAPI\$name" 'fake-assembly' }
+    foreach ($name in @('VGModAPI.dll','VGModAPI.Core.dll','VGModAPI.Abstractions.dll','vgmodapi.vgmod.json','unexpected.dll')) { Put "build\artifacts\VGModAPI\$name" 'fake-assembly' }
     Put 'build\tools\QualificationGuard\bin\Release\netstandard2.1\QualificationGuard.dll' 'fake-guard'
     Put 'build\tools\QualificationRunner\bin\Release\netstandard2.1\QualificationRunner.dll' 'fake-runner'
     Put 'build\examples\LifecycleObserver\bin\Release\netstandard2.1\LifecycleObserver.dll' 'fake-observer'
@@ -2050,13 +2050,14 @@ try {
     Assert ($config.Contains("[General]`nenabled=true`ntarget_assembly=BepInEx\core\BepInEx.Preloader.dll") -and !$config.Contains('C:\outside')) 'Doorstop 4 preloader config is not enabled and sandbox-relative.'
     Assert ($config.Contains('[UnityMono]') -and !$config.Contains('[UnityDoorstop]') -and !$config.Contains('targetAssembly=')) 'Legacy Doorstop keys must not replace the inspected format.'
     $provenance = Get-Content (Join-Path $sandbox 'build-provenance.json') -Raw | ConvertFrom-Json
-    Assert (@($provenance.plugins.PSObject.Properties).Count -eq 6) 'Missing plugin provenance.'
+    Assert (@($provenance.plugins.PSObject.Properties).Count -eq 7) 'Missing plugin or official metadata provenance.'
+    Assert ($provenance.plugins.PSObject.Properties['vgmodapi.vgmod.json'].Value -eq (Get-FileHash -LiteralPath (Join-Path $sandbox 'game\BepInEx\plugins\vgmodapi.vgmod.json')).Hash) 'Official metadata is not hash-bound.'
     foreach ($mode in @('MissingApi','UnavailableApi')) {
         $other = Join-Path $work $mode
         $sandboxes += $other
         & $script -Action Prepare -SandboxRoot $other -Scenario $mode @options
         $p = Get-Content (Join-Path $other 'build-provenance.json') -Raw | ConvertFrom-Json
-        $expected = if ($mode -eq 'MissingApi') { 1 } else { 4 }
+        $expected = if ($mode -eq 'MissingApi') { 1 } else { 5 }
         Assert (@($p.plugins.PSObject.Properties).Count -eq $expected) 'Wrong negative-scenario plugin set.'
         Assert ($p.scenario -eq $mode) 'Scenario provenance missing.'
         Assert (!(Test-Path (Join-Path $other 'game\BepInEx\plugins\QualificationRunner.dll'))) 'Negative scenario copied API-dependent runner.'

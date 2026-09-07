@@ -136,6 +136,9 @@ public sealed class BuiltPackageTests
             ?? throw new InvalidOperationException("Run make package or set VG_PACKAGE_ROOT for built-package checks.");
         PackageChecks.ValidateLayout(root);
         PackageChecks.ValidatePluginVersion(Path.Combine(root, "VGModAPI.dll"));
+        var metadata = Core.ModMetadataCodec.Parse(File.ReadAllBytes(Path.Combine(root, "vgmodapi.vgmod.json")), ModApi.PluginId);
+        Assert.Equal("https://github.com/fankserver/vanguard-galaxy-api", metadata.ProjectUrl);
+        Assert.False(string.IsNullOrWhiteSpace(metadata.Description));
         foreach (var name in PackageChecks.Assemblies)
             PackageChecks.ValidateAssembly(Path.Combine(root, name + ".dll"), name);
     }

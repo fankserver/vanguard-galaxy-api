@@ -13,7 +13,7 @@ using VGModAPI.Runtime;
 
 namespace VGModAPI;
 
-[BepInPlugin(ModApi.PluginId, "Vanguard Galaxy Mod API", "0.1.13")]
+[BepInPlugin(ModApi.PluginId, "Vanguard Galaxy Mod API", "0.1.14")]
 [BepInProcess("VanguardGalaxy.exe")]
 [BepInDependency("vgmodapi.qualification.guard", BepInDependency.DependencyFlags.SoftDependency)]
 public sealed class Plugin : BaseUnityPlugin
@@ -131,7 +131,7 @@ public sealed class Plugin : BaseUnityPlugin
             var assembly = _inspectedGameAssembly
                 ?? throw new NotSupportedException("No inspected game assembly; local catalog remains available.");
             _modMenu = new ModMenuModule(assembly, _modCatalog!, () => string.Join("\n", _hub.Capabilities.Select(capability =>
-                capability.Name + ": " + (capability.Available ? "available, not runtime-qualified" : "unavailable") + " — " + capability.Detail)), DisableModMenu);
+                capability.Name + ": " + capability.Detail)), DisableModMenu);
             _hub.SetCapability("mod-information-menu", true, "Inspected native menu binding; UI qualification pending.");
         }
         catch (Exception error) { DisableModMenu(error); }

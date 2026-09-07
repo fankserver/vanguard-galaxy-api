@@ -55,7 +55,7 @@ public sealed class ModInformationPresenterTests
         Assert.Equal("a\u200cb", ModInformationPresenter.PlainText("a\u200cb", 160, false));
         Assert.Equal("a b", ModInformationPresenter.PlainText("a\nb", 160, false));
         Assert.Equal("a\nb", ModInformationPresenter.PlainText("a\nb", 160, true));
-        Assert.Equal("…", ModInformationPresenter.PlainText("🚀long", 2, false));
+        Assert.Equal("..", ModInformationPresenter.PlainText("🚀long", 2, false));
         Assert.Equal("<b>literal</b>", ModInformationPresenter.PlainText("<b>literal</b>", 160, false)); // View must disable rich text.
     }
 
@@ -65,7 +65,10 @@ public sealed class ModInformationPresenterTests
         var catalog = new Catalog(); var presenter = new ModInformationPresenter(catalog);
         presenter.Open(); Assert.Contains("No local API consumers", presenter.Details("menu unavailable"));
         catalog.Snapshot = new[] { Row("a") }; presenter.Open();
-        var details = presenter.Details("session-lifecycle: unavailable");
+        var summary = presenter.Details("session-lifecycle: unavailable");
+        Assert.DoesNotContain("API capabilities", summary);
+        Assert.DoesNotContain("Declared dependencies", summary);
+        var details = presenter.Details("session-lifecycle: unavailable", true);
         Assert.Contains("Installed: 1.2", details);
         Assert.Contains("Updates: No update source.", details);
         Assert.Contains("API capabilities (not mod update status):\nsession-lifecycle: unavailable", details);
@@ -81,11 +84,23 @@ public sealed class ModInformationPresenterTests
             new ModAuthorMetadata("Author\u202e", "<b>literal</b>", "https://github.com/example/repo", null, "stable"), ModMetadataStatus.Available);
         var presenter = new ModInformationPresenter(new Catalog { Snapshot = new[] { row } }); presenter.Open();
         Assert.Equal(160, ModInformationPresenter.DisplayName(row).Length);
-        var details = presenter.Details("offline");
+        var details = presenter.Details("offline", true);
         Assert.True(details.Length < 15000); Assert.Contains("Additional dependencies omitted", details);
         Assert.Contains("<b>literal</b>", details); Assert.DoesNotContain("github.com", details);
-        Assert.Equal(new string(' ', 159) + "…", ModInformationPresenter.PlainText(new string('\n', 10000), 160, false));
+        Assert.Equal(new string(' ', 157) + "...", ModInformationPresenter.PlainText(new string('\n', 10000), 160, false));
         Assert.Equal("abc", ModInformationPresenter.PlainText("abc\u202e", 3, false));
+    }
+
+    [Fact]
+    public void OwnedPunctuationIsAsciiWhileAuthoredUnicodeIsPreserved()
+    {
+        Assert.Equal("abc...", ModInformationPresenter.PlainText("abcdefghij", 6, false));
+        Assert.Equal(".", ModInformationPresenter.PlainText("long", 1, false));
+        const string authored = "Русский — 日本語…";
+        Assert.Equal(authored, ModInformationPresenter.PlainText(authored, 160, true));
+        var presenter = new ModInformationPresenter(new Catalog { Snapshot = new[] { Row("a") } });
+        presenter.Open();
+        Assert.All(presenter.Details("disabled - configuration").ToCharArray(), c => Assert.True(c < 128));
     }
 
     [Fact]

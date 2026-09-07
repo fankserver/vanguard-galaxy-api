@@ -6,7 +6,7 @@ import zipfile
 
 FILES = {
     'VGModAPI.dll', 'VGModAPI.Core.dll', 'VGModAPI.Abstractions.dll',
-    'README.md', 'LICENSE',
+    'README.md', 'LICENSE', 'vgmodapi.vgmod.json',
     *('docs/' + name + '.md' for name in (
         'checks', 'compatibility', 'implementation-plan', 'lifecycle-contract',
         'qualification-runner', 'research-findings', 'persistence-identity', 'persistence-schema', 'persistence-storage', 'content-safety', 'mission-events', 'travel-events', 'story-content', 'mod-information')),
