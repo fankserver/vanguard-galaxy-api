@@ -252,17 +252,39 @@ one in the same session.
   origin unloaded and both the cancel and the placement at the destination POI with its manager
   initialized, no native route running and no waypoint left. Nothing is injected: no adapter
   callback is invoked, no location, waypoint or docking state is written, and no production hook is
-  disabled. The routine assigns the POI and then yields before calling `SpaceshipHasArrived` (the
-  installed-assembly test pins that), so the window spans a frame boundary and is observable under
-  either coroutine ordering; the bounded three attempts exist for FIXTURE variability — a target
-  whose scene readiness or route length closes the window, or a route that ends abandoned — not for
-  a per-frame race. Each attempt is persisted as its own NOT-RUN receipt row the moment it starts
-  and rewritten with its outcome, so an attempt that later throws can never erase the earlier
-  attempts' results and the launcher can validate the attempt log's presence, bound and outcomes.
+  disabled. Whether the window is observable at all is NOT asserted: the installed-assembly test
+  pins the native predicate SHAPE only, not Unity's coroutine or `CustomYieldInstruction`
+  scheduling, and the window depends on when the destination manager finishes its own `Init`
+  coroutine relative to the POI assignment. The bounded three attempts exist for exactly that
+  fixture/readiness/scheduling variability, and every miss is recorded with its own reason; no
+  "never misses" claim is made anywhere.
+
+  Each attempt is persisted as its own NOT-RUN receipt row the moment it starts and rewritten with
+  its TERMINAL outcome, so an attempt that later throws can never erase the earlier attempts'
+  results. The outcomes are a committed whitelist (`cancelled-in-live-window`,
+  `native-arrival-first`, `route-already-ended`, `timeout-no-route`, `timeout-route-running`,
+  `native-travel-refused`, `no-safe-target`, `abandoned-leg-not-closed`); a row still in its
+  `state=started` form names no outcome and is refused, so it can only be a failure artifact.
+
+  A MISSED attempt closes its own leg before the next one starts. The leg departed and never
+  arrived, so it is still pending; left open, the next route request would supersede it and the
+  tracker would truthfully publish that leg's `Cancelled` INSIDE the next attempt's window, failing
+  an otherwise good attempt on the exact four-fact rule. The miss therefore issues the player's own
+  `CancelTravel(null)` inside its own window and PROVES the observed closure is its own operation's
+  (`Requested`->`Departed`->`Cancelled`, optionally followed by the recovery placement the cleanup
+  itself produces, which is never counted as coverage — that attempt never acquired a live window,
+  so its acquisition can never satisfy the positive rule). If the closure cannot be proven the case
+  ends immediately with a NOT-RUN instead of retrying on a contaminated window.
+
   If no attempt observes the window the case records a mandatory NOT-RUN — a phase FAILURE by
   design — and never a pass. A window wait that expires while the native route is STILL RUNNING is
-  not a clean miss and is never retried: the attempt is persisted, the world is left quiet with the
-  player's own cancel, and the case fails at the timeout with the actual snapshot and attempt log.
+  not a clean miss and is never retried: the outcome is persisted BEFORE any cleanup, the ordinary
+  player cancel is then issued within the captured owner, the post-cleanup residual is recorded, and
+  the case fails at the timeout. That cleanup is honest, not a claim of a quiet world: the vanilla
+  cancel does not reset `isWarping` (only the end of `TravelInSystem` does), so a mid-warp timeout
+  leaves that flag stale and the receipt says so. Nothing is written to hide it — no position, no
+  warp state, no native field — and a failed phase leaves no world a later phase may continue from;
+  the harness fails and the runner quits.
   This phase does NOT reach the native fast lane (gate-to-gate, `travelMultiplier = 7`), which needs
   a route whose next waypoint is another usable gate; that cell stays an explicit required follow-up
   and is documented as UNQUALIFIED in the coverage matrix.
@@ -294,7 +316,10 @@ snapshot with `usingJumpgate=True` and a remaining waypoint, and a completion sn
 waypoints and no active native travel. The attempt log is validated too: at least one persisted
 attempt row, never more than the declared bound the receipt itself publishes (`recovery-attempts=`),
 every row NOT-RUN with a named outcome, and exactly one row reporting the live-route cancel whenever
-the case passed. After the last case the phase reloads `fixture-a` so the later
+the case passed, plus contiguous unique numbering from 1 within the COMMITTED bound (never a bound
+the receipt declares for itself), the case's own session on every attempt row, whitelisted outcomes
+only, and the single success as the LAST attempt with every earlier attempt a continuable miss.
+After the last case the phase reloads `fixture-a` so the later
 pilots see the same world state; that restoring load is harness cleanup and is never coverage.
 
 **Fixture requirement.** Both cases need `fixture-a` to load at a known native system/POI (docked is

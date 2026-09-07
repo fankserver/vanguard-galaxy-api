@@ -129,8 +129,15 @@ public sealed partial class Plugin
         //
         // Nothing is forced: no field is written, no hook is disabled and no adapter callback is
         // invoked. Every attempt is persisted as its own receipt row when it starts and rewritten
-        // with its outcome, so a later failure cannot erase an earlier attempt. A window wait that
-        // expires while the native route is STILL RUNNING is a failure of this case, not a retry.
+        // with its terminal outcome, so a later failure cannot erase an earlier attempt. A window
+        // wait that expires while the native route is STILL RUNNING is a failure of this case, not a
+        // retry. A missed attempt closes its own abandoned leg before the next one starts.
+        //
+        // Whether the window is observable at all depends on WHEN the destination manager finishes
+        // its own Init coroutine relative to the POI assignment, and on Unity's coroutine and
+        // CustomYieldInstruction scheduling, which the installed-assembly test does NOT pin (it pins
+        // the predicate shape only). The bounded attempts therefore exist for that fixture/readiness
+        // variability; no ordering is asserted here and every miss is recorded with its reason.
         private IEnumerable<object?> CaseRecoveredPlacement()
         {
             _p.RcCase(TravelRecoveryReceipt.RecoveredPlacementCase, TravelRecoveryReceipt.RecoveredPlacementDescription);
@@ -148,7 +155,7 @@ public sealed partial class Plugin
                 if (target == null)
                 {
                     var exhausted = TravelRecoveryReceipt.DescribeAttempt(attempt, "<none>",
-                        "no unused safe in-system target remains (" + _p.SafeTargetSelection + ")");
+                        TravelRecoveryReceipt.AttemptNoTargetOutcome, _p.SafeTargetSelection);
                     attemptLog.Add(exhausted);
                     _p.RcCompleteAttempt(_p.RcBeginAttempt(_session, exhausted), _session, exhausted);
                     break;
@@ -158,15 +165,25 @@ public sealed partial class Plugin
                 var originPoi = current == null ? null : (string)SpGet(current, "guid")!;
                 // Persisted BEFORE anything is driven, so an attempt that throws still leaves its
                 // own row behind next to the earlier attempts' outcomes.
-                int attemptRow = _p.RcBeginAttempt(_session, TravelRecoveryReceipt.DescribeAttempt(attempt, targetId, "started"));
-                void RecordAttempt(string result)
+                int attemptRow = _p.RcBeginAttempt(_session, TravelRecoveryReceipt.DescribeStartedAttempt(attempt, targetId));
+                void RecordAttempt(string result, string detail = "")
                 {
-                    var described = TravelRecoveryReceipt.DescribeAttempt(attempt, targetId, result);
+                    var described = TravelRecoveryReceipt.DescribeAttempt(attempt, targetId, result, detail);
                     attemptLog.Add(described);
+                    _p.RcCompleteAttempt(attemptRow, _session, described);
+                }
+                // Rewrites the SAME attempt row and log entry, so recording an outcome before a
+                // cleanup and enriching it with the post-cleanup residual afterwards never invents a
+                // second attempt.
+                void UpdateAttempt(string result, string detail)
+                {
+                    var described = TravelRecoveryReceipt.DescribeAttempt(attempt, targetId, result, detail);
+                    if (attemptLog.Count > 0) attemptLog[attemptLog.Count - 1] = described; else attemptLog.Add(described);
                     _p.RcCompleteAttempt(attemptRow, _session, described);
                 }
                 bool cancelled = false;
                 string outcome = "";
+                string outcomeDetail = "";
                 var acquisition = default(TravelRecoveryReceipt.NativeSnapshot);
                 int offset = Travel.Count;
                 int stationOffset = Stations.Count;
@@ -178,7 +195,7 @@ public sealed partial class Plugin
                 Require(unsolicited == null, unsolicited!);
                 if (!(bool)_canWeTravel.Invoke(NativeTravel("native CanWeTravel for the recovery attempt"), new[] { target })!)
                 {
-                    RecordAttempt("native CanWeTravel refused the route");
+                    RecordAttempt(TravelRecoveryReceipt.AttemptRefusedOutcome, "native CanWeTravel refused the route");
                     continue;
                 }
                 Require((bool)_tryInitiateTravel.Invoke(NativeTravel("native TryInitiateTravel for the recovery attempt"), new[] { target })!,
@@ -193,7 +210,8 @@ public sealed partial class Plugin
                 {
                     if (Slice(offset).Any(fact => fact.Kind == TravelTransitionKind.Arrived))
                     {
-                        outcome = "the native arrival ran before the readiness window could be sampled";
+                        outcome = TravelRecoveryReceipt.AttemptArrivalFirstOutcome;
+                        outcomeDetail = "the native arrival ran before the readiness window could be sampled";
                         break;
                     }
                     var owner = NativeTravel("the recovery readiness sample");
@@ -210,7 +228,8 @@ public sealed partial class Plugin
                             // own wait predicate passes when no manager is registered) and the
                             // manager initialized afterwards. Cancelling here would publish a
                             // Cancelled that interrupted nothing, so no cancel is issued.
-                            outcome = "the native route had already ended when the readiness window became observable, so no live route could be cancelled ("
+                            outcome = TravelRecoveryReceipt.AttemptRouteEndedOutcome;
+                            outcomeDetail = "the native route had already ended when the readiness window became observable ("
                                 + acquisition.ToDetail() + ")";
                             break;
                         }
@@ -231,17 +250,30 @@ public sealed partial class Plugin
                             // That is this case's own failure, never a clean miss and never a retry:
                             // the evidence is persisted, the world is left quiet with the player's
                             // own cancel, and the case fails at the timeout.
-                            RecordAttempt("timed out after " + TravelRecoveryReceipt.ArrivalSeconds
-                                + "s while the native route was still running (" + timedOut.ToDetail() + ")");
-                            // Owner-exact cleanup, AFTER the evidence is persisted: the player's own
-                            // cancel leaves the world quiet without forcing any position or warp
-                            // state. The case still fails at the timeout.
+                            // The fault evidence is persisted BEFORE any cleanup, so the recorded
+                            // outcome describes the world at the timeout itself.
+                            RecordAttempt(TravelRecoveryReceipt.AttemptTimeoutRunningOutcome,
+                                "timed out after " + TravelRecoveryReceipt.ArrivalSeconds + "s while the native route was still running ("
+                                + timedOut.ToDetail() + "; " + _p.RecoveryResidual() + ")");
+                            // Owner-exact cleanup with the player's own cancel. It is BOUNDED and
+                            // honest: the native cancel stops the route and clears the waypoints but
+                            // never resets isWarping, so a mid-warp timeout leaves that vanilla flag
+                            // stale. Nothing is forced to hide it - no position, no warp state and no
+                            // native field is written - and the residual is recorded below. A failed
+                            // phase leaves no world a later phase may continue from; the harness
+                            // fails here and the runner quits.
                             _cancelTravel.Invoke(NativeTravel("the cleanup cancel after the readiness-window timeout"), new object?[] { null });
+                            var residual = _p.RecoveryResidual();
+                            UpdateAttempt(TravelRecoveryReceipt.AttemptTimeoutRunningOutcome,
+                                "timed out after " + TravelRecoveryReceipt.ArrivalSeconds + "s while the native route was still running ("
+                                + timedOut.ToDetail() + "); afterCleanup=" + residual);
                             Require(false, "Timed out after " + TravelRecoveryReceipt.ArrivalSeconds
                                 + "s waiting for the readiness window while the native route was still running ("
-                                + timedOut.ToDetail() + "); attempts: " + string.Join("; ", attemptLog));
+                                + timedOut.ToDetail() + "); the ordinary cancel cannot reset the vanilla warp flag, residual after cleanup: "
+                                + residual + "; attempts: " + string.Join("; ", attemptLog));
                         }
-                        outcome = "timed out after " + TravelRecoveryReceipt.ArrivalSeconds
+                        outcome = TravelRecoveryReceipt.AttemptTimeoutIdleOutcome;
+                        outcomeDetail = "timed out after " + TravelRecoveryReceipt.ArrivalSeconds
                             + "s with no native route running and no arrival (" + timedOut.ToDetail() + ")";
                         break;
                     }
@@ -249,15 +281,49 @@ public sealed partial class Plugin
                 }
                 if (!cancelled)
                 {
-                    RecordAttempt(outcome);
-                    // Leave a quiet native surface for the next attempt: let the route it completed
-                    // close normally instead of starting the next one inside it.
-                    if (Slice(offset).Any(fact => fact.Kind == TravelTransitionKind.Arrived))
+                    // Leave a quiet native surface AND a closed API leg for the next attempt.
+                    bool arrived = Slice(offset).Any(fact => fact.Kind == TravelTransitionKind.Arrived);
+                    bool cleanupAccepted = false;
+                    if (arrived)
                     {
+                        // The route completed on its own: its leg closes with the native boundary.
                         foreach (var frame in AwaitOrFail(() => Slice(offset).Any(fact => fact.Kind == TravelTransitionKind.RouteCompleted),
                             TravelRecoveryReceipt.BoundarySeconds, "the native route boundary of the completed recovery attempt")) yield return frame;
                     }
+                    else
+                    {
+                        // The leg DEPARTED and never arrived, so it is still pending. Left open, the
+                        // next route request would supersede it and the tracker would truthfully
+                        // publish that leg's Cancelled inside the NEXT attempt's window, failing an
+                        // otherwise good attempt on the exact four-fact rule. The player's own cancel
+                        // closes it here, inside this attempt's own window, while the captured owner
+                        // is still valid. It is not coverage: this attempt never acquired a live
+                        // window, so its acquisition can never satisfy the case's positive rule.
+                        cleanupAccepted = (bool)_cancelTravel.Invoke(
+                            NativeTravel("the player cancel that closes the missed attempt's abandoned leg"), new object?[] { null })!;
+                    }
                     foreach (var frame in Settle()) yield return frame;
+                    if (!arrived)
+                    {
+                        var closure = TravelRecoveryReceipt.CheckMissCleanup(Slice(offset), cleanupAccepted);
+                        var closureDetail = outcomeDetail + "; missCleanup={nativeTravelActive="
+                            + _p.RecoverySnapshot().TravelActive + ",cancelAccepted=" + cleanupAccepted
+                            + ",window=[" + string.Join(" ", Slice(offset).Select(fact => fact.Kind.ToString())) + "]}";
+                        if (closure != null)
+                        {
+                            // The abandoned leg could not be proven closed. Another attempt would
+                            // open on a contaminated window, so the case ends here honestly.
+                            RecordAttempt(TravelRecoveryReceipt.AttemptUnclosedOutcome, closureDetail + "; " + closure);
+                            NotRun("The abandoned leg of a missed recovery attempt could not be proven closed, so no further attempt may run: "
+                                + closure + " (" + string.Join("; ", attemptLog) + ")");
+                            yield break;
+                        }
+                        RecordAttempt(outcome, closureDetail);
+                    }
+                    else
+                    {
+                        RecordAttempt(outcome, outcomeDetail);
+                    }
                     continue;
                 }
                 foreach (var frame in AwaitOrFail(() => Slice(offset).Any(fact => fact.Kind == TravelTransitionKind.RecoveredPlacement),
@@ -283,7 +349,7 @@ public sealed partial class Plugin
                 var stationFacts = StationSlice(stationOffset);
                 Require(stationFacts.All(fact => fact.Kind is StationTransitionKind.InteriorReady or StationTransitionKind.InteriorDestroyed),
                     "The recovery window emitted physical station facts: " + string.Join(", ", stationFacts.Select(TravelStationReceipt.Describe)));
-                RecordAttempt(TravelRecoveryReceipt.AttemptCancelledOutcome);
+                RecordAttempt(TravelRecoveryReceipt.AttemptCancelledOutcome, "cancelled inside the observed live-route readiness window");
                 Pass(TravelStationReceipt.Location(_systemId, targetId), slice[0].OperationId,
                     TravelStationReceipt.Evidence(slice, null),
                     "origin=" + TravelStationReceipt.Location(_systemId, originPoi) + "; cancelledLeg=" + slice[0].OperationId

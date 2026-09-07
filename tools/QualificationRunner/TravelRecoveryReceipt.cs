@@ -298,40 +298,153 @@ internal static class TravelRecoveryReceipt
         return null;
     }
 
+    // Known TERMINAL attempt outcomes. An attempt row may only carry one of these, so a receipt can
+    // never be satisfied by an arbitrary string, and the started state below is deliberately NOT an
+    // outcome: it is a failure artifact of an attempt that never reached one.
+    /// <summary>The ONE outcome that acquired the window and cancelled a live route.</summary>
+    internal const string AttemptCancelledOutcome = "cancelled-in-live-window";
+    /// <summary>The native arrival ran before the readiness window could be sampled.</summary>
+    internal const string AttemptArrivalFirstOutcome = "native-arrival-first";
+    /// <summary>Readiness appeared with the native route already gone; no live route could be cancelled.</summary>
+    internal const string AttemptRouteEndedOutcome = "route-already-ended";
+    /// <summary>The window wait expired with no native route running and no arrival.</summary>
+    internal const string AttemptTimeoutIdleOutcome = "timeout-no-route";
+    /// <summary>The window wait expired while the native route was still running; the case fails there.</summary>
+    internal const string AttemptTimeoutRunningOutcome = "timeout-route-running";
+    /// <summary>Native CanWeTravel refused this attempt's route.</summary>
+    internal const string AttemptRefusedOutcome = "native-travel-refused";
+    /// <summary>No unused safe in-system target remained for this attempt.</summary>
+    internal const string AttemptNoTargetOutcome = "no-safe-target";
+    /// <summary>The abandoned leg of a missed attempt could not be proven closed; the case ends.</summary>
+    internal const string AttemptUnclosedOutcome = "abandoned-leg-not-closed";
+
+    internal static readonly string[] AttemptOutcomes =
+    {
+        AttemptCancelledOutcome, AttemptArrivalFirstOutcome, AttemptRouteEndedOutcome,
+        AttemptTimeoutIdleOutcome, AttemptTimeoutRunningOutcome, AttemptRefusedOutcome,
+        AttemptNoTargetOutcome, AttemptUnclosedOutcome
+    };
+
+    /// <summary>Outcomes that are a MISS: the case may drive another bounded attempt after them.</summary>
+    internal static readonly string[] AttemptMissOutcomes =
+    {
+        AttemptArrivalFirstOutcome, AttemptRouteEndedOutcome, AttemptTimeoutIdleOutcome, AttemptRefusedOutcome
+    };
+
     /// <summary>
-    /// One recovery attempt's outcome, recorded verbatim in the receipt. A missed native window is
-    /// reported with what the world actually did, never smoothed over.
+    /// The row an attempt carries while it is running. It names NO outcome, so a receipt still
+    /// holding it is refused: it can only be a failure artifact of an attempt that never finished.
     /// </summary>
-    internal static string DescribeAttempt(int attempt, string targetPoiId, string outcome)
-        => "attempt" + attempt.ToString(CultureInfo.InvariantCulture) + "={target=" + targetPoiId + ",outcome=" + outcome + "}";
-
-    /// <summary>The outcome text of the ONE attempt that acquired the window and cancelled a live route.</summary>
-    internal const string AttemptCancelledOutcome = "cancelled inside the observed live-route readiness window";
+    internal static string DescribeStartedAttempt(int attempt, string targetPoiId)
+        => "attempt" + attempt.ToString(CultureInfo.InvariantCulture) + "={target=" + targetPoiId + ",state=started}";
 
     /// <summary>
-    /// Attempt rows are bounded and consistent with the case: at least one attempt exists whenever
-    /// the case ran at all, never more than the declared bound, every attempt names its outcome, and
-    /// a PASSED case must have exactly one attempt that reports the cancel it claims.
+    /// One recovery attempt's TERMINAL outcome, recorded verbatim in the receipt. The outcome itself
+    /// is one of the known kinds above; everything the world actually did is carried beside it in
+    /// the free-text detail, never smoothed over and never used as the outcome.
+    /// </summary>
+    internal static string DescribeAttempt(int attempt, string targetPoiId, string outcome, string detail = "")
+        => "attempt" + attempt.ToString(CultureInfo.InvariantCulture) + "={target=" + targetPoiId
+            + ",outcome=" + outcome + (string.IsNullOrEmpty(detail) ? "" : ",detail=" + detail) + "}";
+
+    /// <summary>The attempt number and terminal outcome a row carries, or null when it carries neither.</summary>
+    internal static bool TryParseAttempt(string detail, out int number, out string outcome)
+    {
+        number = 0;
+        outcome = "";
+        if (string.IsNullOrEmpty(detail)) return false;
+        const string prefix = "attempt";
+        if (!detail.StartsWith(prefix, StringComparison.Ordinal)) return false;
+        int brace = detail.IndexOf("={", StringComparison.Ordinal);
+        if (brace < 0) return false;
+        if (!int.TryParse(detail.Substring(prefix.Length, brace - prefix.Length), NumberStyles.None,
+            CultureInfo.InvariantCulture, out number)) return false;
+        int marker = detail.IndexOf(",outcome=", StringComparison.Ordinal);
+        if (marker < 0) return false;
+        int start = marker + ",outcome=".Length;
+        int end = detail.IndexOfAny(new[] { ',', '}' }, start);
+        outcome = end < 0 ? detail.Substring(start) : detail.Substring(start, end - start);
+        return true;
+    }
+
+    /// <summary>
+    /// Attempt rows are bounded, structurally consistent and never coverage: numbered contiguously
+    /// from 1 within the COMMITTED bound (not a caller-declared one), each in the case's own
+    /// session, each carrying one of the known terminal outcomes, at most one success, and - when
+    /// the case passed - exactly one success as the LAST attempt with every earlier attempt a miss.
+    /// A row still in its started state is refused: it is a failure artifact, not an outcome.
     /// </summary>
     internal static string? CheckAttempts(IReadOnlyList<TravelStationReceipt.Row> rows)
     {
         var attempts = rows.Where(row => row.Case == RecoveryAttemptRow).ToArray();
         var recovery = rows.Where(row => row.Case == RecoveredPlacementCase).ToArray();
-        var passed = attempts.Where(row => row.Status != TravelStationReceipt.NotRun).ToArray();
-        if (passed.Length > 0)
-            return "A recovery attempt row is recorded as " + passed[0].Status + "; attempts are diagnostics, never coverage.";
+        var promoted = attempts.Where(row => row.Status != TravelStationReceipt.NotRun).ToArray();
+        if (promoted.Length > 0)
+            return "A recovery attempt row is recorded as " + promoted[0].Status + "; attempts are diagnostics, never coverage.";
         if (attempts.Length > RecoveryAttempts)
-            return "The receipt records " + attempts.Length + " recovery attempts, more than the declared bound of " + RecoveryAttempts + ".";
+            return "The receipt records " + attempts.Length + " recovery attempts, more than the committed bound of " + RecoveryAttempts + ".";
+        var numbers = new List<int>();
+        var outcomes = new List<string>();
+        var session = recovery.Length == 1 ? recovery[0].Session : "";
         foreach (var attempt in attempts)
-            if (string.IsNullOrEmpty(attempt.Detail) || attempt.Detail.IndexOf("outcome=", StringComparison.Ordinal) < 0)
-                return "A recovery attempt row names no outcome: " + attempt.Detail + ".";
+        {
+            if (!string.IsNullOrEmpty(session) && attempt.Session != session)
+                return "A recovery attempt row belongs to session " + attempt.Session + " instead of the case's own " + session + ".";
+            if (!TryParseAttempt(attempt.Detail, out int number, out string outcome))
+                return "A recovery attempt row carries no numbered terminal outcome (it may still be in its started state): " + attempt.Detail + ".";
+            if (!AttemptOutcomes.Contains(outcome))
+                return "A recovery attempt row carries the unknown outcome '" + outcome + "'.";
+            if (number < 1 || number > RecoveryAttempts)
+                return "A recovery attempt is numbered " + number + ", outside the committed bound of " + RecoveryAttempts + ".";
+            if (numbers.Contains(number)) return "Recovery attempt " + number + " is recorded twice.";
+            numbers.Add(number);
+            outcomes.Add(outcome);
+        }
+        for (int index = 0; index < numbers.Count; index++)
+            if (numbers[index] != index + 1)
+                return "Recovery attempts are not numbered contiguously from 1: [" + string.Join(",", numbers) + "].";
+        var successes = outcomes.Count(outcome => outcome == AttemptCancelledOutcome);
+        if (successes > 1) return "The recovery case records " + successes + " successful attempts; at most one can exist.";
+        if (successes == 1 && outcomes[outcomes.Count - 1] != AttemptCancelledOutcome)
+            return "The successful recovery attempt is not the last one: [" + string.Join(",", outcomes) + "].";
         if (recovery.Length == 1 && recovery[0].Status == TravelStationReceipt.Passed)
         {
             if (attempts.Length == 0) return "The recovery case passed without a single persisted attempt row.";
-            var cancelled = attempts.Where(row => row.Detail.IndexOf(AttemptCancelledOutcome, StringComparison.Ordinal) >= 0).ToArray();
-            if (cancelled.Length != 1)
-                return "The passed recovery case has " + cancelled.Length + " attempt row(s) reporting the cancel it claims.";
+            if (successes != 1)
+                return "The passed recovery case has " + successes + " attempt row(s) reporting the cancel it claims.";
+            foreach (var outcome in outcomes.Take(outcomes.Count - 1))
+                if (!AttemptMissOutcomes.Contains(outcome))
+                    return "An attempt before the successful one reports '" + outcome + "', which is not a miss the case may continue after.";
         }
+        return null;
+    }
+
+    // --- abandoned-leg closure rules ---------------------------------------------------------
+
+    /// <summary>
+    /// A MISSED attempt leaves the API leg pending: it departed and never arrived. The next route
+    /// request would then supersede it, and the tracker would truthfully emit that leg's
+    /// <c>Cancelled</c> INSIDE the next attempt's window, so an otherwise good attempt would fail
+    /// the exact four-fact rule. The miss therefore closes its own leg with the player's own
+    /// <c>CancelTravel</c> first, and this rule proves the observed closure belongs to THIS
+    /// attempt's operation and started no new stage. A recovery placement the cleanup itself
+    /// produces is allowed and explicitly not coverage: it is never asserted as the case's positive.
+    /// </summary>
+    internal static string? CheckMissCleanup(IReadOnlyList<TravelTransition> slice, bool cancelAccepted)
+    {
+        if (!cancelAccepted) return "The native cancel that had to close the abandoned leg was refused.";
+        if (slice.Count < 3 || slice.Count > 4)
+            return "The missed attempt's window is [" + string.Join(", ", slice.Select(TravelStationReceipt.Describe))
+                + "] instead of the requested/departed/cancelled closure it must end in.";
+        var expected = new[] { TravelTransitionKind.Requested, TravelTransitionKind.Departed, TravelTransitionKind.Cancelled };
+        if (!slice.Take(3).Select(fact => fact.Kind).SequenceEqual(expected))
+            return "The missed attempt did not close its own leg: [" + string.Join(", ", slice.Select(TravelStationReceipt.Describe)) + "].";
+        var operation = slice[0].OperationId;
+        if (operation == null || slice[1].OperationId != operation || slice[2].OperationId != operation)
+            return "The observed closure does not belong to the missed attempt's own operation: "
+                + TravelStationReceipt.Describe(slice[2]) + ".";
+        if (slice.Count == 4 && slice[3].Kind != TravelTransitionKind.RecoveredPlacement)
+            return "The missed attempt's cleanup started a new stage: " + TravelStationReceipt.Describe(slice[3]) + ".";
         return null;
     }
 

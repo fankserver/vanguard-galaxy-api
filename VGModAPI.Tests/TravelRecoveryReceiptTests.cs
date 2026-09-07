@@ -227,7 +227,7 @@ public sealed class TravelRecoveryReceiptTests
     public void AttemptRowsArePersistedBoundedAndConsistentWithTheCase()
     {
         var rows = CaseRowsOnly();
-        rows.Add(AttemptRow(TravelRecoveryReceipt.DescribeAttempt(1, Target, "the native arrival ran first")));
+        rows.Add(AttemptRow(TravelRecoveryReceipt.DescribeAttempt(1, Target, TravelRecoveryReceipt.AttemptArrivalFirstOutcome, "the native arrival ran first")));
         rows.Add(AttemptRow(TravelRecoveryReceipt.DescribeAttempt(2, "poi-second", TravelRecoveryReceipt.AttemptCancelledOutcome)));
         Assert.Null(TravelRecoveryReceipt.CheckAttempts(rows));
         Assert.Null(TravelRecoveryReceipt.Evaluate(rows, null, Trace()));
@@ -238,19 +238,133 @@ public sealed class TravelRecoveryReceiptTests
         {
             AttemptRow(TravelRecoveryReceipt.DescribeAttempt(3, "poi-third", TravelRecoveryReceipt.AttemptCancelledOutcome))
         };
-        Assert.Contains("attempt row(s) reporting the cancel", TravelRecoveryReceipt.CheckAttempts(twoCancels));
-        // The bound is the declared one, and an attempt is never coverage.
-        var overBound = new List<TravelStationReceipt.Row>(rows);
-        for (int index = 0; index < TravelRecoveryReceipt.RecoveryAttempts; index++)
-            overBound.Add(AttemptRow(TravelRecoveryReceipt.DescribeAttempt(index + 3, "poi-x", "missed")));
-        Assert.Contains("more than the declared bound", TravelRecoveryReceipt.CheckAttempts(overBound));
+        Assert.Contains("successful attempts", TravelRecoveryReceipt.CheckAttempts(twoCancels));
+        // The bound is the COMMITTED one, and an attempt is never coverage.
+        var overBound = new List<TravelStationReceipt.Row>(CaseRowsOnly());
+        for (int index = 0; index <= TravelRecoveryReceipt.RecoveryAttempts; index++)
+            overBound.Add(AttemptRow(TravelRecoveryReceipt.DescribeAttempt(index + 1, "poi-x", TravelRecoveryReceipt.AttemptArrivalFirstOutcome)));
+        Assert.Contains("more than the committed bound", TravelRecoveryReceipt.CheckAttempts(overBound));
         var promoted = new List<TravelStationReceipt.Row>(CaseRowsOnly())
         {
-            new(TravelRecoveryReceipt.RecoveryAttemptRow, "description", TravelStationReceipt.Passed, "", Session.ToString(), "", "", "outcome=x")
+            new(TravelRecoveryReceipt.RecoveryAttemptRow, "description", TravelStationReceipt.Passed, "", Session.ToString(), "", "",
+                TravelRecoveryReceipt.DescribeAttempt(1, Target, TravelRecoveryReceipt.AttemptCancelledOutcome))
         };
         Assert.Contains("attempts are diagnostics, never coverage", TravelRecoveryReceipt.CheckAttempts(promoted));
-        var noOutcome = new List<TravelStationReceipt.Row>(CaseRowsOnly()) { AttemptRow("started") };
-        Assert.Contains("names no outcome", TravelRecoveryReceipt.CheckAttempts(noOutcome));
+    }
+
+    /// <summary>
+    /// The attempt schema itself is the evidence: a started row, a duplicate or gapped number, a
+    /// foreign session, an unknown outcome string, a success that is not the last attempt and a
+    /// forged bound are all refused, so an attempt log can never be satisfied by free text.
+    /// </summary>
+    [Fact]
+    public void TheAttemptScheduleIsRejectedWhenItsShapeIsNotTheCommittedOne()
+    {
+        List<TravelStationReceipt.Row> With(params string[] details)
+        {
+            var rows = CaseRowsOnly();
+            foreach (var detail in details) rows.Add(AttemptRow(detail));
+            return rows;
+        }
+        string Miss(int number, string target = "poi-x") =>
+            TravelRecoveryReceipt.DescribeAttempt(number, target, TravelRecoveryReceipt.AttemptArrivalFirstOutcome);
+        string Success(int number) => TravelRecoveryReceipt.DescribeAttempt(number, Target, TravelRecoveryReceipt.AttemptCancelledOutcome);
+        // Still in its started state: a failure artifact, never a terminal outcome.
+        var started = With(TravelRecoveryReceipt.DescribeStartedAttempt(1, Target));
+        Assert.Contains("no numbered terminal outcome", TravelRecoveryReceipt.CheckAttempts(started));
+        Assert.NotNull(TravelRecoveryReceipt.Evaluate(started, null, Trace()));
+        Assert.DoesNotContain("outcome=", TravelRecoveryReceipt.DescribeStartedAttempt(1, Target));
+        // Duplicate and gapped numbering.
+        Assert.Contains("is recorded twice", TravelRecoveryReceipt.CheckAttempts(With(Miss(1), Miss(1))));
+        Assert.Contains("not numbered contiguously", TravelRecoveryReceipt.CheckAttempts(With(Miss(2), Success(3))));
+        // A number outside the committed bound.
+        Assert.Contains("outside the committed bound",
+            TravelRecoveryReceipt.CheckAttempts(With(TravelRecoveryReceipt.DescribeAttempt(
+                TravelRecoveryReceipt.RecoveryAttempts + 1, Target, TravelRecoveryReceipt.AttemptArrivalFirstOutcome))));
+        // A foreign session cannot contribute an attempt to this case.
+        var foreignSession = CaseRowsOnly();
+        foreignSession.Add(new TravelStationReceipt.Row(TravelRecoveryReceipt.RecoveryAttemptRow, "description",
+            TravelStationReceipt.NotRun, "", Guid.NewGuid().ToString(), "", "", Success(1)));
+        Assert.Contains("belongs to session", TravelRecoveryReceipt.CheckAttempts(foreignSession));
+        // Only known terminal outcomes, and the success must be the last attempt.
+        Assert.Contains("unknown outcome", TravelRecoveryReceipt.CheckAttempts(
+            With("attempt1={target=poi-x,outcome=it-worked-out-fine}")));
+        Assert.Contains("not the last one", TravelRecoveryReceipt.CheckAttempts(With(Success(1), Miss(2))));
+        // An attempt before the success must be a MISS the case may continue after, not a terminal
+        // failure such as the still-running timeout or an unclosed abandoned leg.
+        Assert.Contains("not a miss the case may continue after", TravelRecoveryReceipt.CheckAttempts(
+            With(TravelRecoveryReceipt.DescribeAttempt(1, "poi-x", TravelRecoveryReceipt.AttemptTimeoutRunningOutcome), Success(2))));
+        Assert.Contains("not a miss the case may continue after", TravelRecoveryReceipt.CheckAttempts(
+            With(TravelRecoveryReceipt.DescribeAttempt(1, "poi-x", TravelRecoveryReceipt.AttemptUnclosedOutcome), Success(2))));
+        // Every declared outcome is a distinct known kind, and the miss kinds are a subset.
+        Assert.Equal(TravelRecoveryReceipt.AttemptOutcomes.Length, TravelRecoveryReceipt.AttemptOutcomes.Distinct().Count());
+        Assert.All(TravelRecoveryReceipt.AttemptMissOutcomes, outcome => Assert.Contains(outcome, TravelRecoveryReceipt.AttemptOutcomes));
+        Assert.DoesNotContain(TravelRecoveryReceipt.AttemptCancelledOutcome, TravelRecoveryReceipt.AttemptMissOutcomes);
+    }
+
+    /// <summary>
+    /// The defect a missed attempt would otherwise cause: the abandoned leg stays pending, the next
+    /// route request supersedes it, and the tracker truthfully publishes that leg's Cancelled INSIDE
+    /// the next attempt's window. The exact four-fact rule then fails an otherwise good attempt, so
+    /// the miss must close its own leg first and prove the closure belongs to its own operation.
+    /// </summary>
+    [Fact]
+    public void AMissedAttemptMustCloseItsOwnLegBeforeTheNextWindowOpens()
+    {
+        var abandoned = Guid.NewGuid();
+        double clock = 0;
+        // What the miss window looks like after its own cleanup cancel: its own leg, closed.
+        var closed = new List<TravelTransition>
+        {
+            Fact(TravelTransitionKind.Requested, abandoned, null, (System1, Target), null, clock += 1),
+            Fact(TravelTransitionKind.Departed, abandoned, (System1, Station), null, null, clock += 1),
+            Fact(TravelTransitionKind.Cancelled, abandoned, null, null, null, clock += 1)
+        };
+        Assert.Null(TravelRecoveryReceipt.CheckMissCleanup(closed, cancelAccepted: true));
+        // The cleanup may itself produce a recovered placement; that is allowed and is never the
+        // case's positive coverage.
+        var withPlacement = new List<TravelTransition>(closed)
+        {
+            Fact(TravelTransitionKind.RecoveredPlacement, null, null, null, (System1, Target), clock += 1, mode: TravelMode.Unknown)
+        };
+        Assert.Null(TravelRecoveryReceipt.CheckMissCleanup(withPlacement, true));
+        // A refused cancel, an unclosed leg, a closure belonging to another operation and a new
+        // stage started by the cleanup are all refused.
+        Assert.Contains("was refused", TravelRecoveryReceipt.CheckMissCleanup(closed, cancelAccepted: false));
+        Assert.Contains("closure it must end in", TravelRecoveryReceipt.CheckMissCleanup(closed.Take(2).ToList(), true));
+        var unclosed = new List<TravelTransition>(closed) { [2] = Fact(TravelTransitionKind.Arrived, abandoned,
+            (System1, Station), (System1, Target), (System1, Target), 3, sequence: closed[2].Sequence) };
+        Assert.Contains("did not close its own leg", TravelRecoveryReceipt.CheckMissCleanup(unclosed, true));
+        var foreignClosure = new List<TravelTransition>(closed)
+        {
+            [2] = Fact(TravelTransitionKind.Cancelled, Guid.NewGuid(), null, null, null, 3, sequence: closed[2].Sequence)
+        };
+        Assert.Contains("does not belong to the missed attempt's own operation",
+            TravelRecoveryReceipt.CheckMissCleanup(foreignClosure, true));
+        var newStage = new List<TravelTransition>(closed)
+        {
+            Fact(TravelTransitionKind.Requested, Guid.NewGuid(), null, (System1, "poi-next"), null, clock += 1)
+        };
+        Assert.Contains("started a new stage", TravelRecoveryReceipt.CheckMissCleanup(newStage, true));
+        // The contaminated shape the closure prevents: a stale Cancelled of the previous leg in
+        // front of an otherwise perfect window is refused by the case rule...
+        var contaminated = new List<TravelTransition>
+        {
+            Fact(TravelTransitionKind.Cancelled, abandoned, null, null, null, clock += 1)
+        };
+        contaminated.AddRange(RecoveryFacts(Guid.NewGuid()));
+        Assert.Contains("instead of", TravelRecoveryReceipt.CheckRecoveredPlacement(contaminated, Session, System1, Station, Target));
+        Assert.Contains("need the four-fact recovery window", TravelRecoveryReceipt.CheckRecoveryEvidence(contaminated,
+            RecoverySnapshots(contaminated), TravelStationReceipt.Location(System1, Target), Acquisition()));
+        // ...while the clean window that opens AFTER the native closure is accepted unchanged.
+        var clean = RecoveryFacts(Guid.NewGuid());
+        Assert.Null(TravelRecoveryReceipt.CheckRecoveredPlacement(clean, Session, System1, Station, Target));
+        Assert.Null(TravelRecoveryReceipt.CheckRecoveryEvidence(clean, RecoverySnapshots(clean),
+            TravelStationReceipt.Location(System1, Target), Acquisition()));
+        // The attempt that had to close an abandoned leg still reports a miss outcome, and an
+        // unprovable closure reports its own terminal outcome instead.
+        Assert.Contains(TravelRecoveryReceipt.AttemptRouteEndedOutcome, TravelRecoveryReceipt.AttemptMissOutcomes);
+        Assert.DoesNotContain(TravelRecoveryReceipt.AttemptUnclosedOutcome, TravelRecoveryReceipt.AttemptMissOutcomes);
     }
 
     // --- post-gate continuation --------------------------------------------------------------

@@ -312,6 +312,13 @@ $TravelRecoveryBudgetSeconds = 4200
 # rewritten with its outcome. They are never coverage, but a receipt that lost them is refused.
 $TravelRecoveryAttemptRow = 'recovered-placement-attempt'
 $TravelRecoveryMaxAttempts = 3
+# COMMITTED terminal outcomes an attempt row may carry. A receipt can never satisfy the attempt log
+# with an arbitrary string, and the started state carries no outcome at all: it is only a failure
+# artifact of an attempt that never reached one.
+$TravelRecoveryAttemptSuccess = 'cancelled-in-live-window'
+$TravelRecoveryAttemptMisses = @('native-arrival-first','route-already-ended','timeout-no-route','native-travel-refused')
+$TravelRecoveryAttemptOutcomes = @($TravelRecoveryAttemptSuccess) + $TravelRecoveryAttemptMisses +
+    @('timeout-route-running','no-safe-target','abandoned-leg-not-closed')
 # The actual-consumer probe REUSES the two native travel phases in place (it must observe them
 # before the Anima mission pilot disposes the consumer's visit observer), so it reserves only its
 # own consumer loads/saves on top of their existing reservations.
@@ -470,13 +477,37 @@ function Assert-TravelRecoveryReceipt([string]$Root) {
     if ($summary -notcontains "recovery-attempts=$TravelRecoveryMaxAttempts") { throw 'The recovery receipt declares a different attempt bound.' }
     $attempts = @($records | Where-Object { $_[0] -eq $TravelRecoveryAttemptRow })
     if ($attempts.Count -lt 1) { throw 'The recovery case published no persisted attempt row.' }
-    if ($attempts.Count -gt $TravelRecoveryMaxAttempts) { throw 'The recovery case published more attempt rows than its declared bound.' }
+    # The COMMITTED bound, not a value the receipt may declare for itself.
+    if ($attempts.Count -gt $TravelRecoveryMaxAttempts) { throw 'The recovery case published more attempt rows than the committed bound.' }
+    $attemptNumbers = @()
+    $attemptOutcomes = @()
     foreach ($attempt in $attempts) {
         if ($attempt[2] -ne 'not-run') { throw 'A recovery attempt row is recorded as coverage.' }
-        if ($attempt[7] -notlike '*outcome=*') { throw 'A recovery attempt row names no outcome.' }
+        if ($attempt[7] -notmatch '^attempt(\d+)=\{target=[^,}]*,outcome=([a-z-]+)') {
+            throw 'A recovery attempt row carries no numbered terminal outcome (it may still be in its started state).'
+        }
+        $number = [int]$Matches[1]
+        $outcome = $Matches[2]
+        if ($TravelRecoveryAttemptOutcomes -notcontains $outcome) { throw "A recovery attempt row carries the unknown outcome '$outcome'." }
+        if ($number -lt 1 -or $number -gt $TravelRecoveryMaxAttempts) { throw 'A recovery attempt is numbered outside the committed bound.' }
+        if ($attemptNumbers -contains $number) { throw 'A recovery attempt number is recorded twice.' }
+        if ($attempt[4] -ne $recovery[0][4]) { throw 'A recovery attempt row belongs to another session than its case.' }
+        $attemptNumbers += $number
+        $attemptOutcomes += $outcome
     }
-    if ($recovery[0][2] -eq 'passed' -and @($attempts | Where-Object { $_[7] -like '*cancelled inside the observed live-route readiness window*' }).Count -ne 1) {
-        throw 'The passed recovery case has no single attempt row reporting the live-route cancel it claims.'
+    for ($index = 0; $index -lt $attemptNumbers.Count; $index++) {
+        if ($attemptNumbers[$index] -ne ($index + 1)) { throw 'Recovery attempts are not numbered contiguously from 1.' }
+    }
+    $successes = @($attemptOutcomes | Where-Object { $_ -eq $TravelRecoveryAttemptSuccess })
+    if ($successes.Count -gt 1) { throw 'The recovery case records more than one successful attempt.' }
+    if ($successes.Count -eq 1 -and $attemptOutcomes[$attemptOutcomes.Count - 1] -ne $TravelRecoveryAttemptSuccess) {
+        throw 'The successful recovery attempt is not the last one.'
+    }
+    if ($recovery[0][2] -eq 'passed') {
+        if ($successes.Count -ne 1) { throw 'The passed recovery case has no single attempt row reporting the live-route cancel it claims.' }
+        foreach ($earlier in @($attemptOutcomes | Select-Object -SkipLast 1)) {
+            if ($TravelRecoveryAttemptMisses -notcontains $earlier) { throw "An attempt before the successful one reports '$earlier', which is not a miss the case may continue after." }
+        }
     }
     # A recovery is only a recovery when the placement was observed at a loaded, initialized POI
     # with no native route left running: an arrival would have carried an operation instead.

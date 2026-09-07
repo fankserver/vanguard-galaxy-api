@@ -161,6 +161,27 @@ public sealed partial class Plugin
             RecoveryOwned(manager));
     }
 
+    // Bounded read-only residual of the vanilla travel state, recorded beside a failure. It names
+    // the flags an ordinary player cancel does NOT reset - notably isWarping, which only the end of
+    // TravelInSystem clears - so a failed phase never claims to have left a quiet world. Nothing is
+    // written to make it look clean.
+    internal string RecoveryResidual()
+    {
+        try
+        {
+            var travelType = AccessTools.TypeByName("Behaviour.Managers.TravelManager");
+            var manager = travelType == null ? null : SpGet(travelType, "Instance");
+            var player = SpGet(_player, "current");
+            if (!TravelStationDriver.Alive(manager) || player == null) return "residual=<no travel manager or player>";
+            return "residual={travelActive=" + (bool)TravelStationDriver.CallExact(manager!, "TravelActive", typeof(bool))!
+                + ",isWarping=" + (bool)SpGet(manager!, "isWarping")!
+                + ",usingJumpgate=" + (bool)SpGet(manager!, "usingJumpgate")!
+                + ",waypoints=" + ((System.Collections.ICollection)SpGet(player, "waypoints")!).Count
+                + "} (an ordinary cancel does not reset isWarping; a failed phase leaves no world a later phase may continue from)";
+        }
+        catch (Exception error) { return "residual=<unavailable: " + error.GetType().Name + ">"; }
+    }
+
     // The native local POI manager is the initialized manager of EXACTLY the player's current POI.
     // This is the same shape the adapter's own readiness observation requires, read here only to
     // record what the world reported at that moment.
