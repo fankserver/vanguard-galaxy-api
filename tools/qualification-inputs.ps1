@@ -263,6 +263,9 @@ function Assert-PersistenceProbeReceipt([string]$Root, $Provenance) {
     if ($Provenance.PSObject.Properties['travelRecovery'] -and $Provenance.travelRecovery) {
         Assert-TravelRecoveryReceipt $Root
     }
+    if ($Provenance.PSObject.Properties['travelFastLane'] -and $Provenance.travelFastLane) {
+        Assert-TravelFastLaneReceipt $Root
+    }
     if ($Provenance.PSObject.Properties['animaTravelProbe'] -and $Provenance.animaTravelProbe) {
         Assert-AnimaTravelReceipt $Root
     }
@@ -323,6 +326,14 @@ $TravelRecoveryAttemptOutcomes = @($TravelRecoveryAttemptSuccess) + $TravelRecov
 # cleanup finished. A receipt that still carries the marker describes an attempt that never
 # finished; the reason stays readable, but the receipt is never a completed one.
 $TravelRecoveryAttemptPendingMarker = 'cleanup=pending'
+# The fifth separate optional phase reserves its own process time ON TOP of the in-system phase. It
+# closes the last reachable travel cell of #12: the native fast lane (travelMultiplier = 7), which
+# the post-gate continuation phase cannot reach because its follow-on POI is deliberately not a gate.
+$TravelFastLanePhase = 'travel-fast-lane-v1'
+$TravelFastLaneRequiredCases = @('fast-lane-gate-chain','fast-lane-multiplier-observed')
+$TravelFastLaneBudgetSeconds = 2400
+# The one native value the charge branch sets; the receipt must publish it as observed evidence.
+$TravelFastLaneMultiplier = '7'
 # The actual-consumer probe REUSES the two native travel phases in place (it must observe them
 # before the Anima mission pilot disposes the consumer's visit observer), so it reserves only its
 # own consumer loads/saves on top of their existing reservations.
@@ -552,6 +563,46 @@ function Assert-TravelRecoveryReceipt([string]$Root) {
     }
     if ($continuation[0][7] -notlike '*completionSnapshot=*waypoints=0*' -or $continuation[0][7] -notlike '*completionSnapshot=*travelActive=False*') {
         throw 'The post-gate-continuation route completion was not recorded at the end of the native route.'
+    }
+}
+# The fast-lane phase is validated separately and with its own mandatory cases: no other receipt can
+# stand in for it, and its positive proof must be PUBLISHED, not implied.
+function Assert-TravelFastLaneReceipt([string]$Root) {
+    Assert-TravelPhaseReceipt $Root 'Travel fast lane' 'travel-fast-lane' $TravelFastLanePhase $TravelFastLaneRequiredCases $TravelFastLaneBudgetSeconds
+    $summary = @(Get-Content -LiteralPath (Join-Path $Root 'travel-fast-lane.txt'))
+    if ($summary -notcontains "fast-lane-multiplier=$TravelFastLaneMultiplier") { throw 'The fast-lane receipt declares a different native multiplier.' }
+    $rows = @(Get-Content -LiteralPath (Join-Path $Root 'travel-fast-lane-receipt.tsv'))
+    $records = @($rows[1..($rows.Count - 1)] | ForEach-Object { ,($_ -split "`t") })
+    # No row may claim an identity this phase does not own: a fabricated or renamed case is refused
+    # before any content is read.
+    foreach ($record in $records) {
+        if ($TravelFastLaneRequiredCases -notcontains $record[0]) { throw "Unknown case identity in the fast-lane receipt: $($record[0])" }
+    }
+    $chain = @($records | Where-Object { $_[0] -eq 'fast-lane-gate-chain' })
+    if ($chain.Count -ne 1) { throw 'The fast-lane-gate-chain case is missing or duplicated.' }
+    if ($chain[0][7] -notlike '*gates=2*' -or $chain[0][7] -notlike '*systems=3*') { throw 'The fast-lane chain did not cross two gates into a third system.' }
+    if ($chain[0][7] -notlike '*legs=5*') { throw 'The fast-lane chain did not drive five native legs.' }
+    if ($chain[0][7] -notlike '*routeCompletions=1*') { throw 'The fast-lane chain did not publish exactly one route completion.' }
+    if ($chain[0][7] -notlike '*completionSnapshot=*waypoints=0*' -or $chain[0][7] -notlike '*completionSnapshot=*travelActive=False*') {
+        throw 'The fast-lane route completion was not recorded at the end of the native route.'
+    }
+    $multiplier = @($records | Where-Object { $_[0] -eq 'fast-lane-multiplier-observed' })
+    if ($multiplier.Count -ne 1) { throw 'The fast-lane-multiplier-observed case is missing or duplicated.' }
+    # The decisive native evidence: the charge branch's own transient, observed on the gate-to-gate
+    # leg and absent on the legs around it. The unlock flag is only ever READ.
+    if ($multiplier[0][7] -notlike "*fastLaneMultiplier=$TravelFastLaneMultiplier*" -or $multiplier[0][7] -notlike '*fastLaneActive=True*') {
+        throw 'The fast-lane case published no observed native multiplier of ' + $TravelFastLaneMultiplier + '.'
+    }
+    if ($multiplier[0][7] -notlike '*approachMultiplier=1*' -or $multiplier[0][7] -notlike '*postFastLaneMultiplier=1*') {
+        throw 'The fast-lane case did not publish the surrounding legs at the resting native multiplier.'
+    }
+    if ($multiplier[0][7] -notlike '*fastLaneUnlocked=True (read-only; never written)*') {
+        throw 'The fast-lane case did not publish the read-only unlock precondition.'
+    }
+    foreach ($boundary in @('requestedSnapshot','departedSnapshot','arrivedSnapshot')) {
+        if ($multiplier[0][7] -notmatch ($boundary + '=[^;]*multiplier=' + $TravelFastLaneMultiplier + ',fastLaneActive=True')) {
+            throw "The fast-lane case did not publish the native $boundary at the charge branch's multiplier."
+        }
     }
 }
 # The actual-consumer travel probe is validated separately and with its own mandatory cases. It
@@ -885,6 +936,17 @@ function Assert-QualificationInputs([string]$Root) {
     # it, and never beside a consumer travel probe that owns the same reused phases.
     if ($travelJournal -and !$travelJournalComparison) { throw 'The archived TravelJournal is installed without the comparison that owns it; it is never a passive ridealong.' }
     if ($travelJournal -and ($animaTravel -or $echoTravel -or $anima -or $echo)) { throw 'The archived TravelJournal is installed beside a consumer plugin; the comparison sandbox carries the archive alone.' }
+    # The fast-lane phase is an ADDITIONAL selection on top of the in-system phase; it drives its own
+    # two-gate planner route and reserves its own separate process budget.
+    $travelFastLane = $provenance.PSObject.Properties['travelFastLane'] -and [bool]$provenance.travelFastLane
+    $fastLaneMarker = Join-Path $Root 'travel-fast-lane.enabled'
+    if ([bool]$travelFastLane -ne (Test-Path -LiteralPath $fastLaneMarker -PathType Leaf)) { throw 'Travel fast-lane selection changed.' }
+    if ($travelFastLane) {
+        if (!$travelStation -or (Get-Content -LiteralPath $fastLaneMarker -Raw).Trim() -ne 'fast-lane-v1') { throw 'Invalid travel fast-lane selection.' }
+        if (!$provenance.PSObject.Properties['travelFastLaneBudgetSeconds'] -or
+            [int]$provenance.travelFastLaneBudgetSeconds -ne $TravelFastLaneBudgetSeconds) { throw 'Travel fast-lane budget reservation changed.' }
+        if ($provenance.scenario -ne 'Full') { throw 'Travel fast-lane phase requires Full.' }
+    }
     # The recovery/continuation phase is an ADDITIONAL selection on top of the in-system phase; it
     # drives its own routes and reserves its own separate process budget.
     $travelRecovery = $provenance.PSObject.Properties['travelRecovery'] -and [bool]$provenance.travelRecovery

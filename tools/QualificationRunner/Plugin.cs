@@ -281,6 +281,9 @@ public sealed partial class Plugin : BaseUnityPlugin
         // The recovery/continuation phase runs last of the travel phases: its cases end in another
         // world state and it restores the fixture itself, exactly like the resilience phase.
         foreach (var frame in CheckTravelRecovery()) yield return frame;
+        // The fast-lane phase drives its own multi-system route and ends in another system; like the
+        // recovery phase it restores the fixture itself, so it runs after the other travel phases.
+        foreach (var frame in CheckTravelFastLane()) yield return frame;
         foreach (var frame in CheckJournalTeardown()) yield return frame;
         foreach (var frame in RemainingLifecyclePilot()) yield return frame;
         foreach (var frame in PersistencePilot()) yield return frame;

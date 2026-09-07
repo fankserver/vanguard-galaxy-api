@@ -7,6 +7,7 @@
     <Compile Include="../tools/QualificationRunner/TravelCrossSystemReceipt.cs" Link="TravelCrossSystemReceipt.cs" />
     <Compile Include="../tools/QualificationRunner/TravelResilienceReceipt.cs" Link="TravelResilienceReceipt.cs" />
     <Compile Include="../tools/QualificationRunner/TravelRecoveryReceipt.cs" Link="TravelRecoveryReceipt.cs" />
+    <Compile Include="../tools/QualificationRunner/TravelFastLaneReceipt.cs" Link="TravelFastLaneReceipt.cs" />
     <Compile Include="../tools/QualificationRunner/AnimaTravelReceipt.cs" Link="AnimaTravelReceipt.cs" />
     <Compile Include="../tools/QualificationRunner/EchoTravelReceipt.cs" Link="EchoTravelReceipt.cs" />
     <Compile Include="../tools/QualificationRunner/TravelJournalReceipt.cs" Link="TravelJournalReceipt.cs" />

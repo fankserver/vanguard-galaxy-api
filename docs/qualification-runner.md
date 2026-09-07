@@ -351,6 +351,79 @@ destination system contains a safe follow-on POI the planner routes to as `[gate
 that offers neither records the honest NOT-RUN above, which fails the phase rather than shrinking it.
 This remains controlled native evidence only: `RuntimeQualified=false`, and #12 stays open.
 
+## Native fast-lane phase (separate, optional)
+
+`-TravelFastLane` is an ADDITIONAL Prepare selection that requires `-TravelStation` (it reuses the
+same `[Travel]` capability configuration) and Full, writes `travel-fast-lane.enabled`, and records
+its own reservation (`travelFastLaneBudgetSeconds`) in provenance. It is independent of
+`-TravelCrossSystem`, `-TravelResilience` and `-TravelRecoveryContinuation`. It runs as its own
+phase `travel-fast-lane-v1` with its own receipts (`travel-fast-lane.txt`,
+`travel-fast-lane-receipt.tsv`, `travel-fast-lane-events.tsv`, `travel-fast-lane-fault.txt`) and its
+two mandatory case identities `fast-lane-gate-chain` and `fast-lane-multiplier-observed`. It closes
+the last travel-matrix cell of #12 that a phase can reach.
+
+**Why it needs its own route.** The native fast lane is a different branch from the post-gate
+continuation: `GamePlayer.DoFastLaneTravel()` is true only when `waypoints[0]` is a usable
+`JumpGate` and the save's own `fastLaneTravelUnlocked` is set, and only then does `JumpToSystem`
+charge the next gate (`TheGate.ChargeFastLaneTravelToNextGate`) and store `travelMultiplier = 7f`.
+The continuation phase deliberately ends at a safe non-gate POI, so it can never take that branch.
+This phase therefore drives ONE native planner route across TWO gates into a THIRD system: the
+planner (`GenerateShortestRoute`) must really produce `[gate, gate, destination]`, so in the
+intermediate system the next waypoint is another gate.
+
+- `fast-lane-gate-chain`: the route shape. Five legs — in-system approach, gate hop, the
+  gate-to-gate in-system leg, the second gate hop, the final in-system leg — with distinct operation
+  identities, the cross-system phase's own per-leg identity/mode/origin/requested/actual rules, and
+  exactly ONE `RouteCompleted`, as the last fact, belonging to the final in-system leg and to
+  neither gate hop. The pilot additionally refuses an early completion at each of the four
+  intermediate stages, and compares the ending world (destination POI current and initialized,
+  waypoints empty, no `TravelActive()`, no `usingJumpgate`) against the public location.
+- `fast-lane-multiplier-observed`: the actual proof that the branch RAN. Every fact of the
+  gate-to-gate leg must be sampled with the native `travelMultiplier` at **7** and
+  `fastLaneTravelActive` true, outside the jump routine and with a waypoint still queued, while the
+  approach leg before it and the final leg after it (and the route boundary) are sampled at 1. On
+  the inspected build `travelMultiplier = 7f` is stored in exactly ONE place in the whole assembly —
+  inside the jump routine's state machine, immediately after the charge coroutine — and an
+  installed-assembly test pins that uniqueness, so observing the 7 is proof of the branch rather
+  than proof of the unlock flag or of a route that merely contained gates. The two snapshots
+  (`fastLaneTravelActive` and the multiplier) are read from the same live manager and must agree.
+
+**The unlock flag is only READ.** The phase never writes `fastLaneTravelUnlocked`, any other native
+field, any save or any config: a fixture whose own history did not unlock the fast lane records an
+honest NOT-RUN, which is a phase FAILURE by design, and the receipt publishes
+`fastLaneUnlocked=True (read-only; never written)` as the precondition it observed. Gate selection
+uses the phase's own pure refusal rule (usable, not hidden, not dynamic, leaves its own system, has
+a paired target, not hostile-owned, not a story-mission location, no persisted guard descriptors,
+never the one-way tutorial exit), and the destination uses the shared safe in-system target rule, so
+the chain cannot traverse or end in a hostile, guarded, dynamic or tutorial location.
+
+Budgets add up rather than replace: `Run` refuses to launch unless `-TimeoutSeconds` covers base
+1800 + every selected phase reservation (travel/station 1500, fast lane **2400**; **5700** for the
+minimal selection this phase needs). The published `budgetSeconds` is SUMMED from the same per-wait
+deadline constants the driver uses (one fixture load with its service binding plus the restoring
+load, one undock, one availability sample, three in-system arrivals, one handoff and one jump
+arrival per gate, one route boundary and three settles), so a hand-typed occurrence cannot
+understate it; the published worst case is **1960** seconds against the 2400 reservation. The phase
+drives exactly ONE route and never retries: a timeout or a refused native call is a recorded
+failure, never another attempt.
+
+`Assert-TravelFastLaneReceipt` re-checks the outputs exactly like the other phases and additionally
+requires each case to PUBLISH the evidence it claims: the chain row must carry `systems=3`,
+`gates=2`, `legs=5`, `routeCompletions=1` and a completion snapshot with no waypoints and no active
+native travel; the multiplier row must carry `fastLaneMultiplier=7` with `fastLaneActive=True`, the
+surrounding legs at 1, the read-only unlock precondition, and each of the gate-to-gate leg's three
+boundary snapshots at the charge multiplier. Any row whose case identity is not one of the two the
+phase owns is refused outright, in both the C# rule and the launcher validator. After the case the
+phase reloads `fixture-a` so the later pilots see the same world state; that restoring load is
+harness cleanup and is never coverage.
+
+**Fixture requirement.** `fixture-a` must load at a known native system/POI (docked is fine: the
+phase uses the player's own exit action first), its save must already have `fastLaneTravelUnlocked`
+set by its own history, and the world must offer two safe non-tutorial gates leading into a third
+system with a safe follow-on POI the planner routes to as `[gate, gate, destination]`. A world that
+does not records the honest NOT-RUN above, which fails the phase rather than shrinking it. This
+remains controlled native evidence only: `RuntimeQualified=false`, and #12 stays open.
+
 ## Actual-consumer travel probe (separate, optional)
 
 `-AnimaTravelProbe` is an ADDITIONAL Prepare selection that requires the authorized Anima consumer pilot (`-AnimaBin` / `-AnimaRevision` and therefore `-MissionTransitionsProbe -MissionIdentityProbe -PersistenceProbe -MissionJournalBin`), `-TravelStation`, `-TravelCrossSystem` and `-TravelWormholeFixture`. It writes the marker `anima-travel.enabled` and records `animaTravelProbe`, `animaVersion` and its own reservation (`animaTravelBudgetSeconds`) in provenance. Only the Anima **0.4.0 / hard API 0.1.9** metadata shape is accepted for it (the earlier 0.3.0 / 0.1.8 mission-only shape stays accepted for the mission pilot alone), and the marker, the provenance flag, the pinned consumer version and the wormhole-fixture selection must all agree.
