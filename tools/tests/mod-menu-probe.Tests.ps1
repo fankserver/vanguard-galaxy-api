@@ -67,17 +67,25 @@ try {
     $p | Add-Member -NotePropertyName modInformationProbe -NotePropertyValue $true
     Reject { Assert-ModInformationProbeSelection $root $p } 'missing information marker'
     [IO.File]::WriteAllText((Join-Path $root 'mod-information-probe.enabled'), 'mod-information-probe-v1')
+    Reject { Assert-ModInformationProbeSelection $root $p } 'legacy information mode lacks wire failures'
+    [IO.File]::WriteAllText((Join-Path $root 'mod-information-probe.enabled'), 'mod-information-probe-v2')
+    $certificate = Join-Path $root 'untrusted-test.pfx'
+    [IO.File]::WriteAllText($certificate, 'synthetic hash fixture, not a certificate')
+    $p | Add-Member -NotePropertyName modInformationCertificateSha256 -NotePropertyValue ((Get-FileHash -LiteralPath $certificate -Algorithm SHA256).Hash.ToLowerInvariant())
     Assert-ModInformationProbeSelection $root $p
+    [IO.File]::AppendAllText($certificate, ' changed')
+    Reject { Assert-ModInformationProbeSelection $root $p } 'changed TLS fixture'
+    [IO.File]::WriteAllText($certificate, 'synthetic hash fixture, not a certificate')
     $p.modInformationProbe = 'true'
     Reject { Assert-ModInformationProbeSelection $root $p } 'information string Boolean'
     $p.modInformationProbe = $true
     $infoSnapshot = Join-Path $root 'mod-information-probe.txt'
     $infoReceipt = Join-Path $root 'mod-information-probe.receipt'
-    $facts = @('controlled-default-manual-coalescing-cooldown','controlled-six-hour-automatic-disable','controlled-dns-tls-timeout-retain-last-success','controlled-rate-limit','controlled-disk-cache-expiry-channel-installed-version','controlled-invalid-oversized-channel-redirect-policy','controlled-quit-mid-check','wire-platform-tls-parser-stable','wire-platform-tls-parser-experimental','wire-https-redirect','wire-invalid-oversized-channel-rejected','unity-main-thread-menu-responsive')
+    $facts = @('controlled-default-manual-coalescing-cooldown','controlled-six-hour-automatic-disable','controlled-dns-tls-timeout-retain-last-success','controlled-rate-limit','controlled-disk-cache-expiry-channel-installed-version','controlled-invalid-oversized-channel-redirect-policy','controlled-quit-mid-check','wire-platform-tls-parser-stable','wire-platform-tls-parser-experimental','wire-https-redirect','wire-invalid-oversized-channel-rejected','wire-dns-name-resolution-failure','wire-tls-untrusted-certificate-rejected','wire-stalled-handshake-canceled','unity-main-thread-menu-responsive')
     function Write-InformationEvidence($selectedFacts) {
         [IO.File]::WriteAllText($infoSnapshot, (($selectedFacts | ForEach-Object { "$_=PASS" }) -join "`n"))
         $digest = (Get-FileHash -LiteralPath $infoSnapshot -Algorithm SHA256).Hash.ToLowerInvariant()
-        [IO.File]::WriteAllText($infoReceipt, "PASS`nmod-information-probe-v1`nsha256=$digest`n")
+        [IO.File]::WriteAllText($infoReceipt, "PASS`nmod-information-probe-v2`nsha256=$digest`n")
     }
     Write-InformationEvidence $facts
     Assert-ModInformationProbeReceipt $root $p

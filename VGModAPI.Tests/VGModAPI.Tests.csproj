@@ -8,6 +8,7 @@
     <Compile Include="../tools/QualificationRunner/ModMenuModalChecks.cs" Link="ModMenuModalChecks.cs" />
     <Compile Include="../tools/QualificationRunner/ModUpdateChecks.cs" Link="ModUpdateChecks.cs" />
     <Compile Include="../tools/QualificationRunner/ModUpdateWireChecks.cs" Link="ModUpdateWireChecks.cs" />
+    <Compile Include="../tools/QualificationRunner/ModUpdateWireFailures.cs" Link="ModUpdateWireFailures.cs" />
     <Compile Include="../tools/QualificationRunner/ProbeHeartbeat.cs" Link="ProbeHeartbeat.cs" />
     <Compile Include="../tools/QualificationRunner/ProbeCleanup.cs" Link="ProbeCleanup.cs" />
     <Compile Include="../tools/QualificationRunner/TravelStationReceipt.cs" Link="TravelStationReceipt.cs" />

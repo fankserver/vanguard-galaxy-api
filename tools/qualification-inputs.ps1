@@ -257,7 +257,10 @@ function Assert-ModInformationProbeSelection([string]$Root, $Provenance) {
     $marker = Join-Path $Root 'mod-information-probe.enabled'
     if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Information probe selection changed.' }
     if (!$selected) { return }
-    if (!$Provenance.PSObject.Properties['modMenuProbe'] -or $Provenance.modMenuProbe -isnot [bool] -or !$Provenance.modMenuProbe -or $Provenance.scenario -ne 'Full' -or [IO.File]::ReadAllText($marker) -cne 'mod-information-probe-v1') { throw 'Invalid information probe selection.' }
+    if (!$Provenance.PSObject.Properties['modMenuProbe'] -or $Provenance.modMenuProbe -isnot [bool] -or !$Provenance.modMenuProbe -or $Provenance.scenario -ne 'Full' -or [IO.File]::ReadAllText($marker) -cne 'mod-information-probe-v2') { throw 'Invalid information probe selection.' }
+    $certificate = Join-Path $Root 'untrusted-test.pfx'
+    if (!(Test-Path -LiteralPath $certificate -PathType Leaf) -or (Get-Item -LiteralPath $certificate).Length -gt 16384 -or ((Get-Item -LiteralPath $certificate).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'TLS fixture missing, linked or oversized.' }
+    if (!$Provenance.PSObject.Properties['modInformationCertificateSha256'] -or $Provenance.modInformationCertificateSha256 -cnotmatch '^[0-9a-f]{64}$' -or (Get-FileHash -LiteralPath $certificate -Algorithm SHA256).Hash.ToLowerInvariant() -cne $Provenance.modInformationCertificateSha256) { throw 'TLS fixture identity changed.' }
 }
 function Assert-ModInformationProbeReceipt([string]$Root, $Provenance) {
     Assert-ModInformationProbeSelection $Root $Provenance
@@ -269,10 +272,10 @@ function Assert-ModInformationProbeReceipt([string]$Root, $Provenance) {
         if (!(Test-Path -LiteralPath $path -PathType Leaf) -or (Get-Item -LiteralPath $path).Length -gt 16384 -or ((Get-Item -LiteralPath $path).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Information probe evidence missing, linked or oversized.' }
     }
     $lines = @(Get-Content -LiteralPath $receipt)
-    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'mod-information-probe-v1' -or $lines[2] -cnotmatch '^sha256=[0-9a-f]{64}$') { throw 'Invalid information probe receipt.' }
+    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'mod-information-probe-v2' -or $lines[2] -cnotmatch '^sha256=[0-9a-f]{64}$') { throw 'Invalid information probe receipt.' }
     if ((Get-FileHash -LiteralPath $snapshot -Algorithm SHA256).Hash.ToLowerInvariant() -cne $lines[2].Substring(7)) { throw 'Information probe evidence changed.' }
     $facts = @(Get-Content -LiteralPath $snapshot)
-    foreach ($fact in @('controlled-default-manual-coalescing-cooldown','controlled-six-hour-automatic-disable','controlled-dns-tls-timeout-retain-last-success','controlled-rate-limit','controlled-disk-cache-expiry-channel-installed-version','controlled-invalid-oversized-channel-redirect-policy','controlled-quit-mid-check','wire-platform-tls-parser-stable','wire-platform-tls-parser-experimental','wire-https-redirect','wire-invalid-oversized-channel-rejected','unity-main-thread-menu-responsive')) {
+    foreach ($fact in @('controlled-default-manual-coalescing-cooldown','controlled-six-hour-automatic-disable','controlled-dns-tls-timeout-retain-last-success','controlled-rate-limit','controlled-disk-cache-expiry-channel-installed-version','controlled-invalid-oversized-channel-redirect-policy','controlled-quit-mid-check','wire-platform-tls-parser-stable','wire-platform-tls-parser-experimental','wire-https-redirect','wire-invalid-oversized-channel-rejected','wire-dns-name-resolution-failure','wire-tls-untrusted-certificate-rejected','wire-stalled-handshake-canceled','unity-main-thread-menu-responsive')) {
         if (@($facts | Where-Object { $_ -ceq ($fact + '=PASS') }).Count -ne 1) { throw "Missing or duplicate information probe fact: $fact" }
     }
 }
