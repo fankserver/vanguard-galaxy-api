@@ -19,7 +19,7 @@ public sealed partial class Plugin
 {
     private IEnumerator RunModMenuProbe()
     {
-        Require(File.ReadAllText(Path.Combine(_root!, "mod-menu-probe.enabled")) == "mod-menu-probe-v2", "Invalid menu probe marker.");
+        Require(File.ReadAllText(Path.Combine(_root!, "mod-menu-probe.enabled")) == "mod-menu-probe-v3", "Invalid menu probe marker.");
         foreach (var frame in Wait(() => GameObject.Find("VGModAPI Mods") != null, "owned Mods entry")) yield return frame;
         Require(_api!.CurrentSession == null, "Menu probe must not enter gameplay.");
         var entry = GameObject.Find("VGModAPI Mods").GetComponent<Button>();
@@ -37,7 +37,7 @@ public sealed partial class Plugin
         var oldMouse = Mouse.current;
         Mouse? mouse = null;
         var metadataCreated = false;
-        var evidence = new StringBuilder("Native input-system menu probe v2\n");
+        var evidence = new StringBuilder("Native input-system menu probe v3\n");
         try
         {
             keyboard = InputSystem.AddDevice<Keyboard>();
@@ -145,7 +145,7 @@ public sealed partial class Plugin
             File.WriteAllBytes(Path.Combine(_root!, "mod-menu-probe.txt"), bytes);
             using var hash = SHA256.Create();
             var digest = BitConverter.ToString(hash.ComputeHash(bytes)).Replace("-", "").ToLowerInvariant();
-            File.WriteAllText(Path.Combine(_root!, "mod-menu-probe.receipt"), "PASS\nmod-menu-probe-v2\nsha256=" + digest + "\n");
+            File.WriteAllText(Path.Combine(_root!, "mod-menu-probe.receipt"), "PASS\nmod-menu-probe-v3\nsha256=" + digest + "\n");
             Passed("mod-menu-native-input");
         }
         finally
