@@ -1050,7 +1050,14 @@ function Assert-QualificationInputs([string]$Root) {
     $stockpileMarker = Join-Path $Root 'stockpile.enabled'
     if ([bool]$stockpile -ne (Test-Path -LiteralPath $stockpileMarker -PathType Leaf)) { throw 'Prepared Stockpile selection changed.' }
     if ($stockpile -and (Get-Content -LiteralPath $stockpileMarker -Raw).Trim() -ne 'pilot-v1') { throw 'Unknown Stockpile pilot marker.' }
+    $story = $provenance.PSObject.Properties['storyProbe'] -and $provenance.storyProbe -eq $true
+    if ([bool]$story -ne (Test-Path -LiteralPath (Join-Path $Root 'story.enabled') -PathType Leaf)) { throw 'Story selection changed.' }
+    if ($story) {
+        if ($provenance.scenario -ne 'Full' -or $provenance.missionJournal -or $stockpile -or $anima -or $echo -or $travelJournal -or $provenance.persistenceProbe) { throw 'Invalid story probe isolation.' }
+        if ((Get-Content -LiteralPath (Join-Path $Root 'story.enabled') -Raw).Trim() -ne 'owned-story-v1') { throw 'Unknown story marker.' }
+    }
     $expected = @('QualificationGuard.dll')
+    if ($story) { $expected += @('OwnedStoryCampaign.dll','OwnedStoryJob.dll') }
     if ($provenance.scenario -ne 'MissingApi') { $expected += @('VGModAPI.dll','VGModAPI.Core.dll','VGModAPI.Abstractions.dll') }
     if ($provenance.scenario -eq 'Full') { $expected += @('QualificationRunner.dll','LifecycleObserver.dll') }
     if ($provenance.missionJournal) { $expected += @('VGMissionJournal.dll','Newtonsoft.Json.dll') }

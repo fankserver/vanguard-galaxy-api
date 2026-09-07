@@ -12,6 +12,10 @@ link-libs:
 	@set -eu; for name in UnityEngine UnityEngine.CoreModule; do test -f "$(MANAGED)/$$name.dll"; ln -sfn "$(MANAGED)/$$name.dll" "VGModAPI/lib/$$name.dll"; done
 build: link-libs
 	$(DOTNET) build VGModAPI.sln -c $(CONFIGURATION)
+.PHONY: build-story-authors
+build-story-authors: link-libs
+	$(DOTNET) build examples/OwnedStoryCampaign/OwnedStoryCampaign.csproj -c $(CONFIGURATION)
+	$(DOTNET) build examples/OwnedStoryJob/OwnedStoryJob.csproj -c $(CONFIGURATION)
 test:
 	python3 -m unittest discover -s tools -p 'test_release_archive.py'
 	$(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter 'Category!=InstalledGame&Category!=InstalledConsumer&Category!=InstalledArchive&Category!=Package'
