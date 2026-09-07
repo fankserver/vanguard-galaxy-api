@@ -2,6 +2,12 @@
 
 This is development tooling for issue #2, not part of the API distribution. Owner-approved test deployment is required. The owner's complete milestone acceptance remains a separate gate.
 
+## Offline Mods screen input probe (development)
+
+Prepare with `-Scenario Full -ModMenuProbe`, without consumer DLLs or other probe switches. It runs only the native menu input probe instead of loading fixtures. The preparation marker is validated against provenance before launch; a bounded SHA-256 receipt is accepted only after a valid recorded process exit. A source review does not grant a native lease: coordinate exclusive ownership before Prepare/Run.
+
+The driver queues temporary Unity Input System keyboard/mouse devices through the actual UI input module (not physical hardware). It tests submit, long-description Up/Down scrolling, scrollbar geometry, Tab, pointer Close, Escape/focus restoration, a raycast barrier, inactive-menu cleanup and reattachment. Only its own sandbox metadata sidecar is created, then removed. The receipt does **not** establish gamepad, modal coexistence, resizing, shutdown, browser opening, screenshot readability or complete owner acceptance; those remain separate native gates. No game launch has yet qualified this probe.
+
 ## Isolation
 
 `tools/qualification.ps1` provisions a fresh Windows sandbox:

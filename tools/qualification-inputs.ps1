@@ -250,6 +250,32 @@ function Assert-TravelJournalContainment([string]$Root, [string[]]$Roots, $Befor
     $lines += 'scope=after the owned process exited and the archived plugin flushed at quit; no claim is made about locations outside the audited roots'
     [IO.File]::WriteAllLines((Join-Path $Root 'travel-journal-postquit-audit.txt'), [string[]]$lines)
 }
+function Assert-ModMenuProbeSelection([string]$Root, $Provenance) {
+    $property = $Provenance.PSObject.Properties['modMenuProbe']
+    if ($property -and $property.Value -isnot [bool]) { throw 'Invalid mod menu probe flag.' }
+    $selected = $property -and $property.Value
+    $marker = Join-Path $Root 'mod-menu-probe.enabled'
+    if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Mod menu probe selection changed.' }
+    if (!$selected) { return }
+    if ($Provenance.scenario -ne 'Full' -or [IO.File]::ReadAllText($marker) -cne 'mod-menu-probe-v1') { throw 'Invalid mod menu probe selection.' }
+    foreach ($item in $Provenance.PSObject.Properties) {
+        if ($item.Name -ne 'modMenuProbe' -and $item.Value -is [bool] -and $item.Value) { throw 'Mod menu probe cannot be combined with consumers or other probes.' }
+    }
+}
+function Assert-ModMenuProbeReceipt([string]$Root, $Provenance) {
+    Assert-ModMenuProbeSelection $Root $Provenance
+    if (!$Provenance.PSObject.Properties['modMenuProbe'] -or !$Provenance.modMenuProbe) { return }
+    $outcome = Join-Path $Root 'run-outcome.json'
+    if (!(Test-Path -LiteralPath $outcome -PathType Leaf)) { throw 'Mod menu probe has no exit outcome.' }
+    Assert-QualificationExitOutcome (Get-Content -LiteralPath $outcome -Raw | ConvertFrom-Json) 'Mod menu probe'
+    $receipt = Join-Path $Root 'mod-menu-probe.receipt'
+    $snapshot = Join-Path $Root 'mod-menu-probe.txt'
+    if (!(Test-Path -LiteralPath $receipt -PathType Leaf) -or !(Test-Path -LiteralPath $snapshot -PathType Leaf)) { throw 'Mod menu probe evidence missing.' }
+    if ((Get-Item -LiteralPath $receipt).Length -gt 256 -or (Get-Item -LiteralPath $snapshot).Length -gt 1048576) { throw 'Mod menu probe evidence too large.' }
+    $lines = @(Get-Content -LiteralPath $receipt)
+    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'mod-menu-probe-v1' -or $lines[2] -cnotmatch '^sha256=[0-9a-f]{64}$') { throw 'Invalid mod menu probe receipt.' }
+    if ((Get-FileHash -LiteralPath $snapshot -Algorithm SHA256).Hash.ToLowerInvariant() -cne $lines[2].Substring(7)) { throw 'Mod menu probe evidence changed.' }
+}
 function Assert-MenuInspectionReceipt([string]$Root, $Provenance) {
     if (!$Provenance.PSObject.Properties['menuInspection'] -or !$Provenance.menuInspection) { return }
     if ($Provenance.scenario -ne 'MissingApi') { throw 'Menu inspection requires MissingApi provenance.' }
@@ -268,6 +294,7 @@ function Assert-MenuInspectionReceipt([string]$Root, $Provenance) {
 }
 function Assert-PersistenceProbeReceipt([string]$Root, $Provenance) {
     Assert-MenuInspectionReceipt $Root $Provenance
+    Assert-ModMenuProbeReceipt $Root $Provenance
     if ($Provenance.PSObject.Properties['anima'] -and $Provenance.anima) {
         $receipt = Join-Path $Root 'anima-missions.txt'
         if (!(Test-Path -LiteralPath $receipt) -or (Get-Content -LiteralPath $receipt -TotalCount 1) -ne 'PASS') { throw 'Anima mission probe did not complete.' }
@@ -830,6 +857,7 @@ function Assert-QualificationInputs([string]$Root) {
     $provenance = Get-Content -LiteralPath (Join-Path $Root 'build-provenance.json') -Raw | ConvertFrom-Json
     if ($provenance.scenario -notin @('Full','MissingApi','UnavailableApi') -or
         (Get-Content -LiteralPath (Join-Path $Root 'scenario.txt') -Raw).Trim() -cne $provenance.scenario) { throw 'Prepared scenario changed.' }
+    Assert-ModMenuProbeSelection $Root $provenance
     $menuProperty = $provenance.PSObject.Properties['menuInspection']
     if ($menuProperty -and $menuProperty.Value -isnot [bool]) { throw 'Menu inspection selection must be boolean.' }
     $menuInspection = $menuProperty -and $menuProperty.Value
