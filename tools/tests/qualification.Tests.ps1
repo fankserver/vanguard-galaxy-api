@@ -858,7 +858,8 @@ try {
     # Synthetic receipts only. The in-system phase is selected here too and keeps its own required
     # cases; a passing in-system receipt can never stand in for these two.
     $recoverySession = [Guid]::NewGuid().ToString()
-    $recoveryPlacementDetail = 'origin=system-1:station-1; recoveredAt=system-1:poi-target; placementSnapshot=currentPoi=known,managerReady=True,travelActive=False,usingJumpgate=False,waypoints=0,owned=True,location=system-1:poi-target'
+    $recoveryPlacementDetail = 'origin=system-1:station-1; recoveredAt=system-1:poi-target; acquisitionSnapshot=currentPoi=known,managerReady=True,travelActive=True,usingJumpgate=False,waypoints=1,owned=True,location=system-1:poi-target; placementSnapshot=currentPoi=known,managerReady=True,travelActive=False,usingJumpgate=False,waypoints=0,owned=True,location=system-1:poi-target'
+    $recoveryAttemptDetail = 'attempt1={target=poi-target,outcome=cancelled inside the observed live-route readiness window}'
     $recoveryContinuationDetail = 'approachGate=system-1:gate-1; legs=3; routeCompletions=1; gateArrivalSnapshot=currentPoi=known,managerReady=True,travelActive=True,usingJumpgate=True,waypoints=1,owned=True,location=system-2:gate-2; completionSnapshot=currentPoi=known,managerReady=True,travelActive=False,usingJumpgate=False,waypoints=0,owned=True,location=system-2:poi-follow'
     function RecoveryRow($case, $status, $session, $evidence, $detail) { return ($case + "`tdescription`t" + $status + "`tsystem:poi`t" + $session + "`t`t" + $evidence + "`t" + $detail) }
     function RecoveryEvent($surface, $sequence, $caseLabel, $session) { return ("" + $sequence + "`t" + $surface + "`t" + $caseLabel + "`t" + $session + "`t`tArrived`tInSystem`tsystem-1:station-1`tsystem-1:poi-target`tsystem-1:poi-target`t1.000`t") }
@@ -868,7 +869,7 @@ try {
         $failed = @($records | Where-Object { $_[2] -eq 'failed' }).Count
         $notRun = @($records | Where-Object { $_[2] -eq 'not-run' }).Count
         $lines = @($first, "phase=$TravelRecoveryPhase", "budgetSeconds=$TravelRecoveryBudgetSeconds",
-            ("required=" + ($TravelRecoveryRequiredCases -join ',')),
+            ("required=" + ($TravelRecoveryRequiredCases -join ',')), "recovery-attempts=$TravelRecoveryMaxAttempts",
             ("rows=" + $records.Count + " passed=$passed failed=$failed notRun=$notRun"))
         foreach ($case in $TravelRecoveryRequiredCases) {
             $matched = @($records | Where-Object { $_[0] -eq $case })
@@ -907,9 +908,11 @@ try {
     $rejected = $false
     try { Assert-PersistenceProbeReceipt $recoveryRoot $recoveryProvenance } catch { $rejected = $true }
     Assert $rejected 'Missing recovery receipt accepted because the in-system phase passed.'
+    $recoveryAttemptRowText = (RecoveryRow $TravelRecoveryAttemptRow 'not-run' $recoverySession '' $recoveryAttemptDetail)
     $recoveryRows = @(
         (RecoveryRow 'recovered-placement' 'passed' $recoverySession 'travel:1' $recoveryPlacementDetail),
-        (RecoveryRow 'post-gate-continuation' 'passed' $recoverySession 'travel:2' $recoveryContinuationDetail))
+        (RecoveryRow 'post-gate-continuation' 'passed' $recoverySession 'travel:2' $recoveryContinuationDetail),
+        $recoveryAttemptRowText)
     $recoveryEvents = @((RecoveryEvent 'travel' 1 'recovered-placement' $recoverySession),
         (RecoveryEvent 'travel' 2 'post-gate-continuation' $recoverySession))
     WriteRecoveryOutputs $recoveryRows $recoveryEvents (RecoverySummary $recoveryRows 'PASS')
@@ -921,7 +924,7 @@ try {
         @{Detail=($recoveryPlacementDetail -replace 'managerReady=True','managerReady=False'); Message='Recovery placement without an initialized POI accepted.'},
         @{Detail=($recoveryPlacementDetail -replace 'travelActive=False','travelActive=True'); Message='Recovery placement recorded during an active native route accepted.'},
         @{Detail=($recoveryPlacementDetail -replace 'waypoints=0','waypoints=1'); Message='Recovery placement recorded with remaining native waypoints accepted.'})) {
-        $mutated = @((RecoveryRow 'recovered-placement' 'passed' $recoverySession 'travel:1' $broken.Detail), $recoveryRows[1])
+        $mutated = @((RecoveryRow 'recovered-placement' 'passed' $recoverySession 'travel:1' $broken.Detail), $recoveryRows[1], $recoveryAttemptRowText)
         AssertRecoveryRejected $mutated $recoveryEvents (RecoverySummary $mutated 'PASS') $broken.Message
     }
     # A continuation row must publish three legs, exactly one completion, a gate arrival that still
@@ -932,22 +935,49 @@ try {
         @{Detail=($recoveryContinuationDetail -replace 'usingJumpgate=True,waypoints=1','usingJumpgate=True,waypoints=0'); Message='Continuation gate arrival without a remaining waypoint accepted.'},
         @{Detail=($recoveryContinuationDetail -replace 'usingJumpgate=True','usingJumpgate=False'); Message='Continuation gate arrival outside the native jump routine accepted.'},
         @{Detail=($recoveryContinuationDetail -replace 'usingJumpgate=False,waypoints=0,owned=True,location=system-2:poi-follow','usingJumpgate=False,waypoints=3,owned=True,location=system-2:poi-follow'); Message='Continuation completion with remaining native waypoints accepted.'})) {
-        $mutated = @($recoveryRows[0], (RecoveryRow 'post-gate-continuation' 'passed' $recoverySession 'travel:2' $broken.Detail))
+        $mutated = @($recoveryRows[0], (RecoveryRow 'post-gate-continuation' 'passed' $recoverySession 'travel:2' $broken.Detail), $recoveryAttemptRowText)
         AssertRecoveryRejected $mutated $recoveryEvents (RecoverySummary $mutated 'PASS') $broken.Message
     }
-    $recoverySkipped = @($TravelRecoveryRequiredCases | ForEach-Object { RecoveryRow $_ 'not-run' $recoverySession '' 'no native window' })
+    # The acquisition snapshot must show a LIVE native route: readiness alone would also match an
+    # abandoned route whose manager initialized after the route was already gone.
+    foreach ($broken in @(
+        @{Detail=($recoveryPlacementDetail -replace 'acquisitionSnapshot=currentPoi=known,managerReady=True,travelActive=True','acquisitionSnapshot=currentPoi=known,managerReady=True,travelActive=False'); Message='Recovery acquisition without a live native route accepted.'},
+        @{Detail=($recoveryPlacementDetail -replace 'acquisitionSnapshot=[^;]*; ',''); Message='Recovery row without an acquisition snapshot accepted.'})) {
+        $mutated = @((RecoveryRow 'recovered-placement' 'passed' $recoverySession 'travel:1' $broken.Detail), $recoveryRows[1], $recoveryAttemptRowText)
+        AssertRecoveryRejected $mutated $recoveryEvents (RecoverySummary $mutated 'PASS') $broken.Message
+    }
+    # The persisted attempt log is required, bounded, never coverage and must report the cancel the
+    # passed case claims.
+    $recoveryNoAttempts = @($recoveryRows[0], $recoveryRows[1])
+    AssertRecoveryRejected $recoveryNoAttempts $recoveryEvents (RecoverySummary $recoveryNoAttempts 'PASS') 'Passed recovery case without any persisted attempt row accepted.'
+    $recoveryMissedOnly = @($recoveryRows[0], $recoveryRows[1],
+        (RecoveryRow $TravelRecoveryAttemptRow 'not-run' $recoverySession '' 'attempt1={target=poi-target,outcome=the native arrival ran first}'))
+    AssertRecoveryRejected $recoveryMissedOnly $recoveryEvents (RecoverySummary $recoveryMissedOnly 'PASS') 'Passed recovery case whose attempts never report the cancel accepted.'
+    $recoveryTooManyAttempts = @($recoveryRows[0], $recoveryRows[1]) + @(1..($TravelRecoveryMaxAttempts + 1) | ForEach-Object {
+        RecoveryRow $TravelRecoveryAttemptRow 'not-run' $recoverySession '' ("attempt$_={target=poi-$_,outcome=missed}") })
+    AssertRecoveryRejected $recoveryTooManyAttempts $recoveryEvents (RecoverySummary $recoveryTooManyAttempts 'PASS') 'More attempt rows than the declared bound accepted.'
+    $recoveryAttemptAsCoverage = @($recoveryRows[0], $recoveryRows[1],
+        (RecoveryRow $TravelRecoveryAttemptRow 'passed' $recoverySession 'travel:1' $recoveryAttemptDetail))
+    AssertRecoveryRejected $recoveryAttemptAsCoverage $recoveryEvents (RecoverySummary $recoveryAttemptAsCoverage 'PASS') 'A recovery attempt row recorded as coverage accepted.'
+    $recoveryAttemptNoOutcome = @($recoveryRows[0], $recoveryRows[1],
+        (RecoveryRow $TravelRecoveryAttemptRow 'not-run' $recoverySession '' 'started'))
+    AssertRecoveryRejected $recoveryAttemptNoOutcome $recoveryEvents (RecoverySummary $recoveryAttemptNoOutcome 'PASS') 'A recovery attempt row without an outcome accepted.'
+    $recoveryWrongBound = @((RecoverySummary $recoveryRows 'PASS') | ForEach-Object { if ($_ -like 'recovery-attempts=*') { 'recovery-attempts=99' } else { $_ } })
+    AssertRecoveryRejected $recoveryRows $recoveryEvents $recoveryWrongBound 'Recovery receipt declaring a different attempt bound accepted.'
+    $recoverySkipped = @($TravelRecoveryRequiredCases | ForEach-Object { RecoveryRow $_ 'not-run' $recoverySession '' 'no native window' }) + @($recoveryAttemptRowText)
     AssertRecoveryRejected $recoverySkipped $recoveryEvents (RecoverySummary $recoverySkipped 'PASS') 'All-skipped recovery coverage accepted as PASS.'
-    $recoveryMissing = @($recoveryRows[0])
+    $recoveryMissing = @($recoveryRows[0], $recoveryAttemptRowText)
     AssertRecoveryRejected $recoveryMissing $recoveryEvents (RecoverySummary $recoveryMissing 'PASS') 'Missing mandatory recovery case accepted.'
     $recoveryDuplicated = $recoveryRows + @($recoveryRows[0])
     AssertRecoveryRejected $recoveryDuplicated $recoveryEvents (RecoverySummary $recoveryDuplicated 'PASS') 'Duplicated recovery case accepted.'
-    $recoveryFailed = @($recoveryRows[0], (RecoveryRow 'post-gate-continuation' 'failed' $recoverySession 'travel:2' $recoveryContinuationDetail))
+    $recoveryFailed = @($recoveryRows[0], (RecoveryRow 'post-gate-continuation' 'failed' $recoverySession 'travel:2' $recoveryContinuationDetail), $recoveryAttemptRowText)
     AssertRecoveryRejected $recoveryFailed $recoveryEvents (RecoverySummary $recoveryFailed 'PASS') 'Claimed recovery PASS with a failed case accepted.'
     $recoveryForeign = @($recoveryEvents | ForEach-Object { $_ -replace [regex]::Escape($recoverySession), ([Guid]::NewGuid().ToString()) })
     AssertRecoveryRejected $recoveryRows $recoveryForeign (RecoverySummary $recoveryRows 'PASS') 'Recovery identities absent from the event trace accepted.'
     AssertRecoveryRejected $recoveryRows $recoveryEvents (RecoverySummary $recoveryRows 'FAIL') 'Failed recovery attempt summary accepted.'
     AssertRecoveryRejected $recoveryRows $recoveryEvents @('INCOMPLETE', "phase=$TravelRecoveryPhase", "budgetSeconds=$TravelRecoveryBudgetSeconds",
-        'activeCase=recovered-placement', 'rows=2 passed=2 failed=0 notRun=0', 'result=pilot still running or externally terminated; this is not a pass.') 'Incomplete recovery checkpoint accepted as a pass.'
+        "recovery-attempts=$TravelRecoveryMaxAttempts", 'activeCase=recovered-placement', 'rows=3 passed=2 failed=0 notRun=1',
+        'result=pilot still running or externally terminated; this is not a pass.') 'Incomplete recovery checkpoint accepted as a pass.'
     $recoveryOverBudget = @((RecoverySummary $recoveryRows 'PASS') | ForEach-Object { if ($_ -like 'budgetSeconds=*') { "budgetSeconds=$($TravelRecoveryBudgetSeconds + 1)" } else { $_ } })
     AssertRecoveryRejected $recoveryRows $recoveryEvents $recoveryOverBudget 'Recovery budget above the launcher reservation accepted.'
     $recoveryForeignPhase = @((RecoverySummary $recoveryRows 'PASS') | ForEach-Object { if ($_ -like 'phase=*') { "phase=$TravelResiliencePhase" } else { $_ } })

@@ -42,6 +42,27 @@ public sealed partial class Plugin
         => _rcRows.Add(new TravelStationReceipt.Row(caseId, description, status, nativeIdentity,
             session?.ToString() ?? "", operation?.ToString() ?? "", evidence, detail));
 
+    // One recovery attempt is persisted the moment it STARTS and is rewritten in place with its
+    // outcome, so an attempt that later throws can never erase an earlier attempt's outcome and an
+    // external termination still finds the attempt history on disk. Returns the row index the
+    // driver rewrites; attempts are always NOT-RUN rows (diagnostics, never coverage).
+    internal int RcBeginAttempt(Guid? session, string detail)
+    {
+        _rcRows.Add(new TravelStationReceipt.Row(TravelRecoveryReceipt.RecoveryAttemptRow,
+            TravelRecoveryReceipt.RecoveryAttemptDescription, TravelStationReceipt.NotRun, "",
+            session?.ToString() ?? "", "", "", detail));
+        RcCheckpoint();
+        return _rcRows.Count - 1;
+    }
+
+    internal void RcCompleteAttempt(int index, Guid? session, string detail)
+    {
+        _rcRows[index] = new TravelStationReceipt.Row(TravelRecoveryReceipt.RecoveryAttemptRow,
+            TravelRecoveryReceipt.RecoveryAttemptDescription, TravelStationReceipt.NotRun, "",
+            session?.ToString() ?? "", "", "", detail);
+        RcCheckpoint();
+    }
+
     // Incremental, atomic checkpoint after every case: an external termination can then only leave
     // INCOMPLETE evidence behind, never a stale PASS and never an empty directory.
     internal void RcCheckpoint()

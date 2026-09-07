@@ -113,16 +113,24 @@ public sealed partial class Plugin
 
         // A real native in-system route is driven to a safe POI and allowed to reach the verified
         // origin unload (the public Departed). The pilot then samples the loaded world every frame
-        // until the native travel coroutine has assigned the destination POI to the player and its
-        // manager reports initializedAndReady, but SpaceshipHasArrived has not run yet (no public
-        // Arrived). In exactly that window the player's own cancel action is taken, which leaves the
-        // API with a placed session, no pending leg and an unknown location while the world reports
-        // a loaded, ready POI - the state the adapter's own readiness observation recovers from.
+        // until the native travel coroutine has assigned the destination POI to the player, its
+        // manager reports initializedAndReady, and the native ROUTE IS STILL RUNNING
+        // (TravelActive()), while SpaceshipHasArrived has not run yet (no public Arrived). In
+        // exactly that window the player's own cancel action is taken, which leaves the API with a
+        // placed session, no pending leg and an unknown location while the world reports a loaded,
+        // ready POI - the state the adapter's own readiness observation recovers from.
+        //
+        // The live-route requirement is not decoration. On the inspected build the native wait
+        // predicate (<Travel>b__84_0) returns TRUE when no local manager is registered, so a route
+        // can end silently without an arrival and the destination manager can initialize afterwards.
+        // Readiness alone would then be indistinguishable from this case's window while nothing was
+        // travelling, so an acquisition without a live route is classified as a MISS and no cancel
+        // is issued.
         //
         // Nothing is forced: no field is written, no hook is disabled and no adapter callback is
-        // invoked. When the native window closes within a frame the attempt is recorded and the next
-        // real route is driven; after the bounded attempts the case records a NOT-RUN with the
-        // per-attempt log instead of claiming coverage.
+        // invoked. Every attempt is persisted as its own receipt row when it starts and rewritten
+        // with its outcome, so a later failure cannot erase an earlier attempt. A window wait that
+        // expires while the native route is STILL RUNNING is a failure of this case, not a retry.
         private IEnumerable<object?> CaseRecoveredPlacement()
         {
             _p.RcCase(TravelRecoveryReceipt.RecoveredPlacementCase, TravelRecoveryReceipt.RecoveredPlacementDescription);
@@ -139,15 +147,27 @@ public sealed partial class Plugin
                     .FirstOrDefault(poi => !ReferenceEquals(poi, current) && !attempted.Contains((string)SpGet(poi, "guid")!));
                 if (target == null)
                 {
-                    attemptLog.Add(TravelRecoveryReceipt.DescribeAttempt(attempt, "<none>",
-                        "no unused safe in-system target remains (" + _p.SafeTargetSelection + ")"));
+                    var exhausted = TravelRecoveryReceipt.DescribeAttempt(attempt, "<none>",
+                        "no unused safe in-system target remains (" + _p.SafeTargetSelection + ")");
+                    attemptLog.Add(exhausted);
+                    _p.RcCompleteAttempt(_p.RcBeginAttempt(_session, exhausted), _session, exhausted);
                     break;
                 }
                 var targetId = (string)SpGet(target, "guid")!;
                 attempted.Add(targetId);
                 var originPoi = current == null ? null : (string)SpGet(current, "guid")!;
+                // Persisted BEFORE anything is driven, so an attempt that throws still leaves its
+                // own row behind next to the earlier attempts' outcomes.
+                int attemptRow = _p.RcBeginAttempt(_session, TravelRecoveryReceipt.DescribeAttempt(attempt, targetId, "started"));
+                void RecordAttempt(string result)
+                {
+                    var described = TravelRecoveryReceipt.DescribeAttempt(attempt, targetId, result);
+                    attemptLog.Add(described);
+                    _p.RcCompleteAttempt(attemptRow, _session, described);
+                }
                 bool cancelled = false;
                 string outcome = "";
+                var acquisition = default(TravelRecoveryReceipt.NativeSnapshot);
                 int offset = Travel.Count;
                 int stationOffset = Stations.Count;
                 // The quiet window opens BEFORE the availability wait, because that wait is exactly
@@ -158,7 +178,7 @@ public sealed partial class Plugin
                 Require(unsolicited == null, unsolicited!);
                 if (!(bool)_canWeTravel.Invoke(NativeTravel("native CanWeTravel for the recovery attempt"), new[] { target })!)
                 {
-                    attemptLog.Add(TravelRecoveryReceipt.DescribeAttempt(attempt, targetId, "native CanWeTravel refused the route"));
+                    RecordAttempt("native CanWeTravel refused the route");
                     continue;
                 }
                 Require((bool)_tryInitiateTravel.Invoke(NativeTravel("native TryInitiateTravel for the recovery attempt"), new[] { target })!,
@@ -180,7 +200,21 @@ public sealed partial class Plugin
                     var poi = SpGet(Player, "currentPointOfInterest");
                     if (ReferenceEquals(poi, target) && NativeManagerReadyFor(owner, poi))
                     {
-                        // The player's own cancel action, taken inside the observed window.
+                        // Sampled in the frame the cancel is about to be issued, BEFORE the native
+                        // cancel clears its own coroutine: this is the only place a live route can
+                        // still be observed. It is passed to the pure evidence rule unchanged.
+                        acquisition = _p.RecoverySnapshot();
+                        if (!acquisition.TravelActive)
+                        {
+                            // Readiness without a live route: the native route ended silently (its
+                            // own wait predicate passes when no manager is registered) and the
+                            // manager initialized afterwards. Cancelling here would publish a
+                            // Cancelled that interrupted nothing, so no cancel is issued.
+                            outcome = "the native route had already ended when the readiness window became observable, so no live route could be cancelled ("
+                                + acquisition.ToDetail() + ")";
+                            break;
+                        }
+                        // The player's own cancel action, taken inside the observed live window.
                         Require((bool)_cancelTravel.Invoke(owner, new object?[] { null })!,
                             "Native CancelTravel(null) refused inside the observed readiness window.");
                         cancelled = true;
@@ -190,15 +224,32 @@ public sealed partial class Plugin
                         "Session failed while sampling the native readiness window.");
                     if (Time.realtimeSinceStartup >= until)
                     {
-                        outcome = "timed out after " + TravelRecoveryReceipt.ArrivalSeconds + "s without an arrival or a readiness window ("
-                            + _p.RecoverySnapshot().ToDetail() + ")";
+                        var timedOut = _p.RecoverySnapshot();
+                        if (timedOut.TravelActive)
+                        {
+                            // The harness ran out of time while the native route was still running.
+                            // That is this case's own failure, never a clean miss and never a retry:
+                            // the evidence is persisted, the world is left quiet with the player's
+                            // own cancel, and the case fails at the timeout.
+                            RecordAttempt("timed out after " + TravelRecoveryReceipt.ArrivalSeconds
+                                + "s while the native route was still running (" + timedOut.ToDetail() + ")");
+                            // Owner-exact cleanup, AFTER the evidence is persisted: the player's own
+                            // cancel leaves the world quiet without forcing any position or warp
+                            // state. The case still fails at the timeout.
+                            _cancelTravel.Invoke(NativeTravel("the cleanup cancel after the readiness-window timeout"), new object?[] { null });
+                            Require(false, "Timed out after " + TravelRecoveryReceipt.ArrivalSeconds
+                                + "s waiting for the readiness window while the native route was still running ("
+                                + timedOut.ToDetail() + "); attempts: " + string.Join("; ", attemptLog));
+                        }
+                        outcome = "timed out after " + TravelRecoveryReceipt.ArrivalSeconds
+                            + "s with no native route running and no arrival (" + timedOut.ToDetail() + ")";
                         break;
                     }
                     yield return null;
                 }
                 if (!cancelled)
                 {
-                    attemptLog.Add(TravelRecoveryReceipt.DescribeAttempt(attempt, targetId, outcome));
+                    RecordAttempt(outcome);
                     // Leave a quiet native surface for the next attempt: let the route it completed
                     // close normally instead of starting the next one inside it.
                     if (Slice(offset).Any(fact => fact.Kind == TravelTransitionKind.Arrived))
@@ -216,7 +267,7 @@ public sealed partial class Plugin
                 var failure = TravelRecoveryReceipt.CheckRecoveredPlacement(slice, _session, _systemId, originPoi, targetId);
                 Require(failure == null, failure!);
                 failure = TravelRecoveryReceipt.CheckRecoveryEvidence(slice, _p._rcSnapshots,
-                    TravelStationReceipt.Location(_systemId, targetId));
+                    TravelStationReceipt.Location(_systemId, targetId), acquisition);
                 Require(failure == null, failure!);
                 // The public facts are compared against the loaded world, never the other way round.
                 var arrivedOwner = NativeTravel("the recovered placement checks");
@@ -232,16 +283,17 @@ public sealed partial class Plugin
                 var stationFacts = StationSlice(stationOffset);
                 Require(stationFacts.All(fact => fact.Kind is StationTransitionKind.InteriorReady or StationTransitionKind.InteriorDestroyed),
                     "The recovery window emitted physical station facts: " + string.Join(", ", stationFacts.Select(TravelStationReceipt.Describe)));
-                attemptLog.Add(TravelRecoveryReceipt.DescribeAttempt(attempt, targetId, "cancelled inside the observed readiness window"));
+                RecordAttempt(TravelRecoveryReceipt.AttemptCancelledOutcome);
                 Pass(TravelStationReceipt.Location(_systemId, targetId), slice[0].OperationId,
                     TravelStationReceipt.Evidence(slice, null),
                     "origin=" + TravelStationReceipt.Location(_systemId, originPoi) + "; cancelledLeg=" + slice[0].OperationId
                     + "; recoveredAt=" + TravelStationReceipt.Location(_systemId, targetId)
+                    + "; acquisitionSnapshot=" + acquisition.ToDetail()
                     + "; placementSnapshot=" + _p._rcSnapshots[slice[3].Sequence].ToDetail()
-                    + "; " + string.Join("; ", attemptLog));
+                    + "; attempts=" + attemptLog.Count + "; " + string.Join("; ", attemptLog));
                 yield break;
             }
-            NotRun("The native readiness window (destination POI current and initialized before SpaceshipHasArrived) was not observed in "
+            NotRun("The native readiness window (destination POI current and initialized, with the native route still running, before SpaceshipHasArrived) was not observed in "
                 + TravelRecoveryReceipt.RecoveryAttempts + " real routes: " + string.Join("; ", attemptLog)
                 + " (" + _p.SafeTargetSelection + ")");
         }

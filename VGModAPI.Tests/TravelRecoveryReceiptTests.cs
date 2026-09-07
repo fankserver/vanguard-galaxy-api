@@ -70,13 +70,20 @@ public sealed class TravelRecoveryReceiptTests
         return result;
     }
 
+    // What the pilot samples in the frame the cancel is about to be issued: a LIVE native route at
+    // the destination POI whose manager is initialized.
+    private static TravelRecoveryReceipt.NativeSnapshot Acquisition(bool travelActive = true, bool managerReady = true,
+        bool currentPoiKnown = true, bool usingJumpgate = false, bool owned = true, string? location = null)
+        => new(currentPoiKnown, managerReady, travelActive, usingJumpgate, 1,
+            location ?? TravelStationReceipt.Location(System1, Target), owned);
+
     [Fact]
     public void TheRecoveryStreamIsACancelledLegFollowedByAnOperationLessPlacement()
     {
         var facts = RecoveryFacts(Guid.NewGuid());
         Assert.Null(TravelRecoveryReceipt.CheckRecoveredPlacement(facts, Session, System1, Station, Target));
         Assert.Null(TravelRecoveryReceipt.CheckRecoveryEvidence(facts, RecoverySnapshots(facts),
-            TravelStationReceipt.Location(System1, Target)));
+            TravelStationReceipt.Location(System1, Target), Acquisition()));
     }
 
     [Fact]
@@ -151,37 +158,99 @@ public sealed class TravelRecoveryReceiptTests
         var unloaded = RecoverySnapshots(facts);
         unloaded[facts[3].Sequence] = new TravelRecoveryReceipt.NativeSnapshot(false, false, false, false, 0, key, true);
         Assert.Contains("not observed with a current POI whose manager is initialized",
-            TravelRecoveryReceipt.CheckRecoveryEvidence(facts, unloaded, key));
+            TravelRecoveryReceipt.CheckRecoveryEvidence(facts, unloaded, key, Acquisition()));
         // The cancel must be taken in the window, not before the destination POI became current.
         var early = RecoverySnapshots(facts);
         early[facts[2].Sequence] = new TravelRecoveryReceipt.NativeSnapshot(false, false, true, false, 1, key, true);
-        Assert.Contains("not observed in the native window", TravelRecoveryReceipt.CheckRecoveryEvidence(facts, early, key));
+        Assert.Contains("not observed in the native window", TravelRecoveryReceipt.CheckRecoveryEvidence(facts, early, key, Acquisition()));
         // The departure must really have unloaded its origin.
         var loadedDeparture = RecoverySnapshots(facts);
         loadedDeparture[facts[1].Sequence] = new TravelRecoveryReceipt.NativeSnapshot(true, true, true, false, 1, key, true);
-        Assert.Contains("origin was still loaded", TravelRecoveryReceipt.CheckRecoveryEvidence(facts, loadedDeparture, key));
+        Assert.Contains("origin was still loaded", TravelRecoveryReceipt.CheckRecoveryEvidence(facts, loadedDeparture, key, Acquisition()));
         // A route still running, a remaining waypoint, a jump routine or a replaced owner all refuse.
         var running = RecoverySnapshots(facts);
         running[facts[3].Sequence] = new TravelRecoveryReceipt.NativeSnapshot(true, true, true, false, 0, key, true);
-        Assert.Contains("native travel was still active", TravelRecoveryReceipt.CheckRecoveryEvidence(facts, running, key));
+        Assert.Contains("native travel was still active", TravelRecoveryReceipt.CheckRecoveryEvidence(facts, running, key, Acquisition()));
         var queued = RecoverySnapshots(facts);
         queued[facts[3].Sequence] = new TravelRecoveryReceipt.NativeSnapshot(true, true, false, false, 2, key, true);
-        Assert.Contains("native waypoints remained", TravelRecoveryReceipt.CheckRecoveryEvidence(facts, queued, key));
+        Assert.Contains("native waypoints remained", TravelRecoveryReceipt.CheckRecoveryEvidence(facts, queued, key, Acquisition()));
         var jumping = RecoverySnapshots(facts);
         jumping[facts[3].Sequence] = new TravelRecoveryReceipt.NativeSnapshot(true, true, false, true, 0, key, true);
-        Assert.Contains("inside a native jump routine", TravelRecoveryReceipt.CheckRecoveryEvidence(facts, jumping, key));
+        Assert.Contains("inside a native jump routine", TravelRecoveryReceipt.CheckRecoveryEvidence(facts, jumping, key, Acquisition()));
         var foreignOwner = RecoverySnapshots(facts);
         foreignOwner[facts[3].Sequence] = new TravelRecoveryReceipt.NativeSnapshot(true, true, false, false, 0, key, false);
         Assert.Contains("was not the instance this case captured",
-            TravelRecoveryReceipt.CheckRecoveryEvidence(facts, foreignOwner, key));
+            TravelRecoveryReceipt.CheckRecoveryEvidence(facts, foreignOwner, key, Acquisition()));
         // An elsewhere-observed placement is not this case's recovery.
         var elsewhere = RecoverySnapshots(facts);
         elsewhere[facts[3].Sequence] = new TravelRecoveryReceipt.NativeSnapshot(true, true, false, false, 0,
             TravelStationReceipt.Location(System1, "poi-other"), true);
-        Assert.Contains("instead of", TravelRecoveryReceipt.CheckRecoveryEvidence(facts, elsewhere, key));
+        Assert.Contains("instead of", TravelRecoveryReceipt.CheckRecoveryEvidence(facts, elsewhere, key, Acquisition()));
         // A missing snapshot is a missing proof, never a pass.
         Assert.Contains("No native snapshot",
-            TravelRecoveryReceipt.CheckRecoveryEvidence(facts, new Dictionary<long, TravelRecoveryReceipt.NativeSnapshot>(), key));
+            TravelRecoveryReceipt.CheckRecoveryEvidence(facts, new Dictionary<long, TravelRecoveryReceipt.NativeSnapshot>(), key, Acquisition()));
+    }
+
+    [Fact]
+    public void AReadinessWindowWithoutALiveNativeRouteIsRefused()
+    {
+        var facts = RecoveryFacts(Guid.NewGuid());
+        var snapshots = RecoverySnapshots(facts);
+        var key = TravelStationReceipt.Location(System1, Target);
+        // The abandoned-route shape this rule exists to exclude: the native wait predicate of the
+        // inspected build passes when no local manager is registered, so a route can end silently
+        // and the manager can initialize afterwards. The destination POI is then current and ready
+        // with nothing travelling, and a cancel there would interrupt no route at all.
+        Assert.Contains("was not running when the readiness window was acquired",
+            TravelRecoveryReceipt.CheckRecoveryEvidence(facts, snapshots, key, Acquisition(travelActive: false)));
+        // The other acquisition requirements are asserted at the same boundary.
+        Assert.Contains("without a current POI whose manager is initialized",
+            TravelRecoveryReceipt.CheckRecoveryEvidence(facts, snapshots, key, Acquisition(managerReady: false)));
+        Assert.Contains("without a current POI whose manager is initialized",
+            TravelRecoveryReceipt.CheckRecoveryEvidence(facts, snapshots, key, Acquisition(currentPoiKnown: false)));
+        Assert.Contains("acquired inside a native jump routine",
+            TravelRecoveryReceipt.CheckRecoveryEvidence(facts, snapshots, key, Acquisition(usingJumpgate: true)));
+        Assert.Contains("was not the instance this case captured",
+            TravelRecoveryReceipt.CheckRecoveryEvidence(facts, snapshots, key, Acquisition(owned: false)));
+        Assert.Contains("acquired at",
+            TravelRecoveryReceipt.CheckRecoveryEvidence(facts, snapshots, key,
+                Acquisition(location: TravelStationReceipt.Location(System1, "poi-other"))));
+        // The post-cancel placement rule is unchanged and stays separate: the route must be gone
+        // THERE, which is exactly the opposite of the acquisition requirement.
+        var running = RecoverySnapshots(facts);
+        running[facts[3].Sequence] = new TravelRecoveryReceipt.NativeSnapshot(true, true, true, false, 0, key, true);
+        Assert.Contains("native travel was still active",
+            TravelRecoveryReceipt.CheckRecoveryEvidence(facts, running, key, Acquisition()));
+    }
+
+    [Fact]
+    public void AttemptRowsArePersistedBoundedAndConsistentWithTheCase()
+    {
+        var rows = CaseRowsOnly();
+        rows.Add(AttemptRow(TravelRecoveryReceipt.DescribeAttempt(1, Target, "the native arrival ran first")));
+        rows.Add(AttemptRow(TravelRecoveryReceipt.DescribeAttempt(2, "poi-second", TravelRecoveryReceipt.AttemptCancelledOutcome)));
+        Assert.Null(TravelRecoveryReceipt.CheckAttempts(rows));
+        Assert.Null(TravelRecoveryReceipt.Evaluate(rows, null, Trace()));
+        // A passed case with no persisted attempt at all cannot be believed.
+        Assert.Contains("without a single persisted attempt row", TravelRecoveryReceipt.CheckAttempts(CaseRowsOnly()));
+        // Exactly one attempt may report the cancel the case claims.
+        var twoCancels = new List<TravelStationReceipt.Row>(rows)
+        {
+            AttemptRow(TravelRecoveryReceipt.DescribeAttempt(3, "poi-third", TravelRecoveryReceipt.AttemptCancelledOutcome))
+        };
+        Assert.Contains("attempt row(s) reporting the cancel", TravelRecoveryReceipt.CheckAttempts(twoCancels));
+        // The bound is the declared one, and an attempt is never coverage.
+        var overBound = new List<TravelStationReceipt.Row>(rows);
+        for (int index = 0; index < TravelRecoveryReceipt.RecoveryAttempts; index++)
+            overBound.Add(AttemptRow(TravelRecoveryReceipt.DescribeAttempt(index + 3, "poi-x", "missed")));
+        Assert.Contains("more than the declared bound", TravelRecoveryReceipt.CheckAttempts(overBound));
+        var promoted = new List<TravelStationReceipt.Row>(CaseRowsOnly())
+        {
+            new(TravelRecoveryReceipt.RecoveryAttemptRow, "description", TravelStationReceipt.Passed, "", Session.ToString(), "", "", "outcome=x")
+        };
+        Assert.Contains("attempts are diagnostics, never coverage", TravelRecoveryReceipt.CheckAttempts(promoted));
+        var noOutcome = new List<TravelStationReceipt.Row>(CaseRowsOnly()) { AttemptRow("started") };
+        Assert.Contains("names no outcome", TravelRecoveryReceipt.CheckAttempts(noOutcome));
     }
 
     // --- post-gate continuation --------------------------------------------------------------
@@ -298,10 +367,21 @@ public sealed class TravelRecoveryReceiptTests
 
     // --- phase evaluation --------------------------------------------------------------------
 
-    private static List<TravelStationReceipt.Row> PassingRows() => TravelRecoveryReceipt.RequiredCases
+    private static List<TravelStationReceipt.Row> CaseRowsOnly() => TravelRecoveryReceipt.RequiredCases
         .Select((id, index) => new TravelStationReceipt.Row(id, "description", TravelStationReceipt.Passed, "identity",
             Session.ToString(), Guid.NewGuid().ToString(), "travel:" + (index + 1), "detail"))
         .ToList();
+
+    private static TravelStationReceipt.Row AttemptRow(string detail) => new(TravelRecoveryReceipt.RecoveryAttemptRow,
+        "description", TravelStationReceipt.NotRun, "", Session.ToString(), "", "", detail);
+
+    // A complete receipt always carries the persisted attempt rows next to the case rows.
+    private static List<TravelStationReceipt.Row> PassingRows()
+    {
+        var rows = CaseRowsOnly();
+        rows.Add(AttemptRow(TravelRecoveryReceipt.DescribeAttempt(1, Target, TravelRecoveryReceipt.AttemptCancelledOutcome)));
+        return rows;
+    }
 
     private static List<string> Trace() => TravelRecoveryReceipt.RequiredCases
         .Select((id, index) => (index + 1) + "\ttravel\t" + id + "\t" + Session + "\t\tArrived\tInSystem\t\t\t\t1.000\t")
@@ -333,6 +413,9 @@ public sealed class TravelRecoveryReceiptTests
         Assert.StartsWith("PASS", summary);
         Assert.Contains("phase=" + TravelRecoveryReceipt.Phase, summary);
         Assert.Contains("RuntimeQualified=false", summary);
+        Assert.Contains("recovery-attempts=" + TravelRecoveryReceipt.RecoveryAttempts, summary);
+        Assert.Contains("recovery-attempts=" + TravelRecoveryReceipt.RecoveryAttempts,
+            TravelRecoveryReceipt.SummarizeIncomplete(PassingRows(), TravelRecoveryReceipt.RecoveredPlacementCase));
         Assert.Contains("does not widen " + TravelStationReceipt.Phase, summary);
         Assert.Contains(TravelResilienceReceipt.Phase, summary);
         Assert.Contains("INCOMPLETE", TravelRecoveryReceipt.SummarizeIncomplete(PassingRows(), TravelRecoveryReceipt.RecoveredPlacementCase));

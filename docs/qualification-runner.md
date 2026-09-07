@@ -233,9 +233,17 @@ one in the same session.
 - `recovered-placement`: the POSITIVE native `RecoveredPlacement` case. A real in-system route to a
   safe target is driven to its verified origin unload (the public `Departed`), and the pilot then
   samples the loaded world every frame until the native travel routine has assigned the destination
-  POI to the player and its manager reports `initializedAndReady` while `SpaceshipHasArrived` has
-  NOT run (no public `Arrived`). In exactly that window it takes the player's own cancel action
-  (`TravelManager.CancelTravel(null)`). The API then has a placed session, no pending leg and an
+  POI to the player, its manager reports `initializedAndReady` and the native route is STILL RUNNING
+  (`TravelActive()`), while `SpaceshipHasArrived` has NOT run (no public `Arrived`). In exactly that
+  window it takes the player's own cancel action (`TravelManager.CancelTravel(null)`). The
+  live-route requirement is load-bearing and is asserted by the pure rule from an ACQUISITION
+  snapshot taken in the frame the cancel is about to be issued: on the inspected build the routine's
+  own wait predicate (`<Travel>b__84_0`) returns TRUE when no local manager is registered, so a
+  route can end silently without an arrival and the destination manager can initialize afterwards -
+  readiness alone would then look identical to this window while nothing was travelling, and a
+  cancel there would publish a `Cancelled` that interrupted nothing. Such an acquisition is
+  classified as a MISS and no cancel is issued. An installed-assembly test pins that predicate
+  shape. The API then has a placed session, no pending leg and an
   unknown location while the world reports a loaded, ready POI, and the adapter's own per-frame
   readiness observation (`Tick` -> `ObservePlacement`) publishes the placement. The asserted stream
   is exactly `Requested`->`Departed`->`Cancelled`->`RecoveredPlacement`, with the cancellation at an
@@ -244,11 +252,20 @@ one in the same session.
   origin unloaded and both the cancel and the placement at the destination POI with its manager
   initialized, no native route running and no waypoint left. Nothing is injected: no adapter
   callback is invoked, no location, waypoint or docking state is written, and no production hook is
-  disabled. That window is at least one frame wide (the native routine yields on the manager's
-  readiness before calling `SpaceshipHasArrived`, which the installed-assembly test pins), but the
-  native coroutine can resume before the pilot's own poll in that frame, so the case retries with up
-  to three complete real routes and records a per-attempt outcome log. If no attempt observes the
-  window the case records a mandatory NOT-RUN — a phase FAILURE by design — and never a pass.
+  disabled. The routine assigns the POI and then yields before calling `SpaceshipHasArrived` (the
+  installed-assembly test pins that), so the window spans a frame boundary and is observable under
+  either coroutine ordering; the bounded three attempts exist for FIXTURE variability — a target
+  whose scene readiness or route length closes the window, or a route that ends abandoned — not for
+  a per-frame race. Each attempt is persisted as its own NOT-RUN receipt row the moment it starts
+  and rewritten with its outcome, so an attempt that later throws can never erase the earlier
+  attempts' results and the launcher can validate the attempt log's presence, bound and outcomes.
+  If no attempt observes the window the case records a mandatory NOT-RUN — a phase FAILURE by
+  design — and never a pass. A window wait that expires while the native route is STILL RUNNING is
+  not a clean miss and is never retried: the attempt is persisted, the world is left quiet with the
+  player's own cancel, and the case fails at the timeout with the actual snapshot and attempt log.
+  This phase does NOT reach the native fast lane (gate-to-gate, `travelMultiplier = 7`), which needs
+  a route whose next waypoint is another usable gate; that cell stays an explicit required follow-up
+  and is documented as UNQUALIFIED in the coverage matrix.
 - `post-gate-continuation`: ONE native multi-waypoint route is requested to a safe follow-on POI in
   the system behind a usable non-tutorial gate, exactly as the map travel action does it. The native
   planner (`GenerateShortestRoute`) must really produce `[gate, follow-on]`; the in-system approach
@@ -270,10 +287,14 @@ Receipts are checkpointed atomically after every case and written on every path 
 recorded as a failed row for the running case plus `travel-recovery-fault.txt`); a checkpoint always
 says `INCOMPLETE`. `Assert-TravelRecoveryReceipt` re-checks the outputs exactly like the other phases
 and additionally requires each case to PUBLISH the native evidence it claims: the recovery row must
-carry a recovered location and a placement snapshot with `managerReady=True`, `travelActive=False`
-and `waypoints=0`, and the continuation row must carry `legs=3`, `routeCompletions=1`, a gate-arrival
+carry a recovered location, an ACQUISITION snapshot with `travelActive=True` and `managerReady=True`
+(the live route the cancel interrupted) and a placement snapshot with `managerReady=True`,
+`travelActive=False` and `waypoints=0`, and the continuation row must carry `legs=3`, `routeCompletions=1`, a gate-arrival
 snapshot with `usingJumpgate=True` and a remaining waypoint, and a completion snapshot with no
-waypoints and no active native travel. After the last case the phase reloads `fixture-a` so the later
+waypoints and no active native travel. The attempt log is validated too: at least one persisted
+attempt row, never more than the declared bound the receipt itself publishes (`recovery-attempts=`),
+every row NOT-RUN with a named outcome, and exactly one row reporting the live-route cancel whenever
+the case passed. After the last case the phase reloads `fixture-a` so the later
 pilots see the same world state; that restoring load is harness cleanup and is never coverage.
 
 **Fixture requirement.** Both cases need `fixture-a` to load at a known native system/POI (docked is

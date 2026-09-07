@@ -308,6 +308,10 @@ $TravelResilienceRequiredSubcaseRows = @('restore-reinit-same-size')
 $TravelRecoveryPhase = 'travel-recovery-continuation-v1'
 $TravelRecoveryRequiredCases = @('recovered-placement','post-gate-continuation')
 $TravelRecoveryBudgetSeconds = 4200
+# Bounded diagnostic rows: one per driven recovery attempt, persisted as the attempt starts and
+# rewritten with its outcome. They are never coverage, but a receipt that lost them is refused.
+$TravelRecoveryAttemptRow = 'recovered-placement-attempt'
+$TravelRecoveryMaxAttempts = 3
 # The actual-consumer probe REUSES the two native travel phases in place (it must observe them
 # before the Anima mission pilot disposes the consumer's visit observer), so it reserves only its
 # own consumer loads/saves on top of their existing reservations.
@@ -460,6 +464,20 @@ function Assert-TravelRecoveryReceipt([string]$Root) {
     $records = @($rows[1..($rows.Count - 1)] | ForEach-Object { ,($_ -split "`t") })
     $recovery = @($records | Where-Object { $_[0] -eq 'recovered-placement' })
     if ($recovery.Count -ne 1) { throw 'The recovered-placement case is missing or duplicated.' }
+    # The persisted attempt log: bounded, consistent with the receipt's own declared bound, never
+    # coverage, and never absent for a passed case. A missed attempt keeps its own recorded reason.
+    $summary = @(Get-Content -LiteralPath (Join-Path $Root 'travel-recovery.txt'))
+    if ($summary -notcontains "recovery-attempts=$TravelRecoveryMaxAttempts") { throw 'The recovery receipt declares a different attempt bound.' }
+    $attempts = @($records | Where-Object { $_[0] -eq $TravelRecoveryAttemptRow })
+    if ($attempts.Count -lt 1) { throw 'The recovery case published no persisted attempt row.' }
+    if ($attempts.Count -gt $TravelRecoveryMaxAttempts) { throw 'The recovery case published more attempt rows than its declared bound.' }
+    foreach ($attempt in $attempts) {
+        if ($attempt[2] -ne 'not-run') { throw 'A recovery attempt row is recorded as coverage.' }
+        if ($attempt[7] -notlike '*outcome=*') { throw 'A recovery attempt row names no outcome.' }
+    }
+    if ($recovery[0][2] -eq 'passed' -and @($attempts | Where-Object { $_[7] -like '*cancelled inside the observed live-route readiness window*' }).Count -ne 1) {
+        throw 'The passed recovery case has no single attempt row reporting the live-route cancel it claims.'
+    }
     # A recovery is only a recovery when the placement was observed at a loaded, initialized POI
     # with no native route left running: an arrival would have carried an operation instead.
     if ($recovery[0][7] -notlike '*recoveredAt=*' -or $recovery[0][7] -notlike '*placementSnapshot=*') {
@@ -468,6 +486,12 @@ function Assert-TravelRecoveryReceipt([string]$Root) {
     if ($recovery[0][7] -notlike '*placementSnapshot=*managerReady=True*' -or $recovery[0][7] -notlike '*placementSnapshot=*travelActive=False*' -or
         $recovery[0][7] -notlike '*placementSnapshot=*waypoints=0*') {
         throw 'The recovered-placement snapshot does not show an initialized POI with no native route running.'
+    }
+    # The acquisition snapshot is the one taken immediately BEFORE the cancel: it must show a LIVE
+    # native route, otherwise the cancel interrupted nothing and the window was an abandoned route.
+    if ($recovery[0][7] -notlike '*acquisitionSnapshot=*') { throw 'The recovered-placement case published no acquisition snapshot.' }
+    if ($recovery[0][7] -notlike '*acquisitionSnapshot=*travelActive=True*' -or $recovery[0][7] -notlike '*acquisitionSnapshot=*managerReady=True*') {
+        throw 'The recovered-placement acquisition snapshot does not show a live native route at an initialized POI.'
     }
     $continuation = @($records | Where-Object { $_[0] -eq 'post-gate-continuation' })
     if ($continuation.Count -ne 1) { throw 'The post-gate-continuation case is missing or duplicated.' }

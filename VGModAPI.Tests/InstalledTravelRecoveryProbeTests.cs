@@ -137,6 +137,48 @@ public sealed class InstalledTravelRecoveryProbeTests
         Assert.Contains("get_initCoroutine", cancel);
     }
 
+    /// <summary>
+    /// The decisive source fact behind the recovery case's live-route requirement: the in-system
+    /// travel routine's own wait predicate treats a MISSING local manager as satisfied. A route can
+    /// therefore leave that wait with no manager, publish no arrival, and end silently while the
+    /// destination manager initializes afterwards - a state that looks exactly like the readiness
+    /// window. Readiness alone is therefore never proof of a live route, which is why the pilot
+    /// requires <c>TravelActive()</c> at acquisition and the receipt rule refuses an acquisition
+    /// snapshot without it.
+    /// </summary>
+    [Fact]
+    public void TheInSystemWaitPredicateTreatsAMissingManagerAsSatisfied()
+    {
+        using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
+        var module = assembly.MainModule;
+        var travel = module.GetType(Travel) ?? throw new InvalidOperationException("Missing type: " + Travel);
+        var predicate = Assert.Single(travel.Methods, candidate => candidate.Name.StartsWith("<Travel>b__", StringComparison.Ordinal)
+            && candidate.HasBody
+            && candidate.Body.Instructions.Any(instruction => instruction.Operand is MethodReference call
+                && call.Name == "get_initializedAndReady"));
+        var instructions = predicate.Body.Instructions;
+        // The liveness test on the manager: Unity's op_Implicit, then a branch taken when it is
+        // falsy. That branch's target is what the predicate returns for a MISSING manager.
+        int check = instructions.ToList().FindIndex(instruction => instruction.Operand is MethodReference call
+            && call.Name == "op_Implicit" && call.DeclaringType.FullName == "UnityEngine.Object");
+        Assert.True(check >= 0, "The wait predicate no longer tests the local manager with Unity's op_Implicit.");
+        var branch = instructions[check + 1];
+        Assert.Equal("brfalse.s", branch.OpCode.Name);
+        var missingManagerResult = (Mono.Cecil.Cil.Instruction)branch.Operand;
+        Assert.Equal(Mono.Cecil.Cil.OpCodes.Ldc_I4_1, missingManagerResult.OpCode);
+        // The jump routine's own predicate is the opposite shape (a missing manager keeps waiting),
+        // which is why the continuation case has no comparable abandoned-route hazard.
+        var jumpPredicate = Assert.Single(travel.Methods, candidate => candidate.Name.StartsWith("<JumpToSystem>b__", StringComparison.Ordinal)
+            && candidate.HasBody
+            && candidate.Body.Instructions.Any(instruction => instruction.Operand is MethodReference call
+                && call.Name == "get_initializedAndReady"));
+        var jumpInstructions = jumpPredicate.Body.Instructions.ToList();
+        int inequality = jumpInstructions.FindIndex(instruction => instruction.Operand is MethodReference call
+            && call.Name == "op_Inequality" && call.DeclaringType.FullName == "UnityEngine.Object");
+        Assert.True(inequality >= 0, "The jump wait predicate no longer null-checks the local manager.");
+        Assert.Equal(Mono.Cecil.Cil.OpCodes.Ldc_I4_0, ((Mono.Cecil.Cil.Instruction)jumpInstructions[inequality + 1].Operand).OpCode);
+    }
+
     [Fact]
     public void ACrossSystemRoutePlansFollowOnWaypointsAndTheJumpContinuesToThem()
     {

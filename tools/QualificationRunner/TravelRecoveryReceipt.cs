@@ -43,6 +43,16 @@ internal static class TravelRecoveryReceipt
     /// <summary>This phase has no mandatory subcase rows; both cells are whole cases.</summary>
     internal static readonly string[] RequiredSubcaseRows = Array.Empty<string>();
 
+    /// <summary>
+    /// Diagnostic row identity for ONE recovery attempt. Attempts are not coverage - the case row
+    /// carries that - but each attempt is persisted as its own row the moment it starts and is
+    /// rewritten with its outcome, so a later attempt that throws can never erase the earlier
+    /// attempts' outcomes. Every attempt row is recorded as NOT-RUN: it is evidence about the world,
+    /// never a passed case.
+    /// </summary>
+    internal const string RecoveryAttemptRow = "recovered-placement-attempt";
+    internal const string RecoveryAttemptDescription = "Diagnostic row for one bounded recovery attempt: the safe target it drove and the outcome the native world produced (a cancel inside the observed live-route readiness window, or the precise reason the window was missed).";
+
     // Declared per-wait deadlines (seconds). These are the SINGLE source the driver's waits use, and
     // the phase budget is summed from the plan below, so a changed deadline moves the published
     // budget and cannot drift away from the launcher reservation silently.
@@ -235,9 +245,28 @@ internal static class TravelRecoveryReceipt
     /// state the adapter's own tick observes, with no arrival callback anywhere in the window.
     /// </summary>
     internal static string? CheckRecoveryEvidence(IReadOnlyList<TravelTransition> slice,
-        IReadOnlyDictionary<long, NativeSnapshot> snapshots, string targetLocationKey)
+        IReadOnlyDictionary<long, NativeSnapshot> snapshots, string targetLocationKey, NativeSnapshot acquisition)
     {
         if (slice.Count != 4) return "The recovery evidence rules need the four-fact recovery window.";
+        // The ACQUISITION snapshot is taken in the frame the cancel is about to be issued, before
+        // TravelManager.CancelTravel clears its own coroutine. It is the only place a LIVE native
+        // route can still be observed, and it is required: the inspected build's own wait predicate
+        // (<Travel>b__84_0) returns TRUE when no local manager is registered, so a route can end
+        // silently and the destination manager can initialize afterwards. Readiness alone would then
+        // look identical to this case's window while nothing was travelling, and cancelling there
+        // would still publish a Cancelled. Requiring a live route at acquisition excludes it.
+        if (!acquisition.TravelActive)
+            return "The native route was not running when the readiness window was acquired, so the cancel would not have interrupted a live route ("
+                + acquisition.ToDetail() + ").";
+        if (!acquisition.CurrentPoiKnown || !acquisition.ManagerReady)
+            return "The readiness window was acquired without a current POI whose manager is initialized (" + acquisition.ToDetail() + ").";
+        if (acquisition.UsingJumpgate)
+            return "The readiness window was acquired inside a native jump routine (" + acquisition.ToDetail() + ").";
+        if (!acquisition.OwnedByCase)
+            return "The readiness window was acquired while the live native travel manager/player was not the instance this case captured ("
+                + acquisition.ToDetail() + ").";
+        if (acquisition.LocationKey != targetLocationKey)
+            return "The readiness window was acquired at " + acquisition.LocationKey + " instead of " + targetLocationKey + ".";
         foreach (var fact in slice)
         {
             if (!snapshots.TryGetValue(fact.Sequence, out var snapshot))
@@ -275,6 +304,36 @@ internal static class TravelRecoveryReceipt
     /// </summary>
     internal static string DescribeAttempt(int attempt, string targetPoiId, string outcome)
         => "attempt" + attempt.ToString(CultureInfo.InvariantCulture) + "={target=" + targetPoiId + ",outcome=" + outcome + "}";
+
+    /// <summary>The outcome text of the ONE attempt that acquired the window and cancelled a live route.</summary>
+    internal const string AttemptCancelledOutcome = "cancelled inside the observed live-route readiness window";
+
+    /// <summary>
+    /// Attempt rows are bounded and consistent with the case: at least one attempt exists whenever
+    /// the case ran at all, never more than the declared bound, every attempt names its outcome, and
+    /// a PASSED case must have exactly one attempt that reports the cancel it claims.
+    /// </summary>
+    internal static string? CheckAttempts(IReadOnlyList<TravelStationReceipt.Row> rows)
+    {
+        var attempts = rows.Where(row => row.Case == RecoveryAttemptRow).ToArray();
+        var recovery = rows.Where(row => row.Case == RecoveredPlacementCase).ToArray();
+        var passed = attempts.Where(row => row.Status != TravelStationReceipt.NotRun).ToArray();
+        if (passed.Length > 0)
+            return "A recovery attempt row is recorded as " + passed[0].Status + "; attempts are diagnostics, never coverage.";
+        if (attempts.Length > RecoveryAttempts)
+            return "The receipt records " + attempts.Length + " recovery attempts, more than the declared bound of " + RecoveryAttempts + ".";
+        foreach (var attempt in attempts)
+            if (string.IsNullOrEmpty(attempt.Detail) || attempt.Detail.IndexOf("outcome=", StringComparison.Ordinal) < 0)
+                return "A recovery attempt row names no outcome: " + attempt.Detail + ".";
+        if (recovery.Length == 1 && recovery[0].Status == TravelStationReceipt.Passed)
+        {
+            if (attempts.Length == 0) return "The recovery case passed without a single persisted attempt row.";
+            var cancelled = attempts.Where(row => row.Detail.IndexOf(AttemptCancelledOutcome, StringComparison.Ordinal) >= 0).ToArray();
+            if (cancelled.Length != 1)
+                return "The passed recovery case has " + cancelled.Length + " attempt row(s) reporting the cancel it claims.";
+        }
+        return null;
+    }
 
     // --- post-gate continuation rules --------------------------------------------------------
 
@@ -403,6 +462,8 @@ internal static class TravelRecoveryReceipt
             if (matches.Length > 1) return "Required case recorded " + matches.Length + " rows: " + required + ".";
             if (matches[0].Status != TravelStationReceipt.Passed) return "Required case is " + matches[0].Status + ": " + required + ".";
         }
+        var attempts = CheckAttempts(rows);
+        if (attempts != null) return attempts;
         var evidence = CheckEvidence(rows, eventRows);
         if (evidence != null) return evidence;
         // A harness fault is reported last so an attributed failed row keeps the more precise reason.
@@ -421,6 +482,7 @@ internal static class TravelRecoveryReceipt
             .AppendLine("phase=" + Phase)
             .AppendLine("required=" + string.Join(",", RequiredCases))
             .AppendLine("budgetSeconds=" + PhaseBudgetSeconds.ToString("F0", CultureInfo.InvariantCulture))
+            .AppendLine("recovery-attempts=" + RecoveryAttempts.ToString(CultureInfo.InvariantCulture))
             .AppendLine("activeCase=" + TravelStationReceipt.Clean(activeCase))
             .AppendLine("rows=" + rows.Count + " passed=" + rows.Count(row => row.Status == TravelStationReceipt.Passed)
                 + " failed=" + rows.Count(row => row.Status == TravelStationReceipt.Failed)
@@ -437,6 +499,7 @@ internal static class TravelRecoveryReceipt
             .AppendLine("phase=" + Phase)
             .AppendLine("budgetSeconds=" + PhaseBudgetSeconds.ToString("F0", CultureInfo.InvariantCulture))
             .AppendLine("required=" + string.Join(",", RequiredCases))
+            .AppendLine("recovery-attempts=" + RecoveryAttempts.ToString(CultureInfo.InvariantCulture))
             .AppendLine("rows=" + rows.Count
                 + " passed=" + rows.Count(row => row.Status == TravelStationReceipt.Passed)
                 + " failed=" + rows.Count(row => row.Status == TravelStationReceipt.Failed)
