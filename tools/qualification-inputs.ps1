@@ -50,6 +50,9 @@ function Assert-PersistenceProbeReceipt([string]$Root, $Provenance) {
     if ($Provenance.PSObject.Properties['travelCrossSystem'] -and $Provenance.travelCrossSystem) {
         Assert-TravelCrossSystemReceipt $Root $Provenance
     }
+    if ($Provenance.PSObject.Properties['travelResilience'] -and $Provenance.travelResilience) {
+        Assert-TravelResilienceReceipt $Root
+    }
 }
 $TravelStationPhase = 'travel-in-system-station-v1'
 $TravelStationRequiredCases = @('initial-placement','station-undock','in-system-route','early-cancel','chained-route','station-dock')
@@ -69,6 +72,14 @@ $TravelCrossSystemBudgetSeconds = 2400
 # disposable native test data is never coverage of a travel routine.
 $TravelWormholeFixtureCase = 'wormhole-fixture-setup'
 $TravelWormholeFactorySignature = 'factory=Source.Simulation.World.WormholeSpawner.PlaceWormhole('
+# The third separate optional phase reserves its own process time ON TOP of the other two; it never
+# replaces them and never turns their optional NOT-RUN rows for these cells into coverage.
+$TravelResiliencePhase = 'travel-resilience-v1'
+$TravelResilienceRequiredCases = @('empty-origin-reroute','restore-relink-dock','stale-session-replay')
+$TravelResilienceBudgetSeconds = 2400
+# Optional row for the same-docking-size re-init. It is deliberately not required, so a fixture
+# without a second owned ship of the current size can never make the phase claim two-size coverage.
+$TravelResilienceSameSizeCase = 'restore-reinit-same-size'
 # Independent verification of the pilot's own claim: the declared phase, every mandatory case
 # identity, the receipt/event files and the identities they share must all agree. A first line of
 # PASS is never accepted on its own. The two travel phases publish the same receipt/event shape,
@@ -169,6 +180,12 @@ function Assert-TravelCrossSystemReceipt([string]$Root, $Provenance) {
         if ($columns[7] -notlike "*$TravelWormholeFactorySignature*") { throw 'Wormhole fixture preparation does not record the native factory it used.' }
         if ($columns[7] -notlike '*travelFactsDuringCreation=0*') { throw 'Wormhole fixture preparation observed travel facts.' }
     }
+}
+# The resilience phase is validated separately and with its own mandatory cases: a passing
+# in-system or cross-system receipt can never stand in for it.
+function Assert-TravelResilienceReceipt([string]$Root) {
+    Assert-TravelPhaseReceipt $Root 'Travel resilience' 'travel-resilience' $TravelResiliencePhase $TravelResilienceRequiredCases $TravelResilienceBudgetSeconds
+    if ($TravelResilienceSameSizeCase -in $TravelResilienceRequiredCases) { throw 'The optional same-size re-init row must never be a mandatory case.' }
 }
 function Assert-VanillaControlReceipt([string]$Root, $Provenance) {
     if ($Provenance.PSObject.Properties['vanillaLoadControl'] -and $Provenance.vanillaLoadControl) {
@@ -296,6 +313,16 @@ function Assert-QualificationInputs([string]$Root) {
     if ([bool]$wormholeFixture -ne (Test-Path -LiteralPath $wormholeMarker -PathType Leaf)) { throw 'Wormhole fixture selection changed.' }
     if ($wormholeFixture) {
         if (!$travelCrossSystem -or (Get-Content -LiteralPath $wormholeMarker -Raw).Trim() -ne 'wormhole-fixture-v1') { throw 'Invalid wormhole fixture selection.' }
+    }
+    # The resilience phase is an ADDITIONAL selection on top of the in-system phase; it reuses the
+    # same [Travel] capability configuration and reserves its own separate process budget.
+    $travelResilience = $provenance.PSObject.Properties['travelResilience'] -and [bool]$provenance.travelResilience
+    $resilienceMarker = Join-Path $Root 'travel-resilience.enabled'
+    if ([bool]$travelResilience -ne (Test-Path -LiteralPath $resilienceMarker -PathType Leaf)) { throw 'Travel resilience selection changed.' }
+    if ($travelResilience) {
+        if (!$travelStation -or (Get-Content -LiteralPath $resilienceMarker -Raw).Trim() -ne 'resilience-v1') { throw 'Invalid travel resilience selection.' }
+        if (!$provenance.PSObject.Properties['travelResilienceBudgetSeconds'] -or
+            [int]$provenance.travelResilienceBudgetSeconds -ne $TravelResilienceBudgetSeconds) { throw 'Travel resilience budget reservation changed.' }
     }
     $probe = $provenance.PSObject.Properties['persistenceProbe'] -and [bool]$provenance.persistenceProbe
     $probeMarker = Join-Path $Root 'persistence-probe.enabled'
