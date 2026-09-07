@@ -33,6 +33,30 @@ public sealed class Plugin : BaseUnityPlugin
             retention: StoryRetention.Campaign, choiceKeys: new[] { "witness" }));
     }
 
+    public const string ObjectiveLocalId = "objective-x";
+
+    // This authored beat declares only objective state; the provider owns no save/load hooks.
+    public StoryRegistrationResult RegisterObjectives(string sourceFaction, int revision = 1)
+    {
+        if (_provider == null)
+        {
+            var api = ModApi.Story ?? throw new InvalidOperationException("Enable the optional story module.");
+            var acquired = api.AcquireProvider(this);
+            _provider = acquired.Provider ?? throw new InvalidOperationException(acquired.Diagnostic);
+        }
+        var talk = new StoryStep("Listen to the witness", new[] { StoryObjective.Scripted("talk", "Hear the witness", 3) });
+        var report = new StoryStep("Choose an answer", new[] { StoryObjective.Scripted("report", "Promise to investigate") });
+        var definition = new StoryMissionDefinition(ObjectiveLocalId, "A witness's account", "Listen, then choose your reply.",
+            new StoryFactionId(sourceFaction), revision == 1 ? new[] { talk, report } : new[] { report, talk },
+            new[] { new StoryReward(StoryRewardKind.Credits, 7) }, retention: StoryRetention.Campaign);
+        return _provider.Register(revision == 1 ? definition : definition.WithRevision(revision, 1));
+    }
+
+    // Invoked by the consumer's conversation controller when the authored answer is chosen.
+    public StoryTransitionResult AnswerWitness(Guid session, Guid occurrence)
+        => ((IStoryObjectiveProvider)Provider).SetProgress(session,
+            new StoryObjectiveId(new StoryContentId(Provider.ProviderId, ObjectiveLocalId), occurrence, "report"), 1);
+
     public void ReleaseProvider() { _provider?.Dispose(); _provider = null; }
     private void OnDestroy() => ReleaseProvider();
 }

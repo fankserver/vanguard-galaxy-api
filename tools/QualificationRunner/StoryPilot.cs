@@ -102,6 +102,7 @@ public sealed partial class Plugin
             "Archived definition blocked a distinct repeated job.");
         foreach (var frame in ClaimStory(b, repeat.OccurrenceId, 11)) yield return frame;
         StoryCase("repeat-job");
+        foreach (var frame in CheckOwnedObjectives(campaign, job, faction)) yield return frame;
         foreach (var frame in StoryLoadReady("qa-story-active")) yield return frame;
         Invoke(campaign, "ReleaseProvider");
         Save("qa-story-provider-unregistered", LifecycleEventKind.SaveSucceeded);
@@ -145,16 +146,16 @@ public sealed partial class Plugin
         method.Invoke(CurrentPlayer, new object[] { mission, force });
     }
 
-    private object HeldStory(IStoryProvider provider, Guid occurrence)
+    private object HeldStory(IStoryProvider provider, Guid occurrence, string localId = "mission-x")
     {
-        var identifier = "vgmodapi.story." + provider.ProviderId + ".mission-x." + occurrence.ToString("N");
+        var identifier = "vgmodapi.story." + provider.ProviderId + "." + localId + "." + occurrence.ToString("N");
         return ((IEnumerable)SpGet(CurrentPlayer, "missions")!).Cast<object>()
             .Single(mission => (string?)SpGet(mission, "storyId") == identifier);
     }
 
-    private IEnumerable<object?> ClaimStory(IStoryProvider provider, Guid occurrence, long expectedCredits)
+    private IEnumerable<object?> ClaimStory(IStoryProvider provider, Guid occurrence, long expectedCredits, string localId = "mission-x")
     {
-        var mission = HeldStory(provider, occurrence);
+        var mission = HeldStory(provider, occurrence, localId);
         foreach (var frame in Wait(() => (bool)mission.GetType().GetMethod("CanClaimRewards")!.Invoke(mission, null)!,
             "native story objectives ready")) yield return frame;
         long before = Convert.ToInt64(SpGet(CurrentPlayer, "credits"));
@@ -162,7 +163,7 @@ public sealed partial class Plugin
         // objective field writes or synthetic observer events are used.
         CompleteStoryNative(mission, false);
         Require(Convert.ToInt64(SpGet(CurrentPlayer, "credits")) == before + expectedCredits, "Native story payout differs from the author reward.");
-        Require(provider.Unresolved("mission-x").Occurrences.All(x => x.OccurrenceId != occurrence), "Native claim did not automatically retire the occurrence.");
+        Require(provider.Unresolved(localId).Occurrences.All(x => x.OccurrenceId != occurrence), "Native claim did not automatically retire the occurrence.");
         CompleteStoryNative(mission, false);
         Require(Convert.ToInt64(SpGet(CurrentPlayer, "credits")) == before + expectedCredits, "Repeated native claim paid an owned occurrence twice.");
     }
