@@ -12,7 +12,7 @@ using VGModAPI.Runtime;
 
 namespace VGModAPI;
 
-[BepInPlugin(ModApi.PluginId, "Vanguard Galaxy Mod API", "0.1.9")]
+[BepInPlugin(ModApi.PluginId, "Vanguard Galaxy Mod API", "0.1.11")]
 [BepInProcess("VanguardGalaxy.exe")]
 [BepInDependency("vgmodapi.qualification.guard", BepInDependency.DependencyFlags.SoftDependency)]
 public sealed class Plugin : BaseUnityPlugin
@@ -24,6 +24,13 @@ public sealed class Plugin : BaseUnityPlugin
     private MissionAdapter? _missions;
     private TravelNativeAdapter? _travel;
     private bool _identityHooksBound;
+    private ModInformationCatalog? _modCatalog;
+
+    private void Start()
+    {
+        try { _modCatalog?.Refresh(); }
+        catch (Exception error) { Logger.LogWarning($"Mod information inventory could not be refreshed ({error.GetType().Name}); game services are unaffected."); }
+    }
     private void Awake()
     {
         _hub = new LifecycleHub((owner, ex) => Logger.LogError($"Subscriber '{owner}' failed: {ex}"));
@@ -37,6 +44,8 @@ public sealed class Plugin : BaseUnityPlugin
         ModApi.Missions = null;
         ModApi.Current = _hub;
         ModApi.Persistence = null;
+        _modCatalog = new ModInformationCatalog(ModInformationSource.Snapshot);
+        ModApi.Mods = _modCatalog;
         try
         {
             var assembly = AppDomain.CurrentDomain.GetAssemblies().SingleOrDefault(a => a.GetName().Name == "Assembly-CSharp")
@@ -295,6 +304,8 @@ public sealed class Plugin : BaseUnityPlugin
     }
     private void OnDestroy()
     {
+        _modCatalog?.Dispose();
+        ModApi.Mods = null;
         _adapter?.Guard(() => _adapter.Invalidate("API shutting down."));
         _missions?.Dispose(); _missions = null;
         MissionPatches.Adapter = null; ModApi.Missions = null;
