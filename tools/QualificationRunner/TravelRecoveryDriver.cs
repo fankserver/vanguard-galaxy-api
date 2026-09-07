@@ -252,9 +252,10 @@ public sealed partial class Plugin
                             // own cancel, and the case fails at the timeout.
                             // The fault evidence is persisted BEFORE any cleanup, so the recorded
                             // outcome describes the world at the timeout itself.
+                            var preCleanup = _p.RecoveryResidual();
                             RecordAttempt(TravelRecoveryReceipt.AttemptTimeoutRunningOutcome,
                                 "timed out after " + TravelRecoveryReceipt.ArrivalSeconds + "s while the native route was still running ("
-                                + timedOut.ToDetail() + "; " + _p.RecoveryResidual() + ")");
+                                + timedOut.ToDetail() + "); preCleanupResidual=" + preCleanup);
                             // Owner-exact cleanup with the player's own cancel. It is BOUNDED and
                             // honest: the native cancel stops the route and clears the waypoints but
                             // never resets isWarping, so a mid-warp timeout leaves that vanilla flag
@@ -263,14 +264,20 @@ public sealed partial class Plugin
                             // phase leaves no world a later phase may continue from; the harness
                             // fails here and the runner quits.
                             _cancelTravel.Invoke(NativeTravel("the cleanup cancel after the readiness-window timeout"), new object?[] { null });
-                            var residual = _p.RecoveryResidual();
+                            var postCleanup = _p.RecoveryResidual();
+                            // BOTH residuals are kept: the one at the fault says what the world
+                            // looked like when the case failed, the one after the cleanup says what
+                            // the ordinary cancel could and could not reset. Neither overwrites the
+                            // other, and neither can supplant the root failure below.
                             UpdateAttempt(TravelRecoveryReceipt.AttemptTimeoutRunningOutcome,
                                 "timed out after " + TravelRecoveryReceipt.ArrivalSeconds + "s while the native route was still running ("
-                                + timedOut.ToDetail() + "); afterCleanup=" + residual);
+                                + timedOut.ToDetail() + "); preCleanupResidual=" + preCleanup
+                                + "; postCleanupResidual=" + postCleanup);
                             Require(false, "Timed out after " + TravelRecoveryReceipt.ArrivalSeconds
                                 + "s waiting for the readiness window while the native route was still running ("
-                                + timedOut.ToDetail() + "); the ordinary cancel cannot reset the vanilla warp flag, residual after cleanup: "
-                                + residual + "; attempts: " + string.Join("; ", attemptLog));
+                                + timedOut.ToDetail() + "); the ordinary cancel cannot reset the vanilla warp flag. preCleanupResidual="
+                                + preCleanup + "; postCleanupResidual=" + postCleanup
+                                + "; attempts: " + string.Join("; ", attemptLog));
                         }
                         outcome = TravelRecoveryReceipt.AttemptTimeoutIdleOutcome;
                         outcomeDetail = "timed out after " + TravelRecoveryReceipt.ArrivalSeconds
@@ -281,49 +288,70 @@ public sealed partial class Plugin
                 }
                 if (!cancelled)
                 {
-                    // Leave a quiet native surface AND a closed API leg for the next attempt.
+                    // Leave a quiet native surface AND a closed, SETTLED API leg for the next
+                    // attempt. The KNOWN miss reason is persisted BEFORE any cleanup side effect,
+                    // so a throw inside the cleanup can never lose it; the row is then rewritten in
+                    // place with the cleanup's result.
                     bool arrived = Slice(offset).Any(fact => fact.Kind == TravelTransitionKind.Arrived);
-                    bool cleanupAccepted = false;
                     if (arrived)
                     {
-                        // The route completed on its own: its leg closes with the native boundary.
+                        RecordAttempt(outcome, outcomeDetail);
+                        // The route completed on its own: its leg closes with the native boundary,
+                        // no cancel is issued and no recovery gate is opened.
                         foreach (var frame in AwaitOrFail(() => Slice(offset).Any(fact => fact.Kind == TravelTransitionKind.RouteCompleted),
                             TravelRecoveryReceipt.BoundarySeconds, "the native route boundary of the completed recovery attempt")) yield return frame;
+                        foreach (var frame in Settle()) yield return frame;
+                        continue;
                     }
-                    else
-                    {
-                        // The leg DEPARTED and never arrived, so it is still pending. Left open, the
-                        // next route request would supersede it and the tracker would truthfully
-                        // publish that leg's Cancelled inside the NEXT attempt's window, failing an
-                        // otherwise good attempt on the exact four-fact rule. The player's own cancel
-                        // closes it here, inside this attempt's own window, while the captured owner
-                        // is still valid. It is not coverage: this attempt never acquired a live
-                        // window, so its acquisition can never satisfy the case's positive rule.
-                        cleanupAccepted = (bool)_cancelTravel.Invoke(
-                            NativeTravel("the player cancel that closes the missed attempt's abandoned leg"), new object?[] { null })!;
-                    }
+                    RecordAttempt(outcome, outcomeDetail + "; " + TravelRecoveryReceipt.AttemptCleanupPendingMarker);
+                    // The leg DEPARTED and never arrived, so it is still pending. Left open, the
+                    // next route request would supersede it and the tracker would truthfully publish
+                    // that leg's Cancelled inside the NEXT attempt's window, failing an otherwise
+                    // good attempt on the exact four-fact rule. The player's own cancel closes it
+                    // here, inside this attempt's own window, while the captured owner is still
+                    // valid. It is not coverage: this attempt never acquired a live window, so its
+                    // acquisition can never satisfy the case's positive rule.
+                    bool cleanupAccepted = (bool)_cancelTravel.Invoke(
+                        NativeTravel("the player cancel that closes the missed attempt's abandoned leg"), new object?[] { null })!;
+                    // Closing the leg OPENS the reducer's recovery gate (no pending leg, no current
+                    // place), so the adapter publishes one RecoveredPlacement as soon as the native
+                    // manager reports readiness - exactly the readiness this miss did not observe.
+                    // It is settled HERE, inside the missed attempt's own window, with a bounded
+                    // wait; nothing is reset in the API or in native state and no late event is
+                    // ignored. A placement that never settles within the bound would be free to land
+                    // in another attempt's quiet window, so the case ends instead of retrying.
+                    foreach (var frame in PollFor(() => Slice(offset).Any(fact => fact.Kind == TravelTransitionKind.RecoveredPlacement)
+                        && NativeManagerReadyFor(NativeTravel("the cleanup settlement sample"), SpGet(Player, "currentPointOfInterest")),
+                        TravelRecoveryReceipt.CleanupPlacementSeconds)) yield return frame;
                     foreach (var frame in Settle()) yield return frame;
-                    if (!arrived)
+                    var afterCleanup = _p.RecoverySnapshot();
+                    var closureDetail = outcomeDetail + "; missCleanup={nativeTravelActive=" + afterCleanup.TravelActive
+                        + ",cancelAccepted=" + cleanupAccepted
+                        + ",window=[" + string.Join(" ", Slice(offset).Select(fact => fact.Kind.ToString())) + "]"
+                        + ",settlement=" + afterCleanup.ToDetail() + "}";
+                    var closure = TravelRecoveryReceipt.CheckMissCleanup(Slice(offset), cleanupAccepted);
+                    if (closure != null)
                     {
-                        var closure = TravelRecoveryReceipt.CheckMissCleanup(Slice(offset), cleanupAccepted);
-                        var closureDetail = outcomeDetail + "; missCleanup={nativeTravelActive="
-                            + _p.RecoverySnapshot().TravelActive + ",cancelAccepted=" + cleanupAccepted
-                            + ",window=[" + string.Join(" ", Slice(offset).Select(fact => fact.Kind.ToString())) + "]}";
-                        if (closure != null)
-                        {
-                            // The abandoned leg could not be proven closed. Another attempt would
-                            // open on a contaminated window, so the case ends here honestly.
-                            RecordAttempt(TravelRecoveryReceipt.AttemptUnclosedOutcome, closureDetail + "; " + closure);
-                            NotRun("The abandoned leg of a missed recovery attempt could not be proven closed, so no further attempt may run: "
-                                + closure + " (" + string.Join("; ", attemptLog) + ")");
-                            yield break;
-                        }
-                        RecordAttempt(outcome, closureDetail);
+                        // The abandoned leg could not be proven closed. Another attempt would open on
+                        // a contaminated window, so the case ends here honestly.
+                        UpdateAttempt(TravelRecoveryReceipt.AttemptUnclosedOutcome, closureDetail + "; " + closure);
+                        NotRun("The abandoned leg of a missed recovery attempt could not be proven closed, so no further attempt may run: "
+                            + closure + " (" + string.Join("; ", attemptLog) + ")");
+                        yield break;
                     }
-                    else
+                    var settled = TravelRecoveryReceipt.CheckMissCleanupSettled(Slice(offset), afterCleanup);
+                    if (settled != null)
                     {
-                        RecordAttempt(outcome, outcomeDetail);
+                        // The placement the cleanup enabled is still outstanding. It could land in a
+                        // later attempt's quiet window and fail it through the harness's own doing,
+                        // so this case ends here rather than retrying.
+                        UpdateAttempt(TravelRecoveryReceipt.AttemptCleanupUnsettledOutcome, closureDetail + "; " + settled);
+                        NotRun("The recovery placement enabled by a missed attempt's own cleanup did not settle within "
+                            + TravelRecoveryReceipt.CleanupPlacementSeconds + "s, so no further attempt may run: "
+                            + settled + " (" + string.Join("; ", attemptLog) + ")");
+                        yield break;
                     }
+                    UpdateAttempt(outcome, closureDetail);
                     continue;
                 }
                 foreach (var frame in AwaitOrFail(() => Slice(offset).Any(fact => fact.Kind == TravelTransitionKind.RecoveredPlacement),

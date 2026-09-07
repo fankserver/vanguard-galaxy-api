@@ -225,7 +225,9 @@ fixture-load/binding waits per case plus the restoring load, one undock per case
 sample per recovery attempt and one for the continuation route, one departure per recovery attempt
 plus the continuation's three legs, the arrival-or-cancel-window waits, one readiness placement, the
 gate handoff, the jump arrival, the route boundaries and every settle), so a hand-typed occurrence
-cannot understate it; the published worst case is 3932 seconds against the 4200 reservation. Both
+cannot understate it; the published worst case is 4112 seconds against the 4200 reservation (the
+3932 s of the driven waits plus the bounded cleanup-settlement wait of 60 s, declared at most once
+per attempt). Both
 cases load `fixture-a` themselves and capture their native owner only at their own load/readiness
 boundary, and every native drive and observation first proves that owner is still the live current
 one in the same session.
@@ -266,21 +268,38 @@ one in the same session.
   `native-travel-refused`, `no-safe-target`, `abandoned-leg-not-closed`); a row still in its
   `state=started` form names no outcome and is refused, so it can only be a failure artifact.
 
-  A MISSED attempt closes its own leg before the next one starts. The leg departed and never
-  arrived, so it is still pending; left open, the next route request would supersede it and the
+  A MISSED attempt closes AND settles its own leg before the next one starts. The leg departed and
+  never arrived, so it is still pending; left open, the next route request would supersede it and the
   tracker would truthfully publish that leg's `Cancelled` INSIDE the next attempt's window, failing
   an otherwise good attempt on the exact four-fact rule. The miss therefore issues the player's own
   `CancelTravel(null)` inside its own window and PROVES the observed closure is its own operation's
-  (`Requested`->`Departed`->`Cancelled`, optionally followed by the recovery placement the cleanup
-  itself produces, which is never counted as coverage — that attempt never acquired a live window,
-  so its acquisition can never satisfy the positive rule). If the closure cannot be proven the case
-  ends immediately with a NOT-RUN instead of retrying on a contaminated window.
+  (`Requested`->`Departed`->`Cancelled`).
+
+  Closing that leg also OPENS the reducer's recovery gate (no pending leg, no current place), so the
+  adapter publishes one `RecoveredPlacement` as soon as the native manager reports readiness —
+  exactly the readiness the miss did not observe. Left unsettled it would land in a later attempt's
+  quiet window and fail that attempt through the harness's own doing, so the miss waits for it,
+  bounded (60 s, declared in the plan), and requires the placement to be observed at a manager the
+  case still owns, reporting readiness, with no native route running again. That placement is never
+  counted as coverage: the attempt never acquired a live window, so its acquisition can never satisfy
+  the positive rule. Nothing is reset in the API or in native state and no late event is ignored. If
+  the closure cannot be proven, or the placement does not settle within the bound, the case ends
+  immediately with a NOT-RUN (`abandoned-leg-not-closed` / `cleanup-placement-unsettled`) instead of
+  retrying on a window the harness itself could contaminate.
+
+  Each miss persists its KNOWN reason BEFORE that cleanup's side effect, marked `cleanup=pending`,
+  and rewrites the same row with the cleanup result afterwards, so a throw inside the cleanup cannot
+  lose the reason. A receipt still carrying the pending marker describes an attempt that never
+  finished and is refused by both validators; `state=started` stays reserved for a genuinely unknown
+  failure.
 
   If no attempt observes the window the case records a mandatory NOT-RUN — a phase FAILURE by
   design — and never a pass. A window wait that expires while the native route is STILL RUNNING is
-  not a clean miss and is never retried: the outcome is persisted BEFORE any cleanup, the ordinary
-  player cancel is then issued within the captured owner, the post-cleanup residual is recorded, and
-  the case fails at the timeout. That cleanup is honest, not a claim of a quiet world: the vanilla
+  not a clean miss and is never retried: the outcome and the residual observed AT the fault are
+  persisted before any cleanup, the ordinary player cancel is then issued within the captured owner,
+  and the post-cleanup residual is added beside it — the receipt publishes both
+  (`preCleanupResidual=` and `postCleanupResidual=`), neither overwriting the other — and the case
+  fails at the timeout. That cleanup is honest, not a claim of a quiet world: the vanilla
   cancel does not reset `isWarping` (only the end of `TravelInSystem` does), so a mid-warp timeout
   leaves that flag stale and the receipt says so. Nothing is written to hide it — no position, no
   warp state, no native field — and a failed phase leaves no world a later phase may continue from;
@@ -316,7 +335,9 @@ snapshot with `usingJumpgate=True` and a remaining waypoint, and a completion sn
 waypoints and no active native travel. The attempt log is validated too: at least one persisted
 attempt row, never more than the declared bound the receipt itself publishes (`recovery-attempts=`),
 every row NOT-RUN with a named outcome, and exactly one row reporting the live-route cancel whenever
-the case passed, plus contiguous unique numbering from 1 within the COMMITTED bound (never a bound
+the case passed, no attempt still marking its own cleanup pending, a settled cleanup recovery
+published by every miss that closed its own leg, plus contiguous unique numbering from 1 within the
+COMMITTED bound (never a bound
 the receipt declares for itself), the case's own session on every attempt row, whitelisted outcomes
 only, and the single success as the LAST attempt with every earlier attempt a continuable miss.
 After the last case the phase reloads `fixture-a` so the later

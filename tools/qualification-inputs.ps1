@@ -318,7 +318,11 @@ $TravelRecoveryMaxAttempts = 3
 $TravelRecoveryAttemptSuccess = 'cancelled-in-live-window'
 $TravelRecoveryAttemptMisses = @('native-arrival-first','route-already-ended','timeout-no-route','native-travel-refused')
 $TravelRecoveryAttemptOutcomes = @($TravelRecoveryAttemptSuccess) + $TravelRecoveryAttemptMisses +
-    @('timeout-route-running','no-safe-target','abandoned-leg-not-closed')
+    @('timeout-route-running','no-safe-target','abandoned-leg-not-closed','cleanup-placement-unsettled')
+# A miss writes its KNOWN reason before its cleanup's side effect and marks it pending until the
+# cleanup finished. A receipt that still carries the marker describes an attempt that never
+# finished; the reason stays readable, but the receipt is never a completed one.
+$TravelRecoveryAttemptPendingMarker = 'cleanup=pending'
 # The actual-consumer probe REUSES the two native travel phases in place (it must observe them
 # before the Anima mission pilot disposes the consumer's visit observer), so it reserves only its
 # own consumer loads/saves on top of their existing reservations.
@@ -489,6 +493,7 @@ function Assert-TravelRecoveryReceipt([string]$Root) {
         $number = [int]$Matches[1]
         $outcome = $Matches[2]
         if ($TravelRecoveryAttemptOutcomes -notcontains $outcome) { throw "A recovery attempt row carries the unknown outcome '$outcome'." }
+        if ($attempt[7] -like "*$TravelRecoveryAttemptPendingMarker*") { throw "A recovery attempt row still marks its own cleanup as pending (known reason '$outcome')." }
         if ($number -lt 1 -or $number -gt $TravelRecoveryMaxAttempts) { throw 'A recovery attempt is numbered outside the committed bound.' }
         if ($attemptNumbers -contains $number) { throw 'A recovery attempt number is recorded twice.' }
         if ($attempt[4] -ne $recovery[0][4]) { throw 'A recovery attempt row belongs to another session than its case.' }
@@ -523,6 +528,15 @@ function Assert-TravelRecoveryReceipt([string]$Root) {
     if ($recovery[0][7] -notlike '*acquisitionSnapshot=*') { throw 'The recovered-placement case published no acquisition snapshot.' }
     if ($recovery[0][7] -notlike '*acquisitionSnapshot=*travelActive=True*' -or $recovery[0][7] -notlike '*acquisitionSnapshot=*managerReady=True*') {
         throw 'The recovered-placement acquisition snapshot does not show a live native route at an initialized POI.'
+    }
+    # A missed attempt that had to close its own abandoned leg must also publish that the recovery
+    # its cleanup enabled settled inside that attempt's own window.
+    foreach ($attempt in $attempts) {
+        if ($attempt[7] -match ',outcome=([a-z-]+)' -and $TravelRecoveryAttemptMisses -contains $Matches[1] -and $attempt[7] -like '*missCleanup=*') {
+            if ($attempt[7] -notlike '*settlement=*' -or $attempt[7] -notlike '*RecoveredPlacement*') {
+                throw 'A missed recovery attempt closed its own leg without publishing the settled cleanup recovery.'
+            }
+        }
     }
     $continuation = @($records | Where-Object { $_[0] -eq 'post-gate-continuation' })
     if ($continuation.Count -ne 1) { throw 'The post-gate-continuation case is missing or duplicated.' }

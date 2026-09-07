@@ -365,6 +365,71 @@ public sealed class TravelRecoveryReceiptTests
         // unprovable closure reports its own terminal outcome instead.
         Assert.Contains(TravelRecoveryReceipt.AttemptRouteEndedOutcome, TravelRecoveryReceipt.AttemptMissOutcomes);
         Assert.DoesNotContain(TravelRecoveryReceipt.AttemptUnclosedOutcome, TravelRecoveryReceipt.AttemptMissOutcomes);
+        Assert.DoesNotContain(TravelRecoveryReceipt.AttemptCleanupUnsettledOutcome, TravelRecoveryReceipt.AttemptMissOutcomes);
+    }
+
+    /// <summary>
+    /// Closing the abandoned leg OPENS the reducer's recovery gate, so the adapter publishes one
+    /// RecoveredPlacement as soon as the native manager reports readiness - the readiness the miss
+    /// did not observe. Unsettled, that placement would land in the NEXT attempt's quiet window and
+    /// fail an otherwise good attempt through the harness's own doing, so the miss must prove it
+    /// settled inside its own window or end the case.
+    /// </summary>
+    [Fact]
+    public void AMissedAttemptMustSettleTheRecoveryItsOwnCleanupEnabled()
+    {
+        var abandoned = Guid.NewGuid();
+        double clock = 0;
+        var closed = new List<TravelTransition>
+        {
+            Fact(TravelTransitionKind.Requested, abandoned, null, (System1, Target), null, clock += 1),
+            Fact(TravelTransitionKind.Departed, abandoned, (System1, Station), null, null, clock += 1),
+            Fact(TravelTransitionKind.Cancelled, abandoned, null, null, null, clock += 1)
+        };
+        var settled = new List<TravelTransition>(closed)
+        {
+            Fact(TravelTransitionKind.RecoveredPlacement, null, null, null, (System1, Target), clock += 1, mode: TravelMode.Unknown)
+        };
+        var quiet = new TravelRecoveryReceipt.NativeSnapshot(true, true, false, false, 0,
+            TravelStationReceipt.Location(System1, Target), true);
+        Assert.Null(TravelRecoveryReceipt.CheckMissCleanupSettled(settled, quiet));
+        // The exact hazard: the leg is closed but the placement has not been observed, so it is
+        // still free to land later. The closure rule alone accepts that window; the settlement rule
+        // is what refuses it.
+        Assert.Null(TravelRecoveryReceipt.CheckMissCleanup(closed, cancelAccepted: true));
+        Assert.Contains("was not observed", TravelRecoveryReceipt.CheckMissCleanupSettled(closed, quiet));
+        // The settlement must be observed at a manager this case still owns, reporting readiness,
+        // with no native route running again.
+        Assert.Contains("not the instance this case captured", TravelRecoveryReceipt.CheckMissCleanupSettled(settled,
+            new TravelRecoveryReceipt.NativeSnapshot(true, true, false, false, 0, TravelStationReceipt.Location(System1, Target), false)));
+        Assert.Contains("without a native manager reporting readiness", TravelRecoveryReceipt.CheckMissCleanupSettled(settled,
+            new TravelRecoveryReceipt.NativeSnapshot(true, false, false, false, 0, TravelStationReceipt.Location(System1, Target), true)));
+        Assert.Contains("a native route was running again", TravelRecoveryReceipt.CheckMissCleanupSettled(settled,
+            new TravelRecoveryReceipt.NativeSnapshot(true, true, true, false, 0, TravelStationReceipt.Location(System1, Target), true)));
+        // An unsettled cleanup is its own terminal outcome, never a continuable miss.
+        Assert.Contains(TravelRecoveryReceipt.AttemptCleanupUnsettledOutcome, TravelRecoveryReceipt.AttemptOutcomes);
+    }
+
+    /// <summary>
+    /// The KNOWN miss reason is persisted BEFORE the cleanup's side effect, marked pending until the
+    /// cleanup finished. A receipt still carrying that marker describes an attempt that never
+    /// finished and is refused, while the reason itself stays readable in the artifact.
+    /// </summary>
+    [Fact]
+    public void AnAttemptStillMarkingItsCleanupPendingIsRefusedButKeepsItsReason()
+    {
+        var pending = CaseRowsOnly();
+        var detail = TravelRecoveryReceipt.DescribeAttempt(1, Target, TravelRecoveryReceipt.AttemptTimeoutIdleOutcome,
+            "timed out with no native route; " + TravelRecoveryReceipt.AttemptCleanupPendingMarker);
+        pending.Add(AttemptRow(detail));
+        var failure = TravelRecoveryReceipt.CheckAttempts(pending);
+        Assert.Contains("still marks its own cleanup as pending", failure);
+        Assert.Contains(TravelRecoveryReceipt.AttemptTimeoutIdleOutcome, failure);
+        Assert.NotNull(TravelRecoveryReceipt.Evaluate(pending, null, Trace()));
+        // The row is a real terminal outcome apart from the marker, so the reason is never lost.
+        Assert.True(TravelRecoveryReceipt.TryParseAttempt(detail, out int number, out string outcome));
+        Assert.Equal(1, number);
+        Assert.Equal(TravelRecoveryReceipt.AttemptTimeoutIdleOutcome, outcome);
     }
 
     // --- post-gate continuation --------------------------------------------------------------
@@ -554,6 +619,13 @@ public sealed class TravelRecoveryReceiptTests
         Assert.Equal(TravelRecoveryReceipt.RecoveryAttempts + 1, TravelRecoveryReceipt.BoundaryWaits);
         Assert.Contains(TravelRecoveryReceipt.PhaseWaits, wait => wait.Name == "readiness-placement"
             && wait.Seconds == TravelRecoveryReceipt.PlacementSeconds);
+        // The bounded cleanup-settlement wait is DECLARED, at most once per attempt, and the summed
+        // plan still fits the launcher reservation.
+        Assert.Contains(TravelRecoveryReceipt.PhaseWaits, wait => wait.Name == "cleanup-placement"
+            && wait.Seconds == TravelRecoveryReceipt.CleanupPlacementSeconds
+            && wait.Occurrences == TravelRecoveryReceipt.RecoveryAttempts);
+        Assert.Equal(TravelRecoveryReceipt.RecoveryAttempts, TravelRecoveryReceipt.CleanupPlacementWaits);
+        Assert.Equal(4112, TravelRecoveryReceipt.PhaseBudgetSeconds);
     }
 
     [Fact]

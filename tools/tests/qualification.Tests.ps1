@@ -973,6 +973,20 @@ try {
     $recoveryAttemptNoOutcome = @($recoveryRows[0], $recoveryRows[1],
         (RecoveryRow $TravelRecoveryAttemptRow 'not-run' $recoverySession '' 'started'))
     AssertRecoveryRejected $recoveryAttemptNoOutcome $recoveryEvents (RecoverySummary $recoveryAttemptNoOutcome 'PASS') 'A recovery attempt row without an outcome accepted.'
+    # A miss row that still marks its own cleanup pending never completed the attempt.
+    $recoveryAttemptPending = @($recoveryRows[0], $recoveryRows[1],
+        (RecoveryRow $TravelRecoveryAttemptRow 'not-run' $recoverySession '' ("attempt1={target=poi-1,outcome=timeout-no-route,detail=" + $TravelRecoveryAttemptPendingMarker + "}")))
+    AssertRecoveryRejected $recoveryAttemptPending $recoveryEvents (RecoverySummary $recoveryAttemptPending 'PASS') 'A recovery attempt row still marking its cleanup pending accepted.'
+    # A miss that closed its own leg must publish the settled cleanup recovery.
+    $recoveryAttemptUnsettled = @($recoveryRows[0], $recoveryRows[1],
+        (RecoveryRow $TravelRecoveryAttemptRow 'not-run' $recoverySession '' 'attempt1={target=poi-1,outcome=timeout-no-route,detail=missCleanup={nativeTravelActive=False,cancelAccepted=True,window=[Requested Departed Cancelled]}}'),
+        (RecoveryAttempt 2 $TravelRecoveryAttemptSuccess))
+    AssertRecoveryRejected $recoveryAttemptUnsettled $recoveryEvents (RecoverySummary $recoveryAttemptUnsettled 'PASS') 'A missed attempt that closed its leg without a settled cleanup recovery accepted.'
+    $recoveryAttemptSettled = @($recoveryRows[0], $recoveryRows[1],
+        (RecoveryRow $TravelRecoveryAttemptRow 'not-run' $recoverySession '' 'attempt1={target=poi-1,outcome=timeout-no-route,detail=missCleanup={nativeTravelActive=False,cancelAccepted=True,window=[Requested Departed Cancelled RecoveredPlacement],settlement=currentPoi=known,managerReady=True,travelActive=False,usingJumpgate=False,waypoints=0,owned=True,location=system-1:poi-1}}'),
+        (RecoveryAttempt 2 $TravelRecoveryAttemptSuccess))
+    WriteRecoveryOutputs $recoveryAttemptSettled $recoveryEvents (RecoverySummary $recoveryAttemptSettled 'PASS')
+    Assert-PersistenceProbeReceipt $recoveryRoot $recoveryProvenance
     # Schema regressions: duplicate, gapped, foreign-session, unknown outcome and success-not-last.
     $recoveryAttemptDuplicate = @($recoveryRows[0], $recoveryRows[1], (RecoveryAttempt 1 'native-arrival-first'),
         (RecoveryAttempt 1 $TravelRecoveryAttemptSuccess))

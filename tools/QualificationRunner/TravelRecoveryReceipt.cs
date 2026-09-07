@@ -63,6 +63,14 @@ internal static class TravelRecoveryReceipt
     internal const float DepartureSeconds = 240;       // in-system leg until the verified origin unload
     internal const float ArrivalSeconds = 240;         // in-system leg until the native arrival (or the cancel window)
     internal const float PlacementSeconds = 30;        // adapter readiness observation after the native cancel
+    /// <summary>
+    /// Bounded wait after a MISSED attempt's cleanup cancel, for the recovery placement that cancel
+    /// can enable. Closing the abandoned leg opens the reducer's recovery gate (no pending leg, no
+    /// current place), so the adapter publishes one <c>RecoveredPlacement</c> as soon as the native
+    /// manager reports readiness. That readiness is exactly what the miss did NOT observe, so the
+    /// harness must settle it here instead of letting it land in the next attempt's quiet window.
+    /// </summary>
+    internal const float CleanupPlacementSeconds = 60;
     internal const float HandoffSeconds = 180;         // native gate approach until the jump iterator starts
     internal const float JumpArrivalSeconds = 240;     // jump iterator: scene load, readiness and arrival animation
     internal const float BoundarySeconds = 60;         // TravelToNextWaypoint final-route boundary
@@ -101,6 +109,11 @@ internal static class TravelRecoveryReceipt
     internal const int ArrivalWaits = RecoveryAttempts + 2;
     /// <summary>Readiness placements awaited after a successful native cancel.</summary>
     internal const int PlacementWaits = 1;
+    /// <summary>
+    /// Cleanup-placement waits: at most one per attempt, because only a missed attempt whose leg
+    /// never arrived issues the cleanup cancel that can enable the placement.
+    /// </summary>
+    internal const int CleanupPlacementWaits = RecoveryAttempts;
     /// <summary>Route boundaries awaited: an attempt that completed instead of cancelling, plus the final route.</summary>
     internal const int BoundaryWaits = RecoveryAttempts + 1;
     /// <summary>Settle call sites: recovery preparation, per attempt and at its pass; continuation preparation, per leg and at its pass; plus the restoring load.</summary>
@@ -132,6 +145,7 @@ internal static class TravelRecoveryReceipt
         new PhaseWait("departure", DepartureSeconds, DepartureWaits),
         new PhaseWait("arrival-or-cancel-window", ArrivalSeconds, ArrivalWaits),
         new PhaseWait("readiness-placement", PlacementSeconds, PlacementWaits),
+        new PhaseWait("cleanup-placement", CleanupPlacementSeconds, CleanupPlacementWaits),
         new PhaseWait("gate-handoff", HandoffSeconds, 1),
         new PhaseWait("jump-arrival", JumpArrivalSeconds, 1),
         new PhaseWait("route-boundary", BoundarySeconds, BoundaryWaits),
@@ -317,12 +331,26 @@ internal static class TravelRecoveryReceipt
     internal const string AttemptNoTargetOutcome = "no-safe-target";
     /// <summary>The abandoned leg of a missed attempt could not be proven closed; the case ends.</summary>
     internal const string AttemptUnclosedOutcome = "abandoned-leg-not-closed";
+    /// <summary>
+    /// The recovery placement the missed attempt's own cleanup cancel enabled did not settle within
+    /// its bounded wait, so a later emission could still land in another attempt's window. The case
+    /// ends there rather than retrying on a window the harness itself could contaminate.
+    /// </summary>
+    internal const string AttemptCleanupUnsettledOutcome = "cleanup-placement-unsettled";
+
+    /// <summary>
+    /// Marker a miss carries between persisting its KNOWN reason and finishing its own cleanup. The
+    /// reason is written before the cleanup's side effect, so a throw inside the cleanup cannot lose
+    /// it; a receipt still carrying the marker describes an attempt that never finished and is
+    /// refused.
+    /// </summary>
+    internal const string AttemptCleanupPendingMarker = "cleanup=pending";
 
     internal static readonly string[] AttemptOutcomes =
     {
         AttemptCancelledOutcome, AttemptArrivalFirstOutcome, AttemptRouteEndedOutcome,
         AttemptTimeoutIdleOutcome, AttemptTimeoutRunningOutcome, AttemptRefusedOutcome,
-        AttemptNoTargetOutcome, AttemptUnclosedOutcome
+        AttemptNoTargetOutcome, AttemptUnclosedOutcome, AttemptCleanupUnsettledOutcome
     };
 
     /// <summary>Outcomes that are a MISS: the case may drive another bounded attempt after them.</summary>
@@ -394,6 +422,9 @@ internal static class TravelRecoveryReceipt
                 return "A recovery attempt row carries no numbered terminal outcome (it may still be in its started state): " + attempt.Detail + ".";
             if (!AttemptOutcomes.Contains(outcome))
                 return "A recovery attempt row carries the unknown outcome '" + outcome + "'.";
+            if (attempt.Detail.IndexOf(AttemptCleanupPendingMarker, StringComparison.Ordinal) >= 0)
+                return "A recovery attempt row still marks its own cleanup as pending (its known reason is '"
+                    + outcome + "'); the attempt never finished, so the receipt is not a completed one.";
             if (number < 1 || number > RecoveryAttempts)
                 return "A recovery attempt is numbered " + number + ", outside the committed bound of " + RecoveryAttempts + ".";
             if (numbers.Contains(number)) return "Recovery attempt " + number + " is recorded twice.";
@@ -445,6 +476,28 @@ internal static class TravelRecoveryReceipt
                 + TravelStationReceipt.Describe(slice[2]) + ".";
         if (slice.Count == 4 && slice[3].Kind != TravelTransitionKind.RecoveredPlacement)
             return "The missed attempt's cleanup started a new stage: " + TravelStationReceipt.Describe(slice[3]) + ".";
+        return null;
+    }
+
+    /// <summary>
+    /// A missed attempt's cleanup is SETTLED only when the placement its own cancel enabled has
+    /// actually been observed, at a native manager the case still owns. Closing the abandoned leg
+    /// opens the reducer's recovery gate, so a later emission would otherwise land in the NEXT
+    /// attempt's quiet window and fail an otherwise good attempt through the harness's own doing.
+    /// The placement observed here is explicitly NOT coverage: it belongs to a missed attempt.
+    /// </summary>
+    internal static string? CheckMissCleanupSettled(IReadOnlyList<TravelTransition> slice, NativeSnapshot after)
+    {
+        if (slice.Count != 4 || slice[3].Kind != TravelTransitionKind.RecoveredPlacement)
+            return "The recovery placement the cleanup cancel enabled was not observed, so a later emission could still contaminate another attempt's window.";
+        if (!after.OwnedByCase)
+            return "The cleanup settled while the live native travel manager/player was not the instance this case captured ("
+                + after.ToDetail() + ").";
+        if (!after.ManagerReady)
+            return "The cleanup placement was observed without a native manager reporting readiness for the player's current POI ("
+                + after.ToDetail() + ").";
+        if (after.TravelActive)
+            return "The cleanup settled while a native route was running again (" + after.ToDetail() + ").";
         return null;
     }
 
