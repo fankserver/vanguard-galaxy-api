@@ -96,8 +96,8 @@ $TravelResilienceRequiredSubcaseRows = @('restore-reinit-same-size')
 # own consumer loads/saves on top of their existing reservations.
 $AnimaTravelPhase = 'anima-travel-consumer-v1'
 $AnimaTravelRequiredCases = @('consumer-binding','non-travel-quiet','gate-arrival-visit','wormhole-arrival-visit','visit-persistence','recording-degraded')
-$AnimaTravelRequiredSubcaseRows = @('gate-visit-reload','gate-visit-rollback')
-$AnimaTravelBudgetSeconds = 900
+$AnimaTravelRequiredSubcaseRows = @('gate-visit-reload','gate-visit-rollback','regional-history-fixture')
+$AnimaTravelBudgetSeconds = 1200
 # The scenario names the two reused phases record in result.txt, used as the ordering proof.
 $AnimaTravelReusedPhaseScenarios = @("native-travel-station-$TravelStationPhase", "native-travel-$TravelCrossSystemPhase")
 # Independent verification of the pilot's own claim: the declared phase, every mandatory case
@@ -385,7 +385,9 @@ function Assert-QualificationInputs([string]$Root) {
             (Get-Content -LiteralPath $animaTravelMarker -Raw).Trim() -ne 'anima-travel-v1') { throw 'Invalid Anima consumer travel selection.' }
         if (!$provenance.PSObject.Properties['animaTravelBudgetSeconds'] -or
             [int]$provenance.animaTravelBudgetSeconds -ne $AnimaTravelBudgetSeconds) { throw 'Anima consumer travel budget reservation changed.' }
-        if ($provenance.PSObject.Properties['animaVersion'] -and $provenance.animaVersion -ne $AnimaTravelProbeVersion) { throw 'Anima consumer travel probe requires the pinned consumer version.' }
+        # REQUIRED, not merely checked when present: a provenance with the property removed must
+        # never pass while the probe is selected.
+        if (!$provenance.PSObject.Properties['animaVersion'] -or $provenance.animaVersion -ne $AnimaTravelProbeVersion) { throw 'Anima consumer travel probe requires the pinned consumer version in provenance.' }
     }
     # The resilience phase is an ADDITIONAL selection on top of the in-system phase; it reuses the
     # same [Travel] capability configuration and reserves its own separate process budget.

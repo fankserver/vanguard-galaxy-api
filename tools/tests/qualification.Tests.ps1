@@ -881,6 +881,15 @@ try {
         try { $null = Assert-QualificationInputs $consumerRoot } catch { $rejected = $true }
         Assert $rejected $edit.Message
     }
+    # A DELETED property must fail exactly like a wrong one: the consumer version pin is REQUIRED
+    # while the probe is selected, never "checked only when present".
+    $withoutVersion = Get-Content -LiteralPath $consumerProvenancePath -Raw | ConvertFrom-Json
+    $withoutVersion.PSObject.Properties.Remove('animaVersion')
+    Assert (!$withoutVersion.PSObject.Properties['animaVersion']) 'Consumer version pin was not removed by the test fixture.'
+    $withoutVersion | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $consumerProvenancePath
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $consumerRoot } catch { $rejected = $true }
+    Assert $rejected 'Consumer travel probe accepted provenance with the consumer version pin removed.'
     [IO.File]::WriteAllText($consumerProvenancePath, $consumerProvenanceText)
     $consumerProvenance = Assert-QualificationInputs $consumerRoot
     # The launcher must reserve base + the two reused phases + this probe's own budget.
@@ -953,7 +962,8 @@ try {
     Assert-PersistenceProbeReceipt $consumerRoot ([pscustomobject]@{ animaTravelProbe = $true })
     $consumerSkipped = @($AnimaTravelRequiredCases | ForEach-Object { TravelRow $_ 'not-run' $consumerSession '' }) + @($AnimaTravelRequiredSubcaseRows | ForEach-Object { TravelRow $_ 'passed' $consumerSession 'travel:1' })
     AssertConsumerRejected $consumerSkipped $consumerEvents (ConsumerSummary $consumerSkipped 'PASS') $consumerOrderedResult 'All-skipped consumer coverage accepted as PASS.'
-    $consumerFailed = @($consumerRows[0..6]) + @(TravelRow $AnimaTravelRequiredSubcaseRows[1] 'failed' $consumerSession 'travel:8')
+    $lastRow = $consumerRows.Count - 1
+    $consumerFailed = @($consumerRows[0..($lastRow - 1)]) + @(TravelRow $AnimaTravelRequiredSubcaseRows[-1] 'failed' $consumerSession ("travel:" + $consumerRows.Count))
     AssertConsumerRejected $consumerFailed $consumerEvents (ConsumerSummary $consumerFailed 'PASS') $consumerOrderedResult 'Claimed consumer PASS with a failed row accepted.'
     $consumerMissingSubcase = @($consumerRows | Where-Object { $_ -notlike ($AnimaTravelRequiredSubcaseRows[0] + "`t*") })
     AssertConsumerRejected $consumerMissingSubcase $consumerEvents (ConsumerSummary $consumerMissingSubcase 'PASS') $consumerOrderedResult 'Consumer receipt without a mandatory subcase row accepted.'
@@ -964,7 +974,7 @@ try {
     $consumerForeign = @($consumerEvents | ForEach-Object { $_ -replace [regex]::Escape($consumerSession), ([Guid]::NewGuid().ToString()) })
     AssertConsumerRejected $consumerRows $consumerForeign (ConsumerSummary $consumerRows 'PASS') $consumerOrderedResult 'Consumer identities absent from the event trace accepted.'
     AssertConsumerRejected $consumerRows $consumerEvents (ConsumerSummary $consumerRows 'FAIL') $consumerOrderedResult 'Failed consumer attempt summary accepted.'
-    AssertConsumerRejected $consumerRows $consumerEvents @('INCOMPLETE', "phase=$AnimaTravelPhase", "budgetSeconds=$AnimaTravelBudgetSeconds", "required-subcases=$($AnimaTravelRequiredSubcaseRows -join ',')", 'activeCase=gate-arrival-visit', 'rows=8 passed=8 failed=0 notRun=0', 'result=pilot still running or externally terminated; this is not a pass.') $consumerOrderedResult 'Incomplete consumer checkpoint accepted as a pass.'
+    AssertConsumerRejected $consumerRows $consumerEvents @('INCOMPLETE', "phase=$AnimaTravelPhase", "budgetSeconds=$AnimaTravelBudgetSeconds", "required-subcases=$($AnimaTravelRequiredSubcaseRows -join ',')", 'activeCase=gate-arrival-visit', ("rows=" + $consumerRows.Count + " passed=" + $consumerRows.Count + " failed=0 notRun=0"), 'result=pilot still running or externally terminated; this is not a pass.') $consumerOrderedResult 'Incomplete consumer checkpoint accepted as a pass.'
     $consumerForeignPhase = @((ConsumerSummary $consumerRows 'PASS') | ForEach-Object { if ($_ -like 'phase=*') { "phase=$TravelCrossSystemPhase" } else { $_ } })
     AssertConsumerRejected $consumerRows $consumerEvents $consumerForeignPhase $consumerOrderedResult 'Consumer receipt declaring a reused travel phase accepted.'
     $consumerOverBudget = @((ConsumerSummary $consumerRows 'PASS') | ForEach-Object { if ($_ -like 'budgetSeconds=*') { "budgetSeconds=$($AnimaTravelBudgetSeconds + 1)" } else { $_ } })

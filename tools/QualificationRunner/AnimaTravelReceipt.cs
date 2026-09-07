@@ -34,15 +34,17 @@ internal static class AnimaTravelReceipt
     internal const string DegradedCase = "recording-degraded";
     internal const string GateReloadSubcase = "gate-visit-reload";
     internal const string GateRollbackSubcase = "gate-visit-rollback";
+    internal const string RegionalFixtureSubcase = "regional-history-fixture";
 
     internal const string BindingDescription = "The installed consumer is subscribed to the PUBLIC travel surface of the freshly loaded session while the native-travel capability is available, and owns no direct native travel/system-entry Harmony patch.";
     internal const string QuietDescription = "Initial placement, recovered placement, requests, cancellations, in-system POI arrivals, route completion and station facts of the qualified in-system phase leave the consumer's visited-system history unchanged.";
     internal const string GateDescription = "The qualified native jump-gate arrival increments the consumer's visit count for the ACTUAL arrival system exactly once, at the public event's game time, and its v4 sidecar carries that count.";
     internal const string WormholeDescription = "The qualified native wormhole arrival increments the consumer's visit count for the ACTUAL arrival system exactly once, at the public event's game time, and its v4 sidecar carries that count.";
     internal const string PersistenceDescription = "Saving and reloading restores the recorded counts of the saved slot, the replacement session resets the consumer's leg latch, and loading the earlier fixture rolls the history back to that slot's own counts.";
-    internal const string DegradedDescription = "A controlled visit-only consumer fault stops recording while the capability stays available: regional recognition is omitted from a new gather, the recorded history is preserved and still saved, and the mission provider, its save writes and both load-safety hooks remain.";
+    internal const string DegradedDescription = "A controlled visit-only consumer fault stops recording while the capability stays available: the consumer's own shared regional-recognition decision produces entries BEFORE the fault and omits regionally_known from a new gather after it, the recorded history is preserved and still saved, and the mission provider, its save writes and both load-safety hooks remain.";
     internal const string GateReloadDescription = "Mandatory subcase of gate-arrival-visit: reloading the saved slot restores exactly the counts that were saved, from the consumer's own sidecar.";
     internal const string GateRollbackDescription = "Mandatory subcase of gate-arrival-visit: loading the earlier fixture restores that slot's own baseline counts instead of keeping the newer session's history.";
+    internal const string RegionalFixtureDescription = "Mandatory subcase of recording-degraded: an authorized disposable historical visit history is written into the probe's OWN newly saved sandbox slot's consumer sidecar and loaded back through the consumer's real load path, so the regional-recognition window has qualifying pre-existing counts. It is synthetic prompt INPUT, never a native visit: no arrival is observed and no counter is incremented by it.";
 
     /// <summary>
     /// The phase passes only when EVERY one of these case identities has exactly one PASSED row.
@@ -59,7 +61,7 @@ internal static class AnimaTravelReceipt
     /// reload and fixture rollback BEFORE the wormhole case's fresh fixture load replaces the
     /// registry, so those two proofs cannot be deferred into the later persistence case.
     /// </summary>
-    internal static readonly string[] RequiredSubcaseRows = { GateReloadSubcase, GateRollbackSubcase };
+    internal static readonly string[] RequiredSubcaseRows = { GateReloadSubcase, GateRollbackSubcase, RegionalFixtureSubcase };
 
     // Declared per-wait deadlines (seconds). These are the SINGLE source the pilot's waits use, and
     // the phase budget is summed from the plan below, so a changed deadline moves the published
@@ -71,18 +73,62 @@ internal static class AnimaTravelReceipt
     /// <summary>Bounded wait for the freshly loaded session's own public placement fact.</summary>
     internal const float PlacementSeconds = 30;
     /// <summary>Process time the launcher reserves for this phase (mirrors $AnimaTravelBudgetSeconds).</summary>
-    internal const float LauncherReservationSeconds = 900;
+    internal const float LauncherReservationSeconds = 1200;
 
-    // Per-case wait multiplicities, named after the pilot call sites they come from, so the plan
-    // below is DERIVED from the call-site counts instead of being hand-typed.
-    /// <summary>Slot loads the probe itself performs: reload + fixture rollback for each of the two positive cases.</summary>
-    internal const int ProbeLoads = 4;
-    /// <summary>Placement waits: the binding case plus one after every probe load.</summary>
-    internal const int PlacementWaits = ProbeLoads + 1;
-    /// <summary>Quiescence samples: in-system delta, both arrival deltas, both reloads, the rollback and the degradation case.</summary>
-    internal const int QuiescenceSamples = 7;
-    /// <summary>Settle after every probe load plus one before the degradation case.</summary>
-    internal const int Settles = ProbeLoads + 1;
+    /// <summary>The cross-system cases whose consumer evidence this probe takes: gate and wormhole.</summary>
+    internal const int CrossSystemCases = 2;
+
+    /// <summary>
+    /// One pilot method that performs bounded waits, with the number of times the phase INVOKES it
+    /// and the call sites it contains. The budget is derived from this plan and a host test
+    /// re-counts the pilot's actual source call sites against it, so an undeclared wait cannot
+    /// silently shrink the published worst case again.
+    /// </summary>
+    internal sealed class CallSitePlan
+    {
+        internal string Method { get; }
+        internal int Invocations { get; }
+        internal int Loads { get; }
+        internal int Placements { get; }
+        internal int Quiescences { get; }
+        internal int Settles { get; }
+        internal CallSitePlan(string method, int invocations, int loads, int placements, int quiescences, int settles)
+        {
+            Method = method; Invocations = invocations; Loads = loads;
+            Placements = placements; Quiescences = quiescences; Settles = settles;
+        }
+    }
+
+    /// <summary>
+    /// Every waiting call site of the probe, per method. <c>Invocations</c> is how often the phase
+    /// runs that method: the two cross-system hooks run once per cross-system case, everything else
+    /// once.
+    /// </summary>
+    internal static readonly CallSitePlan[] CallSites =
+    {
+        // binding: the fresh in-system session's placement, then one quiescence before the baseline.
+        new("InSystemReady", 1, loads: 0, placements: 1, quiescences: 1, settles: 0),
+        // non-travel-quiet: one quiescence before the delta.
+        new("InSystemCompleted", 1, loads: 0, placements: 0, quiescences: 1, settles: 0),
+        // per cross-system case: the case session's placement, then a quiescence before the baseline.
+        new("CrossCaseReady", CrossSystemCases, loads: 0, placements: 1, quiescences: 1, settles: 0),
+        // per cross-system case: arrival quiescence, then the saved-slot reload and the earlier-fixture
+        // rollback, each with its own settle, placement wait and quiescence.
+        new("CrossCaseCompleted", CrossSystemCases, loads: 2, placements: 2, quiescences: 3, settles: 2),
+        // degradation: settle, placement and quiescence on entry, then one quiescence after the fault.
+        new("CaseRecordingDegraded", 1, loads: 0, placements: 1, quiescences: 2, settles: 1),
+        // the authorized historical-input fixture: its own slot load, settle, placement and quiescence.
+        new("PrepareRegionalHistoryFixture", 1, loads: 1, placements: 1, quiescences: 1, settles: 1)
+    };
+
+    /// <summary>Slot loads the probe itself performs.</summary>
+    internal static readonly int ProbeLoads = CallSites.Sum(site => site.Invocations * site.Loads);
+    /// <summary>Waits for a freshly loaded session's own public placement fact.</summary>
+    internal static readonly int PlacementWaits = CallSites.Sum(site => site.Invocations * site.Placements);
+    /// <summary>Callback-quiescence samples taken before any consumer state is compared.</summary>
+    internal static readonly int QuiescenceSamples = CallSites.Sum(site => site.Invocations * site.Quiescences);
+    /// <summary>Shared harness settles the probe performs itself.</summary>
+    internal static readonly int Settles = CallSites.Sum(site => site.Invocations * site.Settles);
 
     internal sealed class PhaseWait
     {
@@ -323,6 +369,64 @@ internal static class AnimaTravelReceipt
         var expected = Path.Combine(saveRoot, saveName + ".save.vganima.json");
         if (!string.Equals(Path.GetFullPath(sidecarPath), Path.GetFullPath(expected), StringComparison.OrdinalIgnoreCase))
             return "The consumer sidecar " + sidecarPath + " is not the paired companion of the written save " + expected + ".";
+        return null;
+    }
+
+    /// <summary>
+    /// The disposable historical visit history the probe writes into its OWN saved sandbox slot is
+    /// prompt INPUT: it may only raise the target system to the recognition threshold, must preserve
+    /// every other recorded system untouched and must never move a first-visit time. It is recorded
+    /// as synthetic setup and can never be reported as a witnessed visit.
+    /// </summary>
+    internal static string? CheckSyntheticHistoryInput(IReadOnlyList<VisitRecord> saved,
+        IReadOnlyList<VisitRecord> written, string targetSystemId, int threshold)
+    {
+        if (threshold < 1) return "The recognition threshold must be positive.";
+        var before = Index(saved);
+        var after = Index(written);
+        if (!after.TryGetValue(targetSystemId, out var target))
+            return "The synthetic history does not carry the target system " + targetSystemId + ".";
+        if (target.Visits < threshold)
+            return "The synthetic history leaves " + targetSystemId + " below the recognition threshold ("
+                + target.Visits + " < " + threshold + ").";
+        if (before.TryGetValue(targetSystemId, out var previous))
+        {
+            if (target.Visits < previous.Visits) return "The synthetic history reduced recorded visits for " + targetSystemId + ".";
+            if (!Equal(target.FirstSeconds, previous.FirstSeconds)) return "The synthetic history moved the first-visit time of " + targetSystemId + ".";
+        }
+        foreach (var pair in before)
+        {
+            if (pair.Key == targetSystemId) continue;
+            if (!after.TryGetValue(pair.Key, out var untouched)) return "The synthetic history dropped recorded system " + pair.Key + ".";
+            if (untouched.Visits != pair.Value.Visits || !Equal(untouched.FirstSeconds, pair.Value.FirstSeconds)
+                || !Equal(untouched.LastSeconds, pair.Value.LastSeconds))
+                return "The synthetic history changed unrelated system " + pair.Key + ".";
+        }
+        var added = after.Keys.Where(key => key != targetSystemId && !before.ContainsKey(key)).ToArray();
+        if (added.Length > 0) return "The synthetic history invented system(s) " + string.Join(", ", added) + ".";
+        return null;
+    }
+
+    /// <summary>
+    /// Loading that slot must reproduce exactly the written history through the consumer's own load
+    /// path, with NO travel arrival observed: a synthetic input can never be counted as a visit.
+    /// </summary>
+    internal static string? CheckSyntheticHistoryRestored(IReadOnlyList<VisitRecord> written,
+        IReadOnlyList<VisitRecord> restored, int observedArrivals)
+    {
+        if (observedArrivals != 0)
+            return "The synthetic history load observed " + observedArrivals + " travel arrival(s); fixture input is never a visit.";
+        return CheckSameHistory(written, restored, "restored synthetic history");
+    }
+
+    /// <summary>
+    /// The regional-recognition proof must be POSITIVE before the fault: a window that was already
+    /// omitted beforehand proves nothing about the fault, so an absent "before" is a failure.
+    /// </summary>
+    internal static string? CheckRegionalWindow(bool presentBefore, bool presentAfter)
+    {
+        if (!presentBefore) return "The consumer's shared regional-recognition decision produced no window BEFORE the fault, so its omission afterwards would prove nothing.";
+        if (presentAfter) return "A new gather still carried regionally_known after visit recording stopped.";
         return null;
     }
 

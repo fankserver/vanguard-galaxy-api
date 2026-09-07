@@ -390,12 +390,18 @@ public sealed partial class Plugin
     {
         AtCase(AnimaTravelReceipt.DegradedCase, AnimaTravelReceipt.DegradedDescription);
         foreach (var frame in Settle()) yield return frame;
-        var session = _api!.CurrentSession!.Id;
-        foreach (var frame in AwaitPlacement(session)) yield return frame;
+        var entrySession = _api!.CurrentSession!.Id;
+        foreach (var frame in AwaitPlacement(entrySession)) yield return frame;
         foreach (var frame in Quiesce()) yield return frame;
+        Require((bool)SpGet(AnimaPlugin, "VisitHistoryRecording")!, "The consumer was already degraded before the controlled fault.");
+        // Authorized disposable prompt INPUT, after every genuine arrival/persistence proof: the
+        // recognition window needs pre-existing qualifying counts, and no witnessed arrival can
+        // legitimately produce them inside this phase.
+        foreach (var frame in PrepareRegionalHistoryFixture()) yield return frame;
+        var session = _api!.CurrentSession!.Id;
         var anima = AnimaPlugin;
         var before = AnimaVisited();
-        Require((bool)SpGet(anima, "VisitHistoryRecording")!, "The consumer was already degraded before the controlled fault.");
+        Require((bool)SpGet(anima, "VisitHistoryRecording")!, "The consumer stopped recording before the controlled fault.");
         bool gatherBefore = AnimaRegionallyKnownPresent(out string gatherBeforeDetail);
         var observer = SpGet(anima, "_visitObserver")!;
         // Exactly the consumer's own documented observer-failure path.
@@ -418,7 +424,9 @@ public sealed partial class Plugin
         var patches = ConsumerTravelPatches();
         Require(patches.Length == 0, "The degraded consumer installed a native travel fallback hook: " + string.Join(", ", patches));
         bool gatherAfter = AnimaRegionallyKnownPresent(out string gatherAfterDetail);
-        Require(!gatherAfter, "A new context gather still carried regionally_known after recording stopped: " + gatherAfterDetail);
+        // POSITIVE before, omitted after: an already-absent window would prove nothing.
+        var window = AnimaTravelReceipt.CheckRegionalWindow(gatherBefore, gatherAfter);
+        Require(window == null, window + " before=[" + gatherBeforeDetail + "] after=[" + gatherAfterDetail + "]");
 
         var preserved = AnimaVisited();
         var failure = AnimaTravelReceipt.CheckSameHistory(before, preserved, "history after the controlled fault");
@@ -439,6 +447,87 @@ public sealed partial class Plugin
             + "; regionallyKnownAfter=" + gatherAfter + " (" + gatherAfterDetail + ")"
             + "; preserved=" + AnimaTravelReceipt.Describe(preserved) + "; savedSidecar=v" + version);
         AtEndCase();
+    }
+
+    // --- authorized disposable historical prompt input ---------------------------------------
+
+    /// <summary>The probe's OWN sandbox slot; never a prepared fixture and never an original save.</summary>
+    private const string RegionalFixtureSlot = "qa-anima-travel-regional";
+
+    // Regional recognition needs pre-existing qualifying counts, and no arrival this phase can
+    // legitimately drive would produce them (the builder's threshold is three visits to one system).
+    // So AFTER every genuine arrival, save and rollback proof, the probe saves its own new sandbox
+    // slot, adjusts THAT slot's consumer sidecar through the consumer's own reader/writer, and loads
+    // it back through the consumer's real load path. This is synthetic prompt INPUT recorded as a
+    // mandatory setup row: no arrival is observed, no counter is incremented by it, no registry API
+    // is called and no original save or prepared fixture companion is touched.
+    private IEnumerable<object?> PrepareRegionalHistoryFixture()
+    {
+        var anima = AnimaPlugin;
+        var saved = AnimaVisited();
+        Save(RegionalFixtureSlot, LifecycleEventKind.SaveSucceeded);
+        var sidecarPath = AnimaSidecarPath(RegionalFixtureSlot);
+        var failure = AnimaTravelReceipt.CheckSidecarPath(sidecarPath, _saveRoot!, RegionalFixtureSlot);
+        Require(failure == null, failure!);
+        foreach (var prepared in new[] { "fixture-a", "fixture-b" })
+            Require(!SamePath(sidecarPath, AnimaSidecarPath(prepared)),
+                "Refusing to write historical input beside a prepared fixture save.");
+        Require(File.Exists(sidecarPath), "The consumer wrote no sidecar beside the probe's own saved slot.");
+        // Refuse to rewrite anything the consumer itself cannot read at the current schema version:
+        // an unknown/future/corrupt companion fails the case instead of being overwritten.
+        var read = SpCall(SpGet(anima, "SidecarIO")!, "Read", sidecarPath);
+        Require(SpGet(read, "Status")!.ToString() == "Loaded",
+            "Refusing to rewrite a consumer sidecar the consumer cannot read: " + SpGet(read, "Status"));
+        var schema = SpGet(read, "Schema")!;
+        int version = (int)SpGet(schema, "Version")!;
+        failure = AnimaTravelReceipt.CheckSidecarVersion(version, AnimaSidecarVersion);
+        Require(failure == null, "Refusing to rewrite a consumer sidecar of another schema version: " + failure);
+
+        var system = SpGet(CurrentPlayer, "currentSystem");
+        Require(system != null, "The loaded world has no current system to give a pre-existing history.");
+        var targetId = (string)SpGet(system!, "guid")!;
+        int threshold = (int)SpGet(AnimaType("VGAnima.Llm.RegionallyKnownBuilder"), "MinVisitsThreshold")!;
+        double gameSeconds = (double)SpGet(SpGet(anima, "Clock")!, "GameSeconds")!;
+        var existing = saved.Where(record => record.SystemId == targetId).ToArray();
+        var written = saved.Where(record => record.SystemId != targetId).ToList();
+        // Raise the current system to the recognition threshold, keeping whatever label and
+        // first-visit time the slot already recorded; a first visit stores the empty label, exactly
+        // like an observed arrival with no public label would.
+        written.Add(existing.Length == 1
+            ? new AnimaTravelReceipt.VisitRecord(targetId, existing[0].Name,
+                Math.Max(existing[0].Visits, threshold), existing[0].FirstSeconds, existing[0].LastSeconds)
+            : new AnimaTravelReceipt.VisitRecord(targetId, string.Empty, threshold, gameSeconds, gameSeconds));
+        failure = AnimaTravelReceipt.CheckSyntheticHistoryInput(saved, written, targetId, threshold);
+        Require(failure == null, failure!);
+
+        // Written through the consumer's OWN schema type and writer, so the file stays format-correct.
+        var visitedType = AnimaType("VGAnima.Persistence.VisitedSystem");
+        var visited = Array.CreateInstance(visitedType, written.Count);
+        for (int index = 0; index < written.Count; index++)
+            visited.SetValue(Activator.CreateInstance(visitedType, written[index].SystemId, written[index].Name,
+                written[index].Visits, written[index].FirstSeconds, written[index].LastSeconds), index);
+        var replacement = Activator.CreateInstance(AnimaType("VGAnima.Persistence.SidecarSchema"),
+            version, SpGet(schema, "Entries"), visited)!;
+        SpCall(SpGet(anima, "SidecarIO")!, "Write", sidecarPath, replacement);
+
+        int offset = _atFacts!.Count;
+        foreach (var frame in SpLoad(RegionalFixtureSlot)) yield return frame;
+        foreach (var frame in Settle()) yield return frame;
+        var fixtureSession = _api!.CurrentSession!.Id;
+        foreach (var frame in AwaitPlacement(fixtureSession)) yield return frame;
+        foreach (var frame in Quiesce()) yield return frame;
+        var restored = AnimaVisited();
+        var loadWindow = Window(offset);
+        failure = AnimaTravelReceipt.CheckSyntheticHistoryRestored(written, restored,
+            loadWindow.Count(fact => fact.Kind == TravelTransitionKind.Arrived));
+        Require(failure == null, failure!);
+        var evidence = TravelStationReceipt.Evidence(loadWindow.Where(fact => fact.SessionId == fixtureSession), null);
+        AtRecord(AnimaTravelReceipt.RegionalFixtureSubcase, AnimaTravelReceipt.RegionalFixtureDescription,
+            TravelStationReceipt.Passed, "system=" + targetId, fixtureSession, null, evidence,
+            "slot=" + RegionalFixtureSlot + " (probe-owned sandbox save); syntheticHistoricalInput=1 system to " + threshold
+            + " visit(s); observedArrivals=0; sidecar=v" + version
+            + "; savedSystems=" + saved.Count + "; writtenSystems=" + written.Count + "; restoredSystems=" + restored.Count
+            + "; countedVisits=0 (fixture input is never a witnessed visit)");
     }
 
     // --- consumer reads ---------------------------------------------------------------------
@@ -493,22 +582,22 @@ public sealed partial class Plugin
             .ToArray();
 
     /// <summary>
-    /// Source-exact gather-time behaviour: the consumer's own flag decides whether its own builder
-    /// runs, the result is handed to the consumer's own <c>ContextGatherer.Gather</c>, and the
-    /// consumer's own serializer call decides whether <c>regionally_known</c> appears at all. No
-    /// annotation or reimplementation of that decision is asserted.
+    /// The consumer's OWN production decision, invoked exactly as its bar context path invokes it:
+    /// <c>RegionalRecognition.ForCurrentContext()</c> reads the live recording gate, registry,
+    /// journal bridge and clock itself, so the probe cannot supply a substitute flag or history and
+    /// never re-implements the gate. Its result is handed to the consumer's own
+    /// <c>ContextGatherer.Gather</c> and serialized with the consumer's own serializer, so the
+    /// presence of the <c>regionally_known</c> key is the consumer's own output, not an annotation.
     /// </summary>
     private bool AnimaRegionallyKnownPresent(out string detail)
     {
         var anima = AnimaPlugin;
-        var registry = SpGet(anima, "PersistedRegistry");
-        bool recording = (bool)SpGet(anima, "VisitHistoryRecording")!;
-        object? regionallyKnown = null;
-        if (registry != null && recording)
-            regionallyKnown = AccessTools.Method(AnimaType("VGAnima.Llm.RegionallyKnownBuilder"), "Build").Invoke(null, new object?[]
-            {
-                SpGet(registry, "VisitedSystems"), SpGet(anima, "MissionJournalBridge"), (double)SpGet(SpGet(anima, "Clock")!, "GameSeconds")!
-            });
+        var decision = AnimaType("VGAnima.Llm.RegionalRecognition").GetMethod("ForCurrentContext",
+            BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
+            ?? throw new MissingMemberException("VGAnima.Llm.RegionalRecognition", "ForCurrentContext");
+        Require(decision.GetParameters().Length == 0,
+            "The consumer's shared regional-recognition decision takes arguments; the probe must never supply its live state.");
+        var regionallyKnown = decision.Invoke(null, null);
         var broker = Activator.CreateInstance(AnimaType("VGAnima.Llm.BrokerInfo"),
             "qa-anima-travel-probe", true, "qa-anima-travel-probe-seed", string.Empty)!;
         var gather = AnimaType("VGAnima.Llm.ContextGatherer").GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
@@ -520,7 +609,9 @@ public sealed partial class Plugin
         var json = SpJson(context);
         bool present = json.Contains("\"regionally_known\"");
         int entries = regionallyKnown is ICollection collection ? collection.Count : -1;
-        detail = "recording=" + recording + "; builderEntries=" + (regionallyKnown == null ? "null" : entries.ToString())
+        detail = "decision=VGAnima.Llm.RegionalRecognition.ForCurrentContext(); recording="
+            + SpGet(anima, "VisitHistoryRecording")
+            + "; decisionEntries=" + (regionallyKnown == null ? "null" : entries.ToString())
             + "; contextKey=" + (present ? "present" : "omitted");
         return present;
     }

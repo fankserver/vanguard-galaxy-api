@@ -205,6 +205,12 @@ public sealed class InstalledAnimaTravelConsumerTests
         Field(SaveLoadPatch, "VisitObserver", Observer, isStatic: true);
         Field(SaveWritePatch, "CanWrite", "System.Func`1<System.Boolean>", isStatic: true);
 
+        // The SHARED production decision the probe invokes: parameterless, so the probe cannot
+        // supply a substitute recording flag or visit history, and it reads the live gate itself.
+        var decision = Method("VGAnima.Llm.RegionalRecognition", "ForCurrentContext",
+            "System.Collections.Generic.IReadOnlyList`1<VGAnima.Llm.LlmRegionallyKnownEntry>");
+        Assert.True(decision.IsStatic);
+
         // The gather-time decision the probe evaluates through the consumer's own members.
         var build = Method("VGAnima.Llm.RegionallyKnownBuilder", "Build",
             "System.Collections.Generic.IReadOnlyList`1<VGAnima.Llm.LlmRegionallyKnownEntry>",
@@ -223,6 +229,27 @@ public sealed class InstalledAnimaTravelConsumerTests
         var contextProperty = Assert.Single(Type("VGAnima.Llm.LlmContext").Properties, property => property.Name == "RegionallyKnown");
         var jsonProperty = Assert.Single(contextProperty.CustomAttributes, attribute => attribute.AttributeType.Name == "JsonPropertyAttribute");
         Assert.Equal("regionally_known", (string?)jsonProperty.ConstructorArguments[0].Value);
+    }
+
+    [Fact]
+    public void TheProbeAndTheProductionPromptPathShareOneRegionalRecognitionDecision()
+    {
+        using var consumer = ReadConsumer();
+        var module = consumer.Assembly.MainModule;
+        // Nothing may re-derive the gate: only the shared decision builds the window, and the
+        // consumer's own bar context path composes through that same method the probe invokes.
+        Assert.Equal(new[] { "VGAnima.Llm.RegionalRecognition.ForCurrentContext" },
+            Callers(module, "VGAnima.Llm.RegionallyKnownBuilder", "Build").ToArray());
+        Assert.Contains("VGAnima.Patches.BarRefreshPatches.StartInjectMissionBroker",
+            Callers(module, "VGAnima.Llm.RegionalRecognition", "ForCurrentContext"));
+        // The decision reads the live recording gate and registry itself.
+        var body = AllTypes(module).Single(type => type.FullName == "VGAnima.Llm.RegionalRecognition")
+            .Methods.Single(method => method.Name == "ForCurrentContext").Body.Instructions
+            .Select(instruction => (instruction.Operand as MethodReference)?.Name)
+            .Where(name => name != null)
+            .ToArray();
+        foreach (var read in new[] { "get_Instance", "get_VisitHistoryRecording", "get_PersistedRegistry", "get_VisitedSystems", "get_GameSeconds" })
+            Assert.Contains(read, body);
     }
 
     [Fact]
@@ -260,13 +287,20 @@ public sealed class InstalledAnimaTravelConsumerTests
         Assert.Contains("VGModAPI.ITravelEvents", referenced);
     }
 
-    private static IEnumerable<TypeDefinition> AllTypes(ModuleDefinition module)
+    /// <summary>
+    /// Every type in the module at ANY nesting depth. A single level would miss a closure or state
+    /// machine the compiler generates inside an already nested type, which is exactly where a call
+    /// the scan is meant to find could hide.
+    /// </summary>
+    internal static IEnumerable<TypeDefinition> AllTypes(ModuleDefinition module)
     {
-        foreach (var type in module.Types)
+        IEnumerable<TypeDefinition> Walk(TypeDefinition type)
         {
             yield return type;
-            foreach (var nested in type.NestedTypes) yield return nested;
+            foreach (var nested in type.NestedTypes)
+                foreach (var deeper in Walk(nested)) yield return deeper;
         }
+        return module.Types.SelectMany(Walk);
     }
 
     // Declared Harmony patch targets: the class-level typeof(...) plus any method name argument.
@@ -283,12 +317,16 @@ public sealed class InstalledAnimaTravelConsumerTests
 
     // Fully qualified "Type.Method" of every consumer method (including compiler-generated
     // iterators and lambdas) that calls the named member.
-    private static IEnumerable<string> Callers(ModuleDefinition module, string member)
+    internal static IEnumerable<string> Callers(ModuleDefinition module, string member) => Callers(module, null, member);
+
+    /// <summary>Callers of a member, optionally restricted to one declaring type.</summary>
+    internal static IEnumerable<string> Callers(ModuleDefinition module, string? declaringType, string member)
     {
         var result = new SortedSet<string>(StringComparer.Ordinal);
         foreach (var type in AllTypes(module))
             foreach (var method in type.Methods.Where(candidate => candidate.HasBody))
-                if (method.Body.Instructions.Any(instruction => instruction.Operand is MethodReference call && call.Name == member))
+                if (method.Body.Instructions.Any(instruction => instruction.Operand is MethodReference call && call.Name == member
+                    && (declaringType == null || call.DeclaringType.FullName == declaringType)))
                 {
                     var owner = type;
                     var name = method.Name;

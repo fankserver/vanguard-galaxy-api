@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using VGModAPI.Qualification;
 using Xunit;
 
@@ -344,6 +345,64 @@ public sealed class AnimaTravelReceiptTests
         Assert.True(AnimaTravelReceipt.PhaseBudgetSeconds <= AnimaTravelReceipt.LauncherReservationSeconds);
         // The probe reuses the two travel phases in place, so it must not reserve their budgets again.
         Assert.True(AnimaTravelReceipt.LauncherReservationSeconds < TravelCrossSystemReceipt.LauncherReservationSeconds);
+        // Every multiplicity comes from the per-method call-site plan, never a hand-typed number.
+        Assert.Equal(AnimaTravelReceipt.CallSites.Sum(site => site.Invocations * site.Loads), AnimaTravelReceipt.ProbeLoads);
+        Assert.Equal(AnimaTravelReceipt.CallSites.Sum(site => site.Invocations * site.Placements), AnimaTravelReceipt.PlacementWaits);
+        Assert.Equal(AnimaTravelReceipt.CallSites.Sum(site => site.Invocations * site.Quiescences), AnimaTravelReceipt.QuiescenceSamples);
+        Assert.Equal(AnimaTravelReceipt.CallSites.Sum(site => site.Invocations * site.Settles), AnimaTravelReceipt.Settles);
+        // Each cross-system hook runs once per cross-system case.
+        Assert.All(AnimaTravelReceipt.CallSites.Where(site => site.Method.StartsWith("CrossCase", StringComparison.Ordinal)),
+            site => Assert.Equal(AnimaTravelReceipt.CrossSystemCases, site.Invocations));
+    }
+
+    /// <summary>
+    /// The published budget is only honest while the declared plan matches the pilot's ACTUAL
+    /// waiting call sites. Undercounting them is exactly how a phase publishes a worst case it
+    /// cannot keep, so the plan is re-derived here from the pilot source itself.
+    /// </summary>
+    [Fact]
+    public void TheCallSitePlanMatchesThePilotSource()
+    {
+        var source = File.ReadAllLines(PilotSourcePath());
+        var declaration = new Regex(@"^    (?:private|internal)[^=]*?\b(?<name>\w+)\s*\(", RegexOptions.Compiled);
+        var observed = AnimaTravelReceipt.CallSites.ToDictionary(site => site.Method, _ => (Loads: 0, Placements: 0, Quiescences: 0, Settles: 0));
+        var method = string.Empty;
+        foreach (var line in source)
+        {
+            var match = declaration.Match(line);
+            if (match.Success) method = match.Groups["name"].Value;
+            if (!observed.TryGetValue(method, out var counts)) continue;
+            if (line.Contains("foreach (var frame in SpLoad(", StringComparison.Ordinal)) counts.Loads++;
+            if (line.Contains("foreach (var frame in AwaitPlacement(", StringComparison.Ordinal)) counts.Placements++;
+            if (line.Contains("foreach (var frame in Quiesce())", StringComparison.Ordinal)) counts.Quiescences++;
+            if (line.Contains("foreach (var frame in Settle())", StringComparison.Ordinal)) counts.Settles++;
+            observed[method] = counts;
+        }
+        foreach (var site in AnimaTravelReceipt.CallSites)
+        {
+            var counts = observed[site.Method];
+            Assert.Equal((site.Loads, site.Placements, site.Quiescences, site.Settles),
+                (counts.Loads, counts.Placements, counts.Quiescences, counts.Settles));
+        }
+        // No waiting call site may live in a pilot method the plan does not account for.
+        Assert.Equal(AnimaTravelReceipt.CallSites.Sum(site => site.Loads),
+            source.Count(line => line.Contains("foreach (var frame in SpLoad(", StringComparison.Ordinal)));
+        Assert.Equal(AnimaTravelReceipt.CallSites.Sum(site => site.Placements),
+            source.Count(line => line.Contains("foreach (var frame in AwaitPlacement(", StringComparison.Ordinal)));
+        Assert.Equal(AnimaTravelReceipt.CallSites.Sum(site => site.Quiescences),
+            source.Count(line => line.Contains("foreach (var frame in Quiesce())", StringComparison.Ordinal)));
+        Assert.Equal(AnimaTravelReceipt.CallSites.Sum(site => site.Settles),
+            source.Count(line => line.Contains("foreach (var frame in Settle())", StringComparison.Ordinal)));
+    }
+
+    private static string PilotSourcePath()
+    {
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory != null; directory = directory.Parent)
+        {
+            var candidate = Path.Combine(directory.FullName, "tools", "QualificationRunner", "AnimaTravelPilot.cs");
+            if (File.Exists(candidate)) return candidate;
+        }
+        throw new InvalidOperationException("Could not locate tools/QualificationRunner/AnimaTravelPilot.cs from " + AppContext.BaseDirectory + ".");
     }
 
     [Fact]
