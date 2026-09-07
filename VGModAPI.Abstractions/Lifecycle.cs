@@ -61,6 +61,8 @@ public static class ModApi
 {
     public const string PluginId = "vgmodapi";
     public static ILifecycleApi? Current { get; internal set; }
+    /// <summary>Process-scoped loader inventory, independent of game-hook availability. Refresh on the main thread.</summary>
+    public static IModInformationCatalog? Mods { get; internal set; }
     /// <summary>Null unless experimental persistence is explicitly enabled and initialized.</summary>
     public static IPersistenceApi? Persistence { get; internal set; }
     /// <summary>Optional mission observer. Availability does not establish persistent instance continuity.</summary>
