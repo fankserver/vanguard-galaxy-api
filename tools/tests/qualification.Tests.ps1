@@ -35,6 +35,22 @@ try {
     try { & $script -Action Prepare -SandboxRoot (Join-Path $work 'invalid-menu-full') -MenuInspection @options }
     catch { $rejected = $_.Exception.Message -like '*Menu inspection requires*' }
     Assert $rejected 'Menu inspection accepted a gameplay scenario.'
+    $menuProbeRoot = Join-Path $work 'mod-menu-probe'
+    $sandboxes += $menuProbeRoot
+    & $script -Action Prepare -SandboxRoot $menuProbeRoot -ModMenuProbe @options
+    Assert-QualificationInputs $menuProbeRoot
+    $menuProbeProvenancePath = Join-Path $menuProbeRoot 'build-provenance.json'
+    $menuProbeProvenance = Get-Content -LiteralPath $menuProbeProvenancePath -Raw | ConvertFrom-Json
+    foreach ($invalid in @('true', 1, 'false', 0)) {
+        $menuProbeProvenance.missionJournal = $invalid
+        $menuProbeProvenance | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $menuProbeProvenancePath
+        $rejected = $false
+        try { Assert-QualificationInputs $menuProbeRoot } catch { $rejected = $_.Exception.Message -like '*selection fields must be Boolean false*' }
+        Assert $rejected 'Full input validation did not reject malformed conflicting menu selection at its isolation gate.'
+    }
+    $menuProbeProvenance.missionJournal = $false
+    $menuProbeProvenance | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $menuProbeProvenancePath
+    Assert-QualificationInputs $menuProbeRoot
     $inspectionRoot = Join-Path $work 'menu-inspection'
     $sandboxes += $inspectionRoot
     & $script -Action Prepare -SandboxRoot $inspectionRoot -Scenario MissingApi -MenuInspection @options

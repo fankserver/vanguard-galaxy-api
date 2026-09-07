@@ -258,8 +258,11 @@ function Assert-ModMenuProbeSelection([string]$Root, $Provenance) {
     if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Mod menu probe selection changed.' }
     if (!$selected) { return }
     if ($Provenance.scenario -ne 'Full' -or [IO.File]::ReadAllText($marker) -cne 'mod-menu-probe-v1') { throw 'Invalid mod menu probe selection.' }
-    foreach ($item in $Provenance.PSObject.Properties) {
-        if ($item.Name -ne 'modMenuProbe' -and $item.Value -is [bool] -and $item.Value) { throw 'Mod menu probe cannot be combined with consumers or other probes.' }
+    $selections = @('menuInspection','travelJournal','travelJournalComparison','echo','echoTravelProbe','echoAbsentProbe','anima','animaTravelProbe','journalMissionEventsProbe','missionIdentityProbe','missionTransitionsProbe','contentReferenceProbe','stockpileCoordinated','journalCoordinated','persistenceProbe','vanillaLoadControl','stockpile','missionJournal','travelStation','travelCrossSystem','travelWormholeFixture','travelResilience','travelRecovery','travelFastLane')
+    if ($null -ne $Provenance.assemblyOverlay) { throw 'Mod menu probe cannot use an assembly overlay.' }
+    foreach ($name in $selections) {
+        $item = $Provenance.PSObject.Properties[$name]
+        if ($item -and ($item.Value -isnot [bool] -or $item.Value)) { throw 'Mod menu probe cannot be combined with consumers or other probes; selection fields must be Boolean false.' }
     }
 }
 function Assert-ModMenuProbeReceipt([string]$Root, $Provenance) {

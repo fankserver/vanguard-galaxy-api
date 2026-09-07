@@ -115,12 +115,14 @@ public sealed partial class Plugin
         }
         finally
         {
-            menu.SetActive(true);
-            if (metadataCreated && File.Exists(metadata)) File.Delete(metadata);
-            ModApi.Mods?.Refresh();
-            if (keyboard != null) InputSystem.RemoveDevice(keyboard);
-            if (mouse != null) InputSystem.RemoveDevice(mouse);
-            oldKeyboard?.MakeCurrent(); oldMouse?.MakeCurrent();
+            ProbeCleanup.Run(
+                () => { if (menu != null) menu.SetActive(true); },
+                () => { if (metadataCreated && File.Exists(metadata)) File.Delete(metadata); },
+                () => ModApi.Mods?.Refresh(),
+                () => { if (keyboard != null) InputSystem.RemoveDevice(keyboard); },
+                () => { if (mouse != null) InputSystem.RemoveDevice(mouse); },
+                () => oldKeyboard?.MakeCurrent(),
+                () => oldMouse?.MakeCurrent());
         }
     }
 

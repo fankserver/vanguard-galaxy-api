@@ -22,6 +22,10 @@ try {
     Reject { Assert-ModMenuProbeSelection $root $p } 'wrong scenario'
     $p.scenario = 'Full'; $p.missionJournal = $true
     Reject { Assert-ModMenuProbeSelection $root $p } 'consumer conflict'
+    foreach ($invalid in @('true', 1, 'false', 0)) {
+        $p.missionJournal = $invalid
+        Reject { Assert-ModMenuProbeSelection $root $p } 'malformed conflicting selection'
+    }
     $p.missionJournal = $false
     Reject { Assert-ModMenuProbeReceipt $root $p } 'missing outcome'
     $outcome = Join-Path $root 'run-outcome.json'
