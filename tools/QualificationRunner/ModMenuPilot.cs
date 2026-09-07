@@ -47,7 +47,7 @@ public sealed partial class Plugin
             {
                 metadataCreated = true;
                 using var writer = new StreamWriter(file);
-                writer.Write("{\"schemaVersion\":1,\"pluginId\":\"" + Id + "\",\"description\":\"" +
+                writer.Write("{\"schemaVersion\":1,\"pluginId\":\"" + Id + "\",\"updateUrl\":\"https://raw.githubusercontent.com/fankserver/vanguard-galaxy-api/main/README.md\",\"description\":\"" +
                     string.Join(" ", Enumerable.Repeat("Long offline description for native scrolling verification.", 55)) + "\"}");
             }
             ModApi.Mods!.Refresh();
@@ -80,6 +80,24 @@ public sealed partial class Plugin
             var row = list.GetComponentsInChildren<Button>().Single(button => button.GetComponentInChildren<TMP_Text>().text.Contains("Controlled Qualification"));
             events.SetSelectedGameObject(row.gameObject);
             foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
+            var checkUpdate = panel.GetComponentsInChildren<Button>().Single(button => button.name == "Check update");
+            var automatic = panel.GetComponentsInChildren<Button>().Single(button => button.name == "Automatic updates");
+            Require(checkUpdate.interactable && automatic.GetComponentInChildren<TMP_Text>().text == "Auto: off", "Update controls are not manual-only by default.");
+            events.SetSelectedGameObject(checkUpdate.gameObject);
+            foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
+            Require(detailLabel.text.Contains("NETWORK CONFIRMATION") && detailLabel.text.Contains("raw.githubusercontent.com") && detailLabel.text.Contains("IP address"), "Manual network disclosure is missing.");
+            foreach (var frame in CaptureMenu("mod-update-disclosure.png", evidence)) yield return frame;
+            // Selection cancels: never send a request from this UI-only probe.
+            events.SetSelectedGameObject(row.gameObject);
+            foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
+            Require(!detailLabel.text.Contains("NETWORK CONFIRMATION") && detailLabel.text.Contains("Not checked"), "Selection failed to cancel pending manual consent.");
+            events.SetSelectedGameObject(automatic.gameObject);
+            foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
+            Require(detailLabel.text.Contains("all API consumers") && automatic.GetComponentInChildren<TMP_Text>().text == "Confirm auto", "Automatic opt-in lacks separate disclosure.");
+            events.SetSelectedGameObject(row.gameObject);
+            foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
+            Require(automatic.GetComponentInChildren<TMP_Text>().text == "Auto: off" && detailLabel.text.Contains("Not checked"), "Unconfirmed automatic opt-in survived cancellation.");
+            evidence.AppendLine("update-manual-disclosure=PASS automatic-disclosure=PASS selection-cancels-consent=PASS no-confirmed-network-action=PASS");
             Require(details.content.rect.height > details.viewport.rect.height + 20, "Long metadata did not produce scrollable detail content.");
             events.SetSelectedGameObject(details.verticalScrollbar.gameObject);
             var before = details.content.anchoredPosition.y;
