@@ -821,6 +821,152 @@ try {
     Assert (!(Test-Path -LiteralPath (Join-Path $resilienceTimeoutRoot 'run-started.txt'))) 'The launcher started the game despite an insufficient resilience lifetime.'
     & $script -Action Cleanup -SandboxRoot $resilienceTimeoutRoot
 
+    # --- separate optional travel recovery/continuation phase ------------------------------------
+    $rejected = $false
+    try { & $script -Action Prepare -SandboxRoot (Join-Path $work 'invalid-recovery') -TravelRecoveryContinuation @options }
+    catch { $rejected = $_.Exception.Message -like '*requires the travel/station selection*' }
+    Assert $rejected 'Recovery/continuation phase accepted without the travel/station selection.'
+    Assert (!(Test-Path -LiteralPath (Join-Path $work 'invalid-recovery'))) 'Rejected recovery selection left a prepared sandbox.'
+    $rejected = $false
+    try { & $script -Action Prepare -SandboxRoot (Join-Path $work 'invalid-recovery-scenario') -Scenario MissingApi -TravelRecoveryContinuation @options }
+    catch { $rejected = $true }
+    Assert $rejected 'Recovery/continuation phase accepted outside Full.'
+    $recoveryRoot = Join-Path $work 'travel-recovery-sandbox'
+    $sandboxes += $recoveryRoot
+    & $script -Action Prepare -SandboxRoot $recoveryRoot -TravelStation -TravelRecoveryContinuation @options
+    $recoveryProvenance = Assert-QualificationInputs $recoveryRoot
+    Assert ($recoveryProvenance.travelRecovery -and $recoveryProvenance.travelRecoveryBudgetSeconds -eq $TravelRecoveryBudgetSeconds) 'Prepared recovery selection/budget missing.'
+    $recoveryMarker = Join-Path $recoveryRoot 'travel-recovery.enabled'
+    [IO.File]::WriteAllText($recoveryMarker, 'changed')
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $recoveryRoot } catch { $rejected = $true }
+    Assert $rejected 'Changed recovery marker accepted.'
+    [IO.File]::WriteAllText($recoveryMarker, 'recovery-continuation-v1')
+    Remove-Item -LiteralPath $recoveryMarker
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $recoveryRoot } catch { $rejected = $true }
+    Assert $rejected 'Removed recovery marker accepted while provenance still selects it.'
+    [IO.File]::WriteAllText($recoveryMarker, 'recovery-continuation-v1')
+    $recoveryProvenancePath = Join-Path $recoveryRoot 'build-provenance.json'
+    $recoveryProvenanceText = [IO.File]::ReadAllText($recoveryProvenancePath)
+    [IO.File]::WriteAllText($recoveryProvenancePath, ($recoveryProvenanceText -replace '"travelRecoveryBudgetSeconds": *\d+', '"travelRecoveryBudgetSeconds": 60'))
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $recoveryRoot } catch { $rejected = $true }
+    Assert $rejected 'Edited recovery budget reservation accepted.'
+    [IO.File]::WriteAllText($recoveryProvenancePath, $recoveryProvenanceText)
+    $recoveryProvenance = Assert-QualificationInputs $recoveryRoot
+    # Synthetic receipts only. The in-system phase is selected here too and keeps its own required
+    # cases; a passing in-system receipt can never stand in for these two.
+    $recoverySession = [Guid]::NewGuid().ToString()
+    $recoveryPlacementDetail = 'origin=system-1:station-1; recoveredAt=system-1:poi-target; placementSnapshot=currentPoi=known,managerReady=True,travelActive=False,usingJumpgate=False,waypoints=0,owned=True,location=system-1:poi-target'
+    $recoveryContinuationDetail = 'approachGate=system-1:gate-1; legs=3; routeCompletions=1; gateArrivalSnapshot=currentPoi=known,managerReady=True,travelActive=True,usingJumpgate=True,waypoints=1,owned=True,location=system-2:gate-2; completionSnapshot=currentPoi=known,managerReady=True,travelActive=False,usingJumpgate=False,waypoints=0,owned=True,location=system-2:poi-follow'
+    function RecoveryRow($case, $status, $session, $evidence, $detail) { return ($case + "`tdescription`t" + $status + "`tsystem:poi`t" + $session + "`t`t" + $evidence + "`t" + $detail) }
+    function RecoveryEvent($surface, $sequence, $caseLabel, $session) { return ("" + $sequence + "`t" + $surface + "`t" + $caseLabel + "`t" + $session + "`t`tArrived`tInSystem`tsystem-1:station-1`tsystem-1:poi-target`tsystem-1:poi-target`t1.000`t") }
+    function RecoverySummary($rows, $first) {
+        $records = @($rows | ForEach-Object { ,($_ -split "`t") })
+        $passed = @($records | Where-Object { $_[2] -eq 'passed' }).Count
+        $failed = @($records | Where-Object { $_[2] -eq 'failed' }).Count
+        $notRun = @($records | Where-Object { $_[2] -eq 'not-run' }).Count
+        $lines = @($first, "phase=$TravelRecoveryPhase", "budgetSeconds=$TravelRecoveryBudgetSeconds",
+            ("required=" + ($TravelRecoveryRequiredCases -join ',')),
+            ("rows=" + $records.Count + " passed=$passed failed=$failed notRun=$notRun"))
+        foreach ($case in $TravelRecoveryRequiredCases) {
+            $matched = @($records | Where-Object { $_[0] -eq $case })
+            $state = if ($matched.Count -eq 1) { $matched[0][2] } elseif ($matched.Count -eq 0) { 'absent' } else { 'duplicated' }
+            $lines += "required-case $case=$state"
+        }
+        return @($lines + @('optional-not-run=', 'fault=none', 'result=phase satisfied'))
+    }
+    function WriteRecoveryOutputs($rows, $events, $summary) {
+        [IO.File]::WriteAllLines((Join-Path $recoveryRoot 'travel-recovery-receipt.tsv'), [string[]]@(($TravelStationReceiptHeader -join "`t")) + [string[]]$rows)
+        [IO.File]::WriteAllLines((Join-Path $recoveryRoot 'travel-recovery-events.tsv'), [string[]]@(($TravelStationEventHeader -join "`t")) + [string[]]$events)
+        [IO.File]::WriteAllLines((Join-Path $recoveryRoot 'travel-recovery.txt'), [string[]]$summary)
+    }
+    function AssertRecoveryRejected($rows, $events, $summary, $message) {
+        WriteRecoveryOutputs $rows $events $summary
+        $rejected = $false
+        try { Assert-PersistenceProbeReceipt $recoveryRoot $recoveryProvenance } catch { $rejected = $true }
+        Assert $rejected $message
+    }
+    $recoveryStationRows = @()
+    $recoveryStationEvents = @()
+    $sequence = 0
+    foreach ($case in $TravelStationRequiredCases) {
+        $sequence++
+        $recoveryStationRows += (TravelRow $case 'passed' $recoverySession ("travel:" + $sequence))
+        $recoveryStationEvents += (TravelEvent 'travel' $sequence $case $recoverySession)
+    }
+    foreach ($case in $TravelRecoveryRequiredCases) {
+        $recoveryStationRows += (TravelRow $case 'not-run' $recoverySession '')
+    }
+    [IO.File]::WriteAllLines((Join-Path $recoveryRoot 'travel-station-receipt.tsv'), [string[]]@(($TravelStationReceiptHeader -join "`t")) + [string[]]$recoveryStationRows)
+    [IO.File]::WriteAllLines((Join-Path $recoveryRoot 'travel-station-events.tsv'), [string[]]@(($TravelStationEventHeader -join "`t")) + [string[]]$recoveryStationEvents)
+    [IO.File]::WriteAllLines((Join-Path $recoveryRoot 'travel-station.txt'), [string[]](TravelSummary $recoveryStationRows 'PASS'))
+    # A complete in-system phase alone, including its optional NOT-RUN rows for exactly these two
+    # cells, is NOT the recovery/continuation phase.
+    $rejected = $false
+    try { Assert-PersistenceProbeReceipt $recoveryRoot $recoveryProvenance } catch { $rejected = $true }
+    Assert $rejected 'Missing recovery receipt accepted because the in-system phase passed.'
+    $recoveryRows = @(
+        (RecoveryRow 'recovered-placement' 'passed' $recoverySession 'travel:1' $recoveryPlacementDetail),
+        (RecoveryRow 'post-gate-continuation' 'passed' $recoverySession 'travel:2' $recoveryContinuationDetail))
+    $recoveryEvents = @((RecoveryEvent 'travel' 1 'recovered-placement' $recoverySession),
+        (RecoveryEvent 'travel' 2 'post-gate-continuation' $recoverySession))
+    WriteRecoveryOutputs $recoveryRows $recoveryEvents (RecoverySummary $recoveryRows 'PASS')
+    Assert-PersistenceProbeReceipt $recoveryRoot $recoveryProvenance
+    # A recovery row that does not publish the native readiness state it claims is refused, and so
+    # is a placement recorded while the native route was still running or a waypoint remained.
+    foreach ($broken in @(
+        @{Detail='origin=system-1:station-1'; Message='Recovery row without a recovered location or placement snapshot accepted.'},
+        @{Detail=($recoveryPlacementDetail -replace 'managerReady=True','managerReady=False'); Message='Recovery placement without an initialized POI accepted.'},
+        @{Detail=($recoveryPlacementDetail -replace 'travelActive=False','travelActive=True'); Message='Recovery placement recorded during an active native route accepted.'},
+        @{Detail=($recoveryPlacementDetail -replace 'waypoints=0','waypoints=1'); Message='Recovery placement recorded with remaining native waypoints accepted.'})) {
+        $mutated = @((RecoveryRow 'recovered-placement' 'passed' $recoverySession 'travel:1' $broken.Detail), $recoveryRows[1])
+        AssertRecoveryRejected $mutated $recoveryEvents (RecoverySummary $mutated 'PASS') $broken.Message
+    }
+    # A continuation row must publish three legs, exactly one completion, a gate arrival that still
+    # had a native waypoint inside the jump routine, and a completion at the real end of the route.
+    foreach ($broken in @(
+        @{Detail=($recoveryContinuationDetail -replace 'legs=3','legs=2'); Message='Continuation row with fewer than three legs accepted.'},
+        @{Detail=($recoveryContinuationDetail -replace 'routeCompletions=1','routeCompletions=2'); Message='Continuation row with two route completions accepted.'},
+        @{Detail=($recoveryContinuationDetail -replace 'usingJumpgate=True,waypoints=1','usingJumpgate=True,waypoints=0'); Message='Continuation gate arrival without a remaining waypoint accepted.'},
+        @{Detail=($recoveryContinuationDetail -replace 'usingJumpgate=True','usingJumpgate=False'); Message='Continuation gate arrival outside the native jump routine accepted.'},
+        @{Detail=($recoveryContinuationDetail -replace 'usingJumpgate=False,waypoints=0,owned=True,location=system-2:poi-follow','usingJumpgate=False,waypoints=3,owned=True,location=system-2:poi-follow'); Message='Continuation completion with remaining native waypoints accepted.'})) {
+        $mutated = @($recoveryRows[0], (RecoveryRow 'post-gate-continuation' 'passed' $recoverySession 'travel:2' $broken.Detail))
+        AssertRecoveryRejected $mutated $recoveryEvents (RecoverySummary $mutated 'PASS') $broken.Message
+    }
+    $recoverySkipped = @($TravelRecoveryRequiredCases | ForEach-Object { RecoveryRow $_ 'not-run' $recoverySession '' 'no native window' })
+    AssertRecoveryRejected $recoverySkipped $recoveryEvents (RecoverySummary $recoverySkipped 'PASS') 'All-skipped recovery coverage accepted as PASS.'
+    $recoveryMissing = @($recoveryRows[0])
+    AssertRecoveryRejected $recoveryMissing $recoveryEvents (RecoverySummary $recoveryMissing 'PASS') 'Missing mandatory recovery case accepted.'
+    $recoveryDuplicated = $recoveryRows + @($recoveryRows[0])
+    AssertRecoveryRejected $recoveryDuplicated $recoveryEvents (RecoverySummary $recoveryDuplicated 'PASS') 'Duplicated recovery case accepted.'
+    $recoveryFailed = @($recoveryRows[0], (RecoveryRow 'post-gate-continuation' 'failed' $recoverySession 'travel:2' $recoveryContinuationDetail))
+    AssertRecoveryRejected $recoveryFailed $recoveryEvents (RecoverySummary $recoveryFailed 'PASS') 'Claimed recovery PASS with a failed case accepted.'
+    $recoveryForeign = @($recoveryEvents | ForEach-Object { $_ -replace [regex]::Escape($recoverySession), ([Guid]::NewGuid().ToString()) })
+    AssertRecoveryRejected $recoveryRows $recoveryForeign (RecoverySummary $recoveryRows 'PASS') 'Recovery identities absent from the event trace accepted.'
+    AssertRecoveryRejected $recoveryRows $recoveryEvents (RecoverySummary $recoveryRows 'FAIL') 'Failed recovery attempt summary accepted.'
+    AssertRecoveryRejected $recoveryRows $recoveryEvents @('INCOMPLETE', "phase=$TravelRecoveryPhase", "budgetSeconds=$TravelRecoveryBudgetSeconds",
+        'activeCase=recovered-placement', 'rows=2 passed=2 failed=0 notRun=0', 'result=pilot still running or externally terminated; this is not a pass.') 'Incomplete recovery checkpoint accepted as a pass.'
+    $recoveryOverBudget = @((RecoverySummary $recoveryRows 'PASS') | ForEach-Object { if ($_ -like 'budgetSeconds=*') { "budgetSeconds=$($TravelRecoveryBudgetSeconds + 1)" } else { $_ } })
+    AssertRecoveryRejected $recoveryRows $recoveryEvents $recoveryOverBudget 'Recovery budget above the launcher reservation accepted.'
+    $recoveryForeignPhase = @((RecoverySummary $recoveryRows 'PASS') | ForEach-Object { if ($_ -like 'phase=*') { "phase=$TravelResiliencePhase" } else { $_ } })
+    AssertRecoveryRejected $recoveryRows $recoveryEvents $recoveryForeignPhase 'Recovery receipt declaring another phase accepted.'
+    WriteRecoveryOutputs $recoveryRows $recoveryEvents (RecoverySummary $recoveryRows 'PASS')
+    Assert-PersistenceProbeReceipt $recoveryRoot $recoveryProvenance
+    & $script -Action Cleanup -SandboxRoot $recoveryRoot
+    # The launcher must reserve base + EVERY selected phase budget before starting the game.
+    $recoveryTimeoutRoot = Join-Path $work 'travel-recovery-timeout-sandbox'
+    $sandboxes += $recoveryTimeoutRoot
+    & $script -Action Prepare -SandboxRoot $recoveryTimeoutRoot -TravelStation -TravelRecoveryContinuation @options
+    $recoveryMinimum = $QualificationBaseTimeoutSeconds + $TravelStationBudgetSeconds + $TravelRecoveryBudgetSeconds
+    $rejected = $false
+    try { & $script -Action Run -SandboxRoot $recoveryTimeoutRoot -TimeoutSeconds ($recoveryMinimum - 1) @options }
+    catch { $rejected = $_.Exception.Message -like "*at least $recoveryMinimum*" }
+    Assert $rejected 'Recovery run accepted a lifetime one second below the derived minimum.'
+    Assert (!(Test-Path -LiteralPath (Join-Path $recoveryTimeoutRoot 'run-started.txt'))) 'The launcher started the game despite an insufficient recovery lifetime.'
+    & $script -Action Cleanup -SandboxRoot $recoveryTimeoutRoot
+
     # --- separate optional actual-consumer travel probe -----------------------------------------
     $invalidConsumerSelections = @(
         @{ TravelStation = $true; TravelCrossSystem = $true; TravelWormholeFixture = $true },  # no consumer binary

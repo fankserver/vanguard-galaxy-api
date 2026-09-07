@@ -205,6 +205,84 @@ Receipts are checkpointed atomically after every case and written on every path 
 
 **Fixture requirement.** All three cases need `fixture-a` to load docked at a player-friendly station; the re-route case additionally needs two targets from the shared safe in-system selector (industrial POIs only, see the in-system phase above) and the restore case needs an eligible owned ship of a different native docking size. A read-only scan of the prepared fixture found 25 owned ships, so no content-creating ship fixture selection is offered; a world without such a ship records the honest NOT-RUN above instead. This remains controlled native evidence only: `RuntimeQualified=false`, and #12 stays open.
 
+## Native travel recovery/continuation phase (separate, optional)
+
+`-TravelRecoveryContinuation` is an ADDITIONAL Prepare selection that requires `-TravelStation`
+(it reuses the same `[Travel]` capability configuration) and Full, writes `travel-recovery.enabled`,
+and records its own reservation (`travelRecoveryBudgetSeconds`) in provenance. It is independent of
+`-TravelCrossSystem` and of `-TravelResilience`: it drives its own routes, including its own gate
+route. It runs as its own phase `travel-recovery-continuation-v1` with its own receipts
+(`travel-recovery.txt`, `travel-recovery-receipt.tsv`, `travel-recovery-events.tsv`,
+`travel-recovery-fault.txt`) and its two mandatory case identities `recovered-placement` and
+`post-gate-continuation` — the two travel-matrix cells the earlier phases deliberately left open. It
+never widens them, and their optional rows for these cells stay NOT-RUN.
+
+Budgets add up rather than replace: `Run` refuses to launch unless `-TimeoutSeconds` covers base
+1800 + every selected phase reservation (travel/station 1500, recovery/continuation **4200**;
+**7500** for the minimal selection this phase needs, 9900 with the cross-system phase). The
+published `budgetSeconds` is SUMMED from the same per-wait deadline constants the driver uses (two
+fixture-load/binding waits per case plus the restoring load, one undock per case, one availability
+sample per recovery attempt and one for the continuation route, one departure per recovery attempt
+plus the continuation's three legs, the arrival-or-cancel-window waits, one readiness placement, the
+gate handoff, the jump arrival, the route boundaries and every settle), so a hand-typed occurrence
+cannot understate it; the published worst case is 3932 seconds against the 4200 reservation. Both
+cases load `fixture-a` themselves and capture their native owner only at their own load/readiness
+boundary, and every native drive and observation first proves that owner is still the live current
+one in the same session.
+
+- `recovered-placement`: the POSITIVE native `RecoveredPlacement` case. A real in-system route to a
+  safe target is driven to its verified origin unload (the public `Departed`), and the pilot then
+  samples the loaded world every frame until the native travel routine has assigned the destination
+  POI to the player and its manager reports `initializedAndReady` while `SpaceshipHasArrived` has
+  NOT run (no public `Arrived`). In exactly that window it takes the player's own cancel action
+  (`TravelManager.CancelTravel(null)`). The API then has a placed session, no pending leg and an
+  unknown location while the world reports a loaded, ready POI, and the adapter's own per-frame
+  readiness observation (`Tick` -> `ObservePlacement`) publishes the placement. The asserted stream
+  is exactly `Requested`->`Departed`->`Cancelled`->`RecoveredPlacement`, with the cancellation at an
+  UNKNOWN location, and the placement carrying no operation identity, no origin, no requested
+  destination, no dwell and mode `Unknown`; the native snapshots must show the departure with the
+  origin unloaded and both the cancel and the placement at the destination POI with its manager
+  initialized, no native route running and no waypoint left. Nothing is injected: no adapter
+  callback is invoked, no location, waypoint or docking state is written, and no production hook is
+  disabled. That window is at least one frame wide (the native routine yields on the manager's
+  readiness before calling `SpaceshipHasArrived`, which the installed-assembly test pins), but the
+  native coroutine can resume before the pilot's own poll in that frame, so the case retries with up
+  to three complete real routes and records a per-attempt outcome log. If no attempt observes the
+  window the case records a mandatory NOT-RUN — a phase FAILURE by design — and never a pass.
+- `post-gate-continuation`: ONE native multi-waypoint route is requested to a safe follow-on POI in
+  the system behind a usable non-tutorial gate, exactly as the map travel action does it. The native
+  planner (`GenerateShortestRoute`) must really produce `[gate, follow-on]`; the in-system approach
+  leg reaches the gate, the gate's own arrival hands the ship to the jump routine
+  (`JumpGateManager.SpaceshipHasArrived` -> `InitiateTravelThroughGate`), and the jump routine ends
+  with `TravelToNextWaypoint`, which starts the post-gate in-system leg. The asserted stream is three
+  legs with distinct operation identities and exactly ONE `RouteCompleted`, at the end, belonging to
+  the post-gate leg — the cross-system phase's own route rules are reused for the per-leg identity,
+  mode and origin/requested/actual checks. The decisive native evidence is the snapshot at the gate
+  arrival: a waypoint still remained and the jump routine still owned the transition, so withholding
+  the completion there is observed truth rather than a timing artefact. The pilot additionally
+  refuses any completion observed before the native route really ended (waypoints empty, no
+  `TravelActive()`, no `usingJumpgate`). The follow-on POI is chosen with the SAME shared refusal
+  rule the in-system phases use, applied to the destination system, so the chain cannot end in a
+  station, another gate, a dynamic event or a native combat encounter. The one-way tutorial exit gate
+  (`Hermetis` -> `Canis Majoris`) is excluded by identity and stays source-attested only.
+
+Receipts are checkpointed atomically after every case and written on every path (an exception is
+recorded as a failed row for the running case plus `travel-recovery-fault.txt`); a checkpoint always
+says `INCOMPLETE`. `Assert-TravelRecoveryReceipt` re-checks the outputs exactly like the other phases
+and additionally requires each case to PUBLISH the native evidence it claims: the recovery row must
+carry a recovered location and a placement snapshot with `managerReady=True`, `travelActive=False`
+and `waypoints=0`, and the continuation row must carry `legs=3`, `routeCompletions=1`, a gate-arrival
+snapshot with `usingJumpgate=True` and a remaining waypoint, and a completion snapshot with no
+waypoints and no active native travel. After the last case the phase reloads `fixture-a` so the later
+pilots see the same world state; that restoring load is harness cleanup and is never coverage.
+
+**Fixture requirement.** Both cases need `fixture-a` to load at a known native system/POI (docked is
+fine: the phase uses the player's own exit action first). The recovery case needs at least one, and
+preferably three, safe in-system targets; the continuation case needs a usable non-tutorial gate whose
+destination system contains a safe follow-on POI the planner routes to as `[gate, follow-on]`. A world
+that offers neither records the honest NOT-RUN above, which fails the phase rather than shrinking it.
+This remains controlled native evidence only: `RuntimeQualified=false`, and #12 stays open.
+
 ## Actual-consumer travel probe (separate, optional)
 
 `-AnimaTravelProbe` is an ADDITIONAL Prepare selection that requires the authorized Anima consumer pilot (`-AnimaBin` / `-AnimaRevision` and therefore `-MissionTransitionsProbe -MissionIdentityProbe -PersistenceProbe -MissionJournalBin`), `-TravelStation`, `-TravelCrossSystem` and `-TravelWormholeFixture`. It writes the marker `anima-travel.enabled` and records `animaTravelProbe`, `animaVersion` and its own reservation (`animaTravelBudgetSeconds`) in provenance. Only the Anima **0.4.0 / hard API 0.1.9** metadata shape is accepted for it (the earlier 0.3.0 / 0.1.8 mission-only shape stays accepted for the mission pilot alone), and the marker, the provenance flag, the pinned consumer version and the wormhole-fixture selection must all agree.

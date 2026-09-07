@@ -260,6 +260,9 @@ function Assert-PersistenceProbeReceipt([string]$Root, $Provenance) {
     if ($Provenance.PSObject.Properties['travelResilience'] -and $Provenance.travelResilience) {
         Assert-TravelResilienceReceipt $Root
     }
+    if ($Provenance.PSObject.Properties['travelRecovery'] -and $Provenance.travelRecovery) {
+        Assert-TravelRecoveryReceipt $Root
+    }
     if ($Provenance.PSObject.Properties['animaTravelProbe'] -and $Provenance.animaTravelProbe) {
         Assert-AnimaTravelReceipt $Root
     }
@@ -299,6 +302,12 @@ $TravelResilienceBudgetSeconds = 2400
 # MANDATORY subcase row of restore-relink-dock: the same-docking-size branch, driven as the native
 # re-init of the CURRENT owned ship, so it needs no second owned ship and a not-run row is refused.
 $TravelResilienceRequiredSubcaseRows = @('restore-reinit-same-size')
+# The fourth separate optional phase reserves its own process time ON TOP of the in-system phase.
+# It closes the two travel cells the other phases deliberately left open (a positively driven
+# RecoveredPlacement and the post-gate in-system chain continuation) and never widens theirs.
+$TravelRecoveryPhase = 'travel-recovery-continuation-v1'
+$TravelRecoveryRequiredCases = @('recovered-placement','post-gate-continuation')
+$TravelRecoveryBudgetSeconds = 4200
 # The actual-consumer probe REUSES the two native travel phases in place (it must observe them
 # before the Anima mission pilot disposes the consumer's visit observer), so it reserves only its
 # own consumer loads/saves on top of their existing reservations.
@@ -440,6 +449,40 @@ function Assert-TravelResilienceReceipt([string]$Root) {
         if ($matched.Count -ne 1) { throw "Mandatory travel resilience subcase is missing or duplicated: $subcase" }
         if (($matched[0] -split "`t")[2] -ne 'passed') { throw "Mandatory travel resilience subcase did not pass: $subcase" }
         if ($summary -notcontains "required-subcase $subcase=passed") { throw "Travel resilience summary and receipt disagree about $subcase." }
+    }
+}
+# The recovery/continuation phase is validated separately and with its own mandatory cases: a
+# passing in-system, cross-system or resilience receipt can never stand in for it. Both of its cases
+# must publish the native evidence that distinguishes them from an ordinary arrival.
+function Assert-TravelRecoveryReceipt([string]$Root) {
+    Assert-TravelPhaseReceipt $Root 'Travel recovery/continuation' 'travel-recovery' $TravelRecoveryPhase $TravelRecoveryRequiredCases $TravelRecoveryBudgetSeconds
+    $rows = @(Get-Content -LiteralPath (Join-Path $Root 'travel-recovery-receipt.tsv'))
+    $records = @($rows[1..($rows.Count - 1)] | ForEach-Object { ,($_ -split "`t") })
+    $recovery = @($records | Where-Object { $_[0] -eq 'recovered-placement' })
+    if ($recovery.Count -ne 1) { throw 'The recovered-placement case is missing or duplicated.' }
+    # A recovery is only a recovery when the placement was observed at a loaded, initialized POI
+    # with no native route left running: an arrival would have carried an operation instead.
+    if ($recovery[0][7] -notlike '*recoveredAt=*' -or $recovery[0][7] -notlike '*placementSnapshot=*') {
+        throw 'The recovered-placement case published no recovered location or placement snapshot.'
+    }
+    if ($recovery[0][7] -notlike '*placementSnapshot=*managerReady=True*' -or $recovery[0][7] -notlike '*placementSnapshot=*travelActive=False*' -or
+        $recovery[0][7] -notlike '*placementSnapshot=*waypoints=0*') {
+        throw 'The recovered-placement snapshot does not show an initialized POI with no native route running.'
+    }
+    $continuation = @($records | Where-Object { $_[0] -eq 'post-gate-continuation' })
+    if ($continuation.Count -ne 1) { throw 'The post-gate-continuation case is missing or duplicated.' }
+    if ($continuation[0][7] -notlike '*legs=3*') { throw 'The post-gate-continuation case did not drive three native legs.' }
+    if ($continuation[0][7] -notlike '*routeCompletions=1*') { throw 'The post-gate-continuation case did not publish exactly one route completion.' }
+    # The decisive native evidence: the gate arrival still had a remaining waypoint, so withholding
+    # the route completion there is observed truth rather than a timing artefact.
+    if ($continuation[0][7] -notmatch 'gateArrivalSnapshot=[^;]*waypoints=([1-9][0-9]*)') {
+        throw 'The post-gate-continuation case does not record a gate arrival with a remaining native waypoint.'
+    }
+    if ($continuation[0][7] -notlike '*gateArrivalSnapshot=*usingJumpgate=True*') {
+        throw 'The post-gate-continuation gate arrival was not recorded inside the native jump routine.'
+    }
+    if ($continuation[0][7] -notlike '*completionSnapshot=*waypoints=0*' -or $continuation[0][7] -notlike '*completionSnapshot=*travelActive=False*') {
+        throw 'The post-gate-continuation route completion was not recorded at the end of the native route.'
     }
 }
 # The actual-consumer travel probe is validated separately and with its own mandatory cases. It
@@ -773,6 +816,16 @@ function Assert-QualificationInputs([string]$Root) {
     # it, and never beside a consumer travel probe that owns the same reused phases.
     if ($travelJournal -and !$travelJournalComparison) { throw 'The archived TravelJournal is installed without the comparison that owns it; it is never a passive ridealong.' }
     if ($travelJournal -and ($animaTravel -or $echoTravel -or $anima -or $echo)) { throw 'The archived TravelJournal is installed beside a consumer plugin; the comparison sandbox carries the archive alone.' }
+    # The recovery/continuation phase is an ADDITIONAL selection on top of the in-system phase; it
+    # drives its own routes and reserves its own separate process budget.
+    $travelRecovery = $provenance.PSObject.Properties['travelRecovery'] -and [bool]$provenance.travelRecovery
+    $recoveryMarker = Join-Path $Root 'travel-recovery.enabled'
+    if ([bool]$travelRecovery -ne (Test-Path -LiteralPath $recoveryMarker -PathType Leaf)) { throw 'Travel recovery/continuation selection changed.' }
+    if ($travelRecovery) {
+        if (!$travelStation -or (Get-Content -LiteralPath $recoveryMarker -Raw).Trim() -ne 'recovery-continuation-v1') { throw 'Invalid travel recovery/continuation selection.' }
+        if (!$provenance.PSObject.Properties['travelRecoveryBudgetSeconds'] -or
+            [int]$provenance.travelRecoveryBudgetSeconds -ne $TravelRecoveryBudgetSeconds) { throw 'Travel recovery/continuation budget reservation changed.' }
+    }
     # The resilience phase is an ADDITIONAL selection on top of the in-system phase; it reuses the
     # same [Travel] capability configuration and reserves its own separate process budget.
     $travelResilience = $provenance.PSObject.Properties['travelResilience'] -and [bool]$provenance.travelResilience
