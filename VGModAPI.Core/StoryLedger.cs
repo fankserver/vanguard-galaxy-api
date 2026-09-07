@@ -35,10 +35,32 @@ internal sealed class StoryOccurrenceEntry
     internal int ChoiceReservation { get; }
     private readonly Dictionary<string, string> _choices = new(StringComparer.Ordinal);
     internal IReadOnlyDictionary<string, string> Choices => _choices;
+    private readonly Dictionary<string, string> _pending = new(StringComparer.Ordinal);
+    /// <summary>
+    /// Choices declared for an outcome the GAME will produce. They are part of this occurrence's
+    /// persisted state, not process memory: a completion can arrive in a later session, and a
+    /// declaration made for one save must not travel to another.
+    /// </summary>
+    internal IReadOnlyDictionary<string, string> PendingChoices => _pending;
+    /// <summary>
+    /// The game reported this mission failed while it still holds it. That is a fact about the
+    /// mission, not a terminal outcome: the game leaves a failed story mission in the player's list
+    /// and offers to retry it, so the occurrence stays live and owned until it is actually resolved.
+    /// </summary>
+    internal bool FailureObserved { get; private set; }
+
+    internal void DeclarePending(IReadOnlyDictionary<string, string>? choices)
+    {
+        _pending.Clear();
+        if (choices != null) foreach (var pair in choices) _pending[pair.Key] = pair.Value;
+    }
+
+    internal void MarkFailureObserved(bool observed) => FailureObserved = observed;
 
     internal StoryOccurrenceEntry(StoryContentId id, Guid occurrenceId, StoryRetention retention, long sequence,
         StoryOccurrenceState state = StoryOccurrenceState.Offered, StoryOutcome? outcome = null,
-        IEnumerable<KeyValuePair<string, string>>? choices = null, int choiceReservation = 0)
+        IEnumerable<KeyValuePair<string, string>>? choices = null, int choiceReservation = 0,
+        IEnumerable<KeyValuePair<string, string>>? pendingChoices = null, bool failureObserved = false)
     {
         if (occurrenceId == Guid.Empty) throw new ArgumentException("An occurrence requires its own identity.", nameof(occurrenceId));
         if (choiceReservation is < 0 or > StoryMissionDefinition.MaxChoiceBytesPerOccurrence)
@@ -46,6 +68,8 @@ internal sealed class StoryOccurrenceEntry
         Id = id; OccurrenceId = occurrenceId; Retention = retention; Sequence = sequence; State = state; Outcome = outcome;
         ChoiceReservation = choiceReservation;
         if (choices != null) foreach (var pair in choices) _choices[pair.Key] = pair.Value;
+        if (pendingChoices != null) foreach (var pair in pendingChoices) _pending[pair.Key] = pair.Value;
+        FailureObserved = failureObserved;
     }
 
     internal void Activate() => State = StoryOccurrenceState.Active;
@@ -60,6 +84,10 @@ internal sealed class StoryOccurrenceEntry
         // A temporary definition keeps only the bounded idempotency record, never declared choices.
         if (Retention == StoryRetention.Campaign && choices != null)
             foreach (var pair in choices) _choices[pair.Key] = pair.Value;
+        // The declaration is TRANSFERRED into the record, never kept alongside it, so a terminal
+        // occurrence costs no more than the space its outcome was already reserved.
+        _pending.Clear();
+        FailureObserved = false;
     }
 }
 
@@ -227,7 +255,13 @@ internal sealed class StoryLedger
     /// Records the terminal outcome once. A second terminal call is refused rather than rewriting an
     /// authoritative result, and a temporary definition retains only the tombstone.
     /// </summary>
-    internal StoryLedgerStatus Retire(StoryContentId caller, Guid occurrenceId, StoryOutcome outcome,
+    /// <summary>
+    /// Every check <see cref="Retire"/> makes, with NO mutation. It exists because the world is
+    /// changed before the record is written: a refusal discovered after the mission was already
+    /// abandoned in the game would leave the two disagreeing, so the whole retirement is validated
+    /// first and the world is only touched once it is known to be recordable.
+    /// </summary>
+    internal StoryLedgerStatus CanRetire(StoryContentId caller, Guid occurrenceId, StoryOutcome outcome,
         IReadOnlyDictionary<string, string>? choices, out string diagnostic)
     {
         var status = Resolve(caller, occurrenceId, out var entry, out diagnostic);
@@ -238,8 +272,75 @@ internal sealed class StoryLedger
             diagnostic = "This occurrence already reported " + entry.Outcome + "; an outcome is recorded once.";
             return StoryLedgerStatus.InvalidTransition;
         }
-        var refusal = CheckChoices(entry, choices);
-        if (refusal != null) { diagnostic = refusal; return StoryLedgerStatus.LimitExceeded; }
+        var precondition = CheckChoices(entry, choices);
+        if (precondition != null) { diagnostic = precondition; return StoryLedgerStatus.LimitExceeded; }
+        return StoryLedgerStatus.Accepted;
+    }
+
+    /// <summary>
+    /// Stages the choices a future outcome will carry, validated exactly as a retirement validates
+    /// them so the outcome can always be recorded with them. Declaring again REPLACES the previous
+    /// declaration; nothing accumulates.
+    /// </summary>
+    internal StoryLedgerStatus DeclareChoices(StoryContentId caller, Guid occurrenceId,
+        IReadOnlyDictionary<string, string>? choices, out string diagnostic)
+    {
+        var status = CanRetire(caller, occurrenceId, StoryOutcome.Completed, choices, out diagnostic);
+        if (status != StoryLedgerStatus.Accepted) return status;
+        Resolve(caller, occurrenceId, out var entry, out _);
+        if (entry == null) { diagnostic = "Unknown occurrence."; return StoryLedgerStatus.UnknownOccurrence; }
+        entry.DeclarePending(choices);
+        return StoryLedgerStatus.Accepted;
+    }
+
+    /// <summary>
+    /// Records that the game reported this mission failed while still holding it. It is not an
+    /// outcome: it is remembered so the removal that eventually follows can be attributed.
+    /// </summary>
+    internal StoryLedgerStatus ObserveFailure(StoryContentId caller, Guid occurrenceId, out string diagnostic)
+    {
+        var status = Resolve(caller, occurrenceId, out var entry, out diagnostic);
+        if (status != StoryLedgerStatus.Accepted) return status;
+        if (entry!.State == StoryOccurrenceState.Retired)
+        { diagnostic = "This occurrence already reported " + entry.Outcome + "."; return StoryLedgerStatus.InvalidTransition; }
+        entry.MarkFailureObserved(true);
+        return StoryLedgerStatus.Accepted;
+    }
+
+    /// <summary>
+    /// Clears a reported failure, because the game accepted this occurrence again. Only a verified
+    /// re-acceptance clears it; nothing else forgets that the game once failed this mission.
+    /// </summary>
+    internal StoryLedgerStatus ClearFailure(StoryContentId caller, Guid occurrenceId, out string diagnostic)
+    {
+        var status = Resolve(caller, occurrenceId, out var entry, out diagnostic);
+        if (status != StoryLedgerStatus.Accepted) return status;
+        if (entry!.State == StoryOccurrenceState.Retired)
+        { diagnostic = "This occurrence already reported " + entry.Outcome + "."; return StoryLedgerStatus.InvalidTransition; }
+        entry.MarkFailureObserved(false);
+        return StoryLedgerStatus.Accepted;
+    }
+
+    /// <summary>Every check <see cref="Activate"/> makes, with no mutation, for the same reason.</summary>
+    internal StoryLedgerStatus CanActivate(StoryContentId caller, Guid occurrenceId, out string diagnostic)
+    {
+        var status = Resolve(caller, occurrenceId, out var entry, out diagnostic);
+        if (status != StoryLedgerStatus.Accepted) return status;
+        if (entry!.State != StoryOccurrenceState.Offered)
+        {
+            diagnostic = "Only an offered occurrence becomes active; this one is " + entry.State + ".";
+            return StoryLedgerStatus.InvalidTransition;
+        }
+        return StoryLedgerStatus.Accepted;
+    }
+
+    internal StoryLedgerStatus Retire(StoryContentId caller, Guid occurrenceId, StoryOutcome outcome,
+        IReadOnlyDictionary<string, string>? choices, out string diagnostic)
+    {
+        var status = CanRetire(caller, occurrenceId, outcome, choices, out diagnostic);
+        if (status != StoryLedgerStatus.Accepted) return status;
+        Resolve(caller, occurrenceId, out var entry, out _);
+        if (entry == null) { diagnostic = "Unknown occurrence."; return StoryLedgerStatus.UnknownOccurrence; }
         // No per-definition bound is applied here: the slot was reserved when the occurrence was
         // offered, so recording ITS outcome is always possible. Checking again would strand it.
         entry.Retire(outcome, choices);
@@ -300,7 +401,10 @@ internal sealed class StoryLedger
     /// recorded outcome releases the reservation and pays only for what it actually wrote.
     /// </summary>
     internal static int Footprint(StoryOccurrenceEntry entry)
-        => StoryStateCodec.EncodedSize(entry) + (entry.State == StoryOccurrenceState.Retired ? 0 : entry.ChoiceReservation);
+        // Pending choices are already written into the row, so only the UNUSED part of the
+        // reservation is still held back; counting the whole reservation as well would double-count.
+        => StoryStateCodec.EncodedSize(entry)
+           + (entry.State == StoryOccurrenceState.Retired ? 0 : entry.ChoiceReservation - StoryStateCodec.PendingSize(entry));
 
     private int ProviderFootprint(string provider)
         => _byOccurrence.Values.Where(entry => entry.Id.Provider == provider).Sum(Footprint);
@@ -402,6 +506,15 @@ internal sealed class StoryLedger
         // ledger can produce, and restoring one would let a later outcome grow past its bound.
         if (rows.Any(row => row.State != StoryOccurrenceState.Retired && row.Choices.Count > 0))
             return "An unresolved story occurrence records no declared choices.";
+        // Pending declarations are the mirror image: only an unresolved campaign occurrence can hold
+        // them, and never more than the space its own outcome already reserved.
+        if (rows.Any(row => row.PendingChoices.Count > 0
+            && (row.State == StoryOccurrenceState.Retired || row.Retention != StoryRetention.Campaign)))
+            return "Only an unresolved campaign occurrence holds declared choices for a future outcome.";
+        if (rows.Any(row => StoryStateCodec.PendingSize(row) > row.ChoiceReservation))
+            return "Declared choices exceed the space reserved for this occurrence's outcome.";
+        if (rows.Any(row => row.FailureObserved && row.State == StoryOccurrenceState.Retired))
+            return "A retired occurrence carries no unresolved failure.";
         foreach (var group in rows.GroupBy(row => row.Id.Provider, StringComparer.Ordinal))
         {
             if (group.Count() > MaxOccurrencesPerProvider) return "Provider '" + group.Key + "' exceeds its occurrence quota.";
