@@ -166,28 +166,30 @@ public sealed partial class Plugin
     // UNSOLICITED return route to the home station inside the next case's window (autosave-1 of
     // that run recorded emergencyJump=true, hull 0.1/10212 and waypoints=[home station]).
     //
-    // The selection is therefore an explicit ALLOWLIST of the two industrial POI kinds, plus the
-    // stored owner faction and the mission relevance the game itself exposes. Every member read
-    // here is a plain field/property or a read-only lookup; MapPointOfInterest.activeEnemyCount /
-    // totalEnemyCount are deliberately NOT read, because their getters call EnsureContentGenerated
-    // and would generate native content as a side effect of observation.
+    // This method only READS the native facts of each candidate; the decision itself is the pure,
+    // host-tested rule TravelStationReceipt.RefuseTravelTarget. Every member read here is a plain
+    // field/property, an exact native type test or a pure lookup, and the persisted
+    // `guardDescriptors` list is read by COUNT only: MapPointOfInterest.activeEnemyCount /
+    // totalEnemyCount are deliberately never touched, because their getters call
+    // EnsureContentGenerated and would generate native content as a side effect of observation.
     internal object[] SafeInSystemTargets()
     {
-        var mining = AccessTools.TypeByName("Source.Galaxy.POI.Mining") ?? throw new MissingMemberException("Source.Galaxy.POI.Mining", "type");
-        var salvage = AccessTools.TypeByName("Source.Galaxy.POI.Salvage") ?? throw new MissingMemberException("Source.Galaxy.POI.Salvage", "type");
-        var combat = AccessTools.TypeByName("Source.Galaxy.POI.Combat") ?? throw new MissingMemberException("Source.Galaxy.POI.Combat", "type");
-        var station = AccessTools.TypeByName("Source.Galaxy.POI.SpaceStation") ?? throw new MissingMemberException("Source.Galaxy.POI.SpaceStation", "type");
-        var gate = AccessTools.TypeByName("Source.Galaxy.POI.JumpGate") ?? throw new MissingMemberException("Source.Galaxy.POI.JumpGate", "type");
-        var wormhole = AccessTools.TypeByName("Source.Galaxy.POI.Wormhole") ?? throw new MissingMemberException("Source.Galaxy.POI.Wormhole", "type");
-        var factionType = AccessTools.TypeByName("Source.Galaxy.Faction") ?? throw new MissingMemberException("Source.Galaxy.Faction", "type");
+        var poiType = NativeType("Source.Galaxy.MapPointOfInterest");
+        var mining = NativeType("Source.Galaxy.POI.Mining");
+        var salvage = NativeType("Source.Galaxy.POI.Salvage");
+        var combat = NativeType("Source.Galaxy.POI.Combat");
+        var station = NativeType("Source.Galaxy.POI.SpaceStation");
+        var gate = NativeType("Source.Galaxy.POI.JumpGate");
+        var wormhole = NativeType("Source.Galaxy.POI.Wormhole");
+        var factionType = NativeType("Source.Galaxy.Faction");
         var isEnemy = TravelStationDriver.Bind(factionType, "IsEnemy", typeof(bool), factionType);
-        var storyMission = TravelStationDriver.Bind(AccessTools.TypeByName("Source.Galaxy.MapPointOfInterest"), "IsStoryMissionPoi", typeof(bool));
+        var storyMission = TravelStationDriver.Bind(poiType, "IsStoryMissionPoi", typeof(bool));
         var playerFaction = SpGet(factionType, "player");
         var player = CurrentPlayer;
         var system = SpGet(player, "currentSystem");
         var current = SpGet(player, "currentPointOfInterest");
         var position = (Vector2)SpGet(player, "mapPosition")!;
-        var map = SpGet(AccessTools.TypeByName("Source.Galaxy.GalaxyMapData"), "current");
+        var map = SpGet(NativeType("Source.Galaxy.GalaxyMapData"), "current");
         if (map == null)
         {
             SafeTargetSelection = "no live galaxy map";
@@ -196,30 +198,38 @@ public sealed partial class Plugin
         var inSystem = ((IEnumerable)SpGet(map, "allPointsOfInterest")!).Cast<object>()
             .Where(poi => ReferenceEquals(SpGet(poi, "system"), system) && !ReferenceEquals(poi, current))
             .ToArray();
-        var visible = inSystem
-            .Where(poi => !(bool)SpGet(poi, "hidden")! && !(bool)SpGet(poi, "isDynamicPoi")!)
-            .ToArray();
-        var targets = visible
-            // Industrial POIs only. Combat/CombatStation/Escort/LureSite are native combat
-            // encounters, stations own the phase's single dock pair, and gates/wormholes hand off
-            // to the cross-system machinery.
-            .Where(poi => mining.IsInstanceOfType(poi) || salvage.IsInstanceOfType(poi))
-            .Where(poi => !combat.IsInstanceOfType(poi) && !station.IsInstanceOfType(poi)
-                && !gate.IsInstanceOfType(poi) && !wormhole.IsInstanceOfType(poi))
-            // A site owned by a faction that is hostile to the player spawns native guards.
-            .Where(poi => SpGet(poi, "faction") is not { } owner || playerFaction == null
-                || !(bool)isEnemy.Invoke(owner, new[] { playerFaction })!)
-            // A story-mission location is never a disposable travel target.
-            .Where(poi => !(bool)storyMission.Invoke(poi, null)!)
+        var refusals = new Dictionary<string, int>(StringComparer.Ordinal);
+        var targets = new List<object>();
+        foreach (var poi in inSystem)
+        {
+            var candidate = new TravelStationReceipt.TravelTargetCandidate(
+                (string)SpGet(poi, "guid")!,
+                mining.IsInstanceOfType(poi) || salvage.IsInstanceOfType(poi),
+                combat.IsInstanceOfType(poi),
+                station.IsInstanceOfType(poi),
+                gate.IsInstanceOfType(poi),
+                wormhole.IsInstanceOfType(poi),
+                (bool)SpGet(poi, "hidden")!,
+                (bool)SpGet(poi, "isDynamicPoi")!,
+                SpGet(poi, "faction") is { } faction && playerFaction != null
+                    && (bool)isEnemy.Invoke(faction, new[] { playerFaction })!,
+                (bool)storyMission.Invoke(poi, null)!,
+                ((ICollection)SpGet(poi, "guardDescriptors")!).Count);
+            var refusal = TravelStationReceipt.RefuseTravelTarget(candidate);
+            if (refusal == null) targets.Add(poi);
+            else refusals[refusal] = refusals.TryGetValue(refusal, out int count) ? count + 1 : 1;
+        }
+        var selected = targets
             .OrderBy(poi => Vector2.Distance((Vector2)SpGet(poi, "position")!, position))
             .ToArray();
-        SafeTargetSelection = "inSystem=" + inSystem.Length + ", visible=" + visible.Length
-            + ", industrial=" + visible.Count(poi => mining.IsInstanceOfType(poi) || salvage.IsInstanceOfType(poi))
-            + ", combatEncounters=" + visible.Count(poi => combat.IsInstanceOfType(poi))
-            + ", stations=" + visible.Count(poi => station.IsInstanceOfType(poi))
-            + ", selected=" + targets.Length;
-        return targets;
+        SafeTargetSelection = "inSystem=" + inSystem.Length + ", selected=" + selected.Length
+            + ", refused=[" + string.Join(", ", refusals.OrderBy(entry => entry.Key, StringComparer.Ordinal)
+                .Select(entry => entry.Key + ":" + entry.Value)) + "]";
+        return selected;
     }
+
+    private static Type NativeType(string name)
+        => AccessTools.TypeByName(name) ?? throw new MissingMemberException(name, "type");
 
     /// <summary>Why the last <see cref="SafeInSystemTargets"/> call selected what it did; recorded with a NOT-RUN row.</summary>
     internal string SafeTargetSelection { get; private set; } = "<not selected>";
@@ -238,7 +248,9 @@ public sealed partial class Plugin
             var shipData = SpGet(player, "currentSpaceShip");
             var waypoints = (ICollection)SpGet(player, "waypoints")!;
             var poi = SpGet(player, "currentPointOfInterest");
-            var manager = SpGet(AccessTools.TypeByName("Behaviour.Managers.TravelManager"), "Instance");
+            // Singleton<T>.Current is the PURE static read; Instance would run FindAnyObjectByType
+            // and write the static cache when it is null, which a diagnostic must never do.
+            var manager = SpGet(NativeType("Behaviour.Managers.TravelManager"), "Current");
             string Identity(object? element) => element == null ? "<none>" : (string)SpGet(element, "guid")!;
             var detail = "emergencyJump=" + SpGet(player, "emergencyJump")
                 + ",autoPlay=" + SpGet(player, "autoPlay")
@@ -246,6 +258,7 @@ public sealed partial class Plugin
                 + ",shield=" + (shipData == null ? "<none>" : SpGet(shipData, "currentShieldHP") + "/" + SpGet(shipData, "maxShieldHP"))
                 + ",currentPoi=" + Identity(poi)
                 + ",waypoints=" + waypoints.Count;
+            if (manager == null) return detail + ",travelManager=<none>";
             if (!TravelStationDriver.Alive(manager)) return detail + ",travelManager=<destroyed>";
             return detail
                 + ",targetPoi=" + Identity(SpGet(manager!, "targetPoi"))

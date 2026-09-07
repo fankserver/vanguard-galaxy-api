@@ -191,7 +191,11 @@ Fix and protection (harness only; no API runtime change): in-system targets are 
 authoritative ALLOWLIST of the two industrial POI kinds (`Source.Galaxy.POI.Mining`,
 `Source.Galaxy.POI.Salvage`), excluding combat encounters (`Combat` and its `CombatStation`,
 `Escort`, `LureSite` subclasses), stations, gates, wormholes, hidden/dynamic POIs, sites owned by a
-faction the game itself reports hostile to the player, and story-mission locations. The
+faction the game itself reports hostile to the player, story-mission locations, and any POI whose
+persisted `guardDescriptors` list is non-empty - that protected list is what
+`MapPointOfInterest.RegenerateGuardUnits` spawns from, it is read by COUNT only, and it is the
+one signal that catches a mission-generated Mining POI (`MiningDeadDrop.SetupPOI`) whose mission
+faction is neutral, whose `storyId` is null and whose guards are still player-hostile. The
 content-generating `activeEnemyCount`/`totalEnemyCount` getters are still never read. Every travel
 phase shares that one selector. Independently, each case now opens its quiet window BEFORE its
 availability wait and refuses to start on anything but a silent native travel surface: an

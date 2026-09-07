@@ -331,6 +331,64 @@ internal static class TravelStationReceipt
     }
 
     /// <summary>
+    /// The read-only native facts about ONE candidate in-system travel target. Every member is a
+    /// plain field/property, an exact native type test or a pure lookup; the content-generating
+    /// <c>activeEnemyCount</c>/<c>totalEnemyCount</c> getters are deliberately absent, and
+    /// <see cref="PersistedGuards"/> is the count of the POI's already-persisted
+    /// <c>guardDescriptors</c> list, not a generated unit count.
+    /// </summary>
+    internal readonly struct TravelTargetCandidate
+    {
+        internal string Identity { get; }
+        internal bool Industrial { get; }
+        internal bool CombatEncounter { get; }
+        internal bool Station { get; }
+        internal bool Gate { get; }
+        internal bool Wormhole { get; }
+        internal bool Hidden { get; }
+        internal bool Dynamic { get; }
+        internal bool HostileOwner { get; }
+        internal bool StoryMission { get; }
+        internal int PersistedGuards { get; }
+        internal TravelTargetCandidate(string identity, bool industrial, bool combatEncounter, bool station,
+            bool gate, bool wormhole, bool hidden, bool dynamic, bool hostileOwner, bool storyMission, int persistedGuards)
+        {
+            Identity = identity; Industrial = industrial; CombatEncounter = combatEncounter; Station = station;
+            Gate = gate; Wormhole = wormhole; Hidden = hidden; Dynamic = dynamic;
+            HostileOwner = hostileOwner; StoryMission = storyMission; PersistedGuards = persistedGuards;
+        }
+    }
+
+    /// <summary>
+    /// Null when the candidate may be used as an in-system travel target, otherwise the exact reason
+    /// it is refused. The decision is pure so it is a host regression rather than prose.
+    ///
+    /// The guard rule is the one that closes the qa-82 mechanism beyond the type allowlist: a
+    /// mission-generated Mining POI (for example <c>MiningDeadDrop.SetupPOI</c>) is a plain
+    /// <c>Source.Galaxy.POI.Mining</c> with a NEUTRAL mission faction, no <c>storyId</c> and no
+    /// dynamic flag, so only its persisted <c>guardDescriptors</c> list reveals the units
+    /// <c>MapPointOfInterest.RegenerateGuardUnits</c> would spawn - and those guards are marked
+    /// player-hostile regardless of faction standing. Reading that list's COUNT generates nothing.
+    /// This still only REDUCES the chance of native hostility (live units, storyteller payloads and
+    /// wandering hostiles are not visible here); it never proves a POI is safe, which is why an
+    /// unsolicited native route remains a hard case failure.
+    /// </summary>
+    internal static string? RefuseTravelTarget(TravelTargetCandidate candidate)
+    {
+        if (candidate.Hidden) return "hidden";
+        if (candidate.Dynamic) return "dynamic-event POI";
+        if (candidate.CombatEncounter) return "native combat encounter";
+        if (candidate.Station) return "space station";
+        if (candidate.Gate) return "jump gate";
+        if (candidate.Wormhole) return "wormhole";
+        if (!candidate.Industrial) return "not an industrial POI";
+        if (candidate.HostileOwner) return "owned by a faction hostile to the player";
+        if (candidate.StoryMission) return "story-mission location";
+        if (candidate.PersistedGuards > 0) return "persisted guard descriptors (" + candidate.PersistedGuards + ")";
+        return null;
+    }
+
+    /// <summary>
     /// A case may only start driving from a quiet native travel surface. A route the pilot did NOT
     /// request (qa-82: the native emergency jump after a destroyed hull, <c>SpaceShip.TryEmergencyJump</c>
     /// -> <c>TravelManager.TravelToClosestSpacestation</c>, which requested a return route to the home

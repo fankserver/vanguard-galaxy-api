@@ -114,6 +114,12 @@ public sealed class InstalledTravelStationProbeTests
         foreach (var encounter in new[] { "Source.Galaxy.POI.CombatStation", "Source.Galaxy.POI.Escort", "Source.Galaxy.POI.LureSite" })
             Assert.Equal("Source.Galaxy.POI.Combat", Type(encounter).BaseType.FullName);
         Method(poi, "IsStoryMissionPoi", "System.Boolean");
+        // The persisted guard list the selector reads by COUNT: the exact protected field on
+        // MapPointOfInterest that RegenerateGuardUnits spawns from.
+        var guards = Assert.Single(Type(poi).Fields, field => field.Name == "guardDescriptors");
+        Assert.Equal(poi, guards.DeclaringType.FullName);
+        Assert.Equal("System.Collections.Generic.List`1<Source.Galaxy.UnitGenerationDescriptor>", guards.FieldType.FullName);
+        Assert.True(guards.IsFamily && !guards.IsStatic);
         Assert.Single(Type("Source.Galaxy.MapElement").Properties, property => property.Name == "faction"
             && property.PropertyType.FullName == "Source.Galaxy.Faction" && property.GetMethod?.IsVirtual == true);
         Method("Source.Galaxy.Faction", "IsEnemy", "System.Boolean", "Source.Galaxy.Faction");
@@ -150,6 +156,20 @@ public sealed class InstalledTravelStationProbeTests
         // The only other autonomous route source is the autopilot, which is gated on GamePlayer.autoPlay.
         Assert.Contains("autoPlay", FieldRefs(module, "Behaviour.Gameplay.IdleManager", "Update"));
         // The safe-target members must not be the content-generating counters.
+        // The persisted guard descriptors are exactly what the native regeneration spawns, so a
+        // non-empty list is a source-grounded reason to refuse a POI as a travel target - and
+        // reading it is not the content generation itself.
+        var guardRegeneration = Calls(module, "Source.Galaxy.MapPointOfInterest", "RegenerateGuardUnits");
+        Assert.Contains("guardDescriptors", FieldRefs(module, "Source.Galaxy.MapPointOfInterest", "RegenerateGuardUnits"));
+        Assert.Contains("AddGuardBatch", guardRegeneration);
+        Assert.Contains("RegenerateGuardUnits", Calls(module, "Source.Galaxy.MapPointOfInterest", "EnsureContentGenerated"));
+        // The autonomy diagnostic reads the PURE singleton accessor; Instance would search the
+        // scene and write the static cache.
+        var singleton = module.GetType("Behaviour.Util.Singleton`1") ?? throw new InvalidOperationException("Missing Singleton`1.");
+        var current = Assert.Single(singleton.Properties, property => property.Name == "Current");
+        Assert.True(current.GetMethod.IsStatic);
+        Assert.DoesNotContain("FindAnyObjectByType", Calls(module, "Behaviour.Util.Singleton`1", "get_Current"));
+        Assert.Contains("FindAnyObjectByType", Calls(module, "Behaviour.Util.Singleton`1", "get_Instance"));
         // activeEnemyCount generates the POI's content; totalEnemyCount reaches it through that getter.
         Assert.Contains("EnsureContentGenerated", Calls(module, "Source.Galaxy.MapPointOfInterest", "get_activeEnemyCount"));
         Assert.Contains("get_activeEnemyCount", Calls(module, "Source.Galaxy.MapPointOfInterest", "get_totalEnemyCount"));
