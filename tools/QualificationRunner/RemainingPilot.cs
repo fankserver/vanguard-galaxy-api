@@ -44,6 +44,10 @@ public sealed partial class Plugin
         Require((bool)SpCall(travel, "SetRouteToPOI", target), "Native in-system route refused.");
         foreach (var frame in Wait(() => TransitState, "native in-system transit")) yield return frame;
         Save("qa-in-transit", LifecycleEventKind.SaveSucceeded);
+        // Preserve the in-transit snapshot, but do not tear down singleton services while vanilla
+        // is still asynchronously constructing its destination manager (qa98 Awake exception).
+        foreach (var frame in Wait(NativeTravelReady, "native arrival before transit snapshot reload")) yield return frame;
+        foreach (var frame in Settle()) yield return frame;
         foreach (var frame in LoadReady("qa-in-transit")) yield return frame;
         Require(TransitState, "Transit snapshot did not restore travelling state/waypoints.");
         Passed("native-in-system-transit-save-load");

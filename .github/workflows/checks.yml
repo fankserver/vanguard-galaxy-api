@@ -52,3 +52,6 @@ jobs:
       - name: Check synthetic registry recovery
         shell: powershell
         run: '& ./tools/tests/qualification-profile.Tests.ps1'
+      - name: Story receipt rejection tests
+        shell: powershell
+        run: '& ./tools/tests/qualification-story.Tests.ps1'

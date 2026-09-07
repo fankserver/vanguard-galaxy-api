@@ -284,6 +284,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         // The fast-lane phase drives its own multi-system route and ends in another system; like the
         // recovery phase it restores the fixture itself, so it runs after the other travel phases.
         foreach (var frame in CheckTravelFastLane()) yield return frame;
+        foreach (var frame in CheckOwnedStories()) yield return frame;
         foreach (var frame in CheckJournalTeardown()) yield return frame;
         foreach (var frame in RemainingLifecyclePilot()) yield return frame;
         foreach (var frame in PersistencePilot()) yield return frame;

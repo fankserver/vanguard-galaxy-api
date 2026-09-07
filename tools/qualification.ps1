@@ -22,6 +22,9 @@ param(
     [switch]$AssemblyOverlay,
     [switch]$VanillaLoadControl,
     [switch]$PersistenceProbe,
+    [switch]$StoryProbe,
+    [string]$StoryCampaignBin,
+    [string]$StoryJobBin,
     [switch]$JournalCoordinated,
     [switch]$StockpileCoordinated,
     [switch]$ContentReferenceProbe,
@@ -44,6 +47,7 @@ param(
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'qualification-profile.ps1')
 . (Join-Path $PSScriptRoot 'qualification-inputs.ps1')
+. (Join-Path $PSScriptRoot 'qualification-story.ps1')
 $Scenario = switch ($Scenario) { 'Full' { 'Full' }; 'MissingApi' { 'MissingApi' }; 'UnavailableApi' { 'UnavailableApi' } }
 $root = [IO.Path]::GetFullPath($SandboxRoot).TrimEnd('\')
 $game = Join-Path $root 'game'
@@ -74,6 +78,9 @@ if ($Action -eq 'Prepare') {
     }
     if ($AssemblyOverlay -and $Scenario -ne 'UnavailableApi') { throw 'Assembly overlay requires UnavailableApi.' }
     if ($VanillaLoadControl -and $Scenario -ne 'MissingApi') { throw 'Vanilla load control requires MissingApi.' }
+    if ($StoryProbe -and ($Scenario -ne 'Full' -or !$StoryCampaignBin -or !$StoryJobBin -or $MissionJournalBin -or $AnimaBin -or $StockpileBin -or $EchoBin -or $TravelJournalBin -or $PersistenceProbe)) { throw 'Story probe requires Full, both author binaries, and no consumer or synthetic persistence probe.' }
+    if ($StoryProbe -and ($TravelStation -or $TravelCrossSystem -or $TravelWormholeFixture -or $TravelResilience -or $TravelRecoveryContinuation -or $TravelFastLane -or $MissionTransitionsProbe -or $MissionIdentityProbe -or $ContentReferenceProbe -or $JournalMissionEventsProbe -or $JournalCoordinated -or $StockpileCoordinated -or $VanillaLoadControl -or $AssemblyOverlay -or $EchoAbsentProbe -or $EchoTravelProbe -or $AnimaTravelProbe -or $TravelJournalComparison)) { throw 'Story probe cannot be combined with optional probes.' }
+    if (!$StoryProbe -and ($StoryCampaignBin -or $StoryJobBin)) { throw 'Story author binaries require StoryProbe.' }
     if ($PersistenceProbe -and $Scenario -ne 'Full') { throw 'Persistence probe requires Full.' }
     # The two consumer travel probes own the SAME reused native travel phases, so exactly one may
     # own a run; this conflict is checked before any per-probe prerequisite.
@@ -267,7 +274,24 @@ if ($Action -eq 'Prepare') {
     New-Item -ItemType Directory -Path (Join-Path $bep 'config') -Force | Out-Null
     if ($StockpileBin -and !$StockpileCoordinated) { [IO.File]::AppendAllText((Join-Path $bep 'config\vgstockpile.cfg'), "[Persistence]`r`nUseApiSaveData = false`r`n") }
     if ($MissionJournalBin -and !$JournalCoordinated) { [IO.File]::WriteAllText((Join-Path $bep 'config\vgmissionjournal.cfg'), "[Persistence]`r`nUseApiSaveData = false`r`n") }
-    if (!$PersistenceProbe) { [IO.File]::WriteAllText((Join-Path $bep 'config\vgmodapi.cfg'), "[Persistence]`r`nEnabled = false`r`n") }
+    if ($StoryProbe) {
+        Add-Type -Path (Join-Path $bep 'core\Mono.Cecil.dll')
+        foreach ($name in @('VGModAPI','VGModAPI.Core','VGModAPI.Abstractions','QualificationRunner','QualificationGuard','LifecycleObserver')) {
+            $reader = Read-ConsumerAssembly (Join-Path $plugins ($name + '.dll')) (Get-ConsumerMetadataReferenceDirs $plugins $root $GameDir)
+            try { Assert-QualificationAssemblyRevision $reader.Assembly $name $BuildRevision }
+            finally { Close-ConsumerAssembly $reader }
+        }
+        foreach ($author in @(@('OwnedStoryCampaign',$StoryCampaignBin),@('OwnedStoryJob',$StoryJobBin))) {
+            $candidate = Join-Path $author[1] ($author[0] + '.dll')
+            $reader = Read-ConsumerAssembly $candidate (Get-ConsumerMetadataReferenceDirs $author[1] $root $GameDir)
+            try { Assert-StoryAuthorMetadata $reader.Assembly $author[0] $BuildRevision }
+            finally { Close-ConsumerAssembly $reader }
+            Copy-Item -LiteralPath $candidate -Destination $plugins
+        }
+        [IO.File]::WriteAllText((Join-Path $bep 'config\vgmodapi.cfg'), "[Persistence]`r`nEnabled = true`r`nRoot = $(Join-Path $root 'state')`r`n[Story]`r`nEnabled = true`r`nProtection = true`r`n[Missions]`r`nEnabled = true`r`n")
+        [IO.File]::WriteAllText((Join-Path $root 'story.enabled'), 'owned-story-v1')
+    }
+    if (!$PersistenceProbe -and !$StoryProbe) { [IO.File]::WriteAllText((Join-Path $bep 'config\vgmodapi.cfg'), "[Persistence]`r`nEnabled = false`r`n") }
     if ($StockpileCoordinated) {
         [IO.File]::AppendAllText((Join-Path $bep 'config\vgstockpile.cfg'), "[Persistence]`r`nImportLegacySidecars = true`r`n")
         [IO.File]::WriteAllText((Join-Path $root 'stockpile-coordinated.enabled'), 'stockpile-v1')
@@ -312,7 +336,7 @@ if ($Action -eq 'Prepare') {
     if ($EchoTravelProbe) { [IO.File]::WriteAllText((Join-Path $root 'echo-travel.enabled'), 'echo-travel-v1') }
     if ($EchoAbsentProbe) { [IO.File]::WriteAllText((Join-Path $root 'echo-absent.enabled'), 'echo-absent-v1') }
     if ($TravelJournalComparison) { [IO.File]::WriteAllText((Join-Path $root 'travel-journal.enabled'), 'travel-journal-v1') }
-    @{ travelJournal=[bool]$TravelJournalBin; travelJournalRevision=$TravelJournalRevision; travelJournalSha256=$TravelJournalSha256; travelJournalVersion=$travelJournalVersion; travelJournalComparison=[bool]$TravelJournalComparison; travelJournalBudgetSeconds=$(if ($TravelJournalComparison) { $TravelJournalBudgetSeconds } else { 0 }); echo=[bool]$EchoBin; echoRevision=$EchoRevision; echoVersion=$echoVersion; echoTravelProbe=[bool]$EchoTravelProbe; echoTravelBudgetSeconds=$(if ($EchoTravelProbe) { $EchoTravelBudgetSeconds } else { 0 }); echoAbsentProbe=[bool]$EchoAbsentProbe; anima=[bool]$AnimaBin; animaRevision=$AnimaRevision; animaVersion=$animaVersion; animaTravelProbe=[bool]$AnimaTravelProbe; animaTravelBudgetSeconds=$(if ($AnimaTravelProbe) { $AnimaTravelBudgetSeconds } else { 0 }); journalMissionEventsProbe=[bool]$JournalMissionEventsProbe; missionIdentityProbe=[bool]$MissionIdentityProbe; missionTransitionsProbe=[bool]$MissionTransitionsProbe; contentReferenceProbe=[bool]$ContentReferenceProbe; stockpileCoordinated=[bool]$StockpileCoordinated; journalCoordinated=[bool]$JournalCoordinated; persistenceProbe=[bool]$PersistenceProbe; vanillaLoadControl=[bool]$VanillaLoadControl; assemblyOverlay=$overlay; stockpile=[bool]$StockpileBin; missionJournal=[bool]$MissionJournalBin; travelStation=[bool]$TravelStation; travelStationBudgetSeconds=$(if ($TravelStation) { $TravelStationBudgetSeconds } else { 0 }); travelCrossSystem=[bool]$TravelCrossSystem; travelCrossSystemBudgetSeconds=$(if ($TravelCrossSystem) { $TravelCrossSystemBudgetSeconds } else { 0 }); travelWormholeFixture=[bool]$TravelWormholeFixture; travelResilience=[bool]$TravelResilience; travelResilienceBudgetSeconds=$(if ($TravelResilience) { $TravelResilienceBudgetSeconds } else { 0 }); travelRecovery=[bool]$TravelRecoveryContinuation; travelRecoveryBudgetSeconds=$(if ($TravelRecoveryContinuation) { $TravelRecoveryBudgetSeconds } else { 0 }); travelFastLane=[bool]$TravelFastLane; travelFastLaneBudgetSeconds=$(if ($TravelFastLane) { $TravelFastLaneBudgetSeconds } else { 0 }); scenario=$Scenario; revision=$BuildRevision; preparedUtc=[DateTime]::UtcNow.ToString('o'); plugins=$hashes } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'build-provenance.json')
+    @{ storyProbe=[bool]$StoryProbe; travelJournal=[bool]$TravelJournalBin; travelJournalRevision=$TravelJournalRevision; travelJournalSha256=$TravelJournalSha256; travelJournalVersion=$travelJournalVersion; travelJournalComparison=[bool]$TravelJournalComparison; travelJournalBudgetSeconds=$(if ($TravelJournalComparison) { $TravelJournalBudgetSeconds } else { 0 }); echo=[bool]$EchoBin; echoRevision=$EchoRevision; echoVersion=$echoVersion; echoTravelProbe=[bool]$EchoTravelProbe; echoTravelBudgetSeconds=$(if ($EchoTravelProbe) { $EchoTravelBudgetSeconds } else { 0 }); echoAbsentProbe=[bool]$EchoAbsentProbe; anima=[bool]$AnimaBin; animaRevision=$AnimaRevision; animaVersion=$animaVersion; animaTravelProbe=[bool]$AnimaTravelProbe; animaTravelBudgetSeconds=$(if ($AnimaTravelProbe) { $AnimaTravelBudgetSeconds } else { 0 }); journalMissionEventsProbe=[bool]$JournalMissionEventsProbe; missionIdentityProbe=[bool]$MissionIdentityProbe; missionTransitionsProbe=[bool]$MissionTransitionsProbe; contentReferenceProbe=[bool]$ContentReferenceProbe; stockpileCoordinated=[bool]$StockpileCoordinated; journalCoordinated=[bool]$JournalCoordinated; persistenceProbe=[bool]$PersistenceProbe; vanillaLoadControl=[bool]$VanillaLoadControl; assemblyOverlay=$overlay; stockpile=[bool]$StockpileBin; missionJournal=[bool]$MissionJournalBin; travelStation=[bool]$TravelStation; travelStationBudgetSeconds=$(if ($TravelStation) { $TravelStationBudgetSeconds } else { 0 }); travelCrossSystem=[bool]$TravelCrossSystem; travelCrossSystemBudgetSeconds=$(if ($TravelCrossSystem) { $TravelCrossSystemBudgetSeconds } else { 0 }); travelWormholeFixture=[bool]$TravelWormholeFixture; travelResilience=[bool]$TravelResilience; travelResilienceBudgetSeconds=$(if ($TravelResilience) { $TravelResilienceBudgetSeconds } else { 0 }); travelRecovery=[bool]$TravelRecoveryContinuation; travelRecoveryBudgetSeconds=$(if ($TravelRecoveryContinuation) { $TravelRecoveryBudgetSeconds } else { 0 }); travelFastLane=[bool]$TravelFastLane; travelFastLaneBudgetSeconds=$(if ($TravelFastLane) { $TravelFastLaneBudgetSeconds } else { 0 }); scenario=$Scenario; revision=$BuildRevision; preparedUtc=[DateTime]::UtcNow.ToString('o'); plugins=$hashes } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'build-provenance.json')
     # Prevent Steam's restart path; the runner disables SteamManager before arming checks.
     [IO.File]::WriteAllText((Join-Path $game 'steam_appid.txt'), '3471800')
     $saves = Join-Path $root 'Saves'
@@ -363,6 +387,7 @@ if ($Action -eq 'Cleanup') {
 }
 Assert-QualificationUnused $root
 $provenance = Assert-QualificationInputs $root
+if ($provenance.PSObject.Properties['storyProbe'] -and $provenance.storyProbe -and $TimeoutSeconds -lt 3600) { throw 'Story probe requires base plus 1800-second story budget (3600 seconds total).' }
 # The travel/station phase adds its own bounded waits on top of every existing Full pilot, so the
 # process lifetime must be reserved BEFORE launching: a launcher kill mid-phase would otherwise
 # destroy a run that cannot finish. -TimeoutSeconds is the existing lifetime knob.
@@ -463,6 +488,9 @@ if ($provenance.PSObject.Properties['travelJournalComparison'] -and $provenance.
 }
 $null = Assert-QualificationInputs $root
 if (!(Test-Path -LiteralPath $result)) { throw 'Game exited without a qualification result; inspect sandbox logs.' }
+if ($provenance.PSObject.Properties['storyProbe'] -and $provenance.storyProbe) {
+    Assert-StoryReceipt $root
+}
 Assert-VanillaControlReceipt $root $provenance
 Assert-PersistenceProbeReceipt $root $provenance
 if ($provenance.PSObject.Properties['stockpileCoordinated'] -and $provenance.stockpileCoordinated) {
