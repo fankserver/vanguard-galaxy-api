@@ -409,7 +409,7 @@ if ($Action -eq 'Cleanup') {
 Assert-QualificationUnused $root
 $provenance = Assert-QualificationInputs $root
 if ($provenance.PSObject.Properties['storyAbsentProbe'] -and $provenance.storyAbsentProbe -and $TimeoutSeconds -lt 2100) { throw 'Absent-story probe requires base plus300seconds (2100 total).' }
-if ($provenance.PSObject.Properties['storyProbe'] -and $provenance.storyProbe -and $TimeoutSeconds -lt 5100) { throw 'Story probe requires 5100 seconds including objective reload/claim waits and execution margin.' }
+if ($provenance.PSObject.Properties['storyProbe'] -and $provenance.storyProbe -and $TimeoutSeconds -lt 5400) { throw 'Story probe requires 5400 seconds including objective reload/claim waits and execution margin.' }
 # The travel/station phase adds its own bounded waits on top of every existing Full pilot, so the
 # process lifetime must be reserved BEFORE launching: a launcher kill mid-phase would otherwise
 # destroy a run that cannot finish. -TimeoutSeconds is the existing lifetime knob.

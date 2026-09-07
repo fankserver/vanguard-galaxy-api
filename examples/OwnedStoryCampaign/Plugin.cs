@@ -52,6 +52,13 @@ public sealed class Plugin : BaseUnityPlugin
         return _provider.Register(revision == 1 ? definition : definition.WithRevision(revision, 1));
     }
 
+    public StoryRegistrationResult RegisterObservedObjectives(string sourceFaction, string destination)
+        => Provider.Register(new StoryMissionDefinition("observed-x", "Observe native progress", "Read the game's own objective state.",
+            new StoryFactionId(sourceFaction), new[] {
+                new StoryStep("Keep credits", new[] { StoryObjective.CollectCredits(StoryObjective.MaxAmount).WithKey("credits") }),
+                new StoryStep("Visit the destination", new[] { StoryObjective.TravelTo(destination).WithKey("visit") }) },
+            retention: StoryRetention.Temporary));
+
     // Invoked by the consumer's conversation controller when the authored answer is chosen.
     public StoryTransitionResult AnswerWitness(Guid session, Guid occurrence)
         => ((IStoryObjectiveProvider)Provider).SetProgress(session,

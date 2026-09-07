@@ -17,7 +17,7 @@ namespace VGModAPI.Runtime;
 /// replaces a duplicate identifier, so an identifier the adapter did not install is left untouched,
 /// and an entry that someone else has since replaced is never removed.
 /// </summary>
-internal sealed class StoryNativeWorld : IStoryWorld, IStoryObjectiveWorld, IDisposable
+internal sealed class StoryNativeWorld : IStoryWorld, IStoryObjectiveWorld, IStoryObjectiveObservationWorld, IDisposable
 {
     private readonly StoryNativeBindings _bindings;
     private readonly Action _checkThread;
@@ -32,6 +32,30 @@ internal sealed class StoryNativeWorld : IStoryWorld, IStoryObjectiveWorld, IDis
         _bindings = bindings ?? throw new ArgumentNullException(nameof(bindings));
         _checkThread = checkThread ?? throw new ArgumentNullException(nameof(checkThread));
         _fault = fault;
+    }
+
+    public int? ReadProgress(string identifier, StoryObjectiveLayout.Slot slot, StoryObjective expected, Func<bool> stillValid)
+    {
+        _checkThread();
+        try
+        {
+            var player = _bindings.CurrentPlayer;
+            if (_disposed || player == null || !_owned.TryGetValue(identifier, out var catalog)) return null;
+            bool Bounded()
+            {
+                var count = _bindings.Held(player);
+                return count.Missions <= StoryQuarantine.MaxScannedMissions && count.Objectives <= StoryQuarantine.MaxScannedObjectives;
+            }
+            if (!Bounded()) return null;
+            var mission = _bindings.ActiveStory(player, identifier);
+            bool Stable() => stillValid() && !_disposed && ReferenceEquals(_bindings.CurrentPlayer, player)
+                && ReferenceEquals(_bindings.Catalog[identifier], catalog) && Bounded()
+                && _bindings.ActiveStoryIdentifiers(player).Count(value => value == identifier) == 1
+                && ReferenceEquals(_bindings.ActiveStory(player, identifier), mission);
+            if (mission == null || !Stable()) return null;
+            return _bindings.ReadProgress(mission, player, slot, expected, Stable);
+        }
+        catch (Exception error) { Report(error); return null; }
     }
 
     public StoryWorldResult MigrateScripted(string identifier, StoryMissionDefinition definition, StoryObjectiveLayout source,

@@ -11,6 +11,8 @@ function Assert-StoryAbsentReceipt([string]$Root) {
 
 function Assert-StoryReceipt([string]$Root) {
     Assert-StoryDonorReceipt $Root
+    $nativeObjectives = @(Get-Content -LiteralPath (Join-Path $Root 'story-native-objectives.txt') -ErrorAction Stop)
+    if ($nativeObjectives.Count -ne 2 -or $nativeObjectives[0] -cne 'PASS' -or $nativeObjectives[1] -cne 'credit-resource;travel-completion;read-only;reload;stale-session;no-scripted-write;no-invented-progress') { throw 'Native objective observation proof incomplete.' }
     $objectives = @(Get-Content -LiteralPath (Join-Path $Root 'story-objectives.txt') -ErrorAction Stop)
     if ($objectives.Count -ne 2 -or $objectives[0] -cne 'PASS' -or $objectives[1] -cne 'owners;partial-reload;stale-session;inactive-step;authored-beat;generated-objective;duplicate;native-claim;revision-reorder;repeated-instance;rollback') { throw 'Owned objective proof incomplete.' }
 }

@@ -102,6 +102,8 @@ namespace Source.MissionSystem.Objectives
     {
         public string? targetPOI;
         public float requiredVisitTime;
+        public Func<bool>? Completion;
+        public override bool IsComplete() => Completion?.Invoke() ?? false;
         public override string ToJson() => "{travel:" + targetPOI + ":" + requiredVisitTime + "}";
     }
     public sealed class KillEnemies : MissionObjective
@@ -171,6 +173,7 @@ namespace Source.Player
     public sealed partial class GamePlayer
     {
         public List<string> AcceptanceLog { get; } = new();
+        public long credits { get; set; }
         /// <summary>The game's own capacity limit and the check AcceptMission makes with it.</summary>
         public static int MissionLimit = 20;
         public bool IsMissionsLimitExceeded() => missions.Count >= MissionLimit;

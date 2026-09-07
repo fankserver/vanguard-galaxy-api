@@ -75,6 +75,7 @@ public sealed partial class Plugin
             && restoredJob.ContentRevision == 1 && restoredRepeat.ContentRevision == 1
             && restoredJob.Outcome == StoryOutcome.Completed && restoredRepeat.Outcome == StoryOutcome.Completed,
             "Completed generated objective occurrences did not independently restore.");
+        foreach (var frame in CheckNativeObjectiveObservation(campaign, faction)) yield return frame;
         WriteAtomic("story-objectives.txt", new[] { "PASS", "owners;partial-reload;stale-session;inactive-step;authored-beat;generated-objective;duplicate;native-claim;revision-reorder;repeated-instance;rollback" });
     }
 }
