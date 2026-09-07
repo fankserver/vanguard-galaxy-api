@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "pluginId": "vgmodapi.example.updates",
+  "description": "Package-metadata example. Replace the example repository before enabling update checks.",
+  "projectUrl": "https://github.com/example/mod",
+  "updateUrl": "https://github.com/example/mod/releases/latest/download/update.json",
+  "channel": "stable"
+}

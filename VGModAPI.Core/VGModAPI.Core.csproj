@@ -4,5 +4,6 @@
     <ProjectReference Include="../VGModAPI.Abstractions/VGModAPI.Abstractions.csproj" />
     <InternalsVisibleTo Include="VGModAPI" />
     <InternalsVisibleTo Include="VGModAPI.Tests" />
+    <InternalsVisibleTo Include="ReleaseMetadata" />
   </ItemGroup>
 </Project>

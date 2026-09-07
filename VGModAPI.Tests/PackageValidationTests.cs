@@ -111,8 +111,19 @@ public sealed class PackageValidationTests : IDisposable
         foreach (var value in new[] { "vgmodapi", "API", version }) attribute.ConstructorArguments.Add(new CustomAttributeArgument(module.TypeSystem.String, value));
         plugin.CustomAttributes.Add(attribute);
         var file = Path.Combine(_root, "plugin.dll"); assembly.Write(file);
-        if (valid) PackageChecks.ValidatePluginVersion(file);
-        else Assert.Throws<InvalidOperationException>(() => PackageChecks.ValidatePluginVersion(file));
+        if (valid)
+        {
+            PackageChecks.ValidatePluginVersion(file);
+            var feed = ReleaseMetadata.Program.Generate(file, "vgmodapi", "1.2.3", "stable", "https://github.com/example/mod/releases/tag/v1.2.3");
+            Assert.Equal(new Version(1, 2, 3, 0), Core.ModUpdateFeed.Parse(System.Text.Encoding.UTF8.GetBytes(feed), "vgmodapi", "stable").Version);
+            Assert.Throws<InvalidOperationException>(() => ReleaseMetadata.Program.Generate(file, "wrong.guid", "1.2.3", "stable", "https://github.com/example/mod/releases/tag/v1.2.3"));
+            Assert.Throws<FormatException>(() => ReleaseMetadata.Program.Generate(file, "vgmodapi", "1.2.3-beta", "stable", "https://github.com/example/mod/releases/tag/v1.2.3"));
+        }
+        else
+        {
+            Assert.Throws<InvalidOperationException>(() => PackageChecks.ValidatePluginVersion(file));
+            Assert.Throws<InvalidOperationException>(() => ReleaseMetadata.Program.Generate(file, "vgmodapi", "1.2.3", "stable", "https://github.com/example/mod/releases/tag/v1.2.3"));
+        }
     }
 
     public void Dispose() => Directory.Delete(_root, recursive: true);
