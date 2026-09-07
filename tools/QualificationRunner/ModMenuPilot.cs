@@ -25,6 +25,14 @@ public sealed partial class Plugin
         var entry = GameObject.Find("VGModAPI Mods").GetComponent<Button>();
         Require(entry.GetComponentInChildren<TMP_Text>().alignment == TextAlignmentOptions.Center, "Mods entry is not centered.");
         var menu = entry.transform.parent.gameObject;
+        var neutral = menu.transform.Find("Exit").GetComponent<Button>();
+        var nativeImage = neutral.GetComponent<Image>();
+        Require(entry.colors.Equals(neutral.colors) && entry.GetComponent<Image>().pixelsPerUnitMultiplier == nativeImage.pixelsPerUnitMultiplier,
+            "Mods entry does not match neutral native palette/border scaling.");
+        Require(entry.GetComponent<LayoutElement>() == null, "Mods entry overrides native layout sizing.");
+        Canvas.ForceUpdateCanvases();
+        Require(Math.Abs(((RectTransform)entry.transform).rect.height - ((RectTransform)neutral.transform).rect.height) < 1,
+            "Mods entry height differs from native menu buttons.");
         var canvas = entry.GetComponentInParent<Canvas>();
         var events = EventSystem.current;
         Require(events != null, "Menu EventSystem missing.");
@@ -59,7 +67,14 @@ public sealed partial class Plugin
             var list = panel.GetComponentsInChildren<ScrollRect>().Single(item => item.name == "Local mods");
             Require(panel.transform.parent.name == "Gameview", "Panel escaped the inspected viewport.");
             Require(panel.GetComponentsInChildren<TMP_Text>().All(text => !text.richText && !text.parseCtrlCharacters), "Unsafe rich text enabled.");
-            evidence.AppendLine("keyboard-open=PASS plain-text=PASS viewport=Gameview entry-centered=PASS");
+            foreach (var ownedButton in panel.GetComponentsInChildren<Button>())
+            {
+                Require(ownedButton.colors.Equals(neutral.colors), "Owned button palette differs from native neutral style.");
+                var ownedImage = ownedButton.GetComponent<Image>();
+                Require(ownedImage.type == nativeImage.type && ownedImage.pixelsPerUnitMultiplier == nativeImage.pixelsPerUnitMultiplier,
+                    "Owned button border rendering differs from native style.");
+            }
+            evidence.AppendLine("keyboard-open=PASS plain-text=PASS viewport=Gameview entry-centered=PASS native-palette-border-height=PASS");
             var detailLabel = details.content.Find("Plain details").GetComponent<TMP_Text>();
             Require(!detailLabel.text.Contains("API capabilities") && !detailLabel.text.Contains("Declared dependencies"), "Default details expose advanced diagnostics.");
             var diagnostic = panel.GetComponentsInChildren<Button>().Single(button => button.name == "Diagnostics");

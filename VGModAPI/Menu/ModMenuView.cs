@@ -30,6 +30,9 @@ internal sealed class ModMenuView : IModMenuView
     private TMP_Text _heading = null!, _destination = null!, _detailText = null!;
     private TMP_FontAsset _font = null!;
     private Sprite? _sprite;
+    private Image.Type _imageType;
+    private float _pixelsPerUnitMultiplier;
+    private bool _fillCenter, _preserveAspect;
     private ColorBlock _colors;
     private Color _buttonColor, _textColor;
     private GameObject? _savedFocus;
@@ -62,18 +65,18 @@ internal sealed class ModMenuView : IModMenuView
 
     private void Build()
     {
-        var native = _bindings.NativeButton(_menu);
+        var native = _bindings.NativeStyle(_menu);
         var label = native.GetComponentInChildren<TMP_Text>(true);
         var image = native.GetComponent<Image>();
         _font = label != null ? label.font : _bindings.NativeVersion(_menu).font;
         if (_font == null || image == null || _menu.GetComponent<VerticalLayoutGroup>() == null)
             throw new InvalidOperationException("Native menu style/layout unavailable.");
         _sprite = image.sprite; _buttonColor = image.color; _colors = native.colors;
+        _imageType = image.type; _pixelsPerUnitMultiplier = image.pixelsPerUnitMultiplier;
+        _fillCenter = image.fillCenter; _preserveAspect = image.preserveAspect;
         _textColor = label != null ? label.color : Color.white;
         _entry = Button(_menu.transform, "VGModAPI Mods", "Mods", OpenPanel);
         _entry.GetComponentInChildren<TMP_Text>().alignment = TextAlignmentOptions.Center;
-        var entryLayout = _entry.gameObject.AddComponent<LayoutElement>();
-        entryLayout.minHeight = 28; entryLayout.preferredHeight = 34; entryLayout.flexibleHeight = 1;
         // Let the native layout own its column. Only our new child participates in layout.
         _entry.navigation = new Navigation { mode = Navigation.Mode.Automatic };
 
@@ -357,7 +360,8 @@ internal sealed class ModMenuView : IModMenuView
     {
         var rect = Rect(parent, name);
         var image = rect.gameObject.AddComponent<Image>(); image.sprite = _sprite;
-        image.type = Image.Type.Sliced; image.color = _buttonColor;
+        image.type = _imageType; image.pixelsPerUnitMultiplier = _pixelsPerUnitMultiplier;
+        image.fillCenter = _fillCenter; image.preserveAspect = _preserveAspect; image.color = _buttonColor;
         var button = rect.gameObject.AddComponent<Button>(); button.targetGraphic = image; button.colors = _colors;
         button.navigation = new Navigation { mode = Navigation.Mode.None };
         var label = Text(rect, "Label", caption); Stretch(label.rectTransform, 0, 0, 1, 1, 8, 0, -8, 0);

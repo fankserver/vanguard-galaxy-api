@@ -24,6 +24,9 @@ public sealed class InstalledModMenuBindingTests
         Field("instance", "Behaviour.UI.MainMenuUI", true, true);
         Field("continueGame", "UnityEngine.UI.Button", false, false);
         Field("versionNumber", "TMPro.TMP_Text", false, false);
+        var exit = Assert.Single(menu.Methods, method => method.Name == "ExitGame");
+        Assert.True(exit.IsPublic); Assert.False(exit.IsStatic); Assert.Empty(exit.Parameters);
+        Assert.Equal("System.Void", exit.ReturnType.FullName);
         var popup = assembly.MainModule.GetType("Behaviour.UI.AlertPopup");
         var modal = Assert.Single(popup.Properties, property => property.Name == "IsOpen");
         Assert.Equal("System.Boolean", modal.PropertyType.FullName); Assert.Empty(modal.Parameters);
