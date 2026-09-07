@@ -86,6 +86,23 @@ function Assert-EchoAssemblyMetadata($Assembly, [switch]$TravelProbe) {
 # required, so a rebuilt or otherwise different binary can never be prepared.
 $TravelJournalAssemblyVersion = '0.1.0.0'
 $TravelJournalPluginVersion = '0.2.0'
+# HARD PIN, committed here and not caller-supplied: exactly one archived binary, built from exactly
+# one archive revision, is ever accepted. A caller may repeat these pins but can never widen them,
+# so no rebuilt, re-signed or otherwise different VGTravelJournal.dll can be prepared or deployed -
+# assembly and plugin version metadata alone would not distinguish a rebuild.
+$TravelJournalPinnedRevision = '818d8b7e13a7841703bdd99e173e7dd993f6895c'
+$TravelJournalPinnedSha256 = 'f253c3eefb967af7a1472dfb48bd926bff14b84b7219208facdc594387b1fdad'
+function Assert-TravelJournalPins([string]$Revision, [string]$Sha256, [string]$ActualHash) {
+    if ($Revision -ne $TravelJournalPinnedRevision) {
+        throw "The archived TravelJournal source revision '$Revision' is not the committed pin $TravelJournalPinnedRevision."
+    }
+    if ($Sha256.ToUpperInvariant() -ne $TravelJournalPinnedSha256.ToUpperInvariant()) {
+        throw "The archived TravelJournal binary hash pin '$Sha256' is not the committed pin $TravelJournalPinnedSha256."
+    }
+    if ($ActualHash.ToUpperInvariant() -ne $TravelJournalPinnedSha256.ToUpperInvariant()) {
+        throw "Archived TravelJournal binary hash $ActualHash is not the committed pin $TravelJournalPinnedSha256; the archive must not be rebuilt."
+    }
+}
 function Assert-TravelJournalAssemblyMetadata($Assembly, [string]$Revision) {
     if ($Assembly.Name.Name -ne 'VGTravelJournal' -or $Assembly.Name.Version.ToString() -ne $TravelJournalAssemblyVersion) {
         throw "Only the archived VGTravelJournal $TravelJournalAssemblyVersion prebuilt is accepted."
@@ -103,6 +120,53 @@ function Assert-TravelJournalAssemblyMetadata($Assembly, [string]$Revision) {
         $bepInPlugin[0].ConstructorArguments[2].Value -ne $TravelJournalPluginVersion) {
         throw "The archived plugin must declare vgtraveljournal $TravelJournalPluginVersion."
     }
+}
+# The archived plugin flushes its own journal at QUIT, after every in-run case has closed. These
+# helpers therefore audit file locations only AFTER the owned process exited, over the explicitly
+# named roots below; nothing is ever claimed about the rest of the file system.
+$TravelJournalFilePatterns = @('.save.vgtraveljournal.json', '.vgtraveljournal.corrupt.', '.vgtraveljournal.json.tmp')
+function Get-TravelJournalAuditRoots([string]$Root) {
+    return @((Join-Path $Root 'Saves'), (Join-Path $Root 'game\BepInEx\plugins'), (Join-Path $Root 'game\BepInEx\config'),
+        (Join-Path $Root 'game\BepInEx'), (Join-Path $Root 'game'), $Root)
+}
+function Get-TravelJournalFiles([string[]]$Roots) {
+    $found = @{}
+    foreach ($auditRoot in $Roots) {
+        if (!(Test-Path -LiteralPath $auditRoot -PathType Container)) { continue }
+        foreach ($file in Get-ChildItem -LiteralPath $auditRoot -File -Force) {
+            if ($file.Name -like '*vgtraveljournal*') { $found[$file.FullName] = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash }
+        }
+    }
+    return $found
+}
+function Assert-TravelJournalContainment([string]$Root, [string[]]$Roots, $Before) {
+    $saves = [IO.Path]::GetFullPath((Join-Path $Root 'Saves'))
+    # The two PREPARED archive inputs. They carry the plugin's name but are the launcher's own
+    # deployment, so they may exist outside the saves - as long as this run left them untouched.
+    $prepared = @{
+        ([IO.Path]::GetFullPath((Join-Path $Root 'game\BepInEx\plugins\VGTravelJournal.dll'))) = $true
+        ([IO.Path]::GetFullPath((Join-Path $Root 'game\BepInEx\config\vgtraveljournal.cfg'))) = $true
+    }
+    $after = Get-TravelJournalFiles $Roots
+    $created = 0
+    $lines = @('POST-QUIT ARCHIVED JOURNAL AUDIT', ('audited-roots=' + ($Roots -join ';')),
+        ('patterns=' + ($TravelJournalFilePatterns -join ' ')))
+    foreach ($path in @($after.Keys | Sort-Object)) {
+        $name = Split-Path -Leaf $path
+        $full = [IO.Path]::GetFullPath($path)
+        $directory = [IO.Path]::GetFullPath((Split-Path -Parent $path))
+        $state = if (!$Before.ContainsKey($path)) { $created++; 'created' } elseif ($Before[$path] -eq $after[$path]) { 'unchanged' } else { 'rewritten' }
+        $lines += ("file`t" + $name + "`t" + $state + "`t" + $directory)
+        if ($prepared.ContainsKey($full)) {
+            if ($state -ne 'unchanged') { throw "The prepared archive input changed during the run: $name" }
+            continue
+        }
+        if ($directory -ne $saves) { throw "The archived journal left a file outside the sandbox saves after quit: $name" }
+        if (@($TravelJournalFilePatterns | Where-Object { $name.Contains($_) }).Count -eq 0) { throw "Unexpected archived journal file after quit: $name" }
+    }
+    $lines += ('files=' + $after.Count + ' created=' + $created)
+    $lines += 'scope=after the owned process exited and the archived plugin flushed at quit; no claim is made about locations outside the audited roots'
+    [IO.File]::WriteAllLines((Join-Path $Root 'travel-journal-postquit-audit.txt'), [string[]]$lines)
 }
 function Assert-PersistenceProbeReceipt([string]$Root, $Provenance) {
     if ($Provenance.PSObject.Properties['anima'] -and $Provenance.anima) {
@@ -438,7 +502,10 @@ function Assert-TravelJournalReceipt([string]$Root) {
     # The dwell case must publish an actually positive anchored dwell.
     $dwell = @($records | Where-Object { $_[0] -eq 'api-dwell-anchored' })
     if ($dwell.Count -ne 1 -or $dwell[0][7] -notlike '*largestDwellSeconds=*') { throw 'Archived-journal dwell case published no measured dwell.' }
-    if ($dwell[0][7] -match 'largestDwellSeconds=([0-9.]+)' -and [double]$Matches[1] -le 0) { throw 'The native dwell case reported no strictly positive anchored dwell.' }
+    # Round-trip ("R") formatting can be exponential, so the published value is parsed as a number.
+    if ($dwell[0][7] -notmatch 'largestDwellSeconds=([0-9][0-9.eE+-]*)') { throw 'Archived-journal dwell case published no measured dwell.' }
+    if ([double]::Parse($Matches[1], [Globalization.CultureInfo]::InvariantCulture) -le 0) { throw 'The native dwell case reported no strictly positive anchored dwell.' }
+    if ($dwell[0][7] -notlike '*anchorGameSeconds=*' -or $dwell[0][7] -notlike '*departureGameSeconds=*') { throw 'Archived-journal dwell case published no anchor/departure times to re-check.' }
     # Ordering: the comparison observed both reused phases and completed after them.
     $passed = @(Get-Content -LiteralPath (Join-Path $Root 'result.txt'))
     $expected = @($TravelJournalPhase) + $TravelJournalReusedPhaseScenarios
@@ -636,7 +703,9 @@ function Assert-QualificationInputs([string]$Root) {
             (Get-Content -LiteralPath $journalMarkerRevision -Raw).Trim() -ne $provenance.travelJournalRevision) { throw 'Invalid archived TravelJournal source revision pin.' }
         if ($provenance.travelJournalSha256 -notmatch '^[0-9a-fA-F]{64}$') { throw 'Invalid archived TravelJournal binary hash pin.' }
         $journalDll = Join-Path $Root 'game\BepInEx\plugins\VGTravelJournal.dll'
-        if ((Get-FileHash -LiteralPath $journalDll -Algorithm SHA256).Hash -ne $provenance.travelJournalSha256.ToUpperInvariant()) { throw 'The prepared archived TravelJournal binary is not the pinned build.' }
+        # The deployed bytes, the recorded pins and the committed constants must all be the same one
+        # build; the recorded pin alone can never authorise a different binary.
+        Assert-TravelJournalPins $provenance.travelJournalRevision $provenance.travelJournalSha256 (Get-FileHash -LiteralPath $journalDll -Algorithm SHA256).Hash
         if ($provenance.travelJournalVersion -ne $TravelJournalAssemblyVersion) { throw 'The archived TravelJournal assembly version pin changed.' }
         if (Test-Path -LiteralPath (Join-Path $Root 'game\BepInEx\plugins\VGTravelJournal.pdb')) { throw 'The archived TravelJournal PDB must never be deployed.' }
         $journalConfig = Get-Content -LiteralPath (Join-Path $Root 'game\BepInEx\config\vgtraveljournal.cfg') -Raw
@@ -658,6 +727,10 @@ function Assert-QualificationInputs([string]$Root) {
         if ($animaTravel -or $echoTravel) { throw 'The archived-journal comparison and a consumer travel probe both claim the reused travel phases.' }
         if ($provenance.scenario -ne 'Full') { throw 'Archived-journal comparison requires Full.' }
     }
+    # The archived plugin patches the game, so it must never sit in a sandbox that does not compare
+    # it, and never beside a consumer travel probe that owns the same reused phases.
+    if ($travelJournal -and !$travelJournalComparison) { throw 'The archived TravelJournal is installed without the comparison that owns it; it is never a passive ridealong.' }
+    if ($travelJournal -and ($animaTravel -or $echoTravel -or $anima -or $echo)) { throw 'The archived TravelJournal is installed beside a consumer plugin; the comparison sandbox carries the archive alone.' }
     # The resilience phase is an ADDITIONAL selection on top of the in-system phase; it reuses the
     # same [Travel] capability configuration and reserves its own separate process budget.
     $travelResilience = $provenance.PSObject.Properties['travelResilience'] -and [bool]$provenance.travelResilience

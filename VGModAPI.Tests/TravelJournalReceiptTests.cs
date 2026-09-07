@@ -107,16 +107,68 @@ public sealed class TravelJournalReceiptTests
         Assert.Contains("refusing a partial read", refusal.Message);
     }
 
+    private static TravelJournalReceipt.LegacyBaseline Baseline(string json, string slot = "qa-journal-baseline")
+        => new(slot, TravelJournalReceipt.ReadSidecar(json));
+
+    private static string Document(params string[] rows) => "{ \"version\": 2, \"events\": [" + string.Join(",", rows) + "] }";
+
+    private static string PoiRow(string poi, double seconds = 10) =>
+        "{ \"$kind\": \"PoiArrival\", \"gameSeconds\": " + seconds.ToString(System.Globalization.CultureInfo.InvariantCulture)
+        + ", \"systemGuid\": \"" + System1 + "\", \"poiGuid\": \"" + poi + "\" }";
+
+    private static string DockRow(string station, double seconds = 5) =>
+        "{ \"$kind\": \"StationDock\", \"gameSeconds\": " + seconds.ToString(System.Globalization.CultureInfo.InvariantCulture)
+        + ", \"systemGuid\": \"" + System1 + "\", \"stationGuid\": \"" + station + "\" }";
+
     [Fact]
     public void AShrunkenOrForeignVersionLogInvalidatesTheWindowsAppendOffsets()
     {
         var sidecar = TravelJournalReceipt.ReadSidecar(Sample);
-        Assert.Null(TravelJournalReceipt.CheckAppendBaseline(sidecar, 1));
-        Assert.Contains("shrank", TravelJournalReceipt.CheckAppendBaseline(sidecar, 4));
+        var wholeDocument = Baseline(Sample);
+        Assert.Null(TravelJournalReceipt.CheckAppendBaseline(sidecar, wholeDocument));
+        var oversized = new TravelJournalReceipt.LegacyBaseline("slot",
+            TravelJournalReceipt.ReadSidecar(Document(PoiRow("a"), PoiRow("b"), PoiRow("c"), PoiRow("d"))));
+        Assert.Contains("shrank", TravelJournalReceipt.CheckAppendBaseline(sidecar, oversized));
         var v1 = TravelJournalReceipt.ReadSidecar("{ \"version\": 1, \"events\": [] }");
-        Assert.Contains("schema version 1", TravelJournalReceipt.CheckAppendBaseline(v1, 0));
-        // Offsets are per-window against the captured baseline; no global monotonic counter is assumed.
-        Assert.Equal(new[] { 1, 2 }, TravelJournalReceipt.Appended(sidecar, 1).Select(row => row.Index).ToArray());
+        Assert.Contains("schema version 1", TravelJournalReceipt.CheckAppendBaseline(v1, Baseline("{ \"version\": 2, \"events\": [] }")));
+    }
+
+    /// <summary>
+    /// The HIGH finding of the review: a fresh load makes the archive append its own rows before any
+    /// case drives anything. A window whose baseline is the real post-load state must not count them.
+    /// </summary>
+    [Fact]
+    public void LoadTimeLegacyRowsBelongToTheBaselineAndAreNeverCountedAsAWindowsAppends()
+    {
+        // The load itself opened the interior and re-entered a POI: two rows, before any trip.
+        var afterLoad = Document(DockRow("station-a"), PoiRow("poi-loaded"));
+        var baseline = Baseline(afterLoad);
+        Assert.Equal(2, baseline.Count);
+        // One real trip later, only the trip's own row is an append.
+        var afterTrip = TravelJournalReceipt.ReadSidecar(Document(DockRow("station-a"), PoiRow("poi-loaded"), PoiRow("poi-a", 120)));
+        Assert.Null(TravelJournalReceipt.CheckAppendBaseline(afterTrip, baseline));
+        var appended = TravelJournalReceipt.Appended(afterTrip, baseline);
+        Assert.Equal(new[] { "poi-a" }, appended.Select(row => row.PoiGuid).ToArray());
+        Assert.Null(TravelJournalReceipt.CheckArrivalPair(new[] { "poi-a" }, appended));
+        // With the old zero baseline the same document would have carried the load-time rows into
+        // the window and broken the pair.
+        var withoutBaseline = TravelJournalReceipt.Appended(afterTrip, Baseline("{ \"version\": 2, \"events\": [] }"));
+        Assert.Equal(3, withoutBaseline.Count);
+        Assert.NotNull(TravelJournalReceipt.CheckArrivalPair(new[] { "poi-a" }, withoutBaseline));
+    }
+
+    [Fact]
+    public void ABaselinePrefixThatChangedMeansTheStoreWasResetAndTheWindowIsRefused()
+    {
+        var baseline = Baseline(Document(DockRow("station-a"), PoiRow("poi-loaded")));
+        // Same COUNT, different content: a reset store refilled by a replacement load.
+        var reset = TravelJournalReceipt.ReadSidecar(Document(DockRow("station-b"), PoiRow("poi-other"), PoiRow("poi-a", 120)));
+        var failure = TravelJournalReceipt.CheckAppendBaseline(reset, baseline);
+        Assert.Contains("baseline row #0 changed", failure);
+        Assert.Contains("not comparable", failure);
+        // Even an identical-looking row with a different time is a different row.
+        var retimed = TravelJournalReceipt.ReadSidecar(Document(DockRow("station-a", 6), PoiRow("poi-loaded")));
+        Assert.Contains("changed", TravelJournalReceipt.CheckAppendBaseline(retimed, baseline));
     }
 
     // --- comparison rules --------------------------------------------------------------------
@@ -139,19 +191,44 @@ public sealed class TravelJournalReceiptTests
         Assert.Contains("vacuous", TravelJournalReceipt.CheckArrivalPair(Array.Empty<string>(), legacy));
     }
 
+    private static TravelJournalReceipt.InFlightCapture Capture(bool requested = true, bool departed = true,
+        bool arrived = false, int frame = 100, bool jumpRunning = true)
+        => new(requested, departed, arrived, frame, jumpRunning);
+
     [Fact]
-    public void ThePrefixLeadNeedsAnInFlightWindowAndADistinctEarlierLegacyTime()
+    public void ThePrefixLeadNeedsFlagsCapturedAtTheSaveAndAnEarlierSaveFrame()
     {
         var inFlight = new[] { Legacy(0, TravelJournalReceipt.JumpgateTransitKind, 300.0, system: System2) };
-        Assert.Null(TravelJournalReceipt.CheckPrefixLead(inFlight, System2, true, true, false, 420.0));
-        // A lead claimed while the arrival was already observed is not a lead at all.
-        Assert.Contains("already observed", TravelJournalReceipt.CheckPrefixLead(inFlight, System2, true, true, true, 420.0));
-        // No source-only claim: without the two public facts, or without a later arrival time, it fails.
-        Assert.Contains("Requested and Departed", TravelJournalReceipt.CheckPrefixLead(inFlight, System2, false, true, false, 420.0));
-        Assert.Contains("never observed", TravelJournalReceipt.CheckPrefixLead(inFlight, System2, true, true, false, null));
-        Assert.Contains("does not precede", TravelJournalReceipt.CheckPrefixLead(inFlight, System2, true, true, false, 299.0));
+        Assert.Null(TravelJournalReceipt.CheckPrefixLead(inFlight, System2, Capture(), apiArrivedFrame: 140, 420.0));
+        // Flags are what the phase saw AT the save; a departure not yet observed there is no lead.
+        Assert.Contains("had not observed both the Requested and the Departed",
+            TravelJournalReceipt.CheckPrefixLead(inFlight, System2, Capture(departed: false), 140, 420.0));
+        Assert.Contains("already observed",
+            TravelJournalReceipt.CheckPrefixLead(inFlight, System2, Capture(arrived: true), 140, 420.0));
+        Assert.Contains("jump routine was not running",
+            TravelJournalReceipt.CheckPrefixLead(inFlight, System2, Capture(jumpRunning: false), 140, 420.0));
         Assert.Contains("recorded no jump-gate transit",
-            TravelJournalReceipt.CheckPrefixLead(Array.Empty<TravelJournalReceipt.LegacyEvent>(), System2, true, true, false, 420.0));
+            TravelJournalReceipt.CheckPrefixLead(Array.Empty<TravelJournalReceipt.LegacyEvent>(), System2, Capture(), 140, 420.0));
+        Assert.Contains("never observed", TravelJournalReceipt.CheckPrefixLead(inFlight, System2, Capture(), 140, null));
+    }
+
+    [Fact]
+    public void TheLeadIsFrameOrderingNotClockAdvance()
+    {
+        var inFlight = new[] { Legacy(0, TravelJournalReceipt.JumpgateTransitKind, 300.0, system: System2) };
+        // The native clock can stand still across a jump: an EQUAL game time is still a valid lead,
+        // because the ordering proof is the captured frame.
+        Assert.Null(TravelJournalReceipt.CheckPrefixLead(inFlight, System2, Capture(frame: 100), apiArrivedFrame: 101, 300.0));
+        // A legacy row AFTER the arrival is still wrong.
+        Assert.Contains("is later than the public arrival time",
+            TravelJournalReceipt.CheckPrefixLead(inFlight, System2, Capture(frame: 100), 101, 299.0));
+        // No frame ordering, no proof.
+        Assert.Contains("not before the public arrival's frame",
+            TravelJournalReceipt.CheckPrefixLead(inFlight, System2, Capture(frame: 200), 101, 420.0));
+        Assert.Contains("No frame was captured at the in-flight save",
+            TravelJournalReceipt.CheckPrefixLead(inFlight, System2, Capture(frame: 0), 101, 420.0));
+        Assert.Contains("No frame was captured for the public arrival",
+            TravelJournalReceipt.CheckPrefixLead(inFlight, System2, Capture(frame: 100), 0, 420.0));
     }
 
     [Fact]
@@ -185,10 +262,14 @@ public sealed class TravelJournalReceiptTests
     [Fact]
     public void TheLegacyBlindRowIsNeverAnEquivalenceAndNeverVacuous()
     {
-        Assert.Null(TravelJournalReceipt.CheckLegacyBlind(Array.Empty<TravelJournalReceipt.LegacyEvent>(), apiCancellationObserved: true));
-        Assert.Contains("vacuous", TravelJournalReceipt.CheckLegacyBlind(Array.Empty<TravelJournalReceipt.LegacyEvent>(), false));
-        Assert.Contains("appended 1 row(s) for a cancelled route",
-            TravelJournalReceipt.CheckLegacyBlind(new[] { Legacy(0, TravelJournalReceipt.JumpgateTransitKind, 5) }, true));
+        Assert.Null(TravelJournalReceipt.CheckLegacyBlind(Array.Empty<TravelJournalReceipt.LegacyEvent>(),
+            apiCancellationObserved: true, boundarySampled: true));
+        Assert.Contains("vacuous", TravelJournalReceipt.CheckLegacyBlind(Array.Empty<TravelJournalReceipt.LegacyEvent>(), false, true));
+        // Without its own boundary samples the empty set is an inference from the whole phase.
+        Assert.Contains("never sampled at its own boundaries",
+            TravelJournalReceipt.CheckLegacyBlind(Array.Empty<TravelJournalReceipt.LegacyEvent>(), true, boundarySampled: false));
+        Assert.Contains("appended 1 row(s) between the cancel boundaries",
+            TravelJournalReceipt.CheckLegacyBlind(new[] { Legacy(0, TravelJournalReceipt.JumpgateTransitKind, 5) }, true, true));
     }
 
     [Fact]
@@ -264,16 +345,60 @@ public sealed class TravelJournalReceiptTests
     }
 
     [Fact]
-    public void AClockRollbackCannotProduceANegativeOrInventedDwell()
+    public void AClockRollbackReportsNoDwellAtAllAndAReportedOneIsRefused()
     {
-        // The anchor is later than the departure: the difference is negative, which the API reports
-        // as unknown. A reported dwell there is refused rather than clamped.
-        var facts = new List<TravelTransition>
+        // The same session's anchor is LATER than the departure. The adapter's own guard
+        // (now >= _since) reports nothing there, so "no dwell" is the contract, not a defect:
+        // a rolled-back interval is UNKNOWN, not missing.
+        List<TravelTransition> RolledBack(double? dwell) => new()
+        {
+            Fact(TravelTransitionKind.InitialPlacement, TravelMode.Unknown, "poi-a", seconds: 100),
+            Fact(TravelTransitionKind.Departed, TravelMode.InSystem, "poi-a", seconds: 150, dwell: 50),
+            Fact(TravelTransitionKind.Arrived, TravelMode.InSystem, "poi-b", seconds: 500),
+            Fact(TravelTransitionKind.Departed, TravelMode.InSystem, "poi-b", seconds: 100, dwell: dwell),
+        };
+        Assert.Null(TravelJournalReceipt.CheckDwellAnchoring(RolledBack(null), out int pairs, out _));
+        // The positive pair before the rollback is still required and still counted.
+        Assert.Equal(1, pairs);
+        // Any reported dwell on a rolled-back anchor is an invention, whether clamped to zero or not.
+        Assert.Contains("clock rollback", TravelJournalReceipt.CheckDwellAnchoring(RolledBack(0), out _, out _));
+        Assert.Contains("clock rollback", TravelJournalReceipt.CheckDwellAnchoring(RolledBack(400), out _, out _));
+        // A rollback never satisfies the phase on its own: without a positive pair it stays vacuous.
+        var onlyRollback = new List<TravelTransition>
         {
             Fact(TravelTransitionKind.Arrived, TravelMode.InSystem, "poi-a", seconds: 500),
-            Fact(TravelTransitionKind.Departed, TravelMode.InSystem, "poi-a", seconds: 100, dwell: 0),
+            Fact(TravelTransitionKind.Departed, TravelMode.InSystem, "poi-a", seconds: 100, dwell: null),
         };
-        Assert.Contains("instead of its own anchor difference", TravelJournalReceipt.CheckDwellAnchoring(facts, out _, out _));
+        Assert.Contains("vacuous", TravelJournalReceipt.CheckDwellAnchoring(onlyRollback, out _, out _));
+    }
+
+    [Fact]
+    public void TheDwellComparisonIsExactBecauseTheAdapterSubtractsTheSameDoublesTheFactsCarry()
+    {
+        Assert.Equal(0, TravelJournalReceipt.DwellToleranceSeconds);
+        // Values whose difference is not representable at F3 precision: the rule compares the raw
+        // doubles, so the exact subtraction the adapter performs passes with no epsilon...
+        const double anchor = 1234.5678901234;
+        const double departure = 1300.1234567891;
+        var exact = new List<TravelTransition>
+        {
+            Fact(TravelTransitionKind.InitialPlacement, TravelMode.Unknown, "poi-a", seconds: anchor),
+            Fact(TravelTransitionKind.Departed, TravelMode.InSystem, "poi-a", seconds: departure, dwell: departure - anchor),
+        };
+        Assert.Null(TravelJournalReceipt.CheckDwellAnchoring(exact, out _, out double largest));
+        Assert.Equal(departure - anchor, largest);
+        // ...while a value that merely agrees to millisecond rounding does not.
+        var rounded = new List<TravelTransition>
+        {
+            Fact(TravelTransitionKind.InitialPlacement, TravelMode.Unknown, "poi-a", seconds: anchor),
+            Fact(TravelTransitionKind.Departed, TravelMode.InSystem, "poi-a", seconds: departure,
+                dwell: Math.Round(departure - anchor, 3)),
+        };
+        Assert.Contains("instead of its own anchor difference", TravelJournalReceipt.CheckDwellAnchoring(rounded, out _, out _));
+        // The receipt carries full round-trip precision, so a reader can redo the subtraction.
+        Assert.Equal((departure - anchor).ToString("R", System.Globalization.CultureInfo.InvariantCulture),
+            TravelJournalReceipt.Exact(departure - anchor));
+        Assert.Contains("E", TravelJournalReceipt.Exact(1e-9));
     }
 
     // --- phase evaluation --------------------------------------------------------------------
@@ -352,8 +477,18 @@ public sealed class TravelJournalReceiptTests
         Assert.True(TravelJournalReceipt.PhaseBudgetSeconds <= TravelJournalReceipt.LauncherReservationSeconds);
         Assert.Equal(TravelJournalReceipt.CallSites.Sum(site => site.Invocations * site.Placements), TravelJournalReceipt.PlacementWaits);
         Assert.Equal(TravelJournalReceipt.CallSites.Sum(site => site.Invocations * site.Quiescences), TravelJournalReceipt.QuiescenceSamples);
+        Assert.Equal(TravelJournalReceipt.CallSites.Sum(site => site.Invocations * site.InFlightDepartures), TravelJournalReceipt.InFlightDepartureWaits);
+        // The bounded in-flight departure wait the prefix-lead case adds is declared, not implicit.
+        Assert.Equal(1, TravelJournalReceipt.InFlightDepartureWaits);
+        Assert.Contains(TravelJournalReceipt.PhaseWaits, wait => wait.Name == "in-flight-departure"
+            && wait.Seconds == TravelJournalReceipt.InFlightDepartureSeconds && wait.Occurrences == 1);
+        // Only the jump-gate case has an in-flight hook, so this site runs ONCE, not once per case.
+        Assert.Equal(1, TravelJournalReceipt.CallSites.Single(site => site.Method == "JournalCrossInFlight").Invocations);
         // The phase drives no route and performs no load of its own; it reuses the qualified phases.
-        Assert.All(TravelJournalReceipt.CallSites.Where(site => site.Method.StartsWith("JournalCross", StringComparison.Ordinal)),
+        Assert.All(TravelJournalReceipt.CallSites.Where(site => site.Method is "JournalCrossCaseReady" or "JournalCrossCaseCompleted"),
             site => Assert.Equal(TravelJournalReceipt.CrossSystemCases, site.Invocations));
+        // Every real save the phase takes is declared. Saves are synchronous, so they carry no wait.
+        Assert.Equal(7, TravelJournalReceipt.Saves);
+        Assert.All(TravelJournalReceipt.PhaseWaits, wait => Assert.True(wait.Seconds > 0));
     }
 }

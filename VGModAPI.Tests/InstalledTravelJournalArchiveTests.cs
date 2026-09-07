@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection.Metadata;
@@ -31,7 +33,17 @@ public sealed class InstalledTravelJournalArchiveTests
     private const string PinnedPluginVersion = "0.2.0";
     /// <summary>Compiled documents the build attested: 22 committed sources plus 2 SDK-generated files.</summary>
     private const int CompiledDocuments = 24;
+    private const int CommittedDocuments = 22;
     private const int GeneratedDocuments = 2;
+    /// <summary>The project directory every compiled document of this build must live under.</summary>
+    private const string ProjectSegment = "/VGTravelJournal/";
+    /// <summary>
+    /// The ONLY documents that may have no committed source: the two files the SDK generates into
+    /// the project's own obj/ tree. Anything else without a committed source is unaccounted for.
+    /// </summary>
+    private static readonly System.Text.RegularExpressions.Regex GeneratedDocument = new(
+        @"^VGTravelJournal/obj/[A-Za-z0-9._-]+/netstandard2\.1/(VGTravelJournal\.AssemblyInfo\.cs|\.NETStandard,Version=v2\.1\.AssemblyAttributes\.cs)$",
+        System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 
     private static string AssemblyPath => Environment.GetEnvironmentVariable("VG_TRAVELJOURNAL_ASSEMBLY")
         ?? throw new InvalidOperationException("Run make check-archive or set VG_TRAVELJOURNAL_ASSEMBLY to the pinned prebuilt VGTravelJournal.dll.");
@@ -97,11 +109,14 @@ public sealed class InstalledTravelJournalArchiveTests
     }
 
     /// <summary>
-    /// Optional source attestation: the sibling PDB really belongs to this DLL and carries SHA-256
-    /// document hashes for every compiled file. Document PATHS are never emitted.
+    /// The sibling PDB really belongs to this DLL and carries a SHA-256 hash for every compiled
+    /// document. This test alone proves only that those hashes EXIST; comparing them against the
+    /// archived revision's committed sources is
+    /// <see cref="TheCompiledDocumentHashesMatchTheCommittedSourcesOfThePinnedRevision"/>.
+    /// Document PATHS are never emitted.
     /// </summary>
     [Fact]
-    public void TheSiblingPdbBelongsToThisBinaryAndAttestsItsCompiledSources()
+    public void TheSiblingPdbBelongsToThisBinaryAndCarriesAHashForEveryCompiledDocument()
     {
         var pdbPath = Environment.GetEnvironmentVariable("VG_TRAVELJOURNAL_PDB");
         if (string.IsNullOrEmpty(pdbPath))
@@ -131,7 +146,129 @@ public sealed class InstalledTravelJournalArchiveTests
         Assert.All(documents, document => Assert.NotEmpty(reader.GetBlobBytes(document.Hash)));
         Assert.Equal(GeneratedDocuments, documents.Count(document =>
             reader.GetString(document.Name).Replace('\\', '/').Contains("/obj/", StringComparison.Ordinal)));
+        Assert.Equal(CommittedDocuments, documents.Length - GeneratedDocuments);
         // The comparison phase pins the same revision the build embedded.
         Assert.Equal(PinnedRevision, PinnedInformationalVersion.Split('+')[1]);
+    }
+
+    /// <summary>
+    /// The real source attestation: every committed document the PDB records is compared, by
+    /// SHA-256, against the SAME file as it stands in the pinned archive revision. The comparison
+    /// reads the revision through <c>git show</c>, never the working tree, so uncommitted local
+    /// drift can neither satisfy nor break it. The archive is only READ; nothing is built.
+    /// </summary>
+    [Fact]
+    public void TheCompiledDocumentHashesMatchTheCommittedSourcesOfThePinnedRevision()
+    {
+        var repository = ArchiveRepository();
+        Assert.Equal(PinnedRevision, Git(repository, "rev-parse", PinnedRevision + "^{commit}").Trim());
+        var pdbPath = Environment.GetEnvironmentVariable("VG_TRAVELJOURNAL_PDB");
+        if (string.IsNullOrEmpty(pdbPath))
+            throw new InvalidOperationException("Set VG_TRAVELJOURNAL_PDB to the sibling PDB of the pinned prebuilt (it is never deployed).");
+        using var pdb = File.OpenRead(pdbPath);
+        using var provider = MetadataReaderProvider.FromPortablePdbStream(pdb);
+        var reader = provider.GetMetadataReader();
+        var compared = new List<string>();
+        var generated = new List<string>();
+        foreach (var handle in reader.Documents)
+        {
+            var document = reader.GetDocument(handle);
+            var relative = RepositoryRelativePath(reader.GetString(document.Name));
+            if (GeneratedDocument.IsMatch(relative))
+            {
+                generated.Add(relative);
+                continue;
+            }
+            var recorded = Convert.ToHexString(reader.GetBlobBytes(document.Hash));
+            var committed = Convert.ToHexString(SHA256.HashData(GitShowBytes(repository, PinnedRevision + ":" + relative)));
+            // Only the file NAME appears in a failure, never its path or its content.
+            Assert.True(recorded == committed,
+                "The compiled document '" + Path.GetFileName(relative) + "' does not match the pinned revision's committed source.");
+            compared.Add(relative);
+        }
+        Assert.Equal(CommittedDocuments, compared.Count);
+        Assert.Equal(compared.Count, compared.Distinct(StringComparer.Ordinal).Count());
+        // Nothing is unaccounted for: exactly the two generated files may lack a committed source.
+        Assert.Equal(GeneratedDocuments, generated.Count);
+        Assert.Equal(CompiledDocuments, compared.Count + generated.Count);
+        // Every committed .cs file of the project was compiled; none was dropped from the build.
+        var tracked = Git(repository, "ls-tree", "-r", "--name-only", PinnedRevision, "--", "VGTravelJournal")
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.Trim())
+            .Where(line => line.EndsWith(".cs", StringComparison.Ordinal))
+            .ToArray();
+        Assert.Equal(tracked.OrderBy(path => path, StringComparer.Ordinal),
+            compared.OrderBy(path => path, StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// The archive checkout to READ the pinned revision from: VG_TRAVELJOURNAL_REPO when supplied,
+    /// otherwise the git repository the pinned binary itself lives in.
+    /// </summary>
+    private static string ArchiveRepository()
+    {
+        var configured = Environment.GetEnvironmentVariable("VG_TRAVELJOURNAL_REPO");
+        if (!string.IsNullOrEmpty(configured))
+        {
+            if (!Directory.Exists(Path.Combine(configured, ".git")))
+                throw new InvalidOperationException("VG_TRAVELJOURNAL_REPO is not a git repository.");
+            return Path.GetFullPath(configured);
+        }
+        for (var directory = new DirectoryInfo(Path.GetDirectoryName(Path.GetFullPath(AssemblyPath))!);
+            directory != null; directory = directory.Parent)
+        {
+            if (Directory.Exists(Path.Combine(directory.FullName, ".git"))) return directory.FullName;
+        }
+        throw new InvalidOperationException("Set VG_TRAVELJOURNAL_REPO: the pinned binary is not inside an archive checkout.");
+    }
+
+    /// <summary>
+    /// The path of a compiled document RELATIVE to the archive repository root. Build-machine
+    /// absolute paths, separator style and any traversal are rejected rather than normalised away.
+    /// </summary>
+    private static string RepositoryRelativePath(string documentName)
+    {
+        var normalised = documentName.Replace('\\', '/');
+        int project = normalised.IndexOf(ProjectSegment, StringComparison.Ordinal);
+        Assert.True(project >= 0, "A compiled document lies outside the archived project directory.");
+        var relative = normalised[(project + 1)..];
+        Assert.DoesNotContain("..", relative, StringComparison.Ordinal);
+        Assert.False(relative.StartsWith('/'), "A compiled document path did not resolve to a repository-relative path.");
+        return relative;
+    }
+
+    /// <summary>Read-only git invocation. Arguments are passed as a list, never through a shell.</summary>
+    private static Process StartGit(string repository, params string[] arguments)
+    {
+        var start = new ProcessStartInfo("git")
+        {
+            WorkingDirectory = repository,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+        start.ArgumentList.Add("--git-dir");
+        start.ArgumentList.Add(Path.Combine(repository, ".git"));
+        foreach (var argument in arguments) start.ArgumentList.Add(argument);
+        return Process.Start(start) ?? throw new InvalidOperationException("Could not start git to read the archived revision.");
+    }
+
+    private static string Git(string repository, params string[] arguments)
+    {
+        using var process = StartGit(repository, arguments);
+        var output = process.StandardOutput.ReadToEnd();
+        process.WaitForExit();
+        Assert.True(process.ExitCode == 0, "Reading the pinned archive revision failed: git " + arguments[0] + ".");
+        return output;
+    }
+
+    private static byte[] GitShowBytes(string repository, string revisionPath)
+    {
+        using var process = StartGit(repository, "show", revisionPath);
+        using var buffer = new MemoryStream();
+        process.StandardOutput.BaseStream.CopyTo(buffer);
+        process.WaitForExit();
+        Assert.True(process.ExitCode == 0, "The pinned revision has no committed source for a compiled document.");
+        return buffer.ToArray();
     }
 }

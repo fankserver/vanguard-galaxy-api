@@ -195,6 +195,9 @@ public sealed partial class Plugin
                 yield break;
             }
             var originId = (string)SpGet(origin, "guid")!;
+            // Optional archived-journal boundary sample. It drives nothing native and is inert
+            // unless the comparison phase owns a live subscription.
+            foreach (var frame in _p.TravelJournalCancelBoundary("before")) yield return frame;
             // The quiet window opens BEFORE the availability wait, because that wait is exactly
             // where an unsolicited native route (qa-82's emergency-jump return) appeared.
             int offset = Travel.Count;
@@ -224,6 +227,7 @@ public sealed partial class Plugin
                 TravelStationReceipt.Evidence(slice, null),
                 "cancelledAt=" + TravelStationReceipt.Location(slice[1].ActualLocation)
                 + "; cancelledAfterSeconds=" + (slice[1].GameSeconds - slice[0].GameSeconds).ToString("F3"));
+            foreach (var frame in _p.TravelJournalCancelBoundary("after")) yield return frame;
         }
 
         private IEnumerable<object?> CaseChainedRoute()

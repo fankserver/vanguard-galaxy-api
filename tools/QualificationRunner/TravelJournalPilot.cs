@@ -34,6 +34,10 @@ public sealed partial class Plugin
     private string? _tjOpenCase;
     private readonly List<string> _tjLegacyFiles = new();
     private readonly List<string> _tjAuditedRoots = new();
+    /// <summary>Unity frame in which each public fact's callback was delivered, read on the main thread.</summary>
+    private readonly Dictionary<long, int> _tjFactFrames = new();
+    /// <summary>The REAL baseline of the window that is currently open; never assumed to be empty.</summary>
+    private TravelJournalReceipt.LegacyBaseline? _tjBaseline;
 
     private void TjCase(string id, string description) { _tjCase = id; _tjDescription = description; }
     private void TjEndCase() { TjCase(TravelStationReceipt.NoActiveCase, "No archived-journal case is observing."); TjCheckpoint(); }
@@ -112,6 +116,7 @@ public sealed partial class Plugin
         using (ModApi.Travel!.Subscribe("qualification.travel-journal", fact =>
         {
             facts.Add(fact);
+            _tjFactFrames[fact.Sequence] = Time.frameCount;
             _tjEvents.Add(TravelStationReceipt.TravelEventRow(_tjCase, fact));
         }))
         using (ModApi.Station!.Subscribe("qualification.travel-journal.station", fact =>
@@ -139,7 +144,15 @@ public sealed partial class Plugin
     private const string LegacyPluginVersion = "0.2.0";
     private const string LegacyAssemblyVersion = "0.1.0.0";
 
-    private BaseUnityPlugin LegacyPlugin => Chainloader.PluginInfos[LegacyPluginId].Instance;
+    private BaseUnityPlugin LegacyPlugin
+    {
+        get
+        {
+            Require(Chainloader.PluginInfos.TryGetValue(LegacyPluginId, out var info) && info.Instance != null,
+                "The archived TravelJournal plugin is not loaded in this sandbox; its startup did not run.");
+            return Chainloader.PluginInfos[LegacyPluginId].Instance;
+        }
+    }
 
     /// <summary>The sidecar the archived plugin writes beside a save slot, by its own documented rule.</summary>
     private string LegacySidecarPath(string slot) => Path.Combine(_saveRoot!, slot + ".save.vgtraveljournal.json");
@@ -168,14 +181,35 @@ public sealed partial class Plugin
         return sidecar;
     }
 
-    /// <summary>Takes a real vanilla save through the harness helper; the archived plugin's own postfix writes its sidecar.</summary>
+    /// <summary>
+    /// Takes a real vanilla save through the harness helper; the archived plugin's own postfix writes
+    /// its sidecar. The result is validated against the REAL baseline of the open window, so a fresh
+    /// load's own rows can never sit inside a compared append set and a reset store is refused.
+    /// </summary>
     private TravelJournalReceipt.LegacySidecar SaveAndReadLegacy(string slot)
     {
         Save(slot, LifecycleEventKind.SaveSucceeded);
         var sidecar = ReadLegacySidecar(slot);
-        var baseline = TravelJournalReceipt.CheckAppendBaseline(sidecar, 0);
-        Require(baseline == null, baseline!);
+        Require(_tjBaseline != null, "No legacy baseline was captured for this window; a zero baseline is never assumed.");
+        var failure = TravelJournalReceipt.CheckAppendBaseline(sidecar, _tjBaseline!);
+        Require(failure == null, failure!);
         return sidecar;
+    }
+
+    /// <summary>
+    /// Captures the window's own baseline with a real save AFTER placement and quiescence, so every
+    /// later comparison in that window subtracts exactly what the archived plugin had already
+    /// written - including anything its load-time patches appended.
+    /// </summary>
+    private TravelJournalReceipt.LegacyBaseline CaptureLegacyBaseline(string slot)
+    {
+        Save(slot, LifecycleEventKind.SaveSucceeded);
+        var sidecar = ReadLegacySidecar(slot);
+        Require(sidecar.Version == TravelJournalReceipt.LegacySchemaVersion,
+            "The legacy baseline sidecar declares schema version " + sidecar.Version + ".");
+        var baseline = new TravelJournalReceipt.LegacyBaseline(slot, sidecar);
+        _tjBaseline = baseline;
+        return baseline;
     }
 
     // --- hooks called by the reused native travel phases ---------------------------------------
@@ -240,12 +274,16 @@ public sealed partial class Plugin
             .Select(method => (method.DeclaringType?.FullName ?? "") + "." + method.Name)
             .OrderBy(name => name, StringComparer.Ordinal).ToArray();
         Require(owned.Length > 0, "The archived plugin installed no patches; its startup bindings did not resolve.");
+        // The window's REAL baseline: whatever the archived plugin already wrote for this freshly
+        // loaded session, including anything its load-time patches appended.
+        var baseline = CaptureLegacyBaseline("qa-journal-baseline-in-system");
         var placements = JournalWindow(_tjWindowOffset).Where(fact => fact.Kind == TravelTransitionKind.InitialPlacement).ToArray();
         TjRecord(TravelJournalReceipt.BindingCase, TravelJournalReceipt.BindingDescription, TravelStationReceipt.Passed,
             "archive=" + LegacyPluginId + " " + legacy.Info.Metadata.Version, session, null,
             TravelStationReceipt.Evidence(placements, null),
             "assembly=" + assembly.Name + " " + assembly.Version + "; informational=" + informational!.InformationalVersion
-            + "; ownedPatches=[" + string.Join(" ", owned) + "]; unchanged=true (no edit/rebuild/bridge/migration)");
+            + "; ownedPatches=[" + string.Join(" ", owned) + "]; unchanged=true (no edit/rebuild/bridge/migration); "
+            + baseline.Describe());
         TjCase(TravelJournalReceipt.InSystemCase, TravelJournalReceipt.InSystemDescription);
         _tjOpenCase = TravelJournalReceipt.InSystemCase;
     }
@@ -267,7 +305,7 @@ public sealed partial class Plugin
         foreach (var frame in JournalQuiesce()) yield return frame;
         var window = JournalWindow(_tjWindowOffset).Where(fact => fact.SessionId == _tjWindowSession).ToArray();
         var sidecar = SaveAndReadLegacy("qa-journal-in-system");
-        var appended = TravelJournalReceipt.Appended(sidecar, 0);
+        var appended = TravelJournalReceipt.Appended(sidecar, _tjBaseline!);
 
         // Compatible pair: every in-system arrival of the window, in order, by native POI guid.
         var arrivals = window.Where(fact => fact.Kind == TravelTransitionKind.Arrived && fact.Mode == TravelMode.InSystem
@@ -295,16 +333,20 @@ public sealed partial class Plugin
             "comparison=compatible; " + TravelJournalReceipt.LegacyIndices(chainedLegacy)
             + "; orderedHops=[" + string.Join(" ", chained.Select(fact => fact.ActualLocation!.PoiId)) + "]");
 
-        // Legacy-blind: the cancelled route contributed no legacy row at all.
-        bool cancelled = window.Any(fact => fact.Kind == TravelTransitionKind.Cancelled);
-        var cancelWindow = appended.Where(row => row.Kind != TravelJournalReceipt.PoiArrivalKind
-            && row.Kind != TravelJournalReceipt.StationDockKind && row.Kind != TravelJournalReceipt.StationUndockKind).ToArray();
-        failure = TravelJournalReceipt.CheckLegacyBlind(cancelWindow, cancelled);
+        // Legacy-blind: the cancel window is bounded by its OWN two real samples, so the empty
+        // append set is the cancel's own, not an inference from the whole phase.
+        Require(_tjCancelBefore != null && _tjCancelAfter != null,
+            "The qualified cancel case was never sampled at its own boundaries; an empty append set would prove nothing.");
+        var cancelFacts = window.Where(fact => fact.Kind == TravelTransitionKind.Cancelled).ToArray();
+        var cancelAppended = TravelJournalReceipt.Appended(_tjCancelAfter!, _tjCancelBefore!);
+        failure = TravelJournalReceipt.CheckLegacyBlind(cancelAppended, cancelFacts.Length > 0, boundarySampled: true);
         Require(failure == null, failure!);
         TjRecord(TravelJournalReceipt.BlindCase, TravelJournalReceipt.BlindDescription, TravelStationReceipt.Passed,
-            "legacyRows=0", _tjWindowSession, null,
-            TravelStationReceipt.Evidence(window.Where(fact => fact.Kind == TravelTransitionKind.Cancelled), null),
-            "comparison=non-comparable; the archived journal has no session, request or cancellation concept, so this is legacy-blind, not an equivalence");
+            "legacyRows=0", _tjWindowSession, cancelFacts.FirstOrDefault()?.OperationId,
+            TravelStationReceipt.Evidence(cancelFacts, null),
+            "comparison=non-comparable; " + _tjCancelBefore!.Describe()
+            + "; afterRows=" + _tjCancelAfter!.Events.Count + "; appendedAcrossCancel=0"
+            + "; the archived journal has no session, request or cancellation concept, so this is legacy-blind, not an equivalence");
 
         // Station: the legacy dock row is the interior toggle, compared against the PUBLIC physical
         // dock fact of the same session. The physical fact comes from the public station surface,
@@ -326,6 +368,41 @@ public sealed partial class Plugin
         TjEndCase();
     }
 
+    private TravelJournalReceipt.LegacyBaseline? _tjCancelBefore;
+    private TravelJournalReceipt.LegacySidecar? _tjCancelAfter;
+
+    /// <summary>
+    /// Inert unless this phase owns a live subscription. Sampled by the qualified in-system phase
+    /// immediately BEFORE it drives its cancel case and immediately AFTER the case completed, so the
+    /// legacy-blind claim is bounded by the cancel's own boundaries instead of the whole phase.
+    /// It performs one real save per boundary and no load.
+    /// </summary>
+    internal IEnumerable<object?> TravelJournalCancelBoundary(string boundary)
+    {
+        if (_tjFacts == null || _tjOpenCase != TravelJournalReceipt.InSystemCase) yield break;
+        foreach (var frame in TjGuarded(TravelJournalReceipt.BlindCase, TravelJournalReceipt.BlindDescription,
+            JournalCancelBoundary(boundary))) yield return frame;
+    }
+
+    private IEnumerable<object?> JournalCancelBoundary(string boundary)
+    {
+        foreach (var frame in JournalQuiesce()) yield return frame;
+        if (boundary == "before")
+        {
+            // A boundary baseline of its own: the cancel window subtracts exactly this.
+            _tjCancelBefore = CaptureLegacyBaseline("qa-journal-cancel-before");
+        }
+        else
+        {
+            Require(_tjCancelBefore != null, "The cancel window was closed without an opening sample.");
+            var previous = _tjBaseline;
+            _tjBaseline = _tjCancelBefore;
+            _tjCancelAfter = SaveAndReadLegacy("qa-journal-cancel-after");
+            // The enclosing window keeps its own baseline; the cancel sample never replaces it.
+            _tjBaseline = previous;
+        }
+    }
+
     internal IEnumerable<object?> TravelJournalCrossCaseReady(string crossCase, Guid session)
     {
         if (_tjFacts == null) yield break;
@@ -341,10 +418,14 @@ public sealed partial class Plugin
         _tjWindowSession = session;
         _tjWindowOffset = JournalSessionOffset(session);
         _tjInFlight = null;
+        _tjInFlightCapture = null;
+        // Each cross-system case loads its own fixture, so it captures its own REAL baseline.
+        CaptureLegacyBaseline("qa-journal-baseline-" + crossCase);
         _tjOpenCase = crossCase;
     }
 
-    private (int Baseline, IReadOnlyList<TravelJournalReceipt.LegacyEvent> Appended, string Slot)? _tjInFlight;
+    private (IReadOnlyList<TravelJournalReceipt.LegacyEvent> Appended, string Slot)? _tjInFlight;
+    private TravelJournalReceipt.InFlightCapture? _tjInFlightCapture;
 
     /// <summary>
     /// Called by the cross-system driver once the native jump routine is RUNNING and before the
@@ -364,11 +445,31 @@ public sealed partial class Plugin
     {
         TjCase(TravelJournalReceipt.PrefixLeadCase, TravelJournalReceipt.PrefixLeadDescription);
         foreach (var frame in JournalQuiesce()) yield return frame;
-        // Recorded AT the save, so the lead can never be claimed from a later state.
-        _tjArrivedAtInFlightSave = JournalWindow(_tjWindowOffset).Any(fact => fact.SessionId == _tjWindowSession
-            && fact.Kind == TravelTransitionKind.Arrived && fact.Mode == TravelMode.JumpGate);
+        // The driver's handoff wait is satisfied by the leg's Requested fact, so wait - bounded - for
+        // the leg's own Departed while no Arrived exists and the native jump is still running. If
+        // that interval never occurs, the case fails honestly rather than inventing a lead.
+        bool Observed(TravelTransitionKind kind) => JournalWindow(_tjWindowOffset).Any(fact => fact.SessionId == _tjWindowSession
+            && fact.Mode == TravelMode.JumpGate && fact.Kind == kind);
+        Time.timeScale = 1;
+        float until = Time.realtimeSinceStartup + TravelJournalReceipt.InFlightDepartureSeconds;
+        while (!Observed(TravelTransitionKind.Departed))
+        {
+            Require(!Observed(TravelTransitionKind.Arrived),
+                "The jump leg arrived before its departure could be observed in flight; no prefix lead can be captured.");
+            Require(Time.realtimeSinceStartup < until,
+                "Timed out waiting for the jump leg's own public departure while the native jump was running.");
+            yield return null;
+        }
+        // Everything below is captured AT the save, on the main thread, and never recomputed later.
+        var capture = new TravelJournalReceipt.InFlightCapture(
+            requestedObserved: Observed(TravelTransitionKind.Requested),
+            departedObserved: Observed(TravelTransitionKind.Departed),
+            arrivedObserved: Observed(TravelTransitionKind.Arrived),
+            savedFrame: Time.frameCount,
+            nativeJumpRunning: CrossSystemSnapshot().JumpIteratorRunning);
+        _tjInFlightCapture = capture;
         var sidecar = SaveAndReadLegacy("qa-journal-in-flight");
-        _tjInFlight = (0, TravelJournalReceipt.Appended(sidecar, 0), "qa-journal-in-flight");
+        _tjInFlight = (TravelJournalReceipt.Appended(sidecar, _tjBaseline!), "qa-journal-in-flight");
     }
 
     internal IEnumerable<object?> TravelJournalCrossCaseCompleted(string crossCase)
@@ -389,13 +490,13 @@ public sealed partial class Plugin
         var destination = arrival!.ActualLocation!.SystemId;
         if (crossCase == TravelCrossSystemReceipt.JumpGateCase)
         {
-            Require(_tjInFlight != null, "No in-flight legacy snapshot was taken for the jump-gate case.");
+            Require(_tjInFlight != null && _tjInFlightCapture != null,
+                "No in-flight legacy snapshot was taken for the jump-gate case.");
             var inFlight = _tjInFlight!.Value;
-            var failure = TravelJournalReceipt.CheckPrefixLead(inFlight.Appended, destination,
-                apiRequestedObserved: window.Any(fact => fact.Kind == TravelTransitionKind.Requested && fact.Mode == mode),
-                apiDepartedObserved: window.Any(fact => fact.Kind == TravelTransitionKind.Departed && fact.Mode == mode),
-                apiArrivedObservedAtSave: _tjArrivedAtInFlightSave,
-                apiArrivedGameSecondsLater: arrival.GameSeconds);
+            var capture = _tjInFlightCapture!.Value;
+            var arrivalFrame = _tjFactFrames.TryGetValue(arrival.Sequence, out int frame) ? frame : 0;
+            var failure = TravelJournalReceipt.CheckPrefixLead(inFlight.Appended, destination, capture,
+                apiArrivedFrame: arrivalFrame, apiArrivedGameSecondsLater: arrival.GameSeconds);
             Require(failure == null, failure!);
             var transits = inFlight.Appended.Where(row => row.Kind == TravelJournalReceipt.JumpgateTransitKind
                 && row.SystemGuid == destination).ToArray();
@@ -404,14 +505,15 @@ public sealed partial class Plugin
                 TravelStationReceipt.Evidence(window.Where(fact => fact.Mode == mode
                     && fact.Kind is TravelTransitionKind.Requested or TravelTransitionKind.Departed or TravelTransitionKind.Arrived), null),
                 "comparison=legacy-prefix-requested; slot=" + inFlight.Slot + "; " + TravelJournalReceipt.LegacyIndices(transits)
-                + "; legacyGameSeconds=" + transits.Min(row => row.GameSeconds).ToString("F3", System.Globalization.CultureInfo.InvariantCulture)
-                + "; apiArrivedGameSeconds=" + arrival.GameSeconds.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)
-                + "; apiArrivedObservedAtSave=false");
+                + "; legacyGameSeconds=" + TravelJournalReceipt.Exact(transits.Min(row => row.GameSeconds))
+                + "; apiArrivedGameSeconds=" + TravelJournalReceipt.Exact(arrival.GameSeconds)
+                + "; apiArrivedFrame=" + arrivalFrame + "; " + capture.Describe()
+                + "; lead=observed event ordering (frame capture), not clock advance");
         }
         else
         {
             var sidecar = SaveAndReadLegacy("qa-journal-wormhole");
-            var appended = TravelJournalReceipt.Appended(sidecar, 0);
+            var appended = TravelJournalReceipt.Appended(sidecar, _tjBaseline!);
             var failure = TravelJournalReceipt.CheckWormholeGap(appended, destination, apiWormholeArrivalObserved: true);
             Require(failure == null, failure!);
             TjRecord(TravelJournalReceipt.WormholeGapCase, TravelJournalReceipt.WormholeGapDescription, TravelStationReceipt.Passed,
@@ -423,8 +525,6 @@ public sealed partial class Plugin
         }
         TjEndCase();
     }
-
-    private bool _tjArrivedAtInFlightSave;
 
     // --- closing cases -------------------------------------------------------------------------
 
@@ -445,17 +545,26 @@ public sealed partial class Plugin
                 && fact.Kind == TravelTransitionKind.InitialPlacement), null),
             "auditedRoots=[" + string.Join(" ", _tjAuditedRoots) + "]; created=[" + string.Join(" ", created)
             + "]; patterns=[" + string.Join(" ", TravelJournalReceipt.LegacyFilePatterns)
-            + "]; no claim is made about locations outside the audited roots");
+            + "]; scope=as of this phase boundary only - the archived plugin still flushes at quit, so the"
+            + " launcher's post-exit audit is the final location evidence; no claim is made about locations"
+            + " outside the audited roots");
 
         TjCase(TravelJournalReceipt.DwellCase, TravelJournalReceipt.DwellDescription);
         var failureDwell = TravelJournalReceipt.CheckDwellAnchoring(_tjFacts!, out int pairs, out double largest);
         Require(failureDwell == null, failureDwell!);
         var departures = _tjFacts!.Where(fact => fact.Kind == TravelTransitionKind.Departed && fact.DwellSeconds.HasValue).ToArray();
+        // The positive pair the row publishes, with its own raw anchor and departure times.
+        var departure = departures.First(fact => fact.DwellSeconds!.Value > 0);
+        double anchor = departure.GameSeconds - departure.DwellSeconds!.Value;
         TjRecord(TravelJournalReceipt.DwellCase, TravelJournalReceipt.DwellDescription, TravelStationReceipt.Passed,
-            "anchoredPairs=" + pairs, departures[0].SessionId, null,
-            TravelStationReceipt.Evidence(departures.Where(fact => fact.SessionId == departures[0].SessionId), null),
-            "largestDwellSeconds=" + largest.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)
-            + "; toleranceSeconds=" + TravelJournalReceipt.DwellToleranceSeconds.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)
+            "anchoredPairs=" + pairs, departure.SessionId, null,
+            TravelStationReceipt.Evidence(departures.Where(fact => fact.SessionId == departure.SessionId), null),
+            "largestDwellSeconds=" + TravelJournalReceipt.Exact(largest)
+            + "; toleranceSeconds=" + TravelJournalReceipt.Exact(TravelJournalReceipt.DwellToleranceSeconds)
+            + " (exact: the adapter subtracts the same doubles the two facts carry)"
+            + "; anchorGameSeconds=" + TravelJournalReceipt.Exact(anchor)
+            + "; departureGameSeconds=" + TravelJournalReceipt.Exact(departure.GameSeconds)
+            + "; dwellSeconds=" + TravelJournalReceipt.Exact(departure.DwellSeconds!.Value)
             + "; legacy dwell is NOT compared: its anchors are the archived prefix, not the API's verified boundaries");
         TjEndCase();
     }

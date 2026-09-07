@@ -68,6 +68,8 @@ internal static class TravelJournalReceipt
     internal const float SettleSeconds = 2;
     internal const float QuiescenceSeconds = 20;
     internal const float PlacementSeconds = 30;
+    /// <summary>Bounded wait for the jump leg's own public departure while the native jump is still running.</summary>
+    internal const float InFlightDepartureSeconds = 60;
     /// <summary>Process time the launcher reserves for this phase (mirrors $TravelJournalBudgetSeconds).</summary>
     internal const float LauncherReservationSeconds = 900;
     /// <summary>The cross-system cases whose legacy evidence this phase compares.</summary>
@@ -79,9 +81,15 @@ internal static class TravelJournalReceipt
         internal int Invocations { get; }
         internal int Placements { get; }
         internal int Quiescences { get; }
-        internal CallSitePlan(string method, int invocations, int placements = 0, int quiescences = 0)
+        /// <summary>Bounded in-flight departure waits; the only wait this phase adds beyond its own sampling.</summary>
+        internal int InFlightDepartures { get; }
+        /// <summary>Real vanilla saves the phase performs. They are synchronous and add NO wait, but they are declared.</summary>
+        internal int Saves { get; }
+        internal CallSitePlan(string method, int invocations, int placements = 0, int quiescences = 0,
+            int inFlightDepartures = 0, int saves = 0)
         {
             Method = method; Invocations = invocations; Placements = placements; Quiescences = quiescences;
+            InFlightDepartures = inFlightDepartures; Saves = saves;
         }
     }
 
@@ -92,16 +100,25 @@ internal static class TravelJournalReceipt
     /// </summary>
     internal static readonly CallSitePlan[] CallSites =
     {
-        new("JournalInSystemReady", 1, placements: 1, quiescences: 1),
-        new("JournalInSystemCompleted", 1, quiescences: 1),
-        new("JournalCrossCaseReady", CrossSystemCases, placements: 1, quiescences: 1),
-        new("JournalCrossInFlight", CrossSystemCases, quiescences: 1),
+        // Each Ready hook takes its OWN real baseline save, so nothing the fresh load wrote can sit
+        // inside a compared window.
+        new("JournalInSystemReady", 1, placements: 1, quiescences: 1, saves: 1),
+        new("JournalInSystemCompleted", 1, quiescences: 1, saves: 1),
+        // The cancel boundary is sampled before and after the qualified cancel case.
+        new("JournalCancelBoundary", 2, quiescences: 1, saves: 1),
+        new("JournalCrossCaseReady", CrossSystemCases, placements: 1, quiescences: 1, saves: 1),
+        // Only the jump-gate case is driven in flight; the wormhole case has no prefix hook.
+        new("JournalCrossInFlight", 1, quiescences: 1, inFlightDepartures: 1, saves: 1),
+        // Only the wormhole case saves at completion; the gate case compares its in-flight snapshot.
         new("JournalCrossCaseCompleted", CrossSystemCases, quiescences: 1),
         new("RecordClosingCases", 1, quiescences: 1)
     };
 
     internal static readonly int PlacementWaits = CallSites.Sum(site => site.Invocations * site.Placements);
     internal static readonly int QuiescenceSamples = CallSites.Sum(site => site.Invocations * site.Quiescences);
+    internal static readonly int InFlightDepartureWaits = CallSites.Sum(site => site.Invocations * site.InFlightDepartures);
+    /// <summary>Declared real saves. They perform no wait, so they carry no budget term.</summary>
+    internal static readonly int Saves = CallSites.Sum(site => site.Invocations * site.Saves);
 
     internal sealed class PhaseWait
     {
@@ -114,7 +131,8 @@ internal static class TravelJournalReceipt
     internal static readonly PhaseWait[] PhaseWaits =
     {
         new("session-placement", PlacementSeconds, PlacementWaits),
-        new("callback-quiescence", QuiescenceSeconds, QuiescenceSamples)
+        new("callback-quiescence", QuiescenceSeconds, QuiescenceSamples),
+        new("in-flight-departure", InFlightDepartureSeconds, InFlightDepartureWaits)
     };
 
     internal static readonly float PhaseBudgetSeconds = PhaseWaits.Sum(wait => wait.Seconds * wait.Occurrences);
@@ -340,22 +358,61 @@ internal static class TravelJournalReceipt
     // --- comparison rules --------------------------------------------------------------------
 
     /// <summary>
+    /// Content fingerprint of one legacy row: everything the comparison may read from it. The
+    /// baseline is compared by fingerprint, not only by count, so a store that was reset and
+    /// refilled with the same number of different rows cannot silently pass as "unchanged".
+    /// </summary>
+    internal static string Fingerprint(LegacyEvent row)
+        => row.Kind + "|" + row.GameSeconds.ToString("R", CultureInfo.InvariantCulture)
+            + "|" + row.SystemGuid + "|" + row.PoiGuid + "|" + row.StationGuid;
+
+    /// <summary>
+    /// The REAL baseline of one owned window: the archived log exactly as it stood when the window
+    /// opened, captured by the phase's own save. Zero is never assumed - a fresh load can itself
+    /// append a station dock or a POI arrival before any case drives anything.
+    /// </summary>
+    internal sealed class LegacyBaseline
+    {
+        internal string Slot { get; }
+        internal int Count { get; }
+        internal IReadOnlyList<string> Prefix { get; }
+        internal LegacyBaseline(string slot, LegacySidecar sidecar)
+        {
+            Slot = slot;
+            Count = sidecar.Events.Count;
+            Prefix = sidecar.Events.Select(Fingerprint).ToArray();
+        }
+        internal string Describe() => "baselineSlot=" + Slot + "; baselineRows=" + Count.ToString(CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
     /// Legacy rows a window added, addressed by their own append offset relative to the baseline
     /// captured for that window. No global counter monotonicity is assumed across the archived
     /// store's load-time reset: the baseline is re-read per window.
     /// </summary>
-    internal static IReadOnlyList<LegacyEvent> Appended(LegacySidecar sidecar, int baselineCount)
-        => sidecar.Events.Where(row => row.Index >= baselineCount).ToArray();
+    internal static IReadOnlyList<LegacyEvent> Appended(LegacySidecar sidecar, LegacyBaseline baseline)
+        => sidecar.Events.Where(row => row.Index >= baseline.Count).ToArray();
 
-    /// <summary>The baseline must be a prefix of the compared document; a shrunken log is refused.</summary>
-    internal static string? CheckAppendBaseline(LegacySidecar sidecar, int baselineCount)
+    /// <summary>
+    /// The captured baseline must still be the compared document's exact prefix: same schema, no
+    /// shrink, and identical content row for row. A replaced or reset store is refused instead of
+    /// being read as an empty append window.
+    /// </summary>
+    internal static string? CheckAppendBaseline(LegacySidecar sidecar, LegacyBaseline baseline)
     {
         if (sidecar.Version != LegacySchemaVersion)
             return "The legacy sidecar declares schema version " + sidecar.Version + " instead of " + LegacySchemaVersion + ".";
-        if (baselineCount < 0) return "A negative legacy baseline offset is not a valid window.";
-        if (sidecar.Events.Count < baselineCount)
-            return "The legacy log shrank from " + baselineCount + " to " + sidecar.Events.Count
+        if (baseline.Count < 0) return "A negative legacy baseline offset is not a valid window.";
+        if (sidecar.Events.Count < baseline.Count)
+            return "The legacy log shrank from " + baseline.Count + " to " + sidecar.Events.Count
                 + " rows; the append offsets of this window cannot be trusted (FIFO eviction or a replaced store).";
+        for (int index = 0; index < baseline.Count; index++)
+        {
+            var actual = Fingerprint(sidecar.Events[index]);
+            if (actual != baseline.Prefix[index])
+                return "The legacy baseline row #" + index + " changed from '" + baseline.Prefix[index]
+                    + "' to '" + actual + "'; the archived store was reset or replaced, so this window's appends are not comparable.";
+        }
         return null;
     }
 
@@ -383,14 +440,52 @@ internal static class TravelJournalReceipt
     /// the transit for the destination system. The later API arrival time must exceed the legacy
     /// row's own game time, so the lead is proven by two independent facts and never by source alone.
     /// </summary>
-    internal static string? CheckPrefixLead(IReadOnlyList<LegacyEvent> appendedInFlight, string destinationSystemGuid,
-        bool apiRequestedObserved, bool apiDepartedObserved, bool apiArrivedObservedAtSave,
-        double? apiArrivedGameSecondsLater)
+    /// <summary>
+    /// What the phase actually observed AT the in-flight save, captured there and never recomputed
+    /// afterwards. The frame is <c>UnityEngine.Time.frameCount</c> read on the main thread at the
+    /// save; the arrival frame is the one recorded when the public arrival callback was delivered.
+    /// </summary>
+    internal readonly struct InFlightCapture
     {
-        if (!apiRequestedObserved || !apiDepartedObserved)
-            return "The in-flight window did not carry the public Requested and Departed facts of the jump leg.";
-        if (apiArrivedObservedAtSave)
-            return "The public arrival was already observed when the in-flight save was taken, so no lead is proven.";
+        internal bool RequestedObserved { get; }
+        internal bool DepartedObserved { get; }
+        internal bool ArrivedObserved { get; }
+        internal int SavedFrame { get; }
+        internal bool NativeJumpRunning { get; }
+        internal InFlightCapture(bool requestedObserved, bool departedObserved, bool arrivedObserved,
+            int savedFrame, bool nativeJumpRunning)
+        {
+            RequestedObserved = requestedObserved; DepartedObserved = departedObserved;
+            ArrivedObserved = arrivedObserved; SavedFrame = savedFrame; NativeJumpRunning = nativeJumpRunning;
+        }
+        internal string Describe() => "requestedAtSave=" + RequestedObserved + "; departedAtSave=" + DepartedObserved
+            + "; arrivedAtSave=" + ArrivedObserved + "; savedFrame=" + SavedFrame.ToString(CultureInfo.InvariantCulture)
+            + "; nativeJumpRunningAtSave=" + NativeJumpRunning;
+    }
+
+    /// <summary>
+    /// DRIVEN prefix-lead rule. "Lead" means OBSERVED EVENT ORDERING, not clock advance: the legacy
+    /// row was already on disk in a file written at a frame strictly before the frame in which the
+    /// public arrival callback was delivered, while the capture taken AT that save shows the leg's
+    /// Requested and Departed but no Arrived. The native clock may be frozen during the jump, so an
+    /// equal legacy and arrival game time is accepted; a legacy time AFTER the arrival is not.
+    /// </summary>
+    internal static string? CheckPrefixLead(IReadOnlyList<LegacyEvent> appendedInFlight, string destinationSystemGuid,
+        InFlightCapture capture, int apiArrivedFrame, double? apiArrivedGameSecondsLater)
+    {
+        if (!capture.RequestedObserved || !capture.DepartedObserved)
+            return "At the in-flight save the phase had not observed both the Requested and the Departed fact of the jump leg ("
+                + capture.Describe() + ").";
+        if (capture.ArrivedObserved)
+            return "The public arrival was already observed when the in-flight save was taken, so no lead is proven ("
+                + capture.Describe() + ").";
+        if (!capture.NativeJumpRunning)
+            return "The native jump routine was not running at the in-flight save (" + capture.Describe() + ").";
+        if (capture.SavedFrame <= 0) return "No frame was captured at the in-flight save, so no ordering can be proven.";
+        if (apiArrivedFrame <= 0) return "No frame was captured for the public arrival callback, so no ordering can be proven.";
+        if (capture.SavedFrame >= apiArrivedFrame)
+            return "The in-flight save happened at frame " + capture.SavedFrame.ToString(CultureInfo.InvariantCulture)
+                + ", not before the public arrival's frame " + apiArrivedFrame.ToString(CultureInfo.InvariantCulture) + ".";
         var transits = appendedInFlight.Where(row => row.Kind == JumpgateTransitKind
             && row.SystemGuid == destinationSystemGuid).ToArray();
         if (transits.Length == 0)
@@ -399,9 +494,11 @@ internal static class TravelJournalReceipt
         if (apiArrivedGameSecondsLater is not { } arrivedAt)
             return "The public arrival that must follow the legacy transit was never observed.";
         var earliest = transits.Min(row => row.GameSeconds);
-        if (!(earliest < arrivedAt))
-            return "The legacy transit game time " + earliest.ToString("F3", CultureInfo.InvariantCulture)
-                + " does not precede the public arrival time " + arrivedAt.ToString("F3", CultureInfo.InvariantCulture) + ".";
+        // Not strictly earlier: the native clock can stand still across the jump, and the ordering
+        // proof is the frame capture above. A legacy time after the arrival would still be wrong.
+        if (earliest > arrivedAt)
+            return "The legacy transit game time " + earliest.ToString("R", CultureInfo.InvariantCulture)
+                + " is later than the public arrival time " + arrivedAt.ToString("R", CultureInfo.InvariantCulture) + ".";
         return null;
     }
 
@@ -451,12 +548,15 @@ internal static class TravelJournalReceipt
     /// NON-COMPARABLE rule: the archived journal has no request, cancellation or session concept, so
     /// a qualified cancel window must append nothing at all. Any appended row there is a real finding.
     /// </summary>
-    internal static string? CheckLegacyBlind(IReadOnlyList<LegacyEvent> appended, bool apiCancellationObserved)
+    internal static string? CheckLegacyBlind(IReadOnlyList<LegacyEvent> appended, bool apiCancellationObserved,
+        bool boundarySampled)
     {
+        if (!boundarySampled)
+            return "The cancel window was never sampled at its own boundaries, so an empty append set proves nothing.";
         if (!apiCancellationObserved)
             return "No public cancellation was observed, so the legacy-blind claim would be vacuous.";
         if (appended.Count != 0)
-            return "The archived journal appended " + appended.Count + " row(s) for a cancelled route: ["
+            return "The archived journal appended " + appended.Count + " row(s) between the cancel boundaries: ["
                 + string.Join("; ", appended.Select(row => row.Describe())) + "].";
         return null;
     }
@@ -479,19 +579,27 @@ internal static class TravelJournalReceipt
     // --- native dwell rules ------------------------------------------------------------------
 
     /// <summary>
-    /// Tolerance for comparing a reported dwell against the game-time difference of its own anchor.
-    /// Both values come from the SAME game clock and are captured at the same boundaries, so the
-    /// only expected difference is double rounding through the receipt's own formatting; a
-    /// millisecond is generous for that and still far below any real dwell.
+    /// The reported dwell is EXACT, not approximate, so the comparison uses no epsilon.
+    ///
+    /// <para>Source: the adapter's leg tracker stores <c>_since = now</c> in the very call that
+    /// emits the anchor fact with that same <c>now</c>, and later computes
+    /// <c>dwell = _since.HasValue &amp;&amp; now &gt;= _since.Value ? now - _since.Value : null</c>
+    /// with the same <c>now</c> it stamps on the departure. Both operands are therefore the exact
+    /// doubles the two public facts carry, and the receipt compares the raw values, never the
+    /// formatted ones. There are no two independent clock reads to tolerate, so an epsilon would
+    /// only hide a real defect.</para>
     /// </summary>
-    internal const double DwellToleranceSeconds = 0.001;
+    internal const double DwellToleranceSeconds = 0;
+
+    /// <summary>Full-precision round-trip formatting, so a receipt value can be re-checked exactly.</summary>
+    internal static string Exact(double value) => value.ToString("R", CultureInfo.InvariantCulture);
 
     /// <summary>
     /// Native dwell assertion over the public facts of one session window. Every reported dwell must
-    /// be non-negative; a departure that follows a placement or arrival anchor in the same session
-    /// must report exactly that game-time difference; a departure with no anchor in its session must
-    /// report no dwell; and at least one strictly positive anchored dwell must exist, so the rule
-    /// cannot be satisfied by zeros alone.
+    /// be non-negative and equal to the game-time difference from its own same-session anchor; a
+    /// departure whose anchor is LATER than itself (a clock rollback) must report no dwell at all,
+    /// and neither must a departure with no anchor in its session. At least one strictly positive
+    /// anchored dwell must exist, so the rule cannot be satisfied by zeros alone.
     /// </summary>
     internal static string? CheckDwellAnchoring(IReadOnlyList<TravelTransition> facts, out int anchoredPairs, out double largestDwell)
     {
@@ -510,27 +618,34 @@ internal static class TravelJournalReceipt
                     anchored[fact.SessionId] = true;
                     break;
                 case TravelTransitionKind.Departed:
+                    bool hasAnchor = anchored.TryGetValue(fact.SessionId, out bool live) && live;
+                    double? expected = hasAnchor ? fact.GameSeconds - anchors[fact.SessionId] : null;
+                    // A rollback is a legitimate UNKNOWN dwell, not a missing one.
+                    bool rolledBack = expected is < 0;
                     if (fact.DwellSeconds is { } dwell)
                     {
                         if (dwell < 0)
                             return "A departure reported a negative dwell: " + TravelStationReceipt.Describe(fact) + ".";
-                        if (!anchored.TryGetValue(fact.SessionId, out bool hasAnchor) || !hasAnchor)
+                        if (!hasAnchor)
                             return "A departure reported a dwell with no anchor in its own session: "
                                 + TravelStationReceipt.Describe(fact) + ".";
-                        double expected = fact.GameSeconds - anchors[fact.SessionId];
-                        if (Math.Abs(expected - dwell) > DwellToleranceSeconds)
-                            return "A departure reported dwell " + dwell.ToString("F3", CultureInfo.InvariantCulture)
-                                + " instead of its own anchor difference " + expected.ToString("F3", CultureInfo.InvariantCulture)
+                        if (rolledBack)
+                            return "A departure reported dwell " + Exact(dwell)
+                                + " although its own anchor is later than itself (clock rollback), where the contract reports none: "
+                                + TravelStationReceipt.Describe(fact) + ".";
+                        if (Math.Abs(expected!.Value - dwell) > DwellToleranceSeconds)
+                            return "A departure reported dwell " + Exact(dwell)
+                                + " instead of its own anchor difference " + Exact(expected.Value)
                                 + ": " + TravelStationReceipt.Describe(fact) + ".";
                         anchoredPairs++;
                         if (dwell > largestDwell) largestDwell = dwell;
                     }
-                    else if (anchored.TryGetValue(fact.SessionId, out bool present) && present)
+                    else if (hasAnchor && !rolledBack)
                     {
                         return "A departure with a live same-session anchor reported no dwell: "
                             + TravelStationReceipt.Describe(fact) + ".";
                     }
-                    // A departure whose session has no anchor legitimately reports no dwell.
+                    // No anchor, or a rolled-back anchor: reporting no dwell is the contract.
                     anchors.Remove(fact.SessionId);
                     anchored[fact.SessionId] = false;
                     break;

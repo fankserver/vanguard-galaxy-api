@@ -80,6 +80,10 @@ if ($Action -eq 'Prepare') {
     # together with either consumer travel probe.
     if ($TravelJournalComparison -and ($AnimaTravelProbe -or $EchoTravelProbe)) { throw 'The archived-journal comparison and a consumer travel probe both own the reused travel phases; select one per run.' }
     if ($TravelJournalBin -and ($TravelJournalRevision -notmatch '^[0-9a-f]{40}$' -or $TravelJournalSha256 -notmatch '^[0-9a-fA-F]{64}$')) { throw 'The archived TravelJournal requires its exact source revision and binary SHA-256; the archive is never rebuilt, so exactly one binary is accepted.' }
+    if (($TravelJournalRevision -or $TravelJournalSha256) -and !$TravelJournalBin) { throw 'The archived TravelJournal pins were supplied without the archived binary.' }
+    # The archived plugin is NEVER installed as a passive ridealong: it patches the game, so it is
+    # only ever prepared for the run that compares it.
+    if ($TravelJournalBin -and !$TravelJournalComparison) { throw 'The archived TravelJournal binary is only prepared for the archived-journal comparison; it is never installed as a passive ridealong.' }
     if ($TravelJournalComparison -and (!$TravelJournalBin -or !$TravelStation -or !$TravelCrossSystem -or !$TravelWormholeFixture)) { throw 'Archived-journal comparison requires the archived binary, both native travel phases and the wormhole fixture selection.' }
     if ($TravelJournalComparison -and $Scenario -ne 'Full') { throw 'Archived-journal comparison requires Full.' }
     if ($AnimaBin -and (!$MissionIdentityProbe -or !$MissionJournalBin -or $AnimaRevision -notmatch '^[0-9a-f]{40}$')) { throw 'Anima requires identity probes, journal-provided JSON runtime and exact source revision.' }
@@ -196,7 +200,7 @@ if ($Action -eq 'Prepare') {
         # or deps.json, and only when its bytes are exactly the pinned, source-attested build.
         $candidate = Join-Path $TravelJournalBin 'VGTravelJournal.dll'
         $actualHash = (Get-FileHash -LiteralPath $candidate -Algorithm SHA256).Hash
-        if ($actualHash -ne $TravelJournalSha256.ToUpperInvariant()) { throw "Archived TravelJournal binary hash $actualHash does not match the pinned $TravelJournalSha256; the archive must not be rebuilt." }
+        Assert-TravelJournalPins $TravelJournalRevision $TravelJournalSha256 $actualHash
         Add-Type -Path (Join-Path $bep 'core\Mono.Cecil.dll')
         $reader = Read-ConsumerAssembly $candidate (Get-ConsumerMetadataReferenceDirs $TravelJournalBin $root $GameDir)
         try {
@@ -359,6 +363,13 @@ $journalBefore = @{}
 if ($provenance.PSObject.Properties['journalCoordinated'] -and $provenance.journalCoordinated) {
     foreach ($file in Get-ChildItem -LiteralPath (Join-Path $root 'Saves') -Filter '*.vgmissionjournal.json' -File) { $journalBefore[$file.Name] = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash }
 }
+$travelJournalRoots = @()
+$travelJournalBefore = @{}
+if ($provenance.PSObject.Properties['travelJournalComparison'] -and $provenance.travelJournalComparison) {
+    # Sampled BEFORE the launch so the post-exit audit can name exactly what this run created.
+    $travelJournalRoots = Get-TravelJournalAuditRoots $root
+    $travelJournalBefore = Get-TravelJournalFiles $travelJournalRoots
+}
 $transferBefore = @{}
 if ($provenance.PSObject.Properties['stockpileCoordinated'] -and $provenance.stockpileCoordinated) {
     foreach ($file in Get-ChildItem -LiteralPath (Join-Path $root 'Saves') -Filter '*.vgstockpile-transfers.json' -File) { $transferBefore[$file.Name] = (Get-FileHash -LiteralPath $file.FullName).Hash }
@@ -426,6 +437,11 @@ if ($null -ne $negativeBefore) {
         if ($negativeAfter[$key] -ne $negativeBefore[$key]) { throw 'Negative/control run changed a sandbox fixture or sidecar.' }
     }
     [IO.File]::WriteAllText((Join-Path $root 'negative-consumer-files-unchanged.txt'), 'PASS')
+}
+if ($provenance.PSObject.Properties['travelJournalComparison'] -and $provenance.travelJournalComparison) {
+    # The in-run containment case can only speak as of its own phase boundary; the archived plugin
+    # still writes when the game quits, so the final location evidence is taken here, after exit.
+    Assert-TravelJournalContainment $root $travelJournalRoots $travelJournalBefore
 }
 $null = Assert-QualificationInputs $root
 if (!(Test-Path -LiteralPath $result)) { throw 'Game exited without a qualification result; inspect sandbox logs.' }

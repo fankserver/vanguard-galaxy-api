@@ -48,6 +48,7 @@ TRAVELJOURNAL_PDB ?= $(patsubst %.dll,%.pdb,$(TRAVELJOURNAL_ASSEMBLY))
 check-archive:
 	@test -n "$(TRAVELJOURNAL_ASSEMBLY)" || (echo 'Set TRAVELJOURNAL_ASSEMBLY=/path/to/VGTravelJournal.dll (and optionally TRAVELJOURNAL_PDB)'; exit 1)
 	VG_TRAVELJOURNAL_ASSEMBLY="$(TRAVELJOURNAL_ASSEMBLY)" VG_TRAVELJOURNAL_PDB="$(TRAVELJOURNAL_PDB)" \
+	VG_TRAVELJOURNAL_REPO="$(TRAVELJOURNAL_REPO)" \
 	VG_GAME_ASSEMBLY="$(MANAGED)/Assembly-CSharp.dll" \
 	VG_CONSUMER_DEPENDENCY_DIRS="$(CORE):$(MANAGED)" \
 	$(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter 'Category=InstalledArchive' -- RunConfiguration.TreatNoTestsAsError=true
