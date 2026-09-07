@@ -253,6 +253,9 @@ function Assert-TravelJournalContainment([string]$Root, [string[]]$Roots, $Befor
 function Assert-MenuInspectionReceipt([string]$Root, $Provenance) {
     if (!$Provenance.PSObject.Properties['menuInspection'] -or !$Provenance.menuInspection) { return }
     if ($Provenance.scenario -ne 'MissingApi') { throw 'Menu inspection requires MissingApi provenance.' }
+    $outcomePath = Join-Path $Root 'run-outcome.json'
+    if (!(Test-Path -LiteralPath $outcomePath -PathType Leaf)) { throw 'Menu inspection has no recorded launcher outcome.' }
+    Assert-QualificationExitOutcome (Get-Content -LiteralPath $outcomePath -Raw | ConvertFrom-Json) 'Menu inspection'
     $marker = Join-Path $Root 'menu-inspection.enabled'
     if (!(Test-Path -LiteralPath $marker) -or [IO.File]::ReadAllText($marker) -cne 'menu-inspection-v1') { throw 'Menu inspection selection is missing or changed.' }
     $receipt = Join-Path $Root 'menu-inspection.receipt'

@@ -47,7 +47,25 @@ try {
     [IO.File]::WriteAllText($inspectionText, "menu-inspection-v1`nsynthetic-only")
     $inspectionHash = (Get-FileHash -LiteralPath $inspectionText -Algorithm SHA256).Hash.ToLowerInvariant()
     [IO.File]::WriteAllText((Join-Path $inspectionRoot 'menu-inspection.receipt'), "PASS`nmenu-inspection-v1`nsha256=$inspectionHash`n")
-    Assert-MenuInspectionReceipt $inspectionRoot $inspectionProvenance
+    $rejected = $false
+    try { Assert-MenuInspectionReceipt $inspectionRoot $inspectionProvenance } catch { $rejected = $true }
+    Assert $rejected 'Missing menu launcher outcome accepted.'
+    $inspectionOutcome = Join-Path $inspectionRoot 'run-outcome.json'
+    foreach ($outcome in @(
+        @{ timedOut=$true; killed=$false; exitCode=0 },
+        @{ timedOut=$false; killed=$true; exitCode=0 },
+        @{ timedOut=$false; killed=$false; exitCode=$null },
+        @{ timedOut=$false; killed=$false; exitCode=17 }
+    )) {
+        $outcome | ConvertTo-Json | Set-Content -LiteralPath $inspectionOutcome
+        $rejected = $false
+        try { Assert-MenuInspectionReceipt $inspectionRoot $inspectionProvenance } catch { $rejected = $true }
+        Assert $rejected 'Abnormal menu launcher outcome accepted.'
+    }
+    foreach ($code in @(0, -1)) {
+        @{ timedOut=$false; killed=$false; exitCode=$code } | ConvertTo-Json | Set-Content -LiteralPath $inspectionOutcome
+        Assert-MenuInspectionReceipt $inspectionRoot $inspectionProvenance
+    }
     [IO.File]::AppendAllText($inspectionText, 'changed')
     $rejected = $false
     try { Assert-MenuInspectionReceipt $inspectionRoot $inspectionProvenance } catch { $rejected = $true }
