@@ -53,6 +53,10 @@ internal sealed class StoryOccurrenceEntry
     {
         State = StoryOccurrenceState.Retired;
         Outcome = outcome;
+        // The recorded choices REPLACE whatever the entry carried; they are never merged into it, so
+        // the terminal record is exactly what this outcome declared and can never grow past the
+        // bound that was checked for it.
+        _choices.Clear();
         // A temporary definition keeps only the bounded idempotency record, never declared choices.
         if (Retention == StoryRetention.Campaign && choices != null)
             foreach (var pair in choices) _choices[pair.Key] = pair.Value;
@@ -148,6 +152,14 @@ internal sealed class StoryLedger
             diagnostic = "The occurrence sequence reached its bound; refusing rather than wrapping the timeline.";
             return StoryLedgerStatus.LimitExceeded;
         }
+        if (retention == StoryRetention.Campaign && CampaignSlotsUsed(id) >= MaxRetainedPerDefinition)
+        {
+            // Campaign outcomes are never pruned, so an occurrence admitted beyond this bound could
+            // never record its outcome. Refused HERE, before anything exists to strand.
+            diagnostic = "Definition '" + id + "' already holds " + MaxRetainedPerDefinition
+                + " campaign occurrences including unresolved ones; refusing the offer rather than admitting one that could never retire.";
+            return StoryLedgerStatus.LimitExceeded;
+        }
         if (retention != StoryRetention.Campaign && choiceReservation > 0)
         { diagnostic = "Only a campaign definition reserves declared-choice space."; return StoryLedgerStatus.InvalidTransition; }
         var candidate = new StoryOccurrenceEntry(id, occurrenceId, retention, _sequence + 1, choiceReservation: choiceReservation);
@@ -209,12 +221,8 @@ internal sealed class StoryLedger
         }
         var refusal = CheckChoices(entry, choices);
         if (refusal != null) { diagnostic = refusal; return StoryLedgerStatus.LimitExceeded; }
-        if (entry.Retention == StoryRetention.Campaign && RetainedFor(entry.Id) >= MaxRetainedPerDefinition)
-        {
-            diagnostic = "Definition '" + entry.Id + "' already retains " + MaxRetainedPerDefinition
-                + " outcomes; refusing rather than dropping campaign progression.";
-            return StoryLedgerStatus.LimitExceeded;
-        }
+        // No per-definition bound is applied here: the slot was reserved when the occurrence was
+        // offered, so recording ITS outcome is always possible. Checking again would strand it.
         entry.Retire(outcome, choices);
         if (entry.Retention == StoryRetention.Temporary) PruneTemporary(entry.Id);
         return StoryLedgerStatus.Accepted;
@@ -241,8 +249,10 @@ internal sealed class StoryLedger
                 return "A choice value is at most " + StoryMissionDefinition.MaxChoiceValueBytes + " encoded bytes.";
             used += 2 + keyBytes + 2 + valueBytes;
         }
-        // The reservation was taken at offer time, so this can only fail for choices the definition
-        // never declared; the service refuses those earlier with their own diagnostic.
+        // The reservation was taken at OFFER time from the definition as it was declared then. If the
+        // definition has since been revised with more or longer keys, a legitimately declared key can
+        // still exceed the older reservation: that is refused here without mutating anything, and the
+        // outcome remains recordable with fewer or no choices.
         if (used > entry.ChoiceReservation)
             return "These declared choices need " + used + " bytes, above the " + entry.ChoiceReservation
                 + " bytes reserved for this occurrence.";
@@ -279,6 +289,21 @@ internal sealed class StoryLedger
     private int RetainedFor(StoryContentId id)
         => _byOccurrence.Values.Count(entry => entry.Id == id && entry.State == StoryOccurrenceState.Retired);
 
+    /// <summary>
+    /// Campaign slots a definition already holds: retired outcomes AND unresolved occurrences that
+    /// still have their outcome to record. The bound covers both, because an unresolved occurrence
+    /// is a retirement that must still fit.
+    /// </summary>
+    private int CampaignSlotsUsed(StoryContentId id)
+        => _byOccurrence.Values.Count(entry => entry.Id == id && entry.Retention == StoryRetention.Campaign);
+
+    /// <summary>
+    /// Ownership resolution for callers that need the entry before deciding anything else. It uses
+    /// exactly the transition rules, including hiding another provider's local ID.
+    /// </summary>
+    internal StoryLedgerStatus ResolveOwned(StoryContentId caller, Guid occurrenceId, out StoryOccurrenceEntry? entry, out string diagnostic)
+        => Resolve(caller, occurrenceId, out entry, out diagnostic);
+
     private StoryLedgerStatus Resolve(StoryContentId caller, Guid occurrenceId, out StoryOccurrenceEntry? entry, out string diagnostic)
     {
         diagnostic = "";
@@ -302,6 +327,16 @@ internal sealed class StoryLedger
         }
         return StoryLedgerStatus.Accepted;
     }
+
+    /// <summary>Offered and active occurrences of one definition, oldest first.</summary>
+    internal IReadOnlyList<StoryOccurrenceSnapshot> Unresolved(StoryContentId id)
+        => _byOccurrence.Values
+            .Where(entry => entry.Id == id && entry.State != StoryOccurrenceState.Retired)
+            .OrderBy(entry => entry.Sequence)
+            .Select(entry => new StoryOccurrenceSnapshot(entry.Id, entry.OccurrenceId,
+                entry.State == StoryOccurrenceState.Active ? StoryOccurrenceStage.Active : StoryOccurrenceStage.Offered,
+                entry.Retention))
+            .ToArray();
 
     /// <summary>Authoritative retained outcomes for one definition, oldest first.</summary>
     internal IReadOnlyList<StoryOccurrenceRecord> Retained(StoryContentId id)
@@ -339,6 +374,10 @@ internal sealed class StoryLedger
             return "A retired occurrence requires exactly one outcome.";
         if (rows.Any(row => row.State != StoryOccurrenceState.Retired && row.Retention != StoryRetention.Campaign && row.ChoiceReservation > 0))
             return "Only a campaign occurrence reserves declared-choice space.";
+        // Only a terminal record carries choices. An unresolved row with choices is not a state this
+        // ledger can produce, and restoring one would let a later outcome grow past its bound.
+        if (rows.Any(row => row.State != StoryOccurrenceState.Retired && row.Choices.Count > 0))
+            return "An unresolved story occurrence records no declared choices.";
         foreach (var group in rows.GroupBy(row => row.Id.Provider, StringComparer.Ordinal))
         {
             if (group.Count() > MaxOccurrencesPerProvider) return "Provider '" + group.Key + "' exceeds its occurrence quota.";
@@ -348,8 +387,10 @@ internal sealed class StoryLedger
         }
         foreach (var group in rows.GroupBy(row => row.Id))
         {
-            var retired = group.Count(row => row.State == StoryOccurrenceState.Retired);
-            if (retired > MaxRetainedPerDefinition) return "Definition '" + group.Key + "' exceeds its retained outcome cap.";
+            // The same sum the ledger reserves at offer time: retired outcomes plus unresolved
+            // occurrences that still have an outcome to record.
+            if (group.Count(row => row.Retention == StoryRetention.Campaign) > MaxRetainedPerDefinition)
+                return "Definition '" + group.Key + "' exceeds its campaign occurrence cap.";
             if (group.Any(row => row.Retention == StoryRetention.Temporary)
                 && group.Count(row => row.Retention == StoryRetention.Temporary && row.State == StoryOccurrenceState.Retired) > TemporaryTombstoneHorizon)
                 return "Definition '" + group.Key + "' exceeds its temporary tombstone horizon.";

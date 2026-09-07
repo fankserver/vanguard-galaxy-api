@@ -324,6 +324,44 @@ public sealed class StoryOccurrenceRecord
     }
 }
 
+/// <summary>How far one occurrence has progressed. A retired occurrence is terminal and never re-opens.</summary>
+public enum StoryOccurrenceStage { Offered, Active, Retired }
+
+/// <summary>
+/// An immutable read-only view of ONE occurrence the API is holding for this save, including the
+/// unresolved ones. It exists so a provider never has to persist occurrence identities itself: the
+/// API owns the state, so it also has to be able to hand it back after a reload.
+/// </summary>
+public sealed class StoryOccurrenceSnapshot
+{
+    public StoryContentId Id { get; }
+    public Guid OccurrenceId { get; }
+    public StoryOccurrenceStage Stage { get; }
+    public StoryRetention Retention { get; }
+    /// <summary>Set only for a retired occurrence; an unresolved occurrence has no outcome yet.</summary>
+    public StoryOutcome? Outcome { get; }
+    /// <summary>Recorded declared choices. Always empty before the occurrence retires.</summary>
+    public IReadOnlyDictionary<string, string> Choices { get; }
+
+    public StoryOccurrenceSnapshot(StoryContentId id, Guid occurrenceId, StoryOccurrenceStage stage,
+        StoryRetention retention, StoryOutcome? outcome = null, IReadOnlyDictionary<string, string>? choices = null)
+    {
+        if (id.Provider == null) throw new ArgumentException("A default identity is not a content identity.", nameof(id));
+        if (occurrenceId == Guid.Empty) throw new ArgumentException("An occurrence requires its own identity.", nameof(occurrenceId));
+        if (!Enum.IsDefined(typeof(StoryOccurrenceStage), stage)) throw new ArgumentOutOfRangeException(nameof(stage));
+        if (!Enum.IsDefined(typeof(StoryRetention), retention)) throw new ArgumentOutOfRangeException(nameof(retention));
+        if (outcome.HasValue && !Enum.IsDefined(typeof(StoryOutcome), outcome.Value)) throw new ArgumentOutOfRangeException(nameof(outcome));
+        if ((stage == StoryOccurrenceStage.Retired) != outcome.HasValue)
+            throw new ArgumentException("Exactly a retired occurrence carries an outcome.", nameof(outcome));
+        Id = id; OccurrenceId = occurrenceId; Stage = stage; Retention = retention; Outcome = outcome;
+        var copy = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (choices != null) foreach (var pair in choices) copy[pair.Key] = pair.Value;
+        if (stage != StoryOccurrenceStage.Retired && copy.Count > 0)
+            throw new ArgumentException("An unresolved occurrence records no choices.", nameof(choices));
+        Choices = copy;
+    }
+}
+
 /// <summary>
 /// Whether an answer describes the CURRENT save at all. A query never returns a plain empty list or
 /// a bare false when the module could not restore this session's state: "nothing recorded yet" and
@@ -354,6 +392,30 @@ public sealed class StoryOccurrenceQuery
             .Select(record => record ?? throw new ArgumentException("Null record.", nameof(records))).ToArray();
         if (knowledge != StoryKnowledge.Known && copy.Length > 0) throw new ArgumentException("An unavailable answer carries no records.", nameof(records));
         Records = Array.AsReadOnly(copy);
+        Detail = detail ?? throw new ArgumentNullException(nameof(detail));
+    }
+}
+
+/// <summary>
+/// Occurrence snapshots scoped to the session they were read in, with the same availability rules as
+/// every other answer. Snapshots are empty when unavailable.
+/// </summary>
+public sealed class StoryOccurrenceSnapshotQuery
+{
+    public StoryKnowledge Knowledge { get; }
+    public Guid? SessionId { get; }
+    public IReadOnlyList<StoryOccurrenceSnapshot> Occurrences { get; }
+    public string Detail { get; }
+    public StoryOccurrenceSnapshotQuery(StoryKnowledge knowledge, Guid? sessionId,
+        IEnumerable<StoryOccurrenceSnapshot>? occurrences, string detail)
+    {
+        if (!Enum.IsDefined(typeof(StoryKnowledge), knowledge)) throw new ArgumentOutOfRangeException(nameof(knowledge));
+        if ((knowledge == StoryKnowledge.Known) != sessionId.HasValue) throw new ArgumentException("Only a known answer carries its session.", nameof(sessionId));
+        var copy = (occurrences ?? Array.Empty<StoryOccurrenceSnapshot>())
+            .Select(item => item ?? throw new ArgumentException("Null snapshot.", nameof(occurrences))).ToArray();
+        if (knowledge != StoryKnowledge.Known && copy.Length > 0) throw new ArgumentException("An unavailable answer carries no snapshots.", nameof(occurrences));
+        Knowledge = knowledge; SessionId = sessionId;
+        Occurrences = Array.AsReadOnly(copy);
         Detail = detail ?? throw new ArgumentNullException(nameof(detail));
     }
 }
@@ -419,20 +481,32 @@ public interface IStoryProvider : IDisposable
     /// <summary>Registers a supported definition under this provider. Refusals are diagnosed and never overwrite content.</summary>
     StoryRegistrationResult Register(StoryMissionDefinition definition);
 
-    /// <summary>Offers a new occurrence of one of THIS provider's definitions and returns its API-generated identity.</summary>
-    StoryTransitionResult Offer(string localId);
+    /// <summary>
+    /// Offers a new occurrence of one of THIS provider's definitions and returns its API-generated
+    /// identity. <paramref name="expectedSessionId"/> is the session the caller believes it is
+    /// acting in, taken from a query or from the session it observed; a mutation for another session
+    /// is refused with <see cref="StoryTransitionStatus.StaleSession"/> before anything is recorded.
+    /// </summary>
+    StoryTransitionResult Offer(Guid expectedSessionId, string localId);
 
-    /// <summary>Marks an offered occurrence of this provider as active.</summary>
-    StoryTransitionResult Activate(Guid occurrenceId);
+    /// <summary>Marks an offered occurrence of this provider as active, in the expected session.</summary>
+    StoryTransitionResult Activate(Guid expectedSessionId, Guid occurrenceId);
 
     /// <summary>Withdraws an offered occurrence that was never accepted; it leaves no tombstone.</summary>
-    StoryTransitionResult Withdraw(Guid occurrenceId);
+    StoryTransitionResult Withdraw(Guid expectedSessionId, Guid occurrenceId);
 
     /// <summary>Records the single terminal outcome of an occurrence, with declared choices for campaign content.</summary>
-    StoryTransitionResult Retire(Guid occurrenceId, StoryOutcome outcome, IReadOnlyDictionary<string, string>? choices = null);
+    StoryTransitionResult Retire(Guid expectedSessionId, Guid occurrenceId, StoryOutcome outcome, IReadOnlyDictionary<string, string>? choices = null);
 
-    /// <summary>Retained occurrences of one of this provider's definitions, scoped to the session that answered.</summary>
+    /// <summary>Retained (retired) occurrences of one of this provider's definitions, scoped to the session that answered.</summary>
     StoryOccurrenceQuery Occurrences(string localId);
+
+    /// <summary>
+    /// The occurrences of one of this provider's definitions that are still OFFERED or ACTIVE, with
+    /// the session they belong to. This is how a provider finds its unresolved content again after a
+    /// reload: it never has to store occurrence identities in its own save data.
+    /// </summary>
+    StoryOccurrenceSnapshotQuery Unresolved(string localId);
 
     /// <summary>Campaign completion of one of this provider's definitions. Temporary tombstones never answer true.</summary>
     StoryCompletionQuery IsCompleted(string localId);
@@ -450,6 +524,12 @@ public enum StoryTransitionStatus
     InvalidTransition,
     /// <summary>A bounded limit would be exceeded. Nothing is truncated and no campaign progression is dropped.</summary>
     LimitExceeded,
+    /// <summary>
+    /// The expected session is not the session that is loaded now. A reload restores the SAME
+    /// occurrence identities, so a delayed callback from the pre-reload world would otherwise apply
+    /// an outcome the loaded save never produced. Re-read the state and use the current session.
+    /// </summary>
+    StaleSession,
     /// <summary>No restored state for the current session, or the lease/module is inactive; content is never accepted unsaved.</summary>
     Unavailable
 }

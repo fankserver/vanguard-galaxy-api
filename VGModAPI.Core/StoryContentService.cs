@@ -48,34 +48,42 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
             return _service.Register(this, definition);
         }
 
-        public StoryTransitionResult Offer(string localId)
+        public StoryTransitionResult Offer(Guid expectedSessionId, string localId)
         {
             _service.CheckThread();
-            return _service.Offer(this, localId);
+            return _service.Offer(this, expectedSessionId, localId);
         }
 
-        public StoryTransitionResult Activate(Guid occurrenceId)
+        public StoryTransitionResult Activate(Guid expectedSessionId, Guid occurrenceId)
         {
             _service.CheckThread();
-            return _service.Transition(this, occurrenceId, (StoryLedger ledger, StoryContentId id, out string diagnostic) => ledger.Activate(id, occurrenceId, out diagnostic));
+            return _service.Transition(this, expectedSessionId, occurrenceId,
+                (StoryLedger ledger, StoryContentId id, out string diagnostic) => ledger.Activate(id, occurrenceId, out diagnostic));
         }
 
-        public StoryTransitionResult Withdraw(Guid occurrenceId)
+        public StoryTransitionResult Withdraw(Guid expectedSessionId, Guid occurrenceId)
         {
             _service.CheckThread();
-            return _service.Transition(this, occurrenceId, (StoryLedger ledger, StoryContentId id, out string diagnostic) => ledger.Withdraw(id, occurrenceId, out diagnostic));
+            return _service.Transition(this, expectedSessionId, occurrenceId,
+                (StoryLedger ledger, StoryContentId id, out string diagnostic) => ledger.Withdraw(id, occurrenceId, out diagnostic));
         }
 
-        public StoryTransitionResult Retire(Guid occurrenceId, StoryOutcome outcome, IReadOnlyDictionary<string, string>? choices = null)
+        public StoryTransitionResult Retire(Guid expectedSessionId, Guid occurrenceId, StoryOutcome outcome, IReadOnlyDictionary<string, string>? choices = null)
         {
             _service.CheckThread();
-            return _service.Retire(this, occurrenceId, outcome, choices);
+            return _service.Retire(this, expectedSessionId, occurrenceId, outcome, choices);
         }
 
         public StoryOccurrenceQuery Occurrences(string localId)
         {
             _service.CheckThread();
             return _service.Occurrences(this, localId);
+        }
+
+        public StoryOccurrenceSnapshotQuery Unresolved(string localId)
+        {
+            _service.CheckThread();
+            return _service.Unresolved(this, localId);
         }
 
         public StoryCompletionQuery IsCompleted(string localId)
@@ -285,9 +293,9 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
         }
     }
 
-    private StoryTransitionResult Offer(Lease lease, string localId)
+    private StoryTransitionResult Offer(Lease lease, Guid expectedSessionId, string localId)
     {
-        if (!TryDefinition(lease, localId, out var id, out var definition, out var refusal, out var status))
+        if (!TryDefinition(lease, expectedSessionId, localId, out var id, out var definition, out var refusal, out var status))
             return new StoryTransitionResult(status, Guid.Empty, refusal);
         var occurrenceId = _newOccurrence();
         // The outcome's worst-case payload is reserved now, so this occurrence can always be retired.
@@ -300,28 +308,42 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
     /// them was reserved when the occurrence was offered, so an undeclared key is refused here rather
     /// than accepted into space that was never held for it.
     /// </summary>
-    private StoryTransitionResult Retire(Lease lease, Guid occurrenceId, StoryOutcome outcome, IReadOnlyDictionary<string, string>? choices)
+    private StoryTransitionResult Retire(Lease lease, Guid expectedSessionId, Guid occurrenceId, StoryOutcome outcome,
+        IReadOnlyDictionary<string, string>? choices)
     {
         if (choices is { Count: > 0 })
         {
-            if (!_ledger.TryGet(occurrenceId, out var entry))
-                return new StoryTransitionResult(StoryTransitionStatus.UnknownOccurrence, occurrenceId, "Unknown occurrence.");
-            var id = new StoryContentId(lease.ProviderId, entry.Id.LocalId);
+            // Availability, lease and session are checked BEFORE anything is looked up, and ownership
+            // is resolved by the ledger's own rules, so this path can never answer differently from
+            // the choice-free path or mention another provider's local ID.
+            if (!Guard(lease, expectedSessionId, out var refusal, out var status))
+                return new StoryTransitionResult(status, occurrenceId, refusal);
+            var owned = _ledger.ResolveOwned(new StoryContentId(lease.ProviderId, LocalIdOf(occurrenceId)), occurrenceId,
+                out var entry, out var ownership);
+            if (owned != StoryLedgerStatus.Accepted) return new StoryTransitionResult(Map(owned), occurrenceId, ownership);
+            var id = new StoryContentId(lease.ProviderId, entry!.Id.LocalId);
             if (!_registry.TryGet(id, out var definition))
                 return new StoryTransitionResult(StoryTransitionStatus.InvalidTransition, occurrenceId,
-                    "Declared choices need the definition registered in this session; '" + entry.Id.LocalId + "' is not.");
+                    "Declared choices need the definition registered in this session; '" + id.LocalId + "' is not.");
             var undeclared = choices.Keys.FirstOrDefault(key => !definition.ChoiceKeys.Contains(key, StringComparer.Ordinal));
             if (undeclared != null)
                 return new StoryTransitionResult(StoryTransitionStatus.InvalidTransition, occurrenceId,
                     "Choice key '" + undeclared + "' is not declared by this definition.");
         }
-        return Transition(lease, occurrenceId, (StoryLedger ledger, StoryContentId id, out string diagnostic)
+        return Transition(lease, expectedSessionId, occurrenceId, (StoryLedger ledger, StoryContentId id, out string diagnostic)
             => ledger.Retire(id, occurrenceId, outcome, choices, out diagnostic));
     }
 
-    private StoryTransitionResult Transition(Lease lease, Guid occurrenceId, LedgerCall call)
+    /// <summary>
+    /// The local ID recorded for an occurrence, or a placeholder that belongs to no definition. It is
+    /// only used to build the caller identity handed to the ledger, which then decides ownership; an
+    /// unknown occurrence and a foreign one keep their own distinct refusals.
+    /// </summary>
+    private string LocalIdOf(Guid occurrenceId) => _ledger.TryGet(occurrenceId, out var entry) ? entry.Id.LocalId : "unknown";
+
+    private StoryTransitionResult Transition(Lease lease, Guid expectedSessionId, Guid occurrenceId, LedgerCall call)
     {
-        if (!Guard(lease, out var refusal, out var status)) return new StoryTransitionResult(status, occurrenceId, refusal);
+        if (!Guard(lease, expectedSessionId, out var refusal, out var status)) return new StoryTransitionResult(status, occurrenceId, refusal);
         if (!_ledger.TryGet(occurrenceId, out var entry))
             return new StoryTransitionResult(StoryTransitionStatus.UnknownOccurrence, occurrenceId, "Unknown occurrence.");
         // The caller identity is the lease's own provider plus the occurrence's definition, so a
@@ -340,12 +362,12 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
         _ => StoryTransitionStatus.InvalidTransition
     };
 
-    private bool TryDefinition(Lease lease, string localId, out StoryContentId id, out StoryMissionDefinition? definition,
-        out string refusal, out StoryTransitionStatus status)
+    private bool TryDefinition(Lease lease, Guid expectedSessionId, string localId, out StoryContentId id,
+        out StoryMissionDefinition? definition, out string refusal, out StoryTransitionStatus status)
     {
         definition = null;
         id = default;
-        if (!Guard(lease, out refusal, out status)) return false;
+        if (!Guard(lease, expectedSessionId, out refusal, out status)) return false;
         if (!StoryContentId.IsValidSegment(localId))
         {
             refusal = "A local ID is 1-48 lowercase ASCII letters/digits/hyphens starting with a letter.";
@@ -363,7 +385,12 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
         return true;
     }
 
-    private bool Guard(Lease lease, out string refusal, out StoryTransitionStatus status)
+    /// <summary>
+    /// The single precondition every mutation shares: an active lease, restorable state for the
+    /// current session, a persistable owner, and the session the CALLER meant. The session check runs
+    /// before any ledger or registry lookup, so a stale call cannot even observe what exists.
+    /// </summary>
+    private bool Guard(Lease lease, Guid expectedSessionId, out string refusal, out StoryTransitionStatus status)
     {
         status = StoryTransitionStatus.Unavailable;
         if (!lease.Active) { refusal = "This provider lease is no longer active."; return false; }
@@ -378,6 +405,15 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
             refusal = "Story persistence is " + PersistenceStatus + "; refusing to accept unsaved persistent content.";
             return false;
         }
+        if (expectedSessionId != _restoredSession)
+        {
+            // Occurrence identities are restored unchanged, so the same token addresses the same
+            // occurrence after a reload. Only the session tells a delayed caller that the world it
+            // observed is gone.
+            status = StoryTransitionStatus.StaleSession;
+            refusal = "This call expects a session that is not the loaded one; re-read the current state before mutating it.";
+            return false;
+        }
         refusal = "";
         return true;
     }
@@ -388,6 +424,14 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
         if (unavailable != null) return new StoryOccurrenceQuery(StoryKnowledge.Unavailable, null, null, unavailable);
         return new StoryOccurrenceQuery(StoryKnowledge.Known, _restoredSession,
             _ledger.Retained(new StoryContentId(lease.ProviderId, localId)), "restored state of the current session");
+    }
+
+    private StoryOccurrenceSnapshotQuery Unresolved(Lease lease, string localId)
+    {
+        var unavailable = QueryRefusal(lease, localId);
+        if (unavailable != null) return new StoryOccurrenceSnapshotQuery(StoryKnowledge.Unavailable, null, null, unavailable);
+        return new StoryOccurrenceSnapshotQuery(StoryKnowledge.Known, _restoredSession,
+            _ledger.Unresolved(new StoryContentId(lease.ProviderId, localId)), "unresolved occurrences of the current session");
     }
 
     private StoryCompletionQuery IsCompleted(Lease lease, string localId)

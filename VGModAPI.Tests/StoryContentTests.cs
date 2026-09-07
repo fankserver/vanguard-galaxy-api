@@ -18,6 +18,26 @@ namespace VGModAPI.Tests;
 /// identity, bounded retention and the strict state codec. These prove the pure rules only; driving
 /// vanilla registration/reconstruction is separate work and is not claimed here.
 /// </summary>
+/// <summary>
+/// Convenience wrappers that read the CURRENT session from the API itself, so the tests below stay
+/// about the behaviour under test. The session-token contract itself is exercised with the real
+/// signatures in <see cref="StoryContentTests.AMutationForAnotherSessionIsRefusedBeforeAnythingIsRead"/>.
+/// </summary>
+internal static class StoryProviderCallExtensions
+{
+    internal static Guid CurrentSession(this IStoryProvider provider)
+        => provider.Occurrences("session-probe").SessionId ?? Guid.Empty;
+    internal static StoryTransitionResult Offer(this IStoryProvider provider, string localId)
+        => provider.Offer(provider.CurrentSession(), localId);
+    internal static StoryTransitionResult Activate(this IStoryProvider provider, Guid occurrenceId)
+        => provider.Activate(provider.CurrentSession(), occurrenceId);
+    internal static StoryTransitionResult Withdraw(this IStoryProvider provider, Guid occurrenceId)
+        => provider.Withdraw(provider.CurrentSession(), occurrenceId);
+    internal static StoryTransitionResult Retire(this IStoryProvider provider, Guid occurrenceId, StoryOutcome outcome,
+        IReadOnlyDictionary<string, string>? choices = null)
+        => provider.Retire(provider.CurrentSession(), occurrenceId, outcome, choices);
+}
+
 public sealed class StoryContentTests
 {
     private const string AnimaPlugin = "com.fank.anima";
@@ -679,24 +699,65 @@ public sealed class StoryContentTests
         Assert.DoesNotContain(tokens[0], provider.Occurrences("salvage-run").Records.Select(record => record.OccurrenceId));
     }
 
+    /// <summary>
+    /// Campaign outcomes are never pruned, so the per-definition bound has to be spent at OFFER time:
+    /// an occurrence is refused before it exists rather than admitted and then stranded active with
+    /// an outcome it could never record. The bound counts retired and unresolved occurrences alike.
+    /// </summary>
     [Fact]
-    public void CampaignOutcomesAreNeverPrunedAndTheirBoundRefusesInstead()
+    public void TheCampaignBoundRefusesTheOfferSoNoAdmittedOccurrenceIsStranded()
     {
-        var provider = Provider(out _, out _, out _, StoryRetention.Campaign);
+        var provider = Provider(out _, out _, out var service, StoryRetention.Campaign);
         for (int index = 0; index < StoryLedger.MaxRetainedPerDefinition; index++)
         {
             var offer = provider.Offer("salvage-run");
+            Assert.True(offer.Accepted);
             Assert.True(provider.Retire(offer.OccurrenceId, StoryOutcome.Completed,
                 new Dictionary<string, string> { ["branch"] = "left" }).Accepted);
         }
+        int before = service.Ledger.Count;
         var overflow = provider.Offer("salvage-run");
-        var refused = provider.Retire(overflow.OccurrenceId, StoryOutcome.Completed);
-        Assert.Equal(StoryTransitionStatus.LimitExceeded, refused.Status);
-        Assert.Contains("refusing rather than dropping", refused.Detail);
+        Assert.Equal(StoryTransitionStatus.LimitExceeded, overflow.Status);
+        Assert.Equal(Guid.Empty, overflow.OccurrenceId);
+        Assert.Contains("could never retire", overflow.Detail);
+        Assert.Equal(before, service.Ledger.Count);
         var records = provider.Occurrences("salvage-run").Records;
         Assert.Equal(StoryLedger.MaxRetainedPerDefinition, records.Count);
         // Declared choices are never silently dropped or truncated.
         Assert.All(records, record => Assert.Equal("left", record.Choices["branch"]));
+    }
+
+    /// <summary>
+    /// The same bound counts occurrences that are merely OFFERED: 48 concurrent offers are admitted,
+    /// the 49th is refused before any of them retires, and every admitted one still retires.
+    /// </summary>
+    [Fact]
+    public void UnresolvedCampaignOccurrencesConsumeTheirDefinitionsBoundAndAllRemainRetirable()
+    {
+        var provider = Provider(out _, out _, out var service, StoryRetention.Campaign);
+        var admitted = new List<Guid>();
+        for (int index = 0; index < StoryLedger.MaxRetainedPerDefinition; index++)
+        {
+            var offer = provider.Offer("salvage-run");
+            Assert.True(offer.Accepted);
+            admitted.Add(offer.OccurrenceId);
+        }
+        int before = service.Ledger.Count;
+        var refused = provider.Offer("salvage-run");
+        Assert.Equal(StoryTransitionStatus.LimitExceeded, refused.Status);
+        Assert.Equal(before, service.Ledger.Count);
+        // Everything that was admitted can still record its outcome; none is stranded.
+        foreach (var occurrence in admitted)
+            Assert.True(provider.Retire(occurrence, StoryOutcome.Completed,
+                new Dictionary<string, string> { ["branch"] = "left" }).Accepted);
+        Assert.Equal(StoryLedger.MaxRetainedPerDefinition, provider.Occurrences("salvage-run").Records.Count);
+        // A crafted payload that exceeds the same sum is refused by the shared bounds, not restored.
+        var rows = Enumerable.Range(1, StoryLedger.MaxRetainedPerDefinition + 1)
+            .Select(index => new StoryOccurrenceEntry(new StoryContentId("anima", "salvage-run"), Guid.NewGuid(),
+                StoryRetention.Campaign, index))
+            .ToArray();
+        Assert.Contains("campaign occurrence cap", StoryLedger.RefuseBounds(rows));
+        Assert.Throws<InvalidDataException>(() => StoryStateCodec.Encode(rows));
     }
 
     /// <summary>Campaign completion is campaign-only: a temporary tombstone is idempotency, not an authoritative outcome.</summary>
@@ -735,6 +796,204 @@ public sealed class StoryContentTests
         ledger.Offer(id, StoryRetention.Temporary, occurrence, 0, out _);
         return ledger.Retire(id, occurrence, StoryOutcome.Completed,
             new Dictionary<string, string> { ["branch"] = "left" }, out diagnostic);
+    }
+
+    /// <summary>
+    /// The choices path of a retirement answers exactly like the choice-free path: availability,
+    /// lease and session come first, then ownership by the ledger's own rules, and only then the
+    /// definition. A foreign retirement never reveals the owner's local ID either way.
+    /// </summary>
+    [Fact]
+    public void RetiringWithChoicesChecksAvailabilityAndOwnershipBeforeAnyDefinitionLookup()
+    {
+        var host = new FakeHost();
+        var world = new FakeWorld();
+        using var service = world.Service(host);
+        world.StartAndRestore();
+        var animaPlugin = new object();
+        var otherPlugin = new object();
+        host.Register(animaPlugin, AnimaPlugin);
+        host.Register(otherPlugin, OtherPlugin);
+        var anima = service.AcquireProvider(animaPlugin).Provider!;
+        var other = service.AcquireProvider(otherPlugin).Provider!;
+        Assert.True(anima.Register(Definition("secret-arc", StoryRetention.Campaign)).Succeeded);
+        var occurrence = anima.Offer("secret-arc");
+        Assert.True(occurrence.Accepted);
+
+        var choices = new Dictionary<string, string> { ["branch"] = "left" };
+        var stolen = other.Retire(occurrence.OccurrenceId, StoryOutcome.Completed, choices);
+        Assert.Equal(StoryTransitionStatus.ForeignOwner, stolen.Status);
+        Assert.DoesNotContain("secret-arc", stolen.Detail);
+        // Identical to the choice-free path.
+        var stolenWithout = other.Retire(occurrence.OccurrenceId, StoryOutcome.Completed);
+        Assert.Equal(StoryTransitionStatus.ForeignOwner, stolenWithout.Status);
+        Assert.Equal(stolenWithout.Detail, stolen.Detail);
+
+        // A blocked owner and an inactive lease report Unavailable, not a lookup result.
+        world.Persistence.MutationAllowed = false;
+        Assert.Equal(StoryTransitionStatus.Unavailable, anima.Retire(occurrence.OccurrenceId, StoryOutcome.Completed, choices).Status);
+        world.Persistence.MutationAllowed = true;
+        var lease = service.AcquireProvider(otherPlugin).Provider;
+        Assert.Null(lease);                                   // still held; use the live one
+        other.Dispose();
+        Assert.Equal(StoryTransitionStatus.Unavailable, other.Retire(occurrence.OccurrenceId, StoryOutcome.Completed, choices).Status);
+        // Nothing was mutated by any refusal: the owner can still record its outcome.
+        Assert.True(anima.Retire(occurrence.OccurrenceId, StoryOutcome.Completed, choices).Accepted);
+    }
+
+    /// <summary>
+    /// Only a terminal record carries choices, on both sides of the codec, and a recorded outcome
+    /// REPLACES whatever the entry held. Otherwise a crafted payload could restore an unresolved row
+    /// with choices, and a legitimate retirement would merge past the bound and fail every owner's
+    /// next capture.
+    /// </summary>
+    [Fact]
+    public void UnresolvedOccurrencesCarryNoChoicesAndAnOutcomeReplacesThemRatherThanMerging()
+    {
+        var id = new StoryContentId("anima", "salvage-run");
+        var crafted = new[]
+        {
+            new StoryOccurrenceEntry(id, Guid.NewGuid(), StoryRetention.Campaign, 1, StoryOccurrenceState.Offered, null,
+                new[] { new KeyValuePair<string, string>("ghost", "value") })
+        };
+        Assert.Contains("records no declared choices", StoryLedger.RefuseBounds(crafted));
+        Assert.Throws<InvalidDataException>(() => StoryStateCodec.Encode(crafted));
+        // The same state crafted at the byte level, by demoting a terminal row that carries choices.
+        var payload = StoryStateCodec.Encode(new[]
+        {
+            new StoryOccurrenceEntry(id, Guid.NewGuid(), StoryRetention.Campaign, 1, StoryOccurrenceState.Retired,
+                StoryOutcome.Completed, new[] { new KeyValuePair<string, string>("ghost", "value") })
+        });
+        int stateOffset = 12 + (1 + 5) + (1 + 11) + 16 + 8;   // header, provider, local, identity, sequence
+        Assert.True(StoryStateCodec.Validate(payload));
+        payload[stateOffset] = (byte)StoryOccurrenceState.Offered;
+        payload[stateOffset + 1] = 0;                          // no outcome, as an unresolved row has none
+        Assert.False(StoryStateCodec.Validate(payload));
+        Assert.Throws<InvalidDataException>(() => StoryStateCodec.Decode(payload));
+
+        // A retirement replaces the recorded choices; nothing accumulates across the transition.
+        var ledger = new StoryLedger();
+        var occurrence = Guid.NewGuid();
+        Assert.Equal(StoryLedgerStatus.Accepted, ledger.Offer(id, StoryRetention.Campaign, occurrence, 512, out _));
+        Assert.Equal(StoryLedgerStatus.Accepted, ledger.Retire(id, occurrence, StoryOutcome.Completed,
+            new Dictionary<string, string> { ["branch"] = "left" }, out _));
+        Assert.True(ledger.TryGet(occurrence, out var retired));
+        Assert.Equal(new[] { "branch" }, retired.Choices.Keys.ToArray());
+        Assert.True(StoryStateCodec.Validate(StoryStateCodec.Encode(ledger.Entries)));
+    }
+
+    /// <summary>
+    /// A provider finds its unresolved occurrences again after a reload without having stored a
+    /// single identity itself: that is what "the API owns this state" has to mean in practice.
+    /// </summary>
+    [Fact]
+    public void UnresolvedOccurrencesAreDiscoverableAfterAReloadWithoutProviderSideStorage()
+    {
+        var host = new FakeHost();
+        var world = new FakeWorld();
+        using var service = world.Service(host);
+        world.StartAndRestore();
+        var animaPlugin = new object();
+        var otherPlugin = new object();
+        host.Register(animaPlugin, AnimaPlugin);
+        host.Register(otherPlugin, OtherPlugin);
+        var anima = service.AcquireProvider(animaPlugin).Provider!;
+        var other = service.AcquireProvider(otherPlugin).Provider!;
+        Assert.True(anima.Register(Definition(retention: StoryRetention.Campaign)).Succeeded);
+        Assert.True(other.Register(Definition(retention: StoryRetention.Campaign)).Succeeded);
+        var offered = anima.Offer("salvage-run");
+        var active = anima.Offer("salvage-run");
+        Assert.True(anima.Activate(active.OccurrenceId).Accepted);
+        var done = anima.Offer("salvage-run");
+        Assert.True(anima.Retire(done.OccurrenceId, StoryOutcome.Completed).Accepted);
+        var foreign = other.Offer("salvage-run");
+        var bytes = world.Persistence.Provider!.Capture();
+
+        world.StartAndRestore(bytes);
+        var unresolved = anima.Unresolved("salvage-run");
+        Assert.Equal(StoryKnowledge.Known, unresolved.Knowledge);
+        Assert.Equal(world.SessionId, unresolved.SessionId);
+        Assert.Equal(new[] { offered.OccurrenceId, active.OccurrenceId },
+            unresolved.Occurrences.Select(item => item.OccurrenceId).ToArray());
+        Assert.Equal(new[] { StoryOccurrenceStage.Offered, StoryOccurrenceStage.Active },
+            unresolved.Occurrences.Select(item => item.Stage).ToArray());
+        Assert.All(unresolved.Occurrences, item =>
+        {
+            Assert.Equal(StoryRetention.Campaign, item.Retention);
+            Assert.Null(item.Outcome);
+            Assert.Empty(item.Choices);
+            Assert.Equal(anima.ProviderId, item.Id.Provider);
+        });
+        // Retired occurrences stay in the retained query, not in this one.
+        Assert.DoesNotContain(done.OccurrenceId, unresolved.Occurrences.Select(item => item.OccurrenceId));
+        Assert.Single(anima.Occurrences("salvage-run").Records);
+        // Another provider's unresolved content is not listed here.
+        Assert.DoesNotContain(foreign.OccurrenceId, unresolved.Occurrences.Select(item => item.OccurrenceId));
+        Assert.Equal(foreign.OccurrenceId, Assert.Single(other.Unresolved("salvage-run").Occurrences).OccurrenceId);
+
+        // The listed identities are usable: they are what a provider transitions after a reload.
+        var session = unresolved.SessionId!.Value;
+        Assert.True(anima.Activate(session, offered.OccurrenceId).Accepted);
+        Assert.True(anima.Retire(session, active.OccurrenceId, StoryOutcome.Failed).Accepted);
+        Assert.Single(anima.Unresolved("salvage-run").Occurrences);
+        // Unavailable answers carry no snapshots and no session.
+        world.Persistence.MutationAllowed = false;
+        var blocked = anima.Unresolved("salvage-run");
+        Assert.Equal(StoryKnowledge.Unavailable, blocked.Knowledge);
+        Assert.Null(blocked.SessionId);
+        Assert.Empty(blocked.Occurrences);
+    }
+
+    /// <summary>
+    /// Occurrence identities survive a reload unchanged, so the identity alone cannot tell a delayed
+    /// caller that the world it observed is gone. Every mutation therefore states the session it
+    /// believes it is acting in, and a mismatch is refused before anything is read or written.
+    /// </summary>
+    [Fact]
+    public void AMutationForAnotherSessionIsRefusedBeforeAnythingIsRead()
+    {
+        var host = new FakeHost();
+        var world = new FakeWorld();
+        using var service = world.Service(host);
+        world.StartAndRestore();
+        var plugin = new object();
+        host.Register(plugin, AnimaPlugin);
+        var provider = service.AcquireProvider(plugin).Provider!;
+        Assert.True(provider.Register(Definition(retention: StoryRetention.Campaign)).Succeeded);
+        var first = world.SessionId;
+        var occurrence = provider.Offer(first, "salvage-run");
+        Assert.True(occurrence.Accepted);
+        var bytes = world.Persistence.Provider!.Capture();
+
+        // The SAME save is reloaded: identities are identical, the session is not.
+        world.StartAndRestore(bytes);
+        var reloaded = world.SessionId;
+        Assert.NotEqual(first, reloaded);
+        int before = service.Ledger.Count;
+        foreach (var stale in new[]
+        {
+            provider.Offer(first, "salvage-run"),
+            provider.Activate(first, occurrence.OccurrenceId),
+            provider.Withdraw(first, occurrence.OccurrenceId),
+            provider.Retire(first, occurrence.OccurrenceId, StoryOutcome.Completed),
+            provider.Retire(first, occurrence.OccurrenceId, StoryOutcome.Completed, new Dictionary<string, string> { ["branch"] = "left" }),
+            provider.Retire(Guid.NewGuid(), occurrence.OccurrenceId, StoryOutcome.Completed)
+        })
+        {
+            Assert.Equal(StoryTransitionStatus.StaleSession, stale.Status);
+            Assert.DoesNotContain(reloaded.ToString(), stale.Detail);
+        }
+        Assert.Equal(before, service.Ledger.Count);
+        Assert.True(service.Ledger.TryGet(occurrence.OccurrenceId, out var untouched));
+        Assert.Equal(StoryOccurrenceState.Offered, untouched.State);
+
+        // Re-reading the current session is all a provider needs to continue.
+        var current = provider.Unresolved("salvage-run").SessionId!.Value;
+        Assert.Equal(reloaded, current);
+        Assert.True(provider.Activate(current, occurrence.OccurrenceId).Accepted);
+        // An unavailable module still answers Unavailable rather than StaleSession.
+        world.Persistence.MutationAllowed = false;
+        Assert.Equal(StoryTransitionStatus.Unavailable, provider.Offer(current, "salvage-run").Status);
     }
 
     /// <summary>

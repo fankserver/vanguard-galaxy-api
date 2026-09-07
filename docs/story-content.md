@@ -159,7 +159,7 @@ an authoritative result, so a completed temporary job never answers `true`; it i
 | Beyond the horizon | A pruned occurrence reports `UnknownOccurrence`. Occurrence identities are API-generated and never reused, so a pruned job is never re-offered or resurrected under its old token. |
 | Per-provider occurrence quota | At most 64 occurrences per bound provider (2048 / 32 providers). |
 | Per-provider payload budget | 16,383 bytes of persisted state per bound provider, INCLUDING the space reserved for outcomes still to be recorded. The 32 shares plus the header fit inside the 512 KiB payload cap, so no provider's content can make another provider's `Offer` or outcome fail. |
-| Per-definition bound | At most 48 retained outcomes per definition, below the provider quota so both bounds are reachable. |
+| Per-definition bound | At most 48 CAMPAIGN occurrences per definition, counting retired outcomes and unresolved occurrences alike, refused at `Offer`. Campaign outcomes are never pruned, so the slot is taken when the occurrence is admitted and never at retirement. |
 | Provider bound | At most 32 bound providers. A further provider is refused rather than handed a share that would come out of a bound provider's retained history; bindings last for the module's lifetime. |
 | Sequence bound | The occurrence sequence is checked against a bound with reserved headroom on every offer and on decode, so the timeline can never wrap. |
 | Global bound | 2048 occurrences overall, as a backstop behind the per-provider quota. |
@@ -193,10 +193,38 @@ capacity without needing the definition to be registered first. Recording an out
 whatever part of the reservation it did not use; a worst-case outcome releases nothing, which is the
 honest consequence of reserving for it.
 
+**Choice capacity is fixed by the definition as it was at OFFER time.** The reservation is persisted,
+the declared key set is not. If a provider revises a definition between sessions — more keys, or
+longer ones — a key that the CURRENT definition declares can still exceed the reservation an older
+occurrence carries. That is refused without mutating anything, and the outcome itself remains
+recordable with fewer or no choices; a refusal is never a stranded occurrence. So the honest rule is
+not "only undeclared keys fail": a legitimately declared key can fail on a pre-revision occurrence.
+Providers that intend to keep unresolved content across a save need STABLE definitions. Migrating a
+changed choice contract for already-persisted occurrences is not attempted here and is not silently
+performed: it belongs to the versioned-content work tracked for a later milestone (#14).
+
 With the maximum declared payload a provider can hold roughly 18 unresolved campaign occurrences at
 once out of its 64-occurrence quota, and considerably more with smaller declared choices or with
 temporary content, which reserves nothing. Those are the honest limits: the API refuses content it
 could not finish rather than admitting it and failing later.
+
+## Finding your own occurrences again, and the session they belong to
+
+The API owns this state, so it also hands it back. `Occurrences(localId)` returns the RETIRED
+records, and `Unresolved(localId)` returns the still offered or active ones as immutable
+`StoryOccurrenceSnapshot` values (identity, stage, retention, and — for terminal records only —
+outcome and choices). A provider therefore never has to store occurrence identities in its own save
+data to activate, withdraw or retire its content after a reload. Both answers carry `StoryKnowledge`
+and the session they describe, and are empty when unavailable.
+
+Every mutation states the session it believes it is acting in:
+`Offer(expectedSessionId, localId)`, `Activate`, `Withdraw` and `Retire` all take it, and it is
+checked before any occurrence or definition is even looked up. This matters because occurrence
+identities are restored UNCHANGED: after reloading the same save, an old identity still addresses the
+same occurrence, so a delayed callback from the pre-reload world could otherwise record an outcome
+that the loaded save never produced. A mismatch is refused with `StaleSession`, nothing is mutated,
+and the caller simply re-reads the current session from a query. Registration is not session-scoped;
+definitions belong to the process and its leases.
 
 ## Automatic persistence
 
@@ -209,7 +237,8 @@ sides. Payloads are capped well below the 1 MiB
 envelope bound; truncated, extended, malformed or newer-version payloads are refused.
 
 The codec is canonical: the encoder and the decoder run the SAME ledger bounds (per-provider quota,
-per-provider payload budget including reservations, per-definition retained cap, temporary horizon,
+per-provider payload budget including reservations, per-definition campaign cap over retired AND
+unresolved occurrences, choices only on terminal records, temporary horizon,
 sequence range, payload size, identity uniqueness, retired-implies-exactly-one-outcome),
 so a payload can never restore a ledger the ledger's own operations would refuse, and the ledger can
 never reach a state its own capture would refuse. A payload that violates a bound is refused, which
@@ -229,11 +258,13 @@ content still needs its provider.
 
 ## Boundary and status
 
-Delivered here: public contracts, authenticated provider leases, session-scoped availability,
-identity policy, registry, occurrence ledger with its retention policy, bounded codec, automatic
-persistence registration, host tests and installed-assembly pins. Nothing constructs the module at
+Delivered here: public contracts, authenticated provider leases, session-scoped availability and
+session-scoped mutations, unresolved-occurrence discovery, identity policy, registry, occurrence
+ledger with its retention policy, bounded codec, automatic persistence registration, host tests and
+installed-assembly pins. Nothing constructs the module at
 runtime yet, so no consumer is exposed to this surface until the native slice lands. **Not** delivered here:
-installing definitions into `StoryMission`, reconstructing offered/active content in a live session,
+installing definitions into `StoryMission`, reconstructing offered/active content in a live session
+(the ledger records what must be reconstructed; the native bindings that would do it do not exist),
 driving acceptance/outcome transitions from observed native boundaries, the two-consumer
 demonstration and the native qualification pilot. Those remain required for #13, and
 `RuntimeQualified` stays false.
