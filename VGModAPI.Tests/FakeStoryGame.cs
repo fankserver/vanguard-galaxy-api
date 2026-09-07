@@ -128,6 +128,28 @@ namespace Source.MissionSystem.Rewards
     }
 }
 
+namespace Behaviour.UI.Missions
+{
+    /// <summary>
+    /// The route the game's own abandon/retry button takes, reproduced from the installed IL: remove
+    /// the mission, and for a retryable story mission re-add the SAME identifier out of the catalog.
+    /// The catalog lookup throws for an absent entry, exactly as the game's does.
+    /// </summary>
+    public sealed class MissionDetails
+    {
+        public bool Retryable;
+        public void AbandonMission(Source.MissionSystem.Mission mission)
+        {
+            var identifier = mission.nextMissionOnFailed ?? mission.storyId;
+            bool retry = Retryable;
+            Source.Player.GamePlayer.current!.RemoveMission(mission, false);
+            if (retry)
+                Source.Player.GamePlayer.current.AddMissionWithLog(
+                    Source.MissionSystem.StoryMission.Get(Source.Player.GamePlayer.current, identifier!), true);
+        }
+    }
+}
+
 namespace Source.Player
 {
     public sealed partial class GamePlayer

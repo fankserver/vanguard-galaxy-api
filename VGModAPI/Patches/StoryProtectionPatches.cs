@@ -44,12 +44,41 @@ internal static class StoryProtectionPatches
     }
 
     /// <summary>
-    /// Retry looks the story identifier up in the catalog, which throws when an orphan's entry is
-    /// gone and would otherwise re-add a live mission nobody owns.
+    /// The private follow-up route, which only runs for a mission carrying a follow-up identifier.
+    /// API content never carries one, so this guard is defensive: it is NOT the button the player
+    /// presses, which is handled by <see cref="AbandonMission"/>.
     /// </summary>
     internal static class RetryAsNextMission
     {
         private static bool Prefix(object __instance) => Allow(__instance);
+    }
+
+    /// <summary>
+    /// The route the game's own abandon/retry button actually takes: it removes the mission and, for a
+    /// retryable story mission, re-adds the same identifier from the catalog. Both halves are one
+    /// operation, so the guard wraps the whole method.
+    ///
+    /// A quarantined mission is refused before anything happens, so the raw object stays in the
+    /// player's list exactly as the save had it and the catalog is never asked for an entry that may
+    /// be gone. An admitted one is handed to the owning module, which suspends the outcome the
+    /// removal would otherwise record and holds the catalog entry, and is told afterwards what the
+    /// game actually ended up holding.
+    /// </summary>
+    internal static class AbandonMission
+    {
+        private static bool Prefix(object mission, out string? __state)
+        {
+            __state = null;
+            if (Quarantine == null) return true;
+            if (!Quarantine.AllowAbandon(mission, out var identifier)) return false;
+            __state = identifier;
+            return true;
+        }
+
+        private static void Finalizer(string? __state)
+        {
+            if (__state != null) Quarantine?.EndAbandon(__state);
+        }
     }
 
     /// <summary>

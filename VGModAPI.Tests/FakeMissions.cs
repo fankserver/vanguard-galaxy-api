@@ -24,6 +24,7 @@ namespace Source.MissionSystem
         public Source.Galaxy.MapPointOfInterest? turnIn;
         public bool canAbandon, dynamicLevel, trackedOnHud;
         public string? storyId;
+        public string? nextMissionOnFailed;
         public bool failed;
         public List<MissionStep> steps { get; } = new();
         public List<MissionReward> rewards { get; } = new();
@@ -33,6 +34,7 @@ namespace Source.MissionSystem
         public List<object> objectives { get; } = new();
         public string? description;
         public bool requireAllObjectives;
+        public bool hidden;
         public string SerializeLikeTheGame()
             => "{" + description + ":" + requireAllObjectives + ":["
                + string.Join(",", objectives.Select(objective => ((MissionObjective)objective).ToJson())) + "]}";

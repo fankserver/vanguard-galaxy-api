@@ -27,6 +27,7 @@ public sealed class Plugin : BaseUnityPlugin
     private StoryContentService? _story;
     private StoryProtection? _protection;
     private StoryQuarantine? _quarantine;
+    private IDisposable? _protectionSubscription;
     private bool _identityHooksBound;
     private ModInformationCatalog? _modCatalog;
 
@@ -206,7 +207,26 @@ public sealed class Plugin : BaseUnityPlugin
             _quarantine = new StoryQuarantine(guard, _protection,
                 () => player.GetValue(null) is { } current && missions.GetValue(current) is System.Collections.IEnumerable held
                     ? held.Cast<object>().ToArray() : Array.Empty<object>(),
-                error => Logger.LogError("Story protection fault: " + error));
+                error => Logger.LogError("Story protection fault: " + error),
+                reason =>
+                {
+                    _hub!.SetCapability("story-protection", false,
+                        "Owned story content is refused because the guard could not decide: " + reason);
+                    Logger.LogError("Story protection degraded, refusing owned story content: " + reason);
+                });
+            // The guards are session-scoped like the content they protect, and they say so whether or
+            // not the story module exists: a new load starts with nothing vouched for.
+            _protectionSubscription = _hub!.Subscribe("vgmodapi.story-protection", e =>
+            {
+                if (e.Kind is not (LifecycleEventKind.SessionStarting or LifecycleEventKind.SessionInvalidated
+                    or LifecycleEventKind.SessionStartFailed)) return;
+                _protection?.WithdrawAll("a new session started; nothing has been vouched for yet");
+                if (_quarantine?.DegradedReason != null)
+                {
+                    _quarantine.ClearDegraded();
+                    _hub!.SetCapability("story-protection", true, "Bound to inspected assembly; in-game qualification pending.");
+                }
+            });
             StoryProtectionPatches.Quarantine = _quarantine;
             InstallGroup("story-protection", bindings, BindingCatalog.StoryProtection, new Dictionary<string, Type>
             {
@@ -215,6 +235,7 @@ public sealed class Plugin : BaseUnityPlugin
                 ["storyGuardComplete"] = typeof(StoryProtectionPatches.CompleteMission),
                 ["storyGuardFail"] = typeof(StoryProtectionPatches.MissionFailed),
                 ["storyGuardRetry"] = typeof(StoryProtectionPatches.RetryAsNextMission),
+                ["storyGuardAbandon"] = typeof(StoryProtectionPatches.AbandonMission),
                 ["storyGuardTrigger"] = typeof(StoryProtectionPatches.ProcessMissionTrigger)
             });
             if (!_hub.Capabilities.Any(c => c.Name == "story-protection" && c.Available))
@@ -254,11 +275,14 @@ public sealed class Plugin : BaseUnityPlugin
                 _storyWorld, _missions?.Events,
                 (detail, available) => _hub!.SetCapability("owned-story", available, detail), _protection);
             ModApi.Story = _story;
+            // Only a module that exists can say what a UI abandon or retry of owned content means.
+            if (_quarantine != null) _quarantine.Transactions = _story;
             _hub.SetCapability("owned-story", true, "Experimental owned story content enabled; native qualification pending.");
         }
         catch (Exception error)
         {
             ModApi.Story = null;
+            if (_quarantine != null) _quarantine.Transactions = null;
             _story?.Dispose(); _story = null;
             _storyWorld?.Dispose(); _storyWorld = null;
             _hub!.SetCapability("owned-story", false, "Story binding failed: " + error.Message);
@@ -415,7 +439,9 @@ public sealed class Plugin : BaseUnityPlugin
         ModApi.Story = null;
         try { _story?.Dispose(); } catch (Exception error) { Logger.LogError("Story shutdown failed: " + error); }
         // The guards outlive the module on purpose: content it installed may still be held.
+        if (_quarantine != null) _quarantine.Transactions = null;
         _protection?.WithdrawAll("the story module was shut down");
+        _protectionSubscription?.Dispose(); _protectionSubscription = null;
         try { _storyWorld?.Dispose(); } catch (Exception error) { Logger.LogError("Story world shutdown failed: " + error); }
         _story = null; _storyWorld = null;
         _persistence?.Dispose();

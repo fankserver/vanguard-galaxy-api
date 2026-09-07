@@ -2309,6 +2309,141 @@ public sealed class StoryContentTests
         Assert.Empty(service.Ledger.Entries);
     }
 
+    /// <summary>
+    /// The game's own retry button removes an owned mission and re-adds the same identifier. That is
+    /// ONE operation on the SAME occurrence: no outcome is recorded, the catalog entry is kept, and
+    /// the reported failure is cleared only because the game accepted it again.
+    /// </summary>
+    [Fact]
+    public void ARetryThroughTheGamesOwnButtonContinuesTheSameOccurrence()
+    {
+        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var occurrence = provider.Offer("salvage-run");
+        Assert.True(provider.Activate(occurrence.OccurrenceId).Accepted);
+        var identifier = FakeWorld.Native(provider, "salvage-run", occurrence.OccurrenceId);
+        world.Missions.Publish(MissionTransitionKind.Failed, identifier);
+        Assert.True(service.Ledger.TryGet(occurrence.OccurrenceId, out var failed));
+        Assert.True(failed.FailureObserved);
+
+        var transactions = (IStoryUiTransaction)service;
+        Assert.True(transactions.BeginAbandon(identifier));
+        // The removal the button performs is seen while the transaction is open, and settles nothing.
+        world.Missions.Publish(MissionTransitionKind.Removed, identifier);
+        Assert.Equal(StoryOccurrenceState.Active, failed.State);
+        transactions.EndAbandon(identifier, stillHeld: true);
+
+        Assert.Equal(StoryOccurrenceState.Active, failed.State);
+        Assert.False(failed.FailureObserved);                       // the game accepted it afresh
+        Assert.Empty(provider.Occurrences("salvage-run").Records);
+        Assert.True(world.World.IsInstalled(identifier));
+        Assert.False(world.Protection.IsQuarantined(identifier));
+        // A completion after the retry is a completion, once.
+        world.CompleteInGame(provider, "salvage-run", occurrence.OccurrenceId);
+        Assert.Equal(StoryOutcome.Completed, Assert.Single(provider.Occurrences("salvage-run").Records).Outcome);
+    }
+
+    /// <summary>
+    /// The same button on a mission the game does NOT put back is the ending it looked like: a
+    /// reported failure becomes final, and a plain abandon is an abandonment.
+    /// </summary>
+    [Fact]
+    public void AButtonRemovalTheGameDoesNotUndoSettlesTheOccurrence()
+    {
+        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var failing = provider.Offer("salvage-run");
+        Assert.True(provider.Activate(failing.OccurrenceId).Accepted);
+        var failingId = FakeWorld.Native(provider, "salvage-run", failing.OccurrenceId);
+        world.Missions.Publish(MissionTransitionKind.Failed, failingId);
+        var transactions = (IStoryUiTransaction)service;
+        Assert.True(transactions.BeginAbandon(failingId));
+        world.World.CompleteInWorld(failingId);
+        transactions.EndAbandon(failingId, stillHeld: false);
+        Assert.Equal(StoryOutcome.Failed, Assert.Single(provider.Occurrences("salvage-run").Records).Outcome);
+        Assert.False(world.World.IsInstalled(failingId));
+
+        var abandoned = provider.Offer("salvage-run");
+        Assert.True(provider.Activate(abandoned.OccurrenceId).Accepted);
+        var abandonedId = FakeWorld.Native(provider, "salvage-run", abandoned.OccurrenceId);
+        Assert.True(transactions.BeginAbandon(abandonedId));
+        world.World.CompleteInWorld(abandonedId);
+        transactions.EndAbandon(abandonedId, stillHeld: false);
+        Assert.Equal(StoryOutcome.Abandoned, provider.Occurrences("salvage-run").Records[1].Outcome);
+    }
+
+    /// <summary>Only a live occurrence this module admits may take the button's route at all.</summary>
+    [Fact]
+    public void TheButtonRouteIsRefusedForAnythingThisModuleCannotVouchFor()
+    {
+        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var transactions = (IStoryUiTransaction)service;
+        var occurrence = provider.Offer("salvage-run");
+        var identifier = FakeWorld.Native(provider, "salvage-run", occurrence.OccurrenceId);
+        Assert.True(provider.Activate(occurrence.OccurrenceId).Accepted);
+
+        Assert.False(transactions.BeginAbandon("vgmodapi.story.anima.salvage-run"));      // a base identifier
+        Assert.False(transactions.BeginAbandon(identifier + "-malformed"));
+        Assert.False(transactions.BeginAbandon(
+            StoryContentPolicy.OccurrenceIdentifier(new StoryContentId(provider.ProviderId, "salvage-run"), Guid.NewGuid())));
+        // One at a time: a second route cannot open while one is running.
+        Assert.True(transactions.BeginAbandon(identifier));
+        Assert.False(transactions.BeginAbandon(identifier));
+        transactions.EndAbandon(identifier, stillHeld: true);
+        // And nothing at all once the module is suspended.
+        world.World.AdoptInWorld(FakeWorld.Native(provider, "salvage-run", Guid.NewGuid()));
+        world.StartAndRestore();
+        Assert.NotNull(service.SuspendedReason);
+        Assert.False(transactions.BeginAbandon(identifier));
+    }
+
+    /// <summary>
+    /// A world can lose a place between offering a mission and accepting it, so the target is checked
+    /// again immediately before the game is asked to hold it; nothing native happens on a refusal.
+    /// </summary>
+    [Fact]
+    public void ATargetThatDisappearsBetweenOfferAndActivateRefusesTheAcceptance()
+    {
+        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var occurrence = provider.Offer("salvage-run");
+        Assert.True(occurrence.Accepted);
+        int accepts = world.World.Accepts;
+
+        world.World.ForgetPointOfInterest("poi-guid-1");
+        var refused = provider.Activate(occurrence.OccurrenceId);
+        Assert.Equal(StoryTransitionStatus.InvalidTransition, refused.Status);
+        Assert.Contains("no point of interest", refused.Detail);
+        Assert.Equal(accepts, world.World.Accepts);                  // the world was never asked
+        Assert.True(service.Ledger.TryGet(occurrence.OccurrenceId, out var untouched));
+        Assert.Equal(StoryOccurrenceState.Offered, untouched.State);
+    }
+
+    /// <summary>
+    /// A restored occurrence whose destination this world no longer has is not run: it is not vouched
+    /// for, so the native guards quarantine it, and its record and its bytes are left alone.
+    /// </summary>
+    [Fact]
+    public void ARestoredOccurrenceWhoseTargetIsGoneIsHeldBackRatherThanRun()
+    {
+        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var occurrence = provider.Offer("salvage-run");
+        Assert.True(provider.Activate(occurrence.OccurrenceId).Accepted);
+        var identifier = FakeWorld.Native(provider, "salvage-run", occurrence.OccurrenceId);
+        var bytes = world.Persistence.Provider!.Capture();
+
+        world.World.ForgetPointOfInterest("poi-guid-1");
+        world.StartAndRestore(bytes);
+
+        Assert.True(world.Protection.IsQuarantined(identifier));
+        Assert.Contains(service.Reconciliation, reason => reason.Contains("no point of interest"));
+        Assert.Equal(1, service.Ledger.Count);                       // the record is kept
+        Assert.True(service.Ledger.TryGet(occurrence.OccurrenceId, out var kept));
+        Assert.Equal(StoryOccurrenceState.Active, kept.State);
+        Assert.True(StoryStateCodec.Validate(world.Persistence.Provider!.Capture()));
+        // Once the world has the place again, the occurrence is vouched for as before.
+        world.World.RestorePointOfInterest("poi-guid-1");
+        world.StartAndRestore(bytes);
+        Assert.False(world.Protection.IsQuarantined(identifier));
+    }
+
     // --- automatic persistence --------------------------------------------------------------
 
     [Fact]
@@ -2776,6 +2911,7 @@ public sealed class StoryContentTests
         private readonly HashSet<string> _pointsOfInterest = new(StringComparer.Ordinal) { "poi-guid-1" };
         internal bool GalaxyLoaded = true;
         internal void ForgetPointOfInterest(string guid) => _pointsOfInterest.Remove(guid);
+        internal void RestorePointOfInterest(string guid) => _pointsOfInterest.Add(guid);
         public bool? KnowsPointOfInterest(string guid)
             => !GalaxyLoaded || Unavailable ? null : _pointsOfInterest.Contains(guid);
         private readonly HashSet<string> _foreign = new(StringComparer.Ordinal);

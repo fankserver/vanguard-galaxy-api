@@ -50,6 +50,7 @@ internal sealed class StoryProtection
         _session = Guid.Empty;
         _state = state ?? "";
         Version++;
+        _reasons.Clear();
     }
 
     internal int AdmittedCount => _admitted.Count;
@@ -64,12 +65,24 @@ internal sealed class StoryProtection
     /// ever considered: anything else — vanilla story content, another mod's content, no identifier at
     /// all — is not ours to judge and passes through untouched.
     /// </summary>
+    /// <summary>Whether this identifier lives in the namespace this API reserves, and is therefore ours to answer for.</summary>
+    internal bool IsOwnedNamespace(string? storyId)
+        => storyId != null && storyId.StartsWith(StoryContentPolicy.IdentifierPrefix, StringComparison.Ordinal);
+
     internal bool IsQuarantined(string? storyId)
     {
         _checkThread?.Invoke();
-        if (storyId == null || !StoryContentPolicy.TryParseOccurrenceIdentifier(storyId, out _, out _)) return false;
+        // EVERY identifier under this API's reserved namespace is ours to answer for, not just a
+        // well-formed occurrence: a base definition identifier, a malformed one, or one carrying an
+        // occurrence this module never minted is exactly the content nobody can vouch for. Anything
+        // outside the namespace — vanilla story ids, another mod's, none at all — is left alone, and
+        // the match is ordinal, so a neighbouring namespace like "vgmodapi.story-other." is not ours.
+        if (storyId == null || !storyId.StartsWith(StoryContentPolicy.IdentifierPrefix, StringComparison.Ordinal)) return false;
         if (_admitted.Contains(storyId)) return false;
         if (_reasons.Count < 256 && !_reasons.ContainsKey(storyId)) _reasons[storyId] = _state;
         return true;
     }
+
+    /// <summary>Clears the diagnostic record; the reasons describe one session, like the admissions.</summary>
+    internal void ClearDiagnostics() => _reasons.Clear();
 }

@@ -307,6 +307,20 @@ internal sealed class StoryLedger
         return StoryLedgerStatus.Accepted;
     }
 
+    /// <summary>
+    /// Clears a reported failure, because the game accepted this occurrence again. Only a verified
+    /// re-acceptance clears it; nothing else forgets that the game once failed this mission.
+    /// </summary>
+    internal StoryLedgerStatus ClearFailure(StoryContentId caller, Guid occurrenceId, out string diagnostic)
+    {
+        var status = Resolve(caller, occurrenceId, out var entry, out diagnostic);
+        if (status != StoryLedgerStatus.Accepted) return status;
+        if (entry!.State == StoryOccurrenceState.Retired)
+        { diagnostic = "This occurrence already reported " + entry.Outcome + "."; return StoryLedgerStatus.InvalidTransition; }
+        entry.MarkFailureObserved(false);
+        return StoryLedgerStatus.Accepted;
+    }
+
     /// <summary>Every check <see cref="Activate"/> makes, with no mutation, for the same reason.</summary>
     internal StoryLedgerStatus CanActivate(StoryContentId caller, Guid occurrenceId, out string diagnostic)
     {

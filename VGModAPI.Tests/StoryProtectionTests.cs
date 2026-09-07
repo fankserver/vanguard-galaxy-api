@@ -143,6 +143,183 @@ public sealed class StoryProtectionTests : IDisposable
     }
 
     /// <summary>
+    /// The button the player actually presses removes the mission and re-adds the same identifier.
+    /// For an orphan nobody vouches for, that whole operation is refused: the mission stays in the
+    /// player's list exactly as the save had it, and the catalog is never asked for an entry that may
+    /// no longer be there.
+    /// </summary>
+    [Fact]
+    public void TheAbandonAndRetryButtonIsRefusedOutrightForAnOrphan()
+    {
+        var owned = Hold();
+        owned.Mission.failed = true;
+        StoryMission.allMissions.Remove(owned.Identifier);        // the orphan's entry is gone
+        var before = owned.Mission.SerializeLikeTheGame();
+        var ui = new Behaviour.UI.Missions.MissionDetails { Retryable = true };
+
+        Assert.False(_quarantine.AllowAbandon(owned.Mission, out var identifier));
+        Assert.Null(identifier);
+        // The guard refuses before the game runs, so nothing of the route executes.
+        Assert.Contains(owned.Mission, _player.missions);
+        Assert.Equal(before, owned.Mission.SerializeLikeTheGame());
+        // Running the route without the guard is what the refusal prevents: it throws on the catalog.
+        Assert.ThrowsAny<Exception>(() => ui.AbandonMission(owned.Mission));
+    }
+
+    /// <summary>
+    /// A mission carrying a follow-up identifier would make the button install something this module
+    /// never admitted, so an owned mission with one is refused even when it is admitted.
+    /// </summary>
+    [Fact]
+    public void AnOwnedMissionWithAFollowUpIdentifierIsRefusedRatherThanRedirected()
+    {
+        var owned = Hold();
+        owned.Mission.nextMissionOnFailed = "vgmodapi.story.anima.other." + Guid.NewGuid().ToString("N");
+        _protection.Admit(Guid.NewGuid(), new[] { owned.Identifier }, "admitted");
+        Assert.False(_quarantine.AllowAbandon(owned.Mission, out _));
+        Assert.Contains(owned.Mission, _player.missions);
+    }
+
+    /// <summary>
+    /// An admitted mission's abandon/retry is handed to the owning module, and what the game ends up
+    /// holding afterwards is what settles it. Missions that are not ours are never intercepted.
+    /// </summary>
+    [Fact]
+    public void AnAdmittedAbandonIsHandedToTheModuleAndSettledByWhatTheGameHolds()
+    {
+        var owned = Hold();
+        _protection.Admit(Guid.NewGuid(), new[] { owned.Identifier }, "admitted");
+        var transactions = new RecordingTransactions();
+        _quarantine.Transactions = transactions;
+        var ui = new Behaviour.UI.Missions.MissionDetails { Retryable = true };
+
+        Assert.True(_quarantine.AllowAbandon(owned.Mission, out var identifier));
+        Assert.Equal(owned.Identifier, identifier);
+        ui.AbandonMission(owned.Mission);                       // remove, then re-add the same id
+        _quarantine.EndAbandon(identifier!);
+        Assert.Equal(owned.Identifier, transactions.Began);
+        Assert.True(transactions.StillHeld);                    // the retry put it back
+        Assert.Contains(_player.missions, mission => mission.storyId == owned.Identifier);
+
+        // A non-retryable abandon of the same identifier ends it, and the module is told so.
+        var again = _player.missions.Single(mission => mission.storyId == owned.Identifier);
+        var plain = new Behaviour.UI.Missions.MissionDetails { Retryable = false };
+        Assert.True(_quarantine.AllowAbandon(again, out identifier));
+        plain.AbandonMission(again);
+        _quarantine.EndAbandon(identifier!);
+        Assert.False(transactions.StillHeld);
+
+        // Content that is not ours never reaches the module at all.
+        var vanilla = new Mission { storyId = "tutorial_11", sourceFaction = Source.Galaxy.Faction.Get("TradingGuild") };
+        _player.missions.Add(vanilla);
+        transactions.Began = null;
+        Assert.True(_quarantine.AllowAbandon(vanilla, out var none));
+        Assert.Null(none);
+        Assert.Null(transactions.Began);
+    }
+
+    /// <summary>
+    /// Ownership is resolved against the CURRENT player every time, so a mission that appears later —
+    /// a second save loaded into the same process with nothing bumping an admission — is still seen.
+    /// </summary>
+    [Fact]
+    public void ObjectiveOwnershipIsResolvedAgainstThePlayerRatherThanACache()
+    {
+        var first = Hold();
+        _protection.Admit(Guid.NewGuid(), new[] { first.Identifier }, "admitted");
+        foreach (var objective in first.Mission.steps.SelectMany(step => step.objectives))
+            Assert.False(_quarantine.BlocksObjective(objective));
+
+        // A later save's mission, with no admission change of any kind.
+        var later = Hold("side-run");
+        foreach (var objective in later.Mission.steps.SelectMany(step => step.objectives))
+            Assert.True(_quarantine.BlocksObjective(objective));
+
+        // The same player, mutated in place: the newcomer is refused as well.
+        var swapped = Hold("swap-run");
+        _player.missions.Remove(first.Mission);
+        foreach (var objective in swapped.Mission.steps.SelectMany(step => step.objectives))
+            Assert.True(_quarantine.BlocksObjective(objective));
+    }
+
+    /// <summary>
+    /// If ownership cannot be established the objective is refused and the protection says it is
+    /// degraded: an unreadable world is not permission to let possibly owned content advance.
+    /// </summary>
+    [Fact]
+    public void AnUnreadableWorldRefusesTheObjectiveAndReportsItRatherThanFailingOpen()
+    {
+        var owned = Hold();
+        var reports = new List<string>();
+        var failing = new StoryQuarantine(new StoryProtectionGuard(typeof(StoryMission).Assembly), _protection,
+            () => throw new InvalidOperationException("the player could not be read"), null, reports.Add);
+        var objective = owned.Mission.steps.SelectMany(step => step.objectives).First();
+
+        Assert.True(failing.BlocksObjective(objective));
+        Assert.NotNull(failing.DegradedReason);
+        Assert.Single(reports);
+        Assert.Contains("could not read", reports[0]);
+        // It stays degraded until a session boundary clears it.
+        failing.ClearDegraded();
+        Assert.Null(failing.DegradedReason);
+    }
+
+    /// <summary>The scan is bounded: a player holding more than the guard can examine is refused, not skipped.</summary>
+    [Fact]
+    public void AnUnscannablyLargeMissionListIsRefusedRatherThanSkipped()
+    {
+        var owned = Hold();
+        for (int index = 0; index < StoryQuarantine.MaxScannedMissions + 1; index++)
+            _player.missions.Insert(0, new Mission { sourceFaction = Source.Galaxy.Faction.Get("TradingGuild") });
+        var objective = owned.Mission.steps.SelectMany(step => step.objectives).First();
+        Assert.True(_quarantine.BlocksObjective(objective));
+        Assert.Contains("scan", _quarantine.DegradedReason!);
+    }
+
+    /// <summary>
+    /// The whole reserved namespace is ours to answer for, not only well-formed occurrence
+    /// identifiers: a base definition id, a malformed one, or an occurrence nobody minted is content
+    /// nobody can vouch for. A neighbouring namespace is left alone.
+    /// </summary>
+    [Fact]
+    public void EveryIdentifierInTheReservedNamespaceIsQuarantinedUnlessItIsAdmitted()
+    {
+        var admitted = StoryContentPolicy.OccurrenceIdentifier(new StoryContentId("anima", "salvage-run"), Guid.NewGuid());
+        _protection.Admit(Guid.NewGuid(), new[] { admitted }, "admitted");
+        Assert.False(_protection.IsQuarantined(admitted));
+        foreach (var identifier in new[]
+        {
+            StoryContentPolicy.Identifier(new StoryContentId("anima", "salvage-run")),        // the base definition
+            StoryContentPolicy.IdentifierPrefix + "anima.salvage-run.not-a-guid",             // malformed
+            StoryContentPolicy.OccurrenceIdentifier(new StoryContentId("anima", "salvage-run"), Guid.NewGuid()),
+            StoryContentPolicy.IdentifierPrefix
+        }) Assert.True(_protection.IsQuarantined(identifier), identifier);
+        // Ordinal matching: a neighbouring namespace and vanilla content are not ours.
+        Assert.False(_protection.IsQuarantined("vgmodapi.story-other.anima.thing"));
+        Assert.False(_protection.IsQuarantined("VGMODAPI.STORY.anima.thing"));
+        Assert.False(_protection.IsQuarantined("tutorial_11"));
+        Assert.False(_protection.IsQuarantined(null));
+    }
+
+    /// <summary>Steps this API installs are visible; quarantine never has to hide or reveal one.</summary>
+    [Fact]
+    public void InstalledStepsCarryTheSupportedVisibleShape()
+    {
+        var owned = Hold();
+        Assert.All(owned.Mission.steps, step => Assert.False(step.hidden));
+        Assert.True(_quarantine.Blocks(owned.Mission));
+        Assert.All(owned.Mission.steps, step => Assert.False(step.hidden));
+    }
+
+    private sealed class RecordingTransactions : IStoryUiTransaction
+    {
+        internal string? Began;
+        internal bool StillHeld;
+        public bool BeginAbandon(string identifier) { Began = identifier; return true; }
+        public void EndAbandon(string identifier, bool stillHeld) => StillHeld = stillHeld;
+    }
+
+    /// <summary>
     /// The guard binds only against the shape it actually guards, and refuses to bind when an
     /// installable objective kind would slip past the one trigger method it protects.
     /// </summary>

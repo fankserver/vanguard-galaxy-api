@@ -103,7 +103,10 @@ save/load callback and no restoration scheduling for it. Definitions declare the
 Activating an occurrence asks the game to accept the mission and records it only if the game actually
 did; completions are recorded from the game's own observed completion, never declared by you, with
 choices you declared while the occurrence was live.
-`ModApi.Story` is null unless the story group is enabled and bound. See `docs/story-content.md`;
+`ModApi.Story` is null unless the story group is enabled and bound. A separate, default-on load
+safety guard stops API-owned missions in a save from advancing or paying out unless the owning module
+vouches for them; with an uninspected game build, or with that guard turned off, this API cannot
+refuse the load, so do not load saves containing owned story content in those states. See `docs/story-content.md`;
 nothing here is runtime-qualified.
 
 Require API 0.1.2 and register a `PersistenceProvider` before any session starts. Supply your mod's unique identifier (the `Owner` namespace), data schema version, callbacks to capture, restore and validate your data, and optional explicit migrations. The API stores the bytes you provide without interpreting their contents, up to 1 MiB per mod. A null restore payload means genuinely absent known data, not corrupt data. No automatic import of existing sidecars is performed. Keep the returned `IPersistenceRegistration`, obey `MutationAllowed` before mutations, display `Status` on refusal, and dispose it before destroying provider state. That interface is unchanged; a later build adds the optional `IPersistenceReadiness` capability on the same handle, whose `StateReady` says whether your restored state is READABLE right now — true while callbacks dispatch and while a save is in flight, where reading is safe but mutating is not. Cast for it if you want that distinction; it is additive, so nothing is required of consumers that do not, and a handle without it means readiness is unknown rather than ready. Active-session removal pauses API-managed saves for all registered mods until a new load. Do not mutate vanilla state in these callbacks.

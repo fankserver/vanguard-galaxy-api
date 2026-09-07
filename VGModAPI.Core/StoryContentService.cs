@@ -25,7 +25,7 @@ namespace VGModAPI.Core;
 /// This type is pure with respect to the game: it decides what must be installed and what must be
 /// remembered. Driving vanilla registration/reconstruction is separate work.
 /// </summary>
-internal sealed class StoryContentService : IStoryApi, IDisposable
+internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDisposable
 {
     private enum Readiness { None, Pending, Restored, Blocked }
 
@@ -141,6 +141,14 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
     private readonly List<string> _deferredUninstall = new();
     /// <summary>Outcomes this module itself is applying, so its own world calls are not re-observed as the game's.</summary>
     private readonly Dictionary<Guid, StoryOutcome> _intent = new();
+    /// <summary>The occurrence whose removal the game's own abandon/retry button is performing right now.</summary>
+    private Guid _uiAbandon;
+    /// <summary>
+    /// Occurrences this module will not vouch for even though it owns them: their world is missing
+    /// something the mission needs, so running them could never finish. They are not deleted and
+    /// their record is untouched; they are simply not admitted, which quarantines them natively.
+    /// </summary>
+    private readonly HashSet<Guid> _unrunnable = new();
     private readonly IDisposable? _missionObserver;
     private readonly Action<string, bool>? _report;
     /// <summary>
@@ -209,7 +217,9 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
         foreach (var identifier in _occurrenceIdentifiers.Values.ToArray()) _world?.Uninstall(identifier);
         _occurrenceIdentifiers.Clear();
         _deferredUninstall.Clear();
+        _unrunnable.Clear();
         _intent.Clear();
+        _uiAbandon = Guid.Empty;
         _operationInFlight = false;
         _fault = null;
         _suspended = null;
@@ -244,6 +254,7 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
     private void Reconcile()
     {
         _reconciliation.Clear();
+        _unrunnable.Clear();
         _suspended = null;
         if (_world == null) return;
         // Unresolved occurrences need their own catalog entry back before anything can be accepted or
@@ -255,6 +266,17 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
             var identifier = StoryContentPolicy.OccurrenceIdentifier(entry.Id, entry.OccurrenceId);
             if (!_registry.TryGet(entry.Id, out var definition))
             { Suspend(identifier + ": this save holds owned story content whose provider is not registered."); continue; }
+            var missing = MissingTargets(definition, out var unknownWorld);
+            if (unknownWorld || missing != null)
+            {
+                // Not vouched for, so the guards quarantine it: it stays exactly as the save has it,
+                // and nothing runs a mission whose destination this world no longer has.
+                _unrunnable.Add(entry.OccurrenceId);
+                _reconciliation.Add(identifier + ": this world holds no point of interest '"
+                    + (missing ?? "(unknown)") + "', so the mission is not run.");
+                Report("Owned story content is held back: " + identifier + " needs a place this world does not have.");
+                continue;
+            }
             var installed = _world.Install(identifier, definition);
             if (installed.Applied) _occurrenceIdentifiers[entry.OccurrenceId] = identifier;
             else Suspend(identifier + ": the world refused to reinstall this occurrence (" + installed.Detail + ").");
@@ -330,7 +352,7 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
             return;
         }
         _protection.Admit(_restoredSession,
-            _ledger.Entries.Where(entry => entry.State != StoryOccurrenceState.Retired)
+            _ledger.Entries.Where(entry => entry.State != StoryOccurrenceState.Retired && !_unrunnable.Contains(entry.OccurrenceId))
                 .Select(entry => StoryContentPolicy.OccurrenceIdentifier(entry.Id, entry.OccurrenceId)),
             "admitted by the owning module for this session");
     }
@@ -360,8 +382,10 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
         if (_disposed || transition?.Mission?.DefinitionId == null) return;
         if (!StoryContentPolicy.TryParseOccurrenceIdentifier(transition.Mission.DefinitionId, out var id, out var occurrenceId)) return;
         if (!_ledger.TryGet(occurrenceId, out var entry) || entry.Id != id || entry.State == StoryOccurrenceState.Retired) return;
-        // A removal this module is performing is recorded by the operation that asked for it.
-        if (_intent.ContainsKey(occurrenceId)) return;
+        // A removal this module is performing is recorded by the operation that asked for it, and a
+        // removal the game's own abandon/retry button is performing is settled when that finishes:
+        // the very next thing may be the same occurrence being re-added.
+        if (_intent.ContainsKey(occurrenceId) || _uiAbandon == occurrenceId) return;
         if (transition.Kind == MissionTransitionKind.Failed)
         {
             // The game leaves a failed story mission in the player's list and offers to retry it, so
@@ -387,6 +411,53 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
             entry.PendingChoices.Count > 0 ? entry.PendingChoices : null, out var diagnostic);
         if (status != StoryLedgerStatus.Accepted)
         { Report("An observed " + outcome + " for '" + transition.Mission.DefinitionId + "' could not be recorded: " + diagnostic); return; }
+        ReleaseOccurrenceEntry(occurrenceId);
+        PublishAdmissions();
+    }
+
+    /// <summary>
+    /// The game's abandon/retry button is about to remove an owned mission, and may re-add the same
+    /// identifier immediately. The outcome that removal would otherwise record is suspended and the
+    /// catalog entry is held, because the very next thing that happens may be the same occurrence
+    /// coming back. Only a live occurrence this module admits is allowed to take that route.
+    /// </summary>
+    bool IStoryUiTransaction.BeginAbandon(string identifier)
+    {
+        CheckThread();
+        if (_disposed || _suspended != null || _fault != null || _readiness != Readiness.Restored) return false;
+        if (!StoryContentPolicy.TryParseOccurrenceIdentifier(identifier, out var id, out var occurrenceId)) return false;
+        if (!_ledger.TryGet(occurrenceId, out var entry) || entry.Id != id
+            || entry.State == StoryOccurrenceState.Retired || _uiAbandon != Guid.Empty) return false;
+        _uiAbandon = occurrenceId;
+        return true;
+    }
+
+    /// <summary>
+    /// The button finished. If the game holds the mission again it was a RETRY: the same occurrence
+    /// continues, its provisional failure is cleared because the game accepted it afresh, and no
+    /// outcome is recorded. If it does not, the removal was the ending it looked like: a failure that
+    /// had been reported becomes final, anything else is the abandonment the player asked for.
+    /// </summary>
+    void IStoryUiTransaction.EndAbandon(string identifier, bool stillHeld)
+    {
+        CheckThread();
+        var occurrenceId = _uiAbandon;
+        _uiAbandon = Guid.Empty;
+        if (_disposed || occurrenceId == Guid.Empty) return;
+        if (!_ledger.TryGet(occurrenceId, out var entry) || entry.State == StoryOccurrenceState.Retired) return;
+        if (stillHeld)
+        {
+            // The game accepted it afresh, which is the only thing that clears a reported failure.
+            _ledger.ClearFailure(entry.Id, occurrenceId, out _);
+            Report("A retry of '" + identifier + "' was accepted again by the game.", true);
+            PublishAdmissions();
+            return;
+        }
+        var outcome = entry.FailureObserved ? StoryOutcome.Failed : StoryOutcome.Abandoned;
+        var status = _ledger.Retire(entry.Id, occurrenceId, outcome,
+            entry.PendingChoices.Count > 0 ? entry.PendingChoices : null, out var diagnostic);
+        if (status != StoryLedgerStatus.Accepted)
+        { Report("The end of '" + identifier + "' could not be recorded: " + diagnostic); return; }
         ReleaseOccurrenceEntry(occurrenceId);
         PublishAdmissions();
     }
@@ -571,19 +642,13 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
             return new StoryTransitionResult(status, Guid.Empty, refusal);
         // A travel objective aimed at a place this world does not have could never be completed, so it
         // is checked here, where a world exists, rather than at registration where one may not.
-        if (_world != null)
-            foreach (var target in definition!.Steps.SelectMany(step => step.Objectives)
-                .Where(objective => objective.Kind == StoryObjectiveKind.TravelToPoi)
-                .Select(objective => objective.TargetPoiId!).Distinct(StringComparer.Ordinal))
-            {
-                var known = _world.KnowsPointOfInterest(target);
-                if (known == false)
-                    return new StoryTransitionResult(StoryTransitionStatus.InvalidTransition, Guid.Empty,
-                        "This world holds no point of interest '" + target + "', so the mission could never be completed.");
-                if (known == null)
-                    return new StoryTransitionResult(StoryTransitionStatus.Unavailable, Guid.Empty,
-                        "The world could not be asked about point of interest '" + target + "'.");
-            }
+        var targets = MissingTargets(definition!, out var unknownWorld);
+        if (unknownWorld)
+            return new StoryTransitionResult(StoryTransitionStatus.Unavailable, Guid.Empty,
+                "The world could not be asked about this definition's travel targets.");
+        if (targets != null)
+            return new StoryTransitionResult(StoryTransitionStatus.InvalidTransition, Guid.Empty,
+                "This world holds no point of interest '" + targets + "', so the mission could never be completed.");
         var occurrenceId = _newOccurrence();
         // The outcome's worst-case payload is reserved now, so this occurrence can always be retired.
         var result = _ledger.Offer(id, definition!.Retention, occurrenceId, definition.ReservedChoiceBytes, out var diagnostic);
@@ -606,6 +671,26 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
         }
         PublishAdmissions();
         return new StoryTransitionResult(StoryTransitionStatus.Accepted, occurrenceId, diagnostic);
+    }
+
+    /// <summary>
+    /// The first travel target this definition needs that the loaded world does not have, or null when
+    /// every one of them exists. A mission aimed at a place the world lost could never be completed,
+    /// so it is neither offered, accepted, nor run after a reload.
+    /// </summary>
+    private string? MissingTargets(StoryMissionDefinition definition, out bool worldUnknown)
+    {
+        worldUnknown = false;
+        if (_world == null) return null;
+        foreach (var target in definition.Steps.SelectMany(step => step.Objectives)
+            .Where(objective => objective.Kind == StoryObjectiveKind.TravelToPoi)
+            .Select(objective => objective.TargetPoiId!).Distinct(StringComparer.Ordinal))
+        {
+            var known = _world.KnowsPointOfInterest(target);
+            if (known == null) { worldUnknown = true; return null; }
+            if (known == false) return target;
+        }
+        return null;
     }
 
     /// <summary>
@@ -674,12 +759,25 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
         var caller = new StoryContentId(lease.ProviderId, LocalIdOf(occurrenceId));
         var planned = _ledger.CanActivate(caller, occurrenceId, out var plannedDetail);
         if (planned != StoryLedgerStatus.Accepted) return new StoryTransitionResult(Map(planned), occurrenceId, plannedDetail);
+        _ledger.TryGet(occurrenceId, out var entry);
         if (_world == null)
             return new StoryTransitionResult(StoryTransitionStatus.Unavailable, occurrenceId,
                 "No story world is bound, so this acceptance cannot be made in the game and is not recorded.");
         if (!_occurrenceIdentifiers.TryGetValue(occurrenceId, out var identifier))
             return new StoryTransitionResult(StoryTransitionStatus.Unavailable, occurrenceId,
                 "This occurrence has no installed catalog entry in the current world.");
+        // The world can lose a place between offering and accepting, so the target is checked again
+        // right before the game is asked to hold this mission.
+        if (_registry.TryGet(entry!.Id, out var definition))
+        {
+            var missing = MissingTargets(definition, out var unknownWorld);
+            if (unknownWorld)
+                return new StoryTransitionResult(StoryTransitionStatus.Unavailable, occurrenceId,
+                    "The world could not be asked about this mission's travel targets.");
+            if (missing != null)
+                return new StoryTransitionResult(StoryTransitionStatus.InvalidTransition, occurrenceId,
+                    "This world holds no point of interest '" + missing + "', so the mission could never be completed.");
+        }
         if (!BeginOperation(out var busy, occurrenceId)) return busy;
         StoryWorldResult accepted;
         try { accepted = _world.Accept(identifier); }

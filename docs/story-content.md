@@ -307,6 +307,7 @@ only alternative would be letting a caller declare one.
 | Registration | Installs the definition into the game's story catalog under its base identifier, and resolves the definition's SOURCE FACTION against the game's own faction registry. An unknown faction refuses registration. |
 | Collision | The game's own registration REPLACES a duplicate identifier, so the adapter checks first and refuses (`IdentifierInUse`) instead. Nothing existing is ever overwritten, and a refused installation rolls back the API-side registration with it. |
 | `Offer` | Installs a catalog entry for THAT OCCURRENCE, under its own identifier, and refuses a travel objective aimed at a point of interest this world does not have, which could never be completed. |
+| Travel targets | Re-checked immediately before the game is asked to accept, because a world can lose a place in between; a restored occurrence whose destination is gone is NOT vouched for, so the guards quarantine it rather than run a mission that could never finish. Its record and its bytes are untouched, and it is vouched for again once the world has the place. |
 | Generator | Builds a `Mission` through the game's own objective and reward factories, from the supported subset's fields only, and sets the context every vanilla generator sets. No consumer delegate is captured and none is ever persisted. |
 | `Activate` | Asks the game to accept the mission (`force:false`, so its own duplicate-story refusal applies), then VERIFIES the player holds exactly that mission. The occurrence is recorded active only after that. |
 | `Retire(Abandoned/Failed)` | Removes the mission from the world first (`completed:false`, so nothing is archived as finished) and records the outcome only once the world no longer holds it. |
@@ -358,9 +359,16 @@ occurrence with no declaration, not one carrying a newer session's choices.
 
 An observed FAILURE is not a terminal outcome. The game leaves a failed story mission in the player's
 list and offers to retry it, so a reported failure is recorded as a fact about a live occurrence: it
-stays active, keeps its catalog entry so the retry path still resolves, and is settled by what
-follows — a completion after a retry is a completion, and the removal of a failed mission is the
-failure becoming final. `Retire` remains for the outcomes a caller genuinely owns — an
+stays active and keeps its catalog entry, and it is settled by what follows.
+
+The retry button is one operation on ONE occurrence: the game removes the mission and re-adds the
+same identifier. The guard wraps that whole method and tells the module, which suspends the outcome
+the removal would otherwise record and holds the catalog entry. Afterwards, what the game actually
+holds settles it: if the mission is back, the same occurrence simply continues and its reported
+failure is cleared, because only a re-acceptance by the game clears one; if it is not, the removal
+was the ending it looked like — a reported failure becomes final, and anything else is the
+abandonment the player asked for. A mission carrying a follow-up identifier is refused rather than
+redirected, because re-adding it would install something this module never admitted. `Retire` remains for the outcomes a caller genuinely owns — an
 abandonment or a failure it decides — and those end the mission in the game first.
 
 Everything session-scoped ends with the session: catalog entries of that save's occurrences are
@@ -399,14 +407,26 @@ NATIVE and separate from the module:
   binds at all, because an orphan is dangerous exactly then.
 - It guards every way such a mission can advance or pay out: the per-frame `Mission.Update` (which is
   also the auto-complete route), `GamePlayer.CompleteMission`, `Mission.ClaimRewards`,
-  `Mission.MissionFailed`, `Mission.RetryAsNextMission` (which the game's retry button uses and which
-  throws when an orphan's catalog entry is gone), and `MissionObjective.ProcessMissionTrigger`, the
-  one virtual method every objective the supported subset can install goes through. Binding REFUSES
-  if an installable objective kind overrode that method, rather than guarding it incompletely.
-- It fails CLOSED. Only the exact occurrence identifiers the owning module vouches for, in the
-  session it vouched for them, run. With nothing admitted — module absent, disabled, unbound,
-  suspended, faulted, disposed, or a session that has not restored — every identifier this API could
-  have written is quarantined. Nothing else is ever affected: a vanilla story id, another mod's
+  `Mission.MissionFailed`, and `MissionObjective.ProcessMissionTrigger`, the one virtual method every
+  objective the supported subset can install goes through. Binding REFUSES if an installable objective
+  kind overrode that method, rather than guarding it incompletely.
+- It guards the game's own abandon/retry BUTTON, which is `MissionDetails.AbandonMission`: that
+  method removes the mission and, for a retryable story mission, re-adds `nextMissionOnFailed ??
+  storyId` out of the catalog — a lookup that throws when an orphan's entry is gone. The whole method
+  is wrapped, so for an orphan nothing of it runs: the mission stays in the player's list and the
+  catalog is never asked. (`Mission.RetryAsNextMission` is also guarded, but it is a private
+  follow-up-only route that API content never takes; it is not the button.)
+- Objective ownership is resolved against the CURRENT player on every call, not cached against
+  admissions, so a second save loaded into the same process is seen even with the story module off.
+  The scan is bounded; if it cannot be completed the objective is REFUSED and the capability reports
+  itself degraded until the next session, rather than letting possibly owned content through.
+- It fails CLOSED over the whole reserved namespace. Only the exact occurrence identifiers the owning
+  module vouches for, in the session it vouched for them, run; every other identifier beginning with
+  `vgmodapi.story.` — a base definition id, a malformed one, an occurrence this module never minted —
+  is quarantined. The match is ordinal, so a neighbouring namespace such as `vgmodapi.story-other.`
+  is not affected. With nothing admitted — module absent, disabled, unbound, suspended, faulted,
+  disposed, or a session that has not restored — every identifier this API could have written is
+  quarantined. Nothing else is ever affected: a vanilla story id, another mod's
   mission or a mission with no identifier is not ours to judge.
 - It changes NOTHING. The mission stays in the player's list exactly as it was loaded, its objectives
   and flags are untouched, and it serializes byte-for-byte as before, so a provider that returns
@@ -414,6 +434,20 @@ NATIVE and separate from the module:
 
 The module refuses to install any content at all when the guards are unavailable: owning content that
 a later session could not protect is worse than owning none.
+
+**Where the protection does not reach.** Two states leave owned content in an EXISTING save
+unguarded, and this API cannot fix either from inside the game:
+
+- an uninspected assembly (a game update), where every hook including this one stays off; and
+- `Story/Protection=false`, which is a deliberate opt-out.
+
+In both, a save that already contains owned missions loads and those missions run and pay out
+normally. The API refuses to install new content and reports the capability unavailable, but it
+cannot refuse the load, halt the game, or mark the world unsupported: no mod can do that safely, and
+pretending otherwise would be a false guarantee. The honest guidance is: with protection unavailable,
+do not load a save that contains owned story content, and keep the backup this project's checks
+already recommend. Every protection claim in this document holds ONLY for the inspected assembly with
+protection enabled and bound.
 
 ### Load: the game restores its own missions, and orphans suspend the module
 

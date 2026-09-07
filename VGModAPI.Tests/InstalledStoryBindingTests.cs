@@ -352,6 +352,41 @@ public sealed class InstalledStoryBindingTests
     }
 
     /// <summary>
+    /// The route the game's abandon/retry button actually takes, which is the one the guard wraps.
+    /// The button shows a confirmation whose callback calls AbandonMission; that method removes the
+    /// mission and, for a retryable story mission, re-adds `nextMissionOnFailed ?? storyId` out of the
+    /// catalog — a lookup that throws for an absent entry. The private RetryAsNextMission is a
+    /// different, follow-up-only route, which API content never carries.
+    /// </summary>
+    [Fact]
+    public void TheAbandonAndRetryButtonRemovesThenReAddsTheSameStoryIdentifier()
+    {
+        using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
+        var module = assembly.MainModule;
+        var details = module.GetType("Behaviour.UI.Missions.MissionDetails")
+            ?? throw new InvalidOperationException("Missing MissionDetails");
+        var abandon = Assert.Single(details.Methods, method => method.Name == "AbandonMission" && method.Parameters.Count == 1);
+        Assert.Equal(Mission, abandon.Parameters[0].ParameterType.FullName);
+        Assert.Contains(Fields(abandon), name => name == "nextMissionOnFailed");
+        Assert.Contains(Fields(abandon), name => name == "storyId");
+        Assert.Contains(Calls(abandon), name => name == "RemoveMission");
+        Assert.Contains(Calls(abandon), name => name == "Get");                 // StoryMission.Get
+        Assert.Contains(Calls(abandon), name => name == "AddMissionWithLog");
+        Assert.Contains(Calls(abandon), name => name == "IsRetryableStoryMission");
+        // The button itself only asks; the callback is what runs the route above.
+        var button = Assert.Single(details.Methods, method => method.Name == "ButtonAbandon");
+        Assert.Contains(Calls(button), name => name == "ShowQuery");
+        var callback = Assert.Single(details.Methods, method => method.Name.Contains("ButtonAbandon", StringComparison.Ordinal)
+            && method.Name != "ButtonAbandon");
+        Assert.Contains(Calls(callback), name => name == "AbandonMission");
+        // The private follow-up route is real but only runs for a mission carrying a follow-up id.
+        var retry = Assert.Single(module.GetType(Mission)!.Methods, method => method.Name == "RetryAsNextMission");
+        Assert.True(retry.IsPrivate);
+        var failed = Assert.Single(module.GetType(Mission)!.Methods, method => method.Name == "MissionFailed");
+        Assert.Contains(Fields(failed), name => name == "nextMissionOnFailed");
+    }
+
+    /// <summary>
     /// The game's faction lookup never returns null: it resolves a TYPE by identifier, constructs it
     /// and registers it, and throws for anything else. That is why the API resolves the type itself
     /// before asking, and why faction identities are those PascalCase type names.

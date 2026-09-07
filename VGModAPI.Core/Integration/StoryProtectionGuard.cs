@@ -20,7 +20,7 @@ namespace VGModAPI.Runtime;
 /// </summary>
 internal sealed class StoryProtectionGuard
 {
-    private readonly FieldInfo _storyId;
+    private readonly FieldInfo _storyId, _nextOnFailed;
     private readonly PropertyInfo _steps, _objectives;
     private readonly Type _mission;
 
@@ -33,6 +33,10 @@ internal sealed class StoryProtectionGuard
         _storyId = _mission.GetField("storyId", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             ?? throw new MissingFieldException(_mission.FullName, "storyId");
         if (_storyId.FieldType != typeof(string)) throw new MissingFieldException(_mission.FullName, "storyId");
+        // The game's abandon/retry re-adds `nextMissionOnFailed ?? storyId`, so the guard has to see it.
+        _nextOnFailed = _mission.GetField("nextMissionOnFailed", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            ?? throw new MissingFieldException(_mission.FullName, "nextMissionOnFailed");
+        if (_nextOnFailed.FieldType != typeof(string)) throw new MissingFieldException(_mission.FullName, "nextMissionOnFailed");
         _steps = Property(_mission, "steps");
         _objectives = Property(step, "objectives");
         var trigger = objective.GetMethod("ProcessMissionTrigger",
@@ -58,6 +62,10 @@ internal sealed class StoryProtectionGuard
 
     /// <summary>The story identifier of a mission, or null. Reading a field mutates nothing.</summary>
     internal string? StoryId(object mission) => _mission.IsInstanceOfType(mission) ? (string?)_storyId.GetValue(mission) : null;
+
+    /// <summary>The follow-up identifier the game would install instead of this mission's own.</summary>
+    internal string? NextMissionOnFailed(object mission)
+        => _mission.IsInstanceOfType(mission) ? (string?)_nextOnFailed.GetValue(mission) : null;
 
     /// <summary>Every objective object this mission holds, so a guard can recognise one by identity.</summary>
     internal IEnumerable<object> Objectives(object mission)

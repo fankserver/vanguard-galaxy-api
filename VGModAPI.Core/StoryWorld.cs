@@ -100,3 +100,24 @@ internal interface IStoryWorld
     /// <summary>The world's current view of API-owned identifiers, or null when there is no usable world.</summary>
     StoryWorldSnapshot? Snapshot();
 }
+
+/// <summary>
+/// What the story module offers the native guards when the game's own UI performs a remove-and-re-add
+/// of an owned mission. The guards cannot decide that alone: only the module knows which occurrence
+/// the identifier belongs to and what its removal means.
+/// </summary>
+internal interface IStoryUiTransaction
+{
+    /// <summary>
+    /// A UI abandon/retry of this identifier is about to run. Returning false refuses it, so the game
+    /// does not remove the mission at all. Returning true suspends the outcome the removal would
+    /// otherwise record and holds the catalog entry, so a retry can re-add the same occurrence.
+    /// </summary>
+    bool BeginAbandon(string identifier);
+
+    /// <summary>
+    /// The UI operation finished. <paramref name="stillHeld"/> says whether the game holds the
+    /// mission again — a retry re-added it — which settles what the removal meant.
+    /// </summary>
+    void EndAbandon(string identifier, bool stillHeld);
+}
