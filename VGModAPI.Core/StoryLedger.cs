@@ -64,7 +64,15 @@ internal sealed class StoryOccurrenceEntry
 internal sealed class StoryLedger
 {
     internal const int MaxOccurrences = 2048;
+    /// <summary>Campaign outcomes are never pruned; reaching this bound refuses instead of dropping progression.</summary>
     internal const int MaxRetainedPerDefinition = 64;
+    /// <summary>
+    /// The idempotency horizon for TEMPORARY definitions: the newest terminal tombstones per
+    /// definition are retained and older ones are pruned. A pruned occurrence reports
+    /// <see cref="StoryLedgerStatus.UnknownOccurrence"/>; it is never re-offered or re-accepted,
+    /// because occurrence identities are API-generated and never reused.
+    /// </summary>
+    internal const int TemporaryTombstoneHorizon = 32;
     internal const int MaxChoices = 16;
     internal const int MaxChoiceKeyLength = 64;
     internal const int MaxChoiceValueLength = 256;
@@ -108,6 +116,23 @@ internal sealed class StoryLedger
     }
 
     /// <summary>
+    /// Removes an OFFERED occurrence that was never accepted. Nothing was ever reconstructed for it,
+    /// so it leaves no tombstone; an active or retired occurrence is refused.
+    /// </summary>
+    internal StoryLedgerStatus Withdraw(StoryContentId caller, Guid occurrenceId, out string diagnostic)
+    {
+        var status = Resolve(caller, occurrenceId, out var entry, out diagnostic);
+        if (status != StoryLedgerStatus.Accepted) return status;
+        if (entry!.State != StoryOccurrenceState.Offered)
+        {
+            diagnostic = "Only an offered occurrence can be withdrawn; this one is " + entry.State + ".";
+            return StoryLedgerStatus.InvalidTransition;
+        }
+        _byOccurrence.Remove(occurrenceId);
+        return StoryLedgerStatus.Accepted;
+    }
+
+    /// <summary>
     /// Records the terminal outcome once. A second terminal call is refused rather than rewriting an
     /// authoritative result, and a temporary definition retains only the tombstone.
     /// </summary>
@@ -131,6 +156,7 @@ internal sealed class StoryLedger
             return StoryLedgerStatus.LimitExceeded;
         }
         entry.Retire(outcome, choices);
+        if (entry.Retention == StoryRetention.Temporary) PruneTemporary(entry.Id);
         return StoryLedgerStatus.Accepted;
     }
 
@@ -146,6 +172,22 @@ internal sealed class StoryLedger
             if (pair.Value == null || pair.Value.Length > MaxChoiceValueLength) return "A choice value must be at most " + MaxChoiceValueLength + " characters.";
         }
         return null;
+    }
+
+    /// <summary>
+    /// Keeps the newest <see cref="TemporaryTombstoneHorizon"/> terminal tombstones of a temporary
+    /// definition. Only TERMINAL TEMPORARY entries are pruned: offered and active occurrences are
+    /// still needed to reconstruct live content, and campaign outcomes/choices are never removed.
+    /// This is a bounded horizon, not a time-based purge.
+    /// </summary>
+    private void PruneTemporary(StoryContentId id)
+    {
+        var terminal = _byOccurrence.Values
+            .Where(entry => entry.Id == id && entry.Retention == StoryRetention.Temporary && entry.State == StoryOccurrenceState.Retired)
+            .OrderByDescending(entry => entry.Sequence)
+            .Skip(TemporaryTombstoneHorizon)
+            .ToArray();
+        foreach (var entry in terminal) _byOccurrence.Remove(entry.OccurrenceId);
     }
 
     private int RetainedFor(StoryContentId id)
@@ -184,8 +226,20 @@ internal sealed class StoryLedger
                 entry.Retention == StoryRetention.Campaign ? entry.Choices.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal) : null))
             .ToArray();
 
+    /// <summary>
+    /// Authoritative CAMPAIGN completion. A temporary definition keeps a bounded idempotency
+    /// tombstone, not an authoritative outcome, so it never answers true here.
+    /// </summary>
     internal bool IsCompleted(StoryContentId id)
-        => _byOccurrence.Values.Any(entry => entry.Id == id && entry.Outcome == StoryOutcome.Completed);
+        => _byOccurrence.Values.Any(entry => entry.Id == id && entry.Retention == StoryRetention.Campaign
+            && entry.Outcome == StoryOutcome.Completed);
+
+    /// <summary>Removes every occurrence of one provider. Used only when the module itself shuts down.</summary>
+    internal void RemoveProvider(string provider)
+    {
+        foreach (var entry in _byOccurrence.Values.Where(entry => entry.Id.Provider == provider).ToArray())
+            _byOccurrence.Remove(entry.OccurrenceId);
+    }
 
     /// <summary>Replaces the whole ledger with restored state; a load never merges a newer snapshot into an older save.</summary>
     internal void Restore(IEnumerable<StoryOccurrenceEntry> entries)

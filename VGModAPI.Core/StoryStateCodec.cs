@@ -18,6 +18,8 @@ internal static class StoryStateCodec
     internal const string Owner = "vgmodapi.story-content";
     internal const int SchemaVersion = 1;
     private const uint Magic = 0x31435356; // VSC1, little-endian.
+    /// <summary>Strict UTF-8 on BOTH sides: invalid bytes or unpaired surrogates throw instead of decoding to U+FFFD.</summary>
+    private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
     /// <summary>Envelope payloads are capped at 1 MiB; this stays well below that bound.</summary>
     internal const int MaxBytes = 512 * 1024;
 
@@ -25,8 +27,11 @@ internal static class StoryStateCodec
     {
         var rows = (entries ?? throw new ArgumentNullException(nameof(entries))).OrderBy(entry => entry.Sequence).ToArray();
         if (rows.Length > StoryLedger.MaxOccurrences) throw new InvalidDataException("Too many story occurrences to persist.");
+        // The sequence is the authoritative occurrence timeline; it must stay positive and unique.
+        if (rows.Any(row => row.Sequence < 1) || rows.Select(row => row.Sequence).Distinct().Count() != rows.Length)
+            throw new InvalidDataException("Story occurrence sequences must be positive and unique.");
         using var stream = new MemoryStream();
-        using (var writer = new BinaryWriter(stream, Encoding.UTF8, true))
+        using (var writer = new BinaryWriter(stream, StrictUtf8, true))
         {
             writer.Write(Magic);
             writer.Write(SchemaVersion);
@@ -60,7 +65,7 @@ internal static class StoryStateCodec
     {
         if (bytes == null || bytes.Length < 12 || bytes.Length > MaxBytes) throw new InvalidDataException("Invalid story state size.");
         using var stream = new MemoryStream(bytes, false);
-        using var reader = new BinaryReader(stream, Encoding.UTF8, true);
+        using var reader = new BinaryReader(stream, StrictUtf8, true);
         if (reader.ReadUInt32() != Magic) throw new InvalidDataException("Unsupported story state.");
         int version = reader.ReadInt32();
         // A newer payload is never downgraded; the coordinator reports it as unsupported and protects it.
@@ -74,6 +79,9 @@ internal static class StoryStateCodec
             var local = ReadSegment(reader);
             var occurrence = new Guid(ReadExact(reader, 16));
             long sequence = reader.ReadInt64();
+            if (sequence < 1) throw new InvalidDataException("Malformed story occurrence sequence.");
+            if (index > 0 && sequence <= rows[index - 1].Sequence)
+                throw new InvalidDataException("Story occurrence sequences must be strictly increasing.");
             var state = (StoryOccurrenceState)reader.ReadByte();
             int outcomeCode = reader.ReadByte();
             var retention = (StoryRetention)reader.ReadByte();
@@ -145,7 +153,10 @@ internal static class StoryStateCodec
 
     private static void WriteText(BinaryWriter writer, string value, int max)
     {
-        var bytes = Encoding.UTF8.GetBytes(value ?? "");
+        byte[] bytes;
+        // Strict UTF-8: an unpaired surrogate is refused here rather than written as a replacement character.
+        try { bytes = StrictUtf8.GetBytes(value ?? ""); }
+        catch (EncoderFallbackException) { throw new InvalidDataException("Invalid UTF-8 in story text."); }
         if (value != null && value.Length > max) throw new InvalidDataException("Story text exceeds its bound.");
         if (bytes.Length > max * 4) throw new InvalidDataException("Story text exceeds its encoded bound.");
         writer.Write((ushort)bytes.Length);
@@ -156,7 +167,9 @@ internal static class StoryStateCodec
     {
         int length = reader.ReadUInt16();
         if (length > max * 4) throw new InvalidDataException("Story text exceeds its encoded bound.");
-        var value = Encoding.UTF8.GetString(ReadExact(reader, length));
+        string value;
+        try { value = StrictUtf8.GetString(ReadExact(reader, length)); }
+        catch (DecoderFallbackException) { throw new InvalidDataException("Invalid UTF-8 in story state."); }
         if (value.Length > max) throw new InvalidDataException("Story text exceeds its bound.");
         return value;
     }

@@ -5,133 +5,359 @@ using System.Linq;
 namespace VGModAPI.Core;
 
 /// <summary>
-/// The API-owned story module: definitions in, automatic persistence out. It registers its OWN
-/// persistence provider, so a consumer supplies no codec, no save/load callback and no restoration
-/// scheduling for supported story state. Providers keep using the separate save-data API for their
-/// additional information; that boundary is documented, not blurred.
+/// The API-owned story module: authenticated provider leases in, automatic persistence out. It
+/// registers its OWN persistence provider, so a consumer supplies no codec, no save/load callback
+/// and no restoration scheduling for supported story state.
+///
+/// LIFETIME: this module is API-root scoped and must be constructed before any session starts and
+/// disposed only at API shutdown. Its persistence owner is unregistered only by that shutdown,
+/// because unregistering an owner mid-session pauses coordinated saves for EVERY registered mod. A
+/// consumer's lease disposal therefore releases only that provider's registrations.
+///
+/// AVAILABILITY: a query answers for the CURRENT session only. The module resets its ledger on
+/// session start and on any invalidated or failed start, and reports Known only for a session whose
+/// state it actually restored (including a fresh new game with no stored generation). Schema-
+/// unsupported, corrupt, restore-failed and load-blocked owners never call restore, so those
+/// sessions stay Unavailable instead of answering from the previous save.
 ///
 /// This type is pure with respect to the game: it decides what must be installed and what must be
-/// remembered. Driving vanilla registration/reconstruction is the adapter's separate work, so this
-/// module alone does not qualify the runtime path.
+/// remembered. Driving vanilla registration/reconstruction is separate work.
 /// </summary>
 internal sealed class StoryContentService : IStoryApi, IDisposable
 {
-    private sealed class Handle : IStoryRegistration
+    private enum Readiness { None, Pending, Restored, Blocked }
+
+    private sealed class Lease : IStoryProvider
     {
         private readonly StoryContentService _service;
         private bool _disposed;
-        public StoryContentId Id { get; }
-        public string NativeIdentifier { get; }
-        public bool Active => !_disposed && !_service._disposed && _service._registry.Contains(Id);
-        internal Handle(StoryContentService service, StoryContentId id, string identifier)
-        { _service = service; Id = id; NativeIdentifier = identifier; }
+        internal StoryHostPlugin Plugin { get; }
+        public string ProviderId { get; }
+        internal Lease(StoryContentService service, StoryHostPlugin plugin, string providerId)
+        { _service = service; Plugin = plugin; ProviderId = providerId; }
+
+        public bool Active { get { _service.CheckThread(); return !_disposed && !_service._disposed; } }
+
+        public StoryRegistrationResult Register(StoryMissionDefinition definition)
+        {
+            _service.CheckThread();
+            if (definition == null) throw new ArgumentNullException(nameof(definition));
+            if (!Active) return new StoryRegistrationResult(StoryRegistrationStatus.Unavailable, null, "This provider lease is no longer active.");
+            return _service.Register(this, definition);
+        }
+
+        public StoryTransitionResult Offer(string localId)
+        {
+            _service.CheckThread();
+            return _service.Offer(this, localId);
+        }
+
+        public StoryTransitionResult Activate(Guid occurrenceId)
+        {
+            _service.CheckThread();
+            return _service.Transition(this, occurrenceId, (StoryLedger ledger, StoryContentId id, out string diagnostic) => ledger.Activate(id, occurrenceId, out diagnostic));
+        }
+
+        public StoryTransitionResult Withdraw(Guid occurrenceId)
+        {
+            _service.CheckThread();
+            return _service.Transition(this, occurrenceId, (StoryLedger ledger, StoryContentId id, out string diagnostic) => ledger.Withdraw(id, occurrenceId, out diagnostic));
+        }
+
+        public StoryTransitionResult Retire(Guid occurrenceId, StoryOutcome outcome, IReadOnlyDictionary<string, string>? choices = null)
+        {
+            _service.CheckThread();
+            return _service.Transition(this, occurrenceId, (StoryLedger ledger, StoryContentId id, out string diagnostic) => ledger.Retire(id, occurrenceId, outcome, choices, out diagnostic));
+        }
+
+        public StoryOccurrenceQuery Occurrences(string localId)
+        {
+            _service.CheckThread();
+            return _service.Occurrences(this, localId);
+        }
+
+        public StoryCompletionQuery IsCompleted(string localId)
+        {
+            _service.CheckThread();
+            return _service.IsCompleted(this, localId);
+        }
+
         public void Dispose()
         {
+            _service.CheckThread();
             if (_disposed) return;
             _disposed = true;
-            _service.Remove(Id);
+            // Releases this provider's registrations only. The module's persistence owner stays
+            // registered, so no other mod's saves are paused by a consumer's teardown.
+            _service.ReleaseProvider(this);
         }
     }
 
+    private delegate StoryLedgerStatus LedgerCall(StoryLedger ledger, StoryContentId id, out string diagnostic);
+
     private readonly StoryDefinitionRegistry _registry = new();
     private readonly StoryLedger _ledger = new();
+    private readonly Dictionary<string, Lease> _leasesBySegment = new(StringComparer.Ordinal);
+    private readonly StoryProviderBindings _bindings = new();
     private readonly Func<Guid> _newOccurrence;
+    private readonly StoryHostAuthenticator _authenticate;
+    private readonly Action? _checkThread;
+    private readonly Func<SessionSnapshot?> _currentSession;
     private readonly IPersistenceRegistration? _persistence;
-    private readonly Action<StoryContentId>? _onRemoved;
+    private readonly IDisposable? _lifecycle;
+    private Readiness _readiness = Readiness.None;
+    private Guid _restoredSession;
+    private string _readinessDetail = "no session has started since this module was created";
     private bool _disposed;
 
-    /// <summary>
-    /// Registers the module's own persistence provider immediately: the API captures and restores
-    /// this state itself. A null persistence API means the module runs without persistence, and
-    /// every persistent operation is refused rather than silently accepted.
-    /// </summary>
-    internal StoryContentService(IPersistenceApi? persistence, Func<Guid>? newOccurrence = null, Action<StoryContentId>? onRemoved = null)
+    internal StoryContentService(IPersistenceApi? persistence, ILifecycleApi? lifecycle, StoryHostAuthenticator authenticate,
+        Func<Guid>? newOccurrence = null, Action? checkThread = null)
     {
+        _authenticate = authenticate ?? throw new ArgumentNullException(nameof(authenticate));
         _newOccurrence = newOccurrence ?? Guid.NewGuid;
-        _onRemoved = onRemoved;
+        _checkThread = checkThread;
+        _currentSession = () => lifecycle?.CurrentSession;
+        // The module owns its persistence: capture and restore are ITS callbacks, not a consumer's.
         _persistence = persistence?.Register(new PersistenceProvider(
             StoryStateCodec.Owner, StoryStateCodec.SchemaVersion,
             capture: () => StoryStateCodec.Encode(_ledger.Entries),
-            restore: (_, bytes) => _ledger.Restore(bytes == null ? Array.Empty<StoryOccurrenceEntry>() : StoryStateCodec.Decode(bytes)),
+            restore: OnRestore,
             validate: StoryStateCodec.Validate));
+        // Availability is bound to the lifecycle independently of restore: a failed or invalidated
+        // session never calls restore, and its queries must not answer from the previous save.
+        _lifecycle = lifecycle?.Subscribe("vgmodapi.story-content", OnLifecycle);
+    }
+
+    private void CheckThread() => _checkThread?.Invoke();
+
+    private void OnRestore(SessionSnapshot session, byte[]? bytes)
+    {
+        _ledger.Restore(bytes == null ? Array.Empty<StoryOccurrenceEntry>() : StoryStateCodec.Decode(bytes));
+        _restoredSession = session?.Id ?? _currentSession()?.Id ?? Guid.Empty;
+        if (_restoredSession == Guid.Empty)
+        {
+            _readiness = Readiness.Blocked;
+            _readinessDetail = "restored state could not be associated with a session";
+            return;
+        }
+        _readiness = Readiness.Restored;
+        _readinessDetail = bytes == null ? "no stored story state for this save" : "restored";
+    }
+
+    private void OnLifecycle(LifecycleEvent e)
+    {
+        if (_disposed || e == null) return;
+        switch (e.Kind)
+        {
+            case LifecycleEventKind.SessionStarting:
+                // A new attempt owns no earlier state, restored or not.
+                _ledger.Reset();
+                _restoredSession = Guid.Empty;
+                _readiness = Readiness.Pending;
+                _readinessDetail = "the session has not restored story state yet";
+                break;
+            case LifecycleEventKind.SessionInvalidated:
+            case LifecycleEventKind.SessionStartFailed:
+                _ledger.Reset();
+                _restoredSession = Guid.Empty;
+                _readiness = Readiness.Blocked;
+                _readinessDetail = e.Kind == LifecycleEventKind.SessionStartFailed ? "the session failed to start" : "the session was invalidated";
+                break;
+        }
+    }
+
+    /// <summary>Null when the module can answer for the current session, otherwise the exact reason it cannot.</summary>
+    private string? Unavailable()
+    {
+        if (_disposed) return "the story module is disposed";
+        if (_persistence is not { MutationAllowed: true } && _readiness != Readiness.Restored)
+            return "story persistence is " + PersistenceStatus;
+        if (_readiness != Readiness.Restored) return _readinessDetail;
+        var session = _currentSession();
+        if (session == null || session.Id != _restoredSession) return "the restored session is no longer current";
+        if (session.Phase is SessionPhase.Failed or SessionPhase.Invalidated) return "the current session is " + session.Phase;
+        return null;
     }
 
     /// <summary>True only when this module's own state may currently be mutated and persisted.</summary>
-    internal bool PersistenceAvailable => !_disposed && _persistence is { MutationAllowed: true };
+    internal bool PersistenceAvailable => !_disposed && _persistence is { MutationAllowed: true } && Unavailable() == null;
     internal string PersistenceStatus => _disposed ? "inactive" : _persistence?.Status ?? "unavailable";
     internal StoryLedger Ledger => _ledger;
+    internal string ReadinessDetail => _readinessDetail;
 
     /// <summary>Identifiers that already exist in the world; reserving them keeps registration fail-closed.</summary>
     internal void ReserveExistingIdentifiers(IEnumerable<string> identifiers) => _registry.Reserve(identifiers);
 
-    public StoryRegistrationResult Register(StoryMissionDefinition definition)
+    public StoryProviderResult AcquireProvider(object pluginInstance)
     {
-        if (definition == null) throw new ArgumentNullException(nameof(definition));
-        if (_disposed) return new StoryRegistrationResult(StoryRegistrationStatus.Unavailable, null, "The story module is disposed.");
-        var status = _registry.TryRegister(definition, out var diagnostic, out var identifier);
+        CheckThread();
+        if (pluginInstance == null) throw new ArgumentNullException(nameof(pluginInstance));
+        if (_disposed) return new StoryProviderResult(StoryProviderStatus.Unavailable, null, "The story module is disposed.");
+        StoryHostPlugin? plugin;
+        try { plugin = _authenticate(pluginInstance); }
+        catch { plugin = null; }
+        if (plugin == null)
+            return new StoryProviderResult(StoryProviderStatus.UnknownPlugin, null,
+                "The host could not resolve this object to a loaded plugin, so no provider identity can be derived.");
+        var segment = StoryProviderIdentity.Segment(plugin);
+        if (_bindings.Bind(segment, plugin.PluginId) == StoryBindingStatus.Conflict)
+            return new StoryProviderResult(StoryProviderStatus.ProviderConflict, null,
+                "Provider segment '" + segment + "' is already bound to another host plugin.");
+        // The same plugin asking again gets its own live lease back rather than a second owner.
+        if (_leasesBySegment.TryGetValue(segment, out var existing))
+        {
+            if (existing.Active) return new StoryProviderResult(StoryProviderStatus.Acquired, existing, "");
+            _leasesBySegment.Remove(segment);
+        }
+        var lease = new Lease(this, plugin, segment);
+        _leasesBySegment[segment] = lease;
+        return new StoryProviderResult(StoryProviderStatus.Acquired, lease, "");
+    }
+
+    private StoryRegistrationResult Register(Lease lease, StoryMissionDefinition definition)
+    {
+        var id = new StoryContentId(lease.ProviderId, definition.LocalId);
+        var status = _registry.TryRegister(id, definition, out var diagnostic, out var identifier);
         if (status != StoryRegistrationStatus.Registered) return new StoryRegistrationResult(status, null, diagnostic);
-        return new StoryRegistrationResult(status, new Handle(this, definition.Id, identifier), "");
+        return new StoryRegistrationResult(status, new Registration(this, lease, id, identifier), "");
     }
 
-    public IReadOnlyList<StoryOccurrenceRecord> Occurrences(StoryContentId id)
-        => _disposed ? Array.Empty<StoryOccurrenceRecord>() : _ledger.Retained(id);
-
-    public bool IsCompleted(StoryContentId id) => !_disposed && _ledger.IsCompleted(id);
-
-    /// <summary>
-    /// Records a new offered occurrence and returns its identity. Refused when the module cannot
-    /// persist it: an unsaved persistent mission is never silently accepted.
-    /// </summary>
-    internal StoryLedgerStatus Offer(StoryContentId id, out Guid occurrenceId, out string diagnostic)
+    private sealed class Registration : IStoryRegistration
     {
-        occurrenceId = Guid.Empty;
-        if (!Guard(id, out diagnostic, out var definition)) return StoryLedgerStatus.InvalidTransition;
-        var minted = _newOccurrence();
-        var status = _ledger.Offer(id, definition!.Retention, minted, out diagnostic);
-        if (status == StoryLedgerStatus.Accepted) occurrenceId = minted;
-        return status;
+        private readonly StoryContentService _service;
+        private readonly Lease _lease;
+        private bool _disposed;
+        public StoryContentId Id { get; }
+        public string NativeIdentifier { get; }
+        internal Registration(StoryContentService service, Lease lease, StoryContentId id, string identifier)
+        { _service = service; _lease = lease; Id = id; NativeIdentifier = identifier; }
+        public bool Active { get { _service.CheckThread(); return !_disposed && _lease.Active && _service._registry.Contains(Id); } }
+        public void Dispose()
+        {
+            _service.CheckThread();
+            if (_disposed) return;
+            _disposed = true;
+            // Stops offering new content; saved occurrences are never rewritten or deleted here.
+            _service._registry.Unregister(Id);
+        }
     }
 
-    internal StoryLedgerStatus Activate(StoryContentId caller, Guid occurrenceId, out string diagnostic)
-        => Guard(caller, out diagnostic, out _) ? _ledger.Activate(caller, occurrenceId, out diagnostic) : StoryLedgerStatus.InvalidTransition;
+    private StoryTransitionResult Offer(Lease lease, string localId)
+    {
+        if (!TryDefinition(lease, localId, out var id, out var definition, out var refusal, out var status))
+            return new StoryTransitionResult(status, Guid.Empty, refusal);
+        var occurrenceId = _newOccurrence();
+        var result = _ledger.Offer(id, definition!.Retention, occurrenceId, out var diagnostic);
+        return new StoryTransitionResult(Map(result), result == StoryLedgerStatus.Accepted ? occurrenceId : Guid.Empty, diagnostic);
+    }
 
-    internal StoryLedgerStatus Retire(StoryContentId caller, Guid occurrenceId, StoryOutcome outcome,
-        IReadOnlyDictionary<string, string>? choices, out string diagnostic)
-        => Guard(caller, out diagnostic, out _) ? _ledger.Retire(caller, occurrenceId, outcome, choices, out diagnostic) : StoryLedgerStatus.InvalidTransition;
+    private StoryTransitionResult Transition(Lease lease, Guid occurrenceId, LedgerCall call)
+    {
+        if (!Guard(lease, out var refusal, out var status)) return new StoryTransitionResult(status, occurrenceId, refusal);
+        if (!_ledger.TryGet(occurrenceId, out var entry))
+            return new StoryTransitionResult(StoryTransitionStatus.UnknownOccurrence, occurrenceId, "Unknown occurrence.");
+        // The caller identity is the lease's own provider plus the occurrence's definition, so a
+        // lease can only address content it owns.
+        var id = new StoryContentId(lease.ProviderId, entry.Id.LocalId);
+        var result = call(_ledger, id, out var diagnostic);
+        return new StoryTransitionResult(Map(result), occurrenceId, diagnostic);
+    }
 
-    private bool Guard(StoryContentId id, out string diagnostic, out StoryMissionDefinition? definition)
+    private static StoryTransitionStatus Map(StoryLedgerStatus status) => status switch
+    {
+        StoryLedgerStatus.Accepted => StoryTransitionStatus.Accepted,
+        StoryLedgerStatus.UnknownOccurrence => StoryTransitionStatus.UnknownOccurrence,
+        StoryLedgerStatus.ForeignOwner => StoryTransitionStatus.ForeignOwner,
+        StoryLedgerStatus.LimitExceeded => StoryTransitionStatus.LimitExceeded,
+        _ => StoryTransitionStatus.InvalidTransition
+    };
+
+    private bool TryDefinition(Lease lease, string localId, out StoryContentId id, out StoryMissionDefinition? definition,
+        out string refusal, out StoryTransitionStatus status)
     {
         definition = null;
-        if (_disposed) { diagnostic = "The story module is disposed."; return false; }
-        if (!_registry.TryGet(id, out var found))
+        id = default;
+        if (!Guard(lease, out refusal, out status)) return false;
+        if (!StoryContentId.IsValidSegment(localId))
         {
-            diagnostic = "Definition '" + id + "' is not registered in this process.";
+            refusal = "A local ID is 1-48 lowercase ASCII letters/digits/hyphens starting with a letter.";
+            status = StoryTransitionStatus.InvalidTransition;
             return false;
         }
-        if (!PersistenceAvailable)
+        id = new StoryContentId(lease.ProviderId, localId);
+        if (!_registry.TryGet(id, out var found))
         {
-            diagnostic = "Story persistence is unavailable (" + PersistenceStatus + "); refusing to accept unsaved persistent content.";
+            refusal = "Definition '" + localId + "' is not registered by this provider.";
+            status = StoryTransitionStatus.InvalidTransition;
             return false;
         }
         definition = found;
-        diagnostic = "";
         return true;
     }
 
-    private void Remove(StoryContentId id)
+    private bool Guard(Lease lease, out string refusal, out StoryTransitionStatus status)
+    {
+        status = StoryTransitionStatus.Unavailable;
+        if (!lease.Active) { refusal = "This provider lease is no longer active."; return false; }
+        var unavailable = Unavailable();
+        if (unavailable != null)
+        {
+            refusal = "Story state is unavailable: " + unavailable + "; refusing to accept unsaved persistent content.";
+            return false;
+        }
+        if (_persistence is not { MutationAllowed: true })
+        {
+            refusal = "Story persistence is " + PersistenceStatus + "; refusing to accept unsaved persistent content.";
+            return false;
+        }
+        refusal = "";
+        return true;
+    }
+
+    private StoryOccurrenceQuery Occurrences(Lease lease, string localId)
+    {
+        var unavailable = QueryRefusal(lease, localId);
+        if (unavailable != null) return new StoryOccurrenceQuery(StoryKnowledge.Unavailable, null, null, unavailable);
+        return new StoryOccurrenceQuery(StoryKnowledge.Known, _restoredSession,
+            _ledger.Retained(new StoryContentId(lease.ProviderId, localId)), "restored state of the current session");
+    }
+
+    private StoryCompletionQuery IsCompleted(Lease lease, string localId)
+    {
+        var unavailable = QueryRefusal(lease, localId);
+        if (unavailable != null) return new StoryCompletionQuery(StoryKnowledge.Unavailable, null, null, unavailable);
+        return new StoryCompletionQuery(StoryKnowledge.Known, _restoredSession,
+            _ledger.IsCompleted(new StoryContentId(lease.ProviderId, localId)), "campaign completion of the current session");
+    }
+
+    private string? QueryRefusal(Lease lease, string localId)
+    {
+        if (!lease.Active) return "this provider lease is no longer active";
+        if (!StoryContentId.IsValidSegment(localId)) return "the local ID is not a valid identity segment";
+        return Unavailable();
+    }
+
+    private void ReleaseProvider(Lease lease)
     {
         if (_disposed) return;
-        // Unregistering stops offering new content. It never rewrites or deletes saved occurrences:
-        // removal policy for persisted references belongs to the content-safety contract.
-        if (_registry.Unregister(id)) _onRemoved?.Invoke(id);
+        _registry.RemoveProvider(lease.ProviderId);
+        if (_leasesBySegment.TryGetValue(lease.ProviderId, out var current) && ReferenceEquals(current, lease))
+            _leasesBySegment.Remove(lease.ProviderId);
     }
 
     public void Dispose()
     {
+        CheckThread();
         if (_disposed) return;
         _disposed = true;
+        // Only the module's own shutdown unregisters the persistence owner.
+        _lifecycle?.Dispose();
         _persistence?.Dispose();
+        _leasesBySegment.Clear();
+        _bindings.Clear();
         _registry.Clear();
         _ledger.Reset();
+        _readiness = Readiness.None;
+        _readinessDetail = "the story module is disposed";
     }
 }

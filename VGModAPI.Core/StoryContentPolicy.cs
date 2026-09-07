@@ -86,9 +86,10 @@ internal static class StoryContentPolicy
     }
 
     /// <summary>Null when the definition only uses supported types, otherwise the exact refusal reason.</summary>
-    internal static string? Refuse(StoryMissionDefinition definition)
+    internal static string? Refuse(StoryContentId id, StoryMissionDefinition definition)
     {
         if (definition == null) return "A definition is required.";
+        if (id.Provider == null || id.LocalId != definition.LocalId) return "The definition's local ID does not match its resolved identity.";
         foreach (var step in definition.Steps)
             foreach (var objective in step.Objectives)
                 if (!ObjectiveTypes.ContainsKey(objective.Kind))
@@ -96,7 +97,7 @@ internal static class StoryContentPolicy
         foreach (var reward in definition.Rewards)
             if (!RewardTypes.ContainsKey(reward.Kind))
                 return "Unsupported reward kind " + reward.Kind + "; vanilla skips unresolvable rewards on load.";
-        try { Identifier(definition.Id); }
+        try { Identifier(id); }
         catch (ArgumentException error) { return error.Message; }
         return null;
     }

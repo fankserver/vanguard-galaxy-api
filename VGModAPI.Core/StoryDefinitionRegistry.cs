@@ -17,6 +17,7 @@ internal sealed class StoryDefinitionRegistry
 {
     private readonly Dictionary<string, StoryMissionDefinition> _byIdentifier = new(StringComparer.Ordinal);
     private readonly HashSet<string> _reserved = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _providerByIdentifier = new(StringComparer.Ordinal);
 
     /// <summary>Identifiers that already exist in the world (vanilla or foreign). Reserving is not registering.</summary>
     internal void Reserve(IEnumerable<string> identifiers)
@@ -38,15 +39,16 @@ internal sealed class StoryDefinitionRegistry
     /// providers using the same local ID cannot collide; a duplicate WITHIN one provider is
     /// diagnosed, and an identifier owned by other content is refused.
     /// </summary>
-    internal StoryRegistrationStatus TryRegister(StoryMissionDefinition definition, out string diagnostic, out string identifier)
+    internal StoryRegistrationStatus TryRegister(StoryContentId id, StoryMissionDefinition definition, out string diagnostic, out string identifier)
     {
         identifier = "";
-        var refusal = StoryContentPolicy.Refuse(definition);
-        if (refusal != null) { diagnostic = refusal; return StoryRegistrationStatus.IdentifierInUse; }
-        identifier = StoryContentPolicy.Identifier(definition.Id);
+        // A policy refusal is about the DEFINITION, never about someone else owning the identifier.
+        var refusal = StoryContentPolicy.Refuse(id, definition);
+        if (refusal != null) { diagnostic = refusal; return StoryRegistrationStatus.InvalidDefinition; }
+        identifier = StoryContentPolicy.Identifier(id);
         if (_byIdentifier.ContainsKey(identifier))
         {
-            diagnostic = "Provider '" + definition.Id.Provider + "' already registered local ID '" + definition.Id.LocalId + "'.";
+            diagnostic = "Provider '" + id.Provider + "' already registered local ID '" + id.LocalId + "'.";
             return StoryRegistrationStatus.DuplicateLocalId;
         }
         if (_reserved.Contains(identifier))
@@ -60,12 +62,25 @@ internal sealed class StoryDefinitionRegistry
             return StoryRegistrationStatus.LimitExceeded;
         }
         _byIdentifier.Add(identifier, definition);
+        _providerByIdentifier[identifier] = id.Provider;
         diagnostic = "";
         return StoryRegistrationStatus.Registered;
     }
 
     /// <summary>Removes a registration made by THIS identity. Another provider's identity can never remove it.</summary>
-    internal bool Unregister(StoryContentId id) => _byIdentifier.Remove(StoryContentPolicy.Identifier(id));
+    internal bool Unregister(StoryContentId id)
+    {
+        var identifier = StoryContentPolicy.Identifier(id);
+        _providerByIdentifier.Remove(identifier);
+        return _byIdentifier.Remove(identifier);
+    }
 
-    internal void Clear() => _byIdentifier.Clear();
+    /// <summary>Releases every definition of one provider lease. Saved occurrences are untouched.</summary>
+    internal void RemoveProvider(string provider)
+    {
+        foreach (var pair in _providerByIdentifier.Where(pair => pair.Value == provider).Select(pair => pair.Key).ToArray())
+        { _providerByIdentifier.Remove(pair); _byIdentifier.Remove(pair); }
+    }
+
+    internal void Clear() { _byIdentifier.Clear(); _providerByIdentifier.Clear(); }
 }

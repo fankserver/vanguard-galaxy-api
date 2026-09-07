@@ -157,7 +157,12 @@ public sealed class StoryMissionDefinition
     public const int MaxSteps = 8;
     public const int MaxRewards = 4;
 
-    public StoryContentId Id { get; }
+    /// <summary>
+    /// The provider's OWN local identifier. The provider segment is never supplied by the caller: it
+    /// is derived from the authenticated host plugin when a lease is acquired, so one mod cannot
+    /// register content under another mod's name.
+    /// </summary>
+    public string LocalId { get; }
     public string Title { get; }
     public string Description { get; }
     public string? Category { get; }
@@ -168,15 +173,15 @@ public sealed class StoryMissionDefinition
     public IReadOnlyList<StoryStep> Steps { get; }
     public IReadOnlyList<StoryReward> Rewards { get; }
 
-    public StoryMissionDefinition(StoryContentId id, string title, string description, IEnumerable<StoryStep> steps,
+    public StoryMissionDefinition(string localId, string title, string description, IEnumerable<StoryStep> steps,
         IEnumerable<StoryReward>? rewards = null, StoryDifficulty difficulty = StoryDifficulty.Normal,
         StoryRetention retention = StoryRetention.Temporary, bool canAbandon = true,
         string? category = null, string? completionText = null)
     {
-        if (id.Provider == null) throw new ArgumentException("A default story identity is not a registered content identity.", nameof(id));
+        if (!StoryContentId.IsValidSegment(localId)) throw new ArgumentException("A local ID is 1-48 lowercase ASCII letters/digits/hyphens starting with a letter.", nameof(localId));
         if (!Enum.IsDefined(typeof(StoryDifficulty), difficulty)) throw new ArgumentOutOfRangeException(nameof(difficulty));
         if (!Enum.IsDefined(typeof(StoryRetention), retention)) throw new ArgumentOutOfRangeException(nameof(retention));
-        Id = id;
+        LocalId = localId;
         Title = StoryText.Require(title, 128, nameof(title));
         Description = StoryText.Require(description, 1024, nameof(description));
         Category = StoryText.Optional(category, 64, nameof(category));
@@ -199,13 +204,15 @@ public sealed class StoryMissionDefinition
 public enum StoryRegistrationStatus
 {
     Registered,
+    /// <summary>The definition itself is not admissible (an unsupported kind or an over-long identity).</summary>
+    InvalidDefinition,
     /// <summary>The same provider already registered this local ID in this process.</summary>
     DuplicateLocalId,
     /// <summary>The derived native identifier is already taken by other content; the API never overwrites it.</summary>
     IdentifierInUse,
     /// <summary>The registry's bounded capacity would be exceeded; nothing is silently dropped.</summary>
     LimitExceeded,
-    /// <summary>The story capability is unavailable or the module is disposed.</summary>
+    /// <summary>The story module or this provider lease is no longer active.</summary>
     Unavailable
 }
 
@@ -247,6 +254,7 @@ public sealed class StoryOccurrenceRecord
     public IReadOnlyDictionary<string, string> Choices { get; }
     public StoryOccurrenceRecord(StoryContentId id, Guid occurrenceId, StoryOutcome? outcome, IReadOnlyDictionary<string, string>? choices = null)
     {
+        if (id.Provider == null) throw new ArgumentException("A default identity is not a content identity.", nameof(id));
         if (occurrenceId == Guid.Empty) throw new ArgumentException("An occurrence requires its own identity.", nameof(occurrenceId));
         if (outcome.HasValue && !Enum.IsDefined(typeof(StoryOutcome), outcome.Value)) throw new ArgumentOutOfRangeException(nameof(outcome));
         Id = id; OccurrenceId = occurrenceId; Outcome = outcome;
@@ -257,19 +265,172 @@ public sealed class StoryOccurrenceRecord
 }
 
 /// <summary>
-/// Optional owned-story surface. Registration installs supported definitions; the API itself
-/// preserves the offered/active/outcome state a reload needs. Providers supply no codecs, save/load
-/// callbacks or restoration scheduling for this state. Additional provider-owned information keeps
-/// using the separate save-data API.
+/// Whether an answer describes the CURRENT save at all. A query never returns a plain empty list or
+/// a bare false when the module could not restore this session's state: "nothing recorded yet" and
+/// "this save's history is unavailable" are different answers.
+/// </summary>
+public enum StoryKnowledge
+{
+    /// <summary>The module restored (or freshly started) THIS session; the answer describes it.</summary>
+    Known,
+    /// <summary>No restored state for the current session: no session, a failed/invalidated start, blocked or unreadable owner data, or an inactive lease. Nothing is asserted about any save.</summary>
+    Unavailable
+}
+
+/// <summary>Occurrence answer scoped to the session it was read in. Records are empty when unavailable.</summary>
+public sealed class StoryOccurrenceQuery
+{
+    public StoryKnowledge Knowledge { get; }
+    /// <summary>The session the answer belongs to, or null when unavailable.</summary>
+    public Guid? SessionId { get; }
+    public IReadOnlyList<StoryOccurrenceRecord> Records { get; }
+    public string Detail { get; }
+    public StoryOccurrenceQuery(StoryKnowledge knowledge, Guid? sessionId, IEnumerable<StoryOccurrenceRecord>? records, string detail)
+    {
+        if (!Enum.IsDefined(typeof(StoryKnowledge), knowledge)) throw new ArgumentOutOfRangeException(nameof(knowledge));
+        if ((knowledge == StoryKnowledge.Known) != sessionId.HasValue) throw new ArgumentException("Only a known answer carries its session.", nameof(sessionId));
+        Knowledge = knowledge; SessionId = sessionId;
+        var copy = (records ?? Array.Empty<StoryOccurrenceRecord>())
+            .Select(record => record ?? throw new ArgumentException("Null record.", nameof(records))).ToArray();
+        if (knowledge != StoryKnowledge.Known && copy.Length > 0) throw new ArgumentException("An unavailable answer carries no records.", nameof(records));
+        Records = Array.AsReadOnly(copy);
+        Detail = detail ?? throw new ArgumentNullException(nameof(detail));
+    }
+}
+
+/// <summary>
+/// Campaign completion answer. <see cref="Completed"/> is null when unavailable, so a caller can
+/// never read an unreadable history as "not completed".
+/// </summary>
+public sealed class StoryCompletionQuery
+{
+    public StoryKnowledge Knowledge { get; }
+    public Guid? SessionId { get; }
+    public bool? Completed { get; }
+    public string Detail { get; }
+    public StoryCompletionQuery(StoryKnowledge knowledge, Guid? sessionId, bool? completed, string detail)
+    {
+        if (!Enum.IsDefined(typeof(StoryKnowledge), knowledge)) throw new ArgumentOutOfRangeException(nameof(knowledge));
+        if ((knowledge == StoryKnowledge.Known) != sessionId.HasValue) throw new ArgumentException("Only a known answer carries its session.", nameof(sessionId));
+        if ((knowledge == StoryKnowledge.Known) != completed.HasValue) throw new ArgumentException("Only a known answer carries a completion value.", nameof(completed));
+        Knowledge = knowledge; SessionId = sessionId; Completed = completed;
+        Detail = detail ?? throw new ArgumentNullException(nameof(detail));
+    }
+}
+
+/// <summary>Why a provider lease was refused.</summary>
+public enum StoryProviderStatus
+{
+    Acquired,
+    /// <summary>The caller could not be resolved to a loaded plugin by the host, so no provider identity can be derived.</summary>
+    UnknownPlugin,
+    /// <summary>The derived provider segment is already bound to a DIFFERENT host plugin; neither may take the other's content.</summary>
+    ProviderConflict,
+    /// <summary>The story module is unavailable or disposed.</summary>
+    Unavailable
+}
+
+/// <summary>
+/// A provider's own lease on owned story content. The provider segment is derived from the
+/// authenticated host plugin, so every registration, transition and query is scoped to the plugin
+/// that acquired it: a caller-supplied string can no longer claim another mod's content.
+///
+/// Disposing a lease releases only THIS provider's registrations. It never unregisters the module's
+/// internal persistence owner and therefore never pauses another mod's saves.
+/// </summary>
+public interface IStoryProvider : IDisposable
+{
+    /// <summary>The canonical provider segment derived from the host plugin identity.</summary>
+    string ProviderId { get; }
+    bool Active { get; }
+
+    /// <summary>Registers a supported definition under this provider. Refusals are diagnosed and never overwrite content.</summary>
+    StoryRegistrationResult Register(StoryMissionDefinition definition);
+
+    /// <summary>Offers a new occurrence of one of THIS provider's definitions and returns its API-generated identity.</summary>
+    StoryTransitionResult Offer(string localId);
+
+    /// <summary>Marks an offered occurrence of this provider as active.</summary>
+    StoryTransitionResult Activate(Guid occurrenceId);
+
+    /// <summary>Withdraws an offered occurrence that was never accepted; it leaves no tombstone.</summary>
+    StoryTransitionResult Withdraw(Guid occurrenceId);
+
+    /// <summary>Records the single terminal outcome of an occurrence, with declared choices for campaign content.</summary>
+    StoryTransitionResult Retire(Guid occurrenceId, StoryOutcome outcome, IReadOnlyDictionary<string, string>? choices = null);
+
+    /// <summary>Retained occurrences of one of this provider's definitions, scoped to the session that answered.</summary>
+    StoryOccurrenceQuery Occurrences(string localId);
+
+    /// <summary>Campaign completion of one of this provider's definitions. Temporary tombstones never answer true.</summary>
+    StoryCompletionQuery IsCompleted(string localId);
+}
+
+/// <summary>Why an occurrence transition was refused. A refusal changes nothing.</summary>
+public enum StoryTransitionStatus
+{
+    Accepted,
+    /// <summary>The occurrence is unknown to the current ledger, including one pruned past the idempotency horizon.</summary>
+    UnknownOccurrence,
+    /// <summary>The occurrence belongs to another provider or another definition; ownership is never crossed.</summary>
+    ForeignOwner,
+    /// <summary>The transition does not follow the recorded state, for example a second terminal outcome.</summary>
+    InvalidTransition,
+    /// <summary>A bounded limit would be exceeded. Nothing is truncated and no campaign progression is dropped.</summary>
+    LimitExceeded,
+    /// <summary>No restored state for the current session, or the lease/module is inactive; content is never accepted unsaved.</summary>
+    Unavailable
+}
+
+public sealed class StoryTransitionResult
+{
+    public StoryTransitionStatus Status { get; }
+    /// <summary>The occurrence this call created or addressed; empty when refused before one existed.</summary>
+    public Guid OccurrenceId { get; }
+    public string Detail { get; }
+    public StoryTransitionResult(StoryTransitionStatus status, Guid occurrenceId, string detail)
+    {
+        if (!Enum.IsDefined(typeof(StoryTransitionStatus), status)) throw new ArgumentOutOfRangeException(nameof(status));
+        Status = status; OccurrenceId = occurrenceId;
+        Detail = detail ?? throw new ArgumentNullException(nameof(detail));
+    }
+    public bool Accepted => Status == StoryTransitionStatus.Accepted;
+}
+
+public sealed class StoryProviderResult
+{
+    public StoryProviderStatus Status { get; }
+    public IStoryProvider? Provider { get; }
+    public string Diagnostic { get; }
+    public StoryProviderResult(StoryProviderStatus status, IStoryProvider? provider, string diagnostic)
+    {
+        if (!Enum.IsDefined(typeof(StoryProviderStatus), status)) throw new ArgumentOutOfRangeException(nameof(status));
+        if ((status == StoryProviderStatus.Acquired) != (provider != null))
+            throw new ArgumentException("Only an acquired lease carries a provider.", nameof(provider));
+        Status = status; Provider = provider;
+        Diagnostic = diagnostic ?? throw new ArgumentNullException(nameof(diagnostic));
+    }
+    public bool Succeeded => Status == StoryProviderStatus.Acquired;
+}
+
+/// <summary>
+/// Optional owned-story surface. A consumer first acquires a lease for ITSELF: the host resolves the
+/// supplied plugin instance to its loaded plugin identity and derives the provider segment from it.
+/// The API then owns registration, occurrence identity and the supported persisted state, so a
+/// provider writes no codec, save/load callback or restoration scheduling for it. Additional
+/// provider-owned information keeps using the separate save-data API.
+///
+/// This is a trust boundary, not a sandbox: plugins share one process and the API cannot stop
+/// deliberate reflection. What it does prevent is one mod OWNING or mutating another mod's story
+/// content by claiming its name, accidentally or otherwise.
+///
+/// All members, including queries and disposal, are Unity-main-thread-only.
 /// </summary>
 public interface IStoryApi
 {
-    /// <summary>Registers a supported definition. Refusals are diagnosed and never overwrite other content.</summary>
-    StoryRegistrationResult Register(StoryMissionDefinition definition);
-
-    /// <summary>Authoritative outcomes the API retained for this definition, newest last. Empty when nothing is retained.</summary>
-    IReadOnlyList<StoryOccurrenceRecord> Occurrences(StoryContentId id);
-
-    /// <summary>True when a campaign-retained occurrence of this definition completed. Works without any journal mod.</summary>
-    bool IsCompleted(StoryContentId id);
+    /// <summary>
+    /// Acquires this plugin's provider lease. Pass the plugin instance itself (the object the host
+    /// loaded); the host authenticates it and derives the canonical provider segment.
+    /// </summary>
+    StoryProviderResult AcquireProvider(object pluginInstance);
 }
