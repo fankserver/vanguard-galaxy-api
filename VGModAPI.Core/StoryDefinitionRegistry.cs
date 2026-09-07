@@ -19,7 +19,12 @@ internal sealed class StoryDefinitionRegistry
     private readonly HashSet<string> _reserved = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _providerByIdentifier = new(StringComparer.Ordinal);
 
-    /// <summary>Identifiers that already exist in the world (vanilla or foreign). Reserving is not registering.</summary>
+    /// <summary>
+    /// Identifiers that already exist in the WORLD (vanilla or foreign). Reserving is not
+    /// registering, and a reservation belongs to the session that observed it: it is dropped at a
+    /// session boundary by <see cref="ResetWorldReservations"/> and re-evaluated against the next
+    /// world, never carried into a save that does not contain that content.
+    /// </summary>
     internal void Reserve(IEnumerable<string> identifiers)
     {
         foreach (var identifier in identifiers ?? throw new ArgumentNullException(nameof(identifiers)))
@@ -27,6 +32,14 @@ internal sealed class StoryDefinitionRegistry
     }
 
     internal int Count => _byIdentifier.Count;
+    internal int ReservedCount => _reserved.Count;
+
+    /// <summary>
+    /// Drops world reservations at a session boundary. It is deliberately separate from
+    /// <see cref="RemoveProvider"/> and <see cref="Clear"/>: releasing a provider's definitions must
+    /// never forget that the CURRENT world still owns an identifier.
+    /// </summary>
+    internal void ResetWorldReservations() => _reserved.Clear();
     internal IReadOnlyCollection<string> Identifiers => _byIdentifier.Keys.ToArray();
 
     internal bool TryGet(StoryContentId id, out StoryMissionDefinition definition)
@@ -82,5 +95,6 @@ internal sealed class StoryDefinitionRegistry
         { _providerByIdentifier.Remove(pair); _byIdentifier.Remove(pair); }
     }
 
+    /// <summary>Drops every registered definition. World reservations survive; they are session-scoped, not provider-scoped.</summary>
     internal void Clear() { _byIdentifier.Clear(); _providerByIdentifier.Clear(); }
 }

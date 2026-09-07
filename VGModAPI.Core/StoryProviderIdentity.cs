@@ -1,30 +1,39 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 
 namespace VGModAPI.Core;
 
-/// <summary>The host-authenticated identity of one loaded plugin. Consumers cannot construct or forge it.</summary>
+/// <summary>
+/// The host-authenticated identity of one loaded plugin, including the assembly the host loaded it
+/// from. Consumers cannot construct or forge it: it is produced only by the host adapter.
+/// </summary>
 internal sealed class StoryHostPlugin
 {
     internal string PluginId { get; }
     internal string DisplayName { get; }
-    internal StoryHostPlugin(string pluginId, string? displayName = null)
+    /// <summary>The assembly the host recorded for this plugin instance; the caller must match it.</summary>
+    internal Assembly Assembly { get; }
+
+    internal StoryHostPlugin(string pluginId, Assembly assembly, string? displayName = null)
     {
         if (string.IsNullOrEmpty(pluginId) || pluginId.Length > 128) throw new ArgumentException("A host plugin identity is 1-128 characters.", nameof(pluginId));
         PluginId = pluginId;
+        Assembly = assembly ?? throw new ArgumentNullException(nameof(assembly));
         DisplayName = string.IsNullOrEmpty(displayName) ? pluginId : displayName!;
     }
 }
 
 /// <summary>
-/// Resolves a caller-supplied plugin instance to the identity the HOST recorded for it. The story
-/// module never derives a provider from a caller-supplied string; the host adapter supplies this
+/// Resolves a caller-supplied plugin instance to the identity the HOST recorded for it, given the
+/// assembly that actually called the public entry point. The story module never derives a provider
+/// from a caller-supplied string, and never from the argument alone: the host adapter supplies this
 /// authenticator, and only it knows which loaded plugin an object belongs to.
 /// </summary>
-internal delegate StoryHostPlugin? StoryHostAuthenticator(object pluginInstance);
+internal delegate StoryHostPlugin? StoryHostAuthenticator(object pluginInstance, Assembly callingAssembly);
 
 /// <summary>
 /// Deterministic mapping from a host plugin identity to the API's provider segment.
@@ -82,7 +91,7 @@ internal static class StoryProviderIdentity
 }
 
 /// <summary>Why a host plugin could not take a provider segment.</summary>
-internal enum StoryBindingStatus { Bound, AlreadyBoundToSelf, Conflict }
+internal enum StoryBindingStatus { Bound, AlreadyBoundToSelf, Conflict, LimitExceeded }
 
 /// <summary>
 /// Records which host plugin owns each provider segment for the module's lifetime. The binding
@@ -90,21 +99,29 @@ internal enum StoryBindingStatus { Bound, AlreadyBoundToSelf, Conflict }
 /// second plugin can never inherit another mod's content identity. The conflict branch is defensive
 /// (<see cref="StoryProviderIdentity"/> derives a digest-qualified segment), but the module refuses
 /// rather than trusting a truncated digest to be injective.
+///
+/// The count is bounded because each bound provider owns a reserved share of the occurrence ledger
+/// (<see cref="StoryLedger.MaxOccurrencesPerProvider"/>): a provider beyond the bound is refused
+/// rather than granted a share that would have to come out of an existing provider's history.
 /// </summary>
 internal sealed class StoryProviderBindings
 {
+    /// <summary>Bound providers per session-lifetime module. See <see cref="StoryLedger.MaxOccurrencesPerProvider"/>.</summary>
+    internal const int MaxProviders = 32;
+
     private readonly Dictionary<string, string> _pluginBySegment = new(StringComparer.Ordinal);
+
+    internal int Count => _pluginBySegment.Count;
 
     internal StoryBindingStatus Bind(string segment, string pluginId)
     {
-        if (!_pluginBySegment.TryGetValue(segment, out var owner))
-        {
-            _pluginBySegment.Add(segment, pluginId);
-            return StoryBindingStatus.Bound;
-        }
-        return string.Equals(owner, pluginId, StringComparison.Ordinal)
-            ? StoryBindingStatus.AlreadyBoundToSelf
-            : StoryBindingStatus.Conflict;
+        if (_pluginBySegment.TryGetValue(segment, out var owner))
+            return string.Equals(owner, pluginId, StringComparison.Ordinal)
+                ? StoryBindingStatus.AlreadyBoundToSelf
+                : StoryBindingStatus.Conflict;
+        if (_pluginBySegment.Count >= MaxProviders) return StoryBindingStatus.LimitExceeded;
+        _pluginBySegment.Add(segment, pluginId);
+        return StoryBindingStatus.Bound;
     }
 
     internal void Clear() => _pluginBySegment.Clear();

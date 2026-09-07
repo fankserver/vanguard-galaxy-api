@@ -22,14 +22,38 @@ internal static class StoryStateCodec
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
     /// <summary>Envelope payloads are capped at 1 MiB; this stays well below that bound.</summary>
     internal const int MaxBytes = 512 * 1024;
+    /// <summary>Magic, schema version and row count.</summary>
+    internal const int HeaderBytes = 12;
+
+    /// <summary>
+    /// Exact encoded cost of one occurrence, so the ledger can enforce the payload bound in the same
+    /// units the codec writes. Encoding is deterministic, so this is a size, not an estimate.
+    /// </summary>
+    /// <summary>Whether text can be written at all under strict UTF-8; unpaired surrogates cannot.</summary>
+    internal static bool IsEncodable(string value)
+    {
+        try { StrictUtf8.GetByteCount(value ?? ""); return true; }
+        catch (EncoderFallbackException) { return false; }
+    }
+
+    internal static int EncodedSize(StoryOccurrenceEntry entry)
+    {
+        if (entry == null) throw new ArgumentNullException(nameof(entry));
+        int size = 1 + entry.Id.Provider!.Length + 1 + entry.Id.LocalId.Length + 16 + 8 + 3 + 1;
+        if (entry.Retention != StoryRetention.Campaign) return size;
+        foreach (var pair in entry.Choices)
+            // Strict UTF-8 again: text that cannot be encoded has no size, it is simply refused.
+            try { size += 2 + StrictUtf8.GetByteCount(pair.Key) + 2 + StrictUtf8.GetByteCount(pair.Value); }
+            catch (EncoderFallbackException) { throw new InvalidDataException("Invalid UTF-8 in story text."); }
+        return size;
+    }
 
     internal static byte[] Encode(IEnumerable<StoryOccurrenceEntry> entries)
     {
         var rows = (entries ?? throw new ArgumentNullException(nameof(entries))).OrderBy(entry => entry.Sequence).ToArray();
-        if (rows.Length > StoryLedger.MaxOccurrences) throw new InvalidDataException("Too many story occurrences to persist.");
-        // The sequence is the authoritative occurrence timeline; it must stay positive and unique.
-        if (rows.Any(row => row.Sequence < 1) || rows.Select(row => row.Sequence).Distinct().Count() != rows.Length)
-            throw new InvalidDataException("Story occurrence sequences must be positive and unique.");
+        // Encoder and decoder enforce the SAME ledger bounds; neither is more permissive.
+        var refusal = StoryLedger.RefuseBounds(rows);
+        if (refusal != null) throw new InvalidDataException(refusal);
         using var stream = new MemoryStream();
         using (var writer = new BinaryWriter(stream, StrictUtf8, true))
         {
@@ -56,9 +80,7 @@ internal static class StoryStateCodec
             }
             writer.Flush();
         }
-        var bytes = stream.ToArray();
-        if (bytes.Length > MaxBytes) throw new InvalidDataException("Story state exceeds its bounded payload size.");
-        return bytes;
+        return stream.ToArray();
     }
 
     internal static StoryOccurrenceEntry[] Decode(byte[] bytes)
@@ -112,8 +134,8 @@ internal static class StoryStateCodec
             rows[index] = new StoryOccurrenceEntry(new StoryContentId(provider, local), occurrence, retention, sequence, state, outcome, choices);
         }
         if (stream.Position != bytes.Length) throw new InvalidDataException("Trailing story state bytes.");
-        if (rows.Select(row => row.OccurrenceId).Distinct().Count() != rows.Length)
-            throw new InvalidDataException("Duplicate story occurrence identity.");
+        var refusal = StoryLedger.RefuseBounds(rows);
+        if (refusal != null) throw new InvalidDataException(refusal);
         return rows;
     }
 

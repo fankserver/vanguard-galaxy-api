@@ -324,8 +324,20 @@ public enum StoryProviderStatus
     Acquired,
     /// <summary>The caller could not be resolved to a loaded plugin by the host, so no provider identity can be derived.</summary>
     UnknownPlugin,
+    /// <summary>
+    /// The supplied plugin instance belongs to a plugin the host loaded from a DIFFERENT assembly
+    /// than the one that called this method. A plugin acquires its own lease, not another's.
+    /// </summary>
+    CallerMismatch,
+    /// <summary>
+    /// This plugin already holds a live lease. A lease is not shared or reference counted, so a
+    /// caller keeps the one it acquired instead of receiving a second handle to it.
+    /// </summary>
+    AlreadyAcquired,
     /// <summary>The derived provider segment is already bound to a DIFFERENT host plugin; neither may take the other's content.</summary>
     ProviderConflict,
+    /// <summary>The bounded number of story providers is already bound; an existing provider's reserved share is never taken away.</summary>
+    LimitExceeded,
     /// <summary>The story module is unavailable or disposed.</summary>
     Unavailable
 }
@@ -414,15 +426,19 @@ public sealed class StoryProviderResult
 }
 
 /// <summary>
-/// Optional owned-story surface. A consumer first acquires a lease for ITSELF: the host resolves the
-/// supplied plugin instance to its loaded plugin identity and derives the provider segment from it.
-/// The API then owns registration, occurrence identity and the supported persisted state, so a
-/// provider writes no codec, save/load callback or restoration scheduling for it. Additional
-/// provider-owned information keeps using the separate save-data API.
+/// Optional owned-story surface. A consumer acquires a lease for ITSELF: it passes its own plugin
+/// instance, the implementation captures the assembly that actually made the call, and the host
+/// resolves both to one loaded plugin identity. Passing another plugin's instance from a different
+/// assembly is refused (<see cref="StoryProviderStatus.CallerMismatch"/>), so an ordinary API call
+/// cannot take another mod's provider identity. The API then owns registration, occurrence identity
+/// and the supported persisted state, so a provider writes no codec, save/load callback or
+/// restoration scheduling for it. Additional provider-owned information keeps using the separate
+/// save-data API.
 ///
-/// This is a trust boundary, not a sandbox: plugins share one process and the API cannot stop
-/// deliberate reflection. What it does prevent is one mod OWNING or mutating another mod's story
-/// content by claiming its name, accidentally or otherwise.
+/// This is an ordinary-use boundary, NOT a sandbox: plugins share one process, and reflection,
+/// injected code or an assembly that declares several plugins can still reach content the caller
+/// association would otherwise separate. It prevents accidental and casual cross-mod ownership, not
+/// a determined one.
 ///
 /// All members, including queries and disposal, are Unity-main-thread-only.
 /// </summary>
@@ -430,7 +446,11 @@ public interface IStoryApi
 {
     /// <summary>
     /// Acquires this plugin's provider lease. Pass the plugin instance itself (the object the host
-    /// loaded); the host authenticates it and derives the canonical provider segment.
+    /// loaded) and call it DIRECTLY from that plugin's own assembly: the implementation reads the
+    /// calling assembly at this boundary, and the host must resolve the instance to a plugin it
+    /// loaded from that same assembly. There is no caller-supplied assembly or provider parameter,
+    /// so the association cannot be spoofed by an argument. Callers cache the returned lease; a
+    /// second acquisition while one is live reports <see cref="StoryProviderStatus.AlreadyAcquired"/>.
     /// </summary>
     StoryProviderResult AcquireProvider(object pluginInstance);
 }

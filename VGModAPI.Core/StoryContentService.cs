@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 
 namespace VGModAPI.Core;
 
@@ -110,9 +112,19 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
     private string _readinessDetail = "no session has started since this module was created";
     private bool _disposed;
 
+    /// <summary>
+    /// Constructs the module. It MUST be constructed before any session begins, because the
+    /// persistence coordinator refuses a new owner once a session is live; that precondition is
+    /// checked here so the module never leaves a half-registered owner, a dangling subscription or a
+    /// paused coordinator behind.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">A session is already running.</exception>
     internal StoryContentService(IPersistenceApi? persistence, ILifecycleApi? lifecycle, StoryHostAuthenticator authenticate,
         Func<Guid>? newOccurrence = null, Action? checkThread = null)
     {
+        checkThread?.Invoke();
+        if (lifecycle?.CurrentSession != null)
+            throw new InvalidOperationException("The story module must be constructed before a session begins.");
         _authenticate = authenticate ?? throw new ArgumentNullException(nameof(authenticate));
         _newOccurrence = newOccurrence ?? Guid.NewGuid;
         _checkThread = checkThread;
@@ -150,8 +162,11 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
         switch (e.Kind)
         {
             case LifecycleEventKind.SessionStarting:
-                // A new attempt owns no earlier state, restored or not.
+                // A new attempt owns no earlier state, restored or not. Reservations describe the
+                // WORLD, not the process, so they are dropped with it and re-evaluated against the
+                // actual native world of the new session.
                 _ledger.Reset();
+                _registry.ResetWorldReservations();
                 _restoredSession = Guid.Empty;
                 _readiness = Readiness.Pending;
                 _readinessDetail = "the session has not restored story state yet";
@@ -159,6 +174,7 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
             case LifecycleEventKind.SessionInvalidated:
             case LifecycleEventKind.SessionStartFailed:
                 _ledger.Reset();
+                _registry.ResetWorldReservations();
                 _restoredSession = Guid.Empty;
                 _readiness = Readiness.Blocked;
                 _readinessDetail = e.Kind == LifecycleEventKind.SessionStartFailed ? "the session failed to start" : "the session was invalidated";
@@ -183,30 +199,54 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
     internal bool PersistenceAvailable => !_disposed && _persistence is { MutationAllowed: true } && Unavailable() == null;
     internal string PersistenceStatus => _disposed ? "inactive" : _persistence?.Status ?? "unavailable";
     internal StoryLedger Ledger => _ledger;
+    internal StoryDefinitionRegistry Registry => _registry;
     internal string ReadinessDetail => _readinessDetail;
 
     /// <summary>Identifiers that already exist in the world; reserving them keeps registration fail-closed.</summary>
     internal void ReserveExistingIdentifiers(IEnumerable<string> identifiers) => _registry.Reserve(identifiers);
 
+    /// <summary>
+    /// Public entry point. It is deliberately NOT inlined, so <see cref="Assembly.GetCallingAssembly"/>
+    /// observes the consumer's own frame: interface dispatch adds no frame, so the immediate caller
+    /// of this body is the code that made the API call. The captured assembly is passed to the host
+    /// authenticator and is never a parameter, so no argument can claim to come from elsewhere.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     public StoryProviderResult AcquireProvider(object pluginInstance)
+        => AcquireProviderFor(pluginInstance, Assembly.GetCallingAssembly());
+
+    private StoryProviderResult AcquireProviderFor(object pluginInstance, Assembly callingAssembly)
     {
         CheckThread();
         if (pluginInstance == null) throw new ArgumentNullException(nameof(pluginInstance));
         if (_disposed) return new StoryProviderResult(StoryProviderStatus.Unavailable, null, "The story module is disposed.");
         StoryHostPlugin? plugin;
-        try { plugin = _authenticate(pluginInstance); }
+        try { plugin = _authenticate(pluginInstance, callingAssembly); }
         catch { plugin = null; }
         if (plugin == null)
             return new StoryProviderResult(StoryProviderStatus.UnknownPlugin, null,
                 "The host could not resolve this object to a loaded plugin, so no provider identity can be derived.");
+        // The host resolved the ARGUMENT; this checks it against the assembly that actually called.
+        // An assembly declaring several plugins can still acquire any of its own, which is why this
+        // is an ordinary-use boundary rather than a sandbox.
+        if (callingAssembly == null || !ReferenceEquals(plugin.Assembly, callingAssembly))
+            return new StoryProviderResult(StoryProviderStatus.CallerMismatch, null,
+                "That plugin instance belongs to a plugin loaded from another assembly than the caller.");
         var segment = StoryProviderIdentity.Segment(plugin);
-        if (_bindings.Bind(segment, plugin.PluginId) == StoryBindingStatus.Conflict)
+        var binding = _bindings.Bind(segment, plugin.PluginId);
+        if (binding == StoryBindingStatus.Conflict)
             return new StoryProviderResult(StoryProviderStatus.ProviderConflict, null,
                 "Provider segment '" + segment + "' is already bound to another host plugin.");
-        // The same plugin asking again gets its own live lease back rather than a second owner.
+        if (binding == StoryBindingStatus.LimitExceeded)
+            return new StoryProviderResult(StoryProviderStatus.LimitExceeded, null,
+                "All " + StoryProviderBindings.MaxProviders + " story provider slots are bound; an existing provider's reserved share is never taken away.");
+        // A lease is not shared: a second acquisition is refused so one holder's Dispose can never
+        // revoke another holder's registrations behind its back.
         if (_leasesBySegment.TryGetValue(segment, out var existing))
         {
-            if (existing.Active) return new StoryProviderResult(StoryProviderStatus.Acquired, existing, "");
+            if (existing.Active)
+                return new StoryProviderResult(StoryProviderStatus.AlreadyAcquired, null,
+                    "This plugin already holds a live story provider lease; cache and reuse it.");
             _leasesBySegment.Remove(segment);
         }
         var lease = new Lease(this, plugin, segment);
@@ -356,6 +396,7 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
         _leasesBySegment.Clear();
         _bindings.Clear();
         _registry.Clear();
+        _registry.ResetWorldReservations();
         _ledger.Reset();
         _readiness = Readiness.None;
         _readinessDetail = "the story module is disposed";

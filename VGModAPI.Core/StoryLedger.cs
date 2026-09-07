@@ -63,9 +63,29 @@ internal sealed class StoryOccurrenceEntry
 /// </summary>
 internal sealed class StoryLedger
 {
+    /// <summary>Global safety cap. It is a backstop: the per-provider quota below is what a provider may actually use.</summary>
     internal const int MaxOccurrences = 2048;
-    /// <summary>Campaign outcomes are never pruned; reaching this bound refuses instead of dropping progression.</summary>
-    internal const int MaxRetainedPerDefinition = 64;
+    /// <summary>
+    /// Every bound provider owns this share of the ledger outright, so one provider's occurrences can
+    /// never make another provider's <see cref="Offer"/> fail. It is exactly
+    /// <see cref="MaxOccurrences"/> / <see cref="StoryProviderBindings.MaxProviders"/>, so the global
+    /// cap can never be reached before every provider has spent its own quota, and the provider count
+    /// is bounded for the same reason: a new provider is refused rather than handed a share that
+    /// would have to come out of another provider's retained history.
+    /// </summary>
+    internal const int MaxOccurrencesPerProvider = MaxOccurrences / StoryProviderBindings.MaxProviders;
+    /// <summary>
+    /// Highest sequence the codec and the ledger accept. The reserved headroom means a restored
+    /// ledger can never wrap: <see cref="Offer"/> refuses at the bound BEFORE mutating anything, so a
+    /// capture can never fail on a sequence its own decode accepted and block every owner's saves.
+    /// </summary>
+    internal const long MaxSequence = long.MaxValue - MaxOccurrences;
+    /// <summary>
+    /// Campaign outcomes are never pruned; reaching this bound refuses instead of dropping
+    /// progression. It stays BELOW <see cref="MaxOccurrencesPerProvider"/> so one definition's
+    /// history cannot consume its owner's whole share before this bound is reached.
+    /// </summary>
+    internal const int MaxRetainedPerDefinition = 48;
     /// <summary>
     /// The idempotency horizon for TEMPORARY definitions: the newest terminal tombstones per
     /// definition are retained and older ones are pruned. A pruned occurrence reports
@@ -93,12 +113,31 @@ internal sealed class StoryLedger
         diagnostic = "";
         if (occurrenceId == Guid.Empty) { diagnostic = "An occurrence requires its own identity."; return StoryLedgerStatus.InvalidTransition; }
         if (_byOccurrence.ContainsKey(occurrenceId)) { diagnostic = "That occurrence identity already exists."; return StoryLedgerStatus.InvalidTransition; }
+        if (_byOccurrence.Values.Count(entry => entry.Id.Provider == id.Provider) >= MaxOccurrencesPerProvider)
+        {
+            diagnostic = "Provider '" + id.Provider + "' holds its quota of " + MaxOccurrencesPerProvider
+                + " occurrences; nothing was truncated and no other provider is affected.";
+            return StoryLedgerStatus.LimitExceeded;
+        }
         if (_byOccurrence.Count >= MaxOccurrences)
         {
             diagnostic = "The ledger holds its maximum of " + MaxOccurrences + " occurrences; nothing was truncated.";
             return StoryLedgerStatus.LimitExceeded;
         }
-        _byOccurrence.Add(occurrenceId, new StoryOccurrenceEntry(id, occurrenceId, retention, ++_sequence));
+        if (_sequence >= MaxSequence)
+        {
+            // Refused BEFORE any mutation, so the ledger stays capturable instead of overflowing.
+            diagnostic = "The occurrence sequence reached its bound; refusing rather than wrapping the timeline.";
+            return StoryLedgerStatus.LimitExceeded;
+        }
+        var candidate = new StoryOccurrenceEntry(id, occurrenceId, retention, _sequence + 1);
+        if (EncodedSize() + StoryStateCodec.EncodedSize(candidate) > StoryStateCodec.MaxBytes)
+        {
+            diagnostic = "The persisted story state would exceed its bounded payload; refusing rather than failing a later capture.";
+            return StoryLedgerStatus.LimitExceeded;
+        }
+        _sequence++;
+        _byOccurrence.Add(occurrenceId, candidate);
         return StoryLedgerStatus.Accepted;
     }
 
@@ -155,6 +194,15 @@ internal sealed class StoryLedger
                 + " outcomes; refusing rather than dropping campaign progression.";
             return StoryLedgerStatus.LimitExceeded;
         }
+        // A capture must never fail on state this ledger accepted: the cost of the declared choices
+        // is checked against the payload bound BEFORE the outcome is recorded.
+        var projected = new StoryOccurrenceEntry(entry.Id, entry.OccurrenceId, entry.Retention, entry.Sequence,
+            StoryOccurrenceState.Retired, outcome, entry.Retention == StoryRetention.Campaign ? choices : null);
+        if (EncodedSize() - StoryStateCodec.EncodedSize(entry) + StoryStateCodec.EncodedSize(projected) > StoryStateCodec.MaxBytes)
+        {
+            diagnostic = "The persisted story state would exceed its bounded payload; refusing rather than failing a later capture.";
+            return StoryLedgerStatus.LimitExceeded;
+        }
         entry.Retire(outcome, choices);
         if (entry.Retention == StoryRetention.Temporary) PruneTemporary(entry.Id);
         return StoryLedgerStatus.Accepted;
@@ -170,6 +218,8 @@ internal sealed class StoryLedger
         {
             if (string.IsNullOrEmpty(pair.Key) || pair.Key.Length > MaxChoiceKeyLength) return "A choice key must be 1-" + MaxChoiceKeyLength + " characters.";
             if (pair.Value == null || pair.Value.Length > MaxChoiceValueLength) return "A choice value must be at most " + MaxChoiceValueLength + " characters.";
+            // Refused here so the ledger never accepts text its own capture could not write.
+            if (!StoryStateCodec.IsEncodable(pair.Key) || !StoryStateCodec.IsEncodable(pair.Value)) return "A declared choice must be valid text.";
         }
         return null;
     }
@@ -189,6 +239,9 @@ internal sealed class StoryLedger
             .ToArray();
         foreach (var entry in terminal) _byOccurrence.Remove(entry.OccurrenceId);
     }
+
+    /// <summary>Exact encoded size of the current ledger, so bounds are checked in the units that actually matter.</summary>
+    private int EncodedSize() => StoryStateCodec.HeaderBytes + _byOccurrence.Values.Sum(StoryStateCodec.EncodedSize);
 
     private int RetainedFor(StoryContentId id)
         => _byOccurrence.Values.Count(entry => entry.Id == id && entry.State == StoryOccurrenceState.Retired);
@@ -234,11 +287,32 @@ internal sealed class StoryLedger
         => _byOccurrence.Values.Any(entry => entry.Id == id && entry.Retention == StoryRetention.Campaign
             && entry.Outcome == StoryOutcome.Completed);
 
-    /// <summary>Removes every occurrence of one provider. Used only when the module itself shuts down.</summary>
-    internal void RemoveProvider(string provider)
+    /// <summary>
+    /// The bounds a persisted record set must satisfy, shared by the encoder and the decoder so the
+    /// codec is symmetric: a payload can never restore a ledger that this type's own operations would
+    /// have refused, and a capture can never produce one either. A violating payload is refused,
+    /// which protects the owner's retained bytes rather than silently pruning them.
+    /// </summary>
+    internal static string? RefuseBounds(IReadOnlyList<StoryOccurrenceEntry> rows)
     {
-        foreach (var entry in _byOccurrence.Values.Where(entry => entry.Id.Provider == provider).ToArray())
-            _byOccurrence.Remove(entry.OccurrenceId);
+        if (rows == null) throw new ArgumentNullException(nameof(rows));
+        if (rows.Count > MaxOccurrences) return "Too many story occurrences: " + rows.Count + ".";
+        if (StoryStateCodec.HeaderBytes + rows.Sum(StoryStateCodec.EncodedSize) > StoryStateCodec.MaxBytes)
+            return "Story state exceeds its bounded payload size.";
+        if (rows.Any(row => row.Sequence < 1 || row.Sequence > MaxSequence)) return "Story occurrence sequence out of range.";
+        if (rows.Select(row => row.Sequence).Distinct().Count() != rows.Count) return "Story occurrence sequences must be unique.";
+        if (rows.Select(row => row.OccurrenceId).Distinct().Count() != rows.Count) return "Duplicate story occurrence identity.";
+        foreach (var group in rows.GroupBy(row => row.Id.Provider, StringComparer.Ordinal))
+            if (group.Count() > MaxOccurrencesPerProvider) return "Provider '" + group.Key + "' exceeds its occurrence quota.";
+        foreach (var group in rows.GroupBy(row => row.Id))
+        {
+            var retired = group.Count(row => row.State == StoryOccurrenceState.Retired);
+            if (retired > MaxRetainedPerDefinition) return "Definition '" + group.Key + "' exceeds its retained outcome cap.";
+            if (group.Any(row => row.Retention == StoryRetention.Temporary)
+                && group.Count(row => row.Retention == StoryRetention.Temporary && row.State == StoryOccurrenceState.Retired) > TemporaryTombstoneHorizon)
+                return "Definition '" + group.Key + "' exceeds its temporary tombstone horizon.";
+        }
+        return null;
     }
 
     /// <summary>Replaces the whole ledger with restored state; a load never merges a newer snapshot into an older save.</summary>

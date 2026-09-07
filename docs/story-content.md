@@ -9,9 +9,10 @@ its acceptance.
 
 ## The contract in one paragraph
 
-A consumer first acquires its own provider lease with `IStoryApi.AcquireProvider(pluginInstance)`;
-the host resolves that object to the plugin it loaded and the API derives the provider segment from
-that authenticated identity. The lease registers immutable `StoryMissionDefinition`s under their own
+A consumer first acquires its own provider lease with `IStoryApi.AcquireProvider(pluginInstance)`,
+called DIRECTLY from that plugin's own assembly; the implementation captures the calling assembly at
+that boundary, the host resolves the instance to the plugin it loaded, and the API derives the
+provider segment from that authenticated identity. The lease registers immutable `StoryMissionDefinition`s under their own
 `localId`, offers occurrences, records outcomes and answers queries — all scoped to the plugin that
 acquired it. The API derives the namespaced identifier the game will store, refuses collisions,
 mints a separate identity for every occurrence, retains outcomes according to the definition's
@@ -49,9 +50,13 @@ defined subset, not a generic string payload model and not a universal mission D
 
 ## Identity and collisions
 
-A caller never supplies its provider name. `AcquireProvider` takes the plugin instance, the host
-adapter resolves it to the plugin identity it recorded, and the segment is derived from that
-identity: a readable slug of the plugin ID plus a truncated SHA-256 digest of the exact ID, so two
+A caller never supplies its provider name, and the argument alone does not decide the identity.
+`AcquireProvider` is a non-inlined entry point that reads `Assembly.GetCallingAssembly()`; interface
+dispatch adds no frame, so that is the assembly of the code which actually made the call. The host
+adapter resolves the passed instance to the plugin identity it recorded, including the assembly it
+loaded that plugin from, and the module refuses with `CallerMismatch` unless the two are the same
+assembly. There is no caller-supplied assembly or provider parameter to spoof. The segment is then
+derived from that identity: a readable slug of the plugin ID plus a truncated SHA-256 digest of the exact ID, so two
 plugin IDs that slug identically still differ. Host plugin IDs contain dots and upper case, which
 the segment charset excludes (dots must stay reserved so `vgmodapi.story.<provider>.<local>` is
 unambiguous), hence the derivation rather than a direct copy. Because a truncated digest is
@@ -59,9 +64,16 @@ collision-resistant rather than provably injective, the module also records whic
 each segment and refuses a different plugin that maps onto it (`ProviderConflict`). That binding
 outlives the lease: releasing a lease frees the provider's registrations, never its name.
 
-This is a trust boundary, not a sandbox — plugins share one process and the API cannot stop
-deliberate reflection. What it does prevent is one mod owning or mutating another mod's story
-content by claiming its name.
+This is an ordinary-use boundary, NOT a sandbox. It stops a different plugin assembly from taking
+another mod's provider identity by passing that mod's instance. It does not stop reflection,
+injected code, or an assembly that itself declares several plugins: association is at assembly
+granularity, so such an assembly can acquire any of its own plugins' segments. Plugins share one
+process, and nothing here contains a determined mod.
+
+The host adapter that performs the plugin lookup is NOT implemented yet: nothing constructs this
+module at runtime, so the association above is enforced by the module and still has to be honoured
+by the PR2 adapter (resolve the instance to a loaded plugin and report the assembly the host loaded
+it from). `#13` is not complete.
 
 `StoryContentId` segments are 1–48 lowercase ASCII letters/digits/hyphens starting with a letter —
 never a path, alias or display name. The identifier is `vgmodapi.story.<provider>.<local>`, so two
@@ -76,8 +88,15 @@ can capture the other's saved content. Refusals are fail-closed and diagnosed:
 | `LimitExceeded` | The bounded registry (256 definitions) is full; nothing is dropped |
 | `Unavailable` | The module is disposed, or this provider lease is no longer active |
 
-Lease acquisition itself reports `UnknownPlugin` (the host cannot resolve the caller),
-`ProviderConflict` or `Unavailable`.
+Lease acquisition itself reports `UnknownPlugin` (the host cannot resolve the instance),
+`CallerMismatch` (the instance belongs to a plugin from another assembly), `AlreadyAcquired`,
+`ProviderConflict`, `LimitExceeded` (all 32 provider slots are bound) or `Unavailable`.
+
+A lease is not shared and not reference counted. While one is live, a second `AcquireProvider` from
+the same plugin is refused with `AlreadyAcquired` and returns no handle, so one holder's `Dispose`
+can never revoke another holder's registrations; callers cache the lease they acquired. After
+disposal a fresh lease is issued, the old handle stays inactive, and persisted occurrences survive —
+releasing a lease never deletes saved data.
 
 ## Availability: which save an answer is about
 
@@ -100,9 +119,12 @@ capture.
 The module is API-root scoped: constructed before any session starts and disposed only at API
 shutdown, which is the only thing that unregisters its persistence owner (unregistering an owner
 mid-session pauses coordinated saves for every registered mod). A consumer's `IStoryProvider.Dispose`
-therefore releases only that provider's registrations and leaves every other owner running. A module
-constructed after a session already started refuses and reports `Unavailable` until the next session
-start, rather than guessing that the running save is empty.
+therefore releases only that provider's registrations and leaves every other owner running.
+
+Construction before the first session is a PRECONDITION, not a soft state: the persistence
+coordinator refuses a new owner once a session is live, so the constructor checks the lifecycle
+first and throws `InvalidOperationException`. It throws before registering anything, so a refused
+construction leaves no owner, no subscription and no paused coordinator behind for other mods.
 
 ## Occurrences, retention and limits
 
@@ -110,6 +132,11 @@ Every offered occurrence receives its own identity. Only the owning `StoryConten
 retire it; a foreign provider is refused without revealing the owner's local ID. A terminal outcome
 is recorded exactly once — a second attempt is refused rather than rewriting an authoritative
 result. Retention is declared per definition:
+
+Reserved identifiers observed in the loaded world are session-scoped like the ledger: they are
+dropped at a session boundary and re-evaluated against the next world, so an identifier that exists
+in one save never produces a spurious `IdentifierInUse` in another. Releasing a provider lease does
+not drop them, because the current world still owns those identifiers.
 
 - `Temporary`: keeps offered/active state plus a bounded idempotency tombstone (outcome only). No
   declared choices, no completed payload, no history.
@@ -128,11 +155,17 @@ an authoritative result, so a completed temporary job never answers `true`; it i
 | Replay horizon | A temporary definition retains its newest 32 terminal tombstones; older ones are pruned. |
 | Never pruned | Offered and active occurrences (needed to reconstruct live content) and every campaign entry, outcome and declared choice. |
 | Beyond the horizon | A pruned occurrence reports `UnknownOccurrence`. Occurrence identities are API-generated and never reused, so a pruned job is never re-offered or resurrected under its old token. |
-| Global bound | At most 2048 occurrences and 64 retained outcomes per definition. |
+| Per-provider quota | Every bound provider owns 64 occurrences outright (2048 / 32 providers), so one provider's occurrences can never make another's `Offer` fail. |
+| Per-definition bound | At most 48 retained outcomes per definition, below the provider quota so both bounds are reachable. |
+| Provider bound | At most 32 bound providers. A further provider is refused rather than handed a share that would come out of a bound provider's retained history; bindings last for the module's lifetime. |
+| Payload bound | An `Offer` or outcome that would push the persisted state past its bounded payload is refused BEFORE mutating anything, so a later capture cannot fail and block every owner's saves. |
+| Sequence bound | The occurrence sequence is checked against a bound with reserved headroom on every offer and on decode, so the timeline can never wrap. |
+| Global bound | 2048 occurrences overall, as a backstop behind the per-provider quota. |
 
 Bounds are refusals, never truncation. Exceeding the campaign bound diagnoses and changes nothing,
-so campaign progression is never silently dropped, while a generated-job consumer cannot exhaust the
-ledger and starve campaign content. Storing an outcome or a declared choice value is not narrative
+so campaign progression is never silently dropped, and because each provider's share is reserved, a
+generated-job consumer can exhaust only its OWN quota — no starvation of another provider is
+possible within the bounded provider count. Storing an outcome or a declared choice value is not narrative
 history; mod-specific decisions stay mod logic.
 
 ## Automatic persistence
@@ -144,6 +177,12 @@ write, never decoded to replacement characters) — no JSON library is introduce
 sequence is the authoritative timeline and must be positive, unique and strictly increasing on both
 sides. Payloads are capped well below the 1 MiB
 envelope bound; truncated, extended, malformed or newer-version payloads are refused.
+
+The codec is canonical: the encoder and the decoder run the SAME ledger bounds (per-provider quota,
+per-definition retained cap, temporary horizon, sequence range, payload size, identity uniqueness),
+so a payload can never restore a ledger the ledger's own operations would refuse, and the ledger can
+never reach a state its own capture would refuse. A payload that violates a bound is refused, which
+blocks that owner and protects its retained bytes; nothing is silently pruned to fit.
 
 The existing coordinator rules apply unchanged: state is restored only for a generation matching the
 exact loaded save, absence means no known state, and corrupt/unsupported data blocks that owner

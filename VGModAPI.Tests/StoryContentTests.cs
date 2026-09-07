@@ -2,6 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
+using System.Reflection.Emit;
+using System.Runtime.CompilerServices;
 using System.Text;
 using VGModAPI;
 using VGModAPI.Core;
@@ -60,16 +63,16 @@ public sealed class StoryContentTests
     [Fact]
     public void ProviderSegmentsAreDerivedDeterministicallyFromTheHostPluginIdentity()
     {
-        var anima = StoryProviderIdentity.Segment(new StoryHostPlugin(AnimaPlugin));
-        Assert.Equal(anima, StoryProviderIdentity.Segment(new StoryHostPlugin(AnimaPlugin)));
+        var anima = StoryProviderIdentity.Segment(new StoryHostPlugin(AnimaPlugin, typeof(StoryContentTests).Assembly));
+        Assert.Equal(anima, StoryProviderIdentity.Segment(new StoryHostPlugin(AnimaPlugin, typeof(StoryContentTests).Assembly)));
         Assert.True(StoryContentId.IsValidSegment(anima));
-        Assert.NotEqual(anima, StoryProviderIdentity.Segment(new StoryHostPlugin(OtherPlugin)));
+        Assert.NotEqual(anima, StoryProviderIdentity.Segment(new StoryHostPlugin(OtherPlugin, typeof(StoryContentTests).Assembly)));
         // Plugin IDs that slug to the same readable text keep different segments through the digest.
-        Assert.NotEqual(StoryProviderIdentity.Segment(new StoryHostPlugin("com.a.anima")),
-            StoryProviderIdentity.Segment(new StoryHostPlugin("com-a-anima")));
+        Assert.NotEqual(StoryProviderIdentity.Segment(new StoryHostPlugin("com.a.anima", typeof(StoryContentTests).Assembly)),
+            StoryProviderIdentity.Segment(new StoryHostPlugin("com-a-anima", typeof(StoryContentTests).Assembly)));
         // Identities that would otherwise produce an invalid segment still resolve to a valid one.
         foreach (var odd in new[] { "1", ".", "ÄÖÜ", new string('x', 128) })
-            Assert.True(StoryContentId.IsValidSegment(StoryProviderIdentity.Segment(new StoryHostPlugin(odd))));
+            Assert.True(StoryContentId.IsValidSegment(StoryProviderIdentity.Segment(new StoryHostPlugin(odd, typeof(StoryContentTests).Assembly))));
     }
 
     /// <summary>
@@ -81,11 +84,11 @@ public sealed class StoryContentTests
     public void ASegmentStaysBoundToItsHostPluginAndAnotherPluginIsRefused()
     {
         var bindings = new StoryProviderBindings();
-        var segment = StoryProviderIdentity.Segment(new StoryHostPlugin(AnimaPlugin));
+        var segment = StoryProviderIdentity.Segment(new StoryHostPlugin(AnimaPlugin, typeof(StoryContentTests).Assembly));
         Assert.Equal(StoryBindingStatus.Bound, bindings.Bind(segment, AnimaPlugin));
         Assert.Equal(StoryBindingStatus.AlreadyBoundToSelf, bindings.Bind(segment, AnimaPlugin));
         Assert.Equal(StoryBindingStatus.Conflict, bindings.Bind(segment, OtherPlugin));
-        Assert.Equal(StoryBindingStatus.Bound, bindings.Bind(StoryProviderIdentity.Segment(new StoryHostPlugin(OtherPlugin)), OtherPlugin));
+        Assert.Equal(StoryBindingStatus.Bound, bindings.Bind(StoryProviderIdentity.Segment(new StoryHostPlugin(OtherPlugin, typeof(StoryContentTests).Assembly)), OtherPlugin));
     }
 
     // --- supported subset -------------------------------------------------------------------
@@ -189,8 +192,96 @@ public sealed class StoryContentTests
         var stolen = other.Provider.Retire(animaOffer.OccurrenceId, StoryOutcome.Abandoned);
         Assert.Equal(StoryTransitionStatus.ForeignOwner, stolen.Status);
         Assert.DoesNotContain("salvage-run", stolen.Detail);
-        // The same plugin asking again gets its own live lease, not a second owner.
-        Assert.Same(anima.Provider, service.AcquireProvider(animaPlugin).Provider);
+        // A live lease is never handed out twice, so one holder's Dispose cannot revoke another's.
+        var again = service.AcquireProvider(animaPlugin);
+        Assert.Equal(StoryProviderStatus.AlreadyAcquired, again.Status);
+        Assert.Null(again.Provider);
+        Assert.True(anima.Provider.Active);
+    }
+
+    /// <summary>
+    /// A lease is not reference counted. Re-acquisition while one is live is refused outright, and
+    /// after disposal a NEW lease is issued while the old handle stays dead; persisted occurrences
+    /// survive, because releasing a lease never deletes saved data.
+    /// </summary>
+    [Fact]
+    public void ALeaseIsRefusedWhileLiveAndReissuedAfterDisposalWithoutLosingOccurrences()
+    {
+        var host = new FakeHost();
+        var world = new FakeWorld();
+        using var service = world.Service(host);
+        world.StartAndRestore();
+        var plugin = new object();
+        host.Register(plugin, AnimaPlugin);
+        var first = service.AcquireProvider(plugin).Provider!;
+        Assert.True(first.Register(Definition(retention: StoryRetention.Campaign)).Succeeded);
+        var occurrence = first.Offer("salvage-run");
+        Assert.True(first.Retire(occurrence.OccurrenceId, StoryOutcome.Completed).Accepted);
+        Assert.Equal(StoryProviderStatus.AlreadyAcquired, service.AcquireProvider(plugin).Status);
+
+        first.Dispose();
+        var second = service.AcquireProvider(plugin);
+        Assert.Equal(StoryProviderStatus.Acquired, second.Status);
+        Assert.NotSame(first, second.Provider);
+        Assert.False(first.Active);
+        Assert.Equal(StoryTransitionStatus.Unavailable, first.Offer("salvage-run").Status);
+        // The ledger kept the occurrence; only the registration was released with the lease.
+        Assert.Equal(first.ProviderId, second.Provider!.ProviderId);
+        Assert.Single(service.Ledger.Entries);
+        Assert.True(second.Provider.Register(Definition(retention: StoryRetention.Campaign)).Succeeded);
+        Assert.True(second.Provider.IsCompleted("salvage-run").Completed);
+    }
+
+    /// <summary>
+    /// The provider identity is associated with the assembly that ACTUALLY called, captured at the
+    /// non-inlined public entry point rather than taken from an argument. Passing another plugin's
+    /// instance from a different assembly is therefore refused. This is an ordinary-use boundary:
+    /// code inside the plugin's own assembly, or reflection, is explicitly not covered.
+    /// </summary>
+    [Fact]
+    public void AcquiringWithAnotherPluginsInstanceFromAnotherAssemblyIsRefused()
+    {
+        var host = new FakeHost();
+        var world = new FakeWorld();
+        using var service = world.Service(host);
+        world.StartAndRestore();
+        var animaPlugin = new object();
+        host.Register(animaPlugin, AnimaPlugin);
+        // Control: the plugin's own assembly calls directly and is accepted.
+        var owned = service.AcquireProvider(animaPlugin);
+        Assert.Equal(StoryProviderStatus.Acquired, owned.Status);
+
+        // An ordinary API call made from a DIFFERENT assembly, passing that same instance.
+        var foreign = ForeignAssemblyCaller();
+        var spoofed = foreign(service, animaPlugin);
+        Assert.Equal(StoryProviderStatus.CallerMismatch, spoofed.Status);
+        Assert.Null(spoofed.Provider);
+        Assert.DoesNotContain(owned.Provider!.ProviderId, spoofed.Diagnostic);
+
+        // A plugin the host loaded from another assembly is refused even for its own caller.
+        var elsewhere = new object();
+        host.Register(elsewhere, OtherPlugin, typeof(string).Assembly);
+        Assert.Equal(StoryProviderStatus.CallerMismatch, service.AcquireProvider(elsewhere).Status);
+        // The refusal changed nothing: the legitimate lease still works.
+        Assert.True(owned.Provider.Register(Definition()).Succeeded);
+    }
+
+    /// <summary>Emits a real method in a separate dynamic assembly so the captured caller is genuinely foreign.</summary>
+    private static Func<IStoryApi, object, StoryProviderResult> ForeignAssemblyCaller()
+    {
+        var assembly = AssemblyBuilder.DefineDynamicAssembly(
+            new AssemblyName("VGModAPI.Tests.ForeignCaller"), AssemblyBuilderAccess.RunAndCollect);
+        var type = assembly.DefineDynamicModule("main").DefineType("Caller", TypeAttributes.Public);
+        var method = type.DefineMethod("Call", MethodAttributes.Public | MethodAttributes.Static,
+            typeof(StoryProviderResult), new[] { typeof(IStoryApi), typeof(object) });
+        method.SetImplementationFlags(MethodImplAttributes.NoInlining);
+        var il = method.GetILGenerator();
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Ldarg_1);
+        il.Emit(OpCodes.Callvirt, typeof(IStoryApi).GetMethod(nameof(IStoryApi.AcquireProvider))!);
+        il.Emit(OpCodes.Ret);
+        return (Func<IStoryApi, object, StoryProviderResult>)type.CreateType()!
+            .GetMethod("Call")!.CreateDelegate(typeof(Func<IStoryApi, object, StoryProviderResult>));
     }
 
     [Fact]
@@ -301,22 +392,64 @@ public sealed class StoryContentTests
         Assert.Equal(offer.OccurrenceId, Assert.Single(provider.Occurrences("salvage-run").Records).OccurrenceId);
     }
 
+    /// <summary>
+    /// The module is API-root scoped and must exist before any session. The REAL coordinator refuses
+    /// a new owner once a session is live, so the module refuses at construction rather than
+    /// promising an availability state it could not deliver, and it refuses BEFORE registering, so
+    /// no owner, subscription or save pause is left behind for anyone else.
+    /// </summary>
     [Fact]
-    public void AModuleConstructedAfterASessionStartedStaysUnavailableUntilTheNextStart()
+    public void ConstructingTheModuleMidSessionThrowsAndLeavesTheRealCoordinatorUntouched()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "vg-story-" + Guid.NewGuid().ToString("N"));
+        using var hub = new LifecycleHub((_, error) => throw new Exception("Unexpected subscriber fault", error));
+        try
+        {
+            using var persistence = new PersistenceService(hub, new GenerationStore(root), path => path, _ => new string('a', 64));
+            byte[]? restored = null;
+            using var control = persistence.Register(new PersistenceProvider("vgmodapi.tests.control", 1,
+                capture: () => new byte[] { 1 }, restore: (_, bytes) => restored = bytes, validate: bytes => bytes.Length == 1));
+            var session = hub.Begin(SessionOrigin.NewGame, null);
+            hub.PlayerReady(session);
+            hub.GameplayInitialized(session);
+
+            var host = new FakeHost();
+            var failure = Assert.Throws<InvalidOperationException>(
+                () => new StoryContentService(persistence, hub, host.Authenticate, null, hub.CheckThread));
+            Assert.Contains("before a session begins", failure.Message);
+            // No story owner exists, and the other registered owner is neither paused nor faulted.
+            Assert.True(control.MutationAllowed);
+            Assert.Equal("ready", control.Status);
+            Assert.Null(restored);
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    /// <summary>World reservations describe the loaded save, so they end with it.</summary>
+    [Fact]
+    public void WorldReservationsAreDroppedAtASessionBoundaryButNotByProviderTeardown()
     {
         var host = new FakeHost();
         var world = new FakeWorld();
-        world.StartSession();                    // the session began before the module existed
         using var service = world.Service(host);
+        world.StartAndRestore();
         var plugin = new object();
         host.Register(plugin, AnimaPlugin);
         var provider = service.AcquireProvider(plugin).Provider!;
-        provider.Register(Definition());
-        Assert.Equal(StoryKnowledge.Unavailable, provider.IsCompleted("salvage-run").Knowledge);
-        Assert.Contains("no session has started", service.ReadinessDetail);
-        Assert.Equal(StoryTransitionStatus.Unavailable, provider.Offer("salvage-run").Status);
+        var reserved = StoryContentPolicy.Identifier(new StoryContentId(provider.ProviderId, "salvage-run"));
+        service.ReserveExistingIdentifiers(new[] { reserved });
+        var refused = provider.Register(Definition());
+        Assert.Equal(StoryRegistrationStatus.IdentifierInUse, refused.Status);
+
+        // Within the SAME session the reservation survives provider teardown: the world still owns it.
+        provider.Dispose();
+        var again = service.AcquireProvider(plugin).Provider!;
+        Assert.Equal(StoryRegistrationStatus.IdentifierInUse, again.Register(Definition()).Status);
+
+        // The next session is a different world; the reservation does not follow it.
         world.StartAndRestore();
-        Assert.Equal(StoryKnowledge.Known, provider.IsCompleted("salvage-run").Knowledge);
+        Assert.Equal(0, service.Registry.ReservedCount);
+        Assert.True(again.Register(Definition()).Succeeded);
     }
 
     [Fact]
@@ -325,8 +458,9 @@ public sealed class StoryContentTests
         var host = new FakeHost();
         var world = new FakeWorld();
         int checks = 0;
-        var service = world.Service(host, () => { checks++; throw new InvalidOperationException("off-thread"); });
-        Assert.Throws<InvalidOperationException>(() => service.AcquireProvider(new object()));
+        // Construction is main-thread-only too, so the guard fires before anything is registered.
+        Assert.Throws<InvalidOperationException>(
+            () => world.Service(host, () => { checks++; throw new InvalidOperationException("off-thread"); }));
         var relaxed = new FakeWorld();
         var relaxedHost = new FakeHost();
         bool guard = false;
@@ -473,6 +607,60 @@ public sealed class StoryContentTests
         Assert.Contains("campaign definitions only", refusal.Detail);
     }
 
+    /// <summary>
+    /// The global 2048 cap is a backstop, not the rule a provider lives under: each bound provider
+    /// owns 64 occurrences outright, so a generated-job consumer cannot make another mod's offers
+    /// fail. The provider count is bounded for the same reason.
+    /// </summary>
+    [Fact]
+    public void OneProvidersOccurrencesCannotConsumeAnotherProvidersShare()
+    {
+        var host = new FakeHost();
+        var world = new FakeWorld();
+        using var service = world.Service(host);
+        world.StartAndRestore();
+        var greedyPlugin = new object();
+        var quietPlugin = new object();
+        host.Register(greedyPlugin, AnimaPlugin);
+        host.Register(quietPlugin, OtherPlugin);
+        var greedy = service.AcquireProvider(greedyPlugin).Provider!;
+        var quiet = service.AcquireProvider(quietPlugin).Provider!;
+        // Many definitions of ONE owner still share that owner's quota.
+        for (int index = 0; index < 4; index++) Assert.True(greedy.Register(Definition("job-" + index)).Succeeded);
+        Assert.True(quiet.Register(Definition()).Succeeded);
+        int accepted = 0;
+        for (int index = 0; index < StoryLedger.MaxOccurrencesPerProvider + 8; index++)
+            if (greedy.Offer("job-" + (index % 4)).Accepted) accepted++;
+        Assert.Equal(StoryLedger.MaxOccurrencesPerProvider, accepted);
+        var refused = greedy.Offer("job-0");
+        Assert.Equal(StoryTransitionStatus.LimitExceeded, refused.Status);
+        Assert.Contains("no other provider is affected", refused.Detail);
+        // The other provider's share is untouched.
+        Assert.True(quiet.Offer("salvage-run").Accepted);
+        Assert.True(StoryLedger.MaxOccurrencesPerProvider * StoryProviderBindings.MaxProviders <= StoryLedger.MaxOccurrences);
+    }
+
+    [Fact]
+    public void TheBoundedProviderCountRefusesRatherThanTakingABoundProvidersShare()
+    {
+        var host = new FakeHost();
+        var world = new FakeWorld();
+        using var service = world.Service(host);
+        world.StartAndRestore();
+        for (int index = 0; index < StoryProviderBindings.MaxProviders; index++)
+        {
+            var plugin = new object();
+            host.Register(plugin, "com.test.plugin" + index);
+            Assert.Equal(StoryProviderStatus.Acquired, service.AcquireProvider(plugin).Status);
+        }
+        var overflow = new object();
+        host.Register(overflow, "com.test.overflow");
+        var refused = service.AcquireProvider(overflow);
+        Assert.Equal(StoryProviderStatus.LimitExceeded, refused.Status);
+        Assert.Null(refused.Provider);
+        Assert.Contains("never taken away", refused.Diagnostic);
+    }
+
     // --- automatic persistence --------------------------------------------------------------
 
     [Fact]
@@ -590,6 +778,56 @@ public sealed class StoryContentTests
         }));
     }
 
+    /// <summary>
+    /// The codec is canonical: a payload can never restore a ledger the ledger's own operations would
+    /// refuse, and the ledger can never reach a state its capture would refuse. Both matter because a
+    /// capture failure is escalated by the coordinator into a save block for EVERY registered owner.
+    /// </summary>
+    [Fact]
+    public void DecodeEnforcesEveryLedgerBoundAndTheSequenceCannotWrap()
+    {
+        var id = new StoryContentId("anima", "salvage-run");
+        var ledger = new StoryLedger();
+        ledger.Restore(new[] { new StoryOccurrenceEntry(id, Guid.NewGuid(), StoryRetention.Temporary, StoryLedger.MaxSequence) });
+        var refused = ledger.Offer(id, StoryRetention.Temporary, Guid.NewGuid(), out var diagnostic);
+        Assert.Equal(StoryLedgerStatus.LimitExceeded, refused);
+        Assert.Contains("wrapping the timeline", diagnostic);
+        // Nothing mutated, so the state stays capturable instead of overflowing into a save block.
+        Assert.Single(ledger.Entries);
+        Assert.True(StoryStateCodec.Validate(StoryStateCodec.Encode(ledger.Entries)));
+        // A stored sequence beyond the bound leaves no headroom and is refused on decode.
+        var beyond = StoryStateCodec.Encode(new[] { new StoryOccurrenceEntry(id, Guid.NewGuid(), StoryRetention.Temporary, 1) });
+        int sequenceOffset = 12 + (1 + 5) + (1 + 11) + 16;
+        Array.Copy(BitConverter.GetBytes(long.MaxValue), 0, beyond, sequenceOffset, 8);
+        Assert.False(StoryStateCodec.Validate(beyond));
+
+        // Every ledger bound is enforced by BOTH sides, so neither cap is more permissive.
+        var overQuota = Rows(StoryLedger.MaxOccurrencesPerProvider + 1, "anima", "salvage-run", StoryRetention.Temporary, retired: false);
+        Assert.Throws<InvalidDataException>(() => StoryStateCodec.Encode(overQuota));
+        Assert.False(StoryStateCodec.Validate(Craft(overQuota)));
+        var overHorizon = Rows(StoryLedger.TemporaryTombstoneHorizon + 1, "anima", "salvage-run", StoryRetention.Temporary, retired: true);
+        Assert.Throws<InvalidDataException>(() => StoryStateCodec.Encode(overHorizon));
+        Assert.False(StoryStateCodec.Validate(Craft(overHorizon)));
+        var overRetained = Rows(StoryLedger.MaxRetainedPerDefinition + 1, "anima", "salvage-run", StoryRetention.Campaign, retired: true);
+        Assert.Throws<InvalidDataException>(() => StoryStateCodec.Encode(overRetained));
+        Assert.False(StoryStateCodec.Validate(Craft(overRetained)));
+        // A refused payload leaves the owner blocked and its retained bytes intact; nothing is pruned.
+        Assert.Throws<InvalidDataException>(() => StoryStateCodec.Decode(Craft(overRetained)));
+    }
+
+    private static StoryOccurrenceEntry[] Rows(int count, string provider, string local, StoryRetention retention, bool retired)
+        => Enumerable.Range(1, count).Select(index => new StoryOccurrenceEntry(new StoryContentId(provider, local),
+            Guid.NewGuid(), retention, index, retired ? StoryOccurrenceState.Retired : StoryOccurrenceState.Offered,
+            retired ? StoryOutcome.Completed : null)).ToArray();
+
+    /// <summary>Builds a structurally valid payload that violates a ledger bound, by encoding rows separately.</summary>
+    private static byte[] Craft(IReadOnlyList<StoryOccurrenceEntry> rows)
+    {
+        var bodies = rows.Select(row => StoryStateCodec.Encode(new[] { row }).Skip(12).ToArray()).ToArray();
+        var header = StoryStateCodec.Encode(new[] { rows[0] }).Take(8).Concat(BitConverter.GetBytes(rows.Count));
+        return header.Concat(bodies.SelectMany(body => body)).ToArray();
+    }
+
     private static int IndexOf(byte[] haystack, byte[] needle)
     {
         for (int index = 0; index + needle.Length <= haystack.Length; index++)
@@ -603,13 +841,18 @@ public sealed class StoryContentTests
 
     // --- fakes ------------------------------------------------------------------------------
 
-    /// <summary>Stands in for the host adapter that resolves a caller object to its loaded plugin.</summary>
+    /// <summary>
+    /// Stands in for the host adapter that resolves a caller object to its loaded plugin. Like the
+    /// real host it resolves the ARGUMENT and reports the assembly it loaded that plugin from; the
+    /// module is what compares that assembly with the assembly that actually called.
+    /// </summary>
     private sealed class FakeHost
     {
-        private readonly Dictionary<object, string> _plugins = new();
-        internal void Register(object instance, string pluginId) => _plugins[instance] = pluginId;
-        internal StoryHostPlugin? Authenticate(object instance)
-            => _plugins.TryGetValue(instance, out var pluginId) ? new StoryHostPlugin(pluginId) : null;
+        private readonly Dictionary<object, (string PluginId, Assembly Assembly)> _plugins = new();
+        internal void Register(object instance, string pluginId, Assembly? assembly = null)
+            => _plugins[instance] = (pluginId, assembly ?? typeof(StoryContentTests).Assembly);
+        internal StoryHostPlugin? Authenticate(object instance, Assembly caller)
+            => _plugins.TryGetValue(instance, out var plugin) ? new StoryHostPlugin(plugin.PluginId, plugin.Assembly) : null;
     }
 
     private sealed class FakeWorld
@@ -619,9 +862,7 @@ public sealed class StoryContentTests
         internal Guid SessionId => Lifecycle.CurrentSession?.Id ?? Guid.Empty;
 
         internal StoryContentService Service(FakeHost host, Action? checkThread = null)
-            => new(Persistence, Lifecycle, instance => Segment(host, instance), null, checkThread);
-
-        private static StoryHostPlugin? Segment(FakeHost host, object instance) => host.Authenticate(instance);
+            => new(Persistence, Lifecycle, host.Authenticate, null, checkThread);
 
         internal void StartSession()
         {
