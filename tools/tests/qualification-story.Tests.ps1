@@ -13,9 +13,13 @@ try {
     $cases = @('independent-authors','offered-roundtrip','active-roundtrip','native-completion','save-refusals','older-save-rollback','cross-slot-return','repeat-job','provider-unregistered-first-reload','provider-unregistered-second-reload')
     $cases | Set-Content (Join-Path $root 'story-cases.txt')
     @('PASS','owned-story-v1') | Set-Content (Join-Path $root 'story-result.txt')
+    @('PASS','owned-new-game-roundtrip-v1') | Set-Content (Join-Path $root 'story-new-game.txt')
     $outcome = @{ timedOut=$false; killed=$false; selfTerminated=$true; exitCode=0 }
     $outcome | ConvertTo-Json | Set-Content (Join-Path $root 'run-outcome.json')
     Assert-StoryReceipt $root
+    Remove-Item (Join-Path $root 'story-new-game.txt')
+    Reject { Assert-StoryReceipt $root }
+    @('PASS','owned-new-game-roundtrip-v1') | Set-Content (Join-Path $root 'story-new-game.txt')
     foreach ($code in @(-1,0)) {
         $outcome.exitCode=$code
         $outcome | ConvertTo-Json | Set-Content (Join-Path $root 'run-outcome.json')

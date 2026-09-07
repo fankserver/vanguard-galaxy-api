@@ -40,6 +40,8 @@ public sealed partial class Plugin
             "Same local ID must resolve to independent owners.");
         var duplicate = (StoryRegistrationResult)campaign.GetType().GetMethod("Register")!.Invoke(campaign, new object[] { target, faction })!;
         Require(duplicate.Status == StoryRegistrationStatus.DuplicateLocalId, "Duplicate registration was not diagnosed.");
+        Require(a.Unresolved("mission-x").Knowledge == StoryKnowledge.Known && a.Unresolved("mission-x").Occurrences.Count == 0,
+            "New-game occurrences leaked into the pre-existing fixture slot.");
         StoryCase("independent-authors");
         var session = _api!.CurrentSession!.Id;
         var offered = a.Offer(session, "mission-x");

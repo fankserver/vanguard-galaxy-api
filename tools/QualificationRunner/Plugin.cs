@@ -321,6 +321,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         if (JournalSelected)
             Require(!LiveJournalIds().Any(_previousJournalIds.Contains), "New game inherited prior journal history.");
         Passed("new-game-wizard-and-configuration-boundary");
+        foreach (var frame in CheckNewGameStories()) yield return frame;
 
         Require(InSpace(), "Native new-game setup did not produce a space fixture.");
         Save("qa-space", LifecycleEventKind.SaveSucceeded);
