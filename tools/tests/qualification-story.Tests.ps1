@@ -17,18 +17,26 @@ try {
     if (!$budgetGuard) { throw 'Missing story timeout guard.' }
     $checkBudget = [scriptblock]::Create($budgetGuard.Extent.Text)
     $provenance = [pscustomobject]@{ storyProbe=$true }
-    foreach ($TimeoutSeconds in @(3900,4898,5099)) { Reject { & $checkBudget } }
-    $TimeoutSeconds = 5100; & $checkBudget
+    foreach ($TimeoutSeconds in @(3900,4898,5099,5100,5399)) { Reject { & $checkBudget } }
+    $TimeoutSeconds = 5400; & $checkBudget
     $provenance.storyProbe = $false; $TimeoutSeconds = 0; & $checkBudget
     $cases = @('independent-authors','offered-roundtrip','active-roundtrip','native-completion','save-refusals','older-save-rollback','cross-slot-return','repeat-job','provider-unregistered-first-reload','provider-unregistered-second-reload')
     $cases | Set-Content (Join-Path $root 'story-cases.txt')
     @('PASS','owned-story-v1') | Set-Content (Join-Path $root 'story-result.txt')
     @('PASS','owned-new-game-roundtrip-v1') | Set-Content (Join-Path $root 'story-new-game.txt')
+    $nativeCases = 'credit-resource;travel-completion;read-only;reload;stale-session;no-scripted-write;no-invented-progress'
+    @('PASS',$nativeCases) | Set-Content (Join-Path $root 'story-native-objectives.txt')
     $objectiveCases = 'owners;partial-reload;stale-session;inactive-step;authored-beat;generated-objective;duplicate;native-claim;revision-reorder;repeated-instance;rollback'
     @('PASS',$objectiveCases) | Set-Content (Join-Path $root 'story-objectives.txt')
     $outcome = @{ timedOut=$false; killed=$false; selfTerminated=$true; exitCode=0 }
     $outcome | ConvertTo-Json | Set-Content (Join-Path $root 'run-outcome.json')
     Assert-StoryReceipt $root
+    Remove-Item (Join-Path $root 'story-native-objectives.txt')
+    Reject { Assert-StoryReceipt $root }
+    Assert-StoryDonorReceipt $root
+    @('PASS','partial') | Set-Content (Join-Path $root 'story-native-objectives.txt')
+    Reject { Assert-StoryReceipt $root }
+    @('PASS',$nativeCases) | Set-Content (Join-Path $root 'story-native-objectives.txt')
     Remove-Item (Join-Path $root 'story-objectives.txt')
     Assert-StoryDonorReceipt $root
     Reject { Assert-StoryReceipt $root }
