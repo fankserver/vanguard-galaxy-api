@@ -15,7 +15,7 @@ public sealed class ModInformation
         PluginId = pluginId ?? throw new ArgumentNullException(nameof(pluginId));
         Name = name ?? throw new ArgumentNullException(nameof(name));
         InstalledVersion = installedVersion ?? throw new ArgumentNullException(nameof(installedVersion));
-        Dependencies = new ReadOnlyCollection<ModDependencyInformation>(dependencies.ToArray());
+        Dependencies = new ReadOnlyCollection<ModDependencyInformation>((dependencies ?? throw new ArgumentNullException(nameof(dependencies))).ToArray());
         Metadata = metadata;
         MetadataStatus = metadataStatus;
     }
@@ -30,7 +30,7 @@ public sealed class ModInformation
 public sealed class ModDependencyInformation
 {
     public ModDependencyInformation(string pluginId, Version? minimumVersion, bool hardDependency)
-    { PluginId = pluginId; MinimumVersion = minimumVersion; HardDependency = hardDependency; }
+    { PluginId = pluginId ?? throw new ArgumentNullException(nameof(pluginId)); MinimumVersion = minimumVersion; HardDependency = hardDependency; }
     public string PluginId { get; }
     public Version? MinimumVersion { get; }
     public bool HardDependency { get; }

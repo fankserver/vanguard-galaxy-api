@@ -51,7 +51,7 @@ internal sealed class ModInformationCatalog : IModInformationCatalog, IDisposabl
                 var bytes = _read(file);
                 if (bytes != null) { metadata = ModMetadataCodec.Parse(bytes, plugin.Id); status = ModMetadataStatus.Available; }
             }
-            catch (Exception e) when (e is FormatException || e is DecoderFallbackException || e is EncoderFallbackException || e is ArgumentException)
+            catch (Exception e) when (e is FormatException || e is DecoderFallbackException || e is EncoderFallbackException || e is ArgumentException || e is NotSupportedException)
             { status = ModMetadataStatus.Invalid; }
             catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is System.Security.SecurityException)
             { status = ModMetadataStatus.Unreadable; }

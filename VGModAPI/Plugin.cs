@@ -29,7 +29,7 @@ public sealed class Plugin : BaseUnityPlugin
     private void Start()
     {
         try { _modCatalog?.Refresh(); }
-        catch (Exception) { Logger.LogWarning("Mod information inventory could not be refreshed; game services are unaffected."); }
+        catch (Exception error) { Logger.LogWarning($"Mod information inventory could not be refreshed ({error.GetType().Name}); game services are unaffected."); }
     }
     private void Awake()
     {

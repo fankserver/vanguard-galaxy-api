@@ -49,6 +49,17 @@ public sealed class ModInformationTests
     }
 
     [Fact]
+    public void UnsupportedPathFailureIsIsolatedAndPublicNullArgumentsAreDiagnosed()
+    {
+        using var catalog = new ModInformationCatalog(() => new[] { Plugin("a", true), Plugin("b", true) },
+            path => path.EndsWith("a.vgmod.json", StringComparison.Ordinal) ? throw new NotSupportedException("Private path") : null);
+        catalog.Refresh();
+        Assert.Equal(new[] { ModMetadataStatus.Invalid, ModMetadataStatus.Missing }, catalog.Snapshot.Select(r => r.MetadataStatus));
+        Assert.Throws<ArgumentNullException>(() => new ModInformation("a", "a", new Version(1, 0), null!, null, ModMetadataStatus.Missing));
+        Assert.Throws<ArgumentNullException>(() => new ModDependencyInformation(null!, null, false));
+    }
+
+    [Fact]
     public void SharedDllUsesOneDeterministicSidecarPerGuid()
     {
         var paths = new List<string>();
