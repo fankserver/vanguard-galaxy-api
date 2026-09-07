@@ -257,7 +257,7 @@ function Assert-ModMenuProbeSelection([string]$Root, $Provenance) {
     $marker = Join-Path $Root 'mod-menu-probe.enabled'
     if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Mod menu probe selection changed.' }
     if (!$selected) { return }
-    if ($Provenance.scenario -ne 'Full' -or [IO.File]::ReadAllText($marker) -cne 'mod-menu-probe-v1') { throw 'Invalid mod menu probe selection.' }
+    if ($Provenance.scenario -ne 'Full' -or [IO.File]::ReadAllText($marker) -cne 'mod-menu-probe-v2') { throw 'Invalid mod menu probe selection.' }
     $selections = @('menuInspection','travelJournal','travelJournalComparison','echo','echoTravelProbe','echoAbsentProbe','anima','animaTravelProbe','journalMissionEventsProbe','missionIdentityProbe','missionTransitionsProbe','contentReferenceProbe','stockpileCoordinated','journalCoordinated','persistenceProbe','vanillaLoadControl','stockpile','missionJournal','travelStation','travelCrossSystem','travelWormholeFixture','travelResilience','travelRecovery','travelFastLane')
     if ($null -ne $Provenance.assemblyOverlay) { throw 'Mod menu probe cannot use an assembly overlay.' }
     foreach ($name in $selections) {
@@ -276,8 +276,16 @@ function Assert-ModMenuProbeReceipt([string]$Root, $Provenance) {
     if (!(Test-Path -LiteralPath $receipt -PathType Leaf) -or !(Test-Path -LiteralPath $snapshot -PathType Leaf)) { throw 'Mod menu probe evidence missing.' }
     if ((Get-Item -LiteralPath $receipt).Length -gt 256 -or (Get-Item -LiteralPath $snapshot).Length -gt 1048576) { throw 'Mod menu probe evidence too large.' }
     $lines = @(Get-Content -LiteralPath $receipt)
-    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'mod-menu-probe-v1' -or $lines[2] -cnotmatch '^sha256=[0-9a-f]{64}$') { throw 'Invalid mod menu probe receipt.' }
+    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'mod-menu-probe-v2' -or $lines[2] -cnotmatch '^sha256=[0-9a-f]{64}$') { throw 'Invalid mod menu probe receipt.' }
     if ((Get-FileHash -LiteralPath $snapshot -Algorithm SHA256).Hash.ToLowerInvariant() -cne $lines[2].Substring(7)) { throw 'Mod menu probe evidence changed.' }
+    foreach ($name in @('mod-menu-original.png','mod-menu-1280.png')) {
+        $image = Join-Path $Root $name
+        if (!(Test-Path -LiteralPath $image -PathType Leaf) -or (Get-Item -LiteralPath $image).Length -gt 20971520) { throw 'Menu screenshot missing or oversized.' }
+        $record = @(Get-Content -LiteralPath $snapshot | Where-Object { $_.StartsWith("screenshot=$name ") })
+        if ($record.Count -ne 1 -or $record[0] -cnotmatch '^screenshot=[^ ]+ resolution=[1-9][0-9]*x[1-9][0-9]* sha256=([0-9a-f]{64})$') { throw 'Invalid menu screenshot record.' }
+        $expected = $Matches[1]
+        if ((Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expected) { throw 'Menu screenshot hash mismatch.' }
+    }
 }
 function Assert-MenuInspectionReceipt([string]$Root, $Provenance) {
     if (!$Provenance.PSObject.Properties['menuInspection'] -or !$Provenance.menuInspection) { return }

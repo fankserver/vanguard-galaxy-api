@@ -19,7 +19,7 @@ public sealed partial class Plugin
 {
     private IEnumerator RunModMenuProbe()
     {
-        Require(File.ReadAllText(Path.Combine(_root!, "mod-menu-probe.enabled")) == "mod-menu-probe-v1", "Invalid menu probe marker.");
+        Require(File.ReadAllText(Path.Combine(_root!, "mod-menu-probe.enabled")) == "mod-menu-probe-v2", "Invalid menu probe marker.");
         foreach (var frame in Wait(() => GameObject.Find("VGModAPI Mods") != null, "owned Mods entry")) yield return frame;
         Require(_api!.CurrentSession == null, "Menu probe must not enter gameplay.");
         var entry = GameObject.Find("VGModAPI Mods").GetComponent<Button>();
@@ -36,7 +36,7 @@ public sealed partial class Plugin
         var oldMouse = Mouse.current;
         Mouse? mouse = null;
         var metadataCreated = false;
-        var evidence = new StringBuilder("Native input-system menu probe v1\n");
+        var evidence = new StringBuilder("Native input-system menu probe v2\n");
         try
         {
             keyboard = InputSystem.AddDevice<Keyboard>();
@@ -106,11 +106,12 @@ public sealed partial class Plugin
             Require(EventSystem.current == events && GameObject.Find("VGModAPI Mods").GetComponentInParent<Canvas>() == canvas, "Global UI infrastructure changed.");
             Require(_api.CurrentSession == null && !_events.Any(item => item.Kind == LifecycleEventKind.PlayerReady), "Menu probe entered gameplay.");
             evidence.AppendLine("inactive-teardown=PASS reattach-single-entry=PASS no-gameplay=PASS");
+            foreach (var frame in MenuLifecycleProbe(keyboard, mouse, evidence)) yield return frame;
             var bytes = Encoding.UTF8.GetBytes(evidence.ToString());
             File.WriteAllBytes(Path.Combine(_root!, "mod-menu-probe.txt"), bytes);
             using var hash = SHA256.Create();
             var digest = BitConverter.ToString(hash.ComputeHash(bytes)).Replace("-", "").ToLowerInvariant();
-            File.WriteAllText(Path.Combine(_root!, "mod-menu-probe.receipt"), "PASS\nmod-menu-probe-v1\nsha256=" + digest + "\n");
+            File.WriteAllText(Path.Combine(_root!, "mod-menu-probe.receipt"), "PASS\nmod-menu-probe-v2\nsha256=" + digest + "\n");
             Passed("mod-menu-native-input");
         }
         finally
