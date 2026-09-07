@@ -244,10 +244,11 @@ internal sealed class ModMenuView : IModMenuView
         _navigation.Add(_list.verticalScrollbar); _navigation.Add(_details.verticalScrollbar);
         for (var i = 0; i < _navigation.Count; ++i)
         {
-            var previous = _navigation[(i + _navigation.Count - 1) % _navigation.Count];
-            var next = _navigation[(i + 1) % _navigation.Count];
+            var links = ModMenuNavigation.Neighbors(i, _navigation.Count, _navigation[i] is Scrollbar);
             _navigation[i].navigation = new Navigation { mode = Navigation.Mode.Explicit,
-                selectOnUp = previous, selectOnLeft = previous, selectOnDown = next, selectOnRight = next };
+                selectOnUp = links.Up.HasValue ? _navigation[links.Up.Value] : null,
+                selectOnDown = links.Down.HasValue ? _navigation[links.Down.Value] : null,
+                selectOnLeft = _navigation[links.Left], selectOnRight = _navigation[links.Right] };
         }
     }
 
@@ -324,7 +325,9 @@ internal sealed class ModMenuView : IModMenuView
         content = Rect(viewport, "Content"); Stretch(content, 0, 1, 1, 1); content.pivot = new Vector2(.5f, 1);
         var barRect = Rect(root, "Scrollbar"); Stretch(barRect, 1, 0, 1, 1, -16, 0, 0, 0);
         var track = barRect.gameObject.AddComponent<Image>(); track.color = new Color(.12f, .15f, .19f, 1);
-        var handle = Rect(barRect, "Handle"); var handleImage = handle.gameObject.AddComponent<Image>();
+        var handle = Rect(barRect, "Handle");
+        Stretch(handle, 0, 0, 1, 1); // Scrollbar drives anchors, not offsets.
+        var handleImage = handle.gameObject.AddComponent<Image>();
         handleImage.color = new Color(.55f, .6f, .68f, 1);
         var bar = barRect.gameObject.AddComponent<Scrollbar>(); bar.handleRect = handle; bar.targetGraphic = handleImage;
         bar.direction = Scrollbar.Direction.BottomToTop;
