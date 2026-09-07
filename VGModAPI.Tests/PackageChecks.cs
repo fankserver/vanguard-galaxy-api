@@ -67,7 +67,7 @@ internal static class PackageChecks
         {
             "VGModAPI.Abstractions" => new[] { "netstandard" },
             "VGModAPI.Core" => new[] { "netstandard", "VGModAPI.Abstractions" },
-            "VGModAPI" => new[] { "netstandard", "VGModAPI.Abstractions", "VGModAPI.Core", "BepInEx", "0Harmony", "UnityEngine", "UnityEngine.CoreModule" },
+            "VGModAPI" => new[] { "netstandard", "VGModAPI.Abstractions", "VGModAPI.Core", "BepInEx", "0Harmony", "UnityEngine", "UnityEngine.CoreModule", "UnityEngine.UIModule", "UnityEngine.UI", "Unity.TextMeshPro", "Unity.InputSystem" },
             _ => throw new InvalidOperationException("Unknown owned assembly: " + expectedName)
         };
         using var assembly = AssemblyDefinition.ReadAssembly(path);

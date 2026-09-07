@@ -10,7 +10,7 @@ Public CI is not a full plugin build, a real-package validation, an installed-ga
 
 ## Owner-local checks with lawful references
 
-Use your own installed game plus BepInEx 5.x. Set `GAME_DIR` to that local installation; never obtain an unknown publicized stub to make CI green. Build uses only local BepInEx/Harmony and Unity compile references, not a compile-time Assembly-CSharp stub. Binding checks separately inspect the original installed Assembly-CSharp. `make link-libs` creates ignored local links, not distributable copies.
+Use your own installed game plus BepInEx 5.x. Set `GAME_DIR` to that local installation; never obtain an unknown publicized stub to make CI green. Build uses only local BepInEx/Harmony and Unity compile references, not a compile-time Assembly-CSharp stub. Binding checks separately inspect the original installed Assembly-CSharp. `make link-libs` creates ignored local links, not distributable copies. The offline native menu additionally compiles against the installed `UnityEngine.UIModule`, `UnityEngine.UI`, `Unity.TextMeshPro`, and `Unity.InputSystem`; each has `Private=false` and explicit reference provenance. Only the adapter assembly may reference these UI modules, never Core/Abstractions. No reference DLL is copied into the package.
 
 With .NET 10, GNU make, and Python 3.11+ available:
 

@@ -250,7 +250,62 @@ function Assert-TravelJournalContainment([string]$Root, [string[]]$Roots, $Befor
     $lines += 'scope=after the owned process exited and the archived plugin flushed at quit; no claim is made about locations outside the audited roots'
     [IO.File]::WriteAllLines((Join-Path $Root 'travel-journal-postquit-audit.txt'), [string[]]$lines)
 }
+function Assert-ModMenuProbeSelection([string]$Root, $Provenance) {
+    $property = $Provenance.PSObject.Properties['modMenuProbe']
+    if ($property -and $property.Value -isnot [bool]) { throw 'Invalid mod menu probe flag.' }
+    $selected = $property -and $property.Value
+    $marker = Join-Path $Root 'mod-menu-probe.enabled'
+    if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Mod menu probe selection changed.' }
+    if (!$selected) { return }
+    if ($Provenance.scenario -ne 'Full' -or [IO.File]::ReadAllText($marker) -cne 'mod-menu-probe-v2') { throw 'Invalid mod menu probe selection.' }
+    $selections = @('storyProbe','menuInspection','travelJournal','travelJournalComparison','echo','echoTravelProbe','echoAbsentProbe','anima','animaTravelProbe','journalMissionEventsProbe','missionIdentityProbe','missionTransitionsProbe','contentReferenceProbe','stockpileCoordinated','journalCoordinated','persistenceProbe','vanillaLoadControl','stockpile','missionJournal','travelStation','travelCrossSystem','travelWormholeFixture','travelResilience','travelRecovery','travelFastLane')
+    if ($null -ne $Provenance.assemblyOverlay) { throw 'Mod menu probe cannot use an assembly overlay.' }
+    foreach ($name in $selections) {
+        $item = $Provenance.PSObject.Properties[$name]
+        if ($item -and ($item.Value -isnot [bool] -or $item.Value)) { throw 'Mod menu probe cannot be combined with consumers or other probes; selection fields must be Boolean false.' }
+    }
+}
+function Assert-ModMenuProbeReceipt([string]$Root, $Provenance) {
+    Assert-ModMenuProbeSelection $Root $Provenance
+    if (!$Provenance.PSObject.Properties['modMenuProbe'] -or !$Provenance.modMenuProbe) { return }
+    $outcome = Join-Path $Root 'run-outcome.json'
+    if (!(Test-Path -LiteralPath $outcome -PathType Leaf)) { throw 'Mod menu probe has no exit outcome.' }
+    Assert-QualificationExitOutcome (Get-Content -LiteralPath $outcome -Raw | ConvertFrom-Json) 'Mod menu probe'
+    $receipt = Join-Path $Root 'mod-menu-probe.receipt'
+    $snapshot = Join-Path $Root 'mod-menu-probe.txt'
+    if (!(Test-Path -LiteralPath $receipt -PathType Leaf) -or !(Test-Path -LiteralPath $snapshot -PathType Leaf)) { throw 'Mod menu probe evidence missing.' }
+    if ((Get-Item -LiteralPath $receipt).Length -gt 256 -or (Get-Item -LiteralPath $snapshot).Length -gt 1048576) { throw 'Mod menu probe evidence too large.' }
+    $lines = @(Get-Content -LiteralPath $receipt)
+    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'mod-menu-probe-v2' -or $lines[2] -cnotmatch '^sha256=[0-9a-f]{64}$') { throw 'Invalid mod menu probe receipt.' }
+    if ((Get-FileHash -LiteralPath $snapshot -Algorithm SHA256).Hash.ToLowerInvariant() -cne $lines[2].Substring(7)) { throw 'Mod menu probe evidence changed.' }
+    foreach ($name in @('mod-menu-original.png','mod-menu-1280.png')) {
+        $image = Join-Path $Root $name
+        if (!(Test-Path -LiteralPath $image -PathType Leaf) -or (Get-Item -LiteralPath $image).Length -gt 20971520) { throw 'Menu screenshot missing or oversized.' }
+        $record = @(Get-Content -LiteralPath $snapshot | Where-Object { $_.StartsWith("screenshot=$name ") })
+        if ($record.Count -ne 1 -or $record[0] -cnotmatch '^screenshot=[^ ]+ resolution=[1-9][0-9]*x[1-9][0-9]* sha256=([0-9a-f]{64})$') { throw 'Invalid menu screenshot record.' }
+        $expected = $Matches[1]
+        if ((Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expected) { throw 'Menu screenshot hash mismatch.' }
+    }
+}
+function Assert-MenuInspectionReceipt([string]$Root, $Provenance) {
+    if (!$Provenance.PSObject.Properties['menuInspection'] -or !$Provenance.menuInspection) { return }
+    if ($Provenance.scenario -ne 'MissingApi') { throw 'Menu inspection requires MissingApi provenance.' }
+    $outcomePath = Join-Path $Root 'run-outcome.json'
+    if (!(Test-Path -LiteralPath $outcomePath -PathType Leaf)) { throw 'Menu inspection has no recorded launcher outcome.' }
+    Assert-QualificationExitOutcome (Get-Content -LiteralPath $outcomePath -Raw | ConvertFrom-Json) 'Menu inspection'
+    $marker = Join-Path $Root 'menu-inspection.enabled'
+    if (!(Test-Path -LiteralPath $marker) -or [IO.File]::ReadAllText($marker) -cne 'menu-inspection-v1') { throw 'Menu inspection selection is missing or changed.' }
+    $receipt = Join-Path $Root 'menu-inspection.receipt'
+    $snapshot = Join-Path $Root 'menu-inspection.txt'
+    if (!(Test-Path -LiteralPath $receipt) -or !(Test-Path -LiteralPath $snapshot)) { throw 'Menu inspection evidence is missing.' }
+    if ((Get-Item -LiteralPath $receipt).Length -gt 256 -or (Get-Item -LiteralPath $snapshot).Length -gt 1048576) { throw 'Menu inspection evidence exceeds its bound.' }
+    $lines = @(Get-Content -LiteralPath $receipt)
+    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'menu-inspection-v1' -or $lines[2] -cnotmatch '^sha256=[0-9a-f]{64}$') { throw 'Menu inspection receipt is invalid.' }
+    if ((Get-FileHash -LiteralPath $snapshot -Algorithm SHA256).Hash.ToLowerInvariant() -cne $lines[2].Substring(7)) { throw 'Menu inspection snapshot hash mismatch.' }
+}
 function Assert-PersistenceProbeReceipt([string]$Root, $Provenance) {
+    Assert-MenuInspectionReceipt $Root $Provenance
+    Assert-ModMenuProbeReceipt $Root $Provenance
     if ($Provenance.PSObject.Properties['anima'] -and $Provenance.anima) {
         $receipt = Join-Path $Root 'anima-missions.txt'
         if (!(Test-Path -LiteralPath $receipt) -or (Get-Content -LiteralPath $receipt -TotalCount 1) -ne 'PASS') { throw 'Anima mission probe did not complete.' }
@@ -813,6 +868,13 @@ function Assert-QualificationInputs([string]$Root) {
     $provenance = Get-Content -LiteralPath (Join-Path $Root 'build-provenance.json') -Raw | ConvertFrom-Json
     if ($provenance.scenario -notin @('Full','MissingApi','UnavailableApi') -or
         (Get-Content -LiteralPath (Join-Path $Root 'scenario.txt') -Raw).Trim() -cne $provenance.scenario) { throw 'Prepared scenario changed.' }
+    Assert-ModMenuProbeSelection $Root $provenance
+    $menuProperty = $provenance.PSObject.Properties['menuInspection']
+    if ($menuProperty -and $menuProperty.Value -isnot [bool]) { throw 'Menu inspection selection must be boolean.' }
+    $menuInspection = $menuProperty -and $menuProperty.Value
+    $menuMarker = Join-Path $Root 'menu-inspection.enabled'
+    if ([bool]$menuInspection -ne (Test-Path -LiteralPath $menuMarker -PathType Leaf)) { throw 'Menu inspection selection changed.' }
+    if ($menuInspection -and ($provenance.scenario -ne 'MissingApi' -or [IO.File]::ReadAllText($menuMarker) -cne 'menu-inspection-v1' -or $provenance.vanillaLoadControl -or $provenance.missionJournal -or $provenance.stockpile -or $provenance.anima -or $provenance.echo -or $provenance.travelJournal)) { throw 'Invalid menu-only inspection selection.' }
     $missionProbe = $provenance.PSObject.Properties['missionTransitionsProbe'] -and [bool]$provenance.missionTransitionsProbe
     $missionMarker = Join-Path $Root 'mission-transitions.enabled'
     if ([bool]$missionProbe -ne (Test-Path -LiteralPath $missionMarker -PathType Leaf)) { throw 'Mission probe selection changed.' }

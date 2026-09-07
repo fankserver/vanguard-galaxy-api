@@ -78,6 +78,12 @@ public sealed class PackageValidationTests : IDisposable
     [InlineData("VGModAPI.Abstractions", "VGModAPI.Core")]
     [InlineData("VGModAPI.Core", "UnityEngine")]
     [InlineData("VGModAPI.Core", "BepInEx")]
+    [InlineData("VGModAPI.Abstractions", "UnityEngine.UI")]
+    [InlineData("VGModAPI.Abstractions", "Unity.TextMeshPro")]
+    [InlineData("VGModAPI.Abstractions", "Unity.InputSystem")]
+    [InlineData("VGModAPI.Core", "UnityEngine.UI")]
+    [InlineData("VGModAPI.Core", "Unity.TextMeshPro")]
+    [InlineData("VGModAPI.Core", "Unity.InputSystem")]
     [InlineData("VGModAPI", "Assembly-CSharp")]
     public void ForbiddenAssemblyReferencesAreRejected(string owner, string dependency)
     {

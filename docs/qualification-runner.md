@@ -2,6 +2,12 @@
 
 This is development tooling for issue #2, not part of the API distribution. Owner-approved test deployment is required. The owner's complete milestone acceptance remains a separate gate.
 
+## Offline Mods screen input probe (development)
+
+Prepare with `-Scenario Full -ModMenuProbe`, without consumer DLLs or other probe switches. It runs only the native menu input probe instead of loading fixtures. The preparation marker is validated against provenance before launch; a bounded SHA-256 receipt is accepted only after a valid recorded process exit. A source review does not grant a native lease: coordinate exclusive ownership before Prepare/Run.
+
+The driver queues temporary Unity Input System keyboard/mouse devices through the actual UI input module (not physical hardware). It tests submit, long-description Up/Down scrolling, scrollbar geometry, Tab, pointer Close, Escape/focus restoration, a raycast barrier, inactive-menu cleanup and reattachment. Only its own sandbox metadata sidecar is created, then removed. The v2 probe additionally exercises a native confirmation modal, temporary canvas replacement/return and API shutdown. It captures private, hash-bound screenshots at the original resolution and 1280×720, restoring the original resolution afterward. Human inspection of those captures remains necessary for readability. The receipt does **not** establish physical gamepad behavior, browser opening or complete owner acceptance. The v1 subset passed in qa99. The v2 lifecycle checks passed in qa102; image inspection then found a clipped Escape caption. After metric-based sizing and a native truncation assertion, qa103 passed at `58588add09c8ff24a249a5451419223b1b002a1a`, with the full caption visible at both 1920×1080 and 1280×720. Both runs self-terminated with recorded exit -1, without timeout/kill; independent checks preserved 37 original hashes, complete direct file sets and byte-identical preferences. Private screenshots and receipts are retained, not distributed. Subsequent PR91 integration adds only a non-selected Story/new-game phase; it does not change the menu implementation or menu probe. Full milestone/owner qualification remains tracked separately in #80.
+
 ## Isolation
 
 `tools/qualification.ps1` provisions a fresh Windows sandbox:
@@ -727,3 +733,9 @@ The API's own facts are the ground truth throughout; the legacy log is the compa
 This phase does NOT close #12: a positively driven `RecoveredPlacement` case and the post-gate chain
 continuation stay open, the tutorial exit stays source-attested and host-tested only, and
 `RuntimeQualified=false`.
+
+## Menu-only UI inspection (milestone 08 preparation)
+
+`Prepare -Scenario MissingApi -MenuInspection` selects an opt-in read-only main-menu census. It refuses gameplay/load probes and consumer combinations. The normal isolated launcher, source-file/preferences preservation and owned-process exit checks remain mandatory. Coordinate an exclusive native run with other sessions; a free-looking process list is not a lease.
+
+The API-independent guard waits for the menu and two real-time settling seconds, verifies the inspected original game hash, then records the actual canvas hierarchy, anchors, scaler, input module, font assets and modal state. It does not click controls, change game objects or load a save. The bounded private `menu-inspection.txt` is covered by a versioned SHA-256 receipt; selection/provenance and receipt mismatches refuse the run. No screenshot or raw profile is published. This is source/UI-layout inspection, **not** acceptance of the forthcoming Mods screen, catalog, networking, or general UI readiness.
