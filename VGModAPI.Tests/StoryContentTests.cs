@@ -526,6 +526,53 @@ public sealed class StoryContentTests
         Assert.Single(provider.Occurrences("salvage-run").Records);
     }
 
+    /// <summary>
+    /// Readiness is an optional capability of the registration handle. A handle that does not report
+    /// it says nothing about whether restored state exists, so the module refuses instead of assuming
+    /// it does: unknown readiness is unavailable, not ready.
+    /// </summary>
+    [Fact]
+    public void APersistenceHandleWithoutTheReadinessCapabilityMakesEveryAnswerUnavailable()
+    {
+        var host = new FakeHost();
+        var world = new FakeWorld(readiness: false);
+        using var service = world.Service(host);
+        world.StartAndRestore();
+        var plugin = new object();
+        host.Register(plugin, AnimaPlugin);
+        var provider = service.AcquireProvider(plugin).Provider!;
+        Assert.True(provider.Register(Definition(retention: StoryRetention.Campaign)).Succeeded);
+        Assert.False(world.Persistence is IPersistenceReadiness);
+
+        var completion = provider.IsCompleted("salvage-run");
+        Assert.Equal(StoryKnowledge.Unavailable, completion.Knowledge);
+        Assert.Null(completion.Completed);
+        Assert.Equal(StoryKnowledge.Unavailable, provider.Occurrences("salvage-run").Knowledge);
+        Assert.Equal(StoryKnowledge.Unavailable, provider.Unresolved("salvage-run").Knowledge);
+        var refused = provider.Offer("salvage-run");
+        Assert.Equal(StoryTransitionStatus.Unavailable, refused.Status);
+        Assert.Contains("does not report readiness", refused.Detail);
+        Assert.Empty(service.Ledger.Entries);
+    }
+
+    /// <summary>The refusal vocabulary is a contract: members keep their numbers, new ones are appended.</summary>
+    [Fact]
+    public void TheTransitionStatusNumbersAreStable()
+    {
+        Assert.Equal(0, (int)StoryTransitionStatus.Accepted);
+        Assert.Equal(1, (int)StoryTransitionStatus.UnknownOccurrence);
+        Assert.Equal(2, (int)StoryTransitionStatus.ForeignOwner);
+        Assert.Equal(3, (int)StoryTransitionStatus.InvalidTransition);
+        Assert.Equal(4, (int)StoryTransitionStatus.LimitExceeded);
+        Assert.Equal(5, (int)StoryTransitionStatus.StaleSession);
+        Assert.Equal(6, (int)StoryTransitionStatus.Busy);
+        Assert.Equal(7, (int)StoryTransitionStatus.Unavailable);
+        // Nothing else exists, so an inserted member cannot renumber these unnoticed.
+        Assert.Equal(new[] { 0, 1, 2, 3, 4, 5, 6, 7 },
+            Enum.GetValues(typeof(StoryTransitionStatus)).Cast<int>().OrderBy(value => value).ToArray());
+        Assert.Equal(8, Enum.GetNames(typeof(StoryTransitionStatus)).Length);
+    }
+
     /// <summary>The same rule against the REAL coordinator, blocked by an owner unregistering mid-session.</summary>
     [Fact]
     public void TheRealCoordinatorBlockingASessionMakesStoryAnswersUnavailable()
@@ -537,6 +584,8 @@ public sealed class StoryContentTests
             using var persistence = new PersistenceService(hub, new GenerationStore(root), path => path, _ => new string('a', 64));
             var control = persistence.Register(new PersistenceProvider("vgmodapi.tests.control", 1,
                 capture: () => new byte[] { 1 }, restore: (_, _) => { }, validate: bytes => bytes.Length == 1));
+            // The runtime handle carries the optional readiness capability the story module casts for.
+            Assert.True(control is IPersistenceReadiness);
             var host = new FakeHost();
             using var service = new StoryContentService(persistence, hub, host.Authenticate, null, hub.CheckThread);
             var session = hub.Begin(SessionOrigin.NewGame, null);
@@ -1777,7 +1826,8 @@ public sealed class StoryContentTests
 
     private sealed class FakeWorld
     {
-        internal readonly FakePersistence Persistence = new();
+        internal readonly FakePersistence Persistence;
+        internal FakeWorld(bool readiness = true) => Persistence = readiness ? new ReadyFakePersistence() : new FakePersistence();
         internal readonly FakeLifecycle Lifecycle = new();
         internal Guid SessionId => Lifecycle.CurrentSession?.Id ?? Guid.Empty;
 
@@ -1980,7 +2030,8 @@ public sealed class StoryContentTests
         }
     }
 
-    private sealed class FakePersistence : IPersistenceApi, IPersistenceRegistration
+    /// <summary>A handle that implements only the SHIPPED registration interface, with no readiness capability.</summary>
+    private class FakePersistence : IPersistenceApi, IPersistenceRegistration
     {
         internal PersistenceProvider? Provider;
         /// <summary>The owner's restored state is readable. False models blocked, unreadable or restore-failed data.</summary>
@@ -1995,8 +2046,13 @@ public sealed class StoryContentTests
             return this;
         }
         bool IPersistenceRegistration.MutationAllowed => !OwnerDisposed && StateReady && !MutationsPaused;
-        bool IPersistenceRegistration.StateReady => !OwnerDisposed && StateReady;
         string IPersistenceRegistration.Status => OwnerDisposed ? "inactive" : StateReady ? "ready" : "load-blocked";
         public void Dispose() => OwnerDisposed = true;
+    }
+
+    /// <summary>The same handle plus the optional readiness capability the runtime implementation provides.</summary>
+    private sealed class ReadyFakePersistence : FakePersistence, IPersistenceReadiness
+    {
+        bool IPersistenceReadiness.StateReady => !OwnerDisposed && StateReady;
     }
 }

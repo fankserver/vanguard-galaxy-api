@@ -175,6 +175,14 @@ an authoritative result, so a completed temporary job never answers `true`; it i
 | Sequence bound | The occurrence sequence is checked against a bound with reserved headroom on every offer and on decode, so the timeline can never wrap. |
 | Global bound | 2048 occurrences overall, as a backstop behind the per-provider quota. |
 
+Schema 1 is tightened by this rule, deliberately and without a compatibility claim: a payload whose
+encoded bytes fit but whose RESERVED footprint does not is now refused where an earlier experimental
+build of this unwired module would have restored it. Such a payload cannot exist in practice — the
+module is not constructed at runtime and has never written a save — and the refusal follows the
+retention policy: the owner is reported unavailable and its bytes are protected, never silently
+truncated to fit. Earlier experimental commits of this branch carry no back-compatibility promise,
+and any future change to this rule needs an explicit migration rather than a silent widening.
+
 Bounds are refusals, never truncation. Exceeding one diagnoses and changes nothing, so campaign
 progression is never silently dropped, and because each provider's share is reserved, a
 generated-job consumer can exhaust only its OWN quota. That reserved share is guaranteed for up to

@@ -35,18 +35,29 @@ public interface IPersistenceRegistration : IDisposable
     /// <summary>
     /// Whether this owner's state may be MUTATED right now. It is false whenever a mutation could not
     /// be published faithfully, which includes transient moments: lifecycle callbacks dispatching and
-    /// a save already in flight. Use <see cref="StateReady"/> to decide whether restored state can be
-    /// READ; a read is safe in those transient moments, a mutation is not.
+    /// a save already in flight. To decide whether restored state can be READ, cast the handle to
+    /// <see cref="IPersistenceReadiness"/>; a read is safe in those transient moments, a mutation is not.
     /// </summary>
     bool MutationAllowed { get; }
+    string Status { get; }
+}
+
+/// <summary>
+/// Optional capability of a registration handle, additive like <c>ILifecycleDispatchState</c>: the
+/// members of <see cref="IPersistenceRegistration"/> are unchanged, so an existing implementation
+/// keeps compiling and loading. Cast the handle you were given; treat an absent capability as
+/// "readiness unknown" and refuse, rather than assuming state is readable.
+/// </summary>
+public interface IPersistenceReadiness
+{
     /// <summary>
     /// Whether this owner's state for the CURRENT session was restored and is readable. It stays true
-    /// while callbacks dispatch and while a save is in flight, and false when there is no current
-    /// session, when the owner's data was blocked, unreadable or failed to restore, or when
-    /// publication is blocked.
+    /// while callbacks dispatch and while a save is in flight — moments where reading is safe but
+    /// <see cref="IPersistenceRegistration.MutationAllowed"/> is deliberately false — and false when
+    /// there is no current session, when the owner's data was blocked, unreadable or failed to
+    /// restore, or when publication is blocked.
     /// </summary>
     bool StateReady { get; }
-    string Status { get; }
 }
 
 /// <summary>Optional since 0.1.2. Register before loading a session; no implicit legacy data adoption.</summary>

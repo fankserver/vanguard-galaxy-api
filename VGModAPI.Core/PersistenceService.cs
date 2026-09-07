@@ -28,7 +28,7 @@ internal sealed class PersistenceService : IPersistenceApi, IDisposable
         _coordinator.Dispose(); _disposed = true;
     }
 
-    private sealed class Registration : IPersistenceRegistration
+    private sealed class Registration : IPersistenceRegistration, IPersistenceReadiness
     {
         private readonly PersistenceService _service;
         private readonly string _owner;

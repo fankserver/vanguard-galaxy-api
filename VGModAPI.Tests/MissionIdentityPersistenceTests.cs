@@ -14,7 +14,6 @@ public sealed class MissionIdentityPersistenceTests
         internal bool Disposed;
         public IPersistenceRegistration Register(PersistenceProvider provider) { Provider = provider; return this; }
         public bool MutationAllowed => !Disposed;
-        public bool StateReady => !Disposed;
         public string Status => Disposed ? "inactive" : "ready";
         public void Dispose() => Disposed = true;
     }

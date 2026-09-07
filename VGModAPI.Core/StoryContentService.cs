@@ -113,6 +113,12 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
     private readonly StoryHostAuthenticator _authenticate;
     private readonly Action? _checkThread;
     private readonly Func<SessionSnapshot?> _currentSession;
+    /// <summary>
+    /// The module's own registration handle. Readiness is an OPTIONAL capability
+    /// (<see cref="IPersistenceReadiness"/>) on that handle: the runtime implementation provides it,
+    /// and a handle that does not is treated as "readiness unknown", which makes every answer
+    /// unavailable rather than assuming restored state exists.
+    /// </summary>
     private readonly IPersistenceRegistration? _persistence;
     private readonly IDisposable? _lifecycle;
     private Readiness _readiness = Readiness.None;
@@ -203,7 +209,8 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
     private string? Unavailable()
     {
         if (_disposed) return "the story module is disposed";
-        if (_persistence is not { StateReady: true }) return "story persistence is " + PersistenceStatus;
+        if (_persistence is not IPersistenceReadiness readiness) return "story persistence does not report readiness";
+        if (!readiness.StateReady) return "story persistence is " + PersistenceStatus;
         if (_readiness != Readiness.Restored) return _readinessDetail;
         var session = _currentSession();
         if (session == null || session.Id != _restoredSession) return "the restored session is no longer current";

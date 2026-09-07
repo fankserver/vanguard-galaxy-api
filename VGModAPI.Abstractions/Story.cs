@@ -271,9 +271,9 @@ public enum StoryRegistrationStatus
     /// <summary>The derived native identifier is already taken by other content; the API never overwrites it.</summary>
     IdentifierInUse,
     /// <summary>The registry's bounded capacity would be exceeded; nothing is silently dropped.</summary>
-    LimitExceeded,
+    LimitExceeded = 4,
     /// <summary>The story module or this provider lease is no longer active.</summary>
-    Unavailable
+    Unavailable = 7
 }
 
 /// <summary>Session-owned handle. Disposal removes the registration; it never rewrites saved state.</summary>
@@ -506,32 +506,36 @@ public interface IStoryProvider : IDisposable
     StoryCompletionQuery IsCompleted(string localId);
 }
 
-/// <summary>Why an occurrence transition was refused. A refusal changes nothing.</summary>
+/// <summary>
+/// Why an occurrence transition was refused. The numeric values are explicit and stable: a member is
+/// only ever appended with a new value, so inserting one can never silently renumber the others for
+/// code or persisted diagnostics compiled against an earlier build.
+/// </summary>
 public enum StoryTransitionStatus
 {
-    Accepted,
+    Accepted = 0,
     /// <summary>The occurrence is unknown to the current ledger, including one pruned past the idempotency horizon.</summary>
-    UnknownOccurrence,
+    UnknownOccurrence = 1,
     /// <summary>The occurrence belongs to another provider or another definition; ownership is never crossed.</summary>
-    ForeignOwner,
+    ForeignOwner = 2,
     /// <summary>The transition does not follow the recorded state, for example a second terminal outcome.</summary>
-    InvalidTransition,
+    InvalidTransition = 3,
     /// <summary>A bounded limit would be exceeded. Nothing is truncated and no campaign progression is dropped.</summary>
-    LimitExceeded,
+    LimitExceeded = 4,
     /// <summary>
     /// The expected session is not the session that is loaded now. A reload restores the SAME
     /// occurrence identities, so a delayed callback from the pre-reload world would otherwise apply
     /// an outcome the loaded save never produced. Re-read the state and use the current session.
     /// </summary>
-    StaleSession,
+    StaleSession = 5,
     /// <summary>
     /// The state is readable but cannot be mutated at this instant, because lifecycle callbacks are
     /// dispatching or a save is already in flight. Accepting content now would leave it out of the
     /// save being written. This is temporary: the same call succeeds once the operation completes.
     /// </summary>
-    Busy,
+    Busy = 6,
     /// <summary>No restored state for the current session, or the lease/module is inactive; content is never accepted unsaved.</summary>
-    Unavailable
+    Unavailable = 7
 }
 
 public sealed class StoryTransitionResult
