@@ -3040,6 +3040,35 @@ public sealed class StoryContentTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public void MixedSourceCannotLoseUnkeyedRequirementsDuringRevisionMigration(bool active)
+    {
+        var provider = Provider(out var world, out _, out _, StoryRetention.Campaign);
+        Assert.True(provider.Register(new StoryMissionDefinition("mixed", "Mixed", "Description", new StoryFactionId("TradingGuild"),
+            new[] { new StoryStep("Both", new[] { StoryObjective.Scripted("talk", "Talk"), StoryObjective.TravelTo("poi-guid-1") }) })).Succeeded);
+        var occurrence = provider.Offer("mixed");
+        if (active) Assert.True(provider.Activate(occurrence.OccurrenceId).Accepted);
+        var bytes = world.Persistence.Provider!.Capture();
+        var later = new FakeWorld();
+        var host = new FakeHost();
+        using var service = later.Service(host);
+        var plugin = new object();
+        host.Register(plugin, AnimaPlugin);
+        var current = service.AcquireProvider(plugin).Provider!;
+        Assert.True(current.Register(new StoryMissionDefinition("mixed", "Mixed", "Description", new StoryFactionId("TradingGuild"),
+            new[] { new StoryStep("Talk only", new[] { StoryObjective.Scripted("talk", "Talk") }) }).WithRevision(2, 1)).Succeeded);
+        if (active) later.World.AdoptInWorld(FakeWorld.Native(current, "mixed", occurrence.OccurrenceId));
+        later.StartAndRestore(bytes);
+        Assert.True(service.Ledger.TryGet(occurrence.OccurrenceId, out var entry));
+        Assert.Equal(1, entry.ObjectiveLayout.Revision);
+        Assert.False(entry.ObjectiveLayout.FullyScripted);
+        var identity = new StoryObjectiveId(entry.Id, entry.OccurrenceId, "talk");
+        Assert.False(((IStoryObjectiveProvider)current).SetProgress(later.SessionId, identity, 1).Accepted);
+        Assert.Equal(bytes, later.Persistence.Provider!.Capture());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public void RevisionMigrationAndRollbackUseAutomaticOccurrenceRestore(bool active)
     {
         var provider = Provider(out var world, out _, out _, StoryRetention.Campaign);
@@ -3132,6 +3161,17 @@ public sealed class StoryContentTests
         Assert.Equal(StoryKnowledge.Unavailable, objectives.Query(oldSession, objective).Knowledge);
         Assert.Equal(StoryKnowledge.Known, objectives.Query(world.SessionId, objective).Knowledge);
         Assert.Equal(2, objectives.Query(world.SessionId, objective).Progress);
+        world.Persistence.MutationsPaused = true;
+        Assert.Equal(StoryKnowledge.Known, objectives.Query(world.SessionId, objective).Knowledge);
+        world.Persistence.MutationsPaused = false;
+        world.Persistence.StateReady = false;
+        Assert.Equal(StoryKnowledge.Unavailable, objectives.Query(world.SessionId, objective).Knowledge);
+        Assert.Null(objectives.Query(world.SessionId, objective).Progress);
+        world.Persistence.StateReady = true;
+        world.ProtectionHealthy = false;
+        Assert.Equal(StoryKnowledge.Unavailable, objectives.Query(world.SessionId, objective).Knowledge);
+        Assert.Null(objectives.Query(world.SessionId, objective).Required);
+        world.ProtectionHealthy = true;
         Assert.True(objectives.SetProgress(world.SessionId, objective, 2).Accepted);
         Assert.Equal(2, Assert.Single(entry.ObjectiveLayout.Slots).Progress);
         var foreign = new StoryObjectiveId(new StoryContentId("foreign", "conversation"), offered.OccurrenceId, "answer");

@@ -64,7 +64,7 @@ public sealed class StoryObjectiveIdentityTests
         Assert.Equal(occurrence, restored.OccurrenceId);
         Assert.True(restored.ObjectiveLayout.SamePositions(layout));
         var empty = new StoryOccurrenceEntry(definition, occurrence, StoryRetention.Campaign, 1);
-        Assert.Equal(22, StoryStateCodec.EncodedSize(restored) - StoryStateCodec.EncodedSize(empty));
+        Assert.Equal(23, StoryStateCodec.EncodedSize(restored) - StoryStateCodec.EncodedSize(empty));
         var legacy = StoryStateCodec.Encode(new[] { empty });
         Array.Copy(BitConverter.GetBytes(2), 0, legacy, 4, 4);
         Assert.Empty(Assert.Single(StoryStateCodec.Decode(legacy)).ObjectiveLayout.Slots);

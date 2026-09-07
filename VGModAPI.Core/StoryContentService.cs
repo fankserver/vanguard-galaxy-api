@@ -85,6 +85,8 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
         public StoryObjectiveQuery Query(Guid expectedSessionId, StoryObjectiveId objective)
         {
             _service.CheckThread();
+            var unavailable = _service.Unavailable();
+            if (unavailable != null) return new StoryObjectiveQuery(StoryKnowledge.Unavailable, null, null, null, unavailable);
             if (!_service.GuardStable(this, expectedSessionId, out var refusal, out _))
                 return new StoryObjectiveQuery(StoryKnowledge.Unavailable, null, null, null, refusal);
             if (objective.Definition.Provider != ProviderId || !_service._ledger.TryGet(objective.OccurrenceId, out var entry)

@@ -49,10 +49,17 @@ internal sealed class StoryNativeWorld : IStoryWorld, IStoryObjectiveWorld, IDis
             if (held.Objectives - source.Slots.Count + destination.Slots.Count > StoryQuarantine.MaxScannedObjectives)
                 return new StoryWorldResult(StoryWorldStatus.Refused, "Migrated objectives would exceed the live scan budget.");
             var mission = _bindings.ActiveStory(player, identifier);
-            bool Stable() => stillValid() && !_disposed && ReferenceEquals(_bindings.CurrentPlayer, player)
-                && ReferenceEquals(_bindings.Catalog[identifier], catalog)
-                && ReferenceEquals(_bindings.ActiveStory(player, identifier), mission)
-                && _bindings.ActiveStoryIdentifiers(player).Count(value => value == identifier) == 1;
+            bool Stable()
+            {
+                if (!stillValid() || _disposed || !ReferenceEquals(_bindings.CurrentPlayer, player)
+                    || !ReferenceEquals(_bindings.Catalog[identifier], catalog)
+                    || !ReferenceEquals(_bindings.ActiveStory(player, identifier), mission)) return false;
+                var currentCounts = _bindings.Held(player);
+                return currentCounts.Missions <= StoryQuarantine.MaxScannedMissions
+                    && currentCounts.Objectives <= StoryQuarantine.MaxScannedObjectives
+                    && currentCounts.Objectives - source.Slots.Count + destination.Slots.Count <= StoryQuarantine.MaxScannedObjectives
+                    && _bindings.ActiveStoryIdentifiers(player).Count(value => value == identifier) == 1;
+            }
             if (mission == null || !_bindings.MigrateScripted(mission, player, identifier, definition, source, destination, Stable))
                 return new StoryWorldResult(StoryWorldStatus.Refused, "The current scripted occurrence could not be safely migrated.");
             return StoryWorldResult.Ok;

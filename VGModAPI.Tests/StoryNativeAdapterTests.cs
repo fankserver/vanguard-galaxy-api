@@ -31,6 +31,7 @@ public sealed class StoryNativeAdapterTests : IDisposable
 
     public void Dispose()
     {
+        MissionObjective.DuringCreate = null;
         StoryMission.allMissions.Clear();
         Source.Player.GamePlayer.current = null;
     }
@@ -80,6 +81,35 @@ public sealed class StoryNativeAdapterTests : IDisposable
         Assert.True(world.SetScriptedProgress(identifier, first, 1).Applied);
         Assert.Equal(2, ((Source.MissionSystem.Objectives.TriggerObjective)oldMission.steps[0].objectives[0]).currentAmount);
         Assert.Equal(1, ((Source.MissionSystem.Objectives.TriggerObjective)((Mission)newMission).steps[0].objectives[0]).currentAmount);
+    }
+
+    [Fact]
+    public void MigrationRechecksObjectiveBudgetAfterFactoryCallbacks()
+    {
+        using var world = World();
+        var identifier = Identifier();
+        var original = Definition(objectives: new[] { StoryObjective.Scripted("talk", "Talk") });
+        Assert.True(world.Install(identifier, original).Applied);
+        Assert.True(world.Accept(identifier).Applied);
+        var source = new StoryObjectiveLayout(original);
+        var revised = Definition(objectives: new[] { StoryObjective.Scripted("talk", "Talk"), StoryObjective.Scripted("report", "Report") }).WithRevision(2, 1);
+        Assert.True(source.TryMigrate(revised, out var destination));
+        var bindings = new StoryNativeBindings(typeof(StoryMission).Assembly);
+        var mission = (Mission)bindings.ActiveStory(_player, identifier)!;
+        var step = mission.steps[0];
+        MissionObjective.DuringCreate = () =>
+        {
+            MissionObjective.DuringCreate = null;
+            var other = new Mission();
+            var crowded = new MissionStep();
+            for (int index = 0; index < StoryQuarantine.MaxScannedObjectives - 1; index++)
+                crowded.objectives.Add(new Source.MissionSystem.Objectives.TriggerObjective());
+            other.steps.Add(crowded);
+            bindings.Accept(_player, other);
+        };
+        Assert.False(world.MigrateScripted(identifier, revised, source, destination, () => true).Applied);
+        Assert.Same(step, Assert.Single(mission.steps));
+        Assert.Single(step.objectives);
     }
 
     [Fact]

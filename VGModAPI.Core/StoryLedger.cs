@@ -39,7 +39,7 @@ internal sealed class StoryOccurrenceEntry
     internal StoryOccurrenceEntry WithObjectiveLayout(StoryObjectiveLayout layout) => new(Id, OccurrenceId, Retention, Sequence,
         State, Outcome, Choices, ChoiceReservation, PendingChoices, FailureObserved, layout);
     internal void ResetObjectiveProgress() => ObjectiveLayout = new StoryObjectiveLayout(ObjectiveLayout.Slots.Select(slot =>
-        new StoryObjectiveLayout.Slot(slot.Key, slot.Step, slot.Objective, slot.Kind, slot.Required)), ObjectiveLayout.Revision);
+        new StoryObjectiveLayout.Slot(slot.Key, slot.Step, slot.Objective, slot.Kind, slot.Required)), ObjectiveLayout.Revision, ObjectiveLayout.FullyScripted);
     private readonly Dictionary<string, string> _choices = new(StringComparer.Ordinal);
     internal IReadOnlyDictionary<string, string> Choices => _choices;
     private readonly Dictionary<string, string> _pending = new(StringComparer.Ordinal);

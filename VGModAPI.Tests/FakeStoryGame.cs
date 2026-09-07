@@ -58,8 +58,12 @@ namespace Source.MissionSystem
         public virtual void ProcessMissionTrigger(MissionTrigger trigger, object data) => Progress++;
         public int Progress { get; private set; }
         public virtual bool IsComplete() => false;
+        public static Action? DuringCreate;
         public static MissionObjective? Create(string type)
-            => Type.GetType("Source.MissionSystem.Objectives." + type)?.GetConstructor(Type.EmptyTypes)?.Invoke(null) as MissionObjective;
+        {
+            DuringCreate?.Invoke();
+            return Type.GetType("Source.MissionSystem.Objectives." + type)?.GetConstructor(Type.EmptyTypes)?.Invoke(null) as MissionObjective;
+        }
         /// <summary>Mirrors the game writing each objective's own data; a null dependency throws here too.</summary>
         public abstract string ToJson();
     }

@@ -9,7 +9,7 @@ internal static class StoryObjectiveLayoutCodec
 {
     internal static int EncodedSize(StoryObjectiveLayout layout)
     {
-        int size = 5;
+        int size = 6;
         foreach (var slot in layout.Slots) size += 12 + slot.Key.Length;
         return size;
     }
@@ -18,6 +18,7 @@ internal static class StoryObjectiveLayoutCodec
     {
         writer.Write((byte)layout.Slots.Count);
         writer.Write(layout.Revision);
+        writer.Write((byte)(layout.FullyScripted ? 1 : 0));
         foreach (var slot in layout.Slots)
         {
             writer.Write((byte)slot.Key.Length);
@@ -35,6 +36,8 @@ internal static class StoryObjectiveLayoutCodec
         int count = reader.ReadByte();
         if (count > StoryObjectiveLayout.MaxSlots) throw new InvalidDataException("Objective layout exceeds its bound.");
         int revision = reader.ReadInt32();
+        int fullyScripted = reader.ReadByte();
+        if (fullyScripted > 1) throw new InvalidDataException("Invalid source-layout flags.");
         var slots = new List<StoryObjectiveLayout.Slot>(count);
         string? previous = null;
         for (int i = 0; i < count; i++)
@@ -49,7 +52,7 @@ internal static class StoryObjectiveLayoutCodec
             slots.Add(new StoryObjectiveLayout.Slot(key, reader.ReadByte(), reader.ReadByte(), (StoryObjectiveKind)reader.ReadByte(), reader.ReadInt32(), reader.ReadInt32()));
             previous = key;
         }
-        try { return new StoryObjectiveLayout(slots, revision); }
+        try { return new StoryObjectiveLayout(slots, revision, fullyScripted == 1); }
         catch (ArgumentException error) { throw new InvalidDataException("Invalid objective layout.", error); }
     }
 }

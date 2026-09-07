@@ -19,6 +19,7 @@ internal sealed class StoryObjectiveLayout
     }
 
     internal int Revision { get; }
+    internal bool FullyScripted { get; }
     internal const int MaxSlots = StoryMissionDefinition.MaxSteps * StoryStep.MaxObjectives;
     private readonly Dictionary<string, Slot> _slots;
     internal IReadOnlyList<Slot> Slots { get; }
@@ -27,6 +28,7 @@ internal sealed class StoryObjectiveLayout
     {
         if (definition == null) throw new ArgumentNullException(nameof(definition));
         Revision = definition.ContentRevision;
+        FullyScripted = definition.Steps.SelectMany(step => step.Objectives).All(item => item.Kind == StoryObjectiveKind.Scripted && item.LocalKey != null);
         _slots = new Dictionary<string, Slot>(StringComparer.Ordinal);
         for (int step = 0; step < definition.Steps.Count; step++)
             for (int objective = 0; objective < definition.Steps[step].Objectives.Count; objective++)
@@ -38,11 +40,12 @@ internal sealed class StoryObjectiveLayout
         Slots = Array.AsReadOnly(_slots.Values.OrderBy(slot => slot.Key, StringComparer.Ordinal).ToArray());
     }
 
-    internal StoryObjectiveLayout(IEnumerable<Slot> slots, int revision = 1)
+    internal StoryObjectiveLayout(IEnumerable<Slot> slots, int revision = 1, bool fullyScripted = true)
     {
         if (slots == null) throw new ArgumentNullException(nameof(slots));
         if (revision < 1) throw new ArgumentOutOfRangeException(nameof(revision));
         Revision = revision;
+        FullyScripted = fullyScripted;
         var copy = slots.Take(MaxSlots + 1).ToArray();
         if (copy.Length > MaxSlots) throw new ArgumentException("Objective layout exceeds its bound.", nameof(slots));
         _slots = new Dictionary<string, Slot>(StringComparer.Ordinal);
@@ -66,23 +69,23 @@ internal sealed class StoryObjectiveLayout
         if (!TryResolve(key, out var current)) throw new ArgumentException("Unknown objective key.", nameof(key));
         if (progress < current.Progress || progress > current.Required) throw new ArgumentOutOfRangeException(nameof(progress));
         return new StoryObjectiveLayout(Slots.Select(slot => slot.Key == key
-            ? new Slot(slot.Key, slot.Step, slot.Objective, slot.Kind, slot.Required, progress) : slot), Revision);
+            ? new Slot(slot.Key, slot.Step, slot.Objective, slot.Kind, slot.Required, progress) : slot), Revision, FullyScripted);
     }
 
     internal bool TryMigrate(StoryMissionDefinition definition, out StoryObjectiveLayout migrated)
     {
         migrated = this;
-        if (definition.MigratesFromRevision != Revision || definition.ContentRevision <= Revision || Slots.Count == 0
+        if (!FullyScripted || definition.MigratesFromRevision != Revision || definition.ContentRevision <= Revision || Slots.Count == 0
             || Slots.Any(slot => slot.Kind != StoryObjectiveKind.Scripted)) return false;
         var destination = new StoryObjectiveLayout(definition);
-        if (destination.Slots.Any(slot => slot.Kind != StoryObjectiveKind.Scripted) || !TryMapTo(destination, out _)) return false;
+        if (!destination.FullyScripted || destination.Slots.Any(slot => slot.Kind != StoryObjectiveKind.Scripted) || !TryMapTo(destination, out _)) return false;
         migrated = new StoryObjectiveLayout(destination.Slots.Select(slot => TryResolve(slot.Key, out var source)
-            ? new Slot(slot.Key, slot.Step, slot.Objective, slot.Kind, slot.Required, source.Progress) : slot), destination.Revision);
+            ? new Slot(slot.Key, slot.Step, slot.Objective, slot.Kind, slot.Required, source.Progress) : slot), destination.Revision, destination.FullyScripted);
         return true;
     }
 
     internal bool SamePositions(StoryObjectiveLayout other)
-        => Revision == other.Revision && Slots.Count == other.Slots.Count && Slots.All(source => other.TryResolve(source.Key, out var target)
+        => Revision == other.Revision && (Slots.Count == 0 || FullyScripted == other.FullyScripted) && Slots.Count == other.Slots.Count && Slots.All(source => other.TryResolve(source.Key, out var target)
             && source.Step == target.Step && source.Objective == target.Objective && source.Kind == target.Kind && source.Required == target.Required);
 
     // A missing key or changed objective kind requires an explicit migration, never positional
