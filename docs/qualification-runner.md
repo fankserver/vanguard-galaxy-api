@@ -346,3 +346,77 @@ binder that hands it to the API observer, and that no always-JIT plugin member n
 This is controlled actual-consumer evidence for this probe's own cases only. It is not owner
 acceptance, not Echo's ETA-sync qualification, not the archived TravelJournal comparison and not any
 managed-content milestone: `RuntimeQualified=false` and #12 stays open.
+
+## Archived TravelJournal comparison (separate, optional)
+
+`-TravelJournalComparison` is an ADDITIONAL Prepare selection that requires the archived plugin
+(`-TravelJournalBin` with a mandatory `-TravelJournalRevision` and `-TravelJournalSha256`),
+`-TravelStation`, `-TravelCrossSystem`, `-TravelWormholeFixture` and Full. It is refused together
+with `-AnimaTravelProbe` or `-EchoTravelProbe`: all three own the same two reused travel phases, so
+at most one owns a run.
+
+**The archive is never touched.** It is not edited, rebuilt, reactivated, migrated or bridged, and
+nothing here calls its `IVgTravelJournal` surface, reflects into its store or invokes its patches.
+Exactly ONE binary is accepted: the existing prebuilt whose SHA-256 Prepare re-computes and pins,
+whose assembly identity is `VGTravelJournal 0.1.0.0` while its BepInEx plugin version is `0.2.0`
+(both required, deliberately different), and whose embedded `AssemblyInformationalVersion`
+`0.1.0+<revision>` must equal the pinned revision. Only the DLL is copied - never the PDB, never
+`deps.json` - and validation refuses a deployed PDB. `make check-archive
+TRAVELJOURNAL_ASSEMBLY=<dll> TRAVELJOURNAL_PDB=<pdb>` re-attests the same binary read-only outside a
+run and additionally checks that the sibling PDB really belongs to it (CodeView id and stamp) and
+carries SHA-256 document hashes for all 24 compiled documents (22 committed sources plus the two
+SDK-generated files). That attests the compiled INPUTS of that build; it is not a claim that the
+whole worktree was clean, and no document path, private game code or binary content is published.
+
+Sandbox configuration is `[Journal] Verbose = true`, `MaxEvents = 0`. Zero is the archived plugin's
+own documented unbounded value, so its FIFO eviction can never silently drop a compared row; both
+settings are pinned by provenance validation.
+
+**Isolation.** A read-only audit of the whole archived source found its entire persistence surface
+to be the live static `SaveGame.SavesPath`, the `SaveGameFile` vanilla is loading, and the sidecar,
+`.tmp` and quarantine siblings beside them - no `persistentDataPath`, no `PlayerPrefs`, no
+environment or registry root, no network, no process launch. The existing guard redirect
+(`SavesPath`/`SavesDir`/`_saves` plus the `Store`/`Recall` prefixes) therefore contains it with no
+patching of the archive. The phase additionally snapshots the sandbox save directory itself: every
+file the journal created must match its own documented patterns (`*.save.vgtraveljournal.json`,
+`*.vgtraveljournal.corrupt.*.json`, `*.vgtraveljournal.json.tmp`) and lie under the audited roots,
+which the receipt lists explicitly. No claim is made about locations that were not scanned.
+
+It runs as phase `travel-journal-comparison-v1` with its own receipts and nine mandatory cases:
+`legacy-binding`, `in-system-arrival-compatible`, `chained-arrival-compatible`,
+`jumpgate-prefix-lead`, `wormhole-transit-gap`, `station-interior-vs-physical`,
+`legacy-blind-concepts`, `journal-io-containment` and `api-dwell-anchored`. `Run` refuses to launch
+unless `-TimeoutSeconds` covers base 1800 + travel/station 1500 + cross-system 2400 + this phase's
+own **900**; its derived worst case is 270 seconds, because it drives no route and performs no load
+of its own (only real saves, which do not wait).
+
+How the comparison works: the phase observes the PUBLIC travel and station surfaces, lets the
+qualified phases drive, and takes a real vanilla save through the harness's own helper at each
+compared boundary. The archived plugin's own postfix writes its sidecar; the phase then reads that
+FILE with its own strict reader, bounded to 8 MB and 20000 events - a document beyond either bound
+is REFUSED, never partially read - and compares by append offset relative to the baseline captured
+for that window, so no global counter monotonicity is assumed across the archive's load-time reset.
+
+- **Compatible pairs** (`in-system-arrival-compatible`, `chained-arrival-compatible`): the public
+  in-system arrivals and the journal's own `PoiArrival` rows must agree on native POI guid, count
+  and order. Identity only - names are NEVER compared, because the archived plugin reads the game's
+  lazy name getter (`MapElement.name` -> `GenerateDefaultName`) and is therefore **not a passive
+  observer**: installing it can generate names and perturb seeded world randomness relative to a run
+  without it. The receipt acknowledges that explicitly, and no world-RNG equality is claimed.
+- **`jumpgate-prefix-lead`** (driven): a real save is taken while the native jump iterator is still
+  running - the API has the leg's `Requested` and `Departed` and NO `Arrived` yet, recorded at the
+  save - and the journal's file already carries the transit for the destination, whose game time
+  precedes the API's later arrival. The lead is proven by both facts together, never by source alone.
+- **`wormhole-transit-gap`** (driven): the qualified wormhole hop produces a public arrival while the
+  journal, which hooks `JumpToSystem(JumpGate)` only, records no transit for it.
+- **`station-interior-vs-physical`** (driven): the journal's dock row is the interior scene toggle,
+  so it either precedes the public `DockedPhysical` game time or does not exist at all; both
+  outcomes are recorded from the observed evidence and a legacy row AFTER the physical dock fails.
+- **`legacy-blind-concepts`**: the archive has no session, request or cancellation concept, so the
+  qualified cancel window adds no legacy row. Recorded as legacy-blind, never as an equivalence.
+
+The API's own facts are the ground truth throughout; the legacy log is the compared artefact.
+
+This phase does NOT close #12: a positively driven `RecoveredPlacement` case and the post-gate chain
+continuation stay open, the tutorial exit stays source-attested and host-tested only, and
+`RuntimeQualified=false`.

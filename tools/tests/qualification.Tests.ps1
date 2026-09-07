@@ -1262,6 +1262,195 @@ try {
     [IO.File]::WriteAllLines($absentReceipt, [string[]]@('PASS','echoVersion=0.7.0','arrivalSnap=unbound','idleUpdateInvocations=42','gameplayLoadControl=True'))
     Assert-PersistenceProbeReceipt $echoAbsentRoot $absentWithGameplay
     & $script -Action Cleanup -SandboxRoot $echoAbsentRoot
+
+    # --- archived TravelJournal comparison (sandbox-only, archive unchanged) ----------------------
+    function JournalMetadata($assemblyVersion, $informational, $pluginVersion) {
+        return [pscustomobject]@{
+            Name=[pscustomobject]@{Name='VGTravelJournal';Version=[Version]$assemblyVersion}
+            CustomAttributes=@([pscustomobject]@{
+                AttributeType=[pscustomobject]@{FullName='System.Reflection.AssemblyInformationalVersionAttribute'}
+                ConstructorArguments=@([pscustomobject]@{Value=$informational})
+            })
+            MainModule=[pscustomobject]@{Types=@([pscustomobject]@{FullName='VGTravelJournal.Plugin';CustomAttributes=@([pscustomobject]@{
+                AttributeType=[pscustomobject]@{FullName='BepInEx.BepInPlugin'}
+                ConstructorArguments=@([pscustomobject]@{Value='vgtraveljournal'},[pscustomobject]@{Value='Vanguard Galaxy Travel Journal'},[pscustomobject]@{Value=$pluginVersion})
+            })})}
+        }
+    }
+    $journalRevision = '818d8b7e13a7841703bdd99e173e7dd993f6895c'
+    Assert-TravelJournalAssemblyMetadata (JournalMetadata '0.1.0.0' ('0.1.0+' + $journalRevision) '0.2.0') $journalRevision
+    foreach ($bad in @(
+        @{Meta=(JournalMetadata '0.2.0.0' ('0.1.0+' + $journalRevision) '0.2.0'); Why='wrong assembly version accepted'},
+        @{Meta=(JournalMetadata '0.1.0.0' '0.1.0' '0.2.0'); Why='missing source revision accepted'},
+        @{Meta=(JournalMetadata '0.1.0.0' ('0.1.0+' + ('a' * 40)) '0.2.0'); Why='foreign source revision accepted'},
+        @{Meta=(JournalMetadata '0.1.0.0' ('0.1.0+' + $journalRevision) '0.3.0'); Why='wrong plugin version accepted'})) {
+        $rejected = $false
+        try { Assert-TravelJournalAssemblyMetadata $bad.Meta $journalRevision } catch { $rejected = $true }
+        Assert $rejected ('Archived TravelJournal metadata: ' + $bad.Why)
+    }
+    # The comparison and either consumer travel probe both own the reused phases.
+    foreach ($conflict in @(@{AnimaTravelProbe=$true}, @{EchoTravelProbe=$true})) {
+        $rejected = $false
+        try { & $script -Action Prepare -SandboxRoot (Join-Path $work 'invalid-journal-conflict') -TravelJournalComparison -TravelStation -TravelCrossSystem -TravelWormholeFixture @conflict @options }
+        catch { $rejected = $_.Exception.Message -like '*both own the reused travel phases*' }
+        Assert $rejected ('Archived-journal comparison accepted beside ' + ($conflict.Keys -join ','))
+    }
+    $rejected = $false
+    try { & $script -Action Prepare -SandboxRoot (Join-Path $work 'invalid-journal-pins') -TravelJournalBin $build -TravelJournalRevision 'nope' -TravelJournalSha256 'nope' @options }
+    catch { $rejected = $_.Exception.Message -like '*exact source revision and binary SHA-256*' }
+    Assert $rejected 'Archived TravelJournal accepted without its revision/hash pins.'
+    $rejected = $false
+    try { & $script -Action Prepare -SandboxRoot (Join-Path $work 'invalid-journal-prereq') -TravelJournalComparison -TravelStation @options }
+    catch { $rejected = $_.Exception.Message -like '*Archived-journal comparison requires*' }
+    Assert $rejected 'Archived-journal comparison accepted without its prerequisites.'
+    $journalRoot = Join-Path $work 'travel-journal-sandbox'
+    $sandboxes += $journalRoot
+    & $script -Action Prepare -SandboxRoot $journalRoot -TravelStation -TravelCrossSystem -TravelWormholeFixture @options
+    # Synthesize the prepared archive selection this harness cannot build without the real prebuilt;
+    # every rule exercised below is still the launcher's own.
+    $journalDll = Join-Path $journalRoot 'game\BepInEx\plugins\VGTravelJournal.dll'
+    [IO.File]::WriteAllText($journalDll, 'synthetic-not-executable')
+    $journalHash = (Get-FileHash -LiteralPath $journalDll -Algorithm SHA256).Hash
+    $journalProvenancePath = Join-Path $journalRoot 'build-provenance.json'
+    $journalProvenance = Get-Content -LiteralPath $journalProvenancePath -Raw | ConvertFrom-Json
+    $journalProvenance.travelJournal = $true
+    $journalProvenance.travelJournalRevision = $journalRevision
+    $journalProvenance.travelJournalSha256 = $journalHash
+    $journalProvenance.travelJournalVersion = $TravelJournalAssemblyVersion
+    $journalProvenance.travelJournalComparison = $true
+    $journalProvenance.travelJournalBudgetSeconds = $TravelJournalBudgetSeconds
+    $journalProvenance.plugins | Add-Member -NotePropertyName 'VGTravelJournal.dll' -NotePropertyValue $journalHash
+    $journalProvenance | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $journalProvenancePath
+    [IO.File]::WriteAllText((Join-Path $journalRoot 'travel-journal-revision.txt'), $journalRevision)
+    [IO.File]::WriteAllText((Join-Path $journalRoot 'travel-journal.enabled'), 'travel-journal-v1')
+    $validJournalConfig = "[Journal]`nVerbose = true`nMaxEvents = 0`n"
+    $journalConfigPath = Join-Path $journalRoot 'game\BepInEx\config\vgtraveljournal.cfg'
+    [IO.File]::WriteAllText($journalConfigPath, $validJournalConfig)
+    $journalProvenance = Assert-QualificationInputs $journalRoot
+    Assert ($journalProvenance.travelJournalComparison -and $journalProvenance.travelJournalBudgetSeconds -eq $TravelJournalBudgetSeconds) 'Prepared archive selection/budget missing.'
+    # MaxEvents must stay unbounded so the archived FIFO can never silently evict a compared row.
+    foreach ($changed in @($validJournalConfig.Replace('MaxEvents = 0','MaxEvents = 50000'),
+        $validJournalConfig.Replace('Verbose = true','Verbose = false'),
+        ($validJournalConfig + "MaxEvents = 0`n"))) {
+        [IO.File]::WriteAllText($journalConfigPath, $changed)
+        $rejected = $false
+        try { $null = Assert-QualificationInputs $journalRoot } catch { $rejected = $true }
+        Assert $rejected 'Changed archived journal configuration accepted.'
+    }
+    [IO.File]::WriteAllText($journalConfigPath, $validJournalConfig)
+    # The deployed binary must remain exactly the pinned build, and the PDB must never be deployed.
+    [IO.File]::WriteAllText($journalDll, 'tampered')
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $journalRoot } catch { $rejected = $true }
+    Assert $rejected 'A prepared archive binary other than the pinned build was accepted.'
+    [IO.File]::WriteAllText($journalDll, 'synthetic-not-executable')
+    [IO.File]::WriteAllText((Join-Path $journalRoot 'game\BepInEx\plugins\VGTravelJournal.pdb'), 'pdb')
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $journalRoot } catch { $rejected = $true }
+    Assert $rejected 'A deployed archive PDB was accepted.'
+    Remove-Item -LiteralPath (Join-Path $journalRoot 'game\BepInEx\plugins\VGTravelJournal.pdb')
+    $journalProvenanceText = [IO.File]::ReadAllText($journalProvenancePath)
+    foreach ($edit in @(@{Pattern='"travelJournalBudgetSeconds": *\d+'; Value='"travelJournalBudgetSeconds": 60'; Message='Edited archive budget reservation accepted.'},
+        @{Pattern='"travelJournalRevision": *"[^"]*"'; Value=('"travelJournalRevision": "' + ('b' * 40) + '"'); Message='Mismatched archive revision pin accepted.'},
+        @{Pattern='"travelWormholeFixture": *true'; Value='"travelWormholeFixture": false'; Message='Archive comparison accepted without the wormhole fixture selection.'})) {
+        [IO.File]::WriteAllText($journalProvenancePath, ($journalProvenanceText -replace $edit.Pattern, $edit.Value))
+        $rejected = $false
+        try { $null = Assert-QualificationInputs $journalRoot } catch { $rejected = $true }
+        Assert $rejected $edit.Message
+    }
+    [IO.File]::WriteAllText($journalProvenancePath, $journalProvenanceText)
+    $journalProvenance = Assert-QualificationInputs $journalRoot
+    $journalMinimum = $QualificationBaseTimeoutSeconds + $TravelStationBudgetSeconds + $TravelCrossSystemBudgetSeconds + $TravelJournalBudgetSeconds
+    $rejected = $false
+    try { & $script -Action Run -SandboxRoot $journalRoot -TimeoutSeconds ($journalMinimum - 1) @options }
+    catch { $rejected = $_.Exception.Message -like "*at least $journalMinimum*" }
+    Assert $rejected 'Archive comparison run accepted a lifetime one second below the derived minimum.'
+    # Synthetic receipts only.
+    $journalSession = [Guid]::NewGuid().ToString()
+    function JournalEvent($surface, $sequence, $session) { return ("" + $sequence + "`t" + $surface + "`t case`t" + $session + "`t`tArrived`tInSystem`t`t`t`t1.000`t") }
+    function JournalRow($case, $status, $session, $evidence, $detail) { return ($case + "`tdescription`t" + $status + "`tidentity`t" + $session + "`t`t" + $evidence + "`t" + $detail) }
+    function JournalSummary($rows, $first) {
+        $records = @($rows | ForEach-Object { ,($_ -split "`t") })
+        $passed = @($records | Where-Object { $_[2] -eq 'passed' }).Count
+        $failed = @($records | Where-Object { $_[2] -eq 'failed' }).Count
+        $notRun = @($records | Where-Object { $_[2] -eq 'not-run' }).Count
+        $lines = @($first, "phase=$TravelJournalPhase", "budgetSeconds=$TravelJournalBudgetSeconds",
+            ("required=" + ($TravelJournalRequiredCases -join ',')),
+            ("compatible-pairs=" + ($TravelJournalCompatiblePairCases -join ',')),
+            ("driven-discrepancies=" + ($TravelJournalDrivenDiscrepancyCases -join ',')),
+            ("rows=" + $records.Count + " passed=$passed failed=$failed notRun=$notRun"))
+        foreach ($case in $TravelJournalRequiredCases) {
+            $matched = @($records | Where-Object { $_[0] -eq $case })
+            $state = if ($matched.Count -eq 1) { $matched[0][2] } elseif ($matched.Count -eq 0) { 'absent' } else { 'duplicated' }
+            $lines += "required-case $case=$state"
+        }
+        return @($lines + @('optional-not-run=', 'fault=none', 'result=phase satisfied'))
+    }
+    $journalResult = @('PASS') + $TravelJournalReusedPhaseScenarios + @($TravelJournalPhase)
+    function WriteJournalOutputs($rows, $events, $summary, $result) {
+        [IO.File]::WriteAllLines((Join-Path $journalRoot 'travel-journal-receipt.tsv'), [string[]]@(($TravelStationReceiptHeader -join "`t")) + [string[]]$rows)
+        [IO.File]::WriteAllLines((Join-Path $journalRoot 'travel-journal-events.tsv'), [string[]]@(($TravelStationEventHeader -join "`t")) + [string[]]$events)
+        [IO.File]::WriteAllLines((Join-Path $journalRoot 'travel-journal.txt'), [string[]]$summary)
+        [IO.File]::WriteAllLines((Join-Path $journalRoot 'result.txt'), [string[]]$result)
+    }
+    function AssertJournalRejected($rows, $events, $summary, $result, $message) {
+        WriteJournalOutputs $rows $events $summary $result
+        $rejected = $false
+        try { Assert-TravelJournalReceipt $journalRoot } catch { $rejected = $true }
+        Assert $rejected $message
+    }
+    foreach ($slot in @('qa-journal-in-system','qa-journal-in-flight','qa-journal-wormhole')) {
+        [IO.File]::WriteAllText((Join-Path $journalRoot ("travel-journal-" + $slot + ".json")), '{"version":2,"events":[]}')
+    }
+    $journalRows = @()
+    $journalEvents = @()
+    $sequence = 0
+    foreach ($case in $TravelJournalRequiredCases) {
+        $sequence++
+        $detail = switch ($case) {
+            { $TravelJournalCompatiblePairCases -contains $_ } { 'comparison=compatible; legacy:0,1' }
+            'jumpgate-prefix-lead' { 'comparison=legacy-prefix-requested; legacy:2' }
+            'wormhole-transit-gap' { 'comparison=legacy-gap; none for the arrived system' }
+            'station-interior-vs-physical' { 'comparison=legacy-timing; outcome=InteriorPrecedesPhysical' }
+            'api-dwell-anchored' { 'largestDwellSeconds=42.500; toleranceSeconds=0.001' }
+            default { 'detail' }
+        }
+        $journalRows += (JournalRow $case 'passed' $journalSession ("travel:" + $sequence) $detail)
+        $journalEvents += (JournalEvent 'travel' $sequence $journalSession)
+    }
+    WriteJournalOutputs $journalRows $journalEvents (JournalSummary $journalRows 'PASS') $journalResult
+    Assert-TravelJournalReceipt $journalRoot
+    Assert-PersistenceProbeReceipt $journalRoot ([pscustomobject]@{ travelJournalComparison = $true })
+    # A fabricated pass without a compatible pair, without a driven discrepancy, without the legacy
+    # row indices, without a positive dwell or without its evidence copies is refused.
+    foreach ($mutation in @(
+        @{Case='in-system-arrival-compatible'; Detail='comparison=legacy-gap; legacy:0'; Message='Compatible-pair case recorded as a gap accepted.'},
+        @{Case='in-system-arrival-compatible'; Detail='comparison=compatible'; Message='Compatible pair without legacy indices accepted.'},
+        @{Case='wormhole-transit-gap'; Detail='comparison=compatible'; Message='Driven discrepancy recorded as compatible accepted.'},
+        @{Case='api-dwell-anchored'; Detail='largestDwellSeconds=0.000'; Message='Dwell case without a positive anchored dwell accepted.'},
+        @{Case='api-dwell-anchored'; Detail='no measurement'; Message='Dwell case without a published measurement accepted.'})) {
+        $mutated = @($journalRows | ForEach-Object {
+            if (($_ -split "`t")[0] -eq $mutation.Case) { JournalRow $mutation.Case 'passed' $journalSession 'travel:1' $mutation.Detail } else { $_ }
+        })
+        AssertJournalRejected $mutated $journalEvents (JournalSummary $mutated 'PASS') $journalResult $mutation.Message
+    }
+    $journalMissing = @($journalRows | Where-Object { ($_ -split "`t")[0] -ne 'jumpgate-prefix-lead' })
+    AssertJournalRejected $journalMissing $journalEvents (JournalSummary $journalMissing 'PASS') $journalResult 'Missing mandatory archive case accepted.'
+    $journalDuplicated = $journalRows + @($journalRows[0])
+    AssertJournalRejected $journalDuplicated $journalEvents (JournalSummary $journalDuplicated 'PASS') $journalResult 'Duplicated archive case accepted.'
+    $journalForeign = @($journalEvents | ForEach-Object { $_ -replace [regex]::Escape($journalSession), ([Guid]::NewGuid().ToString()) })
+    AssertJournalRejected $journalRows $journalForeign (JournalSummary $journalRows 'PASS') $journalResult 'Archive identities absent from the event trace accepted.'
+    AssertJournalRejected $journalRows $journalEvents (JournalSummary $journalRows 'FAIL') $journalResult 'Failed archive attempt summary accepted.'
+    $journalLate = @('PASS', $TravelJournalReusedPhaseScenarios[0], $TravelJournalPhase, $TravelJournalReusedPhaseScenarios[1])
+    AssertJournalRejected $journalRows $journalEvents (JournalSummary $journalRows 'PASS') $journalLate 'Archive comparison completing before a reused phase accepted.'
+    WriteJournalOutputs $journalRows $journalEvents (JournalSummary $journalRows 'PASS') $journalResult
+    Remove-Item -LiteralPath (Join-Path $journalRoot 'travel-journal-qa-journal-in-flight.json')
+    $rejected = $false
+    try { Assert-TravelJournalReceipt $journalRoot } catch { $rejected = $true }
+    Assert $rejected 'Archive receipt without its private evidence copy accepted.'
+    [IO.File]::WriteAllText((Join-Path $journalRoot 'travel-journal-qa-journal-in-flight.json'), '{"version":2,"events":[]}')
+    Assert-TravelJournalReceipt $journalRoot
+    & $script -Action Cleanup -SandboxRoot $journalRoot
     [IO.File]::WriteAllText($apiConfig, "[Persistence]`nEnabled = true`nRoot = C:\foreign-root`n[Missions]`nEnabled = true`nIdentityContinuity = true`n")
     $rejected = $false
     try { $null = Assert-QualificationInputs $probeRoot } catch { $rejected = $true }
