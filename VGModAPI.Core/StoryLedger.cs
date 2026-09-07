@@ -27,15 +27,24 @@ internal sealed class StoryOccurrenceEntry
     internal StoryOutcome? Outcome { get; private set; }
     internal StoryRetention Retention { get; }
     internal long Sequence { get; }
+    /// <summary>
+    /// Encoded bytes reserved for this occurrence's declared choices while it is unresolved. It is
+    /// taken from the definition when the occurrence is offered and PERSISTED, so a reload recomputes
+    /// exactly the same reservation without the definition having been registered yet.
+    /// </summary>
+    internal int ChoiceReservation { get; }
     private readonly Dictionary<string, string> _choices = new(StringComparer.Ordinal);
     internal IReadOnlyDictionary<string, string> Choices => _choices;
 
     internal StoryOccurrenceEntry(StoryContentId id, Guid occurrenceId, StoryRetention retention, long sequence,
         StoryOccurrenceState state = StoryOccurrenceState.Offered, StoryOutcome? outcome = null,
-        IEnumerable<KeyValuePair<string, string>>? choices = null)
+        IEnumerable<KeyValuePair<string, string>>? choices = null, int choiceReservation = 0)
     {
         if (occurrenceId == Guid.Empty) throw new ArgumentException("An occurrence requires its own identity.", nameof(occurrenceId));
+        if (choiceReservation is < 0 or > StoryMissionDefinition.MaxChoiceBytesPerOccurrence)
+            throw new ArgumentOutOfRangeException(nameof(choiceReservation));
         Id = id; OccurrenceId = occurrenceId; Retention = retention; Sequence = sequence; State = state; Outcome = outcome;
+        ChoiceReservation = choiceReservation;
         if (choices != null) foreach (var pair in choices) _choices[pair.Key] = pair.Value;
     }
 
@@ -48,7 +57,6 @@ internal sealed class StoryOccurrenceEntry
         if (Retention == StoryRetention.Campaign && choices != null)
             foreach (var pair in choices) _choices[pair.Key] = pair.Value;
     }
-    internal void Forget() => _choices.Clear();
 }
 
 /// <summary>
@@ -93,9 +101,14 @@ internal sealed class StoryLedger
     /// because occurrence identities are API-generated and never reused.
     /// </summary>
     internal const int TemporaryTombstoneHorizon = 32;
-    internal const int MaxChoices = 16;
-    internal const int MaxChoiceKeyLength = 64;
-    internal const int MaxChoiceValueLength = 256;
+    /// <summary>
+    /// Bytes of persisted payload every bound provider owns outright, including the reservations that
+    /// guarantee its offered occurrences can still record an outcome. The shares of all
+    /// <see cref="StoryProviderBindings.MaxProviders"/> providers plus the header fit inside
+    /// <see cref="StoryStateCodec.MaxBytes"/>, so no provider's content can ever make another
+    /// provider's offer or outcome fail for space.
+    /// </summary>
+    internal const int ProviderPayloadBudget = (StoryStateCodec.MaxBytes - StoryStateCodec.HeaderBytes) / StoryProviderBindings.MaxProviders;
 
     private readonly Dictionary<Guid, StoryOccurrenceEntry> _byOccurrence = new();
     private long _sequence;
@@ -107,8 +120,13 @@ internal sealed class StoryLedger
 
     internal bool TryGet(Guid occurrenceId, out StoryOccurrenceEntry entry) => _byOccurrence.TryGetValue(occurrenceId, out entry!);
 
-    /// <summary>Records a new offered occurrence and mints its own identity. Never reuses a retired identity.</summary>
-    internal StoryLedgerStatus Offer(StoryContentId id, StoryRetention retention, Guid occurrenceId, out string diagnostic)
+    /// <summary>
+    /// Records a new offered occurrence and mints its own identity. Never reuses a retired identity.
+    /// The occurrence's row AND the worst-case declared-choice payload of its eventual outcome are
+    /// reserved from the provider's own budget here, so an accepted offer can always be retired: an
+    /// occurrence is never admitted that the API could not finish.
+    /// </summary>
+    internal StoryLedgerStatus Offer(StoryContentId id, StoryRetention retention, Guid occurrenceId, int choiceReservation, out string diagnostic)
     {
         diagnostic = "";
         if (occurrenceId == Guid.Empty) { diagnostic = "An occurrence requires its own identity."; return StoryLedgerStatus.InvalidTransition; }
@@ -130,10 +148,13 @@ internal sealed class StoryLedger
             diagnostic = "The occurrence sequence reached its bound; refusing rather than wrapping the timeline.";
             return StoryLedgerStatus.LimitExceeded;
         }
-        var candidate = new StoryOccurrenceEntry(id, occurrenceId, retention, _sequence + 1);
-        if (EncodedSize() + StoryStateCodec.EncodedSize(candidate) > StoryStateCodec.MaxBytes)
+        if (retention != StoryRetention.Campaign && choiceReservation > 0)
+        { diagnostic = "Only a campaign definition reserves declared-choice space."; return StoryLedgerStatus.InvalidTransition; }
+        var candidate = new StoryOccurrenceEntry(id, occurrenceId, retention, _sequence + 1, choiceReservation: choiceReservation);
+        if (ProviderFootprint(id.Provider!) + Footprint(candidate) > ProviderPayloadBudget)
         {
-            diagnostic = "The persisted story state would exceed its bounded payload; refusing rather than failing a later capture.";
+            diagnostic = "Provider '" + id.Provider + "' would exceed its " + ProviderPayloadBudget
+                + "-byte payload budget, including the space reserved to record this outcome; refusing before the offer rather than stranding it later.";
             return StoryLedgerStatus.LimitExceeded;
         }
         _sequence++;
@@ -194,15 +215,6 @@ internal sealed class StoryLedger
                 + " outcomes; refusing rather than dropping campaign progression.";
             return StoryLedgerStatus.LimitExceeded;
         }
-        // A capture must never fail on state this ledger accepted: the cost of the declared choices
-        // is checked against the payload bound BEFORE the outcome is recorded.
-        var projected = new StoryOccurrenceEntry(entry.Id, entry.OccurrenceId, entry.Retention, entry.Sequence,
-            StoryOccurrenceState.Retired, outcome, entry.Retention == StoryRetention.Campaign ? choices : null);
-        if (EncodedSize() - StoryStateCodec.EncodedSize(entry) + StoryStateCodec.EncodedSize(projected) > StoryStateCodec.MaxBytes)
-        {
-            diagnostic = "The persisted story state would exceed its bounded payload; refusing rather than failing a later capture.";
-            return StoryLedgerStatus.LimitExceeded;
-        }
         entry.Retire(outcome, choices);
         if (entry.Retention == StoryRetention.Temporary) PruneTemporary(entry.Id);
         return StoryLedgerStatus.Accepted;
@@ -213,14 +225,27 @@ internal sealed class StoryLedger
         if (choices == null || choices.Count == 0) return null;
         if (entry.Retention != StoryRetention.Campaign)
             return "Declared choices are retained for campaign definitions only; '" + entry.Id + "' is temporary.";
-        if (choices.Count > MaxChoices) return "At most " + MaxChoices + " declared choices per occurrence.";
+        if (choices.Count > StoryMissionDefinition.MaxChoiceKeys)
+            return "At most " + StoryMissionDefinition.MaxChoiceKeys + " declared choices per occurrence.";
+        int used = 0;
         foreach (var pair in choices)
         {
-            if (string.IsNullOrEmpty(pair.Key) || pair.Key.Length > MaxChoiceKeyLength) return "A choice key must be 1-" + MaxChoiceKeyLength + " characters.";
-            if (pair.Value == null || pair.Value.Length > MaxChoiceValueLength) return "A choice value must be at most " + MaxChoiceValueLength + " characters.";
             // Refused here so the ledger never accepts text its own capture could not write.
-            if (!StoryStateCodec.IsEncodable(pair.Key) || !StoryStateCodec.IsEncodable(pair.Value)) return "A declared choice must be valid text.";
+            if (string.IsNullOrEmpty(pair.Key) || pair.Value == null
+                || !StoryStateCodec.IsEncodable(pair.Key) || !StoryStateCodec.IsEncodable(pair.Value))
+                return "A declared choice must be valid non-empty text.";
+            int keyBytes = StoryStateCodec.Utf8Bytes(pair.Key), valueBytes = StoryStateCodec.Utf8Bytes(pair.Value);
+            if (keyBytes > StoryMissionDefinition.MaxChoiceKeyBytes)
+                return "A choice key is at most " + StoryMissionDefinition.MaxChoiceKeyBytes + " encoded bytes.";
+            if (valueBytes > StoryMissionDefinition.MaxChoiceValueBytes)
+                return "A choice value is at most " + StoryMissionDefinition.MaxChoiceValueBytes + " encoded bytes.";
+            used += 2 + keyBytes + 2 + valueBytes;
         }
+        // The reservation was taken at offer time, so this can only fail for choices the definition
+        // never declared; the service refuses those earlier with their own diagnostic.
+        if (used > entry.ChoiceReservation)
+            return "These declared choices need " + used + " bytes, above the " + entry.ChoiceReservation
+                + " bytes reserved for this occurrence.";
         return null;
     }
 
@@ -240,8 +265,16 @@ internal sealed class StoryLedger
         foreach (var entry in terminal) _byOccurrence.Remove(entry.OccurrenceId);
     }
 
-    /// <summary>Exact encoded size of the current ledger, so bounds are checked in the units that actually matter.</summary>
-    private int EncodedSize() => StoryStateCodec.HeaderBytes + _byOccurrence.Values.Sum(StoryStateCodec.EncodedSize);
+    /// <summary>
+    /// What one occurrence costs its provider's budget: the row it writes today plus, while it is
+    /// still unresolved, the space held back for the outcome it is still allowed to record. A
+    /// recorded outcome releases the reservation and pays only for what it actually wrote.
+    /// </summary>
+    internal static int Footprint(StoryOccurrenceEntry entry)
+        => StoryStateCodec.EncodedSize(entry) + (entry.State == StoryOccurrenceState.Retired ? 0 : entry.ChoiceReservation);
+
+    private int ProviderFootprint(string provider)
+        => _byOccurrence.Values.Where(entry => entry.Id.Provider == provider).Sum(Footprint);
 
     private int RetainedFor(StoryContentId id)
         => _byOccurrence.Values.Count(entry => entry.Id == id && entry.State == StoryOccurrenceState.Retired);
@@ -302,8 +335,17 @@ internal sealed class StoryLedger
         if (rows.Any(row => row.Sequence < 1 || row.Sequence > MaxSequence)) return "Story occurrence sequence out of range.";
         if (rows.Select(row => row.Sequence).Distinct().Count() != rows.Count) return "Story occurrence sequences must be unique.";
         if (rows.Select(row => row.OccurrenceId).Distinct().Count() != rows.Count) return "Duplicate story occurrence identity.";
+        if (rows.Any(row => (row.State == StoryOccurrenceState.Retired) != row.Outcome.HasValue))
+            return "A retired occurrence requires exactly one outcome.";
+        if (rows.Any(row => row.State != StoryOccurrenceState.Retired && row.Retention != StoryRetention.Campaign && row.ChoiceReservation > 0))
+            return "Only a campaign occurrence reserves declared-choice space.";
         foreach (var group in rows.GroupBy(row => row.Id.Provider, StringComparer.Ordinal))
+        {
             if (group.Count() > MaxOccurrencesPerProvider) return "Provider '" + group.Key + "' exceeds its occurrence quota.";
+            // The reservation is part of the persisted contract: a restored ledger must leave every
+            // unresolved occurrence able to record its outcome, exactly as when it was offered.
+            if (group.Sum(Footprint) > ProviderPayloadBudget) return "Provider '" + group.Key + "' exceeds its payload budget.";
+        }
         foreach (var group in rows.GroupBy(row => row.Id))
         {
             var retired = group.Count(row => row.State == StoryOccurrenceState.Retired);

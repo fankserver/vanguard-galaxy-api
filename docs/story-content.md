@@ -107,7 +107,9 @@ with "this save's story state could not be read".
 
 The module resets its ledger on `SessionStarting` and on `SessionInvalidated` /
 `SessionStartFailed`, independently of any restore call, and reports `Known` only for a session
-whose state it actually restored. Sessions whose owner data was blocked, corrupt, schema-unsupported
+whose state it actually restored AND whose owner is currently able to persist. Owner status is
+re-read on every answer, not only before the restore: an owner blocked or paused mid-session holds
+accepted state that will not reach disk, so queries report `Unavailable` until it recovers. Sessions whose owner data was blocked, corrupt, schema-unsupported
 or restore-failed never receive a restore call, so they stay `Unavailable` instead of answering from
 the previously loaded save. A brand-new game with no stored generation restores as known-empty. In
 the unavailable state, offering or transitioning content is refused too, and the retained owner
@@ -140,8 +142,8 @@ not drop them, because the current world still owns those identifiers.
 
 - `Temporary`: keeps offered/active state plus a bounded idempotency tombstone (outcome only). No
   declared choices, no completed payload, no history.
-- `Campaign`: additionally retains queryable authoritative outcomes and supported declared choices
-  (at most 16 per occurrence). `IsCompleted` answers campaign completion **without MissionJournal**.
+- `Campaign`: additionally retains queryable authoritative outcomes and the choices the definition
+  DECLARED. `IsCompleted` answers campaign completion **without MissionJournal**.
 
 `IsCompleted` is campaign-only by definition. A temporary tombstone exists for idempotency, not as
 an authoritative result, so a completed temporary job never answers `true`; it is still visible in
@@ -155,18 +157,46 @@ an authoritative result, so a completed temporary job never answers `true`; it i
 | Replay horizon | A temporary definition retains its newest 32 terminal tombstones; older ones are pruned. |
 | Never pruned | Offered and active occurrences (needed to reconstruct live content) and every campaign entry, outcome and declared choice. |
 | Beyond the horizon | A pruned occurrence reports `UnknownOccurrence`. Occurrence identities are API-generated and never reused, so a pruned job is never re-offered or resurrected under its old token. |
-| Per-provider quota | Every bound provider owns 64 occurrences outright (2048 / 32 providers), so one provider's occurrences can never make another's `Offer` fail. |
+| Per-provider occurrence quota | At most 64 occurrences per bound provider (2048 / 32 providers). |
+| Per-provider payload budget | 16,383 bytes of persisted state per bound provider, INCLUDING the space reserved for outcomes still to be recorded. The 32 shares plus the header fit inside the 512 KiB payload cap, so no provider's content can make another provider's `Offer` or outcome fail. |
 | Per-definition bound | At most 48 retained outcomes per definition, below the provider quota so both bounds are reachable. |
 | Provider bound | At most 32 bound providers. A further provider is refused rather than handed a share that would come out of a bound provider's retained history; bindings last for the module's lifetime. |
-| Payload bound | An `Offer` or outcome that would push the persisted state past its bounded payload is refused BEFORE mutating anything, so a later capture cannot fail and block every owner's saves. |
 | Sequence bound | The occurrence sequence is checked against a bound with reserved headroom on every offer and on decode, so the timeline can never wrap. |
 | Global bound | 2048 occurrences overall, as a backstop behind the per-provider quota. |
 
-Bounds are refusals, never truncation. Exceeding the campaign bound diagnoses and changes nothing,
-so campaign progression is never silently dropped, and because each provider's share is reserved, a
-generated-job consumer can exhaust only its OWN quota — no starvation of another provider is
-possible within the bounded provider count. Storing an outcome or a declared choice value is not narrative
-history; mod-specific decisions stay mod logic.
+Bounds are refusals, never truncation. Exceeding one diagnoses and changes nothing, so campaign
+progression is never silently dropped, and because each provider's share is reserved, a
+generated-job consumer can exhaust only its OWN quota. Storing an outcome or a declared choice value
+is not narrative history; mod-specific decisions stay mod logic.
+
+### Declared choices and reserved outcome capacity
+
+A campaign definition DECLARES its choice keys when it is constructed. That is what makes recording
+an outcome a guarantee rather than a hope: offering an occurrence reserves the worst-case persisted
+size of those choices out of the provider's own budget, so an admitted occurrence can always be
+retired, even when every other provider has filled its budget. An occurrence that cannot reserve
+that space is refused at `Offer`, before anything is recorded, instead of being stranded active with
+an outcome that could never be written.
+
+| Limit | Value |
+|---|---|
+| Declared choice keys per definition | 8 |
+| Encoded bytes per choice key | 32 |
+| Encoded bytes per choice value | 64 (a decision token such as `spared-captain`, not narrative text) |
+| Reserved bytes per occurrence | at most 1024; a definition whose declared keys need more is refused at construction |
+
+Bounds are ENCODED bytes on both sides of the codec, so a byte budget means the same thing
+everywhere. A choice key the definition did not declare is refused at retirement, an oversized value
+is refused, and both refusals leave the occurrence able to record its declared outcome. The
+reservation is PERSISTED with the occurrence, so a reload restores exactly the same remaining
+capacity without needing the definition to be registered first. Recording an outcome releases
+whatever part of the reservation it did not use; a worst-case outcome releases nothing, which is the
+honest consequence of reserving for it.
+
+With the maximum declared payload a provider can hold roughly 18 unresolved campaign occurrences at
+once out of its 64-occurrence quota, and considerably more with smaller declared choices or with
+temporary content, which reserves nothing. Those are the honest limits: the API refuses content it
+could not finish rather than admitting it and failing later.
 
 ## Automatic persistence
 
@@ -179,7 +209,8 @@ sides. Payloads are capped well below the 1 MiB
 envelope bound; truncated, extended, malformed or newer-version payloads are refused.
 
 The codec is canonical: the encoder and the decoder run the SAME ledger bounds (per-provider quota,
-per-definition retained cap, temporary horizon, sequence range, payload size, identity uniqueness),
+per-provider payload budget including reservations, per-definition retained cap, temporary horizon,
+sequence range, payload size, identity uniqueness, retired-implies-exactly-one-outcome),
 so a payload can never restore a ledger the ledger's own operations would refuse, and the ledger can
 never reach a state its own capture would refuse. A payload that violates a bound is refused, which
 blocks that owner and protects its retained bytes; nothing is silently pruned to fit.
@@ -191,7 +222,8 @@ snapshot's completion cannot leak into an older loaded save. When persistence is
 paused, offering new content is refused with a diagnostic rather than silently accepting a
 persistent mission that would not be saved.
 
-Unregistering a definition stops offering new content. It never rewrites or deletes saved
+Unregistering a definition stops offering new content. A registration handle from a released lease
+is stale and does nothing: it can never remove a live registration made by a re-acquired lease. It never rewrites or deletes saved
 occurrences: removal of persisted references follows `content-safety.md`, and provider-required
 content still needs its provider.
 

@@ -25,10 +25,6 @@ internal static class StoryStateCodec
     /// <summary>Magic, schema version and row count.</summary>
     internal const int HeaderBytes = 12;
 
-    /// <summary>
-    /// Exact encoded cost of one occurrence, so the ledger can enforce the payload bound in the same
-    /// units the codec writes. Encoding is deterministic, so this is a size, not an estimate.
-    /// </summary>
     /// <summary>Whether text can be written at all under strict UTF-8; unpaired surrogates cannot.</summary>
     internal static bool IsEncodable(string value)
     {
@@ -36,10 +32,17 @@ internal static class StoryStateCodec
         catch (EncoderFallbackException) { return false; }
     }
 
+    /// <summary>Encoded size of text in the bytes this codec writes.</summary>
+    internal static int Utf8Bytes(string value) => StrictUtf8.GetByteCount(value ?? "");
+
+    /// <summary>
+    /// Exact encoded cost of one occurrence, so the ledger can enforce the payload bound in the same
+    /// units the codec writes. Encoding is deterministic, so this is a size, not an estimate.
+    /// </summary>
     internal static int EncodedSize(StoryOccurrenceEntry entry)
     {
         if (entry == null) throw new ArgumentNullException(nameof(entry));
-        int size = 1 + entry.Id.Provider!.Length + 1 + entry.Id.LocalId.Length + 16 + 8 + 3 + 1;
+        int size = 1 + entry.Id.Provider!.Length + 1 + entry.Id.LocalId.Length + 16 + 8 + 3 + 2 + 1;
         if (entry.Retention != StoryRetention.Campaign) return size;
         foreach (var pair in entry.Choices)
             // Strict UTF-8 again: text that cannot be encoded has no size, it is simply refused.
@@ -69,13 +72,14 @@ internal static class StoryStateCodec
                 writer.Write((byte)row.State);
                 writer.Write((byte)(row.Outcome.HasValue ? (int)row.Outcome.Value + 1 : 0));
                 writer.Write((byte)row.Retention);
+                writer.Write((ushort)row.ChoiceReservation);
                 var choices = row.Retention == StoryRetention.Campaign ? row.Choices : new Dictionary<string, string>(StringComparer.Ordinal);
-                if (choices.Count > StoryLedger.MaxChoices) throw new InvalidDataException("Too many declared choices to persist.");
+                if (choices.Count > StoryMissionDefinition.MaxChoiceKeys) throw new InvalidDataException("Too many declared choices to persist.");
                 writer.Write((byte)choices.Count);
                 foreach (var pair in choices.OrderBy(pair => pair.Key, StringComparer.Ordinal))
                 {
-                    WriteText(writer, pair.Key, StoryLedger.MaxChoiceKeyLength);
-                    WriteText(writer, pair.Value, StoryLedger.MaxChoiceValueLength);
+                    WriteText(writer, pair.Key, StoryMissionDefinition.MaxChoiceKeyBytes);
+                    WriteText(writer, pair.Value, StoryMissionDefinition.MaxChoiceValueBytes);
                 }
             }
             writer.Flush();
@@ -107,6 +111,9 @@ internal static class StoryStateCodec
             var state = (StoryOccurrenceState)reader.ReadByte();
             int outcomeCode = reader.ReadByte();
             var retention = (StoryRetention)reader.ReadByte();
+            int reservation = reader.ReadUInt16();
+            if (reservation > StoryMissionDefinition.MaxChoiceBytesPerOccurrence)
+                throw new InvalidDataException("Malformed story choice reservation.");
             if (!Enum.IsDefined(typeof(StoryOccurrenceState), state) || !Enum.IsDefined(typeof(StoryRetention), retention))
                 throw new InvalidDataException("Malformed story occurrence state.");
             StoryOutcome? outcome = null;
@@ -119,19 +126,19 @@ internal static class StoryStateCodec
             if ((state == StoryOccurrenceState.Retired) != outcome.HasValue)
                 throw new InvalidDataException("A retired occurrence requires exactly one outcome.");
             int choiceCount = reader.ReadByte();
-            if (choiceCount > StoryLedger.MaxChoices) throw new InvalidDataException("Malformed story choice count.");
+            if (choiceCount > StoryMissionDefinition.MaxChoiceKeys) throw new InvalidDataException("Malformed story choice count.");
             if (choiceCount > 0 && retention != StoryRetention.Campaign) throw new InvalidDataException("Temporary retention carries no declared choices.");
             var choices = new List<KeyValuePair<string, string>>(choiceCount);
             for (int choice = 0; choice < choiceCount; choice++)
             {
-                var key = ReadText(reader, StoryLedger.MaxChoiceKeyLength);
-                var value = ReadText(reader, StoryLedger.MaxChoiceValueLength);
+                var key = ReadText(reader, StoryMissionDefinition.MaxChoiceKeyBytes);
+                var value = ReadText(reader, StoryMissionDefinition.MaxChoiceValueBytes);
                 if (key.Length == 0) throw new InvalidDataException("Malformed story choice key.");
                 choices.Add(new KeyValuePair<string, string>(key, value));
             }
             if (choices.Select(pair => pair.Key).Distinct(StringComparer.Ordinal).Count() != choices.Count)
                 throw new InvalidDataException("Duplicate story choice key.");
-            rows[index] = new StoryOccurrenceEntry(new StoryContentId(provider, local), occurrence, retention, sequence, state, outcome, choices);
+            rows[index] = new StoryOccurrenceEntry(new StoryContentId(provider, local), occurrence, retention, sequence, state, outcome, choices, reservation);
         }
         if (stream.Position != bytes.Length) throw new InvalidDataException("Trailing story state bytes.");
         var refusal = StoryLedger.RefuseBounds(rows);
@@ -173,26 +180,23 @@ internal static class StoryStateCodec
         return value;
     }
 
-    private static void WriteText(BinaryWriter writer, string value, int max)
+    /// <summary>Text bounds are ENCODED bytes on both sides, so a byte budget means one thing everywhere.</summary>
+    private static void WriteText(BinaryWriter writer, string value, int maxBytes)
     {
         byte[] bytes;
         // Strict UTF-8: an unpaired surrogate is refused here rather than written as a replacement character.
         try { bytes = StrictUtf8.GetBytes(value ?? ""); }
         catch (EncoderFallbackException) { throw new InvalidDataException("Invalid UTF-8 in story text."); }
-        if (value != null && value.Length > max) throw new InvalidDataException("Story text exceeds its bound.");
-        if (bytes.Length > max * 4) throw new InvalidDataException("Story text exceeds its encoded bound.");
+        if (bytes.Length > maxBytes) throw new InvalidDataException("Story text exceeds its encoded bound.");
         writer.Write((ushort)bytes.Length);
         writer.Write(bytes);
     }
 
-    private static string ReadText(BinaryReader reader, int max)
+    private static string ReadText(BinaryReader reader, int maxBytes)
     {
         int length = reader.ReadUInt16();
-        if (length > max * 4) throw new InvalidDataException("Story text exceeds its encoded bound.");
-        string value;
-        try { value = StrictUtf8.GetString(ReadExact(reader, length)); }
+        if (length > maxBytes) throw new InvalidDataException("Story text exceeds its encoded bound.");
+        try { return StrictUtf8.GetString(ReadExact(reader, length)); }
         catch (DecoderFallbackException) { throw new InvalidDataException("Invalid UTF-8 in story state."); }
-        if (value.Length > max) throw new InvalidDataException("Story text exceeds its bound.");
-        return value;
     }
 }

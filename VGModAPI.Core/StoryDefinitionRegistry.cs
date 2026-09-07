@@ -40,7 +40,6 @@ internal sealed class StoryDefinitionRegistry
     /// never forget that the CURRENT world still owns an identifier.
     /// </summary>
     internal void ResetWorldReservations() => _reserved.Clear();
-    internal IReadOnlyCollection<string> Identifiers => _byIdentifier.Keys.ToArray();
 
     internal bool TryGet(StoryContentId id, out StoryMissionDefinition definition)
         => _byIdentifier.TryGetValue(StoryContentPolicy.Identifier(id), out definition!);

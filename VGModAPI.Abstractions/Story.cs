@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 
 namespace VGModAPI;
 
@@ -133,6 +134,15 @@ public sealed class StoryReward
 
 internal static class StoryText
 {
+    private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+
+    /// <summary>Encoded size in the bytes the API actually persists, so a byte bound means the same thing everywhere.</summary>
+    internal static int Utf8Bytes(string value, string name)
+    {
+        try { return StrictUtf8.GetByteCount(value); }
+        catch (EncoderFallbackException) { throw new ArgumentException("Text must be valid Unicode.", name); }
+    }
+
     internal static string Require(string value, int max, string name)
     {
         if (value == null) throw new ArgumentNullException(name);
@@ -156,6 +166,22 @@ public sealed class StoryMissionDefinition
 {
     public const int MaxSteps = 8;
     public const int MaxRewards = 4;
+    /// <summary>Declared choice keys a campaign definition may record per occurrence.</summary>
+    public const int MaxChoiceKeys = 8;
+    /// <summary>Encoded size bound of one declared choice key.</summary>
+    public const int MaxChoiceKeyBytes = 32;
+    /// <summary>
+    /// Encoded size bound of one declared choice VALUE. Declared choices are short decision tokens
+    /// ("spared-captain"), not narrative text: the API reserves this much space for every declared
+    /// key of every offered occurrence, so the bound is what makes an outcome guaranteed recordable.
+    /// </summary>
+    public const int MaxChoiceValueBytes = 64;
+    /// <summary>
+    /// Total encoded size the API reserves for one occurrence's declared choices. A definition whose
+    /// declared keys would need more is refused at construction, so no definition can be registered
+    /// that the API could not finish recording.
+    /// </summary>
+    public const int MaxChoiceBytesPerOccurrence = 1024;
 
     /// <summary>
     /// The provider's OWN local identifier. The provider segment is never supplied by the caller: it
@@ -172,11 +198,24 @@ public sealed class StoryMissionDefinition
     public StoryRetention Retention { get; }
     public IReadOnlyList<StoryStep> Steps { get; }
     public IReadOnlyList<StoryReward> Rewards { get; }
+    /// <summary>
+    /// The declared choice keys this definition may record when an occurrence retires. Choices are
+    /// declared up front, never invented at retirement, because the API reserves their worst-case
+    /// persisted size when the occurrence is offered. A key that is not declared here is refused.
+    /// Campaign retention only: a temporary definition retains no choices at all.
+    /// </summary>
+    public IReadOnlyList<string> ChoiceKeys { get; }
+    /// <summary>
+    /// Worst-case encoded bytes this definition's declared choices can occupy in one occurrence. It
+    /// is reserved at offer time and released when the outcome is recorded, so recording an outcome
+    /// can never be refused for space.
+    /// </summary>
+    public int ReservedChoiceBytes { get; }
 
     public StoryMissionDefinition(string localId, string title, string description, IEnumerable<StoryStep> steps,
         IEnumerable<StoryReward>? rewards = null, StoryDifficulty difficulty = StoryDifficulty.Normal,
         StoryRetention retention = StoryRetention.Temporary, bool canAbandon = true,
-        string? category = null, string? completionText = null)
+        string? category = null, string? completionText = null, IEnumerable<string>? choiceKeys = null)
     {
         if (!StoryContentId.IsValidSegment(localId)) throw new ArgumentException("A local ID is 1-48 lowercase ASCII letters/digits/hyphens starting with a letter.", nameof(localId));
         if (!Enum.IsDefined(typeof(StoryDifficulty), difficulty)) throw new ArgumentOutOfRangeException(nameof(difficulty));
@@ -197,6 +236,27 @@ public sealed class StoryMissionDefinition
         if (rewardCopy.Select(reward => reward.Kind).Distinct().Count() != rewardCopy.Length)
             throw new ArgumentException("Duplicate reward kind.", nameof(rewards));
         Rewards = Array.AsReadOnly(rewardCopy);
+        var choiceCopy = (choiceKeys ?? Array.Empty<string>()).ToArray();
+        if (choiceCopy.Length > 0 && retention != StoryRetention.Campaign)
+            throw new ArgumentException("Only a campaign definition retains declared choices.", nameof(choiceKeys));
+        if (choiceCopy.Length > MaxChoiceKeys) throw new ArgumentException("At most " + MaxChoiceKeys + " declared choice keys.", nameof(choiceKeys));
+        if (choiceCopy.Distinct(StringComparer.Ordinal).Count() != choiceCopy.Length)
+            throw new ArgumentException("Duplicate declared choice key.", nameof(choiceKeys));
+        int reserved = 0;
+        foreach (var key in choiceCopy)
+        {
+            if (string.IsNullOrEmpty(key)) throw new ArgumentException("A declared choice key must not be empty.", nameof(choiceKeys));
+            int keyBytes = StoryText.Utf8Bytes(key, nameof(choiceKeys));
+            if (keyBytes > MaxChoiceKeyBytes) throw new ArgumentException("A declared choice key is at most " + MaxChoiceKeyBytes + " encoded bytes.", nameof(choiceKeys));
+            // The reservation counts what the codec writes: two length prefixes, the key, and a
+            // value of the maximum supported size.
+            reserved += 2 + keyBytes + 2 + MaxChoiceValueBytes;
+        }
+        if (reserved > MaxChoiceBytesPerOccurrence)
+            throw new ArgumentException("Declared choices would reserve " + reserved + " bytes, above the "
+                + MaxChoiceBytesPerOccurrence + "-byte bound for one occurrence.", nameof(choiceKeys));
+        ChoiceKeys = Array.AsReadOnly(choiceCopy);
+        ReservedChoiceBytes = reserved;
     }
 }
 

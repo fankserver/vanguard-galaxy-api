@@ -14,16 +14,14 @@ namespace VGModAPI.Core;
 internal sealed class StoryHostPlugin
 {
     internal string PluginId { get; }
-    internal string DisplayName { get; }
     /// <summary>The assembly the host recorded for this plugin instance; the caller must match it.</summary>
     internal Assembly Assembly { get; }
 
-    internal StoryHostPlugin(string pluginId, Assembly assembly, string? displayName = null)
+    internal StoryHostPlugin(string pluginId, Assembly assembly)
     {
         if (string.IsNullOrEmpty(pluginId) || pluginId.Length > 128) throw new ArgumentException("A host plugin identity is 1-128 characters.", nameof(pluginId));
         PluginId = pluginId;
         Assembly = assembly ?? throw new ArgumentNullException(nameof(assembly));
-        DisplayName = string.IsNullOrEmpty(displayName) ? pluginId : displayName!;
     }
 }
 

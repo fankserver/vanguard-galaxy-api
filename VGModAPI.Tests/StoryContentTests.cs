@@ -24,10 +24,19 @@ public sealed class StoryContentTests
     private const string OtherPlugin = "com.other.custommission";
 
     private static StoryMissionDefinition Definition(string local = "salvage-run",
-        StoryRetention retention = StoryRetention.Temporary)
+        StoryRetention retention = StoryRetention.Temporary, IEnumerable<string>? choiceKeys = null)
         => new(local, "Salvage run", "Recover the drifting cargo.",
             new[] { new StoryStep("Reach the wreck", new[] { StoryObjective.TravelTo("poi-guid-1", 5) }) },
-            new[] { new StoryReward(StoryRewardKind.Credits, 500) }, StoryDifficulty.Normal, retention);
+            new[] { new StoryReward(StoryRewardKind.Credits, 500) }, StoryDifficulty.Normal, retention,
+            choiceKeys: choiceKeys ?? (retention == StoryRetention.Campaign ? new[] { "branch" } : null));
+
+    /// <summary>A campaign definition declaring the largest supported choice payload.</summary>
+    private static StoryMissionDefinition WorstDefinition(string local = "salvage-run")
+        => Definition(local, StoryRetention.Campaign,
+            Enumerable.Range(0, StoryMissionDefinition.MaxChoiceKeys).Select(index => "k" + index + new string('x', StoryMissionDefinition.MaxChoiceKeyBytes - 2)));
+
+    private static Dictionary<string, string> WorstChoices(StoryMissionDefinition definition)
+        => definition.ChoiceKeys.ToDictionary(key => key, _ => new string('v', StoryMissionDefinition.MaxChoiceValueBytes), StringComparer.Ordinal);
 
     // --- identity ---------------------------------------------------------------------------
 
@@ -313,6 +322,38 @@ public sealed class StoryContentTests
         Assert.True(world.Persistence.OwnerDisposed);
     }
 
+    /// <summary>
+    /// A registration handle from a RELEASED lease is stale. Disposing it in an ordinary teardown
+    /// must not remove the live registration a re-acquired lease made for the same local ID.
+    /// </summary>
+    [Fact]
+    public void AStaleRegistrationHandleCannotUnregisterALiveOne()
+    {
+        var host = new FakeHost();
+        var world = new FakeWorld();
+        using var service = world.Service(host);
+        world.StartAndRestore();
+        var plugin = new object();
+        host.Register(plugin, AnimaPlugin);
+        var first = service.AcquireProvider(plugin).Provider!;
+        var stale = first.Register(Definition(retention: StoryRetention.Campaign)).Registration!;
+        first.Dispose();
+
+        var second = service.AcquireProvider(plugin).Provider!;
+        var live = second.Register(Definition(retention: StoryRetention.Campaign)).Registration!;
+        stale.Dispose();                                  // ordinary teardown of the old handle
+
+        Assert.True(live.Active);
+        var occurrence = second.Offer("salvage-run");
+        Assert.True(occurrence.Accepted);
+        Assert.True(second.Retire(occurrence.OccurrenceId, StoryOutcome.Completed,
+            new Dictionary<string, string> { ["branch"] = "left" }).Accepted);
+        Assert.True(second.IsCompleted("salvage-run").Completed);
+        // The live registration is still the one that can be released by its OWN handle.
+        live.Dispose();
+        Assert.False(live.Active);
+    }
+
     // --- availability -----------------------------------------------------------------------
 
     /// <summary>
@@ -357,6 +398,82 @@ public sealed class StoryContentTests
             // The retained owner bytes are never replaced by an empty capture in that state.
             Assert.False(world.Persistence.MutationAllowed && provider.Offer("salvage-run").Accepted);
         }
+    }
+
+    /// <summary>
+    /// A save block that appears AFTER a valid restore still makes answers unavailable: the ledger
+    /// then holds accepted state that will not reach disk, which is exactly what the module refuses
+    /// to report as this save's known history. The same rule already refuses mutations.
+    /// </summary>
+    [Fact]
+    public void AnOwnerBlockedAfterAValidRestoreStopsAnsweringUntilItRecovers()
+    {
+        var host = new FakeHost();
+        var world = new FakeWorld();
+        using var service = world.Service(host);
+        world.StartAndRestore();
+        var plugin = new object();
+        host.Register(plugin, AnimaPlugin);
+        var provider = service.AcquireProvider(plugin).Provider!;
+        provider.Register(Definition(retention: StoryRetention.Campaign));
+        var occurrence = provider.Offer("salvage-run");
+        Assert.True(provider.Retire(occurrence.OccurrenceId, StoryOutcome.Completed).Accepted);
+        Assert.True(provider.IsCompleted("salvage-run").Completed);
+
+        world.Persistence.MutationAllowed = false;      // the owner is paused or blocked mid-session
+        var completion = provider.IsCompleted("salvage-run");
+        Assert.Equal(StoryKnowledge.Unavailable, completion.Knowledge);
+        Assert.Null(completion.Completed);
+        var occurrences = provider.Occurrences("salvage-run");
+        Assert.Equal(StoryKnowledge.Unavailable, occurrences.Knowledge);
+        Assert.Empty(occurrences.Records);
+        Assert.Equal(StoryTransitionStatus.Unavailable, provider.Offer("salvage-run").Status);
+
+        // Recovery answers for the SAME session again, with the history that was recorded in it.
+        world.Persistence.MutationAllowed = true;
+        var resumed = provider.IsCompleted("salvage-run");
+        Assert.Equal(StoryKnowledge.Known, resumed.Knowledge);
+        Assert.True(resumed.Completed);
+        Assert.Equal(world.SessionId, resumed.SessionId);
+        Assert.Single(provider.Occurrences("salvage-run").Records);
+    }
+
+    /// <summary>The same rule against the REAL coordinator, blocked by an owner unregistering mid-session.</summary>
+    [Fact]
+    public void TheRealCoordinatorBlockingASessionMakesStoryAnswersUnavailable()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "vg-story-" + Guid.NewGuid().ToString("N"));
+        using var hub = new LifecycleHub((_, error) => throw new Exception("Unexpected subscriber fault", error));
+        try
+        {
+            using var persistence = new PersistenceService(hub, new GenerationStore(root), path => path, _ => new string('a', 64));
+            var control = persistence.Register(new PersistenceProvider("vgmodapi.tests.control", 1,
+                capture: () => new byte[] { 1 }, restore: (_, _) => { }, validate: bytes => bytes.Length == 1));
+            var host = new FakeHost();
+            using var service = new StoryContentService(persistence, hub, host.Authenticate, null, hub.CheckThread);
+            var session = hub.Begin(SessionOrigin.NewGame, null);
+            hub.PlayerReady(session);
+            hub.GameplayInitialized(session);
+
+            var plugin = new object();
+            host.Register(plugin, AnimaPlugin);
+            var provider = service.AcquireProvider(plugin).Provider!;
+            Assert.True(provider.Register(Definition(retention: StoryRetention.Campaign)).Succeeded);
+            var occurrence = provider.Offer("salvage-run");
+            Assert.True(occurrence.Accepted);
+            Assert.True(provider.Retire(occurrence.OccurrenceId, StoryOutcome.Completed).Accepted);
+            Assert.Equal(StoryKnowledge.Known, provider.IsCompleted("salvage-run").Knowledge);
+
+            // Another owner unregistering mid-session is a real coordinator load block.
+            control.Dispose();
+            Assert.Equal("load-blocked", service.PersistenceStatus);
+            var blocked = provider.IsCompleted("salvage-run");
+            Assert.Equal(StoryKnowledge.Unavailable, blocked.Knowledge);
+            Assert.Null(blocked.Completed);
+            Assert.Empty(provider.Occurrences("salvage-run").Records);
+            Assert.Equal(StoryTransitionStatus.Unavailable, provider.Offer("salvage-run").Status);
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
 
     [Fact]
@@ -603,8 +720,138 @@ public sealed class StoryContentTests
         var rejected = temporary.Offer("salvage-run");
         var refusal = temporary.Retire(rejected.OccurrenceId, StoryOutcome.Completed,
             new Dictionary<string, string> { ["branch"] = "left" });
-        Assert.Equal(StoryTransitionStatus.LimitExceeded, refusal.Status);
-        Assert.Contains("campaign definitions only", refusal.Detail);
+        Assert.Equal(StoryTransitionStatus.InvalidTransition, refusal.Status);
+        Assert.Contains("not declared by this definition", refusal.Detail);
+        // The ledger refuses the same thing on its own, without the definition in hand.
+        Assert.Equal(StoryLedgerStatus.LimitExceeded, TemporaryLedgerChoiceRefusal(out var ledgerDetail));
+        Assert.Contains("campaign definitions only", ledgerDetail);
+    }
+
+    private static StoryLedgerStatus TemporaryLedgerChoiceRefusal(out string diagnostic)
+    {
+        var id = new StoryContentId("anima", "salvage-run");
+        var ledger = new StoryLedger();
+        var occurrence = Guid.NewGuid();
+        ledger.Offer(id, StoryRetention.Temporary, occurrence, 0, out _);
+        return ledger.Retire(id, occurrence, StoryOutcome.Completed,
+            new Dictionary<string, string> { ["branch"] = "left" }, out diagnostic);
+    }
+
+    /// <summary>
+    /// Declared choices are declared UP FRONT, because their worst-case persisted size is reserved
+    /// when the occurrence is offered. An undeclared key, an oversized value or a definition whose
+    /// declared choices would not fit the per-occurrence bound is refused, never accepted into space
+    /// that was never held for it.
+    /// </summary>
+    [Fact]
+    public void OnlyDeclaredChoicesWithinTheReservedBoundAreAccepted()
+    {
+        var provider = Provider(out _, out _, out _, StoryRetention.Campaign);
+        var occurrence = provider.Offer("salvage-run");
+        var undeclared = provider.Retire(occurrence.OccurrenceId, StoryOutcome.Completed,
+            new Dictionary<string, string> { ["ending"] = "left" });
+        Assert.Equal(StoryTransitionStatus.InvalidTransition, undeclared.Status);
+        Assert.Contains("'ending' is not declared", undeclared.Detail);
+        var oversized = provider.Retire(occurrence.OccurrenceId, StoryOutcome.Completed,
+            new Dictionary<string, string> { ["branch"] = new string('v', StoryMissionDefinition.MaxChoiceValueBytes + 1) });
+        Assert.Equal(StoryTransitionStatus.LimitExceeded, oversized.Status);
+        Assert.Contains("encoded bytes", oversized.Detail);
+        // Both refusals changed nothing, so the declared outcome can still be recorded.
+        Assert.True(provider.Retire(occurrence.OccurrenceId, StoryOutcome.Completed,
+            new Dictionary<string, string> { ["branch"] = "left" }).Accepted);
+
+        // A definition whose declared choices exceed the per-occurrence bound cannot exist at all.
+        var tooMany = Enumerable.Range(0, StoryMissionDefinition.MaxChoiceKeys + 1).Select(index => "k" + index);
+        Assert.Throws<ArgumentException>(() => Definition("big", StoryRetention.Campaign, tooMany));
+        Assert.Throws<ArgumentException>(() => Definition("big", StoryRetention.Campaign, new[] { new string('k', StoryMissionDefinition.MaxChoiceKeyBytes + 1) }));
+        // Temporary definitions retain no choices, so they may not declare any.
+        Assert.Throws<ArgumentException>(() => Definition("job", StoryRetention.Temporary, new[] { "branch" }));
+        Assert.Equal(StoryMissionDefinition.MaxChoiceKeys * (2 + StoryMissionDefinition.MaxChoiceKeyBytes + 2 + StoryMissionDefinition.MaxChoiceValueBytes),
+            WorstDefinition().ReservedChoiceBytes);
+        Assert.True(WorstDefinition().ReservedChoiceBytes <= StoryMissionDefinition.MaxChoiceBytesPerOccurrence);
+    }
+
+    /// <summary>
+    /// The provider budget covers the OUTCOME as well as the row: offering reserves the worst-case
+    /// declared-choice payload, so an admitted occurrence can always be retired even after every
+    /// other provider has filled its own budget. An offer that cannot reserve that space is refused
+    /// before anything is recorded, rather than stranding an occurrence that can never be finished.
+    /// </summary>
+    [Fact]
+    public void AnAdmittedOccurrenceCanAlwaysRecordItsWorstCaseOutcome()
+    {
+        var host = new FakeHost();
+        var world = new FakeWorld();
+        using var service = world.Service(host);
+        world.StartAndRestore();
+        var leases = new List<IStoryProvider>();
+        for (int index = 0; index < StoryProviderBindings.MaxProviders; index++)
+        {
+            var plugin = new object();
+            host.Register(plugin, "com.test.plugin" + index);
+            var lease = service.AcquireProvider(plugin).Provider!;
+            Assert.True(lease.Register(WorstDefinition()).Succeeded);
+            leases.Add(lease);
+        }
+        var reserved = new List<Guid>();
+        foreach (var lease in leases)
+        {
+            var first = lease.Offer("salvage-run");
+            Assert.True(first.Accepted);
+            reserved.Add(first.OccurrenceId);
+            // Fill the rest of this provider's budget.
+            while (lease.Offer("salvage-run").Accepted) { }
+            int before = service.Ledger.Count;
+            var refusal = lease.Offer("salvage-run");
+            Assert.Equal(StoryTransitionStatus.LimitExceeded, refusal.Status);
+            Assert.Contains("payload budget", refusal.Detail);
+            Assert.Equal(Guid.Empty, refusal.OccurrenceId);
+            // Refused BEFORE mutating: the ledger is byte-for-byte what it was.
+            Assert.Equal(before, service.Ledger.Count);
+        }
+        // Every provider is full, and every reserved outcome is still recordable at full size.
+        var worstPayload = WorstChoices(WorstDefinition());
+        for (int index = 0; index < leases.Count; index++)
+            Assert.True(leases[index].Retire(reserved[index], StoryOutcome.Completed, worstPayload).Accepted);
+        // The whole ledger still captures, so no capture failure can block every owner's saves.
+        var bytes = world.Persistence.Provider!.Capture();
+        Assert.True(bytes.Length <= StoryStateCodec.MaxBytes);
+        Assert.True(StoryStateCodec.Validate(bytes));
+    }
+
+    /// <summary>The reservation is persisted, so a reload leaves exactly the same outcome capacity.</summary>
+    [Fact]
+    public void ReservedOutcomeCapacitySurvivesASaveAndReload()
+    {
+        var host = new FakeHost();
+        var world = new FakeWorld();
+        using var service = world.Service(host);
+        world.StartAndRestore();
+        var plugin = new object();
+        host.Register(plugin, AnimaPlugin);
+        var provider = service.AcquireProvider(plugin).Provider!;
+        var definition = WorstDefinition();
+        Assert.True(provider.Register(definition).Succeeded);
+        var pending = provider.Offer("salvage-run");
+        var modest = provider.Offer("salvage-run");
+        while (provider.Offer("salvage-run").Accepted) { }
+        Assert.Equal(StoryTransitionStatus.LimitExceeded, provider.Offer("salvage-run").Status);
+        int offered = service.Ledger.Count;
+        var bytes = world.Persistence.Provider!.Capture();
+
+        world.StartAndRestore(bytes);
+        Assert.Equal(offered, service.Ledger.Count);
+        Assert.True(service.Ledger.TryGet(pending.OccurrenceId, out var restored));
+        Assert.Equal(definition.ReservedChoiceBytes, restored.ChoiceReservation);
+        // Same budget after the reload: still full, and the pending outcome is still recordable.
+        Assert.Equal(StoryTransitionStatus.LimitExceeded, provider.Offer("salvage-run").Status);
+        Assert.True(provider.Retire(pending.OccurrenceId, StoryOutcome.Completed, WorstChoices(definition)).Accepted);
+        // A worst-case outcome spends exactly what was reserved for it, so it frees nothing.
+        Assert.Equal(StoryTransitionStatus.LimitExceeded, provider.Offer("salvage-run").Status);
+        // A smaller outcome releases the reservation it did not use, so the provider can offer again.
+        Assert.True(provider.Retire(modest.OccurrenceId, StoryOutcome.Failed,
+            new Dictionary<string, string> { [definition.ChoiceKeys[0]] = "v" }).Accepted);
+        Assert.True(provider.Offer("salvage-run").Accepted);
     }
 
     /// <summary>
@@ -744,6 +991,16 @@ public sealed class StoryContentTests
             new StoryOccurrenceEntry(id, Guid.NewGuid(), StoryRetention.Temporary, 5),
             new StoryOccurrenceEntry(id, Guid.NewGuid(), StoryRetention.Temporary, 5)
         }));
+        // The encoder refuses the retired-implies-one-outcome invariant the decoder enforces, so a
+        // capture can never produce a payload that its own load would reject.
+        Assert.Throws<InvalidDataException>(() => StoryStateCodec.Encode(new[]
+        {
+            new StoryOccurrenceEntry(id, Guid.NewGuid(), StoryRetention.Campaign, 1, StoryOccurrenceState.Retired)
+        }));
+        Assert.Throws<InvalidDataException>(() => StoryStateCodec.Encode(new[]
+        {
+            new StoryOccurrenceEntry(id, Guid.NewGuid(), StoryRetention.Campaign, 1, StoryOccurrenceState.Active, StoryOutcome.Completed)
+        }));
         // A payload whose stored sequence is zero or not increasing is refused on decode.
         var bytes = StoryStateCodec.Encode(new[]
         {
@@ -789,7 +1046,7 @@ public sealed class StoryContentTests
         var id = new StoryContentId("anima", "salvage-run");
         var ledger = new StoryLedger();
         ledger.Restore(new[] { new StoryOccurrenceEntry(id, Guid.NewGuid(), StoryRetention.Temporary, StoryLedger.MaxSequence) });
-        var refused = ledger.Offer(id, StoryRetention.Temporary, Guid.NewGuid(), out var diagnostic);
+        var refused = ledger.Offer(id, StoryRetention.Temporary, Guid.NewGuid(), 0, out var diagnostic);
         Assert.Equal(StoryLedgerStatus.LimitExceeded, refused);
         Assert.Contains("wrapping the timeline", diagnostic);
         // Nothing mutated, so the state stays capturable instead of overflowing into a save block.

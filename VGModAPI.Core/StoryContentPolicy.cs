@@ -54,8 +54,6 @@ internal static class StoryContentPolicy
     internal static string RewardTypeName(StoryRewardKind kind)
         => RewardTypes.TryGetValue(kind, out var name) ? name : throw new ArgumentOutOfRangeException(nameof(kind), "Unsupported reward kind.");
 
-    internal static IReadOnlyCollection<string> SupportedObjectiveTypeNames => ObjectiveTypes.Values.ToArray();
-    internal static IReadOnlyCollection<string> SupportedRewardTypeNames => RewardTypes.Values.ToArray();
 
     /// <summary>
     /// The namespaced identifier for an owner-scoped content ID. Two providers that both choose the

@@ -69,7 +69,7 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
         public StoryTransitionResult Retire(Guid occurrenceId, StoryOutcome outcome, IReadOnlyDictionary<string, string>? choices = null)
         {
             _service.CheckThread();
-            return _service.Transition(this, occurrenceId, (StoryLedger ledger, StoryContentId id, out string diagnostic) => ledger.Retire(id, occurrenceId, outcome, choices, out diagnostic));
+            return _service.Retire(this, occurrenceId, outcome, choices);
         }
 
         public StoryOccurrenceQuery Occurrences(string localId)
@@ -186,8 +186,10 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
     private string? Unavailable()
     {
         if (_disposed) return "the story module is disposed";
-        if (_persistence is not { MutationAllowed: true } && _readiness != Readiness.Restored)
-            return "story persistence is " + PersistenceStatus;
+        // Owner status is re-read on EVERY answer, not only before the restore: an owner blocked or
+        // paused mid-session holds accepted state that will not reach disk, and a query must not
+        // report that state as this save's known history.
+        if (_persistence is not { MutationAllowed: true }) return "story persistence is " + PersistenceStatus;
         if (_readiness != Readiness.Restored) return _readinessDetail;
         var session = _currentSession();
         if (session == null || session.Id != _restoredSession) return "the restored session is no longer current";
@@ -195,8 +197,6 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
         return null;
     }
 
-    /// <summary>True only when this module's own state may currently be mutated and persisted.</summary>
-    internal bool PersistenceAvailable => !_disposed && _persistence is { MutationAllowed: true } && Unavailable() == null;
     internal string PersistenceStatus => _disposed ? "inactive" : _persistence?.Status ?? "unavailable";
     internal StoryLedger Ledger => _ledger;
     internal StoryDefinitionRegistry Registry => _registry;
@@ -277,6 +277,9 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
             _service.CheckThread();
             if (_disposed) return;
             _disposed = true;
+            // A handle from a released lease is stale: the identifier may already belong to a NEW
+            // registration made through a re-acquired lease, and this handle must never remove it.
+            if (!_lease.Active) return;
             // Stops offering new content; saved occurrences are never rewritten or deleted here.
             _service._registry.Unregister(Id);
         }
@@ -287,8 +290,33 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
         if (!TryDefinition(lease, localId, out var id, out var definition, out var refusal, out var status))
             return new StoryTransitionResult(status, Guid.Empty, refusal);
         var occurrenceId = _newOccurrence();
-        var result = _ledger.Offer(id, definition!.Retention, occurrenceId, out var diagnostic);
+        // The outcome's worst-case payload is reserved now, so this occurrence can always be retired.
+        var result = _ledger.Offer(id, definition!.Retention, occurrenceId, definition.ReservedChoiceBytes, out var diagnostic);
         return new StoryTransitionResult(Map(result), result == StoryLedgerStatus.Accepted ? occurrenceId : Guid.Empty, diagnostic);
+    }
+
+    /// <summary>
+    /// Records the outcome. Declared choices must be the ones the definition DECLARED: the space for
+    /// them was reserved when the occurrence was offered, so an undeclared key is refused here rather
+    /// than accepted into space that was never held for it.
+    /// </summary>
+    private StoryTransitionResult Retire(Lease lease, Guid occurrenceId, StoryOutcome outcome, IReadOnlyDictionary<string, string>? choices)
+    {
+        if (choices is { Count: > 0 })
+        {
+            if (!_ledger.TryGet(occurrenceId, out var entry))
+                return new StoryTransitionResult(StoryTransitionStatus.UnknownOccurrence, occurrenceId, "Unknown occurrence.");
+            var id = new StoryContentId(lease.ProviderId, entry.Id.LocalId);
+            if (!_registry.TryGet(id, out var definition))
+                return new StoryTransitionResult(StoryTransitionStatus.InvalidTransition, occurrenceId,
+                    "Declared choices need the definition registered in this session; '" + entry.Id.LocalId + "' is not.");
+            var undeclared = choices.Keys.FirstOrDefault(key => !definition.ChoiceKeys.Contains(key, StringComparer.Ordinal));
+            if (undeclared != null)
+                return new StoryTransitionResult(StoryTransitionStatus.InvalidTransition, occurrenceId,
+                    "Choice key '" + undeclared + "' is not declared by this definition.");
+        }
+        return Transition(lease, occurrenceId, (StoryLedger ledger, StoryContentId id, out string diagnostic)
+            => ledger.Retire(id, occurrenceId, outcome, choices, out diagnostic));
     }
 
     private StoryTransitionResult Transition(Lease lease, Guid occurrenceId, LedgerCall call)
