@@ -37,7 +37,7 @@ internal sealed class ModInformationPresenter
         ModMetadataStatus.Unreadable => "Optional author metadata could not be read; installed identity is still shown.",
         _ => "Author-provided metadata; not a compatibility guarantee."
     };
-    internal static string UpdateNotice(ModInformation row) => row.Metadata?.UpdateUrl == null ? "No update source." : "Not checked. Update checking is not available in this offline screen.";
+    internal static string UpdateNotice(ModInformation row) => row.Metadata?.UpdateUrl == null ? "No update source." : "Not checked.";
 
     internal bool TryProjectDestination(out string host)
     {
@@ -56,7 +56,7 @@ internal sealed class ModInformationPresenter
         open(Selected!.Metadata!.ProjectUrl!); return true;
     }
 
-    internal string Details(string diagnostics, bool showDiagnostics = false)
+    internal string Details(string diagnostics, bool showDiagnostics = false, bool includeUpdateStatus = true)
     {
         var text = new StringBuilder("Loader presence only; not initialization or compatibility.\n");
         if (RefreshWarning != null) text.Append(RefreshWarning).Append('\n');
@@ -66,7 +66,8 @@ internal sealed class ModInformationPresenter
         {
             text.Append("Name: ").Append(DisplayName(row)).Append("\nID: ").Append(PlainText(row.PluginId, 128, false))
                 .Append("\nInstalled: ").Append(row.InstalledVersion).Append('\n')
-                .Append(MetadataNotice(row)).Append("\nUpdates: ").Append(UpdateNotice(row)).Append('\n');
+                .Append(MetadataNotice(row)).Append('\n');
+            if (includeUpdateStatus) text.Append("Updates: ").Append(UpdateNotice(row)).Append('\n');
             if (row.Metadata != null)
             {
                 if (row.Metadata.Author != null) text.Append("Author: ").Append(PlainText(row.Metadata.Author, 256, false)).Append('\n');

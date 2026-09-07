@@ -13,7 +13,7 @@ using VGModAPI.Runtime;
 
 namespace VGModAPI;
 
-[BepInPlugin(ModApi.PluginId, "Vanguard Galaxy Mod API", "0.1.14")]
+[BepInPlugin(ModApi.PluginId, "Vanguard Galaxy Mod API", "0.1.15")]
 [BepInProcess("VanguardGalaxy.exe")]
 [BepInDependency("vgmodapi.qualification.guard", BepInDependency.DependencyFlags.SoftDependency)]
 public sealed class Plugin : BaseUnityPlugin
@@ -33,11 +33,14 @@ public sealed class Plugin : BaseUnityPlugin
     private bool _identityHooksBound;
     private ModInformationCatalog? _modCatalog;
     private ModMenuModule? _modMenu;
+    private ModUpdateService? _updates;
+    private ModUpdatePresenter? _updatePresenter;
+    private BepInEx.Configuration.ConfigEntry<bool>? _updatesEnabled, _automaticUpdates;
     private Assembly? _inspectedGameAssembly;
 
     private void Start()
     {
-        try { _modCatalog?.Refresh(); }
+        try { _modCatalog?.Refresh(); if (_modCatalog != null) _updates?.Sync(_modCatalog.Snapshot); }
         catch (Exception error) { Logger.LogWarning($"Mod information inventory could not be refreshed ({error.GetType().Name}); game services are unaffected."); }
     }
     private void Awake()
@@ -58,6 +61,7 @@ public sealed class Plugin : BaseUnityPlugin
         ModApi.Persistence = null;
         _modCatalog = new ModInformationCatalog(ModInformationSource.Snapshot);
         ModApi.Mods = _modCatalog;
+        InitializeUpdates();
         try
         {
             var assembly = AppDomain.CurrentDomain.GetAssemblies().SingleOrDefault(a => a.GetName().Name == "Assembly-CSharp")
@@ -117,12 +121,25 @@ public sealed class Plugin : BaseUnityPlugin
         Logger.LogInfo("VGModAPI " + Info.Metadata.Version + ": experimental, NOT runtime-qualified. Query capabilities; startup does not prove compatibility.");
     }
 
+    private void InitializeUpdates()
+    {
+        try
+        {
+            _updatesEnabled = Config.Bind("ModUpdates", "Enabled", true, "Allow explicit update checks. No network unless manually confirmed or Automatic is enabled. Disable to stop future checks; in-flight requests may finish.");
+            _automaticUpdates = Config.Bind("ModUpdates", "Automatic", false, "Opt in to HTTPS feed requests for all declared API consumers, exposing IP and feed paths to GitHub hosts/redirects. No saves, profile, machine ID or full inventory sent. Six-hour success interval; no downloads or installs.");
+            _updates = new ModUpdateService(new HttpModFeedTransport(), new ModUpdateCache(Path.Combine(Paths.CachePath, "VGModAPI-updates-v1")))
+                { Enabled = _updatesEnabled.Value, Automatic = _automaticUpdates.Value };
+            _updatePresenter = new ModUpdatePresenter(_updates, value => _automaticUpdates.Value = value);
+        }
+        catch (Exception error) { Logger.LogWarning("Update checker unavailable (" + error.GetType().Name + "); offline inventory is unaffected."); }
+    }
+
     private void InitializeModMenu()
     {
         _hub!.SetCapability("mod-information-menu", false, "Not bound; local catalog remains available.");
         try
         {
-            if (!Config.Bind("ModInformation", "MenuEnabled", true, "Show an offline Mods entry on the inspected native main menu. No update requests. Disable if another menu replacement conflicts.").Value)
+            if (!Config.Bind("ModInformation", "MenuEnabled", true, "Show the Mods entry on the inspected native main menu. Inventory is offline; optional update requests have separate configuration and confirmation. Disable if another menu replacement conflicts.").Value)
             {
                 _hub.SetCapability("mod-information-menu", false, "Disabled by configuration; local catalog remains available.");
                 Logger.LogInfo("Mods menu disabled by configuration; ModApi.Mods remains available.");
@@ -131,7 +148,7 @@ public sealed class Plugin : BaseUnityPlugin
             var assembly = _inspectedGameAssembly
                 ?? throw new NotSupportedException("No inspected game assembly; local catalog remains available.");
             _modMenu = new ModMenuModule(assembly, _modCatalog!, () => string.Join("\n", _hub.Capabilities.Select(capability =>
-                capability.Name + ": " + capability.Detail)), DisableModMenu);
+                capability.Name + ": " + capability.Detail)), DisableModMenu, _updatePresenter);
             _hub.SetCapability("mod-information-menu", true, "Inspected native menu binding; UI qualification pending.");
         }
         catch (Exception error) { DisableModMenu(error); }
@@ -152,6 +169,21 @@ public sealed class Plugin : BaseUnityPlugin
 
     private void LateUpdate()
     {
+        try
+        {
+            if (_updates != null)
+            {
+                _updates.Enabled = _updatesEnabled!.Value;
+                _updates.Automatic = _automaticUpdates!.Value;
+                _updates.Pump();
+            }
+        }
+        catch (Exception error)
+        {
+            try { _updates?.Dispose(); } catch (Exception) { }
+            _updates = null;
+            Logger.LogWarning("Update checker stopped (" + error.GetType().Name + "); offline inventory remains available.");
+        }
         try { _modMenu?.Poll(); }
         catch (Exception error) { DisableModMenu(error); }
     }
@@ -484,6 +516,7 @@ public sealed class Plugin : BaseUnityPlugin
     }
     private void OnDestroy()
     {
+        try { _updates?.Dispose(); } catch (Exception) { }
         try { _modMenu?.Dispose(); } catch (Exception error) { DisableModMenu(error); }
         _modMenu = null;
         _modCatalog?.Dispose();

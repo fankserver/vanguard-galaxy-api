@@ -57,9 +57,11 @@ internal sealed class ModFeedRequestException : Exception
 {
     internal bool RateLimited { get; }
     internal TimeSpan RetryAfter { get; }
-    internal ModFeedRequestException(bool rateLimited = false, TimeSpan? retryAfter = null) : base("Update request failed.")
+    internal string? Origin { get; }
+    internal ModFeedRequestException(bool rateLimited = false, TimeSpan? retryAfter = null, string? origin = null) : base("Update request failed.")
     {
         RateLimited = rateLimited;
+        Origin = origin;
         RetryAfter = TimeSpan.FromSeconds(Math.Max(60, Math.Min(86400, (retryAfter ?? TimeSpan.FromMinutes(15)).TotalSeconds)));
     }
 }
@@ -68,8 +70,9 @@ internal sealed class ModFeedClient
 {
     private readonly IModFeedTransport _transport;
     private readonly TimeSpan _deadline;
-    internal ModFeedClient(IModFeedTransport transport, TimeSpan? deadline = null)
-    { _transport = transport; _deadline = deadline ?? TimeSpan.FromSeconds(10); }
+    private readonly Func<string, TimeSpan?>? _backoff;
+    internal ModFeedClient(IModFeedTransport transport, TimeSpan? deadline = null, Func<string, TimeSpan?>? backoff = null)
+    { _transport = transport; _deadline = deadline ?? TimeSpan.FromSeconds(10); _backoff = backoff; }
 
     internal async Task<ModUpdateFeed> FetchAsync(string source, string pluginId, string channel, CancellationToken cancellation)
     {
@@ -81,6 +84,8 @@ internal sealed class ModFeedClient
             deadline.Token.ThrowIfCancellationRequested();
             if (!ModUpdateHosts.Allowed(current)) throw new FormatException("Unsupported update host or URL.");
             var uri = new Uri(current);
+            var delay = _backoff?.Invoke(uri.Host);
+            if (delay > TimeSpan.Zero) throw new ModFeedRequestException(true, delay, uri.Host);
             using var response = await _transport.GetAsync(uri, deadline.Token).ConfigureAwait(false);
             using var abort = deadline.Token.Register(() =>
             {
@@ -94,7 +99,7 @@ internal sealed class ModFeedClient
                 current = redirect.AbsoluteUri;
                 continue;
             }
-            if (response.Status is 429 or 503) throw new ModFeedRequestException(true, response.RetryAfter);
+            if (response.Status is 429 or 503) throw new ModFeedRequestException(true, response.RetryAfter, uri.Host);
             if (response.Status != 200) throw new ModFeedRequestException();
             if (response.Length > ModMetadataCodec.MaxBytes) throw new FormatException("Update feed is oversized.");
             using var bytes = new MemoryStream();

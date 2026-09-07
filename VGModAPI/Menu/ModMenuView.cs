@@ -39,15 +39,18 @@ internal sealed class ModMenuView : IModMenuView
     private float _width = -1, _height = -1;
     private bool _disposed;
     private bool _showDiagnostics;
+    private readonly ModUpdatePresenter? _updates;
+    private Button _checkUpdate = null!, _autoUpdate = null!, _release = null!;
+    private string _updateText = "";
 
     private ModMenuView(MonoBehaviour menu, RectTransform viewport, Canvas canvas, ModMenuBindings bindings,
-        ModInformationPresenter presenter, Func<string> diagnostics, Action<Exception> fault)
-    { _menu = menu; _viewport = viewport; _canvas = canvas; _bindings = bindings; _presenter = presenter; _diagnostics = diagnostics; _fault = fault; }
+        ModInformationPresenter presenter, Func<string> diagnostics, Action<Exception> fault, ModUpdatePresenter? updates)
+    { _menu = menu; _viewport = viewport; _canvas = canvas; _bindings = bindings; _presenter = presenter; _diagnostics = diagnostics; _fault = fault; _updates = updates; }
 
     internal static ModMenuView Create(MonoBehaviour menu, RectTransform viewport, Canvas canvas, ModMenuBindings bindings,
-        ModInformationPresenter presenter, Func<string> diagnostics, Action<Exception> fault)
+        ModInformationPresenter presenter, Func<string> diagnostics, Action<Exception> fault, ModUpdatePresenter? updates = null)
     {
-        var view = new ModMenuView(menu, viewport, canvas, bindings, presenter, diagnostics, fault);
+        var view = new ModMenuView(menu, viewport, canvas, bindings, presenter, diagnostics, fault, updates);
         try { view.Build(); return view; }
         catch { view.Dispose(); throw; }
     }
@@ -111,6 +114,18 @@ internal sealed class ModMenuView : IModMenuView
         Stretch((RectTransform)_next.transform, .19f, 0, .38f, 0, 4, 6, -8, 38);
         _project = Button(_body, "Project link", "Open project in browser", () => _presenter.OpenProject(Application.OpenURL));
         Stretch((RectTransform)_project.transform, .38f, 0, 1, 0, 4, 6, -8, 38);
+        if (_updates != null)
+        {
+            _project.GetComponentInChildren<TMP_Text>().text = "Open project";
+            Stretch((RectTransform)_project.transform, .38f, 0, .69f, 0, 4, 6, -4, 38);
+            _release = Button(_body, "Release link", "Open release", () => { if (_presenter.Selected != null) _updates.OpenRelease(_presenter.Selected, Application.OpenURL); });
+            Stretch((RectTransform)_release.transform, .69f, 0, 1, 0, 4, 6, -8, 38);
+            _checkUpdate = Button(_body, "Check update", "Check update", () => { if (_presenter.Selected != null) _updates.Check(_presenter.Selected); RenderDetails(true); });
+            _autoUpdate = Button(_body, "Automatic updates", "Auto: off", () => { _updates.ToggleAutomatic(); RenderDetails(true); });
+            Stretch((RectTransform)_checkUpdate.transform, .38f, 0, .69f, 0, 4, 46, -4, 78);
+            Stretch((RectTransform)_autoUpdate.transform, .69f, 0, 1, 0, 4, 46, -8, 78);
+            Stretch((RectTransform)_details.transform, .38f, 0, 1, 1, 4, 86, -8, -42);
+        }
     }
 
     private void Guard(Action action)
@@ -125,6 +140,8 @@ internal sealed class ModMenuView : IModMenuView
         _events = EventSystem.current;
         _savedFocus = _events == null ? null : _events.currentSelectedGameObject;
         _presenter.Open();
+        _updates?.Cancel();
+        _updates?.Sync(_presenter.Rows);
         _panel.gameObject.SetActive(true); _panel.SetAsLastSibling();
         _entry.interactable = false;
         _listContent.anchoredPosition = Vector2.zero; _first = -1;
@@ -142,6 +159,8 @@ internal sealed class ModMenuView : IModMenuView
         if (!Open) return;
         if (_events != EventSystem.current) { Close(false); return; }
         Layout(); RefreshRows();
+        if (_updates != null && _presenter.Selected != null && !_updates.Confirming &&
+            _updates.Text(_presenter.Selected, DateTimeOffset.UtcNow) != _updateText) RenderDetails(true, false);
         if (Keyboard.current?.escapeKey.wasPressedThisFrame == true) { Close(true); return; }
         // All owned selectables use an explicit closed navigation ring; never edit native navigation.
         // Repair foreign/cleared selection without disabling the EventSystem or its input module.
@@ -228,14 +247,34 @@ internal sealed class ModMenuView : IModMenuView
         RenderDetails(); RefreshRows();
     }
 
-    private void RenderDetails()
+    private void RenderDetails(bool preserveConfirmation = false, bool resetScroll = true)
     {
+        if (!preserveConfirmation) _updates?.Cancel();
         _rowsDirty = true;
-        _detailText.text = _presenter.Details(_showDiagnostics ? _diagnostics() : "", _showDiagnostics);
+        _detailText.text = _presenter.Details(_showDiagnostics ? _diagnostics() : "", _showDiagnostics, _updates == null);
+        if (_updates != null)
+        {
+            _checkUpdate.interactable = _release.interactable = false;
+            _autoUpdate.interactable = _presenter.Selected != null;
+        }
+        if (_updates != null && _presenter.Selected != null)
+        {
+            _updateText = _updates.Text(_presenter.Selected, DateTimeOffset.UtcNow);
+            _detailText.text = _updates.Confirming ? _updateText : _updateText + "\n" + _detailText.text;
+            _checkUpdate.interactable = _updates.CanCheck(_presenter.Selected);
+            _checkUpdate.GetComponentInChildren<TMP_Text>().text = _updates.Confirming && !_updates.ConfirmingAutomatic ? "Confirm check" : "Check update";
+            _autoUpdate.GetComponentInChildren<TMP_Text>().text = _updates.Automatic ? "Auto: on" : _updates.ConfirmingAutomatic ? "Confirm auto" : "Auto: off";
+            _release.interactable = _updates.ReleaseHost(_presenter.Selected) != null;
+        }
         _project.interactable = _presenter.TryProjectDestination(out var host);
         _destination.text = _project.interactable ? "Project destination (HTTPS):\n" + host : "No validated project link.";
+        if (_updates != null && _presenter.Selected != null)
+        {
+            var releaseHost = _updates.ReleaseHost(_presenter.Selected);
+            if (releaseHost != null) _destination.text += "\nRelease destination (HTTPS):\n" + releaseHost;
+        }
         _previous.interactable = _next.interactable = _presenter.Rows.Count > 1;
-        _details.StopMovement(); _detailsContent.anchoredPosition = Vector2.zero;
+        if (resetScroll) { _details.StopMovement(); _detailsContent.anchoredPosition = Vector2.zero; }
         ResizeDetails(); RebuildNavigation();
     }
 
@@ -256,6 +295,12 @@ internal sealed class ModMenuView : IModMenuView
         if (_previous.interactable) _navigation.Add(_previous);
         if (_next.interactable) _navigation.Add(_next);
         if (_project.interactable) _navigation.Add(_project);
+        if (_updates != null)
+        {
+            if (_checkUpdate.interactable) _navigation.Add(_checkUpdate);
+            if (_autoUpdate.interactable) _navigation.Add(_autoUpdate);
+            if (_release.interactable) _navigation.Add(_release);
+        }
         _navigation.Add(_list.verticalScrollbar); _navigation.Add(_details.verticalScrollbar);
         for (var i = 0; i < _navigation.Count; ++i)
         {
@@ -274,6 +319,7 @@ internal sealed class ModMenuView : IModMenuView
 
     private void Close(bool restore)
     {
+        _updates?.Cancel();
         if (!Open) return;
         var events = _events;
         var ownedFocus = events != null && events == EventSystem.current && IsPanelFocus(events.currentSelectedGameObject);
