@@ -338,7 +338,7 @@ if ($Action -eq 'Prepare') {
         [IO.File]::WriteAllText((Join-Path $root 'mission-identity.enabled'), 'identity-v1')
     }
     if ($MenuInspection) { [IO.File]::WriteAllText((Join-Path $root 'menu-inspection.enabled'), 'menu-inspection-v1') }
-    if ($ModMenuProbe) { [IO.File]::WriteAllText((Join-Path $root 'mod-menu-probe.enabled'), 'mod-menu-probe-v2') }
+    if ($ModMenuProbe) { [IO.File]::WriteAllText((Join-Path $root 'mod-menu-probe.enabled'), 'mod-menu-probe-v3') }
     if ($ContentReferenceProbe) { [IO.File]::WriteAllText((Join-Path $root 'content-reference.enabled'), 'refs-v1') }
     if ($JournalMissionEventsProbe) {
         [IO.File]::AppendAllText((Join-Path $bep 'config\vgmissionjournal.cfg'), "`r`n[Missions]`r`nUseApiMissionEvents = true`r`n")

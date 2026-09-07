@@ -19,12 +19,20 @@ public sealed partial class Plugin
 {
     private IEnumerator RunModMenuProbe()
     {
-        Require(File.ReadAllText(Path.Combine(_root!, "mod-menu-probe.enabled")) == "mod-menu-probe-v2", "Invalid menu probe marker.");
+        Require(File.ReadAllText(Path.Combine(_root!, "mod-menu-probe.enabled")) == "mod-menu-probe-v3", "Invalid menu probe marker.");
         foreach (var frame in Wait(() => GameObject.Find("VGModAPI Mods") != null, "owned Mods entry")) yield return frame;
         Require(_api!.CurrentSession == null, "Menu probe must not enter gameplay.");
         var entry = GameObject.Find("VGModAPI Mods").GetComponent<Button>();
         Require(entry.GetComponentInChildren<TMP_Text>().alignment == TextAlignmentOptions.Center, "Mods entry is not centered.");
         var menu = entry.transform.parent.gameObject;
+        var neutral = menu.transform.Find("Exit").GetComponent<Button>();
+        var nativeImage = neutral.GetComponent<Image>();
+        Require(entry.colors.Equals(neutral.colors) && entry.GetComponent<Image>().pixelsPerUnitMultiplier == nativeImage.pixelsPerUnitMultiplier,
+            "Mods entry does not match neutral native palette/border scaling.");
+        Require(entry.GetComponent<LayoutElement>() == null, "Mods entry overrides native layout sizing.");
+        Canvas.ForceUpdateCanvases();
+        Require(Math.Abs(((RectTransform)entry.transform).rect.height - ((RectTransform)neutral.transform).rect.height) < 1,
+            "Mods entry height differs from native menu buttons.");
         var canvas = entry.GetComponentInParent<Canvas>();
         var events = EventSystem.current;
         Require(events != null, "Menu EventSystem missing.");
@@ -37,7 +45,7 @@ public sealed partial class Plugin
         var oldMouse = Mouse.current;
         Mouse? mouse = null;
         var metadataCreated = false;
-        var evidence = new StringBuilder("Native input-system menu probe v2\n");
+        var evidence = new StringBuilder("Native input-system menu probe v3\n");
         try
         {
             keyboard = InputSystem.AddDevice<Keyboard>();
@@ -47,7 +55,7 @@ public sealed partial class Plugin
             {
                 metadataCreated = true;
                 using var writer = new StreamWriter(file);
-                writer.Write("{\"schemaVersion\":1,\"pluginId\":\"" + Id + "\",\"description\":\"" +
+                writer.Write("{\"schemaVersion\":1,\"pluginId\":\"" + Id + "\",\"updateUrl\":\"https://raw.githubusercontent.com/fankserver/vanguard-galaxy-api/main/README.md\",\"description\":\"" +
                     string.Join(" ", Enumerable.Repeat("Long offline description for native scrolling verification.", 55)) + "\"}");
             }
             ModApi.Mods!.Refresh();
@@ -59,7 +67,14 @@ public sealed partial class Plugin
             var list = panel.GetComponentsInChildren<ScrollRect>().Single(item => item.name == "Local mods");
             Require(panel.transform.parent.name == "Gameview", "Panel escaped the inspected viewport.");
             Require(panel.GetComponentsInChildren<TMP_Text>().All(text => !text.richText && !text.parseCtrlCharacters), "Unsafe rich text enabled.");
-            evidence.AppendLine("keyboard-open=PASS plain-text=PASS viewport=Gameview entry-centered=PASS");
+            foreach (var ownedButton in panel.GetComponentsInChildren<Button>())
+            {
+                Require(ownedButton.colors.Equals(neutral.colors), "Owned button palette differs from native neutral style.");
+                var ownedImage = ownedButton.GetComponent<Image>();
+                Require(ownedImage.type == nativeImage.type && ownedImage.pixelsPerUnitMultiplier == nativeImage.pixelsPerUnitMultiplier,
+                    "Owned button border rendering differs from native style.");
+            }
+            evidence.AppendLine("keyboard-open=PASS plain-text=PASS viewport=Gameview entry-centered=PASS native-palette-border-height=PASS");
             var detailLabel = details.content.Find("Plain details").GetComponent<TMP_Text>();
             Require(!detailLabel.text.Contains("API capabilities") && !detailLabel.text.Contains("Declared dependencies"), "Default details expose advanced diagnostics.");
             var diagnostic = panel.GetComponentsInChildren<Button>().Single(button => button.name == "Diagnostics");
@@ -80,6 +95,24 @@ public sealed partial class Plugin
             var row = list.GetComponentsInChildren<Button>().Single(button => button.GetComponentInChildren<TMP_Text>().text.Contains("Controlled Qualification"));
             events.SetSelectedGameObject(row.gameObject);
             foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
+            var checkUpdate = panel.GetComponentsInChildren<Button>().Single(button => button.name == "Check update");
+            var automatic = panel.GetComponentsInChildren<Button>().Single(button => button.name == "Automatic updates");
+            Require(checkUpdate.interactable && automatic.GetComponentInChildren<TMP_Text>().text == "Auto: off", "Update controls are not manual-only by default.");
+            events.SetSelectedGameObject(checkUpdate.gameObject);
+            foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
+            Require(detailLabel.text.Contains("NETWORK CONFIRMATION") && detailLabel.text.Contains("raw.githubusercontent.com") && detailLabel.text.Contains("IP address"), "Manual network disclosure is missing.");
+            foreach (var frame in CaptureMenu("mod-update-disclosure.png", evidence)) yield return frame;
+            // Selection cancels: never send a request from this UI-only probe.
+            events.SetSelectedGameObject(row.gameObject);
+            foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
+            Require(!detailLabel.text.Contains("NETWORK CONFIRMATION") && detailLabel.text.Contains("Not checked"), "Selection failed to cancel pending manual consent.");
+            events.SetSelectedGameObject(automatic.gameObject);
+            foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
+            Require(detailLabel.text.Contains("all API consumers") && automatic.GetComponentInChildren<TMP_Text>().text == "Confirm auto", "Automatic opt-in lacks separate disclosure.");
+            events.SetSelectedGameObject(row.gameObject);
+            foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
+            Require(automatic.GetComponentInChildren<TMP_Text>().text == "Auto: off" && detailLabel.text.Contains("Not checked"), "Unconfirmed automatic opt-in survived cancellation.");
+            evidence.AppendLine("update-manual-disclosure=PASS automatic-disclosure=PASS selection-cancels-consent=PASS no-confirmed-network-action=PASS");
             Require(details.content.rect.height > details.viewport.rect.height + 20, "Long metadata did not produce scrollable detail content.");
             events.SetSelectedGameObject(details.verticalScrollbar.gameObject);
             var before = details.content.anchoredPosition.y;
@@ -127,7 +160,7 @@ public sealed partial class Plugin
             File.WriteAllBytes(Path.Combine(_root!, "mod-menu-probe.txt"), bytes);
             using var hash = SHA256.Create();
             var digest = BitConverter.ToString(hash.ComputeHash(bytes)).Replace("-", "").ToLowerInvariant();
-            File.WriteAllText(Path.Combine(_root!, "mod-menu-probe.receipt"), "PASS\nmod-menu-probe-v2\nsha256=" + digest + "\n");
+            File.WriteAllText(Path.Combine(_root!, "mod-menu-probe.receipt"), "PASS\nmod-menu-probe-v3\nsha256=" + digest + "\n");
             Passed("mod-menu-native-input");
         }
         finally

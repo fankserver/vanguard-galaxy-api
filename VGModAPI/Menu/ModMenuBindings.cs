@@ -43,6 +43,21 @@ internal sealed class ModMenuBindings
 
     internal Button NativeButton(MonoBehaviour menu) => _continue.GetValue(menu) as Button
         ?? throw new InvalidOperationException("Native menu button missing.");
+    internal Button NativeStyle(MonoBehaviour menu)
+    {
+        // Stable inspected hierarchy/listener identity, independent of localization and sibling order.
+        // Only inspect the native listener: never invoke or copy it to an owned control.
+        var child = menu.transform.Find("Exit");
+        var button = child == null ? null : child.GetComponent<Button>();
+        var image = child == null ? null : child.GetComponent<Image>();
+        if (child == null || child.parent != menu.transform || button == null || image == null ||
+            button.targetGraphic != image || button.transition != Selectable.Transition.ColorTint ||
+            button.onClick.GetPersistentEventCount() != 1 || button.onClick.GetPersistentTarget(0) != menu ||
+            button.onClick.GetPersistentMethodName(0) != "ExitGame")
+            throw new InvalidOperationException("Inspected neutral menu style identity unavailable.");
+        return button;
+    }
+
     internal TMP_Text NativeVersion(MonoBehaviour menu) => _version.GetValue(menu) as TMP_Text
         ?? throw new InvalidOperationException("Native menu text missing.");
 

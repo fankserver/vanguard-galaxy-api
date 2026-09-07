@@ -14,7 +14,7 @@ internal static class ModMetadataCodec
     internal static ModAuthorMetadata Parse(byte[] bytes, string pluginId)
     {
         if (bytes.Length > MaxBytes) throw new FormatException("Metadata is oversized.");
-        var fields = new FlatObject(Utf8.GetString(bytes)).Read();
+        var fields = ReadFlat(bytes);
         if (!fields.TryGetValue("schemaVersion", out var schema) || schema != "1" ||
             !fields.TryGetValue("pluginId", out var id) || id != pluginId)
             throw new FormatException("Metadata schema or identity mismatch.");
@@ -30,6 +30,12 @@ internal static class ModMetadataCodec
         var channel = Optional(fields, "channel", 32) ?? "stable";
         if (channel is not ("stable" or "experimental")) throw new FormatException("Invalid channel.");
         return new ModAuthorMetadata(author, description, project, update, channel);
+    }
+
+    internal static Dictionary<string, string> ReadFlat(byte[] bytes)
+    {
+        if (bytes.Length > MaxBytes) throw new FormatException("JSON is oversized.");
+        return new FlatObject(Utf8.GetString(bytes)).Read();
     }
 
     private static string? Optional(Dictionary<string, string> fields, string key, int limit)
