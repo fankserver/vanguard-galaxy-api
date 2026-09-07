@@ -745,6 +745,10 @@ public sealed class StoryContentTests
         int before = service.Ledger.Count;
         var refused = provider.Offer("salvage-run");
         Assert.Equal(StoryTransitionStatus.LimitExceeded, refused.Status);
+        // The CAMPAIGN bound is what refuses here; a payload-budget or quota refusal must not be
+        // able to pass for it.
+        Assert.Contains("campaign occurrences including unresolved ones", refused.Detail);
+        Assert.Contains("could never retire", refused.Detail);
         Assert.Equal(before, service.Ledger.Count);
         // Everything that was admitted can still record its outcome; none is stranded.
         foreach (var occurrence in admitted)
@@ -881,6 +885,98 @@ public sealed class StoryContentTests
     }
 
     /// <summary>
+    /// The caller's collection is external CODE, not just external data: reading it re-enters the
+    /// game's thread while a retirement is in flight. Whatever that code does — disposing the lease,
+    /// retiring the same occurrence itself, or reloading the save — the outer call must land on the
+    /// refusal that state deserves and must not apply anything on top of it. This pins the
+    /// re-checking of lease, availability, session and occurrence state AFTER the snapshot; a
+    /// refactor that trusted the pre-snapshot resolution would break it.
+    /// </summary>
+    [Theory]
+    [InlineData(ReentrancyPoint.GetEnumerator)]
+    [InlineData(ReentrancyPoint.MoveNext)]
+    [InlineData(ReentrancyPoint.Dispose)]
+    public void DisposingTheLeaseWhileTheSuppliedChoicesAreReadRefusesTheRetirement(ReentrancyPoint point)
+    {
+        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var occurrence = provider.Offer("salvage-run");
+        var reentrant = new ReentrantChoices(point, () => provider.Dispose(),
+            new Dictionary<string, string> { ["branch"] = "left" });
+        var result = provider.Retire(occurrence.OccurrenceId, StoryOutcome.Completed, reentrant);
+
+        Assert.Equal(StoryTransitionStatus.Unavailable, result.Status);
+        Assert.True(reentrant.Ran);
+        Assert.True(service.Ledger.TryGet(occurrence.OccurrenceId, out var untouched));
+        Assert.Equal(StoryOccurrenceState.Offered, untouched.State);
+        Assert.Null(untouched.Outcome);
+        Assert.Empty(untouched.Choices);
+        Assert.True(StoryStateCodec.Validate(world.Persistence.Provider!.Capture()));
+    }
+
+    /// <summary>
+    /// A nested retirement of the SAME occurrence from inside the collection wins, exactly once, and
+    /// the outer call is refused as the second terminal outcome it now is.
+    /// </summary>
+    [Theory]
+    [InlineData(ReentrancyPoint.GetEnumerator)]
+    [InlineData(ReentrancyPoint.MoveNext)]
+    [InlineData(ReentrancyPoint.Dispose)]
+    public void ANestedRetirementOfTheSameOccurrenceIsRecordedOnceAndTheOuterCallIsRefused(ReentrancyPoint point)
+    {
+        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var occurrence = provider.Offer("salvage-run");
+        StoryTransitionResult nested = default!;
+        var reentrant = new ReentrantChoices(point,
+            () => nested = provider.Retire(occurrence.OccurrenceId, StoryOutcome.Failed,
+                new Dictionary<string, string> { ["branch"] = "nested" }),
+            new Dictionary<string, string> { ["branch"] = "outer" });
+        var outer = provider.Retire(occurrence.OccurrenceId, StoryOutcome.Completed, reentrant);
+
+        Assert.True(nested.Accepted);
+        Assert.Equal(StoryTransitionStatus.InvalidTransition, outer.Status);
+        Assert.Contains("recorded once", outer.Detail);
+        // The intended retirement is retained, once, with its own outcome and choices.
+        var record = Assert.Single(provider.Occurrences("salvage-run").Records);
+        Assert.Equal(occurrence.OccurrenceId, record.OccurrenceId);
+        Assert.Equal(StoryOutcome.Failed, record.Outcome);
+        Assert.Equal("nested", record.Choices["branch"]);
+        Assert.Equal(1, service.Ledger.Count);
+        Assert.True(StoryStateCodec.Validate(world.Persistence.Provider!.Capture()));
+    }
+
+    /// <summary>
+    /// A reload while the collection is being read means the outer call belongs to a world that is
+    /// gone. It is refused as stale, and the restored save is exactly what was captured.
+    /// </summary>
+    [Theory]
+    [InlineData(ReentrancyPoint.GetEnumerator)]
+    [InlineData(ReentrancyPoint.MoveNext)]
+    [InlineData(ReentrancyPoint.Dispose)]
+    public void ReloadingTheSaveWhileTheSuppliedChoicesAreReadRefusesTheRetirementAsStale(ReentrancyPoint point)
+    {
+        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var occurrence = provider.Offer("salvage-run");
+        var saved = world.Persistence.Provider!.Capture();
+        var beforeSession = world.SessionId;
+        var reentrant = new ReentrantChoices(point, () => world.StartAndRestore(saved),
+            new Dictionary<string, string> { ["branch"] = "left" });
+        var result = provider.Retire(occurrence.OccurrenceId, StoryOutcome.Completed, reentrant);
+
+        Assert.Equal(StoryTransitionStatus.StaleSession, result.Status);
+        Assert.NotEqual(beforeSession, world.SessionId);
+        // The reloaded save holds the occurrence exactly as it was persisted: still unresolved.
+        Assert.Equal(1, service.Ledger.Count);
+        Assert.True(service.Ledger.TryGet(occurrence.OccurrenceId, out var restored));
+        Assert.Equal(StoryOccurrenceState.Offered, restored.State);
+        Assert.Empty(provider.Occurrences("salvage-run").Records);
+        Assert.Equal(occurrence.OccurrenceId, Assert.Single(provider.Unresolved("salvage-run").Occurrences).OccurrenceId);
+        Assert.True(StoryStateCodec.Validate(world.Persistence.Provider!.Capture()));
+        // The occurrence is still retirable in the session that is actually loaded.
+        Assert.True(provider.Retire(occurrence.OccurrenceId, StoryOutcome.Completed,
+            new Dictionary<string, string> { ["branch"] = "left" }).Accepted);
+    }
+
+    /// <summary>
     /// A collection the module cannot read safely is a refusal, never a partial record and never an
     /// exception out of a method contracted to return a result. The module and every other owner stay
     /// healthy afterwards.
@@ -1005,13 +1101,16 @@ public sealed class StoryContentTests
         Assert.All(unresolved.Occurrences, item =>
         {
             Assert.Equal(StoryRetention.Campaign, item.Retention);
-            Assert.Null(item.Outcome);
-            Assert.Empty(item.Choices);
             Assert.Equal(anima.ProviderId, item.Id.Provider);
         });
-        // Retired occurrences stay in the retained query, not in this one.
+        // A retired occurrence, its outcome and its choices belong to the retained query, and this
+        // snapshot type has no place to carry them.
         Assert.DoesNotContain(done.OccurrenceId, unresolved.Occurrences.Select(item => item.OccurrenceId));
-        Assert.Single(anima.Occurrences("salvage-run").Records);
+        var record = Assert.Single(anima.Occurrences("salvage-run").Records);
+        Assert.Equal(done.OccurrenceId, record.OccurrenceId);
+        Assert.Equal(StoryOutcome.Completed, record.Outcome);
+        Assert.Equal(new[] { StoryOccurrenceStage.Offered, StoryOccurrenceStage.Active },
+            Enum.GetValues(typeof(StoryOccurrenceStage)).Cast<StoryOccurrenceStage>().ToArray());
         // Another provider's unresolved content is not listed here.
         Assert.DoesNotContain(foreign.OccurrenceId, unresolved.Occurrences.Select(item => item.OccurrenceId));
         Assert.Equal(foreign.OccurrenceId, Assert.Single(other.Unresolved("salvage-run").Occurrences).OccurrenceId);
@@ -1515,6 +1614,53 @@ public sealed class StoryContentTests
             private readonly Action _dispose;
             internal Subscription(Action dispose) => _dispose = dispose;
             public void Dispose() => _dispose();
+        }
+    }
+
+    /// <summary>Where a hostile collection re-enters the API while a retirement is in flight.</summary>
+    public enum ReentrancyPoint { GetEnumerator, MoveNext, Dispose }
+
+    /// <summary>Well-formed choices that run caller code at one point of the enumeration.</summary>
+    private sealed class ReentrantChoices : IReadOnlyDictionary<string, string>
+    {
+        private readonly ReentrancyPoint _point;
+        private readonly Action _reenter;
+        private readonly Dictionary<string, string> _pairs;
+        internal bool Ran { get; private set; }
+        internal ReentrantChoices(ReentrancyPoint point, Action reenter, Dictionary<string, string> pairs)
+        { _point = point; _reenter = reenter; _pairs = pairs; }
+
+        private void Reenter(ReentrancyPoint point)
+        {
+            if (point != _point || Ran) return;
+            Ran = true;
+            _reenter();
+        }
+
+        public IEnumerator<KeyValuePair<string, string>> GetEnumerator()
+        {
+            Reenter(ReentrancyPoint.GetEnumerator);
+            return new Enumerator(this, _pairs.GetEnumerator());
+        }
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+        public int Count => _pairs.Count;
+        public IEnumerable<string> Keys => _pairs.Keys;
+        public IEnumerable<string> Values => _pairs.Values;
+        public bool ContainsKey(string key) => _pairs.ContainsKey(key);
+        public bool TryGetValue(string key, out string value) => _pairs.TryGetValue(key, out value!);
+        public string this[string key] => _pairs[key];
+
+        private sealed class Enumerator : IEnumerator<KeyValuePair<string, string>>
+        {
+            private readonly ReentrantChoices _owner;
+            private Dictionary<string, string>.Enumerator _inner;
+            internal Enumerator(ReentrantChoices owner, Dictionary<string, string>.Enumerator inner)
+            { _owner = owner; _inner = inner; }
+            public KeyValuePair<string, string> Current => _inner.Current;
+            object System.Collections.IEnumerator.Current => Current;
+            public bool MoveNext() { _owner.Reenter(ReentrancyPoint.MoveNext); return _inner.MoveNext(); }
+            public void Reset() { }
+            public void Dispose() { _owner.Reenter(ReentrancyPoint.Dispose); _inner.Dispose(); }
         }
     }
 

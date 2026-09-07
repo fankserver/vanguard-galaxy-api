@@ -331,6 +331,12 @@ internal sealed class StoryContentService : IStoryApi, IDisposable
             if (resolved != StoryLedgerStatus.Accepted) return new StoryTransitionResult(Map(resolved), occurrenceId, ownership);
             if (!TrySnapshotChoices(choices, out owned, out var unreadable))
                 return new StoryTransitionResult(StoryTransitionStatus.InvalidTransition, occurrenceId, unreadable);
+            // Reading the caller's collection ran ITS code on this thread, which may have disposed the
+            // lease, retired this occurrence or reloaded the save. Authorisation is therefore
+            // re-established before anything else is consulted, so a caller that invalidated itself
+            // hears that, not a diagnostic about the state it just changed.
+            if (!Guard(lease, expectedSessionId, out refusal, out status))
+                return new StoryTransitionResult(status, occurrenceId, refusal);
             if (owned.Count > 0)
             {
                 var id = new StoryContentId(lease.ProviderId, entry!.Id.LocalId);

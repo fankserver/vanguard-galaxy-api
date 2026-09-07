@@ -191,7 +191,14 @@ is refused, and both refusals leave the occurrence able to record its declared o
 collection is copied ONCE, after the caller has been authorised for that occurrence and before any
 of it is validated, so what was checked is exactly what is stored: a collection whose contents change
 between reads, whose `Count` disagrees with what it yields, that repeats a key, that never ends or
-whose enumerator throws is refused outright, and nothing is recorded. The
+whose enumerator throws is refused outright, and nothing is recorded.
+
+Reading that collection runs the CALLER's code on the game's thread, so the module re-establishes
+its preconditions afterwards: lease, owner status and expected session are checked again, and the
+occurrence's state is read again, before the outcome is applied. A caller that disposes its lease,
+retires the same occurrence itself, or reloads the save from inside its own collection gets
+`Unavailable`, `InvalidTransition` or `StaleSession` respectively, the intended retirement is
+recorded exactly once, and nothing is applied on top of it. The
 reservation is PERSISTED with the occurrence, so a reload restores exactly the same remaining
 capacity without needing the definition to be registered first. Recording an outcome releases
 whatever part of the reservation it did not use; a worst-case outcome releases nothing, which is the
@@ -216,9 +223,9 @@ could not finish rather than admitting it and failing later.
 
 The API owns this state, so it also hands it back. `Occurrences(localId)` returns the RETIRED
 records, and `Unresolved(localId)` returns the still offered or active ones as immutable
-`StoryOccurrenceSnapshot` values carrying identity, stage and retention. An unresolved occurrence has
-no outcome and no recorded choices yet, so those snapshot fields are always empty here; recorded
-outcomes and choices come from `Occurrences`. A provider therefore never has to store occurrence identities in its own save
+`StoryOccurrenceSnapshot` values carrying identity, stage and retention. The snapshot type describes
+an unresolved occurrence only, so it has no outcome and no choices at all: a recorded outcome with
+its declared choices is a `StoryOccurrenceRecord` from `Occurrences`. A provider therefore never has to store occurrence identities in its own save
 data to activate, withdraw or retire its content after a reload. Both answers carry `StoryKnowledge`
 and the session they describe, and are empty when unavailable.
 

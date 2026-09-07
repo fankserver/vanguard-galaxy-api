@@ -325,12 +325,19 @@ public sealed class StoryOccurrenceRecord
 }
 
 /// <summary>How far one occurrence has progressed. A retired occurrence is terminal and never re-opens.</summary>
-public enum StoryOccurrenceStage { Offered, Active, Retired }
+/// <summary>
+/// How far an UNRESOLVED occurrence has progressed. A retired occurrence is not a stage here: its
+/// terminal record, with the outcome and the recorded choices, is a <see cref="StoryOccurrenceRecord"/>
+/// returned by the retained query.
+/// </summary>
+public enum StoryOccurrenceStage { Offered, Active }
 
 /// <summary>
-/// An immutable read-only view of ONE occurrence the API is holding for this save, including the
-/// unresolved ones. It exists so a provider never has to persist occurrence identities itself: the
-/// API owns the state, so it also has to be able to hand it back after a reload.
+/// An immutable read-only view of one occurrence the API is still holding UNRESOLVED for this save.
+/// It exists so a provider never has to persist occurrence identities itself: the API owns the
+/// state, so it also has to be able to hand it back after a reload. It carries no outcome and no
+/// choices, because an unresolved occurrence has none; a recorded outcome is a
+/// <see cref="StoryOccurrenceRecord"/> from the retained query.
 /// </summary>
 public sealed class StoryOccurrenceSnapshot
 {
@@ -338,27 +345,14 @@ public sealed class StoryOccurrenceSnapshot
     public Guid OccurrenceId { get; }
     public StoryOccurrenceStage Stage { get; }
     public StoryRetention Retention { get; }
-    /// <summary>Set only for a retired occurrence; an unresolved occurrence has no outcome yet.</summary>
-    public StoryOutcome? Outcome { get; }
-    /// <summary>Recorded declared choices. Always empty before the occurrence retires.</summary>
-    public IReadOnlyDictionary<string, string> Choices { get; }
 
-    public StoryOccurrenceSnapshot(StoryContentId id, Guid occurrenceId, StoryOccurrenceStage stage,
-        StoryRetention retention, StoryOutcome? outcome = null, IReadOnlyDictionary<string, string>? choices = null)
+    public StoryOccurrenceSnapshot(StoryContentId id, Guid occurrenceId, StoryOccurrenceStage stage, StoryRetention retention)
     {
         if (id.Provider == null) throw new ArgumentException("A default identity is not a content identity.", nameof(id));
         if (occurrenceId == Guid.Empty) throw new ArgumentException("An occurrence requires its own identity.", nameof(occurrenceId));
         if (!Enum.IsDefined(typeof(StoryOccurrenceStage), stage)) throw new ArgumentOutOfRangeException(nameof(stage));
         if (!Enum.IsDefined(typeof(StoryRetention), retention)) throw new ArgumentOutOfRangeException(nameof(retention));
-        if (outcome.HasValue && !Enum.IsDefined(typeof(StoryOutcome), outcome.Value)) throw new ArgumentOutOfRangeException(nameof(outcome));
-        if ((stage == StoryOccurrenceStage.Retired) != outcome.HasValue)
-            throw new ArgumentException("Exactly a retired occurrence carries an outcome.", nameof(outcome));
-        Id = id; OccurrenceId = occurrenceId; Stage = stage; Retention = retention; Outcome = outcome;
-        var copy = new Dictionary<string, string>(StringComparer.Ordinal);
-        if (choices != null) foreach (var pair in choices) copy[pair.Key] = pair.Value;
-        if (stage != StoryOccurrenceStage.Retired && copy.Count > 0)
-            throw new ArgumentException("An unresolved occurrence records no choices.", nameof(choices));
-        Choices = copy;
+        Id = id; OccurrenceId = occurrenceId; Stage = stage; Retention = retention;
     }
 }
 
