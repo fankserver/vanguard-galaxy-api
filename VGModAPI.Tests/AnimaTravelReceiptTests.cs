@@ -234,6 +234,48 @@ public sealed class AnimaTravelReceiptTests
         Assert.Contains("lost visits", AnimaTravelReceipt.CheckHistoryPreserved(baseline, new[] { Visit(Origin, 1, 10, 50) }, "arrival"));
     }
 
+    /// <summary>
+    /// qa-85: the reload check counted the consumer's leg latch through the NON-GENERIC
+    /// System.Collections.ICollection. HashSet&lt;Guid&gt; implements only ICollection&lt;Guid&gt;,
+    /// so the cast threw InvalidCastException inside the case and the phase lost its mandatory
+    /// reload, rollback and persistence rows. This exercises the shipped helper against the real
+    /// consumer collection type.
+    /// </summary>
+    [Fact]
+    public void TheLegLatchIsCountedThroughTheRealSetTypeAndNotTheNonGenericInterface()
+    {
+        var empty = new HashSet<Guid>();
+        var populated = new HashSet<Guid> { Guid.NewGuid(), Guid.NewGuid() };
+        Assert.Equal(0, AnimaTravelReceipt.StrictCount(empty, "_countedLegs"));
+        Assert.Equal(2, AnimaTravelReceipt.StrictCount(populated, "_countedLegs"));
+        // The exact defect: the old cast really does throw on this exact type.
+        Assert.Throws<InvalidCastException>(() => ((System.Collections.ICollection)(object)populated).Count);
+        // The collections that DID work keep working, so the fix is not a broad weakening.
+        Assert.Equal(1, AnimaTravelReceipt.StrictCount(new Dictionary<string, int> { ["a"] = 1 }, "VisitedSystems"));
+        Assert.Equal(3, AnimaTravelReceipt.StrictCount(new List<int> { 1, 2, 3 }, "entries"));
+        // An array exposes Length, not a Count property, so it is refused rather than guessed. The
+        // probe never counts one: the sidecar's visited array is enumerated, never sized.
+        Assert.Throws<InvalidOperationException>(() => AnimaTravelReceipt.StrictCount(new[] { 1, 2 }, "visited"));
+    }
+
+    [Fact]
+    public void AnUncountableOrAbsentConsumerCollectionFailsInsteadOfDefaultingToZero()
+    {
+        // A missing member must never be read as "the latch was reset".
+        var missing = Assert.Throws<InvalidOperationException>(() => AnimaTravelReceipt.StrictCount(null, "_countedLegs"));
+        Assert.Contains("_countedLegs", missing.Message);
+        // A member of an unexpected shape fails loudly instead of being enumerated or guessed.
+        var wrongType = Assert.Throws<InvalidOperationException>(() => AnimaTravelReceipt.StrictCount(Guid.NewGuid(), "_countedLegs"));
+        Assert.Contains("without an int Count property", wrongType.Message);
+        Assert.Throws<InvalidOperationException>(() => AnimaTravelReceipt.StrictCount(new CountLikeButNotAnInt(), "_countedLegs"));
+    }
+
+    /// <summary>A member named Count that is not an int must not be accepted as a size.</summary>
+    private sealed class CountLikeButNotAnInt
+    {
+        public long Count => 7;
+    }
+
     [Fact]
     public void ASessionReplacementMustResetTheConsumerLegLatch()
     {

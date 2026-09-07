@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using VGModAPI;
 
@@ -428,6 +429,35 @@ internal static class AnimaTravelReceipt
         if (!presentBefore) return "The consumer's shared regional-recognition decision produced no window BEFORE the fault, so its omission afterwards would prove nothing.";
         if (presentAfter) return "A new gather still carried regionally_known after visit recording stopped.";
         return null;
+    }
+
+    /// <summary>
+    /// The element count of a consumer collection the probe read by reflection, resolved STRICTLY
+    /// through that collection's own declared <c>Count</c> property.
+    ///
+    /// <para>qa-85 failed here: <c>_countedLegs</c> is a <c>HashSet&lt;Guid&gt;</c>, which implements
+    /// the GENERIC <c>ICollection&lt;Guid&gt;</c> but NOT the non-generic
+    /// <c>System.Collections.ICollection</c>, so casting it to the non-generic interface threw
+    /// <see cref="InvalidCastException"/> inside the reload check and the phase lost its mandatory
+    /// reload/rollback/persistence rows. <c>Dictionary</c> and <c>List</c> do implement the
+    /// non-generic interface, which is exactly why the defect only surfaced on the one member that
+    /// is a set.</para>
+    ///
+    /// <para>The resolution is deliberately unforgiving: a null member, a missing <c>Count</c> or a
+    /// <c>Count</c> that is not an <see cref="int"/> throws instead of degrading to zero or to a
+    /// counted enumeration. A silent zero would satisfy the very latch assertion this count exists
+    /// to prove.</para>
+    /// </summary>
+    internal static int StrictCount(object? collection, string member)
+    {
+        if (collection == null)
+            throw new InvalidOperationException("Consumer collection member '" + member + "' is null; a count cannot be assumed.");
+        var property = collection.GetType().GetProperty("Count",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+        if (property == null || property.PropertyType != typeof(int) || property.GetMethod == null)
+            throw new InvalidOperationException("Consumer collection member '" + member + "' is a "
+                + collection.GetType().FullName + " without an int Count property; refusing to guess its size.");
+        return (int)property.GetValue(collection)!;
     }
 
     /// <summary>The persisted schema must still be the current v4 contract carrying the visited map.</summary>

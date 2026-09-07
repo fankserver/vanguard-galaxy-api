@@ -345,7 +345,10 @@ public sealed partial class Plugin
         var observer = SpGet(AnimaPlugin, "_visitObserver");
         Require(observer != null, "The consumer's visit observer disappeared across the reload.");
         failure = AnimaTravelReceipt.CheckSessionReplacement(savedSession, reloadSession,
-            (Guid?)SpGet(observer!, "_session"), ((ICollection)SpGet(observer!, "_countedLegs")!).Count);
+            (Guid?)SpGet(observer!, "_session"),
+            // HashSet<Guid> implements only the GENERIC ICollection<Guid>; the strict counter reads
+            // the set's own Count property and refuses to guess (qa-85 InvalidCastException).
+            AnimaTravelReceipt.StrictCount(SpGet(observer!, "_countedLegs"), "_countedLegs"));
         Require(failure == null, failure!);
         var reloadEvidence = TravelStationReceipt.Evidence(
             Window(SessionWindowOffset(reloadSession)).Where(fact => fact.SessionId == reloadSession), null);
@@ -540,6 +543,8 @@ public sealed partial class Plugin
     private List<AnimaTravelReceipt.VisitRecord> AnimaVisited()
     {
         var registry = SpGet(AnimaPlugin, "PersistedRegistry")!;
+        // The consumer's visited map is a Dictionary, which DOES implement the non-generic
+        // IDictionary; its size is never assumed here, only its entries are read.
         return ((IDictionary)SpGet(registry, "VisitedSystems")!).Values.Cast<object>().Select(ReadVisit).ToList();
     }
 
@@ -608,10 +613,12 @@ public sealed partial class Plugin
         })!;
         var json = SpJson(context);
         bool present = json.Contains("\"regionally_known\"");
-        int entries = regionallyKnown is ICollection collection ? collection.Count : -1;
         detail = "decision=VGAnima.Llm.RegionalRecognition.ForCurrentContext(); recording="
             + SpGet(anima, "VisitHistoryRecording")
-            + "; decisionEntries=" + (regionallyKnown == null ? "null" : entries.ToString())
+            // Strict too: an omitted window is null, but a produced window that cannot report its
+            // own size must fail rather than be reported as an unknown count.
+            + "; decisionEntries=" + (regionallyKnown == null ? "null"
+                : AnimaTravelReceipt.StrictCount(regionallyKnown, "RegionalRecognition.ForCurrentContext()").ToString())
             + "; contextKey=" + (present ? "present" : "omitted");
         return present;
     }
