@@ -31,8 +31,16 @@ check-consumer:
 	VG_ANIMA_ASSEMBLY="$(ANIMA_ASSEMBLY)" VG_ECHO_ASSEMBLY="$(ECHO_ASSEMBLY)" \
 	VG_CONSUMER_DEPENDENCY_DIRS="$(CORE):$(MANAGED):$(NEWTONSOFT_DIR):$(ANIMA_DEPENDENCY_DIRS):$(ECHO_DEPENDENCY_DIRS)" \
 	$(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter '$(CONSUMER_FILTER)'
-# Each consumer's metadata tests are their own class, so a run with only one built binary selects it.
+# Select only supplied consumers; the explicit override remains useful for focused checks.
+ifneq ($(strip $(ANIMA_ASSEMBLY)),)
+ifneq ($(strip $(ECHO_ASSEMBLY)),)
 CONSUMER_FILTER ?= Category=InstalledConsumer
+else
+CONSUMER_FILTER ?= Category=InstalledConsumer&FullyQualifiedName~InstalledAnimaTravelConsumerTests
+endif
+else
+CONSUMER_FILTER ?= Category=InstalledConsumer&FullyQualifiedName~InstalledEchoTravelConsumerTests
+endif
 package: build
 	@rm -rf artifacts/VGModAPI
 	@mkdir -p artifacts/VGModAPI
