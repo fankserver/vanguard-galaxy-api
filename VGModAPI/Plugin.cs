@@ -173,7 +173,7 @@ public sealed class Plugin : BaseUnityPlugin
             var files = new PersistenceFiles(saves);
             _persistence = new PersistenceService(_hub, new GenerationStore(root), files.Canonical, files.HashFile);
             ModApi.Persistence = _persistence;
-            _hub.SetCapability("save-data", true, "Experimental API-managed saves enabled; full owner acceptance remains pending.");
+            _hub.SetCapability("save-data", true, "Experimental API-managed saves enabled; full in-game acceptance remains pending.");
         }
         catch (Exception error)
         {
