@@ -30,7 +30,7 @@ check-consumer:
 	@test -n "$(ANIMA_ASSEMBLY)$(ECHO_ASSEMBLY)" || (echo 'Set ANIMA_ASSEMBLY=/path/to/VGAnima.dll and/or ECHO_ASSEMBLY=/path/to/VGEcho.dll'; exit 1)
 	VG_ANIMA_ASSEMBLY="$(ANIMA_ASSEMBLY)" VG_ECHO_ASSEMBLY="$(ECHO_ASSEMBLY)" \
 	VG_CONSUMER_DEPENDENCY_DIRS="$(CORE):$(MANAGED):$(NEWTONSOFT_DIR):$(ANIMA_DEPENDENCY_DIRS):$(ECHO_DEPENDENCY_DIRS)" \
-	$(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter '$(CONSUMER_FILTER)'
+	$(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter '$(CONSUMER_FILTER)' -- RunConfiguration.TreatNoTestsAsError=true
 # Select only supplied consumers; the explicit override remains useful for focused checks.
 ifneq ($(strip $(ANIMA_ASSEMBLY)),)
 ifneq ($(strip $(ECHO_ASSEMBLY)),)
