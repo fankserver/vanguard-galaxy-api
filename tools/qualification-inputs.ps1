@@ -128,6 +128,12 @@ function Assert-TravelJournalAssemblyMetadata($Assembly, [string]$Revision) {
 # is refused - a duplicate key is ambiguous and is never resolved silently.
 $TravelJournalConfigRelativePath = 'game\BepInEx\config\vgtraveljournal.cfg'
 $TravelJournalConfigRequired = @(@{Key='Journal/Verbose'; Value='true'}, @{Key='Journal/MaxEvents'; Value='0'})
+function Assert-QualificationAssemblyRevision($Assembly, [string]$Name, [string]$Revision) {
+    if ($Assembly.Name.Name -cne $Name -or $Revision -cnotmatch '^[0-9a-f]{40}$') { throw 'Qualification assembly identity/revision invalid.' }
+    $versions = @($Assembly.CustomAttributes | Where-Object { $_.AttributeType.FullName -eq 'System.Reflection.AssemblyInformationalVersionAttribute' })
+    if ($versions.Count -ne 1 -or $versions[0].ConstructorArguments[0].Value -cnotmatch ('^[0-9]+\.[0-9]+\.[0-9]+\+' + $Revision + '$')) { throw "Stale qualification assembly: $Name is not built from $Revision." }
+}
+
 function Assert-StoryAuthorMetadata($Assembly, [string]$Name, [string]$Revision) {
     $identities = @{ OwnedStoryCampaign='vg-story-campaign'; OwnedStoryJob='vg-story-job' }
     if (!$identities.ContainsKey($Name) -or $Assembly.Name.Name -cne $Name -or $Revision -cnotmatch '^[0-9a-f]{40}$') { throw 'Unexpected story author identity or revision.' }

@@ -65,6 +65,9 @@ try {
         Assert-StoryIsolation ([pscustomobject]@{ $name=$false })
     }
     $revision = 'a' * 40
+    Assert-QualificationAssemblyRevision (Author $revision) 'OwnedStoryCampaign' $revision
+    Reject { Assert-QualificationAssemblyRevision (Author ('b' * 40)) 'OwnedStoryCampaign' $revision }
+    Reject { Assert-QualificationAssemblyRevision (Author $revision) 'VGModAPI' $revision }
     Assert-StoryAuthorMetadata (Author $revision) 'OwnedStoryCampaign' $revision
     Reject { Assert-StoryAuthorMetadata (Author ('b' * 40)) 'OwnedStoryCampaign' $revision }
     Reject { Assert-StoryAuthorMetadata (Author $revision 'wrong-plugin') 'OwnedStoryCampaign' $revision }

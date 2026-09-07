@@ -276,6 +276,11 @@ if ($Action -eq 'Prepare') {
     if ($MissionJournalBin -and !$JournalCoordinated) { [IO.File]::WriteAllText((Join-Path $bep 'config\vgmissionjournal.cfg'), "[Persistence]`r`nUseApiSaveData = false`r`n") }
     if ($StoryProbe) {
         Add-Type -Path (Join-Path $bep 'core\Mono.Cecil.dll')
+        foreach ($name in @('VGModAPI','VGModAPI.Core','VGModAPI.Abstractions','QualificationRunner','QualificationGuard','LifecycleObserver')) {
+            $reader = Read-ConsumerAssembly (Join-Path $plugins ($name + '.dll')) (Get-ConsumerMetadataReferenceDirs $plugins $root $GameDir)
+            try { Assert-QualificationAssemblyRevision $reader.Assembly $name $BuildRevision }
+            finally { Close-ConsumerAssembly $reader }
+        }
         foreach ($author in @(@('OwnedStoryCampaign',$StoryCampaignBin),@('OwnedStoryJob',$StoryJobBin))) {
             $candidate = Join-Path $author[1] ($author[0] + '.dll')
             $reader = Read-ConsumerAssembly $candidate (Get-ConsumerMetadataReferenceDirs $author[1] $root $GameDir)
