@@ -75,6 +75,25 @@ public sealed class BoardingObserverTests
         Assert.Single(f.Events); Assert.Equal(BoardingEventKind.OperationResumed, f.Events[0].Kind);
     }
     [Fact]
+    public void DeferredResumePublishesHandleBeforeCallbacksAndDoesNotReplayVictory()
+    {
+        using var f = new Fixture(); f.Sim["victoryAchieved"] = true;
+        var pod = Pod(state: "Docked"); ((ArrayList)f.Native["_activePods"]!).Add(pod);
+        BoardingHandle? observed = null;
+        using var subscription = f.Service.Subscribe("resume-consumer", message =>
+        {
+            if (message.Kind != BoardingEventKind.OperationResumed) return;
+            observed = Assert.Single(f.Service.GetOperations()).Handle;
+        });
+        f.Observer.RestoredOperationReady(f.Native);
+        Assert.NotNull(observed); Assert.Single(f.Service.GetOperations());
+        Assert.Equal(observed, f.Observer.CommandHandleForOperation(f.Native));
+        Assert.Same(f.Native, f.Observer.ResolveCommandOperation(observed!));
+        f.Observer.RestoredOperationReady(f.Native); f.Signal();
+        Assert.Single(f.Events); Assert.Equal(BoardingEventKind.OperationResumed, f.Events[0].Kind);
+        Assert.Equal(0, f.Faults);
+    }
+    [Fact]
     public void CompletionAndCrewReturnAreSeparate()
     {
         using var f = new Fixture(); var player = Pod(); ((ArrayList)f.Native["_activePods"]!).Add(player); f.Start();

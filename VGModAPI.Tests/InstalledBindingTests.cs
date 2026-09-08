@@ -146,7 +146,7 @@ public sealed class InstalledBindingTests
     public void EveryPatchHasAnExactNonStubMethodBody()
     {
         using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
-        foreach (var binding in BindingCatalog.Session.Concat(BindingCatalog.Saves).Concat(BindingCatalog.Missions).Concat(BindingCatalog.MissionSnapshots).Concat(BindingCatalog.Travel).Concat(BindingCatalog.Boarding).Concat(BindingCatalog.BoardingQueries).Concat(BoardingRuleBindings.Hooks).Concat(BoardingRuleBindings.Calls).Concat(BoardingCommandBindings.Calls).Concat(BoardingCommandBindings.Hooks).Concat(BoardingTacticalBindings.Actions).Concat(BoardingTacticalBindings.Queries).Concat(BoardingCombatBindings.Scopes).Concat(BoardingCombatBindings.Hooks).Concat(DungeonNativeSchema.Methods).Concat(DungeonSettlementBindings.Hooks))
+        foreach (var binding in BindingCatalog.Session.Concat(BindingCatalog.Saves).Concat(BindingCatalog.Missions).Concat(BindingCatalog.MissionSnapshots).Concat(BindingCatalog.Travel).Concat(BindingCatalog.Boarding).Concat(BindingCatalog.BoardingQueries).Concat(BoardingRuleBindings.Hooks).Concat(BoardingRuleBindings.Calls).Concat(BoardingCommandBindings.Calls).Concat(BoardingCommandBindings.Hooks).Concat(BoardingTacticalBindings.Actions).Concat(BoardingTacticalBindings.Queries).Concat(BoardingCombatBindings.Scopes).Concat(BoardingCombatBindings.Hooks).Concat(DungeonNativeSchema.Methods).Concat(DungeonSettlementBindings.Hooks).Concat(DungeonPodResumeBindings.Methods).Concat(DungeonCrewResumeBindings.Hooks).Concat(DungeonPodReturnBindings.Hooks).Concat(DungeonRecoveryMarkerBindings.Hooks).Concat(DungeonRecoveryCaptureBindings.Hooks))
         {
             var type = assembly.MainModule.GetType(binding.Type);
             Assert.True(type != null, "Missing type: " + binding.Type);
@@ -162,7 +162,7 @@ public sealed class InstalledBindingTests
     public void BoardingSnapshotMembersMatchInstalledAssembly()
     {
         using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
-        foreach (var entry in BoardingMembers.Schema.Concat(BoardingRuleBindings.Members.Select(spec => (spec.Type, spec.Name, spec.ValueType))).Concat(BoardingCommandMembers.Schema.Select(spec => (spec.Type, spec.Name, spec.ValueType))).Concat(BoardingTacticalBindings.Members.Select(spec => (spec.Type, spec.Name, spec.ValueType))).Concat(BoardingCombatBindings.Members.Select(spec => (spec.Type, spec.Name, spec.ValueType))).Concat(DungeonNativeSchema.Members.Select(spec => (spec.Type, spec.Name, spec.ValueType))).Concat(DungeonSettlementBindings.Members.Select(spec => (spec.Type, spec.Name, spec.ValueType))))
+        foreach (var entry in BoardingMembers.Schema.Concat(BoardingRuleBindings.Members.Select(spec => (spec.Type, spec.Name, spec.ValueType))).Concat(BoardingCommandMembers.Schema.Select(spec => (spec.Type, spec.Name, spec.ValueType))).Concat(BoardingTacticalBindings.Members.Select(spec => (spec.Type, spec.Name, spec.ValueType))).Concat(BoardingCombatBindings.Members.Select(spec => (spec.Type, spec.Name, spec.ValueType))).Concat(DungeonNativeSchema.Members.Select(spec => (spec.Type, spec.Name, spec.ValueType))).Concat(DungeonSettlementBindings.Members.Select(spec => (spec.Type, spec.Name, spec.ValueType))).Concat(DungeonPodResumeBindings.Members.Select(spec => (spec.Type, spec.Name, spec.ValueType))))
         {
             var type = assembly.MainModule.GetType(entry.Type);
             Assert.NotNull(type);

@@ -16,6 +16,9 @@ public sealed class JsonValue
     public bool IsJsonObject => _value is JsonObject;
     public bool IsJsonArray => _value is List<JsonValue>;
     public bool IsNull => _value == null;
+    public bool IsString => _value is string;
+    public string AsString => (string)_value!;
+    public static implicit operator JsonValue(string value) => new(value);
     public JsonObject AsJsonObject => (JsonObject)_value!;
     public List<JsonValue> AsJsonArray => (List<JsonValue>)_value!;
     public override string ToString() => _value?.ToString() ?? "null";
