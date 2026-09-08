@@ -10,6 +10,7 @@ internal interface IWorldTravelCaptureHost
 {
     IEnumerator WrapLeg(object manager, object target, IEnumerator inner);
     IEnumerator WrapChild(object manager, IEnumerator inner);
+    void RequireSceneTransition(object manager);
     object? BeginWaypoint(object manager);
     void EndWaypoint(object token);
 }
@@ -66,6 +67,22 @@ internal sealed partial class WorldLifetimeHookHost : IWorldTravelCaptureHost
         var parent = request.Parent;
         while (parent != null && parent.Ended) parent = parent.Parent;
         _waypoint = parent;
+    }
+    public void RequireSceneTransition(object manager)
+    {
+        _hub.CheckThread();
+        var leg = Travel.CaptureExecuting();
+        var target = _localTarget.GetValue(manager);
+        if (leg == null)
+        {
+            if (target != null && !AllowRemoval(target)) throw new InvalidDataException("Owned scene transition lacks originating travel scope.");
+            if (Travel.CurrentLeg is { Completed: false }) throw new InvalidDataException("Active travel scene transition lost its origin.");
+            return;
+        }
+        VerifyRouteNative(leg.Route, manager);
+        Travel.RequireActive(leg, _hub.CurrentSession!.Id, _player.GetValue(null)!, manager);
+        if (!ReferenceEquals(target, leg.Target) || !AllowUse(leg.Target))
+            throw new InvalidDataException("World scene transition target changed or became unavailable.");
     }
     public IEnumerator WrapChild(object manager, IEnumerator inner)
     {

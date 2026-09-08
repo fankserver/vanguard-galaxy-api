@@ -15,6 +15,10 @@ internal static class WorldLifetimePatches
         internal static void Postfix(object __instance, object target, ref System.Collections.IEnumerator __result, IWorldTravelCaptureHost? __state)
         { if (__state != null) __result = __state.WrapLeg(__instance, target, __result); }
     }
+    internal static class SceneTransition
+    {
+        internal static void Prefix(object __instance) => (Host as IWorldTravelCaptureHost)?.RequireSceneTransition(__instance);
+    }
     internal static class TravelChild
     {
         internal static void Prefix(out IWorldTravelCaptureHost? __state) => __state = Host as IWorldTravelCaptureHost;

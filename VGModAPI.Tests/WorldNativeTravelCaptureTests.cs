@@ -45,6 +45,10 @@ public sealed class WorldNativeTravelCaptureTests
             IEnumerator First()
             {
                 manager.localTarget = first;
+                host.RequireSceneTransition(manager);
+                manager.localTarget = second;
+                Assert.Throws<InvalidDataException>(() => host.RequireSceneTransition(manager));
+                manager.localTarget = first;
                 background = host.WrapChild(manager, Preparation()); Assert.True(background.MoveNext());
                 yield return Arrive();
                 obsoleteTailWrites++;
@@ -52,6 +56,7 @@ public sealed class WorldNativeTravelCaptureTests
             var request = host.BeginRoute(manager, second); Assert.NotNull(request);
             var root = host.WrapLeg(manager, first, First());
             Assert.True(root.MoveNext()); host.CompleteRoute(request!, true);
+            Assert.Throws<InvalidDataException>(() => host.RequireSceneTransition(manager));
             var child = Assert.IsType<WorldTravelLegEnumerator>(root.Current);
             Assert.False(child.MoveNext()); Assert.False(root.MoveNext());
             Assert.Equal(0, obsoleteTailWrites); Assert.Same(second, manager.localTarget);
