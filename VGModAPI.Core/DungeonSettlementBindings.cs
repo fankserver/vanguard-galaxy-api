@@ -4,6 +4,7 @@ internal static class DungeonSettlementBindings
 {
     internal static readonly MethodBinding[] Hooks =
     {
+        new("settlementTerminal", BindingCatalog.BoardingOperation, "HandlePodSimulationComplete", false, "System.Void", DungeonNativeSchema.Sim),
         new("settlementPrisonerScope", BindingCatalog.BoardingOperation, "TransferCapturedToBrig", false, "System.Void", DungeonNativeSchema.Sim),
         new("settlementPrisoners", "Source.SpaceShip.SpaceShipData", "AddPrisoners", false, "System.Int32", "System.String", "System.Int32"),
         new("settlementCrewSample", BindingCatalog.BoardingOperation, "Tick", false, "System.Void", "System.Single"),

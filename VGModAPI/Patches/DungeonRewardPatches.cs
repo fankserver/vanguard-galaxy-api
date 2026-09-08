@@ -7,6 +7,10 @@ internal static class DungeonRewardPatches
 {
     internal static DungeonRewardAdapter? Adapter { get; set; }
     internal static DungeonCrewObserver? Crew { get; set; }
+    internal static class Terminal
+    {
+        internal static void Prefix(object __instance) => Adapter?.RetainProtection(__instance);
+    }
     internal static class PrisonerScope
     {
         internal static void Prefix(object __instance, out IDisposable? __state) => __state = Crew?.Begin(__instance);

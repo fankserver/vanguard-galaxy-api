@@ -530,6 +530,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             DungeonRewardPatches.Adapter = new DungeonRewardAdapter(_hub, bindings, _boarding, _dungeonRewards);
             InstallGroup("dungeon-rewards", bindings, DungeonSettlementBindings.Hooks, new Dictionary<string, Type>
             {
+                ["settlementTerminal"] = typeof(DungeonRewardPatches.Terminal),
                 ["settlementPrisonerScope"] = typeof(DungeonRewardPatches.PrisonerScope), ["settlementPrisoners"] = typeof(DungeonRewardPatches.Prisoners),
                 ["settlementCrewSample"] = typeof(DungeonRewardPatches.CrewSample),
                 ["settlementLoot"] = typeof(DungeonRewardPatches.Loot), ["settlementLootCount"] = typeof(DungeonRewardPatches.Count),

@@ -30,6 +30,13 @@ public sealed class DungeonCrewObserverTests
             observer.PrisonersApplied(new NativeObject(), "Crew", 3, 0);
             observer.PrisonersApplied(recipient, "Crew", 3, 3);
             Assert.Empty(settlement.Get(handle)!.PrisonersDelivered);
+            Assert.Throws<InvalidOperationException>((Action)(() =>
+            {
+                using var nested = observer.Begin(new NativeObject());
+                observer.PrisonersApplied(recipient, "Crew", 3, 0);
+                Assert.Empty(settlement.Get(handle)!.PrisonersDelivered);
+                throw new InvalidOperationException();
+            }));
             observer.PrisonersApplied(recipient, "Crew", 3, 1);
         }
         observer.PrisonersApplied(recipient, "Crew", 3, 0);

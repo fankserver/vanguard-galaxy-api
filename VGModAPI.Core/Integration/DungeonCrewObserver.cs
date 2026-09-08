@@ -18,14 +18,14 @@ internal sealed class DungeonCrewObserver
     { _operationHandle = operationHandle; _settlement = settlement; _native = native; _report = report; }
     internal IDisposable? Begin(object operation)
     {
-        var handle = _operationHandle(operation); if (handle == null) return null;
-        var recipient = _native.Get(_native.Get(operation, "operationShip"), "settlementShipData");
+        var handle = _operationHandle(operation);
+        var recipient = handle == null ? null : _native.Get(_native.Get(operation, "operationShip"), "settlementShipData");
         var scope = new Scope(this, operation, recipient, handle); _scopes.Add(scope); return scope;
     }
     internal void PrisonersApplied(object recipient, string crew, int requested, int overflow)
     {
         if (_scopes.Count == 0 || requested <= 0 || overflow < 0 || overflow > requested) return;
-        var scope = _scopes[_scopes.Count - 1]; if (!ReferenceEquals(scope.Recipient, recipient)) return;
+        var scope = _scopes[_scopes.Count - 1]; if (scope.Handle == null || !ReferenceEquals(scope.Recipient, recipient)) return;
         var accepted = requested - overflow; if (accepted == 0) return;
         Guard(() =>
         {
@@ -64,8 +64,8 @@ internal sealed class DungeonCrewObserver
         private readonly DungeonCrewObserver _owner;
         internal readonly object Operation;
         internal readonly object? Recipient;
-        internal readonly BoardingHandle Handle;
-        internal Scope(DungeonCrewObserver owner, object operation, object? recipient, BoardingHandle handle)
+        internal readonly BoardingHandle? Handle;
+        internal Scope(DungeonCrewObserver owner, object operation, object? recipient, BoardingHandle? handle)
         { _owner = owner; Operation = operation; Recipient = recipient; Handle = handle; }
         public void Dispose() => _owner._scopes.Remove(this);
     }
