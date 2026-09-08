@@ -58,14 +58,17 @@ internal sealed class BarPatronPersistence : IDisposable
     private void Restore(SessionSnapshot session, byte[]? payload)
     {
         _checkThread();
-        _restored = null;
         if (_disposed || _lifecycle.CurrentSession?.Id != session.Id) throw new InvalidOperationException("Stale patron restoration.");
+        _restored = null;
         if (payload == null) _ledger.Reset();
         else _ledger.Restore(payload);
         _restored = session.Id;
     }
     private void OnLifecycle(LifecycleEvent value)
     {
+        _checkThread();
+        var current = _lifecycle.CurrentSession;
+        if (_disposed || value.Session == null || current?.Id != value.Session.Id || current.Phase != value.Session.Phase) return;
         if (value.Kind != LifecycleEventKind.SessionStarting && value.Kind != LifecycleEventKind.SessionInvalidated
             && value.Kind != LifecycleEventKind.SessionStartFailed) return;
         _restored = null;

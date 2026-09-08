@@ -10,7 +10,8 @@ internal static class BarPatronCodec
 {
     internal const string Owner = "vgmodapi.bar-patrons";
     internal const int SchemaVersion = 1;
-    internal const int MaxProviders = 32, MaxPerProvider = 32, MaxBytes = 256 * 1024, ProviderBytes = 16 * 1024;
+    internal const int MaxProviders = 32, MaxPerProvider = 32, MaxBytes = 256 * 1024;
+    internal const int HeaderBytes = 12, ProviderBytes = (MaxBytes - HeaderBytes) / MaxProviders;
     private static readonly UTF8Encoding Utf8 = new(false, true);
 
     internal static byte[] Encode(IEnumerable<BarPatronState> values)

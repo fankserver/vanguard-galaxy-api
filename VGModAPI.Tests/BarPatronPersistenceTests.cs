@@ -81,6 +81,29 @@ public sealed class BarPatronPersistenceTests
     }
 
     [Fact]
+    public void OlderSessionSignalsAndRestoreCannotDisruptCurrentState()
+    {
+        using var hub = new LifecycleHub((_, error) => throw error);
+        var storage = new Storage();
+        using var module = new BarPatronPersistence(storage, hub, hub.CheckThread);
+        var first = Ready(hub, storage);
+        var oldSession = hub.CurrentSession!;
+        var second = Ready(hub, storage);
+        Assert.True(module.Put(second, "author", Row()));
+        var before = storage.Provider.Capture();
+        foreach (var signal in new[] {
+            new LifecycleEvent(LifecycleEventKind.SessionStarting, new SessionSnapshot(first, SessionPhase.Starting, SessionOrigin.SaveLoad, "old.save")),
+            new LifecycleEvent(LifecycleEventKind.SessionInvalidated, new SessionSnapshot(first, SessionPhase.Invalidated, SessionOrigin.SaveLoad, "old.save")),
+            new LifecycleEvent(LifecycleEventKind.SessionStartFailed, new SessionSnapshot(first, SessionPhase.Failed, SessionOrigin.SaveLoad, "old.save")),
+            new LifecycleEvent(LifecycleEventKind.SessionStarting, new SessionSnapshot(second, SessionPhase.Starting, SessionOrigin.SaveLoad, "fixture.save"))
+        }) hub.Publish(signal);
+        Assert.Throws<InvalidOperationException>(() => storage.Provider.Restore(oldSession, null));
+        Assert.True(module.Read(second, out var rows));
+        Assert.Single(rows);
+        Assert.Equal(before, storage.Provider.Capture());
+    }
+
+    [Fact]
     public void InvalidationAndDisposalRefuseStaleState()
     {
         using var hub = new LifecycleHub((_, error) => throw error);
