@@ -21,6 +21,7 @@ public sealed class WorldNativeAttachmentTests
     [InlineData(3)]
     [InlineData(4)]
     [InlineData(5)]
+    [InlineData(6)]
     public void AttachmentRequiresUnchangedObservedPlayerMapAndAdmission(int change)
     {
         var hub = new LifecycleHub((_, _) => { });
@@ -40,8 +41,17 @@ public sealed class WorldNativeAttachmentTests
             var attachment = new WorldNativeAttachment(game);
             var coordinator = new WorldCreationCoordinator(attachment, hub.CheckThread);
             coordinator.Reset(request.Id);
-            var result = coordinator.TryCreate(request.Id, definition, identity, "system", 10, 20, () =>
+            using var definitions = new WorldDefinitionRegistry((_, caller) => new StoryHostPlugin("author.a", caller), hub.CheckThread);
+            var provider = definitions.Acquire(new object(), typeof(WorldNativeAttachmentTests).Assembly)!;
+            Assert.True(provider.Register(definition.Definition));
+            var gate = new WorldAuthoringGate(definitions, coordinator, _ =>
             {
+                if (change == 6)
+                {
+                    provider.Dispose();
+                    var replacement = definitions.Acquire(new object(), typeof(WorldNativeAttachmentTests).Assembly)!;
+                    Assert.True(replacement.Register(definition.Definition));
+                }
                 Assert.Throws<InvalidDataException>(() => coordinator.Snapshot());
                 if (change == 5) coordinator.Reset(Guid.NewGuid());
                 if (change == 1) GamePlayer.current = new GamePlayer { map = map };
@@ -49,6 +59,7 @@ public sealed class WorldNativeAttachmentTests
                 if (change == 3) neighbour.position = new UnityEngine.Vector2 { x = 10, y = 20 };
                 return change != 4;
             });
+            var result = gate.TryCreate(provider, request.Id, "PoiX", identity.InstanceId, "system", 10, 20);
             if (change == 0)
             {
                 Assert.NotNull(result); Assert.Equal(2, system.pointsOfInterest.Count);

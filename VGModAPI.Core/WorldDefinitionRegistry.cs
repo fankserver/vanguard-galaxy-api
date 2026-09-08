@@ -47,6 +47,15 @@ internal sealed class WorldDefinitionRegistry : IDisposable
         if (_definitions.ContainsKey(key)) return false;
         Changed(); _definitions.Add(key, definition); return true;
     }
+    internal bool TryResolve(Provider provider, string localId, out WorldSavedDefinition? saved)
+    {
+        _checkThread();
+        saved = null;
+        if (provider == null || !Active(provider) || !_definitions.TryGetValue((provider.Owner, localId), out var definition)) return false;
+        saved = new WorldSavedDefinition(provider.Owner, definition);
+        return true;
+    }
+
     internal bool MatchesRetained(WorldSavedDefinition saved)
     {
         _checkThread();
