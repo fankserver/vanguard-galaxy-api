@@ -160,6 +160,18 @@ internal sealed class GameAdapter
             Invalidate("Player identity changed outside the tracked initialization boundary.");
     }
 
+    // Identity fence for scoped mutators, not a claim that every world/scene object is ready.
+    internal bool TryGetCurrentReadyPlayer(Guid sessionId, out object? player)
+    {
+        Hub.CheckThread();
+        player = null;
+        if (_faulted || Hub.IsDispatchingCallbacks || Hub.CurrentSession?.Id != sessionId ||
+            Hub.CurrentSession.Phase != SessionPhase.GameplayInitialized || _boundPlayer == null ||
+            !ReferenceEquals(_boundPlayer, Bindings.CurrentPlayer)) return false;
+        player = _boundPlayer;
+        return true;
+    }
+
     internal SessionSnapshot? SaveSession()
     {
         var session = Hub.CurrentSession;
