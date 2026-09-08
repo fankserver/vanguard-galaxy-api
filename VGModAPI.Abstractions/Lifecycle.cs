@@ -76,6 +76,7 @@ public static class ModApi
     public static ICraftingJobs? CraftingJobs { get; internal set; }
     public static ICraftingCommands? CraftingCommands { get; internal set; }
     public static IForgeUi? ForgeUi { get; internal set; }
+    public static IModHud? Hud { get; internal set; }
     /// <summary>Optional inspected-build boarding observations; consult boarding-observation capability.</summary>
     public static IBoardingEvents? Boarding { get; internal set; }
     /// <summary>Optional inspected-build boarding policies, independent of observation subscribers.</summary>
