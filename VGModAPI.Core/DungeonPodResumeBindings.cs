@@ -17,6 +17,9 @@ internal static class DungeonPodResumeBindings
     };
     internal static readonly (string Key, string Type, string Name, string ValueType)[] Members =
     {
+        ("resumeAutoBuyOut", BindingCatalog.BoardingOptions, "autoAcceptBuyOut", "System.Boolean"),
+        ("resumeAutoMove", BindingCatalog.BoardingOptions, "autoMove", "System.Boolean"),
+        ("resumePriority", BindingCatalog.BoardingOptions, "priorityCompartmentIndex", "System.Nullable`1<System.Int32>"),
         ("resumeCaptureToken", BindingCatalog.BoardingLocation, "captureToken", "System.String"),
         ("resumeMissionGuid", "Source.SpaceShip.SpaceShipData", "missionGuid", "System.String"),
         ("resumePendingPods", BindingCatalog.BoardingOperation, "_pendingReinforcementPods", "System.Collections.Generic.List`1<Behaviour.Persistables.BoardingPod>"),

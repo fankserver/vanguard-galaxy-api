@@ -12,14 +12,19 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
     internal DungeonOperationResumeAdapter Operations { get; }
     internal DungeonPodReturnObserver ReturnObserver { get; }
     private readonly DungeonReturnRecoveryCoordinator _returns;
+    private readonly DungeonInitialRecoveryRuntime _initial;
     private readonly IDisposable _lifetime;
     private readonly Action<Exception> _report;
     private readonly DungeonMarkerJson _podJson, _operationJson;
     private readonly IBoardingTacticalNativeBindings _native;
     private readonly Type _shipType;
+    private readonly DungeonOperationOptionsAdapter _options;
     internal Func<object, Guid?>? ContentOccurrence { get; set; }
     internal Func<object, bool>? SimulationReady { get; set; }
-    internal bool OperationReady(object operation) => DungeonOperationMutationGate.Allows(operation, _native, SimulationReady);
+    internal Func<object, bool>? ValidateInitialOperation { get; set; }
+    internal void Quarantine(object operation, Exception error)
+    { _captureFaults.Remove(operation); _captureFaults.Add(operation, error); }
+    internal bool OperationReady(object operation) => !_captureFaults.TryGetValue(operation, out _) && DungeonOperationMutationGate.Allows(operation, _native, SimulationReady);
     private System.Runtime.CompilerServices.ConditionalWeakTable<object, Exception> _captureFaults = new();
     private System.Runtime.CompilerServices.ConditionalWeakTable<object, object> _podOwners = new();
     internal DungeonRecoveryRuntime(LifecycleHub hub, IPersistenceApi persistence, GameBindings game, Action<Exception> report)
@@ -28,6 +33,13 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
         _podJson = new(game.Assembly, "vgmodapiDungeonPod"); _operationJson = new(game.Assembly, "vgmodapiDungeonOperation");
         var native = new BoardingCommandNativeBindings(game, DungeonPodResumeBindings.Methods.Concat(DungeonPodReturnBindings.Hooks).ToArray(), DungeonPodResumeBindings.Members);
         _native = native; _shipType = game.Assembly.GetType("Behaviour.Unit.SpaceShip", true)!;
+        var optionsType = game.Assembly.GetType(BindingCatalog.BoardingOptions, true)!;
+        var ammoType = game.Assembly.GetType("Source.Dungeon.AmmoType", true)!; var stealthType = game.Assembly.GetType("Source.Dungeon.StealthMode", true)!;
+        _options = new(native, () => Activator.CreateInstance(optionsType)!, (key, name) =>
+        {
+            var type = key == "ammo" ? ammoType : stealthType; var value = Enum.Parse(type, name);
+            return Enum.IsDefined(type, value) ? value : throw new InvalidOperationException("Unsupported saved option enum.");
+        });
         var factory = new DungeonReturnPodFactory(game.Assembly, native); var world = new DungeonRecoveryWorld(game.Assembly, native);
         State = new(hub, persistence); Pods = new(State, native); Operations = new(State, native);
         ReturnObserver = new(State, Pods, native, ship => ((Component)ship).transform, world.Ready, Operations.OperationId);
@@ -43,11 +55,21 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
                 _podOwners.Add(pod.Pod, pod.Operation);
                 Pods.DetachSource(pod.Data);
             }, report, saved => !Pods.Conflicted(saved.Id) && (Pods.DataFor(saved.Id) is not { } data || !world.HasLivePod(data)));
+        _initial = new(this, native, world, new DungeonInitialOperationFactory(game.Assembly, native, _options), factory, report);
         _lifetime = hub.Subscribe("vgmodapi.dungeon-recovery-runtime", message =>
         {
             if (message.Kind is LifecycleEventKind.SessionStarting or LifecycleEventKind.SessionInvalidated or LifecycleEventKind.SessionStartFailed)
-            { _returns.Poll(); Pods.Clear(); Operations.Clear(); _captureFaults = new(); _podOwners = new(); }
+            { _initial.Clear(); _returns.Poll(); Pods.Clear(); Operations.Clear(); _captureFaults = new(); _podOwners = new(); }
         });
+    }
+    internal bool QueueRestore(object target, out object? existing)
+    {
+        existing = ExistingOperation(target);
+        var isLocation = target.GetType().FullName == BindingCatalog.BoardingLocation;
+        var location = isLocation ? target : _native.Get(target, "data");
+        if (location == null || !Operations.LocationMarker(location).HasValue) return false;
+        if (existing == null) _initial.Queue(location, isLocation ? null : target);
+        return true;
     }
     internal object? ExistingOperation(object? target)
     {
@@ -84,7 +106,7 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
         var phase = _native.Get(operation, "phase")?.ToString() ?? previous.NativePhase;
         var outcome = previous.TerminalProgress == DungeonTerminalProgress.NotStarted ? _native.Get(_native.Get(operation, "simulation"), "outcome")?.ToString() ?? previous.Outcome : previous.Outcome;
         if (!State.TrackOperation(new(previous.Id, previous.LocationId, previous.ContentOccurrence, previous.AttackerShipId, previous.DungeonType,
-            phase, outcome, previous.MissionProtection, previous.TerminalProgress, previous.Autonomous))) return false;
+            phase, outcome, previous.MissionProtection, previous.TerminalProgress, previous.Autonomous, _options.Capture(_native.Get(operation, "options")!)))) return false;
         Pods.TrackLocation(location);
         var pending = (System.Collections.IList)_native.Get(operation, "resumePendingPods")!;
         foreach (var pod in (System.Collections.IEnumerable)_native.Get(operation, "_activePods")!)
@@ -147,7 +169,16 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
         });
     }
     internal void Poll()
-    { try { _returns.Poll(); } catch (Exception error) { try { _report(error); } catch { } } }
+    {
+        try { _initial.Poll(); _returns.Poll(); }
+        catch (Exception error) { try { _report(error); } catch { } }
+    }
+    internal void BindInitialPod(DungeonReturnPodInstance instance, Guid id)
+    {
+        Pods.Loaded(instance.Data, id);
+        if (Pods.Conflicted(id)) throw new InvalidOperationException("Duplicate initial pod identity.");
+        _podOwners.Add(instance.Pod, instance.Operation); MarkLive(id);
+    }
     internal void MarkLive(Guid id) => _returns.MarkLive(id);
-    public void Dispose() { _lifetime.Dispose(); _returns.Dispose(); Pods.Clear(); Operations.Clear(); State.Dispose(); }
+    public void Dispose() { _lifetime.Dispose(); _initial.Dispose(); _returns.Dispose(); Pods.Clear(); Operations.Clear(); State.Dispose(); }
 }

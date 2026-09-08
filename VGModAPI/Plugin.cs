@@ -581,6 +581,9 @@ public sealed partial class Plugin : BaseUnityPlugin
             DungeonRecoveryCapturePatches.Runtime = _dungeonRecovery;
             InstallGroup("dungeon-recovery-capture", bindings, DungeonRecoveryCaptureBindings.Hooks, new Dictionary<string, Type>
             {
+                ["recoveryResumeShip"] = typeof(DungeonRecoveryCapturePatches.ResumeShip),
+                ["recoveryResumeLocation"] = typeof(DungeonRecoveryCapturePatches.ResumeLocation),
+                ["recoveryReconstruct"] = typeof(DungeonRecoveryCapturePatches.Reconstruct),
                 ["recoveryAttach"] = typeof(DungeonRecoveryCapturePatches.Attach),
                 ["recoveryArrival"] = typeof(DungeonRecoveryCapturePatches.Arrival),
                 ["recoveryTerminal"] = typeof(DungeonRecoveryCapturePatches.Terminal), ["recoverySerialization"] = typeof(DungeonRecoveryCapturePatches.Serialization),
@@ -622,6 +625,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             if (!_hub.Capabilities.Any(c => c.Name == "dungeon-crew-resume" && c.Available)) throw new NotSupportedException("Crew save/load hooks unavailable.");
             _dungeonState = new DungeonStateStore(_hub, _persistence);
             _dungeonAdapter = new DungeonContentAdapter(_hub, bindings, _boarding, _dungeonState);
+            _dungeonRecovery.ValidateInitialOperation = operation => _dungeonAdapter.GuardOperation(operation, true);
             _dungeonRecovery.ContentOccurrence = _dungeonAdapter.Marker;
             _dungeons = new DungeonContentService(_hub, _dungeonAdapter.Catalogs(), _dungeonState, _dungeonAdapter.Bindings(), (owner, error) => Logger.LogError($"Dungeon provider '{owner}': {error}"),
                 () => _dungeonRecovery?.State.CanMutate != true || (_dungeonSettlement?.IsDispatchingCallbacks ?? false) || (_dungeonRewards?.IsEvaluating ?? false) || (_boardingCombat?.IsEvaluating ?? false) || (ModApi.BoardingRules?.IsEvaluating ?? false));

@@ -9,6 +9,21 @@ namespace VGModAPI.Tests;
 public sealed class InstalledPodRecoveryBindingTests
 {
     [Fact]
+    public void ApproachResumeConstructorDoesNotDebitCrewOrSpawnPods()
+    {
+        using var assembly = AssemblyDefinition.ReadAssembly(Environment.GetEnvironmentVariable("VG_GAME_ASSEMBLY") ?? throw new InvalidOperationException("Run make check-bindings."));
+        var operation = assembly.MainModule.GetType("Behaviour.Dungeon.DungeonOperation");
+        var constructor = Assert.Single(operation.Methods, m => m.IsConstructor && !m.IsStatic &&
+            m.Parameters.Select(p => p.ParameterType.FullName).SequenceEqual(new[] { "Behaviour.Unit.SpaceShip", "Behaviour.Unit.BoardableUnit", "Source.Dungeon.DungeonOptions", "System.Boolean", "System.Boolean" }));
+        var calls = constructor.Body.Instructions.Select(i => i.Operand).OfType<MethodReference>().ToArray();
+        Assert.All(calls, call => Assert.True(call.Name is ".ctor" or "get_data" or "get_location" or "set_isAutonomous" or "set_phase" || call.FullName.Contains("Behaviour.Dungeon.DungeonDefinition::Get("), call.FullName));
+        var registration = Assert.Single(operation.Methods, m => m.Name == "RegisterReconstructedPod");
+        var fields = registration.Body.Instructions.Select(i => i.Operand).OfType<FieldReference>().Select(f => f.Name).ToArray();
+        Assert.Contains("_activePods", fields); Assert.Contains("_podsInFlight", fields);
+        Assert.DoesNotContain("_pendingReinforcementPods", fields);
+        Assert.DoesNotContain(registration.Body.Instructions.Where(i => i.OpCode.Code is Mono.Cecil.Cil.Code.Call or Mono.Cecil.Cil.Code.Callvirt).Select(i => i.Operand).OfType<MethodReference>(), m => m.Name is "AddCrew" or "AddAttackers" or "HandlePodCrewLanded");
+    }
+    [Fact]
     public void SettlementCarrierConstructorDoesNotStartCombatOrRegisterWithManager()
     {
         using var assembly = AssemblyDefinition.ReadAssembly(Environment.GetEnvironmentVariable("VG_GAME_ASSEMBLY") ?? throw new InvalidOperationException("Run make check-bindings."));

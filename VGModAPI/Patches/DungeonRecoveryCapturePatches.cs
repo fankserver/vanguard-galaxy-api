@@ -5,6 +5,18 @@ namespace VGModAPI.Patches;
 internal static class DungeonRecoveryCapturePatches
 {
     internal static DungeonRecoveryRuntime? Runtime { get; set; }
+    internal static class ResumeShip
+    {
+        internal static bool Prefix(object __0, ref object? __result)
+        { if (Runtime == null || !Runtime.QueueRestore(__0, out var existing)) return true; __result = existing; return false; }
+    }
+    internal static class ResumeLocation
+    {
+        internal static bool Prefix(object __1, ref object? __result)
+        { if (Runtime == null || !Runtime.QueueRestore(__1, out var existing)) return true; __result = existing; return false; }
+    }
+    internal static class Reconstruct
+    { internal static bool Prefix(object __0) => Runtime == null || !Runtime.QueueRestore(__0, out _); }
     internal static class Attach
     { internal static bool Prefix(object __instance) => Runtime?.CanAttach(__instance) ?? true; }
     internal static class Arrival
