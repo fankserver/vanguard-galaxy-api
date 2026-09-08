@@ -38,9 +38,9 @@ internal sealed partial class RecipeCatalogNativeSource : IForgeUiSource
         var contents = Get(ui, "tabContents")!;
         var parent = Get(contents, "parentRecipe"); var selected = Get(contents, "subRecipe");
         if (parent == null || selected == null) { ClearUi(); return null; }
-        var available = Enumerate(Get(Get(station, "forge")!, "recipes")).ToArray();
+        var available = UiRecipes(Get(Get(station, "forge")!, "recipes"));
         var group = available.Where(recipe => ReferenceEquals(Get(recipe, "parentRecipe"), parent)).ToArray();
-        var shown = Enumerate(Get(contents, "unlockedRecipes")).ToArray();
+        var shown = UiRecipes(Get(contents, "unlockedRecipes"));
         if (!group.Any(recipe => ReferenceEquals(recipe, selected)) || group.Length != shown.Length || group.Distinct(NativeObjectIdentity.Instance).Count() != group.Length ||
             !shown.All(recipe => group.Contains(recipe, NativeObjectIdentity.Instance))) { ClearUi(); return null; }
         var batches = Convert.ToDouble(Get(Get(contents, "countSlider")!, "value"));
@@ -62,7 +62,7 @@ internal sealed partial class RecipeCatalogNativeSource : IForgeUiSource
         var facility = Enum.Parse(_assembly.GetType("Source.Galaxy.POI.SpaceStationFacility", true)!, "Forge");
         if (Get(interior!, "tabActions") is not IDictionary actions || !actions.Contains(facility)) return ForgeNavigationStatus.NotAtStation;
         if (recipe.ProviderId != "vanilla" || !recipe.LocalId.StartsWith("forge/", StringComparison.Ordinal)) return ForgeNavigationStatus.RecipeUnavailable;
-        var available = Enumerate(Get(Get(station, "forge")!, "recipes")).ToArray();
+        var available = UiRecipes(Get(Get(station, "forge")!, "recipes"));
         var matches = available.Where(item => ForgeId(item).Equals(recipe)).ToArray();
         if (matches.Length != 1) return ForgeNavigationStatus.RecipeUnavailable;
         var selected = matches[0]; var parent = Get(selected, "parentRecipe")!;
@@ -86,7 +86,7 @@ internal sealed partial class RecipeCatalogNativeSource : IForgeUiSource
         if (ui == null || UiActive?.Invoke(ui) != true || UiBelongsTo?.Invoke(ui, interior!) != true || !ReferenceEquals(UiStation(session, out _), station))
             return ForgeNavigationStatus.Uncertain;
         // Revalidate after opening; other native hooks may have changed availability.
-        var current = Enumerate(Get(Get(station, "forge")!, "recipes")).ToArray();
+        var current = UiRecipes(Get(Get(station, "forge")!, "recipes"));
         var currentGroup = current.Where(item => ReferenceEquals(Get(item, "parentRecipe"), parent)).ToArray();
         if (!currentGroup.Contains(selected, NativeObjectIdentity.Instance) || currentGroup.Length != group.Length || !group.All(item => currentGroup.Contains(item, NativeObjectIdentity.Instance)))
             return ForgeNavigationStatus.Uncertain;
@@ -96,5 +96,7 @@ internal sealed partial class RecipeCatalogNativeSource : IForgeUiSource
         var observed = ReadUi(session);
         return observed?.SelectedRecipe.Equals(recipe) == true ? ForgeNavigationStatus.Selected : ForgeNavigationStatus.Uncertain;
     }
+    // Native sources can repeat the same recipe object. Never merge distinct objects by identifier.
+    private static object[] UiRecipes(object? values) => Enumerate(values).Distinct(NativeObjectIdentity.Instance).ToArray();
     private static RecipeId ForgeId(object recipe) => new("vanilla", "forge/" + Text(recipe, "identifier"));
 }

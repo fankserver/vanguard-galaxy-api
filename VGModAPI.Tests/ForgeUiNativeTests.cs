@@ -46,6 +46,23 @@ public sealed class ForgeUiNativeTests : IDisposable
         var snapshot = _source.ReadUi(_session)!; Assert.Equal(2, snapshot.Batches); Assert.Equal(2, snapshot.AvailableVariants.Count);
     }
     [Fact]
+    public void RepeatedReferencesAreNormalizedForReadingAndNavigation()
+    {
+        _station.forge!.recipes = new[] { _root, _variant, _variant };
+        Assert.Equal(ForgeNavigationStatus.Selected, _source.OpenUi(_session, new("vanilla", "forge/variant")));
+        ForgeUI.current!.tabContents.unlockedRecipes.Add(_variant);
+        Assert.Equal(2, _source.ReadUi(_session)!.AvailableVariants.Count);
+        Assert.Equal(ForgeNavigationStatus.Selected, _source.OpenUi(_session, new("vanilla", "forge/variant")));
+        Assert.Equal(2, ForgeUI.current.tabContents.unlockedRecipes.Count);
+    }
+    [Fact]
+    public void ConflictingObjectsWithSameIdentityAreNotCoalesced()
+    {
+        _station.forge!.recipes = new[] { _root, _variant, new CraftingRecipe { identifier = "variant", parentRecipe = _root } };
+        Assert.Equal(ForgeNavigationStatus.RecipeUnavailable, _source.OpenUi(_session, new("vanilla", "forge/variant")));
+        Assert.Null(ForgeUI.current);
+    }
+    [Fact]
     public void MissingAndWrongStationRequestsDoNotOpenUi()
     {
         Assert.Equal(ForgeNavigationStatus.RecipeUnavailable, _source.OpenUi(_session, new("vanilla", "forge/missing")));
