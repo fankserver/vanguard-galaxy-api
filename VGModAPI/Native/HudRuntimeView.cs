@@ -46,6 +46,7 @@ internal sealed partial class HudRuntime
                 var panel = Box(panelContent, "Panel", panelIndex++ * 308, 0, 300, panelHeight, false);
                 panel.gameObject.AddComponent<Image>().color = new Color(.035f, .05f, .075f, .94f);
                 var header = Box(panel, "Header", 6, -4, 258, 30, true);
+                var headerHit = header.gameObject.AddComponent<Image>(); headerHit.color = Color.clear; headerHit.raycastTarget = true;
                 view.Header = Display(header);
                 if (entry.Panel.Closable)
                 {
