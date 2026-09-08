@@ -17,11 +17,11 @@ namespace VGModAPI.Qualification;
 
 public sealed partial class Plugin
 {
-    private IEnumerator RunModMenuProbe()
+    private IEnumerator RunModMenuProbe(Action<string>? fullRecord = null, string? feedSource = null)
     {
         Require(File.ReadAllText(Path.Combine(_root!, "mod-menu-probe.enabled")) == "mod-menu-probe-v3", "Invalid menu probe marker.");
         foreach (var frame in Wait(() => GameObject.Find("VGModAPI Mods") != null, "owned Mods entry")) yield return frame;
-        Require(_api!.CurrentSession == null, "Menu probe must not enter gameplay.");
+        Require(ModMenuSessionChecks.Inactive(_api!.CurrentSession, fullRecord != null), "Menu probe must not enter gameplay.");
         var entry = GameObject.Find("VGModAPI Mods").GetComponent<Button>();
         Require(entry.GetComponentInChildren<TMP_Text>().alignment == TextAlignmentOptions.Center, "Mods entry is not centered.");
         var menu = entry.transform.parent.gameObject;
@@ -55,7 +55,7 @@ public sealed partial class Plugin
             {
                 metadataCreated = true;
                 using var writer = new StreamWriter(file);
-                writer.Write("{\"schemaVersion\":1,\"pluginId\":\"" + Id + "\",\"updateUrl\":\"https://raw.githubusercontent.com/fankserver/vanguard-galaxy-api/main/README.md\",\"description\":\"" +
+                writer.Write("{\"schemaVersion\":1,\"pluginId\":\"" + Id + "\",\"updateUrl\":\"" + (feedSource ?? "https://raw.githubusercontent.com/fankserver/vanguard-galaxy-api/main/README.md") + "\",\"description\":\"" +
                     string.Join(" ", Enumerable.Repeat("Long offline description for native scrolling verification.", 55)) + "\"}");
             }
             ModApi.Mods!.Refresh();
@@ -112,7 +112,8 @@ public sealed partial class Plugin
             events.SetSelectedGameObject(row.gameObject);
             foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
             Require(automatic.GetComponentInChildren<TMP_Text>().text == "Auto: off" && detailLabel.text.Contains("Not checked"), "Unconfirmed automatic opt-in survived cancellation.");
-            evidence.AppendLine("update-manual-disclosure=PASS automatic-disclosure=PASS selection-cancels-consent=PASS no-confirmed-network-action=PASS");
+            evidence.AppendLine("update-manual-disclosure=PASS automatic-disclosure=PASS selection-cancels-consent=PASS " +
+                (fullRecord == null ? "no-confirmed-network-action=PASS" : "unconfirmed-disclosure-phase=PASS"));
             Require(details.content.rect.height > details.viewport.rect.height + 20, "Long metadata did not produce scrollable detail content.");
             events.SetSelectedGameObject(details.verticalScrollbar.gameObject);
             var before = details.content.anchoredPosition.y;
@@ -146,6 +147,8 @@ public sealed partial class Plugin
             Require(!panel.activeSelf && events.currentSelectedGameObject == entry.gameObject, "Escape did not close and restore focus.");
             evidence.AppendLine("tab=PASS pointer-close=PASS escape-focus=PASS raycast-barrier=PASS");
 
+            if (fullRecord != null)
+                foreach (var frame in ModInformationUi(keyboard, mouse, entry, panel, row, checkUpdate, automatic, detailLabel, fullRecord, evidence)) yield return frame;
             menu.SetActive(false);
             yield return null; yield return null;
             Require(panel == null, "Inactive menu retained owned panel.");
@@ -153,8 +156,8 @@ public sealed partial class Plugin
             foreach (var frame in Wait(() => GameObject.Find("VGModAPI Mods") != null, "reattached Mods entry")) yield return frame;
             Require(menu.GetComponentsInChildren<Button>().Count(button => button.name == "VGModAPI Mods") == 1, "Duplicate Mods entry after reactivation.");
             Require(EventSystem.current == events && GameObject.Find("VGModAPI Mods").GetComponentInParent<Canvas>() == canvas, "Global UI infrastructure changed.");
-            Require(_api.CurrentSession == null && !_events.Any(item => item.Kind == LifecycleEventKind.PlayerReady), "Menu probe entered gameplay.");
-            evidence.AppendLine("inactive-teardown=PASS reattach-single-entry=PASS no-gameplay=PASS");
+            Require(ModMenuSessionChecks.Inactive(_api.CurrentSession, fullRecord != null) && !_events.Any(item => item.Kind == LifecycleEventKind.PlayerReady), "Menu probe entered gameplay.");
+            evidence.AppendLine("inactive-teardown=PASS reattach-single-entry=PASS " + (fullRecord == null ? "no-gameplay=PASS" : "menu-phase-no-gameplay=PASS"));
             foreach (var frame in MenuLifecycleProbe(keyboard, mouse, evidence)) yield return frame;
             var bytes = Encoding.UTF8.GetBytes(evidence.ToString());
             File.WriteAllBytes(Path.Combine(_root!, "mod-menu-probe.txt"), bytes);

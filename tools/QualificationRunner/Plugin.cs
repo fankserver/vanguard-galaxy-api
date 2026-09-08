@@ -116,7 +116,8 @@ public sealed partial class Plugin : BaseUnityPlugin
     private IEnumerator Start()
     {
         if (!_armed) yield break;
-        var routine = File.Exists(Path.Combine(_root!, "mod-menu-probe.enabled")) ? RunModMenuProbe() : Run();
+        var routine = File.Exists(Path.Combine(_root!, "mod-information-probe.enabled")) ? RunModInformationProbe()
+            : File.Exists(Path.Combine(_root!, "mod-menu-probe.enabled")) ? RunModMenuProbe() : Run();
         while (true)
         {
             object? current;
@@ -300,7 +301,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         Passed("callback-dispatch-state");
     }
 
-    private IEnumerable<object?> NewGameAndSpaceLoad()
+    private IEnumerable<object?> NewGameAndSpaceLoad(bool replacementProbe = true)
     {
         Invoke(Instance(_scenes), "StartMenu");
         foreach (var frame in Wait(() => SceneManager.GetSceneByName("Main Menu").isLoaded && SceneManager.sceneCount <= 4
@@ -343,6 +344,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         foreach (var frame in Wait(() => SceneManager.GetSceneByName("Main Menu").isLoaded && SceneManager.sceneCount <= 4
             && AccessTools.Field(_player, "current").GetValue(null) == null, "menu before replacement probe")) yield return frame;
         foreach (var frame in Settle()) yield return frame;
+        if (!replacementProbe) yield break;
         AccessTools.Method(_player, "CreateNewGamePlayer").Invoke(null, new object?[] { null, false });
         var pending = _api.CurrentSession!;
         Require(pending.Phase == SessionPhase.Starting, "Creation prematurely became ready.");
@@ -526,5 +528,5 @@ public sealed partial class Plugin : BaseUnityPlugin
         var file = (FileInfo)AccessTools.Field(__instance.GetType(), "File").GetValue(__instance)!;
         Require(_saveRoot != null && SamePath(file.DirectoryName!, _saveRoot), "Refusing to load a non-sandbox save.");
     }
-    private void OnDestroy() => _subscription?.Dispose();
+    private void OnDestroy() { _updateProbeStop?.Cancel(); _subscription?.Dispose(); }
 }

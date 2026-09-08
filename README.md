@@ -2,7 +2,7 @@
 
 Unofficial community mod API for Vanguard Galaxy, using BepInEx 5 and HarmonyX.
 
-**0.1.23 development / experimental: automatically tested and partially exercised in-game, not fully runtime-qualified.** The API provides lifecycle, mod save data, optional mission/travel/story services and mod information, not a complete modding SDK. Controlled native evidence covers bounded paths; full in-game acceptance remains pending. See [compatibility](docs/compatibility.md) for coverage and limitations.
+**0.1.24 development / experimental: automatically tested and partially exercised in-game, not fully runtime-qualified.** The API provides lifecycle, mod save data, optional mission/travel/story services and mod information, not a complete modding SDK. Controlled native evidence covers bounded paths; full in-game acceptance remains pending. See [compatibility](docs/compatibility.md) for coverage and limitations.
 
 ## Implemented
 

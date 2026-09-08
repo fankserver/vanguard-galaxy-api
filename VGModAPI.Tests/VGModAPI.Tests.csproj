@@ -6,6 +6,11 @@
     <Compile Include="../tools/QualificationRunner/StoryNativeCalls.cs" Link="StoryNativeCalls.cs" />
     <Compile Include="../tools/QualificationRunner/StoryReceipt.cs" Link="StoryReceipt.cs" />
     <Compile Include="../tools/QualificationRunner/ModMenuModalChecks.cs" Link="ModMenuModalChecks.cs" />
+    <Compile Include="../tools/QualificationRunner/ModUpdateChecks.cs" Link="ModUpdateChecks.cs" />
+    <Compile Include="../tools/QualificationRunner/ModUpdateWireChecks.cs" Link="ModUpdateWireChecks.cs" />
+    <Compile Include="../tools/QualificationRunner/ModUpdateWireFailures.cs" Link="ModUpdateWireFailures.cs" />
+    <Compile Include="../tools/QualificationRunner/ProbeHeartbeat.cs" Link="ProbeHeartbeat.cs" />
+    <Compile Include="../tools/QualificationRunner/ModMenuSessionChecks.cs" Link="ModMenuSessionChecks.cs" />
     <Compile Include="../tools/QualificationRunner/ProbeCleanup.cs" Link="ProbeCleanup.cs" />
     <Compile Include="../tools/QualificationRunner/TravelStationReceipt.cs" Link="TravelStationReceipt.cs" />
     <Compile Include="../tools/QualificationRunner/TravelCrossSystemReceipt.cs" Link="TravelCrossSystemReceipt.cs" />
@@ -19,6 +24,7 @@
     <!-- The actual patch entry points, compiled into the test assembly so their prefix/finalizer flow
          is executed rather than described. The file carries no BepInEx or Unity dependency. -->
     <Compile Include="../VGModAPI/Patches/StoryProtectionPatches.cs" Link="StoryProtectionPatches.cs" />
+    <None Include="../tools/fixtures/mod-updates/ui-available.json" Link="ui-available.json" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="../VGModAPI.Core/VGModAPI.Core.csproj" />
     <ProjectReference Include="../tools/ReleaseMetadata/ReleaseMetadata.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />

@@ -20,6 +20,7 @@ internal sealed class ModMenuView : IModMenuView
     private readonly ModInformationPresenter _presenter;
     private readonly Func<string> _diagnostics;
     private readonly Action<Exception> _fault;
+    private Action<string> _openUrl = Application.OpenURL;
     private readonly List<Button> _rows = new();
     private readonly List<Selectable> _navigation = new();
     private readonly List<Action> _removeListeners = new();
@@ -115,13 +116,13 @@ internal sealed class ModMenuView : IModMenuView
         _next = Button(_body, "Next mod", "Next", () => MoveSelection(1));
         Stretch((RectTransform)_previous.transform, 0, 0, .19f, 0, 8, 6, -4, 38);
         Stretch((RectTransform)_next.transform, .19f, 0, .38f, 0, 4, 6, -8, 38);
-        _project = Button(_body, "Project link", "Open project in browser", () => _presenter.OpenProject(Application.OpenURL));
+        _project = Button(_body, "Project link", "Open project in browser", () => _presenter.OpenProject(_openUrl));
         Stretch((RectTransform)_project.transform, .38f, 0, 1, 0, 4, 6, -8, 38);
         if (_updates != null)
         {
             _project.GetComponentInChildren<TMP_Text>().text = "Open project";
             Stretch((RectTransform)_project.transform, .38f, 0, .69f, 0, 4, 6, -4, 38);
-            _release = Button(_body, "Release link", "Open release", () => { if (_presenter.Selected != null) _updates.OpenRelease(_presenter.Selected, Application.OpenURL); });
+            _release = Button(_body, "Release link", "Open release", () => { if (_presenter.Selected != null) _updates.OpenRelease(_presenter.Selected, _openUrl); });
             Stretch((RectTransform)_release.transform, .69f, 0, 1, 0, 4, 6, -8, 38);
             _checkUpdate = Button(_body, "Check update", "Check update", () => { if (_presenter.Selected != null) _updates.Check(_presenter.Selected); RenderDetails(true); });
             _autoUpdate = Button(_body, "Automatic updates", "Auto: off", () => { _updates.ToggleAutomatic(); RenderDetails(true); });
@@ -257,17 +258,18 @@ internal sealed class ModMenuView : IModMenuView
         _detailText.text = _presenter.Details(_showDiagnostics ? _diagnostics() : "", _showDiagnostics, _updates == null);
         if (_updates != null)
         {
-            _checkUpdate.interactable = _release.interactable = false;
-            _autoUpdate.interactable = _presenter.Selected != null;
+            ModUpdateControls.Apply(_presenter.Selected != null,
+                _presenter.Selected != null && _updates.CanCheck(_presenter.Selected),
+                _presenter.Selected != null && _updates.ReleaseHost(_presenter.Selected) != null,
+                value => _checkUpdate.interactable = value, value => _autoUpdate.interactable = value,
+                value => _release.interactable = value);
         }
         if (_updates != null && _presenter.Selected != null)
         {
             _updateText = _updates.Text(_presenter.Selected, DateTimeOffset.UtcNow);
             _detailText.text = _updates.Confirming ? _updateText : _updateText + "\n" + _detailText.text;
-            _checkUpdate.interactable = _updates.CanCheck(_presenter.Selected);
             _checkUpdate.GetComponentInChildren<TMP_Text>().text = _updates.Confirming && !_updates.ConfirmingAutomatic ? "Confirm check" : "Check update";
             _autoUpdate.GetComponentInChildren<TMP_Text>().text = _updates.Automatic ? "Auto: on" : _updates.ConfirmingAutomatic ? "Confirm auto" : "Auto: off";
-            _release.interactable = _updates.ReleaseHost(_presenter.Selected) != null;
         }
         _project.interactable = _presenter.TryProjectDestination(out var host);
         _destination.text = _project.interactable ? "Project destination (HTTPS):\n" + host : "No validated project link.";
