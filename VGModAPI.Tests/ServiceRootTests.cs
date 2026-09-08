@@ -57,6 +57,33 @@ public sealed class ServiceRootTests
     }
 
     [Fact]
+    public void MenuCleanupUsesRetainedInventoryAfterRootShutdown()
+    {
+        using var hub = new LifecycleHub((_, _) => { });
+        using var catalog = new ModInformationCatalog(hub, () => Array.Empty<LoadedPluginInformation>());
+        var root = Compose(hub, catalog);
+        try
+        {
+            Publish(root);
+            var inventory = ModApi.Services.Mods;
+            inventory.Refresh();
+            Clear(root);
+            hub.Dispose();
+            Assert.Throws<InvalidOperationException>(() => _ = ModApi.Services);
+            var cleanup = new List<string>();
+            ModInventoryStatus? refreshed = null;
+            Qualification.ProbeCleanup.Run(
+                () => cleanup.Add("metadata"),
+                () => { refreshed = inventory.Refresh().Status; cleanup.Add("inventory"); },
+                () => cleanup.Add("devices"),
+                () => cleanup.Add("focus"));
+            Assert.Equal(ModInventoryStatus.Stopped, refreshed);
+            Assert.Equal(new[] { "metadata", "inventory", "devices", "focus" }, cleanup);
+        }
+        finally { Clear(root); }
+    }
+
+    [Fact]
     public void DeferredViewCleanupPreservesTerminalCallbacksAndIsolatesCleanupFailures()
     {
         var failures = new List<Exception>();

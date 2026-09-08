@@ -45,6 +45,7 @@ public sealed partial class Plugin
         var oldMouse = Mouse.current;
         Mouse? mouse = null;
         var metadataCreated = false;
+        var inventory = ModApi.Services.Mods;
         var evidence = new StringBuilder("Native input-system menu probe v3\n");
         try
         {
@@ -58,7 +59,7 @@ public sealed partial class Plugin
                 writer.Write("{\"schemaVersion\":1,\"pluginId\":\"" + Id + "\",\"updateUrl\":\"" + (feedSource ?? "https://raw.githubusercontent.com/fankserver/vanguard-galaxy-api/main/README.md") + "\",\"description\":\"" +
                     string.Join(" ", Enumerable.Repeat("Long offline description for native scrolling verification.", 55)) + "\"}");
             }
-            ModApi.Services.Mods!.Refresh();
+            inventory.Refresh();
             events!.SetSelectedGameObject(entry.gameObject);
             foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
             var panel = GameObject.Find("VGModAPI Mods panel");
@@ -83,7 +84,7 @@ public sealed partial class Plugin
             foreach (var label in new[] { panel.transform.Find("Content/Title").GetComponent<TMP_Text>() })
                 foreach (var character in label.text)
                     Require(character < 128 && label.font.HasCharacter(character), "UI-owned heading uses an unsupported native glyph.");
-            var apiRow = ModApi.Services.Mods.Inventory.Entries.Single(item => item.PluginId == ModApi.PluginId);
+            var apiRow = inventory.Inventory.Entries.Single(item => item.PluginId == ModApi.PluginId);
             Require(apiRow.Metadata?.ProjectUrl == "https://github.com/fankserver/vanguard-galaxy-api", "Official API project metadata is missing.");
             var officialRow = list.GetComponentsInChildren<Button>().Single(button => button.GetComponentInChildren<TMP_Text>().text == "Mod API");
             var officialName = officialRow.GetComponentInChildren<TMP_Text>();
@@ -165,7 +166,7 @@ public sealed partial class Plugin
             ProbeCleanup.Run(
                 () => { if (menu != null) menu.SetActive(true); },
                 () => { if (metadataCreated && File.Exists(metadata)) File.Delete(metadata); },
-                () => ModApi.Services.Mods?.Refresh(),
+                () => inventory.Refresh(),
                 () => { if (keyboard != null) InputSystem.RemoveDevice(keyboard); },
                 () => { if (mouse != null) InputSystem.RemoveDevice(mouse); },
                 () => oldKeyboard?.MakeCurrent(),

@@ -1,8 +1,9 @@
 # Injected service consumers
 
 These plain .NET examples compile and run through the repository's host tests.
-They are **not deployable BepInEx plugins**: the plugin does not publish a
-`ModServices` root. See the [composition contract](../../docs/reference/service-contracts.md)
+They are **not deployable BepInEx plugins**: they demonstrate injected domain logic,
+not BepInEx entry points. A plugin obtains its root through `ModApi.Services` after
+API startup. See the [service contract](../../docs/reference/service-contracts.md)
 for access, availability and lifetime requirements.
 
 - `MissionObserver` subscribes once, reads initial availability, ignores stale
