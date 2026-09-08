@@ -395,7 +395,7 @@ if ($Action -eq 'Prepare') {
         if ($ForgeCommandProbe) {
             [IO.File]::AppendAllText((Join-Path $bep 'config\vgmodapi.cfg'), "CommandsEnabled = true`r`n")
             [IO.File]::WriteAllText((Join-Path $root 'forge-commands.enabled'), 'forge-commands-v1')
-            if ($RefineryProbe) { [IO.File]::WriteAllText((Join-Path $root 'refinery.enabled'), 'refinery-v1') }
+            if ($RefineryProbe) { [IO.File]::WriteAllText((Join-Path $root 'refinery.enabled'), 'refinery-v2') }
             if ($ForgeDeliveryProbe) { [IO.File]::WriteAllText((Join-Path $root 'forge-delivery.enabled'), 'forge-delivery-v1') }
             if ($ForgePersistenceProbe) { [IO.File]::WriteAllText((Join-Path $root 'forge-persistence.enabled'), 'forge-persistence-v1') }
         }
