@@ -41,6 +41,7 @@ public sealed partial class Plugin
         Action<string> observe = url =>
         {
             Require(armed && url == ModUpdateChecks.Release && service.Status(selected).LastSuccess?.ReleaseUrl == url, "Unexpected or automatic browser destination.");
+            Require(Application.isFocused, "Owned game must have focus before the explicit browser action.");
             ++launches;
             Require(launches == 1, "Duplicate browser activation.");
             var request = Path.Combine(_root!, "browser-launch-request.txt");
