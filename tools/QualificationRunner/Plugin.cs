@@ -142,7 +142,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             foreach (var frame in CheckForgeReads()) yield return frame;
             if (File.Exists(Path.Combine(_root!, "forge-commands.enabled")))
             {
-                Require(File.ReadAllText(Path.Combine(_root!, "forge-commands.enabled")) == "forge-commands-v2", "Invalid Forge command marker.");
+                Require(File.ReadAllText(Path.Combine(_root!, "forge-commands.enabled")) == "forge-commands-v3", "Invalid Forge command marker.");
                 WriteAtomic("forge-commands.txt", new[] { "INCOMPLETE" });
                 var station = ModApi.RecipeQuotes!.CurrentStation ?? throw new InvalidOperationException("Command fixture lost station.");
                 CheckCraftingSettingCommands(station);
@@ -170,7 +170,7 @@ public sealed partial class Plugin : BaseUnityPlugin
                     foreach (var frame in CheckCraftingPersistence()) yield return frame;
                     WriteAtomic("forge-persistence.txt", new[] { "PASS", "forge-persistence-v1", "paused-jobs-roundtrip-save-as-slot-switch" });
                 }
-                WriteAtomic("forge-commands.txt", new[] { "PASS", "forge-commands-v2", "settings-replay-restored", "forge-queue-cancel-replay-refusal-direct-start" });
+                WriteAtomic("forge-commands.txt", new[] { "PASS", "forge-commands-v3", "settings-replay-restored", "forge-queue-cancel-replay-refusal-direct-start-capacity" });
             }
             yield break;
         }
