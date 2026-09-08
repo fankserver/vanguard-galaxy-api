@@ -1,5 +1,8 @@
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '..\qualification-bars.ps1')
+. (Join-Path $PSScriptRoot '..\qualification-profile.ps1')
+# The helper test never launches a process; make its process-presence check deterministic.
+function Get-Process { param($Name, $ErrorAction) return $null }
 $root = Join-Path $env:TEMP ('vg-bar-receipt-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory $root | Out-Null
 function Reject([scriptblock]$Action) {
@@ -21,5 +24,25 @@ try {
     Assert-BarReceipt $root
     Add-Content (Join-Path $root 'owned-bars.txt') 'unexpected'
     Reject { Assert-BarReceipt $root }
-    Write-Output 'PASS owned-bar receipt and launcher parsing'
+    Reject { Assert-BarColdReceipt $root 'absent' }
+    Set-Content (Join-Path $root 'bar-cold-absent.txt') @('PASS','fresh-process;unregistered-providers;no-owned-presentation;same-save')
+    Assert-BarColdReceipt $root 'absent'
+    Reject { Assert-BarColdReceipt $root 'consumer' }
+    $planned = [pscustomobject]@{barProbe=$true;barColdSequence=$true}
+    Reject { Start-BarColdPhase $root $planned 'absent' }
+    Set-Content (Join-Path $root 'owned-bars.txt') @('PASS', $cases)
+    Set-Content (Join-Path $root 'bar-producer-finalized.txt') 'PASS'
+    Set-Content (Join-Path $root 'result.txt') 'PASS'
+    Set-Content (Join-Path $root 'run-outcome.json') '{"selfTerminated":true,"timedOut":false,"killed":false,"exitCode":-1}'
+    Set-Content (Join-Path $root 'bar-cold-donor.txt') @('PASS',[Guid]::NewGuid().ToString('D'),'station')
+    $null = New-Item -ItemType Directory -Path (Join-Path $root 'Saves'),(Join-Path $root 'game\BepInEx') -Force
+    Set-Content (Join-Path $root 'Saves\qa-owned-bars.save') 'fixture'
+    Set-Content (Join-Path $root 'game\BepInEx\LogOutput.log') 'fixture'
+    Reject { Start-BarColdPhase $root $planned 'consumer' }
+    Start-BarColdPhase $root $planned 'absent'
+    if (Test-Path (Join-Path $root 'result.txt')) { throw 'Old success result was not retired.' }
+    if (!(Test-Path (Join-Path $root 'bar-producer-evidence\result.txt'))) { throw 'Producer evidence was not retained.' }
+    Copy-Item (Join-Path $root 'bar-producer-evidence\result.txt') (Join-Path $root 'result.txt')
+    Reject { Start-BarColdPhase $root $planned 'absent' }
+    Write-Output 'PASS owned-bar receipt, cold sequencing and launcher parsing'
 } finally { Remove-Item -LiteralPath $root -Recurse -Force }

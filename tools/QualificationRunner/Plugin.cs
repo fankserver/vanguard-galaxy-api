@@ -136,6 +136,11 @@ public sealed partial class Plugin : BaseUnityPlugin
     {
         foreach (var frame in Wait(() => SceneManager.GetSceneByName("Main Menu").isLoaded, "main menu")) yield return frame;
         foreach (var frame in Settle()) yield return frame;
+        if (Environment.GetCommandLineArgs().Contains("--vgmodapi-bars-cold-absent") || Environment.GetCommandLineArgs().Contains("--vgmodapi-bars-cold-consumer"))
+        {
+            foreach (var frame in CheckColdBars(Environment.GetCommandLineArgs().Contains("--vgmodapi-bars-cold-absent"))) yield return frame;
+            yield break;
+        }
         if (Environment.GetCommandLineArgs().Contains("--vgmodapi-bars-only"))
         {
             Require(File.Exists(Path.Combine(_root!, "bars.enabled")), "Bar-only phase is not armed.");
