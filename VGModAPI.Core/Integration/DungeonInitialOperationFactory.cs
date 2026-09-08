@@ -33,7 +33,7 @@ internal sealed class DungeonInitialOperationFactory
         {
             if (boardable != null || !active) throw new InvalidOperationException("Walk extraction requires its hydrated location simulation.");
             var extraction = _activeLocation.Invoke(new[] { recipient, location, (object)saved.Autonomous });
-            _native.Set(extraction, "phase", Enum.Parse(_native.Get(extraction, "phase")!.GetType(), "Extraction"));
+            _native.Call("resumeSetPhase", extraction, _native.EnumArgument("resumeSetPhase", 0, "Extraction"));
             return extraction;
         }
         if (saved.NativePhase != (active ? "Active" : "Approach")) throw new InvalidOperationException("Saved phase requires a different recovery path.");

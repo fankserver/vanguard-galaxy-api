@@ -6,6 +6,7 @@ internal static class DungeonPodResumeBindings
     internal const string Data = "Source.Data.Persistable.BoardingPodData";
     internal static readonly MethodBinding[] Methods =
     {
+        new("resumeSetPhase", BindingCatalog.BoardingOperation, "set_phase", false, "System.Void", "Source.CompartmentSystem.MissionPhase"),
         new("walkManifest", BindingCatalog.BoardingOperation, "BuildReturnCrewManifestsForWalk", false, "System.Collections.Generic.Dictionary`2<System.String,System.Int32>", "Source.Dungeon.DungeonSimulation"),
         new("donorDispatch", BindingCatalog.BoardingOperation, "DispatchReinforcer", false, "System.Void", "Behaviour.Unit.SpaceShip", "System.Collections.Generic.Dictionary`2<System.String,System.Int32>"),
         new("resumeDocking", BindingCatalog.BoardingOperation, "RestoreDockingOption", false, "System.Void"),
