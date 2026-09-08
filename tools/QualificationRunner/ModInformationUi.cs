@@ -56,11 +56,19 @@ public sealed partial class Plugin
         try
         {
             Require(service.Automatic && launches == 0, "Automatic checks must run without opening a browser.");
+            // Use a successful, cooldown-expired entry: automatic refresh is not due for six hours.
+            // A new completion here must therefore come from this single manual activation.
+            foreach (var frame in Wait(() => service.Status(selected).State == ModUpdateState.Available &&
+                service.Status(selected).RetryAt <= DateTimeOffset.UtcNow, "eligible manual refresh")) yield return frame;
+            var previousCheck = service.Status(selected).CheckedAt;
+            Require(previousCheck.HasValue && previousCheck.Value.AddHours(6) > DateTimeOffset.UtcNow.AddMinutes(1),
+                "Automatic refresh is due; manual request evidence would be ambiguous.");
             events.SetSelectedGameObject(check.gameObject);
             foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
             Require(!details.text.Contains("NETWORK CONFIRMATION"), "Manual refresh requires confirmation.");
             Require(events.currentSelectedGameObject == check.gameObject, "Manual refresh lost keyboard focus.");
-            foreach (var frame in Wait(() => service.Status(selected).State == ModUpdateState.Available && release.gameObject.activeInHierarchy, "UI update result")) yield return frame;
+            foreach (var frame in Wait(() => service.Status(selected).State == ModUpdateState.Available && service.Status(selected).CheckedAt > previousCheck &&
+                release.gameObject.activeInHierarchy, "new manual UI update result")) yield return frame;
             Require(launches == 0 && details.text.Contains("Update available"), "Update result opened a browser or was not presented.");
             record("ui-immediate-refresh-without-automatic-browser");
             Require(service.Automatic && !panel.GetComponentsInChildren<Button>(true).Any(button => button.name == "Automatic updates"), "Automatic checking must not have a player toggle.");

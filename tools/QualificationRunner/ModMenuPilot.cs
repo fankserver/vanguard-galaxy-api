@@ -95,7 +95,7 @@ public sealed partial class Plugin
             foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
             Require(!detailLabel.text.Contains("NETWORK CONFIRMATION") && events.currentSelectedGameObject == checkUpdate.gameObject, "Manual refresh asked for confirmation or lost focus.");
             foreach (var frame in CaptureMenu("mod-update-status.png", evidence)) yield return frame;
-            evidence.AppendLine("update-immediate-refresh=PASS no-update-toggle=PASS");
+            evidence.AppendLine("refresh-control-focus=PASS no-update-toggle=PASS");
             Require(details.content.rect.height > details.viewport.rect.height + 20, "Long metadata did not produce scrollable detail content.");
             events.SetSelectedGameObject(details.verticalScrollbar.gameObject);
             var before = details.content.anchoredPosition.y;
