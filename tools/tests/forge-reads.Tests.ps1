@@ -74,7 +74,16 @@ try {
     Assert-ForgeReadSelection $root $p
     Reject { Assert-ForgeUiReceipt $root $p }
     [IO.File]::WriteAllLines((Join-Path $root 'forge-ui.txt'), @('PASS','forge-ui-v1','variants-pointer-disabled-stale-reopen-dispose'))
+    Reject { Assert-ForgeUiReceipt $root $p }
+    $image = Join-Path $root 'forge-ui-actions.png'; $imageRecord = Join-Path $root 'forge-ui-actions.txt'
+    [IO.File]::WriteAllBytes($image, [byte[]]@(137,80,78,71,13,10,26,10))
+    [IO.File]::WriteAllText($imageRecord, 'sha256=' + (Get-FileHash $image -Algorithm SHA256).Hash.ToLowerInvariant())
     Assert-ForgeUiReceipt $root $p
+    [IO.File]::AppendAllText($image, 'changed'); Reject { Assert-ForgeUiReceipt $root $p }
+    Remove-Item $image; Reject { Assert-ForgeUiReceipt $root $p }
+    [IO.File]::WriteAllBytes($image, [byte[]]@(137,80,78,71,13,10,26,10))
+    Assert-ForgeUiReceipt $root $p
+    $p.forgeUiProbe = $false; Reject { Assert-ForgeUiSelection $root $p }; $p.forgeUiProbe = $true
     $p.forgeCommandProbe = $true; Reject { Assert-ForgeUiSelection $root $p }; $p.forgeCommandProbe = $false
     [IO.File]::WriteAllText((Join-Path $root 'forge-ui.txt'), 'INCOMPLETE')
     Reject { Assert-ForgeUiReceipt $root $p }

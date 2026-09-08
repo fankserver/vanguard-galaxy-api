@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
+using System.IO;
+using System.Security.Cryptography;
 using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.LowLevel;
 using UnityEngine.UI;
@@ -22,6 +24,7 @@ public sealed partial class Plugin
         {
             if (ui.Open(recipe.Id) == ForgeNavigationStatus.Selected && ui.Current?.AvailableVariants.Count > 1)
             { selection = ui.Current; break; }
+            yield return null;
         }
         Require(selection != null, "UI fixture needs a selectable native variant group.");
         var firstRecipe = selection!.SelectedRecipe;
@@ -37,27 +40,28 @@ public sealed partial class Plugin
             foreach (var frame in Wait(() => GameObject.Find("Mod API Forge actions") != null, "Forge action rendering")) yield return frame;
             var button = ForgeProbeButton("Forge probe first");
             Require(ForgeProbeButton("Forge probe second") != button, "Contributors did not render distinct buttons.");
-            foreach (var frame in MenuClick(mouse, button.transform)) yield return frame;
+            foreach (var frame in ForgeClick(mouse, button.transform)) yield return frame;
             Require(calls.Count == 1 && calls[0].SelectedRecipe.Equals(firstRecipe), "Pointer action did not carry the exact selected recipe.");
             first.Update(new ForgeActionPresentation("Forge probe first", enabled: false));
             foreach (var frame in Wait(() => !button.interactable, "Disabled Forge action")) yield return frame;
-            foreach (var frame in MenuClick(mouse, button.transform)) yield return frame;
+            foreach (var frame in ForgeClick(mouse, button.transform)) yield return frame;
             Require(calls.Count == 1, "Disabled Forge action dispatched.");
             first.Update(new ForgeActionPresentation("Forge probe first", "Exact selection probe", useSelectionIcon: true));
             foreach (var frame in Wait(() => button.interactable, "Enabled Forge action")) yield return frame;
-            var rect = (RectTransform)button.transform;
-            var point = RectTransformUtility.WorldToScreenPoint(null, rect.TransformPoint(rect.rect.center));
+            var point = ForgePointerPoint(button.transform);
+            EventSystem.current.SetSelectedGameObject(null);
             InputSystem.QueueStateEvent(mouse, new MouseState { position = point }.WithButton(MouseButton.Left));
             yield return null; yield return null;
+            Require(EventSystem.current.currentSelectedGameObject == button.gameObject, "Held press did not reach the Forge button.");
             Require(ui.Open(otherRecipe) == ForgeNavigationStatus.Selected && ui.Current!.SelectedRecipe.Equals(otherRecipe), "Exact alternate variant navigation failed.");
             yield return null; yield return null;
+            ForgePointerPoint(button.transform, point);
             InputSystem.QueueStateEvent(mouse, new MouseState { position = point });
             yield return null; yield return null;
             Require(calls.Count == 1, "Held pointer activated a replacement selection.");
-            foreach (var frame in MenuClick(mouse, ForgeProbeButton("Forge probe first").transform)) yield return frame;
+            foreach (var frame in ForgeClick(mouse, ForgeProbeButton("Forge probe first").transform)) yield return frame;
             Require(calls.Count == 2 && calls[1].SelectedRecipe.Equals(otherRecipe), "Fresh pointer did not activate the alternate variant.");
-            var evidence = new StringBuilder("Forge UI native input probe\n");
-            foreach (var frame in CaptureMenu("forge-ui-actions.png", evidence)) yield return frame;
+            foreach (var frame in CaptureForgeActions()) yield return frame;
             var oldView = ui.Current!.View;
             var interior = SpGet(NativeType("Behaviour.UI.Spacestation.SpaceStationInterior"), "instance")!;
             SpCall(interior, "GoToLocation", Enum.Parse(NativeType("Source.Galaxy.POI.SpaceStationFacility"), "Refinery"), true);
@@ -65,7 +69,7 @@ public sealed partial class Plugin
             Require(ui.Open(firstRecipe) == ForgeNavigationStatus.Selected, "Forge reopening failed.");
             foreach (var frame in Wait(() => GameObject.Find("Mod API Forge actions") != null, "Forge action recreation")) yield return frame;
             Require(!ui.Current!.View.Equals(oldView), "Reopened Forge retained the old view handle.");
-            foreach (var frame in MenuClick(mouse, ForgeProbeButton("Forge probe second").transform)) yield return frame;
+            foreach (var frame in ForgeClick(mouse, ForgeProbeButton("Forge probe second").transform)) yield return frame;
             Require(calls.Count == 3 && calls[2].SelectedRecipe.Equals(firstRecipe), "Registration did not survive native view replacement.");
             first.Dispose(); second.Dispose();
             foreach (var frame in Wait(() => GameObject.Find("Mod API Forge actions") == null, "Disposed Forge actions")) yield return frame;
@@ -76,6 +80,43 @@ public sealed partial class Plugin
         {
             ProbeCleanup.Run(() => { if (mouse != null) InputSystem.RemoveDevice(mouse); }, () => oldMouse?.MakeCurrent());
         }
+    }
+    private IEnumerable<object?> CaptureForgeActions()
+    {
+        yield return null; yield return null;
+        Require(GameObject.Find("Mod API Forge actions") != null, "Forge actions disappeared before capture.");
+        var path = Path.Combine(_root!, "forge-ui-actions.png");
+        Require(!File.Exists(path), "Refusing to overwrite Forge screenshot evidence.");
+        ScreenCapture.CaptureScreenshot(path);
+        foreach (var frame in Wait(() => File.Exists(path) && new FileInfo(path).Length > 0, "Forge screenshot")) yield return frame;
+        using var hash = SHA256.Create();
+        WriteAtomic("forge-ui-actions.txt", new[] { "sha256=" + BitConverter.ToString(hash.ComputeHash(File.ReadAllBytes(path))).Replace("-", "").ToLowerInvariant() });
+    }
+    private static Vector2 ForgePointerPoint(Transform target, Vector2? fixedPoint = null)
+    {
+        var canvas = target.GetComponentInParent<Canvas>().rootCanvas;
+        var camera = canvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : canvas.worldCamera;
+        Require(canvas.renderMode == RenderMode.ScreenSpaceOverlay || camera != null, "Forge canvas camera missing.");
+        var rect = (RectTransform)target;
+        var point = fixedPoint ?? RectTransformUtility.WorldToScreenPoint(camera, rect.TransformPoint(rect.rect.center));
+        var events = EventSystem.current;
+        Require(events != null, "Forge EventSystem missing.");
+        var hits = new List<RaycastResult>();
+        events!.RaycastAll(new PointerEventData(events) { position = point }, hits);
+        Require(hits.Count > 0 && (hits[0].gameObject.transform == target || hits[0].gameObject.transform.IsChildOf(target)),
+            "Forge pointer point does not hit its intended button.");
+        return point;
+    }
+    private static IEnumerable<object?> ForgeClick(Mouse mouse, Transform target)
+    {
+        var point = ForgePointerPoint(target);
+        InputSystem.QueueStateEvent(mouse, new MouseState { position = point });
+        yield return null; yield return null;
+        ForgePointerPoint(target);
+        InputSystem.QueueStateEvent(mouse, new MouseState { position = point }.WithButton(MouseButton.Left));
+        yield return null; yield return null;
+        InputSystem.QueueStateEvent(mouse, new MouseState { position = point });
+        yield return null; yield return null;
     }
     private static Button ForgeProbeButton(string label)
     {
