@@ -40,6 +40,41 @@ public sealed class DungeonContentServiceTests
         new DungeonCompartmentDefinition("entry", CompartmentType.Airlock, new[] { "room" }),
         new DungeonCompartmentDefinition("room", CompartmentType.Corridor, new[] { "entry" })
     }), events: new[] { new DungeonEventDefinition("event", "room", "Choose", new[] { new DungeonChoiceDefinition("choice", "Choose") }) });
+    private sealed class PanelSource : IDungeonPanelSource
+    {
+        internal DungeonPanelSnapshot? Snapshot;
+        public DungeonPanelCapabilities Capabilities => new(true, true, true);
+        public DungeonPanelSnapshot? Read() => Snapshot;
+        public DungeonPanelOpenStatus Open(BoardingHandle target) => DungeonPanelOpenStatus.Opened;
+    }
+    [Fact]
+    public void ChoiceBridgePreservesLongTextAndRemovesDeliveredActions()
+    {
+        using var f = new Fixture(); f.Hub.GameplayInitialized(f.Hub.CurrentSession!.Id);
+        using var provider = f.Service.AcquireProvider("owner");
+        using var registration = provider.Register("content", new DungeonDefinition(1, "Site", Definition().Layout,
+            events: new[] { new DungeonEventDefinition("event", "room", new string('e', 4000), new[] { new DungeonChoiceDefinition("choice", new string('c', 1000)) }) }));
+        var target = f.Target; var id = provider.Attach("content", target).OccurrenceId!.Value;
+        var source = new PanelSource { Snapshot = new(Guid.NewGuid(), 1, new(target, 1, BoardingEncounterKind.Installation, "Site", null, null, BoardingAvailability.Available, null), null) };
+        using var panel = new DungeonPanelService(f.Hub, source, (_, error) => throw error);
+        using var bridge = new DungeonPanelChoices(panel, f.Service, _ => id); bridge.Refresh();
+        var rows = panel.Render(); Assert.Equal(2, rows.Count); Assert.Equal(4000, rows[0].Section!.Text.Length); Assert.Equal(1000, rows[1].Action!.Tooltip.Length);
+        Assert.True(panel.Activate(rows[1].Registration, rows[1].Snapshot.ViewId, rows[1].Snapshot.Revision));
+        bridge.Refresh(); Assert.Empty(panel.Render()); Assert.Equal(1, f.Applied);
+        source.Snapshot = null; bridge.Refresh(); Assert.Empty(panel.Render());
+    }
+    [Fact]
+    public void PanelChoiceUsesRegisteredBehaviorAndDisappearsAfterSelectionOrDisposal()
+    {
+        using var f = new Fixture(); using var provider = f.Service.AcquireProvider("owner"); var allowed = false;
+        using var definition = provider.Register("content", Definition(), _ => allowed);
+        var id = provider.Attach("content", f.Target).OccurrenceId!.Value;
+        Assert.Single(f.Service.PanelChoices(id));
+        Assert.Equal(DungeonContentStatus.Vetoed, f.Service.ChooseFromPanel(id, "event", "choice").Status); Assert.Equal(0, f.Applied);
+        allowed = true; Assert.Equal(DungeonContentStatus.ChoiceApplied, f.Service.ChooseFromPanel(id, "event", "choice").Status);
+        Assert.Empty(f.Service.PanelChoices(id)); Assert.Equal(1, f.Applied);
+        provider.Dispose(); Assert.Empty(f.Service.PanelChoices(id));
+    }
     [Fact]
     public void CargoRecoveryExampleCreatesIndependentSavedAuthoredContent()
     {
