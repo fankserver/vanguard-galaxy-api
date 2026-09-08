@@ -1,0 +1,13 @@
+# Cargo recovery author example
+
+Build with `make build-dungeon-example CONFIGURATION=Release`. This library references only `VGModAPI.Abstractions`; it is not itself a loadable BepInEx plugin. A consumer's BepInEx entry point owns these disposable helpers on the main thread. No game types, Harmony patches, private API casts, serializer or reconstruction scheduler are needed.
+
+`CargoRecovery` registers an encounter definition with a discovered cargo-room choice and automatically persisted occurrence state. Supply a known existing item identifier, not an invented asset. Register once per plugin lifetime. Call `Attach` only for an explicitly selected observed target; inspect the returned status, and never attach again merely because a save loaded. `SavedOccurrences` exposes API-restored state. Missing providers keep persisted content but cannot execute its behavior.
+
+`CargoRecoveryPanel` is optional per-target integration. Supply the public panel, boarding observations, commands, tactics and settlement services only when their capabilities are available. It requests extraction from a contextual action, acquires command control only on activation, reports typed refusal when another controller owns the target and always releases its lease. It does not force takeover, auto-confirm extraction or infer success from admission.
+
+Settlement observation is independent of panel visibility. It tracks matching observed operations and reports copied settlement facts even after closing the panel. `CaptureApplied`, `CrewReturnSettled` and `CrewCountsObserved` mean different things; combat completion is not proof of crew delivery. Subscriptions do not replay historical events. Dispose the per-target helper on session/target replacement, and create a new one only from fresh observed handles. Retain the definition registration across session changes; let the API restore its content.
+
+If panel/tactical/settlement integration is absent, omit this helper without disabling the definition registration. Registration and disposal are main-thread operations. Constructor failure releases acquired subscriptions; dispose normally during plugin shutdown. Distinct plugins use distinct identifiers; only one helper with the same plugin/local action identity may exist at a time. Subscriber exceptions are isolated by the API, but consumer callbacks should still be short and nonblocking.
+
+This example exercises authored content, contextual tactics and observed settlement rather than eligibility/balance policy. Compilation does not demonstrate simultaneous consumers or save/load inside Unity; those require controlled native qualification with exact build provenance.
