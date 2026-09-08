@@ -24,6 +24,13 @@ public sealed class InstalledBarBindingTests
             Assert.Equal(binding.Static, method.IsStatic);
             Assert.Equal(binding.ReturnType, method.ReturnType.FullName);
         }
+        var icon = module.GetType("Behaviour.Crew.OfficerIcon");
+        var icons = module.GetType("Behaviour.Crew.OfficerIcons");
+        var getIcon = icons.Methods.Single(method => method.Name == "Get" && method.Parameters.Count == 1);
+        Assert.True(getIcon.IsPublic && getIcon.IsStatic);
+        Assert.Equal("System.String", getIcon.Parameters[0].ParameterType.FullName);
+        Assert.Equal(icon.FullName, getIcon.ReturnType.FullName);
+        Assert.Equal("UnityEngine.Sprite", icon.Fields.Single(field => field.Name == "sprite").FieldType.FullName);
         var station = module.GetType("Source.Galaxy.POI.SpaceStation");
         var player = module.GetType("Source.Player.GamePlayer");
         var current = player.Fields.Single(field => field.Name == "current");
