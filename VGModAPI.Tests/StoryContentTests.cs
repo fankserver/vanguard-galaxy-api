@@ -3130,6 +3130,40 @@ public sealed class StoryContentTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public void MetadataChangingMigrationRequiresAnOfferedOccurrence(bool active)
+    {
+        var provider = Provider(out var world, out _, out _, StoryRetention.Campaign);
+        StoryMissionDefinition DefinitionFor(bool next) => new StoryMissionDefinition("conversation", next ? "New title" : "Old title", "Description", Faction,
+            next ? new[] { new StoryStep("B", new[] { StoryObjective.Scripted("b", "B") }), new StoryStep("A", new[] { StoryObjective.Scripted("a", "A") }) }
+                : new[] { new StoryStep("A", new[] { StoryObjective.Scripted("a", "A") }), new StoryStep("B", new[] { StoryObjective.Scripted("b", "B") }) },
+            new[] { new StoryReward(StoryRewardKind.Credits, next ? 200 : 100) });
+        Assert.True(provider.Register(DefinitionFor(false)).Succeeded);
+        var offered = provider.Offer("conversation");
+        if (active) Assert.True(provider.Activate(offered.OccurrenceId).Accepted);
+        var saved = world.Persistence.Provider!.Capture();
+        var later = new FakeWorld();
+        var host = new FakeHost();
+        using var service = later.Service(host);
+        var plugin = new object(); host.Register(plugin, AnimaPlugin);
+        var current = service.AcquireProvider(plugin).Provider!;
+        Assert.True(current.Register(DefinitionFor(true).WithRevision(2, 1)).Succeeded);
+        var identifier = FakeWorld.Native(current, "conversation", offered.OccurrenceId);
+        if (active) later.World.AdoptInWorld(identifier);
+        later.StartAndRestore(saved);
+        Assert.True(service.Ledger.TryGet(offered.OccurrenceId, out var entry));
+        Assert.Equal(active ? 1 : 2, entry.ObjectiveLayout.Revision);
+        Assert.Equal(active ? "Old title" : "New title", entry.RetainedDefinition!.Title);
+        if (active)
+        {
+            Assert.Equal(saved, later.Persistence.Provider!.Capture());
+            Assert.False(later.World.IsInstalled(identifier));
+        }
+        else Assert.Equal(200, later.World.InstalledDefinition(identifier).Rewards[0].Amount);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public void RevisionMigrationAndRollbackUseAutomaticOccurrenceRestore(bool active)
     {
         var provider = Provider(out var world, out _, out _, StoryRetention.Campaign);

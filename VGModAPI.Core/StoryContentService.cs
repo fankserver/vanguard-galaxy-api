@@ -304,7 +304,8 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
                 definition = entry.RetainedDefinition;
             StoryObjectiveLayout? migrated = null;
             if (!entry.ObjectiveLayout.SamePositions(new StoryObjectiveLayout(definition))
-                && (!entry.ObjectiveLayout.TryMigrate(definition, out migrated) || !_ledger.CanReplaceObjectiveLayout(entry, migrated, definition)))
+                && ((entry.State == StoryOccurrenceState.Active && !StoryDefinitionCodec.SameMetadata(entry.RetainedDefinition, definition))
+                    || !entry.ObjectiveLayout.TryMigrate(definition, out migrated) || !_ledger.CanReplaceObjectiveLayout(entry, migrated, definition)))
             {
                 _unrunnable.Add(entry.OccurrenceId);
                 _reconciliation.Add(identifier + ": objective layout differs from the retained occurrence and requires migration.");

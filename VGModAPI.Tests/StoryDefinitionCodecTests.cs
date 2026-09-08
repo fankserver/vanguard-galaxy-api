@@ -39,6 +39,34 @@ public sealed class StoryDefinitionCodecTests
     }
 
     [Fact]
+    public void NonScriptedRevisionIsNormalizedToInvalidData()
+    {
+        var definition = new StoryMissionDefinition("job", "Title", "Description", new StoryFactionId("TradingGuild"),
+            new[] { new StoryStep("Travel", new[] { StoryObjective.TravelTo("poi") }) });
+        var bytes = StoryDefinitionCodec.Encode(definition);
+        using var stream = new MemoryStream(bytes);
+        using var reader = new BinaryReader(stream);
+        reader.ReadByte();
+        for (int index = 0; index < 6; index++)
+        {
+            int length = reader.ReadInt32();
+            if (length >= 0) stream.Position += length;
+        }
+        stream.Position += 3;
+        int revisionOffset = (int)stream.Position;
+        var state = StoryStateCodec.Encode(new[] { new StoryOccurrenceEntry(new StoryContentId("author", "job"), Guid.NewGuid(),
+            StoryRetention.Temporary, 1, retainedDefinition: definition) });
+        int payloadOffset = -1;
+        for (int index = 0; index <= state.Length - bytes.Length; index++)
+            if (state.AsSpan(index, bytes.Length).SequenceEqual(bytes)) { payloadOffset = index; break; }
+        Assert.True(payloadOffset >= 0);
+        state[payloadOffset + revisionOffset] = 2;
+        Assert.False(StoryStateCodec.Validate(state));
+        bytes[revisionOffset] = 2;
+        Assert.Throws<InvalidDataException>(() => StoryDefinitionCodec.Decode(bytes));
+    }
+
+    [Fact]
     public void OversizedTruncatedAndExtendedPayloadsAreRefused()
     {
         Assert.Throws<InvalidDataException>(() => StoryDefinitionCodec.Decode(new byte[StoryDefinitionCodec.MaxBytes + 1]));

@@ -312,7 +312,10 @@ Capture writes schema 4 without modifying older snapshots. Newly offered occurre
 immutable definition data: text, faction, steps, native targets, rewards and declared choice keys.
 Startup registration still establishes provider ownership and behavior, but same-revision definitions
 cannot replace saved generated data. Explicit supported revision migration replaces the snapshot
-transactionally. Definition bytes consume existing quotas and are discarded at retirement; outcomes,
+transactionally. Active revision migration requires unchanged non-step metadata, including rewards
+and choice declarations; legacy active occurrences without a retained definition cannot prove that
+condition and refuse revision migration. Offered occurrences may migrate the full definition.
+Definition bytes consume existing quotas and are discarded at retirement; outcomes,
 choices and keyed progress remain governed by retention policy. Cold-start restoration has host checks;
 native cold-start acceptance remains pending. Keyed layouts retain objective positions, kinds, required amounts,
 scripted progress and content revision. Their space is charged before admission or migration.

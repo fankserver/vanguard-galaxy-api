@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Text;
 
 namespace VGModAPI.Core;
@@ -9,6 +10,14 @@ internal static class StoryDefinitionCodec
 {
     internal const int MaxBytes = StoryLedger.ProviderPayloadBudget;
     private static readonly UTF8Encoding Utf8 = new(false, true);
+
+    internal static bool SameMetadata(StoryMissionDefinition? saved, StoryMissionDefinition next) => saved != null
+        && saved.LocalId == next.LocalId && saved.Title == next.Title && saved.Description == next.Description
+        && saved.SourceFaction.Equals(next.SourceFaction) && saved.Category == next.Category
+        && saved.CompletionText == next.CompletionText && saved.Difficulty == next.Difficulty
+        && saved.CanAbandon == next.CanAbandon && saved.Retention == next.Retention
+        && saved.ChoiceKeys.SequenceEqual(next.ChoiceKeys)
+        && saved.Rewards.Select(reward => (reward.Kind, reward.Amount)).SequenceEqual(next.Rewards.Select(reward => (reward.Kind, reward.Amount)));
 
     internal static byte[] Encode(StoryMissionDefinition definition)
     {
@@ -76,7 +85,8 @@ internal static class StoryDefinitionCodec
         for (int index = 0; index < choices.Length; index++) choices[index] = Required(reader);
         if (stream.Position != stream.Length || revision < 1 || from < 0) throw new InvalidDataException("Invalid retained definition trailer.");
         var result = new StoryMissionDefinition(local, title, description, faction, steps, rewards, difficulty, retention, abandon, category, completion, choices);
-        return revision == 1 && from == 0 ? result : result.WithRevision(revision, from == 0 ? null : from);
+        try { return revision == 1 && from == 0 ? result : result.WithRevision(revision, from == 0 ? null : from); }
+        catch (InvalidOperationException error) { throw new InvalidDataException("Invalid retained revision shape.", error); }
     }
 
     private static void Text(BinaryWriter writer, string? value)
