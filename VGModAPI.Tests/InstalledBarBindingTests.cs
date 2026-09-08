@@ -32,6 +32,13 @@ public sealed class InstalledBarBindingTests
         Assert.Equal("System.String", getIcon.Parameters[0].ParameterType.FullName);
         Assert.Equal(icon.FullName, getIcon.ReturnType.FullName);
         Assert.Equal("UnityEngine.Sprite", icon.Fields.Single(field => field.Name == "sprite").FieldType.FullName);
+        var element = module.GetType("Source.Galaxy.MapElement");
+        var guid = element.Properties.Single(property => property.Name == "guid");
+        var guidField = element.Fields.Single(field => field.Name == "<guid>k__BackingField");
+        Assert.Equal("System.String", guidField.FieldType.FullName);
+        Assert.True(guidField.IsPrivate && !guid.GetMethod.IsVirtual);
+        Assert.Contains(guidField.CustomAttributes, attribute => attribute.AttributeType.FullName == "System.Runtime.CompilerServices.CompilerGeneratedAttribute");
+        Assert.Contains(guid.GetMethod.CustomAttributes, attribute => attribute.AttributeType.FullName == "System.Runtime.CompilerServices.CompilerGeneratedAttribute");
         var station = module.GetType("Source.Galaxy.POI.SpaceStation");
         var player = module.GetType("Source.Player.GamePlayer");
         var current = player.Fields.Single(field => field.Name == "current");
