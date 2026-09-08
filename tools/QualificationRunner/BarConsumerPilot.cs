@@ -79,14 +79,6 @@ public sealed partial class Plugin
             AccessTools.Field(player.GetType(), "currentPointOfInterest").SetValue(player, foundation);
             AccessTools.Field(player.GetType(), "currentSystem").SetValue(player, SpGet(foundation!, "system"));
             SpCall(bar, "CheckUpdatePatrons", false);
-            int refreshes = 0;
-            while (VanillaCount() > 4 && refreshes < 8)
-            {
-                SpCall(bar, "CheckUpdatePatrons", true);
-                refreshes++;
-            }
-            Require(VanillaCount() <= 4, "Controlled preparation could not provide an additive seat.");
-            WriteAtomic("bar-consumer-preparation.txt", new[] { "native-force-refreshes=" + refreshes, "retained-vanilla=" + VanillaCount() });
             Require(latest?.SessionId == session && latest.StationId == stationId
                 && latest.Members.Count == 4 && latest.Members.All(member => member.OwnedId?.Provider == customProvider.ProviderId), "Foundation exclusive roster was not exactly four owned contacts.");
             CheckTtsBoundary();
@@ -110,6 +102,20 @@ public sealed partial class Plugin
                 && denial == "StationOwnedExclusively"
                 && latest.Members.All(member => member.OwnedId?.Provider != animaProvider.ProviderId), "Anima displaced Foundation or lacked its exclusive-owner denial.");
             CheckTtsBoundary();
+            int refreshes = 0;
+            do
+            {
+                latest = null;
+                SpCall(bar, "CheckUpdatePatrons", true);
+                refreshes++;
+                Require(latest != null && latest.Members.Count == 4
+                    && latest.Members.All(member => member.OwnedId?.Provider == customProvider.ProviderId)
+                    && latest.DeniedProviders.TryGetValue(animaProvider.ProviderId, out var refreshedDenial)
+                    && refreshedDenial == "StationOwnedExclusively", "Forced refresh lost exclusive ownership or Anima's retained contribution.");
+                CheckTtsBoundary();
+            } while (VanillaCount() > 4 && refreshes < 8);
+            Require(VanillaCount() <= 4, "Controlled refresh could not provide an additive seat.");
+            WriteAtomic("bar-consumer-preparation.txt", new[] { "native-force-refreshes=" + refreshes, "retained-vanilla=" + VanillaCount() });
             permissions.GetType().GetProperty("BoxedValue")!.SetValue(permissions, "");
             latest = null; SpCall(bar, "CheckUpdatePatrons", false);
             Require(latest != null && latest.DeniedProviders.ContainsKey(customProvider.ProviderId)
@@ -128,7 +134,7 @@ public sealed partial class Plugin
             }
         }
         Require(ReferenceEquals(CurrentPlayer, player) && ReferenceEquals(SpGet(player, "currentPointOfInterest"), origin) && ReferenceEquals(SpGet(player, "currentSystem"), originSystem), "Controlled context was not restored.");
-        WriteAtomic("bar-consumers.txt", new[] { "PASS", "actual-foundation-builder;four-exclusive-contacts;actual-anima-finalization;denied-additive-offer;tts-finalized-boundary;permission-revocation;context-restored" });
+        WriteAtomic("bar-consumers.txt", new[] { "PASS", "actual-foundation-builder;four-exclusive-contacts;actual-anima-finalization;denied-additive-offer;forced-native-refresh;tts-finalized-boundary;permission-revocation;context-restored" });
         Passed("controlled-bar-consumer-composition");
     }
 }

@@ -33,15 +33,17 @@ try {
     Remove-Item (Join-Path $tools 'extra')
     Assert-BarConsumerToolsInventory $root $inventory
     Reject { Assert-BarConsumerReceipt $root }
-    $consumerCases = 'actual-foundation-builder;four-exclusive-contacts;actual-anima-finalization;denied-additive-offer;tts-finalized-boundary;permission-revocation;context-restored'
+    $consumerCases = 'actual-foundation-builder;four-exclusive-contacts;actual-anima-finalization;denied-additive-offer;forced-native-refresh;tts-finalized-boundary;permission-revocation;context-restored'
     Set-Content (Join-Path $root 'bar-consumers.txt') @('PASS', $consumerCases)
     Set-Content (Join-Path $root 'bar-consumer-preparation.txt') @('native-force-refreshes=0','retained-vanilla=4')
+    Reject { Assert-BarConsumerReceipt $root }
+    Set-Content (Join-Path $root 'bar-consumer-preparation.txt') @('native-force-refreshes=1','retained-vanilla=4')
     Assert-BarConsumerReceipt $root
     Set-Content (Join-Path $root 'bar-consumer-preparation.txt') @('native-force-refreshes=9','retained-vanilla=4')
     Reject { Assert-BarConsumerReceipt $root }
-    Set-Content (Join-Path $root 'bar-consumer-preparation.txt') @('native-force-refreshes=0','retained-vanilla=5')
+    Set-Content (Join-Path $root 'bar-consumer-preparation.txt') @('native-force-refreshes=1','retained-vanilla=5')
     Reject { Assert-BarConsumerReceipt $root }
-    Set-Content (Join-Path $root 'bar-consumer-preparation.txt') @('native-force-refreshes=0','retained-vanilla=4')
+    Set-Content (Join-Path $root 'bar-consumer-preparation.txt') @('native-force-refreshes=1','retained-vanilla=4')
     Add-Content (Join-Path $root 'bar-consumers.txt') 'unexpected'
     Reject { Assert-BarConsumerReceipt $root }
     Set-Content (Join-Path $root 'bad-consumers.json') '{"plugins":[]}'

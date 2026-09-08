@@ -99,7 +99,7 @@ function Initialize-BarConsumers([string]$Root, [string]$Manifest) {
 
 function Assert-BarConsumerReceipt([string]$Root) {
     $rows = @(Get-Content -LiteralPath (Join-Path $Root 'bar-consumers.txt') -ErrorAction Stop)
-    if ($rows.Count -ne 2 -or $rows[0] -cne 'PASS' -or $rows[1] -cne 'actual-foundation-builder;four-exclusive-contacts;actual-anima-finalization;denied-additive-offer;tts-finalized-boundary;permission-revocation;context-restored') { throw 'Incomplete consumer bar receipt.' }
+    if ($rows.Count -ne 2 -or $rows[0] -cne 'PASS' -or $rows[1] -cne 'actual-foundation-builder;four-exclusive-contacts;actual-anima-finalization;denied-additive-offer;forced-native-refresh;tts-finalized-boundary;permission-revocation;context-restored') { throw 'Incomplete consumer bar receipt.' }
     $preparation = @(Get-Content -LiteralPath (Join-Path $Root 'bar-consumer-preparation.txt') -ErrorAction Stop)
-    if ($preparation.Count -ne 2 -or $preparation[0] -cnotmatch '^native-force-refreshes=[0-8]$' -or $preparation[1] -cnotmatch '^retained-vanilla=[0-4]$') { throw 'Invalid consumer capacity preparation.' }
+    if ($preparation.Count -ne 2 -or $preparation[0] -cnotmatch '^native-force-refreshes=[1-8]$' -or $preparation[1] -cnotmatch '^retained-vanilla=[0-4]$') { throw 'Invalid consumer capacity preparation.' }
 }
