@@ -9,6 +9,14 @@ internal static class WorldLifetimePatches
     {
         internal static bool Prefix(object __instance) => Host?.AllowAmbient(__instance) ?? true;
     }
+    internal static class Initialization
+    {
+        internal static void Postfix(object __instance, ref System.Collections.IEnumerator __result)
+        {
+            var host = Host;
+            if (host != null) __result = new WorldManagerEnumerator(__result, __instance, host);
+        }
+    }
     internal static class Arrival
     {
         internal static bool Prefix(object __instance) => Host?.AllowManager(__instance) ?? true;
