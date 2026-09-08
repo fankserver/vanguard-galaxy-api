@@ -49,12 +49,15 @@ internal sealed class WorldJsonInspection
         return text;
     }
 
+    internal object ParseCaptured(byte[] nativeBytes) =>
+        Object(_parse.Invoke(null, new object[] { WorldLoadBytes.Decode(nativeBytes) })!);
+
     internal byte[] VerifyInput(byte[] nativeBytes, object root)
     {
         if (!_objectType.IsInstanceOfType(root)) throw new InvalidDataException("Expected native save JSON root.");
         if (nativeBytes == null || nativeBytes.Length > WorldLoadBytes.MaxNativeBytes) throw new InvalidDataException("Invalid native load bytes.");
         var frozen = (byte[])nativeBytes.Clone();
-        var parsed = Object(_parse.Invoke(null, new object[] { WorldLoadBytes.Decode(frozen) })!);
+        var parsed = ParseCaptured(frozen);
         if (!string.Equals(parsed.ToString(), root.ToString(), StringComparison.Ordinal))
             throw new InvalidDataException("Parsed load input does not match the captured native bytes.");
         return frozen;

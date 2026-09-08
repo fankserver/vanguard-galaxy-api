@@ -14,7 +14,8 @@ public sealed class JsonValue
     private readonly object? _value;
     public JsonValue(object? value) { _value = value; }
     // Shape double: preserves supplied text; it does not simulate native JSON parsing.
-    public static JsonValue Parse(string text) => new(new JsonObject { Text = text });
+    internal static readonly System.Collections.Concurrent.ConcurrentDictionary<string, JsonObject> ParseFixtures = new();
+    public static JsonValue Parse(string text) => new(ParseFixtures.TryGetValue(text, out var fixture) ? fixture : new JsonObject { Text = text });
     public bool IsJsonObject => _value is JsonObject;
     public bool IsJsonArray => _value is List<JsonValue>;
     public bool IsNull => _value == null;
