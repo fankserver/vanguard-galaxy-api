@@ -149,12 +149,12 @@ public sealed partial class Plugin : BaseUnityPlugin
                 CheckCraftingQueueAndCancel(station);
                 if (File.Exists(Path.Combine(_root!, "refinery.enabled")))
                 {
-                    Require(File.ReadAllText(Path.Combine(_root!, "refinery.enabled")) == "refinery-v2", "Invalid refinery marker.");
+                    Require(File.ReadAllText(Path.Combine(_root!, "refinery.enabled")) == "refinery-v3", "Invalid refinery marker.");
                     WriteAtomic("refinery.txt", new[] { "INCOMPLETE" });
                     CheckRefineryDelivery(station);
                     CheckRefineryMultipleBatches(station);
                     CheckMaterialExtraction(station);
-                    WriteAtomic("refinery.txt", new[] { "PASS", "refinery-v2", "fractional-partial-multiple-refund-extraction-replay" });
+                    WriteAtomic("refinery.txt", new[] { "PASS", "refinery-v3", "fractional-partial-multiple-refund-extraction-replay-favourites" });
                 }
                 if (File.Exists(Path.Combine(_root!, "forge-delivery.enabled")))
                 {

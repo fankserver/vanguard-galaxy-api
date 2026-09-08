@@ -58,10 +58,10 @@ try {
     Remove-Item (Join-Path $root 'forge-delivery.enabled')
     $p | Add-Member refineryProbe $true
     Reject { Assert-ForgeReadSelection $root $p }
-    [IO.File]::WriteAllText((Join-Path $root 'refinery.enabled'), 'refinery-v2')
+    [IO.File]::WriteAllText((Join-Path $root 'refinery.enabled'), 'refinery-v3')
     Assert-ForgeReadSelection $root $p
     Reject { Assert-RefineryReceipt $root $p }
-    [IO.File]::WriteAllLines((Join-Path $root 'refinery.txt'), @('PASS','refinery-v2','fractional-partial-multiple-refund-extraction-replay'))
+    [IO.File]::WriteAllLines((Join-Path $root 'refinery.txt'), @('PASS','refinery-v3','fractional-partial-multiple-refund-extraction-replay-favourites'))
     Assert-RefineryReceipt $root $p
     [IO.File]::WriteAllLines((Join-Path $root 'refinery.txt'), @('PASS','refinery-v1','fractional-partial-refund-extraction-replay'))
     Reject { Assert-RefineryReceipt $root $p }
