@@ -29,6 +29,9 @@ public sealed partial class Plugin : BaseUnityPlugin
     private CraftingJobService? _craftingJobs;
     private CraftingJobObserver? _craftingJobObserver;
     private Harmony? _craftingJobHarmony;
+    private CraftingCommandService? _craftingCommands;
+    private Harmony? _craftingCommandHarmony;
+    private RecipeCatalogNativeSource? _craftingCommandSource;
     private BoardingObserver? _boarding;
     private BoardingRuleAdapter? _boardingRules;
     private BoardingCommandService? _boardingCommands;
@@ -67,6 +70,8 @@ public sealed partial class Plugin : BaseUnityPlugin
         _hub.SetCapability("recipe-quotes", false, "Disabled or not bound; experimental.");
         ModApi.RecipeQuotes = null;
         ModApi.CraftingJobs = null;
+        ModApi.CraftingCommands = null;
+        _hub.SetCapability("crafting-commands", false, "Disabled or not bound; experimental.");
         _hub.SetCapability("crafting-jobs", false, "Disabled or not bound; experimental.");
         _hub.SetCapability("save-data", false, "Not initialized; experimental.");
         _hub.SetCapability("mission-continuity", false, "Disabled by configuration; experimental.");
@@ -504,11 +509,13 @@ public sealed partial class Plugin : BaseUnityPlugin
                 _craftingJobHarmony.Patch(methods[spec.Key], prefix: prefix, finalizer: new HarmonyMethod(typeof(CraftingJobPatches).GetMethod(name, flags)));
             }
             _craftingJobs.SetAvailable(true); ModApi.CraftingJobs = _craftingJobs;
+            InstallCraftingCommands(assembly, source);
         }
         catch (Exception error) { TeardownCraftingJobs(); Logger.LogError(error); }
     }
     private void TeardownCraftingJobs()
     {
+        TeardownCraftingCommands();
         CraftingJobPatches.Observer = null;
         _craftingJobObserver?.Dispose(); _craftingJobObserver = null;
         _craftingJobs?.Dispose(); _craftingJobs = null; ModApi.CraftingJobs = null;
@@ -516,6 +523,42 @@ public sealed partial class Plugin : BaseUnityPlugin
         try { _craftingJobHarmony?.UnpatchSelf(); } catch (Exception error) { Logger.LogError(error); }
         _craftingJobHarmony = null;
         _hub?.SetCapability("crafting-jobs", false, "Crafting job observation unavailable.");
+    }
+    private void InstallCraftingCommands(Assembly assembly, RecipeCatalogNativeSource source)
+    {
+        try
+        {
+            if (!Config.Bind("Recipes", "CommandsEnabled", false, "Experimental crafting mutations; requires recipe/job observation and disposable-save qualification.").Value) return;
+            var methods = CraftingCommandBindings.Validate(assembly);
+            _craftingCommandSource = source;
+            source.CommandSession = () => _hub?.CurrentSession?.Phase == SessionPhase.GameplayInitialized && _adapter?.IsBoundPlayer(source.NativePlayer) == true ? _hub.CurrentSession.Id : null;
+            source.CommandObserver = _craftingJobObserver; source.CommandJobEvents = _craftingJobs;
+            source.CommandReport = error => Logger.LogError(error);
+            source.RefreshCommandUi = new CraftingCommandUiRefresh(assembly, methods).Refresh;
+            _craftingCommands = new CraftingCommandService(_hub!, _craftingJobs!, source, error => Logger.LogError(error));
+            CraftingCommandPatches.Service = _craftingCommands;
+            _craftingCommandHarmony = new Harmony(ModApi.PluginId + ".crafting-commands");
+            var flags = BindingFlags.Static | BindingFlags.NonPublic;
+            foreach (var spec in CraftingCommandBindings.Serialization)
+                _craftingCommandHarmony.Patch(methods[spec.Key], prefix: new HarmonyMethod(typeof(CraftingCommandPatches).GetMethod("Prefix", flags)),
+                    finalizer: new HarmonyMethod(typeof(CraftingCommandPatches).GetMethod("Finalizer", flags)));
+            _craftingCommands.SetAvailable(true); ModApi.CraftingCommands = _craftingCommands;
+            _hub!.SetCapability("crafting-commands", true, "Experimental guarded commands; not runtime-qualified.");
+        }
+        catch (Exception error) { TeardownCraftingCommands(); Logger.LogError(error); }
+    }
+    private void TeardownCraftingCommands()
+    {
+        CraftingCommandPatches.Service = null;
+        _craftingCommands?.Dispose(); _craftingCommands = null; ModApi.CraftingCommands = null;
+        if (_craftingCommandSource != null)
+        {
+            _craftingCommandSource.CommandSession = null; _craftingCommandSource.CommandObserver = null;
+            _craftingCommandSource.CommandJobEvents = null; _craftingCommandSource.CommandReport = null; _craftingCommandSource.RefreshCommandUi = null;
+            _craftingCommandSource = null;
+        }
+        try { _craftingCommandHarmony?.UnpatchSelf(); } catch (Exception error) { Logger.LogError(error); }
+        _craftingCommandHarmony = null; _hub?.SetCapability("crafting-commands", false, "Crafting commands unavailable.");
     }
     private void InitializeDungeons()
     {
@@ -795,7 +838,9 @@ public sealed partial class Plugin : BaseUnityPlugin
     private void Update()
     {
         var craftingFault = _craftingJobObserver?.PumpFault();
-        if (craftingFault != null) Logger.LogError(craftingFault);
+        if (craftingFault != null) { Logger.LogError(craftingFault); TeardownCraftingCommands(); }
+        var commandFault = _craftingCommands?.PumpFault();
+        if (commandFault != null) { Logger.LogError(commandFault); TeardownCraftingCommands(); }
         _boarding?.Poll();
         _adapter?.Poll(); _missions?.Poll();
         if (_travel != null)
@@ -824,6 +869,7 @@ public sealed partial class Plugin : BaseUnityPlugin
     }
     private void OnDestroy()
     {
+        TeardownCraftingCommands();
         StopBars();
         DungeonRewardPatches.Crew = null; _dungeonSettlement?.Dispose(); _dungeonSettlement = null; ModApi.DungeonSettlement = null;
         DungeonRewardPatches.Adapter = null; _dungeonRewards?.Dispose(); _dungeonRewards = null; ModApi.DungeonRewards = null;

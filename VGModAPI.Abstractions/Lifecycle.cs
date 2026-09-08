@@ -74,6 +74,7 @@ public static class ModApi
     /// <summary>Optional main-thread station requirements and output estimates; advisory, not reservations.</summary>
     public static IRecipeQuotes? RecipeQuotes { get; internal set; }
     public static ICraftingJobs? CraftingJobs { get; internal set; }
+    public static ICraftingCommands? CraftingCommands { get; internal set; }
     /// <summary>Optional inspected-build boarding observations; consult boarding-observation capability.</summary>
     public static IBoardingEvents? Boarding { get; internal set; }
     /// <summary>Optional inspected-build boarding policies, independent of observation subscribers.</summary>

@@ -42,6 +42,11 @@ public sealed class GameAdapterTests
         Assert.NotNull(_adapter.CaptureGameplay());
         _adapter.GameplayCompleted(request.Id, new GameplayManager(true), null);
         Assert.Equal(SessionPhase.GameplayInitialized, _hub.CurrentSession.Phase);
+        var bound = GamePlayer.current;
+        Assert.True(_adapter.IsBoundPlayer(bound));
+        GamePlayer.current = new GamePlayer();
+        Assert.False(_adapter.IsBoundPlayer(bound));
+        Assert.False(_adapter.IsBoundPlayer(GamePlayer.current)); // Refuse mutations before the next poll reconciles replacement.
     }
 
     [Fact]
