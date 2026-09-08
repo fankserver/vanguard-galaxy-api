@@ -89,5 +89,6 @@ public sealed partial class Plugin
         Require(facts.Count(fact => fact.Kind == CraftingJobEventKind.Cancelled && fact.Job.Handle.Equals(result.Jobs[0])) == 1, "Cancellation fact missing or duplicated.");
         Passed("Two-batch native queue and immediate cancellation with actual list/credit receipts and replay guard");
         CheckForgeCreditRefusal(station, candidate.Id, SpGet(added, "recipe")!);
+        CheckForgeQueueCapacity(station, candidate.Id, SpGet(added, "recipe")!);
     }
 }
