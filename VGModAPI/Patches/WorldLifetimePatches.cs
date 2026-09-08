@@ -77,6 +77,10 @@ internal static class WorldLifetimePatches
             return __exception;
         }
     }
+    internal static class GenerateArgument
+    {
+        internal static void Prefix(object poi) => Generate.Prefix(poi);
+    }
     internal static class Generate
     {
         internal static void Prefix(object __instance)

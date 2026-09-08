@@ -111,6 +111,8 @@ public sealed class WorldLifetimeHookTests : IDisposable
         Assert.False(WorldLifetimePatches.Remove.Prefix(owned));
         Assert.True(WorldLifetimePatches.Ambient.Prefix(vanilla));
         Assert.True(WorldLifetimePatches.Remove.Prefix(vanilla));
+        Assert.Throws<System.IO.InvalidDataException>(() => WorldLifetimePatches.GenerateArgument.Prefix(owned));
+        WorldLifetimePatches.GenerateArgument.Prefix(vanilla);
         Assert.False(WorldLifetimePatches.Active.Prefix(owned));
         Assert.Throws<System.IO.InvalidDataException>(() => WorldLifetimePatches.Generate.Prefix(owned));
         WorldLifetimePatches.Generate.Prefix(vanilla);
