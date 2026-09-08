@@ -6,6 +6,15 @@ using VGModAPI.Core;
 using VGModAPI.Core.Integration;
 using Xunit;
 
+namespace Behaviour.Unit { public abstract class AbstractUnit { } }
+namespace Source.SpaceShip { public abstract class AutoActions { } }
+namespace Source.SpaceShip.Auto
+{
+    public sealed class KnownActions : Source.SpaceShip.AutoActions
+    {
+        public KnownActions(Behaviour.Unit.AbstractUnit parent) => throw new Exception("Must not construct actions during inspection");
+    }
+}
 namespace Source.Data.Persistable
 {
     public abstract class PersistableData { }
@@ -38,7 +47,7 @@ namespace VGModAPI.Tests
             var payload = new JsonObject
             {
                 ["persistables"] = new(new List<JsonValue> { new(persistable) }),
-                ["descriptor"] = new(new JsonObject { ["type"] = new("FixedPayloadDescriptor"), ["fixedUnit"] = new("NativeShip"), ["unitCount"] = new(count) })
+                ["descriptor"] = new(new JsonObject { ["type"] = new("FixedPayloadDescriptor"), ["fixedUnit"] = new("NativeShip"), ["unitCount"] = new(count), ["autoActions"] = new("Known") })
             };
             var poi = new JsonObject { ["guid"] = new(identity.NativeId), ["type"] = new("Combat"), ["systemName"] = new("system"), ["payloads"] = new(new List<JsonValue> { new(payload) }) };
             var system = new JsonObject { ["guid"] = new("system"), ["pointsOfInterest"] = new(new List<JsonValue> { new(poi) }) };
@@ -67,6 +76,17 @@ namespace VGModAPI.Tests
             var root = new JsonObject { ["Player"] = new(new JsonObject { ["map"] = new(new JsonObject { ["systems"] = new(new List<JsonValue> { new(system) }) }) }) };
             var error = Assert.Throws<InvalidDataException>(() => new WorldJsonInspection(typeof(JsonObject).Assembly).Read(root));
             Assert.Contains("Budget-expanded", error.Message);
+        }
+        [Theory]
+        [InlineData("Known", true)]
+        [InlineData("Known, foreign", false)]
+        [InlineData("Known+Nested", false)]
+        [InlineData("Missing", false)]
+        public void AutoActionSelectorsRequireNativeConstructorMetadata(string selector, bool valid)
+        {
+            var catalog = new WorldNestedTypeCatalog(typeof(JsonObject).Assembly);
+            if (valid) catalog.AutoActions(selector);
+            else Assert.Throws<InvalidDataException>(() => catalog.AutoActions(selector));
         }
         [Fact]
         public void UnitDispatchRemainsTheInspectedClosedSwitch()

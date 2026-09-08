@@ -13,6 +13,8 @@ internal sealed class WorldNestedTypeCatalog
     internal void Descriptor(string name) => Require(name, "Source.Galaxy.", "Source.Galaxy.UnitGenerationDescriptor", Type.EmptyTypes);
     internal void Storyteller(string name) => Require(name, "Source.Simulation.World.POI.", "Source.Simulation.World.PoiStoryteller",
         new[] { _assembly.GetType("Source.Galaxy.MapPointOfInterest", true)! });
+    internal void AutoActions(string name) => Require(name + "Actions", "Source.SpaceShip.Auto.", "Source.SpaceShip.AutoActions",
+        new[] { _assembly.GetType("Behaviour.Unit.AbstractUnit", true)! });
     internal static void Unit(string name)
     {
         if (name != "SpaceShip" && name != "Turret" && name != "CombatStationPart") throw new InvalidDataException("Unsupported native unit selector.");

@@ -10,6 +10,7 @@ internal sealed partial class WorldJsonInspection
     {
         var kind = Text(descriptor, "type");
         _nested.Descriptor(kind);
+        CheckAutoActions(descriptor);
         if (kind == "FixedPayloadDescriptor")
         {
             Text(descriptor, "fixedUnit");
