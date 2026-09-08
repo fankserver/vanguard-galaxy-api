@@ -129,7 +129,7 @@ namespace Source.Galaxy.POI
 }
 namespace Behaviour.Unit
 {
-    public sealed class SpaceShip
+    public sealed partial class SpaceShip
     {
         public Source.SpaceShip.SpaceShipData? spaceShipData { get; set; }
     }

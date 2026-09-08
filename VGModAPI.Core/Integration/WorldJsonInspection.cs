@@ -25,6 +25,7 @@ internal sealed partial class WorldJsonInspection
     private readonly MethodInfo _parse;
     private readonly WorldSaveFormat _format;
     private readonly WorldNestedTypeCatalog _nested;
+    private readonly WorldNativeAssetInspection _assets;
     private readonly PropertyInfo _isNull;
     internal void SealSnapshot(object root, bool owned) => _format.Seal(root, owned);
     internal void UnsealVerified(object root, bool owned) => _format.UnsealVerified(root, owned);
@@ -34,6 +35,7 @@ internal sealed partial class WorldJsonInspection
     {
         _format = new WorldSaveFormat(assembly);
         _nested = new WorldNestedTypeCatalog(assembly);
+        _assets = new WorldNativeAssetInspection(assembly);
         _objectType = assembly.GetType("LightJson.JsonObject", true)!;
         var value = assembly.GetType("LightJson.JsonValue", true)!;
         _parse = value.GetMethod("Parse", BindingFlags.Public | BindingFlags.Static, null, new[] { typeof(string) }, null)
@@ -130,7 +132,12 @@ internal sealed partial class WorldJsonInspection
                 var hazard = Field(item, "hazard");
                 if (!(bool)_isNull.GetValue(hazard)!) { visit(); CheckHazard(Object(hazard)); }
             });
-            OptionalArray(parent, "units", item => { WorldNestedTypeCatalog.Unit(Text(item, "type")); CheckAutoActions(item); });
+            OptionalArray(parent, "units", item =>
+            {
+                var kind = Text(item, "type"); WorldNestedTypeCatalog.Unit(kind);
+                if (kind == "SpaceShip") _assets.Ship(Text(item, "shipClass"));
+                CheckAutoActions(item);
+            });
         }
         Bodies(poi);
         OptionalArray(poi, "guardDescriptors", item => CheckDescriptor(item));

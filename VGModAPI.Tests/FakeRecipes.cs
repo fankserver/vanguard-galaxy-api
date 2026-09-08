@@ -31,7 +31,7 @@ namespace Behaviour.Item.Builder
 }
 namespace Behaviour.Equipment.Builder
 {
-    public sealed class EquipmentBuilder { public string identifier { get; set; } = "equipment"; public Behaviour.Item.InventoryItemType prefab { get; set; } = new(); }
+    public sealed partial class EquipmentBuilder { public string identifier { get; set; } = "equipment"; public Behaviour.Item.InventoryItemType prefab { get; set; } = new(); }
 }
 namespace Behaviour.Mining
 {

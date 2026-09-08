@@ -13,7 +13,22 @@ namespace Source.Hazard
     public sealed class KnownHazardData : HazardData { public KnownHazardData() => throw new Exception("Must not construct hazards during inspection"); }
 }
 namespace Source.Util { public enum GameplayType { Combat, Trade } }
-namespace Behaviour.Unit { public enum UnitRank { Rookie } public abstract class AbstractUnit { } }
+namespace Behaviour.Unit
+{
+    public enum UnitRank { Rookie }
+    public abstract class AbstractUnit { }
+    public sealed partial class SpaceShip : AbstractUnit
+    {
+        public static Dictionary<string, SpaceShip> allShips = new() { ["NativeShip"] = new SpaceShip() };
+    }
+}
+namespace Behaviour.Equipment.Builder
+{
+    public sealed partial class EquipmentBuilder
+    {
+        private static readonly Dictionary<string, EquipmentBuilder> allBuilders = new() { ["Native"] = new EquipmentBuilder() };
+    }
+}
 namespace Source.SpaceShip { public abstract class AutoActions { } }
 namespace Source.SpaceShip.Auto
 {
@@ -115,6 +130,8 @@ namespace VGModAPI.Tests
             Assert.Throws<InvalidDataException>(() => catalog.EnumName("Source.Combat.DamageType", "Unknown"));
         }
         [Theory]
+        [InlineData("fixedUnit", "NativeShip", true)]
+        [InlineData("fixedUnit", "MissingShip", false)]
         [InlineData("rank", "Rookie", true)]
         [InlineData("rank", "0", false)]
         [InlineData("rank", "Unknown", false)]
@@ -131,6 +148,18 @@ namespace VGModAPI.Tests
             var inspection = new WorldJsonInspection(typeof(JsonObject).Assembly);
             if (valid) Assert.Single(inspection.Read(root));
             else Assert.Throws<InvalidDataException>(() => inspection.Read(root));
+        }
+        [Fact]
+        public void AssetInspectionPreservesNativeRegistryAndDoesNotBuild()
+        {
+            var assets = new WorldNativeAssetInspection(typeof(JsonObject).Assembly);
+            var registry = Behaviour.Unit.SpaceShip.allShips;
+            var ship = registry["NativeShip"];
+            assets.Ship("NativeShip"); assets.Equipment("Native");
+            Assert.Throws<InvalidDataException>(() => assets.Ship("MissingShip"));
+            Assert.Throws<InvalidDataException>(() => assets.Equipment("MissingBuilder"));
+            Assert.Same(registry, Behaviour.Unit.SpaceShip.allShips);
+            Assert.Same(ship, registry["NativeShip"]); Assert.Single(registry);
         }
         [Fact]
         public void UnitDispatchRemainsTheInspectedClosedSwitch()

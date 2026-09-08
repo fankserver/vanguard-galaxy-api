@@ -13,7 +13,7 @@ internal sealed partial class WorldJsonInspection
         CheckAutoActions(descriptor);
         if (kind == "FixedPayloadDescriptor")
         {
-            Text(descriptor, "fixedUnit");
+            _assets.Ship(Text(descriptor, "fixedUnit"));
             Number(descriptor, "unitCount", 0, 128, true);
             OptionalNumber(descriptor, "overrideLevel", 1, 10000, true);
             OptionalNumber(descriptor, "bonusEquipChance", 0, 1, false);
@@ -21,7 +21,7 @@ internal sealed partial class WorldJsonInspection
             OptionalEnum(descriptor, "loadout", "Source.Util.GameplayType");
             if (!(bool)_isNull.GetValue(Field(descriptor, "bonusEquipBuilderId"))!)
             {
-                Text(descriptor, "bonusEquipBuilderId");
+                _assets.Equipment(Text(descriptor, "bonusEquipBuilderId"));
                 Number(descriptor, "bonusEquipChance", 0, 1, false);
             }
         }
