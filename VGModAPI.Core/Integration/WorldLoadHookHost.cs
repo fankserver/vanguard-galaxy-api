@@ -50,7 +50,13 @@ internal sealed partial class WorldLoadHookHost : IWorldLoadHookHost, IDisposabl
         if (_disposed || _factoryRejected || prepared == null) return null;
         long revision = _providerRevision();
         // Staged loading can yield after construction; readiness must retain the original assets.
-        prepared.ValidateAssets();
+        try { prepared.ValidateAssets(); }
+        catch
+        {
+            _factoryRejected = true;
+            _gate.Invalidate();
+            throw;
+        }
         var current = _hub.CurrentSession;
         return !_disposed && !_factoryRejected && ReferenceEquals(prepared, _prepared) && prepared.Session == session && current?.Id == session &&
             (current.Phase == SessionPhase.Starting || current.Phase == SessionPhase.PlayerReady || current.Phase == SessionPhase.GameplayInitialized) &&

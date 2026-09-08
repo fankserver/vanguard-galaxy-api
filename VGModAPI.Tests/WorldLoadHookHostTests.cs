@@ -9,6 +9,7 @@ using Xunit;
 
 namespace VGModAPI.Tests;
 
+[Collection("World native assets")]
 public sealed class WorldLoadHookHostTests
 {
     [Fact]
@@ -44,16 +45,21 @@ public sealed class WorldLoadHookHostTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void PreparedLoadAndFactoryRemainAttemptScoped(bool repeatRecall)
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public void PreparedLoadAndFactoryRemainAttemptScoped(bool repeatRecall, bool replaceAsset)
     {
+        string assetId = "host-" + Guid.NewGuid().ToString("N");
+        var asset = new Behaviour.Unit.SpaceShip();
+        Behaviour.Unit.SpaceShip.allShips.Add(assetId, asset);
         string dir = Path.Combine(Path.GetTempPath(), "vg-world-host-" + Guid.NewGuid().ToString("N"));
         string text = "fixture-" + Guid.NewGuid().ToString("N"); Directory.CreateDirectory(dir);
         try
         {
             var identity = new WorldObjectIdentity(new ContentDeclaration("author.one", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
-            var poi = new JsonObject { Text = "poi", ["guid"] = new(identity.NativeId), ["type"] = new("Combat"), ["systemName"] = new("system-a") };
+            var poi = new JsonObject { Text = "poi", ["guid"] = new(identity.NativeId), ["type"] = new("Combat"), ["systemName"] = new("system-a"),
+                ["guardDescriptors"] = new(new List<JsonValue> { new(new JsonObject { ["type"] = new("FixedPayloadDescriptor"), ["fixedUnit"] = new(assetId), ["unitCount"] = new(1) }) }) };
             var system = new JsonObject { ["guid"] = new("system-a"), ["pointsOfInterest"] = new(new List<JsonValue> { new(poi) }) };
             var map = new JsonObject { ["systems"] = new(new List<JsonValue> { new(system) }) };
             var root = new JsonObject { Text = text, ["Version"] = new(WorldSaveFormat.Marker), [WorldSaveFormat.OriginalVersion] = new("0.8.2.3"), ["Player"] = new(new JsonObject { ["map"] = new(map) }) };
@@ -85,6 +91,15 @@ public sealed class WorldLoadHookHostTests
             var definition = prepared.Generation.DefinitionFor(Assert.Single(prepared.Generation.Rows));
             Assert.True(host.ConstructedBy(prepared, new WorldSnapshotInstance(native, identity, "system-a", definition)));
             Assert.False(host.ConstructedBy(prepared, new WorldSnapshotInstance(new Source.Galaxy.POI.Combat { guid = identity.NativeId }, identity, "system-a", definition)));
+            if (replaceAsset)
+            {
+                Behaviour.Unit.SpaceShip.allShips[assetId] = new Behaviour.Unit.SpaceShip();
+                Assert.Throws<InvalidDataException>(() => host.PreparedFor(session));
+                Behaviour.Unit.SpaceShip.allShips[assetId] = asset;
+                Assert.Null(host.PreparedFor(session));
+                Assert.Throws<InvalidDataException>(() => host.RequireFactory(new JsonValue(poi)));
+                return;
+            }
             if (repeatRecall)
             {
                 Assert.Throws<InvalidDataException>(() => host.BeginFactory(new JsonValue(poi)));
@@ -99,6 +114,6 @@ public sealed class WorldLoadHookHostTests
             Assert.Equal(SessionPhase.PlayerReady, hub.CurrentSession!.Phase);
             host.Dispose(); Assert.Null(host.PreparedFor(session));
         }
-        finally { JsonValue.ParseFixtures.TryRemove(text, out _); Directory.Delete(dir, true); }
+        finally { Behaviour.Unit.SpaceShip.allShips.Remove(assetId); JsonValue.ParseFixtures.TryRemove(text, out _); Directory.Delete(dir, true); }
     }
 }
