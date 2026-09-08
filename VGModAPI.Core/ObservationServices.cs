@@ -1,0 +1,133 @@
+using System;
+
+namespace VGModAPI.Core;
+
+internal sealed class LifecycleServiceView : ILifecycleService, IDisposable
+{
+    private readonly LifecycleHub _hub;
+    private readonly ServiceSubscriptions<LifecycleEvent> _events;
+    private readonly IServiceStatus _sessionTracking, _saveOutcomes;
+    internal LifecycleServiceView(LifecycleHub hub)
+    {
+        _hub = hub;
+        _sessionTracking = hub.Services.Get("session-lifecycle");
+        _saveOutcomes = hub.Services.Get("save-outcomes");
+        _events = new ServiceSubscriptions<LifecycleEvent>(hub, hub.Subscribe, Deliver,
+            () => SessionTracking.Availability.IsAvailable || SaveOutcomes.Availability.IsAvailable);
+    }
+    public IServiceStatus SessionTracking { get { _hub.CheckThread(); return _sessionTracking; } }
+    public IServiceStatus SaveOutcomes { get { _hub.CheckThread(); return _saveOutcomes; } }
+    public SessionSnapshot? CurrentSession
+    {
+        get
+        {
+            var session = _hub.CurrentSession;
+            return SessionTracking.Availability.IsAvailable || session?.Phase == SessionPhase.Invalidated ? session : null;
+        }
+    }
+    public bool IsDispatchingCallbacks => _hub.IsDispatchingCallbacks;
+    public event Action<LifecycleEvent>? Changed { add => _events.Add(value); remove => _events.Remove(value); }
+    private bool Deliver(LifecycleEvent fact) => fact.Kind == LifecycleEventKind.SessionInvalidated ||
+        (fact.Kind >= LifecycleEventKind.SaveStarted ? SaveOutcomes : SessionTracking).Availability.IsAvailable;
+    public void Dispose() => _events.Dispose();
+}
+
+internal abstract class ObservationServiceView : IServiceStatus
+{
+    protected readonly LifecycleHub Hub;
+    private readonly IServiceStatus _status;
+    protected ObservationServiceView(LifecycleHub hub, string feature)
+    { Hub = hub; _status = hub.Services.Get(feature); }
+    public ServiceAvailability Availability => _status.Availability;
+    public event Action<ServiceAvailability>? AvailabilityChanged
+    { add => _status.AvailabilityChanged += value; remove => _status.AvailabilityChanged -= value; }
+    protected void RequireBoundSource(object? source)
+    {
+        if (source == null && Availability.IsAvailable)
+            throw new ArgumentException("An available observation service requires its bound source.", nameof(source));
+    }
+    protected bool InSession(Guid sessionId)
+    {
+        var session = Hub.CurrentSession;
+        return Availability.IsAvailable && session?.Id == sessionId &&
+            session.Phase != SessionPhase.Invalidated && session.Phase != SessionPhase.Failed;
+    }
+}
+
+internal sealed class MissionServiceView : ObservationServiceView, IMissionService, IDisposable
+{
+    private readonly IVersionSensitiveMissionAccess? _native;
+    private readonly IServiceStatus _identityContinuity;
+    private readonly ServiceSubscriptions<MissionTransition> _events;
+    internal MissionServiceView(LifecycleHub hub, IMissionEvents? source) : base(hub, "mission-transitions")
+    {
+        RequireBoundSource(source);
+        _native = source as IVersionSensitiveMissionAccess;
+        _identityContinuity = hub.Services.Get("mission-continuity");
+        _events = new ServiceSubscriptions<MissionTransition>(hub, source == null ? null : source.Subscribe,
+            fact => InSession(fact.Mission.SessionId), () => Availability.IsAvailable);
+    }
+    public IServiceStatus IdentityContinuity { get { Hub.CheckThread(); return _identityContinuity; } }
+    public event Action<MissionTransition>? Transitioned { add => _events.Add(value); remove => _events.Remove(value); }
+    public bool TryGetNative(MissionSnapshot snapshot, out object? native)
+    {
+        Hub.CheckThread();
+        if (snapshot == null) throw new ArgumentNullException(nameof(snapshot));
+        native = null;
+        return InSession(snapshot.SessionId) && _native != null && _native.TryGetNative(snapshot, out native);
+    }
+    public void Dispose() => _events.Dispose();
+}
+
+internal sealed class TravelServiceView : ObservationServiceView, ITravelService, IDisposable
+{
+    private readonly ITravelEvents? _source;
+    private readonly ServiceSubscriptions<TravelTransition> _events;
+    internal TravelServiceView(LifecycleHub hub, ITravelEvents? source) : base(hub, "native-travel")
+    {
+        RequireBoundSource(source);
+        _source = source;
+        _events = new ServiceSubscriptions<TravelTransition>(hub, source == null ? null : source.Subscribe,
+            fact => InSession(fact.SessionId), () => Availability.IsAvailable);
+    }
+    public Guid? SessionId
+    {
+        get
+        {
+            Hub.CheckThread();
+            if (!Availability.IsAvailable) return null;
+            var id = _source?.SessionId;
+            return id.HasValue && InSession(id.Value) ? id : null;
+        }
+    }
+    public TravelLocation? CurrentLocation => SessionId.HasValue ? _source?.CurrentLocation : null;
+    public bool IsDispatchingCallbacks { get { Hub.CheckThread(); return Hub.IsDispatchingCallbacks || (Availability.IsAvailable && (_source?.IsDispatchingCallbacks ?? false)); } }
+    public event Action<TravelTransition>? Transitioned { add => _events.Add(value); remove => _events.Remove(value); }
+    public void Dispose() => _events.Dispose();
+}
+
+internal sealed class StationServiceView : ObservationServiceView, IStationService, IDisposable
+{
+    private readonly IStationEvents? _source;
+    private readonly ServiceSubscriptions<StationTransition> _events;
+    internal StationServiceView(LifecycleHub hub, IStationEvents? source) : base(hub, "native-travel")
+    {
+        RequireBoundSource(source);
+        _source = source;
+        _events = new ServiceSubscriptions<StationTransition>(hub, source == null ? null : source.Subscribe,
+            fact => InSession(fact.SessionId), () => Availability.IsAvailable);
+    }
+    public Guid? SessionId
+    {
+        get
+        {
+            Hub.CheckThread();
+            if (!Availability.IsAvailable) return null;
+            var id = _source?.SessionId;
+            return id.HasValue && InSession(id.Value) ? id : null;
+        }
+    }
+    public bool IsDispatchingCallbacks { get { Hub.CheckThread(); return Hub.IsDispatchingCallbacks || (Availability.IsAvailable && (_source?.IsDispatchingCallbacks ?? false)); } }
+    public event Action<StationTransition>? Transitioned { add => _events.Add(value); remove => _events.Remove(value); }
+    public void Dispose() => _events.Dispose();
+}
