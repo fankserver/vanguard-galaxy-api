@@ -41,7 +41,7 @@ internal static class NativeTypeName
         }
         // Generic parameters have no FullName; their Name can never match a catalog entry, which is
         // the correct outcome (a binding must never resolve to an open generic member).
-        return type.FullName ?? type.Name;
+        return (type.FullName ?? type.Name).Replace('+', '/');
     }
 
     /// <summary>True when the reflected type is exactly the declared native type.</summary>

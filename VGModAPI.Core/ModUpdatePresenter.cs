@@ -1,66 +1,63 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace VGModAPI.Core;
 
 internal sealed class ModUpdatePresenter
 {
     private readonly ModUpdateService _service;
-    private readonly Action<bool> _setAutomatic;
-    private string? _confirmation;
-    internal bool Confirming => _confirmation != null;
-    internal bool ConfirmingAutomatic => _confirmation == "automatic";
-    internal bool Automatic => _service.Automatic;
-    internal ModUpdatePresenter(ModUpdateService service, Action<bool> setAutomatic) { _service = service; _setAutomatic = setAutomatic; }
-    internal void Cancel() => _confirmation = null;
-    internal void Sync(System.Collections.Generic.IReadOnlyList<ModInformation> mods) => _service.Sync(mods);
-    internal bool Check(ModInformation mod)
+    internal ModUpdatePresenter(ModUpdateService service) => _service = service;
+    internal void Sync(IReadOnlyList<ModInformation> mods) => _service.Sync(mods);
+    internal bool Check(ModInformation mod) => CanCheck(mod) && _service.Request(mod.PluginId);
+    internal void CheckAll(IReadOnlyList<ModInformation> mods)
     {
-        var key = "manual:" + ModUpdateCache.Key(mod);
-        if (!_service.Enabled || !ModUpdateHosts.Allowed(mod.Metadata?.UpdateUrl ?? "")) { Cancel(); return false; }
-        if (_confirmation != key) { _confirmation = key; return false; }
-        Cancel(); return _service.Request(mod.PluginId);
+        Sync(mods);
+        foreach (var mod in mods) Check(mod);
     }
-    internal void ToggleAutomatic()
+    internal ModUpdateState State(ModInformation mod) => _service.Enabled ? _service.Status(mod).State : ModUpdateState.Failed;
+    internal string Label(ModInformation mod) => State(mod) switch
     {
-        if (!_service.Enabled) return;
-        if (_service.Automatic) { _setAutomatic(false); _service.Automatic = false; Cancel(); return; }
-        if (_confirmation != "automatic") { _confirmation = "automatic"; return; }
-        _setAutomatic(true); _service.Automatic = true; Cancel();
+        ModUpdateState.NoSource => "No update information",
+        ModUpdateState.NotChecked => "Waiting to check",
+        ModUpdateState.Checking => "Checking...",
+        ModUpdateState.Current => "Up to date",
+        ModUpdateState.Available => "Update available",
+        ModUpdateState.InstalledAhead => "Newer than published",
+        _ => "Update check failed"
+    };
+    internal int AvailableCount(IReadOnlyList<ModInformation> mods) => mods.Count(mod => State(mod) == ModUpdateState.Available);
+    internal string Summary(IReadOnlyList<ModInformation> mods)
+    {
+        if (mods.Count == 0) return "No mods to show";
+        var parts = new List<string> { mods.Count + (mods.Count == 1 ? " mod" : " mods") };
+        var available = AvailableCount(mods);
+        var failed = mods.Count(mod => State(mod) is ModUpdateState.Invalid or ModUpdateState.Failed or ModUpdateState.RateLimited);
+        var pending = mods.Count(mod => State(mod) is ModUpdateState.NotChecked or ModUpdateState.Checking);
+        if (available > 0) parts.Add(available + (available == 1 ? " update available" : " updates available"));
+        if (failed > 0) parts.Add(failed + (failed == 1 ? " update check failed" : " update checks failed"));
+        if (pending > 0) parts.Add("Checking for updates...");
+        if (mods.All(mod => State(mod) == ModUpdateState.Current)) parts.Add("All up to date");
+        return string.Join("  |  ", parts);
     }
     internal string Text(ModInformation mod, DateTimeOffset now)
     {
-        if (Confirming)
-            return "NETWORK CONFIRMATION\nSelected feed host: " + FeedHost(mod) + "\n" + (_confirmation == "automatic" ? "Enable automatic checks for declared feeds of all API consumers.\n" : "Check this mod's declared feed once.\n") +
-                "Requests expose your IP address and requested feed path to GitHub hosts and validated GitHub redirects. No saves, profile, machine ID or full inventory is sent.\n" +
-                "Supported hosts: github.com, raw.githubusercontent.com, objects.githubusercontent.com, release-assets.githubusercontent.com.\n" +
-                "Automatic checks repeat at most every six hours after success. Disabling stops future checks; in-flight checks may finish.\n" +
-                "Press the same button again to confirm. Select another mod or close to cancel. No downloads or installations.";
         var status = _service.Status(mod);
-        var label = !_service.Enabled ? "Disabled globally" : status.State switch
-        {
-            ModUpdateState.NoSource => "No update source",
-            ModUpdateState.NotChecked => "Not checked",
-            ModUpdateState.Checking => "Checking",
-            ModUpdateState.Current => "Up to date at last successful check",
-            ModUpdateState.Available => "Update available at last successful check",
-            ModUpdateState.InstalledAhead => "Installed version ahead; no downgrade recommended",
-            ModUpdateState.Invalid => "Invalid feed or unsupported source",
-            ModUpdateState.RateLimited => "Rate limited; retry delayed",
-            _ => "Check failed; not an up-to-date result"
-        };
-        var result = "Update check: " + label + "\nAutomatic checks: " + (Automatic ? "on" : "off") + "\n";
-        if (status.LastSuccess != null)
-            result += "Last successful feed: " + status.LastSuccess.Version + " at " + status.CheckedAt!.Value.ToString("u") +
-                (now - status.CheckedAt.Value >= TimeSpan.FromHours(6) || status.State is ModUpdateState.Failed or ModUpdateState.RateLimited or ModUpdateState.Invalid ? " (stale)" : " (cached)") + "\n";
-        if (status.RetryAt > now) result += "Next permitted check: " + status.RetryAt.Value.ToString("u") + "\n";
-        return result + "A newer release does not prove API, game or save compatibility.\n";
+        var latest = status.LastSuccess?.Version.ToString() ?? "Unknown";
+        var result = "Installed: " + mod.InstalledVersion + "    Latest: " + latest + "\n" + Label(mod);
+        if (!_service.Enabled) return result + " - update checking unavailable.";
+        if (status.State is ModUpdateState.Failed or ModUpdateState.Invalid or ModUpdateState.RateLimited)
+            result += status.RetryAt > now ? ". Will retry later." : ". Try again.";
+        if (status.CheckedAt.HasValue)
+            result += "\nLast checked: " + status.CheckedAt.Value.ToLocalTime().ToString("g");
+        return result;
     }
-    private static string FeedHost(ModInformation mod) => ModUpdateHosts.Allowed(mod.Metadata?.UpdateUrl ?? "") ? new Uri(mod.Metadata!.UpdateUrl!).IdnHost : "none supported";
     internal bool CanCheck(ModInformation mod) => _service.Enabled && ModUpdateHosts.Allowed(mod.Metadata?.UpdateUrl ?? "");
+    internal bool CanRequest(ModInformation mod, DateTimeOffset now) => CanCheck(mod) &&
+        State(mod) != ModUpdateState.Checking && !(_service.Status(mod).RetryAt > now);
     internal bool OpenRelease(ModInformation mod, Action<string> open)
     {
         var status = _service.Status(mod);
-        // Last-success data remains readable after a failure, but only current available results offer a release action.
         if (status.State != ModUpdateState.Available || status.LastSuccess == null || !ModMetadataCodec.IsPublicHttpsUrl(status.LastSuccess.ReleaseUrl)) return false;
         open(status.LastSuccess.ReleaseUrl); return true;
     }

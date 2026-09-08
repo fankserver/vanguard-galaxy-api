@@ -296,7 +296,7 @@ function Assert-ModInformationProbeReceipt([string]$Root, $Provenance) {
     if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'mod-information-probe-v3' -or $lines[2] -cnotmatch '^sha256=[0-9a-f]{64}$') { throw 'Invalid information probe receipt.' }
     if ((Get-FileHash -LiteralPath $snapshot -Algorithm SHA256).Hash.ToLowerInvariant() -cne $lines[2].Substring(7)) { throw 'Information probe evidence changed.' }
     $facts = @(Get-Content -LiteralPath $snapshot)
-    foreach ($fact in @('controlled-default-manual-coalescing-cooldown','controlled-six-hour-automatic-disable','controlled-dns-tls-timeout-retain-last-success','controlled-rate-limit','controlled-disk-cache-expiry-channel-installed-version','controlled-invalid-oversized-channel-redirect-policy','controlled-quit-mid-check','wire-platform-tls-parser-stable','wire-platform-tls-parser-experimental','wire-https-redirect','wire-invalid-oversized-channel-rejected','wire-dns-name-resolution-failure','wire-tls-untrusted-certificate-rejected','wire-stalled-handshake-canceled','unity-main-thread-menu-responsive','inventory-two-real-consumers-without-metadata','inventory-malformed-wrong-guid-isolated','gameplay-two-loads-return-single-entry','real-stockpile-ui-journal-coexistence','new-game-save-load-return','ui-confirmed-manual-without-automatic-browser','ui-confirmed-automatic-and-opt-out','ui-explicit-default-browser-release','ui-scale-restored','actual-api-unavailable-loader-presence')) {
+    foreach ($fact in @('controlled-default-manual-coalescing-cooldown','controlled-six-hour-automatic-disable','controlled-dns-tls-timeout-retain-last-success','controlled-rate-limit','controlled-disk-cache-expiry-channel-installed-version','controlled-invalid-oversized-channel-redirect-policy','controlled-quit-mid-check','wire-platform-tls-parser-stable','wire-platform-tls-parser-experimental','wire-https-redirect','wire-invalid-oversized-channel-rejected','wire-dns-name-resolution-failure','wire-tls-untrusted-certificate-rejected','wire-stalled-handshake-canceled','unity-main-thread-menu-responsive','inventory-two-real-consumers-without-metadata','inventory-malformed-wrong-guid-isolated','gameplay-two-loads-return-single-entry','real-stockpile-ui-journal-coexistence','new-game-save-load-return','ui-immediate-refresh-without-automatic-browser','ui-automatic-checks-without-toggle','ui-explicit-default-browser-release','ui-scale-restored','actual-api-unavailable-loader-presence')) {
         if (@($facts | Where-Object { $_ -ceq ($fact + '=PASS') }).Count -ne 1) { throw "Missing or duplicate information probe fact: $fact" }
     }
 }
@@ -330,7 +330,7 @@ function Assert-ModMenuProbeReceipt([string]$Root, $Provenance) {
     $lines = @(Get-Content -LiteralPath $receipt)
     if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'mod-menu-probe-v3' -or $lines[2] -cnotmatch '^sha256=[0-9a-f]{64}$') { throw 'Invalid mod menu probe receipt.' }
     if ((Get-FileHash -LiteralPath $snapshot -Algorithm SHA256).Hash.ToLowerInvariant() -cne $lines[2].Substring(7)) { throw 'Mod menu probe evidence changed.' }
-    $images = @('mod-menu-original.png','mod-menu-1280.png','mod-update-disclosure.png')
+    $images = @('mod-menu-original.png','mod-menu-1280.png','mod-update-status.png')
     if ($Provenance.PSObject.Properties['modInformationProbe'] -and $Provenance.modInformationProbe) { $images += @('mod-menu-scale.png','mod-api-unavailable.png') }
     foreach ($name in $images) {
         $image = Join-Path $Root $name

@@ -18,7 +18,7 @@ namespace VGModAPI.Qualification;
 public sealed partial class Plugin
 {
     private IEnumerable<object?> ModInformationUi(Keyboard keyboard, Mouse mouse, Button entry, GameObject panel,
-        Button row, Button check, Button automatic, TMP_Text details, Action<string> record, System.Text.StringBuilder images)
+        Button row, Button check, TMP_Text details, Action<string> record, System.Text.StringBuilder images)
     {
         var events = EventSystem.current;
         events.SetSelectedGameObject(entry.gameObject);
@@ -28,7 +28,7 @@ public sealed partial class Plugin
         var apiPlugin = Chainloader.PluginInfos[ModApi.PluginId].Instance;
         var service = (ModUpdateService)AccessTools.Field(apiPlugin.GetType(), "_updates").GetValue(apiPlugin)!;
         var selected = ModApi.Mods!.Snapshot.Single(item => item.PluginId == Id);
-        var release = panel.GetComponentsInChildren<Button>().Single(button => button.name == "Release link");
+        var release = panel.GetComponentsInChildren<Button>(true).Single(button => button.name == "Release link");
         var module = AccessTools.Field(apiPlugin.GetType(), "_modMenu").GetValue(apiPlugin)!;
         var lifetime = AccessTools.Field(module.GetType(), "_lifetime").GetValue(module)!;
         var view = AccessTools.Field(lifetime.GetType(), "_view").GetValue(lifetime)!;
@@ -55,24 +55,25 @@ public sealed partial class Plugin
         var background = Application.runInBackground;
         try
         {
-            Require(!release.interactable && launches == 0, "Unchecked mod can launch a release.");
+            Require(service.Automatic && launches == 0, "Automatic checks must run without opening a browser.");
+            // Use a successful, cooldown-expired entry: automatic refresh is not due for six hours.
+            // A new completion here must therefore come from this single manual activation.
+            foreach (var frame in Wait(() => service.Status(selected).State == ModUpdateState.Available &&
+                service.Status(selected).RetryAt <= DateTimeOffset.UtcNow, "eligible manual refresh")) yield return frame;
+            var previousCheck = service.Status(selected).CheckedAt;
+            Require(previousCheck.HasValue && previousCheck.Value.AddHours(6) > DateTimeOffset.UtcNow.AddMinutes(1),
+                "Automatic refresh is due; manual request evidence would be ambiguous.");
             events.SetSelectedGameObject(check.gameObject);
             foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
-            Require(details.text.Contains("NETWORK CONFIRMATION") && service.Status(selected).State == ModUpdateState.NotChecked, "First click performed network I/O.");
-            Require(events.currentSelectedGameObject == check.gameObject, "Disclosure rendering stole keyboard focus from Confirm check.");
-            foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
-            foreach (var frame in Wait(() => service.Status(selected).State == ModUpdateState.Available && release.interactable, "confirmed UI update")) yield return frame;
-            Require(launches == 0 && details.text.Contains("Update available"), "Update result opened a browser or was not presented.");
-            record("ui-confirmed-manual-without-automatic-browser");
-            events.SetSelectedGameObject(automatic.gameObject);
-            foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
-            Require(!service.Automatic, "Automatic mode enabled without confirmation.");
-            Require(events.currentSelectedGameObject == automatic.gameObject, "Automatic disclosure lost keyboard focus.");
-            foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
-            Require(service.Automatic, "Automatic confirmation did not enable the setting.");
-            foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
-            Require(!service.Automatic && launches == 0, "Automatic opt-out or browser isolation failed.");
-            record("ui-confirmed-automatic-and-opt-out");
+            Require(!details.text.Contains("NETWORK CONFIRMATION"), "Manual refresh requires confirmation.");
+            Require(events.currentSelectedGameObject == check.gameObject, "Manual refresh lost keyboard focus.");
+            foreach (var frame in Wait(() => service.Status(selected).State == ModUpdateState.Available && service.Status(selected).CheckedAt > previousCheck &&
+                release.gameObject.activeInHierarchy, "new manual UI update result")) yield return frame;
+            Require(launches == 0 && panel.GetComponentsInChildren<TMP_Text>().Single(text => text.name == "Update status").text.Contains("Update available") &&
+                !details.text.Contains("Update available"), "Update result must appear separately from the description without opening a browser.");
+            record("ui-immediate-refresh-without-automatic-browser");
+            Require(service.Automatic && !panel.GetComponentsInChildren<Button>(true).Any(button => button.name == "Automatic updates"), "Automatic checking must not have a player toggle.");
+            record("ui-automatic-checks-without-toggle");
             Application.runInBackground = true;
             armed = true;
             foreach (var frame in MenuClick(mouse, release.transform)) yield return frame;
@@ -102,10 +103,7 @@ public sealed partial class Plugin
         var adapter = (GameAdapter)AccessTools.Field(apiPlugin.GetType(), "_adapter").GetValue(apiPlugin)!;
         adapter.Guard(() => throw new InvalidOperationException("Controlled information qualification observer fault."));
         foreach (var frame in Wait(() => _api!.Capabilities.Any(capability => capability.Name == "session-lifecycle" && !capability.Available), "actual unavailable observer")) yield return frame;
-        var diagnostic = panel.GetComponentsInChildren<Button>().Single(button => button.name == "Diagnostics");
-        events.SetSelectedGameObject(diagnostic.gameObject);
-        foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
-        Require(details.text.Contains("Observer fault") && ModApi.Mods.Snapshot.Any(item => item.PluginId == ModApi.PluginId), "Unavailable API hid loader presence or diagnostics.");
+        Require(!details.text.Contains("Observer fault") && ModApi.Mods.Snapshot.Any(item => item.PluginId == ModApi.PluginId), "Unavailable API must preserve the mod list without exposing technical faults in player details.");
         var scroll = panel.GetComponentsInChildren<ScrollRect>().Single(item => item.name == "Selected details");
         scroll.verticalNormalizedPosition = 0;
         yield return null; yield return null;

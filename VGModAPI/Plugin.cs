@@ -13,7 +13,7 @@ using VGModAPI.Runtime;
 
 namespace VGModAPI;
 
-[BepInPlugin(ModApi.PluginId, "Vanguard Galaxy Mod API", PluginBuildVersion.Value)]
+[BepInPlugin(ModApi.PluginId, "Mod API", PluginBuildVersion.Value)]
 [BepInProcess("VanguardGalaxy.exe")]
 [BepInDependency("vgmodapi.qualification.guard", BepInDependency.DependencyFlags.SoftDependency)]
 public sealed partial class Plugin : BaseUnityPlugin
@@ -24,6 +24,14 @@ public sealed partial class Plugin : BaseUnityPlugin
     private PersistenceService? _persistence;
     private MissionAdapter? _missions;
     private TravelNativeAdapter? _travel;
+    private RecipeCatalogService? _recipes;
+    private BoardingObserver? _boarding;
+    private BoardingRuleAdapter? _boardingRules;
+    private BoardingCommandService? _boardingCommands;
+    private BoardingCombatService? _boardingCombat;
+    private DungeonContentService? _dungeons;
+    private DungeonStateStore? _dungeonState;
+    private DungeonContentAdapter? _dungeonAdapter;
     private StoryNativeWorld? _storyWorld;
     private StoryContentService? _story;
     private StoryProtection? _protection;
@@ -35,7 +43,6 @@ public sealed partial class Plugin : BaseUnityPlugin
     private ModMenuModule? _modMenu;
     private ModUpdateService? _updates;
     private ModUpdatePresenter? _updatePresenter;
-    private BepInEx.Configuration.ConfigEntry<bool>? _updatesEnabled, _automaticUpdates;
     private Assembly? _inspectedGameAssembly;
 
     private void Start()
@@ -50,11 +57,22 @@ public sealed partial class Plugin : BaseUnityPlugin
         _hub.SetCapability("save-outcomes", false, "Not bound.");
         _hub.SetCapability("world-ready", false, "No universal POI/UI-ready guarantee; GameplayInitialized is narrower.");
         _hub.SetCapability("native-travel", false, "Not bound; experimental.");
+        _hub.SetCapability("recipe-catalog", false, "Disabled or not bound; experimental.");
         _hub.SetCapability("save-data", false, "Not initialized; experimental.");
         _hub.SetCapability("mission-continuity", false, "Disabled by configuration; experimental.");
         _hub.SetCapability("mission-transitions", false, "Disabled by configuration; experimental.");
         _hub.SetCapability("owned-story", false, "Not initialized; experimental.");
         _hub.SetCapability("story-protection", false, "Not bound.");
+        _hub.SetCapability("boarding-observation", false, "Disabled by configuration; experimental.");
+        ModApi.Recipes = null;
+        ModApi.Boarding = null;
+        ModApi.BoardingRules = null;
+        ModApi.BoardingCommands = null;
+        ModApi.BoardingTactics = null; ModApi.BoardingCombat = null;
+        _hub.SetCapability("boarding-tactics", false, "Disabled by configuration; experimental.");
+        _hub.SetCapability("boarding-combat", false, "Disabled by configuration; experimental.");
+        _hub.SetCapability("boarding-commands", false, "Disabled by configuration; experimental.");
+        _hub.SetCapability("boarding-rules", false, "Disabled by configuration; experimental.");
         ModApi.Missions = null;
         ModApi.Story = null;
         ModApi.Bars = null;
@@ -98,6 +116,15 @@ public sealed partial class Plugin : BaseUnityPlugin
                 ["store"] = typeof(SavePatches.Store), ["writeFile"] = typeof(SavePatches.WriteFile),
                 ["writeMetadata"] = typeof(SavePatches.WriteMetadata), ["storeFailure"] = typeof(SavePatches.StoreFailure)
             });
+            if (Config.Bind("Recipes", "Enabled", false, "Experimental read-only Forge and refinery recipe catalog.").Value)
+                InstallRecipes(assembly);
+            if (Config.Bind("Boarding", "Enabled", false, "Experimental boarding observation and rules on the inspected game build.").Value)
+            {
+                InstallBoarding(bindings);
+                InstallBoardingRules(bindings);
+                InstallBoardingCommands(bindings);
+                InstallBoardingTactics(bindings);
+            }
             // Load safety, not a feature: an owned mission restored from a save must not progress or
             // pay out while nobody vouches for it, and that is true whether or not the story module is
             // enabled. Bound before anything else story-related, and on by default.
@@ -117,6 +144,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         }
         // Subscription order is contractual: coordinated owners restore before mission PlayerReady identity seeding.
         InitializePersistence();
+        InitializeDungeons();
         InitializeMissions();
         InitializeStory();
         InitializeBars();
@@ -128,11 +156,9 @@ public sealed partial class Plugin : BaseUnityPlugin
     {
         try
         {
-            _updatesEnabled = Config.Bind("ModUpdates", "Enabled", true, "Allow explicit update checks. No network unless manually confirmed or Automatic is enabled. Disable to stop future checks; in-flight requests may finish.");
-            _automaticUpdates = Config.Bind("ModUpdates", "Automatic", false, "Opt in to HTTPS feed requests for all declared API consumers, exposing IP and feed paths to GitHub hosts/redirects. No saves, profile, machine ID or full inventory sent. Six-hour success interval; no downloads or installs.");
             _updates = new ModUpdateService(new HttpModFeedTransport(), new ModUpdateCache(Path.Combine(Paths.CachePath, "VGModAPI-updates-v1")))
-                { Enabled = _updatesEnabled.Value, Automatic = _automaticUpdates.Value };
-            _updatePresenter = new ModUpdatePresenter(_updates, value => _automaticUpdates.Value = value);
+                { Enabled = true, Automatic = true };
+            _updatePresenter = new ModUpdatePresenter(_updates);
         }
         catch (Exception error) { Logger.LogWarning("Update checker unavailable (" + error.GetType().Name + "); offline inventory is unaffected."); }
     }
@@ -142,7 +168,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         _hub!.SetCapability("mod-information-menu", false, "Not bound; local catalog remains available.");
         try
         {
-            if (!Config.Bind("ModInformation", "MenuEnabled", true, "Show the Mods entry on the inspected native main menu. Inventory is offline; optional update requests have separate configuration and confirmation. Disable if another menu replacement conflicts.").Value)
+            if (!Config.Bind("ModInformation", "MenuEnabled", true, "Show the Mods entry on the inspected native main menu. Update checks run automatically without downloading or installing mods. Disable if another menu replacement conflicts.").Value)
             {
                 _hub.SetCapability("mod-information-menu", false, "Disabled by configuration; local catalog remains available.");
                 Logger.LogInfo("Mods menu disabled by configuration; ModApi.Mods remains available.");
@@ -150,8 +176,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             }
             var assembly = _inspectedGameAssembly
                 ?? throw new NotSupportedException("No inspected game assembly; local catalog remains available.");
-            _modMenu = new ModMenuModule(assembly, _modCatalog!, () => string.Join("\n", _hub.Capabilities.Select(capability =>
-                capability.Name + ": " + capability.Detail)), DisableModMenu, _updatePresenter);
+            _modMenu = new ModMenuModule(assembly, _modCatalog!, DisableModMenu, _updatePresenter);
             _hub.SetCapability("mod-information-menu", true, "Inspected native menu binding; UI qualification pending.");
         }
         catch (Exception error) { DisableModMenu(error); }
@@ -176,9 +201,6 @@ public sealed partial class Plugin : BaseUnityPlugin
         {
             if (_updates != null)
             {
-                _updates.Enabled = _updatesEnabled!.Value;
-                if (!_updates.Enabled) _updatePresenter?.Cancel();
-                _updates.Automatic = _automaticUpdates!.Value;
                 _updates.Pump();
             }
         }
@@ -186,7 +208,6 @@ public sealed partial class Plugin : BaseUnityPlugin
         {
             try { _updates?.Dispose(); } catch (Exception) { }
             _updates = null;
-            _updatePresenter?.Cancel();
             Logger.LogWarning("Update checker stopped (" + error.GetType().Name + "); offline inventory remains available.");
         }
         try { _modMenu?.Poll(); }
@@ -421,6 +442,197 @@ public sealed partial class Plugin : BaseUnityPlugin
         }
     }
 
+    private void InstallRecipes(System.Reflection.Assembly assembly)
+    {
+        try
+        {
+            var translate = assembly.GetType("Source.Util.Translation", true)!.GetMethod("Translate", new[] { typeof(string), typeof(object[]) })
+                ?? throw new MissingMethodException("Translation.Translate");
+            var source = new RecipeCatalogNativeSource(assembly,
+                (prefab, type) => prefab is UnityEngine.GameObject gameObject && gameObject != null ? gameObject.GetComponent(type) : null,
+                text => (string)translate.Invoke(null, new object[] { text, Array.Empty<object>() })!);
+            _recipes = new RecipeCatalogService(_hub!, source, error => Logger.LogError(error));
+            ModApi.Recipes = _recipes;
+            _hub!.SetCapability("recipe-catalog", true, "Experimental read-only definitions; not runtime-qualified.");
+        }
+        catch (Exception error)
+        {
+            _recipes?.Dispose(); _recipes = null; ModApi.Recipes = null;
+            _hub!.SetCapability("recipe-catalog", false, "Recipe catalog binding failed."); Logger.LogError(error);
+        }
+    }
+    private void InitializeDungeons()
+    {
+        _hub!.SetCapability("dungeon-content", false, "Experimental authored content is disabled.");
+        if (_boarding == null || !Config.Bind("Dungeons", "Enabled", false, "Experimental authored dungeon content; requires boarding and API save data.").Value) return;
+        try
+        {
+            if (_persistence == null) throw new NotSupportedException("API save data is required.");
+            var bindings = new GameBindings(Assembly.Load("Assembly-CSharp"));
+            _dungeonState = new DungeonStateStore(_hub, _persistence);
+            _dungeonAdapter = new DungeonContentAdapter(_hub, bindings, _boarding, _dungeonState);
+            _dungeons = new DungeonContentService(_hub, _dungeonAdapter.Catalogs(), _dungeonState, _dungeonAdapter.Bindings(), (owner, error) => Logger.LogError($"Dungeon provider '{owner}': {error}"));
+            DungeonContentPatches.Adapter = _dungeonAdapter; DungeonContentPatches.Json = new DungeonMarkerJson(bindings.Assembly);
+            var patches = new Dictionary<string, Type>
+            {
+                ["dungeonEntered"] = typeof(DungeonContentPatches.Entered), ["dungeonGuardTick"] = typeof(DungeonContentPatches.GuardTick),
+                ["dungeonResumeShip"] = typeof(DungeonContentPatches.Resumed), ["dungeonResumeLocation"] = typeof(DungeonContentPatches.Resumed),
+                ["dungeonSerialization"] = typeof(DungeonContentPatches.Serialization),
+                ["dungeonWalkCreated"] = typeof(DungeonContentPatches.WalkCreated),
+                ["dungeonHazard"] = typeof(DungeonContentPatches.Hazard), ["dungeonReinforcements"] = typeof(DungeonContentPatches.Reinforcements),
+                ["dungeonLocationSave"] = typeof(DungeonContentPatches.SaveLocation), ["dungeonLocationLoad"] = typeof(DungeonContentPatches.LoadLocation),
+                ["dungeonShipLayout"] = typeof(DungeonContentPatches.ShipLayout), ["dungeonWalkLayout"] = typeof(DungeonContentPatches.WalkLayout),
+                ["dungeonShipDefenders"] = typeof(DungeonContentPatches.Defenders), ["dungeonWalkDefenders"] = typeof(DungeonContentPatches.Defenders)
+            };
+            InstallGroup("dungeon-content", bindings, DungeonNativeSchema.Methods.Where(b => patches.ContainsKey(b.Key)).ToArray(), patches);
+            if (!_hub.Capabilities.Any(c => c.Name == "dungeon-content" && c.Available)) throw new NotSupportedException("Dungeon hooks unavailable.");
+            ModApi.Dungeons = _dungeons;
+        }
+        catch (Exception error)
+        {
+            StopDungeons(); _hub.SetCapability("dungeon-content", false, error.GetType().Name); Logger.LogError(error);
+        }
+    }
+    private void StopDungeons()
+    {
+        DungeonContentPatches.Adapter = null; DungeonContentPatches.Json = null; ModApi.Dungeons = null;
+        _dungeons?.Dispose(); _dungeons = null; _dungeonAdapter?.Dispose(); _dungeonAdapter = null; _dungeonState?.Dispose(); _dungeonState = null;
+    }
+
+    private void InstallBoardingTactics(GameBindings bindings)
+    {
+        if (_boarding == null || ModApi.Boarding == null || _boardingCommands == null) return;
+        try
+        {
+            var tactics = new BoardingTacticalAdapter(_hub!, bindings, _boarding, ModApi.Boarding, _boardingCommands);
+            BoardingTacticalPatches.Adapter = tactics;
+            InstallGroup("boarding-tactics", bindings, BoardingTacticalBindings.Actions, BoardingTacticalBindings.Actions.ToDictionary(b => b.Key,
+                b => b.ReturnType == "System.Boolean" ? typeof(BoardingTacticalPatches.BoolAction) : typeof(BoardingTacticalPatches.VoidAction)));
+            if (!_hub!.Capabilities.Any(c => c.Name == "boarding-tactics" && c.Available)) throw new NotSupportedException("Tactical hooks unavailable.");
+            ModApi.BoardingTactics = tactics;
+        }
+        catch (Exception error)
+        {
+            BoardingTacticalPatches.Adapter = null; ModApi.BoardingTactics = null;
+            _hub!.SetCapability("boarding-tactics", false, error.GetType().Name); Logger.LogError(error);
+        }
+        try
+        {
+            _boardingCombat = new BoardingCombatService(_hub!, (owner, error) => Logger.LogError($"Boarding combat rule '{owner}': {error}"));
+            BoardingCombatPatches.Adapter = new BoardingCombatAdapter(_hub!, _boardingCombat, bindings);
+            var hooks = BoardingCombatBindings.Scopes.Concat(BoardingCombatBindings.Hooks).ToArray();
+            var scopeKeys = BoardingCombatBindings.Scopes.Select(b => b.Key).ToHashSet();
+            InstallGroup("boarding-combat", bindings, hooks, hooks.ToDictionary(b => b.Key, b => scopeKeys.Contains(b.Key) ? typeof(BoardingCombatPatches.Scope) : b.Key switch
+            {
+                "combatPlayerReinforcements" => typeof(BoardingCombatPatches.PlayerReinforcements),
+                "combatPower" => typeof(BoardingCombatPatches.Power), "combatHealth" => typeof(BoardingCombatPatches.Health),
+                "combatCasualties" => typeof(BoardingCombatPatches.Casualties),
+                "combatAttackerState" => typeof(BoardingCombatPatches.AttackerState),
+                "combatMoraleRecovery" or "combatMoraleGlobal" or "combatMoraleAttackers" or "combatMoraleCombat" => typeof(BoardingCombatPatches.Morale),
+                _ => b.ReturnType == "System.Boolean" ? typeof(BoardingCombatPatches.BoolEffect) : typeof(BoardingCombatPatches.VoidEffect)
+            }));
+            if (!_hub!.Capabilities.Any(c => c.Name == "boarding-combat" && c.Available)) throw new NotSupportedException("Combat hooks unavailable.");
+            ModApi.BoardingCombat = _boardingCombat;
+            if (BoardingCommandPatches.Adapter != null) BoardingCommandPatches.Adapter.ReinforcementAllowed = BoardingCombatPatches.Adapter.AllowPlayerReinforcement;
+        }
+        catch (Exception error)
+        {
+            BoardingCombatPatches.Adapter = null; _boardingCombat?.Dispose(); _boardingCombat = null; ModApi.BoardingCombat = null;
+            _hub!.SetCapability("boarding-combat", false, error.GetType().Name); Logger.LogError(error);
+        }
+    }
+
+    private void InstallBoardingCommands(GameBindings bindings)
+    {
+        _hub!.SetCapability("boarding-commands", false, "Boarding observation required; experimental.");
+        if (_boarding == null || ModApi.Boarding == null) return;
+        try
+        {
+            var adapter = new BoardingCommandAdapter(new BoardingCommandNativeBindings(bindings), _boarding, ModApi.Boarding,
+                value => value is UnityEngine.Object native && native != null);
+            _boardingCommands = new BoardingCommandService(_hub, ModApi.Boarding, adapter, () => (ModApi.BoardingRules?.IsEvaluating ?? false) || (_boardingCombat?.IsEvaluating ?? false));
+            BoardingCommandPatches.Adapter = adapter; BoardingCommandPatches.Service = _boardingCommands;
+            InstallGroup("boarding-commands", bindings, BoardingCommandBindings.Hooks, BoardingCommandBindings.Hooks.ToDictionary(b => b.Key, b => b.Key switch
+            {
+                "commandRemoveAssigned" => typeof(BoardingCommandPatches.RemoveAssigned),
+                "commandBeginWalk" => typeof(BoardingCommandPatches.BeginWalk),
+                "commandHudCancel" => typeof(BoardingCommandPatches.HudCancel),
+                "commandSerialization" => typeof(BoardingCommandPatches.Serialization),
+                "commandAutonomyHook" => typeof(BoardingCommandPatches.Autonomous),
+                _ => typeof(BoardingCommandPatches.Manual)
+            }));
+            if (!_hub.Capabilities.Any(c => c.Name == "boarding-commands" && c.Available)) throw new NotSupportedException("Boarding command hooks unavailable.");
+            ModApi.BoardingCommands = _boardingCommands;
+        }
+        catch (Exception error)
+        {
+            BoardingCommandPatches.Adapter = null; BoardingCommandPatches.Service = null;
+            _boardingCommands?.Dispose(); _boardingCommands = null; ModApi.BoardingCommands = null;
+            _hub.SetCapability("boarding-commands", false, error.GetType().Name); Logger.LogError(error);
+        }
+    }
+
+    private void InstallBoardingRules(GameBindings bindings)
+    {
+        if (!_hub!.Capabilities.Any(c => c.Name == "session-lifecycle" && c.Available)) return;
+        BoardingRuleService? rules = null;
+        try
+        {
+            rules = new BoardingRuleService(_hub, (owner, error) => Logger.LogError($"Boarding rule '{owner}': {error}"));
+            _boardingRules = new BoardingRuleAdapter(_hub, rules, bindings, value => value is UnityEngine.Object native && native != null, error => Logger.LogError(error), () => UnityEngine.Random.value);
+            BoardingRulePatches.Adapter = _boardingRules;
+            var patches = BoardingRuleBindings.Hooks.ToDictionary(binding => binding.Key, binding => binding.Key switch
+            {
+                "disable" => typeof(BoardingRulePatches.Disable), "scaling" => typeof(BoardingRulePatches.Scaling),
+                "damage" => typeof(BoardingRulePatches.Damage), "scuttle" => typeof(BoardingRulePatches.Scuttle),
+                "explosion" => typeof(BoardingRulePatches.Explosion),
+                "createShip" => typeof(BoardingRulePatches.CreateShip), "createWalk" => typeof(BoardingRulePatches.CreateWalk),
+                "estimate" => typeof(BoardingRulePatches.Estimate), "estimatePower" => typeof(BoardingRulePatches.EstimatePower),
+                _ => typeof(BoardingRulePatches.Cause)
+            });
+            InstallGroup("boarding-rules", bindings, BoardingRuleBindings.Hooks, patches);
+            if (!_hub.Capabilities.Any(c => c.Name == "boarding-rules" && c.Available)) throw new NotSupportedException("Boarding rules unavailable.");
+            ModApi.BoardingRules = rules;
+        }
+        catch (Exception error)
+        {
+            BoardingRulePatches.Adapter = null; _boardingRules?.Dispose(); _boardingRules = null; rules?.Dispose();
+            _hub.SetCapability("boarding-rules", false, "Boarding rules unavailable: " + error.GetType().Name); Logger.LogError(error);
+        }
+    }
+
+    private void InstallBoarding(GameBindings bindings)
+    {
+        if (!_hub!.Capabilities.Any(c => c.Name == "session-lifecycle" && c.Available)) return;
+        BoardingService? service = null;
+        try
+        {
+            service = new BoardingService(_hub, (owner, error) => Logger.LogError($"Boarding subscriber '{owner}': {error}"));
+            _boarding = new BoardingObserver(_hub, service, bindings.Assembly, value => value is UnityEngine.Object native && native != null, error => Logger.LogError(error));
+            BoardingPatches.Observer = _boarding;
+            var patches = BindingCatalog.Boarding.ToDictionary(binding => binding.Key, binding => binding.Key switch
+            {
+                "boardingShipReady" or "boardingLocationReady" => typeof(BoardingPatches.Target),
+                "boardingStartShip" or "boardingStartLocation" or "boardingResumeShip" or "boardingResumeLocation" or "boardingRestoreApproach" => typeof(BoardingPatches.Start),
+                "boardingCapture" => typeof(BoardingPatches.Capture),
+                "boardingLoot" or "boardingPartialLoot" or "boardingDataLoot" => typeof(BoardingPatches.Rewards),
+                "boardingInventoryDelivery" => typeof(BoardingPatches.Inventory),
+                "boardingCreditDelivery" => typeof(BoardingPatches.Credits),
+                "boardingWorldDelivery" => typeof(BoardingPatches.WorldLoot),
+                _ => typeof(BoardingPatches.Operation)
+            });
+            InstallGroup("boarding-observation", bindings, BindingCatalog.Boarding, patches);
+            if (!_hub.Capabilities.Any(c => c.Name == "boarding-observation" && c.Available)) throw new NotSupportedException("Boarding hooks unavailable.");
+            ModApi.Boarding = service;
+        }
+        catch (Exception error)
+        {
+            BoardingPatches.Observer = null; _boarding?.Dispose(); _boarding = null; service?.Dispose();
+            _hub.SetCapability("boarding-observation", false, "Boarding unavailable: " + error.GetType().Name);
+            Logger.LogError(error);
+        }
+    }
+
     private void InstallTravel(Assembly assembly, GameBindings bindings)
     {
         _hub!.SetCapability("native-travel", false, "Not bound.");
@@ -495,6 +707,7 @@ public sealed partial class Plugin : BaseUnityPlugin
 
     private void Update()
     {
+        _boarding?.Poll();
         _adapter?.Poll(); _missions?.Poll();
         if (_travel != null)
         {
@@ -523,6 +736,12 @@ public sealed partial class Plugin : BaseUnityPlugin
     private void OnDestroy()
     {
         StopBars();
+        StopDungeons();
+        BoardingTacticalPatches.Adapter = null; ModApi.BoardingTactics = null;
+        BoardingCombatPatches.Adapter = null; _boardingCombat?.Dispose(); _boardingCombat = null; ModApi.BoardingCombat = null;
+        BoardingCommandPatches.Adapter = null; BoardingCommandPatches.Service = null; _boardingCommands?.Dispose(); _boardingCommands = null; ModApi.BoardingCommands = null;
+        BoardingRulePatches.Adapter = null; _boardingRules?.Dispose(); _boardingRules = null; ModApi.BoardingRules = null;
+        BoardingPatches.Observer = null; _boarding?.Dispose(); _boarding = null; ModApi.Boarding = null;
         try { _updates?.Dispose(); } catch (Exception) { }
         try { _modMenu?.Dispose(); } catch (Exception error) { DisableModMenu(error); }
         _modMenu = null;
@@ -550,6 +769,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         LifecyclePatches.Adapter = null;
         SavePatches.Adapter = null;
         ModApi.Current = null;
+        _recipes?.Dispose(); _recipes = null; ModApi.Recipes = null;
         _hub?.Dispose();
         _adapter = null;
     }

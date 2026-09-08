@@ -69,7 +69,9 @@ public sealed partial class Plugin
             Require(panel.GetComponentsInChildren<TMP_Text>().All(text => !text.richText && !text.parseCtrlCharacters), "Unsafe rich text enabled.");
             foreach (var ownedButton in panel.GetComponentsInChildren<Button>())
             {
-                Require(ownedButton.colors.Equals(neutral.colors), "Owned button palette differs from native neutral style.");
+                var selection = ownedButton.transform.Find("Selection stripe");
+                if (selection == null || !selection.gameObject.activeSelf)
+                    Require(ownedButton.colors.Equals(neutral.colors), "Unselected button palette differs from native neutral style.");
                 var ownedImage = ownedButton.GetComponent<Image>();
                 Require(ownedImage.type == nativeImage.type && ownedImage.pixelsPerUnitMultiplier == nativeImage.pixelsPerUnitMultiplier,
                     "Owned button border rendering differs from native style.");
@@ -77,43 +79,35 @@ public sealed partial class Plugin
             evidence.AppendLine("keyboard-open=PASS plain-text=PASS viewport=Gameview entry-centered=PASS native-palette-border-height=PASS");
             var detailLabel = details.content.Find("Plain details").GetComponent<TMP_Text>();
             Require(!detailLabel.text.Contains("API capabilities") && !detailLabel.text.Contains("Declared dependencies"), "Default details expose advanced diagnostics.");
-            var diagnostic = panel.GetComponentsInChildren<Button>().Single(button => button.name == "Diagnostics");
-            foreach (var label in new[] { diagnostic.GetComponentInChildren<TMP_Text>(), panel.transform.Find("Content/Title").GetComponent<TMP_Text>() })
+            Require(!panel.GetComponentsInChildren<Button>().Any(button => button.name == "Diagnostics" || button.name == "Automatic updates" || button.name == "Previous mod" || button.name == "Next mod" || button.name == "Retry update"), "Technical controls must not appear in the player menu.");
+            foreach (var label in new[] { panel.transform.Find("Content/Title").GetComponent<TMP_Text>() })
                 foreach (var character in label.text)
                     Require(character < 128 && label.font.HasCharacter(character), "UI-owned heading uses an unsupported native glyph.");
-            events.SetSelectedGameObject(diagnostic.gameObject);
-            foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
-            Require(detailLabel.text.Contains("API capabilities") && detailLabel.text.Contains("Declared dependencies"), "Diagnostics toggle did not reveal details.");
-            Require(!detailLabel.text.Contains("\u2014") && !detailLabel.text.Contains("\u2026"), "UI-generated diagnostics contain unsupported punctuation.");
-            foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
-            Require(!detailLabel.text.Contains("API capabilities"), "Diagnostics toggle did not hide details.");
             var apiRow = ModApi.Mods!.Snapshot.Single(item => item.PluginId == ModApi.PluginId);
             Require(apiRow.Metadata?.ProjectUrl == "https://github.com/fankserver/vanguard-galaxy-api", "Official API project metadata is missing.");
-            evidence.AppendLine("diagnostics-toggle=PASS owned-heading-glyphs=PASS official-metadata=PASS");
+            var officialRow = list.GetComponentsInChildren<Button>().Single(button => button.GetComponentInChildren<TMP_Text>().text == "Mod API");
+            var officialName = officialRow.GetComponentInChildren<TMP_Text>();
+            Require(officialName.GetPreferredValues(officialName.text, officialName.rectTransform.rect.width, float.PositiveInfinity).y <= officialName.rectTransform.rect.height + 1,
+                "Official mod name does not fit its wrapping area.");
+            Require(!string.IsNullOrEmpty(officialRow.transform.Find("Update state").GetComponent<TMP_Text>().text), "List lacks update status.");
+            Require(!officialName.text.StartsWith("> ", StringComparison.Ordinal), "Selection must not use an expansion arrow.");
+            Require(!detailLabel.text.Contains("Installed:") && !detailLabel.text.Contains("Latest:"), "Description contains update information.");
+            evidence.AppendLine("player-details=PASS owned-heading-glyphs=PASS official-metadata=PASS");
 
             // Select the genuine loaded driver through its native row, not a presenter backdoor.
             var row = list.GetComponentsInChildren<Button>().Single(button => button.GetComponentInChildren<TMP_Text>().text.Contains("Controlled Qualification"));
             events.SetSelectedGameObject(row.gameObject);
             foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
-            var checkUpdate = panel.GetComponentsInChildren<Button>().Single(button => button.name == "Check update");
-            var automatic = panel.GetComponentsInChildren<Button>().Single(button => button.name == "Automatic updates");
-            Require(checkUpdate.interactable && automatic.GetComponentInChildren<TMP_Text>().text == "Auto: off", "Update controls are not manual-only by default.");
+            Require(row.transform.Find("Selection stripe").gameObject.activeSelf && !officialRow.transform.Find("Selection stripe").gameObject.activeSelf,
+                "Selected row must retain a visual highlight without highlighting other rows.");
+            var checkUpdate = panel.GetComponentsInChildren<Button>().Single(button => button.name == "Check updates");
+            Require(((RectTransform)checkUpdate.transform).anchorMax.y == 0, "Update action must be in the bottom bar.");
+            Require(checkUpdate.interactable && checkUpdate.GetComponentInChildren<TMP_Text>().text == "Check for updates", "Manual refresh is unavailable.");
             events.SetSelectedGameObject(checkUpdate.gameObject);
             foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
-            Require(detailLabel.text.Contains("NETWORK CONFIRMATION") && detailLabel.text.Contains("raw.githubusercontent.com") && detailLabel.text.Contains("IP address"), "Manual network disclosure is missing.");
-            foreach (var frame in CaptureMenu("mod-update-disclosure.png", evidence)) yield return frame;
-            // Selection cancels: never send a request from this UI-only probe.
-            events.SetSelectedGameObject(row.gameObject);
-            foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
-            Require(!detailLabel.text.Contains("NETWORK CONFIRMATION") && detailLabel.text.Contains("Not checked"), "Selection failed to cancel pending manual consent.");
-            events.SetSelectedGameObject(automatic.gameObject);
-            foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
-            Require(detailLabel.text.Contains("all API consumers") && automatic.GetComponentInChildren<TMP_Text>().text == "Confirm auto", "Automatic opt-in lacks separate disclosure.");
-            events.SetSelectedGameObject(row.gameObject);
-            foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
-            Require(automatic.GetComponentInChildren<TMP_Text>().text == "Auto: off" && detailLabel.text.Contains("Not checked"), "Unconfirmed automatic opt-in survived cancellation.");
-            evidence.AppendLine("update-manual-disclosure=PASS automatic-disclosure=PASS selection-cancels-consent=PASS " +
-                (fullRecord == null ? "no-confirmed-network-action=PASS" : "unconfirmed-disclosure-phase=PASS"));
+            Require(!detailLabel.text.Contains("NETWORK CONFIRMATION") && events.currentSelectedGameObject == checkUpdate.gameObject, "Manual refresh asked for confirmation or lost focus.");
+            foreach (var frame in CaptureMenu("mod-update-status.png", evidence)) yield return frame;
+            evidence.AppendLine("refresh-control-focus=PASS no-update-toggle=PASS");
             Require(details.content.rect.height > details.viewport.rect.height + 20, "Long metadata did not produce scrollable detail content.");
             events.SetSelectedGameObject(details.verticalScrollbar.gameObject);
             var before = details.content.anchoredPosition.y;
@@ -148,7 +142,7 @@ public sealed partial class Plugin
             evidence.AppendLine("tab=PASS pointer-close=PASS escape-focus=PASS raycast-barrier=PASS");
 
             if (fullRecord != null)
-                foreach (var frame in ModInformationUi(keyboard, mouse, entry, panel, row, checkUpdate, automatic, detailLabel, fullRecord, evidence)) yield return frame;
+                foreach (var frame in ModInformationUi(keyboard, mouse, entry, panel, row, checkUpdate, detailLabel, fullRecord, evidence)) yield return frame;
             menu.SetActive(false);
             yield return null; yield return null;
             Require(panel == null, "Inactive menu retained owned panel.");

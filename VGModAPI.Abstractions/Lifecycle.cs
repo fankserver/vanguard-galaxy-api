@@ -69,6 +69,18 @@ public static class ModApi
     public static IMissionEvents? Missions { get; internal set; }
     /// <summary>Optional native travel observer; non-null only when the travel group is bound and enabled.</summary>
     public static ITravelEvents? Travel { get; internal set; }
+    /// <summary>Optional experimental recipe definitions for the current station; null when disabled/unavailable.</summary>
+    public static IRecipeCatalog? Recipes { get; internal set; }
+    /// <summary>Optional inspected-build boarding observations; consult boarding-observation capability.</summary>
+    public static IBoardingEvents? Boarding { get; internal set; }
+    /// <summary>Optional inspected-build boarding policies, independent of observation subscribers.</summary>
+    public static IBoardingRules? BoardingRules { get; internal set; }
+    /// <summary>Optional inspected-build boarding commands; admitted commands are not completed outcomes.</summary>
+    public static IBoardingCommands? BoardingCommands { get; internal set; }
+    public static IBoardingTactics? BoardingTactics { get; internal set; }
+    public static IBoardingCombatRules? BoardingCombat { get; internal set; }
+    /// <summary>Optional experimental authored dungeon content with API-owned save data; requires API 0.1.30.</summary>
+    public static IDungeonContent? Dungeons { get; internal set; }
     /// <summary>Optional station-lifetime observer; non-null only when the travel group is bound and enabled.</summary>
     public static IStationEvents? Station { get; internal set; }
     /// <summary>

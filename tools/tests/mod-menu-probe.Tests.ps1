@@ -45,7 +45,7 @@ try {
     $snapshot = Join-Path $root 'mod-menu-probe.txt'
     $receipt = Join-Path $root 'mod-menu-probe.receipt'
     $text = "synthetic evidence, not a native pass`n"
-    foreach ($name in @('mod-menu-original.png','mod-menu-1280.png','mod-update-disclosure.png','mod-menu-scale.png','mod-api-unavailable.png')) {
+    foreach ($name in @('mod-menu-original.png','mod-menu-1280.png','mod-update-status.png','mod-menu-scale.png','mod-api-unavailable.png')) {
         $image = Join-Path $root $name
         [IO.File]::WriteAllText($image, 'synthetic image placeholder, not a screenshot')
         $imageHash = (Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -65,7 +65,7 @@ try {
     [IO.File]::WriteAllText($receipt, "PASS`nmod-menu-probe-v2`nsha256=$hash`n")
     Reject { Assert-ModMenuProbeReceipt $root $p } 'legacy receipt cannot attest updated controls'
     [IO.File]::WriteAllText($receipt, "PASS`nmod-menu-probe-v3`nsha256=$hash`n")
-    foreach ($name in @('mod-menu-1280.png','mod-update-disclosure.png')) {
+    foreach ($name in @('mod-menu-1280.png','mod-update-status.png')) {
         $image = Join-Path $root $name
         [IO.File]::AppendAllText($image, ' changed')
         Reject { Assert-ModMenuProbeReceipt $root $p } "changed screenshot $name"
@@ -93,7 +93,7 @@ try {
     $p.modInformationProbe = $true
     $infoSnapshot = Join-Path $root 'mod-information-probe.txt'
     $infoReceipt = Join-Path $root 'mod-information-probe.receipt'
-    $facts = @('controlled-default-manual-coalescing-cooldown','controlled-six-hour-automatic-disable','controlled-dns-tls-timeout-retain-last-success','controlled-rate-limit','controlled-disk-cache-expiry-channel-installed-version','controlled-invalid-oversized-channel-redirect-policy','controlled-quit-mid-check','wire-platform-tls-parser-stable','wire-platform-tls-parser-experimental','wire-https-redirect','wire-invalid-oversized-channel-rejected','wire-dns-name-resolution-failure','wire-tls-untrusted-certificate-rejected','wire-stalled-handshake-canceled','unity-main-thread-menu-responsive','inventory-two-real-consumers-without-metadata','inventory-malformed-wrong-guid-isolated','gameplay-two-loads-return-single-entry','real-stockpile-ui-journal-coexistence','new-game-save-load-return','ui-confirmed-manual-without-automatic-browser','ui-confirmed-automatic-and-opt-out','ui-explicit-default-browser-release','ui-scale-restored','actual-api-unavailable-loader-presence')
+    $facts = @('controlled-default-manual-coalescing-cooldown','controlled-six-hour-automatic-disable','controlled-dns-tls-timeout-retain-last-success','controlled-rate-limit','controlled-disk-cache-expiry-channel-installed-version','controlled-invalid-oversized-channel-redirect-policy','controlled-quit-mid-check','wire-platform-tls-parser-stable','wire-platform-tls-parser-experimental','wire-https-redirect','wire-invalid-oversized-channel-rejected','wire-dns-name-resolution-failure','wire-tls-untrusted-certificate-rejected','wire-stalled-handshake-canceled','unity-main-thread-menu-responsive','inventory-two-real-consumers-without-metadata','inventory-malformed-wrong-guid-isolated','gameplay-two-loads-return-single-entry','real-stockpile-ui-journal-coexistence','new-game-save-load-return','ui-immediate-refresh-without-automatic-browser','ui-automatic-checks-without-toggle','ui-explicit-default-browser-release','ui-scale-restored','actual-api-unavailable-loader-presence')
     function Write-InformationEvidence($selectedFacts) {
         [IO.File]::WriteAllText($infoSnapshot, (($selectedFacts | ForEach-Object { "$_=PASS" }) -join "`n"))
         $digest = (Get-FileHash -LiteralPath $infoSnapshot -Algorithm SHA256).Hash.ToLowerInvariant()

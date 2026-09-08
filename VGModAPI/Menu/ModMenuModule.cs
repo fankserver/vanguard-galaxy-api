@@ -12,12 +12,12 @@ internal sealed class ModMenuModule : IDisposable
     private readonly ModMenuBindings _bindings;
     private readonly ModMenuLifetime _lifetime;
 
-    internal ModMenuModule(Assembly assembly, ModInformationCatalog catalog, Func<string> diagnostics, Action<Exception> fault, ModUpdatePresenter? updates = null)
+    internal ModMenuModule(Assembly assembly, ModInformationCatalog catalog, Action<Exception> fault, ModUpdatePresenter? updates = null)
     {
         _bindings = new ModMenuBindings(assembly);
         _lifetime = new ModMenuLifetime((menu, viewport, canvas) => ModMenuView.Create(
             (MonoBehaviour)menu, (RectTransform)viewport, (Canvas)canvas, _bindings,
-            new ModInformationPresenter(catalog), diagnostics, fault, updates));
+            new ModInformationPresenter(catalog), fault, updates));
     }
 
     internal void Poll()

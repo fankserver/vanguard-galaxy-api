@@ -33,7 +33,7 @@ public sealed class ModInformationPresenterTests
     public void RefreshFailureIsNotPresentedAsFreshOrHealthy()
     {
         var catalog = new Catalog { Snapshot = new[] { Row("a") }, Fail = true }; var presenter = new ModInformationPresenter(catalog);
-        presenter.Open(); Assert.Contains("previous snapshot", presenter.RefreshWarning); Assert.DoesNotContain("Private", presenter.RefreshWarning);
+        presenter.Open(); Assert.Contains("previous list", presenter.RefreshWarning); Assert.DoesNotContain("Private", presenter.RefreshWarning);
         Assert.Single(presenter.Rows); catalog.Fail = false; presenter.Open(); Assert.Null(presenter.RefreshWarning);
     }
 
@@ -60,20 +60,22 @@ public sealed class ModInformationPresenterTests
     }
 
     [Fact]
-    public void DetailsSeparateLoaderMetadataUpdatesAndApiDiagnosticsWithoutInventingHealth()
+    public void DetailsShowPlayerInformationWithoutTechnicalDiagnostics()
     {
         var catalog = new Catalog(); var presenter = new ModInformationPresenter(catalog);
-        presenter.Open(); Assert.Contains("No local API consumers", presenter.Details("menu unavailable"));
+        presenter.Open(); Assert.Contains("No mods to show", presenter.Details());
         catalog.Snapshot = new[] { Row("a") }; presenter.Open();
-        var summary = presenter.Details("session-lifecycle: unavailable");
+        var summary = presenter.Details();
         Assert.DoesNotContain("API capabilities", summary);
         Assert.DoesNotContain("Declared dependencies", summary);
-        var details = presenter.Details("session-lifecycle: unavailable", true);
-        Assert.Contains("Installed: 1.2", details);
-        Assert.Contains("Updates: No update source.", details);
-        Assert.Contains("API capabilities (not mod update status):\nsession-lifecycle: unavailable", details);
+        var details = presenter.Details();
+        Assert.DoesNotContain("Installed version:", details);
+        Assert.DoesNotContain("Updates:", details);
+        Assert.DoesNotContain("No update source", details);
+        Assert.DoesNotContain("Loader presence", details);
+        Assert.DoesNotContain("ID:", details);
         Assert.DoesNotContain("broken", details);
-        catalog.Fail = true; presenter.Open(); Assert.Contains("previous snapshot", presenter.Details(""));
+        catalog.Fail = true; presenter.Open(); Assert.Contains("previous list", presenter.Details());
     }
 
     [Fact]
@@ -84,8 +86,8 @@ public sealed class ModInformationPresenterTests
             new ModAuthorMetadata("Author\u202e", "<b>literal</b>", "https://github.com/example/repo", null, "stable"), ModMetadataStatus.Available);
         var presenter = new ModInformationPresenter(new Catalog { Snapshot = new[] { row } }); presenter.Open();
         Assert.Equal(160, ModInformationPresenter.DisplayName(row).Length);
-        var details = presenter.Details("offline", true);
-        Assert.True(details.Length < 15000); Assert.Contains("Additional dependencies omitted", details);
+        var details = presenter.Details();
+        Assert.True(details.Length < 15000); Assert.DoesNotContain("dependencies", details);
         Assert.Contains("<b>literal</b>", details); Assert.DoesNotContain("github.com", details);
         Assert.Equal(new string(' ', 157) + "...", ModInformationPresenter.PlainText(new string('\n', 10000), 160, false));
         Assert.Equal("abc", ModInformationPresenter.PlainText("abc\u202e", 3, false));
@@ -100,7 +102,7 @@ public sealed class ModInformationPresenterTests
         Assert.Equal(authored, ModInformationPresenter.PlainText(authored, 160, true));
         var presenter = new ModInformationPresenter(new Catalog { Snapshot = new[] { Row("a") } });
         presenter.Open();
-        Assert.All(presenter.Details("disabled - configuration").ToCharArray(), c => Assert.True(c < 128));
+        Assert.All(presenter.Details().ToCharArray(), c => Assert.True(c < 128));
     }
 
     [Fact]

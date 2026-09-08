@@ -1,15 +1,20 @@
 # VGModAPI
 
+<p align="center">
+  <img src="docs/assets/vgmodapi-logo.png" alt="VGModAPI logo" width="480">
+</p>
+
 Unofficial community mod API for Vanguard Galaxy, using BepInEx 5 and HarmonyX.
 
-**0.1.24 development / experimental: automatically tested and partially exercised in-game, not fully runtime-qualified.** The API provides lifecycle, mod save data, optional mission/travel/story services and mod information, not a complete modding SDK. Controlled native evidence covers bounded paths; full in-game acceptance remains pending. See [compatibility](docs/compatibility.md) for coverage and limitations.
+**0.1.30 development / experimental: automatically tested and partially exercised in-game, not fully runtime-qualified.** The API provides lifecycle, mod save data, optional mission/travel/story services and mod information, not a complete modding SDK. Controlled native evidence covers bounded paths; full in-game acceptance remains pending. See [compatibility](docs/compatibility.md) for coverage and limitations.
 
 ## Implemented
 
 - Default-enabled experimental mod save data for additional custom payloads.
+- Optional read-only [Forge/refining recipe catalog](docs/recipes.md): stable identities, variants and multi-producer lookup; no crafting mutations or native qualification implied.
 - Optional experimental mission transitions and native travel/station observations.
 - Optional experimental owned story definitions, native catalog installation, occurrence reconstruction and API-managed persistence for a closed mission subset.
-- Local mod-information catalog and a native main-menu interface; no automatic update-check service.
+- Mods menu with installed versions, descriptions and automatic update checks; no automatic downloads or installations.
 - Runtime session identity, replacement/menu invalidation, player readiness, and gameplay-manager initialization.
 - Coroutine-aware file-load observation and detected failure reporting.
 - Save success/failure/skip outcomes, with recursive retries grouped into one operation.
@@ -68,6 +73,8 @@ No automatic deploy target is provided. Remove older API copies from other plugi
 
 The package contains `VGModAPI.dll`, `VGModAPI.Core.dll`, and `VGModAPI.Abstractions.dll`, plus documentation. Keep one installed copy of these assemblies. An unsupported game hash leaves the service available for diagnostics but its lifecycle/save capabilities unavailable.
 
+Optional boarding observation (API 0.1.25) is available through `ModApi.Boarding` when `[Boarding] Enabled = true` and `boarding-observation` is available. It provides copied targets/operations and scoped events, not commands or encounter authoring. API 0.1.26 additionally exposes `ModApi.BoardingRules` for disposable, scoped disable/chance, defender tuning, integrity, scuttle and explosion policies when `boarding-rules` is available. API 0.1.27 adds `ModApi.BoardingCommands` for validated, exclusively controlled operations when `boarding-commands` is available. API 0.1.28 adds tactical requests and scoped combat policies through `ModApi.BoardingTactics` and `ModApi.BoardingCombat`. API 0.1.30 adds opt-in `ModApi.Dungeons` for [authored dungeon content](docs/dungeon-content.md) with API-owned persistence. See [boarding](docs/boarding-contract.md); native qualification remains pending.
+
 See [compatibility and qualification](docs/compatibility.md) for the inspected hash, completed checks, and pending in-game checklist. Development-only [controlled qualification tooling](docs/qualification-runner.md) uses an isolated game sandbox and copied saves; it is not included in the API package.
 
 ## Consume
@@ -99,7 +106,7 @@ Enabled by default. Set `[Persistence] Enabled = false` in `BepInEx/config/vgmod
 
 ## Owned bar rosters (experimental)
 
-API 0.1.25 provides opt-in owner-scoped patrons, automatic persistent presentation, explicit additive/exclusive station policy, guarded interaction and finalized roster observation. A stored contribution is not a visibility guarantee. Narrative and voice data remain consumer-owned. See [bar rosters](docs/bar-rosters.md) for the contract and current qualification limits.
+API 0.1.31 provides opt-in owner-scoped patrons, automatic persistent presentation, explicit additive/exclusive station policy, guarded interaction and finalized roster observation. A stored contribution is not a visibility guarantee. Narrative and voice data remain consumer-owned. See [bar rosters](docs/bar-rosters.md) for the contract and current qualification limits.
 
 ## Owned story content (experimental)
 
