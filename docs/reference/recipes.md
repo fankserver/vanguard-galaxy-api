@@ -100,4 +100,25 @@ Extraction is immediate, not queued. It requires the owning station interior, su
 
 A request ID is scoped to its plugin and runtime session. Repeating the same immutable intent returns its cached result with `IsReplay`; changing the payload gives `RequestConflict`. The session retains at most 4,096 intents and refuses new ones at the limit rather than evicting uncertain outcomes. This cache is not saved. After reload, old session handles are stale; reconcile restored jobs/inventory before creating a new intent. `MutationMayHaveRun` includes native price initialization and possible partial effects. `CreditDelta` on an uncertain result is a net observation, not exclusive attribution. No outcome promises cross-operation atomicity.
 
+## Scoped Forge UI (API 0.1.36)
+
+With recipe integration enabled, `ModApi.ForgeUi` is separately bound and reported by the `forge-ui` capability. It exposes an observed selection, not a global recipe choice or universal UI readiness. `Current` is null outside a live, matching station Forge screen. A snapshot includes its transient view handle, station, real parent/variant group, selected recipe, displayed rounded batch count and revision. Zero batches are retained, not silently changed to one. Queries do not open screens, construct previews or repair incomplete native selection groups.
+
+```csharp
+var ui = ModApi.ForgeUi;
+if (ui == null) return;
+var action = ui.RegisterAction(pluginId, "pin", new ForgeActionPresentation("Pin", "Pin this selection"),
+    selection => Pin(selection.SelectedRecipe, selection.Batches));
+var changes = ui.Subscribe(pluginId, change => RefreshSelection(change.Current));
+// Dispose both registrations when the consumer stops. Pin remains consumer behavior.
+```
+
+Registrations survive window close/reopen and session replacement without save callbacks. View handles and rendered revisions do not: stale clicks cannot act on a replacement selection. Subscriptions report previous/current immutable snapshots; null current means closure or unavailable context. Registration does not replay an initial event; read `Current` after subscribing. Reentrant observations may coalesce before the next refresh. Subscriber failures are isolated. Registration changes are reflected on the next UI update. Dispose/update are main-thread operations; same-provider duplicate local IDs are rejected, while different providers may reuse a local ID. Up to 16 actions and 128 subscriptions coexist. Action order is numeric order, then ordinal provider/local identity; the bounded horizontal strip scrolls rather than assigning consumers overlapping offsets.
+
+`Open(recipeId)` deliberately performs native navigation and can build native UI previews. It requires the actual station interior, an initialized Forge location and an exact available recipe identity. It passes the real complete available parent/variant group, never a manufactured singleton unlock list. Inspect its explicit not-at-station, missing-recipe, busy and uncertain outcomes. Selection notifications cannot recursively navigate or issue crafting mutations. Explicit registered action clicks may issue commands.
+
+Presentation is separate from recipe economics: snapshots expose localized display text and whether the selected UI already has an icon. `UseSelectionIcon` reuses that existing sprite only inside the registered Forge action; no Unity object, generated-item preview or asset reference is exported. Action labels/tooltips are bounded consumer text rendered without rich-text interpretation. Native item tooltips remain owned by the native recipe icon. This is not general HUD attachment, visibility or asset export; those require a shared HUD surface rather than another Forge-owned canvas framework.
+
+Installed member checks and host lifetime/navigation tests do not establish native layout, scaling, input or coexistence acceptance. Full Unity Forge UI qualification remains pending.
+
 Host tests exercise duplicate names, multiple producers, template identity, multi-output/fractional quantities, station-specific availability, registry rereads, unresolved outputs, conflicting IDs, session invalidation and failure isolation. Installed-metadata tests verify the declared native member shapes. These do not execute Unity; full in-game recipe/Forge/refining acceptance remains pending.

@@ -71,6 +71,8 @@ public sealed partial class Plugin : BaseUnityPlugin
         ModApi.RecipeQuotes = null;
         ModApi.CraftingJobs = null;
         ModApi.CraftingCommands = null;
+        ModApi.ForgeUi = null;
+        _hub.SetCapability("forge-ui", false, "Disabled or not bound; experimental.");
         _hub.SetCapability("crafting-commands", false, "Disabled or not bound; experimental.");
         _hub.SetCapability("crafting-jobs", false, "Disabled or not bound; experimental.");
         _hub.SetCapability("save-data", false, "Not initialized; experimental.");
@@ -152,6 +154,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         {
             // Stop observation even if a failed rollback leaves a detour installed.
             _adapter?.Guard(() => throw new InvalidOperationException("Adapter installation failed.", ex));
+            TeardownForgeUi();
             TeardownCraftingJobs();
             try { _harmony?.UnpatchSelf(); }
             catch (Exception cleanupError) { Logger.LogError($"Patch rollback failed: {cleanupError}"); }
@@ -483,7 +486,7 @@ public sealed partial class Plugin : BaseUnityPlugin
                 _recipeQuotes?.Dispose(); _recipeQuotes = null; ModApi.RecipeQuotes = null;
                 _hub.SetCapability("recipe-quotes", false, "Recipe quote binding failed."); Logger.LogError(quoteError);
             }
-            if (_recipeQuotes != null) InstallCraftingJobs(assembly, source);
+            if (_recipeQuotes != null) { InstallCraftingJobs(assembly, source); InstallForgeUi(assembly, source); }
         }
         catch (Exception error)
         {
@@ -837,6 +840,7 @@ public sealed partial class Plugin : BaseUnityPlugin
 
     private void Update()
     {
+        _forgeUiRuntime?.Tick();
         var craftingFault = _craftingJobObserver?.PumpFault();
         if (craftingFault != null) { Logger.LogError(craftingFault); TeardownCraftingCommands(); }
         var commandFault = _craftingCommands?.PumpFault();
@@ -869,6 +873,7 @@ public sealed partial class Plugin : BaseUnityPlugin
     }
     private void OnDestroy()
     {
+        TeardownForgeUi();
         TeardownCraftingCommands();
         StopBars();
         DungeonRewardPatches.Crew = null; _dungeonSettlement?.Dispose(); _dungeonSettlement = null; ModApi.DungeonSettlement = null;
