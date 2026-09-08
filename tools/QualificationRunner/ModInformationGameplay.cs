@@ -57,7 +57,7 @@ public sealed partial class Plugin
                 foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
                 var playerDetails = panel.GetComponentsInChildren<TMP_Text>().Single(text => text.name == "Plain details").text;
                 Require(playerDetails.Contains(ModInformationPresenter.DisplayName(row)) &&
-                    playerDetails.Contains("Installed version: " + row.InstalledVersion) &&
+                    driverRow.transform.Find("Installed version").GetComponent<TMP_Text>().text == "v" + row.InstalledVersion &&
                     !playerDetails.Contains("Optional author metadata") && !playerDetails.Contains("broken"),
                     "Invalid metadata must preserve player-facing identity without technical warnings or invented health claims.");
                 foreach (var frame in MenuKey(keyboard, Key.Escape)) yield return frame;

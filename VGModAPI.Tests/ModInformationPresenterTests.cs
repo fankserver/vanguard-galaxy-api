@@ -69,8 +69,9 @@ public sealed class ModInformationPresenterTests
         Assert.DoesNotContain("API capabilities", summary);
         Assert.DoesNotContain("Declared dependencies", summary);
         var details = presenter.Details();
-        Assert.Contains("Installed version: 1.2", details);
-        Assert.Contains("Updates: No update source.", details);
+        Assert.DoesNotContain("Installed version:", details);
+        Assert.DoesNotContain("Updates:", details);
+        Assert.DoesNotContain("No update source", details);
         Assert.DoesNotContain("Loader presence", details);
         Assert.DoesNotContain("ID:", details);
         Assert.DoesNotContain("broken", details);

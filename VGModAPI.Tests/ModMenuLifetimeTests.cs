@@ -87,12 +87,12 @@ public sealed class ModMenuLifetimeTests
     public void LargeInventoryUsesOnlyViewportSizedRowsAndClampsOverscroll()
     {
         Assert.Equal(0, ModMenuRows.VisibleCount(0, 220));
-        Assert.Equal(8, ModMenuRows.VisibleCount(4096, 220));
+        Assert.Equal(4, ModMenuRows.VisibleCount(4096, 220));
         Assert.Equal(0, ModMenuRows.First(4096, -100, 220));
-        Assert.Equal(2048, ModMenuRows.First(4096, 2048 * 36, 220));
-        Assert.Equal(4089, ModMenuRows.First(4096, float.MaxValue, 220));
+        Assert.Equal(2048, ModMenuRows.First(4096, 2048 * ModMenuRows.Height, 220));
+        Assert.Equal(4093, ModMenuRows.First(4096, float.MaxValue, 220));
         Assert.Equal(0, ModMenuRows.First(2, 300, 220));
         Assert.Equal(2, ModMenuRows.VisibleCount(2, 220));
-        Assert.Equal(35, ModMenuRows.VisibleCount(4096, 1200));
+        Assert.Equal(15, ModMenuRows.VisibleCount(4096, 1200));
     }
 }

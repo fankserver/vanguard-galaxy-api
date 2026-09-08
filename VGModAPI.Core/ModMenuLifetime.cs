@@ -45,7 +45,7 @@ internal sealed class ModMenuLifetime : IDisposable
 
 internal static class ModMenuRows
 {
-    internal const int Height = 36;
+    internal const int Height = 88;
     internal static int First(int count, float offset, float viewportHeight)
     {
         var maximum = Math.Max(0, count * (float)Height - Math.Max(0, viewportHeight));

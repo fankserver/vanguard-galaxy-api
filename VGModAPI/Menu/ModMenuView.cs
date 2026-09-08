@@ -24,10 +24,10 @@ internal sealed class ModMenuView : IModMenuView
     private readonly List<Selectable> _navigation = new();
     private readonly List<Action> _removeListeners = new();
     private readonly List<GameObject> _ownedRoots = new();
-    private Button _entry = null!, _close = null!, _previous = null!, _next = null!, _project = null!;
+    private Button _entry = null!, _close = null!, _project = null!;
     private RectTransform _panel = null!, _body = null!, _listContent = null!, _detailsContent = null!;
     private ScrollRect _list = null!, _details = null!;
-    private TMP_Text _heading = null!, _destination = null!, _detailText = null!;
+    private TMP_Text _heading = null!, _summary = null!, _updateStatus = null!, _detailText = null!;
     private TMP_FontAsset _font = null!;
     private Sprite? _sprite;
     private Image.Type _imageType;
@@ -42,8 +42,10 @@ internal sealed class ModMenuView : IModMenuView
     private float _width = -1, _height = -1;
     private bool _disposed;
     private readonly ModUpdatePresenter? _updates;
-    private Button _checkUpdate = null!, _release = null!;
+    private Button _checkUpdate = null!, _retry = null!, _release = null!;
     private string _updateText = "";
+    private string _listStatus = "";
+    private float _nextStatusRefresh;
 
     private ModMenuView(MonoBehaviour menu, RectTransform viewport, Canvas canvas, ModMenuBindings bindings,
         ModInformationPresenter presenter, Action<Exception> fault, ModUpdatePresenter? updates)
@@ -91,34 +93,35 @@ internal sealed class ModMenuView : IModMenuView
         _close = Button(_body, "Close", "Close [Esc]", () => Close(true));
         Stretch((RectTransform)_close.transform, 1, 1, 1, 1, -108, -36, -4, -4);
 
+        _summary = Text(_body, "Update summary", "");
+        _summary.fontSize = 14;
+        Stretch(_summary.rectTransform, 0, 1, 1, 1, 8, -64, -8, -38);
         _list = Scroll(_body, "Local mods", out _listContent);
-        Stretch((RectTransform)_list.transform, 0, 0, .38f, 1, 8, 46, -8, -42);
+        Stretch((RectTransform)_list.transform, 0, 0, .46f, 1, 8, 8, -8, -70);
         _details = Scroll(_body, "Selected details", out _detailsContent);
-        Stretch((RectTransform)_details.transform, .38f, 0, 1, 1, 4, 46, -8, -42);
-        _destination = Text(_detailsContent, "ASCII project destination", "");
-        _destination.alignment = TextAlignmentOptions.TopLeft;
-        _destination.textWrappingMode = TextWrappingModes.Normal;
-        _destination.overflowMode = TextOverflowModes.Overflow;
+        Stretch((RectTransform)_details.transform, .46f, 0, 1, 1, 8, 122, -8, -70);
         _detailText = Text(_detailsContent, "Plain details", "");
         _detailText.alignment = TextAlignmentOptions.TopLeft;
         _detailText.textWrappingMode = TextWrappingModes.Normal;
         _detailText.overflowMode = TextOverflowModes.Overflow;
         Stretch(_detailText.rectTransform, 0, 0, 1, 1, 6, 0, -8, 0);
-        _previous = Button(_body, "Previous mod", "Previous", () => MoveSelection(-1));
-        _next = Button(_body, "Next mod", "Next", () => MoveSelection(1));
-        Stretch((RectTransform)_previous.transform, 0, 0, .19f, 0, 8, 6, -4, 38);
-        Stretch((RectTransform)_next.transform, .19f, 0, .38f, 0, 4, 6, -8, 38);
-        _project = Button(_body, "Project link", "Open project in browser", () => _presenter.OpenProject(_openUrl));
-        Stretch((RectTransform)_project.transform, .38f, 0, 1, 0, 4, 6, -8, 38);
+        _project = Button(_body, "Project link", "Mod website", () => _presenter.OpenProject(_openUrl));
+        Stretch((RectTransform)_project.transform, .46f, 0, .70f, 0, 8, 82, -4, 114);
+        var divider = Rect(_body, "Update divider");
+        Stretch(divider, .46f, 0, 1, 0, 8, 74, -8, 75);
+        divider.gameObject.AddComponent<Image>().color = new Color(.2f, .3f, .36f, 1);
+        _updateStatus = Text(_body, "Update status", "Update checking unavailable");
+        _updateStatus.fontSize = 14;
+        _updateStatus.alignment = TextAlignmentOptions.TopLeft;
+        _updateStatus.textWrappingMode = TextWrappingModes.Normal;
+        Stretch(_updateStatus.rectTransform, .46f, 0, 1, 0, 8, 8, -170, 68);
         if (_updates != null)
         {
-            _project.GetComponentInChildren<TMP_Text>().text = "Open project";
-            Stretch((RectTransform)_project.transform, .38f, 0, .69f, 0, 4, 6, -4, 38);
-            _release = Button(_body, "Release link", "Open download page", () => { if (_presenter.Selected != null) _updates.OpenRelease(_presenter.Selected, _openUrl); });
-            Stretch((RectTransform)_release.transform, .69f, 0, 1, 0, 4, 6, -8, 38);
-            _checkUpdate = Button(_body, "Check updates", "Check for updates", () => { if (_presenter.Selected != null) _updates.Check(_presenter.Selected); RenderDetails(); });
-            Stretch((RectTransform)_checkUpdate.transform, .38f, 0, 1, 0, 4, 46, -8, 78);
-            Stretch((RectTransform)_details.transform, .38f, 0, 1, 1, 4, 86, -8, -42);
+            _release = Button(_body, "Release link", "Download update", () => { if (_presenter.Selected != null) _updates.OpenRelease(_presenter.Selected, _openUrl); });
+            Stretch((RectTransform)_release.transform, 1, 0, 1, 0, -168, 24, -8, 56);
+            _retry = Button(_body, "Retry update", "Retry", () => { if (_presenter.Selected != null) _updates.Check(_presenter.Selected); RenderDetails(false); });
+            Stretch((RectTransform)_retry.transform, 1, 0, 1, 0, -108, 24, -8, 56);
+            _checkUpdate = Button(_body, "Check updates", "Check for updates", () => { _updates.CheckAll(_presenter.Rows); RenderDetails(false); });
         }
     }
 
@@ -139,6 +142,8 @@ internal sealed class ModMenuView : IModMenuView
         _entry.interactable = false;
         _listContent.anchoredPosition = Vector2.zero; _first = -1;
         _heading.text = "Mods";
+        _summary.text = _updates?.Summary(_presenter.Rows) ?? (_presenter.Rows.Count + " mods");
+        _nextStatusRefresh = 0;
         Layout(); RenderDetails(); RefreshRows();
         Select(_close.gameObject);
     }
@@ -149,11 +154,37 @@ internal sealed class ModMenuView : IModMenuView
         if (_entry == null || _panel == null) throw new InvalidOperationException("Owned menu objects were removed.");
         if (!Valid || modalOpen) { Close(false); _entry.interactable = false; return; }
         _entry.interactable = !Open;
+        var refreshStatus = Time.unscaledTime >= _nextStatusRefresh;
+        if (refreshStatus)
+        {
+            _nextStatusRefresh = Time.unscaledTime + .25f;
+            var available = _updates?.AvailableCount(ModApi.Mods?.Snapshot ?? Array.Empty<ModInformation>()) ?? 0;
+            _entry.GetComponentInChildren<TMP_Text>().text = available > 0 ? "Mods (" + available + (available == 1 ? " update)" : " updates)") : "Mods";
+        }
         if (!Open) return;
         if (_events != EventSystem.current) { Close(false); return; }
-        Layout(); RefreshRows();
+        Layout();
+        if (refreshStatus)
+        {
+            var listStatus = string.Join("|", System.Linq.Enumerable.Select(_presenter.Rows, mod => _updates?.Label(mod) ?? "Check unavailable"));
+            if (listStatus != _listStatus) { _listStatus = listStatus; _rowsDirty = true; }
+            _summary.text = _updates?.Summary(_presenter.Rows) ?? (_presenter.Rows.Count + " mods");
+        }
+        RefreshRows();
+        UpdateScrollbars();
         if (_updates != null && _presenter.Selected != null &&
             _updates.Text(_presenter.Selected, DateTimeOffset.UtcNow) != _updateText) RenderDetails(false);
+        var directionKey = Keyboard.current?.downArrowKey.wasPressedThisFrame == true ? 1 :
+            Keyboard.current?.upArrowKey.wasPressedThisFrame == true ? -1 : 0;
+        if (_events != null && directionKey != 0)
+        {
+            var slot = _rows.FindIndex(row => row.gameObject == _events.currentSelectedGameObject);
+            if (slot >= 0 && _first + slot < _presenter.Rows.Count)
+            {
+                _presenter.Select(_presenter.Rows[_first + slot].PluginId);
+                MoveSelection(directionKey);
+            }
+        }
         if (Keyboard.current?.escapeKey.wasPressedThisFrame == true) { Close(true); return; }
         // All owned selectables use an explicit closed navigation ring; never edit native navigation.
         // Repair foreign/cleared selection without disabling the EventSystem or its input module.
@@ -175,7 +206,12 @@ internal sealed class ModMenuView : IModMenuView
         var caption = _close.GetComponentInChildren<TMP_Text>();
         var closeWidth = Mathf.Max(104, Mathf.Ceil(caption.GetPreferredValues(caption.text).x) + 24);
         Stretch((RectTransform)_close.transform, 1, 1, 1, 1, -closeWidth - 4, -36, -4, -4);
-        Stretch(_heading.rectTransform, 0, 1, 1, 1, 8, -36, -closeWidth - 20, -4);
+        if (_updates != null)
+        {
+            var checkWidth = Mathf.Ceil(_checkUpdate.GetComponentInChildren<TMP_Text>().GetPreferredValues("Check for updates").x) + 24;
+            Stretch((RectTransform)_checkUpdate.transform, 1, 1, 1, 1, -closeWidth - checkWidth - 12, -36, -closeWidth - 12, -4);
+            Stretch(_heading.rectTransform, 0, 1, 1, 1, 8, -36, -closeWidth - checkWidth - 20, -4);
+        }
         var height = _viewport.rect.height;
         if (Math.Abs(_width - width) > .5f || Math.Abs(_height - height) > .5f)
         {
@@ -202,10 +238,20 @@ internal sealed class ModMenuView : IModMenuView
                 var index = _first + slot;
                 if (index < _presenter.Rows.Count && _presenter.Select(_presenter.Rows[index].PluginId)) RenderDetails();
             });
-            Stretch(row.GetComponentInChildren<TMP_Text>().rectTransform, 0, 0, 1, 1, 8, 0, -108, 0);
+            var name = row.GetComponentInChildren<TMP_Text>();
+            name.enableAutoSizing = false;
+            name.textWrappingMode = TextWrappingModes.Normal;
+            name.overflowMode = TextOverflowModes.Ellipsis;
+            name.alignment = TextAlignmentOptions.TopLeft;
+            Stretch(name.rectTransform, 0, 0, 1, 1, 10, 28, -10, -8);
             var version = Text(row.transform, "Installed version", "");
-            version.alignment = TextAlignmentOptions.MidlineRight;
-            Stretch(version.rectTransform, 1, 0, 1, 1, -104, 0, -8, 0);
+            version.fontSize = 14;
+            version.color = new Color(.7f, .75f, .8f, 1);
+            Stretch(version.rectTransform, 0, 0, .35f, 0, 10, 4, 0, 26);
+            var status = Text(row.transform, "Update state", "");
+            status.fontSize = 14;
+            status.alignment = TextAlignmentOptions.MidlineRight;
+            Stretch(status.rectTransform, .35f, 0, 1, 0, 0, 4, -10, 26);
             _rows.Add(row);
         }
         _first = first;
@@ -219,7 +265,10 @@ internal sealed class ModMenuView : IModMenuView
             Stretch((RectTransform)row.transform, 0, 1, 1, 1, 0, -(index + 1) * ModMenuRows.Height + 2, 0, -index * ModMenuRows.Height - 2);
             row.GetComponentInChildren<TMP_Text>().text = (item.PluginId == _presenter.SelectedId ? "> " : "") +
                 ModInformationPresenter.DisplayName(item);
-            row.transform.Find("Installed version").GetComponent<TMP_Text>().text = item.InstalledVersion.ToString();
+            row.transform.Find("Installed version").GetComponent<TMP_Text>().text = "v" + item.InstalledVersion;
+            var status = row.transform.Find("Update state").GetComponent<TMP_Text>();
+            status.text = _updates?.Label(item) ?? "Check unavailable";
+            status.color = StatusColor(item);
         }
         if (changed) RebuildNavigation();
     }
@@ -235,63 +284,95 @@ internal sealed class ModMenuView : IModMenuView
         _listContent.anchoredPosition = new Vector2(0, Mathf.Min(index * ModMenuRows.Height,
             Mathf.Max(0, _listContent.rect.height - _list.viewport.rect.height)));
         RenderDetails(); RefreshRows();
+        var slot = index - _first;
+        if (slot >= 0 && slot < _rows.Count) Select(_rows[slot].gameObject);
     }
+
+    private Color StatusColor(ModInformation mod) => (_updates?.State(mod)) switch
+    {
+        ModUpdateState.Available => new Color(.4f, .85f, 1, 1),
+        ModUpdateState.Current => new Color(.55f, .85f, .65f, 1),
+        ModUpdateState.Failed or ModUpdateState.Invalid or ModUpdateState.RateLimited => new Color(1, .72f, .4f, 1),
+        _ => new Color(.7f, .75f, .8f, 1)
+    };
 
     private void RenderDetails(bool resetScroll = true)
     {
         _rowsDirty = true;
-        _detailText.text = _presenter.Details(includeUpdateStatus: _updates == null);
+        _detailText.text = _presenter.Details();
         if (_updates != null)
         {
-            _checkUpdate.interactable = _presenter.Selected != null && _updates.CanCheck(_presenter.Selected);
+            _checkUpdate.interactable = System.Linq.Enumerable.Any(_presenter.Rows, mod => _updates.CanCheck(mod));
             _release.gameObject.SetActive(_presenter.Selected != null && _updates.ReleaseHost(_presenter.Selected) != null);
+            var failed = _presenter.Selected != null && _updates.State(_presenter.Selected) is ModUpdateState.Failed or ModUpdateState.Invalid or ModUpdateState.RateLimited;
+            _retry.gameObject.SetActive(failed);
+            _retry.interactable = failed && _updates.CanRequest(_presenter.Selected!, DateTimeOffset.UtcNow);
         }
         if (_updates != null && _presenter.Selected != null)
         {
             _updateText = _updates.Text(_presenter.Selected, DateTimeOffset.UtcNow);
-            _detailText.text += "\n" + _updateText;
+            _updateStatus.text = _updateText;
+            _updateStatus.color = StatusColor(_presenter.Selected);
         }
-        _project.interactable = _presenter.TryProjectDestination(out var host);
-        _destination.text = _project.interactable ? "Project: " + host : "";
-        if (_updates != null && _presenter.Selected != null)
-        {
-            var releaseHost = _updates.ReleaseHost(_presenter.Selected);
-            if (releaseHost != null) _destination.text += "\nDownload page: " + releaseHost;
-        }
-        _previous.interactable = _next.interactable = _presenter.Rows.Count > 1;
+        _project.gameObject.SetActive(_presenter.TryProjectDestination(out _));
+        if (_presenter.Selected == null) _updateStatus.text = "";
         if (resetScroll) { _details.StopMovement(); _detailsContent.anchoredPosition = Vector2.zero; }
-        ResizeDetails(); RebuildNavigation();
+        ResizeDetails(); UpdateScrollbars(); RebuildNavigation();
     }
 
     private void ResizeDetails()
     {
+        _updateStatus.fontSize = _body.rect.width < 800 ? 12 : 14;
+        var updateWidth = Mathf.Max(1, _body.rect.width * .54f - 178);
+        var updateHeight = Mathf.Max(60, _updateStatus.GetPreferredValues(_updateStatus.text, updateWidth, float.PositiveInfinity).y + 8);
+        Stretch(_updateStatus.rectTransform, .46f, 0, 1, 0, 8, 8, -170, updateHeight + 8);
+        Stretch((RectTransform)_body.Find("Update divider"), .46f, 0, 1, 0, 8, updateHeight + 14, -8, updateHeight + 15);
+        Stretch((RectTransform)_project.transform, .46f, 0, .70f, 0, 8, updateHeight + 22, -4, updateHeight + 54);
+        Stretch((RectTransform)_details.transform, .46f, 0, 1, 1, 8, updateHeight + 62, -8, -70);
+        if (_updates != null)
+        {
+            Stretch((RectTransform)_release.transform, 1, 0, 1, 0, -168, updateHeight / 2 - 8, -8, updateHeight / 2 + 24);
+            Stretch((RectTransform)_retry.transform, 1, 0, 1, 0, -108, updateHeight / 2 - 8, -8, updateHeight / 2 + 24);
+        }
+        Canvas.ForceUpdateCanvases();
         var width = Mathf.Max(1, _details.viewport.rect.width - 14);
-        var destinationHeight = _destination.GetPreferredValues(_destination.text, width, float.PositiveInfinity).y + 8;
-        var detailHeight = _detailText.GetPreferredValues(_detailText.text, width, float.PositiveInfinity).y + 8;
-        Stretch(_destination.rectTransform, 0, 1, 1, 1, 6, -destinationHeight, -8, 0);
-        Stretch(_detailText.rectTransform, 0, 1, 1, 1, 6, -destinationHeight - detailHeight, -8, -destinationHeight);
-        _detailsContent.sizeDelta = new Vector2(0, Mathf.Max(_details.viewport.rect.height, destinationHeight + detailHeight));
+        var detailHeight = _detailText.GetPreferredValues(_detailText.text, width, float.PositiveInfinity).y + 16;
+        Stretch(_detailText.rectTransform, 0, 1, 1, 1, 8, -detailHeight, -8, -8);
+        _detailsContent.sizeDelta = new Vector2(0, Mathf.Max(_details.viewport.rect.height, detailHeight));
+    }
+
+    private void UpdateScrollbars()
+    {
+        var changed = false;
+        foreach (var scroll in new[] { _list, _details })
+        {
+            var visible = scroll.content.rect.height > scroll.viewport.rect.height + 1;
+            if (scroll.verticalScrollbar.gameObject.activeSelf == visible) continue;
+            scroll.verticalScrollbar.gameObject.SetActive(visible);
+            changed = true;
+        }
+        if (changed) RebuildNavigation();
     }
 
     private void RebuildNavigation()
     {
         _navigation.Clear(); _navigation.Add(_close);
         foreach (var row in _rows) if (row.gameObject.activeSelf) _navigation.Add(row);
-        if (_previous.interactable) _navigation.Add(_previous);
-        if (_next.interactable) _navigation.Add(_next);
-        if (_project.interactable) _navigation.Add(_project);
+        if (_project.gameObject.activeSelf && _project.interactable) _navigation.Add(_project);
         if (_updates != null)
         {
             if (_checkUpdate.interactable) _navigation.Add(_checkUpdate);
             if (_release.gameObject.activeSelf && _release.interactable) _navigation.Add(_release);
+            if (_retry.gameObject.activeSelf && _retry.interactable) _navigation.Add(_retry);
         }
-        _navigation.Add(_list.verticalScrollbar); _navigation.Add(_details.verticalScrollbar);
+        if (_list.verticalScrollbar.gameObject.activeSelf) _navigation.Add(_list.verticalScrollbar);
+        if (_details.verticalScrollbar.gameObject.activeSelf) _navigation.Add(_details.verticalScrollbar);
         for (var i = 0; i < _navigation.Count; ++i)
         {
             var links = ModMenuNavigation.Neighbors(i, _navigation.Count, _navigation[i] is Scrollbar);
             _navigation[i].navigation = new Navigation { mode = Navigation.Mode.Explicit,
-                selectOnUp = links.Up.HasValue ? _navigation[links.Up.Value] : null,
-                selectOnDown = links.Down.HasValue ? _navigation[links.Down.Value] : null,
+                selectOnUp = !_rows.Exists(row => row == _navigation[i]) && links.Up.HasValue ? _navigation[links.Up.Value] : null,
+                selectOnDown = !_rows.Exists(row => row == _navigation[i]) && links.Down.HasValue ? _navigation[links.Down.Value] : null,
                 selectOnLeft = _navigation[links.Left], selectOnRight = _navigation[links.Right] };
         }
     }
@@ -345,6 +426,7 @@ internal sealed class ModMenuView : IModMenuView
         var button = rect.gameObject.AddComponent<Button>(); button.targetGraphic = image; button.colors = _colors;
         button.navigation = new Navigation { mode = Navigation.Mode.None };
         var label = Text(rect, "Label", caption); Stretch(label.rectTransform, 0, 0, 1, 1, 8, 0, -8, 0);
+        label.enableAutoSizing = true; label.fontSizeMin = 12; label.fontSizeMax = 16;
         UnityAction action = () => Guard(click); button.onClick.AddListener(action);
         _removeListeners.Add(() => { if (button != null) button.onClick.RemoveListener(action); });
         return button;
@@ -378,7 +460,7 @@ internal sealed class ModMenuView : IModMenuView
         bar.direction = Scrollbar.Direction.BottomToTop;
         scroll.viewport = viewport; scroll.content = content; scroll.horizontal = false; scroll.vertical = true;
         scroll.movementType = ScrollRect.MovementType.Clamped; scroll.scrollSensitivity = 36; scroll.inertia = false;
-        scroll.verticalScrollbar = bar; scroll.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
+        scroll.verticalScrollbar = bar; scroll.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHide;
         return scroll;
     }
 

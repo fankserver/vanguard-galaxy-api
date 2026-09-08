@@ -44,7 +44,7 @@ internal sealed class ModInformationPresenter
         host = "";
         var url = Selected?.Metadata?.ProjectUrl;
         if (url == null || !ModMetadataCodec.IsPublicHttpsUrl(url)) return false;
-        // Render the ASCII destination separately from author-controlled text, never a misleading link caption.
+        // Revalidate independently of author-controlled display text before any browser action.
         host = new Uri(url).IdnHost;
         return true;
     }
@@ -56,7 +56,7 @@ internal sealed class ModInformationPresenter
         open(Selected!.Metadata!.ProjectUrl!); return true;
     }
 
-    internal string Details(bool includeUpdateStatus = true)
+    internal string Details()
     {
         var text = new StringBuilder();
         if (RefreshWarning != null) text.Append(RefreshWarning).Append('\n');
@@ -64,12 +64,11 @@ internal sealed class ModInformationPresenter
         if (row == null) text.Append("No mods to show.\n");
         else
         {
-            text.Append(DisplayName(row)).Append("\nInstalled version: ").Append(row.InstalledVersion).Append('\n');
-            if (includeUpdateStatus) text.Append("Updates: ").Append(UpdateNotice(row)).Append('\n');
+            text.Append(DisplayName(row)).Append('\n');
             if (row.Metadata != null)
             {
-                if (row.Metadata.Author != null) text.Append("Author: ").Append(PlainText(row.Metadata.Author, 256, false)).Append('\n');
-                if (row.Metadata.Description != null) text.Append("Description:\n").Append(PlainText(row.Metadata.Description, 4096, true)).Append('\n');
+                if (row.Metadata.Author != null) text.Append("by ").Append(PlainText(row.Metadata.Author, 256, false)).Append('\n');
+                if (row.Metadata.Description != null) text.Append('\n').Append(PlainText(row.Metadata.Description, 4096, true)).Append('\n');
             }
         }
         return text.ToString();

@@ -48,6 +48,42 @@ public sealed class ModUpdateServiceTests : IDisposable
         Assert.Equal(1, transport.Calls);
         Assert.False(service.Request("a"));
     }
+    [Theory]
+    [InlineData("1.0", "Update available", 1)]
+    [InlineData("2.0", "Up to date", 0)]
+    [InlineData("3.0", "Newer than published", 0)]
+    public async Task OverviewShowsComparedStatusWithoutSelectingMod(string version, string label, int updates)
+    {
+        var transport = new Transport();
+        using var service = new ModUpdateService(transport, new ModUpdateCache(_root), () => Now) { Automatic = true };
+        var mod = Mod(version); var rows = new[] { mod };
+        var presenter = new ModUpdatePresenter(service); presenter.Sync(rows);
+        await Until(service, () => service.Status(mod).LastSuccess != null);
+        Assert.Equal(label, presenter.Label(mod));
+        Assert.Equal(updates, presenter.AvailableCount(rows));
+        Assert.Contains("Installed: " + version, presenter.Text(mod, Now));
+        Assert.Contains("Latest: 2.0", presenter.Text(mod, Now));
+        Assert.Contains(updates > 0 ? "1 update available" : "1 mod", presenter.Summary(rows));
+        Assert.False(presenter.CanRequest(mod, Now));
+        Assert.True(presenter.CanRequest(mod, Now.AddMinutes(2)));
+    }
+    [Fact]
+    public async Task GlobalRefreshRequestsEverySupportedModAndReportsFailureHonestly()
+    {
+        var transport = new Transport { Code = 404 };
+        using var service = new ModUpdateService(transport, new ModUpdateCache(_root), () => Now);
+        var rows = new[] { Mod(), Mod(id: "b"), new ModInformation("c", "C", new Version(1, 0), Array.Empty<ModDependencyInformation>(), null, ModMetadataStatus.Missing) };
+        var presenter = new ModUpdatePresenter(service);
+        presenter.CheckAll(rows);
+        await Until(service, () => presenter.State(rows[0]) == ModUpdateState.Failed && presenter.State(rows[1]) == ModUpdateState.Failed);
+        Assert.Equal(2, transport.Calls);
+        Assert.Contains("2 checks failed", presenter.Summary(rows));
+        Assert.Equal("No update information", presenter.Label(rows[2]));
+        Assert.Contains("Latest: Unknown", presenter.Text(rows[0], Now));
+        Assert.DoesNotContain("Up to date", presenter.Summary(rows));
+        Assert.Equal(0, presenter.AvailableCount(rows));
+        Assert.False(presenter.CanRequest(rows[0], Now));
+    }
     [Fact]
     public async Task OfflineCacheDoesNotSendRequestsAndFailureKeepsLastSuccess()
     {

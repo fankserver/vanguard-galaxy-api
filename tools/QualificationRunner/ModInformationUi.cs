@@ -69,7 +69,8 @@ public sealed partial class Plugin
             Require(events.currentSelectedGameObject == check.gameObject, "Manual refresh lost keyboard focus.");
             foreach (var frame in Wait(() => service.Status(selected).State == ModUpdateState.Available && service.Status(selected).CheckedAt > previousCheck &&
                 release.gameObject.activeInHierarchy, "new manual UI update result")) yield return frame;
-            Require(launches == 0 && details.text.Contains("Update available"), "Update result opened a browser or was not presented.");
+            Require(launches == 0 && panel.GetComponentsInChildren<TMP_Text>().Single(text => text.name == "Update status").text.Contains("Update available") &&
+                !details.text.Contains("Update available"), "Update result must appear separately from the description without opening a browser.");
             record("ui-immediate-refresh-without-automatic-browser");
             Require(service.Automatic && !panel.GetComponentsInChildren<Button>(true).Any(button => button.name == "Automatic updates"), "Automatic checking must not have a player toggle.");
             record("ui-automatic-checks-without-toggle");
