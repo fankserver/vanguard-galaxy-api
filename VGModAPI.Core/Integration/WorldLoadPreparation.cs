@@ -9,8 +9,10 @@ internal sealed class WorldPreparedLoad
     internal object Root { get; }
     internal WorldGenerationReader.Result? Generation { get; }
     internal long ProviderRevision { get; }
-    internal WorldPreparedLoad(Guid session, object root, WorldGenerationReader.Result? generation, long providerRevision)
-    { Session = session; Root = root; Generation = generation; ProviderRevision = providerRevision; }
+    private readonly Action? _validateAssets;
+    internal void ValidateAssets() => _validateAssets?.Invoke();
+    internal WorldPreparedLoad(Guid session, object root, WorldGenerationReader.Result? generation, long providerRevision, Action? validateAssets = null)
+    { Session = session; Root = root; Generation = generation; ProviderRevision = providerRevision; _validateAssets = validateAssets; }
 }
 
 /// <summary>Combines inspected input and committed metadata before native construction. Hooks must supply and revalidate the observed starting attempt.</summary>
@@ -75,7 +77,12 @@ internal sealed class WorldLoadPreparation
             string transformed = root.ToString() ?? throw new InvalidDataException("Missing transformed root text.");
             if (!stillStarting() || providerRevision() != revision || !stillStarting() || transformed != root.ToString())
                 throw new InvalidDataException("World load changed after verified format transformation.");
-            return new WorldPreparedLoad(session, root, verified, revision);
+            return new WorldPreparedLoad(session, root, verified, revision, ValidateAssets);
+        }
+
+        void ValidateAssets()
+        {
+            foreach (var node in nodes) node.ValidateAssets();
         }
 
         void RequireUnchangedRoot()

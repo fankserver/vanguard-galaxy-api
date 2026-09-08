@@ -89,10 +89,14 @@ public sealed class WorldLoadPreparationTests
             }
             if (fault == 0)
             {
-                Assert.Same(root, prep.Read(session, path, GenerationStore.Hash(bytes), Starting, Definition, () => revision));
+                var prepared = prep.ReadPrepared(session, path, GenerationStore.Hash(bytes), Starting, Definition, () => revision);
+                Assert.Same(root, prepared.Root);
                 Assert.Equal("0.8.2.3", root["Version"].AsString);
                 Assert.False(root.ContainsKey(WorldSaveFormat.OriginalVersion));
                 gate.RequireFactory(session, poi, identity.NativeId, row.NativeDigest, revision);
+                prepared.ValidateAssets();
+                Behaviour.Unit.SpaceShip.allShips[assetId] = new Behaviour.Unit.SpaceShip();
+                Assert.Throws<InvalidDataException>(() => prepared.ValidateAssets());
             }
             else
             {
