@@ -25,12 +25,13 @@ internal sealed class DungeonContentService : IDungeonContent, IDisposable
     private readonly DungeonStateStore _state;
     private readonly DungeonContentBindings _native;
     private readonly Action<string, Exception> _diagnose;
+    private readonly Func<bool> _mutationBlocked;
     private readonly Dictionary<string, Provider> _providers = new(StringComparer.Ordinal);
     private bool _disposed;
     private int _callbacks;
     internal DungeonContentService(LifecycleHub hub, DungeonDefinitionRegistry registry, DungeonStateStore state,
-        DungeonContentBindings native, Action<string, Exception> diagnose)
-    { _hub = hub; _registry = registry; _state = state; _native = native; _diagnose = diagnose; }
+        DungeonContentBindings native, Action<string, Exception> diagnose, Func<bool>? mutationBlocked = null)
+    { _hub = hub; _registry = registry; _state = state; _native = native; _diagnose = diagnose; _mutationBlocked = mutationBlocked ?? (() => false); }
     public IDungeonProvider AcquireProvider(string pluginId)
     {
         _hub.CheckThread(); if (_disposed || _callbacks != 0) throw new InvalidOperationException("Dungeon registration unavailable.");
@@ -38,11 +39,12 @@ internal sealed class DungeonContentService : IDungeonContent, IDisposable
         if (_providers.ContainsKey(pluginId)) throw new InvalidOperationException("Dungeon provider already acquired.");
         var provider = new Provider(this, pluginId); _providers.Add(pluginId, provider); return provider;
     }
+    private bool MutationBlocked => _callbacks != 0 || _mutationBlocked();
     private bool Live(Provider provider) => !_disposed && _providers.TryGetValue(provider.Id, out var current) && ReferenceEquals(current, provider);
     private DungeonContentResult Result(DungeonContentStatus status, Guid? id = null) => new(status, status.ToString(), id);
     private DungeonContentResult Attach(Provider provider, string localId, BoardingHandle target)
     {
-        _hub.CheckThread(); if (!Live(provider) || _callbacks != 0) return Result(DungeonContentStatus.Unavailable);
+        _hub.CheckThread(); if (!Live(provider) || MutationBlocked) return Result(DungeonContentStatus.Unavailable);
         if (!_state.MutationAllowed) return Result(DungeonContentStatus.PersistenceUnavailable);
         if (!_registry.TryGet(new(provider.Id, localId), out var definition)) return Result(DungeonContentStatus.MissingDefinition);
         var status = _native.ValidateAttachment(target, definition); if (status != DungeonContentStatus.Attached) return Result(status);
@@ -53,7 +55,7 @@ internal sealed class DungeonContentService : IDungeonContent, IDisposable
     }
     private DungeonContentResult Choose(Provider provider, Guid id, string eventId, string choiceId)
     {
-        _hub.CheckThread(); if (!Live(provider) || _callbacks != 0) return Result(DungeonContentStatus.Unavailable);
+        _hub.CheckThread(); if (!Live(provider) || MutationBlocked) return Result(DungeonContentStatus.Unavailable);
         if (!_state.MutationAllowed) return Result(DungeonContentStatus.PersistenceUnavailable);
         var occurrence = _state.Get(id);
         if (occurrence == null || occurrence.DefinitionId.ProviderId != provider.Id) return Result(DungeonContentStatus.MissingDefinition);

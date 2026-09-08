@@ -15,6 +15,7 @@ internal sealed class BoardingObserver : IDisposable
     private readonly Action<Exception> _fault;
     private readonly Func<object, bool> _isLive;
     private readonly Func<object, string, object?> _read;
+    private readonly Func<object, bool> _isDataInventory;
     private readonly Dictionary<object, Target> _targets = new();
     private readonly Dictionary<object, Operation> _operations = new();
     private readonly System.Runtime.CompilerServices.ConditionalWeakTable<object, object> _retiredOperations = new();
@@ -22,9 +23,17 @@ internal sealed class BoardingObserver : IDisposable
     private bool _stopped;
     private readonly Stack<RewardScope> _rewards = new();
     internal BoardingObserver(LifecycleHub hub, BoardingService service, Assembly assembly, Func<object, bool> isLive, Action<Exception> fault)
-        : this(hub, service, Bind(assembly), isLive, fault) { }
-    internal BoardingObserver(LifecycleHub hub, BoardingService service, Func<object, string, object?> read, Func<object, bool> isLive, Action<Exception> fault)
-    { _hub = hub; _service = service; _fault = fault; _isLive = isLive; _read = read; }
+        : this(hub, service, Bind(assembly), isLive, fault, BindDataInventory(assembly)) { }
+    internal BoardingObserver(LifecycleHub hub, BoardingService service, Func<object, string, object?> read, Func<object, bool> isLive, Action<Exception> fault, Func<object, bool>? isDataInventory = null)
+    { _hub = hub; _service = service; _fault = fault; _isLive = isLive; _read = read; _isDataInventory = isDataInventory ?? (_ => false); }
+    private static Func<object, bool> BindDataInventory(Assembly assembly)
+    {
+        var inventory = assembly.GetType("Source.Item.Inventory", true)!;
+        var data = inventory.GetProperty("data", BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly);
+        if (data?.PropertyType != inventory || data.GetMethod == null) throw new MissingMemberException("Inventory.data");
+        var player = assembly.GetType(BindingCatalog.Player, true)!.GetField("current", BindingFlags.Public | BindingFlags.Static)!;
+        return value => player.GetValue(null) != null && ReferenceEquals(data.GetValue(null), value);
+    }
     private static Func<object, string, object?> Bind(Assembly assembly)
     {
         var members = new Dictionary<(Type, string), MemberInfo>();
@@ -162,9 +171,9 @@ internal sealed class BoardingObserver : IDisposable
         if (before.HasValue && after > before && after.Value - before.Value <= int.MaxValue)
             Delivered(new BoardingDelivery(BoardingDeliveryRoute.Credits, (int)(after.Value - before.Value)));
     }
-    internal void InventoryApplied(object? result, int amount)
+    internal void InventoryApplied(object? result, int amount, object? inventory = null)
     {
-        if (result != null && amount > 0) Delivered(new BoardingDelivery(BoardingDeliveryRoute.Inventory, amount));
+        if (result != null && amount > 0) Delivered(new BoardingDelivery(inventory != null && _isDataInventory(inventory) ? BoardingDeliveryRoute.DataInventory : BoardingDeliveryRoute.Inventory, amount));
     }
     internal void WorldLootApplied(object poi, object data)
     {
@@ -267,6 +276,11 @@ internal sealed class BoardingObserver : IDisposable
     private int CountCrew(object sim, string side, int index) => ((IEnumerable)Read(sim, side)!).Cast<object>()
         .Count(unit => Read<int>(unit, "compartmentIndex") == index && Read<int>(unit, "hp") > 0 && Read(unit, "state")!.ToString() is not ("Killed" or "Surrendered" or "Captured"));
     public void Dispose() { _stopped = true; _targets.Clear(); _operations.Clear(); _service.Dispose(); }
+    internal BoardingHandle? CommandHandleForOperation(object native)
+    {
+        _hub.CheckThread();
+        return _operations.TryGetValue(native, out var operation) && _service.GetOperation(operation.Handle) != null ? operation.Handle : null;
+    }
     internal object? ResolveCommandOperation(BoardingHandle handle)
     {
         _hub.CheckThread();
