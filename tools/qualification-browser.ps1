@@ -22,6 +22,7 @@ public static class BrowserObservation {
 }
 '@
 $destination = 'https://github.com/fankserver/vanguard-galaxy-api/releases'
+$releaseTitlePattern = '^Releases.*fankserver/vanguard-galaxy-api(?:\s|$)' # Branding suffix is not stable; exact HTTPS URI below is authoritative.
 $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
 $game = $null
 try {
@@ -43,7 +44,7 @@ try {
         $title = New-Object Text.StringBuilder 1024
         $null = [BrowserObservation]::GetWindowText($window, $title, 1024)
         # Never inspect or capture unrelated browser tabs/windows.
-        if ($title.ToString() -match 'Releases.*fankserver/vanguard-galaxy-api.*GitHub') {
+        if ($title.ToString() -match $releaseTitlePattern) {
             $element = [Windows.Automation.AutomationElement]::FromHandle($window)
             $condition = New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::ControlTypeProperty, [Windows.Automation.ControlType]::Edit)
             foreach ($edit in $element.FindAll([Windows.Automation.TreeScope]::Descendants, $condition)) {

@@ -6,6 +6,16 @@ function Reject($action, $label) {
     try { & $action } catch { $rejected = $true }
     if (!$rejected) { throw "Accepted invalid case: $label" }
 }
+$browserSource = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../qualification-browser.ps1'))
+$titleMatch = [regex]::Match($browserSource, '(?m)^\$releaseTitlePattern = ''([^'']+)''')
+if (!$titleMatch.Success) { throw 'Missing shared browser title pattern.' }
+$titlePattern = $titleMatch.Groups[1].Value
+foreach ($title in @('Releases - fankserver/vanguard-galaxy-api - Google Chrome', 'Releases - fankserver/vanguard-galaxy-api - GitHub - Google Chrome')) {
+    if ($title -notmatch $titlePattern) { throw 'Rejected valid public release title variation.' }
+}
+foreach ($title in @('Settings - Google Chrome', 'Releases - unrelated/private', 'Releases - fankserver/vanguard-galaxy-api-private')) {
+    if ($title -match $titlePattern) { throw 'Accepted unrelated browser title.' }
+}
 $root = Join-Path ([IO.Path]::GetTempPath()) ('vg-menu-synthetic-' + [guid]::NewGuid())
 New-Item -ItemType Directory -Path $root | Out-Null
 try {
