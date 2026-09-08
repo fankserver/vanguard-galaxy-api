@@ -35,6 +35,10 @@ internal sealed class WorldConstructionGate
     internal void Open(Guid session, SnapshotAssociation? association, string canonicalPath, string nativeHash,
         long providerRevision, string[] availableProviders, WorldConstructionNode[] nodes)
     {
+        // Classification survives refusal; it does not confer permission to construct.
+        if (nodes != null)
+            foreach (var observed in nodes)
+                if (observed != null) _ownedNodes.GetValue(observed.Json, _ => new object());
         if (session == Guid.Empty || session != _session) throw new InvalidDataException("Stale world load.");
         _ready = false;
         _nodes = new ConditionalWeakTable<object, WorldConstructionNode>();
@@ -62,6 +66,7 @@ internal sealed class WorldConstructionGate
     internal void RequireFactory(Guid session, object json, string nativeId, string digest, long providerRevision)
     {
         if (json == null) throw new ArgumentNullException(nameof(json));
+        if (WorldObjectIdentity.IsReserved(nativeId)) _ownedNodes.GetValue(json, _ => new object());
         bool known = _nodes.TryGetValue(json, out var node);
         if (!known && !_ownedNodes.TryGetValue(json, out _) && !WorldObjectIdentity.IsReserved(nativeId)) return;
         if (!_ready || session != _session || providerRevision != _providerRevision || !known ||

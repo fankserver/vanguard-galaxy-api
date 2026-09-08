@@ -23,6 +23,21 @@ public sealed class WorldConstructionGateTests
     }
 
     [Fact]
+    public void RejectedNodesCannotBecomeVanillaByStrippingTheirMarkers()
+    {
+        var gate = new WorldConstructionGate(); var session = Guid.NewGuid(); gate.Start(session);
+        var beforeOpen = Node();
+        Assert.Throws<InvalidDataException>(() => gate.RequireFactory(session, beforeOpen.Json, beforeOpen.Identity.NativeId, Hash, 1));
+        Assert.Throws<InvalidDataException>(() => gate.RequireFactory(session, beforeOpen.Json, "stripped", Hash, 1));
+        var missingProvider = Node();
+        Assert.Throws<InvalidDataException>(() => gate.Open(session, Association(), "/save/a", Hash, 1, Array.Empty<string>(), new[] { missingProvider }));
+        Assert.Throws<InvalidDataException>(() => gate.RequireFactory(session, missingProvider.Json, "stripped", Hash, 1));
+        var missingMetadata = Node();
+        Assert.Throws<InvalidDataException>(() => gate.Open(session, null, "/save/a", Hash, 1, Array.Empty<string>(), new[] { missingMetadata }));
+        Assert.Throws<InvalidDataException>(() => gate.RequireFactory(session, missingMetadata.Json, "stripped", Hash, 1));
+    }
+
+    [Fact]
     public void ExactNodeGenerationAndProviderRevisionAreRequired()
     {
         var gate = new WorldConstructionGate(); var session = Guid.NewGuid(); gate.Start(session);
