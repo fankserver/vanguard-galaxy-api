@@ -81,6 +81,10 @@ internal sealed class WorldMapIndex
         private readonly float[] _coordinates;
         internal Snapshot(object map, Dictionary<string, object> systems, Dictionary<string, object> points, object[] references, string[] identities, object[] collections, float[] coordinates)
         { _map = map; _systems = systems; _points = points; _references = references; _identities = identities; _collections = collections; _coordinates = coordinates; }
+        internal int OwnedPointCount
+        {
+            get { int count = 0; foreach (var id in _points.Keys) if (WorldObjectIdentity.IsReserved(id)) count++; return count; }
+        }
         internal object? FindSystem(string id) => _systems.TryGetValue(id, out var system) ? system : null;
         internal object? FindPoint(string id) => _points.TryGetValue(id, out var poi) ? poi : null;
         internal bool SameMembership(Snapshot other)

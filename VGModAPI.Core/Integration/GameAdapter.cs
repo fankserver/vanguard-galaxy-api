@@ -165,11 +165,17 @@ internal sealed class GameAdapter
     {
         Hub.CheckThread();
         player = null;
-        if (_faulted || Hub.IsDispatchingCallbacks || Hub.CurrentSession?.Id != sessionId ||
-            Hub.CurrentSession.Phase != SessionPhase.GameplayInitialized || _boundPlayer == null ||
-            !ReferenceEquals(_boundPlayer, Bindings.CurrentPlayer)) return false;
+        if (Hub.IsDispatchingCallbacks || Hub.CurrentSession?.Phase != SessionPhase.GameplayInitialized) return false;
+        return TryGetObservedPlayer(sessionId, out player);
+    }
+
+    // Read-only reconstruction can inspect the bound player during PlayerReady dispatch.
+    internal bool TryGetObservedPlayer(Guid sessionId, out object? player)
+    {
+        Hub.CheckThread(); player = null;
+        if (_faulted || SaveSession()?.Id != sessionId) return false;
         player = _boundPlayer;
-        return true;
+        return player != null;
     }
 
     internal SessionSnapshot? SaveSession()
