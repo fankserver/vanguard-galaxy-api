@@ -89,6 +89,13 @@ public sealed class CraftingCommandNativeTests : IDisposable
         Assert.Equal(10, _station.materialStorage.items.Single().count); Assert.Equal(100, _player.Materials);
     }
     [Fact]
+    public void ForgeSelectionNotificationsCannotIssueMutations()
+    {
+        _source.UiDispatching = () => true;
+        Assert.Equal(CraftingCommandStatus.Busy, _commands.Execute(QueueRequest()).Status);
+        Assert.Empty(_station.forge!.jobs); Assert.Equal(1000, _player.credits);
+    }
+    [Fact]
     public void CompatibleCloneCannotHideFavouriteExactReferenceConsumption()
     {
         var favourite = _station.materialStorage.items.Single(); favourite.favourite = true;
