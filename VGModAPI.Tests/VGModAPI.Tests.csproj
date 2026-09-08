@@ -26,6 +26,7 @@
     <Compile Include="../VGModAPI/Patches/StoryProtectionPatches.cs" Link="StoryProtectionPatches.cs" />
     <Compile Include="../VGModAPI/Patches/BarPatches.cs" Link="BarPatches.cs" />
     <Compile Include="../VGModAPI/Patches/WorldLoadPatches.cs" Link="WorldLoadPatches.cs" />
+    <Compile Include="../VGModAPI/Patches/WorldLifetimePatches.cs" Link="WorldLifetimePatches.cs" />
     <Compile Include="../VGModAPI/Patches/BoardingPatches.cs" Link="BoardingPatches.cs" />
     <Compile Include="../VGModAPI/Patches/DungeonRewardPatches.cs" Link="DungeonRewardPatches.cs" />
     <None Include="../tools/fixtures/mod-updates/ui-available.json" Link="ui-available.json" CopyToOutputDirectory="PreserveNewest" />
