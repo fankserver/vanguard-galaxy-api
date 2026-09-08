@@ -80,7 +80,7 @@ make test CONFIGURATION=Release
 make check-bindings CONFIGURATION=Release
 ```
 
-Tests require .NET SDK 10. Override `GAME_DIR` for another installation. Pure `make test` needs no game installation; build/package need local compile references and `check-bindings` needs the original game DLL. Never use a stripped/publicized stub as compatibility evidence. See [checks](checks.md) for the complete local validation chain.
+Tests require .NET SDK 10. Override `GAME_DIR` for another installation. Pure `make test` needs no game installation; build/package need local compile references and `check-bindings` needs the original game DLL. Never use a stripped/publicized stub as compatibility evidence. `make check-local CONFIGURATION=Release` runs the local validation chain defined in the [Makefile](https://github.com/fankserver/vanguard-galaxy-api/blob/main/Makefile). Its provenance report identifies inputs and outputs, not Unity qualification; never publish reference binaries or raw profiles.
 
 ## Native testing safety
 

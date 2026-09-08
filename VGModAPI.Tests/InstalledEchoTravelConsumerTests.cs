@@ -22,7 +22,7 @@ namespace VGModAPI.Tests;
 ///    with the API absent (the separate MissingApi control).
 ///
 /// Reading is Cecil-only and read-only, with the same bounded, explicit dependency search path the
-/// Anima consumer tests use (see docs/checks.md). Run with VG_ECHO_ASSEMBLY (make check-consumer).
+/// Anima consumer tests use. Run with VG_ECHO_ASSEMBLY (make check-consumer).
 /// </summary>
 [Trait("Category", "InstalledConsumer")]
 public sealed class InstalledEchoTravelConsumerTests
@@ -70,7 +70,7 @@ public sealed class InstalledEchoTravelConsumerTests
             {
                 throw new InvalidOperationException("Cecil could not resolve the consumer dependency '" + name.FullName
                     + "' that decoding this metadata requires. Searched: " + string.Join(", ", _directories)
-                    + ". Point ECHO_DEPENDENCY_DIRS at the directory holding it (see docs/checks.md).", error);
+                    + ". Point ECHO_DEPENDENCY_DIRS at the directory holding it when running make check-consumer.", error);
             }
         }
     }
