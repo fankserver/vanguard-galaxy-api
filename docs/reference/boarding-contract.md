@@ -119,7 +119,7 @@ The current vanilla serializer is insufficient for the complete API save contrac
 
 These gaps remain automatic save/load and native qualification requirements, not exemptions. Returning manifests need stable occurrence/settlement identity; frame-derived pod names are not persistent uniqueness. Mutable transform data is copied by native update components, not a transactional save snapshot.
 
-Native serialization is not an atomic transaction with API storage. Save-as, rollback, failed/skipped writes, absent providers, schema migrations and return-pod continuity require explicit recovery behavior. A session ID is not a campaign or occurrence key. `SaveStarted` is after vanilla snapshot construction and is not an authoring hook. See [contributor constraints](https://github.com/fankserver/vanguard-galaxy-api/blob/main/CLAUDE.md#api-owned-content) and [save storage](persistence-storage.md).
+Native serialization is not an atomic transaction with API storage. Save-as, rollback, failed/skipped writes, absent providers, schema migrations and return-pod continuity require explicit recovery behavior. A session ID is not a campaign or occurrence key. `SaveStarted` is after vanilla snapshot construction and is not an authoring hook. See [contributor constraints](https://github.com/fankserver/vanguard-galaxy-api/blob/main/CONTRIBUTING.md#api-owned-content) and [save storage](persistence-storage.md).
 
 ## Consumer boundary
 
