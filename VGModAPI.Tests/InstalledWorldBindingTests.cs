@@ -23,6 +23,18 @@ public sealed class InstalledWorldBindingTests
             Assert.Equal(binding.Static, method.IsStatic);
             Assert.Equal(binding.ReturnType, method.ReturnType.FullName);
         }
+        var element = module.GetType("Source.Galaxy.MapElement");
+        foreach (string fieldName in new[] { "<guid>k__BackingField", "_name", "system", "position", "level", "<faction>k__BackingField" })
+            Assert.False(element.Fields.Single(field => field.Name == fieldName).IsStatic);
+        Assert.True(module.GetType("Source.Galaxy.Faction").Fields.Single(field => field.Name == "allFactions").IsStatic);
+        foreach (string seed in new[] { "backgroundSeed", "contentSeed" })
+            Assert.Equal("System.UInt64", module.GetType("Source.Galaxy.MapPointOfInterest").Fields.Single(field => field.Name == seed).FieldType.FullName);
+        foreach (string typeName in new[] { "Source.Galaxy.MapElement", "Source.Galaxy.MapPointOfInterest", "Source.Galaxy.POI.Combat" })
+        {
+            var constructor = module.GetType(typeName).Methods.Single(method => method.IsConstructor && !method.IsStatic && method.Parameters.Count == 0);
+            Assert.DoesNotContain(constructor.Body.Instructions, instruction => instruction.Operand is MethodReference method &&
+                (method.DeclaringType.FullName.Contains("SeededRandom") || method.Name == "SetupPOI" || method.DeclaringType.FullName == "Source.Galaxy.Faction"));
+        }
         var poiRead = module.GetType("Source.Galaxy.MapPointOfInterest").Methods.Single(method => method.Name == "FromJson");
         var calls = poiRead.Body.Instructions.Where(instruction => instruction.Operand is MethodReference)
             .Select(instruction => (MethodReference)instruction.Operand).ToArray();

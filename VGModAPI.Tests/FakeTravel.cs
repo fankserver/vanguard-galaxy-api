@@ -3,13 +3,16 @@ namespace Source.Galaxy
     public abstract class MapElement
     {
         public SystemMapData? system;
+        public UnityEngine.Vector2 position;
+        public int level;
+        public virtual Faction? faction { get; set; }
         private string? _name;
         public string guid { get; set; } = "native-id";
         public int NameReads { get; private set; }
         public string name { get { NameReads++; return _name ?? "generated"; } set { _name = value; } }
     }
-    public sealed class SystemMapData : MapElement { }
-    public partial class MapPointOfInterest : MapElement { }
+    public sealed class SystemMapData : MapElement { public System.Collections.Generic.List<MapPointOfInterest> pointsOfInterest = new(); }
+    public partial class MapPointOfInterest : MapElement { public ulong backgroundSeed, contentSeed; }
 }
 namespace Source.Player
 {
