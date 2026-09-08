@@ -16,6 +16,7 @@ internal sealed class LifecycleHub : ILifecycleApi, ILifecycleDispatchState, IDi
     private SessionSnapshot? _session;
     private bool _dispatching;
     private bool _disposed;
+    private bool _disposeRequested;
 
     internal LifecycleHub(Action<string, Exception> report)
     {
@@ -54,7 +55,7 @@ internal sealed class LifecycleHub : ILifecycleApi, ILifecycleDispatchState, IDi
     public IDisposable Subscribe(string owner, Action<LifecycleEvent> callback)
     {
         CheckThread();
-        if (_disposed) throw new ObjectDisposedException(nameof(LifecycleHub));
+        if (_disposed || Services.IsStopping) throw new ObjectDisposedException(nameof(LifecycleHub));
         if (string.IsNullOrWhiteSpace(owner)) throw new ArgumentException("An owner ID is required.", nameof(owner));
         if (callback == null) throw new ArgumentNullException(nameof(callback));
         var sub = new Subscription(this, owner, callback);
@@ -117,8 +118,10 @@ internal sealed class LifecycleHub : ILifecycleApi, ILifecycleDispatchState, IDi
             while (_pending.Count > 0 && !_disposed)
             {
                 var next = _pending.Dequeue();
+                if (Services.IsStopping && next.Kind != LifecycleEventKind.SessionInvalidated) continue;
                 foreach (var sub in _subscriptions.ToArray())
                 {
+                    if (Services.IsStopping && next.Kind != LifecycleEventKind.SessionInvalidated) break;
                     if (!sub.Active) continue;
                     try { sub.Callback(next); }
                     catch (Exception ex)
@@ -128,7 +131,11 @@ internal sealed class LifecycleHub : ILifecycleApi, ILifecycleDispatchState, IDi
                 }
             }
         }
-        finally { _dispatching = false; }
+        finally
+        {
+            _dispatching = false;
+            if (_disposeRequested) FinishDispose();
+        }
     }
 
     internal void CheckThread()
@@ -140,9 +147,16 @@ internal sealed class LifecycleHub : ILifecycleApi, ILifecycleDispatchState, IDi
     public void Dispose()
     {
         CheckThread();
-        if (_disposed) return;
+        if (_disposed || _disposeRequested) return;
+        _disposeRequested = true;
         Services.BeginStop();
         Invalidate("API shutting down.");
+        if (!_dispatching) FinishDispose();
+    }
+
+    private void FinishDispose()
+    {
+        if (_disposed) return;
         _disposed = true;
         foreach (var sub in _subscriptions) sub.Active = false;
         _subscriptions.Clear();

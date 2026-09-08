@@ -158,6 +158,39 @@ public sealed class ServiceStatusRegistryTests
         Assert.Equal(SessionPhase.Invalidated, hub.CurrentSession!.Phase);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ReentrantLifecycleDisposalDrainsTerminalInvalidationBeforeServiceShutdown(bool duringInvalidation)
+    {
+        using var hub = Bound();
+        var seen = new List<string>();
+        var status = hub.Services.Get("session-lifecycle");
+        status.AvailabilityChanged += state => seen.Add("status:" + state.Reason);
+        hub.Subscribe("first", fact =>
+        {
+            seen.Add("first:" + fact.Kind);
+            if (duringInvalidation && fact.Kind != LifecycleEventKind.SessionInvalidated) return;
+            if (!duringInvalidation && fact.Kind == LifecycleEventKind.SessionStarting)
+                hub.PlayerReady(fact.Session!.Id); // Queued ordinary work must not survive shutdown.
+            hub.Dispose();
+        });
+        hub.Subscribe("second", fact => seen.Add("second:" + fact.Kind));
+        hub.Begin(SessionOrigin.NewGame, null);
+        if (duringInvalidation)
+        {
+            seen.Clear();
+            hub.Dispose();
+        }
+        Assert.Equal(duringInvalidation
+            ? new[] { "first:SessionInvalidated", "second:SessionInvalidated", "status:ApiStopped" }
+            : new[] { "first:SessionStarting", "first:SessionInvalidated", "second:SessionInvalidated", "status:ApiStopped" }, seen);
+        Assert.Equal(SessionPhase.Invalidated, hub.CurrentSession!.Phase);
+        Assert.False(hub.IsDispatchingCallbacks);
+        Assert.Throws<ObjectDisposedException>(() => hub.Subscribe("late", _ => { }));
+        Assert.Throws<ObjectDisposedException>(() => hub.Begin(SessionOrigin.NewGame, null));
+    }
+
     [Fact]
     public void UnknownFeaturesFailClosedAndAllStatusAccessRequiresTheMainThread()
     {
