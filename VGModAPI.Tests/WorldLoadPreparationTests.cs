@@ -11,11 +11,38 @@ namespace VGModAPI.Tests;
 
 public sealed class WorldLoadPreparationTests
 {
+    [Fact]
+    public void OptionalGenerationStillRejectsRootChangesFromValidationCallbacks()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "vg-prep-empty-" + Guid.NewGuid().ToString("N"));
+        string text = "fixture-" + Guid.NewGuid().ToString("N");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var map = new JsonObject { ["systems"] = new(new List<JsonValue>()) };
+            var root = new JsonObject { Text = text, ["Player"] = new(new JsonObject { ["map"] = new(map) }) };
+            JsonValue.ParseFixtures[text] = root;
+            var bytes = Encoding.UTF8.GetBytes(text); string path = Path.Combine(dir, "native.save"); File.WriteAllBytes(path, bytes);
+            var store = new GenerationStore(Path.Combine(dir, "generations"));
+            var gate = new WorldConstructionGate(); var session = Guid.NewGuid(); gate.Start(session);
+            var prep = new WorldLoadPreparation(new WorldGenerationReader(store), new WorldJsonInspection(typeof(JsonObject).Assembly), gate);
+            int calls = 0;
+            bool Starting()
+            {
+                if (++calls == 2) root.Text = "mutated-without-owned-pois";
+                return true;
+            }
+            Assert.Throws<InvalidDataException>(() => prep.Read(session, path, GenerationStore.Hash(bytes), Starting, _ => true, () => 1));
+        }
+        finally { JsonValue.ParseFixtures.TryRemove(text, out _); Directory.Delete(dir, true); }
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
     [InlineData(2)]
     [InlineData(3)]
+    [InlineData(4)]
     public void EarlyPreparationAdmitsOnlyUnchangedCurrentDefinitions(int fault)
     {
         string dir = Path.Combine(Path.GetTempPath(), "vg-prep-" + Guid.NewGuid().ToString("N"));
@@ -42,6 +69,7 @@ public sealed class WorldLoadPreparationTests
                 if (fault == 1) return false;
                 if (fault == 2) revision++;
                 if (fault == 3) poi.Text = "changed-after-metadata";
+                if (fault == 4) root.Text = "changed-player-or-vanilla-state";
                 return saved.DefinitionRevision == 1;
             }
             if (fault == 0)

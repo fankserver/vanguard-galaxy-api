@@ -25,11 +25,13 @@ internal sealed class WorldLoadPreparation
         var bytes = WorldLoadFile.Capture(canonicalPath, expectedHash);
         // This parsed object is the returned load input. The native Recall body must not reread the file.
         var root = _json.ParseCaptured(bytes);
+        string rootText = root.ToString() ?? throw new InvalidDataException("Missing native root representation.");
         var nodes = _json.Read(root);
         var generation = nodes.Length == 0 ? _generations.ReadOptional(canonicalPath, bytes) : _generations.Read(canonicalPath, bytes);
         if (generation == null)
         {
             if (!stillStarting() || providerRevision() != revision || !stillStarting()) throw new InvalidDataException("World load changed during inspection.");
+            RequireUnchangedRoot();
             return root;
         }
         var rows = generation.Rows;
@@ -45,7 +47,14 @@ internal sealed class WorldLoadPreparation
         var current = WorldJsonInspection.Bind(rows, _json.Read(root));
         for (int i = 0; i < bindings.Length; i++)
             if (!ReferenceEquals(bindings[i].Json, current[i].Json)) throw new InvalidDataException("World JSON node replaced during admission.");
+        RequireUnchangedRoot();
         _gate.Open(session, generation.Association, canonicalPath, expectedHash, revision, providers, current);
         return root;
+
+        void RequireUnchangedRoot()
+        {
+            if (!string.Equals(rootText, root.ToString(), StringComparison.Ordinal))
+                throw new InvalidDataException("Native load root changed after its byte association.");
+        }
     }
 }
