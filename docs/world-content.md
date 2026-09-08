@@ -1,0 +1,34 @@
+# Owned world content boundary
+
+World protection is opt-in and experimental. Its implementation is internal: there is no supported public world-authoring API, and owned-definition load admission is disabled. Host checks and binding inspection do not qualify persistent world creation in Unity.
+
+## Shared primitive selection
+
+Two consumers motivate an owned encounter location, not a campaign framework:
+
+- Anima's `MissionFactoryFromJson.BuildClearCombatSite` creates a Combat POI, attaches a mission objective and composes guards/reinforcement waves. Its fleet helpers request count ranges within point-budgeted generation.
+- CustomMission's `SectorBuilder` builds pocket systems and gated entrances, chooses faction ships, and uses fixed payloads for exact-count timed spawns. Its scoped-hostility helper explicitly avoids changing global faction diplomacy.
+
+The selected implementation boundary is a persistent, independently identified Combat POI in an existing system. Pocket-system and gate authoring are not implied by that selection. Six-act progression, boss escape, dungeon layouts, faction politics, autopilot rules and combat choreography remain consumer logic. A capability used by only one campaign detail is not sufficient justification for a shared API.
+
+### Spawn semantics
+
+Exact-count and point-budgeted operations must be distinct contracts:
+
+- Native fixed payload creation constructs the requested number of one selected ship type.
+- Native budgeted creation spends a total points budget and can return fewer units than a requested count. Its maximum may also expand from parent level and faction ship-budget calculations. Setting input count bounds is not an effective generation bound.
+- Scoped per-unit hostility is not a change to the faction's global relationship with the player.
+
+No public spawn operation is exposed. `UnitPayloadDescriptor` is refused by world inspection until effective generation bounds are validated. Fixed-descriptor input bounds and native selector checks are not complete validation of generated content.
+
+## Persistence and activation constraints
+
+Supported persistent creation must automatically preserve existence, owner/local identity, instance identity, supported properties, links and lifecycle state. Providers must not implement save hooks or rebuild timing for those fields. Temporary lifetime must be explicit; it must not replace persistence merely to avoid reconstruction.
+
+The internal implementation pairs world inventory and full declarations in one committed save generation, associates them with the exact native snapshot and uses an API-required save-version envelope. Reconstruction requires the exact admitted constructor results, not just matching IDs. Two providers may declare the same local ID without sharing ownership; same-owner duplicate declarations are rejected.
+
+Activation requires exact reconstruction or creation provenance and readiness of both automatic persistence owners. Load-time provider absence refuses before construction. No hot-unload guarantee is offered; retained refusal guards require process restart. Keeping immutable data after a provider lease is disposed is not, by itself, evidence that native activity is safe.
+
+Before admission can be enabled, nested state must satisfy the supported data-only contract at creation, save and load. Native type membership and a committed digest do not establish behavioral safety: triggered descriptors execute generation during loading, getters can generate deferred content, and scene/travel coroutines resume after their factories return. Executable provider payloads and custom native types/state cannot be admitted under a data-only lifetime contract.
+
+Mission references must resolve only after world reconstruction, with dependent story and bar restoration ordered accordingly. Native qualification must cover save/load, cross-slot changes, save-as/rollback, failed saves, missing providers, content migration and reference restoration, without duplicates or unrelated-world changes. The internal guards are not evidence that these end-to-end requirements are complete.
