@@ -41,12 +41,16 @@ internal sealed class WorldTravelScopes
         RequireLeg(leg);
         return leg.PendingCompletion = new AsyncCompletion(leg);
     }
-    internal bool ClaimCompletion(AsyncCompletion completion)
+    internal bool IsCurrent(AsyncCompletion completion)
     {
         var leg = completion.Leg;
-        if (!ReferenceEquals(_current, leg.Route) || !ReferenceEquals(leg.Route.Current, leg) || leg.HandedOff || leg.Completed ||
-            !ReferenceEquals(leg.PendingCompletion, completion)) return false;
-        leg.PendingCompletion = null; return true;
+        return ReferenceEquals(_current, leg.Route) && ReferenceEquals(leg.Route.Current, leg) && !leg.HandedOff && !leg.Completed &&
+            ReferenceEquals(leg.PendingCompletion, completion);
+    }
+    internal bool ClaimCompletion(AsyncCompletion completion)
+    {
+        if (!IsCurrent(completion)) return false;
+        completion.Leg.PendingCompletion = null; return true;
     }
     private sealed class Execution : IDisposable
     {
