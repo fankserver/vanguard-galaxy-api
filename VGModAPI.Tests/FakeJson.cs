@@ -2,17 +2,22 @@ using System.Collections.Generic;
 
 // Reflection-shape doubles, not a replacement for the native serializer qualification.
 namespace LightJson;
-public sealed class JsonObject
+public sealed class JsonObject : IEnumerable<KeyValuePair<string, JsonValue>>
 {
     private readonly Dictionary<string, JsonValue> _fields = new();
     public string Text = "{}";
     public JsonValue this[string key] { get => _fields.TryGetValue(key, out var value) ? value : new JsonValue(null); set => _fields[key] = value; }
+    public bool ContainsKey(string key) => _fields.ContainsKey(key);
+    public bool Remove(string key) => _fields.Remove(key);
+    public IEnumerator<KeyValuePair<string, JsonValue>> GetEnumerator() => _fields.GetEnumerator();
+    System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
     public override string ToString() => Text;
 }
 public sealed class JsonValue
 {
     private readonly object? _value;
     public JsonValue(object? value) { _value = value; }
+    public JsonValue(string? value) : this((object?)value) { }
     // Shape double: preserves supplied text; it does not simulate native JSON parsing.
     internal static readonly System.Collections.Concurrent.ConcurrentDictionary<string, JsonObject> ParseFixtures = new();
     public static JsonValue Parse(string text) => new(ParseFixtures.TryGetValue(text, out var fixture) ? fixture : new JsonObject { Text = text });
