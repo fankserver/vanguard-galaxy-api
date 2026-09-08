@@ -13,10 +13,11 @@ namespace Source.Item
 {
     public enum RefinedMaterial { TestMetal, TestGas }
     public enum Rarity { Common, Rare }
+    public enum ItemCategory { Ore, Material, Module }
 }
 namespace Behaviour.Item
 {
-    public sealed class InventoryItemType
+    public sealed partial class InventoryItemType
     {
         public static IEnumerable<InventoryItemType> all { get; set; } = Array.Empty<InventoryItemType>();
         public string identifier { get; set; } = "item";
@@ -26,11 +27,11 @@ namespace Behaviour.Item
 }
 namespace Behaviour.Item.Builder
 {
-    public sealed class ItemBuilder { public string identifier { get; set; } = "builder"; }
+    public sealed class ItemBuilder { public string identifier { get; set; } = "builder"; public Behaviour.Item.InventoryItemType prefab { get; set; } = new(); }
 }
 namespace Behaviour.Equipment.Builder
 {
-    public sealed class EquipmentBuilder { public string identifier { get; set; } = "equipment"; }
+    public sealed class EquipmentBuilder { public string identifier { get; set; } = "equipment"; public Behaviour.Item.InventoryItemType prefab { get; set; } = new(); }
 }
 namespace Behaviour.Mining
 {
@@ -39,11 +40,11 @@ namespace Behaviour.Mining
         public Source.Item.RefinedMaterial product { get; set; }
         public float yield { get; set; } = .5f;
     }
-    public sealed class OreItemData { public List<OreRefinementProduct> contents = new(); }
+    public sealed partial class OreItemData { public List<OreRefinementProduct> contents = new(); }
 }
 namespace Behaviour.Crafting
 {
-    public sealed class CraftingRecipe
+    public sealed partial class CraftingRecipe
     {
         public sealed class CraftingRecipeMaterialRow
         {
@@ -69,9 +70,14 @@ namespace Behaviour.Crafting
 }
 namespace Source.Mining
 {
-    public sealed class Forge
+    public sealed partial class Forge
     {
-        public static Forge? current { get; set; }
+        private static Forge? _current;
+        public static Forge? current
+        {
+            get => _current;
+            set { _current = value; if (value != null) value.spaceStation.forge = value; }
+        }
         public IEnumerable<Behaviour.Crafting.CraftingRecipe> recipes { get; set; } = Array.Empty<Behaviour.Crafting.CraftingRecipe>();
     }
 }

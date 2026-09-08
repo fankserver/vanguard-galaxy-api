@@ -29,6 +29,9 @@ internal static class RecipeCatalogBindings
         (Item, "identifier", "System.String", false, false),
         (Item, "displayName", "System.String", false, false),
         ("Source.Mining.Forge", "current", "Source.Mining.Forge", true, false),
+        ("Source.Galaxy.POI.SpaceStation", "current", "Source.Galaxy.POI.SpaceStation", true, false),
+        ("Source.Galaxy.POI.SpaceStation", "forge", "Source.Mining.Forge", false, true),
+        ("Source.Galaxy.POI.SpaceStation", "refinery", "Source.Mining.Refinery", false, true),
         ("Source.Mining.Forge", "recipes", "System.Collections.Generic.IEnumerable`1<" + Recipe + ">", false, false),
         ("Behaviour.Mining.OreItemData", "contents", "System.Collections.Generic.List`1<Behaviour.Mining.OreRefinementProduct>", false, true),
         ("Behaviour.Mining.OreRefinementProduct", "product", "Source.Item.RefinedMaterial", false, false),
@@ -36,10 +39,11 @@ internal static class RecipeCatalogBindings
         ("Behaviour.Equipment.Builder.EquipmentBuilder", "identifier", "System.String", false, false),
         ("Behaviour.Item.Builder.ItemBuilder", "identifier", "System.String", false, false)
     };
-    internal static void Validate(Assembly assembly)
+    internal static void Validate(Assembly assembly) => Validate(assembly, Members);
+    internal static void Validate(Assembly assembly, System.Collections.Generic.IEnumerable<(string Type, string Member, string Shape, bool Static, bool Field)> members)
     {
         const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly;
-        foreach (var spec in Members)
+        foreach (var spec in members)
         {
             var type = assembly.GetType(spec.Type.Replace('/', '+'), true)!;
             if (spec.Field)
