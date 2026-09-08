@@ -750,6 +750,19 @@ internal sealed partial class StoryContentService : IStoryApi, IStoryUiTransacti
 
     private StoryRegistrationResult Register(Lease lease, StoryMissionDefinition definition)
     {
+        _barRegistrationDepth++;
+        _barOperationEpoch = new object();
+        try { return RegisterCore(lease, definition); }
+        catch (Exception error)
+        {
+            Fault("Registration ended unexpectedly; its native installation is uncertain: " + error.Message);
+            throw;
+        }
+        finally { _barRegistrationDepth--; _barOperationEpoch = new object(); }
+    }
+
+    private StoryRegistrationResult RegisterCore(Lease lease, StoryMissionDefinition definition)
+    {
         var id = new StoryContentId(lease.ProviderId, definition.LocalId);
         // Registration installs into the same catalog an open operation is holding entries in, and a
         // teardown queued during that operation removes an identifier by NAME: registering the same

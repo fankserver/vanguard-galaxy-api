@@ -5,6 +5,7 @@ namespace VGModAPI.Core;
 
 internal sealed partial class StoryContentService
 {
+    private int _barRegistrationDepth;
     private object _barOperationEpoch = new object();
     private object _barDependencyEpoch = new object();
     private object?[]? _barDependencySnapshot;
@@ -30,7 +31,7 @@ internal sealed partial class StoryContentService
         var session = _currentSession();
         var healthy = _protectionHealthy?.Invoke() != false;
         // All provider/world callbacks have returned before examining the admission and identity.
-        return healthy && !_disposed && _fault == null && _suspended == null && !InFlight
+        return healthy && !_disposed && _fault == null && _suspended == null && !InFlight && _barRegistrationDepth == 0
             && _readiness == Readiness.Restored && expectedSession == _restoredSession
             && session?.Id == expectedSession
             && _leasesBySegment.TryGetValue(definition.Provider, out var lease) && lease.Active
