@@ -32,6 +32,7 @@ internal static class BoardingCombatBindings
         new("combatHazard", Sim, "FireHazardEvent", false, "System.Void", "Source.CompartmentSystem.SimCompartmentData", "Source.CompartmentSystem.SimCompartmentEvent"),
         new("combatVent", Sim, "TryAirlockVent", false, "System.Void", "System.Single"),
         new("combatStructuralVent", Sim, "TriggerRandomVentDamage", false, "System.Boolean"),
+        new("combatAttackerState", Sim, "UpdateAttackerState", false, "System.Void", Crew),
         new("combatMoraleRecovery", Sim, "TickIdleMoraleRecovery", false, "System.Void", "System.Single"),
         new("combatMoraleGlobal", Sim, "TickGlobalDefenderMorale", false, "System.Void"),
         new("combatMoraleAttackers", Sim, "TickAttackerMorale", false, "System.Void", "System.Single", "System.Boolean", "System.Collections.Generic.HashSet`1<System.Int32>", "System.Single", "System.Boolean"),

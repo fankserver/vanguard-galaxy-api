@@ -25,6 +25,25 @@ public sealed class BoardingCombatAdapterTests
         adapter.End(inner); Assert.Equal(10, adapter.UnitValue(unit, BoardingCombatPolicyKind.Power, 5));
         adapter.End(outer); Assert.Equal(5, adapter.UnitValue(unit, BoardingCombatPolicyKind.Power, 5));
     }
+    [Theory]
+    [InlineData(.3f, .1f, 0f, .3f)]
+    [InlineData(.3f, .2f, 2f, .1f)]
+    [InlineData(.4f, .6f, 0f, .4f)]
+    [InlineData(.4f, .46f, 2f, .52f)]
+    public void MoraleIsAdjustedBeforePanicAndRecoveryThresholdEvaluation(float before, float nativeAfter, float multiplier, float expected)
+    {
+        using var hub = new LifecycleHub((_, _) => { }); using var rules = new BoardingCombatService(hub, (_, _) => { });
+        var session = hub.Begin(SessionOrigin.SaveLoad, "save"); hub.PlayerReady(session); hub.GameplayInitialized(session);
+        var adapter = new BoardingCombatAdapter(hub, rules, (obj, key) => ((Dictionary<string, object?>)obj)[key], (obj, key, value) => ((Dictionary<string, object?>)obj)[key] = value);
+        var unit = new Dictionary<string, object?> { ["combatFriendly"] = true, ["combatMorale"] = before };
+        var sim = new Dictionary<string, object?> { ["combatKind"] = "HostileShip", ["combatLevel"] = 1, ["friendlyUnits"] = new ArrayList { unit }, ["hostileUnits"] = new ArrayList() };
+        using var mod = rules.AcquireProvider("mod"); mod.RegisterMultiplier("morale", BoardingRuleScope.Both, BoardingCombatPolicyKind.Morale, _ => multiplier);
+        var state = adapter.BeginMorale(sim); unit["combatMorale"] = nativeAfter;
+        adapter.ApplyPendingMorale(sim, unit);
+        var evaluated = (float)unit["combatMorale"]!;
+        Assert.Equal(expected, evaluated, 5); Assert.Equal(expected < .2f, evaluated < .2f); Assert.Equal(expected > .5f, evaluated > .5f);
+        adapter.EndMorale(state, true); Assert.Equal(evaluated, unit["combatMorale"]);
+    }
     [Fact]
     public void MoraleScalingPrecedesSurrenderEvaluationAndIsNotAppliedTwice()
     {

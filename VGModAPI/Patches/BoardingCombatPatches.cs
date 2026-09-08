@@ -31,6 +31,10 @@ internal static class BoardingCombatPatches
         internal static void Prefix(object __instance, int __1, ref float __2, bool __3)
         { if (Adapter != null) __2 = Adapter.Casualties(__instance, __1, __2, __3); }
     }
+    internal static class AttackerState
+    {
+        internal static void Prefix(object __instance, object __0) => Adapter?.ApplyPendingMorale(__instance, __0);
+    }
     internal static class Morale
     {
         internal static void Prefix(object __instance, out object? __state) => __state = Adapter?.BeginMorale(__instance);

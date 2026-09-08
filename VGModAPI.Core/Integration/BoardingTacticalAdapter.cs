@@ -26,7 +26,8 @@ internal sealed class BoardingTacticalAdapter : IBoardingTactics
     {
         _hub.CheckThread();
         var observed = _events.GetOperation(operation); if (observed == null) return null;
-        var simulation = Simulation(observed.Target); if (simulation == null) return null;
+        var nativeOperation = _observer.ResolveCommandOperation(operation);
+        var simulation = _native.Get(nativeOperation, "simulation"); if (simulation == null) return null;
         var visible = observed.Compartments.ToList();
         var rooms = (IList)_native.Get(simulation, "compartments")!;
         for (var index = 0; index < rooms.Count; index++)
@@ -107,9 +108,10 @@ internal sealed class BoardingTacticalAdapter : IBoardingTactics
     private bool ValidateDirectMovement(object simulation, IList units, int target)
     {
         if (target < 0 || units.Count == 0) return false;
-        var request = new BoardingTacticalRequest(BoardingTacticalAction.Move, target, count: units.Count);
+        var request = new BoardingTacticalRequest(BoardingTacticalAction.Move, target, count: 1);
         var state = Read(simulation, request, out _);
-        if (state.Locked || BoardingTacticalValidation.Validate(state, request) != BoardingCommandStatus.Admitted) return false;
+        // Native direct movement intentionally takes the subset that fits; it is not a queued count request.
+        if (!state.Active || !state.HasCompartment || !state.Discovered || state.Destroyed || state.Locked) return false;
         var all = (IList)_native.Get(simulation, "friendlyUnits")!;
         var rooms = (IList)_native.Get(simulation, "compartments")!;
         var seen = new System.Collections.Generic.HashSet<object>(); var specialist = false;

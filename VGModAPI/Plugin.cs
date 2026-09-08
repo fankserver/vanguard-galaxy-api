@@ -458,6 +458,7 @@ public sealed class Plugin : BaseUnityPlugin
                 "combatPlayerReinforcements" => typeof(BoardingCombatPatches.PlayerReinforcements),
                 "combatPower" => typeof(BoardingCombatPatches.Power), "combatHealth" => typeof(BoardingCombatPatches.Health),
                 "combatCasualties" => typeof(BoardingCombatPatches.Casualties),
+                "combatAttackerState" => typeof(BoardingCombatPatches.AttackerState),
                 "combatMoraleRecovery" or "combatMoraleGlobal" or "combatMoraleAttackers" or "combatMoraleCombat" => typeof(BoardingCombatPatches.Morale),
                 _ => b.ReturnType == "System.Boolean" ? typeof(BoardingCombatPatches.BoolEffect) : typeof(BoardingCombatPatches.VoidEffect)
             }));

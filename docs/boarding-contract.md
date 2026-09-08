@@ -129,7 +129,7 @@ Patch-free means no direct game/Unity/Harmony compile references, reflection or 
 
 ## Tactical actions and combat policies (API 0.1.28)
 
-Tactical execution requires the actual current `IBoardingController` instance, not merely its plugin ID or an imitation of the interface. `BoardingTacticalRequest` describes an action; `BoardingTacticalSnapshot` copies discovered rooms, grenade charges/cooldown and extraction availability. Adjacent unexplored rooms expose only their index, unknown status and door state so exploration remains possible without revealing their occupants. Snapshots are not permission and action execution revalidates native state.
+Tactical execution requires the actual current `IBoardingController` instance, not merely its plugin ID or an imitation of the interface. `BoardingTacticalRequest` describes an action; `BoardingTacticalSnapshot` copies discovered rooms, grenade charges/cooldown and extraction availability. Adjacent unexplored rooms expose only their index, unknown status and door state so exploration remains possible without revealing their occupants. Snapshots resolve the exact requested operation generation, never its target's newer operation. Snapshots are not permission and action execution revalidates native state. Native direct movement retains capacity-limited partial movement; queued API count requests require the requested capacity.
 
 | Family | Implemented contract / native boundary | Validation evidence |
 | --- | --- | --- |
@@ -140,7 +140,7 @@ Tactical execution requires the actual current `IBoardingController` instance, n
 | Ammo, stealth/noise and auto-move | Controller SetOptions uses typed native options, keeping the native ammo/noise relationships | Enum validation, phase and control gates; no duplicate simulation escape hatch |
 | Buyout and extraction | Accept/decline buyout; request/confirm extraction | Candidate exists before debit, credits, pending offer, victory and pending extraction |
 | Power and initial HP | Combat multipliers run at effective-power and new HP initialization boundaries, scoped to a simulation | Per-side composition, scope nesting and vanilla fallback |
-| Morale and casualties | Morale change magnitudes and casualty rate have separate multiplier families | Morale adjusted before combat surrender checks, not applied twice; finite nonnegative values |
+| Morale and casualties | Morale change magnitudes and casualty rate have separate multiplier families | Morale adjusted before combat surrender and attacker panic/recovery checks, not applied twice; finite nonnegative values |
 | Surrender and defection | Veto combat/mass surrender, attacker morale collapse and combat/faction side switching | Discrete veto composition and session/reentrancy behavior |
 | Reinforcements | Veto defender scheduling or player requests before debit, not already-arriving manifests | Player roster conservation on veto; receiving simulation remains mandatory |
 | Hazards and venting | Veto native hazard firing, airlock vent attempts or random structural vent selection | Discrete family validation and exact native binding checks |

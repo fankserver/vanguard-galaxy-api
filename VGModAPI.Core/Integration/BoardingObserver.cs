@@ -267,6 +267,13 @@ internal sealed class BoardingObserver : IDisposable
     private int CountCrew(object sim, string side, int index) => ((IEnumerable)Read(sim, side)!).Cast<object>()
         .Count(unit => Read<int>(unit, "compartmentIndex") == index && Read<int>(unit, "hp") > 0 && Read(unit, "state")!.ToString() is not ("Killed" or "Surrendered" or "Captured"));
     public void Dispose() { _stopped = true; _targets.Clear(); _operations.Clear(); _service.Dispose(); }
+    internal object? ResolveCommandOperation(BoardingHandle handle)
+    {
+        _hub.CheckThread();
+        if (_service.GetOperation(handle) == null) return null;
+        return _operations.Values.FirstOrDefault(operation => operation.Handle.Equals(handle))?.Native;
+    }
+
     internal BoardingHandle? CommandHandleForLocation(object? location)
     {
         _hub.CheckThread();

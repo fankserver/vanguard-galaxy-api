@@ -69,6 +69,39 @@ public sealed class BoardingTacticalAdapterTests
         Assert.False(f.Adapter.ValidateNative(f.Native.Sim, "TryUnlockCompartment", new object[] { 1, f.Native.Unit }));
     }
     [Fact]
+    public void NativeDirectMovementPreservesOversizedGroupPartialAdmission()
+    {
+        using var f = new Fixture(); var units = new ArrayList();
+        for (var i = 0; i < 5; i++) units.Add(new Dictionary<string, object?>(f.Native.Unit));
+        f.Native.Sim["friendlyUnits"] = units;
+        // Native capacity query returns three; all five form a valid group and native selects the fitting subset.
+        Assert.True(f.Adapter.ValidateNative(f.Native.Sim, "MoveCrewTo", new object[] { units, 1 }));
+    }
+    [Fact]
+    public void SnapshotResolvesRequestedOperationRatherThanTargetsNewestOperation()
+    {
+        using var f = new Fixture(); using var events = new BoardingService(f.Hub, (_, _) => { });
+        using var observer = new BoardingObserver(f.Hub, events, f.Native.Get, _ => true, error => throw error);
+        var location = new Dictionary<string, object?> { ["availability"] = BoardingAvailability.Available, ["shipTemplate"] = "Scout", ["isShipBased"] = true };
+        var unit = new Dictionary<string, object?> { ["data"] = location };
+        Dictionary<string, object?> Operation(object sim) => new()
+        {
+            ["location"] = location, ["boardableTarget"] = unit, ["simulation"] = sim, ["phase"] = "Active", ["isComplete"] = false,
+            ["_podsInFlight"] = 0, ["isAutonomous"] = false, ["_activePods"] = new ArrayList(),
+            ["options"] = new Dictionary<string, object?> { ["autoMove"] = false, ["assignedCrew"] = new Dictionary<string, int>() }
+        };
+        var oldSim = new Dictionary<string, object?>(f.Native.Sim) { ["grenades"] = 2, ["compartments"] = new ArrayList(), ["friendlyUnits"] = new ArrayList(), ["hostileUnits"] = new ArrayList(), ["structureIntegrity"] = 100f, ["maxStructureIntegrity"] = 100f, ["outcome"] = "InProgress", ["awaitingPlayerExtraction"] = false, ["victoryAchieved"] = false, ["isComplete"] = false };
+        var nextSim = new Dictionary<string, object?>(oldSim) { ["grenades"] = 7 };
+        var oldOp = Operation(oldSim); observer.Guard(() => observer.OperationReady(oldOp, false));
+        var oldHandle = events.GetOperations()[0].Handle;
+        var nextOp = Operation(nextSim); observer.Guard(() => observer.OperationReady(nextOp, false));
+        var nextHandle = events.GetTargets()[0].Operation!;
+        var adapter = new BoardingTacticalAdapter(f.Hub, f.Native, observer, events, null!);
+        Assert.Equal(2, adapter.GetSnapshot(oldHandle)!.GrenadeCharges);
+        Assert.Equal(7, adapter.GetSnapshot(nextHandle)!.GrenadeCharges);
+        Assert.Same(oldOp, observer.ResolveCommandOperation(oldHandle));
+    }
+    [Fact]
     public void AutonomousDirectMovementRejectsForeignDuplicateAndInvalidOriginUnits()
     {
         using var f = new Fixture();

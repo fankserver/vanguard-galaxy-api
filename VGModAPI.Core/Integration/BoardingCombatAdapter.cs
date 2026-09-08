@@ -77,7 +77,7 @@ internal sealed class BoardingCombatAdapter
                 if (unit != null && !scope.Before.ContainsKey(unit)) scope.Before.Add(unit, (float)_read(unit, "combatMorale")!);
         _morale.Add(scope); return scope;
     }
-    private void ApplyPendingMorale(object simulation, object unit)
+    internal void ApplyPendingMorale(object simulation, object unit)
     {
         var scope = _morale.LastOrDefault(s => ReferenceEquals(s.Simulation, simulation) && s.Session == Session);
         if (scope != null) ApplyMorale(scope, unit);
