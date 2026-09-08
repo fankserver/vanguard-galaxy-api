@@ -17,6 +17,7 @@ public sealed class CraftingHookOrderTests
             Assert.True(At("jobRoute" + process) < At("jobBatch" + process));
             Assert.True(At("jobBatch" + process) < At("jobProgress" + process));
             Assert.True(At("jobMaterialAdd") < At("jobCancel" + process));
+            Assert.True(At("jobInventoryAdd") < At("jobCancel" + process));
         }
     }
 }
