@@ -1,0 +1,92 @@
+using System;
+using System.Collections.Generic;
+using VGModAPI;
+using VGModAPI.Core;
+using VGModAPI.Core.Integration;
+using Xunit;
+
+namespace VGModAPI.Tests;
+
+public sealed class BarNativeSerializationTests
+{
+    public sealed class Value
+    {
+        public object? Data;
+        public Value(string? value) { Data = value; }
+        public Value(JsonObject value) { Data = value; }
+        public Value(JsonArray value) { Data = value; }
+    }
+    public sealed class JsonObject
+    {
+        public Dictionary<string, Value> Fields = new();
+        public void Add(string key, Value value) => Fields.Add(key, value);
+    }
+    public sealed class JsonArray
+    {
+        public List<Value> Items = new();
+        public void Add(Value value) => Items.Add(value);
+    }
+    public sealed class Station { }
+    public class Patron
+    {
+        private bool initialized = false;
+        public bool Initialized => initialized;
+        public Action? DuringSerialization;
+        public int Calls;
+        public Value ToJson() { Calls++; DuringSerialization?.Invoke(); return new Value("native"); }
+    }
+    public sealed class Salesman : Patron
+    {
+        public string _name = "", description = "";
+        public bool _isMale = false;
+        public UnityEngine.Sprite? _icon;
+        public Salesman(string seed, Station station) { }
+    }
+    public sealed class Bar
+    {
+        public List<Patron> availablePatrons = new();
+        private long lastUpdateTime = 123;
+        private string nextUpdateSeed = "next";
+        public string Metadata => lastUpdateTime + nextUpdateSeed;
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void OwnedContactsAreExcludedWithoutMutatingTheRoster(bool mutateDuringNativeSerialization)
+    {
+        var factory = new BarNativeContacts(typeof(Salesman), typeof(Patron), typeof(Station), _ => new UnityEngine.Sprite());
+        var serializer = new BarNativeSerialization(typeof(Bar), typeof(Patron), typeof(Value), typeof(JsonObject), typeof(JsonArray), factory);
+        var contact = (Salesman)factory.Create(new BarPatronState(new BarPatronId("author", "contact"), "station", "Name", "Description", "seed"), new Station())!;
+        var vanilla = new Patron(); var bar = new Bar();
+        bar.availablePatrons.AddRange(new Patron[] { vanilla, contact });
+        var original = bar.availablePatrons;
+        vanilla.DuringSerialization = () =>
+        {
+            Assert.Same(original, bar.availablePatrons);
+            Assert.Contains(contact, bar.availablePatrons);
+            if (mutateDuringNativeSerialization) bar.availablePatrons = new List<Patron>();
+        };
+        if (mutateDuringNativeSerialization)
+            Assert.Throws<InvalidOperationException>(() => serializer.TrySerialize(bar, () => true, out _));
+        else
+        {
+            Assert.True(serializer.TrySerialize(bar, () => true, out var result));
+            var obj = (JsonObject)((Value)result!).Data!;
+            Assert.Single(((JsonArray)obj.Fields["availablePatrons"].Data!).Items);
+            Assert.Equal("123", obj.Fields["lastUpdateTime"].Data);
+            Assert.Equal("next", obj.Fields["nextUpdateSeed"].Data);
+            Assert.Same(original, bar.availablePatrons);
+        }
+        Assert.Equal(0, contact.Calls);
+        Assert.Equal(1, vanilla.Calls);
+    }
+
+    [Fact]
+    public void VanillaOnlyRosterUsesOriginalSerializer()
+    {
+        var factory = new BarNativeContacts(typeof(Salesman), typeof(Patron), typeof(Station), _ => null);
+        var serializer = new BarNativeSerialization(typeof(Bar), typeof(Patron), typeof(Value), typeof(JsonObject), typeof(JsonArray), factory);
+        Assert.False(serializer.TrySerialize(new Bar(), () => false, out _));
+    }
+}
