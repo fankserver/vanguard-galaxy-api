@@ -26,13 +26,15 @@ public sealed class BarNativeSerializationTests
         public List<Value> Items = new();
         public void Add(Value value) => Items.Add(value);
     }
-    public sealed class Station { }
+    public sealed class Station { public string guid = "station"; public Bar bar = new(); }
+    public sealed class Player { public static Player? current; public object? currentPointOfInterest; }
     public class Patron
     {
         private bool initialized = false;
         public bool Initialized => initialized;
         public Action? DuringSerialization;
         public int Calls;
+        public int seat = 1;
         public Value ToJson() { Calls++; DuringSerialization?.Invoke(); return new Value("native"); }
     }
     public sealed class Salesman : Patron
@@ -80,6 +82,24 @@ public sealed class BarNativeSerializationTests
         }
         Assert.Equal(0, contact.Calls);
         Assert.Equal(1, vanilla.Calls);
+    }
+
+    [Fact]
+    public void ExclusiveRosterStillSerializesSuppressedVanillaForMissingProviderLoads()
+    {
+        var factory = new BarNativeContacts(typeof(Salesman), typeof(Patron), typeof(Station), _ => new UnityEngine.Sprite());
+        var station = new Station(); var vanilla = new Patron(); station.bar.availablePatrons.Add(vanilla);
+        Player.current = new Player { currentPointOfInterest = station };
+        var world = new BarNativeWorld(typeof(Station), typeof(Bar), typeof(Patron), new BarStationSource(typeof(Player), typeof(Station)), factory.IsOwned, factory.Create, 5);
+        var state = new BarPatronState(new BarPatronId("author", "contact"), "station", "Name", "Description", "seed");
+        var contact = world.CreateContact(state)!;
+        Assert.True(world.Apply(world.Capture("station")!, new[] { contact }, () => true));
+        var serializer = new BarNativeSerialization(typeof(Bar), typeof(Patron), typeof(Value), typeof(JsonObject), typeof(JsonArray), factory, world);
+        Assert.True(serializer.TrySerialize(station.bar, () => true, out var result));
+        var obj = (JsonObject)((Value)result!).Data!;
+        Assert.Single(((JsonArray)obj.Fields["availablePatrons"].Data!).Items);
+        Assert.Equal(1, vanilla.Calls);
+        Assert.Same(contact, Assert.Single(station.bar.availablePatrons));
     }
 
     [Fact]

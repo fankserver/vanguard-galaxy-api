@@ -74,6 +74,23 @@ public sealed class BarNativeWorldTests
     }
 
     [Fact]
+    public void ExclusivePresentationRetainsVanillaForRevocationButNotAfterNativeRefresh()
+    {
+        var station = new Station(); var vanilla = new Patron(); station.bar.availablePatrons.Add(vanilla);
+        var world = World(() => station);
+        Assert.True(world.Apply(world.Capture("station")!, new object[] { new Patron { Owned = true } }, () => true));
+        Assert.Same(vanilla, Assert.Single(world.RetainedVanilla(station.bar)!));
+        var restore = world.Capture("station")!;
+        Assert.Same(vanilla, Assert.Single(restore.VanillaPatrons));
+        Assert.True(world.Apply(restore, restore.VanillaPatrons, () => true));
+        Assert.Same(vanilla, Assert.Single(station.bar.availablePatrons));
+        var fresh = new Patron();
+        station.bar.availablePatrons.Clear(); station.bar.availablePatrons.Add(fresh);
+        Assert.Null(world.RetainedVanilla(station.bar));
+        Assert.Same(fresh, Assert.Single(world.Capture("station")!.VanillaPatrons));
+    }
+
+    [Fact]
     public void ForeignSnapshotsAndDuplicateReferencesAreRefused()
     {
         var station = new Station(); var world = World(() => station); var second = World(() => station);

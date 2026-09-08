@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 
 namespace VGModAPI.Core.Integration;
 
@@ -16,6 +17,23 @@ internal sealed class BarNativeWorld : IBarRosterWorld
     private readonly FieldInfo _bar, _guid, _patrons, _seat;
     private readonly Type _patronType;
     private readonly int _capacity;
+    private readonly ConditionalWeakTable<object, RetainedRoster> _retained = new();
+
+    private sealed class RetainedRoster
+    {
+        internal readonly IList Applied;
+        internal readonly object[] Entries, Vanilla;
+        internal RetainedRoster(IList applied, object[] entries, object[] vanilla)
+        { Applied = applied; Entries = entries; Vanilla = vanilla; }
+        internal bool Matches(object? list) => ReferenceEquals(list, Applied) && Applied.Count == Entries.Length
+            && Entries.Select((entry, index) => ReferenceEquals(entry, Applied[index])).All(value => value);
+    }
+
+    internal object[]? RetainedVanilla(object bar)
+    {
+        return _retained.TryGetValue(bar, out var retained) && retained.Matches(_patrons.GetValue(bar))
+            ? retained.Vanilla.ToArray() : null;
+    }
 
     internal BarNativeWorld(Type stationType, Type barType, Type patronType, BarStationSource station,
         Func<object, bool> owned, Func<BarPatronState, object, object?> create, int capacity)
@@ -38,6 +56,8 @@ internal sealed class BarNativeWorld : IBarRosterWorld
         internal readonly IList List;
         internal readonly object[] Entries;
         internal readonly int[] Seats;
+        internal object[] Vanilla = Array.Empty<object>();
+        internal int[] VanillaSeats = Array.Empty<int>();
         internal CaptureToken(BarNativeWorld owner, object station, object bar, IList list, object[] entries, int[] seats, string identity)
         { Owner = owner; Station = station; Bar = bar; List = list; Entries = entries; Seats = seats; Identity = identity; }
     }
@@ -51,7 +71,9 @@ internal sealed class BarNativeWorld : IBarRosterWorld
         var entries = list.Cast<object>().ToArray();
         if (entries.Any(entry => entry == null || !_patronType.IsInstanceOfType(entry))) return null;
         var token = new CaptureToken(this, current, bar, list, entries, entries.Select(entry => (int)_seat.GetValue(entry)!).ToArray(), station);
-        var vanilla = entries.Where(entry => !_owned(entry)).ToArray();
+        var vanilla = RetainedVanilla(bar) ?? entries.Where(entry => !_owned(entry)).ToArray();
+        token.Vanilla = vanilla;
+        token.VanillaSeats = vanilla.Select(entry => (int)_seat.GetValue(entry)!).ToArray();
         if (!Stable(token)) return null;
         return new BarRosterSnapshot(token, vanilla, _capacity);
     }
@@ -95,7 +117,10 @@ internal sealed class BarNativeWorld : IBarRosterWorld
         var replacement = (IList)Activator.CreateInstance(_patrons.FieldType)!;
         foreach (var patron in copy) replacement.Add(patron);
         if (!Stable(token) || !stillValid() || !Stable(token)) return false;
+        var retained = new RetainedRoster(replacement, copy, token.Vanilla);
         _patrons.SetValue(token.Bar, replacement);
+        _retained.Remove(token.Bar);
+        _retained.Add(token.Bar, retained);
         return true;
     }
 
@@ -105,6 +130,7 @@ internal sealed class BarNativeWorld : IBarRosterWorld
             || !ReferenceEquals(_bar.GetValue(token.Station), token.Bar)
             || !ReferenceEquals(_patrons.GetValue(token.Bar), token.List) || token.List.Count != token.Entries.Length) return false;
         for (int i = 0; i < token.Entries.Length; i++) if (!ReferenceEquals(token.List[i], token.Entries[i]) || (int)_seat.GetValue(token.Entries[i])! != token.Seats[i]) return false;
+        for (int i = 0; i < token.Vanilla.Length; i++) if ((int)_seat.GetValue(token.Vanilla[i])! != token.VanillaSeats[i]) return false;
         return true;
     }
 }

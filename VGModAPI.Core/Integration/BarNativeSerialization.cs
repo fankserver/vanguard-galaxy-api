@@ -13,8 +13,9 @@ internal sealed class BarNativeSerialization
     private readonly MethodInfo _serialize, _addItem, _addProperty;
     private readonly ConstructorInfo _array, _object, _arrayValue, _objectValue, _stringValue;
     private readonly BarNativeContacts _contacts;
+    private readonly BarNativeWorld? _world;
 
-    internal BarNativeSerialization(Type bar, Type patron, Type value, Type jsonObject, Type jsonArray, BarNativeContacts contacts)
+    internal BarNativeSerialization(Type bar, Type patron, Type value, Type jsonObject, Type jsonArray, BarNativeContacts contacts, BarNativeWorld? world = null)
     {
         _patrons = bar.GetField("availablePatrons", Fields) ?? throw new MissingFieldException("Bar.availablePatrons");
         _time = bar.GetField("lastUpdateTime", Fields) ?? throw new MissingFieldException("Bar.lastUpdateTime");
@@ -27,6 +28,7 @@ internal sealed class BarNativeSerialization
         _addItem = jsonArray.GetMethod("Add", new[] { value }) ?? throw new MissingMethodException("JsonArray.Add");
         _addProperty = jsonObject.GetMethod("Add", new[] { typeof(string), value }) ?? throw new MissingMethodException("JsonObject.Add");
         _contacts = contacts;
+        _world = world;
     }
 
     internal bool TrySerialize(object bar, Func<bool> ready, out object? result)
@@ -35,7 +37,10 @@ internal sealed class BarNativeSerialization
         if (_patrons.GetValue(bar) is not IList list || list.Count > 32) throw new InvalidOperationException("Unbounded bar roster serialization.");
         var entries = list.Cast<object>().ToArray();
         var owned = entries.Select(entry => entry != null && _contacts.IsOwned(entry)).ToArray();
-        if (!owned.Any(value => value)) return false;
+        var retained = _world?.RetainedVanilla(bar);
+        bool hiddenVanilla = retained != null && retained.Any(patron => !entries.Any(entry => ReferenceEquals(entry, patron)));
+        if (!owned.Any(value => value) && !hiddenVanilla) return false;
+        var native = retained ?? entries.Where((_, index) => !owned[index]).ToArray();
         var time = (long)_time.GetValue(bar)!;
         var seed = (string?)_seed.GetValue(bar);
         bool Stable()
@@ -47,11 +52,10 @@ internal sealed class BarNativeSerialization
         }
         if (!ready() || !Stable()) throw new InvalidOperationException("Owned patron state is not safe to serialize.");
         var array = _array.Invoke(Array.Empty<object>());
-        for (int index = 0; index < entries.Length; index++)
+        foreach (var patron in native)
         {
-            if (owned[index]) continue;
-            if (entries[index] == null) throw new InvalidOperationException("Null native patron.");
-            var serialized = _serialize.Invoke(entries[index], null);
+            if (patron == null) throw new InvalidOperationException("Null native patron.");
+            var serialized = _serialize.Invoke(patron, null);
             _addItem.Invoke(array, new[] { serialized });
         }
         var obj = _object.Invoke(Array.Empty<object>());
