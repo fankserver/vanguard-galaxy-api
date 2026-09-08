@@ -144,9 +144,9 @@ public sealed class MissionAdapterTests : IDisposable
     [Fact]
     public void ObserverFaultStopsObservationWithoutThrowingIntoCaller()
     {
-        _hub.SetCapability("mission-continuity", false, "Disabled by configuration");
+        _hub.SetCapability("mission-continuity", false, "API-managed saves unavailable");
         _adapter.Guard(() => throw new InvalidOperationException("injected")); _adapter.Poll();
-        Assert.Equal("Disabled by configuration", _hub.Capabilities.Single(c => c.Name == "mission-continuity").Detail);
+        Assert.Equal("API-managed saves unavailable", _hub.Capabilities.Single(c => c.Name == "mission-continuity").Detail);
         Assert.Null(_adapter.Begin("accept", _player, new Mission()));
         Assert.False(_hub.Capabilities.Single(c => c.Name == "mission-transitions").Available);
     }

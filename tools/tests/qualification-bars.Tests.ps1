@@ -95,12 +95,14 @@ try {
     $configDir = Join-Path $root 'game\BepInEx\config'
     $null = New-Item -ItemType Directory -Path $configDir -Force
     $configPath = Join-Path $configDir 'vgmodapi.cfg'
-    $linkedConfig = "[Persistence]`r`nEnabled = true`r`nRoot = $(Join-Path $root 'state')`r`n[Story]`r`nEnabled = true`r`nProtection = true`r`n[Missions]`r`nEnabled = true`r`n"
+    $linkedConfig = "[Persistence]`r`nRoot = $(Join-Path $root 'state')`r`n[Story]`r`nEnabled = true`r`nProtection = true`r`n"
     Set-Content $configPath $linkedConfig
+    Assert-BarLinkedConfiguration $root
+    Set-Content $configPath ($linkedConfig + "[Missions]`r`nIdentityContinuity = false")
+    Assert-BarLinkedConfiguration $root
+    Set-Content $configPath ($linkedConfig.Replace('Protection = true', 'Protection = false'))
     Reject { Assert-BarLinkedConfiguration $root }
-    Set-Content $configPath ($linkedConfig + 'IdentityContinuity = false')
-    Reject { Assert-BarLinkedConfiguration $root }
-    Set-Content $configPath ($linkedConfig + 'IdentityContinuity = true')
+    Set-Content $configPath $linkedConfig
     Assert-BarLinkedConfiguration $root
     Reject { Assert-BarLinkedReceipt $root }
     $linkedCases = 'active-mission;automatic-linked-restore;stale-session;provider-unavailable;registered-before-reload;rollback;no-replacement-placement'
