@@ -28,6 +28,27 @@ public sealed class WorldLifetimeGuardTests
     }
 
     [Fact]
+    public void ProviderReadinessLossLatchesButStaleFailureCannotRevokeReplacementReadiness()
+    {
+        var guard = new WorldLifetimeGuard(); var session = Guid.NewGuid(); guard.Start(session);
+        var identity = Identity(); var poi = new object(); guard.Track(session, poi, identity);
+        bool available = true;
+        guard.Ready(session, () => available);
+        Assert.True(guard.AllowAmbient(session, poi, identity.NativeId));
+        available = false; Assert.False(guard.AllowAmbient(session, poi, identity.NativeId));
+        available = true; Assert.False(guard.AllowAmbient(session, poi, identity.NativeId));
+        bool replace = true; Func<bool>? readiness = null;
+        readiness = () =>
+        {
+            if (!replace) return true;
+            replace = false; guard.Ready(session, readiness); return false;
+        };
+        guard.Ready(session, readiness);
+        Assert.False(guard.AllowAmbient(session, poi, identity.NativeId));
+        Assert.True(guard.AllowAmbient(session, poi, identity.NativeId));
+    }
+
+    [Fact]
     public void OwnedUpdatesWaitForScopedReadinessAndNativeCleanupCannotDeletePersistentSites()
     {
         var guard = new WorldLifetimeGuard(); var session = Guid.NewGuid(); guard.Start(session);

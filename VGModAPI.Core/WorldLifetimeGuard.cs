@@ -19,13 +19,16 @@ internal sealed class WorldLifetimeGuard
     private Dictionary<string, object> _current = new(StringComparer.Ordinal);
     private Guid _session;
     private bool _ready;
+    private Func<bool>? _admission;
+    private object _readiness = new();
+    private bool _checkingAdmission;
     private bool _stopped;
 
     internal void Start(Guid session)
     {
         if (_stopped) throw new InvalidOperationException("World lifetime guard requires process restart.");
         if (session == Guid.Empty) throw new ArgumentException("Observed session required.", nameof(session));
-        _session = session; _ready = false; _current = new Dictionary<string, object>(StringComparer.Ordinal);
+        _session = session; _ready = false; _admission = null; _current = new Dictionary<string, object>(StringComparer.Ordinal);
     }
     internal sealed class PreparedTracking
     {
@@ -78,10 +81,10 @@ internal sealed class WorldLifetimeGuard
         _reserved.GetValue(poi, _ => new object());
         PrepareTracking(session, new[] { (poi, identity) }).Commit();
     }
-    internal void Ready(Guid session)
+    internal void Ready(Guid session, Func<bool>? admission = null)
     {
         if (_stopped || session == Guid.Empty || session != _session) throw new InvalidDataException("Stale world readiness.");
-        _ready = true;
+        _readiness = new object(); _admission = admission; _ready = true;
     }
     private bool Owned(object poi, string nativeId)
     {
@@ -91,10 +94,20 @@ internal sealed class WorldLifetimeGuard
     internal bool AllowAmbient(Guid session, object poi, string nativeId)
     {
         if (!Owned(poi, nativeId)) return true;
-        return !_stopped && _ready && session == _session && _known.TryGetValue(poi, out var entry) &&
-            entry.Session == session && entry.NativeId == nativeId && _current.TryGetValue(nativeId, out var current) && ReferenceEquals(current, poi);
+        if (_stopped || !_ready || session != _session || !_known.TryGetValue(poi, out var entry) ||
+            entry.Session != session || entry.NativeId != nativeId || !_current.TryGetValue(nativeId, out var current) || !ReferenceEquals(current, poi)) return false;
+        var inventory = _current; var admission = _admission; var readiness = _readiness;
+        if (_checkingAdmission) return false;
+        bool admitted;
+        _checkingAdmission = true;
+        try { admitted = admission?.Invoke() ?? true; }
+        catch { admitted = false; }
+        finally { _checkingAdmission = false; }
+        bool same = !_stopped && _ready && session == _session && ReferenceEquals(inventory, _current) && ReferenceEquals(admission, _admission) && ReferenceEquals(readiness, _readiness);
+        if (!admitted && same) _ready = false;
+        return admitted && same;
     }
     internal bool AllowNativeRemoval(object poi, string nativeId) => !Owned(poi, nativeId);
-    internal void Invalidate() { _ready = false; _session = Guid.Empty; _current.Clear(); }
+    internal void Invalidate() { _ready = false; _admission = null; _session = Guid.Empty; _current.Clear(); }
     internal void Stop() { _stopped = true; Invalidate(); }
 }
