@@ -3,6 +3,16 @@ using System.IO;
 
 namespace VGModAPI.Core.Integration;
 
+internal sealed class WorldPreparedLoad
+{
+    internal Guid Session { get; }
+    internal object Root { get; }
+    internal WorldGenerationReader.Result? Generation { get; }
+    internal long ProviderRevision { get; }
+    internal WorldPreparedLoad(Guid session, object root, WorldGenerationReader.Result? generation, long providerRevision)
+    { Session = session; Root = root; Generation = generation; ProviderRevision = providerRevision; }
+}
+
 /// <summary>Combines inspected input and committed metadata before native construction. Hooks must supply and revalidate the observed starting attempt.</summary>
 internal sealed class WorldLoadPreparation
 {
@@ -18,6 +28,10 @@ internal sealed class WorldLoadPreparation
 
     internal object Read(Guid session, string canonicalPath, string expectedHash, Func<bool> stillStarting,
         Func<WorldSavedDefinition, bool> definitionAvailable, Func<long> providerRevision)
+        => ReadPrepared(session, canonicalPath, expectedHash, stillStarting, definitionAvailable, providerRevision).Root;
+
+    internal WorldPreparedLoad ReadPrepared(Guid session, string canonicalPath, string expectedHash, Func<bool> stillStarting,
+        Func<WorldSavedDefinition, bool> definitionAvailable, Func<long> providerRevision)
     {
         if (stillStarting == null || definitionAvailable == null || providerRevision == null) throw new ArgumentNullException("World load verification callbacks are required.");
         if (!stillStarting()) throw new InvalidDataException("World load attempt is no longer starting.");
@@ -32,7 +46,7 @@ internal sealed class WorldLoadPreparation
         {
             if (!stillStarting() || providerRevision() != revision || !stillStarting()) throw new InvalidDataException("World load changed during inspection.");
             RequireUnchangedRoot();
-            return root;
+            return new WorldPreparedLoad(session, root, null, revision);
         }
         var rows = generation.Rows;
         var bindings = WorldJsonInspection.Bind(rows, nodes);
@@ -49,7 +63,7 @@ internal sealed class WorldLoadPreparation
             if (!ReferenceEquals(bindings[i].Json, current[i].Json)) throw new InvalidDataException("World JSON node replaced during admission.");
         RequireUnchangedRoot();
         _gate.Open(session, generation.Association, canonicalPath, expectedHash, revision, providers, current);
-        return root;
+        return new WorldPreparedLoad(session, root, generation, revision);
 
         void RequireUnchangedRoot()
         {

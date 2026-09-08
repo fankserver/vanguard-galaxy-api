@@ -39,22 +39,42 @@ internal sealed class WorldLoadHookHost : IWorldLoadHookHost, IDisposable
         _subscription = _hub.Subscribe(WorldStateCodec.Owner, OnLifecycle);
     }
 
+    private WorldPreparedLoad? _prepared;
+    private bool _recallAttempted;
+
+    internal WorldPreparedLoad? PreparedFor(Guid session)
+    {
+        _hub.CheckThread();
+        var prepared = _prepared;
+        if (_disposed || prepared == null) return null;
+        long revision = _providerRevision();
+        var current = _hub.CurrentSession;
+        return !_disposed && ReferenceEquals(prepared, _prepared) && prepared.Session == session && current?.Id == session &&
+            (current.Phase == SessionPhase.Starting || current.Phase == SessionPhase.PlayerReady || current.Phase == SessionPhase.GameplayInitialized) &&
+            revision == prepared.ProviderRevision ? prepared : null;
+    }
+
     private void OnLifecycle(LifecycleEvent e)
     {
         if (e.Kind == LifecycleEventKind.SessionStarting && e.Session?.Id == _hub.CurrentSession?.Id)
-        { _sessionId = e.Session!.Id; _gate.Start(_sessionId); }
+        { _prepared = null; _recallAttempted = false; _sessionId = e.Session!.Id; _gate.Start(_sessionId); }
         else if ((e.Kind == LifecycleEventKind.SessionInvalidated || e.Kind == LifecycleEventKind.SessionStartFailed) && e.Session?.Id == _sessionId)
-            _gate.Invalidate();
+        { _prepared = null; _gate.Invalidate(); }
     }
 
     public bool TryRecall(object file, out object? result)
     {
         _hub.CheckThread(); result = null;
         if (_disposed || _hub.CurrentSession is not { } session || !_persistence.TryGetStartingLoad(session.Id, out var path, out var hash)) return false;
+        _prepared = null;
+        if (_recallAttempted) { _gate.Invalidate(); throw new InvalidDataException("World Recall already attempted for this session."); }
+        _recallAttempted = true;
         var nativeFile = _file.GetValue(file) as FileInfo ?? throw new InvalidDataException("Missing native load file.");
         if (_canonical(nativeFile.FullName) != path) throw new InvalidDataException("Recall source does not match the observed attempt.");
         bool StillStarting() => !_disposed && _persistence.TryGetStartingLoad(session.Id, out var currentPath, out var currentHash) && currentPath == path && currentHash == hash;
-        result = _preparation.Read(session.Id, path!, hash!, StillStarting, _definitionAvailable, _providerRevision);
+        var prepared = _preparation.ReadPrepared(session.Id, path!, hash!, StillStarting, _definitionAvailable, _providerRevision);
+        _prepared = prepared;
+        result = prepared.Root;
         return true;
     }
 
@@ -74,6 +94,6 @@ internal sealed class WorldLoadHookHost : IWorldLoadHookHost, IDisposable
     {
         _hub.CheckThread();
         if (_disposed) return;
-        _disposed = true; _gate.Invalidate(); _subscription.Dispose();
+        _disposed = true; _prepared = null; _gate.Invalidate(); _subscription.Dispose();
     }
 }

@@ -11,8 +11,10 @@ namespace VGModAPI.Tests;
 
 public sealed class WorldLoadHookHostTests
 {
-    [Fact]
-    public void ProviderCallbackAdvancingSameSessionCannotAdmitFactory()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void PreparedLoadAndFactoryRemainAttemptScoped(bool repeatRecall)
     {
         string dir = Path.Combine(Path.GetTempPath(), "vg-world-host-" + Guid.NewGuid().ToString("N"));
         string text = "fixture-" + Guid.NewGuid().ToString("N"); Directory.CreateDirectory(dir);
@@ -40,10 +42,22 @@ public sealed class WorldLoadHookHostTests
             using var host = new WorldLoadHookHost(typeof(JsonObject).Assembly, hub, persistence, persistence.CreateWorldReader(), Path.GetFullPath, _ => true, Revision);
             session = hub.Begin(SessionOrigin.SaveLoad, path);
             Assert.True(host.TryRecall(new Source.Util.SaveGameFile(path), out var loaded)); Assert.Same(root, loaded);
+            var prepared = host.PreparedFor(session);
+            Assert.NotNull(prepared); Assert.Same(root, prepared!.Root);
+            Assert.Equal(identity.NativeId, Assert.Single(prepared.Generation!.Rows).Identity.NativeId);
+            Assert.Null(host.PreparedFor(Guid.NewGuid()));
             host.RequireFactory(new JsonValue(poi));
+            if (repeatRecall)
+            {
+                Assert.Throws<InvalidDataException>(() => host.TryRecall(new Source.Util.SaveGameFile(path), out _));
+                Assert.Null(host.PreparedFor(session));
+                Assert.Throws<InvalidDataException>(() => host.RequireFactory(new JsonValue(poi)));
+                return;
+            }
             advance = true;
             Assert.Throws<InvalidDataException>(() => host.RequireFactory(new JsonValue(poi)));
             Assert.Equal(SessionPhase.PlayerReady, hub.CurrentSession!.Phase);
+            host.Dispose(); Assert.Null(host.PreparedFor(session));
         }
         finally { JsonValue.ParseFixtures.TryRemove(text, out _); Directory.Delete(dir, true); }
     }
