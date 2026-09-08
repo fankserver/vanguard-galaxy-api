@@ -14,11 +14,20 @@ internal sealed class DungeonPodPersistence : IDisposable
     private Guid? _restoredSession;
     private bool _disposed;
     private int _returnDepth;
+    internal bool IsCheckpointing { get; private set; }
+    internal bool CanObserveSnapshots => CanMutate || (IsCheckpointing && Ready);
+    internal void Checkpoint(Action capture)
+    {
+        EnsureSerializationAllowed();
+        if (!Ready || IsCheckpointing) throw new InvalidOperationException("Recovery checkpoint unavailable.");
+        IsCheckpointing = true;
+        try { capture(); } finally { IsCheckpointing = false; }
+    }
     private readonly DungeonMutationFence _effects = new();
     internal void RejectTransferSnapshot() { _hub.CheckThread(); _effects.Fail(); }
     internal DungeonMutationFence.Lease? BeginTransfer()
     {
-        if (_returnDepth != 0 || !Ready || !_registration!.MutationAllowed || _hub.IsDispatchingCallbacks || _effects.Uncertain) return null;
+        if (IsCheckpointing || _returnDepth != 0 || !Ready || !_registration!.MutationAllowed || _hub.IsDispatchingCallbacks || _effects.Uncertain) return null;
         return _effects.Enter();
     }
     internal object RestoreToken { get; private set; } = new();
@@ -42,12 +51,15 @@ internal sealed class DungeonPodPersistence : IDisposable
                 _registration is IPersistenceReadiness readiness && readiness.StateReady;
         }
     }
-    internal bool CanMutate => !_effects.Busy && !_effects.Uncertain && _returnDepth == 0 && Ready && _registration!.MutationAllowed && !_hub.IsDispatchingCallbacks;
+    internal bool CanMutate => !IsCheckpointing && !_effects.Busy && !_effects.Uncertain && _returnDepth == 0 && Ready && _registration!.MutationAllowed && !_hub.IsDispatchingCallbacks;
     internal IReadOnlyList<DungeonPodResumeState> Snapshot => Ready ? _ledger.Snapshot : Array.Empty<DungeonPodResumeState>();
     internal DungeonPodResumeState? Get(Guid id) => Ready ? _ledger.Get(id) : null;
     internal DungeonOperationResumeState? Operation(Guid id) => Ready ? _operations.Get(id) : null;
     internal bool TrackOperation(DungeonOperationResumeState state)
-    { if (!CanMutate) return false; _operations.Track(state); return true; }
+    {
+        if (!CanObserveSnapshots || (IsCheckpointing && (_operations.Get(state.Id) is not { } previous || previous.TerminalProgress != state.TerminalProgress))) return false;
+        _operations.Track(state); return true;
+    }
     internal bool RefreshTransportPose(Guid id, IReadOnlyList<float> pose)
     {
         EnsureSerializationAllowed();
@@ -57,7 +69,10 @@ internal sealed class DungeonPodPersistence : IDisposable
         return true;
     }
     internal bool Track(DungeonPodResumeState state)
-    { if (!CanMutate || _operations.Get(state.OperationId) == null) return false; _ledger.Track(state); return true; }
+    {
+        if (!CanObserveSnapshots || _operations.Get(state.OperationId) == null || (IsCheckpointing && (_ledger.Get(state.Id) is not { } previous || previous.ReturnAttempted != state.ReturnAttempted || previous.ReturnDelivered != state.ReturnDelivered))) return false;
+        _ledger.Track(state); return true;
+    }
     internal DungeonPodResumeState? BeginReturn(Guid id) => CanMutate ? _ledger.BeginReturn(id) : null;
     internal bool Return(Guid id, string parentShipId, Func<IReadOnlyDictionary<string, int>, DungeonPodDeliveryReceipt?> nativeReturn)
     {
@@ -77,12 +92,12 @@ internal sealed class DungeonPodPersistence : IDisposable
         _ledger.Delivered(id); return true;
     }
     internal void EnsureSerializationAllowed()
-    { _hub.CheckThread(); _effects.EnsureSettled(); if (_returnDepth != 0) throw new InvalidOperationException("Cannot save while dungeon effects are being applied."); }
+    { _hub.CheckThread(); _effects.EnsureSettled(); if (_returnDepth != 0 || IsCheckpointing) throw new InvalidOperationException("Cannot save while dungeon effects or snapshot refresh are being applied."); }
     internal TerminalAttempt? BeginTerminal(Guid id)
     {
         if (!CanMutate || _operations.Get(id) is not { MayStartTerminalEffects: true } operation) return null;
         var attempted = new DungeonOperationResumeState(operation.Id, operation.LocationId, operation.ContentOccurrence, operation.AttackerShipId,
-            operation.DungeonType, operation.NativePhase, operation.Outcome, operation.MissionProtection, DungeonTerminalProgress.Attempted, operation.Autonomous, operation.Options, operation.Donors);
+            operation.DungeonType, operation.NativePhase, operation.Outcome, operation.MissionProtection, DungeonTerminalProgress.Attempted, operation.Autonomous, operation.Options, operation.Donors, operation.WalkDispatched);
         _operations.Track(attempted); _returnDepth++;
         return new TerminalAttempt(this, RestoreToken, attempted);
     }
@@ -95,7 +110,7 @@ internal sealed class DungeonPodPersistence : IDisposable
             _owner._hub.CheckThread();
             if (_disposed || !_owner.Ready || !ReferenceEquals(_token, _owner.RestoreToken) || !ReferenceEquals(_owner._operations.Get(_attempted.Id), _attempted)) return;
             _owner._operations.Track(new(_attempted.Id, _attempted.LocationId, _attempted.ContentOccurrence, _attempted.AttackerShipId, _attempted.DungeonType,
-                _attempted.NativePhase, _attempted.Outcome, _attempted.MissionProtection, DungeonTerminalProgress.Completed, _attempted.Autonomous, _attempted.Options, _attempted.Donors));
+                _attempted.NativePhase, _attempted.Outcome, _attempted.MissionProtection, DungeonTerminalProgress.Completed, _attempted.Autonomous, _attempted.Options, _attempted.Donors, _attempted.WalkDispatched));
         }
         public void Dispose() { _owner._hub.CheckThread(); if (_disposed) return; _disposed = true; _owner._returnDepth--; }
     }

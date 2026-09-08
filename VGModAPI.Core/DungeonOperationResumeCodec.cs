@@ -14,7 +14,7 @@ internal static class DungeonOperationResumeCodec
         var entries = states.Take(257).ToArray();
         if (entries.Length > 256 || entries.Select(state => state.Id).Distinct().Count() != entries.Length) throw new InvalidDataException("Invalid operation collection.");
         using var stream = new MemoryStream(); using var writer = new BinaryWriter(stream);
-        writer.Write(3); writer.Write(entries.Length);
+        writer.Write(4); writer.Write(entries.Length);
         foreach (var entry in entries.OrderBy(state => state.Id))
         {
             writer.Write(entry.Id.ToByteArray()); writer.Write(entry.LocationId.ToByteArray()); writer.Write((entry.ContentOccurrence ?? Guid.Empty).ToByteArray());
@@ -23,6 +23,7 @@ internal static class DungeonOperationResumeCodec
             writer.Write((byte)entry.TerminalProgress); writer.Write((byte)(entry.Autonomous ? 1 : 0));
             DungeonOperationOptionsCodec.Write(writer, entry.Options);
             DungeonDonorApproachCodec.Write(writer, entry.Donors);
+            writer.Write((byte)(entry.WalkDispatched ? 1 : 0));
         }
         if (stream.Length > OwnerSchemaCodec.MaxPayload) throw new InvalidDataException("Operation state exceeds bound.");
         return stream.ToArray();
@@ -31,7 +32,7 @@ internal static class DungeonOperationResumeCodec
     {
         if (bytes == null || bytes.Length > OwnerSchemaCodec.MaxPayload) throw new InvalidDataException("Invalid operation payload.");
         using var stream = new MemoryStream(bytes, false); using var reader = new BinaryReader(stream);
-        if (reader.ReadInt32() != 3) throw new InvalidDataException("Unsupported operation schema.");
+        if (reader.ReadInt32() != 4) throw new InvalidDataException("Unsupported operation schema.");
         var count = reader.ReadInt32(); if (count < 0 || count > 256) throw new InvalidDataException("Invalid operation count.");
         var entries = new List<DungeonOperationResumeState>(); var ids = new HashSet<Guid>();
         for (var i = 0; i < count; i++)
@@ -44,7 +45,9 @@ internal static class DungeonOperationResumeCodec
                 text[t] = Utf8.GetString(reader.ReadBytes(length));
             }
             var terminal = (DungeonTerminalProgress)reader.ReadByte(); var autonomous = reader.ReadByte(); if (autonomous > 1) throw new InvalidDataException("Invalid operation ownership flag.");
-            entries.Add(new(id, location, content == Guid.Empty ? null : content, text[0], text[1], text[2], text[3], text[4], terminal, autonomous == 1, DungeonOperationOptionsCodec.Read(reader), DungeonDonorApproachCodec.Read(reader)));
+            var options = DungeonOperationOptionsCodec.Read(reader); var donors = DungeonDonorApproachCodec.Read(reader);
+            var walk = reader.ReadByte(); if (walk > 1) throw new InvalidDataException("Invalid walk dispatch state.");
+            entries.Add(new(id, location, content == Guid.Empty ? null : content, text[0], text[1], text[2], text[3], text[4], terminal, autonomous == 1, options, donors, walk == 1));
         }
         if (stream.Position != stream.Length) throw new InvalidDataException("Trailing operation data.");
         return entries.AsReadOnly();

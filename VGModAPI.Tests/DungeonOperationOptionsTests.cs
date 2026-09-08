@@ -26,6 +26,14 @@ public sealed class DungeonOperationOptionsTests
         Assert.Throws<System.IO.InvalidDataException>(() => DungeonOperationOptionsCodec.Read(corrupt));
     }
     [Fact]
+    public void DispatchedWalkApproachCannotBeTreatedAsPreDispatchAfterRoundTrip()
+    {
+        var saved = new DungeonOperationResumeState(Guid.NewGuid(), Guid.NewGuid(), null, "ship", "Station", "Approach", "", "", DungeonTerminalProgress.NotStarted, false, walkDispatched: true);
+        var restored = Assert.Single(DungeonOperationResumeCodec.Decode(DungeonOperationResumeCodec.Encode(new[] { saved })));
+        Assert.Equal("Approach", restored.NativePhase);
+        Assert.True(restored.WalkDispatched);
+    }
+    [Fact]
     public void AssignedCrewBoundsAndCopiesAreEnforced()
     {
         Assert.Throws<ArgumentException>(() => new DungeonOperationOptions(new Dictionary<string, int> { ["A"] = 10000, ["B"] = 1 }, "a", "s", false, false, null));

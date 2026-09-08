@@ -97,11 +97,12 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
     internal bool CaptureOperation(object operation, bool fresh = false)
     {
         if (DungeonReturnCarrier.IsSettlementOnly(operation)) return false;
-        if (!State.CanMutate) return false;
+        if (!State.CanObserveSnapshots) return false;
         var location = _native.Get(operation, "location") ?? throw new InvalidOperationException("Missing operation location.");
         var id = Operations.OperationId(operation);
         if (!id.HasValue)
         {
+            if (State.IsCheckpointing) return false;
             if (!fresh && Operations.LocationMarker(location).HasValue)
             { if (!Operations.Resumed(operation)) return false; id = Operations.OperationId(operation); }
             else
@@ -116,7 +117,7 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
         var phase = _native.Get(operation, "phase")?.ToString() ?? previous.NativePhase;
         var outcome = previous.TerminalProgress == DungeonTerminalProgress.NotStarted ? _native.Get(_native.Get(operation, "simulation"), "outcome")?.ToString() ?? previous.Outcome : previous.Outcome;
         if (!State.TrackOperation(new(previous.Id, previous.LocationId, previous.ContentOccurrence, previous.AttackerShipId, previous.DungeonType,
-            phase, outcome, previous.MissionProtection, previous.TerminalProgress, previous.Autonomous, _options.Capture(_native.Get(operation, "options")!), _world.CaptureDonors(_native.Get(operation, "boardableTarget"))))) return false;
+            phase, outcome, previous.MissionProtection, previous.TerminalProgress, previous.Autonomous, _options.Capture(_native.Get(operation, "options")!), _world.CaptureDonors(_native.Get(operation, "boardableTarget")), (bool)_native.Get(operation, "resumeCrewWalking")!))) return false;
         Pods.TrackLocation(location);
         var pending = (System.Collections.IList)_native.Get(operation, "resumePendingPods")!;
         foreach (var pod in (System.Collections.IEnumerable)_native.Get(operation, "_activePods")!)
@@ -170,6 +171,12 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
     internal void Checkpoint()
     {
         State.EnsureSerializationAllowed();
+        if (State.Ready && _native.Manager is { } manager)
+            State.Checkpoint(() =>
+            {
+                foreach (var operation in (System.Collections.IEnumerable)_native.Get(manager, "resumeOperations")!)
+                    if (!ObserveOperation(operation)) throw new InvalidOperationException("Cannot checkpoint unresolved native operation.");
+            });
         _returns.Checkpoint((id, instance) =>
         {
             var pod = (DungeonReturnPodInstance)instance;

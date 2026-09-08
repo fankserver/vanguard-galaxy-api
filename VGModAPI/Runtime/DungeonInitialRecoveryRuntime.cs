@@ -33,6 +33,7 @@ internal sealed class DungeonInitialRecoveryRuntime : IDisposable
             var id = _owner.Operations.LocationMarker(request.Key);
             if (!id.HasValue || _attempted.Contains(id.Value)) continue;
             var saved = _owner.State.Operation(id.Value); if (saved == null || saved.TerminalProgress != DungeonTerminalProgress.NotStarted) continue;
+            if (request.Value == null && !_world.ContainsWalkLocation(request.Key)) continue;
             if (request.Value != null && (request.Value is not Component target || !target)) continue;
             var recipient = _world.Resolve(saved.AttackerShipId); if (recipient == null) continue;
             var records = _owner.State.Snapshot.Where(pod => pod.OperationId == saved.Id && pod.Phase is DungeonPodPhase.Docked or DungeonPodPhase.Launching or DungeonPodPhase.Attached).ToArray();
@@ -66,7 +67,7 @@ internal sealed class DungeonInitialRecoveryRuntime : IDisposable
                 }
                 foreach (var reservation in saved.Donors)
                     _native.Call("donorDispatch", operation, donors[reservation.ShipId], new Dictionary<string, int>(reservation.Crew, StringComparer.Ordinal));
-                DungeonInitialRelease.Run(request.Value == null && active,
+                DungeonInitialRelease.Run(request.Value == null,
                     () => _native.Call("resumeDocking", operation), () => _operations.Register(operation),
                     () => (_owner.ObserveInitialOperation ?? throw new InvalidOperationException("Boarding observation unavailable."))(operation),
                     () => { foreach (var instance in built) instance.Activate(); });

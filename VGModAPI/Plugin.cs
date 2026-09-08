@@ -581,6 +581,8 @@ public sealed partial class Plugin : BaseUnityPlugin
             DungeonRecoveryCapturePatches.Runtime = _dungeonRecovery;
             InstallGroup("dungeon-recovery-capture", bindings, DungeonRecoveryCaptureBindings.Hooks, new Dictionary<string, Type>
             {
+                ["recoveryWalkDispatch"] = typeof(DungeonRecoveryCapturePatches.Transfer),
+                ["recoveryWalkEntry"] = typeof(DungeonRecoveryCapturePatches.Transfer),
                 ["recoveryDonorRequest"] = typeof(DungeonRecoveryCapturePatches.Transfer),
                 ["recoveryDonorSpawn"] = typeof(DungeonRecoveryCapturePatches.Transfer),
                 ["recoveryDonorUpdate"] = typeof(DungeonRecoveryCapturePatches.DonorUpdate),

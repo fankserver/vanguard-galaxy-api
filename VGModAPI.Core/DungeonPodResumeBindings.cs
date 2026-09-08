@@ -19,6 +19,9 @@ internal static class DungeonPodResumeBindings
     };
     internal static readonly (string Key, string Type, string Name, string ValueType)[] Members =
     {
+        ("resumeOperations", BindingCatalog.BoardingManager, "_operations", "System.Collections.Generic.List`1<Behaviour.Dungeon.DungeonOperation>"),
+        ("resumeCrewWalking", BindingCatalog.BoardingOperation, "_crewWalking", "System.Boolean"),
+        ("resumeWalkLocation", "Behaviour.Unit.DungeonLocationUnit", "data", BindingCatalog.BoardingLocation),
         ("donorActions", "Behaviour.Unit.AbstractUnit", "autoActions", "Source.SpaceShip.AutoActions"),
         ("donorTarget", "Source.SpaceShip.Auto.BoardingReinforcementActions", "_boardableTarget", "UnityEngine.Transform"),
         ("donorCrew", "Source.SpaceShip.Auto.BoardingReinforcementActions", "_crew", "System.Collections.Generic.Dictionary`2<System.String,System.Int32>"),

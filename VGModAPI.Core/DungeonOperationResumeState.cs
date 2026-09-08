@@ -19,10 +19,11 @@ internal sealed class DungeonOperationResumeState
     internal string MissionProtection { get; }
     internal DungeonTerminalProgress TerminalProgress { get; }
     internal bool Autonomous { get; }
+    internal bool WalkDispatched { get; }
     internal DungeonOperationOptions? Options { get; }
     internal IReadOnlyList<DungeonDonorApproachState> Donors { get; }
     internal DungeonOperationResumeState(Guid id, Guid locationId, Guid? contentOccurrence, string attackerShipId, string dungeonType,
-        string nativePhase, string outcome, string missionProtection, DungeonTerminalProgress terminalProgress, bool autonomous, DungeonOperationOptions? options = null, IEnumerable<DungeonDonorApproachState>? donors = null)
+        string nativePhase, string outcome, string missionProtection, DungeonTerminalProgress terminalProgress, bool autonomous, DungeonOperationOptions? options = null, IEnumerable<DungeonDonorApproachState>? donors = null, bool walkDispatched = false)
     {
         if (id == Guid.Empty || locationId == Guid.Empty || contentOccurrence == Guid.Empty || !Enum.IsDefined(typeof(DungeonTerminalProgress), terminalProgress))
             throw new ArgumentException("Invalid persistent operation identity or terminal state.");
@@ -36,7 +37,7 @@ internal sealed class DungeonOperationResumeState
         if (reservations.Length > 64 || reservations.Any(item => item == null) || reservations.Select(item => item.ShipId).Distinct(StringComparer.Ordinal).Count() != reservations.Length)
             throw new ArgumentException("Invalid donor reservations.");
         Donors = Array.AsReadOnly(reservations);
-        TerminalProgress = terminalProgress; Autonomous = autonomous; Options = options;
+        TerminalProgress = terminalProgress; Autonomous = autonomous; Options = options; WalkDispatched = walkDispatched;
     }
     internal bool MayStartTerminalEffects => TerminalProgress == DungeonTerminalProgress.NotStarted;
 }

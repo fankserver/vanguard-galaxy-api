@@ -46,9 +46,10 @@ internal sealed class DungeonPodResumeAdapter
     }
     internal bool Observe(object pod, Guid occurrence, string parentShipId, bool returnInitialized = false, DungeonPodTransport? transport = null)
     {
-        if (!_persistence.CanMutate) return false;
+        if (!_persistence.CanObserveSnapshots) return false;
         var data = _native.Get(pod, "resumePodData") ?? throw new InvalidOperationException("Pod data unavailable.");
         var savedId = IdentityFor(data);
+        if (_persistence.IsCheckpointing && !savedId.HasValue) return false;
         var id = savedId ?? Guid.NewGuid(); var previous = _persistence.Get(id);
         if (_conflicts.Contains(id) || (savedId.HasValue && previous == null)) return false;
         if (!Enum.TryParse<DungeonPodPhase>(_native.Get(data, "resumePodPhase")?.ToString(), out var phase)) throw new InvalidOperationException("Unknown pod phase.");

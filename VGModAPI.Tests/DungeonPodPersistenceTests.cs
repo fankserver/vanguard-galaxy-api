@@ -21,6 +21,29 @@ public sealed class DungeonPodPersistenceTests
         public void Dispose() { }
     }
     [Fact]
+    public void SaveWindowCheckpointRefreshesKnownStateWithoutCreatingEffectsOrIdentities()
+    {
+        using var hub = new LifecycleHub((_, _) => { }); var persistence = new Persistence(); using var pods = new DungeonPodPersistence(hub, persistence);
+        var session = hub.Begin(SessionOrigin.SaveLoad, "save"); hub.PlayerReady(session); persistence.Provider.Restore(hub.CurrentSession!, null);
+        var id = Guid.NewGuid(); var location = Guid.NewGuid();
+        DungeonOperationResumeState Snapshot(Guid key, DungeonTerminalProgress terminal, bool walking) => new(key, location, null, "ship", "Station", "Approach", "", "", terminal, false, walkDispatched: walking);
+        Assert.True(pods.TrackOperation(Snapshot(id, DungeonTerminalProgress.NotStarted, false)));
+        persistence.MutationAllowed = false;
+        pods.Checkpoint(() =>
+        {
+            Assert.False(pods.CanMutate); Assert.Null(pods.BeginTransfer()); Assert.Null(pods.BeginTerminal(id));
+            Assert.True(pods.TrackOperation(Snapshot(id, DungeonTerminalProgress.NotStarted, true)));
+            Assert.False(pods.TrackOperation(Snapshot(Guid.NewGuid(), DungeonTerminalProgress.NotStarted, false)));
+            Assert.False(pods.TrackOperation(Snapshot(id, DungeonTerminalProgress.Attempted, true)));
+            Assert.Throws<InvalidOperationException>(() => persistence.Provider.Capture());
+        });
+        var payload = persistence.Provider.Capture(); persistence.Provider.Restore(hub.CurrentSession!, payload);
+        Assert.True(pods.Operation(id)!.WalkDispatched);
+        Assert.Equal(DungeonTerminalProgress.NotStarted, pods.Operation(id)!.TerminalProgress);
+        Assert.Throws<InvalidOperationException>(() => pods.Checkpoint(() => throw new InvalidOperationException("read failure")));
+        Assert.False(pods.IsCheckpointing);
+    }
+    [Fact]
     public void TransferFenceBlocksProviderCaptureAndMutationUntilReloadAfterFailure()
     {
         using var hub = new LifecycleHub((_, _) => { }); var persistence = new Persistence(); using var pods = new DungeonPodPersistence(hub, persistence);

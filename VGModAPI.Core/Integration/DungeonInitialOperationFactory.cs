@@ -33,7 +33,12 @@ internal sealed class DungeonInitialOperationFactory
         if (active)
             return boardable == null ? _activeLocation.Invoke(new[] { recipient, location, (object)saved.Autonomous }) : _activeShip.Invoke(new[] { recipient, boardable, (object)saved.Autonomous });
         if (saved.Options == null) throw new InvalidOperationException("Approach recovery requires saved options.");
-        if (boardable == null) return _walkApproach.Invoke(new[] { recipient, location, _options.Restore(saved.Options), (object)saved.Autonomous });
+        if (boardable == null)
+        {
+            var operation = _walkApproach.Invoke(new[] { recipient, location, _options.Restore(saved.Options), (object)saved.Autonomous });
+            _native.Set(operation, "resumeCrewWalking", saved.WalkDispatched);
+            return operation;
+        }
         return _approach.Invoke(new[] { recipient, boardable, _options.Restore(saved.Options), (object)saved.Autonomous, true });
     }
     internal void Register(object operation)

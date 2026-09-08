@@ -9,6 +9,20 @@ namespace VGModAPI.Tests;
 public sealed class InstalledPodRecoveryBindingTests
 {
     [Fact]
+    public void OutboundWalkerAnimationDoesNotRemoveCrewBeforeSimulationEntry()
+    {
+        using var assembly = AssemblyDefinition.ReadAssembly(Environment.GetEnvironmentVariable("VG_GAME_ASSEMBLY") ?? throw new InvalidOperationException("Run make check-bindings."));
+        var logistics = assembly.MainModule.GetType("Behaviour.Spacestation.LogisticsManager");
+        var methods = logistics.Methods.Concat(logistics.NestedTypes.SelectMany(type => type.Methods)).Where(method => method.HasBody);
+        var calls = methods.SelectMany(method => method.Body.Instructions).Select(instruction => instruction.Operand).OfType<MethodReference>().ToArray();
+        Assert.DoesNotContain(calls, method => method.Name is "RemoveCrew" or "AddCrew" or "SubtractCrewFromShip");
+        var operation = assembly.MainModule.GetType("Behaviour.Dungeon.DungeonOperation");
+        var dispatch = Assert.Single(operation.Methods, method => method.Name == "HandleDockedCrewDispatch");
+        Assert.Contains(dispatch.Body.Instructions.Select(instruction => instruction.Operand).OfType<FieldReference>(), field => field.Name == "_crewWalking");
+        var begin = Assert.Single(operation.Methods, method => method.Name == "BeginWalkSimulation");
+        Assert.Single(begin.Body.Instructions.Select(instruction => instruction.Operand).OfType<MethodReference>(), method => method.Name == "RemoveAssignedCrewFromShip");
+    }
+    [Fact]
     public void DonorDispatchRebindsActionsWithoutSubtractingCrewAgain()
     {
         using var assembly = AssemblyDefinition.ReadAssembly(Environment.GetEnvironmentVariable("VG_GAME_ASSEMBLY") ?? throw new InvalidOperationException("Run make check-bindings."));
