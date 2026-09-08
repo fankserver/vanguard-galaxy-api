@@ -19,15 +19,22 @@ internal interface IBoardingCommandNativeBindings
     void ApplyOptions(object native, BoardingCommandOptions options);
 }
 
-internal sealed class BoardingCommandNativeBindings : IBoardingCommandNativeBindings
+internal interface IBoardingTacticalNativeBindings : IBoardingCommandNativeBindings
+{
+    void Set(object obj, string key, object? value);
+    object EnumArgument(string key, int index, string name);
+}
+
+internal sealed class BoardingCommandNativeBindings : IBoardingTacticalNativeBindings
 {
     private readonly Dictionary<string, List<MemberInfo>> _members = new(StringComparer.Ordinal);
     private readonly IReadOnlyDictionary<string, MethodInfo> _methods;
     private readonly FieldInfo _player, _manager;
     private readonly Type _options;
-    internal BoardingCommandNativeBindings(GameBindings game)
+    internal BoardingCommandNativeBindings(GameBindings game, MethodBinding[]? additionalMethods = null,
+        (string Key, string Type, string Name, string ValueType)[]? additionalMembers = null)
     {
-        _methods = game.Resolve(BindingCatalog.Boarding.Concat(BindingCatalog.BoardingQueries).Concat(BoardingCommandBindings.Calls).ToArray());
+        _methods = game.Resolve(BindingCatalog.Boarding.Concat(BindingCatalog.BoardingQueries).Concat(BoardingCommandBindings.Calls).Concat(additionalMethods ?? Array.Empty<MethodBinding>()).ToArray());
         _options = game.Assembly.GetType(BindingCatalog.BoardingOptions, true)!;
         if (_options.GetConstructor(Type.EmptyTypes) == null) throw new MissingMethodException(_options.FullName, ".ctor");
         _player = game.Assembly.GetType(BindingCatalog.Player, true)!.GetField("current", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly)
@@ -38,7 +45,7 @@ internal sealed class BoardingCommandNativeBindings : IBoardingCommandNativeBind
         _manager = singleton.GetField("instance", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly)
             ?? throw new MissingFieldException(singleton.FullName, "instance");
         if (_manager.FieldType != managerType) throw new InvalidOperationException("Unexpected boarding manager field.");
-        foreach (var spec in BoardingMembers.Schema.Select(s => (Key: s.Name, s.Type, s.Name, s.ValueType)).Concat(BoardingCommandMembers.Schema))
+        foreach (var spec in BoardingMembers.Schema.Select(s => (Key: s.Name, s.Type, s.Name, s.ValueType)).Concat(BoardingCommandMembers.Schema).Concat(additionalMembers ?? Array.Empty<(string Key, string Type, string Name, string ValueType)>()))
         {
             var type = game.Assembly.GetType(spec.Type, true)!;
             MemberInfo? member = type.GetField(spec.Name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly);
@@ -59,7 +66,7 @@ internal sealed class BoardingCommandNativeBindings : IBoardingCommandNativeBind
         var member = Member(obj, key);
         return member is FieldInfo f ? f.GetValue(obj) : ((PropertyInfo)member).GetValue(obj);
     }
-    internal void Set(object obj, string key, object value)
+    public void Set(object obj, string key, object? value)
     {
         var field = Member(obj, key) as FieldInfo ?? throw new InvalidOperationException("Writable native field required.");
         if (field.IsInitOnly) throw new InvalidOperationException("Readonly native field.");
@@ -72,6 +79,7 @@ internal sealed class BoardingCommandNativeBindings : IBoardingCommandNativeBind
         catch (TargetInvocationException error) when (error.InnerException != null)
         { ExceptionDispatchInfo.Capture(error.InnerException).Throw(); throw; }
     }
+    public object EnumArgument(string key, int index, string name) => Enum.Parse(_methods[key].GetParameters()[index].ParameterType, name, false);
     public object OutcomeReason(string name) => Enum.Parse(_methods["commandRetreat"].GetParameters()[0].ParameterType, name, false);
     public bool ValidCrew(string id) => (bool)Call("commandCrewType", null, id, null!)!;
     public object CreateOptions(BoardingCrewManifest crew, BoardingCommandOptions options)

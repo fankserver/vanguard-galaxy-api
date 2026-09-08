@@ -70,6 +70,16 @@ internal sealed class BoardingCommandService : IBoardingCommands, IDisposable
         try { return _backend.Execute(controller.Target, command, crew, options, allowFactionConsequences); }
         finally { _busy = false; }
     }
+    internal BoardingCommandResult ExecuteControlled(IBoardingController controller, Func<BoardingHandle, BoardingCommandResult> action)
+    {
+        _hub.CheckThread();
+        if (controller is not Controller owned || !owned.OwnedBy(this)) return Result(BoardingCommandStatus.ControlConflict);
+        var rejected = Gate(owned.Target); if (rejected != null) return rejected;
+        if (!Current(owned)) return Result(BoardingCommandStatus.ControlConflict);
+        _busy = true;
+        try { return action(owned.Target); }
+        finally { _busy = false; }
+    }
     /// <summary>Manual native UI action wins over a mod controller. Called before the manual mutation, not observer delivery.</summary>
     internal bool HasControl(BoardingHandle target)
     {
@@ -98,6 +108,7 @@ internal sealed class BoardingCommandService : IBoardingCommands, IDisposable
         internal readonly string PluginId;
         internal bool Disposed;
         public BoardingHandle Target { get; }
+        internal bool OwnedBy(BoardingCommandService owner) => ReferenceEquals(_owner, owner);
         public bool IsActive { get { _owner._hub.CheckThread(); return _owner.Current(this); } }
         internal Controller(BoardingCommandService owner, string pluginId, BoardingHandle target) { _owner = owner; PluginId = pluginId; Target = target; }
         public BoardingCommandResult Start(BoardingCrewManifest crew, BoardingCommandOptions options, bool allowFactionConsequences = false)

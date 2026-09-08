@@ -27,6 +27,7 @@ public sealed class Plugin : BaseUnityPlugin
     private BoardingObserver? _boarding;
     private BoardingRuleAdapter? _boardingRules;
     private BoardingCommandService? _boardingCommands;
+    private BoardingCombatService? _boardingCombat;
     private StoryNativeWorld? _storyWorld;
     private StoryContentService? _story;
     private StoryProtection? _protection;
@@ -61,6 +62,9 @@ public sealed class Plugin : BaseUnityPlugin
         ModApi.Boarding = null;
         ModApi.BoardingRules = null;
         ModApi.BoardingCommands = null;
+        ModApi.BoardingTactics = null; ModApi.BoardingCombat = null;
+        _hub.SetCapability("boarding-tactics", false, "Disabled by configuration; experimental.");
+        _hub.SetCapability("boarding-combat", false, "Disabled by configuration; experimental.");
         _hub.SetCapability("boarding-commands", false, "Disabled by configuration; experimental.");
         _hub.SetCapability("boarding-rules", false, "Disabled by configuration; experimental.");
         ModApi.Missions = null;
@@ -109,6 +113,7 @@ public sealed class Plugin : BaseUnityPlugin
                 InstallBoarding(bindings);
                 InstallBoardingRules(bindings);
                 InstallBoardingCommands(bindings);
+                InstallBoardingTactics(bindings);
             }
             // Load safety, not a feature: an owned mission restored from a save must not progress or
             // pay out while nobody vouches for it, and that is true whether or not the story module is
@@ -425,6 +430,49 @@ public sealed class Plugin : BaseUnityPlugin
         }
     }
 
+    private void InstallBoardingTactics(GameBindings bindings)
+    {
+        if (_boarding == null || ModApi.Boarding == null || _boardingCommands == null) return;
+        try
+        {
+            var tactics = new BoardingTacticalAdapter(_hub!, bindings, _boarding, ModApi.Boarding, _boardingCommands);
+            BoardingTacticalPatches.Adapter = tactics;
+            InstallGroup("boarding-tactics", bindings, BoardingTacticalBindings.Actions, BoardingTacticalBindings.Actions.ToDictionary(b => b.Key,
+                b => b.ReturnType == "System.Boolean" ? typeof(BoardingTacticalPatches.BoolAction) : typeof(BoardingTacticalPatches.VoidAction)));
+            if (!_hub!.Capabilities.Any(c => c.Name == "boarding-tactics" && c.Available)) throw new NotSupportedException("Tactical hooks unavailable.");
+            ModApi.BoardingTactics = tactics;
+        }
+        catch (Exception error)
+        {
+            BoardingTacticalPatches.Adapter = null; ModApi.BoardingTactics = null;
+            _hub!.SetCapability("boarding-tactics", false, error.GetType().Name); Logger.LogError(error);
+        }
+        try
+        {
+            _boardingCombat = new BoardingCombatService(_hub!, (owner, error) => Logger.LogError($"Boarding combat rule '{owner}': {error}"));
+            BoardingCombatPatches.Adapter = new BoardingCombatAdapter(_hub!, _boardingCombat, bindings);
+            var hooks = BoardingCombatBindings.Scopes.Concat(BoardingCombatBindings.Hooks).ToArray();
+            var scopeKeys = BoardingCombatBindings.Scopes.Select(b => b.Key).ToHashSet();
+            InstallGroup("boarding-combat", bindings, hooks, hooks.ToDictionary(b => b.Key, b => scopeKeys.Contains(b.Key) ? typeof(BoardingCombatPatches.Scope) : b.Key switch
+            {
+                "combatPlayerReinforcements" => typeof(BoardingCombatPatches.PlayerReinforcements),
+                "combatPower" => typeof(BoardingCombatPatches.Power), "combatHealth" => typeof(BoardingCombatPatches.Health),
+                "combatCasualties" => typeof(BoardingCombatPatches.Casualties),
+                "combatAttackerState" => typeof(BoardingCombatPatches.AttackerState),
+                "combatMoraleRecovery" or "combatMoraleGlobal" or "combatMoraleAttackers" or "combatMoraleCombat" => typeof(BoardingCombatPatches.Morale),
+                _ => b.ReturnType == "System.Boolean" ? typeof(BoardingCombatPatches.BoolEffect) : typeof(BoardingCombatPatches.VoidEffect)
+            }));
+            if (!_hub!.Capabilities.Any(c => c.Name == "boarding-combat" && c.Available)) throw new NotSupportedException("Combat hooks unavailable.");
+            ModApi.BoardingCombat = _boardingCombat;
+            if (BoardingCommandPatches.Adapter != null) BoardingCommandPatches.Adapter.ReinforcementAllowed = BoardingCombatPatches.Adapter.AllowPlayerReinforcement;
+        }
+        catch (Exception error)
+        {
+            BoardingCombatPatches.Adapter = null; _boardingCombat?.Dispose(); _boardingCombat = null; ModApi.BoardingCombat = null;
+            _hub!.SetCapability("boarding-combat", false, error.GetType().Name); Logger.LogError(error);
+        }
+    }
+
     private void InstallBoardingCommands(GameBindings bindings)
     {
         _hub!.SetCapability("boarding-commands", false, "Boarding observation required; experimental.");
@@ -433,7 +481,7 @@ public sealed class Plugin : BaseUnityPlugin
         {
             var adapter = new BoardingCommandAdapter(new BoardingCommandNativeBindings(bindings), _boarding, ModApi.Boarding,
                 value => value is UnityEngine.Object native && native != null);
-            _boardingCommands = new BoardingCommandService(_hub, ModApi.Boarding, adapter, () => ModApi.BoardingRules?.IsEvaluating ?? false);
+            _boardingCommands = new BoardingCommandService(_hub, ModApi.Boarding, adapter, () => (ModApi.BoardingRules?.IsEvaluating ?? false) || (_boardingCombat?.IsEvaluating ?? false));
             BoardingCommandPatches.Adapter = adapter; BoardingCommandPatches.Service = _boardingCommands;
             InstallGroup("boarding-commands", bindings, BoardingCommandBindings.Hooks, BoardingCommandBindings.Hooks.ToDictionary(b => b.Key, b => b.Key switch
             {
@@ -618,6 +666,8 @@ public sealed class Plugin : BaseUnityPlugin
     }
     private void OnDestroy()
     {
+        BoardingTacticalPatches.Adapter = null; ModApi.BoardingTactics = null;
+        BoardingCombatPatches.Adapter = null; _boardingCombat?.Dispose(); _boardingCombat = null; ModApi.BoardingCombat = null;
         BoardingCommandPatches.Adapter = null; BoardingCommandPatches.Service = null; _boardingCommands?.Dispose(); _boardingCommands = null; ModApi.BoardingCommands = null;
         BoardingRulePatches.Adapter = null; _boardingRules?.Dispose(); _boardingRules = null; ModApi.BoardingRules = null;
         BoardingPatches.Observer = null; _boarding?.Dispose(); _boarding = null; ModApi.Boarding = null;

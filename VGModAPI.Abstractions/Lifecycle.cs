@@ -75,6 +75,8 @@ public static class ModApi
     public static IBoardingRules? BoardingRules { get; internal set; }
     /// <summary>Optional inspected-build boarding commands; admitted commands are not completed outcomes.</summary>
     public static IBoardingCommands? BoardingCommands { get; internal set; }
+    public static IBoardingTactics? BoardingTactics { get; internal set; }
+    public static IBoardingCombatRules? BoardingCombat { get; internal set; }
     /// <summary>Optional station-lifetime observer; non-null only when the travel group is bound and enabled.</summary>
     public static IStationEvents? Station { get; internal set; }
     /// <summary>

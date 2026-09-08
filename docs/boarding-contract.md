@@ -1,6 +1,6 @@
 # Boarding integration constraints and source coverage
 
-Optional boarding observation is implemented in API 0.1.25, disabled by default and not runtime-qualified. Enable `[Boarding] Enabled = true`, inspect the `boarding-observation` capability and use `ModApi.Boarding`. API 0.1.26 also exposes `ModApi.BoardingRules` with the independent `boarding-rules` capability. API 0.1.27 exposes `ModApi.BoardingCommands` when `boarding-commands` is available. Authored content and presentation registration are not available yet. This document distinguishes the observation contract from applicable constraints on those integrations; no native boarding scenario is attested by it. Delivery and remaining acceptance belong to [milestone 09](https://github.com/fankserver/vanguard-galaxy-api/milestone/9), not a second source-tree backlog.
+Optional boarding observation is implemented in API 0.1.25, disabled by default and not runtime-qualified. Enable `[Boarding] Enabled = true`, inspect the `boarding-observation` capability and use `ModApi.Boarding`. API 0.1.26 also exposes `ModApi.BoardingRules` with the independent `boarding-rules` capability. API 0.1.27 exposes `ModApi.BoardingCommands` when `boarding-commands` is available. API 0.1.28 exposes `ModApi.BoardingTactics` and `ModApi.BoardingCombat` under the separate `boarding-tactics` and `boarding-combat` capabilities. Authored content and presentation registration are not available yet. This document distinguishes the observation contract from applicable constraints on those integrations; no native boarding scenario is attested by it. Delivery and remaining acceptance belong to [milestone 09](https://github.com/fankserver/vanguard-galaxy-api/milestone/9), not a second source-tree backlog.
 
 ## Evidence boundary
 
@@ -126,6 +126,33 @@ Native serialization is not an atomic transaction with API storage. Save-as, rol
 BoardAlways owns its Enabled setting, threshold/guaranteed-disable policy, balance multipliers and chosen ship/installation scope. The API owns safe conversion, native side effects, once-only modifiers and checked command accounting. Its difficulty code currently omits Enabled and rejects values outside the easier-only interval; its scuttle restoration can scale ammo damage twice and cannot undo explosions. Those are migration corrections, not API compatibility requirements.
 
 Patch-free means no direct game/Unity/Harmony compile references, reflection or native casts for covered boarding functionality. A wrapper moving the same patches into another consumer file does not qualify. A second author example must exercise custom encounter/tactical/UI/save behavior beyond the four BoardAlways patch areas.
+
+## Tactical actions and combat policies (API 0.1.28)
+
+Tactical execution requires the actual current `IBoardingController` instance, not merely its plugin ID or an imitation of the interface. `BoardingTacticalRequest` describes an action; `BoardingTacticalSnapshot` copies discovered rooms, grenade charges/cooldown and extraction availability. Adjacent unexplored rooms expose only their index, unknown status and door state so exploration remains possible without revealing their occupants. Snapshots resolve the exact requested operation generation, never its target's newer operation. Snapshots are not permission and action execution revalidates native state. Native direct movement retains capacity-limited partial movement; queued API count requests require the requested capacity.
+
+| Family | Implemented contract / native boundary | Validation evidence |
+| --- | --- | --- |
+| Movement and priority | Move, clear orders, retreat from a room, set/clear priority; native `IssueMovementOrder` and autonomous `MoveCrewTo` are checked | Invalid indices before order clearing; visibility, count/capacity, foreign/duplicate crew, transit and adjacency |
+| Locks and specialists | Locked movement routes a specialist; Unlock starts the native timer with an available adjacent specialist | Actual supplied unlocker, liveness, membership, directive assignment and existing timer |
+| Barricades | Toggle uses native start/held predicates | Active, visible, intact room and native prerequisites |
+| Grenades | Throw uses native resource/reachability predicates; API requires explicit friendly-damage consent | Charges, cooldown, target and terminal state |
+| Ammo, stealth/noise and auto-move | Controller SetOptions uses typed native options, keeping the native ammo/noise relationships | Enum validation, phase and control gates; no duplicate simulation escape hatch |
+| Buyout and extraction | Accept/decline buyout; request/confirm extraction | Candidate exists before debit, credits, pending offer, victory and pending extraction |
+| Power and initial HP | Combat multipliers run at effective-power and new HP initialization boundaries, scoped to a simulation | Per-side composition, scope nesting and vanilla fallback |
+| Morale and casualties | Morale change magnitudes and casualty rate have separate multiplier families | Morale adjusted before combat surrender and attacker panic/recovery checks, not applied twice; finite nonnegative values |
+| Surrender and defection | Veto combat/mass surrender, attacker morale collapse and combat/faction side switching | Discrete veto composition and session/reentrancy behavior |
+| Reinforcements | Veto defender scheduling or player requests before debit, not already-arriving manifests | Player roster conservation on veto; receiving simulation remains mandatory |
+| Hazards and venting | Veto native hazard firing, airlock vent attempts or random structural vent selection | Discrete family validation and exact native binding checks |
+| Structural damage | `IBoardingRules.RegisterIntegrity`, scuttle and explosion policies | Cause-aware exactly-once composition; authoritative host destruction remains unchanged |
+
+`IBoardingCombatRules.AcquireProvider` creates a disposable provider instance independent of command control. RegisterMultiplier accepts Power, InitialHealth, Morale or CasualtyRate; RegisterVeto accepts Surrender, Defection, Reinforcement, Hazard or Venting. Callbacks receive copied encounter kind/level, side, optional room and boundary value. InitialHealth scales the native HP initialization multiplier; Morale scales the absolute change, retaining its sign and clamping resulting morale to [0,1]. Policies do not rewrite saved HP on load.
+
+Individual multipliers must be finite in [0,10]; combined multipliers above 100 or overflowing the boundary value reject the offending contribution with diagnostics. Contributions run by descending priority then ordinal provider/local ID. Vetoes aggregate as denials, and throwing callbacks do not prevent later contributions. Provider disposal removes only that instance's registrations. Nested evaluation preserves native defaults; session replacement discards results. Policy callbacks must not issue commands.
+
+These are request/effect vetoes, not outcome notifications. Vetoing a hazard effect can leave native event scheduling/progression intact; refusing reinforcement scheduling delays the request rather than deleting arriving crew. Power, health, morale and casualty changes influence subsequent native RNG outcomes; vetoes skip the intercepted native draw, while vanilla numeric defaults add no API random draw. Native UI and autonomous tactical helpers share checked boundaries with API requests. An explicit native UI grenade action retains native friendly-damage semantics; API callers must opt in.
+
+Host tests, source inspection and metadata checks are not Unity acceptance. Native timing, coexistence, presentation and complete action-family scenarios remain unqualified until exercised on the exact source revision.
 
 ## Boarding commands (API 0.1.27)
 
