@@ -17,6 +17,40 @@ public sealed class BarContentServiceTests
         public IPersistenceRegistration Register(PersistenceProvider provider) { Provider = provider; return this; }
         public void Dispose() { MutationAllowed = false; StateReady = false; }
     }
+    private sealed class World : IBarRosterWorld
+    {
+        internal int Capacity = 5;
+        internal Action? DuringCreate;
+        internal int Created;
+        internal bool Applied;
+        public BarRosterSnapshot Capture(string station) => new(this, Array.Empty<object>(), Capacity);
+        public object CreateContact(BarPatronState state) { Created++; DuringCreate?.Invoke(); return new object(); }
+        public bool Apply(BarRosterSnapshot snapshot, System.Collections.Generic.IReadOnlyList<object> patrons, Func<bool> stillValid)
+        { if (!stillValid()) return false; Applied = true; return true; }
+    }
+
+    [Theory]
+    [InlineData(0, false, 2)]
+    [InlineData(1, false, 0)]
+    [InlineData(1, true, 1)]
+    public void RosterApplicationRefusesCapacityAndReentrantChanges(int capacity, bool dispose, int expectedStatus)
+    {
+        var expected = (BarRosterApplyStatus)expectedStatus;
+        using var hub = new LifecycleHub((_, error) => throw error);
+        var storage = new Storage();
+        using var service = new BarContentService(storage, hub,
+            (_, _) => new StoryHostPlugin("author", typeof(BarContentServiceTests).Assembly), _ => false, hub.CheckThread);
+        var author = service.AcquireProvider("author").Provider!;
+        author.Register(Definition());
+        var session = Ready(hub, storage);
+        author.Place(session, "contact");
+        var plan = service.Plan(session, "station")!;
+        var world = new World { Capacity = capacity, DuringCreate = dispose ? author.Dispose : null };
+        Assert.Equal(expected, BarRosterApplication.Apply(service, world, plan));
+        Assert.Equal(expected == BarRosterApplyStatus.Applied, world.Applied);
+        if (capacity == 0) Assert.Equal(0, world.Created);
+    }
+
     private static BarPatronDefinition Definition(BarPatronRetention retention = BarPatronRetention.Persistent) =>
         new("contact", "station", "Name", "Description", "seed", retention);
     private static Guid Ready(LifecycleHub hub, Storage storage, byte[]? bytes = null)
