@@ -24,6 +24,8 @@ internal sealed class WorldJsonInspection
     private readonly Type _objectType;
     private readonly MethodInfo _parse;
     private readonly WorldSaveFormat _format;
+    private readonly WorldNestedTypeCatalog _nested;
+    private readonly PropertyInfo _isNull;
     internal void SealSnapshot(object root, bool owned) => _format.Seal(root, owned);
     internal void UnsealVerified(object root, bool owned) => _format.UnsealVerified(root, owned);
     private static readonly UTF8Encoding Utf8 = new(false, true);
@@ -31,6 +33,7 @@ internal sealed class WorldJsonInspection
     internal WorldJsonInspection(Assembly assembly)
     {
         _format = new WorldSaveFormat(assembly);
+        _nested = new WorldNestedTypeCatalog(assembly);
         _objectType = assembly.GetType("LightJson.JsonObject", true)!;
         var value = assembly.GetType("LightJson.JsonValue", true)!;
         _parse = value.GetMethod("Parse", BindingFlags.Public | BindingFlags.Static, null, new[] { typeof(string) }, null)
@@ -39,6 +42,7 @@ internal sealed class WorldJsonInspection
         _isObject = Property(value, "IsJsonObject"); _object = Property(value, "AsJsonObject");
         _isArray = Property(value, "IsJsonArray"); _array = Property(value, "AsJsonArray");
         _isString = Property(value, "IsString"); _string = Property(value, "AsString");
+        _isNull = Property(value, "IsNull");
     }
     private static PropertyInfo Property(Type type, string name) => type.GetProperty(name) ?? throw new MissingMemberException(type.FullName, name);
     private object Field(object json, string key) => _item.GetValue(json, new object[] { key })!;
@@ -101,10 +105,38 @@ internal sealed class WorldJsonInspection
                     if (result.Count >= WorldSerializationAssociation.MaxObjects || !ids.Add(id)) throw new InvalidDataException("Duplicate or excessive owned POIs.");
                     if (Text(poi, "type") != "Combat" || Text(poi, "systemName") != systemId)
                         throw new InvalidDataException("Owned POI type or parent link is not supported.");
+                    CheckNestedFactories(poi, Visit);
                     result.Add(new WorldParsedNode(poi, id, systemId, Digest(poi)));
                 }
             }
         }
+    }
+
+    // These are the directly dispatched nested factories in LoadOptionalPoiData/MapTriggeredPayload.
+    // Their subtype data, lazy generation and other nested schemas still require separate validation.
+    private void CheckNestedFactories(object poi, Action visit)
+    {
+        void OptionalArray(object parent, string key, Action<object> check)
+        {
+            var value = Field(parent, key);
+            if ((bool)_isNull.GetValue(value)!) return;
+            foreach (var entry in Array(value)) { visit(); check(Object(entry)); }
+        }
+        void Bodies(object parent)
+        {
+            OptionalArray(parent, "persistables", item => _nested.Persistable(Text(item, "type")));
+            OptionalArray(parent, "units", item => WorldNestedTypeCatalog.Unit(Text(item, "type")));
+        }
+        Bodies(poi);
+        OptionalArray(poi, "guardDescriptors", item => _nested.Descriptor(Text(item, "type")));
+        OptionalArray(poi, "payloads", item =>
+        {
+            Bodies(item);
+            var descriptor = Field(item, "descriptor");
+            if (!(bool)_isNull.GetValue(descriptor)!) { visit(); _nested.Descriptor(Text(Object(descriptor), "type")); }
+        });
+        var storyteller = Field(poi, "storyteller");
+        if (!(bool)_isNull.GetValue(storyteller)!) { visit(); _nested.Storyteller(Text(Object(storyteller), "identifier")); }
     }
 
     internal static string Digest(object json)
