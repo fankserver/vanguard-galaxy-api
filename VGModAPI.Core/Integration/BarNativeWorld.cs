@@ -132,6 +132,26 @@ internal sealed class BarNativeWorld : IBarRosterWorld
         return new BarRosterSnapshot(token, vanilla, _capacity);
     }
 
+    internal sealed class ContactAdmission
+    {
+        private readonly BarNativeWorld _world;
+        private readonly CaptureToken _token;
+        private readonly object _contact;
+        internal ContactAdmission(BarNativeWorld world, object token, object contact)
+        { _world = world; _token = (CaptureToken)token; _contact = contact; }
+        internal bool IsCurrent => _token.Entries.Any(entry => ReferenceEquals(entry, _contact)) && _world.Stable(_token);
+    }
+
+    internal ContactAdmission? CaptureContact(object contact)
+    {
+        var station = _station.Read();
+        if (station == null || _guid.GetValue(station) is not string identity) return null;
+        var snapshot = Capture(identity);
+        if (snapshot == null) return null;
+        var admission = new ContactAdmission(this, snapshot.Token, contact);
+        return admission.IsCurrent ? admission : null;
+    }
+
     public object? CreateContact(BarPatronState state)
     {
         var station = _station.Read();

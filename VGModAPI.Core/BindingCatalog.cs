@@ -78,6 +78,14 @@ internal static class BindingCatalog
     /// independently of the story module, because an orphaned owned mission is dangerous exactly when
     /// that module is absent, disabled or unbound.
     /// </summary>
+    internal static readonly MethodBinding[] Bars =
+    {
+        new("barRefresh", "Source.Galaxy.POI.Station.Bar", "CheckUpdatePatrons", false, "System.Void", "System.Boolean"),
+        new("barSerialize", "Source.Galaxy.POI.Station.Bar", "ToJson", false, "LightJson.JsonValue"),
+        new("barPatronSerialize", "Source.Galaxy.POI.Station.BarPatron", "ToJson", false, "LightJson.JsonValue"),
+        new("barInteract", "Source.Galaxy.POI.Station.Patrons.Salesman", "InteractWithPatron", false, "System.Void", "Behaviour.UI.Spacestation.Bar.BarUI")
+    };
+
     internal static readonly MethodBinding[] StoryProtection =
     {
         new("storyGuardUpdate", Mission, "Update", false, "System.Void", "System.Single"),

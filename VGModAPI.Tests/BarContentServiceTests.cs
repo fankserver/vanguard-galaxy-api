@@ -52,6 +52,38 @@ public sealed class BarContentServiceTests
         Assert.Equal(2, calls);
     }
 
+    public sealed class ClickPatron { public int seat = 1; }
+    public sealed class ClickBar { public System.Collections.Generic.List<ClickPatron> availablePatrons = new(); public long lastUpdateTime = 1; }
+    public sealed class ClickStation { public string guid = "station"; public ClickBar bar = new(); }
+    public sealed class ClickPlayer { public static ClickPlayer? current; public object? currentPointOfInterest; }
+
+    [Fact]
+    public void NativeMembershipIsRecheckedAfterCallbackCapablePlanValidation()
+    {
+        using var hub = new LifecycleHub((_, error) => throw error);
+        var storage = new Storage(); var station = new ClickStation(); var contact = new ClickPatron();
+        station.bar.availablePatrons.Add(contact);
+        ClickPlayer.current = new ClickPlayer { currentPointOfInterest = station };
+        bool invalidate = false;
+        using var service = new BarContentService(storage, hub,
+            (_, _) => new StoryHostPlugin("author", typeof(BarContentServiceTests).Assembly),
+            _ => { if (invalidate) station.bar.availablePatrons.Clear(); return true; }, hub.CheckThread, () => FixedPermissionStamp);
+        var author = service.AcquireProvider("author").Provider!;
+        int calls = 0;
+        author.Register(Definition(), _ => calls++);
+        author.ConfigureStation("station", BarRosterOwnership.Exclusive);
+        var session = Ready(hub, storage);
+        author.Place(session, "contact");
+        var plan = service.Plan(session, "station")!;
+        var world = new VGModAPI.Core.Integration.BarNativeWorld(typeof(ClickStation), typeof(ClickBar), typeof(ClickPatron),
+            new VGModAPI.Core.Integration.BarStationSource(typeof(ClickPlayer), typeof(ClickStation)), _ => true, (_, _) => new ClickPatron(), 5);
+        var admission = world.CaptureContact(contact);
+        Assert.NotNull(admission);
+        invalidate = true;
+        Assert.False(service.Interact(plan, plan.Patrons[0], admission));
+        Assert.Equal(0, calls);
+    }
+
     private static readonly object FixedPermissionStamp = new();
     private sealed class Storage : IPersistenceApi, IPersistenceRegistration, IPersistenceReadiness
     {

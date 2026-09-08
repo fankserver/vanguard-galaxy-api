@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using Mono.Cecil;
 using Xunit;
+using VGModAPI.Core;
 
 namespace VGModAPI.Tests;
 
@@ -15,6 +16,14 @@ public sealed class InstalledBarBindingTests
             ?? throw new InvalidOperationException("Run make check-bindings against the installed game.");
         using var assembly = AssemblyDefinition.ReadAssembly(path);
         var module = assembly.MainModule;
+        foreach (var binding in BindingCatalog.Bars)
+        {
+            var type = module.GetType(binding.Type);
+            var method = type.Methods.Single(candidate => candidate.Name == binding.Name
+                && candidate.Parameters.Select(parameter => parameter.ParameterType.FullName).SequenceEqual(binding.Parameters));
+            Assert.Equal(binding.Static, method.IsStatic);
+            Assert.Equal(binding.ReturnType, method.ReturnType.FullName);
+        }
         var station = module.GetType("Source.Galaxy.POI.SpaceStation");
         var player = module.GetType("Source.Player.GamePlayer");
         var current = player.Fields.Single(field => field.Name == "current");
