@@ -33,6 +33,10 @@ public sealed partial class Plugin : BaseUnityPlugin
     private Harmony? _craftingCommandHarmony;
     private RecipeCatalogNativeSource? _craftingCommandSource;
     private BoardingObserver? _boarding;
+    private DungeonPanelRuntime? _dungeonPanel;
+    private DungeonPanelService? _dungeonPanelService;
+    private DungeonPanelView? _dungeonPanelView;
+    private DungeonPanelChoices? _dungeonPanelChoices;
     private BoardingRuleAdapter? _boardingRules;
     private BoardingCommandService? _boardingCommands;
     private BoardingCombatService? _boardingCombat;
@@ -165,6 +169,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         // Subscription order is contractual: coordinated owners restore before mission PlayerReady identity seeding.
         InitializePersistence();
         InitializeDungeons();
+        InitializeDungeonPanel();
         InitializeMissions();
         InitializeStory();
         InitializeBars();
@@ -553,6 +558,43 @@ public sealed partial class Plugin : BaseUnityPlugin
         try { _craftingCommandHarmony?.UnpatchSelf(); } catch (Exception error) { Logger.LogError(error); }
         _craftingCommandHarmony = null; _hub?.SetCapability("crafting-commands", false, "Crafting commands unavailable.");
     }
+    private void InitializeDungeonPanel()
+    {
+        _hub!.SetCapability("dungeon-panel-opening", false, "Boarding integration unavailable.");
+        _hub.SetCapability("dungeon-panel-sections", false, "Panel renderer unavailable.");
+        _hub.SetCapability("dungeon-panel-actions", false, "Panel renderer unavailable.");
+        if (_boarding == null || ModApi.Boarding == null) return;
+        try
+        {
+            var bindings = new GameBindings(Assembly.Load("Assembly-CSharp"));
+            _dungeonPanel = new(bindings, _boarding, ModApi.Boarding, operation =>
+                _dungeonRecovery == null || (_dungeonRecovery.State.CanMutate && (operation == null || _dungeonRecovery.OperationReady(operation))));
+            _dungeonPanelService = new(_hub, _dungeonPanel, (owner, error) => Logger.LogError($"Dungeon panel contributor '{owner}': {error}"));
+            DungeonPanelPatches.Runtime = _dungeonPanel; DungeonPanelPatches.Report = error => Logger.LogError(error);
+            InstallGroup("dungeon-panel-opening", bindings, DungeonPanelBindings.Hooks, new Dictionary<string, Type>
+            {
+                ["panelOpenedLocation"] = typeof(DungeonPanelPatches.Opened), ["panelOpenedShip"] = typeof(DungeonPanelPatches.Opened),
+                ["panelClosed"] = typeof(DungeonPanelPatches.Closed), ["panelDisabled"] = typeof(DungeonPanelPatches.Closed)
+            });
+            if (!_hub.Capabilities.Any(capability => capability.Name == "dungeon-panel-opening" && capability.Available)) throw new NotSupportedException("Panel observation hooks unavailable.");
+            ModApi.DungeonPanel = _dungeonPanelService;
+            if (_dungeons != null && _dungeonAdapter != null)
+                _dungeonPanelChoices = new(_dungeonPanelService, _dungeons, target =>
+                    _boarding.TryResolveCommandTarget(target, out var location, out _, out _) && location != null ? _dungeonAdapter.Marker(location) : null);
+            _dungeonPanelView = new(_dungeonPanel, _dungeonPanelService); _dungeonPanel.PresentationEnabled = true;
+            _hub.SetCapability("dungeon-panel-sections", true, "Native panel status renderer installed; not runtime-qualified.");
+            _hub.SetCapability("dungeon-panel-actions", true, "Native panel action renderer installed; not runtime-qualified.");
+        }
+        catch (Exception error) { StopDungeonPanel(); _hub.SetCapability("dungeon-panel-opening", false, error.Message); Logger.LogError(error); }
+    }
+    private void StopDungeonPanel()
+    {
+        DungeonPanelPatches.Runtime = null; DungeonPanelPatches.Report = null; ModApi.DungeonPanel = null;
+        _dungeonPanelChoices?.Dispose(); _dungeonPanelChoices = null;
+        _dungeonPanelView?.Dispose(); _dungeonPanelView = null;
+        _dungeonPanelService?.Dispose(); _dungeonPanelService = null; _dungeonPanel?.Dispose(); _dungeonPanel = null;
+    }
+
     private void InitializeDungeons()
     {
         _hub!.SetCapability("dungeon-content", false, "Experimental authored content is disabled.");
@@ -898,6 +940,15 @@ public sealed partial class Plugin : BaseUnityPlugin
 
     private void Update()
     {
+        try { _dungeonPanelChoices?.Refresh(); _dungeonPanelView?.Tick(); }
+        catch (Exception error)
+        {
+            _dungeonPanelView?.Dispose(); _dungeonPanelView = null;
+            if (_dungeonPanel != null) _dungeonPanel.PresentationEnabled = false;
+            _hub?.SetCapability("dungeon-panel-sections", false, "Panel renderer failed.");
+            _hub?.SetCapability("dungeon-panel-actions", false, "Panel renderer failed.");
+            Logger.LogError(error);
+        }
         _hudRuntime?.Tick();
         _forgeUiRuntime?.Tick();
         var craftingFault = _craftingJobObserver?.PumpFault();
@@ -933,6 +984,7 @@ public sealed partial class Plugin : BaseUnityPlugin
     }
     private void OnDestroy()
     {
+        StopDungeonPanel();
         TeardownHud();
         TeardownForgeUi();
         TeardownCraftingCommands();

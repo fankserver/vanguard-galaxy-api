@@ -39,6 +39,38 @@ internal sealed class DungeonContentService : IDungeonContent, IDisposable
         if (_providers.ContainsKey(pluginId)) throw new InvalidOperationException("Dungeon provider already acquired.");
         var provider = new Provider(this, pluginId); _providers.Add(pluginId, provider); return provider;
     }
+    internal bool PanelBusy { get { _hub.CheckThread(); return MutationBlocked || !_state.MutationAllowed; } }
+    internal (object? Occurrence, object? Provider, object? Definition) PanelToken(Guid id)
+    {
+        _hub.CheckThread(); var occurrence = _state.Get(id);
+        if (occurrence == null) return (null, null, null);
+        _providers.TryGetValue(occurrence.DefinitionId.ProviderId, out var provider);
+        _registry.TryGet(occurrence.DefinitionId, out var definition);
+        return (occurrence, provider, definition);
+    }
+    internal IReadOnlyList<(string EventId, string EventText, string ChoiceId, string ChoiceText)> PanelChoices(Guid id, string? eventId = null, string? choiceId = null)
+    {
+        _hub.CheckThread();
+        var result = new List<(string, string, string, string)>();
+        if (_disposed || MutationBlocked || !_state.MutationAllowed || _state.Get(id) is not { } occurrence ||
+            !_providers.TryGetValue(occurrence.DefinitionId.ProviderId, out var provider) || !Live(provider) ||
+            !_registry.TryGet(occurrence.DefinitionId, out var definition) || definition.Version != occurrence.Definition.Version) return result;
+        foreach (var item in occurrence.Definition.Events)
+        {
+            if (occurrence.Choices.ContainsKey(item.Id) || (eventId != null && item.Id != eventId)) continue;
+            foreach (var choice in item.Choices)
+                if ((choiceId == null || choice.Id == choiceId) && _native.ValidateChoice(occurrence, item, choice) == DungeonContentStatus.ChoiceApplied)
+                    result.Add((item.Id, item.Text, choice.Id, choice.Text));
+        }
+        return result.AsReadOnly();
+    }
+    internal DungeonContentResult ChooseFromPanel(Guid id, string eventId, string choiceId)
+    {
+        _hub.CheckThread();
+        var occurrence = _state.Get(id);
+        return occurrence != null && _providers.TryGetValue(occurrence.DefinitionId.ProviderId, out var provider)
+            ? Choose(provider, id, eventId, choiceId) : Result(DungeonContentStatus.MissingDefinition);
+    }
     private bool MutationBlocked => _callbacks != 0 || _mutationBlocked();
     private bool Live(Provider provider) => !_disposed && _providers.TryGetValue(provider.Id, out var current) && ReferenceEquals(current, provider);
     private DungeonContentResult Result(DungeonContentStatus status, Guid? id = null) => new(status, status.ToString(), id);
