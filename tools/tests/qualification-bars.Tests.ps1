@@ -91,5 +91,16 @@ try {
     if (!(Test-Path (Join-Path $root 'bar-producer-evidence\result.txt'))) { throw 'Producer evidence was not retained.' }
     Copy-Item (Join-Path $root 'bar-producer-evidence\result.txt') (Join-Path $root 'result.txt')
     Reject { Start-BarColdPhase $root $planned 'absent' }
+    Reject { Assert-BarLinkedReceipt $root }
+    $linkedCases = 'active-mission;automatic-linked-restore;stale-session;provider-unavailable;registered-before-reload;rollback;no-replacement-placement'
+    Set-Content (Join-Path $root 'bar-linked.txt') @('PASS', $linkedCases)
+    Reject { Assert-BarLinkedReceipt $root }
+    Set-Content (Join-Path $root 'bar-linked-generation.txt') $producer
+    Assert-BarLinkedReceipt $root
+    Set-Content $save 'tampered linked save'
+    Reject { Assert-BarLinkedReceipt $root }
+    Set-Content $save 'fixture'
+    Add-Content (Join-Path $root 'bar-linked.txt') 'unexpected'
+    Reject { Assert-BarLinkedReceipt $root }
     Write-Output 'PASS owned-bar receipt, cold sequencing and launcher parsing'
 } finally { Remove-Item -LiteralPath $root -Recurse -Force }

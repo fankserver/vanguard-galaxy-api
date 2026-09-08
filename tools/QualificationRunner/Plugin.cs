@@ -146,6 +146,11 @@ public sealed partial class Plugin : BaseUnityPlugin
             foreach (var frame in CheckBarConsumers()) yield return frame;
             yield break;
         }
+        if (Environment.GetCommandLineArgs().Contains("--vgmodapi-bars-linked"))
+        {
+            foreach (var frame in CheckLinkedStoryBars()) yield return frame;
+            yield break;
+        }
         if (Environment.GetCommandLineArgs().Contains("--vgmodapi-bars-only"))
         {
             Require(File.Exists(Path.Combine(_root!, "bars.enabled")), "Bar-only phase is not armed.");

@@ -1122,6 +1122,13 @@ function Assert-QualificationInputs([string]$Root) {
     if ($barConsumers) { Assert-BarConsumerInputs $Root $provenance }
     $bars = $provenance.PSObject.Properties['barProbe'] -and $provenance.barProbe -eq $true
     if ([bool]$bars -ne (Test-Path -LiteralPath (Join-Path $Root 'bars.enabled') -PathType Leaf)) { throw 'Bar selection changed.' }
+    $linkedBars = $provenance.PSObject.Properties['barLinkedStory'] -and $provenance.barLinkedStory -eq $true
+    if ([bool]$linkedBars -ne (Test-Path -LiteralPath (Join-Path $Root 'bar-linked.enabled') -PathType Leaf)) { throw 'Linked bar selection changed.' }
+    if ($linkedBars) {
+        if (!$bars -or ($provenance.PSObject.Properties['barColdSequence'] -and $provenance.barColdSequence) -or
+            (Get-Content -LiteralPath (Join-Path $Root 'bar-linked.enabled') -Raw) -cne 'linked-bars-v1') { throw 'Invalid linked bar selection.' }
+        Assert-StoryConfiguration $Root
+    }
     if ($bars) {
         Assert-StoryIsolation $provenance
         foreach ($name in @('storyProbe','storyAbsentProbe','storyColdSequence','persistenceProbe','missionJournal','stockpile','anima','echo','travelJournal')) {

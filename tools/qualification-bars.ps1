@@ -10,6 +10,12 @@ function Initialize-BarProbe([string]$Root, [string]$AuthorA, [string]$AuthorB) 
     [IO.File]::WriteAllText((Join-Path $Root 'bars.enabled'), 'owned-bars-v1')
 }
 
+function Assert-BarLinkedReceipt([string]$Root) {
+    $rows = @(Get-Content -LiteralPath (Join-Path $Root 'bar-linked.txt') -ErrorAction Stop)
+    if ($rows.Count -ne 2 -or $rows[0] -cne 'PASS' -or $rows[1] -cne 'active-mission;automatic-linked-restore;stale-session;provider-unavailable;registered-before-reload;rollback;no-replacement-placement') { throw 'Incomplete linked bar receipt.' }
+    $null = Assert-BarGeneration $Root 'bar-linked-generation.txt'
+}
+
 function Assert-BarReceipt([string]$Root) {
     $path = Join-Path $Root 'owned-bars.txt'
     if (!(Test-Path -LiteralPath $path -PathType Leaf)) { throw 'Missing owned-bar receipt.' }
