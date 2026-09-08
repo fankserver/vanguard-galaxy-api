@@ -1,6 +1,6 @@
 # Authored dungeon content
 
-`ModApi.Dungeons` is optional and experimental. Query the `dungeon-content`
+`ModApi.Dungeons` requires API 0.1.30 and is optional and experimental. Query the `dungeon-content`
 capability before use. It requires boarding observation, API save data and
 `Dungeons.Enabled`; it is disabled by default. Host tests and binding checks do
 not establish in-game qualification.
