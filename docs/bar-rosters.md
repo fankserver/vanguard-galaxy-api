@@ -4,7 +4,7 @@ Requires API 0.1.25. Enable `[Persistence] Enabled = true` and `[Bars] Enabled =
 
 ## Provider lifecycle
 
-Acquire a provider directly from the loaded BepInEx plugin instance with `ModApi.Bars.AcquireProvider(this)`. The API authenticates its stable owner identity. Register a `BarPatronDefinition` containing a local ID, native station GUID, display name, description and seed, with an optional interaction callback. Different providers may reuse local IDs.
+Acquire a provider from the loaded BepInEx plugin instance in `Start` with `ModApi.Bars.AcquireProvider(this)`. Chainloader publishes its authenticated instance only after `Awake` returns; acquiring during `Awake` is refused. Consumers can latch managed mode in `Awake` to prevent a native fallback before acquisition. The API authenticates its stable owner identity. Register a `BarPatronDefinition` containing a local ID, native station GUID, display name, description and seed, with an optional interaction callback. Different providers may reuse local IDs.
 
 `Place(currentSession.Id, localId)` stores the contribution. A successful placement is **not a visibility guarantee**: station policy, native capacity, readiness and dependencies determine admission at refresh. Always pass the current session identity; a saved occurrence ID does not make a stale session valid.
 

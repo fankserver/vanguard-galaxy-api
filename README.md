@@ -104,7 +104,7 @@ API 0.1.25 provides opt-in owner-scoped patrons, automatic persistent presentati
 ## Owned story content (experimental)
 
 Require API 0.1.12, declare a hard BepInEx dependency, and acquire a provider lease from your own
-`Awake` with `ModApi.Story?.AcquireProvider(this)`. The lease registers immutable mission definitions
+`Start` with `ModApi.Story?.AcquireProvider(this)` (after Chainloader publishes the plugin instance). The lease registers immutable mission definitions
 from a closed supported subset; the API installs them into the game's own story catalog, mints and
 persists occurrence identity, and captures/restores that state itself, so you write no codec, no
 save/load callback and no restoration scheduling for it. Definitions declare their source faction, because the game requires one to save a held mission.
