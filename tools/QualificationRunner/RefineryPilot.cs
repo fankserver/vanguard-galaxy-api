@@ -46,6 +46,9 @@ public sealed partial class Plugin
         }
         SpCall(nativeJob, "ProgressJob", Convert.ToSingle(SpGet(nativeJob, "refineTime")));
         var batch = facts.Single(fact => fact.Kind == CraftingJobEventKind.BatchObserved && fact.Job.Handle.Equals(queued.Jobs[0]));
+        WriteAtomic("refinery-batch-diagnostic.txt", new[] { "status=" + batch.DeliveryStatus, "remaining=" + SpGet(nativeJob, "remainingAmount") }
+            .Concat(batch.Deliveries.Select(delivery => delivery.Resource?.LocalId + " requested=" + delivery.RequestedAmount.ToString("R", System.Globalization.CultureInfo.InvariantCulture)
+                + " actual=" + delivery.VerifiedAmount?.ToString("R", System.Globalization.CultureInfo.InvariantCulture) + " status=" + delivery.Status)));
         Require(batch.DeliveryStatus == CraftingDeliveryStatus.Verified && Convert.ToInt32(SpGet(nativeJob, "remainingAmount")) == 1, "Refining partial batch not verified.");
         var deliveredInventory = ForgeInventoryCounts(nativeStation);
         Require(expectedMaterials.Any(expected => expected.All(pair => deliveredInventory[pair.Key] == pair.Value)), "Refinery fractional material yields differ from native contents and eligible bonus multiplier.");
