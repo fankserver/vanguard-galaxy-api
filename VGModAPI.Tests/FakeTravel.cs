@@ -9,7 +9,7 @@ namespace Source.Galaxy
         public string name { get { NameReads++; return _name ?? "generated"; } set { _name = value; } }
     }
     public sealed class SystemMapData : MapElement { }
-    public class MapPointOfInterest : MapElement { }
+    public partial class MapPointOfInterest : MapElement { }
 }
 namespace Source.Player
 {
@@ -29,14 +29,14 @@ namespace Source.SpaceShip.Auto
 }
 namespace Source.SpaceShip
 {
-    public sealed class SpaceShipData
+    public sealed partial class SpaceShipData
     {
         public Source.SpaceShip.Auto.DockingState? dockingState;
     }
 }
 namespace Source.Galaxy.POI
 {
-    public sealed class SpaceStation : Source.Galaxy.MapPointOfInterest { }
+    public partial class SpaceStation : Source.Galaxy.MapPointOfInterest { }
 }
 namespace Behaviour.UI.Spacestation
 {

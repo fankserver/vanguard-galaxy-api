@@ -25,6 +25,7 @@ public sealed class Plugin : BaseUnityPlugin
     private MissionAdapter? _missions;
     private TravelNativeAdapter? _travel;
     private RecipeCatalogService? _recipes;
+    private RecipeQuoteService? _recipeQuotes;
     private BoardingObserver? _boarding;
     private BoardingRuleAdapter? _boardingRules;
     private BoardingCommandService? _boardingCommands;
@@ -58,6 +59,8 @@ public sealed class Plugin : BaseUnityPlugin
         _hub.SetCapability("world-ready", false, "No universal POI/UI-ready guarantee; GameplayInitialized is narrower.");
         _hub.SetCapability("native-travel", false, "Not bound; experimental.");
         _hub.SetCapability("recipe-catalog", false, "Disabled or not bound; experimental.");
+        _hub.SetCapability("recipe-quotes", false, "Disabled or not bound; experimental.");
+        ModApi.RecipeQuotes = null;
         _hub.SetCapability("save-data", false, "Not initialized; experimental.");
         _hub.SetCapability("mission-continuity", false, "Disabled by configuration; experimental.");
         _hub.SetCapability("mission-transitions", false, "Disabled by configuration; experimental.");
@@ -451,6 +454,18 @@ public sealed class Plugin : BaseUnityPlugin
             _recipes = new RecipeCatalogService(_hub!, source, error => Logger.LogError(error));
             ModApi.Recipes = _recipes;
             _hub!.SetCapability("recipe-catalog", true, "Experimental read-only definitions; not runtime-qualified.");
+            try
+            {
+                source.BindQuotes();
+                _recipeQuotes = new RecipeQuoteService(_hub, source, error => Logger.LogError(error));
+                ModApi.RecipeQuotes = _recipeQuotes;
+                _hub.SetCapability("recipe-quotes", true, "Experimental advisory requirements; not runtime-qualified.");
+            }
+            catch (Exception quoteError)
+            {
+                _recipeQuotes?.Dispose(); _recipeQuotes = null; ModApi.RecipeQuotes = null;
+                _hub.SetCapability("recipe-quotes", false, "Recipe quote binding failed."); Logger.LogError(quoteError);
+            }
         }
         catch (Exception error)
         {
@@ -765,6 +780,7 @@ public sealed class Plugin : BaseUnityPlugin
         LifecyclePatches.Adapter = null;
         SavePatches.Adapter = null;
         ModApi.Current = null;
+        _recipeQuotes?.Dispose(); _recipeQuotes = null; ModApi.RecipeQuotes = null;
         _recipes?.Dispose(); _recipes = null; ModApi.Recipes = null;
         _hub?.Dispose();
         _adapter = null;
