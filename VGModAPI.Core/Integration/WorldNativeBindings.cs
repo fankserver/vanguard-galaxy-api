@@ -12,6 +12,9 @@ internal static class WorldNativeBindings
         new("worldStore", BindingCatalog.Save, "Store", true, "System.Void", "LightJson.JsonObject", "System.String", "Source.Util.SaveGameFormat", "System.Int32"),
         new("worldElementWrite", "Source.Galaxy.MapElement", "ToJson", false, "LightJson.JsonValue"),
         new("worldRemove", "Source.Galaxy.SystemMapData", "RemovePointOfInterest", false, "System.Void", "Source.Galaxy.MapPointOfInterest"),
+        new("worldActiveUpdate", "Source.Galaxy.MapPointOfInterest", "ActiveUpdate", false, "System.Void", "System.Single"),
+        new("worldCanTravel", "Source.Galaxy.MapPointOfInterest", "CanTravelHere", false, "System.Boolean"),
+        new("worldRoute", BindingCatalog.TravelManager, "SetRouteToPOI", false, "System.Boolean", "Source.Galaxy.MapPointOfInterest"),
         new("worldCombatUpdate", "Source.Galaxy.POI.Combat", "AmbientUpdate", false, "System.Void", "System.Single")
     };
 }

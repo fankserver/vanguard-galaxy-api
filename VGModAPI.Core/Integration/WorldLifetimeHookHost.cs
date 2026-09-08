@@ -8,6 +8,7 @@ internal interface IWorldLifetimeHookHost
 {
     bool AllowAmbient(object poi);
     bool AllowRemoval(object poi);
+    bool AllowUse(object poi);
 }
 
 /// <summary>Refuses reserved ambient/removal paths before their native bodies; no world readiness is inferred.</summary>
@@ -41,6 +42,7 @@ internal sealed class WorldLifetimeHookHost : IWorldLifetimeHookHost, IDisposabl
         _hub.CheckThread();
         return _guard.AllowAmbient(_hub.CurrentSession?.Id ?? Guid.Empty, poi, Identity(poi));
     }
+    public bool AllowUse(object poi) => AllowAmbient(poi);
     public bool AllowRemoval(object poi)
     {
         _hub.CheckThread(); return _guard.AllowNativeRemoval(poi, Identity(poi));

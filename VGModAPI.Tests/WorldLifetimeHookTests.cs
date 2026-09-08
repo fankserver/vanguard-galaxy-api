@@ -23,6 +23,13 @@ public sealed class WorldLifetimeHookTests : IDisposable
         Assert.False(WorldLifetimePatches.Remove.Prefix(owned));
         Assert.True(WorldLifetimePatches.Ambient.Prefix(vanilla));
         Assert.True(WorldLifetimePatches.Remove.Prefix(vanilla));
+        Assert.False(WorldLifetimePatches.Active.Prefix(owned));
+        bool result = true;
+        Assert.False(WorldLifetimePatches.Route.Prefix(owned, ref result)); Assert.False(result);
+        result = true;
+        Assert.False(WorldLifetimePatches.CanTravel.Prefix(owned, ref result)); Assert.False(result);
+        Assert.True(WorldLifetimePatches.Route.Prefix(vanilla, ref result));
+        Assert.True(WorldLifetimePatches.Active.Prefix(vanilla));
         owned.guid = "stripped";
         host.Dispose();
         Assert.False(WorldLifetimePatches.Ambient.Prefix(owned));
