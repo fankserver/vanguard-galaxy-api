@@ -163,6 +163,23 @@ public sealed class CraftingJobObserverTests : IDisposable
         Assert.Equal(handle, _events.Last().Job.Handle); Assert.Equal(CraftingJobState.Invalidated, _events.Last().Job.State);
         Assert.Empty(_service.Read(handle.Station).Jobs); Assert.Null(_observer.PumpFault());
     }
+    [Theory]
+    [InlineData(.3f, .35f, true)]
+    [InlineData(16777216f, .25f, false)]
+    public void MaterialBatchUsesPositiveNativeFloatExpectation(float before, float requested, bool fulfilled)
+    {
+        _player.Materials = before;
+        var refinery = _station.refinery; refinery.spaceStation = _station;
+        var job = new RefineJob { parent = refinery, ore = new() { item = _item } }; refinery.jobs.Add(job);
+        var batch = _observer.Begin("jobBatchRefinery", job, Array.Empty<object>()); job.remainingAmount--;
+        var transfer = _observer.Begin("jobMaterialAdd", _player, new object[] { RefinedMaterial.TestMetal, requested });
+        _player.Materials = (float)(before + requested);
+        _observer.End(transfer, null, null); _observer.End(batch, null, null);
+        var fact = Assert.Single(_events);
+        Assert.Equal(fulfilled ? CraftingDeliveryStatus.Verified : CraftingDeliveryStatus.Unresolved, fact.DeliveryStatus);
+        Assert.Equal((double)(float)(before + requested) - before, Assert.Single(fact.Deliveries).VerifiedAmount);
+        Assert.Null(_observer.PumpFault());
+    }
     [Fact]
     public void RefineryMaterialDeltasExcludeNestedAdds()
     {

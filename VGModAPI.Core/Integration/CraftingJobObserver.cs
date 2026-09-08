@@ -108,7 +108,8 @@ internal sealed partial class CraftingJobObserver : IDisposable
             if (scope.Key.StartsWith("jobBatch", StringComparison.Ordinal))
             {
                 var verified = after.State == CraftingJobState.Active && originalError == null && !scope.Unresolved && scope.Before!.RemainingBatches - after.RemainingBatches == 1 &&
-                    scope.Deliveries.Count > 0 && scope.Deliveries.All(item => item.Status == CraftingDeliveryStatus.Verified && item.VerifiedAmount == item.RequestedAmount);
+                    scope.Deliveries.Count > 0 && scope.Deliveries.All(item => item.Status == CraftingDeliveryStatus.Verified &&
+                        (item.Resource?.Kind == RecipeResourceKind.RefinedMaterial || item.VerifiedAmount == item.RequestedAmount));
                 _service.Observe(CraftingJobEventKind.BatchObserved, after, scope.Deliveries,
                     verified ? CraftingDeliveryStatus.Verified : CraftingDeliveryStatus.Unresolved,
                     originalError == null ? "One native batch call observed; remaining count alone is not delivery evidence." : "Batch call faulted; recorded transfers may be partial.");

@@ -54,5 +54,15 @@ try {
     [IO.File]::WriteAllLines((Join-Path $root 'forge-delivery.txt'), @('PASS','forge-delivery-v1','partial-cancel-multi-batch-inventory'))
     Assert-ForgeDeliveryReceipt $root $p
     $p.forgePersistenceProbe = $true; Reject { Assert-ForgeReadSelection $root $p }
-    'PASS Forge probe selection and receipt tests'
+    $p.forgePersistenceProbe = $false; $p.forgeDeliveryProbe = $false
+    Remove-Item (Join-Path $root 'forge-delivery.enabled')
+    $p | Add-Member refineryProbe $true
+    Reject { Assert-ForgeReadSelection $root $p }
+    [IO.File]::WriteAllText((Join-Path $root 'refinery.enabled'), 'refinery-v1')
+    Assert-ForgeReadSelection $root $p
+    Reject { Assert-RefineryReceipt $root $p }
+    [IO.File]::WriteAllLines((Join-Path $root 'refinery.txt'), @('PASS','refinery-v1','fractional-partial-refund-extraction-replay'))
+    Assert-RefineryReceipt $root $p
+    $p.forgeDeliveryProbe = $true; Reject { Assert-ForgeReadSelection $root $p }
+    'PASS Forge/refinery probe selection and receipt tests'
 } finally { Remove-Item -LiteralPath $root -Recurse -Force }
