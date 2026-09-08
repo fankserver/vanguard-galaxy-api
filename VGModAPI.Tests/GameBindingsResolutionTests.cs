@@ -118,7 +118,7 @@ public sealed class GameBindingsResolutionTests
     public void EveryCatalogTypeNameIsCanonical()
     {
         var declared = BindingCatalog.Session.Concat(BindingCatalog.Saves).Concat(BindingCatalog.Missions)
-            .Concat(BindingCatalog.MissionSnapshots).Concat(BindingCatalog.Travel).Concat(BindingCatalog.Boarding).Concat(BindingCatalog.BoardingQueries)
+            .Concat(BindingCatalog.MissionSnapshots).Concat(BindingCatalog.Travel).Concat(BindingCatalog.Boarding).Concat(BindingCatalog.BoardingQueries).Concat(BoardingRuleBindings.Hooks).Concat(BoardingRuleBindings.Calls)
             .SelectMany(b => new[] { b.ReturnType }.Concat(b.Parameters)).Distinct().ToArray();
         foreach (var name in declared)
         {
