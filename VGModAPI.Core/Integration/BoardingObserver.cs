@@ -267,6 +267,26 @@ internal sealed class BoardingObserver : IDisposable
     private int CountCrew(object sim, string side, int index) => ((IEnumerable)Read(sim, side)!).Cast<object>()
         .Count(unit => Read<int>(unit, "compartmentIndex") == index && Read<int>(unit, "hp") > 0 && Read(unit, "state")!.ToString() is not ("Killed" or "Surrendered" or "Captured"));
     public void Dispose() { _stopped = true; _targets.Clear(); _operations.Clear(); _service.Dispose(); }
+    internal BoardingHandle? CommandHandleForLocation(object? location)
+    {
+        _hub.CheckThread();
+        return location != null && _targets.TryGetValue(location, out var target) && !target.Retired && _service.GetTarget(target.Handle) != null ? target.Handle : null;
+    }
+
+    /// <summary>Resolve only the current observed generation; never revive a retired target for commands.</summary>
+    internal bool TryResolveCommandTarget(BoardingHandle handle, out object? location, out object? component, out object? operation)
+    {
+        _hub.CheckThread(); location = null; component = null; operation = null;
+        if (_service.GetTarget(handle) == null) return false;
+        var target = _targets.Values.FirstOrDefault(value => !value.Retired && value.Handle.Equals(handle));
+        if (target == null) return false;
+        component = target.Components.FirstOrDefault(_isLive);
+        if (component == null) return false;
+        location = target.Data;
+        if (target.Operation != null && _operations.ContainsKey(target.Operation.Native)) operation = target.Operation.Native;
+        return true;
+    }
+
     private sealed class RewardScope
     {
         internal readonly Operation Operation;

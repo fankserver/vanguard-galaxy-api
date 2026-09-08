@@ -26,6 +26,7 @@ public sealed class Plugin : BaseUnityPlugin
     private TravelNativeAdapter? _travel;
     private BoardingObserver? _boarding;
     private BoardingRuleAdapter? _boardingRules;
+    private BoardingCommandService? _boardingCommands;
     private StoryNativeWorld? _storyWorld;
     private StoryContentService? _story;
     private StoryProtection? _protection;
@@ -59,6 +60,8 @@ public sealed class Plugin : BaseUnityPlugin
         _hub.SetCapability("boarding-observation", false, "Disabled by configuration; experimental.");
         ModApi.Boarding = null;
         ModApi.BoardingRules = null;
+        ModApi.BoardingCommands = null;
+        _hub.SetCapability("boarding-commands", false, "Disabled by configuration; experimental.");
         _hub.SetCapability("boarding-rules", false, "Disabled by configuration; experimental.");
         ModApi.Missions = null;
         ModApi.Story = null;
@@ -105,6 +108,7 @@ public sealed class Plugin : BaseUnityPlugin
             {
                 InstallBoarding(bindings);
                 InstallBoardingRules(bindings);
+                InstallBoardingCommands(bindings);
             }
             // Load safety, not a feature: an owned mission restored from a save must not progress or
             // pay out while nobody vouches for it, and that is true whether or not the story module is
@@ -421,6 +425,35 @@ public sealed class Plugin : BaseUnityPlugin
         }
     }
 
+    private void InstallBoardingCommands(GameBindings bindings)
+    {
+        _hub!.SetCapability("boarding-commands", false, "Boarding observation required; experimental.");
+        if (_boarding == null || ModApi.Boarding == null) return;
+        try
+        {
+            var adapter = new BoardingCommandAdapter(new BoardingCommandNativeBindings(bindings), _boarding, ModApi.Boarding,
+                value => value is UnityEngine.Object native && native != null);
+            _boardingCommands = new BoardingCommandService(_hub, ModApi.Boarding, adapter, () => ModApi.BoardingRules?.IsEvaluating ?? false);
+            BoardingCommandPatches.Adapter = adapter; BoardingCommandPatches.Service = _boardingCommands;
+            InstallGroup("boarding-commands", bindings, BoardingCommandBindings.Hooks, BoardingCommandBindings.Hooks.ToDictionary(b => b.Key, b => b.Key switch
+            {
+                "commandRemoveAssigned" => typeof(BoardingCommandPatches.RemoveAssigned),
+                "commandBeginWalk" => typeof(BoardingCommandPatches.BeginWalk),
+                "commandSerialization" => typeof(BoardingCommandPatches.Serialization),
+                "commandAutonomyHook" => typeof(BoardingCommandPatches.Autonomous),
+                _ => typeof(BoardingCommandPatches.Manual)
+            }));
+            if (!_hub.Capabilities.Any(c => c.Name == "boarding-commands" && c.Available)) throw new NotSupportedException("Boarding command hooks unavailable.");
+            ModApi.BoardingCommands = _boardingCommands;
+        }
+        catch (Exception error)
+        {
+            BoardingCommandPatches.Adapter = null; BoardingCommandPatches.Service = null;
+            _boardingCommands?.Dispose(); _boardingCommands = null; ModApi.BoardingCommands = null;
+            _hub.SetCapability("boarding-commands", false, error.GetType().Name); Logger.LogError(error);
+        }
+    }
+
     private void InstallBoardingRules(GameBindings bindings)
     {
         if (!_hub!.Capabilities.Any(c => c.Name == "session-lifecycle" && c.Available)) return;
@@ -584,6 +617,7 @@ public sealed class Plugin : BaseUnityPlugin
     }
     private void OnDestroy()
     {
+        BoardingCommandPatches.Adapter = null; BoardingCommandPatches.Service = null; _boardingCommands?.Dispose(); _boardingCommands = null; ModApi.BoardingCommands = null;
         BoardingRulePatches.Adapter = null; _boardingRules?.Dispose(); _boardingRules = null; ModApi.BoardingRules = null;
         BoardingPatches.Observer = null; _boarding?.Dispose(); _boarding = null; ModApi.Boarding = null;
         try { _updates?.Dispose(); } catch (Exception) { }

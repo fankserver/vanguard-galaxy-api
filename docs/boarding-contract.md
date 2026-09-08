@@ -1,6 +1,6 @@
 # Boarding integration constraints and source coverage
 
-Optional boarding observation is implemented in API 0.1.25, disabled by default and not runtime-qualified. Enable `[Boarding] Enabled = true`, inspect the `boarding-observation` capability and use `ModApi.Boarding`. API 0.1.26 also exposes `ModApi.BoardingRules` with the independent `boarding-rules` capability. Commands, authored content and presentation registration are not available yet. This document distinguishes the observation contract from applicable constraints on those integrations; no native boarding scenario is attested by it. Delivery and remaining acceptance belong to [milestone 09](https://github.com/fankserver/vanguard-galaxy-api/milestone/9), not a second source-tree backlog.
+Optional boarding observation is implemented in API 0.1.25, disabled by default and not runtime-qualified. Enable `[Boarding] Enabled = true`, inspect the `boarding-observation` capability and use `ModApi.Boarding`. API 0.1.26 also exposes `ModApi.BoardingRules` with the independent `boarding-rules` capability. API 0.1.27 exposes `ModApi.BoardingCommands` when `boarding-commands` is available. Authored content and presentation registration are not available yet. This document distinguishes the observation contract from applicable constraints on those integrations; no native boarding scenario is attested by it. Delivery and remaining acceptance belong to [milestone 09](https://github.com/fankserver/vanguard-galaxy-api/milestone/9), not a second source-tree backlog.
 
 ## Evidence boundary
 
@@ -126,6 +126,16 @@ Native serialization is not an atomic transaction with API storage. Save-as, rol
 BoardAlways owns its Enabled setting, threshold/guaranteed-disable policy, balance multipliers and chosen ship/installation scope. The API owns safe conversion, native side effects, once-only modifiers and checked command accounting. Its difficulty code currently omits Enabled and rejects values outside the easier-only interval; its scuttle restoration can scale ammo damage twice and cannot undo explosions. Those are migration corrections, not API compatibility requirements.
 
 Patch-free means no direct game/Unity/Harmony compile references, reflection or native casts for covered boarding functionality. A wrapper moving the same patches into another consumer file does not qualify. A second author example must exercise custom encounter/tactical/UI/save behavior beyond the four BoardAlways patch areas.
+
+## Boarding commands (API 0.1.27)
+
+`ModApi.BoardingCommands.AcquireControl(pluginId, target, out controller)` returns a typed result and, when admitted, an instance-scoped disposable controller. Acquire from a current target snapshot, not a saved handle. Event subscriptions do not grant command control. Only one mod controller can hold a target; manual native panel start, extraction, reinforcement and option actions revoke it. Native autonomous re-enabling is blocked while it is held. Disposal does not restore old autonomous settings over newer player choices.
+
+The controller exposes Start, Resume, Reinforce, CancelApproach, Retreat, RequestExtraction, ConfirmExtraction and SetOptions. Crew manifests are copied, nonempty, positive-count maps of native crew identifiers. Options expose ammunition, stealth, auto-move and automatic buyout. Automatic buyout can spend credits later according to native rules; no upfront credit charge is invented. Starting with friendly-faction consequences requires explicit consent, then uses native reputation/aggro bookkeeping. Availability, crew, capacity, travel, phase and target/ship identity are revalidated at execution.
+
+Initial ship crew is debited at native pod creation. Walk-in crew is revalidated and debited at actual entry, not reserved during approach; an insufficient delayed roster cancels the operation without a partial debit. API-owned initial transfers and reinforcement use batch debit, with notification after the native transport boundary. A possibly dispatched native failure is never automatically refunded or retried. Exceptions propagate, including both transport and notification failures when both occur. Cancellation invokes the exact operation's native abandonment path, including pod recall, rather than selecting another operation belonging to the same ship. Native crew-return handling remains independent of panel visibility.
+
+Commands refuse reentrancy, event/policy dispatch and native save-state serialization. Session/target replacement invalidates controllers. Admitted means the native request was entered, not arrival, extraction completion, successful rewards or settled crew. Observe lifecycle events for those separate facts. Host tests and installed binding checks do not prove the cancellation, return, UI or save paths in Unity; complete native acceptance remains pending.
 
 ## Registered boarding policies (API 0.1.26)
 
