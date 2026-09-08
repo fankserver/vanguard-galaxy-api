@@ -112,6 +112,8 @@ public sealed class WorldLifetimeHookTests : IDisposable
         Assert.True(WorldLifetimePatches.Ambient.Prefix(vanilla));
         Assert.True(WorldLifetimePatches.Remove.Prefix(vanilla));
         Assert.False(WorldLifetimePatches.Active.Prefix(owned));
+        Assert.Throws<System.IO.InvalidDataException>(() => WorldLifetimePatches.Generate.Prefix(owned));
+        WorldLifetimePatches.Generate.Prefix(vanilla);
         bool result = true;
         Assert.False(WorldLifetimePatches.Route.Prefix(owned, ref result)); Assert.False(result);
         result = true;
@@ -125,6 +127,8 @@ public sealed class WorldLifetimeHookTests : IDisposable
         Assert.True(WorldLifetimePatches.Arrival.Prefix(manager)); WorldLifetimePatches.Spawn.Prefix(manager);
         owned.guid = "stripped";
         host.Dispose();
+        Assert.Throws<System.IO.InvalidDataException>(() => WorldLifetimePatches.Generate.Prefix(owned));
+        WorldLifetimePatches.Generate.Prefix(vanilla);
         Assert.False(WorldLifetimePatches.Ambient.Prefix(owned));
         Assert.False(WorldLifetimePatches.Remove.Prefix(owned));
         Assert.True(WorldLifetimePatches.Ambient.Prefix(vanilla));

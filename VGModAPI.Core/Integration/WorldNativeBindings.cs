@@ -12,6 +12,7 @@ internal static class WorldNativeBindings
         new("worldStore", BindingCatalog.Save, "Store", true, "System.Void", "LightJson.JsonObject", "System.String", "Source.Util.SaveGameFormat", "System.Int32"),
         new("worldElementWrite", "Source.Galaxy.MapElement", "ToJson", false, "LightJson.JsonValue"),
         new("worldRemove", "Source.Galaxy.SystemMapData", "RemovePointOfInterest", false, "System.Void", "Source.Galaxy.MapPointOfInterest"),
+        new("worldGenerate", "Source.Galaxy.MapPointOfInterest", "EnsureContentGenerated", false, "System.Void"),
         new("worldCancelTravel", BindingCatalog.TravelManager, "CancelTravel", false, "System.Boolean", "System.Nullable`1<UnityEngine.Vector2>"),
         new("worldWaitUnload", BindingCatalog.TravelManager, "WaitForSceneUnload", false, "System.Void", "System.String"),
         new("worldCheckLocalScene", BindingCatalog.TravelManager, "CheckLocalPoiStatus", false, "System.Void"),

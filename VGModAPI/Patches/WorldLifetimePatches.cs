@@ -77,6 +77,13 @@ internal static class WorldLifetimePatches
             return __exception;
         }
     }
+    internal static class Generate
+    {
+        internal static void Prefix(object __instance)
+        {
+            if (!(Host?.AllowUse(__instance) ?? true)) throw new System.IO.InvalidDataException("Owned world generation is quarantined.");
+        }
+    }
     internal static class Awake
     {
         internal static bool Prefix(object __instance) => Host?.AllowManagerAwake(__instance) ?? true;
