@@ -8,11 +8,12 @@ internal sealed class WorldTravelScopes
 {
     internal sealed class Route
     {
+        internal readonly WorldTravelScopes Owner;
         internal readonly Guid Session;
         internal readonly object Player, Manager, Destination;
         internal Leg? Current;
-        internal Route(Guid session, object player, object manager, object destination)
-        { Session = session; Player = player; Manager = manager; Destination = destination; }
+        internal Route(WorldTravelScopes owner, Guid session, object player, object manager, object destination)
+        { Owner = owner; Session = session; Player = player; Manager = manager; Destination = destination; }
     }
     internal sealed class Leg
     {
@@ -72,6 +73,12 @@ internal sealed class WorldTravelScopes
         var scope = new Execution(this, leg, _execution);
         _execution = scope; return scope;
     }
+    internal IDisposable EnterCleanup(Leg leg)
+    {
+        if (leg == null || !ReferenceEquals(leg.Route.Owner, this)) throw new InvalidDataException("Foreign travel cleanup scope.");
+        var scope = new Execution(this, leg, _execution);
+        _execution = scope; return scope;
+    }
     // Independent native child factories must capture this origin, never infer it from the latest route.
     internal Leg? CaptureExecuting()
     {
@@ -82,7 +89,7 @@ internal sealed class WorldTravelScopes
     {
         if (session == Guid.Empty || player == null || manager == null || destination == null)
             throw new ArgumentException("Observed route identity required.");
-        return _current = new Route(session, player, manager, destination);
+        return _current = new Route(this, session, player, manager, destination);
     }
     internal Leg First(Route route, object target)
     {
