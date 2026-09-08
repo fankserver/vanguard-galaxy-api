@@ -35,5 +35,14 @@ try {
     [IO.File]::WriteAllLines((Join-Path $root 'forge-commands.txt'), @('PASS','forge-commands-v1','settings-replay-restored','forge-queue-cancel-replay'))
     Assert-ForgeCommandReceipt $root $p
     $p.forgeCommandProbe = $false; Reject { Assert-ForgeReadSelection $root $p }
-    'PASS Forge read/command selection and receipt tests'
+    $p.forgeCommandProbe = $true
+    $p | Add-Member forgePersistenceProbe $true
+    Reject { Assert-ForgeReadSelection $root $p }
+    [IO.File]::WriteAllText((Join-Path $root 'forge-persistence.enabled'), 'forge-persistence-v1')
+    Assert-ForgeReadSelection $root $p
+    Reject { Assert-ForgePersistenceReceipt $root $p }
+    [IO.File]::WriteAllLines((Join-Path $root 'forge-persistence.txt'), @('PASS','forge-persistence-v1','paused-jobs-roundtrip-save-as-slot-switch'))
+    Assert-ForgePersistenceReceipt $root $p
+    $p.forgeCommandProbe = $false; Reject { Assert-ForgeReadSelection $root $p }
+    'PASS Forge read/command/persistence selection and receipt tests'
 } finally { Remove-Item -LiteralPath $root -Recurse -Force }

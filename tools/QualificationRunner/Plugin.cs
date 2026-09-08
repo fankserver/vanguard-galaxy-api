@@ -147,6 +147,13 @@ public sealed partial class Plugin : BaseUnityPlugin
                 var station = ModApi.RecipeQuotes!.CurrentStation ?? throw new InvalidOperationException("Command fixture lost station.");
                 CheckCraftingSettingCommands(station);
                 CheckCraftingQueueAndCancel(station);
+                if (File.Exists(Path.Combine(_root!, "forge-persistence.enabled")))
+                {
+                    Require(File.ReadAllText(Path.Combine(_root!, "forge-persistence.enabled")) == "forge-persistence-v1", "Invalid persistence marker.");
+                    WriteAtomic("forge-persistence.txt", new[] { "INCOMPLETE" });
+                    foreach (var frame in CheckCraftingPersistence()) yield return frame;
+                    WriteAtomic("forge-persistence.txt", new[] { "PASS", "forge-persistence-v1", "paused-jobs-roundtrip-save-as-slot-switch" });
+                }
                 WriteAtomic("forge-commands.txt", new[] { "PASS", "forge-commands-v1", "settings-replay-restored", "forge-queue-cancel-replay" });
             }
             yield break;
