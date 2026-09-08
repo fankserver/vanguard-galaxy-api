@@ -10,14 +10,14 @@ namespace VGModAPI.Core.Integration;
 internal sealed class BarNativeWorld : IBarRosterWorld
 {
     private const BindingFlags Fields = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-    private readonly Func<object?> _station;
+    private readonly BarStationSource _station;
     private readonly Func<object, bool> _owned;
     private readonly Func<BarPatronState, object, object?> _create;
     private readonly FieldInfo _bar, _guid, _patrons, _seat;
     private readonly Type _patronType;
     private readonly int _capacity;
 
-    internal BarNativeWorld(Type stationType, Type barType, Type patronType, Func<object?> station,
+    internal BarNativeWorld(Type stationType, Type barType, Type patronType, BarStationSource station,
         Func<object, bool> owned, Func<BarPatronState, object, object?> create, int capacity)
     {
         _bar = stationType.GetField("bar", Fields) ?? throw new MissingFieldException("station.bar");
@@ -34,22 +34,23 @@ internal sealed class BarNativeWorld : IBarRosterWorld
     {
         internal readonly BarNativeWorld Owner;
         internal readonly object Station, Bar;
+        internal readonly string Identity;
         internal readonly IList List;
         internal readonly object[] Entries;
         internal readonly int[] Seats;
-        internal CaptureToken(BarNativeWorld owner, object station, object bar, IList list, object[] entries, int[] seats)
-        { Owner = owner; Station = station; Bar = bar; List = list; Entries = entries; Seats = seats; }
+        internal CaptureToken(BarNativeWorld owner, object station, object bar, IList list, object[] entries, int[] seats, string identity)
+        { Owner = owner; Station = station; Bar = bar; List = list; Entries = entries; Seats = seats; Identity = identity; }
     }
 
     public BarRosterSnapshot? Capture(string station)
     {
-        var current = _station();
+        var current = _station.Read();
         if (current == null || (string?)_guid.GetValue(current) != station) return null;
         var bar = _bar.GetValue(current);
         if (bar == null || _patrons.GetValue(bar) is not IList list || list.Count > _capacity) return null;
         var entries = list.Cast<object>().ToArray();
         if (entries.Any(entry => entry == null || !_patronType.IsInstanceOfType(entry))) return null;
-        var token = new CaptureToken(this, current, bar, list, entries, entries.Select(entry => (int)_seat.GetValue(entry)!).ToArray());
+        var token = new CaptureToken(this, current, bar, list, entries, entries.Select(entry => (int)_seat.GetValue(entry)!).ToArray(), station);
         var vanilla = entries.Where(entry => !_owned(entry)).ToArray();
         if (!Stable(token)) return null;
         return new BarRosterSnapshot(token, vanilla, _capacity);
@@ -57,7 +58,7 @@ internal sealed class BarNativeWorld : IBarRosterWorld
 
     public object? CreateContact(BarPatronState state)
     {
-        var station = _station();
+        var station = _station.Read();
         if (station == null || (string?)_guid.GetValue(station) != state.Station) return null;
         var contact = _create(state, station);
         return contact != null && _patronType.IsInstanceOfType(contact) ? contact : null;
@@ -100,7 +101,8 @@ internal sealed class BarNativeWorld : IBarRosterWorld
 
     private bool Stable(CaptureToken token)
     {
-        if (!ReferenceEquals(_station(), token.Station) || !ReferenceEquals(_bar.GetValue(token.Station), token.Bar)
+        if (!ReferenceEquals(_station.Read(), token.Station) || (string?)_guid.GetValue(token.Station) != token.Identity
+            || !ReferenceEquals(_bar.GetValue(token.Station), token.Bar)
             || !ReferenceEquals(_patrons.GetValue(token.Bar), token.List) || token.List.Count != token.Entries.Length) return false;
         for (int i = 0; i < token.Entries.Length; i++) if (!ReferenceEquals(token.List[i], token.Entries[i]) || (int)_seat.GetValue(token.Entries[i])! != token.Seats[i]) return false;
         return true;

@@ -16,6 +16,13 @@ public sealed class InstalledBarBindingTests
         using var assembly = AssemblyDefinition.ReadAssembly(path);
         var module = assembly.MainModule;
         var station = module.GetType("Source.Galaxy.POI.SpaceStation");
+        var player = module.GetType("Source.Player.GamePlayer");
+        var current = player.Fields.Single(field => field.Name == "current");
+        Assert.True(current.IsStatic && current.IsPublic);
+        Assert.Equal(player.FullName, current.FieldType.FullName);
+        var poi = player.Fields.Single(field => field.Name == "currentPointOfInterest");
+        Assert.True(poi.IsPublic && !poi.IsStatic);
+        Assert.Equal("Source.Galaxy.MapPointOfInterest", poi.FieldType.FullName);
         var bar = module.GetType("Source.Galaxy.POI.Station.Bar");
         var patron = module.GetType("Source.Galaxy.POI.Station.BarPatron");
         var salesman = module.GetType("Source.Galaxy.POI.Station.Patrons.Salesman");

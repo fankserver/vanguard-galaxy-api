@@ -11,8 +11,27 @@ public sealed class BarNativeWorldTests
     public sealed class Patron { public int seat = 1; public bool Owned; }
     public sealed class Bar { public List<Patron> availablePatrons = new(); }
     public sealed class Station { public string guid = "station"; public Bar bar = new(); }
-    private static BarNativeWorld World(Func<object?> current, Func<object, bool>? owned = null) =>
-        new(typeof(Station), typeof(Bar), typeof(Patron), current, owned ?? (value => ((Patron)value).Owned), (_, _) => new Patron(), 5);
+    public sealed class Player { public static Player? current; public object? currentPointOfInterest; }
+    public sealed class PropertyPlayer
+    {
+        public static int Calls;
+        public static PropertyPlayer current { get { Calls++; return new PropertyPlayer(); } }
+        public object? currentPointOfInterest = null;
+    }
+    private static BarNativeWorld World(Func<object?> current, Func<object, bool>? owned = null)
+    {
+        Player.current = new Player { currentPointOfInterest = current() };
+        return new(typeof(Station), typeof(Bar), typeof(Patron), new BarStationSource(typeof(Player), typeof(Station)),
+            owned ?? (value => ((Patron)value).Owned), (_, _) => new Patron(), 5);
+    }
+
+    [Fact]
+    public void CommitSourceRejectsCallbackPropertiesWithoutInvokingThem()
+    {
+        PropertyPlayer.Calls = 0;
+        Assert.Throws<System.MissingFieldException>(() => new BarStationSource(typeof(PropertyPlayer), typeof(Station)));
+        Assert.Equal(0, PropertyPlayer.Calls);
+    }
 
     [Fact]
     public void CapturePreservesVanillaAndAtomicSwapReplacesOldOwnedPresentation()
@@ -35,6 +54,7 @@ public sealed class BarNativeWorldTests
     [InlineData(1)]
     [InlineData(2)]
     [InlineData(3)]
+    [InlineData(4)]
     public void ReentrantChangesRefuseWithoutOverwritingNewNativeState(int change)
     {
         var station = new Station(); var patron = new Patron(); station.bar.availablePatrons.Add(patron);
@@ -43,10 +63,11 @@ public sealed class BarNativeWorldTests
         var snapshot = world.Capture("station")!;
         Assert.False(world.Apply(snapshot, new object[] { new Patron { Owned = true } }, () =>
         {
-            if (change == 0) current = new Station();
+            if (change == 0) Player.current!.currentPointOfInterest = new Station();
             else if (change == 1) station.bar.availablePatrons = new List<Patron> { patron };
             else if (change == 2) station.bar.availablePatrons.Add(new Patron());
-            else patron.seat = 3;
+            else if (change == 3) patron.seat = 3;
+            else station.guid = "another-station";
             return true;
         }));
         Assert.Same(patron, station.bar.availablePatrons[0]);
