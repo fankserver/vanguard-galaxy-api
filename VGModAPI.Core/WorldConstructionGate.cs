@@ -70,16 +70,17 @@ internal sealed class WorldConstructionGate
         _ready = true;
     }
 
-    internal void RequireFactory(Guid session, object json, string nativeId, string digest, long providerRevision)
+    internal WorldConstructionNode? RequireFactory(Guid session, object json, string nativeId, string digest, long providerRevision)
     {
         if (json == null) throw new ArgumentNullException(nameof(json));
         if (_inventoryRejected) throw new InvalidDataException("World inventory rejection requires a new load attempt.");
         if (WorldObjectIdentity.IsReserved(nativeId)) _ownedNodes.GetValue(json, _ => new object());
         bool known = _nodes.TryGetValue(json, out var node);
-        if (!known && !_ownedNodes.TryGetValue(json, out _) && !WorldObjectIdentity.IsReserved(nativeId)) return;
+        if (!known && !_ownedNodes.TryGetValue(json, out _) && !WorldObjectIdentity.IsReserved(nativeId)) return null;
         if (!_ready || session != _session || providerRevision != _providerRevision || !known ||
             !string.Equals(node!.Identity.NativeId, nativeId, StringComparison.Ordinal) || !string.Equals(node.Digest, digest, StringComparison.Ordinal))
             throw new InvalidDataException("Owned world construction lacks current verified generation admission.");
+        return node;
     }
 
     internal void Invalidate()

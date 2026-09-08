@@ -43,7 +43,7 @@ public sealed class WorldLoadPatchTests : IDisposable
         object? result = null;
         Assert.Same(error, Assert.Throws<InvalidDataException>(() => WorldLoadPatches.Recall.Prefix(new object(), ref result)));
         var value = new object();
-        Assert.Same(error, Assert.Throws<InvalidDataException>(() => WorldLoadPatches.Factory.Prefix(value)));
+        Assert.Same(error, Assert.Throws<InvalidDataException>(() => WorldLoadPatches.Factory.Prefix(value, out _)));
         Assert.Same(value, host.FactoryValue);
         host.Failure = null; host.Handled = true;
         Assert.Throws<InvalidOperationException>(() => WorldLoadPatches.Recall.Prefix(new object(), ref result));

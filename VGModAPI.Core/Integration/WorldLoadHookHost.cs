@@ -11,7 +11,7 @@ internal interface IWorldLoadHookHost
 }
 
 /// <summary>Load-only host. A disposed host must remain attached as a reserved-content refusal guard.</summary>
-internal sealed class WorldLoadHookHost : IWorldLoadHookHost, IDisposable
+internal sealed partial class WorldLoadHookHost : IWorldLoadHookHost, IDisposable
 {
     private readonly LifecycleHub _hub;
     private readonly PersistenceService _persistence;
@@ -47,10 +47,10 @@ internal sealed class WorldLoadHookHost : IWorldLoadHookHost, IDisposable
     {
         _hub.CheckThread();
         var prepared = _prepared;
-        if (_disposed || prepared == null) return null;
+        if (_disposed || _factoryRejected || prepared == null) return null;
         long revision = _providerRevision();
         var current = _hub.CurrentSession;
-        return !_disposed && ReferenceEquals(prepared, _prepared) && prepared.Session == session && current?.Id == session &&
+        return !_disposed && !_factoryRejected && ReferenceEquals(prepared, _prepared) && prepared.Session == session && current?.Id == session &&
             (current.Phase == SessionPhase.Starting || current.Phase == SessionPhase.PlayerReady || current.Phase == SessionPhase.GameplayInitialized) &&
             revision == prepared.ProviderRevision ? prepared : null;
     }
@@ -58,7 +58,7 @@ internal sealed class WorldLoadHookHost : IWorldLoadHookHost, IDisposable
     private void OnLifecycle(LifecycleEvent e)
     {
         if (e.Kind == LifecycleEventKind.SessionStarting && e.Session?.Id == _hub.CurrentSession?.Id)
-        { _prepared = null; _recallAttempted = false; _recallRejected = false; _sessionId = e.Session!.Id; _gate.Start(_sessionId); }
+        { _prepared = null; _recallAttempted = false; _recallRejected = false; ResetFactories(); _sessionId = e.Session!.Id; _gate.Start(_sessionId); }
         else if ((e.Kind == LifecycleEventKind.SessionInvalidated || e.Kind == LifecycleEventKind.SessionStartFailed) && e.Session?.Id == _sessionId)
         { _prepared = null; _gate.Invalidate(); }
     }
@@ -80,7 +80,9 @@ internal sealed class WorldLoadHookHost : IWorldLoadHookHost, IDisposable
         return true;
     }
 
-    public void RequireFactory(object value)
+    public void RequireFactory(object value) => AdmitFactory(value);
+
+    private WorldConstructionNode? AdmitFactory(object value)
     {
         _hub.CheckThread();
         var session = _hub.CurrentSession;
@@ -89,7 +91,7 @@ internal sealed class WorldLoadHookHost : IWorldLoadHookHost, IDisposable
         var current = _hub.CurrentSession;
         if (_disposed || current?.Phase != SessionPhase.Starting || current?.Id != session?.Id)
             _gate.Invalidate();
-        _json.RequireFactory(_gate, current?.Id ?? Guid.Empty, value, revision);
+        return _json.RequireFactory(_gate, current?.Id ?? Guid.Empty, value, revision);
     }
 
     public void Dispose()

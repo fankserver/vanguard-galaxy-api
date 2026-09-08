@@ -20,6 +20,27 @@ internal static class WorldLoadPatches
 
     internal static class Factory
     {
-        internal static void Prefix(object val) => Host?.RequireFactory(val);
+        internal sealed class Capture
+        {
+            internal readonly IWorldFactoryCaptureHost Host;
+            internal readonly object Token;
+            internal Capture(IWorldFactoryCaptureHost host, object token) { Host = host; Token = token; }
+        }
+        internal static void Prefix(object val, out Capture? __state)
+        {
+            __state = null;
+            var host = Host;
+            if (host is IWorldFactoryCaptureHost captureHost)
+            {
+                var token = captureHost.BeginFactory(val);
+                if (token != null) __state = new Capture(captureHost, token);
+            }
+            else host?.RequireFactory(val);
+        }
+        internal static Exception? Finalizer(Capture? __state, object __result, Exception? __exception)
+        {
+            if (__exception == null && __state != null) __state.Host.CompleteFactory(__state.Token, __result);
+            return __exception;
+        }
     }
 }

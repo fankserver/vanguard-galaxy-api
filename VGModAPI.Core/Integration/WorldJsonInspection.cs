@@ -49,11 +49,11 @@ internal sealed class WorldJsonInspection
         return text;
     }
 
-    internal void RequireFactory(WorldConstructionGate gate, Guid session, object value, long providerRevision)
+    internal WorldConstructionNode? RequireFactory(WorldConstructionGate gate, Guid session, object value, long providerRevision)
     {
         var json = Object(value);
         string id = Text(json, "guid");
-        gate.RequireFactory(session, json, id, WorldObjectIdentity.IsReserved(id) ? Digest(json) : "", providerRevision);
+        return gate.RequireFactory(session, json, id, WorldObjectIdentity.IsReserved(id) ? Digest(json) : "", providerRevision);
     }
 
     internal object ParseCaptured(byte[] nativeBytes) =>

@@ -22,9 +22,9 @@ internal sealed class WorldNativeReconstruction
             ?? throw new MissingFieldException("MapElement.system");
         _combat = assembly.GetType("Source.Galaxy.POI.Combat", true)!;
     }
-    internal WorldSnapshotInstance[] Read(WorldPreparedLoad prepared, Func<bool> stillAdmitted)
+    internal WorldSnapshotInstance[] Read(WorldPreparedLoad prepared, Func<bool> stillAdmitted, Func<WorldSnapshotInstance, bool> constructed)
     {
-        if (prepared == null || stillAdmitted == null) throw new ArgumentNullException("Verified load and admission fence required.");
+        if (prepared == null || stillAdmitted == null || constructed == null) throw new ArgumentNullException("Verified load and admission fence required.");
         if (!_game.TryGetObservedPlayer(prepared.Session, out var player)) throw new InvalidDataException("World reconstruction has no observed player.");
         var map = _map.GetValue(player) ?? throw new InvalidDataException("Loaded player has no map.");
         var before = _index.Read(map);
@@ -38,6 +38,7 @@ internal sealed class WorldNativeReconstruction
             if (poi == null || poi.GetType() != _combat || system == null || !ReferenceEquals(_parent.GetValue(poi), system))
                 throw new InvalidDataException("Loaded world identity, type or parent differs from verified metadata.");
             result[i] = new WorldSnapshotInstance(poi, row.Identity, row.SystemId, prepared.Generation!.DefinitionFor(row));
+            if (!constructed(result[i])) throw new InvalidDataException("World instance lacks admitted native construction provenance.");
         }
         if (!stillAdmitted() || !_game.TryGetObservedPlayer(prepared.Session, out var current) || !ReferenceEquals(player, current) ||
             !ReferenceEquals(_map.GetValue(current), map) || !before.SameMembership(_index.Read(map)))

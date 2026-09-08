@@ -41,11 +41,11 @@ public sealed class WorldNativeReconstructionTests
             var routine = game.ObserveLoad(Load()); game.EndLoadRequest(request, null); while (routine.MoveNext()) { }
             var prepared = new WorldPreparedLoad(request.Id, new object(), generation, 1);
             var reconstruction = new WorldNativeReconstruction(game);
-            var restored = Assert.Single(reconstruction.Read(prepared, () => true));
+            var restored = Assert.Single(reconstruction.Read(prepared, () => true, record => ReferenceEquals(record.Native, poi)));
             Assert.Same(poi, restored.Native); Assert.Same(poi, Assert.Single(system.pointsOfInterest));
             Assert.Equal(9, poi.level); Assert.Equal(0, poi.NameReads); Assert.Equal("Native persisted state", poi.name);
-            Assert.Throws<InvalidDataException>(() => reconstruction.Read(prepared, () => false));
-            Assert.Throws<InvalidDataException>(() => reconstruction.Read(prepared, () => { GamePlayer.current = new GamePlayer { map = map }; return true; }));
+            Assert.Throws<InvalidDataException>(() => reconstruction.Read(prepared, () => false, _ => true));
+            Assert.Throws<InvalidDataException>(() => reconstruction.Read(prepared, () => { GamePlayer.current = new GamePlayer { map = map }; return true; }, _ => true));
         }
         finally { GamePlayer.current = null; if (Directory.Exists(dir)) Directory.Delete(dir, true); }
     }
