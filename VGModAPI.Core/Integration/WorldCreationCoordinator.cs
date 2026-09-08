@@ -14,6 +14,7 @@ internal sealed class WorldCreationCoordinator
     private bool _creating;
     private bool _restored;
     internal WorldCreationCoordinator(WorldNativeAttachment native, Action checkThread) { _native = native; _checkThread = checkThread; }
+    internal bool Restored(Guid session) { _checkThread(); return !_creating && _restored && session == _session; }
     internal long Revision { get { _checkThread(); return _revision; } }
     internal void Reset(Guid session)
     {
