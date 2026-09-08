@@ -14,7 +14,7 @@ function Assert-BarReceipt([string]$Root) {
     $path = Join-Path $Root 'owned-bars.txt'
     if (!(Test-Path -LiteralPath $path -PathType Leaf)) { throw 'Missing owned-bar receipt.' }
     $rows = @(Get-Content -LiteralPath $path)
-    if ($rows.Count -ne 2 -or $rows[0] -cne 'PASS' -or $rows[1] -cne 'independent-authors;repeated-open;native-json;exclusive-denial;exclusive-conflict;reload;stale-session;provider-reconstruction') {
+    if ($rows.Count -ne 2 -or $rows[0] -cne 'PASS' -or $rows[1] -cne 'independent-authors;repeated-check-update;native-json;exclusive-denial;exclusive-conflict;reload;stale-session;provider-reconstruction') {
         throw 'Incomplete or unexpected owned-bar receipt.'
     }
 }

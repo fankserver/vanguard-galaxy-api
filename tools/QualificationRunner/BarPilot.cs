@@ -29,7 +29,7 @@ public sealed partial class Plugin
         void Refresh(int owned)
         {
             latest = null;
-            SpCall(bar, "CheckUpdatePatrons");
+            SpCall(bar, "CheckUpdatePatrons", false);
             Require(latest != null && latest.SessionId == _api!.CurrentSession!.Id && latest.StationId == stationId,
                 "Missing current finalized observation from native refresh.");
             Require(latest!.Members.Count(member => member.OwnedId.HasValue) == owned, "Unexpected owned roster membership.");
@@ -42,7 +42,40 @@ public sealed partial class Plugin
                 "Finalized observation differs from the actual native roster.");
         }
         Refresh(0);
+        // Controlled preparation through the real force-refresh entry point, not roster edits or
+        // fabricated free seats. Fail if eight bounded native refreshes do not provide capacity.
+        int preparationRefreshes = 0;
+        while (((IEnumerable)SpGet(bar, "availablePatrons")!).Cast<object>().Count() > 3 && preparationRefreshes < 8)
+        {
+            yield return null;
+            SpCall(bar, "CheckUpdatePatrons", true);
+            preparationRefreshes++;
+        }
+        Refresh(0);
         var baseline = ((IEnumerable)SpGet(bar, "availablePatrons")!).Cast<object>().ToArray();
+        Require(baseline.Length <= 3, "Controlled native preparation did not provide two additive seats.");
+        WriteAtomic("owned-bar-preparation.txt", new[] { "native-force-refreshes=" + preparationRefreshes, "retained-vanilla=" + baseline.Length });
+        var baselineJson = SpCall(bar, "ToJson");
+        Require((bool)SpGet(baselineJson, "IsJsonObject")!, "Baseline native JSON is not an object.");
+        var patronsJson = baselineJson.GetType().GetProperty("Item", new[] { typeof(string) })!.GetValue(baselineJson, new object[] { "availablePatrons" })!;
+        Require((bool)SpGet(patronsJson, "IsJsonArray")!, "Baseline JSON has no patron array.");
+        var array = SpGet(patronsJson, "AsJsonArray")!;
+        Require((int)SpGet(array, "Count")! == baseline.Length, "Baseline JSON lost vanilla patrons.");
+        for (int index = 0; index < baseline.Length; index++)
+        {
+            var item = array.GetType().GetProperty("Item", new[] { typeof(int) })!.GetValue(array, new object[] { index })!;
+            Require(item.ToString() == SpCall(baseline[index], "ToJson").ToString(), "Baseline JSON changed vanilla patron content.");
+        }
+        Require((int)SpGet(SpGet(baselineJson, "AsJsonObject")!, "Count")! == 3, "Unexpected native bar JSON shape.");
+        foreach (var field in new[] { "lastUpdateTime", "nextUpdateSeed" })
+        {
+            var value = baselineJson.GetType().GetProperty("Item", new[] { typeof(string) })!.GetValue(baselineJson, new object[] { field })!;
+            var expected = SpGet(bar, field)?.ToString();
+            Require(expected == null ? (bool)SpGet(value, "IsNull")! :
+                (bool)SpGet(value, "IsString")! && (string)SpGet(value, "AsString")! == expected,
+                "Baseline JSON changed native metadata: " + field);
+        }
+        var baselineText = baselineJson.ToString();
         const string local = "contact";
         Require(((BarResult)SpCall(a, "Register", stationId, local, "owned-bar-a")).Succeeded, "Author A registration refused.");
         Require(((BarResult)SpCall(b, "Register", stationId, local, "owned-bar-b")).Succeeded, "Author B registration refused.");
@@ -58,6 +91,7 @@ public sealed partial class Plugin
         var before = SpGet(bar, "availablePatrons");
         var serialized = SpCall(bar, "ToJson").ToString()!;
         Require(ReferenceEquals(before, SpGet(bar, "availablePatrons")), "Serialization replaced the native roster.");
+        Require(serialized == baselineText, "Owned roster serialization changed retained vanilla JSON or metadata.");
         Require(!serialized.Contains("owned-bar-a") && !serialized.Contains("owned-bar-b"), "Owned contacts leaked into native JSON.");
         Require(pa.ConfigureStation(stationId, BarRosterOwnership.Exclusive).Succeeded, "Fixture requires explicit A exclusive permission.");
         Refresh(1);
@@ -78,7 +112,7 @@ public sealed partial class Plugin
         SpCall(a, "Release"); Refresh(1);
         Require(((BarResult)SpCall(a, "Register", stationId, local, "owned-bar-a")).Succeeded, "Re-registration refused.");
         Refresh(2); // Persistent row survived runtime provider removal.
-        WriteAtomic("owned-bars.txt", new[] { "PASS", "independent-authors;repeated-open;native-json;exclusive-denial;exclusive-conflict;reload;stale-session;provider-reconstruction" });
+        WriteAtomic("owned-bars.txt", new[] { "PASS", "independent-authors;repeated-check-update;native-json;exclusive-denial;exclusive-conflict;reload;stale-session;provider-reconstruction" });
         Passed("owned-bar-core-composition");
     }
 }
