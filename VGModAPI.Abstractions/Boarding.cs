@@ -108,7 +108,7 @@ public sealed class BoardingOperationSnapshot
     }
 }
 
-public enum BoardingDeliveryRoute { Inventory, Credits, WorldLoot }
+public enum BoardingDeliveryRoute { Inventory, Credits, WorldLoot, DataInventory }
 
 /// <summary>One observed reward application, not proof the complete reward batch was delivered.</summary>
 public sealed class BoardingDelivery

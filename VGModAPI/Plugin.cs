@@ -30,6 +30,8 @@ public sealed partial class Plugin : BaseUnityPlugin
     private BoardingRuleAdapter? _boardingRules;
     private BoardingCommandService? _boardingCommands;
     private BoardingCombatService? _boardingCombat;
+    private DungeonSettlementService? _dungeonSettlement;
+    private DungeonRewardService? _dungeonRewards;
     private DungeonContentService? _dungeons;
     private DungeonStateStore? _dungeonState;
     private DungeonContentAdapter? _dungeonAdapter;
@@ -127,6 +129,7 @@ public sealed partial class Plugin : BaseUnityPlugin
                 InstallBoardingRules(bindings);
                 InstallBoardingCommands(bindings);
                 InstallBoardingTactics(bindings);
+                InstallDungeonRewards(bindings);
             }
             // Load safety, not a feature: an owned mission restored from a save must not progress or
             // pay out while nobody vouches for it, and that is true whether or not the story module is
@@ -486,7 +489,8 @@ public sealed partial class Plugin : BaseUnityPlugin
             var bindings = new GameBindings(Assembly.Load("Assembly-CSharp"));
             _dungeonState = new DungeonStateStore(_hub, _persistence);
             _dungeonAdapter = new DungeonContentAdapter(_hub, bindings, _boarding, _dungeonState);
-            _dungeons = new DungeonContentService(_hub, _dungeonAdapter.Catalogs(), _dungeonState, _dungeonAdapter.Bindings(), (owner, error) => Logger.LogError($"Dungeon provider '{owner}': {error}"));
+            _dungeons = new DungeonContentService(_hub, _dungeonAdapter.Catalogs(), _dungeonState, _dungeonAdapter.Bindings(), (owner, error) => Logger.LogError($"Dungeon provider '{owner}': {error}"),
+                () => (_dungeonSettlement?.IsDispatchingCallbacks ?? false) || (_dungeonRewards?.IsEvaluating ?? false) || (_boardingCombat?.IsEvaluating ?? false) || (ModApi.BoardingRules?.IsEvaluating ?? false));
             DungeonContentPatches.Adapter = _dungeonAdapter; DungeonContentPatches.Json = new DungeonMarkerJson(bindings.Assembly);
             var patches = new Dictionary<string, Type>
             {
@@ -512,6 +516,35 @@ public sealed partial class Plugin : BaseUnityPlugin
     {
         DungeonContentPatches.Adapter = null; DungeonContentPatches.Json = null; ModApi.Dungeons = null;
         _dungeons?.Dispose(); _dungeons = null; _dungeonAdapter?.Dispose(); _dungeonAdapter = null; _dungeonState?.Dispose(); _dungeonState = null;
+    }
+
+    private void InstallDungeonRewards(GameBindings bindings)
+    {
+        _hub!.SetCapability("dungeon-rewards", false, "Boarding observation required; experimental.");
+        if (_boarding == null) return;
+        try
+        {
+            _dungeonRewards = new DungeonRewardService(_hub, (owner, error) => Logger.LogError($"Dungeon reward '{owner}': {error}"));
+            _dungeonSettlement = new DungeonSettlementService(_hub, ModApi.Boarding!, (owner, error) => Logger.LogError($"Dungeon settlement '{owner}': {error}"));
+            DungeonRewardPatches.Crew = new DungeonCrewObserver(bindings, _boarding, _dungeonSettlement, error => Logger.LogError(error));
+            DungeonRewardPatches.Adapter = new DungeonRewardAdapter(_hub, bindings, _boarding, _dungeonRewards);
+            InstallGroup("dungeon-rewards", bindings, DungeonSettlementBindings.Hooks, new Dictionary<string, Type>
+            {
+                ["settlementPrisonerScope"] = typeof(DungeonRewardPatches.PrisonerScope), ["settlementPrisoners"] = typeof(DungeonRewardPatches.Prisoners),
+                ["settlementCrewSample"] = typeof(DungeonRewardPatches.CrewSample),
+                ["settlementLoot"] = typeof(DungeonRewardPatches.Loot), ["settlementLootCount"] = typeof(DungeonRewardPatches.Count),
+                ["settlementMasteryScope"] = typeof(DungeonRewardPatches.MasteryScope), ["settlementMastery"] = typeof(DungeonRewardPatches.Mastery)
+            });
+            if (!_hub.Capabilities.Any(c => c.Name == "dungeon-rewards" && c.Available)) throw new NotSupportedException("Reward hooks unavailable.");
+            ModApi.DungeonRewards = _dungeonRewards;
+            ModApi.DungeonSettlement = _dungeonSettlement;
+        }
+        catch (Exception error)
+        {
+            DungeonRewardPatches.Crew = null; _dungeonSettlement?.Dispose(); _dungeonSettlement = null; ModApi.DungeonSettlement = null;
+            DungeonRewardPatches.Adapter = null; _dungeonRewards?.Dispose(); _dungeonRewards = null; ModApi.DungeonRewards = null;
+            _hub.SetCapability("dungeon-rewards", false, error.GetType().Name); Logger.LogError(error);
+        }
     }
 
     private void InstallBoardingTactics(GameBindings bindings)
@@ -565,7 +598,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         {
             var adapter = new BoardingCommandAdapter(new BoardingCommandNativeBindings(bindings), _boarding, ModApi.Boarding,
                 value => value is UnityEngine.Object native && native != null);
-            _boardingCommands = new BoardingCommandService(_hub, ModApi.Boarding, adapter, () => (ModApi.BoardingRules?.IsEvaluating ?? false) || (_boardingCombat?.IsEvaluating ?? false));
+            _boardingCommands = new BoardingCommandService(_hub, ModApi.Boarding, adapter, () => (ModApi.BoardingRules?.IsEvaluating ?? false) || (_boardingCombat?.IsEvaluating ?? false) || (_dungeonRewards?.IsEvaluating ?? false) || (_dungeonSettlement?.IsDispatchingCallbacks ?? false));
             BoardingCommandPatches.Adapter = adapter; BoardingCommandPatches.Service = _boardingCommands;
             InstallGroup("boarding-commands", bindings, BoardingCommandBindings.Hooks, BoardingCommandBindings.Hooks.ToDictionary(b => b.Key, b => b.Key switch
             {
@@ -751,6 +784,8 @@ public sealed partial class Plugin : BaseUnityPlugin
     private void OnDestroy()
     {
         StopBars();
+        DungeonRewardPatches.Crew = null; _dungeonSettlement?.Dispose(); _dungeonSettlement = null; ModApi.DungeonSettlement = null;
+        DungeonRewardPatches.Adapter = null; _dungeonRewards?.Dispose(); _dungeonRewards = null; ModApi.DungeonRewards = null;
         StopDungeons();
         BoardingTacticalPatches.Adapter = null; ModApi.BoardingTactics = null;
         BoardingCombatPatches.Adapter = null; _boardingCombat?.Dispose(); _boardingCombat = null; ModApi.BoardingCombat = null;
