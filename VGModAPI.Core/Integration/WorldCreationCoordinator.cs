@@ -12,17 +12,45 @@ internal sealed class WorldCreationCoordinator
     private Guid _session;
     private long _revision;
     private bool _creating;
+    private bool _restored;
     internal WorldCreationCoordinator(WorldNativeAttachment native, Action checkThread) { _native = native; _checkThread = checkThread; }
     internal long Revision { get { _checkThread(); return _revision; } }
     internal void Reset(Guid session)
     {
         _checkThread();
-        _revision = checked(_revision + 1); _session = session; _instances = Array.Empty<WorldSnapshotInstance>();
+        _revision = checked(_revision + 1); _session = session; _restored = false; _instances = Array.Empty<WorldSnapshotInstance>();
     }
+    internal bool TryRestore(Guid session, Func<WorldSnapshotInstance[]> reconstruct)
+    {
+        _checkThread();
+        if (reconstruct == null) throw new ArgumentNullException(nameof(reconstruct));
+        if (_creating || _restored || session == Guid.Empty || session != _session) return false;
+        long revision = _revision, nextRevision = checked(_revision + 1);
+        _creating = true;
+        try
+        {
+            var source = reconstruct() ?? throw new InvalidDataException("Missing reconstructed inventory.");
+            if (source.Length > WorldSerializationAssociation.MaxObjects) throw new InvalidDataException("Reconstructed inventory exceeds bound.");
+            var prepared = (WorldSnapshotInstance[])source.Clone();
+            var ids = new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal);
+            var references = new System.Runtime.CompilerServices.ConditionalWeakTable<object, object>();
+            foreach (var instance in prepared)
+            {
+                if (instance == null || !ids.Add(instance.Identity.NativeId) || references.TryGetValue(instance.Native, out _))
+                    throw new InvalidDataException("Invalid reconstructed instance inventory.");
+                references.Add(instance.Native, new object());
+            }
+            if (session != _session || revision != _revision) return false;
+            _instances = prepared; _revision = nextRevision; _restored = true;
+            return true;
+        }
+        finally { _creating = false; }
+    }
+
     internal WorldSnapshotInstance[] Snapshot()
     {
         _checkThread();
-        if (_creating) throw new InvalidDataException("World creation is in progress; snapshot cannot capture partial state.");
+        if (_creating || !_restored) throw new InvalidDataException("World instance state is not ready for snapshot capture.");
         return (WorldSnapshotInstance[])_instances.Clone();
     }
     internal WorldSnapshotInstance? TryCreate(Guid session, WorldSavedDefinition definition, WorldObjectIdentity identity,
@@ -30,7 +58,7 @@ internal sealed class WorldCreationCoordinator
     {
         _checkThread();
         if (admission == null) throw new ArgumentNullException(nameof(admission));
-        if (_creating || session == Guid.Empty || session != _session || _instances.Length >= WorldSerializationAssociation.MaxObjects) return null;
+        if (_creating || !_restored || session == Guid.Empty || session != _session || _instances.Length >= WorldSerializationAssociation.MaxObjects) return null;
         foreach (var instance in _instances)
         {
             if (instance.Identity.NativeId == identity.NativeId) return null;

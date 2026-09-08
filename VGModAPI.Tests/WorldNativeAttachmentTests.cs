@@ -41,6 +41,9 @@ public sealed class WorldNativeAttachmentTests
             var attachment = new WorldNativeAttachment(game);
             var coordinator = new WorldCreationCoordinator(attachment, hub.CheckThread);
             coordinator.Reset(request.Id);
+            Assert.Null(coordinator.TryCreate(request.Id, definition, identity, "system", 10, 20, () => true));
+            Assert.Throws<InvalidDataException>(() => coordinator.Snapshot());
+            Assert.True(coordinator.TryRestore(request.Id, () => Array.Empty<WorldSnapshotInstance>()));
             using var definitions = new WorldDefinitionRegistry((_, caller) => new StoryHostPlugin("author.a", caller), hub.CheckThread);
             var provider = definitions.Acquire(new object(), typeof(WorldNativeAttachmentTests).Assembly)!;
             Assert.True(provider.Register(definition.Definition));
@@ -68,7 +71,12 @@ public sealed class WorldNativeAttachmentTests
                 Assert.Null(coordinator.TryCreate(request.Id, definition, identity, "system", 30, 40, () => true));
                 Assert.Null(attachment.TryAppend(request.Id, definition, identity, "system", 30, 40, () => true));
             }
-            else { Assert.Null(result); Assert.Same(neighbour, Assert.Single(system.pointsOfInterest)); Assert.Empty(coordinator.Snapshot()); }
+            else
+            {
+                Assert.Null(result); Assert.Same(neighbour, Assert.Single(system.pointsOfInterest));
+                if (change == 5) Assert.Throws<InvalidDataException>(() => coordinator.Snapshot());
+                else Assert.Empty(coordinator.Snapshot());
+            }
             Assert.Equal(0, neighbour.NameReads);
         }
         finally { Faction.allFactions.Remove(faction); GamePlayer.current = null; }

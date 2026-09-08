@@ -41,9 +41,20 @@ public sealed class WorldNativeReconstructionTests
             var routine = game.ObserveLoad(Load()); game.EndLoadRequest(request, null); while (routine.MoveNext()) { }
             var prepared = new WorldPreparedLoad(request.Id, new object(), generation, 1);
             var reconstruction = new WorldNativeReconstruction(game);
-            var restored = Assert.Single(reconstruction.Read(prepared, () => true, record => ReferenceEquals(record.Native, poi)));
+            var coordinator = new WorldCreationCoordinator(new WorldNativeAttachment(game), hub.CheckThread);
+            coordinator.Reset(request.Id);
+            Assert.True(coordinator.TryRestore(request.Id, () => reconstruction.Read(prepared, () => true, record => ReferenceEquals(record.Native, poi))));
+            var restored = Assert.Single(coordinator.Snapshot());
+            Assert.False(coordinator.TryRestore(request.Id, () => throw new Exception("Must not replay restoration")));
             Assert.Same(poi, restored.Native); Assert.Same(poi, Assert.Single(system.pointsOfInterest));
             Assert.Equal(9, poi.level); Assert.Equal(0, poi.NameReads); Assert.Equal("Native persisted state", poi.name);
+            coordinator.Reset(request.Id);
+            Assert.False(coordinator.TryRestore(request.Id, () =>
+            {
+                coordinator.Reset(Guid.NewGuid());
+                return new[] { restored };
+            }));
+            Assert.Throws<InvalidDataException>(() => coordinator.Snapshot());
             Assert.Throws<InvalidDataException>(() => reconstruction.Read(prepared, () => false, _ => true));
             Assert.Throws<InvalidDataException>(() => reconstruction.Read(prepared, () => { GamePlayer.current = new GamePlayer { map = map }; return true; }, _ => true));
         }
