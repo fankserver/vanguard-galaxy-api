@@ -69,7 +69,9 @@ public sealed partial class Plugin
             Require(panel.GetComponentsInChildren<TMP_Text>().All(text => !text.richText && !text.parseCtrlCharacters), "Unsafe rich text enabled.");
             foreach (var ownedButton in panel.GetComponentsInChildren<Button>())
             {
-                Require(ownedButton.colors.Equals(neutral.colors), "Owned button palette differs from native neutral style.");
+                var selection = ownedButton.transform.Find("Selection stripe");
+                if (selection == null || !selection.gameObject.activeSelf)
+                    Require(ownedButton.colors.Equals(neutral.colors), "Unselected button palette differs from native neutral style.");
                 var ownedImage = ownedButton.GetComponent<Image>();
                 Require(ownedImage.type == nativeImage.type && ownedImage.pixelsPerUnitMultiplier == nativeImage.pixelsPerUnitMultiplier,
                     "Owned button border rendering differs from native style.");
@@ -77,7 +79,7 @@ public sealed partial class Plugin
             evidence.AppendLine("keyboard-open=PASS plain-text=PASS viewport=Gameview entry-centered=PASS native-palette-border-height=PASS");
             var detailLabel = details.content.Find("Plain details").GetComponent<TMP_Text>();
             Require(!detailLabel.text.Contains("API capabilities") && !detailLabel.text.Contains("Declared dependencies"), "Default details expose advanced diagnostics.");
-            Require(!panel.GetComponentsInChildren<Button>().Any(button => button.name == "Diagnostics" || button.name == "Automatic updates" || button.name == "Previous mod" || button.name == "Next mod"), "Technical controls must not appear in the player menu.");
+            Require(!panel.GetComponentsInChildren<Button>().Any(button => button.name == "Diagnostics" || button.name == "Automatic updates" || button.name == "Previous mod" || button.name == "Next mod" || button.name == "Retry update"), "Technical controls must not appear in the player menu.");
             foreach (var label in new[] { panel.transform.Find("Content/Title").GetComponent<TMP_Text>() })
                 foreach (var character in label.text)
                     Require(character < 128 && label.font.HasCharacter(character), "UI-owned heading uses an unsupported native glyph.");
@@ -88,6 +90,7 @@ public sealed partial class Plugin
             Require(officialName.GetPreferredValues(officialName.text, officialName.rectTransform.rect.width, float.PositiveInfinity).y <= officialName.rectTransform.rect.height + 1,
                 "Official mod name does not fit its wrapping area.");
             Require(!string.IsNullOrEmpty(officialRow.transform.Find("Update state").GetComponent<TMP_Text>().text), "List lacks update status.");
+            Require(!officialName.text.StartsWith("> ", StringComparison.Ordinal), "Selection must not use an expansion arrow.");
             Require(!detailLabel.text.Contains("Installed:") && !detailLabel.text.Contains("Latest:"), "Description contains update information.");
             evidence.AppendLine("player-details=PASS owned-heading-glyphs=PASS official-metadata=PASS");
 
@@ -95,7 +98,10 @@ public sealed partial class Plugin
             var row = list.GetComponentsInChildren<Button>().Single(button => button.GetComponentInChildren<TMP_Text>().text.Contains("Controlled Qualification"));
             events.SetSelectedGameObject(row.gameObject);
             foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
+            Require(row.transform.Find("Selection stripe").gameObject.activeSelf && !officialRow.transform.Find("Selection stripe").gameObject.activeSelf,
+                "Selected row must retain a visual highlight without highlighting other rows.");
             var checkUpdate = panel.GetComponentsInChildren<Button>().Single(button => button.name == "Check updates");
+            Require(((RectTransform)checkUpdate.transform).anchorMax.y == 0, "Update action must be in the bottom bar.");
             Require(checkUpdate.interactable && checkUpdate.GetComponentInChildren<TMP_Text>().text == "Check for updates", "Manual refresh is unavailable.");
             events.SetSelectedGameObject(checkUpdate.gameObject);
             foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;

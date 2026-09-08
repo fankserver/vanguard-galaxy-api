@@ -77,7 +77,8 @@ public sealed class ModUpdateServiceTests : IDisposable
         presenter.CheckAll(rows);
         await Until(service, () => presenter.State(rows[0]) == ModUpdateState.Failed && presenter.State(rows[1]) == ModUpdateState.Failed);
         Assert.Equal(2, transport.Calls);
-        Assert.Contains("2 checks failed", presenter.Summary(rows));
+        Assert.Contains("2 update checks failed", presenter.Summary(rows));
+        Assert.Equal("Update check failed", presenter.Label(rows[0]));
         Assert.Equal("No update information", presenter.Label(rows[2]));
         Assert.Contains("Latest: Unknown", presenter.Text(rows[0], Now));
         Assert.DoesNotContain("Up to date", presenter.Summary(rows));

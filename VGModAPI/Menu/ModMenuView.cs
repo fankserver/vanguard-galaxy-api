@@ -42,7 +42,7 @@ internal sealed class ModMenuView : IModMenuView
     private float _width = -1, _height = -1;
     private bool _disposed;
     private readonly ModUpdatePresenter? _updates;
-    private Button _checkUpdate = null!, _retry = null!, _release = null!;
+    private Button _checkUpdate = null!, _release = null!;
     private string _updateText = "";
     private string _listStatus = "";
     private float _nextStatusRefresh;
@@ -97,7 +97,7 @@ internal sealed class ModMenuView : IModMenuView
         _summary.fontSize = 14;
         Stretch(_summary.rectTransform, 0, 1, 1, 1, 8, -64, -8, -38);
         _list = Scroll(_body, "Local mods", out _listContent);
-        Stretch((RectTransform)_list.transform, 0, 0, .46f, 1, 8, 8, -8, -70);
+        Stretch((RectTransform)_list.transform, 0, 0, .46f, 1, 8, 52, -8, -70);
         _details = Scroll(_body, "Selected details", out _detailsContent);
         Stretch((RectTransform)_details.transform, .46f, 0, 1, 1, 8, 122, -8, -70);
         _detailText = Text(_detailsContent, "Plain details", "");
@@ -106,7 +106,7 @@ internal sealed class ModMenuView : IModMenuView
         _detailText.overflowMode = TextOverflowModes.Overflow;
         Stretch(_detailText.rectTransform, 0, 0, 1, 1, 6, 0, -8, 0);
         _project = Button(_body, "Project link", "Mod website", () => _presenter.OpenProject(_openUrl));
-        Stretch((RectTransform)_project.transform, .46f, 0, .70f, 0, 8, 82, -4, 114);
+        Stretch((RectTransform)_project.transform, .46f, 0, .70f, 0, 8, 8, -4, 40);
         var divider = Rect(_body, "Update divider");
         Stretch(divider, .46f, 0, 1, 0, 8, 74, -8, 75);
         divider.gameObject.AddComponent<Image>().color = new Color(.2f, .3f, .36f, 1);
@@ -119,8 +119,6 @@ internal sealed class ModMenuView : IModMenuView
         {
             _release = Button(_body, "Release link", "Download update", () => { if (_presenter.Selected != null) _updates.OpenRelease(_presenter.Selected, _openUrl); });
             Stretch((RectTransform)_release.transform, 1, 0, 1, 0, -168, 24, -8, 56);
-            _retry = Button(_body, "Retry update", "Retry", () => { if (_presenter.Selected != null) _updates.Check(_presenter.Selected); RenderDetails(false); });
-            Stretch((RectTransform)_retry.transform, 1, 0, 1, 0, -108, 24, -8, 56);
             _checkUpdate = Button(_body, "Check updates", "Check for updates", () => { _updates.CheckAll(_presenter.Rows); RenderDetails(false); });
         }
     }
@@ -206,11 +204,11 @@ internal sealed class ModMenuView : IModMenuView
         var caption = _close.GetComponentInChildren<TMP_Text>();
         var closeWidth = Mathf.Max(104, Mathf.Ceil(caption.GetPreferredValues(caption.text).x) + 24);
         Stretch((RectTransform)_close.transform, 1, 1, 1, 1, -closeWidth - 4, -36, -4, -4);
+        Stretch(_heading.rectTransform, 0, 1, 1, 1, 8, -36, -closeWidth - 20, -4);
         if (_updates != null)
         {
             var checkWidth = Mathf.Ceil(_checkUpdate.GetComponentInChildren<TMP_Text>().GetPreferredValues("Check for updates").x) + 24;
-            Stretch((RectTransform)_checkUpdate.transform, 1, 1, 1, 1, -closeWidth - checkWidth - 12, -36, -closeWidth - 12, -4);
-            Stretch(_heading.rectTransform, 0, 1, 1, 1, 8, -36, -closeWidth - checkWidth - 20, -4);
+            Stretch((RectTransform)_checkUpdate.transform, 0, 0, 0, 0, 8, 8, 8 + checkWidth, 40);
         }
         var height = _viewport.rect.height;
         if (Math.Abs(_width - width) > .5f || Math.Abs(_height - height) > .5f)
@@ -252,6 +250,10 @@ internal sealed class ModMenuView : IModMenuView
             status.fontSize = 14;
             status.alignment = TextAlignmentOptions.MidlineRight;
             Stretch(status.rectTransform, .35f, 0, 1, 0, 0, 4, -10, 26);
+            var stripe = Rect(row.transform, "Selection stripe");
+            Stretch(stripe, 0, 0, 0, 1, 0, 0, 3, 0);
+            var stripeImage = stripe.gameObject.AddComponent<Image>();
+            stripeImage.color = new Color(.4f, .85f, 1, 1); stripeImage.raycastTarget = false;
             _rows.Add(row);
         }
         _first = first;
@@ -263,8 +265,17 @@ internal sealed class ModMenuView : IModMenuView
             if (!visible) continue;
             var item = _presenter.Rows[index];
             Stretch((RectTransform)row.transform, 0, 1, 1, 1, 0, -(index + 1) * ModMenuRows.Height + 2, 0, -index * ModMenuRows.Height - 2);
-            row.GetComponentInChildren<TMP_Text>().text = (item.PluginId == _presenter.SelectedId ? "> " : "") +
-                ModInformationPresenter.DisplayName(item);
+            row.GetComponentInChildren<TMP_Text>().text = ModInformationPresenter.DisplayName(item);
+            // Selection persists independently of keyboard focus and pointer hover.
+            var colors = _colors;
+            if (item.PluginId == _presenter.SelectedId)
+            {
+                colors.normalColor = new Color(.25f, .65f, .85f, 1);
+                colors.highlightedColor = new Color(.4f, .8f, 1, 1);
+                colors.selectedColor = colors.highlightedColor;
+            }
+            row.colors = colors;
+            row.transform.Find("Selection stripe").gameObject.SetActive(item.PluginId == _presenter.SelectedId);
             row.transform.Find("Installed version").GetComponent<TMP_Text>().text = "v" + item.InstalledVersion;
             var status = row.transform.Find("Update state").GetComponent<TMP_Text>();
             status.text = _updates?.Label(item) ?? "Check unavailable";
@@ -304,9 +315,6 @@ internal sealed class ModMenuView : IModMenuView
         {
             _checkUpdate.interactable = System.Linq.Enumerable.Any(_presenter.Rows, mod => _updates.CanCheck(mod));
             _release.gameObject.SetActive(_presenter.Selected != null && _updates.ReleaseHost(_presenter.Selected) != null);
-            var failed = _presenter.Selected != null && _updates.State(_presenter.Selected) is ModUpdateState.Failed or ModUpdateState.Invalid or ModUpdateState.RateLimited;
-            _retry.gameObject.SetActive(failed);
-            _retry.interactable = failed && _updates.CanRequest(_presenter.Selected!, DateTimeOffset.UtcNow);
         }
         if (_updates != null && _presenter.Selected != null)
         {
@@ -323,17 +331,14 @@ internal sealed class ModMenuView : IModMenuView
     private void ResizeDetails()
     {
         _updateStatus.fontSize = _body.rect.width < 800 ? 12 : 14;
-        var updateWidth = Mathf.Max(1, _body.rect.width * .54f - 178);
-        var updateHeight = Mathf.Max(60, _updateStatus.GetPreferredValues(_updateStatus.text, updateWidth, float.PositiveInfinity).y + 8);
-        Stretch(_updateStatus.rectTransform, .46f, 0, 1, 0, 8, 8, -170, updateHeight + 8);
-        Stretch((RectTransform)_body.Find("Update divider"), .46f, 0, 1, 0, 8, updateHeight + 14, -8, updateHeight + 15);
-        Stretch((RectTransform)_project.transform, .46f, 0, .70f, 0, 8, updateHeight + 22, -4, updateHeight + 54);
-        Stretch((RectTransform)_details.transform, .46f, 0, 1, 1, 8, updateHeight + 62, -8, -70);
+        var updateWidth = Mathf.Max(1, _body.rect.width * .54f - 24);
+        var updateHeight = Mathf.Max(44, _updateStatus.GetPreferredValues(_updateStatus.text, updateWidth, float.PositiveInfinity).y + 8);
+        Stretch(_updateStatus.rectTransform, .46f, 0, 1, 0, 16, 52, -8, updateHeight + 52);
+        Stretch((RectTransform)_body.Find("Update divider"), .46f, 0, 1, 0, 8, updateHeight + 60, -8, updateHeight + 61);
+        Stretch((RectTransform)_project.transform, .46f, 0, .70f, 0, 8, 8, -4, 40);
+        Stretch((RectTransform)_details.transform, .46f, 0, 1, 1, 8, updateHeight + 69, -8, -70);
         if (_updates != null)
-        {
-            Stretch((RectTransform)_release.transform, 1, 0, 1, 0, -168, updateHeight / 2 - 8, -8, updateHeight / 2 + 24);
-            Stretch((RectTransform)_retry.transform, 1, 0, 1, 0, -108, updateHeight / 2 - 8, -8, updateHeight / 2 + 24);
-        }
+            Stretch((RectTransform)_release.transform, .70f, 0, 1, 0, 4, 8, -8, 40);
         Canvas.ForceUpdateCanvases();
         var width = Mathf.Max(1, _details.viewport.rect.width - 14);
         var detailHeight = _detailText.GetPreferredValues(_detailText.text, width, float.PositiveInfinity).y + 16;
@@ -363,7 +368,6 @@ internal sealed class ModMenuView : IModMenuView
         {
             if (_checkUpdate.interactable) _navigation.Add(_checkUpdate);
             if (_release.gameObject.activeSelf && _release.interactable) _navigation.Add(_release);
-            if (_retry.gameObject.activeSelf && _retry.interactable) _navigation.Add(_retry);
         }
         if (_list.verticalScrollbar.gameObject.activeSelf) _navigation.Add(_list.verticalScrollbar);
         if (_details.verticalScrollbar.gameObject.activeSelf) _navigation.Add(_details.verticalScrollbar);
@@ -439,6 +443,7 @@ internal sealed class ModMenuView : IModMenuView
         label.richText = false; label.parseCtrlCharacters = false; label.raycastTarget = false;
         label.textWrappingMode = TextWrappingModes.NoWrap; label.overflowMode = TextOverflowModes.Truncate;
         label.alignment = TextAlignmentOptions.MidlineLeft; label.text = value;
+        label.margin = Vector4.zero;
         return label;
     }
 

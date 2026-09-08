@@ -24,7 +24,7 @@ internal sealed class ModUpdatePresenter
         ModUpdateState.Current => "Up to date",
         ModUpdateState.Available => "Update available",
         ModUpdateState.InstalledAhead => "Newer than published",
-        _ => "Couldn't check"
+        _ => "Update check failed"
     };
     internal int AvailableCount(IReadOnlyList<ModInformation> mods) => mods.Count(mod => State(mod) == ModUpdateState.Available);
     internal string Summary(IReadOnlyList<ModInformation> mods)
@@ -35,7 +35,7 @@ internal sealed class ModUpdatePresenter
         var failed = mods.Count(mod => State(mod) is ModUpdateState.Invalid or ModUpdateState.Failed or ModUpdateState.RateLimited);
         var pending = mods.Count(mod => State(mod) is ModUpdateState.NotChecked or ModUpdateState.Checking);
         if (available > 0) parts.Add(available + (available == 1 ? " update available" : " updates available"));
-        if (failed > 0) parts.Add(failed + (failed == 1 ? " check failed" : " checks failed"));
+        if (failed > 0) parts.Add(failed + (failed == 1 ? " update check failed" : " update checks failed"));
         if (pending > 0) parts.Add("Checking for updates...");
         if (mods.All(mod => State(mod) == ModUpdateState.Current)) parts.Add("All up to date");
         return string.Join("  |  ", parts);
