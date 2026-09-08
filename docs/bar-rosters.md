@@ -1,6 +1,6 @@
 # Owned bar rosters
 
-Requires API 0.1.31. Enable `[Persistence] Enabled = true` and `[Bars] Enabled = true`. Bars are opt-in; check `ModApi.Bars` and the `owned-bars` capability rather than assuming availability. `RuntimeQualified` remains false: bounded native core checks do not establish complete consumer-combination acceptance.
+Requires API 0.1.32. Enable `[Persistence] Enabled = true` and `[Bars] Enabled = true`. Bars are opt-in; check `ModApi.Bars` and the `owned-bars` capability rather than assuming availability. `RuntimeQualified` remains false: bounded native core checks do not establish complete consumer-combination acceptance.
 
 ## Provider lifecycle
 

@@ -8,7 +8,7 @@ using VGModAPI.Core;
 namespace VGModAPI.Runtime;
 
 /// <summary>Reads definitions only. Never invokes preview builders or crafting/delivery methods.</summary>
-internal sealed class RecipeCatalogNativeSource : IRecipeCatalogSource
+internal sealed partial class RecipeCatalogNativeSource : IRecipeCatalogSource, IRecipeQuoteSource
 {
     private const string RecipeType = "Behaviour.Crafting.CraftingRecipe";
     private const string ItemType = "Behaviour.Item.InventoryItemType";
@@ -26,12 +26,14 @@ internal sealed class RecipeCatalogNativeSource : IRecipeCatalogSource
     }
     public RecipeCatalogSnapshot Read(Guid sessionId, bool includeUnavailable)
     {
-        var forge = GetStatic("Source.Mining.Forge", "current");
-        if (forge == null) return RecipeCatalogService.Failure(RecipeCatalogStatus.StationUnavailable, sessionId, "An accessible station Forge is required.");
+        var station = GetStatic("Source.Galaxy.POI.SpaceStation", "current");
+        if (station == null) return RecipeCatalogService.Failure(RecipeCatalogStatus.StationUnavailable, sessionId, "An accessible station is required.");
+        var forge = Get(station, "forge"); var refinery = Get(station, "refinery");
+        if (forge == null && refinery == null) return RecipeCatalogService.Failure(RecipeCatalogStatus.StationUnavailable, sessionId, "Station crafting facilities unavailable.");
         var definitions = new Dictionary<RecipeId, RecipeSnapshot>();
         var nativeIdentities = new Dictionary<string, object>(StringComparer.Ordinal);
         var available = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var recipe in Enumerate(Get(forge, "recipes")))
+        foreach (var recipe in forge == null ? Array.Empty<object>() : Enumerate(Get(forge, "recipes")))
         {
             CheckIdentity(nativeIdentities, "forge/" + Text(recipe, "identifier"), recipe);
             available.Add(Text(recipe, "identifier"));
@@ -46,7 +48,7 @@ internal sealed class RecipeCatalogNativeSource : IRecipeCatalogSource
                     if (!available.Contains(Text(variant, "identifier"))) Add(definitions, ReadForge(variant, RecipeAvailability.Locked));
                 }
         }
-        foreach (var item in Enumerate(GetStatic(ItemType, "all")))
+        foreach (var item in refinery == null ? Array.Empty<object>() : Enumerate(GetStatic(ItemType, "all")))
         {
             var ore = Component(Get(item, "gameObject")!, "Behaviour.Mining.OreItemData");
             if (ore == null) continue;
