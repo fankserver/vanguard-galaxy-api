@@ -11,7 +11,7 @@ internal enum DungeonPodPhase { Docked, Launching, Attached, Returning, Arrived 
 internal sealed class DungeonPodResumeState
 {
     internal Guid Id { get; }
-    internal Guid Occurrence { get; }
+    internal Guid OperationId { get; }
     internal string ParentShipId { get; }
     internal DungeonPodTransport? Transport { get; }
     internal DungeonPodPhase Phase { get; }
@@ -35,7 +35,7 @@ internal sealed class DungeonPodResumeState
         if (returnDelivered && (!returnManifestKnown || phase != DungeonPodPhase.Arrived)) throw new ArgumentException("Delivery requires an observed arrival and known manifest.");
         if (parentShipId == null || parentShipId.Length > 128 || parentShipId.IndexOf('\0') >= 0) throw new ArgumentException("Invalid parent ship identity.");
         ParentShipId = parentShipId; Transport = transport;
-        Id = id; Occurrence = occurrence; Phase = phase; PlayerOwned = playerOwned; ReturnManifestKnown = returnManifestKnown;
+        Id = id; OperationId = occurrence; Phase = phase; PlayerOwned = playerOwned; ReturnManifestKnown = returnManifestKnown;
         ReturnAttempted = returnAttempted || returnDelivered;
         ReturnDelivered = returnDelivered; ReturnCrew = new ReadOnlyDictionary<string, int>(copy);
     }

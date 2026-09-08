@@ -19,7 +19,7 @@ internal static class DungeonPodResumeCodec
         writer.Write(1); writer.Write(entries.Length);
         foreach (var pod in entries.OrderBy(p => p.Id))
         {
-            writer.Write(pod.Id.ToByteArray()); writer.Write(pod.Occurrence.ToByteArray());
+            writer.Write(pod.Id.ToByteArray()); writer.Write(pod.OperationId.ToByteArray());
             var parent = Utf8.GetBytes(pod.ParentShipId); writer.Write(parent.Length); writer.Write(parent);
             writer.Write((byte)pod.Phase);
             writer.Write((byte)((pod.PlayerOwned ? 1 : 0) | (pod.ReturnManifestKnown ? 2 : 0) | (pod.ReturnDelivered ? 4 : 0) | (pod.ReturnAttempted ? 8 : 0)));
@@ -32,6 +32,7 @@ internal static class DungeonPodResumeCodec
             if (pod.Transport is { } transport)
             {
                 var nativeId = Utf8.GetBytes(transport.NativePodId); writer.Write(nativeId.Length); writer.Write(nativeId);
+                var donor = Utf8.GetBytes(transport.DonorShipId); writer.Write(donor.Length); writer.Write(donor);
                 writer.Write((byte)(transport.PendingReinforcement ? 1 : 0));
                 foreach (var value in transport.Pose) writer.Write(value);
                 writer.Write(transport.OutboundCrew.Count);
@@ -65,11 +66,11 @@ internal static class DungeonPodResumeCodec
             var present = reader.ReadByte(); if (present > 1) throw new InvalidDataException("Invalid transport flag.");
             if (present == 1)
             {
-                var nativeId = Text(reader); var reinforcement = reader.ReadByte(); if (reinforcement > 1) throw new InvalidDataException("Invalid reinforcement flag.");
+                var nativeId = Text(reader); var donor = Text(reader); var reinforcement = reader.ReadByte(); if (reinforcement > 1) throw new InvalidDataException("Invalid reinforcement flag.");
                 var pose = new float[9]; for (var p = 0; p < pose.Length; p++) pose[p] = reader.ReadSingle();
                 var outbound = new Dictionary<string, int>(StringComparer.Ordinal); var outboundCount = Count(reader, 64);
                 for (var c = 0; c < outboundCount; c++) outbound.Add(Text(reader), reader.ReadInt32());
-                transport = new(nativeId, reinforcement == 1, outbound, pose);
+                transport = new(nativeId, reinforcement == 1, outbound, pose, donor);
             }
             entries.Add(new(id, occurrence, phase, (flags & 1) != 0, (flags & 2) != 0, (flags & 4) != 0, crew, (flags & 8) != 0, parent, transport));
         }

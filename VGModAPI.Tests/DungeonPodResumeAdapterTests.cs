@@ -27,7 +27,7 @@ public sealed class DungeonPodResumeAdapterTests
         var data = new NativeObject(); data.Fields["resumePodPhase"] = "Returning"; data.Fields["resumePodPlayer"] = true;
         var pod = new NativeObject(); pod.Fields["resumePodData"] = data;
         var crew = new Dictionary<string, int> { ["Marine"] = 2 }; pod.Fields["resumeReturnCrew"] = crew;
-        var occurrence = Guid.NewGuid(); Assert.True(adapter.Observe(pod, occurrence, "ship-guid", true));
+        var occurrence = Guid.NewGuid(); DungeonPodPersistenceTests.TrackOperation(pods, occurrence); Assert.True(adapter.Observe(pod, occurrence, "ship-guid", true));
         var id = adapter.IdentityFor(data)!.Value; crew["Marine"] = 9; Assert.Equal(2, pods.Get(id)!.ReturnCrew["Marine"]);
         var saved = persistence.Provider.Capture(); adapter.Clear(); persistence.Provider.Restore(hub.CurrentSession!, saved);
         adapter.Loaded(data, id); pod.Fields["resumeReturnCrew"] = new Dictionary<string, int>();

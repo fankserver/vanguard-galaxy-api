@@ -1,0 +1,13 @@
+namespace VGModAPI.Core;
+
+internal static class DungeonRecoveryCaptureBindings
+{
+    internal static readonly MethodBinding[] Hooks =
+    {
+        new("recoveryTerminal", BindingCatalog.BoardingOperation, "HandleSimulationComplete", false, "System.Void", "Source.Dungeon.DungeonSimulation"),
+        new("recoverySerialization", BindingCatalog.Save, "SaveCurrentState", true, "LightJson.JsonObject"),
+        new("recoveryOperationTick", BindingCatalog.BoardingOperation, "Tick", false, "System.Void", "System.Single"),
+        new("recoveryStartShip", BindingCatalog.BoardingManager, "StartOperation", false, BindingCatalog.BoardingOperation, "Behaviour.Unit.SpaceShip", BindingCatalog.Boardable, BindingCatalog.BoardingOptions, "System.Boolean"),
+        new("recoveryStartLocation", BindingCatalog.BoardingManager, "StartOperation", false, BindingCatalog.BoardingOperation, "Behaviour.Unit.SpaceShip", BindingCatalog.BoardingLocation, BindingCatalog.BoardingOptions, "System.Boolean")
+    };
+}

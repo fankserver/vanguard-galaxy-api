@@ -6,6 +6,7 @@ internal static class DungeonPodResumeBindings
     internal const string Data = "Source.Data.Persistable.BoardingPodData";
     internal static readonly MethodBinding[] Methods =
     {
+        new("podInit", Pod, "InitDocked", false, "System.Void", Data, "UnityEngine.Transform", "UnityEngine.Transform"),
         new("podReturnStart", Pod, "StartReturning", false, "System.Void", "UnityEngine.Transform", "System.Collections.Generic.Dictionary`2<System.String,System.Int32>"),
         new("podSave", Data, "DataToJson", false, "System.Void", "LightJson.JsonObject"),
         new("podLoad", Data, "LoadFromJson", false, "System.Void", "LightJson.JsonObject"),
@@ -16,6 +17,13 @@ internal static class DungeonPodResumeBindings
     };
     internal static readonly (string Key, string Type, string Name, string ValueType)[] Members =
     {
+        ("resumeCaptureToken", BindingCatalog.BoardingLocation, "captureToken", "System.String"),
+        ("resumeMissionGuid", "Source.SpaceShip.SpaceShipData", "missionGuid", "System.String"),
+        ("resumePendingPods", BindingCatalog.BoardingOperation, "_pendingReinforcementPods", "System.Collections.Generic.List`1<Behaviour.Persistables.BoardingPod>"),
+        ("resumeParentTransform", Pod, "_parentTransform", "UnityEngine.Transform"),
+        ("resumeLocationPods", BindingCatalog.BoardingLocation, "boardingPods", "System.Collections.Generic.List`1<Source.Data.Persistable.BoardingPodData>"),
+        ("resumeShipData", "Behaviour.Unit.SpaceShip", "spaceShipData", "Source.SpaceShip.SpaceShipData"),
+        ("resumeShipGuid", "Source.Data.AbstractUnitData", "guid", "System.String"),
         ("pendingDirectives", "Source.Dungeon.DungeonSimulation", "pendingDirectives", "System.Collections.Generic.List`1<Source.CompartmentSystem.SimCrewDirective>"),
         ("directiveTarget", "Source.CompartmentSystem.SimCrewDirective", "targetCompartmentIndex", "System.Int32"),
         ("directivePriority", "Source.CompartmentSystem.SimCrewDirective", "priority", "Source.CompartmentSystem.DirectivePriority"),

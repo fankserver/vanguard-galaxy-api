@@ -15,7 +15,26 @@ internal sealed class DungeonPodResumeAdapter
     { _persistence = persistence; _native = native; }
     private readonly Dictionary<Guid, WeakReference<object>> _objects = new();
     private readonly HashSet<Guid> _conflicts = new();
-    internal void Clear() { _ids = new(); _objects.Clear(); _conflicts.Clear(); }
+    private ConditionalWeakTable<object, object> _sources = new();
+    internal void Clear() { _ids = new(); _sources = new(); _objects.Clear(); _conflicts.Clear(); }
+    internal object? DataFor(Guid id) => !_conflicts.Contains(id) && _objects.TryGetValue(id, out var reference) && reference.TryGetTarget(out var data) ? data : null;
+    internal void TrackLocation(object location)
+    {
+        if (_native.Get(location, "resumeLocationPods") is not System.Collections.IEnumerable pods) throw new InvalidOperationException("Missing location pod list.");
+        foreach (var data in pods)
+        {
+            if (data == null) continue;
+            if (_sources.TryGetValue(data, out var previous) && !ReferenceEquals(previous, location))
+            { if (IdentityFor(data) is { } id) _conflicts.Add(id); continue; }
+            if (!_sources.TryGetValue(data, out _)) _sources.Add(data, location);
+        }
+    }
+    internal void DetachSource(object data)
+    {
+        if (!_sources.TryGetValue(data, out var location)) return;
+        var pods = _native.Get(location, "resumeLocationPods") as System.Collections.IList ?? throw new InvalidOperationException("Missing source pod list.");
+        pods.Remove(data); _sources.Remove(data);
+    }
     internal bool Conflicted(Guid id) => _conflicts.Contains(id);
     internal Guid? IdentityFor(object data) => _ids.TryGetValue(data, out var identity) ? identity.Id : null;
     internal void Loaded(object data, Guid id)
@@ -42,7 +61,7 @@ internal sealed class DungeonPodResumeAdapter
         if (!IdentityFor(data).HasValue) Loaded(data, id);
         return true;
     }
-    internal DungeonPodTransport CaptureTransport(object pod, bool reinforcement, Func<object, (float X, float Y)> vector)
+    internal DungeonPodTransport CaptureTransport(object pod, bool reinforcement, Func<object, (float X, float Y)> vector, string donorShipId)
     {
         var data = _native.Get(pod, "resumePodData") ?? throw new InvalidOperationException("Missing pod data.");
         var position = vector(_native.Get(data, "resumePosition")!);
@@ -51,7 +70,7 @@ internal sealed class DungeonPodResumeAdapter
         var attachment = vector(_native.Get(data, "resumeAttachmentOffset")!);
         return new DungeonPodTransport((string)_native.Get(data, "resumePodId")!, reinforcement,
             (IReadOnlyDictionary<string, int>)_native.Get(data, "resumePodCrew")!,
-            new[] { position.X, position.Y, (float)_native.Get(data, "resumeAngle")!, hull.X, hull.Y, target.X, target.Y, attachment.X, attachment.Y });
+            new[] { position.X, position.Y, (float)_native.Get(data, "resumeAngle")!, hull.X, hull.Y, target.X, target.Y, attachment.X, attachment.Y }, donorShipId);
     }
     internal bool RestoreReturnManifest(object pod, string parentShipId)
     {

@@ -7,7 +7,11 @@ namespace VGModAPI.Tests;
 
 public sealed class DungeonPodPersistenceTests
 {
-    private sealed class Persistence : IPersistenceApi, IPersistenceRegistration, IPersistenceReadiness
+    internal static void TrackOperation(DungeonPodPersistence pods, Guid id)
+    {
+        Assert.True(pods.TrackOperation(new(id, Guid.NewGuid(), null, "ship-guid", "HostileShip", "Extraction", "Victory", "", DungeonTerminalProgress.NotStarted, false)));
+    }
+    internal sealed class Persistence : IPersistenceApi, IPersistenceRegistration, IPersistenceReadiness
     {
         internal PersistenceProvider Provider = null!;
         public bool MutationAllowed { get; set; } = true;
@@ -23,7 +27,7 @@ public sealed class DungeonPodPersistenceTests
         var session = hub.Begin(SessionOrigin.SaveLoad, "save"); hub.PlayerReady(session); persistence.Provider.Restore(hub.CurrentSession!, null);
         var crew = new Dictionary<string, int> { ["Marine"] = 2 };
         var pod = new DungeonPodResumeState(Guid.NewGuid(), Guid.NewGuid(), DungeonPodPhase.Returning, true, true, false, crew, parentShipId: "ship");
-        pods.Track(pod);
+        TrackOperation(pods, pod.OperationId); pods.Track(pod);
         Assert.False(pods.Return(pod.Id, "ship", _ =>
         {
             Assert.False(pods.CanMutate); Assert.Throws<InvalidOperationException>(() => persistence.Provider.Capture());
@@ -40,7 +44,7 @@ public sealed class DungeonPodPersistenceTests
         var session = hub.Begin(SessionOrigin.SaveLoad, "save"); hub.PlayerReady(session); persistence.Provider.Restore(hub.CurrentSession!, null);
         var pod = new DungeonPodResumeState(Guid.NewGuid(), Guid.NewGuid(), DungeonPodPhase.Returning, true, true, false,
             new Dictionary<string, int> { ["Marine"] = 2 }, parentShipId: "ship-guid");
-        pods.Track(pod); var calls = 0;
+        TrackOperation(pods, pod.OperationId); pods.Track(pod); var calls = 0;
         Assert.False(pods.Return(pod.Id, "another-ship", _ => { calls++; return null; }));
         Assert.Throws<InvalidOperationException>(() => pods.Return(pod.Id, "ship-guid", manifest =>
         { calls++; Assert.Equal(2, manifest["Marine"]); throw new InvalidOperationException("native failure"); }));
@@ -55,7 +59,7 @@ public sealed class DungeonPodPersistenceTests
         using var hub = new LifecycleHub((_, _) => { }); var persistence = new Persistence(); using var pods = new DungeonPodPersistence(hub, persistence);
         var session = hub.Begin(SessionOrigin.SaveLoad, "first"); hub.PlayerReady(session);
         var pod = new DungeonPodResumeState(Guid.NewGuid(), Guid.NewGuid(), DungeonPodPhase.Returning, true, true, false, new Dictionary<string, int> { ["Marine"] = 2 });
-        Assert.False(pods.Track(pod)); persistence.Provider.Restore(hub.CurrentSession!, null); Assert.True(pods.Track(pod));
+        Assert.False(pods.Track(pod)); persistence.Provider.Restore(hub.CurrentSession!, null); TrackOperation(pods, pod.OperationId); Assert.True(pods.Track(pod));
         var pending = persistence.Provider.Capture(); persistence.MutationAllowed = false;
         Assert.Null(pods.BeginReturn(pod.Id)); Assert.Single(pods.Snapshot);
         persistence.MutationAllowed = true; Assert.NotNull(pods.BeginReturn(pod.Id)); Assert.True(pods.Delivered(pod.Id));

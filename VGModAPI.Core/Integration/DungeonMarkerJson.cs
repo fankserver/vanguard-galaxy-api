@@ -27,6 +27,13 @@ internal sealed class DungeonMarkerJson
         if (_isString.GetValue(value) is not true) return null;
         return Guid.TryParseExact((string?)_string.GetValue(value), "D", out var id) && id != Guid.Empty ? id : null;
     }
+    internal Guid? ReadStrict(object json)
+    {
+        var value = _item.GetValue(json, new object[] { Key })!;
+        var isNull = value.GetType().GetProperty("IsNull") ?? throw new MissingMemberException("Json null predicate unavailable.");
+        if (isNull.GetValue(value) is true) return null;
+        return Read(json) ?? throw new System.IO.InvalidDataException("Invalid persistent dungeon identity marker.");
+    }
     internal void Write(object json, Guid occurrence)
     {
         if (occurrence == Guid.Empty) throw new ArgumentException("Occurrence identity required.");

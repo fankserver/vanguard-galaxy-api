@@ -20,7 +20,7 @@ internal sealed class DungeonPodRecoveryLedger
     {
         if (_pods.TryGetValue(pod.Id, out var previous))
         {
-            if (previous.Occurrence != pod.Occurrence || previous.ParentShipId != pod.ParentShipId || previous.PlayerOwned != pod.PlayerOwned) throw new InvalidOperationException("Pod identity cannot change occurrence.");
+            if (previous.OperationId != pod.OperationId || previous.ParentShipId != pod.ParentShipId || previous.PlayerOwned != pod.PlayerOwned) throw new InvalidOperationException("Pod operation, recipient and ownership cannot change.");
             if (previous.ReturnAttempted && (previous.ReturnManifestKnown != pod.ReturnManifestKnown ||
                 previous.ReturnCrew.Count != pod.ReturnCrew.Count || previous.ReturnCrew.Any(pair => !pod.ReturnCrew.TryGetValue(pair.Key, out var count) || count != pair.Value)))
                 throw new InvalidOperationException("An attempted return manifest cannot change.");
@@ -33,13 +33,13 @@ internal sealed class DungeonPodRecoveryLedger
     internal DungeonPodResumeState? BeginReturn(Guid id)
     {
         var pod = Get(id); if (pod == null || !pod.CanRecover) return null;
-        Track(new(pod.Id, pod.Occurrence, pod.Phase, pod.PlayerOwned, true, false, pod.ReturnCrew, true, pod.ParentShipId, pod.Transport));
+        Track(new(pod.Id, pod.OperationId, pod.Phase, pod.PlayerOwned, true, false, pod.ReturnCrew, true, pod.ParentShipId, pod.Transport));
         return pod;
     }
     internal void Delivered(Guid id)
     {
         var pod = Get(id) ?? throw new InvalidOperationException("Unknown pod.");
         if (!pod.ReturnAttempted || !pod.ReturnManifestKnown) throw new InvalidOperationException("Return was not attempted with a known manifest.");
-        Track(new(pod.Id, pod.Occurrence, DungeonPodPhase.Arrived, pod.PlayerOwned, true, true, pod.ReturnCrew, true, pod.ParentShipId, pod.Transport));
+        Track(new(pod.Id, pod.OperationId, DungeonPodPhase.Arrived, pod.PlayerOwned, true, true, pod.ReturnCrew, true, pod.ParentShipId, pod.Transport));
     }
 }
