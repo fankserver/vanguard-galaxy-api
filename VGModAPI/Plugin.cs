@@ -29,6 +29,9 @@ public sealed class Plugin : BaseUnityPlugin
     private BoardingRuleAdapter? _boardingRules;
     private BoardingCommandService? _boardingCommands;
     private BoardingCombatService? _boardingCombat;
+    private DungeonContentService? _dungeons;
+    private DungeonStateStore? _dungeonState;
+    private DungeonContentAdapter? _dungeonAdapter;
     private StoryNativeWorld? _storyWorld;
     private StoryContentService? _story;
     private StoryProtection? _protection;
@@ -139,6 +142,7 @@ public sealed class Plugin : BaseUnityPlugin
         }
         // Subscription order is contractual: coordinated owners restore before mission PlayerReady identity seeding.
         InitializePersistence();
+        InitializeDungeons();
         InitializeMissions();
         InitializeStory();
         InitializeModMenu();
@@ -454,6 +458,41 @@ public sealed class Plugin : BaseUnityPlugin
             _hub!.SetCapability("recipe-catalog", false, "Recipe catalog binding failed."); Logger.LogError(error);
         }
     }
+    private void InitializeDungeons()
+    {
+        _hub!.SetCapability("dungeon-content", false, "Experimental authored content is disabled.");
+        if (_boarding == null || !Config.Bind("Dungeons", "Enabled", false, "Experimental authored dungeon content; requires boarding and API save data.").Value) return;
+        try
+        {
+            if (_persistence == null) throw new NotSupportedException("API save data is required.");
+            var bindings = new GameBindings(Assembly.Load("Assembly-CSharp"));
+            _dungeonState = new DungeonStateStore(_hub, _persistence);
+            _dungeonAdapter = new DungeonContentAdapter(_hub, bindings, _boarding, _dungeonState);
+            _dungeons = new DungeonContentService(_hub, _dungeonAdapter.Catalogs(), _dungeonState, _dungeonAdapter.Bindings(), (owner, error) => Logger.LogError($"Dungeon provider '{owner}': {error}"));
+            DungeonContentPatches.Adapter = _dungeonAdapter; DungeonContentPatches.Json = new DungeonMarkerJson(bindings.Assembly);
+            var patches = new Dictionary<string, Type>
+            {
+                ["dungeonSerialization"] = typeof(DungeonContentPatches.Serialization),
+                ["dungeonWalkCreated"] = typeof(DungeonContentPatches.WalkCreated),
+                ["dungeonHazard"] = typeof(DungeonContentPatches.Hazard), ["dungeonReinforcements"] = typeof(DungeonContentPatches.Reinforcements),
+                ["dungeonLocationSave"] = typeof(DungeonContentPatches.SaveLocation), ["dungeonLocationLoad"] = typeof(DungeonContentPatches.LoadLocation),
+                ["dungeonShipLayout"] = typeof(DungeonContentPatches.ShipLayout), ["dungeonWalkLayout"] = typeof(DungeonContentPatches.WalkLayout),
+                ["dungeonShipDefenders"] = typeof(DungeonContentPatches.Defenders), ["dungeonWalkDefenders"] = typeof(DungeonContentPatches.Defenders)
+            };
+            InstallGroup("dungeon-content", bindings, DungeonNativeSchema.Methods.Where(b => patches.ContainsKey(b.Key)).ToArray(), patches);
+            if (!_hub.Capabilities.Any(c => c.Name == "dungeon-content" && c.Available)) throw new NotSupportedException("Dungeon hooks unavailable.");
+            ModApi.Dungeons = _dungeons;
+        }
+        catch (Exception error)
+        {
+            StopDungeons(); _hub.SetCapability("dungeon-content", false, error.GetType().Name); Logger.LogError(error);
+        }
+    }
+    private void StopDungeons()
+    {
+        DungeonContentPatches.Adapter = null; DungeonContentPatches.Json = null; ModApi.Dungeons = null;
+        _dungeons?.Dispose(); _dungeons = null; _dungeonAdapter?.Dispose(); _dungeonAdapter = null; _dungeonState?.Dispose(); _dungeonState = null;
+    }
 
     private void InstallBoardingTactics(GameBindings bindings)
     {
@@ -691,6 +730,7 @@ public sealed class Plugin : BaseUnityPlugin
     }
     private void OnDestroy()
     {
+        StopDungeons();
         BoardingTacticalPatches.Adapter = null; ModApi.BoardingTactics = null;
         BoardingCombatPatches.Adapter = null; _boardingCombat?.Dispose(); _boardingCombat = null; ModApi.BoardingCombat = null;
         BoardingCommandPatches.Adapter = null; BoardingCommandPatches.Service = null; _boardingCommands?.Dispose(); _boardingCommands = null; ModApi.BoardingCommands = null;
