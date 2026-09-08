@@ -9,9 +9,9 @@ namespace VGModAPI.Tests;
 
 public sealed class BarNativeSerializationTests
 {
-    public sealed class Value
+    public readonly struct Value
     {
-        public object? Data;
+        public readonly object? Data;
         public Value(string? value) { Data = value; }
         public Value(JsonObject value) { Data = value; }
         public Value(JsonArray value) { Data = value; }

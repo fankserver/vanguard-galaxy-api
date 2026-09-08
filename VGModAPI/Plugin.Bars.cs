@@ -64,6 +64,7 @@ public sealed partial class Plugin
             // A distinct owner prevents general plugin teardown from removing protection for
             // contact objects still held by stale UI buttons or uncertain retained rosters.
             _barHarmony = new Harmony(ModApi.PluginId + ".bars");
+            var installs = new List<Action>();
             foreach (var binding in BindingCatalog.Bars)
             {
                 var patch = patches[binding.Key];
@@ -72,8 +73,9 @@ public sealed partial class Plugin
                     var method = patch.GetMethod(name, BindingFlags.NonPublic | BindingFlags.Static);
                     return method == null ? null : new HarmonyMethod(method);
                 }
-                _barHarmony.Patch(targets[binding.Key], prefix: Hook("Prefix"), finalizer: Hook("Finalizer"));
+                installs.Add(() => _barHarmony.Patch(targets[binding.Key], prefix: Hook("Prefix"), finalizer: Hook("Finalizer")));
             }
+            BarHookInstallation.Install(installs, _barHarmony.UnpatchSelf);
             BarPatches.Host = _barHost;
             ModApi.Bars = bars;
             _hub.SetCapability("owned-bars", true, "Experimental owned bar rosters; native qualification pending. Mission-linked contributions require additional readiness integration.");

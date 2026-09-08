@@ -90,6 +90,8 @@ public sealed class BarContentServiceTests
     [InlineData(2)]
     [InlineData(3)]
     [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(6)]
     public void RuntimeHostHonorsCallbackFaultsAndRestoresVanillaAfterProviderRemoval(int faultStage)
     {
         using var hub = new LifecycleHub((_, error) => throw error);
@@ -123,6 +125,21 @@ public sealed class BarContentServiceTests
         Assert.Equal(BarRosterApplyStatus.Applied, host.Reconcile(station.bar));
         var contact = Assert.Single(station.bar.availablePatrons, patron => contacts.IsOwned(patron));
         armed = true;
+        if (faultStage >= 5)
+        {
+            if (faultStage == 6) station.bar.availablePatrons = new System.Collections.Generic.List<BarNativeSerializationTests.Patron>(station.bar.availablePatrons);
+            Assert.Equal(faultStage == 5, host.Stop());
+            Assert.True(host.IsOwned(contact)); // A stale UI reference still needs the process-lived guard.
+            host.Interact(contact); Assert.Equal(0, clicks);
+            if (faultStage == 6) Assert.Throws<InvalidOperationException>(() => host.TrySerialize(station.bar, out _));
+            else
+            {
+                Assert.Same(vanilla, Assert.Single(station.bar.availablePatrons));
+                Assert.False(host.TrySerialize(station.bar, out _));
+            }
+            Assert.Equal(BarRosterApplyStatus.Unavailable, host.Reconcile(station.bar));
+            return;
+        }
         if (faultStage != 0)
         {
             var original = station.bar.availablePatrons;

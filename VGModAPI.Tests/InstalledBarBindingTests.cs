@@ -16,6 +16,7 @@ public sealed class InstalledBarBindingTests
             ?? throw new InvalidOperationException("Run make check-bindings against the installed game.");
         using var assembly = AssemblyDefinition.ReadAssembly(path);
         var module = assembly.MainModule;
+        Assert.True(module.GetType("LightJson.JsonValue").IsValueType);
         foreach (var binding in BindingCatalog.Bars)
         {
             var type = module.GetType(binding.Type);
