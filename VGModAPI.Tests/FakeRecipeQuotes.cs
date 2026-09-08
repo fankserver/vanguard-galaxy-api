@@ -9,6 +9,7 @@ namespace Source.Item
         public sealed class InventoryItem
         {
             public Behaviour.Item.InventoryItemType item = new();
+            public Inventory? inventory;
             public int count { get; set; }
             public bool favourite;
         }
@@ -63,6 +64,7 @@ namespace Source.Mining
     }
     public sealed class Refinery
     {
+        public Source.Galaxy.POI.SpaceStation spaceStation = null!;
         public List<object> jobs = new();
         public int maxJobs { get; set; } = 2;
         public static int GetExtractCost(Source.Item.RefinedMaterial material, int count) => count * 2;
@@ -100,6 +102,8 @@ namespace Behaviour.Item
     {
         public Source.Item.ItemCategory itemCategory { get; set; } = Source.Item.ItemCategory.Material;
         public float m3 { get; set; } = 1;
+        public int itemLevel { get; set; } = 1;
+        public Source.Item.Rarity rarity { get; set; }
         public float calcCost = 100;
         public int PreviewBuilderCalls { get; private set; }
         public int cost
@@ -118,6 +122,7 @@ namespace Behaviour.Mining
 {
     public sealed partial class OreItemData
     {
+        public Behaviour.Item.InventoryItemType item { get; set; } = new();
         public Behaviour.Item.InventoryItemType? PricingItem;
         private int _cost = 5;
         public int refinementCost

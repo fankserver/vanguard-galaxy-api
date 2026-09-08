@@ -2,7 +2,7 @@
   <PropertyGroup>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
-    <Version>0.1.33</Version>
+    <Version>0.1.34</Version>
     <Deterministic>true</Deterministic>
     <PathMap>$(MSBuildThisFileDirectory)=/src/</PathMap>
     <DebugType Condition="'$(Configuration)' == 'Release'">none</DebugType>
