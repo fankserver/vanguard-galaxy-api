@@ -58,6 +58,7 @@ public sealed partial class Plugin
             events.SetSelectedGameObject(check.gameObject);
             foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
             Require(details.text.Contains("NETWORK CONFIRMATION") && service.Status(selected).State == ModUpdateState.NotChecked, "First click performed network I/O.");
+            Require(events.currentSelectedGameObject == check.gameObject, "Disclosure rendering stole keyboard focus from Confirm check.");
             foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
             foreach (var frame in Wait(() => service.Status(selected).State == ModUpdateState.Available && release.interactable, "confirmed UI update")) yield return frame;
             Require(launches == 0 && details.text.Contains("Update available"), "Update result opened a browser or was not presented.");
@@ -65,6 +66,7 @@ public sealed partial class Plugin
             events.SetSelectedGameObject(automatic.gameObject);
             foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
             Require(!service.Automatic, "Automatic mode enabled without confirmation.");
+            Require(events.currentSelectedGameObject == automatic.gameObject, "Automatic disclosure lost keyboard focus.");
             foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
             Require(service.Automatic, "Automatic confirmation did not enable the setting.");
             foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;

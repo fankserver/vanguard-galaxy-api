@@ -258,17 +258,18 @@ internal sealed class ModMenuView : IModMenuView
         _detailText.text = _presenter.Details(_showDiagnostics ? _diagnostics() : "", _showDiagnostics, _updates == null);
         if (_updates != null)
         {
-            _checkUpdate.interactable = _release.interactable = false;
-            _autoUpdate.interactable = _presenter.Selected != null;
+            ModUpdateControls.Apply(_presenter.Selected != null,
+                _presenter.Selected != null && _updates.CanCheck(_presenter.Selected),
+                _presenter.Selected != null && _updates.ReleaseHost(_presenter.Selected) != null,
+                value => _checkUpdate.interactable = value, value => _autoUpdate.interactable = value,
+                value => _release.interactable = value);
         }
         if (_updates != null && _presenter.Selected != null)
         {
             _updateText = _updates.Text(_presenter.Selected, DateTimeOffset.UtcNow);
             _detailText.text = _updates.Confirming ? _updateText : _updateText + "\n" + _detailText.text;
-            _checkUpdate.interactable = _updates.CanCheck(_presenter.Selected);
             _checkUpdate.GetComponentInChildren<TMP_Text>().text = _updates.Confirming && !_updates.ConfirmingAutomatic ? "Confirm check" : "Check update";
             _autoUpdate.GetComponentInChildren<TMP_Text>().text = _updates.Automatic ? "Auto: on" : _updates.ConfirmingAutomatic ? "Confirm auto" : "Auto: off";
-            _release.interactable = _updates.ReleaseHost(_presenter.Selected) != null;
         }
         _project.interactable = _presenter.TryProjectDestination(out var host);
         _destination.text = _project.interactable ? "Project destination (HTTPS):\n" + host : "No validated project link.";
