@@ -65,7 +65,7 @@ make check-bindings                # inspect original installed game DLL without
 make package CONFIGURATION=Release # explicit three-assembly package in artifacts/VGModAPI/
 ```
 
-Public CI runs pure tests and synthetic Windows checks without game assets. See the [check strategy](docs/checks.md) for local reference provisioning, package validation, and provenance.
+Public CI is defined in [.github/workflows](.github/workflows); local build, test, and package commands are in the [Makefile](Makefile).
 
 Override `GAME_DIR` and/or `DOTNET` as needed. Game/Unity/BepInEx DLLs are never committed or bundled. The runtime binds game internals through inspected reflection; it does not require a publicized game stub. The lifecycle API needs no serializer; custom save-data providers supply their own payload encoding.
 

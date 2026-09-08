@@ -26,7 +26,7 @@ namespace VGModAPI.Tests;
 /// still has to RESOLVE a few referenced assemblies to decode custom-attribute enum arguments
 /// (<c>BepInEx.BepInDependency.DependencyFlags</c>, <c>Newtonsoft.Json.NullValueHandling</c>), so
 /// the resolver gets an explicit, bounded search path instead of Cecil's implicit defaults; see
-/// <see cref="SearchDirectories"/> and docs/checks.md.
+/// <see cref="SearchDirectories"/> and the Makefile's check-consumer target.
 /// </summary>
 [Trait("Category", "InstalledConsumer")]
 public sealed class InstalledAnimaTravelConsumerTests
@@ -34,7 +34,7 @@ public sealed class InstalledAnimaTravelConsumerTests
     private static string AssemblyPath => Environment.GetEnvironmentVariable("VG_ANIMA_ASSEMBLY")
         ?? throw new InvalidOperationException("Run make check-consumer or set VG_ANIMA_ASSEMBLY to the built VGAnima.dll.");
 
-    /// <summary>Extra dependency directories, supplied by make check-consumer (see docs/checks.md).</summary>
+    /// <summary>Extra dependency directories, supplied by make check-consumer.</summary>
     private const string DependencyDirectoriesVariable = "VG_CONSUMER_DEPENDENCY_DIRS";
 
     /// <summary>
@@ -88,7 +88,7 @@ public sealed class InstalledAnimaTravelConsumerTests
                 throw new InvalidOperationException("Cecil could not resolve the consumer dependency '"
                     + name.FullName + "' that decoding this metadata requires. Searched: "
                     + string.Join(", ", _directories)
-                    + ". Point ANIMA_DEPENDENCY_DIRS at the directory holding it (see docs/checks.md).", error);
+                    + ". Point ANIMA_DEPENDENCY_DIRS at the directory holding it when running make check-consumer.", error);
             }
         }
     }
