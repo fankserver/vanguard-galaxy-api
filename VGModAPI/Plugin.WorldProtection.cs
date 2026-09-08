@@ -41,8 +41,11 @@ public sealed partial class Plugin
         }
         catch (Exception error)
         {
-            StopWorldProtection();
-            if (WorldLoadPatches.Host == null) _worldLoadHarmony?.UnpatchSelf();
+            WorldLoadHookInstallation.CleanupFailure(
+                StopWorldProtection,
+                () => { if (WorldLoadPatches.Host == null) _worldLoadHarmony?.UnpatchSelf(); },
+                () => { if (_worldLoadHost != null) WorldLoadPatches.Host = _worldLoadHost; },
+                cleanup => Logger.LogError(cleanup));
             _hub.SetCapability("world-load-protection", false, "World load guard initialization failed: " + error.GetType().Name);
             Logger.LogError(error);
         }

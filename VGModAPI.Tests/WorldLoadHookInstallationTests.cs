@@ -7,6 +7,27 @@ namespace VGModAPI.Tests;
 
 public sealed class WorldLoadHookInstallationTests
 {
+    [Fact]
+    public void RepeatedRollbackFailureRetainsRefusalAndDoesNotEscapeCleanup()
+    {
+        bool stopped = false, retained = false, continued = false;
+        int rollbacks = 0;
+        void Rollback() { rollbacks++; throw new InvalidOperationException("rollback failed"); }
+        try
+        {
+            WorldLoadHookInstallation.Install(() => { }, () => throw new InvalidOperationException("patch failed"), Rollback);
+        }
+        catch (Exception)
+        {
+            // Same cleanup path used by Plugin.InitializeWorldProtection.
+            WorldLoadHookInstallation.CleanupFailure(() => stopped = true, Rollback,
+                () => { Assert.True(stopped); retained = true; }, _ => throw new Exception("logger failed"));
+            continued = true;
+        }
+        Assert.Equal(2, rollbacks);
+        Assert.True(stopped); Assert.True(retained); Assert.True(continued);
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
