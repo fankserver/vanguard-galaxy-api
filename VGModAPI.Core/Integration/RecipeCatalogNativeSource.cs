@@ -7,7 +7,7 @@ using VGModAPI.Core;
 
 namespace VGModAPI.Runtime;
 
-/// <summary>Reads definitions only. Never invokes preview builders or crafting/delivery methods.</summary>
+/// <summary>Native recipe services. Definition and quote queries never invoke preview builders or crafting/delivery methods.</summary>
 internal sealed partial class RecipeCatalogNativeSource : IRecipeCatalogSource, IRecipeQuoteSource
 {
     private const string RecipeType = "Behaviour.Crafting.CraftingRecipe";
