@@ -55,8 +55,7 @@ configuration. A compiled example is available in the source repository at
 
 ## Contribute
 
-See the [developer documentation](https://github.com/fankserver/vanguard-galaxy-api/blob/main/docs/development/README.md)
-and [roadmap](https://github.com/fankserver/vanguard-galaxy-api/issues/1).
+See the [developer documentation](https://github.com/fankserver/vanguard-galaxy-api/blob/main/docs/development/README.md).
 
 ## License
 

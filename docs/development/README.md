@@ -5,7 +5,6 @@ local game/BepInEx references; pure host tests do not. Override `GAME_DIR` and
 `DOTNET` in the [Makefile](../../Makefile) for your installation.
 
 - [Contributor rules](../../CLAUDE.md)
-- [Design constraints](design.md)
 - [Native integration findings](native-integration.md)
 - [Controlled Unity qualification](qualification-runner.md)
   - Bar scopes: [API](bar-probe-scope.md), [consumers](bar-consumer-scope.md), [linked story](bar-linked-scope.md)

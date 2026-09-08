@@ -1,6 +1,6 @@
 # VGModAPI contributor guidance
 
-Unofficial Vanguard Galaxy API: lifecycle, mod save data, optional mission/travel/story services, and mod information. Read `docs/reference/lifecycle-contract.md` and `docs/reference/compatibility.md` before modifying hooks. `docs/development/design.md` defines development constraints; GitHub issues track future work.
+Unofficial Vanguard Galaxy API: lifecycle, mod save data, optional mission/travel/story services, and mod information. Read `docs/reference/lifecycle-contract.md` and `docs/reference/compatibility.md` before modifying hooks. Contributor constraints are defined here; GitHub issues track work, not durable documentation.
 
 ## Current-state-only content
 
@@ -15,7 +15,9 @@ package layout in `tools/release_archive.py`, public contracts in `docs/referenc
 and contributor guidance in `docs/development/`. Link rather than restate mechanics.
 Simplify confusing interfaces before adding explanatory prose; retain necessary
 safety constraints and contract semantics. Documentation indexes provide navigation,
-not duplicate summaries. Keep Markdown portable for future documentation hosting.
+not duplicate summaries. Keep Markdown portable for future documentation hosting. Do not use issue numbers or
+issue/milestone links as documentation or runtime-message references; state the current
+contract or limitation directly, or link its canonical documentation.
 
 ## Implementation and delivery
 
@@ -32,6 +34,31 @@ not duplicate summaries. Keep Markdown portable for future documentation hosting
 - Gate semantics on inspected original game code, not just signatures. The runtime currently rejects uninspected hashes. Never update the allowed hash without reinspection.
 - Coroutine factories returning are not completion. GameplayInitialized is deliberately narrower than all-world-ready. A Store return is not proof of successful disk writing.
 - Maintain tests for stale session signals, nesting/reentrancy, retries, skips, and subscriber disposal.
-- Mod save data is default-enabled, optional and experimental, with a bounded binary provider envelope; consumers own their additional custom-data schema/serializer. API-owned story state is persisted by the API, not consumer save callbacks. Do not assume the game provides Newtonsoft.Json; do not introduce System.Text.Json without reevaluating known Unity/Mono compatibility issues.
+- Do not assume the game provides Newtonsoft.Json; do not introduce System.Text.Json without reevaluating known Unity/Mono compatibility issues.
 - No deployment, release, or destructive save testing without explicit project-maintainer authorization. Always distinguish passing host tests from actual Unity qualification.
 - Do not redistribute decompiled game source. Preserve concise findings and member mappings in docs instead.
+
+## API-owned content
+
+Supported persistent API-owned content must save and reconstruct automatically.
+Mod authors register definitions and declare lifetime/retention; they must not
+supply save hooks, codecs, sidecars or restoration scheduling for API-owned fields.
+The generic save-data API is for **additional custom mod data**.
+
+- Identity is a stable provider/plugin ID plus local ID, never a display name or
+  invented string prefix. Repeated live instances remain distinct from definitions.
+  Namespaces prevent collisions, not malicious same-process access.
+- Persistent creation defaults to saved content. If required persistence is
+  unavailable, refuse creation rather than silently creating unsaved content.
+  Explicitly transient effects, UI handles and observations need no permanent record.
+- Retain necessary mission progress, completion/outcomes and supported choices
+  within the save, without requiring a journal plugin. Optional narrative history
+  is separate. Retention limits must fail safely rather than truncate progression.
+- Preserve ownership and references through reload, new game, save-as, slot changes,
+  rollback, failed/skipped writes, provider absence and supported migrations.
+  Reuse safe vanilla serialization where appropriate; do not promise cross-file
+  atomicity or serialization of executable behavior.
+
+Observer/storage plumbing alone does not satisfy these requirements. Consumer
+integrations retaining their own save hooks are not API-managed content persistence.
+Keep bespoke campaign and combat behavior in consumer mods rather than the API.

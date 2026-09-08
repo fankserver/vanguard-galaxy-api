@@ -18,4 +18,4 @@ or fabricates completion events.
 
 Minimum launcher lifetime: 2100 seconds (ordinary Full allowance plus300 for
 initial readiness and one readiness-settled reload). Migration qualification and
-complete #13 acceptance remain separate required work.
+complete owned-story acceptance remain separate required work.

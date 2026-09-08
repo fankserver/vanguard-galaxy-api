@@ -539,7 +539,7 @@ internal static class EchoTravelReceipt
         text.AppendLine("Actual-consumer evidence over the public travel surface only. The route completions it reacts to are qualified by "
             + TravelStationReceipt.Phase + " and " + TravelCrossSystemReceipt.Phase
             + " plus this phase's own owned in-system legs; a suppressed FindActivity body proves the native idle DECISION BOUNDARY was reached, never that the autonomous action executed.");
-        text.AppendLine("RuntimeQualified=false; #12 open pending owner in-game qualification and the remaining consumer reconciliation.");
+        text.AppendLine("RuntimeQualified=false; full in-game qualification and remaining consumer reconciliation are pending.");
         return text.ToString();
     }
 }

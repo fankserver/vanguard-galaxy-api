@@ -19,5 +19,5 @@ The initial `owned-story-v1` phase covers two authors, offered/active round trip
 native payout/idempotency, declared choices, skipped/failed saves, rollback,
 cross-slot return, repeated jobs and a disposed-provider quarantine after reload.
 Disposing a lease is **not** an absent-assembly test. Fresh-process provider absence,
-new-game owned content and migration qualification remain separate required #13
+new-game owned content and migration qualification remain separate required
 work; passing this phase alone must not close that issue.

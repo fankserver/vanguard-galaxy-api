@@ -21,7 +21,7 @@ namespace VGModAPI.Qualification;
 /// </summary>
 internal static class TravelJournalReceipt
 {
-    /// <summary>Honest scope of the delivered phase; #12 stays open.</summary>
+    /// <summary>Scope of this phase, not full travel qualification.</summary>
     internal const string Phase = "travel-journal-comparison-v1";
 
     internal const string BindingCase = "legacy-binding";
@@ -768,7 +768,7 @@ internal static class TravelJournalReceipt
         text.AppendLine("fault=" + (string.IsNullOrEmpty(fault) ? "none" : TravelStationReceipt.Clean(fault)));
         text.AppendLine("result=" + (failure ?? "phase satisfied"));
         text.AppendLine("The archived TravelJournal is an INDEPENDENT history owner, read only through the files it wrote itself; it is never edited, rebuilt, reactivated, migrated or bridged, its log is never ground truth, and its name fields are never compared because it reads the game's lazy name generator and is therefore not a passive observer.");
-        text.AppendLine("RuntimeQualified=false; #12 stays open: recovered placement, post-gate chain continuation and the tutorial/teleport coverage decisions are NOT closed by this phase.");
+        text.AppendLine("RuntimeQualified=false; recovered placement, post-gate chain continuation and tutorial/teleport coverage are not qualified by this phase.");
         return text.ToString();
     }
 }

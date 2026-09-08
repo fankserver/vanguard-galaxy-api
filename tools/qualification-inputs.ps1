@@ -471,7 +471,7 @@ $TravelRecoveryAttemptOutcomes = @($TravelRecoveryAttemptSuccess) + $TravelRecov
 # finished; the reason stays readable, but the receipt is never a completed one.
 $TravelRecoveryAttemptPendingMarker = 'cleanup=pending'
 # The fifth separate optional phase reserves its own process time ON TOP of the in-system phase. It
-# closes the last reachable travel cell of #12: the native fast lane (travelMultiplier = 7), which
+# exercises the native fast lane (travelMultiplier = 7), which
 # the post-gate continuation phase cannot reach because its follow-on POI is deliberately not a gate.
 $TravelFastLanePhase = 'travel-fast-lane-v1'
 $TravelFastLaneRequiredCases = @('fast-lane-gate-chain','fast-lane-multiplier-observed')

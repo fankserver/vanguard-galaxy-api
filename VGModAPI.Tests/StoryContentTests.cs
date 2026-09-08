@@ -1889,7 +1889,7 @@ public sealed class StoryContentTests
     /// <summary>
     /// Every occurrence is installed under its OWN identifier. The game archives a completed story
     /// identifier and refuses a duplicate of it forever, so a shared identifier could be accepted
-    /// exactly once per save; distinct occurrences are what #13 asks for.
+    /// exactly once per save. Each occurrence therefore needs a distinct identifier.
     /// </summary>
     [Fact]
     public void EachOccurrenceGetsItsOwnCatalogEntrySoARepeatCanStillBeAccepted()

@@ -229,7 +229,7 @@ recordable with fewer or no choices; a refusal is never a stranded occurrence. S
 not "only undeclared keys fail": a legitimately declared key can fail on a pre-revision occurrence.
 Providers that intend to keep unresolved content across a save need STABLE definitions. Migrating a
 changed choice contract for already-persisted occurrences is not attempted here and is not silently
-performed: it belongs to the versioned-content work tracked for a later milestone (#14).
+performed; versioned-content migration is not implemented.
 
 With the maximum declared payload a provider can hold roughly 18 unresolved campaign occurrences at
 once out of its 64-occurrence quota, and considerably more with smaller declared choices or with

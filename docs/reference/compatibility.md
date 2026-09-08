@@ -28,7 +28,7 @@ An uninspected hash leaves the API available for diagnostics but disables game i
 | Story load protection | Default-on guard on the inspected build, independent of story-author registration | With the guard disabled or the game uninspected, the API cannot refuse unsafe owned-story loads; do not load those saves in that state |
 | Mod information | Process-local catalog and default-on native main-menu entry when binding succeeds | Bounded menu interactions are exercised; presentation acceptance, physical gamepad behavior and browser opening are not fully qualified. No automatic update-check service is provided |
 
-Story remains incomplete under [#13](https://github.com/fankserver/vanguard-galaxy-api/issues/13); the general scripted-objective API in [#14](https://github.com/fankserver/vanguard-galaxy-api/issues/14) is not implemented. Supported payload-schema compatibility is separate from migration of arbitrary authored definitions or scripted objectives.
+Story remains incomplete; the general scripted-objective API is not implemented. Supported payload-schema compatibility is separate from migration of arbitrary authored definitions or scripted objectives.
 
 ## Controlled coverage
 

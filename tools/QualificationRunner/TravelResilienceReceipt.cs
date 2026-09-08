@@ -566,7 +566,7 @@ internal static class TravelResilienceReceipt
         text.AppendLine("result=" + (failure ?? "phase satisfied"));
         text.AppendLine("Controlled native evidence for this phase only; it does not widen " + TravelStationReceipt.Phase
             + " or " + TravelCrossSystemReceipt.Phase + ", whose own optional rows for these cells stay NOT-RUN.");
-        text.AppendLine("RuntimeQualified=false; #12 open pending owner in-game qualification.");
+        text.AppendLine("RuntimeQualified=false; full in-game qualification remains pending.");
         return text.ToString();
     }
 }
