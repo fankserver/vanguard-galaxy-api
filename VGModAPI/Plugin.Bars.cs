@@ -52,8 +52,12 @@ public sealed partial class Plugin
                 plugin => _barPermissions.Allowed.Contains(plugin), _hub.CheckThread, () => _barPermissions,
                 (owner, error) => Logger.LogError("Bar observer '" + owner + "' failed: " + error));
             _bars = bars;
+            var story = _story;
+            var noStory = new object();
             _barHost = new BarRuntimeHost(bars, native.World, native.Contacts, native.Serialization,
-                station => _hub.CurrentSession is { } session ? bars.Plan(session.Id, station) : null,
+                station => _hub.CurrentSession is { } session ? bars.Plan(session.Id, station,
+                    (id, occurrence) => story?.IsBarMissionReady(session.Id, id, occurrence) == true,
+                    () => story?.BarDependencyStamp() ?? noStory) : null,
                 bars.CanSerializeCurrent, bars.CanMutateCurrent, _hub.CheckThread,
                 error => { ModApi.Bars = null; _hub.SetCapability("owned-bars", false, "Bar adapter fault; content guards remain active."); Logger.LogError(error); });
             var targets = new GameBindings(assembly).Resolve(BindingCatalog.Bars);

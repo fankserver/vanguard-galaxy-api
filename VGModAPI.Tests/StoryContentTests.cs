@@ -63,6 +63,33 @@ public sealed class StoryContentTests
     private static Dictionary<string, string> WorstChoices(StoryMissionDefinition definition)
         => definition.ChoiceKeys.ToDictionary(key => key, _ => new string('v', StoryMissionDefinition.MaxChoiceValueBytes), StringComparer.Ordinal);
 
+    [Fact]
+    public void BarDependenciesRequireLiveDefinitionExactOccurrenceAndCurrentAdmissions()
+    {
+        var host = new FakeHost(); var world = new FakeWorld();
+        using var service = world.Service(host);
+        world.StartAndRestore(); var plugin = new object(); host.Register(plugin, AnimaPlugin);
+        var provider = service.AcquireProvider(plugin).Provider!;
+        var definition = Definition(); var registration = provider.Register(definition).Registration!;
+        var offered = provider.Offer(definition.LocalId);
+        Assert.True(offered.Accepted);
+        var id = new StoryContentId(provider.ProviderId, definition.LocalId);
+        Assert.True(service.IsBarMissionReady(world.SessionId, id, offered.OccurrenceId));
+        Assert.False(service.IsBarMissionReady(Guid.NewGuid(), id, offered.OccurrenceId));
+        Assert.False(service.IsBarMissionReady(world.SessionId, id, Guid.NewGuid()));
+        var stamp = service.BarDependencyStamp();
+        Assert.Same(stamp, service.BarDependencyStamp());
+        registration.Dispose();
+        Assert.False(service.IsBarMissionReady(world.SessionId, id, offered.OccurrenceId));
+        Assert.True(provider.Register(definition).Succeeded);
+        Assert.NotSame(stamp, service.BarDependencyStamp());
+        Assert.True(service.IsBarMissionReady(world.SessionId, id, offered.OccurrenceId));
+        stamp = service.BarDependencyStamp();
+        world.DegradeProtection("scan failed");
+        Assert.False(service.IsBarMissionReady(world.SessionId, id, offered.OccurrenceId));
+        Assert.NotSame(stamp, service.BarDependencyStamp());
+    }
+
     // --- identity ---------------------------------------------------------------------------
 
     [Fact]
