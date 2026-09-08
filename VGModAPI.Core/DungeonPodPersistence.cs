@@ -93,6 +93,11 @@ internal sealed class DungeonPodPersistence : IDisposable
     }
     internal void EnsureSerializationAllowed()
     { _hub.CheckThread(); _effects.EnsureSettled(); if (_returnDepth != 0 || IsCheckpointing) throw new InvalidOperationException("Cannot save while dungeon effects or snapshot refresh are being applied."); }
+    internal bool CompleteDonorAbort(Guid operationId, string shipId, object token)
+    {
+        if (!CanMutate || !ReferenceEquals(token, RestoreToken) || _operations.Get(operationId) is not { } operation) return false;
+        _operations.Track(operation.WithoutDonor(shipId)); return true;
+    }
     internal WalkAttempt? BeginWalkReturn(Guid id)
     {
         if (!CanMutate || _operations.Get(id) is not { TerminalProgress: DungeonTerminalProgress.Completed, WalkReturn: { Progress: DungeonWalkReturnProgress.Pending } walk } operation) return null;

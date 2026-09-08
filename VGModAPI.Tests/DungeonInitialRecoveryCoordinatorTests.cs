@@ -26,16 +26,18 @@ public sealed class DungeonInitialRecoveryCoordinatorTests
         internal readonly List<string> Calls = new();
         internal readonly Guid Id = Guid.NewGuid();
         internal bool LiveLocation = true, Hydrated = true;
-        internal Fixture(bool ship, DungeonPodPhase? phase = null, string savedPhase = "Active")
+        internal Fixture(bool ship, DungeonPodPhase? phase = null, string savedPhase = "Active", bool donor = false)
         {
             State = new(Hub, Persistence); var session = Hub.Begin(SessionOrigin.SaveLoad, "save"); Hub.PlayerReady(session); Persistence.Provider.Restore(Hub.CurrentSession!, null);
             var native = new DungeonLayoutBuilderTests.Native(); var identity = new DungeonOperationResumeAdapter(State, native); var pods = new DungeonPodResumeAdapter(State, native);
             Location.Fields["dungeonType"] = "Station";
             var data = new NativeObject(); data.Fields["savedSimulation"] = new object(); Location.Fields["dungeonData"] = data;
-            var recipient = new NativeObject(); recipient.Fields["resumeShipGuid"] = "ship"; var vessel = new NativeObject(); vessel.Fields["resumeShipData"] = recipient;
+            var recipient = new NativeObject(); recipient.Fields["resumeShipGuid"] = "ship"; var vessel = new NativeObject(); vessel.Fields["resumeShipData"] = recipient; vessel.Fields["donorActions"] = null;
             Operation.Fields["location"] = Location; Operation.Fields["operationShip"] = vessel; Operation.Fields["isAutonomous"] = false;
+            Operation.Fields["dispatchDonor"] = (Action)(() => Calls.Add("donor"));
             Operation.Fields["restoreDocking"] = (Action)(() => Calls.Add("dock"));
             State.TrackOperation(new(Id, Guid.NewGuid(), null, "ship", "Station", savedPhase, "", "", DungeonTerminalProgress.NotStarted, false,
+                donors: donor ? new[] { new DungeonDonorApproachState("donor", new Dictionary<string, int> { ["Marine"] = 2 }) } : null,
                 walkReturn: savedPhase == "Extraction" ? new DungeonWalkReturnState(new Dictionary<string, int>()) : null));
             if (savedPhase == "Extraction") using (var terminal = State.BeginTerminal(Id)) terminal!.Completed();
             identity.LoadedLocation(Location, Id);
@@ -70,6 +72,16 @@ public sealed class DungeonInitialRecoveryCoordinatorTests
         f.LiveLocation = true; f.Hydrated = false; f.Queue.Poll(); Assert.Empty(f.Calls);
         f.Hydrated = true; f.Queue.Poll();
         Assert.Equal(new[] { "create", "validate", "dock", "register", "observe" }, f.Calls);
+    }
+    [Fact]
+    public void DonorReservationWaitsForExactDonorBeforeConstructionAndDispatchesOnce()
+    {
+        using var f = new Fixture(true, donor: true); var resolve = f.Ports.Resolve; var available = false;
+        f.Ports.Resolve = id => id == "donor" && !available ? null : resolve(id);
+        f.Queue.Poll(); Assert.Empty(f.Calls);
+        available = true; f.Queue.Poll(); f.Queue.Poll();
+        Assert.Equal(new[] { "create", "validate", "donor", "register", "observe" }, f.Calls);
+        Assert.Equal(2, Assert.Single(f.State.Operation(f.Id)!.Donors).Crew["Marine"]);
     }
     [Theory]
     [InlineData("Approach")]

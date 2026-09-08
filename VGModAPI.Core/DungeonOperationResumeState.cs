@@ -40,6 +40,7 @@ internal sealed class DungeonOperationResumeState
         Donors = Array.AsReadOnly(reservations);
         TerminalProgress = terminalProgress; Autonomous = autonomous; Options = options; WalkDispatched = walkDispatched; WalkReturn = walkReturn;
     }
+    internal DungeonOperationResumeState WithoutDonor(string shipId) => new(Id, LocationId, ContentOccurrence, AttackerShipId, DungeonType, NativePhase, Outcome, MissionProtection, TerminalProgress, Autonomous, Options, Donors.Where(donor => donor.ShipId != shipId), WalkDispatched, WalkReturn);
     internal DungeonOperationResumeState WithWalkReturn(DungeonWalkReturnState state) => new(Id, LocationId, ContentOccurrence, AttackerShipId, DungeonType, NativePhase, Outcome, MissionProtection, TerminalProgress, Autonomous, Options, Donors, WalkDispatched, state);
     internal bool MayResumeWalkExtraction => NativePhase == "Extraction" && TerminalProgress == DungeonTerminalProgress.Completed && WalkReturn?.Progress == DungeonWalkReturnProgress.Pending;
     internal bool MayStartTerminalEffects => TerminalProgress == DungeonTerminalProgress.NotStarted;

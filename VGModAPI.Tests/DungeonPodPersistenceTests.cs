@@ -21,6 +21,24 @@ public sealed class DungeonPodPersistenceTests
         public void Dispose() { }
     }
     [Fact]
+    public void DonorAbortRetiresOnlyMatchingReservationAndCannotCrossRestoreGenerations()
+    {
+        using var hub = new LifecycleHub((_, _) => { }); var persistence = new Persistence(); using var state = new DungeonPodPersistence(hub, persistence);
+        var session = hub.Begin(SessionOrigin.SaveLoad, "save"); hub.PlayerReady(session); persistence.Provider.Restore(hub.CurrentSession!, null);
+        var crew = new Dictionary<string, int> { ["Marine"] = 2 }; var id = Guid.NewGuid();
+        Assert.True(state.TrackOperation(new(id, Guid.NewGuid(), null, "ship", "Ship", "Active", "", "", DungeonTerminalProgress.NotStarted, false,
+            donors: new[] { new DungeonDonorApproachState("a", crew), new DungeonDonorApproachState("b", crew) })));
+        var snapshot = persistence.Provider.Capture(); var token = state.RestoreToken;
+        using (var scope = state.BeginTransfer())
+        { Assert.NotNull(scope); Assert.False(state.CompleteDonorAbort(id, "a", token)); }
+        Assert.True(state.CompleteDonorAbort(id, "a", token));
+        Assert.Equal("b", Assert.Single(state.Operation(id)!.Donors).ShipId);
+        persistence.Provider.Restore(hub.CurrentSession!, snapshot);
+        Assert.False(state.CompleteDonorAbort(id, "a", token)); Assert.Equal(2, state.Operation(id)!.Donors.Count);
+        Assert.True(state.CompleteDonorAbort(id, "a", state.RestoreToken));
+        Assert.Equal(2, Assert.Single(state.Operation(id)!.Donors).Crew["Marine"]);
+    }
+    [Fact]
     public void SaveWindowCheckpointRefreshesKnownStateWithoutCreatingEffectsOrIdentities()
     {
         using var hub = new LifecycleHub((_, _) => { }); var persistence = new Persistence(); using var pods = new DungeonPodPersistence(hub, persistence);

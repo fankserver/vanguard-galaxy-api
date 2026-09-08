@@ -48,7 +48,7 @@ internal sealed class DungeonRecoveryWorld
             if (candidate is Component unit && unit && unit.gameObject.activeInHierarchy && unit.transform.IsChildOf(root.transform) && ReferenceEquals(_native.Get(unit, "resumeWalkLocation"), location)) return true;
         return false;
     }
-    internal IReadOnlyList<DungeonDonorApproachState> CaptureDonors(object? target)
+    internal IReadOnlyList<DungeonDonorApproachState> CaptureDonors(object? target, Action<object, object, string>? observed = null)
     {
         var result = new List<DungeonDonorApproachState>();
         if (target is not Component destination || !destination) return result;
@@ -60,6 +60,7 @@ internal sealed class DungeonRecoveryWorld
             if (_native.Get(actions, "donorTarget") is not Transform aimed || aimed != destination.transform) continue;
             var id = (string?)_native.Get(_native.Get(candidate, "resumeShipData"), "resumeShipGuid");
             result.Add(new(id ?? "", (IReadOnlyDictionary<string, int>)_native.Get(actions, "donorCrew")!));
+            observed?.Invoke(actions, candidate, id!);
             if (result.Count > 64) throw new InvalidOperationException("Too many approaching donors.");
         }
         return result;

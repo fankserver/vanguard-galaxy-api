@@ -14,6 +14,12 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
     private readonly DungeonReturnRecoveryCoordinator _returns;
     private readonly DungeonInitialRecoveryCoordinator _initial;
     private readonly DungeonRecoveryWorld _world;
+    private System.Runtime.CompilerServices.ConditionalWeakTable<object, DonorOwnership> _donors = new();
+    private sealed class DonorOwnership
+    {
+        internal readonly Guid Operation; internal readonly string ShipId; internal readonly object Ship, Token;
+        internal DonorOwnership(Guid operation, string shipId, object ship, object token) { Operation = operation; ShipId = shipId; Ship = ship; Token = token; }
+    }
     private readonly IDisposable _lifetime;
     private readonly Action<Exception> _report;
     private readonly DungeonMarkerJson _podJson, _operationJson;
@@ -67,14 +73,41 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
             Create = initialFactory.Create,
             BuildPod = (saved, donor, target, operation, data) => new DungeonReturnPodInstance(factory.BuildInitial(saved, donor, target, operation, data)),
             BindPod = (instance, id) => BindInitialPod((DungeonReturnPodInstance)instance, id), Register = initialFactory.Register,
-            Observe = operation => (ObserveInitialOperation ?? throw new InvalidOperationException("Boarding observation unavailable."))(operation),
+            Observe = operation =>
+            {
+                if (!ObserveOperation(operation)) throw new InvalidOperationException("Restored operation capture unavailable.");
+                (ObserveInitialOperation ?? throw new InvalidOperationException("Boarding observation unavailable."))(operation);
+            },
             Quarantine = Quarantine
         }, report);
         _lifetime = hub.Subscribe("vgmodapi.dungeon-recovery-runtime", message =>
         {
             if (message.Kind is LifecycleEventKind.SessionStarting or LifecycleEventKind.SessionInvalidated or LifecycleEventKind.SessionStartFailed)
-            { _initial.Clear(); _returns.Poll(); Pods.Clear(); Operations.Clear(); _captureFaults = new(); _podOwners = new(); }
+            { _initial.Clear(); _returns.Poll(); Pods.Clear(); Operations.Clear(); _captureFaults = new(); _podOwners = new(); _donors = new(); }
         });
+    }
+    internal bool BeginDonorUpdate(object actions, out DungeonMutationFence.Lease? abort)
+    {
+        abort = null;
+        if (_native.Get(actions, "donorDispatched") is true) return true;
+        if (_native.Get(actions, "donorTarget") is not Transform target || !target)
+        { abort = State.BeginTransfer(); return abort != null; }
+        return DonorReady(actions);
+    }
+    internal void DonorAborted(object actions)
+    {
+        try
+        {
+            if (!_donors.TryGetValue(actions, out var owner) || !ReferenceEquals(owner.Token, State.RestoreToken)) return;
+            if (ReferenceEquals(_native.Get(owner.Ship, "donorActions"), actions)) return;
+            if (!State.CompleteDonorAbort(owner.Operation, owner.ShipId, owner.Token)) State.RejectTransferSnapshot();
+            _donors.Remove(actions);
+        }
+        catch (Exception error)
+        {
+            try { State.RejectTransferSnapshot(); } catch { }
+            try { _report(error); } catch { }
+        }
     }
     internal bool DonorReady(object actions)
     {
@@ -132,7 +165,8 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
         if (walkReturn == null && phase == "Extraction" && _native.Get(location, "isShipBased") is false)
             walkReturn = new DungeonWalkReturnState((System.Collections.Generic.IReadOnlyDictionary<string, int>)_native.Call("walkManifest", operation, _native.Get(operation, "simulation")!)!);
         if (!State.TrackOperation(new(previous.Id, previous.LocationId, previous.ContentOccurrence, previous.AttackerShipId, previous.DungeonType,
-            phase, outcome, previous.MissionProtection, previous.TerminalProgress, previous.Autonomous, _options.Capture(_native.Get(operation, "options")!), _world.CaptureDonors(_native.Get(operation, "boardableTarget")), (bool)_native.Get(operation, "resumeCrewWalking")!, walkReturn))) return false;
+            phase, outcome, previous.MissionProtection, previous.TerminalProgress, previous.Autonomous, _options.Capture(_native.Get(operation, "options")!), _world.CaptureDonors(_native.Get(operation, "boardableTarget"), (actions, ship, shipId) =>
+            { _donors.Remove(actions); _donors.Add(actions, new(previous.Id, shipId, ship, State.RestoreToken)); }), (bool)_native.Get(operation, "resumeCrewWalking")!, walkReturn))) return false;
         Pods.TrackLocation(location);
         var pending = (System.Collections.IList)_native.Get(operation, "resumePendingPods")!;
         foreach (var pod in (System.Collections.IEnumerable)_native.Get(operation, "_activePods")!)

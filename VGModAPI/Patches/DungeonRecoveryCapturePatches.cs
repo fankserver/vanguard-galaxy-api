@@ -19,7 +19,18 @@ internal static class DungeonRecoveryCapturePatches
         { __state?.Dispose(); return __exception; }
     }
     internal static class DonorUpdate
-    { internal static bool Prefix(object __instance) => Runtime?.DonorReady(__instance) ?? true; }
+    {
+        internal static bool Prefix(object __instance, out VGModAPI.Core.DungeonMutationFence.Lease? __state)
+        { __state = null; return Runtime == null || Runtime.BeginDonorUpdate(__instance, out __state); }
+        internal static System.Exception? Finalizer(object __instance, System.Exception? __exception, VGModAPI.Core.DungeonMutationFence.Lease? __state)
+        {
+            if (__state == null) return __exception;
+            if (__exception != null) __state.Failed();
+            __state.Dispose();
+            if (__exception == null) Runtime?.DonorAborted(__instance);
+            return __exception;
+        }
+    }
     internal static class Transfer
     {
         internal static bool Prefix(object __instance, out VGModAPI.Core.DungeonMutationFence.Lease? __state)

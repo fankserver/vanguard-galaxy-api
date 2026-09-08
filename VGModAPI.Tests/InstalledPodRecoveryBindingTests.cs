@@ -9,6 +9,18 @@ namespace VGModAPI.Tests;
 public sealed class InstalledPodRecoveryBindingTests
 {
     [Fact]
+    public void NativeDonorAbortResumesBehaviorWithoutCreditingReservedCrew()
+    {
+        using var assembly = AssemblyDefinition.ReadAssembly(Environment.GetEnvironmentVariable("VG_GAME_ASSEMBLY") ?? throw new InvalidOperationException("Run make check-bindings."));
+        var actions = assembly.MainModule.GetType("Source.SpaceShip.Auto.BoardingReinforcementActions");
+        var abort = Assert.Single(actions.Methods, method => method.Name == "ResumeAndAbort");
+        Assert.Equal("Resume", Assert.Single(abort.Body.Instructions.Select(instruction => instruction.Operand).OfType<MethodReference>()).Name);
+        var resume = Assert.Single(actions.Methods, method => method.Name == "Resume");
+        var calls = resume.Body.Instructions.Select(instruction => instruction.Operand).OfType<MethodReference>().Select(method => method.Name).ToArray();
+        Assert.Contains("SetTemporaryActions", calls); Assert.Contains("ResetAutoActions", calls);
+        Assert.DoesNotContain("AddCrew", calls); Assert.DoesNotContain("SpawnEnemyPods", calls);
+    }
+    [Fact]
     public void ExtractionCompletionUsesCrewOverflowPathWithoutReplayingRewards()
     {
         using var assembly = AssemblyDefinition.ReadAssembly(Environment.GetEnvironmentVariable("VG_GAME_ASSEMBLY") ?? throw new InvalidOperationException("Run make check-bindings."));
