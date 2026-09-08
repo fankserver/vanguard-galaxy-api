@@ -38,6 +38,8 @@ public interface IBarProvider : IDisposable
 {
     string ProviderId { get; }
     BarResult Register(BarPatronDefinition definition, Action<BarInteraction>? interact = null);
+    /// <summary>Remove runtime definition/behavior; persistent patron state remains until explicitly removed.</summary>
+    BarResult Unregister(string localId);
     BarResult ConfigureStation(string stationId, BarRosterOwnership ownership);
     BarResult Place(Guid expectedSessionId, string localId);
     BarResult Remove(Guid expectedSessionId, string localId);

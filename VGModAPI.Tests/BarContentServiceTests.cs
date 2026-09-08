@@ -205,6 +205,30 @@ public sealed class BarContentServiceTests
         Assert.Equal(new[] { "first" }, reported);
     }
 
+    [Fact]
+    public void UnregistrationRevokesCallbacksButPreservesPersistentPatronState()
+    {
+        using var hub = new LifecycleHub((_, error) => throw error);
+        var storage = new Storage();
+        using var service = new BarContentService(storage, hub,
+            (_, _) => new StoryHostPlugin("author", typeof(BarContentServiceTests).Assembly), _ => false, hub.CheckThread);
+        var author = service.AcquireProvider("author").Provider!;
+        int oldCalls = 0, newCalls = 0;
+        author.Register(Definition(), _ => oldCalls++);
+        var session = Ready(hub, storage); author.Place(session, "contact");
+        var oldPlan = service.Plan(session, "station")!;
+        Assert.True(author.Unregister("contact").Succeeded);
+        Assert.Empty(service.Plan(session, "station")!.Patrons);
+        Assert.False(service.Interact(oldPlan, oldPlan.Patrons[0]));
+        Assert.True(author.Register(Definition(), _ => newCalls++).Succeeded);
+        var restored = service.Plan(session, "station")!;
+        Assert.Single(restored.Patrons);
+        Assert.True(service.Interact(restored, restored.Patrons[0]));
+        Assert.Equal(0, oldCalls); Assert.Equal(1, newCalls);
+        Assert.True(author.Remove(session, "contact").Succeeded);
+        Assert.Empty(service.Plan(session, "station")!.Patrons);
+    }
+
     private static readonly object FixedPermissionStamp = new();
     private sealed class Storage : IPersistenceApi, IPersistenceRegistration, IPersistenceReadiness
     {

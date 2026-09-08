@@ -28,6 +28,16 @@ internal sealed partial class BarContentService
             _owner.Changed();
             return new BarResult(BarStatus.Succeeded);
         }
+        public BarResult Unregister(string localId)
+        {
+            _owner._checkThread();
+            if (!_owner.Active(this)) return new BarResult(BarStatus.Unavailable);
+            if (localId == null || !Definitions.Remove(localId)) return new BarResult(BarStatus.NotRegistered);
+            Interactions.Remove(localId);
+            _owner._transient.Remove(new BarPatronId(ProviderId, localId));
+            _owner.Changed();
+            return new BarResult(BarStatus.Succeeded);
+        }
         public BarResult ConfigureStation(string stationId, BarRosterOwnership ownership)
         {
             _owner._checkThread();
