@@ -69,6 +69,8 @@ public static class ModApi
     public static IMissionEvents? Missions { get; internal set; }
     /// <summary>Optional native travel observer; non-null only when the travel group is bound and enabled.</summary>
     public static ITravelEvents? Travel { get; internal set; }
+    /// <summary>Optional experimental recipe definitions for the current station; null when disabled/unavailable.</summary>
+    public static IRecipeCatalog? Recipes { get; internal set; }
     /// <summary>Optional inspected-build boarding observations; consult boarding-observation capability.</summary>
     public static IBoardingEvents? Boarding { get; internal set; }
     /// <summary>Optional inspected-build boarding policies, independent of observation subscribers.</summary>

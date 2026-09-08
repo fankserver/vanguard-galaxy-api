@@ -6,11 +6,12 @@
 
 Unofficial community mod API for Vanguard Galaxy, using BepInEx 5 and HarmonyX.
 
-**0.1.24 development / experimental: automatically tested and partially exercised in-game, not fully runtime-qualified.** The API provides lifecycle, mod save data, optional mission/travel/story services and mod information, not a complete modding SDK. Controlled native evidence covers bounded paths; full in-game acceptance remains pending. See [compatibility](docs/compatibility.md) for coverage and limitations.
+**0.1.29 development / experimental: automatically tested and partially exercised in-game, not fully runtime-qualified.** The API provides lifecycle, mod save data, optional mission/travel/story services and mod information, not a complete modding SDK. Controlled native evidence covers bounded paths; full in-game acceptance remains pending. See [compatibility](docs/compatibility.md) for coverage and limitations.
 
 ## Implemented
 
 - Default-enabled experimental mod save data for additional custom payloads.
+- Optional read-only [Forge/refining recipe catalog](docs/recipes.md): stable identities, variants and multi-producer lookup; no crafting mutations or native qualification implied.
 - Optional experimental mission transitions and native travel/station observations.
 - Optional experimental owned story definitions, native catalog installation, occurrence reconstruction and API-managed persistence for a closed mission subset.
 - Mods menu with installed versions, descriptions and automatic update checks; no automatic downloads or installations.

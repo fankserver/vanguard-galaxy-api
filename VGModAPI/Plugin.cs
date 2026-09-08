@@ -24,6 +24,7 @@ public sealed class Plugin : BaseUnityPlugin
     private PersistenceService? _persistence;
     private MissionAdapter? _missions;
     private TravelNativeAdapter? _travel;
+    private RecipeCatalogService? _recipes;
     private BoardingObserver? _boarding;
     private BoardingRuleAdapter? _boardingRules;
     private BoardingCommandService? _boardingCommands;
@@ -59,6 +60,7 @@ public sealed class Plugin : BaseUnityPlugin
         _hub.SetCapability("owned-story", false, "Not initialized; experimental.");
         _hub.SetCapability("story-protection", false, "Not bound.");
         _hub.SetCapability("boarding-observation", false, "Disabled by configuration; experimental.");
+        ModApi.Recipes = null;
         ModApi.Boarding = null;
         ModApi.BoardingRules = null;
         ModApi.BoardingCommands = null;
@@ -108,6 +110,8 @@ public sealed class Plugin : BaseUnityPlugin
                 ["store"] = typeof(SavePatches.Store), ["writeFile"] = typeof(SavePatches.WriteFile),
                 ["writeMetadata"] = typeof(SavePatches.WriteMetadata), ["storeFailure"] = typeof(SavePatches.StoreFailure)
             });
+            if (Config.Bind("Recipes", "Enabled", false, "Experimental read-only Forge and refinery recipe catalog.").Value)
+                InstallRecipes(assembly);
             if (Config.Bind("Boarding", "Enabled", false, "Experimental boarding observation and rules on the inspected game build.").Value)
             {
                 InstallBoarding(bindings);
@@ -430,6 +434,26 @@ public sealed class Plugin : BaseUnityPlugin
         }
     }
 
+    private void InstallRecipes(System.Reflection.Assembly assembly)
+    {
+        try
+        {
+            var translate = assembly.GetType("Source.Util.Translation", true)!.GetMethod("Translate", new[] { typeof(string), typeof(object[]) })
+                ?? throw new MissingMethodException("Translation.Translate");
+            var source = new RecipeCatalogNativeSource(assembly,
+                (prefab, type) => prefab is UnityEngine.GameObject gameObject && gameObject != null ? gameObject.GetComponent(type) : null,
+                text => (string)translate.Invoke(null, new object[] { text, Array.Empty<object>() })!);
+            _recipes = new RecipeCatalogService(_hub!, source, error => Logger.LogError(error));
+            ModApi.Recipes = _recipes;
+            _hub!.SetCapability("recipe-catalog", true, "Experimental read-only definitions; not runtime-qualified.");
+        }
+        catch (Exception error)
+        {
+            _recipes?.Dispose(); _recipes = null; ModApi.Recipes = null;
+            _hub!.SetCapability("recipe-catalog", false, "Recipe catalog binding failed."); Logger.LogError(error);
+        }
+    }
+
     private void InstallBoardingTactics(GameBindings bindings)
     {
         if (_boarding == null || ModApi.Boarding == null || _boardingCommands == null) return;
@@ -698,6 +722,7 @@ public sealed class Plugin : BaseUnityPlugin
         LifecyclePatches.Adapter = null;
         SavePatches.Adapter = null;
         ModApi.Current = null;
+        _recipes?.Dispose(); _recipes = null; ModApi.Recipes = null;
         _hub?.Dispose();
         _adapter = null;
     }
