@@ -92,7 +92,6 @@ public sealed partial class Plugin : BaseUnityPlugin
         _hub.SetCapability("boarding-combat", false, "Disabled by configuration; experimental.");
         _hub.SetCapability("boarding-commands", false, "Disabled by configuration; experimental.");
         _hub.SetCapability("boarding-rules", false, "Disabled by configuration; experimental.");
-        ModApi.Missions = null;
         ModApi.Story = null;
         ModApi.Bars = null;
         _hub.SetCapability("owned-bars", false, "Not initialized; experimental.");
@@ -267,7 +266,6 @@ public sealed partial class Plugin : BaseUnityPlugin
                 BindingCatalog.Missions.ToDictionary(binding => binding.Key, binding => binding.Key.StartsWith("missionSweep", StringComparison.Ordinal) ? typeof(MissionSweepPatches) : typeof(MissionPatches)));
             if (_hub.Capabilities.Any(c => c.Name == "mission-transitions" && c.Available))
             {
-                ModApi.Missions = _missions.Events;
                 InitializeMissionIdentity(assembly);
             }
             else { _missions.Dispose(); _missions = null; MissionPatches.Adapter = null; }
@@ -890,7 +888,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         _modCatalog?.Dispose();
         _adapter?.Guard(() => _adapter.Invalidate("API shutting down."));
         _missions?.Dispose(); _missions = null;
-        MissionPatches.Adapter = null; ModApi.Missions = null;
+        MissionPatches.Adapter = null;
         _travel?.SetSession(null); _travel?.Dispose(); _travel = null;
         TravelPatches.Adapter = null; ModApi.Travel = null; ModApi.Station = null;
         // The story module owns catalog entries AND a persistence owner, so it is torn down before

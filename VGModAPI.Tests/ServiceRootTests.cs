@@ -18,7 +18,7 @@ public sealed class ServiceRootTests
     {
         var lifecycle = hub;
         var mods = catalog;
-        var missions = new MissionServiceView(hub, null);
+        var missions = new MissionTransitions(hub);
         var travel = new TravelServiceView(hub, null);
         var station = new StationServiceView(hub, null);
         foreach (var disposable in new IDisposable[] { lifecycle, mods, missions, travel, station }) hub.Services.AfterStopped(disposable.Dispose);

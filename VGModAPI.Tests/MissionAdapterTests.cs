@@ -20,11 +20,50 @@ public sealed class MissionAdapterTests : IDisposable
     public MissionAdapterTests()
     {
         GamePlayer.current = _player;
+        _hub.SetCapability("session-lifecycle", true, "Bound.");
+        _hub.SetCapability("mission-transitions", true, "Bound.");
         _adapter = new MissionAdapter(_hub, new MissionBindings(typeof(GamePlayer).Assembly), _errors.Add);
         _adapter.Events.Subscribe("test", _events.Add);
         var id = _hub.Begin(SessionOrigin.SaveLoad, "test.save"); _hub.PlayerReady(id); _hub.GameplayInitialized(id);
     }
     public void Dispose() { _adapter.Dispose(); _hub.Dispose(); GamePlayer.current = null; }
+
+    [Fact]
+    public void DirectServicePreservesNativeWindowAndIsolatesMulticastDelegates()
+    {
+        IMissionService service = _adapter.Events;
+        var witnessed = new List<(MissionSnapshot Snapshot, object? Native, bool Dispatching)>();
+        Action<MissionTransition> handlers = _ => throw new InvalidOperationException("Expected subscriber fault.");
+        handlers += fact =>
+        {
+            service.TryGetNative(fact.Mission, out var native);
+            witnessed.Add((fact.Mission, native, _hub.IsDispatchingCallbacks));
+        };
+        service.Transitioned += handlers;
+        var mission = new Mission();
+        Accept(mission);
+        var observation = Assert.Single(witnessed);
+        Assert.Same(mission, observation.Native);
+        Assert.True(observation.Dispatching);
+        Assert.Single(_errors);
+        Assert.False(service.TryGetNative(observation.Snapshot, out _));
+        service.Transitioned -= handlers;
+        Accept(new Mission());
+        Assert.Single(witnessed);
+        Assert.Null(typeof(ModApi).Assembly.GetType("VGModAPI.IMissionEvents"));
+        Assert.Null(typeof(ModApi).GetProperty("Missions"));
+    }
+
+    [Fact]
+    public void DirectMissionServiceClosesWithItsProducer()
+    {
+        IMissionService service = _adapter.Events;
+        Assert.True(service.Availability.IsAvailable);
+        _adapter.Dispose();
+        Assert.False(service.Availability.IsAvailable);
+        Assert.Equal(ServiceUnavailableReason.ApiStopped, service.Availability.Reason);
+        Assert.Throws<ObjectDisposedException>(() => service.Transitioned += _ => { });
+    }
 
     [Fact]
     public void SubscriberErrorsNameOwnerWithoutFaultingObservation()

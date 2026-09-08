@@ -165,7 +165,7 @@ internal sealed partial class StoryContentService : IStoryApi, IStoryUiTransacti
     /// their record is untouched; they are simply not admitted, which quarantines them natively.
     /// </summary>
     private readonly HashSet<Guid> _unrunnable = new();
-    private readonly IDisposable? _missionObserver;
+    private readonly IMissionService? _missionObserver;
     private readonly Action<string, bool>? _report;
     /// <summary>
     /// The native quarantine's authority. It only ever advances or pays out an owned mission this
@@ -196,7 +196,7 @@ internal sealed partial class StoryContentService : IStoryApi, IStoryUiTransacti
     /// <exception cref="InvalidOperationException">A session is already running.</exception>
     internal StoryContentService(ISaveDataService? persistence, ILifecycleService? lifecycle, StoryHostAuthenticator authenticate,
         Func<Guid>? newOccurrence = null, Action? checkThread = null, IStoryWorld? world = null,
-        IMissionEvents? missions = null, Action<string, bool>? report = null, StoryProtection? protection = null,
+        IMissionService? missions = null, Action<string, bool>? report = null, StoryProtection? protection = null,
         Func<bool>? protectionHealthy = null)
     {
         checkThread?.Invoke();
@@ -227,7 +227,8 @@ internal sealed partial class StoryContentService : IStoryApi, IStoryUiTransacti
         if (_lifecycle != null) _lifecycle.Changed += OnLifecycle;
         // Outcomes are OBSERVED, not declared: the game completing or failing an owned mission is what
         // records a completion, so this module watches the same mission boundary every consumer sees.
-        _missionObserver = missions?.Subscribe("vgmodapi.story-content", OnMissionTransition);
+        _missionObserver = missions;
+        if (_missionObserver != null) _missionObserver.Transitioned += OnMissionTransition;
     }
 
     private void CheckThread() => _checkThread?.Invoke();
@@ -1416,7 +1417,7 @@ internal sealed partial class StoryContentService : IStoryApi, IStoryUiTransacti
         foreach (var identifier in _occurrenceIdentifiers.Values.ToArray()) _world?.Uninstall(identifier);
         _occurrenceIdentifiers.Clear();
         _deferredUninstall.Clear();
-        _missionObserver?.Dispose();
+        if (_missionObserver != null) _missionObserver.Transitioned -= OnMissionTransition;
         _protection?.WithdrawAll("the story module is disposed");
         _registry.Clear();
         _registry.ResetWorldReservations();

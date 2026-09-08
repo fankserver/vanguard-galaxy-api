@@ -24,31 +24,6 @@ internal abstract class ObservationServiceView : IServiceStatus
     }
 }
 
-internal sealed class MissionServiceView : ObservationServiceView, IMissionService, IDisposable
-{
-    private readonly IVersionSensitiveMissionAccess? _native;
-    private readonly IServiceStatus _identityContinuity;
-    private readonly ServiceSubscriptions<MissionTransition> _events;
-    internal MissionServiceView(LifecycleHub hub, IMissionEvents? source) : base(hub, "mission-transitions")
-    {
-        RequireBoundSource(source);
-        _native = source as IVersionSensitiveMissionAccess;
-        _identityContinuity = hub.Services.Get("mission-continuity");
-        _events = new ServiceSubscriptions<MissionTransition>(hub, source == null ? null : source.Subscribe,
-            fact => InSession(fact.Mission.SessionId), () => Availability.IsAvailable);
-    }
-    public IServiceStatus IdentityContinuity { get { Hub.CheckThread(); return _identityContinuity; } }
-    public event Action<MissionTransition>? Transitioned { add => _events.Add(value); remove => _events.Remove(value); }
-    public bool TryGetNative(MissionSnapshot snapshot, out object? native)
-    {
-        Hub.CheckThread();
-        if (snapshot == null) throw new ArgumentNullException(nameof(snapshot));
-        native = null;
-        return InSession(snapshot.SessionId) && _native != null && _native.TryGetNative(snapshot, out native);
-    }
-    public void Dispose() => _events.Dispose();
-}
-
 internal sealed class TravelServiceView : ObservationServiceView, ITravelService, IDisposable
 {
     private readonly ITravelEvents? _source;

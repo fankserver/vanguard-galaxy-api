@@ -68,8 +68,6 @@ public static class ModApi
         services?.CheckThread();
         if (ReferenceEquals(_services, services)) _services = null;
     }
-    /// <summary>Automatically bound mission observer. Check mission-continuity separately for persistent instance identity.</summary>
-    public static IMissionEvents? Missions { get; internal set; }
     /// <summary>Native travel observer; non-null when automatic binding succeeds.</summary>
     public static ITravelEvents? Travel { get; internal set; }
     /// <summary>Optional experimental recipe definitions for the current station; null when disabled/unavailable.</summary>

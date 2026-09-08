@@ -42,7 +42,7 @@ internal sealed partial class MissionAdapter : IDisposable
     internal MissionAdapter(LifecycleHub hub, MissionBindings bindings, Action<Exception> report)
     {
         _hub = hub; _bindings = bindings; _report = report;
-        Events = new MissionTransitions((owner, error) => report(new InvalidOperationException("Mission subscriber '" + owner + "' failed.", error)));
+        Events = new MissionTransitions(hub, (owner, error) => report(new InvalidOperationException("Mission subscriber '" + owner + "' failed.", error)));
         _subscription = hub.Subscribe("vgmodapi.missions", e => Guard(() => ObserveLifecycle(e)));
         hub.Services.WatchFault("mission-transitions", () => _faulted);
         hub.Services.WatchFault("mission-continuity", () => _identity != null && _faulted);

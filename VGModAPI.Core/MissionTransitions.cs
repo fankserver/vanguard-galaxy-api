@@ -24,7 +24,7 @@ internal readonly struct MissionFacts
     }
 }
 
-internal sealed class MissionTransitions : IMissionEvents, IVersionSensitiveMissionAccess, IDisposable
+internal sealed class MissionTransitions : IMissionService, IDisposable
 {
     internal sealed class Observation : IDisposable
     {
@@ -55,6 +55,9 @@ internal sealed class MissionTransitions : IMissionEvents, IVersionSensitiveMiss
     }
     private readonly int _thread = Thread.CurrentThread.ManagedThreadId;
     private readonly Action<string, Exception> _report;
+    private readonly LifecycleHub _lifecycle;
+    private readonly IServiceStatus _status, _identityContinuity;
+    private readonly ServiceSubscriptions<MissionTransition> _events;
     private ConditionalWeakTable<object, Entry> _entries = new();
     private readonly List<Subscription> _subscriptions = new();
     private readonly Stack<Observation> _stack = new();
@@ -86,11 +89,27 @@ internal sealed class MissionTransitions : IMissionEvents, IVersionSensitiveMiss
     public bool TryGetNative(MissionSnapshot snapshot, out object? native)
     {
         CheckThread();
-        native = !_disposed && ReferenceEquals(snapshot, _dispatchSnapshot) ? _dispatchIdentity : null;
+        if (snapshot == null) throw new ArgumentNullException(nameof(snapshot));
+        native = !_disposed && InSession(snapshot.SessionId) && ReferenceEquals(snapshot, _dispatchSnapshot) ? _dispatchIdentity : null;
         return native != null;
     }
 
-    internal MissionTransitions(Action<string, Exception> report) { _report = report; }
+    internal MissionTransitions(LifecycleHub lifecycle, Action<string, Exception>? report = null)
+    {
+        _lifecycle = lifecycle;
+        _report = report ?? lifecycle.ReportSubscriberFailure;
+        _status = lifecycle.Services.Get("mission-transitions");
+        _identityContinuity = lifecycle.Services.Get("mission-continuity");
+        _events = new ServiceSubscriptions<MissionTransition>(lifecycle, Subscribe,
+            fact => InSession(fact.Mission.SessionId), () => Availability.IsAvailable);
+    }
+    public ServiceAvailability Availability => _status.Availability;
+    public event Action<ServiceAvailability>? AvailabilityChanged
+    { add => _status.AvailabilityChanged += value; remove => _status.AvailabilityChanged -= value; }
+    public IServiceStatus IdentityContinuity { get { CheckThread(); return _identityContinuity; } }
+    public event Action<MissionTransition>? Transitioned { add => _events.Add(value); remove => _events.Remove(value); }
+    private bool InSession(Guid id) => Availability.IsAvailable && _lifecycle.CurrentSession?.Id == id &&
+        _lifecycle.CurrentSession.Phase is not (SessionPhase.Failed or SessionPhase.Invalidated);
     private void CheckThread()
     { if (Thread.CurrentThread.ManagedThreadId != _thread) throw new InvalidOperationException("Mission events are main-thread-only."); }
     internal void Reset(Guid? session)
@@ -194,7 +213,7 @@ internal sealed class MissionTransitions : IMissionEvents, IVersionSensitiveMiss
         }
         finally { _dispatching = false; _dispatchSnapshot = null; _dispatchIdentity = null; }
     }
-    public IDisposable Subscribe(string owner, Action<MissionTransition> callback)
+    internal IDisposable Subscribe(string owner, Action<MissionTransition> callback)
     {
         CheckThread(); if (_disposed) throw new ObjectDisposedException(nameof(MissionTransitions));
         if (string.IsNullOrWhiteSpace(owner)) throw new ArgumentException("Owner required.", nameof(owner));
@@ -204,6 +223,8 @@ internal sealed class MissionTransitions : IMissionEvents, IVersionSensitiveMiss
     public void Dispose()
     {
         CheckThread(); if (_disposed) return;
-        Reset(null); _disposed = true; _subscriptions.Clear();
+        Reset(null); _disposed = true; _events.Dispose(); _subscriptions.Clear();
+        if (Availability.IsAvailable)
+            _lifecycle.SetCapability("mission-transitions", false, "Mission service stopped.", ServiceUnavailableReason.ApiStopped);
     }
 }

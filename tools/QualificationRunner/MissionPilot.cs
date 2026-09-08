@@ -13,7 +13,7 @@ public sealed partial class Plugin
     private void CheckMissionTransitions()
     {
         if (!File.Exists(Path.Combine(_root!, "mission-transitions.enabled"))) return;
-        var api = ModApi.Missions ?? throw new InvalidOperationException("Mission service missing.");
+        var api = ModApi.Services.Missions;
         Require(ModApi.Services.Missions.Availability.IsAvailable, "Mission capability unavailable.");
         var nativeAccess = api as IVersionSensitiveMissionAccess ?? throw new InvalidOperationException("Native mission access missing.");
         var type = AccessTools.TypeByName("Source.MissionSystem.Mission");
@@ -27,7 +27,7 @@ public sealed partial class Plugin
         string prefix = "vgmodapi-qa-" + Guid.NewGuid().ToString("N");
         string replacementId = prefix + "-replacement";
         var observed = new List<MissionTransition>(); var trace = new List<string>(); bool nativeValid = true, ownsFixture = false;
-        using var subscription = api.Subscribe("qualification.missions", e =>
+        using var subscription = new MissionProbeSubscription(api, e =>
         {
             if (e.Mission.DefinitionId?.StartsWith(prefix, StringComparison.Ordinal) != true) return;
             observed.Add(e); trace.Add(e.Sequence + "\t" + e.Kind + "\t" + e.Mission.InstanceId.ToString("N"));

@@ -3561,27 +3561,18 @@ public sealed class StoryContentTests
     }
 
     /// <summary>The mission observation boundary every consumer sees, driven explicitly by the tests.</summary>
-    private sealed class FakeMissionEvents : IMissionEvents
+    private sealed class FakeMissionEvents : FakeServiceStatus, IMissionService
     {
-        private readonly List<Action<MissionTransition>> _subscribers = new();
         private long _sequence;
-        internal int Subscribers => _subscribers.Count;
-        public IDisposable Subscribe(string owner, Action<MissionTransition> callback)
-        {
-            _subscribers.Add(callback);
-            return new Subscription(() => _subscribers.Remove(callback));
-        }
+        public event Action<MissionTransition>? Transitioned;
+        internal int Subscribers => Transitioned?.GetInvocationList().Length ?? 0;
+        public IServiceStatus IdentityContinuity { get; } = new FakeServiceStatus();
+        public bool TryGetNative(MissionSnapshot snapshot, out object? native) { native = null; return false; }
         internal void Publish(MissionTransitionKind kind, string? definitionId)
         {
             var snapshot = new MissionSnapshot(Guid.NewGuid(), Guid.NewGuid(), definitionId, "mission",
                 Array.Empty<string>(), acceptanceObserved: true);
-            foreach (var subscriber in _subscribers.ToArray()) subscriber(new MissionTransition(kind, snapshot, ++_sequence));
-        }
-        private sealed class Subscription : IDisposable
-        {
-            private readonly Action _dispose;
-            internal Subscription(Action dispose) => _dispose = dispose;
-            public void Dispose() => _dispose();
+            Transitioned?.Invoke(new MissionTransition(kind, snapshot, ++_sequence));
         }
     }
 

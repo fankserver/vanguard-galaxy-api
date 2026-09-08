@@ -16,7 +16,7 @@ public sealed partial class Plugin
     private void CheckMissionSweepClear()
     {
         if (!File.Exists(Path.Combine(_root!, "mission-transitions.enabled"))) return;
-        var api = ModApi.Missions ?? throw new InvalidOperationException("Mission service missing.");
+        var api = ModApi.Services.Missions;
         var player = CurrentPlayer;
         var missionType = AccessTools.TypeByName("Source.MissionSystem.Mission");
         var active = (IList)AccessTools.Field(player.GetType(), "missions").GetValue(player);
@@ -31,7 +31,7 @@ public sealed partial class Plugin
         AccessTools.Field(missionType, "trackedOnHud").SetValue(mission, false);
         var observed = new List<MissionTransitionKind>();
         var journalEvents = new List<MissionTransition>();
-        using var subscription = api.Subscribe("qualification.mission-clear", e => { if (e.Mission.DefinitionId == id) { observed.Add(e.Kind); journalEvents.Add(e); } });
+        using var subscription = new MissionProbeSubscription(api, e => { if (e.Mission.DefinitionId == id) { observed.Add(e.Kind); journalEvents.Add(e); } });
         var expected = new InvalidOperationException("VGModAPI intentional stop before map mutation");
         bool caught = false;
         try

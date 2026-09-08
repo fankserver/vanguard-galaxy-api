@@ -124,15 +124,13 @@ public sealed class ObservationServiceTests
         using var hub = Bound();
         Assert.Throws<ArgumentException>(() => new TravelServiceView(hub, null));
         Assert.Throws<ArgumentException>(() => new StationServiceView(hub, null));
-        hub.SetCapability("mission-transitions", true, "Bound.");
-        Assert.Throws<ArgumentException>(() => new MissionServiceView(hub, null));
     }
 
     [Fact]
     public void MissingSourcesRemainUnavailableAndForeignThreadQueriesFail()
     {
         using var hub = new LifecycleHub((_, _) => { });
-        using var missions = new MissionServiceView(hub, null);
+        using var missions = new MissionTransitions(hub);
         using var travel = new TravelServiceView(hub, null);
         using var station = new StationServiceView(hub, null);
         Assert.False(missions.Availability.IsAvailable);

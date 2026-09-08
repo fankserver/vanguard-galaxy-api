@@ -25,7 +25,7 @@ public sealed class MissionIdentityPersistenceTests
     public void RestoreDeliveryDistinguishesMissingFromUnavailable(bool delivered)
     {
         var persistence = new Persistence(); using var owner = new MissionIdentityPersistence(persistence, () => true);
-        using var events = new MissionTransitions((_, _) => { });
+        using var events = new MissionTransitions(new LifecycleHub((_, _) => { }));
         var id = Guid.NewGuid(); events.Reset(id); var mission = new object();
         if (delivered) persistence.Provider.Restore(new SessionSnapshot(id, SessionPhase.PlayerReady, SessionOrigin.SaveLoad, "test.save"), null);
         owner.Seed(events, id, new[] { mission }, new[] { new string('a', 64) });
@@ -43,7 +43,7 @@ public sealed class MissionIdentityPersistenceTests
         byte[] bytes; using (owner.Snapshots.BeginStore(json)) bytes = persistence.Provider.Capture();
         Assert.True(persistence.Provider.Validate(bytes));
         var id = Guid.NewGuid(); persistence.Provider.Restore(new SessionSnapshot(id, SessionPhase.PlayerReady, SessionOrigin.SaveLoad, "test.save"), bytes);
-        using var events = new MissionTransitions((_, _) => { }); events.Reset(id); var loaded = new object();
+        using var events = new MissionTransitions(new LifecycleHub((_, _) => { })); events.Reset(id); var loaded = new object();
         owner.Seed(events, id, new[] { loaded }, new[] { fingerprint }); Assert.Equal(guid, events.SnapshotIdentity(loaded));
         owner.Reset(); events.Reset(Guid.NewGuid());
         Assert.Throws<InvalidDataException>(() => persistence.Provider.Capture());

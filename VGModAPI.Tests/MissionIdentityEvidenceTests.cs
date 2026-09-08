@@ -10,7 +10,7 @@ public sealed class MissionIdentityEvidenceTests
     [Fact]
     public void MatchedIdentityDoesNotFabricateAcceptanceHistory()
     {
-        using var events = new MissionTransitions((_, _) => { }); events.Reset(Guid.NewGuid());
+        using var events = new MissionTransitions(new LifecycleHub((_, _) => { })); events.Reset(Guid.NewGuid());
         var received = new List<MissionTransition>(); events.Subscribe("test", received.Add);
         var mission = new object(); var id = Guid.NewGuid();
         events.SeedIdentity(mission, id, MissionIdentityEvidence.SavedSnapshotMatch);
@@ -23,7 +23,7 @@ public sealed class MissionIdentityEvidenceTests
     [InlineData(MissionIdentityEvidence.Unavailable)]
     public void UnmatchedRestorationIsExplicitAndSessionLocal(MissionIdentityEvidence evidence)
     {
-        using var events = new MissionTransitions((_, _) => { }); events.Reset(Guid.NewGuid());
+        using var events = new MissionTransitions(new LifecycleHub((_, _) => { })); events.Reset(Guid.NewGuid());
         var received = new List<MissionTransition>(); events.Subscribe("test", received.Add); var mission = new object();
         events.SeedIdentity(mission, null, evidence);
         using (var observation = events.Begin()) events.Record(observation, mission, MissionTransitionKind.Restored, new MissionFacts(false, true), null, "name", Array.Empty<string>());
@@ -33,7 +33,7 @@ public sealed class MissionIdentityEvidenceTests
     [Fact]
     public void SnapshotOnlyOccurrenceDoesNotReuseIdOnLaterWitnessedAcceptance()
     {
-        using var events = new MissionTransitions((_, _) => { }); events.Reset(Guid.NewGuid());
+        using var events = new MissionTransitions(new LifecycleHub((_, _) => { })); events.Reset(Guid.NewGuid());
         var received = new List<MissionTransition>(); events.Subscribe("test", received.Add); var mission = new object();
         var original = events.SnapshotIdentity(mission);
         using (var observation = events.Begin()) events.Record(observation, mission, MissionTransitionKind.Accepted, new MissionFacts(false, true), null, "name", Array.Empty<string>());
@@ -42,7 +42,7 @@ public sealed class MissionIdentityEvidenceTests
     [Fact]
     public void FailedOnlyOccurrenceDoesNotReuseIdOnLaterAcceptance()
     {
-        using var events = new MissionTransitions((_, _) => { }); events.Reset(Guid.NewGuid());
+        using var events = new MissionTransitions(new LifecycleHub((_, _) => { })); events.Reset(Guid.NewGuid());
         var received = new List<MissionTransition>(); events.Subscribe("test", received.Add); var mission = new object();
         using (var failure = events.Begin()) events.Record(failure, mission, MissionTransitionKind.Failed, new MissionFacts(false, false, false, true), null, "name", Array.Empty<string>());
         using (var acceptance = events.Begin()) events.Record(acceptance, mission, MissionTransitionKind.Accepted, new MissionFacts(false, true), null, "name", Array.Empty<string>());

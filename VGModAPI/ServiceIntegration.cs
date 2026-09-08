@@ -12,7 +12,7 @@ public sealed partial class Plugin
         var hub = _hub!;
         var lifecycle = hub;
         var mods = _modCatalog!;
-        var missions = new MissionServiceView(hub, ModApi.Missions);
+        var missions = _missions?.Events ?? new MissionTransitions(hub);
         var travel = new TravelServiceView(hub, ModApi.Travel);
         var station = new StationServiceView(hub, ModApi.Station);
         var root = new ModServices(lifecycle, mods, (_persistence ??= new PersistenceService(hub)), missions, travel, station);

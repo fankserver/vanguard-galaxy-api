@@ -29,7 +29,7 @@ public sealed partial class Plugin
         var ids = new HashSet<string>(StringComparer.Ordinal);
         var events = new List<MissionTransition>();
         var trace = new List<string>();
-        using var subscription = ModApi.Missions!.Subscribe("qualification.anima", e =>
+        using var subscription = new MissionProbeSubscription(ModApi.Services.Missions, e =>
         {
             if (e.Mission.DefinitionId == null || !ids.Contains(e.Mission.DefinitionId)) return;
             events.Add(e); trace.Add(e.Sequence + "\t" + e.Kind + "\t" + e.Mission.InstanceId + "\t" + e.Mission.DefinitionId);

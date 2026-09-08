@@ -12,9 +12,9 @@ public sealed partial class Plugin
     {
         if (!File.Exists(Path.Combine(_root!, "mission-identity.enabled"))) yield break;
         Require(ModApi.Services.Missions.IdentityContinuity.Availability.IsAvailable, "Mission continuity unavailable.");
-        var api = ModApi.Missions!; var events = new List<MissionTransition>();
+        var api = ModApi.Services.Missions; var events = new List<MissionTransition>();
         string prefix = "VGModAPI identity " + Guid.NewGuid().ToString("N");
-        using var subscription = api.Subscribe("qualification.identity", e => { if (e.Mission.Name.StartsWith(prefix, StringComparison.Ordinal)) events.Add(e); });
+        using var subscription = new MissionProbeSubscription(api, e => { if (e.Mission.Name.StartsWith(prefix, StringComparison.Ordinal)) events.Add(e); });
         var type = AccessTools.TypeByName("Source.MissionSystem.Mission");
         var player = CurrentPlayer;
         foreach (string suffix in new[] { " unique", " duplicate", " duplicate" })
