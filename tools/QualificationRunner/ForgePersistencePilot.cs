@@ -57,6 +57,7 @@ public sealed partial class Plugin
             restoredStation = quotes.CurrentStation ?? throw new InvalidOperationException("Save-as station unavailable.");
             Require(CraftingSaveSignature(jobs.Read(restoredStation)).SequenceEqual(signature), "Slot switch/save-as changed native jobs.");
             CheckRestoredCraftingSettings(commands.ReadSettings(restoredStation.SessionId, restoredStation), cargo, autoRefine, autoSell);
+            Require(!facts.Any(fact => fact.Kind == CraftingJobEventKind.Queued), "Slot switch/save-as replayed restored jobs as queue admissions.");
             Passed("Paused native job save/reload/save-as/slot-switch with stale handles and no queue replay");
         }
         finally { _pauseCraftingProgress = false; harmony.UnpatchSelf(); }
