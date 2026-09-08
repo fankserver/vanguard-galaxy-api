@@ -10,6 +10,7 @@ internal sealed partial class BarContentService : IBarApi, IDisposable
 {
     private readonly StoryHostAuthenticator _authenticate;
     private readonly Func<string, bool> _exclusivePermission;
+    private readonly Func<object>? _permissionStamp;
     private readonly ILifecycleApi _lifecycle;
     private readonly Action _checkThread;
     private readonly BarPatronPersistence _persistence;
@@ -20,11 +21,12 @@ internal sealed partial class BarContentService : IBarApi, IDisposable
     private bool _disposed;
 
     internal BarContentService(IPersistenceApi persistence, ILifecycleApi lifecycle, StoryHostAuthenticator authenticate,
-        Func<string, bool> exclusivePermission, Action checkThread)
+        Func<string, bool> exclusivePermission, Action checkThread, Func<object>? permissionStamp = null)
     {
         _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
         _authenticate = authenticate ?? throw new ArgumentNullException(nameof(authenticate));
         _exclusivePermission = exclusivePermission ?? throw new ArgumentNullException(nameof(exclusivePermission));
+        _permissionStamp = permissionStamp;
         _checkThread = checkThread ?? throw new ArgumentNullException(nameof(checkThread));
         _persistence = new BarPatronPersistence(persistence, lifecycle, checkThread);
         try { _subscription = lifecycle.Subscribe("vgmodapi.bar-content", OnLifecycle); }

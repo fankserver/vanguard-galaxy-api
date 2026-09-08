@@ -7,6 +7,7 @@ namespace VGModAPI.Tests;
 
 public sealed class BarContentServiceTests
 {
+    private static readonly object FixedPermissionStamp = new();
     private sealed class Storage : IPersistenceApi, IPersistenceRegistration, IPersistenceReadiness
     {
         internal PersistenceProvider Provider = null!;
@@ -58,7 +59,7 @@ public sealed class BarContentServiceTests
         using var hub = new LifecycleHub((_, error) => throw error);
         var storage = new Storage();
         using var service = new BarContentService(storage, hub,
-            (plugin, _) => new StoryHostPlugin((string)plugin, typeof(BarContentServiceTests).Assembly), _ => true, hub.CheckThread);
+            (plugin, _) => new StoryHostPlugin((string)plugin, typeof(BarContentServiceTests).Assembly), _ => true, hub.CheckThread, () => FixedPermissionStamp);
         var a = service.AcquireProvider("a").Provider!;
         var b = service.AcquireProvider("b").Provider!;
         a.Register(Definition()); b.Register(Definition());
@@ -117,7 +118,7 @@ public sealed class BarContentServiceTests
         Action? duringPermission = null;
         using var service = new BarContentService(storage, hub,
             (_, _) => new StoryHostPlugin("author", typeof(BarContentServiceTests).Assembly),
-            _ => { duringPermission?.Invoke(); return true; }, hub.CheckThread);
+            _ => { duringPermission?.Invoke(); return true; }, hub.CheckThread, () => FixedPermissionStamp);
         var author = service.AcquireProvider("author").Provider!;
         author.Register(Definition());
         author.ConfigureStation("station", BarRosterOwnership.Exclusive);
@@ -162,7 +163,7 @@ public sealed class BarContentServiceTests
         bool allowed = true;
         using var service = new BarContentService(storage, hub,
             (plugin, _) => new StoryHostPlugin((string)plugin, typeof(BarContentServiceTests).Assembly),
-            _ => allowed ? true : throws ? throw new InvalidOperationException("permission unavailable") : false, hub.CheckThread);
+            _ => allowed ? true : throws ? throw new InvalidOperationException("permission unavailable") : false, hub.CheckThread, () => FixedPermissionStamp);
         var a = service.AcquireProvider("a").Provider!;
         var b = service.AcquireProvider("b").Provider!;
         a.Register(Definition()); b.Register(Definition());
@@ -177,6 +178,44 @@ public sealed class BarContentServiceTests
         Assert.True(revoked.Policy.KeepVanilla);
         Assert.Equal(b.ProviderId, Assert.Single(revoked.Patrons).Id.Provider);
         Assert.Equal(BarRosterPolicy.Denial.ExclusivePermissionRequired, revoked.Policy.Denied[a.ProviderId]);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CallbackRevokingAnEarlierGrantRefusesPlanAndApplication(bool throughMission)
+    {
+        using var hub = new LifecycleHub((_, error) => throw error);
+        var storage = new Storage();
+        object permissionEpoch = new();
+        object missionEpoch = new();
+        bool attack = false, grantA = true;
+        using var service = new BarContentService(storage, hub,
+            (plugin, _) => new StoryHostPlugin((string)plugin, typeof(BarContentServiceTests).Assembly),
+            id =>
+            {
+                if (!throughMission && attack && id == "b") { grantA = false; permissionEpoch = new object(); return false; }
+                return id != "a" || grantA;
+            }, hub.CheckThread, () => permissionEpoch);
+        var a = service.AcquireProvider("a").Provider!;
+        var b = service.AcquireProvider("b").Provider!;
+        a.Register(throughMission ? new BarPatronDefinition("contact", "station", "Name", "Description", "seed",
+            mission: new StoryContentId(a.ProviderId, "job"), occurrence: Guid.NewGuid()) : Definition());
+        a.ConfigureStation("station", BarRosterOwnership.Exclusive);
+        if (!throughMission) b.ConfigureStation("station", BarRosterOwnership.Exclusive);
+        var session = Ready(hub, storage);
+        a.Place(session, "contact");
+        bool Resolve(StoryContentId _, Guid occurrence)
+        {
+            if (attack) { grantA = false; permissionEpoch = new object(); }
+            return true;
+        }
+        var original = service.Plan(session, "station", Resolve, () => missionEpoch)!;
+        Assert.NotNull(original);
+        attack = true;
+        Assert.False(service.IsCurrent(original));
+        grantA = true;
+        Assert.Null(service.Plan(session, "station", Resolve, () => missionEpoch));
     }
 
     [Fact]

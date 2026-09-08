@@ -51,6 +51,14 @@ internal sealed partial class BarContentService
         var candidates = saved.Where(row => row.Station == station && _leases.TryGetValue(row.Id.Provider, out var lease)
             && lease.Definitions.TryGetValue(row.Id.LocalId, out var definition) && definition.Retention == BarPatronRetention.Persistent)
             .Concat(_transient.Values.Where(row => row.Station == station)).ToArray();
+        // The host must replace this token on every permission change, including changes made
+        // by mission resolution. Stamp accessors are read-only and must not return recycled tokens.
+        object? permissionStamp = null;
+        if (_leases.Values.Any(lease => lease.Stations.TryGetValue(station, out var mode) && mode == BarRosterOwnership.Exclusive))
+        {
+            try { permissionStamp = _permissionStamp?.Invoke(); } catch { return null; }
+            if (permissionStamp == null) return null;
+        }
         var claims = new List<BarRosterPolicy.Claim>();
         foreach (var lease in _leases.Values.ToArray())
         {
@@ -80,6 +88,10 @@ internal sealed partial class BarContentService
         if (stamp != null)
         {
             try { if (!ReferenceEquals(stamp, dependencyStamp!())) return null; } catch { return null; }
+        }
+        if (permissionStamp != null)
+        {
+            try { if (!ReferenceEquals(permissionStamp, _permissionStamp!())) return null; } catch { return null; }
         }
         if (_disposed || !ReferenceEquals(revision, _revision) || !_persistence.Read(session, out _)) return null;
         return new BarRosterPlan(session, station, revision, policy, admitted, missionReady, dependencyStamp);
