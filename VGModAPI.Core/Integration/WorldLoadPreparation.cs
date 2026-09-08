@@ -57,12 +57,15 @@ internal sealed class WorldLoadPreparation
             providers[i] = rows[i].Identity.Owner;
         }
         if (!stillStarting() || providerRevision() != revision || !stillStarting()) throw new InvalidDataException("World load changed during definition admission.");
+        // Preserve the original asset baseline; a fresh inspection must not authorize replacements.
+        foreach (var node in nodes) node.ValidateAssets();
         // Reinspect after callbacks: they must not change the native input after the generation comparison.
         var current = WorldJsonInspection.Bind(rows, _json.Read(root));
         for (int i = 0; i < bindings.Length; i++)
             if (!ReferenceEquals(bindings[i].Json, current[i].Json)) throw new InvalidDataException("World JSON node replaced during admission.");
         RequireUnchangedRoot();
         var prepared = Finish(generation, rows.Length != 0);
+        foreach (var node in nodes) node.ValidateAssets();
         _gate.Open(session, generation.Association, canonicalPath, expectedHash, revision, providers, current);
         return prepared;
 

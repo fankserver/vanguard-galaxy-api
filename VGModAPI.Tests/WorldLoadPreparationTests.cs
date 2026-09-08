@@ -9,6 +9,7 @@ using Xunit;
 
 namespace VGModAPI.Tests;
 
+[Collection("World native assets")]
 public sealed class WorldLoadPreparationTests
 {
     [Fact]
@@ -44,15 +45,20 @@ public sealed class WorldLoadPreparationTests
     [InlineData(3)]
     [InlineData(4)]
     [InlineData(5)]
+    [InlineData(6)]
+    [InlineData(7)]
     public void EarlyPreparationAdmitsOnlyUnchangedCurrentDefinitions(int fault)
     {
+        string assetId = "prep-" + Guid.NewGuid().ToString("N");
+        Behaviour.Unit.SpaceShip.allShips.Add(assetId, new Behaviour.Unit.SpaceShip());
         string dir = Path.Combine(Path.GetTempPath(), "vg-prep-" + Guid.NewGuid().ToString("N"));
         string text = "fixture-" + Guid.NewGuid().ToString("N");
         Directory.CreateDirectory(dir);
         try
         {
             var identity = new WorldObjectIdentity(new ContentDeclaration("author.one", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
-            var poi = new JsonObject { Text = "poi", ["guid"] = new(identity.NativeId), ["type"] = new("Combat"), ["systemName"] = new("system-a") };
+            var poi = new JsonObject { Text = "poi", ["guid"] = new(identity.NativeId), ["type"] = new("Combat"), ["systemName"] = new("system-a"),
+                ["guardDescriptors"] = new(new List<JsonValue> { new(new JsonObject { ["type"] = new("FixedPayloadDescriptor"), ["fixedUnit"] = new(assetId), ["unitCount"] = new(1) }) }) };
             var system = new JsonObject { ["guid"] = new("system-a"), ["pointsOfInterest"] = new(new List<JsonValue> { new(poi) }) };
             var map = new JsonObject { ["systems"] = new(new List<JsonValue> { new(system) }) };
             var root = new JsonObject { Text = text, ["Version"] = new(WorldSaveFormat.Marker), [WorldSaveFormat.OriginalVersion] = new("0.8.2.3"), ["Player"] = new(new JsonObject { ["map"] = new(map) }) };
@@ -65,8 +71,15 @@ public sealed class WorldLoadPreparationTests
             var gate = new WorldConstructionGate(); var session = Guid.NewGuid(); gate.Start(session);
             var prep = new WorldLoadPreparation(new WorldGenerationReader(store), new WorldJsonInspection(typeof(JsonObject).Assembly), gate);
             long revision = 1;
+            int startingCalls = 0;
+            bool Starting()
+            {
+                if (++startingCalls == 4 && fault == 7) Behaviour.Unit.SpaceShip.allShips[assetId] = new Behaviour.Unit.SpaceShip();
+                return true;
+            }
             bool Definition(WorldSavedDefinition saved)
             {
+                if (fault == 6) Behaviour.Unit.SpaceShip.allShips[assetId] = new Behaviour.Unit.SpaceShip();
                 if (fault == 1) return false;
                 if (fault == 2) revision++;
                 if (fault == 3) poi.Text = "changed-after-metadata";
@@ -76,17 +89,17 @@ public sealed class WorldLoadPreparationTests
             }
             if (fault == 0)
             {
-                Assert.Same(root, prep.Read(session, path, GenerationStore.Hash(bytes), () => true, Definition, () => revision));
+                Assert.Same(root, prep.Read(session, path, GenerationStore.Hash(bytes), Starting, Definition, () => revision));
                 Assert.Equal("0.8.2.3", root["Version"].AsString);
                 Assert.False(root.ContainsKey(WorldSaveFormat.OriginalVersion));
                 gate.RequireFactory(session, poi, identity.NativeId, row.NativeDigest, revision);
             }
             else
             {
-                Assert.Throws<InvalidDataException>(() => prep.Read(session, path, GenerationStore.Hash(bytes), () => true, Definition, () => revision));
+                Assert.Throws<InvalidDataException>(() => prep.Read(session, path, GenerationStore.Hash(bytes), Starting, Definition, () => revision));
                 Assert.Throws<InvalidDataException>(() => gate.RequireFactory(session, poi, identity.NativeId, row.NativeDigest, revision));
             }
         }
-        finally { JsonValue.ParseFixtures.TryRemove(text, out _); Directory.Delete(dir, true); }
+        finally { Behaviour.Unit.SpaceShip.allShips.Remove(assetId); JsonValue.ParseFixtures.TryRemove(text, out _); Directory.Delete(dir, true); }
     }
 }

@@ -50,6 +50,7 @@ namespace Source.Galaxy
 }
 namespace VGModAPI.Tests
 {
+    [Collection("World native assets")]
     public sealed class WorldNestedFactoryTests
     {
         [Theory]
