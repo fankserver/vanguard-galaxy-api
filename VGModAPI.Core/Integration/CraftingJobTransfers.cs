@@ -22,7 +22,7 @@ internal sealed partial class CraftingJobObserver
         }
         var material = key == "jobMaterialAdd";
         if (material ? !(owner.Key == "jobBatchRefinery" || owner.Key.StartsWith("jobCancel", StringComparison.Ordinal)) :
-            !(owner.Key.StartsWith("jobRoute", StringComparison.Ordinal) || owner.Key.StartsWith("jobCancel", StringComparison.Ordinal))) return null;
+            !(owner.Key.StartsWith("jobRoute", StringComparison.Ordinal) || owner.Key.StartsWith("jobCancel", StringComparison.Ordinal) || owner.Key == "commandExtract")) return null;
         var state = new TransferState(owner, args[0], Convert.ToDouble(args[1]));
         var scope = new Scope(key, instance, args, _epoch, session, _source.NativePlayer)
         { Transfer = state, Station = owner.Station, Parent = owner.Parent, Job = owner.Job, Process = owner.Process };
@@ -97,7 +97,11 @@ internal sealed partial class CraftingJobObserver
         state.Owner.Deliveries.Add(new CraftingDeliverySnapshot(resource, state.Requested, verified ? own : null, state.Destination,
             verified ? CraftingDeliveryStatus.Verified : CraftingDeliveryStatus.Unresolved,
             verified ? "Observed destination quantity delta, excluding nested transfers." : "Transfer effect could not be attributed as a quantity receipt.", level, rarity));
-        state.Owner.Unresolved |= !verified;
+        // A positive, exact float-rounded addition is a fulfilled native material transfer.
+        // Keep zero/rounded-away additions and ambiguous nested rounding unresolved at batch level.
+        var materialFulfilled = !material || own > 0 && (own == state.Requested || state.NestedAmount == 0 &&
+            own == (double)(float)((float)state.BeforeAmount + (float)state.Requested) - state.BeforeAmount);
+        state.Owner.Unresolved |= !verified || !materialFulfilled;
     }
     private RecipeInventoryKind? Destination(Scope owner, object inventory)
     {

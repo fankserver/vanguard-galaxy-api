@@ -136,6 +136,44 @@ public sealed partial class Plugin : BaseUnityPlugin
     {
         foreach (var frame in Wait(() => SceneManager.GetSceneByName("Main Menu").isLoaded, "main menu")) yield return frame;
         foreach (var frame in Settle()) yield return frame;
+        if (File.Exists(Path.Combine(_root!, "forge-reads.enabled")))
+        {
+            Require(File.ReadAllText(Path.Combine(_root!, "forge-reads.enabled")) == "forge-reads-v1", "Invalid Forge read marker.");
+            foreach (var frame in CheckForgeReads()) yield return frame;
+            if (File.Exists(Path.Combine(_root!, "forge-commands.enabled")))
+            {
+                Require(File.ReadAllText(Path.Combine(_root!, "forge-commands.enabled")) == "forge-commands-v2", "Invalid Forge command marker.");
+                WriteAtomic("forge-commands.txt", new[] { "INCOMPLETE" });
+                var station = ModApi.RecipeQuotes!.CurrentStation ?? throw new InvalidOperationException("Command fixture lost station.");
+                CheckCraftingSettingCommands(station);
+                CheckCraftingQueueAndCancel(station);
+                if (File.Exists(Path.Combine(_root!, "refinery.enabled")))
+                {
+                    Require(File.ReadAllText(Path.Combine(_root!, "refinery.enabled")) == "refinery-v2", "Invalid refinery marker.");
+                    WriteAtomic("refinery.txt", new[] { "INCOMPLETE" });
+                    CheckRefineryDelivery(station);
+                    CheckRefineryMultipleBatches(station);
+                    CheckMaterialExtraction(station);
+                    WriteAtomic("refinery.txt", new[] { "PASS", "refinery-v2", "fractional-partial-multiple-refund-extraction-replay" });
+                }
+                if (File.Exists(Path.Combine(_root!, "forge-delivery.enabled")))
+                {
+                    Require(File.ReadAllText(Path.Combine(_root!, "forge-delivery.enabled")) == "forge-delivery-v1", "Invalid delivery marker.");
+                    WriteAtomic("forge-delivery.txt", new[] { "INCOMPLETE" });
+                    CheckForgeDeliveries(station);
+                    WriteAtomic("forge-delivery.txt", new[] { "PASS", "forge-delivery-v1", "partial-cancel-multi-batch-inventory" });
+                }
+                if (File.Exists(Path.Combine(_root!, "forge-persistence.enabled")))
+                {
+                    Require(File.ReadAllText(Path.Combine(_root!, "forge-persistence.enabled")) == "forge-persistence-v1", "Invalid persistence marker.");
+                    WriteAtomic("forge-persistence.txt", new[] { "INCOMPLETE" });
+                    foreach (var frame in CheckCraftingPersistence()) yield return frame;
+                    WriteAtomic("forge-persistence.txt", new[] { "PASS", "forge-persistence-v1", "paused-jobs-roundtrip-save-as-slot-switch" });
+                }
+                WriteAtomic("forge-commands.txt", new[] { "PASS", "forge-commands-v2", "settings-replay-restored", "forge-queue-cancel-replay-refusal-direct-start" });
+            }
+            yield break;
+        }
         if (Environment.GetCommandLineArgs().Contains("--vgmodapi-bars-cold-absent") || Environment.GetCommandLineArgs().Contains("--vgmodapi-bars-cold-consumer"))
         {
             foreach (var frame in CheckColdBars(Environment.GetCommandLineArgs().Contains("--vgmodapi-bars-cold-absent"))) yield return frame;

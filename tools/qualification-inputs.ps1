@@ -305,6 +305,111 @@ function Assert-ModInformationProbeReceipt([string]$Root, $Provenance) {
         if (@($facts | Where-Object { $_ -ceq ($fact + '=PASS') }).Count -ne 1) { throw "Missing or duplicate information probe fact: $fact" }
     }
 }
+function Assert-RefinerySelection([string]$Root, $Provenance) {
+    $flag = $Provenance.PSObject.Properties['refineryProbe']
+    if ($flag -and $flag.Value -isnot [bool]) { throw 'Invalid refinery flag.' }
+    $selected = $flag -and $flag.Value
+    $marker = Join-Path $Root 'refinery.enabled'
+    if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Refinery selection changed.' }
+    if (!$selected) { return }
+    if (!$Provenance.forgeCommandProbe -or $Provenance.forgePersistenceProbe -or $Provenance.forgeDeliveryProbe -or [IO.File]::ReadAllText($marker) -cne 'refinery-v2') { throw 'Invalid refinery selection.' }
+}
+function Assert-RefineryReceipt([string]$Root, $Provenance) {
+    Assert-ForgeCommandReceipt $Root $Provenance
+    Assert-RefinerySelection $Root $Provenance
+    if (!$Provenance.PSObject.Properties['refineryProbe'] -or !$Provenance.refineryProbe) { return }
+    $file = Join-Path $Root 'refinery.txt'
+    if ((Get-Item -LiteralPath $file).Length -gt 512) { throw 'Oversized refinery receipt.' }
+    $lines = @(Get-Content -LiteralPath $file)
+    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'refinery-v2' -or $lines[2] -cne 'fractional-partial-multiple-refund-extraction-replay') { throw 'Incomplete refinery receipt.' }
+}
+function Assert-ForgeDeliverySelection([string]$Root, $Provenance) {
+    Assert-RefinerySelection $Root $Provenance
+    $flag = $Provenance.PSObject.Properties['forgeDeliveryProbe']
+    if ($flag -and $flag.Value -isnot [bool]) { throw 'Invalid crafting delivery flag.' }
+    $selected = $flag -and $flag.Value
+    $marker = Join-Path $Root 'forge-delivery.enabled'
+    if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Crafting delivery selection changed.' }
+    if (!$selected) { return }
+    if (!$Provenance.forgeCommandProbe -or $Provenance.forgePersistenceProbe -or [IO.File]::ReadAllText($marker) -cne 'forge-delivery-v1') { throw 'Invalid crafting delivery selection.' }
+}
+function Assert-ForgeDeliveryReceipt([string]$Root, $Provenance) {
+    Assert-ForgeCommandReceipt $Root $Provenance
+    Assert-ForgeDeliverySelection $Root $Provenance
+    if (!$Provenance.PSObject.Properties['forgeDeliveryProbe'] -or !$Provenance.forgeDeliveryProbe) { return }
+    $file = Join-Path $Root 'forge-delivery.txt'
+    if ((Get-Item -LiteralPath $file).Length -gt 512) { throw 'Oversized crafting delivery receipt.' }
+    $lines = @(Get-Content -LiteralPath $file)
+    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'forge-delivery-v1' -or $lines[2] -cne 'partial-cancel-multi-batch-inventory') { throw 'Incomplete crafting delivery receipt.' }
+}
+function Assert-ForgePersistenceSelection([string]$Root, $Provenance) {
+    Assert-ForgeDeliverySelection $Root $Provenance
+    $flag = $Provenance.PSObject.Properties['forgePersistenceProbe']
+    if ($flag -and $flag.Value -isnot [bool]) { throw 'Invalid crafting persistence flag.' }
+    $selected = $flag -and $flag.Value
+    $marker = Join-Path $Root 'forge-persistence.enabled'
+    if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Crafting persistence selection changed.' }
+    if (!$selected) { return }
+    if (!$Provenance.forgeCommandProbe -or [IO.File]::ReadAllText($marker) -cne 'forge-persistence-v1') { throw 'Invalid crafting persistence selection.' }
+}
+function Assert-ForgePersistenceReceipt([string]$Root, $Provenance) {
+    Assert-ForgeCommandReceipt $Root $Provenance
+    Assert-ForgePersistenceSelection $Root $Provenance
+    if (!$Provenance.PSObject.Properties['forgePersistenceProbe'] -or !$Provenance.forgePersistenceProbe) { return }
+    $file = Join-Path $Root 'forge-persistence.txt'
+    if ((Get-Item -LiteralPath $file).Length -gt 512) { throw 'Oversized crafting persistence receipt.' }
+    $lines = @(Get-Content -LiteralPath $file)
+    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'forge-persistence-v1' -or $lines[2] -cne 'paused-jobs-roundtrip-save-as-slot-switch') { throw 'Incomplete crafting persistence receipt.' }
+}
+function Assert-ForgeCommandSelection([string]$Root, $Provenance) {
+    Assert-ForgePersistenceSelection $Root $Provenance
+    $flag = $Provenance.PSObject.Properties['forgeCommandProbe']
+    if ($flag -and $flag.Value -isnot [bool]) { throw 'Invalid Forge command flag.' }
+    $selected = $flag -and $flag.Value
+    $marker = Join-Path $Root 'forge-commands.enabled'
+    if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Forge command selection changed.' }
+    if (!$selected) { return }
+    if (!$Provenance.forgeReadProbe -or [IO.File]::ReadAllText($marker) -cne 'forge-commands-v2') { throw 'Invalid Forge command selection.' }
+    $config = [IO.File]::ReadAllText((Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg'))
+    if ($config -cnotmatch '(?ms)^\[Recipes\]\r?\n(?:(?!^\[).)*?^CommandsEnabled = true\r?$') { throw 'Crafting commands not enabled.' }
+}
+function Assert-ForgeCommandReceipt([string]$Root, $Provenance) {
+    Assert-ForgeReadReceipt $Root $Provenance
+    Assert-ForgeCommandSelection $Root $Provenance
+    if (!$Provenance.PSObject.Properties['forgeCommandProbe'] -or !$Provenance.forgeCommandProbe) { return }
+    $file = Join-Path $Root 'forge-commands.txt'
+    if ((Get-Item -LiteralPath $file).Length -gt 512) { throw 'Oversized Forge command receipt.' }
+    $lines = @(Get-Content -LiteralPath $file)
+    if ($lines.Count -ne 4 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'forge-commands-v2' -or $lines[2] -cne 'settings-replay-restored' -or $lines[3] -cne 'forge-queue-cancel-replay-refusal-direct-start') { throw 'Incomplete Forge command receipt.' }
+}
+function Assert-ForgeReadSelection([string]$Root, $Provenance) {
+    Assert-ForgeCommandSelection $Root $Provenance
+    $property = $Provenance.PSObject.Properties['forgeReadProbe']
+    if ($property -and $property.Value -isnot [bool]) { throw 'Invalid Forge read flag.' }
+    $selected = $property -and $property.Value
+    $marker = Join-Path $Root 'forge-reads.enabled'
+    if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Forge read selection changed.' }
+    if (!$selected) { return }
+    if ($Provenance.scenario -ne 'Full' -or [IO.File]::ReadAllText($marker) -cne 'forge-reads-v1') { throw 'Invalid Forge read selection.' }
+    foreach ($entry in $Provenance.PSObject.Properties) {
+        if ($entry.Name -notin @('forgeReadProbe','forgeCommandProbe','forgePersistenceProbe','forgeDeliveryProbe','refineryProbe') -and $entry.Value -is [bool] -and $entry.Value) { throw 'Forge reads cannot combine other scenarios or consumers.' }
+    }
+    if ($null -ne $Provenance.assemblyOverlay) { throw 'Forge reads cannot use an assembly overlay.' }
+    $config = [IO.File]::ReadAllText((Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg'))
+    if ($config -cnotmatch '(?ms)^\[Recipes\]\r?\n(?:(?!^\[).)*?^Enabled = true\r?$') { throw 'Forge read recipe integration is not enabled.' }
+}
+function Assert-ForgeReadReceipt([string]$Root, $Provenance) {
+    Assert-ForgeReadSelection $Root $Provenance
+    if (!$Provenance.PSObject.Properties['forgeReadProbe'] -or !$Provenance.forgeReadProbe) { return }
+    Assert-QualificationExitOutcome (Get-Content -LiteralPath (Join-Path $Root 'run-outcome.json') -Raw | ConvertFrom-Json) 'Forge reads'
+    $receipt = Join-Path $Root 'forge-reads.receipt'; $snapshot = Join-Path $Root 'forge-reads.txt'
+    if ((Get-Item -LiteralPath $receipt).Length -gt 256 -or (Get-Item -LiteralPath $snapshot).Length -gt 4096) { throw 'Forge evidence too large.' }
+    $lines = @(Get-Content -LiteralPath $receipt)
+    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'forge-reads-v1' -or $lines[2] -cnotmatch '^sha256=[0-9a-f]{64}$') { throw 'Invalid Forge receipt.' }
+    if ((Get-FileHash -LiteralPath $snapshot -Algorithm SHA256).Hash.ToLowerInvariant() -cne $lines[2].Substring(7)) { throw 'Forge evidence changed.' }
+    $facts = @(Get-Content -LiteralPath $snapshot)
+    if ($facts.Count -ne 5 -or $facts[0] -cne 'PASS' -or $facts[1] -cne 'forge-reads-v1' -or $facts[2] -cnotmatch '^catalog=[1-9][0-9]*$' -or $facts[3] -cnotmatch '^quotes=[1-9][0-9]*$' -or $facts[4] -cnotmatch '^restored=[0-9]+$') { throw 'Invalid Forge facts.' }
+}
 function Assert-ModMenuProbeSelection([string]$Root, $Provenance) {
     Assert-ModInformationProbeSelection $Root $Provenance
     $property = $Provenance.PSObject.Properties['modMenuProbe']
@@ -928,6 +1033,7 @@ function Assert-QualificationInputs([string]$Root) {
     $provenance = Get-Content -LiteralPath (Join-Path $Root 'build-provenance.json') -Raw | ConvertFrom-Json
     if ($provenance.scenario -notin @('Full','MissingApi','UnavailableApi') -or
         (Get-Content -LiteralPath (Join-Path $Root 'scenario.txt') -Raw).Trim() -cne $provenance.scenario) { throw 'Prepared scenario changed.' }
+    Assert-ForgeReadSelection $Root $provenance
     Assert-ModMenuProbeSelection $Root $provenance
     if ($provenance.scenario -ne 'MissingApi') { Assert-ApiPersistenceRoot $Root }
     $menuProperty = $provenance.PSObject.Properties['menuInspection']

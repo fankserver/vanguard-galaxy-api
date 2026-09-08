@@ -29,6 +29,9 @@ public sealed partial class Plugin : BaseUnityPlugin
     private CraftingJobService? _craftingJobs;
     private CraftingJobObserver? _craftingJobObserver;
     private Harmony? _craftingJobHarmony;
+    private CraftingCommandService? _craftingCommands;
+    private Harmony? _craftingCommandHarmony;
+    private RecipeCatalogNativeSource? _craftingCommandSource;
     private BoardingObserver? _boarding;
     private BoardingRuleAdapter? _boardingRules;
     private BoardingCommandService? _boardingCommands;
@@ -37,6 +40,7 @@ public sealed partial class Plugin : BaseUnityPlugin
     private DungeonRewardService? _dungeonRewards;
     private DungeonContentService? _dungeons;
     private DungeonStateStore? _dungeonState;
+    private DungeonRecoveryRuntime? _dungeonRecovery;
     private DungeonContentAdapter? _dungeonAdapter;
     private StoryNativeWorld? _storyWorld;
     private StoryContentService? _story;
@@ -67,6 +71,12 @@ public sealed partial class Plugin : BaseUnityPlugin
         _hub.SetCapability("recipe-quotes", false, "Disabled or not bound; experimental.");
         ModApi.RecipeQuotes = null;
         ModApi.CraftingJobs = null;
+        ModApi.CraftingCommands = null;
+        ModApi.ForgeUi = null;
+        ModApi.Hud = null;
+        _hub.SetCapability("hud", false, "Disabled or not bound; experimental.");
+        _hub.SetCapability("forge-ui", false, "Disabled or not bound; experimental.");
+        _hub.SetCapability("crafting-commands", false, "Disabled or not bound; experimental.");
         _hub.SetCapability("crafting-jobs", false, "Disabled or not bound; experimental.");
         _hub.SetCapability("save-data", false, "Not initialized; experimental.");
         _hub.SetCapability("mission-continuity", false, "Not initialized.");
@@ -122,6 +132,7 @@ public sealed partial class Plugin : BaseUnityPlugin
                 ["store"] = typeof(SavePatches.Store), ["writeFile"] = typeof(SavePatches.WriteFile),
                 ["writeMetadata"] = typeof(SavePatches.WriteMetadata), ["storeFailure"] = typeof(SavePatches.StoreFailure)
             });
+            if (Config.Bind("Hud", "Enabled", false, "Experimental shared HUD buttons and information panels.").Value) InstallHud(assembly);
             if (Config.Bind("Recipes", "Enabled", false, "Experimental recipe catalog, advisory quotes and Forge/refinery job observations.").Value)
                 InstallRecipes(assembly);
             if (Config.Bind("Boarding", "Enabled", false, "Experimental boarding observation and rules on the inspected game build.").Value)
@@ -142,6 +153,8 @@ public sealed partial class Plugin : BaseUnityPlugin
         {
             // Stop observation even if a failed rollback leaves a detour installed.
             _adapter?.Guard(() => throw new InvalidOperationException("Adapter installation failed.", ex));
+            TeardownHud();
+            TeardownForgeUi();
             TeardownCraftingJobs();
             try { _harmony?.UnpatchSelf(); }
             catch (Exception cleanupError) { Logger.LogError($"Patch rollback failed: {cleanupError}"); }
@@ -463,7 +476,7 @@ public sealed partial class Plugin : BaseUnityPlugin
                 _recipeQuotes?.Dispose(); _recipeQuotes = null; ModApi.RecipeQuotes = null;
                 _hub.SetCapability("recipe-quotes", false, "Recipe quote binding failed."); Logger.LogError(quoteError);
             }
-            if (_recipeQuotes != null) InstallCraftingJobs(assembly, source);
+            if (_recipeQuotes != null) { InstallCraftingJobs(assembly, source); InstallForgeUi(assembly, source); }
         }
         catch (Exception error)
         {
@@ -489,11 +502,13 @@ public sealed partial class Plugin : BaseUnityPlugin
                 _craftingJobHarmony.Patch(methods[spec.Key], prefix: prefix, finalizer: new HarmonyMethod(typeof(CraftingJobPatches).GetMethod(name, flags)));
             }
             _craftingJobs.SetAvailable(true); ModApi.CraftingJobs = _craftingJobs;
+            InstallCraftingCommands(assembly, source);
         }
         catch (Exception error) { TeardownCraftingJobs(); Logger.LogError(error); }
     }
     private void TeardownCraftingJobs()
     {
+        TeardownCraftingCommands();
         CraftingJobPatches.Observer = null;
         _craftingJobObserver?.Dispose(); _craftingJobObserver = null;
         _craftingJobs?.Dispose(); _craftingJobs = null; ModApi.CraftingJobs = null;
@@ -501,6 +516,42 @@ public sealed partial class Plugin : BaseUnityPlugin
         try { _craftingJobHarmony?.UnpatchSelf(); } catch (Exception error) { Logger.LogError(error); }
         _craftingJobHarmony = null;
         _hub?.SetCapability("crafting-jobs", false, "Crafting job observation unavailable.");
+    }
+    private void InstallCraftingCommands(Assembly assembly, RecipeCatalogNativeSource source)
+    {
+        try
+        {
+            if (!Config.Bind("Recipes", "CommandsEnabled", false, "Experimental crafting mutations; requires recipe/job observation and disposable-save qualification.").Value) return;
+            var methods = CraftingCommandBindings.Validate(assembly);
+            _craftingCommandSource = source;
+            source.CommandSession = () => _hub?.CurrentSession?.Phase == SessionPhase.GameplayInitialized && _adapter?.IsBoundPlayer(source.NativePlayer) == true ? _hub.CurrentSession.Id : null;
+            source.CommandObserver = _craftingJobObserver; source.CommandJobEvents = _craftingJobs;
+            source.CommandReport = error => Logger.LogError(error);
+            source.RefreshCommandUi = new CraftingCommandUiRefresh(assembly, methods).Refresh;
+            _craftingCommands = new CraftingCommandService(_hub!, _craftingJobs!, source, error => Logger.LogError(error));
+            CraftingCommandPatches.Service = _craftingCommands;
+            _craftingCommandHarmony = new Harmony(ModApi.PluginId + ".crafting-commands");
+            var flags = BindingFlags.Static | BindingFlags.NonPublic;
+            foreach (var spec in CraftingCommandBindings.Serialization)
+                _craftingCommandHarmony.Patch(methods[spec.Key], prefix: new HarmonyMethod(typeof(CraftingCommandPatches).GetMethod("Prefix", flags)),
+                    finalizer: new HarmonyMethod(typeof(CraftingCommandPatches).GetMethod("Finalizer", flags)));
+            _craftingCommands.SetAvailable(true); ModApi.CraftingCommands = _craftingCommands;
+            _hub!.SetCapability("crafting-commands", true, "Experimental guarded commands; not runtime-qualified.");
+        }
+        catch (Exception error) { TeardownCraftingCommands(); Logger.LogError(error); }
+    }
+    private void TeardownCraftingCommands()
+    {
+        CraftingCommandPatches.Service = null;
+        _craftingCommands?.Dispose(); _craftingCommands = null; ModApi.CraftingCommands = null;
+        if (_craftingCommandSource != null)
+        {
+            _craftingCommandSource.CommandSession = null; _craftingCommandSource.CommandObserver = null;
+            _craftingCommandSource.CommandJobEvents = null; _craftingCommandSource.CommandReport = null; _craftingCommandSource.RefreshCommandUi = null;
+            _craftingCommandSource = null;
+        }
+        try { _craftingCommandHarmony?.UnpatchSelf(); } catch (Exception error) { Logger.LogError(error); }
+        _craftingCommandHarmony = null; _hub?.SetCapability("crafting-commands", false, "Crafting commands unavailable.");
     }
     private void InitializeDungeons()
     {
@@ -510,10 +561,73 @@ public sealed partial class Plugin : BaseUnityPlugin
         {
             if (_persistence == null) throw new NotSupportedException("API save data is required.");
             var bindings = new GameBindings(Assembly.Load("Assembly-CSharp"));
+            _dungeonRecovery = new DungeonRecoveryRuntime(_hub, _persistence, bindings, error => Logger.LogError(error));
+            DungeonRecoveryMarkerPatches.Runtime = _dungeonRecovery;
+            DungeonRecoveryCapturePatches.Runtime = _dungeonRecovery;
+            InstallGroup("dungeon-recovery-capture", bindings, DungeonRecoveryCaptureBindings.Hooks, new Dictionary<string, Type>
+            {
+                ["recoveryCancelPods"] = typeof(DungeonRefundPatches.Cancellation),
+                ["recoveryCancelMovement"] = typeof(DungeonRefundPatches.Cancellation),
+                ["recoveryRefundRecall"] = typeof(DungeonRefundPatches.DockedRefund),
+                ["recoveryRefundDocked"] = typeof(DungeonRefundPatches.DockedRefund),
+                ["recoveryRefundTerminal"] = typeof(DungeonRefundPatches.DockedRefund),
+                ["recoveryRetired"] = typeof(DungeonRecoveryCapturePatches.Retired),
+                ["recoveryPendingExtraction"] = typeof(DungeonRecoveryCapturePatches.PendingExtraction),
+                ["recoveryWalkComplete"] = typeof(DungeonTerminalRecoveryPatches.WalkComplete),
+                ["recoveryWalkDispatch"] = typeof(DungeonRecoveryCapturePatches.Transfer),
+                ["recoveryWalkEntry"] = typeof(DungeonRecoveryCapturePatches.Transfer),
+                ["recoveryDonorRequest"] = typeof(DungeonRecoveryCapturePatches.Transfer),
+                ["recoveryDonorSpawn"] = typeof(DungeonRecoveryCapturePatches.Transfer),
+                ["recoveryDonorUpdate"] = typeof(DungeonDonorPatches.DonorUpdate),
+                ["recoveryResumeShip"] = typeof(DungeonRecoveryCapturePatches.ResumeShip),
+                ["recoveryResumeLocation"] = typeof(DungeonRecoveryCapturePatches.ResumeLocation),
+                ["recoveryReconstruct"] = typeof(DungeonRecoveryCapturePatches.Reconstruct),
+                ["recoveryAttach"] = typeof(DungeonRecoveryCapturePatches.Attach),
+                ["recoveryArrival"] = typeof(DungeonRecoveryCapturePatches.Arrival),
+                ["recoveryTerminal"] = typeof(DungeonTerminalRecoveryPatches.Terminal), ["recoverySerialization"] = typeof(DungeonRecoveryCapturePatches.Serialization),
+                ["recoveryOperationTick"] = typeof(DungeonRecoveryCapturePatches.Tick),
+                ["recoveryStartShip"] = typeof(DungeonRecoveryCapturePatches.Started), ["recoveryStartLocation"] = typeof(DungeonRecoveryCapturePatches.Started)
+            });
+            if (!_hub.Capabilities.Any(c => c.Name == "dungeon-recovery-capture" && c.Available)) throw new NotSupportedException("Recovery capture hooks unavailable.");
+            DungeonPodReturnPatches.Observer = _dungeonRecovery.ReturnObserver;
+            DungeonPodReturnPatches.Report = error => Logger.LogError(error);
+            InstallGroup("dungeon-recovery-markers", bindings, DungeonRecoveryMarkerBindings.Hooks, new Dictionary<string, Type>
+            {
+                ["recoveryPodSave"] = typeof(DungeonRecoveryMarkerPatches.PodSave), ["recoveryPodLoad"] = typeof(DungeonRecoveryMarkerPatches.PodLoad),
+                ["recoveryLocationSave"] = typeof(DungeonRecoveryMarkerPatches.LocationSave), ["recoveryLocationLoad"] = typeof(DungeonRecoveryMarkerPatches.LocationLoad)
+            });
+            InstallGroup("dungeon-return-receipts", bindings, DungeonPodReturnBindings.Hooks, new Dictionary<string, Type>
+            {
+                ["returnReceipt"] = typeof(DungeonPodReturnPatches.Return), ["returnCrewAdded"] = typeof(DungeonPodReturnPatches.Crew),
+                ["returnOverflow"] = typeof(DungeonPodReturnPatches.Overflow), ["returnPersisted"] = typeof(DungeonPodReturnPatches.Persisted)
+            });
+            if (!_hub.Capabilities.Any(c => c.Name == "dungeon-recovery-markers" && c.Available) || !_hub.Capabilities.Any(c => c.Name == "dungeon-return-receipts" && c.Available))
+                throw new NotSupportedException("Dungeon recovery hooks unavailable.");
+            var crewNative = new BoardingCommandNativeBindings(bindings, DungeonCrewResumeBindings.Hooks, DungeonPodResumeBindings.Members);
+            var directiveType = bindings.Assembly.GetType("Source.CompartmentSystem.SimCrewDirective", true)!;
+            var priorityType = bindings.Assembly.GetType("Source.CompartmentSystem.DirectivePriority", true)!;
+            var filterType = bindings.Assembly.GetType("Source.CompartmentSystem.MovementOrderFilter", true)!;
+            var directives = new DungeonDirectiveAdapter(crewNative, () => Activator.CreateInstance(directiveType)!,
+                (kind, value) => Enum.ToObject(kind == "priority" ? priorityType : filterType, value));
+            DungeonCrewResumePatches.Coordinator = new DungeonCrewResumeCoordinator(crewNative, new DungeonCrewResumeJson(bindings.Assembly), error => Logger.LogError(error), directives, execution: true);
+            _dungeonRecovery.SimulationReady = DungeonCrewResumePatches.Coordinator.CanTick;
+            InstallGroup("dungeon-crew-resume", bindings, DungeonCrewResumeBindings.Hooks, new Dictionary<string, Type>
+            {
+                ["crewResumeSave"] = typeof(DungeonCrewResumePatches.Save), ["crewResumeLoad"] = typeof(DungeonCrewResumePatches.Load),
+                ["crewSimulationSave"] = typeof(DungeonCrewResumePatches.SimulationSave),
+                ["crewSimulationLoad"] = typeof(DungeonCrewResumePatches.SimulationLoad), ["crewSimulationTick"] = typeof(DungeonCrewResumePatches.Tick)
+            });
+            InstallGroup("dungeon-hydration-actions", bindings, BoardingTacticalBindings.Actions,
+                BoardingTacticalBindings.Actions.ToDictionary(binding => binding.Key, _ => typeof(DungeonCrewResumePatches.Tick)));
+            if (!_hub.Capabilities.Any(c => c.Name == "dungeon-hydration-actions" && c.Available)) throw new NotSupportedException("Dungeon hydration action guards unavailable.");
+            if (!_hub.Capabilities.Any(c => c.Name == "dungeon-crew-resume" && c.Available)) throw new NotSupportedException("Crew save/load hooks unavailable.");
             _dungeonState = new DungeonStateStore(_hub, _persistence);
             _dungeonAdapter = new DungeonContentAdapter(_hub, bindings, _boarding, _dungeonState);
+            _dungeonRecovery.ValidateInitialOperation = operation => _dungeonAdapter.GuardOperation(operation, true);
+            _dungeonRecovery.ObserveInitialOperation = operation => _boarding.RestoredOperationReady(operation);
+            _dungeonRecovery.ContentOccurrence = _dungeonAdapter.Marker;
             _dungeons = new DungeonContentService(_hub, _dungeonAdapter.Catalogs(), _dungeonState, _dungeonAdapter.Bindings(), (owner, error) => Logger.LogError($"Dungeon provider '{owner}': {error}"),
-                () => (_dungeonSettlement?.IsDispatchingCallbacks ?? false) || (_dungeonRewards?.IsEvaluating ?? false) || (_boardingCombat?.IsEvaluating ?? false) || (ModApi.BoardingRules?.IsEvaluating ?? false));
+                () => _dungeonRecovery?.State.CanMutate != true || (_dungeonSettlement?.IsDispatchingCallbacks ?? false) || (_dungeonRewards?.IsEvaluating ?? false) || (_boardingCombat?.IsEvaluating ?? false) || (ModApi.BoardingRules?.IsEvaluating ?? false));
             DungeonContentPatches.Adapter = _dungeonAdapter; DungeonContentPatches.Json = new DungeonMarkerJson(bindings.Assembly);
             var patches = new Dictionary<string, Type>
             {
@@ -537,6 +651,10 @@ public sealed partial class Plugin : BaseUnityPlugin
     }
     private void StopDungeons()
     {
+        DungeonRecoveryCapturePatches.Runtime = null;
+        DungeonRecoveryMarkerPatches.Runtime = null; DungeonPodReturnPatches.Observer = null; DungeonPodReturnPatches.Report = null;
+        _dungeonRecovery?.Dispose(); _dungeonRecovery = null;
+        DungeonCrewResumePatches.Coordinator?.Clear(); DungeonCrewResumePatches.Coordinator = null;
         DungeonContentPatches.Adapter = null; DungeonContentPatches.Json = null; ModApi.Dungeons = null;
         _dungeons?.Dispose(); _dungeons = null; _dungeonAdapter?.Dispose(); _dungeonAdapter = null; _dungeonState?.Dispose(); _dungeonState = null;
     }
@@ -622,6 +740,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         {
             var adapter = new BoardingCommandAdapter(new BoardingCommandNativeBindings(bindings), _boarding, ModApi.Boarding,
                 value => value is UnityEngine.Object native && native != null);
+            adapter.SimulationReady = simulation => DungeonCrewResumePatches.Coordinator?.CanTick(simulation) ?? true;
             _boardingCommands = new BoardingCommandService(_hub, ModApi.Boarding, adapter, () => (ModApi.BoardingRules?.IsEvaluating ?? false) || (_boardingCombat?.IsEvaluating ?? false) || (_dungeonRewards?.IsEvaluating ?? false) || (_dungeonSettlement?.IsDispatchingCallbacks ?? false));
             BoardingCommandPatches.Adapter = adapter; BoardingCommandPatches.Service = _boardingCommands;
             InstallGroup("boarding-commands", bindings, BoardingCommandBindings.Hooks, BoardingCommandBindings.Hooks.ToDictionary(b => b.Key, b => b.Key switch
@@ -779,8 +898,13 @@ public sealed partial class Plugin : BaseUnityPlugin
 
     private void Update()
     {
+        _hudRuntime?.Tick();
+        _forgeUiRuntime?.Tick();
         var craftingFault = _craftingJobObserver?.PumpFault();
-        if (craftingFault != null) Logger.LogError(craftingFault);
+        if (craftingFault != null) { Logger.LogError(craftingFault); TeardownCraftingCommands(); }
+        var commandFault = _craftingCommands?.PumpFault();
+        if (commandFault != null) { Logger.LogError(commandFault); TeardownCraftingCommands(); }
+        _dungeonRecovery?.Poll();
         _boarding?.Poll();
         _adapter?.Poll(); _missions?.Poll();
         if (_travel != null)
@@ -809,6 +933,9 @@ public sealed partial class Plugin : BaseUnityPlugin
     }
     private void OnDestroy()
     {
+        TeardownHud();
+        TeardownForgeUi();
+        TeardownCraftingCommands();
         StopBars();
         DungeonRewardPatches.Crew = null; _dungeonSettlement?.Dispose(); _dungeonSettlement = null; ModApi.DungeonSettlement = null;
         DungeonRewardPatches.Adapter = null; _dungeonRewards?.Dispose(); _dungeonRewards = null; ModApi.DungeonRewards = null;

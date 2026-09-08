@@ -15,6 +15,8 @@ namespace Source.Item
         }
         public IEnumerable<InventoryItem> items { get; set; } = Array.Empty<InventoryItem>();
         public float Capacity = 1000;
+        public Func<Behaviour.Item.InventoryItemType, int, InventoryItem>? AddHandler;
+        public InventoryItem Add(Behaviour.Item.InventoryItemType item, int count, bool buyback = false, bool stack = false) => AddHandler!(item, count);
         public int GetCount(Behaviour.Item.InventoryItemType item) => items.Where(stack => ReferenceEquals(stack.item, item)).Sum(stack => stack.count);
         public bool IsFull(float space) => space > Capacity;
     }
@@ -61,12 +63,24 @@ namespace Source.Mining
         public List<object> jobs = new();
         public int maxJobs { get; set; } = 2;
         public float craftingSpeed { get; set; } = 1;
+        public Func<Behaviour.Crafting.CraftingRecipe, int, bool>? QueueHandler;
+        public Action<object>? CancelHandler;
+        public bool TryStartJob(Behaviour.Crafting.CraftingRecipe recipe, int count) => QueueHandler!(recipe, count);
+        public void CancelJob(object job) => CancelHandler!(job);
     }
     public sealed class Refinery
     {
         public Source.Galaxy.POI.SpaceStation spaceStation = null!;
         public List<object> jobs = new();
         public int maxJobs { get; set; } = 2;
+        public bool cargoAccessible { get; set; } = true;
+        public bool autoRefine;
+        public static bool autoSell;
+        public Func<Behaviour.Mining.OreItemData, int, bool, bool>? QueueHandler;
+        public bool TryStartJob(Behaviour.Mining.OreItemData ore, int count) => QueueHandler!(ore, count, false);
+        public bool StartJob(Behaviour.Mining.OreItemData ore, int count, bool excludeFavourited = false) => QueueHandler!(ore, count, excludeFavourited);
+        public Action<Source.Item.RefinedMaterial, int>? ExtractHandler;
+        public void ExtractMaterial(Source.Item.RefinedMaterial material, int count) => ExtractHandler!(material, count);
         public static int GetExtractCost(Source.Item.RefinedMaterial material, int count) => count * 2;
     }
 }
@@ -104,6 +118,11 @@ namespace Behaviour.Item
         public float m3 { get; set; } = 1;
         public int itemLevel { get; set; } = 1;
         public Source.Item.Rarity rarity { get; set; }
+        public object? itemBuilder { get; set; }
+        public object? equipmentBuilder { get; set; }
+        public Func<InventoryItemType, bool>? StackRule;
+        public bool CanStackWith(InventoryItemType other) => StackRule?.Invoke(other) ?? ReferenceEquals(this, other);
+        public bool CanGoInDataInventory() => false;
         public float calcCost = 100;
         public int PreviewBuilderCalls { get; private set; }
         public int cost

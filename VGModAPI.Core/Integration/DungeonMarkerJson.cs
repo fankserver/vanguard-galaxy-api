@@ -7,11 +7,12 @@ namespace VGModAPI.Runtime;
 /// <summary>The native location carries only occurrence identity; API-owned data stays in its provider envelope.</summary>
 internal sealed class DungeonMarkerJson
 {
-    private const string Key = "vgmodapiDungeonOccurrence";
+    private readonly string Key;
     private readonly PropertyInfo _item, _string, _isString;
     private readonly MethodInfo _convert;
-    internal DungeonMarkerJson(Assembly assembly)
+    internal DungeonMarkerJson(Assembly assembly, string key = "vgmodapiDungeonOccurrence")
     {
+        Key = key;
         var json = assembly.GetType("LightJson.JsonObject", true)!; var value = assembly.GetType("LightJson.JsonValue", true)!;
         _item = json.GetProperty("Item", new[] { typeof(string) }) ?? throw new MissingMemberException(json.FullName, "Item");
         if (_item.PropertyType != value || _item.GetMethod == null || _item.SetMethod == null) throw new MissingMemberException("Writable JsonObject string indexer required.");
@@ -25,6 +26,13 @@ internal sealed class DungeonMarkerJson
         var value = _item.GetValue(json, new object[] { Key })!;
         if (_isString.GetValue(value) is not true) return null;
         return Guid.TryParseExact((string?)_string.GetValue(value), "D", out var id) && id != Guid.Empty ? id : null;
+    }
+    internal Guid? ReadStrict(object json)
+    {
+        var value = _item.GetValue(json, new object[] { Key })!;
+        var isNull = value.GetType().GetProperty("IsNull") ?? throw new MissingMemberException("Json null predicate unavailable.");
+        if (isNull.GetValue(value) is true) return null;
+        return Read(json) ?? throw new System.IO.InvalidDataException("Invalid persistent dungeon identity marker.");
     }
     internal void Write(object json, Guid occurrence)
     {

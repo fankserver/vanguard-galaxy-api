@@ -17,6 +17,17 @@ internal sealed partial class CraftingJobObserver : IDisposable
     private bool _disposed, _faultReported;
     internal CraftingJobObserver(LifecycleHub hub, CraftingJobService service, RecipeCatalogNativeSource source)
     { _hub = hub; _service = service; _source = source; source.JobsInvalidated += Reset; }
+    internal bool IsHealthy => !_disposed && _fault == null;
+    internal bool IsOperationInFlight => _scopes.Count != 0;
+    internal Scope? BeginExtraction(RecipeStationHandle station, object refinery)
+    {
+        _hub.CheckThread();
+        if (!IsHealthy || _service.ActiveSession != station.SessionId || _source.ResolveStation(station) is not object nativeStation ||
+            !ReferenceEquals(Value(nativeStation, "refinery"), refinery)) return null;
+        var scope = new Scope("commandExtract", refinery, Array.Empty<object>(), _epoch, station.SessionId, _source.NativePlayer)
+        { Station = station, Parent = refinery, Process = RecipeProcess.Refining };
+        Push(scope); return scope;
+    }
     internal Scope? Begin(string key, object instance, object[] args)
     {
         if (_disposed || _fault != null) return null;
@@ -56,6 +67,7 @@ internal sealed partial class CraftingJobObserver : IDisposable
             if (_scopes.Count == 0 || !ReferenceEquals(_scopes[_scopes.Count - 1], scope)) throw new InvalidOperationException("Unbalanced crafting observation scopes.");
             _scopes.RemoveAt(_scopes.Count - 1);
             if (scope.Transfer != null) { EndTransfer(scope, result, originalError); return; }
+            if (scope.Key == "commandExtract") { scope.Unresolved |= originalError != null; return; }
             if (scope.Key.StartsWith("jobRoute", StringComparison.Ordinal))
             {
                 var owner = _scopes.LastOrDefault(item => item.Key.StartsWith("jobBatch", StringComparison.Ordinal) && ReferenceEquals(item.Job, scope.Job) && item.CallbackContext == scope.CallbackContext);
@@ -96,7 +108,8 @@ internal sealed partial class CraftingJobObserver : IDisposable
             if (scope.Key.StartsWith("jobBatch", StringComparison.Ordinal))
             {
                 var verified = after.State == CraftingJobState.Active && originalError == null && !scope.Unresolved && scope.Before!.RemainingBatches - after.RemainingBatches == 1 &&
-                    scope.Deliveries.Count > 0 && scope.Deliveries.All(item => item.Status == CraftingDeliveryStatus.Verified && item.VerifiedAmount == item.RequestedAmount);
+                    scope.Deliveries.Count > 0 && scope.Deliveries.All(item => item.Status == CraftingDeliveryStatus.Verified &&
+                        (item.Resource?.Kind == RecipeResourceKind.RefinedMaterial || item.VerifiedAmount == item.RequestedAmount));
                 _service.Observe(CraftingJobEventKind.BatchObserved, after, scope.Deliveries,
                     verified ? CraftingDeliveryStatus.Verified : CraftingDeliveryStatus.Unresolved,
                     originalError == null ? "One native batch call observed; remaining count alone is not delivery evidence." : "Batch call faulted; recorded transfers may be partial.");
