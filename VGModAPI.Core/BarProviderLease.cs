@@ -10,6 +10,7 @@ internal sealed partial class BarContentService
     {
         private readonly BarContentService _owner;
         private readonly string _pluginId;
+        internal string PluginId => _pluginId;
         internal readonly Dictionary<string, BarPatronDefinition> Definitions = new(StringComparer.Ordinal);
         internal readonly Dictionary<string, BarRosterOwnership> Stations = new(StringComparer.Ordinal);
         public string ProviderId { get; }

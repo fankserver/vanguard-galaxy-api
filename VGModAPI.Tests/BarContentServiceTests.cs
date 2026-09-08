@@ -97,10 +97,86 @@ public sealed class BarContentServiceTests
         var session = Ready(hub, storage);
         provider.Place(session, "contact");
         Assert.Null(service.Plan(session, "station"));
-        Assert.NotNull(service.Plan(session, "station", (_, _) => true));
-        Assert.Null(service.Plan(session, "station", (_, _) => { provider.Dispose(); return true; }));
+        object stamp = new();
+        bool ready = true;
+        var plan = service.Plan(session, "station", (_, _) => ready, () => stamp)!;
+        Assert.NotNull(plan);
+        ready = false;
+        Assert.False(service.IsCurrent(plan));
+        Assert.Null(service.Plan(session, "station", (_, _) => { stamp = new object(); return true; }, () => stamp));
+        Assert.Null(service.Plan(session, "station", (_, _) => { provider.Dispose(); return true; }, () => stamp));
         Assert.Empty(service.Plan(session, "station")!.Patrons);
         Assert.Single(BarPatronCodec.Decode(storage.Provider.Capture()));
+    }
+
+    [Fact]
+    public void PermissionCallbackDisposalCannotPublishAStalePlan()
+    {
+        using var hub = new LifecycleHub((_, error) => throw error);
+        var storage = new Storage();
+        Action? duringPermission = null;
+        using var service = new BarContentService(storage, hub,
+            (_, _) => new StoryHostPlugin("author", typeof(BarContentServiceTests).Assembly),
+            _ => { duringPermission?.Invoke(); return true; }, hub.CheckThread);
+        var author = service.AcquireProvider("author").Provider!;
+        author.Register(Definition());
+        author.ConfigureStation("station", BarRosterOwnership.Exclusive);
+        var session = Ready(hub, storage);
+        author.Place(session, "contact");
+        var plan = service.Plan(session, "station")!;
+        duringPermission = author.Dispose;
+        Assert.False(service.IsCurrent(plan));
+        Assert.True(service.Plan(session, "station")!.Policy.KeepVanilla);
+    }
+
+    [Fact]
+    public void ResolverInvalidatingAnEarlierDependencyRefusesTheWholePlan()
+    {
+        using var hub = new LifecycleHub((_, error) => throw error);
+        var storage = new Storage();
+        using var service = new BarContentService(storage, hub,
+            (_, _) => new StoryHostPlugin("author", typeof(BarContentServiceTests).Assembly), _ => false, hub.CheckThread);
+        var author = service.AcquireProvider("author").Provider!;
+        foreach (string local in new[] { "first", "second" })
+            author.Register(new BarPatronDefinition(local, "station", local, "Description", "seed",
+                mission: new StoryContentId(author.ProviderId, local), occurrence: Guid.NewGuid()));
+        var session = Ready(hub, storage);
+        author.Place(session, "first"); author.Place(session, "second");
+        object epoch = new();
+        bool firstReady = true;
+        Assert.Null(service.Plan(session, "station", (mission, _) =>
+        {
+            if (mission.LocalId == "second") { firstReady = false; epoch = new object(); return true; }
+            return firstReady;
+        }, () => epoch));
+        Assert.False(firstReady);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RevokedOrThrowingPermissionInvalidatesExclusivePlans(bool throws)
+    {
+        using var hub = new LifecycleHub((_, error) => throw error);
+        var storage = new Storage();
+        bool allowed = true;
+        using var service = new BarContentService(storage, hub,
+            (plugin, _) => new StoryHostPlugin((string)plugin, typeof(BarContentServiceTests).Assembly),
+            _ => allowed ? true : throws ? throw new InvalidOperationException("permission unavailable") : false, hub.CheckThread);
+        var a = service.AcquireProvider("a").Provider!;
+        var b = service.AcquireProvider("b").Provider!;
+        a.Register(Definition()); b.Register(Definition());
+        a.ConfigureStation("station", BarRosterOwnership.Exclusive);
+        var session = Ready(hub, storage);
+        a.Place(session, "contact"); b.Place(session, "contact");
+        var original = service.Plan(session, "station")!;
+        Assert.False(original.Policy.KeepVanilla);
+        allowed = false;
+        Assert.False(service.IsCurrent(original));
+        var revoked = service.Plan(session, "station")!;
+        Assert.True(revoked.Policy.KeepVanilla);
+        Assert.Equal(b.ProviderId, Assert.Single(revoked.Patrons).Id.Provider);
+        Assert.Equal(BarRosterPolicy.Denial.ExclusivePermissionRequired, revoked.Policy.Denied[a.ProviderId]);
     }
 
     [Fact]
