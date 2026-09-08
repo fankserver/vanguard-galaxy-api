@@ -160,6 +160,17 @@ namespace VGModAPI.Tests
             Assert.Throws<InvalidDataException>(() => assets.Equipment("MissingBuilder"));
             Assert.Same(registry, Behaviour.Unit.SpaceShip.allShips);
             Assert.Same(ship, registry["NativeShip"]); Assert.Single(registry);
+            assets.Validate();
+            try
+            {
+                registry["NativeShip"] = new Behaviour.Unit.SpaceShip();
+                Assert.Throws<InvalidDataException>(() => assets.Validate());
+                Assert.Throws<InvalidDataException>(() => assets.Ship("NativeShip"));
+                registry["NativeShip"] = ship;
+                Behaviour.Unit.SpaceShip.allShips = new Dictionary<string, Behaviour.Unit.SpaceShip>(registry);
+                Assert.Throws<InvalidDataException>(() => assets.Validate());
+            }
+            finally { registry["NativeShip"] = ship; Behaviour.Unit.SpaceShip.allShips = registry; }
         }
         [Fact]
         public void UnitDispatchRemainsTheInspectedClosedSwitch()

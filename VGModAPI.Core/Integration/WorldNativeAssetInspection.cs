@@ -10,6 +10,14 @@ namespace VGModAPI.Core.Integration;
 internal sealed class WorldNativeAssetInspection
 {
     private readonly Assembly _assembly;
+    private readonly Dictionary<(FieldInfo Field, string Id), (IDictionary Registry, object Value)> _references = new();
+    internal void Validate()
+    {
+        foreach (var entry in _references)
+            if (!ReferenceEquals(entry.Key.Field.GetValue(null), entry.Value.Registry) || entry.Value.Registry.Count > 10000 ||
+                !entry.Value.Registry.Contains(entry.Key.Id) || !ReferenceEquals(entry.Value.Registry[entry.Key.Id], entry.Value.Value))
+                throw new InvalidDataException("Native asset registry changed after inspection.");
+    }
     internal WorldNativeAssetInspection(Assembly assembly) => _assembly = assembly;
     internal void Ship(string id) => Require("Behaviour.Unit.SpaceShip", "allShips", id);
     internal void Equipment(string id) => Require("Behaviour.Equipment.Builder.EquipmentBuilder", "allBuilders", id);
@@ -23,5 +31,16 @@ internal sealed class WorldNativeAssetInspection
         var value = registry[id];
         if (value == null || !type!.IsInstanceOfType(value) || value.GetType().Assembly != _assembly)
             throw new InvalidDataException("Provider-defined asset types are not admitted as native content.");
+        var key = (field, id);
+        if (_references.TryGetValue(key, out var prior))
+        {
+            if (!ReferenceEquals(prior.Registry, registry) || !ReferenceEquals(prior.Value, value))
+                throw new InvalidDataException("Native asset changed during inspection.");
+        }
+        else
+        {
+            if (_references.Count >= 10000) throw new InvalidDataException("Excessive native asset references.");
+            _references.Add(key, (registry, value));
+        }
     }
 }

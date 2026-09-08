@@ -57,6 +57,17 @@ public sealed class WorldConstructionGateTests
     }
 
     [Fact]
+    public void AssetReceiptIsRecheckedAtFactoryAndCannotInvalidateAdmissionSilently()
+    {
+        var gate = new WorldConstructionGate(); var session = Guid.NewGuid(); gate.Start(session);
+        var original = Node(); int checks = 0;
+        var node = new WorldConstructionNode(original.Json, original.Identity, Hash, () => { checks++; gate.Invalidate(); });
+        gate.Open(session, Association(), "/save/a", Hash, 1, new[] { "author.one" }, new[] { node });
+        Assert.Throws<InvalidDataException>(() => gate.RequireFactory(session, node.Json, node.Identity.NativeId, Hash, 1));
+        Assert.Equal(1, checks);
+    }
+
+    [Fact]
     public void ExactNodeGenerationAndProviderRevisionAreRequired()
     {
         var gate = new WorldConstructionGate(); var session = Guid.NewGuid(); gate.Start(session);

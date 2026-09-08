@@ -6,14 +6,14 @@ namespace VGModAPI.Core.Integration;
 internal sealed partial class WorldJsonInspection
 {
     // Bounds apply before both immediate payload generation and deferred guard generation.
-    private void CheckDescriptor(object descriptor)
+    private void CheckDescriptor(object descriptor, WorldNativeAssetInspection assets)
     {
         var kind = Text(descriptor, "type");
         _nested.Descriptor(kind);
         CheckAutoActions(descriptor);
         if (kind == "FixedPayloadDescriptor")
         {
-            _assets.Ship(Text(descriptor, "fixedUnit"));
+            assets.Ship(Text(descriptor, "fixedUnit"));
             Number(descriptor, "unitCount", 0, 128, true);
             OptionalNumber(descriptor, "overrideLevel", 1, 10000, true);
             OptionalNumber(descriptor, "bonusEquipChance", 0, 1, false);
@@ -21,7 +21,7 @@ internal sealed partial class WorldJsonInspection
             OptionalEnum(descriptor, "loadout", "Source.Util.GameplayType");
             if (!(bool)_isNull.GetValue(Field(descriptor, "bonusEquipBuilderId"))!)
             {
-                _assets.Equipment(Text(descriptor, "bonusEquipBuilderId"));
+                assets.Equipment(Text(descriptor, "bonusEquipBuilderId"));
                 Number(descriptor, "bonusEquipChance", 0, 1, false);
             }
         }

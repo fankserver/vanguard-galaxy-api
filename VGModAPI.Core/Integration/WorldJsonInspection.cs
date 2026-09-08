@@ -13,8 +13,10 @@ internal sealed class WorldParsedNode
     internal string NativeId { get; }
     internal string SystemId { get; }
     internal string Digest { get; }
-    internal WorldParsedNode(object json, string nativeId, string systemId, string digest)
-    { Json = json; NativeId = nativeId; SystemId = systemId; Digest = digest; }
+    private readonly Action? _validateAssets;
+    internal void ValidateAssets() => _validateAssets?.Invoke();
+    internal WorldParsedNode(object json, string nativeId, string systemId, string digest, Action? validateAssets = null)
+    { Json = json; NativeId = nativeId; SystemId = systemId; Digest = digest; _validateAssets = validateAssets; }
 }
 
 /// <summary>Inspects the serialized galaxy before native constructors. Does not invoke a vanilla type factory.</summary>
@@ -25,7 +27,6 @@ internal sealed partial class WorldJsonInspection
     private readonly MethodInfo _parse;
     private readonly WorldSaveFormat _format;
     private readonly WorldNestedTypeCatalog _nested;
-    private readonly WorldNativeAssetInspection _assets;
     private readonly PropertyInfo _isNull;
     internal void SealSnapshot(object root, bool owned) => _format.Seal(root, owned);
     internal void UnsealVerified(object root, bool owned) => _format.UnsealVerified(root, owned);
@@ -35,7 +36,6 @@ internal sealed partial class WorldJsonInspection
     {
         _format = new WorldSaveFormat(assembly);
         _nested = new WorldNestedTypeCatalog(assembly);
-        _assets = new WorldNativeAssetInspection(assembly);
         _objectType = assembly.GetType("LightJson.JsonObject", true)!;
         var value = assembly.GetType("LightJson.JsonValue", true)!;
         _parse = value.GetMethod("Parse", BindingFlags.Public | BindingFlags.Static, null, new[] { typeof(string) }, null)
@@ -91,6 +91,7 @@ internal sealed partial class WorldJsonInspection
         // The native loader also supports a single-sector map represented directly by its systems.
         if ((bool)_isArray.GetValue(Field(map, "systems"))!) ReadSystems(map);
         else foreach (var sector in Array(Field(map, "sectors"))) { Visit(); ReadSystems(Object(sector)); }
+        foreach (var node in result) node.ValidateAssets();
         return result.ToArray();
 
         void Visit() { if (++visited > MaxVisited) throw new InvalidDataException("World inspection exceeds its node budget."); }
@@ -107,8 +108,8 @@ internal sealed partial class WorldJsonInspection
                     if (result.Count >= WorldSerializationAssociation.MaxObjects || !ids.Add(id)) throw new InvalidDataException("Duplicate or excessive owned POIs.");
                     if (Text(poi, "type") != "Combat" || Text(poi, "systemName") != systemId)
                         throw new InvalidDataException("Owned POI type or parent link is not supported.");
-                    CheckNestedFactories(poi, Visit);
-                    result.Add(new WorldParsedNode(poi, id, systemId, Digest(poi)));
+                    var assets = CheckNestedFactories(poi, Visit);
+                    result.Add(new WorldParsedNode(poi, id, systemId, Digest(poi), assets.Validate));
                 }
             }
         }
@@ -116,8 +117,9 @@ internal sealed partial class WorldJsonInspection
 
     // These are the directly dispatched nested factories in LoadOptionalPoiData/MapTriggeredPayload.
     // Their subtype data, lazy generation and other nested schemas still require separate validation.
-    private void CheckNestedFactories(object poi, Action visit)
+    private WorldNativeAssetInspection CheckNestedFactories(object poi, Action visit)
     {
+        var assets = new WorldNativeAssetInspection(_objectType.Assembly);
         void OptionalArray(object parent, string key, Action<object> check)
         {
             var value = Field(parent, key);
@@ -135,22 +137,23 @@ internal sealed partial class WorldJsonInspection
             OptionalArray(parent, "units", item =>
             {
                 var kind = Text(item, "type"); WorldNestedTypeCatalog.Unit(kind);
-                if (kind == "SpaceShip") _assets.Ship(Text(item, "shipClass"));
+                if (kind == "SpaceShip") assets.Ship(Text(item, "shipClass"));
                 CheckAutoActions(item);
             });
         }
         Bodies(poi);
-        OptionalArray(poi, "guardDescriptors", item => CheckDescriptor(item));
+        OptionalArray(poi, "guardDescriptors", item => CheckDescriptor(item, assets));
         OptionalArray(poi, "payloads", item =>
         {
             Bodies(item);
             var descriptor = Field(item, "descriptor");
-            if (!(bool)_isNull.GetValue(descriptor)!) { visit(); CheckDescriptor(Object(descriptor)); }
+            if (!(bool)_isNull.GetValue(descriptor)!) { visit(); CheckDescriptor(Object(descriptor), assets); }
         });
         var field = Field(poi, "hazardFieldData");
         if (!(bool)_isNull.GetValue(field)!) { visit(); CheckHazardField(Object(field)); }
         var storyteller = Field(poi, "storyteller");
         if (!(bool)_isNull.GetValue(storyteller)!) { visit(); _nested.Storyteller(Text(Object(storyteller), "identifier")); }
+        return assets;
     }
 
     private void CheckAutoActions(object data)
@@ -179,7 +182,7 @@ internal sealed partial class WorldJsonInspection
             if (node == null || !inventory.TryGetValue(node.NativeId, out var row) || node.SystemId != row.SystemId || node.Digest != row.NativeDigest)
                 throw new InvalidDataException("World node does not match its committed metadata.");
             inventory.Remove(node.NativeId);
-            result[i] = new WorldConstructionNode(node.Json, row.Identity, node.Digest);
+            result[i] = new WorldConstructionNode(node.Json, row.Identity, node.Digest, node.ValidateAssets);
         }
         return result;
     }

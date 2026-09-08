@@ -11,8 +11,10 @@ internal sealed class WorldConstructionNode
     internal object Json { get; }
     internal WorldObjectIdentity Identity { get; }
     internal string Digest { get; }
-    internal WorldConstructionNode(object json, WorldObjectIdentity identity, string digest)
-    { Json = json ?? throw new ArgumentNullException(nameof(json)); Identity = identity ?? throw new ArgumentNullException(nameof(identity)); Digest = digest; }
+    private readonly Action? _validateAssets;
+    internal void ValidateAssets() => _validateAssets?.Invoke();
+    internal WorldConstructionNode(object json, WorldObjectIdentity identity, string digest, Action? validateAssets = null)
+    { Json = json ?? throw new ArgumentNullException(nameof(json)); Identity = identity ?? throw new ArgumentNullException(nameof(identity)); Digest = digest; _validateAssets = validateAssets; }
 }
 
 /// <summary>Pre-factory admission only. The adapter must establish decoded metadata, parsed-node provenance and provider revision before opening a load.</summary>
@@ -80,6 +82,9 @@ internal sealed class WorldConstructionGate
         if (!_ready || session != _session || providerRevision != _providerRevision || !known ||
             !string.Equals(node!.Identity.NativeId, nativeId, StringComparison.Ordinal) || !string.Equals(node.Digest, digest, StringComparison.Ordinal))
             throw new InvalidDataException("Owned world construction lacks current verified generation admission.");
+        node!.ValidateAssets();
+        if (!_ready || session != _session || providerRevision != _providerRevision || !_nodes.TryGetValue(json, out var current) || !ReferenceEquals(current, node))
+            throw new InvalidDataException("World admission changed during asset validation.");
         return node;
     }
 

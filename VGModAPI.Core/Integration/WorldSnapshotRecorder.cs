@@ -93,8 +93,10 @@ internal sealed class WorldSnapshotRecorder
         var beforeValidation = WorldJsonInspection.Digest(root);
         validateBeforePublish?.Invoke();
         if (operation != _operation || beforeValidation != WorldJsonInspection.Digest(root)) return false;
+        foreach (var node in nodes) node.ValidateAssets();
         _json.SealSnapshot(root, rows.Length != 0);
         var digest = WorldJsonInspection.Digest(root);
+        foreach (var node in nodes) node.ValidateAssets();
         if (operation != _operation) return false;
         var stateToken = _states.Begin(revision, state, objects);
         var definitionToken = _definitions.Begin(revision, capture.Definitions, objects);
