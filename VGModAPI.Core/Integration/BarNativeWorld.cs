@@ -14,10 +14,11 @@ internal sealed class BarNativeWorld : IBarRosterWorld
     private readonly BarStationSource _station;
     private readonly Func<object, bool> _owned;
     private readonly Func<BarPatronState, object, object?> _create;
-    private readonly FieldInfo _bar, _guid, _patrons, _seat;
+    private readonly FieldInfo _bar, _guid, _patrons, _seat, _updateTime;
     private readonly Type _patronType;
     private readonly int _capacity;
     private readonly ConditionalWeakTable<object, RetainedRoster> _retained = new();
+    private readonly ConditionalWeakTable<object, RefreshToken> _refreshes = new();
 
     private sealed class RetainedRoster
     {
@@ -31,8 +32,46 @@ internal sealed class BarNativeWorld : IBarRosterWorld
 
     internal object[]? RetainedVanilla(object bar)
     {
-        return _retained.TryGetValue(bar, out var retained) && retained.Matches(_patrons.GetValue(bar))
-            ? retained.Vanilla.ToArray() : null;
+        if (_refreshes.TryGetValue(bar, out _)) throw new InvalidOperationException("Native bar refresh is in progress.");
+        if (!_retained.TryGetValue(bar, out var retained)) return null;
+        if (!retained.Matches(_patrons.GetValue(bar)))
+            throw new InvalidOperationException("Retained vanilla roster is uncertain; a verified native refresh is required.");
+        return retained.Vanilla.ToArray();
+    }
+
+    internal sealed class RefreshToken
+    {
+        internal readonly BarNativeWorld Owner;
+        internal readonly object Bar;
+        internal readonly long Time;
+        internal bool Completed;
+        internal readonly RefreshToken? Parent;
+        internal RefreshToken(BarNativeWorld owner, object bar, long time, RefreshToken? parent)
+        { Owner = owner; Bar = bar; Time = time; Parent = parent; }
+    }
+
+    internal RefreshToken BeginNativeRefresh(object bar)
+    {
+        _refreshes.TryGetValue(bar, out var parent);
+        var token = new RefreshToken(this, bar, (long)_updateTime.GetValue(bar)!, parent);
+        _refreshes.Remove(bar);
+        _refreshes.Add(bar, token);
+        return token;
+    }
+
+    // Call only from the inspected CheckUpdatePatrons boundary with Harmony's original-run
+    // evidence and successful completion. The final native timestamp write proves regeneration,
+    // unlike arbitrary edits to the list by another postfix. A daily no-op retains the baseline.
+    internal bool CompleteNativeRefresh(RefreshToken token, bool originalRan, bool succeeded)
+    {
+        if (!ReferenceEquals(token.Owner, this) || token.Completed
+            || !_refreshes.TryGetValue(token.Bar, out var current) || !ReferenceEquals(current, token)) return false;
+        token.Completed = true;
+        _refreshes.Remove(token.Bar);
+        if (token.Parent != null) { _refreshes.Add(token.Bar, token.Parent); return false; }
+        if (!originalRan || !succeeded || (long)_updateTime.GetValue(token.Bar)! == token.Time) return false;
+        _retained.Remove(token.Bar);
+        return true;
     }
 
     internal BarNativeWorld(Type stationType, Type barType, Type patronType, BarStationSource station,
@@ -42,7 +81,8 @@ internal sealed class BarNativeWorld : IBarRosterWorld
         _guid = stationType.GetField("guid", Fields) ?? throw new MissingFieldException("station.guid");
         _patrons = barType.GetField("availablePatrons", Fields) ?? throw new MissingFieldException("bar.availablePatrons");
         _seat = patronType.GetField("seat", Fields) ?? throw new MissingFieldException("BarPatron.seat");
-        if (_seat.FieldType != typeof(int) || _bar.FieldType != barType || _guid.FieldType != typeof(string)
+        _updateTime = barType.GetField("lastUpdateTime", Fields) ?? throw new MissingFieldException("Bar.lastUpdateTime");
+        if (_updateTime.FieldType != typeof(long) || _seat.FieldType != typeof(int) || _bar.FieldType != barType || _guid.FieldType != typeof(string)
             || _patrons.FieldType != typeof(List<>).MakeGenericType(patronType)) throw new InvalidOperationException("Unsupported native bar shape.");
         if (capacity < 1 || capacity > 32) throw new ArgumentOutOfRangeException(nameof(capacity));
         _station = station; _owned = owned; _create = create; _patronType = patronType; _capacity = capacity;
@@ -116,7 +156,7 @@ internal sealed class BarNativeWorld : IBarRosterWorld
         }
         var replacement = (IList)Activator.CreateInstance(_patrons.FieldType)!;
         foreach (var patron in copy) replacement.Add(patron);
-        if (!Stable(token) || !stillValid() || !Stable(token)) return false;
+        if (!Stable(token) || !stillValid() || !Stable(token) || _refreshes.TryGetValue(token.Bar, out _)) return false;
         var retained = new RetainedRoster(replacement, copy, token.Vanilla);
         _patrons.SetValue(token.Bar, replacement);
         _retained.Remove(token.Bar);

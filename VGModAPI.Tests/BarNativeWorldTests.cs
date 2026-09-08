@@ -9,7 +9,7 @@ namespace VGModAPI.Tests;
 public sealed class BarNativeWorldTests
 {
     public sealed class Patron { public int seat = 1; public bool Owned; }
-    public sealed class Bar { public List<Patron> availablePatrons = new(); }
+    public sealed class Bar { public List<Patron> availablePatrons = new(); public long lastUpdateTime = 1; }
     public sealed class Station { public string guid = "station"; public Bar bar = new(); }
     public sealed class Player { public static Player? current; public object? currentPointOfInterest; }
     public sealed class PropertyPlayer
@@ -85,9 +85,32 @@ public sealed class BarNativeWorldTests
         Assert.True(world.Apply(restore, restore.VanillaPatrons, () => true));
         Assert.Same(vanilla, Assert.Single(station.bar.availablePatrons));
         var fresh = new Patron();
+        var refresh = world.BeginNativeRefresh(station.bar);
         station.bar.availablePatrons.Clear(); station.bar.availablePatrons.Add(fresh);
+        station.bar.lastUpdateTime++;
+        Assert.True(world.CompleteNativeRefresh(refresh, true, true));
+        Assert.False(world.CompleteNativeRefresh(refresh, true, true));
         Assert.Null(world.RetainedVanilla(station.bar));
         Assert.Same(fresh, Assert.Single(world.Capture("station")!.VanillaPatrons));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void UnverifiedMutationRefusesInsteadOfDroppingHiddenVanilla(int mutation)
+    {
+        var station = new Station(); var vanilla = new Patron(); station.bar.availablePatrons.Add(vanilla);
+        var world = World(() => station);
+        Assert.True(world.Apply(world.Capture("station")!, new object[] { new Patron { Owned = true } }, () => true));
+        if (mutation == 0) station.bar.availablePatrons.Add(new Patron());
+        else if (mutation == 1) station.bar.availablePatrons.Clear();
+        else station.bar.availablePatrons = new List<Patron>(station.bar.availablePatrons);
+        Assert.Throws<InvalidOperationException>(() => world.RetainedVanilla(station.bar));
+        Assert.Throws<InvalidOperationException>(() => world.Capture("station"));
+        var noop = world.BeginNativeRefresh(station.bar);
+        Assert.False(world.CompleteNativeRefresh(noop, true, true));
+        Assert.Throws<InvalidOperationException>(() => world.RetainedVanilla(station.bar));
     }
 
     [Fact]

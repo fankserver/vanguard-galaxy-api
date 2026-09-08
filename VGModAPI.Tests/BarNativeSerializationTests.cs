@@ -84,8 +84,12 @@ public sealed class BarNativeSerializationTests
         Assert.Equal(1, vanilla.Calls);
     }
 
-    [Fact]
-    public void ExclusiveRosterStillSerializesSuppressedVanillaForMissingProviderLoads()
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void ExclusiveRosterPreservesSuppressedVanillaOrRefusesUncertainSerialization(int mutation)
     {
         var factory = new BarNativeContacts(typeof(Salesman), typeof(Patron), typeof(Station), _ => new UnityEngine.Sprite());
         var station = new Station(); var vanilla = new Patron(); station.bar.availablePatrons.Add(vanilla);
@@ -95,6 +99,15 @@ public sealed class BarNativeSerializationTests
         var contact = world.CreateContact(state)!;
         Assert.True(world.Apply(world.Capture("station")!, new[] { contact }, () => true));
         var serializer = new BarNativeSerialization(typeof(Bar), typeof(Patron), typeof(Value), typeof(JsonObject), typeof(JsonArray), factory, world);
+        if (mutation >= 0)
+        {
+            if (mutation == 0) station.bar.availablePatrons.Add(new Patron());
+            else if (mutation == 1) station.bar.availablePatrons.Clear();
+            else station.bar.availablePatrons = new List<Patron>(station.bar.availablePatrons);
+            Assert.Throws<InvalidOperationException>(() => serializer.TrySerialize(station.bar, () => true, out _));
+            Assert.Equal(0, vanilla.Calls);
+            return;
+        }
         Assert.True(serializer.TrySerialize(station.bar, () => true, out var result));
         var obj = (JsonObject)((Value)result!).Data!;
         Assert.Single(((JsonArray)obj.Fields["availablePatrons"].Data!).Items);
