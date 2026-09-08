@@ -10,12 +10,12 @@ namespace VGModAPI.Core.Integration;
 internal sealed class WorldNativeAssetInspection
 {
     private readonly Assembly _assembly;
-    private readonly Dictionary<(FieldInfo Field, string Id), (IDictionary Registry, object Value)> _references = new();
+    private readonly Dictionary<(FieldInfo Field, string Id), (IDictionary Registry, object Value, bool Unity)> _references = new();
     internal void Validate()
     {
         foreach (var entry in _references)
         {
-            RequireAlive(entry.Value.Value);
+            if (entry.Value.Unity) RequireAlive(entry.Value.Value);
             if (!ReferenceEquals(entry.Key.Field.GetValue(null), entry.Value.Registry) || entry.Value.Registry.Count > 10000 ||
                 !entry.Value.Registry.Contains(entry.Key.Id) || !ReferenceEquals(entry.Value.Registry[entry.Key.Id], entry.Value.Value))
                 throw new InvalidDataException("Native asset registry changed after inspection.");
@@ -32,7 +32,8 @@ internal sealed class WorldNativeAssetInspection
     internal WorldNativeAssetInspection(Assembly assembly) => _assembly = assembly;
     internal void Ship(string id) => Require("Behaviour.Unit.SpaceShip", "allShips", id);
     internal void Equipment(string id) => Require("Behaviour.Equipment.Builder.EquipmentBuilder", "allBuilders", id);
-    private void Require(string typeName, string fieldName, string id)
+    internal void Faction(string id) => Require("Source.Galaxy.Faction", "allFactions", id, false);
+    private void Require(string typeName, string fieldName, string id, bool unity = true)
     {
         var type = _assembly.GetType(typeName, false);
         var field = type?.GetField(fieldName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly);
@@ -42,7 +43,7 @@ internal sealed class WorldNativeAssetInspection
         var value = registry[id];
         if (value == null || !type!.IsInstanceOfType(value) || value.GetType().Assembly != _assembly)
             throw new InvalidDataException("Provider-defined asset types are not admitted as native content.");
-        RequireAlive(value);
+        if (unity) RequireAlive(value);
         var key = (field, id);
         if (_references.TryGetValue(key, out var prior))
         {
@@ -52,7 +53,7 @@ internal sealed class WorldNativeAssetInspection
         else
         {
             if (_references.Count >= 10000) throw new InvalidDataException("Excessive native asset references.");
-            _references.Add(key, (registry, value));
+            _references.Add(key, (registry, value, unity));
         }
     }
 }

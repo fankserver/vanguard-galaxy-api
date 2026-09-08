@@ -138,10 +138,13 @@ internal sealed partial class WorldJsonInspection
             {
                 var kind = Text(item, "type"); WorldNestedTypeCatalog.Unit(kind);
                 if (kind == "SpaceShip") assets.Ship(Text(item, "shipClass"));
+                CheckFaction(item, "faction", assets);
                 CheckAutoActions(item);
             });
         }
         Bodies(poi);
+        CheckFaction(poi, "faction", assets);
+        CheckFaction(poi, "oreOwnershipOverride", assets);
         OptionalArray(poi, "guardDescriptors", item => CheckDescriptor(item, assets));
         OptionalArray(poi, "payloads", item =>
         {
@@ -154,6 +157,11 @@ internal sealed partial class WorldJsonInspection
         var storyteller = Field(poi, "storyteller");
         if (!(bool)_isNull.GetValue(storyteller)!) { visit(); _nested.Storyteller(Text(Object(storyteller), "identifier")); }
         return assets;
+    }
+
+    private void CheckFaction(object data, string key, WorldNativeAssetInspection assets)
+    {
+        if (!(bool)_isNull.GetValue(Field(data, key))!) assets.Faction(Text(data, key));
     }
 
     private void CheckAutoActions(object data)

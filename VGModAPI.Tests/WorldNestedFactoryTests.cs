@@ -142,6 +142,7 @@ namespace VGModAPI.Tests
         [Theory]
         [InlineData("fixedUnit", "NativeShip", true)]
         [InlineData("fixedUnit", "MissingShip", false)]
+        [InlineData("factionId", "UnregisteredWorldFaction", false)]
         [InlineData("rank", "Rookie", true)]
         [InlineData("rank", "0", false)]
         [InlineData("rank", "Unknown", false)]
@@ -197,6 +198,26 @@ namespace VGModAPI.Tests
                 Assert.Throws<InvalidDataException>(() => new WorldNativeAssetInspection(typeof(JsonObject).Assembly).Ship(id));
             }
             finally { Behaviour.Unit.SpaceShip.allShips.Remove(id); }
+        }
+        [Fact]
+        public void FactionInspectionDoesNotCreateMissingFactionsAndRetainsExactInstances()
+        {
+            string id = "world-faction-" + Guid.NewGuid().ToString("N");
+            var factions = Source.Galaxy.Faction.allFactions;
+            var faction = new Source.Galaxy.Faction { identifier = id };
+            factions.Add(id, faction);
+            try
+            {
+                var assets = new WorldNativeAssetInspection(typeof(JsonObject).Assembly);
+                assets.Faction(id); assets.Validate();
+                var count = factions.Count;
+                Assert.Throws<InvalidDataException>(() => assets.Faction(id + "-missing"));
+                Assert.Equal(count, factions.Count);
+                Assert.False(factions.ContainsKey(id + "-missing"));
+                factions[id] = new Source.Galaxy.Faction { identifier = id };
+                Assert.Throws<InvalidDataException>(() => assets.Validate());
+            }
+            finally { factions.Remove(id); }
         }
         [Fact]
         public void UnitDispatchRemainsTheInspectedClosedSwitch()

@@ -11,6 +11,7 @@ internal sealed partial class WorldJsonInspection
         var kind = Text(descriptor, "type");
         _nested.Descriptor(kind);
         CheckAutoActions(descriptor);
+        CheckFaction(descriptor, "factionId", assets);
         if (kind == "FixedPayloadDescriptor")
         {
             assets.Ship(Text(descriptor, "fixedUnit"));
