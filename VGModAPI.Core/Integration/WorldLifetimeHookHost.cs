@@ -9,6 +9,7 @@ internal interface IWorldLifetimeHookHost
     bool AllowAmbient(object poi);
     bool AllowRemoval(object poi);
     bool AllowUse(object poi);
+    bool AllowManager(object manager);
 }
 
 /// <summary>Refuses reserved ambient/removal paths before their native bodies; no world readiness is inferred.</summary>
@@ -16,6 +17,7 @@ internal sealed class WorldLifetimeHookHost : IWorldLifetimeHookHost, IDisposabl
 {
     private readonly LifecycleHub _hub;
     private readonly FieldInfo _guid;
+    private readonly FieldInfo _managerPoi;
     private readonly WorldLifetimeGuard _guard = new();
     private readonly IDisposable _subscription;
     private Guid _session;
@@ -27,6 +29,8 @@ internal sealed class WorldLifetimeHookHost : IWorldLifetimeHookHost, IDisposabl
         _guid = assembly.GetType("Source.Galaxy.MapElement", true)!.GetField("<guid>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance)
             ?? throw new MissingFieldException("MapElement.guid backing field");
         if (_guid.FieldType != typeof(string)) throw new MissingFieldException("MapElement.guid must be a string.");
+        _managerPoi = assembly.GetType("Behaviour.Managers.BasePoiManager", true)!.GetField("<poi>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance)
+            ?? throw new MissingFieldException("BasePoiManager.poi backing field");
         _subscription = hub.Subscribe("vgmodapi.world-lifetime", OnLifecycle);
     }
     private void OnLifecycle(LifecycleEvent e)
@@ -43,6 +47,12 @@ internal sealed class WorldLifetimeHookHost : IWorldLifetimeHookHost, IDisposabl
         return _guard.AllowAmbient(_hub.CurrentSession?.Id ?? Guid.Empty, poi, Identity(poi));
     }
     public bool AllowUse(object poi) => AllowAmbient(poi);
+    public bool AllowManager(object manager)
+    {
+        _hub.CheckThread();
+        var poi = _managerPoi.GetValue(manager);
+        return poi == null || AllowUse(poi);
+    }
     public bool AllowRemoval(object poi)
     {
         _hub.CheckThread(); return _guard.AllowNativeRemoval(poi, Identity(poi));

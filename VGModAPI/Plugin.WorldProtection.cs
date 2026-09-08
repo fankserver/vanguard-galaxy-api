@@ -43,7 +43,7 @@ public sealed partial class Plugin
             _worldSnapshotHost = new WorldSnapshotHookHost(_hub, new WorldSnapshotRecorder(new WorldJsonInspection(assembly)), creation.Snapshot, () => creation.Revision);
             _worldPersistence = new WorldPersistenceBindings(_persistence, _hub, _worldLoadHost, _worldSnapshotHost, creation);
             _worldRuntime = new WorldRuntimeState(_adapter, _worldLoadHost, definitions, creation);
-            var selected = WorldNativeBindings.Methods.Where(m => m.Key == "worldPoiRead" || m.Key == "worldRecall" || m.Key == "worldCombatUpdate" || m.Key == "worldRemove" || m.Key == "worldSnapshot" || m.Key == "worldStore" || m.Key == "worldActiveUpdate" || m.Key == "worldCanTravel" || m.Key == "worldRoute").ToArray();
+            var selected = WorldNativeBindings.Methods.Where(m => m.Key == "worldPoiRead" || m.Key == "worldRecall" || m.Key == "worldCombatUpdate" || m.Key == "worldRemove" || m.Key == "worldSnapshot" || m.Key == "worldStore" || m.Key == "worldActiveUpdate" || m.Key == "worldCanTravel" || m.Key == "worldRoute" || m.Key == "worldBaseArrival" || m.Key == "worldCombatArrival" || m.Key == "worldSpawnPersistable" || m.Key == "worldSpawnUnit").ToArray();
             var targets = new GameBindings(assembly).Resolve(selected);
             _worldLoadHarmony = new Harmony(ModApi.PluginId + ".world-load");
             WorldLoadHookInstallation.Install(
@@ -60,6 +60,10 @@ public sealed partial class Plugin
                     _worldLoadHarmony.Patch(targets["worldActiveUpdate"], prefix: new HarmonyMethod(typeof(WorldLifetimePatches.Active).GetMethod("Prefix", BindingFlags.NonPublic | BindingFlags.Static)));
                     _worldLoadHarmony.Patch(targets["worldCanTravel"], prefix: new HarmonyMethod(typeof(WorldLifetimePatches.CanTravel).GetMethod("Prefix", BindingFlags.NonPublic | BindingFlags.Static)));
                     _worldLoadHarmony.Patch(targets["worldRoute"], prefix: new HarmonyMethod(typeof(WorldLifetimePatches.Route).GetMethod("Prefix", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.First });
+                    foreach (var key in new[] { "worldBaseArrival", "worldCombatArrival" })
+                        _worldLoadHarmony.Patch(targets[key], prefix: new HarmonyMethod(typeof(WorldLifetimePatches.Arrival).GetMethod("Prefix", BindingFlags.NonPublic | BindingFlags.Static)));
+                    foreach (var key in new[] { "worldSpawnPersistable", "worldSpawnUnit" })
+                        _worldLoadHarmony.Patch(targets[key], prefix: new HarmonyMethod(typeof(WorldLifetimePatches.Spawn).GetMethod("Prefix", BindingFlags.NonPublic | BindingFlags.Static)));
                     // Establish the owner capture scope before the lifecycle Store prefix emits SaveStarted.
                     _worldLoadHarmony.Patch(targets["worldStore"],
                         prefix: new HarmonyMethod(typeof(WorldSnapshotPatches.Store).GetMethod("Prefix", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.First },

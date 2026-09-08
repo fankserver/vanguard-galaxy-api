@@ -9,6 +9,18 @@ internal static class WorldLifetimePatches
     {
         internal static bool Prefix(object __instance) => Host?.AllowAmbient(__instance) ?? true;
     }
+    internal static class Arrival
+    {
+        internal static bool Prefix(object __instance) => Host?.AllowManager(__instance) ?? true;
+    }
+    internal static class Spawn
+    {
+        internal static void Prefix(object __instance)
+        {
+            if (!(Host?.AllowManager(__instance) ?? true))
+                throw new System.IO.InvalidDataException("Quarantined world content cannot spawn native objects.");
+        }
+    }
     internal static class Active
     {
         internal static bool Prefix(object __instance) => Host?.AllowUse(__instance) ?? true;

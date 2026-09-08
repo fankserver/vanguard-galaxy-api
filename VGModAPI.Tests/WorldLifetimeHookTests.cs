@@ -30,6 +30,11 @@ public sealed class WorldLifetimeHookTests : IDisposable
         Assert.False(WorldLifetimePatches.CanTravel.Prefix(owned, ref result)); Assert.False(result);
         Assert.True(WorldLifetimePatches.Route.Prefix(vanilla, ref result));
         Assert.True(WorldLifetimePatches.Active.Prefix(vanilla));
+        var manager = new Behaviour.Managers.TestPoiManager { poi = owned };
+        Assert.False(WorldLifetimePatches.Arrival.Prefix(manager));
+        Assert.Throws<System.IO.InvalidDataException>(() => WorldLifetimePatches.Spawn.Prefix(manager));
+        manager.poi = vanilla;
+        Assert.True(WorldLifetimePatches.Arrival.Prefix(manager)); WorldLifetimePatches.Spawn.Prefix(manager);
         owned.guid = "stripped";
         host.Dispose();
         Assert.False(WorldLifetimePatches.Ambient.Prefix(owned));
