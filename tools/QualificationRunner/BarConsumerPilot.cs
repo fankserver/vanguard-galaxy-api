@@ -20,6 +20,8 @@ public sealed partial class Plugin
         var anima = Chainloader.PluginInfos["vganima"].Instance;
         var custom = Chainloader.PluginInfos["com.vanguardgalaxy.custommission"].Instance;
         var tts = Chainloader.PluginInfos["vgtts"].Instance;
+        Require(!(bool)SpGet(SpGet(tts, "CfgEnabled")!, "Value")!
+            && !(bool)SpGet(SpGet(tts, "CfgDialogue")!, "Value")!, "Roster-only fixture must disable speech synthesis.");
         Require(anima.enabled && (bool)SpGet(anima, "_active")! && (bool)SpGet(anima, "ManagedBarsSelected")!, "Anima managed provider inactive.");
         Require(SpGet(anima, "LlmClient") == null, "Consumer fixture must not contact an LLM endpoint.");
         var player = CurrentPlayer;

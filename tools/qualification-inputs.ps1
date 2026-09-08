@@ -1,4 +1,5 @@
 # Prepared-input helpers; safe to exercise with synthetic files.
+. (Join-Path $PSScriptRoot 'qualification-bar-consumers.ps1')
 # Accepted Anima pilot shapes, each pinned to the exact hard API dependency that version declares.
 # The consumer travel probe additionally requires the 0.4.0 shape, which is the first one that
 # observes system visits through the public travel surface.
@@ -1116,6 +1117,9 @@ function Assert-QualificationInputs([string]$Root) {
         if (!$provenance.PSObject.Properties['travelResilienceBudgetSeconds'] -or
             [int]$provenance.travelResilienceBudgetSeconds -ne $TravelResilienceBudgetSeconds) { throw 'Travel resilience budget reservation changed.' }
     }
+    $barConsumers = $provenance.PSObject.Properties['barConsumers'] -and $provenance.barConsumers -eq $true
+    if ([bool]$barConsumers -ne (Test-Path -LiteralPath (Join-Path $Root 'bar-consumers.enabled') -PathType Leaf)) { throw 'Consumer bar selection changed.' }
+    if ($barConsumers) { Assert-BarConsumerInputs $Root $provenance }
     $bars = $provenance.PSObject.Properties['barProbe'] -and $provenance.barProbe -eq $true
     if ([bool]$bars -ne (Test-Path -LiteralPath (Join-Path $Root 'bars.enabled') -PathType Leaf)) { throw 'Bar selection changed.' }
     if ($bars) {
@@ -1172,7 +1176,7 @@ function Assert-QualificationInputs([string]$Root) {
         $enabled = [regex]::Matches($config, '(?m)^Enabled\s*=\s*true\s*$')
         if ($roots.Count -ne 1 -or $settings.Count -gt 1 -or $enabled.Count -ne $settings.Count -or [IO.Path]::GetFullPath($roots[0].Groups[1].Value.Trim()) -ine [IO.Path]::GetFullPath((Join-Path $Root 'state'))) { throw 'Persistence probe root/config changed.' }
     }
-    if (!$probe -and !$story -and !$storyAbsent -and !$bars) {
+    if (!$probe -and !$story -and !$storyAbsent -and !$bars -and !$barConsumers) {
         $config = Get-Content -LiteralPath (Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg') -Raw
         $sections = [regex]::Matches($config, '(?ms)^\[Persistence\]\r?\n(?<body>.*?)(?=^\[|\z)')
         if ($sections.Count -ne 1 -or [regex]::Matches($sections[0].Groups['body'].Value, '(?m)^Enabled\s*=').Count -ne 1 -or [regex]::Matches($sections[0].Groups['body'].Value, '(?m)^Enabled\s*=\s*false\s*$').Count -ne 1) { throw 'Legacy control must explicitly disable API-managed saves.' }
@@ -1249,6 +1253,7 @@ function Assert-QualificationInputs([string]$Root) {
     $expected = @('QualificationGuard.dll')
     if ($story) { $expected += @('OwnedStoryCampaign.dll','OwnedStoryJob.dll') }
     if ($bars) { $expected += @('OwnedBarAuthorA.dll','OwnedBarAuthorB.dll') }
+    if ($barConsumers) { $expected += @('VGAnima.dll','VGTTS.dll','VanguardGalaxy.CustomMission.dll','Newtonsoft.Json.dll') }
     if ($provenance.scenario -ne 'MissingApi') { $expected += @('VGModAPI.dll','VGModAPI.Core.dll','VGModAPI.Abstractions.dll','vgmodapi.vgmod.json') }
     if ($provenance.scenario -eq 'Full') { $expected += @('QualificationRunner.dll','LifecycleObserver.dll') }
     if ($provenance.missionJournal) { $expected += @('VGMissionJournal.dll','Newtonsoft.Json.dll') }
@@ -1261,6 +1266,10 @@ function Assert-QualificationInputs([string]$Root) {
         @($provenance.plugins.PSObject.Properties.Name | Where-Object { $_ -notin $expected }).Count -gt 0) { throw 'Scenario plugin allowlist mismatch.' }
     $plugins = Join-Path $Root 'game\BepInEx\plugins'
     $actual = @(Get-ChildItem -LiteralPath $plugins -Force)
+    if ($barConsumers) {
+        # The single sealed tools tree is separately checked, including empty directories and links.
+        $actual = @($actual | Where-Object { !($_.PSIsContainer -and $_.Name -ceq 'tools') })
+    }
     if ($actual.Count -ne @($provenance.plugins.PSObject.Properties).Count -or
         @($actual | Where-Object { $_.PSIsContainer -or ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $_.Name -notin @($provenance.plugins.PSObject.Properties.Name) }).Count -gt 0) { throw 'Prepared plugin set changed.' }
     foreach ($property in $provenance.plugins.PSObject.Properties) {

@@ -27,6 +27,7 @@ param(
     [string]$TlsFixture,
     [switch]$PersistenceProbe,
     [switch]$StoryProbe,
+    [string]$BarConsumerManifest,
     [switch]$BarProbe,
     [switch]$BarColdSequence,
     [ValidateSet('absent','consumer')][string]$BarColdPhase,
@@ -62,6 +63,11 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'qualification-inputs.ps1')
 . (Join-Path $PSScriptRoot 'qualification-story.ps1')
 . (Join-Path $PSScriptRoot 'qualification-bars.ps1')
+. (Join-Path $PSScriptRoot 'qualification-bar-consumers.ps1')
+if ($BarConsumerManifest) {
+    $allowed = @('Action','SandboxRoot','GameDir','OriginalSaveDir','SaveA','SaveB','BuildRoot','BuildRevision','TimeoutSeconds','Diagnostics','Scenario','BarConsumerManifest')
+    if ($Action -ne 'Prepare' -or $Scenario -ne 'Full' -or @($PSBoundParameters.Keys | Where-Object { $_ -notin $allowed }).Count) { throw 'Consumer bars require isolated Full preparation.' }
+}
 if ($BarProbe) {
     $allowed = @('Action','SandboxRoot','GameDir','OriginalSaveDir','SaveA','SaveB','BuildRoot','BuildRevision','TimeoutSeconds','Diagnostics','Scenario','BarProbe','BarColdSequence','BarAuthorABin','BarAuthorBBin')
     if ($Action -ne 'Prepare' -or $Scenario -ne 'Full' -or !$BarAuthorABin -or !$BarAuthorBBin -or @($PSBoundParameters.Keys | Where-Object { $_ -notin $allowed }).Count) { throw 'Bar probe requires isolated Full preparation and both author binaries.' }
@@ -335,7 +341,8 @@ if ($Action -eq 'Prepare') {
         if ($StoryAbsentProbe) { [IO.File]::WriteAllText((Join-Path $root 'story-absent.enabled'), 'owned-story-absent-v1') }
     }
     if ($BarProbe) { Initialize-BarProbe $root $BarAuthorABin $BarAuthorBBin }
-    if (!$PersistenceProbe -and !$StoryProbe -and !$StoryAbsentProbe -and !$BarProbe) { [IO.File]::WriteAllText((Join-Path $bep 'config\vgmodapi.cfg'), "[Persistence]`r`nEnabled = false`r`n") }
+    if ($BarConsumerManifest) { Initialize-BarConsumers $root $BarConsumerManifest }
+    if (!$PersistenceProbe -and !$StoryProbe -and !$StoryAbsentProbe -and !$BarProbe -and !$BarConsumerManifest) { [IO.File]::WriteAllText((Join-Path $bep 'config\vgmodapi.cfg'), "[Persistence]`r`nEnabled = false`r`n") }
     if ($StockpileCoordinated) {
         [IO.File]::AppendAllText((Join-Path $bep 'config\vgstockpile.cfg'), "[Persistence]`r`nImportLegacySidecars = true`r`n")
         [IO.File]::WriteAllText((Join-Path $root 'stockpile-coordinated.enabled'), 'stockpile-v1')
@@ -386,7 +393,7 @@ if ($Action -eq 'Prepare') {
     if ($EchoTravelProbe) { [IO.File]::WriteAllText((Join-Path $root 'echo-travel.enabled'), 'echo-travel-v1') }
     if ($EchoAbsentProbe) { [IO.File]::WriteAllText((Join-Path $root 'echo-absent.enabled'), 'echo-absent-v1') }
     if ($TravelJournalComparison) { [IO.File]::WriteAllText((Join-Path $root 'travel-journal.enabled'), 'travel-journal-v1') }
-    @{ barColdSequence=[bool]$BarColdSequence; barProbe=[bool]$BarProbe; storyColdSequence=[bool]$StoryColdSequence; storyDonorRoot=$StoryDonorRoot; storyDonorHash=$(if ($StoryAbsentProbe) { (Get-FileHash -LiteralPath $SaveA -Algorithm SHA256).Hash } else { '' }); storyAbsentProbe=[bool]$StoryAbsentProbe; storyProbe=[bool]$StoryProbe; menuInspection=[bool]$MenuInspection; modMenuProbe=[bool]$ModMenuProbe; modInformationProbe=[bool]$ModInformationProbe; modInformationCertificateSha256=$(if ($ModInformationProbe) { (Get-FileHash -LiteralPath (Join-Path $root 'untrusted-test.pfx') -Algorithm SHA256).Hash.ToLowerInvariant() } else { '' }); travelJournal=[bool]$TravelJournalBin; travelJournalRevision=$TravelJournalRevision; travelJournalSha256=$TravelJournalSha256; travelJournalVersion=$travelJournalVersion; travelJournalComparison=[bool]$TravelJournalComparison; travelJournalBudgetSeconds=$(if ($TravelJournalComparison) { $TravelJournalBudgetSeconds } else { 0 }); echo=[bool]$EchoBin; echoRevision=$EchoRevision; echoVersion=$echoVersion; echoTravelProbe=[bool]$EchoTravelProbe; echoTravelBudgetSeconds=$(if ($EchoTravelProbe) { $EchoTravelBudgetSeconds } else { 0 }); echoAbsentProbe=[bool]$EchoAbsentProbe; anima=[bool]$AnimaBin; animaRevision=$AnimaRevision; animaVersion=$animaVersion; animaTravelProbe=[bool]$AnimaTravelProbe; animaTravelBudgetSeconds=$(if ($AnimaTravelProbe) { $AnimaTravelBudgetSeconds } else { 0 }); journalMissionEventsProbe=[bool]$JournalMissionEventsProbe; missionIdentityProbe=[bool]$MissionIdentityProbe; missionTransitionsProbe=[bool]$MissionTransitionsProbe; contentReferenceProbe=[bool]$ContentReferenceProbe; stockpileCoordinated=[bool]$StockpileCoordinated; journalCoordinated=[bool]$JournalCoordinated; persistenceProbe=[bool]$PersistenceProbe; vanillaLoadControl=[bool]$VanillaLoadControl; assemblyOverlay=$overlay; stockpile=[bool]$StockpileBin; missionJournal=[bool]$MissionJournalBin; travelStation=[bool]$TravelStation; travelStationBudgetSeconds=$(if ($TravelStation) { $TravelStationBudgetSeconds } else { 0 }); travelCrossSystem=[bool]$TravelCrossSystem; travelCrossSystemBudgetSeconds=$(if ($TravelCrossSystem) { $TravelCrossSystemBudgetSeconds } else { 0 }); travelWormholeFixture=[bool]$TravelWormholeFixture; travelResilience=[bool]$TravelResilience; travelResilienceBudgetSeconds=$(if ($TravelResilience) { $TravelResilienceBudgetSeconds } else { 0 }); travelRecovery=[bool]$TravelRecoveryContinuation; travelRecoveryBudgetSeconds=$(if ($TravelRecoveryContinuation) { $TravelRecoveryBudgetSeconds } else { 0 }); travelFastLane=[bool]$TravelFastLane; travelFastLaneBudgetSeconds=$(if ($TravelFastLane) { $TravelFastLaneBudgetSeconds } else { 0 }); scenario=$Scenario; revision=$BuildRevision; preparedUtc=[DateTime]::UtcNow.ToString('o'); plugins=$hashes } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'build-provenance.json')
+    @{ barConsumers=[bool]$BarConsumerManifest; barConsumerManifestHash=$(if ($BarConsumerManifest) { (Get-FileHash -LiteralPath (Join-Path $root 'bar-consumer-sources.json') -Algorithm SHA256).Hash }); barConsumerTools=$(if ($BarConsumerManifest) { Get-BarConsumerToolsInventory $root }); barColdSequence=[bool]$BarColdSequence; barProbe=[bool]$BarProbe; storyColdSequence=[bool]$StoryColdSequence; storyDonorRoot=$StoryDonorRoot; storyDonorHash=$(if ($StoryAbsentProbe) { (Get-FileHash -LiteralPath $SaveA -Algorithm SHA256).Hash } else { '' }); storyAbsentProbe=[bool]$StoryAbsentProbe; storyProbe=[bool]$StoryProbe; menuInspection=[bool]$MenuInspection; modMenuProbe=[bool]$ModMenuProbe; modInformationProbe=[bool]$ModInformationProbe; modInformationCertificateSha256=$(if ($ModInformationProbe) { (Get-FileHash -LiteralPath (Join-Path $root 'untrusted-test.pfx') -Algorithm SHA256).Hash.ToLowerInvariant() } else { '' }); travelJournal=[bool]$TravelJournalBin; travelJournalRevision=$TravelJournalRevision; travelJournalSha256=$TravelJournalSha256; travelJournalVersion=$travelJournalVersion; travelJournalComparison=[bool]$TravelJournalComparison; travelJournalBudgetSeconds=$(if ($TravelJournalComparison) { $TravelJournalBudgetSeconds } else { 0 }); echo=[bool]$EchoBin; echoRevision=$EchoRevision; echoVersion=$echoVersion; echoTravelProbe=[bool]$EchoTravelProbe; echoTravelBudgetSeconds=$(if ($EchoTravelProbe) { $EchoTravelBudgetSeconds } else { 0 }); echoAbsentProbe=[bool]$EchoAbsentProbe; anima=[bool]$AnimaBin; animaRevision=$AnimaRevision; animaVersion=$animaVersion; animaTravelProbe=[bool]$AnimaTravelProbe; animaTravelBudgetSeconds=$(if ($AnimaTravelProbe) { $AnimaTravelBudgetSeconds } else { 0 }); journalMissionEventsProbe=[bool]$JournalMissionEventsProbe; missionIdentityProbe=[bool]$MissionIdentityProbe; missionTransitionsProbe=[bool]$MissionTransitionsProbe; contentReferenceProbe=[bool]$ContentReferenceProbe; stockpileCoordinated=[bool]$StockpileCoordinated; journalCoordinated=[bool]$JournalCoordinated; persistenceProbe=[bool]$PersistenceProbe; vanillaLoadControl=[bool]$VanillaLoadControl; assemblyOverlay=$overlay; stockpile=[bool]$StockpileBin; missionJournal=[bool]$MissionJournalBin; travelStation=[bool]$TravelStation; travelStationBudgetSeconds=$(if ($TravelStation) { $TravelStationBudgetSeconds } else { 0 }); travelCrossSystem=[bool]$TravelCrossSystem; travelCrossSystemBudgetSeconds=$(if ($TravelCrossSystem) { $TravelCrossSystemBudgetSeconds } else { 0 }); travelWormholeFixture=[bool]$TravelWormholeFixture; travelResilience=[bool]$TravelResilience; travelResilienceBudgetSeconds=$(if ($TravelResilience) { $TravelResilienceBudgetSeconds } else { 0 }); travelRecovery=[bool]$TravelRecoveryContinuation; travelRecoveryBudgetSeconds=$(if ($TravelRecoveryContinuation) { $TravelRecoveryBudgetSeconds } else { 0 }); travelFastLane=[bool]$TravelFastLane; travelFastLaneBudgetSeconds=$(if ($TravelFastLane) { $TravelFastLaneBudgetSeconds } else { 0 }); scenario=$Scenario; revision=$BuildRevision; preparedUtc=[DateTime]::UtcNow.ToString('o'); plugins=$hashes } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'build-provenance.json')
     # Prevent Steam's restart path; the runner disables SteamManager before arming checks.
     [IO.File]::WriteAllText((Join-Path $game 'steam_appid.txt'), '3471800')
     $saves = Join-Path $root 'Saves'
@@ -485,6 +492,7 @@ try {
     $arguments = @('--fse-shim-applied','-screen-fullscreen','0','-logFile', ('"' + (Join-Path $root 'Player.log') + '"'), '--vgmodapi-qualification-root', ('"' + $root + '"'))
     if ($Diagnostics) { $arguments += '--vgmodapi-qualification-diagnostics' }
     if ($StoryDefinitionColdPhase) { $arguments += '--vgmodapi-story-definition-cold' }
+    if ($provenance.PSObject.Properties['barConsumers'] -and $provenance.barConsumers) { $arguments += '--vgmodapi-bar-consumers' }
     if ($provenance.PSObject.Properties['barProbe'] -and $provenance.barProbe) {
         $arguments += $(if ($BarColdPhase) { '--vgmodapi-bars-cold-' + $BarColdPhase } else { '--vgmodapi-bars-only' })
     }
@@ -551,6 +559,7 @@ if ($provenance.PSObject.Properties['storyProbe'] -and $provenance.storyProbe) {
     else { Assert-StoryReceipt $root }
 }
 if ($provenance.PSObject.Properties['storyAbsentProbe'] -and $provenance.storyAbsentProbe) { Assert-StoryAbsentReceipt $root }
+if ($provenance.PSObject.Properties['barConsumers'] -and $provenance.barConsumers) { Assert-BarConsumerReceipt $root }
 if ($provenance.PSObject.Properties['barProbe'] -and $provenance.barProbe) {
     if ($BarColdPhase) { Assert-BarColdReceipt $root $BarColdPhase } else { Assert-BarReceipt $root }
 }

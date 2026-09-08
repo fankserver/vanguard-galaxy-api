@@ -1,5 +1,6 @@
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '..\qualification-bars.ps1')
+. (Join-Path $PSScriptRoot '..\qualification-bar-consumers.ps1')
 . (Join-Path $PSScriptRoot '..\qualification-profile.ps1')
 # The helper test never launches a process; make its process-presence check deterministic.
 function Get-Process { param($Name, $ErrorAction) return $null }
@@ -11,11 +12,40 @@ function Reject([scriptblock]$Action) {
     if (!$rejected) { throw 'Invalid bar receipt accepted.' }
 }
 try {
-    foreach ($name in @('qualification.ps1','qualification-inputs.ps1','qualification-bars.ps1')) {
+    foreach ($name in @('qualification.ps1','qualification-inputs.ps1','qualification-bars.ps1','qualification-bar-consumers.ps1')) {
         $tokens = $null; $errors = $null
         $null = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot ('..\' + $name)), [ref]$tokens, [ref]$errors)
         if ($errors.Count) { throw "Parse errors in $name : $errors" }
     }
+    $tools = Join-Path $root 'game\BepInEx\plugins\tools'
+    $null = New-Item -ItemType Directory -Path (Join-Path $tools 'empty') -Force
+    Set-Content (Join-Path $tools 'payload') 'original'
+    $inventory = Get-BarConsumerToolsInventory $root | ConvertTo-Json | ConvertFrom-Json
+    Assert-BarConsumerToolsInventory $root $inventory
+    Set-Content (Join-Path $tools 'payload') 'changed'
+    Reject { Assert-BarConsumerToolsInventory $root $inventory }
+    Set-Content (Join-Path $tools 'payload') 'original'
+    Remove-Item (Join-Path $tools 'empty')
+    Reject { Assert-BarConsumerToolsInventory $root $inventory }
+    $null = New-Item -ItemType Directory -Path (Join-Path $tools 'empty')
+    Set-Content (Join-Path $tools 'extra') 'extra'
+    Reject { Assert-BarConsumerToolsInventory $root $inventory }
+    Remove-Item (Join-Path $tools 'extra')
+    Assert-BarConsumerToolsInventory $root $inventory
+    Reject { Assert-BarConsumerReceipt $root }
+    $consumerCases = 'actual-foundation-builder;four-exclusive-contacts;actual-anima-finalization;denied-additive-offer;tts-finalized-boundary;permission-revocation;context-restored'
+    Set-Content (Join-Path $root 'bar-consumers.txt') @('PASS', $consumerCases)
+    Set-Content (Join-Path $root 'bar-consumer-preparation.txt') @('native-force-refreshes=0','retained-vanilla=4')
+    Assert-BarConsumerReceipt $root
+    Set-Content (Join-Path $root 'bar-consumer-preparation.txt') @('native-force-refreshes=9','retained-vanilla=4')
+    Reject { Assert-BarConsumerReceipt $root }
+    Set-Content (Join-Path $root 'bar-consumer-preparation.txt') @('native-force-refreshes=0','retained-vanilla=5')
+    Reject { Assert-BarConsumerReceipt $root }
+    Set-Content (Join-Path $root 'bar-consumer-preparation.txt') @('native-force-refreshes=0','retained-vanilla=4')
+    Add-Content (Join-Path $root 'bar-consumers.txt') 'unexpected'
+    Reject { Assert-BarConsumerReceipt $root }
+    Set-Content (Join-Path $root 'bad-consumers.json') '{"plugins":[]}'
+    Reject { Initialize-BarConsumers $root (Join-Path $root 'bad-consumers.json') }
     Reject { Assert-BarReceipt $root }
     Set-Content (Join-Path $root 'owned-bars.txt') @('INCOMPLETE')
     Reject { Assert-BarReceipt $root }
