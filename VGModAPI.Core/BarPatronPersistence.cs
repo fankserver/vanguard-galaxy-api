@@ -34,6 +34,12 @@ internal sealed class BarPatronPersistence : IDisposable
         return true;
     }
 
+    internal bool CanMutate(Guid session)
+    {
+        _checkThread();
+        return Ready(session) && _registration.MutationAllowed;
+    }
+
     // Only the owning service passes authenticated provider identities after checking its leases.
     internal bool Put(Guid session, string authenticatedProvider, BarPatronState state)
     {
