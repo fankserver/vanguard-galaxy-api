@@ -64,6 +64,7 @@ public sealed partial class Plugin
         refundBefore.TryGetValue(refundKey, out var oldCount); refundAfter.TryGetValue(refundKey, out var newCount);
         Require(newCount - oldCount == 1 && (long)SpGet(CurrentPlayer, "credits")! - credits == price, "Refinery partial refund did not match one remaining ore and its native price.");
         CheckRefineryReceipts(refundBefore, refundAfter, cancelled.Deliveries);
+        CheckRefineryFavouriteProtection(station, recipe.Id, item);
         Passed("Driven fractional refinery delivery and partial ore/credit cancellation with native inventory receipts");
     }
     private void CheckMaterialExtraction(RecipeStationHandle station)

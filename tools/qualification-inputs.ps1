@@ -307,7 +307,7 @@ function Assert-RefinerySelection([string]$Root, $Provenance) {
     $marker = Join-Path $Root 'refinery.enabled'
     if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Refinery selection changed.' }
     if (!$selected) { return }
-    if (!$Provenance.forgeCommandProbe -or $Provenance.forgePersistenceProbe -or $Provenance.forgeDeliveryProbe -or [IO.File]::ReadAllText($marker) -cne 'refinery-v2') { throw 'Invalid refinery selection.' }
+    if (!$Provenance.forgeCommandProbe -or $Provenance.forgePersistenceProbe -or $Provenance.forgeDeliveryProbe -or [IO.File]::ReadAllText($marker) -cne 'refinery-v3') { throw 'Invalid refinery selection.' }
 }
 function Assert-RefineryReceipt([string]$Root, $Provenance) {
     Assert-ForgeCommandReceipt $Root $Provenance
@@ -316,7 +316,7 @@ function Assert-RefineryReceipt([string]$Root, $Provenance) {
     $file = Join-Path $Root 'refinery.txt'
     if ((Get-Item -LiteralPath $file).Length -gt 512) { throw 'Oversized refinery receipt.' }
     $lines = @(Get-Content -LiteralPath $file)
-    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'refinery-v2' -or $lines[2] -cne 'fractional-partial-multiple-refund-extraction-replay') { throw 'Incomplete refinery receipt.' }
+    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'refinery-v3' -or $lines[2] -cne 'fractional-partial-multiple-refund-extraction-replay-favourites') { throw 'Incomplete refinery receipt.' }
 }
 function Assert-ForgeDeliverySelection([string]$Root, $Provenance) {
     Assert-RefinerySelection $Root $Provenance
