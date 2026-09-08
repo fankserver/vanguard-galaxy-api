@@ -11,13 +11,16 @@ internal sealed partial class RecipeCatalogNativeSource
     private Guid _quoteSession;
     private readonly Dictionary<Guid, object> _quoteStations = new();
     internal void BindQuotes() => RecipeQuoteBindings.Validate(_assembly);
-    public void Invalidate() { _quoteStations.Clear(); _quoteSession = Guid.Empty; }
+    public void Invalidate() { _quoteStations.Clear(); _quoteSession = Guid.Empty; InvalidateJobs(); }
     public RecipeStationHandle? CurrentStation(Guid sessionId)
     {
-        if (_quoteSession != sessionId) { _quoteStations.Clear(); _quoteSession = sessionId; }
         var station = GetStatic("Source.Galaxy.POI.SpaceStation", "current");
-        if (station == null || Get(station, "forge") == null && Get(station, "refinery") == null) return null;
-        if (!StationStillPresent(station)) return null;
+        return station == null ? null : IssueStation(sessionId, station);
+    }
+    internal RecipeStationHandle? IssueStation(Guid sessionId, object station)
+    {
+        if (_quoteSession != sessionId) { Invalidate(); _quoteSession = sessionId; }
+        if (Get(station, "forge") == null && Get(station, "refinery") == null || !StationStillPresent(station)) return null;
         var key = _quoteStations.FirstOrDefault(pair => ReferenceEquals(pair.Value, station)).Key;
         if (key == Guid.Empty)
         {

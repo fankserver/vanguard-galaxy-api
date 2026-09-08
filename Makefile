@@ -12,6 +12,10 @@ link-libs:
 	@set -eu; for name in UnityEngine UnityEngine.CoreModule UnityEngine.UIModule UnityEngine.ScreenCaptureModule UnityEngine.UI Unity.TextMeshPro Unity.InputSystem; do test -f "$(MANAGED)/$$name.dll"; ln -sfn "$(MANAGED)/$$name.dll" "VGModAPI/lib/$$name.dll"; done
 build: link-libs
 	$(DOTNET) build VGModAPI.sln -c $(CONFIGURATION)
+.PHONY: build-bar-authors
+build-bar-authors: link-libs
+	$(DOTNET) build examples/OwnedBarAuthorA/OwnedBarAuthorA.csproj -c $(CONFIGURATION)
+	$(DOTNET) build examples/OwnedBarAuthorB/OwnedBarAuthorB.csproj -c $(CONFIGURATION)
 .PHONY: build-story-authors
 build-story-authors: link-libs
 	$(DOTNET) build examples/OwnedStoryCampaign/OwnedStoryCampaign.csproj -c $(CONFIGURATION)

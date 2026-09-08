@@ -10,6 +10,20 @@ namespace VGModAPI.Tests;
 
 public sealed class BoardingObserverTests
 {
+    [Fact]
+    public void DataInventoryDeliveryIsDistinctAndRequiresActualNativeResult()
+    {
+        using var f = new Fixture(); f.Start();
+        var scope = f.Observer.BeginRewards(f.Native);
+        f.Observer.InventoryApplied(null, 2, f.DataInventory);
+        f.Observer.InventoryApplied(new object(), 2, f.DataInventory);
+        f.Observer.InventoryApplied(new object(), 3, new object());
+        f.Observer.EndRewards(scope);
+        var deliveries = f.Events.Where(e => e.Delivery != null).Select(e => e.Delivery!).ToArray();
+        Assert.Equal(2, deliveries.Length);
+        Assert.Equal(BoardingDeliveryRoute.DataInventory, deliveries[0].Route);
+        Assert.Equal(BoardingDeliveryRoute.Inventory, deliveries[1].Route);
+    }
     private static Dictionary<string, object?> Pod(bool player = true, string state = "Returning") => new() { ["isPlayerOwned"] = player, ["state"] = state };
     private sealed class Fixture : IDisposable
     {
@@ -20,10 +34,11 @@ public sealed class BoardingObserverTests
         internal readonly HashSet<object> Dead = new();
         internal readonly Dictionary<string, object?> Location, Unit, Native, Sim;
         internal int Faults;
+        internal readonly object DataInventory = new();
         internal Fixture()
         {
             Service = new BoardingService(Hub, (_, _) => { });
-            Observer = new BoardingObserver(Hub, Service, (obj, name) => ((Dictionary<string, object?>)obj)[name], obj => !Dead.Contains(obj), _ => Faults++);
+            Observer = new BoardingObserver(Hub, Service, (obj, name) => ((Dictionary<string, object?>)obj)[name], obj => !Dead.Contains(obj), _ => Faults++, obj => ReferenceEquals(obj, DataInventory));
             Service.Subscribe("test", Events.Add);
             var session = Hub.Begin(SessionOrigin.SaveLoad, "save"); Hub.PlayerReady(session); Hub.GameplayInitialized(session);
             Location = new() { ["availability"] = BoardingAvailability.Available, ["shipTemplate"] = "Scout", ["shipData"] = new object(), ["faction"] = null, ["isShipBased"] = true, ["dungeonType"] = "Ship" };

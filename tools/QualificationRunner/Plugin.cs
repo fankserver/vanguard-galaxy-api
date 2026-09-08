@@ -136,6 +136,27 @@ public sealed partial class Plugin : BaseUnityPlugin
     {
         foreach (var frame in Wait(() => SceneManager.GetSceneByName("Main Menu").isLoaded, "main menu")) yield return frame;
         foreach (var frame in Settle()) yield return frame;
+        if (Environment.GetCommandLineArgs().Contains("--vgmodapi-bars-cold-absent") || Environment.GetCommandLineArgs().Contains("--vgmodapi-bars-cold-consumer"))
+        {
+            foreach (var frame in CheckColdBars(Environment.GetCommandLineArgs().Contains("--vgmodapi-bars-cold-absent"))) yield return frame;
+            yield break;
+        }
+        if (Environment.GetCommandLineArgs().Contains("--vgmodapi-bar-consumers"))
+        {
+            foreach (var frame in CheckBarConsumers()) yield return frame;
+            yield break;
+        }
+        if (Environment.GetCommandLineArgs().Contains("--vgmodapi-bars-linked"))
+        {
+            foreach (var frame in CheckLinkedStoryBars()) yield return frame;
+            yield break;
+        }
+        if (Environment.GetCommandLineArgs().Contains("--vgmodapi-bars-only"))
+        {
+            Require(File.Exists(Path.Combine(_root!, "bars.enabled")), "Bar-only phase is not armed.");
+            foreach (var frame in CheckOwnedBars()) yield return frame;
+            yield break;
+        }
         if (Environment.GetCommandLineArgs().Contains("--vgmodapi-story-definition-cold"))
         {
             foreach (var frame in StoryLoadReady("fixture-a")) yield return frame;
@@ -293,6 +314,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         // recovery phase it restores the fixture itself, so it runs after the other travel phases.
         foreach (var frame in CheckTravelFastLane()) yield return frame;
         foreach (var frame in CheckOwnedStories()) yield return frame;
+        foreach (var frame in CheckOwnedBars()) yield return frame;
         foreach (var frame in CheckJournalTeardown()) yield return frame;
         foreach (var frame in RemainingLifecyclePilot()) yield return frame;
         foreach (var frame in PersistencePilot()) yield return frame;

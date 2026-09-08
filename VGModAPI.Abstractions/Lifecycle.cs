@@ -73,6 +73,7 @@ public static class ModApi
     public static IRecipeCatalog? Recipes { get; internal set; }
     /// <summary>Optional main-thread station requirements and output estimates; advisory, not reservations.</summary>
     public static IRecipeQuotes? RecipeQuotes { get; internal set; }
+    public static ICraftingJobs? CraftingJobs { get; internal set; }
     /// <summary>Optional inspected-build boarding observations; consult boarding-observation capability.</summary>
     public static IBoardingEvents? Boarding { get; internal set; }
     /// <summary>Optional inspected-build boarding policies, independent of observation subscribers.</summary>
@@ -83,6 +84,8 @@ public static class ModApi
     public static IBoardingCombatRules? BoardingCombat { get; internal set; }
     /// <summary>Optional experimental authored dungeon content with API-owned save data; requires API 0.1.30.</summary>
     public static IDungeonContent? Dungeons { get; internal set; }
+    public static IDungeonRewardRules? DungeonRewards { get; internal set; }
+    public static IDungeonSettlement? DungeonSettlement { get; internal set; }
     /// <summary>Optional station-lifetime observer; non-null only when the travel group is bound and enabled.</summary>
     public static IStationEvents? Station { get; internal set; }
     /// <summary>
@@ -91,4 +94,7 @@ public static class ModApi
     /// catalog. Acquire a provider lease from your plugin's own Awake, before any session begins.
     /// </summary>
     public static IStoryApi? Story { get; internal set; }
+
+    /// <summary>Optional experimental owned station-bar content. Null when unavailable.</summary>
+    public static IBarApi? Bars { get; internal set; }
 }

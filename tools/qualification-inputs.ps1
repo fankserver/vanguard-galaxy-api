@@ -1,4 +1,6 @@
 # Prepared-input helpers; safe to exercise with synthetic files.
+. (Join-Path $PSScriptRoot 'qualification-bar-consumers.ps1')
+. (Join-Path $PSScriptRoot 'qualification-bars.ps1')
 # Accepted Anima pilot shapes, each pinned to the exact hard API dependency that version declares.
 # The consumer travel probe additionally requires the 0.4.0 shape, which is the first one that
 # observes system visits through the public travel surface.
@@ -1116,6 +1118,44 @@ function Assert-QualificationInputs([string]$Root) {
         if (!$provenance.PSObject.Properties['travelResilienceBudgetSeconds'] -or
             [int]$provenance.travelResilienceBudgetSeconds -ne $TravelResilienceBudgetSeconds) { throw 'Travel resilience budget reservation changed.' }
     }
+    $barConsumers = $provenance.PSObject.Properties['barConsumers'] -and $provenance.barConsumers -eq $true
+    if ([bool]$barConsumers -ne (Test-Path -LiteralPath (Join-Path $Root 'bar-consumers.enabled') -PathType Leaf)) { throw 'Consumer bar selection changed.' }
+    if ($barConsumers) { Assert-BarConsumerInputs $Root $provenance }
+    $bars = $provenance.PSObject.Properties['barProbe'] -and $provenance.barProbe -eq $true
+    if ([bool]$bars -ne (Test-Path -LiteralPath (Join-Path $Root 'bars.enabled') -PathType Leaf)) { throw 'Bar selection changed.' }
+    $linkedBars = $provenance.PSObject.Properties['barLinkedStory'] -and $provenance.barLinkedStory -eq $true
+    if ([bool]$linkedBars -ne (Test-Path -LiteralPath (Join-Path $Root 'bar-linked.enabled') -PathType Leaf)) { throw 'Linked bar selection changed.' }
+    if ($linkedBars) {
+        if (!$bars -or ($provenance.PSObject.Properties['barColdSequence'] -and $provenance.barColdSequence) -or
+            (Get-Content -LiteralPath (Join-Path $Root 'bar-linked.enabled') -Raw) -cne 'linked-bars-v1') { throw 'Invalid linked bar selection.' }
+        Assert-BarLinkedConfiguration $Root
+    }
+    if ($bars) {
+        Assert-StoryIsolation $provenance
+        foreach ($name in @('storyProbe','storyAbsentProbe','storyColdSequence','persistenceProbe','missionJournal','stockpile','anima','echo','travelJournal')) {
+            if ($provenance.PSObject.Properties[$name] -and $provenance.$name) { throw "Bar probe conflicts with $name." }
+        }
+        if ($provenance.scenario -ne 'Full' -or (Get-Content -LiteralPath (Join-Path $Root 'bars.enabled') -Raw) -cne 'owned-bars-v1') { throw 'Invalid bar phase.' }
+        $entries = Get-TravelJournalConfigEntries (Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg')
+        foreach ($key in @('Persistence/Enabled','Bars/Enabled')) { if (!$entries.ContainsKey($key) -or $entries[$key] -ine 'true') { throw "Bar configuration requires $key=true." } }
+        if (!$entries.ContainsKey('Persistence/Root') -or [IO.Path]::GetFullPath($entries['Persistence/Root']) -ine [IO.Path]::GetFullPath((Join-Path $Root 'state'))) { throw 'Bar persistence root changed.' }
+        if ($entries['Bars/ExclusiveProviders'] -cne 'vg-bar-author-a,vg-bar-author-b') { throw 'Bar permissions changed.' }
+        Add-Type -Path (Join-Path $Root 'game\BepInEx\core\Mono.Cecil.dll')
+        $pluginDir = Join-Path $Root 'game\BepInEx\plugins'
+        foreach ($name in @('VGModAPI','VGModAPI.Core','VGModAPI.Abstractions','QualificationRunner','QualificationGuard','LifecycleObserver','OwnedBarAuthorA','OwnedBarAuthorB')) {
+            $reader = Read-ConsumerAssembly (Join-Path $pluginDir ($name + '.dll')) (Get-ConsumerMetadataReferenceDirs $pluginDir $Root (Join-Path $Root 'game'))
+            try {
+                Assert-QualificationAssemblyRevision $reader.Assembly $name $provenance.revision
+                if ($name -like 'OwnedBarAuthor*') {
+                    $types = @($reader.Assembly.MainModule.Types | Where-Object { $_.FullName -ceq 'OwnedBarAuthor.Plugin' })
+                    if ($types.Count -ne 1) { throw 'Bar author plugin missing.' }
+                    $attributes = @($types[0].CustomAttributes | Where-Object { $_.AttributeType.FullName -eq 'BepInEx.BepInPlugin' })
+                    $expectedId = if ($name -ceq 'OwnedBarAuthorA') { 'vg-bar-author-a' } else { 'vg-bar-author-b' }
+                    if ($attributes.Count -ne 1 -or $attributes[0].ConstructorArguments[0].Value -cne $expectedId) { throw 'Bar author identity mismatch.' }
+                }
+            } finally { Close-ConsumerAssembly $reader }
+        }
+    }
     $story = $provenance.PSObject.Properties['storyProbe'] -and $provenance.storyProbe -eq $true
     $storyAbsent = $provenance.PSObject.Properties['storyAbsentProbe'] -and $provenance.storyAbsentProbe -eq $true
     if ([bool]$storyAbsent -ne (Test-Path -LiteralPath (Join-Path $Root 'story-absent.enabled') -PathType Leaf)) { throw 'Absent-story selection changed.' }
@@ -1144,7 +1184,7 @@ function Assert-QualificationInputs([string]$Root) {
         $enabled = [regex]::Matches($config, '(?m)^Enabled\s*=\s*true\s*$')
         if ($roots.Count -ne 1 -or $settings.Count -gt 1 -or $enabled.Count -ne $settings.Count -or [IO.Path]::GetFullPath($roots[0].Groups[1].Value.Trim()) -ine [IO.Path]::GetFullPath((Join-Path $Root 'state'))) { throw 'Persistence probe root/config changed.' }
     }
-    if (!$probe -and !$story -and !$storyAbsent) {
+    if (!$probe -and !$story -and !$storyAbsent -and !$bars -and !$barConsumers) {
         $config = Get-Content -LiteralPath (Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg') -Raw
         $sections = [regex]::Matches($config, '(?ms)^\[Persistence\]\r?\n(?<body>.*?)(?=^\[|\z)')
         if ($sections.Count -ne 1 -or [regex]::Matches($sections[0].Groups['body'].Value, '(?m)^Enabled\s*=').Count -ne 1 -or [regex]::Matches($sections[0].Groups['body'].Value, '(?m)^Enabled\s*=\s*false\s*$').Count -ne 1) { throw 'Legacy control must explicitly disable API-managed saves.' }
@@ -1220,6 +1260,8 @@ function Assert-QualificationInputs([string]$Root) {
     }
     $expected = @('QualificationGuard.dll')
     if ($story) { $expected += @('OwnedStoryCampaign.dll','OwnedStoryJob.dll') }
+    if ($bars) { $expected += @('OwnedBarAuthorA.dll','OwnedBarAuthorB.dll') }
+    if ($barConsumers) { $expected += @('VGAnima.dll','VGTTS.dll','VanguardGalaxy.CustomMission.dll','Newtonsoft.Json.dll') }
     if ($provenance.scenario -ne 'MissingApi') { $expected += @('VGModAPI.dll','VGModAPI.Core.dll','VGModAPI.Abstractions.dll','vgmodapi.vgmod.json') }
     if ($provenance.scenario -eq 'Full') { $expected += @('QualificationRunner.dll','LifecycleObserver.dll') }
     if ($provenance.missionJournal) { $expected += @('VGMissionJournal.dll','Newtonsoft.Json.dll') }
@@ -1232,6 +1274,10 @@ function Assert-QualificationInputs([string]$Root) {
         @($provenance.plugins.PSObject.Properties.Name | Where-Object { $_ -notin $expected }).Count -gt 0) { throw 'Scenario plugin allowlist mismatch.' }
     $plugins = Join-Path $Root 'game\BepInEx\plugins'
     $actual = @(Get-ChildItem -LiteralPath $plugins -Force)
+    if ($barConsumers) {
+        # The single sealed tools tree is separately checked, including empty directories and links.
+        $actual = @($actual | Where-Object { !($_.PSIsContainer -and $_.Name -ceq 'tools') })
+    }
     if ($actual.Count -ne @($provenance.plugins.PSObject.Properties).Count -or
         @($actual | Where-Object { $_.PSIsContainer -or ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $_.Name -notin @($provenance.plugins.PSObject.Properties.Name) }).Count -gt 0) { throw 'Prepared plugin set changed.' }
     foreach ($property in $provenance.plugins.PSObject.Properties) {

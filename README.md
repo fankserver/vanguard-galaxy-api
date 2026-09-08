@@ -8,12 +8,12 @@
 
 Unofficial community mod API for Vanguard Galaxy, using BepInEx 5 and HarmonyX.
 
-**0.1.31 development / experimental: automatically tested and partially exercised in-game, not fully runtime-qualified.** The API provides lifecycle, mod save data, optional mission/travel/story services and mod information, not a complete modding SDK. Controlled native evidence covers bounded paths; full in-game acceptance remains pending. See [compatibility](docs/compatibility.md) for coverage and limitations.
+**0.1.33 development / experimental: automatically tested and partially exercised in-game, not fully runtime-qualified.** The API provides lifecycle, mod save data, optional mission/travel/story services and mod information, not a complete modding SDK. Controlled native evidence covers bounded paths; full in-game acceptance remains pending. See [compatibility](docs/compatibility.md) for coverage and limitations.
 
 ## Implemented
 
 - Default-enabled experimental mod save data for additional custom payloads.
-- Optional read-only [Forge/refining recipe catalog](docs/recipes.md): stable identities, variants, multi-producer lookup and station-aware requirements/output estimates; no crafting mutations or native qualification implied.
+- Optional read-only [Forge/refining recipe catalog](docs/recipes.md): stable identities, variants, multi-producer lookup, station-aware requirements/output estimates and distinct job/transfer observations; no crafting mutations or native qualification implied.
 - Optional experimental mission transitions and native travel/station observations.
 - Optional experimental owned story definitions, native catalog installation, occurrence reconstruction and API-managed persistence for a closed mission subset.
 - Mods menu with installed versions, descriptions and automatic update checks; no automatic downloads or installations.
@@ -73,7 +73,7 @@ No automatic deploy target is provided. Remove older API copies from other plugi
 
 The package contains `VGModAPI.dll`, `VGModAPI.Core.dll`, and `VGModAPI.Abstractions.dll`, plus documentation. Keep one installed copy of these assemblies. An unsupported game hash leaves the service available for diagnostics but its lifecycle/save capabilities unavailable.
 
-Optional boarding observation (API 0.1.25) is available through `ModApi.Boarding` when `[Boarding] Enabled = true` and `boarding-observation` is available. It provides copied targets/operations and scoped events, not commands or encounter authoring. API 0.1.26 additionally exposes `ModApi.BoardingRules` for disposable, scoped disable/chance, defender tuning, integrity, scuttle and explosion policies when `boarding-rules` is available. API 0.1.27 adds `ModApi.BoardingCommands` for validated, exclusively controlled operations when `boarding-commands` is available. API 0.1.28 adds tactical requests and scoped combat policies through `ModApi.BoardingTactics` and `ModApi.BoardingCombat`. API 0.1.30 adds opt-in `ModApi.Dungeons` for [authored dungeon content](docs/dungeon-content.md) with API-owned persistence. See [boarding](docs/boarding-contract.md); native qualification remains pending.
+Optional boarding observation (API 0.1.25) is available through `ModApi.Boarding` when `[Boarding] Enabled = true` and `boarding-observation` is available. It provides copied targets/operations and scoped events, not commands or encounter authoring. API 0.1.26 additionally exposes `ModApi.BoardingRules` for disposable, scoped disable/chance, defender tuning, integrity, scuttle and explosion policies when `boarding-rules` is available. API 0.1.27 adds `ModApi.BoardingCommands` for validated, exclusively controlled operations when `boarding-commands` is available. API 0.1.28 adds tactical requests and scoped combat policies through `ModApi.BoardingTactics` and `ModApi.BoardingCombat`. API 0.1.30 adds opt-in `ModApi.Dungeons` for [authored dungeon content](docs/dungeon-content.md) with API-owned persistence. Optional `ModApi.DungeonRewards` and `ModApi.DungeonSettlement` expose bounded reward policies and separate [settlement observations](docs/dungeon-settlement.md). See [boarding](docs/boarding-contract.md); native qualification remains pending.
 
 See [compatibility and qualification](docs/compatibility.md) for the inspected hash, completed checks, and pending in-game checklist. Development-only [controlled qualification tooling](docs/qualification-runner.md) uses an isolated game sandbox and copied saves; it is not included in the API package.
 
@@ -104,10 +104,14 @@ The API can manage each mod's save data alongside a particular game save. It pub
 
 Enabled by default. Set `[Persistence] Enabled = false` in `BepInEx/config/vgmodapi.cfg` to opt out. For disposable-save testing, choose an absolute, short, non-linked `Root`. Never share the root across installations or delete it to work around a blocked load. The default save-data folder is under BepInEx config. An existing explicit `Enabled = false` remains an opt-out. Binding or path failures leave `ModApi.Persistence` null; check the `save-data` capability for availability.
 
+## Owned bar rosters (experimental)
+
+API 0.1.32 provides opt-in owner-scoped patrons, automatic persistent presentation, explicit additive/exclusive station policy, guarded interaction and finalized roster observation. A stored contribution is not a visibility guarantee. Narrative and voice data remain consumer-owned. See [bar rosters](docs/bar-rosters.md) for the contract and current qualification limits.
+
 ## Owned story content (experimental)
 
 Require API 0.1.12, declare a hard BepInEx dependency, and acquire a provider lease from your own
-`Awake` with `ModApi.Story?.AcquireProvider(this)`. The lease registers immutable mission definitions
+`Start` with `ModApi.Story?.AcquireProvider(this)` (after Chainloader publishes the plugin instance). The lease registers immutable mission definitions
 from a closed supported subset; the API installs them into the game's own story catalog, mints and
 persists occurrence identity, and captures/restores that state itself, so you write no codec, no
 save/load callback and no restoration scheduling for it. Definitions declare their source faction, because the game requires one to save a held mission.

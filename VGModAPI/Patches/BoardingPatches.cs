@@ -47,9 +47,9 @@ internal static class BoardingPatches
     }
     internal static class Inventory
     {
-        internal static Exception? Finalizer(object? __result, int __1, Exception? __exception)
+        internal static Exception? Finalizer(object __instance, object? __result, int __1, Exception? __exception)
         {
-            if (__exception == null) Observer?.Guard(() => Observer.InventoryApplied(__result, __1));
+            if (__exception == null) Observer?.Guard(() => Observer.InventoryApplied(__result, __1, __instance));
             return __exception;
         }
     }

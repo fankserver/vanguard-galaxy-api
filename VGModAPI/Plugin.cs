@@ -16,7 +16,7 @@ namespace VGModAPI;
 [BepInPlugin(ModApi.PluginId, "Mod API", PluginBuildVersion.Value)]
 [BepInProcess("VanguardGalaxy.exe")]
 [BepInDependency("vgmodapi.qualification.guard", BepInDependency.DependencyFlags.SoftDependency)]
-public sealed class Plugin : BaseUnityPlugin
+public sealed partial class Plugin : BaseUnityPlugin
 {
     private LifecycleHub? _hub;
     private Harmony? _harmony;
@@ -26,10 +26,15 @@ public sealed class Plugin : BaseUnityPlugin
     private TravelNativeAdapter? _travel;
     private RecipeCatalogService? _recipes;
     private RecipeQuoteService? _recipeQuotes;
+    private CraftingJobService? _craftingJobs;
+    private CraftingJobObserver? _craftingJobObserver;
+    private Harmony? _craftingJobHarmony;
     private BoardingObserver? _boarding;
     private BoardingRuleAdapter? _boardingRules;
     private BoardingCommandService? _boardingCommands;
     private BoardingCombatService? _boardingCombat;
+    private DungeonSettlementService? _dungeonSettlement;
+    private DungeonRewardService? _dungeonRewards;
     private DungeonContentService? _dungeons;
     private DungeonStateStore? _dungeonState;
     private DungeonContentAdapter? _dungeonAdapter;
@@ -61,6 +66,8 @@ public sealed class Plugin : BaseUnityPlugin
         _hub.SetCapability("recipe-catalog", false, "Disabled or not bound; experimental.");
         _hub.SetCapability("recipe-quotes", false, "Disabled or not bound; experimental.");
         ModApi.RecipeQuotes = null;
+        ModApi.CraftingJobs = null;
+        _hub.SetCapability("crafting-jobs", false, "Disabled or not bound; experimental.");
         _hub.SetCapability("save-data", false, "Not initialized; experimental.");
         _hub.SetCapability("mission-continuity", false, "Disabled by configuration; experimental.");
         _hub.SetCapability("mission-transitions", false, "Disabled by configuration; experimental.");
@@ -78,6 +85,8 @@ public sealed class Plugin : BaseUnityPlugin
         _hub.SetCapability("boarding-rules", false, "Disabled by configuration; experimental.");
         ModApi.Missions = null;
         ModApi.Story = null;
+        ModApi.Bars = null;
+        _hub.SetCapability("owned-bars", false, "Not initialized; experimental.");
         ModApi.Current = _hub;
         ModApi.Persistence = null;
         _modCatalog = new ModInformationCatalog(ModInformationSource.Snapshot);
@@ -117,7 +126,7 @@ public sealed class Plugin : BaseUnityPlugin
                 ["store"] = typeof(SavePatches.Store), ["writeFile"] = typeof(SavePatches.WriteFile),
                 ["writeMetadata"] = typeof(SavePatches.WriteMetadata), ["storeFailure"] = typeof(SavePatches.StoreFailure)
             });
-            if (Config.Bind("Recipes", "Enabled", false, "Experimental read-only Forge and refinery recipe catalog.").Value)
+            if (Config.Bind("Recipes", "Enabled", false, "Experimental recipe catalog, advisory quotes and Forge/refinery job observations.").Value)
                 InstallRecipes(assembly);
             if (Config.Bind("Boarding", "Enabled", false, "Experimental boarding observation and rules on the inspected game build.").Value)
             {
@@ -125,6 +134,7 @@ public sealed class Plugin : BaseUnityPlugin
                 InstallBoardingRules(bindings);
                 InstallBoardingCommands(bindings);
                 InstallBoardingTactics(bindings);
+                InstallDungeonRewards(bindings);
             }
             // Load safety, not a feature: an owned mission restored from a save must not progress or
             // pay out while nobody vouches for it, and that is true whether or not the story module is
@@ -137,6 +147,7 @@ public sealed class Plugin : BaseUnityPlugin
         {
             // Stop observation even if a failed rollback leaves a detour installed.
             _adapter?.Guard(() => throw new InvalidOperationException("Adapter installation failed.", ex));
+            TeardownCraftingJobs();
             try { _harmony?.UnpatchSelf(); }
             catch (Exception cleanupError) { Logger.LogError($"Patch rollback failed: {cleanupError}"); }
             _hub.SetCapability("session-lifecycle", false, ex.Message);
@@ -148,6 +159,7 @@ public sealed class Plugin : BaseUnityPlugin
         InitializeDungeons();
         InitializeMissions();
         InitializeStory();
+        InitializeBars();
         InitializeModMenu();
         Logger.LogInfo("VGModAPI " + Info.Metadata.Version + ": experimental, NOT runtime-qualified. Query capabilities; startup does not prove compatibility.");
     }
@@ -466,12 +478,44 @@ public sealed class Plugin : BaseUnityPlugin
                 _recipeQuotes?.Dispose(); _recipeQuotes = null; ModApi.RecipeQuotes = null;
                 _hub.SetCapability("recipe-quotes", false, "Recipe quote binding failed."); Logger.LogError(quoteError);
             }
+            if (_recipeQuotes != null) InstallCraftingJobs(assembly, source);
         }
         catch (Exception error)
         {
             _recipes?.Dispose(); _recipes = null; ModApi.Recipes = null;
             _hub!.SetCapability("recipe-catalog", false, "Recipe catalog binding failed."); Logger.LogError(error);
         }
+    }
+    private void InstallCraftingJobs(Assembly assembly, RecipeCatalogNativeSource source)
+    {
+        try
+        {
+            var methods = CraftingJobBindings.Validate(assembly);
+            _craftingJobs = new CraftingJobService(_hub!, source, (owner, error) => Logger.LogError(owner + ": " + error));
+            _craftingJobObserver = new CraftingJobObserver(_hub!, _craftingJobs, source);
+            CraftingJobPatches.Keys = CraftingJobBindings.Hooks.ToDictionary(spec => (MethodBase)methods[spec.Key], spec => spec.Key);
+            CraftingJobPatches.Observer = _craftingJobObserver;
+            _craftingJobHarmony = new Harmony(ModApi.PluginId + ".crafting-jobs");
+            var flags = BindingFlags.Static | BindingFlags.NonPublic;
+            var prefix = new HarmonyMethod(typeof(CraftingJobPatches).GetMethod("Prefix", flags));
+            foreach (var spec in CraftingJobBindings.Hooks)
+            {
+                var name = spec.ReturnType == "System.Void" ? "VoidFinalizer" : spec.ReturnType == "System.Boolean" ? "BoolFinalizer" : "ObjectFinalizer";
+                _craftingJobHarmony.Patch(methods[spec.Key], prefix: prefix, finalizer: new HarmonyMethod(typeof(CraftingJobPatches).GetMethod(name, flags)));
+            }
+            _craftingJobs.SetAvailable(true); ModApi.CraftingJobs = _craftingJobs;
+        }
+        catch (Exception error) { TeardownCraftingJobs(); Logger.LogError(error); }
+    }
+    private void TeardownCraftingJobs()
+    {
+        CraftingJobPatches.Observer = null;
+        _craftingJobObserver?.Dispose(); _craftingJobObserver = null;
+        _craftingJobs?.Dispose(); _craftingJobs = null; ModApi.CraftingJobs = null;
+        CraftingJobPatches.Keys = new Dictionary<MethodBase, string>();
+        try { _craftingJobHarmony?.UnpatchSelf(); } catch (Exception error) { Logger.LogError(error); }
+        _craftingJobHarmony = null;
+        _hub?.SetCapability("crafting-jobs", false, "Crafting job observation unavailable.");
     }
     private void InitializeDungeons()
     {
@@ -483,7 +527,8 @@ public sealed class Plugin : BaseUnityPlugin
             var bindings = new GameBindings(Assembly.Load("Assembly-CSharp"));
             _dungeonState = new DungeonStateStore(_hub, _persistence);
             _dungeonAdapter = new DungeonContentAdapter(_hub, bindings, _boarding, _dungeonState);
-            _dungeons = new DungeonContentService(_hub, _dungeonAdapter.Catalogs(), _dungeonState, _dungeonAdapter.Bindings(), (owner, error) => Logger.LogError($"Dungeon provider '{owner}': {error}"));
+            _dungeons = new DungeonContentService(_hub, _dungeonAdapter.Catalogs(), _dungeonState, _dungeonAdapter.Bindings(), (owner, error) => Logger.LogError($"Dungeon provider '{owner}': {error}"),
+                () => (_dungeonSettlement?.IsDispatchingCallbacks ?? false) || (_dungeonRewards?.IsEvaluating ?? false) || (_boardingCombat?.IsEvaluating ?? false) || (ModApi.BoardingRules?.IsEvaluating ?? false));
             DungeonContentPatches.Adapter = _dungeonAdapter; DungeonContentPatches.Json = new DungeonMarkerJson(bindings.Assembly);
             var patches = new Dictionary<string, Type>
             {
@@ -509,6 +554,36 @@ public sealed class Plugin : BaseUnityPlugin
     {
         DungeonContentPatches.Adapter = null; DungeonContentPatches.Json = null; ModApi.Dungeons = null;
         _dungeons?.Dispose(); _dungeons = null; _dungeonAdapter?.Dispose(); _dungeonAdapter = null; _dungeonState?.Dispose(); _dungeonState = null;
+    }
+
+    private void InstallDungeonRewards(GameBindings bindings)
+    {
+        _hub!.SetCapability("dungeon-rewards", false, "Boarding observation required; experimental.");
+        if (_boarding == null) return;
+        try
+        {
+            _dungeonRewards = new DungeonRewardService(_hub, (owner, error) => Logger.LogError($"Dungeon reward '{owner}': {error}"));
+            _dungeonSettlement = new DungeonSettlementService(_hub, ModApi.Boarding!, (owner, error) => Logger.LogError($"Dungeon settlement '{owner}': {error}"));
+            DungeonRewardPatches.Crew = new DungeonCrewObserver(bindings, _boarding, _dungeonSettlement, error => Logger.LogError(error));
+            DungeonRewardPatches.Adapter = new DungeonRewardAdapter(_hub, bindings, _boarding, _dungeonRewards);
+            InstallGroup("dungeon-rewards", bindings, DungeonSettlementBindings.Hooks, new Dictionary<string, Type>
+            {
+                ["settlementTerminal"] = typeof(DungeonRewardPatches.Terminal),
+                ["settlementPrisonerScope"] = typeof(DungeonRewardPatches.PrisonerScope), ["settlementPrisoners"] = typeof(DungeonRewardPatches.Prisoners),
+                ["settlementCrewSample"] = typeof(DungeonRewardPatches.CrewSample),
+                ["settlementLoot"] = typeof(DungeonRewardPatches.Loot), ["settlementLootCount"] = typeof(DungeonRewardPatches.Count),
+                ["settlementMasteryScope"] = typeof(DungeonRewardPatches.MasteryScope), ["settlementMastery"] = typeof(DungeonRewardPatches.Mastery)
+            });
+            if (!_hub.Capabilities.Any(c => c.Name == "dungeon-rewards" && c.Available)) throw new NotSupportedException("Reward hooks unavailable.");
+            ModApi.DungeonRewards = _dungeonRewards;
+            ModApi.DungeonSettlement = _dungeonSettlement;
+        }
+        catch (Exception error)
+        {
+            DungeonRewardPatches.Crew = null; _dungeonSettlement?.Dispose(); _dungeonSettlement = null; ModApi.DungeonSettlement = null;
+            DungeonRewardPatches.Adapter = null; _dungeonRewards?.Dispose(); _dungeonRewards = null; ModApi.DungeonRewards = null;
+            _hub.SetCapability("dungeon-rewards", false, error.GetType().Name); Logger.LogError(error);
+        }
     }
 
     private void InstallBoardingTactics(GameBindings bindings)
@@ -562,7 +637,7 @@ public sealed class Plugin : BaseUnityPlugin
         {
             var adapter = new BoardingCommandAdapter(new BoardingCommandNativeBindings(bindings), _boarding, ModApi.Boarding,
                 value => value is UnityEngine.Object native && native != null);
-            _boardingCommands = new BoardingCommandService(_hub, ModApi.Boarding, adapter, () => (ModApi.BoardingRules?.IsEvaluating ?? false) || (_boardingCombat?.IsEvaluating ?? false));
+            _boardingCommands = new BoardingCommandService(_hub, ModApi.Boarding, adapter, () => (ModApi.BoardingRules?.IsEvaluating ?? false) || (_boardingCombat?.IsEvaluating ?? false) || (_dungeonRewards?.IsEvaluating ?? false) || (_dungeonSettlement?.IsDispatchingCallbacks ?? false));
             BoardingCommandPatches.Adapter = adapter; BoardingCommandPatches.Service = _boardingCommands;
             InstallGroup("boarding-commands", bindings, BoardingCommandBindings.Hooks, BoardingCommandBindings.Hooks.ToDictionary(b => b.Key, b => b.Key switch
             {
@@ -719,6 +794,8 @@ public sealed class Plugin : BaseUnityPlugin
 
     private void Update()
     {
+        var craftingFault = _craftingJobObserver?.PumpFault();
+        if (craftingFault != null) Logger.LogError(craftingFault);
         _boarding?.Poll();
         _adapter?.Poll(); _missions?.Poll();
         if (_travel != null)
@@ -747,6 +824,9 @@ public sealed class Plugin : BaseUnityPlugin
     }
     private void OnDestroy()
     {
+        StopBars();
+        DungeonRewardPatches.Crew = null; _dungeonSettlement?.Dispose(); _dungeonSettlement = null; ModApi.DungeonSettlement = null;
+        DungeonRewardPatches.Adapter = null; _dungeonRewards?.Dispose(); _dungeonRewards = null; ModApi.DungeonRewards = null;
         StopDungeons();
         BoardingTacticalPatches.Adapter = null; ModApi.BoardingTactics = null;
         BoardingCombatPatches.Adapter = null; _boardingCombat?.Dispose(); _boardingCombat = null; ModApi.BoardingCombat = null;
@@ -780,6 +860,7 @@ public sealed class Plugin : BaseUnityPlugin
         LifecyclePatches.Adapter = null;
         SavePatches.Adapter = null;
         ModApi.Current = null;
+        TeardownCraftingJobs();
         _recipeQuotes?.Dispose(); _recipeQuotes = null; ModApi.RecipeQuotes = null;
         _recipes?.Dispose(); _recipes = null; ModApi.Recipes = null;
         _hub?.Dispose();
