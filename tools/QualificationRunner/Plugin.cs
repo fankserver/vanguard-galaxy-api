@@ -140,6 +140,15 @@ public sealed partial class Plugin : BaseUnityPlugin
         {
             Require(File.ReadAllText(Path.Combine(_root!, "forge-reads.enabled")) == "forge-reads-v1", "Invalid Forge read marker.");
             foreach (var frame in CheckForgeReads()) yield return frame;
+            if (File.Exists(Path.Combine(_root!, "forge-commands.enabled")))
+            {
+                Require(File.ReadAllText(Path.Combine(_root!, "forge-commands.enabled")) == "forge-commands-v1", "Invalid Forge command marker.");
+                WriteAtomic("forge-commands.txt", new[] { "INCOMPLETE" });
+                var station = ModApi.RecipeQuotes!.CurrentStation ?? throw new InvalidOperationException("Command fixture lost station.");
+                CheckCraftingSettingCommands(station);
+                CheckCraftingQueueAndCancel(station);
+                WriteAtomic("forge-commands.txt", new[] { "PASS", "forge-commands-v1", "settings-replay-restored", "forge-queue-cancel-replay" });
+            }
             yield break;
         }
         if (Environment.GetCommandLineArgs().Contains("--vgmodapi-bars-cold-absent") || Environment.GetCommandLineArgs().Contains("--vgmodapi-bars-cold-consumer"))

@@ -24,5 +24,16 @@ try {
     [IO.File]::WriteAllLines($receipt, @('PASS','forge-reads-v1',"sha256=$hash"))
     Assert-ForgeReadReceipt $root $p
     [IO.File]::AppendAllText($facts, 'tampered'); Reject { Assert-ForgeReadReceipt $root $p }
-    'PASS Forge read selection and receipt tests'
+    [IO.File]::WriteAllLines($facts, @('PASS','forge-reads-v1','catalog=2','quotes=1','restored=0'))
+    $p | Add-Member forgeCommandProbe $true
+    Reject { Assert-ForgeReadSelection $root $p }
+    [IO.File]::WriteAllText((Join-Path $root 'forge-commands.enabled'), 'forge-commands-v1')
+    Reject { Assert-ForgeReadSelection $root $p }
+    [IO.File]::AppendAllText($config, "CommandsEnabled = true`r`n")
+    Assert-ForgeReadSelection $root $p
+    Reject { Assert-ForgeCommandReceipt $root $p }
+    [IO.File]::WriteAllLines((Join-Path $root 'forge-commands.txt'), @('PASS','forge-commands-v1','settings-replay-restored','forge-queue-cancel-replay'))
+    Assert-ForgeCommandReceipt $root $p
+    $p.forgeCommandProbe = $false; Reject { Assert-ForgeReadSelection $root $p }
+    'PASS Forge read/command selection and receipt tests'
 } finally { Remove-Item -LiteralPath $root -Recurse -Force }
