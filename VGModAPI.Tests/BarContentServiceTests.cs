@@ -52,7 +52,7 @@ public sealed class BarContentServiceTests
         Assert.Equal(2, calls);
     }
 
-    public sealed class ClickPatron { public int seat = 1; }
+    public sealed class ClickPatron { public string seed => "native"; public int seat = 1; }
     public sealed class ClickBar { public System.Collections.Generic.List<ClickPatron> availablePatrons = new(); public long lastUpdateTime = 1; }
     public sealed class ClickStation { public string guid = "station"; public ClickBar bar = new(); }
     public sealed class ClickPlayer { public static ClickPlayer? current; public object? currentPointOfInterest; }
@@ -117,6 +117,14 @@ public sealed class BarContentServiceTests
             contacts.IsOwned, contacts.Create, 5);
         var serialization = new VGModAPI.Core.Integration.BarNativeSerialization(typeof(BarNativeSerializationTests.Bar), typeof(BarNativeSerializationTests.Patron),
             typeof(BarNativeSerializationTests.Value), typeof(BarNativeSerializationTests.JsonObject), typeof(BarNativeSerializationTests.JsonArray), contacts, world);
+        int observed = 0;
+        using var throwingObserver = service.Subscribe("throwing", _ => throw new InvalidOperationException("observer failure"));
+        using var observer = service.Subscribe("cache", roster =>
+        {
+            Assert.Equal(session, roster.SessionId);
+            Assert.Equal(station.bar.availablePatrons.Count, roster.Members.Count);
+            observed++;
+        });
         int readinessCalls = 0;
         host = new VGModAPI.Core.Integration.BarRuntimeHost(service, world, contacts, serialization,
             id => { FaultAt(1); return service.Plan(session, id); },
@@ -124,6 +132,7 @@ public sealed class BarContentServiceTests
             () => storage.MutationAllowed, hub.CheckThread, _ => { });
         Assert.Equal(BarRosterApplyStatus.Applied, host.Reconcile(station.bar));
         var contact = Assert.Single(station.bar.availablePatrons, patron => contacts.IsOwned(patron));
+        Assert.Equal(1, observed);
         armed = true;
         if (faultStage >= 5)
         {

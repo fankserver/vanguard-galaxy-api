@@ -30,6 +30,7 @@ public sealed class BarNativeSerializationTests
     public sealed class Player { public static Player? current; public object? currentPointOfInterest; }
     public class Patron
     {
+        public string seed => "native";
         private bool initialized = false;
         public bool Initialized => initialized;
         public Action? DuringSerialization;

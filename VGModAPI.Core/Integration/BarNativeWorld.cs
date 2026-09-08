@@ -16,6 +16,7 @@ internal sealed class BarNativeWorld : IBarRosterWorld
     private readonly Func<BarPatronState, object, object?> _create;
     private readonly FieldInfo _bar, _guid, _patrons, _seat, _updateTime;
     private readonly Type _patronType;
+    private readonly PropertyInfo _seed;
     private readonly int _capacity;
     private BarHostHealth? _health;
     private bool _stopped;
@@ -103,7 +104,8 @@ internal sealed class BarNativeWorld : IBarRosterWorld
         _patrons = barType.GetField("availablePatrons", Fields) ?? throw new MissingFieldException("bar.availablePatrons");
         _seat = patronType.GetField("seat", Fields) ?? throw new MissingFieldException("BarPatron.seat");
         _updateTime = barType.GetField("lastUpdateTime", Fields) ?? throw new MissingFieldException("Bar.lastUpdateTime");
-        if (_updateTime.FieldType != typeof(long) || _seat.FieldType != typeof(int) || _bar.FieldType != barType || _guid.FieldType != typeof(string)
+        _seed = patronType.GetProperty("seed") ?? throw new MissingMemberException("BarPatron.seed");
+        if (_seed.PropertyType != typeof(string) || _updateTime.FieldType != typeof(long) || _seat.FieldType != typeof(int) || _bar.FieldType != barType || _guid.FieldType != typeof(string)
             || _patrons.FieldType != typeof(List<>).MakeGenericType(patronType)) throw new InvalidOperationException("Unsupported native bar shape.");
         if (capacity < 1 || capacity > 32) throw new ArgumentOutOfRangeException(nameof(capacity));
         _station = station; _owned = owned; _create = create; _patronType = patronType; _capacity = capacity;
@@ -139,6 +141,30 @@ internal sealed class BarNativeWorld : IBarRosterWorld
         token.VanillaSeats = vanilla.Select(entry => (int)_seat.GetValue(entry)!).ToArray();
         if (!Stable(token)) return null;
         return new BarRosterSnapshot(token, vanilla, _capacity);
+    }
+
+    internal sealed class Observation
+    {
+        private readonly BarNativeWorld _world;
+        private readonly CaptureToken _token;
+        internal BarRosterFinalized Snapshot { get; }
+        internal Observation(BarNativeWorld world, object token, BarRosterFinalized snapshot)
+        { _world = world; _token = (CaptureToken)token; Snapshot = snapshot; }
+        internal bool IsCurrent => _world.Stable(_token);
+    }
+
+    internal Observation? Observe(BarRosterPlan plan, BarNativeContacts contacts)
+    {
+        var captured = Capture(plan.Station);
+        if (captured == null) return null;
+        var token = (CaptureToken)captured.Token;
+        var members = token.Entries.Select(patron => new BarRosterMember(
+            contacts.TryGet(patron, out var state) ? state.Id : (BarPatronId?)null,
+            patron.GetType().Name, (string?)_seed.GetValue(patron) ?? "", (int)_seat.GetValue(patron)!)).ToArray();
+        var snapshot = new BarRosterFinalized(plan.Session, plan.Station, members,
+            plan.Policy.Denied.ToDictionary(pair => pair.Key, pair => pair.Value.ToString(), StringComparer.Ordinal));
+        var observation = new Observation(this, token, snapshot);
+        return observation.IsCurrent ? observation : null;
     }
 
     internal sealed class ContactAdmission

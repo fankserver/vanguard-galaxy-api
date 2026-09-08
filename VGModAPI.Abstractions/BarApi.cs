@@ -29,6 +29,8 @@ public sealed class BarProviderResult
 public interface IBarApi
 {
     BarProviderResult AcquireProvider(object pluginInstance);
+    /// <summary>Main-thread-only finalized-roster observation. No replay; dispose on consumer teardown.</summary>
+    IDisposable Subscribe(string owner, Action<BarRosterFinalized> callback);
 }
 
 /// <summary>Definitions and policies are registrations; persistent placement is a session mutation.</summary>

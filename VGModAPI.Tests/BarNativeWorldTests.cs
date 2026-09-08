@@ -8,7 +8,7 @@ namespace VGModAPI.Tests;
 
 public sealed class BarNativeWorldTests
 {
-    public sealed class Patron { public int seat = 1; public bool Owned; }
+    public sealed class Patron { public string seed => "native"; public int seat = 1; public bool Owned; }
     public sealed class Bar { public List<Patron> availablePatrons = new(); public long lastUpdateTime = 1; }
     public sealed class Station { public string guid = "station"; public Bar bar = new(); }
     public sealed class Player { public static Player? current; public object? currentPointOfInterest; }

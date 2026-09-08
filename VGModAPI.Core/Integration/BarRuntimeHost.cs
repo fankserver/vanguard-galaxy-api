@@ -73,6 +73,8 @@ internal sealed class BarRuntimeHost : IBarHookHost
             _applied.Remove(contact);
             _applied.Add(contact, plan);
         }
+        var observation = _world.Observe(plan, _contacts);
+        if (observation != null) _service.Publish(observation.Snapshot, () => _service.IsCurrent(plan) && observation.IsCurrent);
         return result;
     }
 

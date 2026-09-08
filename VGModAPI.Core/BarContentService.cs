@@ -92,6 +92,8 @@ internal sealed partial class BarContentService : IBarApi, IDisposable
         Changed();
         foreach (var lease in _leases.Values) { lease.Definitions.Clear(); lease.Stations.Clear(); lease.Interactions.Clear(); }
         _leases.Clear(); _transient.Clear();
+        foreach (var observer in _observers) observer.Active = false;
+        _observers.Clear();
         _subscription.Dispose(); _persistence.Dispose();
     }
 }
