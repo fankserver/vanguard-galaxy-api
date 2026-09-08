@@ -34,6 +34,9 @@ public sealed class WorldLifetimeHookTests : IDisposable
             singleton.SetValue(null, null);
             Assert.False(host.AllowManagerAwake(manager));
             Assert.False(host.CaptureManager(manager)());
+            WorldLifetimePatches.Host = host;
+            Assert.False(WorldLifetimePatches.Arrival.Prefix(manager));
+            Assert.Throws<System.IO.InvalidDataException>(() => WorldLifetimePatches.Spawn.Prefix(manager));
             Assert.True(host.AllowManagerAwake(new Behaviour.Managers.TestPoiManager()));
         }
         finally { Source.Player.GamePlayer.current = oldPlayer; singleton.SetValue(null, oldTravel); }
