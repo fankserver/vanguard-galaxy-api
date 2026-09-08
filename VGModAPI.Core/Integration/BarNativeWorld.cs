@@ -13,7 +13,7 @@ internal sealed class BarNativeWorld : IBarRosterWorld
     private readonly Func<object?> _station;
     private readonly Func<object, bool> _owned;
     private readonly Func<BarPatronState, object, object?> _create;
-    private readonly FieldInfo _bar, _guid, _patrons;
+    private readonly FieldInfo _bar, _guid, _patrons, _seat;
     private readonly Type _patronType;
     private readonly int _capacity;
 
@@ -23,7 +23,8 @@ internal sealed class BarNativeWorld : IBarRosterWorld
         _bar = stationType.GetField("bar", Fields) ?? throw new MissingFieldException("station.bar");
         _guid = stationType.GetField("guid", Fields) ?? throw new MissingFieldException("station.guid");
         _patrons = barType.GetField("availablePatrons", Fields) ?? throw new MissingFieldException("bar.availablePatrons");
-        if (_bar.FieldType != barType || _guid.FieldType != typeof(string)
+        _seat = patronType.GetField("seat", Fields) ?? throw new MissingFieldException("BarPatron.seat");
+        if (_seat.FieldType != typeof(int) || _bar.FieldType != barType || _guid.FieldType != typeof(string)
             || _patrons.FieldType != typeof(List<>).MakeGenericType(patronType)) throw new InvalidOperationException("Unsupported native bar shape.");
         if (capacity < 1 || capacity > 32) throw new ArgumentOutOfRangeException(nameof(capacity));
         _station = station; _owned = owned; _create = create; _patronType = patronType; _capacity = capacity;
@@ -35,8 +36,9 @@ internal sealed class BarNativeWorld : IBarRosterWorld
         internal readonly object Station, Bar;
         internal readonly IList List;
         internal readonly object[] Entries;
-        internal CaptureToken(BarNativeWorld owner, object station, object bar, IList list, object[] entries)
-        { Owner = owner; Station = station; Bar = bar; List = list; Entries = entries; }
+        internal readonly int[] Seats;
+        internal CaptureToken(BarNativeWorld owner, object station, object bar, IList list, object[] entries, int[] seats)
+        { Owner = owner; Station = station; Bar = bar; List = list; Entries = entries; Seats = seats; }
     }
 
     public BarRosterSnapshot? Capture(string station)
@@ -47,7 +49,7 @@ internal sealed class BarNativeWorld : IBarRosterWorld
         if (bar == null || _patrons.GetValue(bar) is not IList list || list.Count > _capacity) return null;
         var entries = list.Cast<object>().ToArray();
         if (entries.Any(entry => entry == null || !_patronType.IsInstanceOfType(entry))) return null;
-        var token = new CaptureToken(this, current, bar, list, entries);
+        var token = new CaptureToken(this, current, bar, list, entries, entries.Select(entry => (int)_seat.GetValue(entry)!).ToArray());
         var vanilla = entries.Where(entry => !_owned(entry)).ToArray();
         if (!Stable(token)) return null;
         return new BarRosterSnapshot(token, vanilla, _capacity);
@@ -68,6 +70,27 @@ internal sealed class BarNativeWorld : IBarRosterWorld
         if (copy.Any(patron => patron == null || !_patronType.IsInstanceOfType(patron))) return false;
         for (int i = 0; i < copy.Length; i++)
             for (int j = 0; j < i; j++) if (ReferenceEquals(copy[i], copy[j])) return false;
+        var occupied = new HashSet<int>();
+        var contacts = new List<object>();
+        foreach (var patron in copy)
+        {
+            if (snapshot.VanillaPatrons.Any(original => ReferenceEquals(original, patron)))
+            {
+                int seat = (int)_seat.GetValue(patron)!;
+                if (seat < 1 || seat > _capacity || !occupied.Add(seat)) return false;
+            }
+            else
+            {
+                if (token.Entries.Any(original => ReferenceEquals(original, patron)) || !_owned(patron)) return false;
+                contacts.Add(patron);
+            }
+        }
+        foreach (var contact in contacts)
+        {
+            int seat = Enumerable.Range(1, _capacity).First(index => !occupied.Contains(index));
+            _seat.SetValue(contact, seat);
+            occupied.Add(seat);
+        }
         var replacement = (IList)Activator.CreateInstance(_patrons.FieldType)!;
         foreach (var patron in copy) replacement.Add(patron);
         if (!Stable(token) || !stillValid() || !Stable(token)) return false;
@@ -79,7 +102,7 @@ internal sealed class BarNativeWorld : IBarRosterWorld
     {
         if (!ReferenceEquals(_station(), token.Station) || !ReferenceEquals(_bar.GetValue(token.Station), token.Bar)
             || !ReferenceEquals(_patrons.GetValue(token.Bar), token.List) || token.List.Count != token.Entries.Length) return false;
-        for (int i = 0; i < token.Entries.Length; i++) if (!ReferenceEquals(token.List[i], token.Entries[i])) return false;
+        for (int i = 0; i < token.Entries.Length; i++) if (!ReferenceEquals(token.List[i], token.Entries[i]) || (int)_seat.GetValue(token.Entries[i])! != token.Seats[i]) return false;
         return true;
     }
 }
