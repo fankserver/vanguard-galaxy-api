@@ -66,5 +66,17 @@ try {
     [IO.File]::WriteAllLines((Join-Path $root 'refinery.txt'), @('PASS','refinery-v1','fractional-partial-refund-extraction-replay'))
     Reject { Assert-RefineryReceipt $root $p }
     $p.forgeDeliveryProbe = $true; Reject { Assert-ForgeReadSelection $root $p }
+    $p.forgeDeliveryProbe = $false; $p.refineryProbe = $false; $p.forgeCommandProbe = $false
+    Remove-Item (Join-Path $root 'refinery.enabled'), (Join-Path $root 'forge-commands.enabled')
+    $p | Add-Member forgeUiProbe $true
+    Reject { Assert-ForgeReadSelection $root $p }
+    [IO.File]::WriteAllText((Join-Path $root 'forge-ui.enabled'), 'forge-ui-v1')
+    Assert-ForgeReadSelection $root $p
+    Reject { Assert-ForgeUiReceipt $root $p }
+    [IO.File]::WriteAllLines((Join-Path $root 'forge-ui.txt'), @('PASS','forge-ui-v1','variants-pointer-disabled-stale-reopen-dispose'))
+    Assert-ForgeUiReceipt $root $p
+    $p.forgeCommandProbe = $true; Reject { Assert-ForgeUiSelection $root $p }; $p.forgeCommandProbe = $false
+    [IO.File]::WriteAllText((Join-Path $root 'forge-ui.txt'), 'INCOMPLETE')
+    Reject { Assert-ForgeUiReceipt $root $p }
     'PASS Forge/refinery probe selection and receipt tests'
 } finally { Remove-Item -LiteralPath $root -Recurse -Force }
