@@ -16,6 +16,16 @@ public sealed class DungeonWalkReturnStateTests
         Assert.Throws<InvalidOperationException>(() => delivered.Begin());
     }
     [Fact]
+    public void UnsupportedOperationSchemaIsRejectedRatherThanClearingObligations()
+    {
+        var operation = new DungeonOperationResumeState(Guid.NewGuid(), Guid.NewGuid(), null, "ship", "Station", "Extraction", "Victory", "", DungeonTerminalProgress.NotStarted, false,
+            walkReturn: new(new Dictionary<string, int> { ["Marine"] = 1 }));
+        var ledger = new DungeonOperationRecoveryLedger(); ledger.Track(operation);
+        var invalid = ledger.Capture(); invalid[0] = 99;
+        Assert.Throws<System.IO.InvalidDataException>(() => ledger.Restore(invalid));
+        Assert.Equal(1, ledger.Get(operation.Id)!.WalkReturn!.Crew["Marine"]);
+    }
+    [Fact]
     public void SavedAttemptCannotBeErasedOrResetToPending()
     {
         var ledger = new DungeonOperationRecoveryLedger();

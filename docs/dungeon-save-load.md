@@ -23,6 +23,14 @@ With experimental Dungeons enabled, crew save/load hooks retain the six native e
 
 Simulation JSON also retains pending directives. Claimants reference only the ordered crew arrays of that same snapshot. Restoration validates compartment references and claimant assignments after crew execution state is restored, before enabling simulation ticks. Invalid supplements quarantine the affected simulation and refuse its serialization; they are not rewritten as default state. Missing supplements retain native compatibility defaults, not proof of complete continuity for an older save. Host patch-entry tests cover save/restore/save; these hooks have not been qualified in Unity.
 
+## Compatibility and removal policy
+
+The recovery provider uses envelope schema 1, operation schema 5 and pod schema 1. Only these versions are accepted; no automatic conversion of unsupported recovery payloads is provided. Unknown schemas, corrupt payloads and inconsistent identities must not be replaced with empty obligations. Restore a compatible API version or a matching backup rather than editing markers to bypass validation.
+
+A missing content provider does not erase retained authored definitions, but provider-owned choices require its registered behavior; see [authored content](dungeon-content.md). New API-owned creation requires restored, writable persistence. Missing original ships or live locations leave recovery staged, without substituting the current player ship or creating a replacement location.
+
+Removing or disabling the API/recovery hooks removes their protection: vanilla does not interpret the supplemental return manifests or settlement receipts. There is no automatic removal/migration procedure for outstanding operations. Retain a matching native-save/sidecar backup and keep recovery enabled while those obligations remain. A save made without these hooks is not evidence that all crew or effects were settled.
+
 ## Supplemental return-state primitives
 
 Experimental Dungeons wires operation/pod capture, identity markers, return receipts and a return reconstruction coordinator. Complete encounter recovery remains unqualified and incomplete. The recovery envelope retains independent operation and pod identities, the exact parent ship identity, phase, transport pose, outbound and return manifests, donor identity, reinforcement role, and separate attempted/delivered flags. A known-empty manifest is distinct from missing state. A potentially partial return attempt is not automatically retried or described as successful delivery.
