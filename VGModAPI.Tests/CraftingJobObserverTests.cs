@@ -31,7 +31,10 @@ public sealed class CraftingJobObserverTests : IDisposable
         GamePlayer.current = _player; _player.currentPointOfInterest = _station;
         Source.Galaxy.GalaxyMapData.current = new(); Source.Galaxy.GalaxyMapData.current.AddPoi(_station);
         _station.forge = new Forge { spaceStation = _station }; Source.Mining.Forge.current = Forge;
-        _source = new(typeof(CraftingRecipe).Assembly, (_, _) => null, value => value);
+        _item.gameObject.Components[typeof(InventoryItemType)] = _item;
+        _recipe.results.Add(new() { item = _item.gameObject, count = 1 });
+        _source = new(typeof(CraftingRecipe).Assembly,
+            (prefab, type) => ((UnityEngine.GameObject)prefab).Components.TryGetValue(type, out var component) ? component : null, value => value);
         _service = new(_hub, _source, (_, _) => { }); _service.SetAvailable(true);
         _observer = new(_hub, _service, _source); _service.Subscribe("test", _events.Add);
     }
@@ -94,6 +97,50 @@ public sealed class CraftingJobObserverTests : IDisposable
         _observer.End(route, null, null); _observer.End(batch, null, new InvalidOperationException("Native failure"));
         var fact = _events.Last(); Assert.Equal(CraftingDeliveryStatus.Unresolved, fact.DeliveryStatus); Assert.Single(fact.Deliveries);
         Assert.DoesNotContain(_events, item => item.Kind == CraftingJobEventKind.Finished); Assert.Null(_observer.PumpFault());
+    }
+    [Fact]
+    public void MixedUnsupportedOutputPreventsAggregateVerification()
+    {
+        _recipe.results.Add(new() { item = new UnityEngine.GameObject(), count = 1 });
+        var job = Queue(); var batch = _observer.Begin("jobBatchForge", job, Array.Empty<object>()); job.remainingAmount--;
+        var route = _observer.Begin("jobRouteForge", job, new object[] { _item, 1 });
+        Add(_observer.Begin("jobInventoryAdd", _station.materialStorage, new object[] { _item, 1, false, false }));
+        _observer.End(route, null, null); _observer.End(batch, null, null);
+        Assert.Equal(CraftingDeliveryStatus.Unresolved, _events.Last().DeliveryStatus);
+        Assert.Equal(CraftingDeliveryStatus.Verified, Assert.Single(_events.Last().Deliveries).Status);
+        Assert.Null(_observer.PumpFault());
+    }
+    [Fact]
+    public void NestedBatchSubscriberCannotDonateAnUnrelatedReceiptToOuterJob()
+    {
+        var a = Queue(); var b = Queue(); var c = Queue();
+        var bHandle = _events[1].Job.Handle;
+        _service.Subscribe("callback-transfer", fact =>
+        {
+            if (fact.Kind != CraftingJobEventKind.BatchObserved || !fact.Job.Handle.Equals(bHandle)) return;
+            var unrelated = _observer.Begin("jobInventoryAdd", _station.materialStorage, new object[] { _item, 1, false, false });
+            Assert.Null(unrelated);
+            _station.materialStorage.items = _station.materialStorage.items.Append(new Inventory.InventoryItem
+                { item = _item, inventory = _station.materialStorage, count = 1 }).ToArray();
+            // A genuinely new job operation inside the callback retains its own receipts.
+            var cb = _observer.Begin("jobBatchForge", c, Array.Empty<object>()); c.remainingAmount--;
+            var cr = _observer.Begin("jobRouteForge", c, new object[] { _item, 1 });
+            Add(_observer.Begin("jobInventoryAdd", _station.materialStorage, new object[] { _item, 1, false, false }));
+            _observer.End(cr, null, null); _observer.End(cb, null, null);
+        });
+        var ab = _observer.Begin("jobBatchForge", a, Array.Empty<object>()); a.remainingAmount--;
+        var ar = _observer.Begin("jobRouteForge", a, new object[] { _item, 1 });
+        var bb = _observer.Begin("jobBatchForge", b, Array.Empty<object>()); b.remainingAmount--;
+        var br = _observer.Begin("jobRouteForge", b, new object[] { _item, 1 });
+        Add(_observer.Begin("jobInventoryAdd", _station.materialStorage, new object[] { _item, 1, false, false }));
+        _observer.End(br, null, null); _observer.End(bb, null, null);
+        Add(_observer.Begin("jobInventoryAdd", _station.materialStorage, new object[] { _item, 1, false, false }));
+        _observer.End(ar, null, null); _observer.End(ab, null, null);
+        var batches = _events.Where(item => item.Kind == CraftingJobEventKind.BatchObserved).ToArray();
+        Assert.Equal(3, batches.Length); Assert.All(batches, fact => Assert.Single(fact.Deliveries));
+        Assert.Equal(3, batches.Sum(fact => fact.Deliveries.Sum(item => item.VerifiedAmount)));
+        Assert.Equal(4, _station.materialStorage.items.Sum(item => item.count));
+        Assert.Null(_observer.PumpFault());
     }
     [Fact]
     public void CancellationInsideProgressIsNotAlsoFinished()

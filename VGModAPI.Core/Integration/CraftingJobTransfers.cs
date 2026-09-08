@@ -12,6 +12,14 @@ internal sealed partial class CraftingJobObserver
     {
         var owner = _scopes.LastOrDefault(scope => scope.Transfer == null);
         if (owner == null) return null;
+        if (owner.CallbackContext != _service.CallbackContext)
+        {
+            // Subscriber work is not an output of a native operation enclosing dispatch.
+            // If it touches an in-flight addition, its enclosing quantity delta is no longer attributable.
+            foreach (var active in _scopes)
+                if (active.Transfer != null && ReferenceEquals(active.Instance, instance)) active.Transfer.NestedUnknown = true;
+            return null;
+        }
         var material = key == "jobMaterialAdd";
         if (material ? !(owner.Key == "jobBatchRefinery" || owner.Key.StartsWith("jobCancel", StringComparison.Ordinal)) :
             !(owner.Key.StartsWith("jobRoute", StringComparison.Ordinal) || owner.Key.StartsWith("jobCancel", StringComparison.Ordinal))) return null;

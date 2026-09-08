@@ -21,7 +21,8 @@ internal sealed class CraftingJobService : ICraftingJobs, IDisposable
     private readonly HashSet<CraftingJobHandle> _queued = new();
     private readonly List<Subscription> _subscriptions = new();
     private readonly Queue<(long Epoch, CraftingJobEvent Fact)> _pending = new();
-    private long _epoch, _sequence;
+    private long _epoch, _sequence, _callbackSequence;
+    internal long CallbackContext { get; private set; }
     private bool _available, _disposed, _dispatching;
     internal CraftingJobService(LifecycleHub hub, ICraftingJobSource source, Action<string, Exception> report)
     {
@@ -122,7 +123,10 @@ internal sealed class CraftingJobService : ICraftingJobs, IDisposable
                 {
                     if (_disposed || item.Epoch != _epoch && item.Fact.Kind != CraftingJobEventKind.Invalidated) break;
                     if (!subscription.Active) continue;
+                    var previousContext = CallbackContext;
+                    CallbackContext = checked(++_callbackSequence);
                     try { subscription.Callback(item.Fact); } catch (Exception error) { Report(subscription.Owner, error); }
+                    finally { CallbackContext = previousContext; }
                 }
             }
         }

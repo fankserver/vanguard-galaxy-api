@@ -75,6 +75,7 @@ internal sealed partial class RecipeCatalogNativeSource : ICraftingJobSource
         if (isNew) { _jobHandles.Add(job, handle); _jobObjects.Add(handle, job); }
         return snapshot;
     }
+    internal bool HasSupportedForgeOutputs(object job) => ReadForge(Get(job, "recipe") ?? throw new InvalidOperationException("Missing recipe."), RecipeAvailability.Available).Availability == RecipeAvailability.Available;
     internal object? NativePlayer => GetStatic("Source.Player.GamePlayer", "current");
     internal static object? Member(object value, string name) => Get(value, name);
     internal static object? InvokeMember(object value, string name, params object[] args) => Call(value, name, args);

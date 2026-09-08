@@ -40,6 +40,7 @@ internal sealed partial class CraftingJobObserver : IDisposable
                 var job = isJob ? instance : args[0];
                 if (!nativeJobs.Any(candidate => ReferenceEquals(candidate, job))) return null;
                 scope.Job = job; scope.Before = _source.SnapshotJob(handle, parent, job, process);
+                if (key == "jobBatchForge") scope.Unresolved = !_source.HasSupportedForgeOutputs(job);
             }
             else foreach (var job in nativeJobs) scope.BeforeJobs.Add(job, _source.SnapshotJob(handle, parent, job, process));
             Push(scope); return scope;
@@ -57,7 +58,7 @@ internal sealed partial class CraftingJobObserver : IDisposable
             if (scope.Transfer != null) { EndTransfer(scope, result, originalError); return; }
             if (scope.Key.StartsWith("jobRoute", StringComparison.Ordinal))
             {
-                var owner = _scopes.LastOrDefault(item => item.Key.StartsWith("jobBatch", StringComparison.Ordinal) && ReferenceEquals(item.Job, scope.Job));
+                var owner = _scopes.LastOrDefault(item => item.Key.StartsWith("jobBatch", StringComparison.Ordinal) && ReferenceEquals(item.Job, scope.Job) && item.CallbackContext == scope.CallbackContext);
                 if (owner != null) { owner.Deliveries.AddRange(scope.Deliveries); owner.Unresolved |= originalError != null || scope.Unresolved || scope.Deliveries.Count == 0; }
                 return;
             }
@@ -121,6 +122,7 @@ internal sealed partial class CraftingJobObserver : IDisposable
     private void Push(Scope scope)
     {
         if (_scopes.Count >= 64) throw new RecipeCatalogLimitException();
+        scope.CallbackContext = _service.CallbackContext;
         _scopes.Add(scope);
     }
     private bool Current(Scope scope) => !_disposed && _fault == null && scope.Epoch == _epoch &&
@@ -152,6 +154,7 @@ internal sealed partial class CraftingJobObserver : IDisposable
         internal readonly Dictionary<object, CraftingJobSnapshot> BeforeJobs = new(NativeObjectIdentity.Instance);
         internal readonly HashSet<object> NestedTerminals = new(NativeObjectIdentity.Instance), NestedQueued = new(NativeObjectIdentity.Instance);
         internal readonly List<CraftingDeliverySnapshot> Deliveries = new();
+        internal long CallbackContext;
         internal bool Unresolved;
         internal TransferState? Transfer;
         internal Scope(string key, object instance, object[] args, long epoch, Guid session, object? player)
