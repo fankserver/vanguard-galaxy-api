@@ -110,6 +110,18 @@ public sealed class BoardingCommandAdapterTests
         Assert.False(controller.IsActive); Assert.Equal(BoardingCommandStatus.ControlConflict, controller.Resume().Status);
     }
     [Fact]
+    public void ReinforcementPolicyVetoPrecedesRosterDebit()
+    {
+        using var f = new Fixture(); Assert.True(f.Start().Admitted);
+        f.Native.Operation!["phase"] = "Active";
+        f.Native.Operation["simulation"] = new Dictionary<string, object?>();
+        f.Adapter.ReinforcementAllowed = _ => false;
+        var before = f.Native.Roster["Marine"];
+        Assert.Equal(BoardingCommandStatus.WrongPhase, f.Adapter.Execute(f.Target, BoardingCommandKind.Reinforce,
+            new BoardingCrewManifest(new Dictionary<string, int> { ["Marine"] = 1 }), null, false).Status);
+        Assert.Equal(before, f.Native.Roster["Marine"]); Assert.DoesNotContain("commandReinforce", f.Native.Calls);
+    }
+    [Fact]
     public void WalkEntryRevalidatesDelayedCrewAndCancelsWithoutPartialDebit()
     {
         using var f = new Fixture(); f.Native.Location["isShipBased"] = false;

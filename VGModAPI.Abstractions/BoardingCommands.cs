@@ -8,7 +8,8 @@ public enum BoardingCommandStatus
 {
     Admitted, IntegrationUnavailable, SessionUnavailable, StaleHandle, Busy, ControlConflict,
     WrongPhase, Travelling, TargetUnavailable, InsufficientCrew, CapacityExceeded,
-    InvalidCrew, InvalidOptions, FactionConsentRequired, OperationExists, NativeFailure
+    InvalidCrew, InvalidOptions, FactionConsentRequired, OperationExists, NativeFailure,
+    InvalidAction, NotDiscovered, MissingSpecialist, InsufficientResources, FriendlyDamageConsentRequired
 }
 
 public enum BoardingAmmunition { Standard, Hollow, ArmourPiercing }

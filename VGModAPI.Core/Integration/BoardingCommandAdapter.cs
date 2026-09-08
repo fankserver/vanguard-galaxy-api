@@ -12,6 +12,7 @@ internal sealed class BoardingCommandAdapter : IBoardingCommandBackend
     private readonly Func<object, bool> _live;
     private readonly System.Runtime.CompilerServices.ConditionalWeakTable<object, BoardingHandle> _owned = new();
     private readonly Stack<DebitScope> _debits = new();
+    internal Func<object, bool>? ReinforcementAllowed;
     internal BoardingCommandAdapter(IBoardingCommandNativeBindings native, BoardingObserver observer, IBoardingEvents events, Func<object, bool> live)
     { _native = native; _observer = observer; _events = events; _live = live; }
     internal bool AllowAutonomous(object operation, bool enabled, BoardingCommandService commands)
@@ -109,6 +110,9 @@ internal sealed class BoardingCommandAdapter : IBoardingCommandBackend
                 if (resumed == null) return BoardingCommandService.Result(BoardingCommandStatus.NativeFailure);
                 break;
             case BoardingCommandKind.Reinforce:
+                if (ReinforcementAllowed != null && !ReinforcementAllowed(frame.Simulation!)) return BoardingCommandService.Result(BoardingCommandStatus.WrongPhase);
+                var current = Read(target);
+                if (current == null || !ReferenceEquals(current.Ship, frame.Ship) || !ReferenceEquals(current.Simulation, frame.Simulation)) return BoardingCommandService.Result(BoardingCommandStatus.StaleHandle);
                 status = BoardingCrewTransfer.Transfer(frame.State.Crew, crew!, _native.ValidCrew, frame.State.CrewCapacity,
                     manifest => _native.Call("commandReinforce", frame.Operation, manifest), () => _native.Call("commandNotifyCrew", null));
                 if (status != BoardingCommandStatus.Admitted) return BoardingCommandService.Result(status);
