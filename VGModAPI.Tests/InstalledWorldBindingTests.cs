@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.IO;
 using Mono.Cecil;
 using VGModAPI.Core.Integration;
 using Xunit;
@@ -9,6 +10,28 @@ namespace VGModAPI.Tests;
 [Trait("Category", "InstalledGame")]
 public sealed class InstalledWorldBindingTests
 {
+    [Fact]
+    public void NativeAssetRegistriesAndUnityLifetimeMatchInspection()
+    {
+        var path = Environment.GetEnvironmentVariable("VG_GAME_ASSEMBLY")
+            ?? throw new InvalidOperationException("Run make check-bindings against the original installed assembly.");
+        using var game = AssemblyDefinition.ReadAssembly(path);
+        foreach (var entry in new[] { (Type: "Behaviour.Unit.SpaceShip", Field: "allShips"), (Type: "Behaviour.Equipment.Builder.EquipmentBuilder", Field: "allBuilders") })
+        {
+            var field = game.MainModule.GetType(entry.Type).Fields.Single(candidate => candidate.Name == entry.Field);
+            Assert.True(field.IsStatic);
+            Assert.Equal("System.Collections.Generic.Dictionary`2<System.String," + entry.Type + ">", field.FieldType.FullName);
+        }
+        using var unity = AssemblyDefinition.ReadAssembly(Path.Combine(Path.GetDirectoryName(path)!, "UnityEngine.CoreModule.dll"));
+        var type = unity.MainModule.GetType("UnityEngine.Object");
+        var pointer = type.Fields.Single(field => field.Name == "m_CachedPtr");
+        Assert.False(pointer.IsStatic); Assert.Equal("System.IntPtr", pointer.FieldType.FullName);
+        var getPointer = type.Methods.Single(method => method.Name == "GetCachedPtr");
+        Assert.Contains(getPointer.Body.Instructions, instruction => instruction.Operand is FieldReference field && field.Name == "m_CachedPtr");
+        var alive = type.Methods.Single(method => method.Name == "IsNativeObjectAlive");
+        Assert.Contains(alive.Body.Instructions, instruction => instruction.Operand is MethodReference method && method.Name == "GetCachedPtr");
+    }
+
     [Fact]
     public void ConstructionAndSnapshotBoundariesMatchInspectedAssembly()
     {
