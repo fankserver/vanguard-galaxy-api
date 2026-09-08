@@ -5,6 +5,25 @@ namespace VGModAPI.Patches;
 internal static class DungeonRecoveryCapturePatches
 {
     internal static DungeonRecoveryRuntime? Runtime { get; set; }
+    internal static class DonorUpdate
+    { internal static bool Prefix(object __instance) => Runtime?.DonorReady(__instance) ?? true; }
+    internal static class Transfer
+    {
+        internal static bool Prefix(object __instance, out VGModAPI.Core.DungeonMutationFence.Lease? __state)
+        {
+            __state = null; if (Runtime == null) return true;
+            if (!Runtime.OperationReady(__instance)) return false;
+            __state = Runtime.State.BeginTransfer(); return __state != null;
+        }
+        internal static System.Exception? Finalizer(object __instance, System.Exception? __exception, VGModAPI.Core.DungeonMutationFence.Lease? __state)
+        {
+            if (__state == null) return __exception;
+            if (__exception != null) __state.Failed();
+            __state.Dispose();
+            if (__exception == null && Runtime?.State.CanMutate == true && !Runtime.ObserveOperation(__instance)) Runtime.State.RejectTransferSnapshot();
+            return __exception;
+        }
+    }
     internal static class ResumeShip
     {
         internal static bool Prefix(object __0, ref object? __result)

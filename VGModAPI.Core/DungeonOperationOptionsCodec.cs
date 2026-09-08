@@ -25,9 +25,9 @@ internal static class DungeonOperationOptionsCodec
         for (var i = 0; i < count; i++) crew.Add(Text(reader), reader.ReadInt32());
         return new(crew, ammo, stealth, (flags & 2) != 0, (flags & 1) != 0, priority == -1 ? null : priority);
     }
-    private static void Text(BinaryWriter writer, string value)
+    internal static void Text(BinaryWriter writer, string value)
     { var bytes = Utf8.GetBytes(value); writer.Write(bytes.Length); writer.Write(bytes); }
-    private static string Text(BinaryReader reader)
+    internal static string Text(BinaryReader reader)
     {
         var length = reader.ReadInt32();
         if (length < 0 || length > 512 || length > reader.BaseStream.Length - reader.BaseStream.Position) throw new InvalidDataException("Invalid option text length.");

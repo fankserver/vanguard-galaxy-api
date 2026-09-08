@@ -21,6 +21,27 @@ public sealed class DungeonPodPersistenceTests
         public void Dispose() { }
     }
     [Fact]
+    public void TransferFenceBlocksProviderCaptureAndMutationUntilReloadAfterFailure()
+    {
+        using var hub = new LifecycleHub((_, _) => { }); var persistence = new Persistence(); using var pods = new DungeonPodPersistence(hub, persistence);
+        var session = hub.Begin(SessionOrigin.SaveLoad, "save"); hub.PlayerReady(session); persistence.Provider.Restore(hub.CurrentSession!, null);
+        var snapshot = persistence.Provider.Capture();
+        using (var outer = pods.BeginTransfer())
+        {
+            Assert.NotNull(outer); Assert.False(pods.CanMutate);
+            using (var nested = pods.BeginTransfer())
+            {
+                Assert.NotNull(nested); Assert.Throws<InvalidOperationException>(() => persistence.Provider.Capture());
+                nested!.Failed();
+            }
+        }
+        Assert.False(pods.CanMutate); Assert.Null(pods.BeginTransfer());
+        Assert.Throws<InvalidOperationException>(() => persistence.Provider.Capture());
+        persistence.Provider.Restore(hub.CurrentSession!, snapshot);
+        Assert.True(pods.CanMutate); Assert.NotNull(persistence.Provider.Capture());
+        persistence.MutationAllowed = false; Assert.Null(pods.BeginTransfer());
+    }
+    [Fact]
     public void MissingOverflowReceiptDoesNotAttestDeliveryAndDispatchRefusesCapture()
     {
         using var hub = new LifecycleHub((_, _) => { }); var persistence = new Persistence(); using var pods = new DungeonPodPersistence(hub, persistence);

@@ -6,6 +6,7 @@ internal static class DungeonPodResumeBindings
     internal const string Data = "Source.Data.Persistable.BoardingPodData";
     internal static readonly MethodBinding[] Methods =
     {
+        new("donorDispatch", BindingCatalog.BoardingOperation, "DispatchReinforcer", false, "System.Void", "Behaviour.Unit.SpaceShip", "System.Collections.Generic.Dictionary`2<System.String,System.Int32>"),
         new("resumeDocking", BindingCatalog.BoardingOperation, "RestoreDockingOption", false, "System.Void"),
         new("podInit", Pod, "InitDocked", false, "System.Void", Data, "UnityEngine.Transform", "UnityEngine.Transform"),
         new("podReturnStart", Pod, "StartReturning", false, "System.Void", "UnityEngine.Transform", "System.Collections.Generic.Dictionary`2<System.String,System.Int32>"),
@@ -18,6 +19,10 @@ internal static class DungeonPodResumeBindings
     };
     internal static readonly (string Key, string Type, string Name, string ValueType)[] Members =
     {
+        ("donorActions", "Behaviour.Unit.AbstractUnit", "autoActions", "Source.SpaceShip.AutoActions"),
+        ("donorTarget", "Source.SpaceShip.Auto.BoardingReinforcementActions", "_boardableTarget", "UnityEngine.Transform"),
+        ("donorCrew", "Source.SpaceShip.Auto.BoardingReinforcementActions", "_crew", "System.Collections.Generic.Dictionary`2<System.String,System.Int32>"),
+        ("donorDispatched", "Source.SpaceShip.Auto.BoardingReinforcementActions", "_dispatched", "System.Boolean"),
         ("resumeAutoBuyOut", BindingCatalog.BoardingOptions, "autoAcceptBuyOut", "System.Boolean"),
         ("resumeAutoMove", BindingCatalog.BoardingOptions, "autoMove", "System.Boolean"),
         ("resumePriority", BindingCatalog.BoardingOptions, "priorityCompartmentIndex", "System.Nullable`1<System.Int32>"),

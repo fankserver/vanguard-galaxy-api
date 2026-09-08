@@ -14,6 +14,13 @@ internal sealed class DungeonPodPersistence : IDisposable
     private Guid? _restoredSession;
     private bool _disposed;
     private int _returnDepth;
+    private readonly DungeonMutationFence _effects = new();
+    internal void RejectTransferSnapshot() { _hub.CheckThread(); _effects.Fail(); }
+    internal DungeonMutationFence.Lease? BeginTransfer()
+    {
+        if (_returnDepth != 0 || !Ready || !_registration!.MutationAllowed || _hub.IsDispatchingCallbacks || _effects.Uncertain) return null;
+        return _effects.Enter();
+    }
     internal object RestoreToken { get; private set; } = new();
     private readonly HashSet<Guid> _restoredPods = new();
     internal bool WasRestored(Guid id) => Ready && _restoredPods.Contains(id);
@@ -23,7 +30,7 @@ internal sealed class DungeonPodPersistence : IDisposable
         _lifetime = hub.Subscribe("vgmodapi.dungeon-pods", message =>
         {
             if (message.Kind is LifecycleEventKind.SessionStarting or LifecycleEventKind.SessionInvalidated or LifecycleEventKind.SessionStartFailed)
-            { _restoredSession = null; _ledger.Restore(null); _operations.Restore(null); _restoredPods.Clear(); RestoreToken = new(); }
+            { _restoredSession = null; _ledger.Restore(null); _operations.Restore(null); _restoredPods.Clear(); RestoreToken = new(); _effects.Reset(); }
         });
         _registration = persistence?.Register(new PersistenceProvider("vgmodapi.dungeon-recovery", 1, Capture, Restore, DungeonRecoveryCodec.Validate));
     }
@@ -35,7 +42,7 @@ internal sealed class DungeonPodPersistence : IDisposable
                 _registration is IPersistenceReadiness readiness && readiness.StateReady;
         }
     }
-    internal bool CanMutate => _returnDepth == 0 && Ready && _registration!.MutationAllowed && !_hub.IsDispatchingCallbacks;
+    internal bool CanMutate => !_effects.Busy && !_effects.Uncertain && _returnDepth == 0 && Ready && _registration!.MutationAllowed && !_hub.IsDispatchingCallbacks;
     internal IReadOnlyList<DungeonPodResumeState> Snapshot => Ready ? _ledger.Snapshot : Array.Empty<DungeonPodResumeState>();
     internal DungeonPodResumeState? Get(Guid id) => Ready ? _ledger.Get(id) : null;
     internal DungeonOperationResumeState? Operation(Guid id) => Ready ? _operations.Get(id) : null;
@@ -70,12 +77,12 @@ internal sealed class DungeonPodPersistence : IDisposable
         _ledger.Delivered(id); return true;
     }
     internal void EnsureSerializationAllowed()
-    { _hub.CheckThread(); if (_returnDepth != 0) throw new InvalidOperationException("Cannot save while dungeon effects are being applied."); }
+    { _hub.CheckThread(); _effects.EnsureSettled(); if (_returnDepth != 0) throw new InvalidOperationException("Cannot save while dungeon effects are being applied."); }
     internal TerminalAttempt? BeginTerminal(Guid id)
     {
         if (!CanMutate || _operations.Get(id) is not { MayStartTerminalEffects: true } operation) return null;
         var attempted = new DungeonOperationResumeState(operation.Id, operation.LocationId, operation.ContentOccurrence, operation.AttackerShipId,
-            operation.DungeonType, operation.NativePhase, operation.Outcome, operation.MissionProtection, DungeonTerminalProgress.Attempted, operation.Autonomous, operation.Options);
+            operation.DungeonType, operation.NativePhase, operation.Outcome, operation.MissionProtection, DungeonTerminalProgress.Attempted, operation.Autonomous, operation.Options, operation.Donors);
         _operations.Track(attempted); _returnDepth++;
         return new TerminalAttempt(this, RestoreToken, attempted);
     }
@@ -88,7 +95,7 @@ internal sealed class DungeonPodPersistence : IDisposable
             _owner._hub.CheckThread();
             if (_disposed || !_owner.Ready || !ReferenceEquals(_token, _owner.RestoreToken) || !ReferenceEquals(_owner._operations.Get(_attempted.Id), _attempted)) return;
             _owner._operations.Track(new(_attempted.Id, _attempted.LocationId, _attempted.ContentOccurrence, _attempted.AttackerShipId, _attempted.DungeonType,
-                _attempted.NativePhase, _attempted.Outcome, _attempted.MissionProtection, DungeonTerminalProgress.Completed, _attempted.Autonomous, _attempted.Options));
+                _attempted.NativePhase, _attempted.Outcome, _attempted.MissionProtection, DungeonTerminalProgress.Completed, _attempted.Autonomous, _attempted.Options, _attempted.Donors));
         }
         public void Dispose() { _owner._hub.CheckThread(); if (_disposed) return; _disposed = true; _owner._returnDepth--; }
     }
@@ -122,7 +129,7 @@ internal sealed class DungeonPodPersistence : IDisposable
     { if (!CanMutate) return false; _ledger.Delivered(id); return true; }
     private byte[] Capture()
     {
-        _hub.CheckThread();
+        EnsureSerializationAllowed();
         if (_returnDepth != 0 || _disposed || !_restoredSession.HasValue || _restoredSession != _hub.CurrentSession?.Id) throw new InvalidOperationException("Pod state is not restored for this session.");
         return DungeonRecoveryCodec.Encode(_operations.Capture(), _ledger.Capture());
     }
@@ -133,7 +140,7 @@ internal sealed class DungeonPodPersistence : IDisposable
         var decoded = payload == null ? ((byte[]?)null, (byte[]?)null) : DungeonRecoveryCodec.Decode(payload);
         _operations.Restore(decoded.Item1); _ledger.Restore(decoded.Item2); _restoredSession = session.Id;
         _restoredPods.Clear(); foreach (var pod in _ledger.Snapshot) _restoredPods.Add(pod.Id);
-        RestoreToken = new();
+        RestoreToken = new(); _effects.Reset();
     }
     public void Dispose()
     {

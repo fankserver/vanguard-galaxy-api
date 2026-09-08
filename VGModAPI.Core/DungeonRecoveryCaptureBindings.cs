@@ -4,6 +4,9 @@ internal static class DungeonRecoveryCaptureBindings
 {
     internal static readonly MethodBinding[] Hooks =
     {
+        new("recoveryDonorRequest", BindingCatalog.BoardingOperation, "CheckReinforcementRequest", false, "System.Void", "Source.Dungeon.DungeonSimulation"),
+        new("recoveryDonorSpawn", BindingCatalog.BoardingOperation, "SpawnEnemyPods", false, "System.Void", "System.Collections.Generic.Dictionary`2<System.String,System.Int32>", "UnityEngine.Transform"),
+        new("recoveryDonorUpdate", "Source.SpaceShip.Auto.BoardingReinforcementActions", "Update", false, "System.Void", "System.Single"),
         new("recoveryResumeShip", BindingCatalog.BoardingManager, "ResumeOperation", false, BindingCatalog.BoardingOperation, BindingCatalog.Boardable, "System.Boolean"),
         new("recoveryResumeLocation", BindingCatalog.BoardingManager, "ResumeOperation", false, BindingCatalog.BoardingOperation, "Behaviour.Unit.SpaceShip", BindingCatalog.BoardingLocation, "System.Boolean"),
         new("recoveryReconstruct", BindingCatalog.BoardingManager, "ReconstructPodsFromData", false, "System.Void", BindingCatalog.Boardable, "System.Boolean"),

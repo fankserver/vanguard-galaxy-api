@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace VGModAPI.Core;
 
@@ -18,8 +20,9 @@ internal sealed class DungeonOperationResumeState
     internal DungeonTerminalProgress TerminalProgress { get; }
     internal bool Autonomous { get; }
     internal DungeonOperationOptions? Options { get; }
+    internal IReadOnlyList<DungeonDonorApproachState> Donors { get; }
     internal DungeonOperationResumeState(Guid id, Guid locationId, Guid? contentOccurrence, string attackerShipId, string dungeonType,
-        string nativePhase, string outcome, string missionProtection, DungeonTerminalProgress terminalProgress, bool autonomous, DungeonOperationOptions? options = null)
+        string nativePhase, string outcome, string missionProtection, DungeonTerminalProgress terminalProgress, bool autonomous, DungeonOperationOptions? options = null, IEnumerable<DungeonDonorApproachState>? donors = null)
     {
         if (id == Guid.Empty || locationId == Guid.Empty || contentOccurrence == Guid.Empty || !Enum.IsDefined(typeof(DungeonTerminalProgress), terminalProgress))
             throw new ArgumentException("Invalid persistent operation identity or terminal state.");
@@ -29,6 +32,10 @@ internal sealed class DungeonOperationResumeState
             throw new ArgumentException("Operation recipient, type and phase are required.");
         Id = id; LocationId = locationId; ContentOccurrence = contentOccurrence; AttackerShipId = attackerShipId;
         DungeonType = dungeonType; NativePhase = nativePhase; Outcome = outcome; MissionProtection = missionProtection;
+        var reservations = (donors ?? Array.Empty<DungeonDonorApproachState>()).Take(65).ToArray();
+        if (reservations.Length > 64 || reservations.Any(item => item == null) || reservations.Select(item => item.ShipId).Distinct(StringComparer.Ordinal).Count() != reservations.Length)
+            throw new ArgumentException("Invalid donor reservations.");
+        Donors = Array.AsReadOnly(reservations);
         TerminalProgress = terminalProgress; Autonomous = autonomous; Options = options;
     }
     internal bool MayStartTerminalEffects => TerminalProgress == DungeonTerminalProgress.NotStarted;

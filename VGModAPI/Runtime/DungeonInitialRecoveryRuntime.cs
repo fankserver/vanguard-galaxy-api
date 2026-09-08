@@ -43,13 +43,20 @@ internal sealed class DungeonInitialRecoveryRuntime : IDisposable
                 if (string.IsNullOrEmpty(donorId) || _owner.Pods.Conflicted(pod.Id) || _owner.Pods.DataFor(pod.Id) is { } data && _world.HasLivePod(data)) { ready = false; break; }
                 var donor = _world.Resolve(donorId!); if (donor == null) { ready = false; break; } donors[donorId!] = donor;
             }
+            foreach (var reservation in saved.Donors)
+            {
+                var donor = _world.Resolve(reservation.ShipId);
+                if (donor == null || request.Value == null || _native.Get(donor, "donorActions")?.GetType().FullName == "Source.SpaceShip.Auto.BoardingReinforcementActions") { ready = false; break; }
+                donors[reservation.ShipId] = donor;
+            }
             if (!ready) continue;
             var simulation = _native.Get(_native.Get(request.Key, "dungeonData"), "savedSimulation");
-            if (simulation != null && _owner.SimulationReady?.Invoke(simulation) == false) continue;
+            var active = saved.NativePhase == "Active";
+            if (active && (simulation == null || _owner.SimulationReady?.Invoke(simulation) == false)) continue;
             _attempted.Add(saved.Id); var built = new List<DungeonReturnPodInstance>(); object? operation = null;
             try
             {
-                operation = _operations.Create(saved, recipient, request.Key, request.Value, simulation != null);
+                operation = _operations.Create(saved, recipient, request.Key, request.Value, active);
                 if (!_owner.Operations.Resumed(operation) || !_owner.OperationReady(operation) || _owner.ValidateInitialOperation?.Invoke(operation) == false) throw new InvalidOperationException("Operation restore validation failed.");
                 foreach (var pod in records)
                 {
@@ -57,7 +64,9 @@ internal sealed class DungeonInitialRecoveryRuntime : IDisposable
                     var instance = new DungeonReturnPodInstance(_pods.BuildInitial(pod, donors[pod.Transport!.DonorShipId], request.Value, operation, _owner.Pods.DataFor(pod.Id)));
                     built.Add(instance); _owner.BindInitialPod(instance, pod.Id);
                 }
-                DungeonInitialRelease.Run(request.Value == null && simulation != null,
+                foreach (var reservation in saved.Donors)
+                    _native.Call("donorDispatch", operation, donors[reservation.ShipId], new Dictionary<string, int>(reservation.Crew, StringComparer.Ordinal));
+                DungeonInitialRelease.Run(request.Value == null && active,
                     () => _native.Call("resumeDocking", operation), () => _operations.Register(operation),
                     () => (_owner.ObserveInitialOperation ?? throw new InvalidOperationException("Boarding observation unavailable."))(operation),
                     () => { foreach (var instance in built) instance.Activate(); });

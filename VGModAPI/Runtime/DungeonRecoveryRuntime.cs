@@ -13,6 +13,7 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
     internal DungeonPodReturnObserver ReturnObserver { get; }
     private readonly DungeonReturnRecoveryCoordinator _returns;
     private readonly DungeonInitialRecoveryRuntime _initial;
+    private readonly DungeonRecoveryWorld _world;
     private readonly IDisposable _lifetime;
     private readonly Action<Exception> _report;
     private readonly DungeonMarkerJson _podJson, _operationJson;
@@ -41,7 +42,7 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
             var type = key == "ammo" ? ammoType : stealthType; var value = Enum.Parse(type, name);
             return Enum.IsDefined(type, value) ? value : throw new InvalidOperationException("Unsupported saved option enum.");
         });
-        var factory = new DungeonReturnPodFactory(game.Assembly, native); var world = new DungeonRecoveryWorld(game.Assembly, native);
+        var factory = new DungeonReturnPodFactory(game.Assembly, native); var world = new DungeonRecoveryWorld(game.Assembly, native); _world = world;
         State = new(hub, persistence); Pods = new(State, native); Operations = new(State, native);
         ReturnObserver = new(State, Pods, native, ship => ((Component)ship).transform, world.Ready, Operations.OperationId);
         _returns = new(State, world.Resolve,
@@ -62,6 +63,14 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
             if (message.Kind is LifecycleEventKind.SessionStarting or LifecycleEventKind.SessionInvalidated or LifecycleEventKind.SessionStartFailed)
             { _initial.Clear(); _returns.Poll(); Pods.Clear(); Operations.Clear(); _captureFaults = new(); _podOwners = new(); }
         });
+    }
+    internal bool DonorReady(object actions)
+    {
+        if (!State.CanMutate) return false;
+        if (_native.Get(actions, "donorTarget") is not Transform target || !target) return false;
+        var boardable = target.GetComponent(_shipType.Assembly.GetType(BindingCatalog.Boardable, true)!);
+        var operation = boardable == null ? null : ExistingOperation(boardable);
+        return operation != null && OperationReady(operation);
     }
     internal bool QueueRestore(object target, out object? existing)
     {
@@ -107,7 +116,7 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
         var phase = _native.Get(operation, "phase")?.ToString() ?? previous.NativePhase;
         var outcome = previous.TerminalProgress == DungeonTerminalProgress.NotStarted ? _native.Get(_native.Get(operation, "simulation"), "outcome")?.ToString() ?? previous.Outcome : previous.Outcome;
         if (!State.TrackOperation(new(previous.Id, previous.LocationId, previous.ContentOccurrence, previous.AttackerShipId, previous.DungeonType,
-            phase, outcome, previous.MissionProtection, previous.TerminalProgress, previous.Autonomous, _options.Capture(_native.Get(operation, "options")!)))) return false;
+            phase, outcome, previous.MissionProtection, previous.TerminalProgress, previous.Autonomous, _options.Capture(_native.Get(operation, "options")!), _world.CaptureDonors(_native.Get(operation, "boardableTarget"))))) return false;
         Pods.TrackLocation(location);
         var pending = (System.Collections.IList)_native.Get(operation, "resumePendingPods")!;
         foreach (var pod in (System.Collections.IEnumerable)_native.Get(operation, "_activePods")!)
@@ -150,6 +159,7 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
     {
         if (_operationJson.ReadStrict(json) is { } id) Operations.LoadedLocation(location, id);
         Pods.TrackLocation(location);
+        if (_native.Get(location, "isShipBased") is false) _initial.Queue(location, null);
     }
     internal void SaveLocation(object location, object json)
     {

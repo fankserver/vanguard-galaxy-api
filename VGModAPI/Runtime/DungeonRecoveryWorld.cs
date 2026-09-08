@@ -1,5 +1,7 @@
 using System;
 using System.Reflection;
+using System.Collections.Generic;
+using VGModAPI.Core;
 using UnityEngine;
 
 namespace VGModAPI.Runtime;
@@ -36,6 +38,22 @@ internal sealed class DungeonRecoveryWorld
         if (local == null || !_travel.Ready(local, poi)) return false;
         var item = _item.Invoke(null, new object[] { "CrewPod" });
         return item != null && (int)_capacity.GetValue(item)! > 0;
+    }
+    internal IReadOnlyList<DungeonDonorApproachState> CaptureDonors(object? target)
+    {
+        var result = new List<DungeonDonorApproachState>();
+        if (target is not Component destination || !destination) return result;
+        foreach (var candidate in UnityEngine.Object.FindObjectsByType(_ship, FindObjectsInactive.Include))
+        {
+            if (!candidate) continue;
+            var actions = _native.Get(candidate, "donorActions");
+            if (actions?.GetType().FullName != "Source.SpaceShip.Auto.BoardingReinforcementActions" || _native.Get(actions, "donorDispatched") is true) continue;
+            if (_native.Get(actions, "donorTarget") is not Transform aimed || aimed != destination.transform) continue;
+            var id = (string?)_native.Get(_native.Get(candidate, "resumeShipData"), "resumeShipGuid");
+            result.Add(new(id ?? "", (IReadOnlyDictionary<string, int>)_native.Get(actions, "donorCrew")!));
+            if (result.Count > 64) throw new InvalidOperationException("Too many approaching donors.");
+        }
+        return result;
     }
     internal bool HasLivePod(object data)
     {

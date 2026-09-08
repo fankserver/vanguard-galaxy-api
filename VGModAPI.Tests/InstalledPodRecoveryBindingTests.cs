@@ -9,6 +9,21 @@ namespace VGModAPI.Tests;
 public sealed class InstalledPodRecoveryBindingTests
 {
     [Fact]
+    public void DonorDispatchRebindsActionsWithoutSubtractingCrewAgain()
+    {
+        using var assembly = AssemblyDefinition.ReadAssembly(Environment.GetEnvironmentVariable("VG_GAME_ASSEMBLY") ?? throw new InvalidOperationException("Run make check-bindings."));
+        var operation = assembly.MainModule.GetType("Behaviour.Dungeon.DungeonOperation");
+        var dispatch = Assert.Single(operation.Methods, m => m.Name == "DispatchReinforcer");
+        var calls = dispatch.Body.Instructions.Select(i => i.Operand).OfType<MethodReference>().ToArray();
+        Assert.Contains(calls, m => m.Name == "SetTemporaryActions");
+        Assert.Contains(calls, m => m.Name == ".ctor" && m.DeclaringType.FullName == "Source.SpaceShip.Auto.BoardingReinforcementActions");
+        Assert.DoesNotContain(calls, m => m.Name is "SubtractCrewFromShip" or "CollectCombatCrew" or "SpawnEnemyPods");
+        var request = Assert.Single(operation.Methods, m => m.Name == "CheckReinforcementRequest");
+        var requestCalls = request.Body.Instructions.Select(i => i.Operand).OfType<MethodReference>().Select(m => m.Name).ToArray();
+        Assert.True(Array.IndexOf(requestCalls, "SubtractCrewFromShip") >= 0);
+        Assert.True(Array.IndexOf(requestCalls, "SubtractCrewFromShip") < Array.IndexOf(requestCalls, "DispatchReinforcer"));
+    }
+    [Fact]
     public void ApproachResumeConstructorDoesNotDebitCrewOrSpawnPods()
     {
         using var assembly = AssemblyDefinition.ReadAssembly(Environment.GetEnvironmentVariable("VG_GAME_ASSEMBLY") ?? throw new InvalidOperationException("Run make check-bindings."));
