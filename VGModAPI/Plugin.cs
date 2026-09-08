@@ -24,6 +24,7 @@ public sealed class Plugin : BaseUnityPlugin
     private PersistenceService? _persistence;
     private MissionAdapter? _missions;
     private TravelNativeAdapter? _travel;
+    private BoardingObserver? _boarding;
     private StoryNativeWorld? _storyWorld;
     private StoryContentService? _story;
     private StoryProtection? _protection;
@@ -54,6 +55,8 @@ public sealed class Plugin : BaseUnityPlugin
         _hub.SetCapability("mission-transitions", false, "Disabled by configuration; experimental.");
         _hub.SetCapability("owned-story", false, "Not initialized; experimental.");
         _hub.SetCapability("story-protection", false, "Not bound.");
+        _hub.SetCapability("boarding-observation", false, "Disabled by configuration; experimental.");
+        ModApi.Boarding = null;
         ModApi.Missions = null;
         ModApi.Story = null;
         ModApi.Current = _hub;
@@ -95,6 +98,8 @@ public sealed class Plugin : BaseUnityPlugin
                 ["store"] = typeof(SavePatches.Store), ["writeFile"] = typeof(SavePatches.WriteFile),
                 ["writeMetadata"] = typeof(SavePatches.WriteMetadata), ["storeFailure"] = typeof(SavePatches.StoreFailure)
             });
+            if (Config.Bind("Boarding", "Enabled", false, "Experimental boarding observation on the inspected game build.").Value)
+                InstallBoarding(bindings);
             // Load safety, not a feature: an owned mission restored from a save must not progress or
             // pay out while nobody vouches for it, and that is true whether or not the story module is
             // enabled. Bound before anything else story-related, and on by default.
@@ -410,6 +415,38 @@ public sealed class Plugin : BaseUnityPlugin
         }
     }
 
+    private void InstallBoarding(GameBindings bindings)
+    {
+        if (!_hub!.Capabilities.Any(c => c.Name == "session-lifecycle" && c.Available)) return;
+        BoardingService? service = null;
+        try
+        {
+            service = new BoardingService(_hub, (owner, error) => Logger.LogError($"Boarding subscriber '{owner}': {error}"));
+            _boarding = new BoardingObserver(_hub, service, bindings.Assembly, value => value is UnityEngine.Object native && native != null, error => Logger.LogError(error));
+            BoardingPatches.Observer = _boarding;
+            var patches = BindingCatalog.Boarding.ToDictionary(binding => binding.Key, binding => binding.Key switch
+            {
+                "boardingShipReady" or "boardingLocationReady" => typeof(BoardingPatches.Target),
+                "boardingStartShip" or "boardingStartLocation" or "boardingResumeShip" or "boardingResumeLocation" => typeof(BoardingPatches.Start),
+                "boardingCapture" => typeof(BoardingPatches.Capture),
+                "boardingLoot" or "boardingPartialLoot" or "boardingDataLoot" => typeof(BoardingPatches.Rewards),
+                "boardingInventoryDelivery" => typeof(BoardingPatches.Inventory),
+                "boardingCreditDelivery" => typeof(BoardingPatches.Credits),
+                "boardingWorldDelivery" => typeof(BoardingPatches.WorldLoot),
+                _ => typeof(BoardingPatches.Operation)
+            });
+            InstallGroup("boarding-observation", bindings, BindingCatalog.Boarding, patches);
+            if (!_hub.Capabilities.Any(c => c.Name == "boarding-observation" && c.Available)) throw new NotSupportedException("Boarding hooks unavailable.");
+            ModApi.Boarding = service;
+        }
+        catch (Exception error)
+        {
+            BoardingPatches.Observer = null; _boarding?.Dispose(); _boarding = null; service?.Dispose();
+            _hub.SetCapability("boarding-observation", false, "Boarding unavailable: " + error.GetType().Name);
+            Logger.LogError(error);
+        }
+    }
+
     private void InstallTravel(Assembly assembly, GameBindings bindings)
     {
         _hub!.SetCapability("native-travel", false, "Not bound.");
@@ -484,6 +521,7 @@ public sealed class Plugin : BaseUnityPlugin
 
     private void Update()
     {
+        _boarding?.Poll();
         _adapter?.Poll(); _missions?.Poll();
         if (_travel != null)
         {
@@ -511,6 +549,7 @@ public sealed class Plugin : BaseUnityPlugin
     }
     private void OnDestroy()
     {
+        BoardingPatches.Observer = null; _boarding?.Dispose(); _boarding = null; ModApi.Boarding = null;
         try { _updates?.Dispose(); } catch (Exception) { }
         try { _modMenu?.Dispose(); } catch (Exception error) { DisableModMenu(error); }
         _modMenu = null;

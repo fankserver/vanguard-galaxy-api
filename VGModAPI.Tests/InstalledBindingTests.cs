@@ -146,7 +146,7 @@ public sealed class InstalledBindingTests
     public void EveryPatchHasAnExactNonStubMethodBody()
     {
         using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
-        foreach (var binding in BindingCatalog.Session.Concat(BindingCatalog.Saves).Concat(BindingCatalog.Missions).Concat(BindingCatalog.MissionSnapshots).Concat(BindingCatalog.Travel))
+        foreach (var binding in BindingCatalog.Session.Concat(BindingCatalog.Saves).Concat(BindingCatalog.Missions).Concat(BindingCatalog.MissionSnapshots).Concat(BindingCatalog.Travel).Concat(BindingCatalog.Boarding).Concat(BindingCatalog.BoardingQueries))
         {
             var type = assembly.MainModule.GetType(binding.Type);
             Assert.True(type != null, "Missing type: " + binding.Type);
@@ -155,6 +155,22 @@ public sealed class InstalledBindingTests
                 && m.Parameters.Select(p => p.ParameterType.FullName).SequenceEqual(binding.Parameters)).ToArray();
             Assert.True(matches.Length == 1, "Binding mismatch: " + binding.Key + " / " + binding.Type + "." + binding.Name);
             Assert.True(matches[0].HasBody && matches[0].Body.Instructions.Count > 2, "Missing/non-original body: " + binding.Key);
+        }
+    }
+
+    [Fact]
+    public void BoardingSnapshotMembersMatchInstalledAssembly()
+    {
+        using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
+        foreach (var entry in BoardingMembers.Schema)
+        {
+            var type = assembly.MainModule.GetType(entry.Type);
+            Assert.NotNull(type);
+            var field = type.Fields.SingleOrDefault(value => value.Name == entry.Name);
+            var property = type.Properties.SingleOrDefault(value => value.Name == entry.Name);
+            Assert.True(entry.ValueType == (field?.FieldType ?? property?.PropertyType)?.FullName, entry.Type + "." + entry.Name + " expected " + entry.ValueType);
+            if (field != null) Assert.False(field.IsStatic);
+            else { Assert.NotNull(property?.GetMethod); Assert.False(property!.GetMethod.IsStatic); }
         }
     }
 

@@ -56,6 +56,36 @@ internal static class BindingCatalog
         new("interiorStart", SpaceStationInterior, "Start", false, "System.Void"),
         new("interiorDestroy", SpaceStationInterior, "OnDestroy", false, "System.Void")
     };
+    internal const string BoardingManager = "Behaviour.Managers.DungeonManager";
+    internal const string BoardingOperation = "Behaviour.Dungeon.DungeonOperation";
+    internal const string Boardable = "Behaviour.Unit.BoardableUnit";
+    internal const string BoardingLocation = "Source.Data.Persistable.DungeonLocationData";
+    internal const string BoardingOptions = "Source.Dungeon.DungeonOptions";
+    internal static readonly MethodBinding[] BoardingQueries =
+    {
+        new("travel", BoardingManager, "IsTravelBlocked", true, "System.Boolean"),
+        new("level", BoardingManager, "ExceedsLevelGap", true, "System.Boolean", "System.Int32"),
+        new("crew", "Behaviour.UI.Dungeon.DungeonPanel", "HasAvailableCrew", true, "System.Boolean")
+    };
+    internal static readonly MethodBinding[] Boarding =
+    {
+        new("boardingInventoryDelivery", "Source.Item.Inventory", "Add", false, "Source.Item.Inventory/InventoryItem", "Behaviour.Item.InventoryItemType", "System.Int32", "System.Boolean", "System.Boolean"),
+        new("boardingCreditDelivery", "Behaviour.Item.Usable.CreditsItem", "OnUse", false, "System.Boolean"),
+        new("boardingWorldDelivery", "Source.Galaxy.MapPointOfInterest", "AddPersistable", false, "UnityEngine.GameObject", "Source.Data.Persistable.PersistableData"),
+        new("boardingDataLoot", BoardingOperation, "HandleDataLootCollected", false, "System.Void", "Source.CompartmentSystem.SimLootEntry"),
+        new("boardingShipReady", Boardable, "Start", false, "System.Void"),
+        new("boardingLocationReady", "Behaviour.Unit.DungeonLocationUnit", "Start", false, "System.Void"),
+        new("boardingStartShip", BoardingManager, "StartOperation", false, BoardingOperation, "Behaviour.Unit.SpaceShip", Boardable, BoardingOptions, "System.Boolean"),
+        new("boardingStartLocation", BoardingManager, "StartOperation", false, BoardingOperation, "Behaviour.Unit.SpaceShip", BoardingLocation, BoardingOptions, "System.Boolean"),
+        new("boardingResumeShip", BoardingManager, "ResumeOperation", false, BoardingOperation, Boardable, "System.Boolean"),
+        new("boardingResumeLocation", BoardingManager, "ResumeOperation", false, BoardingOperation, "Behaviour.Unit.SpaceShip", BoardingLocation, "System.Boolean"),
+        new("boardingTick", BoardingOperation, "Tick", false, "System.Void", "System.Single"),
+        new("boardingCapture", Boardable, "FinalizeCapture", false, "System.Void"),
+        new("boardingLoot", BoardingOperation, "TransferLootToCargo", false, "System.Void"),
+        new("boardingPartialLoot", BoardingOperation, "TransferPartialLootToCargo", false, "System.Void"),
+        new("boardingCrewDirect", BoardingOperation, "ReturnCrewToShip", false, "System.Void", "Source.Dungeon.DungeonSimulation"),
+        new("boardingCrewPod", BoardingOperation, "HandlePodCrewReturned", false, "System.Void", "Behaviour.Persistables.BoardingPod")
+    };
     internal const string Mission = "Source.MissionSystem.Mission";
     internal static readonly MethodBinding[] Missions =
     {

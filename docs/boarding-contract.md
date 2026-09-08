@@ -1,6 +1,6 @@
 # Boarding integration constraints and source coverage
 
-Boarding is not an available public capability in this revision. This document defines the inspected integration boundaries and applicable constraints for boarding contracts. It does not attest that any boarding adapter or native scenario is implemented. Delivery and remaining acceptance belong to [milestone 09](https://github.com/fankserver/vanguard-galaxy-api/milestone/9), not a second source-tree backlog.
+Optional boarding observation is implemented in API 0.1.25, disabled by default and not runtime-qualified. Enable `[Boarding] Enabled = true`, inspect the `boarding-observation` capability and use `ModApi.Boarding`. Commands, rules, authored content and presentation registration are not available yet. This document distinguishes the observation contract from applicable constraints on those integrations; no native boarding scenario is attested by it. Delivery and remaining acceptance belong to [milestone 09](https://github.com/fankserver/vanguard-galaxy-api/milestone/9), not a second source-tree backlog.
 
 ## Evidence boundary
 
@@ -61,7 +61,9 @@ Enemy donor selection consumes a reinforcement request before finding a donor, d
 
 ## Public shape and identity constraints
 
-Public contract names are reserved design terminology here, not advertised available types:
+The current observation surface is `IBoardingEvents`, `BoardingHandle`, `BoardingTargetSnapshot`, `BoardingOperationSnapshot`, `BoardingCompartmentSnapshot` and `BoardingEvent`. `BoardingHandle` is opaque runtime identity; separate query dictionaries distinguish targets from operations. Registration is main-thread-only, does not replay, and is disposed through the returned subscription. All snapshots copy their collections. Invalidated/retired handles cannot be queried or resurrected.
+
+The following naming and behavioral constraints apply to richer interfaces; names not listed above are design terminology, not advertised available types:
 
 - `IBoardingApi`: queries/subscriptions plus optional command/rule/content/presentation interfaces. Each independently bound integration reports availability and an actionable reason. A live service or `GameplayInitialized` does not imply target, panel or command availability.
 - `BoardingTargetHandle`: session ID and opaque generation; `BoardingOperationHandle`: session ID and opaque operation generation. Compartment and crew handles additionally belong to an operation. Constructors must not let arbitrary identifiers confer mutation authority.
@@ -72,11 +74,21 @@ Public contract names are reserved design terminology here, not advertised avail
 
 Capabilities must separate observations, operations, rules, authored content and presentation. A failure in an optional presentation group does not make safe observation unavailable. Within a group, exact binding/installation is all-or-nothing. No capability is runtime-qualified by a successful bind.
 
+## Observation delivery
+
+Target `Start` hooks and manager start/resume return boundaries identify live native instances. Operation `Tick` and inspected settlement hooks supply changed snapshots independently of the panel. Starting an existing operation does not emit another start. Resume seeds victory/resolution state without replaying those as newly achieved facts. Known rooms exclude `Unknown` rooms; crew counts exclude killed, surrendered, captured or zero-HP units. Autonomy and auto-move are distinct fields. Target availability reports travel, no crew, installation integrity/level restrictions, active operations and destroyed targets; it is not a reservation or permission to execute a future command.
+
+`VictorySecured`, `SimulationResolved`, `CaptureApplied` and `CrewReturnSettled` are separate facts. A nonthrowing operation completion is not return settlement. Direct crew return or the final pod-return handler supplies settlement evidence; a target destroyed with no remaining operation/pods is retired rather than fabricating delivered survivors. Session invalidation clears all live queries; immutable event snapshots remain usable as records of their observed boundary.
+
+`RewardsDelivered` includes one `BoardingDelivery` route/quantity receipt, **not a complete-batch success claim**. Only nested successful inventory applications, actual positive credit balance changes, or registered world loot produce receipts inside boarding reward scopes. A transfer batch returning with no application emits none. World loot means a registered world drop, not cargo delivery. Data routed through native inventory additions is an inventory application. Special currency conversion returning no inventory entry has no inventory receipt; it must not be misreported as cargo. Detailed item identities and complete settlement accounting are governed by #116. Buffered successful inner applications remain facts if a later batch step throws; the original exception is preserved.
+
+Observed snapshot changes receive monotonic session-local sequences. Foreign-thread/adapter faults stop observation and clear live state; subscriber faults alone do not stop it. Binding validates all snapshot members and hooks before enabling the optional group, including nested metadata type spelling. Host tests cover lifetime, reconstruction suppression, discovery, separate return settlement and reward-scope behavior; installed metadata checks cover shapes. Neither is Unity/Harmony qualification.
+
 ## Callback and conflict contract
 
 Main-thread-only access follows the lifecycle service. Callbacks are short, synchronous and nonblocking. Observers cannot cancel or mutate the transition they observe. Before-action policy evaluation receives immutable input and returns a validated proposal. Native exceptions retain vanilla behavior; only provider failures are contained.
 
-Registration order is explicit priority followed by ordinal provider/local ID, not plugin load timing. Evaluation snapshots registration identities at entry; additions apply next time, disposed-before-turn callbacks are skipped. Removal does not mutate an evaluation already returned to vanilla. Each registration lease is disposed at provider teardown.
+Rule/action registration order is explicit priority followed by ordinal provider/local ID, not plugin load timing. Observational subscriptions use registration order and have no policy priority. Evaluation snapshots registration identities at entry; additions apply next time, disposed-before-turn callbacks are skipped. Removal does not mutate an evaluation already returned to vanilla. Each registration lease is disposed at provider teardown.
 
 Restrictions compose as additional denials. Numeric multipliers compose exactly once in deterministic order using checked finite arithmetic; per-field bounds are part of their typed contract, and out-of-range/NaN/infinite proposals are rejected rather than clamped secretly. A rejected provider proposal leaves the previous valid baseline unchanged and emits diagnostics. Conflicting exclusive overrides at equal highest priority do not silently choose a winner: use the native baseline with explicit conflict diagnostics. A required command validator failing rejects that command; it does not grant permission.
 
