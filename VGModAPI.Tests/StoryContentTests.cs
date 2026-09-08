@@ -2272,9 +2272,10 @@ public sealed class StoryContentTests
         var offered = provider.Offer("salvage-run");
         Assert.True(offered.Accepted);
         if (active) Assert.True(provider.Activate(offered.OccurrenceId).Accepted);
-        var current = world.Persistence.Provider!.Capture();
-        // One schema1 row has no pending choices or failure byte. This fixture represents
-        // that historical layout; migration is performed by the real service restore callback.
+        var captured = Assert.Single(StoryStateCodec.Decode(world.Persistence.Provider!.Capture()));
+        var current = StoryStateCodec.Encode(new[] { new StoryOccurrenceEntry(captured.Id, captured.OccurrenceId, captured.Retention,
+            captured.Sequence, captured.State, captured.Outcome, captured.Choices, captured.ChoiceReservation) });
+        // Schema 1 has no definition snapshot, pending choices or failure byte.
         var legacy = current.Take(current.Length - 2).ToArray();
         Array.Copy(BitConverter.GetBytes(1), 0, legacy, 4, 4);
         world.StartAndRestore(legacy);
@@ -3037,6 +3038,41 @@ public sealed class StoryContentTests
             => _plugins.TryGetValue(instance, out var plugin) ? new StoryHostPlugin(plugin.PluginId, plugin.Assembly) : null;
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ColdRestoreUsesSavedGeneratedDefinitionRatherThanStartupReplacement(bool active)
+    {
+        var provider = Provider(out var original, out _, out _, StoryRetention.Campaign);
+        var offered = provider.Offer("salvage-run");
+        if (active) Assert.True(provider.Activate(offered.OccurrenceId).Accepted);
+        var saved = original.Persistence.Provider!.Capture();
+        var later = new FakeWorld();
+        var host = new FakeHost();
+        using var service = later.Service(host);
+        var plugin = new object();
+        host.Register(plugin, AnimaPlugin);
+        var current = service.AcquireProvider(plugin).Provider!;
+        Assert.True(current.Register(new StoryMissionDefinition("salvage-run", "Different generated pitch", "Not the saved payload", Faction,
+            new[] { new StoryStep("Wrong destination", new[] { StoryObjective.TravelTo("missing-new-target") }) },
+            new[] { new StoryReward(StoryRewardKind.Credits, 999) }, retention: StoryRetention.Campaign)).Succeeded);
+        var native = FakeWorld.Native(current, "salvage-run", offered.OccurrenceId);
+        if (active) later.World.AdoptInWorld(native);
+        later.StartAndRestore(saved);
+        var restored = later.World.InstalledDefinition(native);
+        Assert.Equal("Salvage run", restored.Title);
+        Assert.Equal("poi-guid-1", restored.Steps[0].Objectives[0].TargetPoiId);
+        Assert.Equal(500, restored.Rewards[0].Amount);
+        Assert.Equal(new[] { "branch" }, restored.ChoiceKeys);
+        Assert.Equal(saved, later.Persistence.Provider!.Capture());
+        if (!active) Assert.True(current.Activate(offered.OccurrenceId).Accepted);
+        Assert.True(current.DeclareChoices(offered.OccurrenceId, new Dictionary<string, string> { ["branch"] = "saved-choice" }).Accepted);
+        later.CompleteInGame(current, "salvage-run", offered.OccurrenceId);
+        var completed = Assert.Single(StoryStateCodec.Decode(later.Persistence.Provider!.Capture()));
+        Assert.Null(completed.RetainedDefinition);
+        Assert.Equal("saved-choice", completed.Choices["branch"]);
+    }
+
     [Fact]
     public void NativeProgressQueriesResolveAfterReloadWithoutWritingRetainedState()
     {
@@ -3496,6 +3532,7 @@ public sealed class StoryContentTests
         internal void AdoptInWorld(string identifier) => _active.Add(identifier);
         internal void ClearWorld() { _active.Clear(); _archived.Clear(); }
         internal bool IsInstalled(string identifier) => _installed.ContainsKey(identifier);
+        internal StoryMissionDefinition InstalledDefinition(string identifier) => _installed[identifier];
         internal bool IsActive(string identifier) => _active.Contains(identifier);
 
         public StoryWorldResult MigrateScripted(string identifier, StoryMissionDefinition definition, StoryObjectiveLayout source,
