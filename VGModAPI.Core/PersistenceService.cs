@@ -24,9 +24,14 @@ internal sealed class PersistenceService : ISaveDataService, IDisposable
         _status = hub.Services.Get("save-data");
         if (coordinator != null) coordinator.StateChanged += PublishStates;
         _status.AvailabilityChanged += OnAvailabilityChanged;
-        hub.SetCapability("save-data", coordinator != null,
-            coordinator == null ? "Save storage is unavailable." : "Save storage initialized.",
-            ServiceUnavailableReason.BindingFailed);
+        if (coordinator != null) hub.SetCapability("save-data", true, "Save storage initialized.");
+        else
+        {
+            var diagnosis = _status.Availability;
+            hub.SetCapability("save-data", false,
+                diagnosis.IsAvailable ? "Save storage is unavailable." : diagnosis.Detail,
+                diagnosis.IsAvailable ? ServiceUnavailableReason.BindingFailed : diagnosis.Reason);
+        }
     }
 
     public ServiceAvailability Availability => _status.Availability;

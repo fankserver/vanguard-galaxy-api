@@ -89,22 +89,41 @@ public sealed class SaveDataServiceTests : IDisposable
         Assert.Throws<InvalidOperationException>(() => new DungeonStateStore(hub, service));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void MissingStoragePreservesInitializationDiagnosis(bool dependencyFailure)
+    {
+        using var hub = Bound();
+        if (dependencyFailure)
+            hub.SetCapability("session-lifecycle", false, "Inspected lifecycle binding unavailable.");
+        else
+            hub.SetCapability("save-data", false, "Storage root initialization refused.", ServiceUnavailableReason.BindingFailed);
+        var diagnosis = hub.Services.Get("save-data").Availability;
+        using var service = new PersistenceService(hub);
+        Assert.Equal(diagnosis.Reason, service.Availability.Reason);
+        Assert.Equal(diagnosis.Detail, service.Availability.Detail);
+        Assert.Equal(SaveDataRegistrationStatus.Unavailable, service.Register(Provider()).Status);
+        hub.SetCapability("session-lifecycle", true, "Bound.");
+        Assert.False(service.Availability.IsAvailable);
+        Assert.Equal(SaveDataRegistrationStatus.Unavailable, service.Register(Provider()).Status);
+    }
+
     [Fact]
     public void DirectServiceDisposalClosesHealthBeforeNotifyingConsumers()
     {
         using var hub = Bound();
         using var service = Source(hub);
         using var registration = service.Register(Provider()).Registration!;
-        var changes = new List<ServiceAvailability>();
-        service.AvailabilityChanged += state =>
-        {
-            changes.Add(state);
-            Assert.False(registration.CanRead);
-            Assert.False(registration.CanMutate);
-            Assert.Equal(SaveDataRegistrationStatus.Unavailable, service.Register(Provider("another")).Status);
-        };
+        var changes = new List<(ServiceAvailability Health, bool CanRead, bool CanMutate, SaveDataRegistrationStatus Admission)>();
+        service.AvailabilityChanged += state => changes.Add((state, registration.CanRead, registration.CanMutate,
+            service.Register(Provider("another")).Status));
         service.Dispose();
-        Assert.False(Assert.Single(changes).IsAvailable);
+        var change = Assert.Single(changes);
+        Assert.False(change.Health.IsAvailable);
+        Assert.False(change.CanRead);
+        Assert.False(change.CanMutate);
+        Assert.Equal(SaveDataRegistrationStatus.Unavailable, change.Admission);
         Assert.Equal(ServiceUnavailableReason.ApiStopped, service.Availability.Reason);
         Assert.Equal(SaveDataStateKind.Disposed, registration.State.Kind);
     }
