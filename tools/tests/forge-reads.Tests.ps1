@@ -44,5 +44,15 @@ try {
     [IO.File]::WriteAllLines((Join-Path $root 'forge-persistence.txt'), @('PASS','forge-persistence-v1','paused-jobs-roundtrip-save-as-slot-switch'))
     Assert-ForgePersistenceReceipt $root $p
     $p.forgeCommandProbe = $false; Reject { Assert-ForgeReadSelection $root $p }
-    'PASS Forge read/command/persistence selection and receipt tests'
+    $p.forgeCommandProbe = $true; $p.forgePersistenceProbe = $false
+    Remove-Item (Join-Path $root 'forge-persistence.enabled')
+    $p | Add-Member forgeDeliveryProbe $true
+    Reject { Assert-ForgeReadSelection $root $p }
+    [IO.File]::WriteAllText((Join-Path $root 'forge-delivery.enabled'), 'forge-delivery-v1')
+    Assert-ForgeReadSelection $root $p
+    Reject { Assert-ForgeDeliveryReceipt $root $p }
+    [IO.File]::WriteAllLines((Join-Path $root 'forge-delivery.txt'), @('PASS','forge-delivery-v1','partial-cancel-multi-batch-inventory'))
+    Assert-ForgeDeliveryReceipt $root $p
+    $p.forgePersistenceProbe = $true; Reject { Assert-ForgeReadSelection $root $p }
+    'PASS Forge probe selection and receipt tests'
 } finally { Remove-Item -LiteralPath $root -Recurse -Force }
