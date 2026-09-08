@@ -26,7 +26,7 @@ internal sealed class WorldLoadHookHost : IWorldLoadHookHost, IDisposable
     private bool _disposed;
     private Guid _sessionId;
 
-    internal WorldLoadHookHost(Assembly assembly, LifecycleHub hub, PersistenceService persistence, GenerationStore store,
+    internal WorldLoadHookHost(Assembly assembly, LifecycleHub hub, PersistenceService persistence, WorldGenerationReader generations,
         Func<string, string> canonical, Func<WorldSavedObject, bool> definitionAvailable, Func<long> providerRevision)
     {
         _hub = hub; _hub.CheckThread();
@@ -35,7 +35,7 @@ internal sealed class WorldLoadHookHost : IWorldLoadHookHost, IDisposable
         _file = assembly.GetType(BindingCatalog.File, true)!.GetField("File") ?? throw new MissingFieldException("SaveGameFile.File");
         if (_file.FieldType != typeof(FileInfo) || _file.IsStatic) throw new MissingFieldException("SaveGameFile.File must be instance FileInfo.");
         _json = new WorldJsonInspection(assembly); _gate = new WorldConstructionGate();
-        _preparation = new WorldLoadPreparation(new WorldGenerationReader(store), _json, _gate);
+        _preparation = new WorldLoadPreparation(generations, _json, _gate);
         _subscription = _hub.Subscribe(WorldStateCodec.Owner, OnLifecycle);
     }
 

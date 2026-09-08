@@ -10,6 +10,8 @@ Unofficial community mod API for Vanguard Galaxy, using BepInEx 5 and HarmonyX.
 
 ## Implemented
 
+Optional `[WorldProtection] Enabled = true` installs experimental pre-construction load guards when inspected lifecycle and persistence are available. This is a load-refusal surface only: owned world definitions are not admitted, and no world creation/reconstruction API is exposed. Published guards remain attached after teardown. Native qualification and safe API removal are not established.
+
 - Default-enabled experimental mod save data for additional custom payloads.
 - Optional read-only [Forge/refining recipe catalog](docs/recipes.md): stable identities, variants, multi-producer lookup and station-aware requirements/output estimates; no crafting mutations or native qualification implied.
 - Optional experimental mission transitions and native travel/station observations.

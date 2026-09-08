@@ -94,6 +94,20 @@ internal sealed class PersistenceCoordinator : IDisposable
         return _owners.TryGetValue(owner, out var registered) ? registered.Status : "unregistered";
     }
 
+    internal string CanonicalLoadPath(string path)
+    {
+        _hub.CheckThread();
+        if (_disposed) throw new ObjectDisposedException(nameof(PersistenceCoordinator));
+        return _canonical(path);
+    }
+
+    internal WorldGenerationReader CreateWorldReader()
+    {
+        _hub.CheckThread();
+        if (_disposed) throw new ObjectDisposedException(nameof(PersistenceCoordinator));
+        return new WorldGenerationReader(_store);
+    }
+
     // Early protection may compare actual read bytes to the observed attempt's fingerprint.
     // This does not restore owners or grant mutation/readiness.
     internal bool TryGetStartingLoad(Guid session, out string? path, out string? hash)

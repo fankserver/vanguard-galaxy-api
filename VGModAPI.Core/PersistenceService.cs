@@ -11,6 +11,10 @@ internal sealed class PersistenceService : IPersistenceApi, IDisposable
     internal PersistenceService(LifecycleHub hub, GenerationStore store, Func<string, string> canonical, Func<string, string> hashFile)
     { _hub = hub; _coordinator = new PersistenceCoordinator(hub, store, canonical, hashFile); }
 
+    internal string CanonicalLoadPath(string path) => _coordinator.CanonicalLoadPath(path);
+
+    internal WorldGenerationReader CreateWorldReader() => _coordinator.CreateWorldReader();
+
     internal bool TryGetStartingLoad(Guid session, out string? path, out string? hash) =>
         _coordinator.TryGetStartingLoad(session, out path, out hash);
 

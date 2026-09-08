@@ -37,7 +37,7 @@ public sealed class WorldLoadHookHostTests
                 if (advance) hub.PlayerReady(session);
                 return 1;
             }
-            using var host = new WorldLoadHookHost(typeof(JsonObject).Assembly, hub, persistence, store, Path.GetFullPath, _ => true, Revision);
+            using var host = new WorldLoadHookHost(typeof(JsonObject).Assembly, hub, persistence, persistence.CreateWorldReader(), Path.GetFullPath, _ => true, Revision);
             session = hub.Begin(SessionOrigin.SaveLoad, path);
             Assert.True(host.TryRecall(new Source.Util.SaveGameFile(path), out var loaded)); Assert.Same(root, loaded);
             host.RequireFactory(new JsonValue(poi));

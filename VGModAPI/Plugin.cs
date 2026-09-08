@@ -150,6 +150,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         }
         // Subscription order is contractual: coordinated owners restore before mission PlayerReady identity seeding.
         InitializePersistence();
+        InitializeWorldProtection();
         InitializeDungeons();
         InitializeMissions();
         InitializeStory();
@@ -785,6 +786,7 @@ public sealed partial class Plugin : BaseUnityPlugin
     private void OnDestroy()
     {
         StopBars();
+        StopWorldProtection();
         DungeonRewardPatches.Crew = null; _dungeonSettlement?.Dispose(); _dungeonSettlement = null; ModApi.DungeonSettlement = null;
         DungeonRewardPatches.Adapter = null; _dungeonRewards?.Dispose(); _dungeonRewards = null; ModApi.DungeonRewards = null;
         StopDungeons();
