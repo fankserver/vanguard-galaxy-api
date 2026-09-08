@@ -54,13 +54,31 @@ public sealed class WorldSnapshotRecorderTests
     }
 
     [Fact]
+    public void StaleAndForeignCompletionsCannotRevokeFreshBindings()
+    {
+        var (instance, root, _) = Fixture(); var recorder = Recorder(); var instances = new[] { instance };
+        var old = recorder.Begin(1, instances);
+        recorder.Reset();
+        var fresh = recorder.Begin(2, instances);
+        Assert.True(recorder.Complete(fresh, 2, instances, root));
+        var expected = recorder.ForStore(root);
+        foreach (var token in new[] { old, new object(), fresh })
+        {
+            Assert.False(recorder.Complete(token, 1, instances, root));
+            var actual = recorder.ForStore(root);
+            Assert.Equal(expected[WorldStateCodec.Owner], actual[WorldStateCodec.Owner]);
+            Assert.Equal(expected[WorldDefinitionCodec.Owner], actual[WorldDefinitionCodec.Owner]);
+        }
+    }
+
+    [Fact]
     public void TokensAreSingleUseAndMismatchedParentsRefuse()
     {
         var (instance, root, poi) = Fixture(); var recorder = Recorder(); var instances = new[] { instance };
         var token = recorder.Begin(1, instances);
         Assert.True(recorder.Complete(token, 1, instances, root));
         Assert.False(recorder.Complete(token, 1, instances, root));
-        Assert.Throws<InvalidDataException>(() => recorder.ForStore(root));
+        Assert.Single(WorldStateCodec.Decode(recorder.ForStore(root)[WorldStateCodec.Owner]));
         token = recorder.Begin(1, instances); poi["systemName"] = new("other");
         Assert.Throws<InvalidDataException>(() => recorder.Complete(token, 1, instances, root));
         Assert.Throws<InvalidDataException>(() => recorder.ForStore(root));

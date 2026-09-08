@@ -66,13 +66,14 @@ internal sealed class WorldSnapshotRecorder
 
     internal bool Complete(object token, long revision, IReadOnlyList<WorldSnapshotInstance> current, object root)
     {
-        long previous = _operation;
-        long operation = Next();
-        // Even a failed recapture must revoke both previous owner associations for a reused root.
-        _states.Forget(root); _definitions.Forget(root);
-        if (!_captures.TryGetValue(token, out var capture)) return false;
+        if (token == null || !_captures.TryGetValue(token, out var capture)) return false;
         _captures.Remove(token);
-        if (capture.Operation != previous || capture.Revision != revision) return false;
+        if (capture.Operation != _operation) return false;
+        long operation = Next();
+        // Only a current capture owns revocation; stale/foreign/replayed completions cannot
+        // erase a newer association. A current recapture still revokes on validation failure.
+        _states.Forget(root); _definitions.Forget(root);
+        if (capture.Revision != revision) return false;
         var observed = Copy(current);
         if (observed.Length != capture.Instances.Length) return false;
         for (int i = 0; i < observed.Length; i++) if (!ReferenceEquals(observed[i], capture.Instances[i])) return false;
