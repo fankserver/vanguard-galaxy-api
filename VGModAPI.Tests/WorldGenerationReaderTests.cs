@@ -53,6 +53,29 @@ public sealed class WorldGenerationReaderTests : IDisposable
         Assert.Throws<InvalidDataException>(() => new WorldGenerationReader(store).Read(Slot, _native));
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void InstancesRequireTheirExactRetainedDefinitionRevision(int revision)
+    {
+        var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
+        var row = new WorldSavedObject(identity, "system-a", GenerationStore.Hash(_native), 1);
+        var owners = new Dictionary<string, byte[]>
+        {
+            [WorldStateCodec.Owner] = new OwnerSchemaCodec(WorldStateCodec.Owner, 1, _ => true).Encode(WorldStateCodec.Encode(new[] { row }))
+        };
+        if (revision != 0) owners.Add(WorldDefinitionCodec.Owner, WorldTestDefinitions.Envelope(identity, revision));
+        var store = Store; store.Publish(Slot, GenerationStore.Hash(_native), Guid.NewGuid(), owners);
+        var reader = new WorldGenerationReader(store);
+        if (revision == 1)
+        {
+            var result = reader.Read(Slot, _native);
+            Assert.Equal("Site", result.DefinitionFor(Assert.Single(result.Rows)).Definition.Name);
+        }
+        else Assert.Throws<InvalidDataException>(() => reader.Read(Slot, _native));
+    }
+
     [Fact]
     public void CorruptPublishedMetadataDoesNotFallBackToEmpty()
     {

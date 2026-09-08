@@ -60,17 +60,17 @@ public sealed class WorldLoadPreparationTests
             var row = new WorldSavedObject(identity, "system-a", WorldJsonInspection.Digest(poi), 1);
             var store = new GenerationStore(Path.Combine(dir, "generations"));
             var envelope = new OwnerSchemaCodec(WorldStateCodec.Owner, 1, _ => true).Encode(WorldStateCodec.Encode(new[] { row }));
-            store.Publish(path, GenerationStore.Hash(bytes), Guid.NewGuid(), new Dictionary<string, byte[]> { [WorldStateCodec.Owner] = envelope });
+            store.Publish(path, GenerationStore.Hash(bytes), Guid.NewGuid(), new Dictionary<string, byte[]> { [WorldStateCodec.Owner] = envelope, [WorldDefinitionCodec.Owner] = WorldTestDefinitions.Envelope(identity) });
             var gate = new WorldConstructionGate(); var session = Guid.NewGuid(); gate.Start(session);
             var prep = new WorldLoadPreparation(new WorldGenerationReader(store), new WorldJsonInspection(typeof(JsonObject).Assembly), gate);
             long revision = 1;
-            bool Definition(WorldSavedObject saved)
+            bool Definition(WorldSavedDefinition saved)
             {
                 if (fault == 1) return false;
                 if (fault == 2) revision++;
                 if (fault == 3) poi.Text = "changed-after-metadata";
                 if (fault == 4) root.Text = "changed-player-or-vanilla-state";
-                return saved.DefinitionRevision == 1;
+                return saved.Definition.Revision == 1;
             }
             if (fault == 0)
             {

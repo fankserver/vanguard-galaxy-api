@@ -20,14 +20,14 @@ internal sealed class WorldLoadHookHost : IWorldLoadHookHost, IDisposable
     private readonly WorldLoadPreparation _preparation;
     private readonly FieldInfo _file;
     private readonly Func<string, string> _canonical;
-    private readonly Func<WorldSavedObject, bool> _definitionAvailable;
+    private readonly Func<WorldSavedDefinition, bool> _definitionAvailable;
     private readonly Func<long> _providerRevision;
     private readonly IDisposable _subscription;
     private bool _disposed;
     private Guid _sessionId;
 
     internal WorldLoadHookHost(Assembly assembly, LifecycleHub hub, PersistenceService persistence, WorldGenerationReader generations,
-        Func<string, string> canonical, Func<WorldSavedObject, bool> definitionAvailable, Func<long> providerRevision)
+        Func<string, string> canonical, Func<WorldSavedDefinition, bool> definitionAvailable, Func<long> providerRevision)
     {
         _hub = hub; _hub.CheckThread();
         if (_hub.CurrentSession != null) throw new InvalidOperationException("World load guard must attach before a session.");

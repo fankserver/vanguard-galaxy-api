@@ -17,7 +17,7 @@ internal sealed class WorldLoadPreparation
     }
 
     internal object Read(Guid session, string canonicalPath, string expectedHash, Func<bool> stillStarting,
-        Func<WorldSavedObject, bool> definitionAvailable, Func<long> providerRevision)
+        Func<WorldSavedDefinition, bool> definitionAvailable, Func<long> providerRevision)
     {
         if (stillStarting == null || definitionAvailable == null || providerRevision == null) throw new ArgumentNullException("World load verification callbacks are required.");
         if (!stillStarting()) throw new InvalidDataException("World load attempt is no longer starting.");
@@ -39,7 +39,7 @@ internal sealed class WorldLoadPreparation
         var providers = new string[rows.Length];
         for (int i = 0; i < rows.Length; i++)
         {
-            if (!definitionAvailable(rows[i])) throw new InvalidDataException("Required world definition/provider is unavailable.");
+            if (!definitionAvailable(generation.DefinitionFor(rows[i]))) throw new InvalidDataException("Required world definition/provider is unavailable.");
             providers[i] = rows[i].Identity.Owner;
         }
         if (!stillStarting() || providerRevision() != revision || !stillStarting()) throw new InvalidDataException("World load changed during definition admission.");

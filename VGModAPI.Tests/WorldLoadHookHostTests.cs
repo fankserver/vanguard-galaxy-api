@@ -28,7 +28,7 @@ public sealed class WorldLoadHookHostTests
             var store = new GenerationStore(Path.Combine(dir, "generations"));
             var row = new WorldSavedObject(identity, "system-a", WorldJsonInspection.Digest(poi), 1);
             var envelope = new OwnerSchemaCodec(WorldStateCodec.Owner, 1, _ => true).Encode(WorldStateCodec.Encode(new[] { row }));
-            store.Publish(path, GenerationStore.Hash(bytes), Guid.NewGuid(), new Dictionary<string, byte[]> { [WorldStateCodec.Owner] = envelope });
+            store.Publish(path, GenerationStore.Hash(bytes), Guid.NewGuid(), new Dictionary<string, byte[]> { [WorldStateCodec.Owner] = envelope, [WorldDefinitionCodec.Owner] = WorldTestDefinitions.Envelope(identity) });
             var hub = new LifecycleHub((_, error) => throw new Exception("Unexpected observer failure", error));
             using var persistence = new PersistenceService(hub, store, Path.GetFullPath, p => GenerationStore.Hash(File.ReadAllBytes(p)));
             Guid session = Guid.Empty; bool advance = false;

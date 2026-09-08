@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Collections.Generic;
 
 namespace VGModAPI.Core;
 
@@ -11,11 +12,20 @@ internal sealed class WorldGenerationReader
         internal SnapshotAssociation Association { get; }
         private readonly WorldSavedObject[] _rows;
         internal WorldSavedObject[] Rows => (WorldSavedObject[])_rows.Clone();
-        internal Result(SnapshotAssociation association, WorldSavedObject[] rows)
-        { Association = association; _rows = (WorldSavedObject[])rows.Clone(); }
+        private readonly Dictionary<(string, string), WorldSavedDefinition> _definitions = new();
+        internal WorldSavedDefinition DefinitionFor(WorldSavedObject row) => _definitions[(row.Identity.Owner, row.Identity.LocalId)];
+        internal Result(SnapshotAssociation association, WorldSavedObject[] rows, WorldSavedDefinition[] definitions)
+        {
+            Association = association; _rows = (WorldSavedObject[])rows.Clone();
+            foreach (var definition in definitions) _definitions.Add((definition.Owner, definition.Definition.LocalId), definition);
+            foreach (var row in rows)
+                if (!_definitions.TryGetValue((row.Identity.Owner, row.Identity.LocalId), out var definition) || definition.Definition.Revision != row.DefinitionRevision)
+                    throw new InvalidDataException("World instance has no matching retained declaration.");
+        }
     }
     private readonly GenerationStore _store;
     private readonly OwnerSchemaCodec _codec = new(WorldStateCodec.Owner, WorldStateCodec.SchemaVersion, Validate);
+    private readonly OwnerSchemaCodec _definitions = new(WorldDefinitionCodec.Owner, WorldDefinitionCodec.SchemaVersion, ValidateDefinitions);
     internal WorldGenerationReader(GenerationStore store) => _store = store ?? throw new ArgumentNullException(nameof(store));
 
     internal Result Read(string canonicalPath, byte[] nativeBytes) =>
@@ -45,7 +55,22 @@ internal sealed class WorldGenerationReader
         var decoded = _codec.Decode(envelope);
         if (decoded.Status != SchemaReadStatus.Ready || decoded.Payload is not { } payload)
             throw new InvalidDataException("World metadata is protected: " + decoded.Status);
-        return new Result(generation.Identity, WorldStateCodec.Decode(payload));
+        var rows = WorldStateCodec.Decode(payload);
+        var definitions = Array.Empty<WorldSavedDefinition>();
+        if (generation.Owners.TryGetValue(WorldDefinitionCodec.Owner, out var definitionEnvelope))
+        {
+            var result = _definitions.Decode(definitionEnvelope);
+            if (result.Status != SchemaReadStatus.Ready || result.Payload is not { } definitionPayload)
+                throw new InvalidDataException("Retained world declarations are protected: " + result.Status);
+            definitions = WorldDefinitionCodec.Decode(definitionPayload);
+        }
+        return new Result(generation.Identity, rows, definitions);
+    }
+
+    private static bool ValidateDefinitions(byte[] payload)
+    {
+        try { WorldDefinitionCodec.Decode(payload); return true; }
+        catch (InvalidDataException) { return false; }
     }
 
     private static bool Validate(byte[] payload)
