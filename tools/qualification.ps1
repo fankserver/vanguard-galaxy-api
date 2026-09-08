@@ -104,11 +104,12 @@ if ($Action -eq 'Prepare') {
     if ($MenuInspection -and ($Scenario -ne 'MissingApi' -or $VanillaLoadControl -or $MissionJournalBin -or $StockpileBin -or $AnimaBin -or $EchoBin -or $TravelJournalBin)) { throw 'Menu inspection requires an API-absent menu-only run without consumers.' }
     if ($ModInformationProbe -and !$ModMenuProbe) { throw 'Information probe requires ModMenuProbe.' }
     if ($ModInformationProbe) {
+        if (!$MissionJournalBin -or !$StockpileBin) { throw 'Full information qualification requires both real consumers.' }
         if (!$TlsFixture -or !(Test-Path -LiteralPath $TlsFixture -PathType Leaf) -or (Get-Item -LiteralPath $TlsFixture).Length -gt 16384 -or ((Get-Item -LiteralPath $TlsFixture).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Information probe requires a bounded, unlinked throwaway TLS fixture.' }
     } elseif ($TlsFixture) { throw 'TLS fixture requires information probe.' }
     if ($ModMenuProbe) {
         $otherSwitches = @($PSBoundParameters.Keys | Where-Object { $PSBoundParameters[$_] -is [Management.Automation.SwitchParameter] -and $PSBoundParameters[$_].IsPresent -and $_ -notin @('ModMenuProbe','ModInformationProbe','Diagnostics') })
-        if ($Scenario -ne 'Full' -or $otherSwitches.Count -or $MissionJournalBin -or $StockpileBin -or $AnimaBin -or $EchoBin -or $TravelJournalBin) { throw 'Mod menu probe requires an isolated Full menu-only run without other probes or consumers.' }
+        if ($Scenario -ne 'Full' -or $otherSwitches.Count -or ((!$ModInformationProbe) -and ($MissionJournalBin -or $StockpileBin)) -or $AnimaBin -or $EchoBin -or $TravelJournalBin) { throw 'Mod menu probe requires Full without unrelated probes or consumers.' }
     }
     if ($PersistenceProbe -and $Scenario -ne 'Full') { throw 'Persistence probe requires Full.' }
     # The two consumer travel probes own the SAME reused native travel phases, so exactly one may
@@ -352,7 +353,7 @@ if ($Action -eq 'Prepare') {
     if ($ModMenuProbe) { [IO.File]::WriteAllText((Join-Path $root 'mod-menu-probe.enabled'), 'mod-menu-probe-v3') }
     if ($ModInformationProbe) {
         Copy-Item -LiteralPath $TlsFixture -Destination (Join-Path $root 'untrusted-test.pfx')
-        [IO.File]::WriteAllText((Join-Path $root 'mod-information-probe.enabled'), 'mod-information-probe-v2')
+        [IO.File]::WriteAllText((Join-Path $root 'mod-information-probe.enabled'), 'mod-information-probe-v3')
     }
     if ($ContentReferenceProbe) { [IO.File]::WriteAllText((Join-Path $root 'content-reference.enabled'), 'refs-v1') }
     if ($JournalMissionEventsProbe) {
@@ -423,6 +424,7 @@ if ($Action -eq 'Cleanup') {
 }
 if (!$StoryDefinitionColdPhase) { Assert-QualificationUnused $root }
 $provenance = Assert-QualificationInputs $root
+if ($provenance.PSObject.Properties['modInformationProbe'] -and $provenance.modInformationProbe -and $TimeoutSeconds -lt 900) { throw 'Full information probe requires at least 900 seconds.' }
 if ($provenance.PSObject.Properties['storyAbsentProbe'] -and $provenance.storyAbsentProbe -and $TimeoutSeconds -lt 2100) { throw 'Absent-story probe requires base plus300seconds (2100 total).' }
 if ($provenance.PSObject.Properties['storyProbe'] -and $provenance.storyProbe -and $TimeoutSeconds -lt 5400) { throw 'Story probe requires 5400 seconds including objective reload/claim waits and execution margin.' }
 # The travel/station phase adds its own bounded waits on top of every existing Full pilot, so the

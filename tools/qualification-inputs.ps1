@@ -257,25 +257,44 @@ function Assert-ModInformationProbeSelection([string]$Root, $Provenance) {
     $marker = Join-Path $Root 'mod-information-probe.enabled'
     if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Information probe selection changed.' }
     if (!$selected) { return }
-    if (!$Provenance.PSObject.Properties['modMenuProbe'] -or $Provenance.modMenuProbe -isnot [bool] -or !$Provenance.modMenuProbe -or $Provenance.scenario -ne 'Full' -or [IO.File]::ReadAllText($marker) -cne 'mod-information-probe-v2') { throw 'Invalid information probe selection.' }
+    if (!$Provenance.PSObject.Properties['modMenuProbe'] -or $Provenance.modMenuProbe -isnot [bool] -or !$Provenance.modMenuProbe -or $Provenance.scenario -ne 'Full' -or [IO.File]::ReadAllText($marker) -cne 'mod-information-probe-v3') { throw 'Invalid information probe selection.' }
+    foreach ($consumer in @('missionJournal','stockpile')) {
+        $item = $Provenance.PSObject.Properties[$consumer]
+        if (!$item -or $item.Value -isnot [bool] -or !$item.Value) { throw 'Full information probe needs both real consumers.' }
+    }
     $certificate = Join-Path $Root 'untrusted-test.pfx'
     if (!(Test-Path -LiteralPath $certificate -PathType Leaf) -or (Get-Item -LiteralPath $certificate).Length -gt 16384 -or ((Get-Item -LiteralPath $certificate).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'TLS fixture missing, linked or oversized.' }
     if (!$Provenance.PSObject.Properties['modInformationCertificateSha256'] -or $Provenance.modInformationCertificateSha256 -cnotmatch '^[0-9a-f]{64}$' -or (Get-FileHash -LiteralPath $certificate -Algorithm SHA256).Hash.ToLowerInvariant() -cne $Provenance.modInformationCertificateSha256) { throw 'TLS fixture identity changed.' }
+}
+function Assert-ReleaseBrowserReceipt([string]$Root) {
+    $request = Join-Path $Root 'browser-launch-request.txt'
+    $receipt = Join-Path $Root 'browser-launch.receipt'
+    $image = Join-Path $Root 'mod-release-browser.png'
+    foreach ($path in @($request,$receipt,$image)) {
+        if (!(Test-Path -LiteralPath $path -PathType Leaf) -or ((Get-Item -LiteralPath $path).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Browser evidence missing or linked.' }
+    }
+    if ((Get-Item -LiteralPath $request).Length -gt 512 -or (Get-Item -LiteralPath $receipt).Length -gt 512 -or (Get-Item -LiteralPath $image).Length -gt 20971520) { throw 'Browser evidence exceeds its bound.' }
+    $url = 'https://github.com/fankserver/vanguard-galaxy-api/releases'
+    if ([IO.File]::ReadAllText($request) -cne "mod-release-browser-v1`n$url`n") { throw 'Browser request destination changed.' }
+    $lines = @(Get-Content -LiteralPath $receipt)
+    if ($lines.Count -ne 4 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'mod-release-browser-v1' -or $lines[2] -cne "url=$url" -or $lines[3] -cnotmatch '^sha256=[0-9a-f]{64}$') { throw 'Invalid browser receipt.' }
+    if ((Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash.ToLowerInvariant() -cne $lines[3].Substring(7)) { throw 'Browser screenshot changed.' }
 }
 function Assert-ModInformationProbeReceipt([string]$Root, $Provenance) {
     Assert-ModInformationProbeSelection $Root $Provenance
     if (!$Provenance.PSObject.Properties['modInformationProbe'] -or !$Provenance.modInformationProbe) { return }
     Assert-ModMenuProbeReceipt $Root $Provenance
+    Assert-ReleaseBrowserReceipt $Root
     $receipt = Join-Path $Root 'mod-information-probe.receipt'
     $snapshot = Join-Path $Root 'mod-information-probe.txt'
     foreach ($path in @($receipt,$snapshot)) {
         if (!(Test-Path -LiteralPath $path -PathType Leaf) -or (Get-Item -LiteralPath $path).Length -gt 16384 -or ((Get-Item -LiteralPath $path).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Information probe evidence missing, linked or oversized.' }
     }
     $lines = @(Get-Content -LiteralPath $receipt)
-    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'mod-information-probe-v2' -or $lines[2] -cnotmatch '^sha256=[0-9a-f]{64}$') { throw 'Invalid information probe receipt.' }
+    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'mod-information-probe-v3' -or $lines[2] -cnotmatch '^sha256=[0-9a-f]{64}$') { throw 'Invalid information probe receipt.' }
     if ((Get-FileHash -LiteralPath $snapshot -Algorithm SHA256).Hash.ToLowerInvariant() -cne $lines[2].Substring(7)) { throw 'Information probe evidence changed.' }
     $facts = @(Get-Content -LiteralPath $snapshot)
-    foreach ($fact in @('controlled-default-manual-coalescing-cooldown','controlled-six-hour-automatic-disable','controlled-dns-tls-timeout-retain-last-success','controlled-rate-limit','controlled-disk-cache-expiry-channel-installed-version','controlled-invalid-oversized-channel-redirect-policy','controlled-quit-mid-check','wire-platform-tls-parser-stable','wire-platform-tls-parser-experimental','wire-https-redirect','wire-invalid-oversized-channel-rejected','wire-dns-name-resolution-failure','wire-tls-untrusted-certificate-rejected','wire-stalled-handshake-canceled','unity-main-thread-menu-responsive')) {
+    foreach ($fact in @('controlled-default-manual-coalescing-cooldown','controlled-six-hour-automatic-disable','controlled-dns-tls-timeout-retain-last-success','controlled-rate-limit','controlled-disk-cache-expiry-channel-installed-version','controlled-invalid-oversized-channel-redirect-policy','controlled-quit-mid-check','wire-platform-tls-parser-stable','wire-platform-tls-parser-experimental','wire-https-redirect','wire-invalid-oversized-channel-rejected','wire-dns-name-resolution-failure','wire-tls-untrusted-certificate-rejected','wire-stalled-handshake-canceled','unity-main-thread-menu-responsive','inventory-two-real-consumers-without-metadata','inventory-malformed-wrong-guid-isolated','gameplay-two-loads-return-single-entry','real-stockpile-ui-journal-coexistence','new-game-save-load-return','ui-confirmed-manual-without-automatic-browser','ui-confirmed-automatic-and-opt-out','ui-explicit-default-browser-release','ui-scale-restored','actual-api-unavailable-loader-presence')) {
         if (@($facts | Where-Object { $_ -ceq ($fact + '=PASS') }).Count -ne 1) { throw "Missing or duplicate information probe fact: $fact" }
     }
 }
@@ -292,6 +311,7 @@ function Assert-ModMenuProbeSelection([string]$Root, $Provenance) {
     if ($null -ne $Provenance.assemblyOverlay) { throw 'Mod menu probe cannot use an assembly overlay.' }
     foreach ($name in $selections) {
         $item = $Provenance.PSObject.Properties[$name]
+        if ($Provenance.PSObject.Properties['modInformationProbe'] -and $Provenance.modInformationProbe -and $name -in @('missionJournal','stockpile')) { continue }
         if ($item -and ($item.Value -isnot [bool] -or $item.Value)) { throw 'Mod menu probe cannot be combined with consumers or other probes; selection fields must be Boolean false.' }
     }
 }
@@ -308,7 +328,9 @@ function Assert-ModMenuProbeReceipt([string]$Root, $Provenance) {
     $lines = @(Get-Content -LiteralPath $receipt)
     if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'mod-menu-probe-v3' -or $lines[2] -cnotmatch '^sha256=[0-9a-f]{64}$') { throw 'Invalid mod menu probe receipt.' }
     if ((Get-FileHash -LiteralPath $snapshot -Algorithm SHA256).Hash.ToLowerInvariant() -cne $lines[2].Substring(7)) { throw 'Mod menu probe evidence changed.' }
-    foreach ($name in @('mod-menu-original.png','mod-menu-1280.png','mod-update-disclosure.png')) {
+    $images = @('mod-menu-original.png','mod-menu-1280.png','mod-update-disclosure.png')
+    if ($Provenance.PSObject.Properties['modInformationProbe'] -and $Provenance.modInformationProbe) { $images += @('mod-menu-scale.png','mod-api-unavailable.png') }
+    foreach ($name in $images) {
         $image = Join-Path $Root $name
         if (!(Test-Path -LiteralPath $image -PathType Leaf) -or (Get-Item -LiteralPath $image).Length -gt 20971520) { throw 'Menu screenshot missing or oversized.' }
         $record = @(Get-Content -LiteralPath $snapshot | Where-Object { $_.StartsWith("screenshot=$name ") })

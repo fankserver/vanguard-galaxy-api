@@ -14,12 +14,12 @@ public sealed partial class Plugin
     private CancellationTokenSource? _updateProbeStop;
     private IEnumerator RunModInformationProbe()
     {
-        Require(File.ReadAllText(Path.Combine(_root!, "mod-information-probe.enabled")) == "mod-information-probe-v2", "Invalid information probe marker.");
+        Require(File.ReadAllText(Path.Combine(_root!, "mod-information-probe.enabled")) == "mod-information-probe-v3", "Invalid information probe marker.");
         foreach (var frame in Wait(() => GameObject.Find("VGModAPI Mods") != null, "information probe main menu")) yield return frame;
         var revisions = Regex.Matches(File.ReadAllText(Path.Combine(_root!, "build-provenance.json")), "\"revision\"\\s*:\\s*\"([0-9a-f]{40})\"");
         Require(revisions.Count == 1, "Information probe requires one exact build revision.");
         var thread = Thread.CurrentThread.ManagedThreadId;
-        var evidence = new StringBuilder("Mod information qualification v2\n");
+        var evidence = new StringBuilder("Mod information qualification v3\n");
         void Record(string step)
         {
             Require(Thread.CurrentThread.ManagedThreadId == thread, "Qualification continuation left the Unity thread.");
@@ -31,6 +31,7 @@ public sealed partial class Plugin
         void LiveRecord(string step) { token.ThrowIfCancellationRequested(); Record(step); }
         try
         {
+            foreach (var frame in ModInformationGameplay(LiveRecord)) { token.ThrowIfCancellationRequested(); yield return frame; }
             var controlled = ModUpdateChecks.ControlledAsync(Path.Combine(_root!, "update-check-cache"), LiveRecord, token);
             while (!controlled.IsCompleted) yield return null;
             controlled.GetAwaiter().GetResult();
@@ -47,14 +48,14 @@ public sealed partial class Plugin
             LiveRecord("unity-main-thread-menu-responsive");
         }
         finally { lifetime.Cancel(); _updateProbeStop = null; }
-        var menu = RunModMenuProbe();
+        var menu = RunModMenuProbe(Record, "https://raw.githubusercontent.com/fankserver/vanguard-galaxy-api/" + revisions[0].Groups[1].Value + "/tools/fixtures/mod-updates/stable.json");
         try { while (menu.MoveNext()) yield return menu.Current; }
         finally { (menu as IDisposable)?.Dispose(); }
         var bytes = Encoding.UTF8.GetBytes(evidence.ToString());
         File.WriteAllBytes(Path.Combine(_root!, "mod-information-probe.txt"), bytes);
         using var hash = SHA256.Create();
         var digest = BitConverter.ToString(hash.ComputeHash(bytes)).Replace("-", "").ToLowerInvariant();
-        File.WriteAllText(Path.Combine(_root!, "mod-information-probe.receipt"), "PASS\nmod-information-probe-v2\nsha256=" + digest + "\n");
+        File.WriteAllText(Path.Combine(_root!, "mod-information-probe.receipt"), "PASS\nmod-information-probe-v3\nsha256=" + digest + "\n");
         Passed("mod-information-native-updates");
     }
 }

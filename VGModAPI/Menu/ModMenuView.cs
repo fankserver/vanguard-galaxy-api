@@ -20,6 +20,7 @@ internal sealed class ModMenuView : IModMenuView
     private readonly ModInformationPresenter _presenter;
     private readonly Func<string> _diagnostics;
     private readonly Action<Exception> _fault;
+    private Action<string> _openUrl = Application.OpenURL;
     private readonly List<Button> _rows = new();
     private readonly List<Selectable> _navigation = new();
     private readonly List<Action> _removeListeners = new();
@@ -115,13 +116,13 @@ internal sealed class ModMenuView : IModMenuView
         _next = Button(_body, "Next mod", "Next", () => MoveSelection(1));
         Stretch((RectTransform)_previous.transform, 0, 0, .19f, 0, 8, 6, -4, 38);
         Stretch((RectTransform)_next.transform, .19f, 0, .38f, 0, 4, 6, -8, 38);
-        _project = Button(_body, "Project link", "Open project in browser", () => _presenter.OpenProject(Application.OpenURL));
+        _project = Button(_body, "Project link", "Open project in browser", () => _presenter.OpenProject(_openUrl));
         Stretch((RectTransform)_project.transform, .38f, 0, 1, 0, 4, 6, -8, 38);
         if (_updates != null)
         {
             _project.GetComponentInChildren<TMP_Text>().text = "Open project";
             Stretch((RectTransform)_project.transform, .38f, 0, .69f, 0, 4, 6, -4, 38);
-            _release = Button(_body, "Release link", "Open release", () => { if (_presenter.Selected != null) _updates.OpenRelease(_presenter.Selected, Application.OpenURL); });
+            _release = Button(_body, "Release link", "Open release", () => { if (_presenter.Selected != null) _updates.OpenRelease(_presenter.Selected, _openUrl); });
             Stretch((RectTransform)_release.transform, .69f, 0, 1, 0, 4, 6, -8, 38);
             _checkUpdate = Button(_body, "Check update", "Check update", () => { if (_presenter.Selected != null) _updates.Check(_presenter.Selected); RenderDetails(true); });
             _autoUpdate = Button(_body, "Automatic updates", "Auto: off", () => { _updates.ToggleAutomatic(); RenderDetails(true); });

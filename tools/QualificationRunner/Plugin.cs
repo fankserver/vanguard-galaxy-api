@@ -301,7 +301,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         Passed("callback-dispatch-state");
     }
 
-    private IEnumerable<object?> NewGameAndSpaceLoad()
+    private IEnumerable<object?> NewGameAndSpaceLoad(bool replacementProbe = true)
     {
         Invoke(Instance(_scenes), "StartMenu");
         foreach (var frame in Wait(() => SceneManager.GetSceneByName("Main Menu").isLoaded && SceneManager.sceneCount <= 4
@@ -344,6 +344,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         foreach (var frame in Wait(() => SceneManager.GetSceneByName("Main Menu").isLoaded && SceneManager.sceneCount <= 4
             && AccessTools.Field(_player, "current").GetValue(null) == null, "menu before replacement probe")) yield return frame;
         foreach (var frame in Settle()) yield return frame;
+        if (!replacementProbe) yield break;
         AccessTools.Method(_player, "CreateNewGamePlayer").Invoke(null, new object?[] { null, false });
         var pending = _api.CurrentSession!;
         Require(pending.Phase == SessionPhase.Starting, "Creation prematurely became ready.");
