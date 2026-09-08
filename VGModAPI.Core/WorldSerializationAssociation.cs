@@ -73,6 +73,12 @@ internal sealed class WorldSerializationAssociation
         return (byte[])binding.Metadata.Clone();
     }
 
+    internal void Forget(object nativeSnapshot)
+    {
+        NextOperation();
+        _bindings.Remove(nativeSnapshot);
+    }
+
     internal void Reset()
     {
         NextOperation();

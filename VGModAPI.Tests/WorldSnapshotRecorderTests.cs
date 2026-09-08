@@ -1,0 +1,68 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using LightJson;
+using VGModAPI.Core;
+using VGModAPI.Core.Integration;
+using Xunit;
+
+namespace VGModAPI.Tests;
+
+public sealed class WorldSnapshotRecorderTests
+{
+    private static (WorldSnapshotInstance instance, JsonObject root, JsonObject poi) Fixture()
+    {
+        var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
+        var instance = new WorldSnapshotInstance(new object(), identity, "system-a", new WorldSavedDefinition("author.a", new WorldCombatDefinition("PoiX", 1, "世界", "player", 2)));
+        var poi = new JsonObject { Text = "native-poi", ["guid"] = new(identity.NativeId), ["type"] = new("Combat"), ["systemName"] = new("system-a") };
+        var system = new JsonObject { ["guid"] = new("system-a"), ["pointsOfInterest"] = new(new List<JsonValue> { new(poi) }) };
+        var map = new JsonObject { ["systems"] = new(new List<JsonValue> { new(system) }) };
+        var root = new JsonObject { Text = "native-root", ["Player"] = new(new JsonObject { ["map"] = new(map) }) };
+        return (instance, root, poi);
+    }
+    private static WorldSnapshotRecorder Recorder() => new(new WorldJsonInspection(typeof(JsonObject).Assembly));
+
+    [Fact]
+    public void BindsBothOwnerPayloadsToTheActualSerializedSnapshot()
+    {
+        var (instance, root, poi) = Fixture(); var recorder = Recorder(); var instances = new[] { instance };
+        var token = recorder.Begin(1, instances);
+        poi.Text = "actual-serialized-state";
+        Assert.True(recorder.Complete(token, 1, instances, root));
+        var payload = recorder.ForStore(root);
+        Assert.Equal(WorldJsonInspection.Digest(poi), Assert.Single(WorldStateCodec.Decode(payload[WorldStateCodec.Owner])).NativeDigest);
+        Assert.Equal("世界", Assert.Single(WorldDefinitionCodec.Decode(payload[WorldDefinitionCodec.Owner])).Definition.Name);
+        payload[WorldStateCodec.Owner][0] = 0;
+        Assert.Single(WorldStateCodec.Decode(recorder.ForStore(root)[WorldStateCodec.Owner]));
+        Assert.Throws<InvalidDataException>(() => recorder.ForStore(new JsonObject { Text = "native-root" }));
+        root.Text = "changed";
+        Assert.Throws<InvalidDataException>(() => recorder.ForStore(root));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void FailedRecaptureRevokesBothOwners(int failure)
+    {
+        var (instance, root, _) = Fixture(); var recorder = Recorder(); var instances = new[] { instance };
+        Assert.True(recorder.Complete(recorder.Begin(1, instances), 1, instances, root));
+        var token = recorder.Begin(1, instances);
+        if (failure == 0) recorder.Reset();
+        Assert.False(recorder.Complete(token, failure == 1 ? 2 : 1, failure == 2 ? Array.Empty<WorldSnapshotInstance>() : instances, root));
+        Assert.Throws<InvalidDataException>(() => recorder.ForStore(root));
+    }
+
+    [Fact]
+    public void TokensAreSingleUseAndMismatchedParentsRefuse()
+    {
+        var (instance, root, poi) = Fixture(); var recorder = Recorder(); var instances = new[] { instance };
+        var token = recorder.Begin(1, instances);
+        Assert.True(recorder.Complete(token, 1, instances, root));
+        Assert.False(recorder.Complete(token, 1, instances, root));
+        Assert.Throws<InvalidDataException>(() => recorder.ForStore(root));
+        token = recorder.Begin(1, instances); poi["systemName"] = new("other");
+        Assert.Throws<InvalidDataException>(() => recorder.Complete(token, 1, instances, root));
+        Assert.Throws<InvalidDataException>(() => recorder.ForStore(root));
+    }
+}
