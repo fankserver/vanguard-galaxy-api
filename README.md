@@ -2,8 +2,6 @@
 
 [![Core + Abstractions coverage](https://raw.githubusercontent.com/fankserver/vanguard-galaxy-api/coverage/badge.svg)](https://github.com/fankserver/vanguard-galaxy-api/actions/workflows/coverage.yml)
 
-Coverage measures Core + Abstractions host tests on the latest successfully published main revision, not the full plugin or in-game behavior.
-
 <p align="center">
   <img src="docs/assets/vgmodapi-logo.png" alt="VGModAPI logo" width="480">
 </p>
@@ -64,8 +62,6 @@ make test                          # pure tests; no game installation needed
 make check-bindings                # inspect original installed game DLL without executing it
 make package CONFIGURATION=Release # explicit three-assembly package in artifacts/VGModAPI/
 ```
-
-Public CI is defined in [.github/workflows](.github/workflows); local build, test, and package commands are in the [Makefile](Makefile).
 
 Override `GAME_DIR` and/or `DOTNET` as needed. Game/Unity/BepInEx DLLs are never committed or bundled. The runtime binds game internals through inspected reflection; it does not require a publicized game stub. The lifecycle API needs no serializer; custom save-data providers supply their own payload encoding.
 
