@@ -27,6 +27,11 @@
     <Compile Include="../VGModAPI/Patches/BarPatches.cs" Link="BarPatches.cs" />
     <Compile Include="../VGModAPI/Patches/BoardingPatches.cs" Link="BoardingPatches.cs" />
     <Compile Include="../VGModAPI/Patches/DungeonRewardPatches.cs" Link="DungeonRewardPatches.cs" />
+    <Compile Include="../VGModAPI/Patches/DungeonCrewResumePatches.cs" Link="DungeonCrewResumePatches.cs" />
+    <Compile Include="../VGModAPI/Patches/DungeonTerminalRecoveryPatches.cs" Link="DungeonTerminalRecoveryPatches.cs" />
+    <Compile Include="../VGModAPI/Patches/DungeonDonorPatches.cs" Link="DungeonDonorPatches.cs" />
+    <Compile Include="../VGModAPI/Patches/DungeonRefundPatches.cs" Link="DungeonRefundPatches.cs" />
+    <Compile Include="../VGModAPI/Patches/DungeonPodReturnPatches.cs" Link="DungeonPodReturnPatches.cs" />
     <None Include="../tools/fixtures/mod-updates/ui-available.json" Link="ui-available.json" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="../VGModAPI.Core/VGModAPI.Core.csproj" />
     <ProjectReference Include="../tools/ReleaseMetadata/ReleaseMetadata.csproj" />
