@@ -10,10 +10,11 @@ internal static class WorldTravelAsyncCompletion
     internal static async Task<bool> Run(WorldTravelScopes scopes, WorldTravelScopes.Leg leg,
         Action verifyNative, Func<Task> operation, Action publish)
     {
+        WorldTravelScopes.AsyncCompletion? ticket = null;
         try
         {
             verifyNative();
-            var ticket = scopes.BeginAsync(leg);
+            ticket = scopes.BeginAsync(leg);
             await operation(); // Preserve Unity's captured synchronization context and observe failures even after replacement.
             if (!scopes.IsCurrent(ticket)) return false;
             verifyNative();
@@ -21,6 +22,6 @@ internal static class WorldTravelAsyncCompletion
             publish();
             return true;
         }
-        catch { scopes.Cancel(leg); throw; }
+        catch { if (ticket != null) scopes.Cancel(ticket); throw; }
     }
 }

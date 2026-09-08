@@ -33,6 +33,7 @@ internal sealed class WorldTravelScopes
     internal sealed class AsyncCompletion
     {
         internal readonly Leg Leg;
+        internal bool Consumed;
         internal AsyncCompletion(Leg leg) => Leg = leg;
     }
     // A delayed writer needs both the current leg and its own latest operation, not just a destination match.
@@ -41,7 +42,8 @@ internal sealed class WorldTravelScopes
         RequireLeg(leg);
         return leg.PendingCompletion = new AsyncCompletion(leg);
     }
-    internal bool IsCurrent(AsyncCompletion completion)
+    internal bool IsCurrent(AsyncCompletion completion) => !completion.Consumed && IsLatest(completion);
+    private bool IsLatest(AsyncCompletion completion)
     {
         var leg = completion.Leg;
         return ReferenceEquals(_current, leg.Route) && ReferenceEquals(leg.Route.Current, leg) && !leg.HandedOff && !leg.Completed &&
@@ -50,8 +52,9 @@ internal sealed class WorldTravelScopes
     internal bool ClaimCompletion(AsyncCompletion completion)
     {
         if (!IsCurrent(completion)) return false;
-        completion.Leg.PendingCompletion = null; return true;
+        completion.Consumed = true; return true;
     }
+    internal bool Cancel(AsyncCompletion completion) => IsLatest(completion) && Cancel(completion.Leg);
     private sealed class Execution : IDisposable
     {
         internal readonly Leg Leg;
