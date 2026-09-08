@@ -66,6 +66,14 @@ public sealed class WorldLifetimeHookTests : IDisposable
             var nativeError = new InvalidOperationException("native failure");
             Assert.Same(nativeError, WorldLifetimePatches.Route.Finalizer(outer, false, nativeError));
             Assert.True(host.Travel.IsCurrent(second!)); Assert.Null(host.Travel.CaptureRequest());
+            using var executing = host.Travel.Enter(host.Travel.First(second!, target));
+            var replacement = host.BeginRoute(manager, target)!;
+            var replacementRoute = host.Travel.CaptureRequest();
+            var cleanup = host.BeginCancellation(manager);
+            host.EndCancellation(cleanup, true);
+            Assert.True(host.Travel.IsCurrent(replacementRoute!)); Assert.Null(host.Travel.CurrentLeg);
+            host.CompleteRoute(replacement, true);
+            Assert.Throws<System.IO.InvalidDataException>(() => host.BeginCancellation(manager));
         }
         finally { WorldLifetimePatches.Host = null; Source.Player.GamePlayer.current = oldPlayer; singleton.SetValue(null, oldTravel); }
     }

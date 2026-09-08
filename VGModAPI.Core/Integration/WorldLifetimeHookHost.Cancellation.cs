@@ -23,8 +23,13 @@ internal sealed partial class WorldLifetimeHookHost : IWorldTravelCancellationHo
     public object BeginCancellation(object manager)
     {
         _hub.CheckThread(); RequireNoCancellation();
-        var leg = Travel.CaptureExecuting() ?? Travel.CurrentLeg;
-        if (leg != null) VerifyRouteNative(leg.Route, manager);
+        WorldTravelScopes.Leg? leg = null;
+        if (Travel.PendingRequest is { } incoming) VerifyRouteNative(incoming, manager);
+        else
+        {
+            leg = Travel.CaptureExecuting() ?? Travel.CurrentLeg;
+            if (leg != null) VerifyRouteNative(leg.Route, manager);
+        }
         // An incoming request may already have revoked the old route before native CancelTravel runs.
         // Its not-yet-created leg must not be cancelled by that predecessor cleanup.
         return _cancellation = new Cancellation(leg);
