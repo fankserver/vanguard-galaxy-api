@@ -25,6 +25,21 @@ public sealed class BarNativeWorldTests
             owned ?? (value => ((Patron)value).Owned), (_, _) => new Patron(), 5);
     }
 
+    public class Element { public string guid { get; protected set; } = "station"; public void Rename(string value) => guid = value; }
+    public sealed class AutoStation : Element { public Bar bar = new(); }
+
+    [Fact]
+    public void InheritedPrivateGuidBackingFieldIsReadAndRevalidatedWithoutGetterCalls()
+    {
+        var station = new AutoStation(); Player.current = new Player { currentPointOfInterest = station };
+        var world = new BarNativeWorld(typeof(AutoStation), typeof(Bar), typeof(Patron),
+            new BarStationSource(typeof(Player), typeof(AutoStation)), _ => false, (_, _) => new Patron(), 5);
+        var captured = world.Capture("station")!;
+        Assert.NotNull(captured);
+        station.Rename("replacement");
+        Assert.False(world.Apply(captured, new object[] { new Patron() }, () => true));
+    }
+
     [Fact]
     public void CommitSourceRejectsCallbackPropertiesWithoutInvokingThem()
     {

@@ -100,7 +100,7 @@ internal sealed class BarNativeWorld : IBarRosterWorld
         Func<object, bool> owned, Func<BarPatronState, object, object?> create, int capacity)
     {
         _bar = stationType.GetField("bar", Fields) ?? throw new MissingFieldException("station.bar");
-        _guid = stationType.GetField("guid", Fields) ?? throw new MissingFieldException("station.guid");
+        _guid = stationType.GetField("guid", Fields) ?? GuidBackingField(stationType);
         _patrons = barType.GetField("availablePatrons", Fields) ?? throw new MissingFieldException("bar.availablePatrons");
         _seat = patronType.GetField("seat", Fields) ?? throw new MissingFieldException("BarPatron.seat");
         _updateTime = barType.GetField("lastUpdateTime", Fields) ?? throw new MissingFieldException("Bar.lastUpdateTime");
@@ -109,6 +109,17 @@ internal sealed class BarNativeWorld : IBarRosterWorld
             || _patrons.FieldType != typeof(List<>).MakeGenericType(patronType)) throw new InvalidOperationException("Unsupported native bar shape.");
         if (capacity < 1 || capacity > 32) throw new ArgumentOutOfRangeException(nameof(capacity));
         _station = station; _owned = owned; _create = create; _patronType = patronType; _capacity = capacity;
+    }
+
+    private static FieldInfo GuidBackingField(Type stationType)
+    {
+        var property = stationType.GetProperty("guid", Fields);
+        var field = property?.DeclaringType?.GetField("<guid>k__BackingField", Fields | BindingFlags.DeclaredOnly);
+        if (property?.PropertyType != typeof(string) || property.GetMethod == null || property.GetMethod.IsVirtual
+            || field?.FieldType != typeof(string) || !field.IsDefined(typeof(CompilerGeneratedAttribute), false)
+            || !property.GetMethod.IsDefined(typeof(CompilerGeneratedAttribute), false))
+            throw new MissingFieldException("station.guid must be a field or inspected nonvirtual auto-property.");
+        return field;
     }
 
     private sealed class CaptureToken
