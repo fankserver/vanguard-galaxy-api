@@ -1,6 +1,8 @@
 # VGModAPI
 
-[![Core + Abstractions coverage](https://raw.githubusercontent.com/fankserver/vanguard-galaxy-api/coverage/badge.svg)](docs/checks.md#host-test-coverage)
+[![Core + Abstractions coverage](https://raw.githubusercontent.com/fankserver/vanguard-galaxy-api/coverage/badge.svg)](https://github.com/fankserver/vanguard-galaxy-api/actions/workflows/coverage.yml)
+
+Coverage measures Core + Abstractions host tests on the latest successfully published main revision, not the full plugin or in-game behavior.
 
 <p align="center">
   <img src="docs/assets/vgmodapi-logo.png" alt="VGModAPI logo" width="480">
