@@ -28,7 +28,8 @@ internal sealed class WorldTravelScopes
         internal readonly Leg Predecessor;
         internal readonly object Target;
         internal bool Consumed;
-        internal Handoff(Leg predecessor, object target) { Predecessor = predecessor; Target = target; }
+        internal readonly bool CompletedPredecessor;
+        internal Handoff(Leg predecessor, object target) { Predecessor = predecessor; Target = target; CompletedPredecessor = predecessor.Completed; }
     }
     internal sealed class AsyncCompletion
     {
@@ -121,6 +122,7 @@ internal sealed class WorldTravelScopes
         if (_execution == null) return null;
         RequireLeg(_execution.Leg); return _execution.Leg;
     }
+    internal Leg? CurrentLeg => _current?.Current;
     internal bool IsCurrent(Route route) => ReferenceEquals(_current, route);
     internal void Reset() => _current = null;
     internal void Stop() { _stopped = true; Reset(); }
@@ -153,10 +155,19 @@ internal sealed class WorldTravelScopes
         if (nextWaypoint == null) throw new ArgumentNullException(nameof(nextWaypoint));
         return new Handoff(leg, nextWaypoint);
     }
+    internal Handoff PrepareContinuation(Leg leg, object nextWaypoint)
+    {
+        RequireRoute(leg.Route);
+        if (!leg.Completed || leg.HandedOff || !ReferenceEquals(leg.Route.Current, leg) || nextWaypoint == null)
+            throw new InvalidDataException("No completed leg awaiting native continuation.");
+        return new Handoff(leg, nextWaypoint);
+    }
     internal Leg AcceptHandoff(Handoff handoff, object observedNextWaypoint)
     {
-        RequireLeg(handoff.Predecessor);
-        if (handoff.Consumed || !ReferenceEquals(handoff.Target, observedNextWaypoint))
+        RequireRoute(handoff.Predecessor.Route);
+        if (!ReferenceEquals(handoff.Predecessor.Route.Current, handoff.Predecessor) || handoff.Predecessor.HandedOff)
+            throw new InvalidDataException("Stale handoff predecessor.");
+        if (handoff.Consumed || handoff.CompletedPredecessor != handoff.Predecessor.Completed || !ReferenceEquals(handoff.Target, observedNextWaypoint))
             throw new InvalidDataException("Waypoint handoff is stale or was replaced.");
         var successor = new Leg(handoff.Predecessor.Route, handoff.Target);
         handoff.Consumed = true; handoff.Predecessor.HandedOff = true;

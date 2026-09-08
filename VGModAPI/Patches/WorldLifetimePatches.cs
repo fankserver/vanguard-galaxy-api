@@ -9,6 +9,33 @@ internal static class WorldLifetimePatches
     {
         internal static bool Prefix(object __instance) => Host?.AllowAmbient(__instance) ?? true;
     }
+    internal static class TravelLeg
+    {
+        internal static void Prefix(out IWorldTravelCaptureHost? __state) => __state = Host as IWorldTravelCaptureHost;
+        internal static void Postfix(object __instance, object target, ref System.Collections.IEnumerator __result, IWorldTravelCaptureHost? __state)
+        { if (__state != null) __result = __state.WrapLeg(__instance, target, __result); }
+    }
+    internal static class Waypoint
+    {
+        internal sealed class Capture
+        {
+            internal readonly IWorldTravelCaptureHost Host;
+            internal readonly object Token;
+            internal Capture(IWorldTravelCaptureHost host, object token) { Host = host; Token = token; }
+        }
+        internal static void Prefix(object __instance, out Capture? __state)
+        {
+            __state = null;
+            if (Host is IWorldTravelCaptureHost host && host.BeginWaypoint(__instance) is { } token) __state = new Capture(host, token);
+        }
+        internal static System.Exception? Finalizer(Capture? __state, System.Exception? __exception)
+        {
+            if (__state == null) return __exception;
+            try { __state.Host.EndWaypoint(__state.Token); }
+            catch (System.Exception error) { return __exception ?? error; }
+            return __exception;
+        }
+    }
     internal static class Awake
     {
         internal static bool Prefix(object __instance) => Host?.AllowManagerAwake(__instance) ?? true;
