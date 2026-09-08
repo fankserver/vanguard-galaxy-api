@@ -22,6 +22,12 @@ internal sealed class GameAdapter
     internal GameAdapter(LifecycleHub hub, GameBindings bindings, Action<Exception> report)
     { Hub = hub; Bindings = bindings; Saves = new SaveTracker(hub); _report = report; }
 
+    internal bool IsBoundPlayer(object? player)
+    {
+        Hub.CheckThread();
+        return !_faulted && player != null && ReferenceEquals(player, _boundPlayer) && ReferenceEquals(player, Bindings.CurrentPlayer);
+    }
+
     internal void Guard(Action action)
     {
         if (_faulted) return;
