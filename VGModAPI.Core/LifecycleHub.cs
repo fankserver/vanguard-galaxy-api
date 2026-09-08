@@ -28,8 +28,7 @@ internal sealed class LifecycleHub : ILifecycleService, IDisposable
         _saveOutcomes = Services.Get("save-outcomes");
         _events = new ServiceSubscriptions<LifecycleEvent>(this, Subscribe,
             fact => fact.Kind == LifecycleEventKind.SessionInvalidated ||
-                (fact.Kind >= LifecycleEventKind.SaveStarted ? SaveOutcomes : SessionTracking).Availability.IsAvailable,
-            () => SessionTracking.Availability.IsAvailable || SaveOutcomes.Availability.IsAvailable);
+                (fact.Kind >= LifecycleEventKind.SaveStarted ? SaveOutcomes : SessionTracking).Availability.IsAvailable);
     }
     public IServiceStatus SessionTracking { get { CheckThread(); return _sessionTracking; } }
     public IServiceStatus SaveOutcomes { get { CheckThread(); return _saveOutcomes; } }

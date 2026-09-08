@@ -1,6 +1,6 @@
 # Travel observation
 
-Require API 0.1.9. The travel group initializes automatically. `TravelNativeAdapter` interprets native facts, `TravelPatches` installs hooks, and `ModApi.Travel`/`ModApi.Station` are exposed only when the group binds. Check `native-travel` availability before subscribing.
+The travel group initializes automatically. `ModApi.Services.Travel` and `ModApi.Services.Station` are stable, non-null services after API bootstrap. Inspect their `Availability`; unavailable observation is not an empty successful route history. Subscribe with `Transitioned += handler` and remove the handler during consumer teardown. No events replay. `TravelNativeAdapter` interprets native facts and `TravelPatches` installs inspected hooks.
 
 Bounded controlled native evidence exists for the paths below; it is not full in-game acceptance or proof that the current checkout ran in Unity. `RuntimeQualified` remains **false**. Exact candidate identities and receipts stay outside the repository. See [compatibility](compatibility.md) and [runner instructions](https://github.com/fankserver/vanguard-galaxy-api/blob/main/docs/development/qualification-runner.md).
 
@@ -48,7 +48,7 @@ Dock/undock factories pin immutable session/player ownership. The first step ver
 
 ## Binding and delivery
 
-All access is main-thread-only. Subscribers and diagnostics are individually isolated; reentrant notifications queue, disposal stops delivery, and replacement rejects stale evidence. A main-thread violation faults the travel group and disables its capability/services. A stale-session operation error is reported without disabling the replacement.
+All access is main-thread-only. Delegates and diagnostics are individually isolated; reentrant notifications queue, handler removal stops delivery, and replacement rejects stale evidence. Public session/placement queries require a matching live tracked session and available bindings. Producer shutdown closes health and rejects new event handlers. A main-thread violation faults the travel group and disables its capability/services. A stale-session operation error is reported without disabling the replacement.
 
 `SpaceshipHasArrived` covers in-system arrival only; jumpgate/wormhole routines do not call it. Binding enumerates concrete declarations and true overrides, base-first to avoid JIT-inlining gaps. Inherited methods reuse their declaration; hidden non-overrides are not overrides. Whole-assembly type-load failure aborts resolution rather than using a partial set. Installation disables the group on failure without breaking plugin startup.
 
@@ -56,9 +56,9 @@ Caught nested failures cannot manufacture success. Before publication the adapte
 
 ## Coverage and exclusions
 
-These are evidence categories, not full runtime-qualification badges. Each named phase is evidence only for its own cases, with source/host/installed-metadata checks supporting distinct layers. The [runner](https://github.com/fankserver/vanguard-galaxy-api/blob/main/docs/development/qualification-runner.md) defines mandatory cases, selections, budgets, fixtures and refusal rules.
+The typed runtime requires native qualification. Each named phase below must be exercised against the delivered revision; host and installed-metadata checks do not establish those runtime outcomes. The [runner](https://github.com/fankserver/vanguard-galaxy-api/blob/main/docs/development/qualification-runner.md) defines mandatory cases, selections, budgets, fixtures and refusal rules.
 
-| Path | Evidence scope | Limit |
+| Path | Qualification scope | Limit |
 |---|---|---|
 | Same-system routes, local arrivals and initial placement | Controlled `travel-in-system-station-v1` | Nested scope/stale evidence rules also have host tests; placement is not travel |
 | Jumpgates and wormholes | Controlled `travel-cross-system-v1` | Arrival is sampled inside the owned jump iterator. Missing wormholes require explicit disposable native-fixture creation or the required case fails |

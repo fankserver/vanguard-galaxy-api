@@ -14,7 +14,7 @@ namespace VGModAPI.Qualification;
 // its route to complete at the jump destination, so it can neither prove the post-gate chain
 // continuation nor be reused for it; this phase drives a real multi-waypoint route instead.
 //
-// Like the other phases it ASSERTS only through the public ITravelEvents surface and DRIVES only
+// Like the other phases it ASSERTS only through the public ITravelService surface and DRIVES only
 // actual vanilla entry points and Unity coroutines: it never invokes adapter callbacks, never
 // assigns a location or a waypoint, never fabricates an arrival and never disables a production
 // hook to manufacture an event.
@@ -195,7 +195,7 @@ public sealed partial class Plugin
     private IEnumerable<object?> RunTravelRecovery()
     {
         Require(TravelStationSelected, "The recovery/continuation phase requires the travel/station selection that enables the native travel capability.");
-        var travel = ModApi.Travel;
+        var travel = ModApi.Services.Travel;
         Require(travel != null, "Travel public service not exposed.");
         Require(ModApi.Services.Travel.Availability.IsAvailable, "native-travel capability not available.");
         Require(!travel!.IsDispatchingCallbacks, "Cannot subscribe during callback dispatch.");
@@ -207,7 +207,7 @@ public sealed partial class Plugin
             "Declared phase budget exceeds the launcher reservation.");
         var transitions = new List<TravelTransition>();
         var stationFacts = new List<StationTransition>();
-        using (travel.Subscribe("qualification.travel.recovery", fact =>
+        using (new TravelProbeSubscription(travel, fact =>
         {
             transitions.Add(fact);
             _rcEvents.Add(TravelStationReceipt.TravelEventRow(_rcCase, fact));
@@ -220,7 +220,7 @@ public sealed partial class Plugin
                     "<snapshot failed: " + error.GetType().Name + ">", false);
             }
         }))
-        using (ModApi.Station!.Subscribe("qualification.station.recovery", fact =>
+        using (new StationProbeSubscription(ModApi.Services.Station, fact =>
         {
             stationFacts.Add(fact);
             _rcEvents.Add(TravelStationReceipt.StationEventRow(_rcCase, fact));

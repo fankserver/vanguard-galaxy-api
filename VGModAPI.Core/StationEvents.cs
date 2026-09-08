@@ -7,7 +7,7 @@ namespace VGModAPI.Core;
 // Main-thread, isolated-subscriber, reentrancy-safe dispatch hub for station-lifetime
 // facts. Mirrors TravelEvents safety rather than composing it, because station facts are
 // deliberately distinct from travel legs and placements.
-internal sealed class StationEvents : IStationEvents, IDisposable
+internal sealed class StationEvents : IStationService, IDisposable
 {
     private sealed class Subscription : IDisposable
     {
@@ -20,15 +20,36 @@ internal sealed class StationEvents : IStationEvents, IDisposable
     }
     private readonly int _thread = Thread.CurrentThread.ManagedThreadId;
     private readonly Action<string, Exception> _report;
+    private readonly LifecycleHub _lifecycle;
+    private readonly IServiceStatus _status;
+    private readonly ServiceSubscriptions<StationTransition> _events;
     private readonly List<Subscription> _subscriptions = new();
     private readonly Queue<(long Epoch, StationTransition Event)> _queue = new();
     private Guid? _session;
     private long _epoch, _sequence;
     private bool _dispatching, _disposed;
-    internal StationEvents(Action<string, Exception> report) { _report = report; }
+    internal StationEvents(LifecycleHub lifecycle, Action<string, Exception>? report = null)
+    {
+        _lifecycle = lifecycle; _report = report ?? lifecycle.ReportSubscriberFailure;
+        _status = lifecycle.Services.Get("native-travel");
+        _events = new ServiceSubscriptions<StationTransition>(lifecycle, Subscribe,
+            fact => InSession(fact.SessionId));
+    }
+    public ServiceAvailability Availability => _status.Availability;
+    public event Action<ServiceAvailability>? AvailabilityChanged
+    { add => _status.AvailabilityChanged += value; remove => _status.AvailabilityChanged -= value; }
+    public event Action<StationTransition>? Transitioned { add => _events.Add(value); remove => _events.Remove(value); }
+    Guid? IStationService.SessionId
+    { get { CheckThread(); return _session.HasValue && InSession(_session.Value) ? _session : null; } }
+    private bool InSession(Guid id)
+    {
+        CheckThread();
+        return !_disposed && Availability.IsAvailable && _lifecycle.CurrentSession?.Id == id &&
+            _lifecycle.CurrentSession.Phase is not (SessionPhase.Failed or SessionPhase.Invalidated);
+    }
     public Guid? SessionId { get { CheckThread(); return _session; } }
-    public bool IsDispatchingCallbacks { get { CheckThread(); return _dispatching; } }
-    public IDisposable Subscribe(string owner, Action<StationTransition> callback)
+    public bool IsDispatchingCallbacks { get { CheckThread(); return _dispatching || _lifecycle.IsDispatchingCallbacks; } }
+    internal IDisposable Subscribe(string owner, Action<StationTransition> callback)
     {
         CheckThread();
         if (_disposed) throw new ObjectDisposedException(nameof(StationEvents));
@@ -76,9 +97,12 @@ internal sealed class StationEvents : IStationEvents, IDisposable
     }
     public void Dispose()
     {
-        CheckThread(); _disposed = true; _session = null; _queue.Clear();
+        CheckThread(); if (_disposed) return;
+        _disposed = true; _session = null; _queue.Clear(); _events.Dispose();
         foreach (var subscription in _subscriptions) subscription.Active = false;
         _subscriptions.Clear();
+        if (Availability.IsAvailable)
+            _lifecycle.SetCapability("native-travel", false, "Station service stopped.", ServiceUnavailableReason.ApiStopped);
     }
     private void CheckThread()
     {

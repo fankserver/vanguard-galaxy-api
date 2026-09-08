@@ -11,7 +11,7 @@ namespace VGModAPI.Qualification;
 
 // Native travel/station qualification pilot, phase travel-in-system-station-v1.
 //
-// It ASSERTS only through the public ITravelEvents / IStationEvents surfaces and DRIVES only
+// It ASSERTS only through the public ITravelService / IStationService surfaces and DRIVES only
 // actual vanilla entry points and Unity coroutines: it never invokes adapter callbacks, never
 // teleports the ship and never fabricates an arrival, dock or undock. Every case owns a slice of
 // the observed facts (an offset captured immediately before the case drives anything), so no
@@ -108,9 +108,9 @@ public sealed partial class Plugin
 
     private IEnumerable<object?> RunTravelStation()
     {
-        var travel = ModApi.Travel;
-        var station = ModApi.Station;
-        Require(travel != null && station != null, "Travel/Station public services not exposed.");
+        var travel = ModApi.Services.Travel;
+        var station = ModApi.Services.Station;
+        Require(travel.Availability.IsAvailable && station.Availability.IsAvailable, "Travel/Station services unavailable.");
         Require(ModApi.Services.Travel.Availability.IsAvailable, "native-travel capability not available.");
         Require(!travel!.IsDispatchingCallbacks && !station!.IsDispatchingCallbacks, "Cannot subscribe during callback dispatch.");
         // The published phase budget is summed from the declared deadlines, and the two shared
@@ -121,12 +121,12 @@ public sealed partial class Plugin
             "Declared phase budget exceeds the launcher reservation.");
         var transitions = new List<TravelTransition>();
         var stationFacts = new List<StationTransition>();
-        using (travel!.Subscribe("qualification.travel", t =>
+        using (new TravelProbeSubscription(travel, t =>
         {
             transitions.Add(t);
             _tsEvents.Add(TravelStationReceipt.TravelEventRow(_tsCase, t));
         }))
-        using (station!.Subscribe("qualification.station", s =>
+        using (new StationProbeSubscription(station, s =>
         {
             stationFacts.Add(s);
             _tsEvents.Add(TravelStationReceipt.StationEventRow(_tsCase, s));
@@ -149,8 +149,8 @@ public sealed partial class Plugin
                 // Service binding and actual native readiness, not GameplayInitialized alone:
                 // the travel service must own this session and the live local manager must be the
                 // initialized manager of the player's actual current POI.
-                foreach (var frame in Wait(() => ModApi.Travel?.SessionId == session
-                    && ModApi.Travel.CurrentLocation != null && NativeTravelReady(), "travel service binding and native POI readiness")) yield return frame;
+                foreach (var frame in Wait(() => ModApi.Services.Travel?.SessionId == session
+                    && ModApi.Services.Travel.CurrentLocation != null && NativeTravelReady(), "travel service binding and native POI readiness")) yield return frame;
                 // Optional actual-consumer observation boundary. It drives nothing and is inert
                 // unless the consumer probe owns a live subscription.
                 foreach (var frame in AnimaTravelInSystemReady(session)) yield return frame;

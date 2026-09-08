@@ -13,7 +13,7 @@ namespace VGModAPI.Qualification;
 // six required cases and keeps recording the cross-system matrix cells as optional NOT-RUN rows,
 // so nothing here turns an earlier NOT-RUN into a coverage claim.
 //
-// Like the in-system phase it ASSERTS only through the public ITravelEvents surface and DRIVES only
+// Like the in-system phase it ASSERTS only through the public ITravelService surface and DRIVES only
 // actual vanilla entry points and Unity coroutines: it never invokes adapter callbacks, never
 // teleports the ship and never fabricates a jump. The two required cases are the two native
 // cross-system routines (JumpToSystem and JumpToWormhole); a fixture that cannot exercise one of
@@ -160,7 +160,7 @@ public sealed partial class Plugin
     private IEnumerable<object?> RunTravelCrossSystem()
     {
         Require(TravelStationSelected, "The cross-system phase requires the travel/station selection that enables the native travel capability.");
-        var travel = ModApi.Travel;
+        var travel = ModApi.Services.Travel;
         Require(travel != null, "Travel public service not exposed.");
         Require(ModApi.Services.Travel.Availability.IsAvailable, "native-travel capability not available.");
         Require(!travel!.IsDispatchingCallbacks, "Cannot subscribe during callback dispatch.");
@@ -171,7 +171,7 @@ public sealed partial class Plugin
         Require(TravelCrossSystemReceipt.PhaseBudgetSeconds <= TravelCrossSystemReceipt.LauncherReservationSeconds,
             "Declared phase budget exceeds the launcher reservation.");
         var transitions = new List<TravelTransition>();
-        using (travel.Subscribe("qualification.travel.cross-system", fact =>
+        using (new TravelProbeSubscription(travel, fact =>
         {
             transitions.Add(fact);
             _xsEvents.Add(TravelStationReceipt.TravelEventRow(_xsCase, fact));

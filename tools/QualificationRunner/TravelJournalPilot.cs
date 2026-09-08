@@ -99,9 +99,9 @@ public sealed partial class Plugin
             "The archived-journal comparison owns the reused travel phases; it is refused together with a consumer travel probe at Prepare.");
         Require(TravelStationSelected && TravelCrossSystemSelected && TravelWormholeFixtureSelected,
             "The archived-journal comparison requires both qualified native travel phases and the wormhole fixture selection.");
-        Require(ModApi.Travel != null, "Travel public service not exposed.");
+        Require(ModApi.Services.Travel.Availability.IsAvailable, "Travel public service not exposed.");
         Require(ModApi.Services.Travel.Availability.IsAvailable, "native-travel capability not available.");
-        Require(!ModApi.Travel!.IsDispatchingCallbacks, "Cannot subscribe during callback dispatch.");
+        Require(!ModApi.Services.Travel!.IsDispatchingCallbacks, "Cannot subscribe during callback dispatch.");
         Require(TravelJournalReceipt.ReadinessSeconds == WaitDeadlineSeconds && TravelJournalReceipt.SettleSeconds == SettleSeconds,
             "Shared harness wait/settle deadlines no longer match the declared phase budget terms.");
         Require(TravelJournalReceipt.PhaseBudgetSeconds <= TravelJournalReceipt.LauncherReservationSeconds,
@@ -114,16 +114,16 @@ public sealed partial class Plugin
         _tjLegacyFiles.Clear();
         _tjLegacyFiles.AddRange(LegacyFilesUnder(_saveRoot!));
 
-        Require(ModApi.Station != null && !ModApi.Station.IsDispatchingCallbacks, "Station public service not exposed.");
+        Require(ModApi.Services.Station.Availability.IsAvailable && !ModApi.Services.Station.IsDispatchingCallbacks, "Station public service not exposed.");
         var facts = new List<TravelTransition>();
         var stationFacts = new List<StationTransition>();
-        using (ModApi.Travel!.Subscribe("qualification.travel-journal", fact =>
+        using (new TravelProbeSubscription(ModApi.Services.Travel, fact =>
         {
             facts.Add(fact);
             _tjFactFrames[fact.Sequence] = Time.frameCount;
             _tjEvents.Add(TravelStationReceipt.TravelEventRow(_tjCase, fact));
         }))
-        using (ModApi.Station!.Subscribe("qualification.travel-journal.station", fact =>
+        using (new StationProbeSubscription(ModApi.Services.Station, fact =>
         {
             stationFacts.Add(fact);
             _tjEvents.Add(TravelStationReceipt.StationEventRow(_tjCase, fact));
@@ -610,7 +610,7 @@ public sealed partial class Plugin
             Require(Time.realtimeSinceStartup < until, "Timed out waiting for public travel callback quiescence.");
             yield return null;
             if (_tjFacts.Count != observed) { observed = _tjFacts.Count; stable = 0; }
-            else if (ModApi.Travel?.IsDispatchingCallbacks == true) stable = 0;
+            else if (ModApi.Services.Travel?.IsDispatchingCallbacks == true) stable = 0;
             else stable++;
         }
     }

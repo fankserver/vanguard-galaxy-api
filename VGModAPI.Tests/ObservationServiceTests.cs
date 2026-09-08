@@ -67,8 +67,8 @@ public sealed class ObservationServiceTests
     public void TravelNotificationsCloseMutationDispatchGateAndRejectStaleSessions()
     {
         using var hub = Bound();
-        using var source = new TravelEvents((_, _) => { });
-        using var service = new TravelServiceView(hub, source);
+        using var source = new TravelEvents(hub);
+        ITravelService service = source;
         var id = hub.Begin(SessionOrigin.NewGame, null);
         source.SetSession(id);
         var scopes = new List<bool>();
@@ -85,18 +85,19 @@ public sealed class ObservationServiceTests
     }
 
     [Fact]
-    public void UnavailableTravelHasNoPlacementAndDisposedSourceAcceptsOnlyInertObservationRegistration()
+    public void UnavailableTravelHasNoPlacementAndDisposedServiceRejectsNewHandlers()
     {
         using var hub = Bound();
-        using var source = new TravelEvents((_, _) => { });
-        using var service = new TravelServiceView(hub, source);
+        using var source = new TravelEvents(hub);
+        ITravelService service = source;
         var id = hub.Begin(SessionOrigin.NewGame, null);
         source.SetSession(id);
         hub.SetCapability("native-travel", false, "Fault.", ServiceUnavailableReason.ObserverFault);
-        source.Dispose();
         Action<TravelTransition> callback = _ => throw new Exception();
         service.Transitioned += callback;
         service.Transitioned -= callback;
+        source.Dispose();
+        Assert.Throws<ObjectDisposedException>(() => service.Transitioned += callback);
         Assert.Null(service.SessionId);
         Assert.Null(service.CurrentLocation);
         Assert.False(service.Availability.IsAvailable);
@@ -119,11 +120,26 @@ public sealed class ObservationServiceTests
     }
 
     [Fact]
-    public void AvailableBindingsCannotBeComposedWithMissingSources()
+    public void DirectStationServiceFiltersReplacedSessionsAndSharesDispatchGate()
     {
         using var hub = Bound();
-        Assert.Throws<ArgumentException>(() => new TravelServiceView(hub, null));
-        Assert.Throws<ArgumentException>(() => new StationServiceView(hub, null));
+        using var source = new StationEvents(hub);
+        IStationService service = source;
+        var id = hub.Begin(SessionOrigin.NewGame, null);
+        source.SetSession(id);
+        var gates = new List<bool>();
+        service.Transitioned += _ => gates.Add(hub.IsDispatchingCallbacks && service.IsDispatchingCallbacks);
+        source.Emit(id, StationTransitionKind.InteriorReady, null, 1);
+        Assert.True(Assert.Single(gates));
+        Assert.Equal(id, service.SessionId);
+        hub.Begin(SessionOrigin.NewGame, null);
+        Assert.Null(service.SessionId);
+        source.Emit(id, StationTransitionKind.InteriorDestroyed, null, 2);
+        Assert.Single(gates);
+        foreach (var name in new[] { "ITravelEvents", "IStationEvents" })
+            Assert.Null(typeof(ModApi).Assembly.GetType("VGModAPI." + name));
+        Assert.Null(typeof(ModApi).GetProperty("Travel"));
+        Assert.Null(typeof(ModApi).GetProperty("Station"));
     }
 
     [Fact]
@@ -131,8 +147,8 @@ public sealed class ObservationServiceTests
     {
         using var hub = new LifecycleHub((_, _) => { });
         using var missions = new MissionTransitions(hub);
-        using var travel = new TravelServiceView(hub, null);
-        using var station = new StationServiceView(hub, null);
+        using var travel = new TravelEvents(hub);
+        using var station = new StationEvents(hub);
         Assert.False(missions.Availability.IsAvailable);
         Assert.False(missions.IdentityContinuity.Availability.IsAvailable);
         Assert.Null(travel.SessionId);

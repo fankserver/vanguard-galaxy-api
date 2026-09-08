@@ -13,8 +13,8 @@ public sealed partial class Plugin
         var lifecycle = hub;
         var mods = _modCatalog!;
         var missions = _missions?.Events ?? new MissionTransitions(hub);
-        var travel = new TravelServiceView(hub, ModApi.Travel);
-        var station = new StationServiceView(hub, ModApi.Station);
+        var travel = _travel?.Events ?? new TravelEvents(hub);
+        var station = _travel?.Station ?? new StationEvents(hub);
         var root = new ModServices(lifecycle, mods, (_persistence ??= new PersistenceService(hub)), missions, travel, station);
         // Deferred cleanup preserves terminal lifecycle delivery when shutdown starts inside a callback.
         foreach (var view in new IDisposable[] { mods, missions, travel, station, _persistence! })

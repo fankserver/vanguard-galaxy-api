@@ -101,7 +101,7 @@ internal sealed class MissionTransitions : IMissionService, IDisposable
         _status = lifecycle.Services.Get("mission-transitions");
         _identityContinuity = lifecycle.Services.Get("mission-continuity");
         _events = new ServiceSubscriptions<MissionTransition>(lifecycle, Subscribe,
-            fact => InSession(fact.Mission.SessionId), () => Availability.IsAvailable);
+            fact => InSession(fact.Mission.SessionId));
     }
     public ServiceAvailability Availability => _status.Availability;
     public event Action<ServiceAvailability>? AvailabilityChanged

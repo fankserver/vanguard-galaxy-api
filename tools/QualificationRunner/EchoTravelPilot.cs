@@ -138,9 +138,9 @@ public sealed partial class Plugin
             "The Anima and Echo consumer travel probes both own the reused travel phases; they are refused together at Prepare.");
         Require(TravelStationSelected && TravelCrossSystemSelected && TravelWormholeFixtureSelected,
             "The Echo consumer probe requires both qualified native travel phases and the wormhole fixture selection.");
-        Require(ModApi.Travel != null, "Travel public service not exposed.");
+        Require(ModApi.Services.Travel.Availability.IsAvailable, "Travel public service not exposed.");
         Require(ModApi.Services.Travel.Availability.IsAvailable, "native-travel capability not available.");
-        Require(!ModApi.Travel!.IsDispatchingCallbacks, "Cannot subscribe during callback dispatch.");
+        Require(!ModApi.Services.Travel!.IsDispatchingCallbacks, "Cannot subscribe during callback dispatch.");
         Require(EchoTravelReceipt.ReadinessSeconds == WaitDeadlineSeconds && EchoTravelReceipt.SettleSeconds == SettleSeconds,
             "Shared harness wait/settle deadlines no longer match the declared phase budget terms.");
         Require(EchoTravelReceipt.PhaseBudgetSeconds <= EchoTravelReceipt.LauncherReservationSeconds,
@@ -153,7 +153,7 @@ public sealed partial class Plugin
         InstallEchoProbes(harmony);
         try
         {
-            using (ModApi.Travel!.Subscribe("qualification.echo", fact =>
+            using (new TravelProbeSubscription(ModApi.Services.Travel, fact =>
             {
                 facts.Add(fact);
                 _etFactFrames[fact.Sequence] = Time.frameCount;
@@ -473,7 +473,7 @@ public sealed partial class Plugin
         Require(echo.Info.Metadata.Version.ToString(3) == EchoPinnedVersion,
             "The installed Echo consumer is " + echo.Info.Metadata.Version + ", not the pinned " + EchoPinnedVersion + ".");
         Require(EchoListening, "The consumer's arrival-snap subscription is absent or not listening.");
-        Require(ModApi.Travel!.SessionId == session, "The public travel service is not bound to the phase's session.");
+        Require(ModApi.Services.Travel!.SessionId == session, "The public travel service is not bound to the phase's session.");
         foreach (var entry in new[] { "CfgAutopilotTiming", "CfgAutopilotArrivalSnap", "CfgAutopilotEtaSync" })
             Require(SpGet(echo, entry) != null, "The consumer's " + entry + " configuration entry is missing.");
         Require((bool)SpGet(SpGet(echo, "CfgAutopilotTiming")!, "Value")!
@@ -599,8 +599,8 @@ public sealed partial class Plugin
         var session = _api!.CurrentSession!.Id;
         foreach (var frame in AwaitEchoPlacement(session)) yield return frame;
         foreach (var frame in EchoQuiesce()) yield return frame;
-        foreach (var frame in Wait(() => ModApi.Travel?.SessionId == session
-            && ModApi.Travel.CurrentLocation != null && NativeTravelReady(), "travel service binding and native POI readiness")) yield return frame;
+        foreach (var frame in Wait(() => ModApi.Services.Travel?.SessionId == session
+            && ModApi.Services.Travel.CurrentLocation != null && NativeTravelReady(), "travel service binding and native POI readiness")) yield return frame;
         _etSnapOffset = _echoSnaps.Count;
         _etIdleOffset = _echoIdle.Count;
         _etWindowSession = session;
@@ -651,7 +651,7 @@ public sealed partial class Plugin
         Guid? supersededOperation = null;
         int supersessions = 0;
         bool? superseding = null;
-        using (ModApi.Travel!.Subscribe("qualification.echo.earlier", fact =>
+        using (new TravelProbeSubscription(ModApi.Services.Travel, fact =>
         {
             if (fact.Kind != TravelTransitionKind.RouteCompleted) return;
             if (supersededOperation == null || fact.OperationId != supersededOperation || supersessions != 0) return;
@@ -861,7 +861,7 @@ public sealed partial class Plugin
             Require(Time.realtimeSinceStartup < until, "Timed out waiting for public travel callback quiescence.");
             yield return null;
             if (_etFacts.Count != observed) { observed = _etFacts.Count; stable = 0; }
-            else if (ModApi.Travel?.IsDispatchingCallbacks == true) stable = 0;
+            else if (ModApi.Services.Travel?.IsDispatchingCallbacks == true) stable = 0;
             else stable++;
         }
     }

@@ -213,7 +213,7 @@ public sealed partial class Plugin
             Require(!(bool)_travelActive.Invoke(arrivedOwner, null)!, "Native travel is still active after the final route boundary.");
             Require(((ICollection)SpGet(Player, "waypoints")!).Count == 0, "Native waypoints remain after the final route boundary.");
             Require(ReferenceEquals(SpGet(Player, "currentPointOfInterest"), second), "The native current POI is not the re-routed destination.");
-            Require(TravelStationReceipt.Same(ModApi.Travel!.CurrentLocation, _systemId, secondId),
+            Require(TravelStationReceipt.Same(ModApi.Services.Travel!.CurrentLocation, _systemId, secondId),
                 "Public CurrentLocation does not match the re-routed destination.");
             var stationFacts = StationSlice(stationOffset);
             Require(stationFacts.All(fact => fact.Kind is StationTransitionKind.InteriorReady or StationTransitionKind.InteriorDestroyed),
@@ -551,9 +551,9 @@ public sealed partial class Plugin
             // never a reason to disable the replacement session's capability or services.
             Require(ModApi.Services.Travel.Availability.IsAvailable,
                 "The stale replay disabled the native-travel capability.");
-            Require(ModApi.Travel != null && ModApi.Station != null, "The stale replay removed the public travel/station services.");
-            Require(ModApi.Travel!.SessionId == replacement, "The public travel service no longer owns the replacement session after the replay.");
-            Require(TravelStationReceipt.Same(ModApi.Travel.CurrentLocation, _systemId, _startPoiId),
+            Require(ModApi.Services.Travel.Availability.IsAvailable && ModApi.Services.Station.Availability.IsAvailable, "The stale replay removed the public travel/station services.");
+            Require(ModApi.Services.Travel!.SessionId == replacement, "The public travel service no longer owns the replacement session after the replay.");
+            Require(TravelStationReceipt.Same(ModApi.Services.Travel.CurrentLocation, _systemId, _startPoiId),
                 "Public CurrentLocation left the replacement session's actual location during the replay.");
 
             // The replacement session's own native operation must still produce its facts.
@@ -635,8 +635,8 @@ public sealed partial class Plugin
             foreach (var frame in Settle()) yield return frame;
             _session = _p._api!.CurrentSession!.Id;
             var session = _session;
-            foreach (var frame in _p.Wait(() => ModApi.Travel?.SessionId == session
-                && ModApi.Travel.CurrentLocation != null && _p.NativeTravelReady(), "travel service binding and native POI readiness")) yield return frame;
+            foreach (var frame in _p.Wait(() => ModApi.Services.Travel?.SessionId == session
+                && ModApi.Services.Travel.CurrentLocation != null && _p.NativeTravelReady(), "travel service binding and native POI readiness")) yield return frame;
             var system = SpGet(Player, "currentSystem");
             var poi = SpGet(Player, "currentPointOfInterest");
             if (system == null || poi == null)

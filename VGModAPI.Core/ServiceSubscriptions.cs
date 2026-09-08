@@ -15,15 +15,13 @@ internal sealed class ServiceSubscriptions<T> : IDisposable
         internal void Close() { Active = false; Lease?.Dispose(); }
     }
     private readonly LifecycleHub _hub;
-    private readonly Func<string, Action<T>, IDisposable>? _subscribe;
+    private readonly Func<string, Action<T>, IDisposable> _subscribe;
     private readonly Func<T, bool> _deliver;
-    private readonly Func<bool> _available;
     private readonly List<Slot> _slots = new();
     private bool _disposed;
 
-    internal ServiceSubscriptions(LifecycleHub hub, Func<string, Action<T>, IDisposable>? subscribe,
-        Func<T, bool> deliver, Func<bool> available)
-    { _hub = hub; _subscribe = subscribe; _deliver = deliver; _available = available; }
+    internal ServiceSubscriptions(LifecycleHub hub, Func<string, Action<T>, IDisposable> subscribe, Func<T, bool> deliver)
+    { _hub = hub; _subscribe = subscribe; _deliver = deliver; }
 
     internal void Add(Action<T>? callback)
     {
@@ -37,18 +35,12 @@ internal sealed class ServiceSubscriptions<T> : IDisposable
             {
                 var slot = new Slot(handler);
                 added.Add(slot);
-                if (_subscribe == null) continue;
-                try
+                slot.Lease = _subscribe(handler.Method.Module.Assembly.GetName().Name ?? "service subscriber", value =>
                 {
-                    slot.Lease = _subscribe(handler.Method.Module.Assembly.GetName().Name ?? "service subscriber", value =>
-                    {
-                        if (!slot.Active || !_deliver(value)) return;
-                        using var scope = _hub.EnterServiceDispatch();
-                        handler(value);
-                    });
-                }
-                catch (ObjectDisposedException) when (!_available())
-                { /* A terminally unavailable source has no remaining observations. */ }
+                    if (!slot.Active || !_deliver(value)) return;
+                    using var scope = _hub.EnterServiceDispatch();
+                    handler(value);
+                });
             }
             _slots.AddRange(added);
         }

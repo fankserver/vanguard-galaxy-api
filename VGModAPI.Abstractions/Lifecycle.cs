@@ -68,8 +68,6 @@ public static class ModApi
         services?.CheckThread();
         if (ReferenceEquals(_services, services)) _services = null;
     }
-    /// <summary>Native travel observer; non-null when automatic binding succeeds.</summary>
-    public static ITravelEvents? Travel { get; internal set; }
     /// <summary>Optional experimental recipe definitions for the current station; null when disabled/unavailable.</summary>
     public static IRecipeCatalog? Recipes { get; internal set; }
     /// <summary>Optional main-thread station requirements and output estimates; advisory, not reservations.</summary>
@@ -90,8 +88,6 @@ public static class ModApi
     public static IDungeonContent? Dungeons { get; internal set; }
     public static IDungeonRewardRules? DungeonRewards { get; internal set; }
     public static IDungeonSettlement? DungeonSettlement { get; internal set; }
-    /// <summary>Station-lifetime observer; non-null when automatic travel binding succeeds.</summary>
-    public static IStationEvents? Station { get; internal set; }
     /// <summary>
     /// Optional owned-story surface (since 0.1.12); non-null only when the story group is bound and
     /// enabled, which requires the inspected assembly, API-managed saves and the native story

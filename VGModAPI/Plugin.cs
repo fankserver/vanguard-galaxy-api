@@ -764,7 +764,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         var touched = new List<MethodInfo>();
         try
         {
-            var adapter = new TravelNativeAdapter(new TravelNativeBindings(assembly),
+            var adapter = new TravelNativeAdapter(_hub!, new TravelNativeBindings(assembly),
                 (owner, ex) => Logger.LogError($"{owner} observer fault: {ex}"));
             TravelPatches.Adapter = adapter;
             var resolved = bindings.Resolve(BindingCatalog.Travel);
@@ -808,8 +808,6 @@ public sealed partial class Plugin : BaseUnityPlugin
             }
             _travel = adapter;
             _hub.Services.WatchFault("native-travel", () => adapter.IsFaulted);
-            ModApi.Travel = adapter.Events;
-            ModApi.Station = adapter.Station;
             _hub!.SetCapability("native-travel", true, "Bound to inspected assembly; in-game qualification pending.");
         }
         catch (Exception ex)
@@ -827,7 +825,6 @@ public sealed partial class Plugin : BaseUnityPlugin
             _travel.SetSession(null); _travel.Dispose(); _travel = null;
         }
         TravelPatches.Adapter = null;
-        ModApi.Travel = null; ModApi.Station = null;
         _hub?.SetCapability("native-travel", false, reason, unavailableReason);
         Logger.LogError(ex == null ? reason : reason + " " + ex);
     }
@@ -890,7 +887,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         _missions?.Dispose(); _missions = null;
         MissionPatches.Adapter = null;
         _travel?.SetSession(null); _travel?.Dispose(); _travel = null;
-        TravelPatches.Adapter = null; ModApi.Travel = null; ModApi.Station = null;
+        TravelPatches.Adapter = null;
         // The story module owns catalog entries AND a persistence owner, so it is torn down before
         // the coordinator: uninstalling its content cannot race an owner that is already gone, and
         // disposing the coordinator first would pause coordinated saves for every other owner.

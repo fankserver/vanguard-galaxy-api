@@ -19,8 +19,8 @@ public sealed class ServiceRootTests
         var lifecycle = hub;
         var mods = catalog;
         var missions = new MissionTransitions(hub);
-        var travel = new TravelServiceView(hub, null);
-        var station = new StationServiceView(hub, null);
+        var travel = new TravelEvents(hub);
+        var station = new StationEvents(hub);
         foreach (var disposable in new IDisposable[] { lifecycle, mods, missions, travel, station }) hub.Services.AfterStopped(disposable.Dispose);
         return (ModServices)typeof(ModServices).GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance)[0].Invoke(
             new object[] { lifecycle, mods, new PersistenceService(hub), missions, travel, station });
