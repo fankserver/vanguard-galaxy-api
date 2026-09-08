@@ -61,14 +61,19 @@ internal sealed class BoardingRuleService : IBoardingRules, IDisposable
     }
     internal float? Chance(BoardingDisableContext context)
     {
-        float? selected = null; int? priority = null; var conflict = false;
+        float? selected = null; int? priority = null; var conflict = false; string? selectedOwner = null;
         if (!Evaluate(context.SessionId, Kind.Chance, BoardingEncounterKind.Ship, entry =>
         {
             var value = ((Func<BoardingDisableContext, float?>)entry.Callback)(context);
             if (!value.HasValue) return;
             if (float.IsNaN(value.Value) || value < 0 || value > 1) throw new ArgumentOutOfRangeException(nameof(value));
-            if (!priority.HasValue) { priority = entry.Priority; selected = value; }
-            else if (priority == entry.Priority && selected != value) conflict = true;
+            var owner = entry.Provider.Id + "/" + entry.Id;
+            if (!priority.HasValue) { priority = entry.Priority; selected = value; selectedOwner = owner; }
+            else if (priority == entry.Priority && selected != value)
+            {
+                conflict = true;
+                try { _report(owner, new InvalidOperationException($"Conflicting boarding probability overrides: {selectedOwner} and {owner} at priority {priority}; preserving vanilla.")); } catch { }
+            }
         }) || conflict) return null;
         return selected;
     }

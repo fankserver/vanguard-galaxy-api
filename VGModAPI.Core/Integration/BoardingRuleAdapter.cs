@@ -140,7 +140,7 @@ internal sealed class BoardingRuleAdapter : IDisposable
             var scope = _scopes.LastOrDefault(s => s.Estimate && s.Context.SessionId == Session);
             if (scope == null) return;
             var tuning = _rules.Encounter(scope.Context);
-            if (Session == scope.Context.SessionId) result = tuning.Health == 0 ? 0 : Multiply(defenderPower, tuning.Power);
+            if (Session == scope.Context.SessionId) result = Multiply(Multiply(defenderPower, tuning.Power), tuning.Health);
         });
         return result;
     }

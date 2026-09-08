@@ -13,9 +13,10 @@ public sealed class BoardingRuleServiceTests
         internal readonly BoardingRuleService Rules;
         internal readonly Guid Session;
         internal int Faults;
+        internal readonly List<string> Diagnostics = new();
         internal Fixture()
         {
-            Rules = new BoardingRuleService(Hub, (_, _) => Faults++);
+            Rules = new BoardingRuleService(Hub, (owner, error) => { Faults++; Diagnostics.Add(owner + ": " + error.Message); });
             Session = Hub.Begin(SessionOrigin.SaveLoad, "save"); Hub.PlayerReady(Session); Hub.GameplayInitialized(Session);
         }
         internal BoardingEncounterContext Context(BoardingEncounterKind kind = BoardingEncounterKind.Ship) => new(Session, kind, 10);
@@ -111,7 +112,10 @@ public sealed class BoardingRuleServiceTests
         b.RegisterDisableChance("lower", _ => .9f, 0);
         Assert.Equal(.25f, f.Rules.Chance(context));
         using var conflict = b.RegisterDisableChance("conflict", _ => .5f, 10);
-        Assert.Null(f.Rules.Chance(context)); conflict.Dispose();
+        Assert.Null(f.Rules.Chance(context));
+        var diagnostic = Assert.Single(f.Diagnostics);
+        Assert.Contains("a/chance", diagnostic); Assert.Contains("b/conflict", diagnostic);
+        Assert.Equal(1, f.Faults); conflict.Dispose();
         Assert.Equal(.25f, f.Rules.Chance(context));
     }
     [Fact]

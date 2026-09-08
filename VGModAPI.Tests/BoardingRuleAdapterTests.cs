@@ -92,13 +92,26 @@ public sealed class BoardingRuleAdapterTests
         provider.RegisterScuttle("preventExplosion", BoardingRuleScope.Ships, _ => false);
         Assert.False(f.Adapter.AllowScuttle(f.Sim));
     }
+    [Theory]
+    [InlineData(.1f, 1f)]
+    [InlineData(10f, 100f)]
+    [InlineData(0f, 0f)]
+    public void HealthOnlyTuningChangesPreEntryHeuristic(float health, float expected)
+    {
+        using var f = new Fixture(); using var provider = f.Rules.AcquireProvider("mod");
+        provider.RegisterEncounter("health", BoardingRuleScope.Ships, _ => new(1, health));
+        var scope = f.Adapter.BeginEstimate(f.Location);
+        Assert.Equal(expected, f.Adapter.EstimatePower(10));
+        f.Adapter.EndScope(scope);
+        Assert.Equal(2f, f.Sim["health"]);
+    }
     [Fact]
     public void EstimateUsesSameScopedTuningWithoutChangingLiveFields()
     {
         using var f = new Fixture(); using var provider = f.Rules.AcquireProvider("mod");
         provider.RegisterEncounter("hard", BoardingRuleScope.Ships, _ => new(2, 3));
         Assert.Equal(10, f.Adapter.EstimatePower(10));
-        var scope = f.Adapter.BeginEstimate(f.Location); Assert.Equal(20, f.Adapter.EstimatePower(10)); f.Adapter.EndScope(scope);
+        var scope = f.Adapter.BeginEstimate(f.Location); Assert.Equal(60, f.Adapter.EstimatePower(10)); f.Adapter.EndScope(scope);
         Assert.Equal(10, f.Adapter.EstimatePower(10)); Assert.Equal(1f, f.Sim["power"]);
     }
 }
