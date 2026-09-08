@@ -472,6 +472,8 @@ public sealed class Plugin : BaseUnityPlugin
             DungeonContentPatches.Adapter = _dungeonAdapter; DungeonContentPatches.Json = new DungeonMarkerJson(bindings.Assembly);
             var patches = new Dictionary<string, Type>
             {
+                ["dungeonEntered"] = typeof(DungeonContentPatches.Entered), ["dungeonGuardTick"] = typeof(DungeonContentPatches.GuardTick),
+                ["dungeonResumeShip"] = typeof(DungeonContentPatches.Resumed), ["dungeonResumeLocation"] = typeof(DungeonContentPatches.Resumed),
                 ["dungeonSerialization"] = typeof(DungeonContentPatches.Serialization),
                 ["dungeonWalkCreated"] = typeof(DungeonContentPatches.WalkCreated),
                 ["dungeonHazard"] = typeof(DungeonContentPatches.Hazard), ["dungeonReinforcements"] = typeof(DungeonContentPatches.Reinforcements),

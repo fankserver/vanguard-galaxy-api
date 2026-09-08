@@ -11,7 +11,7 @@ internal sealed class DungeonContentAdapter : IDisposable
     private readonly LifecycleHub _hub;
     private readonly BoardingObserver _observer;
     private readonly DungeonStateStore _state;
-    private readonly BoardingCommandNativeBindings _native;
+    private readonly IBoardingTacticalNativeBindings _native;
     private readonly DungeonLayoutBuilder _builder;
     private readonly HashSet<string> _factions;
     private readonly Type _loot;
@@ -21,14 +21,21 @@ internal sealed class DungeonContentAdapter : IDisposable
     private readonly IDisposable _lifetime;
     private bool _disposed;
     internal DungeonContentAdapter(LifecycleHub hub, GameBindings game, BoardingObserver observer, DungeonStateStore state)
+        : this(hub, observer, state, new BoardingCommandNativeBindings(game, DungeonNativeSchema.Methods, DungeonNativeSchema.Members),
+            game.Assembly.GetType(DungeonNativeSchema.Room, true)!, game.Assembly.GetType(DungeonNativeSchema.Crew, true)!,
+            game.Assembly.GetType(DungeonNativeSchema.Loot, true)!, NativeFactions(game)) { }
+    private static IEnumerable<string> NativeFactions(GameBindings game)
     {
-        _hub = hub; _observer = observer; _state = state;
-        _native = new(game, DungeonNativeSchema.Methods, DungeonNativeSchema.Members);
-        _builder = new(game, _native);
-        _loot = game.Assembly.GetType(DungeonNativeSchema.Loot, true)!;
-        if (_loot.GetConstructor(Type.EmptyTypes) == null) throw new MissingMethodException(_loot.FullName, ".ctor");
         var faction = game.Assembly.GetType("Source.Galaxy.Faction", true)!;
-        _factions = new(game.Assembly.GetTypes().Where(t => t.Namespace == "Source.Galaxy.Factions" && !t.IsAbstract && faction.IsAssignableFrom(t) && t.GetConstructor(Type.EmptyTypes) != null).Select(t => t.Name), StringComparer.Ordinal);
+        return game.Assembly.GetTypes().Where(t => t.Namespace == "Source.Galaxy.Factions" && !t.IsAbstract && faction.IsAssignableFrom(t) && t.GetConstructor(Type.EmptyTypes) != null).Select(t => t.Name);
+    }
+    internal DungeonContentAdapter(LifecycleHub hub, BoardingObserver observer, DungeonStateStore state,
+        IBoardingTacticalNativeBindings native, Type room, Type crew, Type loot, IEnumerable<string> factions)
+    {
+        _hub = hub; _observer = observer; _state = state; _native = native;
+        _builder = new(native, room, crew); _loot = loot;
+        if (_loot.GetConstructor(Type.EmptyTypes) == null) throw new MissingMethodException(_loot.FullName, ".ctor");
+        _factions = new(factions, StringComparer.Ordinal);
         _lifetime = hub.Subscribe("vgmodapi.dungeon-attachments", message =>
         {
             if (message.Kind is LifecycleEventKind.SessionStarting or LifecycleEventKind.SessionInvalidated or LifecycleEventKind.SessionStartFailed)
@@ -131,15 +138,39 @@ internal sealed class DungeonContentAdapter : IDisposable
         _native.Set(simulation, "maxStructureIntegrity", rooms.Count * 3000f);
         _native.Set(simulation, "structureIntegrity", rooms.Count * 3000f * fraction);
     }
+    internal bool GuardOperation(object? operation, bool refreshProfile = false)
+    {
+        _hub.CheckThread(); if (_disposed || operation == null) return true;
+        var location = _native.Get(operation, "location"); if (location == null) return true;
+        var id = _index.SavedMarker(location); if (!id.HasValue) return true;
+        var occurrence = _state.Get(id.Value);
+        if (occurrence == null || !ReferenceEquals(_index.Resolve(id.Value), location)) return false;
+        var simulation = _native.Get(operation, "simulation"); if (simulation == null) return true;
+        _simulations.Remove(simulation); _simulations.Add(simulation, occurrence);
+        var faction = occurrence.Definition.FactionId;
+        if (faction != null && (refreshProfile || !Equals(_native.Get(simulation, "authoredFaction"), faction)))
+        {
+            if (!_factions.Contains(faction)) return false;
+            var profile = _native.Call("dungeonProfile", null, faction)!;
+            if (_native.Get(simulation, "authoredNoScuttle") is true) profile = _native.Call("dungeonNoScuttleProfile", null, profile)!;
+            _native.Set(simulation, "authoredFaction", faction); _native.Set(simulation, "authoredProfile", profile);
+        }
+        return true;
+    }
     internal bool AllowEffect(object simulation, bool hazard)
     {
         _hub.CheckThread(); if (_disposed) return true;
         if (!_simulations.TryGetValue(simulation, out var occurrence))
         {
-            occurrence = _state.Entries.FirstOrDefault(entry => ReferenceEquals(ResolveSimulation(entry), simulation));
-            if (occurrence == null) return true;
+            var marker = _index.FindSavedMarker(location =>
+                ReferenceEquals(_native.Get(_native.Get(location, "authoredLocationData"), "authoredSavedSimulation"), simulation));
+            if (!marker.HasValue) return true;
+            if (_index.Resolve(marker.Value) == null) return false;
+            occurrence = _state.Get(marker.Value);
+            if (occurrence == null) return false;
             _simulations.Add(simulation, occurrence);
         }
+        if (_state.Get(occurrence.Id) == null || _index.Resolve(occurrence.Id) == null) return false;
         return hazard ? occurrence.Definition.AllowHazards : occurrence.Definition.AllowScheduledReinforcements;
     }
     internal void CompleteWalkCreation(object dungeonData)

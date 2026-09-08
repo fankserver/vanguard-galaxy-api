@@ -6,6 +6,18 @@ internal static class DungeonContentPatches
 {
     internal static DungeonContentAdapter? Adapter { get; set; }
     internal static DungeonMarkerJson? Json { get; set; }
+    internal static class Entered
+    {
+        internal static void Postfix(object __instance) => Adapter?.GuardOperation(__instance, true);
+    }
+    internal static class Resumed
+    {
+        internal static void Postfix(object? __result) => Adapter?.GuardOperation(__result, true);
+    }
+    internal static class GuardTick
+    {
+        internal static bool Prefix(object __instance) => Adapter?.GuardOperation(__instance) != false;
+    }
     internal static class Serialization
     {
         internal static void Prefix(out DungeonContentAdapter? __state) { __state = Adapter; __state?.BeginSerialization(); }

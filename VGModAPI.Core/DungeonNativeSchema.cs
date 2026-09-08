@@ -8,6 +8,10 @@ internal static class DungeonNativeSchema
     internal const string Sim = "Source.Dungeon.DungeonSimulation";
     internal static readonly MethodBinding[] Methods =
     {
+        new("dungeonEntered", BindingCatalog.BoardingOperation, "BeginWalkSimulation", false, "System.Void"),
+        new("dungeonGuardTick", BindingCatalog.BoardingOperation, "Tick", false, "System.Void", "System.Single"),
+        new("dungeonResumeShip", BindingCatalog.BoardingManager, "ResumeOperation", false, BindingCatalog.BoardingOperation, BindingCatalog.Boardable, "System.Boolean"),
+        new("dungeonResumeLocation", BindingCatalog.BoardingManager, "ResumeOperation", false, BindingCatalog.BoardingOperation, "Behaviour.Unit.SpaceShip", BindingCatalog.BoardingLocation, "System.Boolean"),
         new("dungeonSerialization", BindingCatalog.Save, "SaveCurrentState", true, "LightJson.JsonObject"),
         new("dungeonWalkCreated", BindingCatalog.BoardingOperation, "InitialiseWalkSimulation", false, "System.Void", "Source.Dungeon.DungeonData"),
         new("dungeonCombatMode", Sim, "ApplyCombatMode", false, "System.Void"),

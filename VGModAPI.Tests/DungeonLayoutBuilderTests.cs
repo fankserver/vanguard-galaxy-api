@@ -11,7 +11,7 @@ public sealed class DungeonLayoutBuilderTests
     {
         public Dictionary<string, object?> Fields { get; } = new();
     }
-    private sealed class Native : IBoardingTacticalNativeBindings
+    internal sealed class Native : IBoardingTacticalNativeBindings
     {
         public object? Player => null;
         public object? Manager => null;
@@ -19,6 +19,8 @@ public sealed class DungeonLayoutBuilderTests
         public void Set(object obj, string key, object? value) => ((NativeObject)obj).Fields[key] = value;
         public object? Call(string key, object? target, params object[] arguments)
         {
+            if (key == "dungeonProfile") return arguments[0];
+            if (key == "dungeonNoScuttleProfile") return "protected:" + arguments[0];
             if (key == "dungeonRoomCapacity") return 5;
             if (key == "dungeonCrewHealth") { Set(target!, "health", arguments[0]); return null; }
             throw new InvalidOperationException(key);

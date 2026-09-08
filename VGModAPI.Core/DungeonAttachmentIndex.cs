@@ -34,6 +34,12 @@ internal sealed class DungeonAttachmentIndex
         if (_conflicts.Contains(occurrence)) return null;
         return _occurrences.TryGetValue(occurrence, out var reference) && reference.TryGetTarget(out var location) ? location : null;
     }
+    internal Guid? FindSavedMarker(Func<object, bool> matchesLocation)
+    {
+        foreach (var pair in _locations)
+            if (matchesLocation(pair.Key)) return pair.Value.Id;
+        return null;
+    }
     internal void Clear()
     { _locations = new(); _occurrences.Clear(); _conflicts.Clear(); }
 }
