@@ -32,6 +32,7 @@ internal sealed class BoardingCommandAdapter : IBoardingCommandBackend
         var handle = _observer.CommandHandleForLocation(_native.Get(panel, "panelLocation"));
         if (handle != null) commands.ManualTakeover(handle);
     }
+    internal Func<object, bool>? SimulationReady { get; set; }
     private bool Flag(object? obj, string key) => _native.Get(obj, key) is true;
     private Frame? Read(BoardingHandle target)
     {
@@ -43,6 +44,7 @@ internal sealed class BoardingCommandAdapter : IBoardingCommandBackend
         var operation = _native.Call("commandGetOperation", manager, location!);
         var saved = _native.Get(_native.Get(location, "dungeonData"), "savedSimulation");
         var simulation = _native.Get(operation, "simulation") ?? saved;
+        if (simulation != null && SimulationReady?.Invoke(simulation) == false) return null;
         var state = new BoardingCommandState
         {
             TargetAlive = component != null && _live(component),

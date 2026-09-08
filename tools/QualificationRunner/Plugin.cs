@@ -142,12 +142,35 @@ public sealed partial class Plugin : BaseUnityPlugin
             foreach (var frame in CheckForgeReads()) yield return frame;
             if (File.Exists(Path.Combine(_root!, "forge-commands.enabled")))
             {
-                Require(File.ReadAllText(Path.Combine(_root!, "forge-commands.enabled")) == "forge-commands-v1", "Invalid Forge command marker.");
+                Require(File.ReadAllText(Path.Combine(_root!, "forge-commands.enabled")) == "forge-commands-v3", "Invalid Forge command marker.");
                 WriteAtomic("forge-commands.txt", new[] { "INCOMPLETE" });
                 var station = ModApi.RecipeQuotes!.CurrentStation ?? throw new InvalidOperationException("Command fixture lost station.");
                 CheckCraftingSettingCommands(station);
                 CheckCraftingQueueAndCancel(station);
-                WriteAtomic("forge-commands.txt", new[] { "PASS", "forge-commands-v1", "settings-replay-restored", "forge-queue-cancel-replay" });
+                if (File.Exists(Path.Combine(_root!, "refinery.enabled")))
+                {
+                    Require(File.ReadAllText(Path.Combine(_root!, "refinery.enabled")) == "refinery-v3", "Invalid refinery marker.");
+                    WriteAtomic("refinery.txt", new[] { "INCOMPLETE" });
+                    CheckRefineryDelivery(station);
+                    CheckRefineryMultipleBatches(station);
+                    CheckMaterialExtraction(station);
+                    WriteAtomic("refinery.txt", new[] { "PASS", "refinery-v3", "fractional-partial-multiple-refund-extraction-replay-favourites" });
+                }
+                if (File.Exists(Path.Combine(_root!, "forge-delivery.enabled")))
+                {
+                    Require(File.ReadAllText(Path.Combine(_root!, "forge-delivery.enabled")) == "forge-delivery-v1", "Invalid delivery marker.");
+                    WriteAtomic("forge-delivery.txt", new[] { "INCOMPLETE" });
+                    CheckForgeDeliveries(station);
+                    WriteAtomic("forge-delivery.txt", new[] { "PASS", "forge-delivery-v1", "partial-cancel-multi-batch-inventory" });
+                }
+                if (File.Exists(Path.Combine(_root!, "forge-persistence.enabled")))
+                {
+                    Require(File.ReadAllText(Path.Combine(_root!, "forge-persistence.enabled")) == "forge-persistence-v1", "Invalid persistence marker.");
+                    WriteAtomic("forge-persistence.txt", new[] { "INCOMPLETE" });
+                    foreach (var frame in CheckCraftingPersistence()) yield return frame;
+                    WriteAtomic("forge-persistence.txt", new[] { "PASS", "forge-persistence-v1", "paused-jobs-roundtrip-save-as-slot-switch" });
+                }
+                WriteAtomic("forge-commands.txt", new[] { "PASS", "forge-commands-v3", "settings-replay-restored", "forge-queue-cancel-replay-refusal-direct-start-capacity" });
             }
             yield break;
         }

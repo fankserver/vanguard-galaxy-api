@@ -86,6 +86,7 @@ public static class ModApi
     public static IBoardingCombatRules? BoardingCombat { get; internal set; }
     /// <summary>Optional experimental authored dungeon content with API-owned save data; requires API 0.1.30.</summary>
     public static IDungeonContent? Dungeons { get; internal set; }
+    public static IDungeonPanelApi? DungeonPanel { get; internal set; }
     public static IDungeonRewardRules? DungeonRewards { get; internal set; }
     public static IDungeonSettlement? DungeonSettlement { get; internal set; }
     /// <summary>

@@ -27,13 +27,44 @@ try {
     [IO.File]::WriteAllLines($facts, @('PASS','forge-reads-v1','catalog=2','quotes=1','restored=0'))
     $p | Add-Member forgeCommandProbe $true
     Reject { Assert-ForgeReadSelection $root $p }
-    [IO.File]::WriteAllText((Join-Path $root 'forge-commands.enabled'), 'forge-commands-v1')
+    [IO.File]::WriteAllText((Join-Path $root 'forge-commands.enabled'), 'forge-commands-v3')
     Reject { Assert-ForgeReadSelection $root $p }
     [IO.File]::AppendAllText($config, "CommandsEnabled = true`r`n")
     Assert-ForgeReadSelection $root $p
     Reject { Assert-ForgeCommandReceipt $root $p }
-    [IO.File]::WriteAllLines((Join-Path $root 'forge-commands.txt'), @('PASS','forge-commands-v1','settings-replay-restored','forge-queue-cancel-replay'))
+    [IO.File]::WriteAllLines((Join-Path $root 'forge-commands.txt'), @('PASS','forge-commands-v3','settings-replay-restored','forge-queue-cancel-replay-refusal-direct-start-capacity'))
     Assert-ForgeCommandReceipt $root $p
     $p.forgeCommandProbe = $false; Reject { Assert-ForgeReadSelection $root $p }
-    'PASS Forge read/command selection and receipt tests'
+    $p.forgeCommandProbe = $true
+    $p | Add-Member forgePersistenceProbe $true
+    Reject { Assert-ForgeReadSelection $root $p }
+    [IO.File]::WriteAllText((Join-Path $root 'forge-persistence.enabled'), 'forge-persistence-v1')
+    Assert-ForgeReadSelection $root $p
+    Reject { Assert-ForgePersistenceReceipt $root $p }
+    [IO.File]::WriteAllLines((Join-Path $root 'forge-persistence.txt'), @('PASS','forge-persistence-v1','paused-jobs-roundtrip-save-as-slot-switch'))
+    Assert-ForgePersistenceReceipt $root $p
+    $p.forgeCommandProbe = $false; Reject { Assert-ForgeReadSelection $root $p }
+    $p.forgeCommandProbe = $true; $p.forgePersistenceProbe = $false
+    Remove-Item (Join-Path $root 'forge-persistence.enabled')
+    $p | Add-Member forgeDeliveryProbe $true
+    Reject { Assert-ForgeReadSelection $root $p }
+    [IO.File]::WriteAllText((Join-Path $root 'forge-delivery.enabled'), 'forge-delivery-v1')
+    Assert-ForgeReadSelection $root $p
+    Reject { Assert-ForgeDeliveryReceipt $root $p }
+    [IO.File]::WriteAllLines((Join-Path $root 'forge-delivery.txt'), @('PASS','forge-delivery-v1','partial-cancel-multi-batch-inventory'))
+    Assert-ForgeDeliveryReceipt $root $p
+    $p.forgePersistenceProbe = $true; Reject { Assert-ForgeReadSelection $root $p }
+    $p.forgePersistenceProbe = $false; $p.forgeDeliveryProbe = $false
+    Remove-Item (Join-Path $root 'forge-delivery.enabled')
+    $p | Add-Member refineryProbe $true
+    Reject { Assert-ForgeReadSelection $root $p }
+    [IO.File]::WriteAllText((Join-Path $root 'refinery.enabled'), 'refinery-v3')
+    Assert-ForgeReadSelection $root $p
+    Reject { Assert-RefineryReceipt $root $p }
+    [IO.File]::WriteAllLines((Join-Path $root 'refinery.txt'), @('PASS','refinery-v3','fractional-partial-multiple-refund-extraction-replay-favourites'))
+    Assert-RefineryReceipt $root $p
+    [IO.File]::WriteAllLines((Join-Path $root 'refinery.txt'), @('PASS','refinery-v1','fractional-partial-refund-extraction-replay'))
+    Reject { Assert-RefineryReceipt $root $p }
+    $p.forgeDeliveryProbe = $true; Reject { Assert-ForgeReadSelection $root $p }
+    'PASS Forge/refinery probe selection and receipt tests'
 } finally { Remove-Item -LiteralPath $root -Recurse -Force }
