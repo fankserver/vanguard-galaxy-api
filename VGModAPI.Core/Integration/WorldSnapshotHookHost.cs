@@ -78,8 +78,8 @@ internal sealed class WorldSnapshotHookHost : IDisposable
         Require(capture.Session, capture.Revision);
         var instances = _instances();
         Require(capture.Session, capture.Revision);
-        bool complete = _recorder.Complete(capture.Token, capture.Revision, instances, root);
-        Require(capture.Session, capture.Revision);
+        bool complete = _recorder.Complete(capture.Token, capture.Revision, instances, root,
+            () => Require(capture.Session, capture.Revision));
         if (!complete) throw new InvalidDataException("Native world snapshot could not be associated.");
     }
     internal IDisposable BeginStore(object root)

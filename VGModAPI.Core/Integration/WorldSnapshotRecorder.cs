@@ -64,7 +64,7 @@ internal sealed class WorldSnapshotRecorder
         var token = new object(); _captures.Add(token, new Capture(operation, revision, frozen, bytes)); return token;
     }
 
-    internal bool Complete(object token, long revision, IReadOnlyList<WorldSnapshotInstance> current, object root)
+    internal bool Complete(object token, long revision, IReadOnlyList<WorldSnapshotInstance> current, object root, Action? validateBeforePublish = null)
     {
         if (token == null || !_captures.TryGetValue(token, out var capture)) return false;
         _captures.Remove(token);
@@ -91,6 +91,7 @@ internal sealed class WorldSnapshotRecorder
         }
         var state = WorldStateCodec.Encode(rows);
         var digest = WorldJsonInspection.Digest(root);
+        validateBeforePublish?.Invoke();
         if (operation != _operation) return false;
         var stateToken = _states.Begin(revision, state, objects);
         var definitionToken = _definitions.Begin(revision, capture.Definitions, objects);

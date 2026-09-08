@@ -45,6 +45,29 @@ public sealed class WorldSnapshotHookHostTests
         Assert.Throws<InvalidDataException>(() => host.BeginStore(Root("refused")));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void FinalRevisionValidationCannotPublishOnFailure(bool throws)
+    {
+        var hub = Hub(); int calls = 0; bool completing = false;
+        using var host = new WorldSnapshotHookHost(hub,
+            new WorldSnapshotRecorder(new WorldJsonInspection(typeof(JsonObject).Assembly)),
+            () => Array.Empty<WorldSnapshotInstance>(), () =>
+            {
+                if (completing && ++calls == 3)
+                {
+                    if (throws) throw new InvalidDataException("Final revision callback failed");
+                    return 2;
+                }
+                return 1;
+            });
+        Ready(hub); var root = Root("failed-final-validation");
+        var token = host.BeginSnapshot(); completing = true;
+        Assert.Throws<InvalidDataException>(() => host.CompleteSnapshot(token, root));
+        Assert.Throws<InvalidDataException>(() => host.BeginStore(root));
+    }
+
     [Fact]
     public void UnassociatedStoresAndDisposedHostsRefuse()
     {
