@@ -10,14 +10,13 @@ internal sealed class WorldSerializationAssociation
 {
     internal const int MaxMetadataBytes = 256 * 1024;
     internal const int MaxObjects = 1024;
-    internal sealed class Capture
+    private sealed class CaptureData
     {
-        internal readonly WorldSerializationAssociation Owner;
-        internal readonly long Epoch, Revision;
+        internal readonly long Revision;
         internal readonly byte[] Metadata;
         internal readonly object[] Objects;
-        internal Capture(WorldSerializationAssociation owner, long epoch, long revision, byte[] metadata, object[] objects)
-        { Owner = owner; Epoch = epoch; Revision = revision; Metadata = metadata; Objects = objects; }
+        internal CaptureData(long revision, byte[] metadata, object[] objects)
+        { Revision = revision; Metadata = metadata; Objects = objects; }
     }
     private sealed class Binding
     {
@@ -25,34 +24,44 @@ internal sealed class WorldSerializationAssociation
         internal readonly string Digest;
         internal Binding(byte[] metadata, string digest) { Metadata = metadata; Digest = digest; }
     }
-    private long _epoch;
+    private long _operation;
+    private ConditionalWeakTable<object, CaptureData> _captures = new();
     private ConditionalWeakTable<object, Binding> _bindings = new();
 
-    internal Capture Begin(long revision, byte[] metadata, IReadOnlyList<object> objects)
+    internal object Begin(long revision, byte[] metadata, IReadOnlyList<object> objects)
     {
-        long epoch = _epoch;
+        long operation = NextOperation();
         if (metadata == null || metadata.Length == 0 || metadata.Length > MaxMetadataBytes)
             throw new InvalidDataException("Invalid world metadata size.");
-        if (objects == null || objects.Count > MaxObjects) throw new InvalidDataException("Invalid world object count.");
-        var copy = new object[objects.Count];
-        for (int i = 0; i < copy.Length; i++)
+        var frozen = (byte[])metadata.Clone();
+        if (objects == null) throw new InvalidDataException("Missing world objects.");
+        int count = objects.Count;
+        if (count < 0 || count > MaxObjects) throw new InvalidDataException("Invalid world object count.");
+        var copy = new object[count];
+        for (int i = 0; i < count; i++)
             copy[i] = objects[i] ?? throw new InvalidDataException("Null world object.");
-        if (epoch != _epoch) throw new InvalidDataException("World session changed during capture.");
-        return new Capture(this, epoch, revision, (byte[])metadata.Clone(), copy);
+        if (objects.Count != count || operation != _operation)
+            throw new InvalidDataException("World capture changed during observation.");
+        var token = new object();
+        _captures.Add(token, new CaptureData(revision, frozen, copy));
+        return token;
     }
 
-    internal bool Complete(Capture capture, long revision, IReadOnlyList<object> objects, object nativeSnapshot, string digest)
+    internal bool Complete(object token, long revision, IReadOnlyList<object> objects, object nativeSnapshot, string digest)
     {
-        if (capture == null) throw new ArgumentNullException(nameof(capture));
+        if (token == null) throw new ArgumentNullException(nameof(token));
         if (nativeSnapshot == null) throw new ArgumentNullException(nameof(nativeSnapshot));
-        if (!ReferenceEquals(capture.Owner, this) || capture.Epoch != _epoch) return false;
+        long operation = NextOperation();
+        if (!_captures.TryGetValue(token, out var capture)) return false;
+        _captures.Remove(token);
         // A failed recapture of a reused JSON object must revoke its previous association.
         _bindings.Remove(nativeSnapshot);
-        if (capture.Revision != revision || objects == null || objects.Count != capture.Objects.Length || !IsDigest(digest)) return false;
-        for (int i = 0; i < objects.Count; i++)
+        int count = capture.Objects.Length;
+        if (capture.Revision != revision || objects == null || objects.Count != count || !IsDigest(digest)) return false;
+        for (int i = 0; i < count; i++)
             if (!ReferenceEquals(objects[i], capture.Objects[i])) return false;
-        if (capture.Epoch != _epoch) return false;
-        _bindings.Add(nativeSnapshot, new Binding((byte[])capture.Metadata.Clone(), digest));
+        if (objects.Count != count || operation != _operation) return false;
+        _bindings.Add(nativeSnapshot, new Binding(capture.Metadata, digest));
         return true;
     }
 
@@ -66,9 +75,12 @@ internal sealed class WorldSerializationAssociation
 
     internal void Reset()
     {
-        _epoch = checked(_epoch + 1);
+        NextOperation();
+        _captures = new ConditionalWeakTable<object, CaptureData>();
         _bindings = new ConditionalWeakTable<object, Binding>();
     }
+
+    private long NextOperation() => _operation = checked(_operation + 1);
 
     private static bool IsDigest(string? value)
     {
