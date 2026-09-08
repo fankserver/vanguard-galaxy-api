@@ -57,8 +57,10 @@ internal sealed class DungeonInitialRecoveryRuntime : IDisposable
                     var instance = new DungeonReturnPodInstance(_pods.BuildInitial(pod, donors[pod.Transport!.DonorShipId], request.Value, operation, _owner.Pods.DataFor(pod.Id)));
                     built.Add(instance); _owner.BindInitialPod(instance, pod.Id);
                 }
-                _operations.Register(operation);
-                foreach (var instance in built) instance.Activate();
+                DungeonInitialRelease.Run(request.Value == null && simulation != null,
+                    () => _native.Call("resumeDocking", operation), () => _operations.Register(operation),
+                    () => (_owner.ObserveInitialOperation ?? throw new InvalidOperationException("Boarding observation unavailable."))(operation),
+                    () => { foreach (var instance in built) instance.Activate(); });
                 _owned.AddRange(built); _pending.Remove(request.Key);
             }
             catch (Exception error)

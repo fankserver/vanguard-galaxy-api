@@ -7,13 +7,14 @@ namespace VGModAPI.Runtime;
 internal sealed class DungeonRecoveryWorld
 {
     private readonly IBoardingTacticalNativeBindings _native;
+    private readonly TravelNativeBindings _travel;
     private readonly Type _ship, _pod;
     private readonly PropertyInfo _poi;
     private readonly FieldInfo _initializing, _loot, _capacity;
     private readonly MethodInfo _item;
     internal DungeonRecoveryWorld(Assembly assembly, IBoardingTacticalNativeBindings native)
     {
-        _native = native; _ship = assembly.GetType("Behaviour.Unit.SpaceShip", true)!;
+        _native = native; _travel = new(assembly); _ship = assembly.GetType("Behaviour.Unit.SpaceShip", true)!;
         _pod = assembly.GetType("Behaviour.Persistables.BoardingPod", true)!;
         var poi = assembly.GetType("Source.Galaxy.MapPointOfInterest", true)!;
         _poi = poi.GetProperty("current", BindingFlags.Public | BindingFlags.Static)!;
@@ -31,6 +32,8 @@ internal sealed class DungeonRecoveryWorld
         if (recipient is not Component ship || !ship || !ship.gameObject.activeInHierarchy || _native.Manager is not Component manager || !manager) return false;
         if (_loot.GetValue(null) is not Component loot || !loot) return false;
         var poi = _poi.GetValue(null); if (poi == null || _initializing.GetValue(poi) is true) return false;
+        var travel = _travel.TravelManager(); var local = travel == null ? null : _travel.LocalManager(travel);
+        if (local == null || !_travel.Ready(local, poi)) return false;
         var item = _item.Invoke(null, new object[] { "CrewPod" });
         return item != null && (int)_capacity.GetValue(item)! > 0;
     }

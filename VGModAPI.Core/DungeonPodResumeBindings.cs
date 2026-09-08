@@ -6,6 +6,7 @@ internal static class DungeonPodResumeBindings
     internal const string Data = "Source.Data.Persistable.BoardingPodData";
     internal static readonly MethodBinding[] Methods =
     {
+        new("resumeDocking", BindingCatalog.BoardingOperation, "RestoreDockingOption", false, "System.Void"),
         new("podInit", Pod, "InitDocked", false, "System.Void", Data, "UnityEngine.Transform", "UnityEngine.Transform"),
         new("podReturnStart", Pod, "StartReturning", false, "System.Void", "UnityEngine.Transform", "System.Collections.Generic.Dictionary`2<System.String,System.Int32>"),
         new("podSave", Data, "DataToJson", false, "System.Void", "LightJson.JsonObject"),

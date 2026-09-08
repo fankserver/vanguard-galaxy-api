@@ -114,6 +114,11 @@ internal sealed class BoardingObserver : IDisposable
         if (component != null) target.Components.Add(component);
         return target;
     }
+    internal void RestoredOperationReady(object native)
+    {
+        Guard(() => OperationReady(native, resumed: true));
+        if (CommandHandleForOperation(native) == null) throw new InvalidOperationException("Restored operation observation unavailable.");
+    }
     internal void OperationReady(object? native, bool resumed)
     {
         if (native == null || _operations.ContainsKey(native) || _retiredOperations.TryGetValue(native, out _)) return;
@@ -122,6 +127,7 @@ internal sealed class BoardingObserver : IDisposable
         if (resumed && Read(native, "simulation") is object saved)
         { operation.Victory = Read<bool>(saved, "victoryAchieved"); operation.Resolved = Read<bool>(saved, "isComplete"); }
         _operations.Add(native, operation); target.Operation = operation;
+        if (resumed) TrackPods(operation);
         Observe(operation, resumed ? BoardingEventKind.OperationResumed : BoardingEventKind.OperationStarted);
     }
     internal void BeforeOperation(object native)

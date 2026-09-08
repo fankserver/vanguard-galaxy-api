@@ -22,6 +22,7 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
     internal Func<object, Guid?>? ContentOccurrence { get; set; }
     internal Func<object, bool>? SimulationReady { get; set; }
     internal Func<object, bool>? ValidateInitialOperation { get; set; }
+    internal Action<object>? ObserveInitialOperation { get; set; }
     internal void Quarantine(object operation, Exception error)
     { _captureFaults.Remove(operation); _captureFaults.Add(operation, error); }
     internal bool OperationReady(object operation) => !_captureFaults.TryGetValue(operation, out _) && DungeonOperationMutationGate.Allows(operation, _native, SimulationReady);
