@@ -1,7 +1,7 @@
 # Dungeon rewards and settlement
 
 `ModApi.DungeonRewards` and `ModApi.DungeonSettlement` are optional experimental
-services under `dungeon-rewards`, requiring boarding observation. Query capability
+services available from API 0.1.33 under `dungeon-rewards`, requiring boarding observation. Query capability
 availability before accessing them. Native qualification remains pending: host and
 installed-assembly checks are not evidence of complete in-game acceptance.
 
