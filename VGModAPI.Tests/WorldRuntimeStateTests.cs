@@ -28,7 +28,7 @@ public sealed class WorldRuntimeStateTests
             var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
             var poiJson = new JsonObject { Text = "native-poi", ["guid"] = new(identity.NativeId), ["type"] = new("Combat"), ["systemName"] = new("system") };
             var systemJson = new JsonObject { ["guid"] = new("system"), ["pointsOfInterest"] = new(new List<JsonValue> { new(poiJson) }) };
-            var root = new JsonObject { Text = text, ["Player"] = new(new JsonObject { ["map"] = new(new JsonObject { ["systems"] = new(new List<JsonValue> { new(systemJson) }) }) }) };
+            var root = new JsonObject { Text = text, ["Version"] = new(WorldSaveFormat.Marker), [WorldSaveFormat.OriginalVersion] = new("0.8.2.3"), ["Player"] = new(new JsonObject { ["map"] = new(new JsonObject { ["systems"] = new(new List<JsonValue> { new(systemJson) }) }) }) };
             JsonValue.ParseFixtures[text] = root;
             byte[] bytes = Encoding.UTF8.GetBytes(text); string path = Path.Combine(dir, "native.save"); File.WriteAllBytes(path, bytes);
             var store = new GenerationStore(Path.Combine(dir, "generations"));

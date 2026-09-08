@@ -20,7 +20,7 @@ public sealed class WorldLoadPreparationTests
         try
         {
             var map = new JsonObject { ["systems"] = new(new List<JsonValue>()) };
-            var root = new JsonObject { Text = text, ["Player"] = new(new JsonObject { ["map"] = new(map) }) };
+            var root = new JsonObject { Text = text, ["Version"] = new("0.8.2.3"), ["Player"] = new(new JsonObject { ["map"] = new(map) }) };
             JsonValue.ParseFixtures[text] = root;
             var bytes = Encoding.UTF8.GetBytes(text); string path = Path.Combine(dir, "native.save"); File.WriteAllBytes(path, bytes);
             var store = new GenerationStore(Path.Combine(dir, "generations"));
@@ -43,6 +43,7 @@ public sealed class WorldLoadPreparationTests
     [InlineData(2)]
     [InlineData(3)]
     [InlineData(4)]
+    [InlineData(5)]
     public void EarlyPreparationAdmitsOnlyUnchangedCurrentDefinitions(int fault)
     {
         string dir = Path.Combine(Path.GetTempPath(), "vg-prep-" + Guid.NewGuid().ToString("N"));
@@ -54,7 +55,7 @@ public sealed class WorldLoadPreparationTests
             var poi = new JsonObject { Text = "poi", ["guid"] = new(identity.NativeId), ["type"] = new("Combat"), ["systemName"] = new("system-a") };
             var system = new JsonObject { ["guid"] = new("system-a"), ["pointsOfInterest"] = new(new List<JsonValue> { new(poi) }) };
             var map = new JsonObject { ["systems"] = new(new List<JsonValue> { new(system) }) };
-            var root = new JsonObject { Text = text, ["Player"] = new(new JsonObject { ["map"] = new(map) }) };
+            var root = new JsonObject { Text = text, ["Version"] = new(WorldSaveFormat.Marker), [WorldSaveFormat.OriginalVersion] = new("0.8.2.3"), ["Player"] = new(new JsonObject { ["map"] = new(map) }) };
             JsonValue.ParseFixtures[text] = root;
             var bytes = Encoding.UTF8.GetBytes(text); string path = Path.Combine(dir, "native.save"); File.WriteAllBytes(path, bytes);
             var row = new WorldSavedObject(identity, "system-a", WorldJsonInspection.Digest(poi), 1);
@@ -70,11 +71,14 @@ public sealed class WorldLoadPreparationTests
                 if (fault == 2) revision++;
                 if (fault == 3) poi.Text = "changed-after-metadata";
                 if (fault == 4) root.Text = "changed-player-or-vanilla-state";
+                if (fault == 5) { root["Version"] = new("0.8.2.3"); root.Remove(WorldSaveFormat.OriginalVersion); }
                 return saved.Definition.Revision == 1;
             }
             if (fault == 0)
             {
                 Assert.Same(root, prep.Read(session, path, GenerationStore.Hash(bytes), () => true, Definition, () => revision));
+                Assert.Equal("0.8.2.3", root["Version"].AsString);
+                Assert.False(root.ContainsKey(WorldSaveFormat.OriginalVersion));
                 gate.RequireFactory(session, poi, identity.NativeId, row.NativeDigest, revision);
             }
             else

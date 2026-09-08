@@ -17,7 +17,7 @@ public sealed class WorldSnapshotRecorderTests
         var poi = new JsonObject { Text = "native-poi", ["guid"] = new(identity.NativeId), ["type"] = new("Combat"), ["systemName"] = new("system-a") };
         var system = new JsonObject { ["guid"] = new("system-a"), ["pointsOfInterest"] = new(new List<JsonValue> { new(poi) }) };
         var map = new JsonObject { ["systems"] = new(new List<JsonValue> { new(system) }) };
-        var root = new JsonObject { Text = "native-root", ["Player"] = new(new JsonObject { ["map"] = new(map) }) };
+        var root = new JsonObject { Text = "native-root", ["Version"] = new("0.8.2.3"), ["Player"] = new(new JsonObject { ["map"] = new(map) }) };
         return (instance, root, poi);
     }
     private static WorldSnapshotRecorder Recorder() => new(new WorldJsonInspection(typeof(JsonObject).Assembly));
@@ -29,6 +29,8 @@ public sealed class WorldSnapshotRecorderTests
         var token = recorder.Begin(1, instances);
         poi.Text = "actual-serialized-state";
         Assert.True(recorder.Complete(token, 1, instances, root));
+        Assert.Equal(WorldSaveFormat.Marker, root["Version"].AsString);
+        Assert.Equal("0.8.2.3", root[WorldSaveFormat.OriginalVersion].AsString);
         var payload = recorder.ForStore(root);
         Assert.Equal(WorldJsonInspection.Digest(poi), Assert.Single(WorldStateCodec.Decode(payload[WorldStateCodec.Owner])).NativeDigest);
         Assert.Equal("世界", Assert.Single(WorldDefinitionCodec.Decode(payload[WorldDefinitionCodec.Owner])).Definition.Name);

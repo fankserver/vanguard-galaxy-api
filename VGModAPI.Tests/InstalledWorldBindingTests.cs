@@ -41,6 +41,12 @@ public sealed class InstalledWorldBindingTests
         int create = Array.FindIndex(calls, method => method.Name == "Create" && method.DeclaringType.FullName == "Source.Galaxy.MapPointOfInterest");
         int load = Array.FindIndex(calls, method => method.Name == "LoadFromJson");
         Assert.True(create >= 0 && load > create, "Validation must precede the native type factory, not just property loading.");
+        var staged = module.GetType("Source.Util.SaveGame").NestedTypes.Single(type => type.Name.StartsWith("<LoadStateStaged>", StringComparison.Ordinal));
+        var stagedCalls = staged.Methods.Single(method => method.Name == "MoveNext").Body.Instructions
+            .Where(instruction => instruction.Operand is MethodReference).Select(instruction => (MethodReference)instruction.Operand).ToArray();
+        int futureCheck = Array.FindIndex(stagedCalls, method => method.DeclaringType.FullName == "Source.Util.GameVersion" && method.Name == "IsFuture");
+        int playerFactory = Array.FindIndex(stagedCalls, method => method.DeclaringType.FullName == "Source.Player.GamePlayer" && method.Name == "FromJsonStaged");
+        Assert.True(futureCheck >= 0 && playerFactory > futureCheck, "The API-required envelope relies on native future-version refusal preceding player/world construction.");
         var snapshot = module.GetType("Source.Util.SaveGame").Methods.Single(method => method.Name == "SaveCurrentState");
         Assert.Contains(snapshot.Body.Instructions, instruction => instruction.Operand is MethodReference method &&
             method.Name == "ToJson" && method.DeclaringType.FullName == "Source.Player.GamePlayer");

@@ -12,7 +12,7 @@ namespace VGModAPI.Tests;
 public sealed class WorldSnapshotPatchTests : IDisposable
 {
     public void Dispose() => WorldSnapshotPatches.Host = null;
-    private static JsonObject Root() => new() { Text = "snapshot", ["Player"] = new(new JsonObject { ["map"] = new(new JsonObject { ["systems"] = new(new List<JsonValue>()) }) }) };
+    private static JsonObject Root() => new() { Text = "snapshot", ["Version"] = new("0.8.2.3"), ["Player"] = new(new JsonObject { ["map"] = new(new JsonObject { ["systems"] = new(new List<JsonValue>()) }) }) };
 
     [Fact]
     public void SnapshotAndStoreUseTheCapturedHostAndPreserveNativeExceptions()

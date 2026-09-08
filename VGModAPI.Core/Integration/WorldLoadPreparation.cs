@@ -46,7 +46,7 @@ internal sealed class WorldLoadPreparation
         {
             if (!stillStarting() || providerRevision() != revision || !stillStarting()) throw new InvalidDataException("World load changed during inspection.");
             RequireUnchangedRoot();
-            return new WorldPreparedLoad(session, root, null, revision);
+            return Finish(null, false);
         }
         var rows = generation.Rows;
         var bindings = WorldJsonInspection.Bind(rows, nodes);
@@ -62,8 +62,18 @@ internal sealed class WorldLoadPreparation
         for (int i = 0; i < bindings.Length; i++)
             if (!ReferenceEquals(bindings[i].Json, current[i].Json)) throw new InvalidDataException("World JSON node replaced during admission.");
         RequireUnchangedRoot();
+        var prepared = Finish(generation, rows.Length != 0);
         _gate.Open(session, generation.Association, canonicalPath, expectedHash, revision, providers, current);
-        return new WorldPreparedLoad(session, root, generation, revision);
+        return prepared;
+
+        WorldPreparedLoad Finish(WorldGenerationReader.Result? verified, bool owned)
+        {
+            _json.UnsealVerified(root, owned);
+            string transformed = root.ToString() ?? throw new InvalidDataException("Missing transformed root text.");
+            if (!stillStarting() || providerRevision() != revision || !stillStarting() || transformed != root.ToString())
+                throw new InvalidDataException("World load changed after verified format transformation.");
+            return new WorldPreparedLoad(session, root, verified, revision);
+        }
 
         void RequireUnchangedRoot()
         {

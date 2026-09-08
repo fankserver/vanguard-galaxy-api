@@ -10,7 +10,7 @@ namespace VGModAPI.Tests;
 
 public sealed class WorldSnapshotHookHostTests
 {
-    private static JsonObject Root(string text) => new() { Text = text, ["Player"] = new(new JsonObject { ["map"] = new(new JsonObject { ["systems"] = new(new List<JsonValue>()) }) }) };
+    private static JsonObject Root(string text) => new() { Text = text, ["Version"] = new("0.8.2.3"), ["Player"] = new(new JsonObject { ["map"] = new(new JsonObject { ["systems"] = new(new List<JsonValue>()) }) }) };
     private static LifecycleHub Hub() => new((_, error) => throw new Exception("Unexpected lifecycle fault", error));
     private static void Ready(LifecycleHub hub) { hub.Begin(SessionOrigin.NewGame, null); hub.PlayerReady(hub.CurrentSession!.Id); }
     private static WorldSnapshotHookHost Host(LifecycleHub hub, Func<IReadOnlyList<WorldSnapshotInstance>>? source = null) =>

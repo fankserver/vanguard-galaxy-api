@@ -34,7 +34,7 @@ public sealed class WorldSnapshotPublicationTests : IDisposable
         var session = hub.Begin(SessionOrigin.NewGame, null); hub.PlayerReady(session); hub.GameplayInitialized(session);
         var poi = new JsonObject { Text = "poi-state", ["guid"] = new(identity.NativeId), ["type"] = new("Combat"), ["systemName"] = new("system-a") };
         var system = new JsonObject { ["guid"] = new("system-a"), ["pointsOfInterest"] = new(new List<JsonValue> { new(poi) }) };
-        var root = new JsonObject { Text = "snapshot-a", ["Player"] = new(new JsonObject { ["map"] = new(new JsonObject { ["systems"] = new(new List<JsonValue> { new(system) }) }) }) };
+        var root = new JsonObject { Text = "snapshot-a", ["Version"] = new("0.8.2.3"), ["Player"] = new(new JsonObject { ["map"] = new(new JsonObject { ["systems"] = new(new List<JsonValue> { new(system) }) }) }) };
         host.CompleteSnapshot(host.BeginSnapshot(), root);
         string slot = Path.Combine(_directory, "a.save"), saveAs = Path.Combine(_directory, "b.save");
         Save(slot, LifecycleEventKind.SaveSucceeded);

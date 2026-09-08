@@ -23,10 +23,14 @@ internal sealed class WorldJsonInspection
     private readonly PropertyInfo _item, _isObject, _object, _isArray, _array, _isString, _string;
     private readonly Type _objectType;
     private readonly MethodInfo _parse;
+    private readonly WorldSaveFormat _format;
+    internal void SealSnapshot(object root, bool owned) => _format.Seal(root, owned);
+    internal void UnsealVerified(object root, bool owned) => _format.UnsealVerified(root, owned);
     private static readonly UTF8Encoding Utf8 = new(false, true);
     private const int MaxVisited = 100000;
     internal WorldJsonInspection(Assembly assembly)
     {
+        _format = new WorldSaveFormat(assembly);
         _objectType = assembly.GetType("LightJson.JsonObject", true)!;
         var value = assembly.GetType("LightJson.JsonValue", true)!;
         _parse = value.GetMethod("Parse", BindingFlags.Public | BindingFlags.Static, null, new[] { typeof(string) }, null)
