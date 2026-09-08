@@ -549,7 +549,7 @@ public sealed partial class Plugin
             Require(silence == null, silence!);
             // The replay must not have faulted the observer group: a stale operation is reported,
             // never a reason to disable the replacement session's capability or services.
-            Require(_p._api!.Capabilities.Any(capability => capability.Name == "native-travel" && capability.Available),
+            Require(ModApi.Services.Travel.Availability.IsAvailable,
                 "The stale replay disabled the native-travel capability.");
             Require(ModApi.Travel != null && ModApi.Station != null, "The stale replay removed the public travel/station services.");
             Require(ModApi.Travel!.SessionId == replacement, "The public travel service no longer owns the replacement session after the replay.");

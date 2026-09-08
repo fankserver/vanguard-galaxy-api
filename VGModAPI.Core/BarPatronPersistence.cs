@@ -7,21 +7,20 @@ namespace VGModAPI.Core;
 internal sealed class BarPatronPersistence : IDisposable
 {
     private readonly BarPatronLedger _ledger = new();
-    private readonly ILifecycleApi _lifecycle;
+    private readonly ILifecycleService _lifecycle;
     private readonly ISaveDataRegistration _registration;
-    private readonly IDisposable _subscription;
     private readonly Action _checkThread;
     private Guid? _restored;
     private bool _disposed;
 
-    internal BarPatronPersistence(ISaveDataService persistence, ILifecycleApi lifecycle, Action checkThread)
+    internal BarPatronPersistence(ISaveDataService persistence, ILifecycleService lifecycle, Action checkThread)
     {
         _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
         _checkThread = checkThread ?? throw new ArgumentNullException(nameof(checkThread));
         _checkThread();
         _registration = (persistence ?? throw new ArgumentNullException(nameof(persistence))).Register(new PersistenceProvider(
             BarPatronCodec.Owner, BarPatronCodec.SchemaVersion, Capture, Restore, BarPatronCodec.Validate)).Registration ?? throw new InvalidOperationException("Patron save provider registration refused.");
-        try { _subscription = lifecycle.Subscribe(BarPatronCodec.Owner, OnLifecycle); }
+        try { lifecycle.Changed += OnLifecycle; }
         catch { _registration.Dispose(); throw; }
     }
 
@@ -87,7 +86,7 @@ internal sealed class BarPatronPersistence : IDisposable
         _disposed = true;
         _restored = null;
         _ledger.Reset();
-        _subscription.Dispose();
+        _lifecycle.Changed -= OnLifecycle;
         _registration.Dispose();
     }
 }

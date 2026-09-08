@@ -41,21 +41,6 @@ public sealed class CapabilityStatus
     { Name = name; Available = available; RuntimeQualified = runtimeQualified; Detail = detail; }
 }
 
-/// <summary>All members and subscription disposal are Unity-main-thread-only. Registration does not replay events.</summary>
-public interface ILifecycleApi
-{
-    SessionSnapshot? CurrentSession { get; }
-    IReadOnlyList<CapabilityStatus> Capabilities { get; }
-    IDisposable Subscribe(string owner, Action<LifecycleEvent> callback);
-}
-
-/// <summary>Optional since 0.1.1. Main-thread-only; false is not a readiness or mutation guarantee.</summary>
-public interface ILifecycleDispatchState
-{
-    /// <summary>True throughout callback delivery, including queued reentrant events and error reporting.</summary>
-    bool IsDispatchingCallbacks { get; }
-}
-
 /// <summary>Available after the API plugin's Awake; declare a hard BepInEx dependency on vgmodapi.</summary>
 public static class ModApi
 {
@@ -83,7 +68,6 @@ public static class ModApi
         services?.CheckThread();
         if (ReferenceEquals(_services, services)) _services = null;
     }
-    public static ILifecycleApi? Current { get; internal set; }
     /// <summary>Automatically bound mission observer. Check mission-continuity separately for persistent instance identity.</summary>
     public static IMissionEvents? Missions { get; internal set; }
     /// <summary>Native travel observer; non-null when automatic binding succeeds.</summary>

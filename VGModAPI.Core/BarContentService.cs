@@ -11,17 +11,16 @@ internal sealed partial class BarContentService : IBarApi, IDisposable
     private readonly StoryHostAuthenticator _authenticate;
     private readonly Func<string, bool> _exclusivePermission;
     private readonly Func<object>? _permissionStamp;
-    private readonly ILifecycleApi _lifecycle;
+    private readonly ILifecycleService _lifecycle;
     private readonly Action _checkThread;
     private readonly Action<string, Exception>? _reportObserver;
     private readonly BarPatronPersistence _persistence;
     private readonly StoryProviderBindings _bindings = new();
     private readonly Dictionary<string, Lease> _leases = new(StringComparer.Ordinal);
     private readonly Dictionary<BarPatronId, BarPatronState> _transient = new();
-    private readonly IDisposable _subscription;
     private bool _disposed;
 
-    internal BarContentService(ISaveDataService persistence, ILifecycleApi lifecycle, StoryHostAuthenticator authenticate,
+    internal BarContentService(ISaveDataService persistence, ILifecycleService lifecycle, StoryHostAuthenticator authenticate,
         Func<string, bool> exclusivePermission, Action checkThread, Func<object>? permissionStamp = null, Action<string, Exception>? reportObserver = null)
     {
         _reportObserver = reportObserver;
@@ -31,7 +30,7 @@ internal sealed partial class BarContentService : IBarApi, IDisposable
         _permissionStamp = permissionStamp;
         _checkThread = checkThread ?? throw new ArgumentNullException(nameof(checkThread));
         _persistence = new BarPatronPersistence(persistence, lifecycle, checkThread);
-        try { _subscription = lifecycle.Subscribe("vgmodapi.bar-content", OnLifecycle); }
+        try { lifecycle.Changed += OnLifecycle; }
         catch { _persistence.Dispose(); throw; }
     }
 
@@ -96,6 +95,6 @@ internal sealed partial class BarContentService : IBarApi, IDisposable
         _leases.Clear(); _transient.Clear();
         foreach (var observer in _observers) observer.Active = false;
         _observers.Clear();
-        _subscription.Dispose(); _persistence.Dispose();
+        _lifecycle.Changed -= OnLifecycle; _persistence.Dispose();
     }
 }

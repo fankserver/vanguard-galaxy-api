@@ -5,13 +5,15 @@ using System.Threading;
 
 namespace VGModAPI.Core;
 
-internal sealed class LifecycleHub : ILifecycleApi, ILifecycleDispatchState, IDisposable
+internal sealed class LifecycleHub : ILifecycleService, IDisposable
 {
     private readonly int _thread = Thread.CurrentThread.ManagedThreadId;
     private readonly Action<string, Exception> _report;
     private readonly List<Subscription> _subscriptions = new();
     private readonly Queue<LifecycleEvent> _pending = new();
     internal ServiceStatusRegistry Services { get; }
+    private readonly ServiceSubscriptions<LifecycleEvent> _events;
+    private readonly IServiceStatus _sessionTracking, _saveOutcomes;
     private int _serviceDispatchDepth;
     private SessionSnapshot? _session;
     private bool _dispatching;
@@ -22,7 +24,18 @@ internal sealed class LifecycleHub : ILifecycleApi, ILifecycleDispatchState, IDi
     {
         _report = report;
         Services = new ServiceStatusRegistry(CheckThread, report, EnterServiceDispatch);
+        _sessionTracking = Services.Get("session-lifecycle");
+        _saveOutcomes = Services.Get("save-outcomes");
+        _events = new ServiceSubscriptions<LifecycleEvent>(this, Subscribe,
+            fact => fact.Kind == LifecycleEventKind.SessionInvalidated ||
+                (fact.Kind >= LifecycleEventKind.SaveStarted ? SaveOutcomes : SessionTracking).Availability.IsAvailable,
+            () => SessionTracking.Availability.IsAvailable || SaveOutcomes.Availability.IsAvailable);
     }
+    public IServiceStatus SessionTracking { get { CheckThread(); return _sessionTracking; } }
+    public IServiceStatus SaveOutcomes { get { CheckThread(); return _saveOutcomes; } }
+    SessionSnapshot? ILifecycleService.CurrentSession => SessionTracking.Availability.IsAvailable ||
+        CurrentSession?.Phase == SessionPhase.Invalidated ? CurrentSession : null;
+    public event Action<LifecycleEvent>? Changed { add => _events.Add(value); remove => _events.Remove(value); }
     public bool IsDispatchingCallbacks { get { CheckThread(); return _dispatching || _serviceDispatchDepth != 0; } }
     public SessionSnapshot? CurrentSession { get { CheckThread(); return _session; } }
     public IReadOnlyList<CapabilityStatus> Capabilities => Services.Legacy;
@@ -52,7 +65,7 @@ internal sealed class LifecycleHub : ILifecycleApi, ILifecycleDispatchState, IDi
         }
     }
 
-    public IDisposable Subscribe(string owner, Action<LifecycleEvent> callback)
+    internal IDisposable Subscribe(string owner, Action<LifecycleEvent> callback)
     {
         CheckThread();
         if (_disposed || Services.IsStopping) throw new ObjectDisposedException(nameof(LifecycleHub));
@@ -166,6 +179,7 @@ internal sealed class LifecycleHub : ILifecycleApi, ILifecycleDispatchState, IDi
         foreach (var sub in _subscriptions) sub.Active = false;
         _subscriptions.Clear();
         _pending.Clear();
+        _events.Dispose();
         Services.Dispose();
     }
 

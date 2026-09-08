@@ -32,19 +32,27 @@ Reference `VGModAPI.Abstractions.dll` as compile-only and declare a BepInEx depe
 on the minimum API version your mod uses:
 
 ```csharp
-[BepInDependency(ModApi.PluginId, "0.1.0")]
+[BepInDependency(ModApi.PluginId)]
 ```
 
-In your plugin's `Awake`, inspect `ModApi.Current.Capabilities` and subscribe:
+Retain the typed lifecycle service and subscribe in `Awake`:
 
 ```csharp
-_subscription = ModApi.Current!.Subscribe("your.mod.id", message =>
+private ILifecycleService? _lifecycle;
+private void Awake()
 {
+    _lifecycle = ModApi.Services.Lifecycle;
+    _lifecycle.Changed += OnLifecycle;
+}
+private void OnLifecycle(LifecycleEvent message) =>
     Logger.LogInfo($"{message.Kind}: session={message.Session?.Id}");
-});
+private void OnDestroy()
+{
+    if (_lifecycle != null) _lifecycle.Changed -= OnLifecycle;
+}
 ```
 
-Dispose subscriptions in `OnDestroy`. API access is main-thread-only; consumers
+Inspect `SessionTracking.Availability` and `SaveOutcomes.Availability` before relying on these integrations. API access is main-thread-only; consumers
 must handle unavailable optional services. Do not bundle the API assemblies with
 your mod. API-covered features need no direct Harmony or vanilla assembly reference;
 your BepInEx plugin entry point still needs BepInEx/Unity compile references.

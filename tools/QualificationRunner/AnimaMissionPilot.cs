@@ -105,7 +105,7 @@ public sealed partial class Plugin
 
             var held = Create(); Add(held.Mission); State(held.Id, "accepted");
             var savedEntry = SpJson(SpCall(registry, "Get", held.Id));
-            var session = ModApi.Current!.CurrentSession!.Id;
+            var session = ModApi.Services.Lifecycle.CurrentSession!.Id;
             Save("qa-anima-held", LifecycleEventKind.SaveSucceeded);
             Require(File.Exists(Sidecar("qa-anima-held")), "Anima sidecar missing.");
             foreach (var name in new[] { "qa-anima-held", "qa-anima-held" })

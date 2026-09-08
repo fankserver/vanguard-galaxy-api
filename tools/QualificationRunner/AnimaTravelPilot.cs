@@ -106,7 +106,7 @@ public sealed partial class Plugin
         Require(TravelWormholeFixtureSelected,
             "The consumer travel probe requires the opt-in wormhole fixture selection; without it the wormhole arrival can never be witnessed.");
         Require(ModApi.Travel != null, "Travel public service not exposed.");
-        Require(_api!.Capabilities.Any(capability => capability.Name == "native-travel" && capability.Available), "native-travel capability not available.");
+        Require(ModApi.Services.Travel.Availability.IsAvailable, "native-travel capability not available.");
         Require(!ModApi.Travel!.IsDispatchingCallbacks, "Cannot subscribe during callback dispatch.");
         Require(AnimaTravelReceipt.ReadinessSeconds == WaitDeadlineSeconds && AnimaTravelReceipt.SettleSeconds == SettleSeconds,
             "Shared harness wait/settle deadlines no longer match the declared phase budget terms.");
@@ -416,7 +416,7 @@ public sealed partial class Plugin
         Require(SpGet(AnimaType("VGAnima.Patches.SaveLoadPatch"), "VisitObserver") == null, "The consumer's load hook kept the faulted observer.");
         Require(!(bool)SpGet(anima, "VisitHistoryRecording")!, "The consumer still reports visit recording after the fault.");
         // The capability itself must remain available: this is a LOCAL consumer latch, not an API fault.
-        Require(ModApi.Travel != null && _api.Capabilities.Any(capability => capability.Name == "native-travel" && capability.Available),
+        Require(ModApi.Travel != null && ModApi.Services.Travel.Availability.IsAvailable,
             "The controlled consumer fault disabled the API travel capability.");
         Require(!ModApi.Travel!.IsDispatchingCallbacks, "The public travel surface is stuck dispatching after the consumer fault.");
         Require(anima.enabled && (bool)SpGet(anima, "_active")!, "The visit-only fault stopped the whole consumer.");

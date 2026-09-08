@@ -102,7 +102,7 @@ public sealed partial class Plugin
         // Exercise the real adapter fault path only after all gameplay, not a fabricated supported hash.
         var adapter = (GameAdapter)AccessTools.Field(apiPlugin.GetType(), "_adapter").GetValue(apiPlugin)!;
         adapter.Guard(() => throw new InvalidOperationException("Controlled information qualification observer fault."));
-        foreach (var frame in Wait(() => _api!.Capabilities.Any(capability => capability.Name == "session-lifecycle" && !capability.Available), "actual unavailable observer")) yield return frame;
+        foreach (var frame in Wait(() => !_api!.SessionTracking.Availability.IsAvailable, "actual unavailable observer")) yield return frame;
         Require(!details.text.Contains("Observer fault") && ModApi.Services.Mods.Inventory.Entries.Any(item => item.PluginId == ModApi.PluginId), "Unavailable API must preserve the mod list without exposing technical faults in player details.");
         var scroll = panel.GetComponentsInChildren<ScrollRect>().Single(item => item.name == "Selected details");
         scroll.verticalNormalizedPosition = 0;

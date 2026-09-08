@@ -1,21 +1,21 @@
 # Lifecycle contract — experimental
 
-Implemented, automatically tested and partially exercised inside Unity; **not fully runtime-qualified**. This contract describes the supported adapter, not every possible way other mods can manipulate the game.
+Implemented and host-tested; **the typed runtime requires in-game qualification**. This contract describes the supported adapter, not every possible way other mods can manipulate the game.
 
 ## Access and delivery
 
-Reference `VGModAPI.Abstractions.dll`, declare a hard BepInEx dependency on `vgmodapi` version `0.1.0`, and obtain `ModApi.Current` in your plugin's Awake. A service can exist with unavailable capabilities: inspect `Capabilities` before relying on an integration.
+Reference `VGModAPI.Abstractions.dll`, declare a hard BepInEx dependency on `vgmodapi`, and obtain `ModApi.Services.Lifecycle` in your plugin's Awake after API bootstrap. Inspect `SessionTracking.Availability` and `SaveOutcomes.Availability` before relying on their respective integrations.
 
-All service access, subscriptions, callbacks, and subscription disposal are main-thread-only. Registration does not replay events; query `CurrentSession` for current state. Null means no observed attempt, not proof that the game is at the menu.
+All service access, event registration/removal and callbacks are main-thread-only. Subscribe with `Changed += handler`, then query `CurrentSession`; events do not replay. Null means no available observed attempt, not proof that the game is at the menu. Terminal invalidation remains visible when tracking becomes unavailable.
 
 - Callbacks run synchronously in registration order and should be short, observational, and nonblocking.
 - Do not mutate the in-progress vanilla load/save operation from a callback. Defer gameplay actions until an appropriate later boundary.
-- Each subscriber exception is logged with its owner ID and does not suppress other subscribers.
-- Newly registered callbacks start with the next dispatched event. Disposing a callback before its turn suppresses that invocation.
+- Each delegate exception is logged with its declaring assembly and does not suppress other subscribers.
+- Newly registered callbacks start with the next dispatched event. Removing a callback before its turn suppresses that invocation.
 - Reentrant events are queued until current-event delivery finishes. Payload snapshots describe the event; querying current state can return a later state, especially during reentrant game actions.
-- Dispose subscriptions when the consumer is destroyed. API shutdown clears subscriptions and unpatches its hooks.
+- Remove handlers with `Changed -= handler` when the consumer is destroyed. API shutdown clears subscriptions and unpatches its hooks.
 
-The service implements optional `ILifecycleDispatchState`, which requires API 0.1.1. Its main-thread-only `IsDispatchingCallbacks` stays true throughout callback delivery, queued reentrant events, diagnostic reporting, and disposal inside a callback. Mutating consumers can refuse request/cancel/tick while it is true. False is **not** permission to mutate, a readiness guarantee, or a pre-serialization boundary; consumers still need current-session and save-in-flight guards. Dispatch state is separate from `ILifecycleApi`; declare the required BepInEx API dependency when using it.
+`ILifecycleService.IsDispatchingCallbacks` stays true throughout callback delivery, queued reentrant events, diagnostic reporting and disposal inside a callback. Mutating consumers can refuse request/cancel/tick while it is true. False is **not** permission to mutate, a readiness guarantee or a pre-serialization boundary; consumers still need current-session and save-in-flight guards.
 
 ## Identities
 

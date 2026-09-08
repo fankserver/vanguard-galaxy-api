@@ -100,7 +100,7 @@ public sealed partial class Plugin
         Require(TravelStationSelected && TravelCrossSystemSelected && TravelWormholeFixtureSelected,
             "The archived-journal comparison requires both qualified native travel phases and the wormhole fixture selection.");
         Require(ModApi.Travel != null, "Travel public service not exposed.");
-        Require(_api!.Capabilities.Any(capability => capability.Name == "native-travel" && capability.Available), "native-travel capability not available.");
+        Require(ModApi.Services.Travel.Availability.IsAvailable, "native-travel capability not available.");
         Require(!ModApi.Travel!.IsDispatchingCallbacks, "Cannot subscribe during callback dispatch.");
         Require(TravelJournalReceipt.ReadinessSeconds == WaitDeadlineSeconds && TravelJournalReceipt.SettleSeconds == SettleSeconds,
             "Shared harness wait/settle deadlines no longer match the declared phase budget terms.");

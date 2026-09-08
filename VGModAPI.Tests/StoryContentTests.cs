@@ -3401,26 +3401,19 @@ public sealed class StoryContentTests
         }
     }
 
-    private sealed class FakeLifecycle : ILifecycleApi
+    private sealed class FakeLifecycle : ILifecycleService
     {
-        private readonly List<Action<LifecycleEvent>> _subscribers = new();
         public SessionSnapshot? CurrentSession { get; private set; }
-        public IReadOnlyList<CapabilityStatus> Capabilities => Array.Empty<CapabilityStatus>();
-        public IDisposable Subscribe(string owner, Action<LifecycleEvent> callback)
-        {
-            _subscribers.Add(callback);
-            return new Subscription(() => _subscribers.Remove(callback));
-        }
+        public IServiceStatus SessionTracking { get; } = new FakeServiceStatus();
+        public IServiceStatus SaveOutcomes { get; } = new FakeServiceStatus();
+        public bool IsDispatchingCallbacks { get; private set; }
+        public event Action<LifecycleEvent>? Changed;
         internal void Set(SessionSnapshot snapshot) => CurrentSession = snapshot;
         internal void Publish(LifecycleEventKind kind)
         {
-            foreach (var subscriber in _subscribers.ToArray()) subscriber(new LifecycleEvent(kind, CurrentSession));
-        }
-        private sealed class Subscription : IDisposable
-        {
-            private readonly Action _dispose;
-            internal Subscription(Action dispose) => _dispose = dispose;
-            public void Dispose() => _dispose();
+            IsDispatchingCallbacks = true;
+            try { Changed?.Invoke(new LifecycleEvent(kind, CurrentSession)); }
+            finally { IsDispatchingCallbacks = false; }
         }
     }
 

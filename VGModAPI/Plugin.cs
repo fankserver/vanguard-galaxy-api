@@ -96,7 +96,6 @@ public sealed partial class Plugin : BaseUnityPlugin
         ModApi.Story = null;
         ModApi.Bars = null;
         _hub.SetCapability("owned-bars", false, "Not initialized; experimental.");
-        ModApi.Current = _hub;
         _modCatalog = new ModInformationCatalog(_hub, ModInformationSource.Snapshot);
         InitializeUpdates();
         try
@@ -909,7 +908,6 @@ public sealed partial class Plugin : BaseUnityPlugin
         _harmony?.UnpatchSelf();
         LifecyclePatches.Adapter = null;
         SavePatches.Adapter = null;
-        ModApi.Current = null;
         TeardownCraftingJobs();
         _recipeQuotes?.Dispose(); _recipeQuotes = null; ModApi.RecipeQuotes = null;
         _recipes?.Dispose(); _recipes = null; ModApi.Recipes = null;

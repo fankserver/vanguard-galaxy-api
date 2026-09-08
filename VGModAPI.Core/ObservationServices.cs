@@ -2,36 +2,6 @@ using System;
 
 namespace VGModAPI.Core;
 
-internal sealed class LifecycleServiceView : ILifecycleService, IDisposable
-{
-    private readonly LifecycleHub _hub;
-    private readonly ServiceSubscriptions<LifecycleEvent> _events;
-    private readonly IServiceStatus _sessionTracking, _saveOutcomes;
-    internal LifecycleServiceView(LifecycleHub hub)
-    {
-        _hub = hub;
-        _sessionTracking = hub.Services.Get("session-lifecycle");
-        _saveOutcomes = hub.Services.Get("save-outcomes");
-        _events = new ServiceSubscriptions<LifecycleEvent>(hub, hub.Subscribe, Deliver,
-            () => SessionTracking.Availability.IsAvailable || SaveOutcomes.Availability.IsAvailable);
-    }
-    public IServiceStatus SessionTracking { get { _hub.CheckThread(); return _sessionTracking; } }
-    public IServiceStatus SaveOutcomes { get { _hub.CheckThread(); return _saveOutcomes; } }
-    public SessionSnapshot? CurrentSession
-    {
-        get
-        {
-            var session = _hub.CurrentSession;
-            return SessionTracking.Availability.IsAvailable || session?.Phase == SessionPhase.Invalidated ? session : null;
-        }
-    }
-    public bool IsDispatchingCallbacks => _hub.IsDispatchingCallbacks;
-    public event Action<LifecycleEvent>? Changed { add => _events.Add(value); remove => _events.Remove(value); }
-    private bool Deliver(LifecycleEvent fact) => fact.Kind == LifecycleEventKind.SessionInvalidated ||
-        (fact.Kind >= LifecycleEventKind.SaveStarted ? SaveOutcomes : SessionTracking).Availability.IsAvailable;
-    public void Dispose() => _events.Dispose();
-}
-
 internal abstract class ObservationServiceView : IServiceStatus
 {
     protected readonly LifecycleHub Hub;

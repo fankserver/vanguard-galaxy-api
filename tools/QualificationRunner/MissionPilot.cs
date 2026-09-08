@@ -14,7 +14,7 @@ public sealed partial class Plugin
     {
         if (!File.Exists(Path.Combine(_root!, "mission-transitions.enabled"))) return;
         var api = ModApi.Missions ?? throw new InvalidOperationException("Mission service missing.");
-        Require(ModApi.Current!.Capabilities.Any(c => c.Name == "mission-transitions" && c.Available), "Mission capability unavailable.");
+        Require(ModApi.Services.Missions.Availability.IsAvailable, "Mission capability unavailable.");
         var nativeAccess = api as IVersionSensitiveMissionAccess ?? throw new InvalidOperationException("Native mission access missing.");
         var type = AccessTools.TypeByName("Source.MissionSystem.Mission");
         var story = AccessTools.TypeByName("Source.MissionSystem.StoryMission");

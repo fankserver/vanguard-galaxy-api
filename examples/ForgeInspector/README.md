@@ -1,16 +1,16 @@
 # Forge Inspector: independent author example
 
-A Unity-free consumer of public VGModAPI 0.1.38 contracts. It adds an **Inspect** Forge action and a shared HUD panel with selected-variant requirements, producer counts, and every output preview (explicit overflow summary above the HUD limit). It is independent of Blueprint Pin and does not copy its target policy.
+A Unity-free consumer of public VGModAPI contracts. It adds an **Inspect** Forge action and a shared HUD panel with selected-variant requirements, producer counts, and every output preview (explicit overflow summary above the HUD limit). It is independent of Blueprint Pin and does not copy its target policy.
 
 Build with `make build-forge-example CONFIGURATION=Release`. The only project reference is Abstractions. No game, Unity, Harmony, Core or runtime implementation is referenced or packaged.
 
-A BepInEx host with a hard dependency on `vgmodapi` version `0.1.38` can create this scope after the API initializes:
+A BepInEx host with a hard dependency on `vgmodapi` can create this scope after the API initializes:
 
 ```csharp
 // Keep this registration scope in a host field; dispose it during host teardown.
-if (ModApi.Current != null && ModApi.ForgeUi != null && ModApi.Recipes != null &&
+if (ModApi.ForgeUi != null && ModApi.Recipes != null &&
     ModApi.RecipeQuotes != null && ModApi.Hud != null)
-    inspector = new ForgeInspector.Inspector(MyPluginId, ModApi.Current,
+    inspector = new ForgeInspector.Inspector(MyPluginId, ModApi.Services.Lifecycle,
         ModApi.ForgeUi, ModApi.Recipes, ModApi.RecipeQuotes, ModApi.Hud);
 ```
 

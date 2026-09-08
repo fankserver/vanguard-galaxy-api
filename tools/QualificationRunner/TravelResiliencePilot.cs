@@ -158,7 +158,7 @@ public sealed partial class Plugin
         var travel = ModApi.Travel;
         var station = ModApi.Station;
         Require(travel != null && station != null, "Travel/Station public services not exposed.");
-        Require(_api!.Capabilities.Any(capability => capability.Name == "native-travel" && capability.Available), "native-travel capability not available.");
+        Require(ModApi.Services.Travel.Availability.IsAvailable, "native-travel capability not available.");
         Require(!travel!.IsDispatchingCallbacks && !station!.IsDispatchingCallbacks, "Cannot subscribe during callback dispatch.");
         // The published phase budget is summed from the declared deadlines, and the two shared
         // harness waits are part of that sum: refuse to run if they no longer agree.

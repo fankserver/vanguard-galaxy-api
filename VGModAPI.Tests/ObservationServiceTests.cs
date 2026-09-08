@@ -17,11 +17,11 @@ public sealed class ObservationServiceTests
     }
 
     [Fact]
-    public void ModernAndLegacyHandlersKeepRegistrationOrderAndMulticastFailureIsolation()
+    public void PublicAndInternalHandlersKeepRegistrationOrderAndMulticastFailureIsolation()
     {
         var failures = new List<string>();
         using var hub = Bound((owner, _) => failures.Add(owner));
-        using var service = new LifecycleServiceView(hub);
+        ILifecycleService service = hub;
         var seen = new List<string>();
         hub.Subscribe("legacy-first", _ => seen.Add("legacy-first"));
         Action<LifecycleEvent> handlers = _ => { seen.Add("throwing"); throw new Exception(); };
@@ -37,6 +37,30 @@ public sealed class ObservationServiceTests
         service.Changed -= handlers;
         hub.PlayerReady(hub.CurrentSession!.Id);
         Assert.Equal(new[] { "legacy-first", "legacy-last" }, seen);
+    }
+
+    [Fact]
+    public void LifecycleIsDirectAndSeparatesTrackingFromSaveOutcomeHealth()
+    {
+        using var hub = Bound();
+        ILifecycleService service = hub;
+        Assert.Same(hub, service);
+        var facts = new List<LifecycleEventKind>();
+        service.Changed += fact => facts.Add(fact.Kind);
+        hub.Begin(SessionOrigin.NewGame, null);
+        Assert.NotNull(service.CurrentSession);
+        hub.SetCapability("session-lifecycle", false, "Tracking fault.", ServiceUnavailableReason.ObserverFault);
+        Assert.Null(service.CurrentSession);
+        facts.Clear();
+        hub.Publish(new LifecycleEvent(LifecycleEventKind.PlayerReady, hub.CurrentSession));
+        hub.Publish(new LifecycleEvent(LifecycleEventKind.SaveSkipped, hub.CurrentSession, Guid.NewGuid()));
+        Assert.Equal(new[] { LifecycleEventKind.SaveSkipped }, facts);
+        hub.Invalidate("Tracking stopped.");
+        Assert.Equal(LifecycleEventKind.SessionInvalidated, facts[1]);
+        Assert.Equal(SessionPhase.Invalidated, service.CurrentSession!.Phase);
+        foreach (var name in new[] { "ILifecycleApi", "ILifecycleDispatchState" })
+            Assert.Null(typeof(ModApi).Assembly.GetType("VGModAPI." + name));
+        Assert.Null(typeof(ModApi).GetProperty("Current"));
     }
 
     [Fact]
@@ -81,10 +105,10 @@ public sealed class ObservationServiceTests
     }
 
     [Fact]
-    public void LifecycleViewsDeliverTerminalInvalidationEvenAfterAvailabilityCloses()
+    public void LifecycleDeliversTerminalInvalidationEvenAfterAvailabilityCloses()
     {
         using var hub = Bound();
-        using var service = new LifecycleServiceView(hub);
+        ILifecycleService service = hub;
         hub.Begin(SessionOrigin.NewGame, null);
         var facts = new List<LifecycleEvent>();
         service.Changed += facts.Add;

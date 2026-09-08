@@ -280,6 +280,8 @@ public sealed class BarContentServiceTests
         new("contact", "station", "Name", "Description", "seed", retention);
     private static Guid Ready(LifecycleHub hub, Storage storage, byte[]? bytes = null)
     {
+        hub.SetCapability("session-lifecycle", true, "Bound.");
+        hub.SetCapability("save-outcomes", true, "Bound.");
         var session = hub.Begin(SessionOrigin.SaveLoad, "slot");
         hub.PlayerReady(session); storage.Provider.Restore(hub.CurrentSession!, bytes); hub.GameplayInitialized(session);
         return session;

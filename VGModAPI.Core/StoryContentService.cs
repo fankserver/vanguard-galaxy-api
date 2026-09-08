@@ -181,7 +181,7 @@ internal sealed partial class StoryContentService : IStoryApi, IStoryUiTransacti
     private bool _operationInFlight;
     private string? _suspended;
     private string? _fault;
-    private readonly IDisposable? _lifecycle;
+    private readonly ILifecycleService? _lifecycle;
     private Readiness _readiness = Readiness.None;
     private Guid _restoredSession;
     private string _readinessDetail = "no session has started since this module was created";
@@ -194,7 +194,7 @@ internal sealed partial class StoryContentService : IStoryApi, IStoryUiTransacti
     /// paused coordinator behind.
     /// </summary>
     /// <exception cref="InvalidOperationException">A session is already running.</exception>
-    internal StoryContentService(ISaveDataService? persistence, ILifecycleApi? lifecycle, StoryHostAuthenticator authenticate,
+    internal StoryContentService(ISaveDataService? persistence, ILifecycleService? lifecycle, StoryHostAuthenticator authenticate,
         Func<Guid>? newOccurrence = null, Action? checkThread = null, IStoryWorld? world = null,
         IMissionEvents? missions = null, Action<string, bool>? report = null, StoryProtection? protection = null,
         Func<bool>? protectionHealthy = null)
@@ -223,7 +223,8 @@ internal sealed partial class StoryContentService : IStoryApi, IStoryUiTransacti
         if (persistence != null && _persistence == null) throw new InvalidOperationException("Story save provider registration refused.");
         // Availability is bound to the lifecycle independently of restore: a failed or invalidated
         // session never calls restore, and its queries must not answer from the previous save.
-        _lifecycle = lifecycle?.Subscribe("vgmodapi.story-content", OnLifecycle);
+        _lifecycle = lifecycle;
+        if (_lifecycle != null) _lifecycle.Changed += OnLifecycle;
         // Outcomes are OBSERVED, not declared: the game completing or failing an owned mission is what
         // records a completion, so this module watches the same mission boundary every consumer sees.
         _missionObserver = missions?.Subscribe("vgmodapi.story-content", OnMissionTransition);
@@ -1407,7 +1408,7 @@ internal sealed partial class StoryContentService : IStoryApi, IStoryUiTransacti
         if (_disposed) return;
         _disposed = true;
         // Only the module's own shutdown unregisters the persistence owner.
-        _lifecycle?.Dispose();
+        if (_lifecycle != null) _lifecycle.Changed -= OnLifecycle;
         _persistence?.Dispose();
         _leasesBySegment.Clear();
         _bindings.Clear();

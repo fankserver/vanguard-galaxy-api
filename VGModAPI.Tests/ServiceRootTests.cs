@@ -16,7 +16,7 @@ public sealed class ServiceRootTests
     private static void Clear(ModServices root) => typeof(ModApi).GetMethod("ClearServices", BindingFlags.NonPublic | BindingFlags.Static)!.Invoke(null, new object[] { root });
     private static ModServices Compose(LifecycleHub hub, ModInformationCatalog catalog)
     {
-        var lifecycle = new LifecycleServiceView(hub);
+        var lifecycle = hub;
         var mods = catalog;
         var missions = new MissionServiceView(hub, null);
         var travel = new TravelServiceView(hub, null);
@@ -89,12 +89,12 @@ public sealed class ServiceRootTests
         var failures = new List<Exception>();
         using var hub = new LifecycleHub((_, error) => failures.Add(error));
         hub.SetCapability("session-lifecycle", true, "Bound.");
-        using var view = new LifecycleServiceView(hub);
+        ILifecycleService view = hub;
         var seen = new List<string>();
         view.Changed += fact => { if (fact.Kind == LifecycleEventKind.SessionStarting) hub.Dispose(); };
         view.Changed += fact => seen.Add(fact.Kind.ToString());
         hub.Services.AfterStopped(() => throw new Exception());
-        hub.Services.AfterStopped(() => { seen.Add("cleanup"); view.Dispose(); });
+        hub.Services.AfterStopped(() => { seen.Add("cleanup"); hub.Dispose(); });
         hub.Begin(SessionOrigin.NewGame, null);
         Assert.Equal(new[] { "SessionInvalidated", "cleanup" }, seen);
         Assert.Single(failures);

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace VGModAPI.Core;
 
-/// <summary>One native subscription per delegate preserves ordering with legacy subscribers.</summary>
+/// <summary>One engine subscription per delegate preserves ordering with internal observers.</summary>
 internal sealed class ServiceSubscriptions<T> : IDisposable
 {
     private sealed class Slot

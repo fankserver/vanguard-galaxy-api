@@ -22,6 +22,8 @@ public sealed class BarPatronPersistenceTests
     private static BarPatronState Row() => new(new BarPatronId("author", "contact"), "station", "Name", "Description", "seed");
     private static Guid Ready(LifecycleHub hub, Storage storage, byte[]? payload = null)
     {
+        hub.SetCapability("session-lifecycle", true, "Bound.");
+        hub.SetCapability("save-outcomes", true, "Bound.");
         var session = hub.Begin(SessionOrigin.SaveLoad, "fixture.save");
         hub.PlayerReady(session);
         storage.Provider.Restore(hub.CurrentSession!, payload);

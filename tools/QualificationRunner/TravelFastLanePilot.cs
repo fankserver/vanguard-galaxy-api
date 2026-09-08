@@ -148,7 +148,7 @@ public sealed partial class Plugin
         Require(TravelStationSelected, "The fast-lane phase requires the travel/station selection that enables the native travel capability.");
         var travel = ModApi.Travel;
         Require(travel != null, "Travel public service not exposed.");
-        Require(_api!.Capabilities.Any(capability => capability.Name == "native-travel" && capability.Available), "native-travel capability not available.");
+        Require(ModApi.Services.Travel.Availability.IsAvailable, "native-travel capability not available.");
         Require(!travel!.IsDispatchingCallbacks, "Cannot subscribe during callback dispatch.");
         Require(TravelFastLaneReceipt.ReadinessSeconds == WaitDeadlineSeconds && TravelFastLaneReceipt.SettleSeconds == SettleSeconds,
             "Shared harness wait/settle deadlines no longer match the declared phase budget terms.");
