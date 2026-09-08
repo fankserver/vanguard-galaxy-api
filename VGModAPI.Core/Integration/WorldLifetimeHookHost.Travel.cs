@@ -46,7 +46,7 @@ internal sealed partial class WorldLifetimeHookHost : IWorldTravelCaptureHost
     }
     public object? BeginWaypoint(object manager)
     {
-        _hub.CheckThread();
+        _hub.CheckThread(); RequireNoCancellation();
         var leg = Travel.CaptureExecuting() ?? Travel.CurrentLeg;
         if (leg == null) return null;
         VerifyRouteNative(leg.Route, manager);
@@ -106,7 +106,7 @@ internal sealed partial class WorldLifetimeHookHost : IWorldTravelCaptureHost
     }
     public IEnumerator WrapLeg(object manager, object target, IEnumerator inner)
     {
-        _hub.CheckThread();
+        _hub.CheckThread(); RequireNoCancellation();
         WorldTravelScopes.Leg leg;
         if (_waypoint != null && Travel.IsCurrent(_waypoint.Handoff.Predecessor.Route))
         {

@@ -15,6 +15,27 @@ internal static class WorldLifetimePatches
         internal static void Postfix(object __instance, object target, ref System.Collections.IEnumerator __result, IWorldTravelCaptureHost? __state)
         { if (__state != null) __result = __state.WrapLeg(__instance, target, __result); }
     }
+    internal static class CancelTravel
+    {
+        internal sealed class Capture
+        {
+            internal readonly IWorldTravelCancellationHost Host;
+            internal readonly object Token;
+            internal Capture(IWorldTravelCancellationHost host, object token) { Host = host; Token = token; }
+        }
+        internal static void Prefix(object __instance, out Capture? __state)
+        {
+            __state = null;
+            if (Host is IWorldTravelCancellationHost host) __state = new Capture(host, host.BeginCancellation(__instance));
+        }
+        internal static System.Exception? Finalizer(Capture? __state, bool __result, System.Exception? __exception)
+        {
+            if (__state == null) return __exception;
+            try { __state.Host.EndCancellation(__state.Token, __result || __exception != null); }
+            catch (System.Exception error) { return __exception ?? error; }
+            return __exception;
+        }
+    }
     internal static class SceneUnload
     {
         internal static bool Prefix(object __instance, string sceneName)

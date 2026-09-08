@@ -67,8 +67,12 @@ public sealed class WorldNativeTravelCaptureTests
                 obsoleteTailWrites++;
             }
             var request = host.BeginRoute(manager, second); Assert.NotNull(request);
+            var predecessorCleanup = host.BeginCancellation(manager);
+            Assert.Throws<InvalidDataException>(() => host.BeginRoute(manager, second));
+            host.EndCancellation(predecessorCleanup, true);
             var root = host.WrapLeg(manager, first, First());
             Assert.True(root.MoveNext()); host.CompleteRoute(request!, true);
+            var refusedCancellation = host.BeginCancellation(manager); host.EndCancellation(refusedCancellation, false);
             Assert.Throws<InvalidDataException>(() => host.RequireSceneTransition(manager));
             var child = Assert.IsType<WorldTravelLegEnumerator>(root.Current);
             Assert.False(child.MoveNext()); Assert.False(root.MoveNext());
@@ -77,6 +81,8 @@ public sealed class WorldNativeTravelCaptureTests
             ((IDisposable)background!).Dispose();
             Assert.NotNull(successor); Assert.False(successor!.MoveNext());
             ((IDisposable)successor).Dispose(); child.Dispose(); ((IDisposable)root).Dispose();
+            var cancellation = host.BeginCancellation(manager); host.EndCancellation(cancellation, true);
+            Assert.Null(host.Travel.CurrentLeg);
             var owned = new Source.Galaxy.MapPointOfInterest { guid = WorldObjectIdentity.ReservedPrefix + "unknown" };
             Assert.Throws<InvalidDataException>(() => host.WrapLeg(manager, owned, Second()));
             host.Dispose();

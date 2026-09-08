@@ -22,7 +22,7 @@ internal sealed partial class WorldLifetimeHookHost : IWorldRouteCaptureHost
     }
     public object? BeginRoute(object manager, object target)
     {
-        _hub.CheckThread();
+        _hub.CheckThread(); RequireNoCancellation();
         if (_disposed) return null;
         var session = _hub.CurrentSession;
         var player = _player.GetValue(null);
