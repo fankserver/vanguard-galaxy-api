@@ -19,7 +19,7 @@ public sealed class BoardingCommandAdapterTests
         internal Dictionary<string, object?>? Operation;
         internal BoardingCommandAdapter Adapter = null!;
         internal int Notifications, Transports;
-        internal bool Travel;
+        internal bool Travel, LevelGap;
         internal Action? BeforeStart;
         internal readonly List<string> Calls = new();
         public object? Player { get; }
@@ -40,7 +40,7 @@ public sealed class BoardingCommandAdapterTests
             switch (key)
             {
                 case "travel": return Travel;
-                case "commandLevelGap": return false;
+                case "commandLevelGap": return LevelGap;
                 case "commandGetOperation": return Operation;
                 case "commandNotifyCrew": Notifications++; return null;
                 case "boardingStartLocation":
@@ -75,6 +75,39 @@ public sealed class BoardingCommandAdapterTests
         }
         internal BoardingCommandResult Start() => Adapter.Execute(Target, BoardingCommandKind.Start, new BoardingCrewManifest(new Dictionary<string, int> { ["Marine"] = 2 }), new BoardingCommandOptions(), false);
         public void Dispose() { Observer.Dispose(); Hub.Dispose(); }
+    }
+    [Theory]
+    [InlineData(true, 0)]
+    [InlineData(true, 1)]
+    [InlineData(false, 0)]
+    public void ReinforcementWithoutReceivingSimulationConservesCrew(bool ship, int inFlight)
+    {
+        using var f = new Fixture(); f.Native.Location["isShipBased"] = ship; Assert.True(f.Start().Admitted);
+        f.Native.Operation!["_podsInFlight"] = inFlight;
+        var before = f.Native.Roster["Marine"];
+        var result = f.Adapter.Execute(f.Target, BoardingCommandKind.Reinforce,
+            new BoardingCrewManifest(new Dictionary<string, int> { ["Marine"] = 1 }), null, false);
+        Assert.Equal(BoardingCommandStatus.WrongPhase, result.Status); Assert.Equal(before, f.Native.Roster["Marine"]);
+        Assert.DoesNotContain("commandReinforce", f.Native.Calls);
+    }
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(false, false)]
+    public void LevelGapRestrictionIsInstallationOnly(bool ship, bool admitted)
+    {
+        using var f = new Fixture(); f.Native.Location["isShipBased"] = ship; f.Native.LevelGap = true;
+        Assert.Equal(admitted, f.Start().Admitted);
+    }
+    [Fact]
+    public void HudCancellationRevokesControllerButApiCancellationDoesNot()
+    {
+        using var f = new Fixture();
+        using var commands = new BoardingCommandService(f.Hub, f.Events, f.Adapter, () => false);
+        Assert.True(commands.AcquireControl("mod", f.Target, out var controller).Admitted);
+        Assert.True(controller!.Start(new BoardingCrewManifest(new Dictionary<string, int> { ["Marine"] = 2 }), new()).Admitted);
+        Assert.True(controller.CancelApproach().Admitted); Assert.True(controller.IsActive);
+        f.Adapter.HudCancel(new Dictionary<string, object?> { ["hudBoardable"] = f.Native.Unit }, commands);
+        Assert.False(controller.IsActive); Assert.Equal(BoardingCommandStatus.ControlConflict, controller.Resume().Status);
     }
     [Fact]
     public void WalkEntryRevalidatesDelayedCrewAndCancelsWithoutPartialDebit()

@@ -439,6 +439,7 @@ public sealed class Plugin : BaseUnityPlugin
             {
                 "commandRemoveAssigned" => typeof(BoardingCommandPatches.RemoveAssigned),
                 "commandBeginWalk" => typeof(BoardingCommandPatches.BeginWalk),
+                "commandHudCancel" => typeof(BoardingCommandPatches.HudCancel),
                 "commandSerialization" => typeof(BoardingCommandPatches.Serialization),
                 "commandAutonomyHook" => typeof(BoardingCommandPatches.Autonomous),
                 _ => typeof(BoardingCommandPatches.Manual)

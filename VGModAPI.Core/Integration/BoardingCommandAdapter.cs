@@ -20,6 +20,12 @@ internal sealed class BoardingCommandAdapter : IBoardingCommandBackend
         var handle = _observer.CommandHandleForLocation(_native.Get(operation, "location"));
         return handle == null || !commands.HasControl(handle);
     }
+    internal void HudCancel(object button, BoardingCommandService commands)
+    {
+        var boardable = _native.Get(button, "hudBoardable");
+        var handle = _observer.CommandHandleForLocation(_native.Get(boardable, "data"));
+        if (handle != null) commands.ManualTakeover(handle);
+    }
     internal void ManualTakeover(object panel, BoardingCommandService commands)
     {
         var handle = _observer.CommandHandleForLocation(_native.Get(panel, "panelLocation"));
@@ -40,8 +46,8 @@ internal sealed class BoardingCommandAdapter : IBoardingCommandBackend
         {
             TargetAlive = component != null && _live(component),
             ShipAvailable = !Flag(ship, "destroyed") && (operation == null || ReferenceEquals(_native.Get(operation, "operationShip"), ship)),
-            Travelling = (bool)_native.Call("travel", null)!, Enterable = Flag(location, "isEnterable"),
-            LevelAllowed = !(bool)_native.Call("commandLevelGap", null, _native.Get(location, "level")!)!,
+            Travelling = (bool)_native.Call("travel", null)!, Enterable = Flag(location, "isShipBased") || Flag(location, "isEnterable"),
+            LevelAllowed = Flag(location, "isShipBased") || !(bool)_native.Call("commandLevelGap", null, _native.Get(location, "level")!)!,
             HasOperation = operation != null, HasSavedSimulation = saved != null && !Flag(saved, "isComplete"),
             HasSimulation = simulation != null, SimulationComplete = Flag(simulation, "isComplete"),
             Retreating = Flag(simulation, "retreating"), Victory = Flag(simulation, "victoryAchieved"),

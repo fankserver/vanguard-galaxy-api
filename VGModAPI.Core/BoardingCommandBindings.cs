@@ -28,6 +28,7 @@ internal static class BoardingCommandBindings
         new("commandAutonomyHook", Op, "SetAutonomous", false, "System.Void", "System.Boolean"),
         new("commandRemoveAssigned", Op, "RemoveAssignedCrewFromShip", false, Manifest),
         new("commandBeginWalk", Op, "BeginWalkSimulation", false, "System.Void"),
+        new("commandHudCancel", "Behaviour.UI.HUD.BoardingCancelButton", "OnPointerClick", false, "System.Void", "UnityEngine.EventSystems.PointerEventData"),
         new("commandUiStart", "Behaviour.UI.Dungeon.DungeonPanel", "OnStartClicked", false, "System.Void"),
         new("commandUiExtract", "Behaviour.UI.Dungeon.DungeonPanel", "OnExtractClicked", false, "System.Void"),
         new("commandUiReinforce", "Behaviour.UI.Dungeon.DungeonPanel", "AddReinforcements", false, "System.Void"),

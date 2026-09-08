@@ -37,7 +37,7 @@ internal static class BoardingCommandValidation
             case BoardingCommandKind.CancelApproach:
                 return state.Phase is BoardingPhase.Approaching or BoardingPhase.AwaitingLanding ? BoardingCommandStatus.Admitted : BoardingCommandStatus.WrongPhase;
             case BoardingCommandKind.Reinforce:
-                if (state.SimulationComplete || state.Retreating || state.Phase is not (BoardingPhase.Approaching or BoardingPhase.AwaitingLanding or BoardingPhase.Active)) return BoardingCommandStatus.WrongPhase;
+                if (!state.HasSimulation || state.SimulationComplete || state.Retreating || state.Phase is not (BoardingPhase.Approaching or BoardingPhase.AwaitingLanding or BoardingPhase.Active)) return BoardingCommandStatus.WrongPhase;
                 return ValidateCrew(state, crew);
             case BoardingCommandKind.Retreat:
                 return state.HasSimulation && !state.SimulationComplete && !state.Retreating ? BoardingCommandStatus.Admitted : BoardingCommandStatus.WrongPhase;

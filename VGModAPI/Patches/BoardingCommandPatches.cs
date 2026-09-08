@@ -34,6 +34,13 @@ internal static class BoardingCommandPatches
     {
         internal static bool Prefix(object __instance, bool __0) => Adapter == null || Service == null || Adapter.AllowAutonomous(__instance, __0, Service);
     }
+    internal static class HudCancel
+    {
+        internal static void Prefix(object __instance)
+        {
+            if (Adapter != null && Service != null) Adapter.HudCancel(__instance, Service);
+        }
+    }
     internal static class Manual
     {
         internal static void Prefix(object __instance)

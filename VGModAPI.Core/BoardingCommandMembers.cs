@@ -5,6 +5,7 @@ internal static class BoardingCommandMembers
     private const string Options = BindingCatalog.BoardingOptions;
     internal static readonly (string Key, string Type, string Name, string ValueType)[] Schema =
     {
+        ("hudBoardable", "Behaviour.UI.HUD.BoardingCancelButton", "_boardable", BindingCatalog.Boardable),
         ("panelLocation", "Behaviour.UI.Dungeon.DungeonPanel", "_location", BindingCatalog.BoardingLocation),
         ("playerShipData", BindingCatalog.Player, "currentSpaceShip", "Source.SpaceShip.SpaceShipData"),
         ("transponder", BindingCatalog.Player, "hasUmbralTransponder", "System.Boolean"),

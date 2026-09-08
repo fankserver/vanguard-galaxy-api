@@ -39,7 +39,7 @@ public sealed class BoardingCommandValidationTests
     [InlineData(BoardingPhase.Resolved, false)]
     public void ReinforcementsRespectTransportAndResolutionPhases(BoardingPhase phase, bool admitted)
     {
-        var state = Ready(); state.HasOperation = true; state.Phase = phase;
+        var state = Ready(); state.HasOperation = state.HasSimulation = true; state.Phase = phase;
         Assert.Equal(admitted, BoardingCommandValidation.Validate(state, BoardingCommandKind.Reinforce, Crew(), null, false) == BoardingCommandStatus.Admitted);
         state.TargetAlive = false;
         Assert.Equal(BoardingCommandStatus.TargetUnavailable, BoardingCommandValidation.Validate(state, BoardingCommandKind.Reinforce, Crew(), null, false));
