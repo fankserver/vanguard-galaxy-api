@@ -49,6 +49,7 @@ internal sealed partial class BarContentService : IBarApi, IDisposable
         if (_leases.ContainsKey(segment)) return new BarProviderResult(BarStatus.AlreadyAcquired, null);
         var lease = new Lease(this, segment, plugin.PluginId);
         _leases.Add(segment, lease);
+        Changed();
         return new BarProviderResult(BarStatus.Succeeded, lease);
     }
 
@@ -65,13 +66,17 @@ internal sealed partial class BarContentService : IBarApi, IDisposable
     {
         if (_lifecycle.CurrentSession?.Id != value.Session?.Id || _lifecycle.CurrentSession?.Phase != value.Session?.Phase) return;
         if (value.Kind == LifecycleEventKind.SessionStarting || value.Kind == LifecycleEventKind.SessionInvalidated || value.Kind == LifecycleEventKind.SessionStartFailed)
+        {
             _transient.Clear();
+            Changed();
+        }
     }
     public void Dispose()
     {
         _checkThread();
         if (_disposed) return;
         _disposed = true;
+        Changed();
         foreach (var lease in _leases.Values) { lease.Definitions.Clear(); lease.Stations.Clear(); }
         _leases.Clear(); _transient.Clear();
         _subscription.Dispose(); _persistence.Dispose();

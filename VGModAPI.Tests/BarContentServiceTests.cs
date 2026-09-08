@@ -53,6 +53,57 @@ public sealed class BarContentServiceTests
     }
 
     [Fact]
+    public void StationPlansApplyOwnershipAndInvalidateOnProviderChanges()
+    {
+        using var hub = new LifecycleHub((_, error) => throw error);
+        var storage = new Storage();
+        using var service = new BarContentService(storage, hub,
+            (plugin, _) => new StoryHostPlugin((string)plugin, typeof(BarContentServiceTests).Assembly), _ => true, hub.CheckThread);
+        var a = service.AcquireProvider("a").Provider!;
+        var b = service.AcquireProvider("b").Provider!;
+        a.Register(Definition()); b.Register(Definition());
+        var session = Ready(hub, storage);
+        a.Place(session, "contact"); b.Place(session, "contact");
+        var additive = service.Plan(session, "station")!;
+        Assert.Equal(2, additive.Patrons.Count);
+        Assert.True(additive.Policy.KeepVanilla);
+        Assert.True(service.IsCurrent(additive));
+        a.ConfigureStation("station", BarRosterOwnership.Exclusive);
+        Assert.False(service.IsCurrent(additive));
+        var exclusive = service.Plan(session, "station")!;
+        Assert.False(exclusive.Policy.KeepVanilla);
+        Assert.Equal(a.ProviderId, Assert.Single(exclusive.Patrons).Id.Provider);
+        Assert.Equal(BarRosterPolicy.Denial.StationOwnedExclusively, exclusive.Policy.Denied[b.ProviderId]);
+        Assert.True(service.Plan(session, "another-station")!.Policy.KeepVanilla);
+        b.ConfigureStation("station", BarRosterOwnership.Exclusive);
+        var conflict = service.Plan(session, "station")!;
+        Assert.Empty(conflict.Patrons);
+        Assert.True(conflict.Policy.KeepVanilla);
+        b.Dispose();
+        Assert.False(service.IsCurrent(conflict));
+        Assert.Single(service.Plan(session, "station")!.Patrons);
+    }
+
+    [Fact]
+    public void MissionResolutionCannotPublishAPlanAfterReentrantMutation()
+    {
+        using var hub = new LifecycleHub((_, error) => throw error);
+        var storage = new Storage();
+        using var service = new BarContentService(storage, hub,
+            (_, _) => new StoryHostPlugin("author", typeof(BarContentServiceTests).Assembly), _ => true, hub.CheckThread);
+        var provider = service.AcquireProvider("author").Provider!;
+        provider.Register(new BarPatronDefinition("contact", "station", "Name", "Description", "seed",
+            mission: new StoryContentId(provider.ProviderId, "job"), occurrence: Guid.NewGuid()));
+        var session = Ready(hub, storage);
+        provider.Place(session, "contact");
+        Assert.Null(service.Plan(session, "station"));
+        Assert.NotNull(service.Plan(session, "station", (_, _) => true));
+        Assert.Null(service.Plan(session, "station", (_, _) => { provider.Dispose(); return true; }));
+        Assert.Empty(service.Plan(session, "station")!.Patrons);
+        Assert.Single(BarPatronCodec.Decode(storage.Provider.Capture()));
+    }
+
+    [Fact]
     public void WrongAssemblyCannotAcquireAndExclusivePermissionIsExplicit()
     {
         using var hub = new LifecycleHub((_, error) => throw error);

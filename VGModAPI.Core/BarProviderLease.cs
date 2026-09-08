@@ -22,6 +22,7 @@ internal sealed partial class BarContentService
             if (Definitions.ContainsKey(definition.LocalId)) return new BarResult(BarStatus.DuplicateLocalId);
             if (Definitions.Count >= BarPatronCodec.MaxPerProvider) return new BarResult(BarStatus.LimitExceeded);
             Definitions.Add(definition.LocalId, definition);
+            _owner.Changed();
             return new BarResult(BarStatus.Succeeded);
         }
         public BarResult ConfigureStation(string stationId, BarRosterOwnership ownership)
@@ -40,6 +41,7 @@ internal sealed partial class BarContentService
             }
             if (!Stations.ContainsKey(stationId) && Stations.Count >= 32) return new BarResult(BarStatus.LimitExceeded);
             Stations[stationId] = ownership;
+            _owner.Changed();
             return new BarResult(BarStatus.Succeeded);
         }
         public BarResult Place(Guid expectedSessionId, string localId)
@@ -54,9 +56,12 @@ internal sealed partial class BarContentService
                 if (!_owner._persistence.Read(expectedSessionId, out var persisted) || persisted.Any(row => row.Id == state.Id))
                     return new BarResult(BarStatus.InvalidDefinition, "A saved patron cannot be replaced by transient presentation.");
                 _owner._transient[state.Id] = state;
+                _owner.Changed();
                 return new BarResult(BarStatus.Succeeded);
             }
-            return new BarResult(_owner._persistence.Put(expectedSessionId, ProviderId, state) ? BarStatus.Succeeded : BarStatus.Unavailable);
+            bool placed = _owner._persistence.Put(expectedSessionId, ProviderId, state);
+            if (placed) _owner.Changed();
+            return new BarResult(placed ? BarStatus.Succeeded : BarStatus.Unavailable);
         }
         public BarResult Remove(Guid expectedSessionId, string localId)
         {
@@ -64,14 +69,16 @@ internal sealed partial class BarContentService
             if (refusal != null) return refusal;
             BarPatronId id;
             try { id = new BarPatronId(ProviderId, localId); } catch (ArgumentException) { return new BarResult(BarStatus.InvalidDefinition); }
-            if (_owner._transient.Remove(id)) return new BarResult(BarStatus.Succeeded);
-            return new BarResult(_owner._persistence.Remove(expectedSessionId, ProviderId, id) ? BarStatus.Succeeded : BarStatus.Unavailable);
+            bool removed = _owner._transient.Remove(id) || _owner._persistence.Remove(expectedSessionId, ProviderId, id);
+            if (removed) _owner.Changed();
+            return new BarResult(removed ? BarStatus.Succeeded : BarStatus.Unavailable);
         }
         public void Dispose()
         {
             _owner._checkThread();
             if (!_owner.Active(this)) return;
             _owner._leases.Remove(ProviderId);
+            _owner.Changed();
             foreach (var local in Definitions.Keys) _owner._transient.Remove(new BarPatronId(ProviderId, local));
             Definitions.Clear(); Stations.Clear();
         }
