@@ -45,10 +45,11 @@ public sealed class WorldLoadHookHostTests
     }
 
     [Theory]
-    [InlineData(false, false)]
-    [InlineData(true, false)]
-    [InlineData(false, true)]
-    public void PreparedLoadAndFactoryRemainAttemptScoped(bool repeatRecall, bool replaceAsset)
+    [InlineData(false, false, false)]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(false, true, true)]
+    public void PreparedLoadAndFactoryRemainAttemptScoped(bool repeatRecall, bool replaceAsset, bool replaceSession)
     {
         string assetId = "host-" + Guid.NewGuid().ToString("N");
         var asset = new Behaviour.Unit.SpaceShip();
@@ -71,13 +72,21 @@ public sealed class WorldLoadHookHostTests
             store.Publish(path, GenerationStore.Hash(bytes), Guid.NewGuid(), new Dictionary<string, byte[]> { [WorldStateCodec.Owner] = envelope, [WorldDefinitionCodec.Owner] = WorldTestDefinitions.Envelope(identity) });
             var hub = new LifecycleHub((_, error) => throw new Exception("Unexpected observer failure", error));
             using var persistence = new PersistenceService(hub, store, Path.GetFullPath, p => GenerationStore.Hash(File.ReadAllBytes(p)));
-            Guid session = Guid.Empty; bool advance = false;
+            Guid session = Guid.Empty; bool advance = false; bool swapSession = false;
+            WorldLoadHookHost? host = null;
             long Revision()
             {
+                if (swapSession)
+                {
+                    swapSession = false;
+                    session = hub.Begin(SessionOrigin.SaveLoad, path);
+                    root["Version"] = new(WorldSaveFormat.Marker); root[WorldSaveFormat.OriginalVersion] = new("0.8.2.3");
+                    Assert.True(host!.TryRecall(new Source.Util.SaveGameFile(path), out _));
+                }
                 if (advance) hub.PlayerReady(session);
                 return 1;
             }
-            using var host = new WorldLoadHookHost(typeof(JsonObject).Assembly, hub, persistence, persistence.CreateWorldReader(), Path.GetFullPath, _ => true, Revision);
+            using var ownedHost = host = new WorldLoadHookHost(typeof(JsonObject).Assembly, hub, persistence, persistence.CreateWorldReader(), Path.GetFullPath, _ => true, Revision);
             session = hub.Begin(SessionOrigin.SaveLoad, path);
             Assert.True(host.TryRecall(new Source.Util.SaveGameFile(path), out var loaded)); Assert.Same(root, loaded);
             var prepared = host.PreparedFor(session);
@@ -94,6 +103,15 @@ public sealed class WorldLoadHookHostTests
             if (replaceAsset)
             {
                 Behaviour.Unit.SpaceShip.allShips[assetId] = new Behaviour.Unit.SpaceShip();
+                if (replaceSession)
+                {
+                    var oldSession = session; swapSession = true;
+                    Assert.Null(host.PreparedFor(oldSession));
+                    Assert.NotEqual(oldSession, session);
+                    Assert.NotNull(host.PreparedFor(session));
+                    Assert.NotNull(host.BeginFactory(new JsonValue(poi)));
+                    return;
+                }
                 Assert.Throws<InvalidDataException>(() => host.PreparedFor(session));
                 Behaviour.Unit.SpaceShip.allShips[assetId] = asset;
                 Assert.Null(host.PreparedFor(session));

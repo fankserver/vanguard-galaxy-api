@@ -49,18 +49,25 @@ internal sealed partial class WorldLoadHookHost : IWorldLoadHookHost, IDisposabl
         var prepared = _prepared;
         if (_disposed || _factoryRejected || prepared == null) return null;
         long revision = _providerRevision();
+        if (!IsCurrent()) return null;
         // Staged loading can yield after construction; readiness must retain the original assets.
         try { prepared.ValidateAssets(); }
         catch
         {
+            if (!IsCurrent()) return null;
             _factoryRejected = true;
             _gate.Invalidate();
             throw;
         }
-        var current = _hub.CurrentSession;
-        return !_disposed && !_factoryRejected && ReferenceEquals(prepared, _prepared) && prepared.Session == session && current?.Id == session &&
-            (current.Phase == SessionPhase.Starting || current.Phase == SessionPhase.PlayerReady || current.Phase == SessionPhase.GameplayInitialized) &&
-            revision == prepared.ProviderRevision ? prepared : null;
+        return IsCurrent() ? prepared : null;
+
+        bool IsCurrent()
+        {
+            var current = _hub.CurrentSession;
+            return !_disposed && !_factoryRejected && ReferenceEquals(prepared, _prepared) && _sessionId == session && prepared.Session == session && current?.Id == session &&
+                (current.Phase == SessionPhase.Starting || current.Phase == SessionPhase.PlayerReady || current.Phase == SessionPhase.GameplayInitialized) &&
+                revision == prepared.ProviderRevision;
+        }
     }
 
     private void OnLifecycle(LifecycleEvent e)
