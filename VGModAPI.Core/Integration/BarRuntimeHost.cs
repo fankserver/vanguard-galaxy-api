@@ -92,6 +92,13 @@ internal sealed class BarRuntimeHost : IBarHookHost
         if (admission != null) _service.Interact(plan, state, admission);
     }
 
+    internal bool Stop()
+    {
+        _checkThread();
+        _health.Fault();
+        return _world.StopAndRestore();
+    }
+
     public void Fault(Exception error)
     {
         _health.Fault();

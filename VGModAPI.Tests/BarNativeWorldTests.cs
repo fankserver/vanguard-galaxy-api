@@ -136,6 +136,34 @@ public sealed class BarNativeWorldTests
         else Assert.Same(vanilla, Assert.Single(world.RetainedVanilla(station.bar)!));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void TeardownRestoresAllVisitedBarsOrRefusesBeforeAnySwap(bool uncertain)
+    {
+        var first = new Station(); var second = new Station();
+        var firstVanilla = new Patron(); var secondVanilla = new Patron();
+        first.bar.availablePatrons.Add(firstVanilla); second.bar.availablePatrons.Add(secondVanilla);
+        var world = World(() => first);
+        Assert.True(world.Apply(world.Capture("station")!, new object[] { new Patron { Owned = true } }, () => true));
+        Player.current!.currentPointOfInterest = second;
+        Assert.True(world.Apply(world.Capture("station")!, new object[] { new Patron { Owned = true } }, () => true));
+        var firstApplied = first.bar.availablePatrons;
+        if (uncertain) second.bar.availablePatrons = new List<Patron>(second.bar.availablePatrons);
+        Assert.Equal(!uncertain, world.StopAndRestore());
+        if (uncertain)
+        {
+            Assert.Same(firstApplied, first.bar.availablePatrons);
+            Assert.True(Assert.Single(first.bar.availablePatrons).Owned);
+        }
+        else
+        {
+            Assert.Same(firstVanilla, Assert.Single(first.bar.availablePatrons));
+            Assert.Same(secondVanilla, Assert.Single(second.bar.availablePatrons));
+            Assert.True(world.StopAndRestore());
+        }
+    }
+
     [Fact]
     public void ForeignSnapshotsAndDuplicateReferencesAreRefused()
     {

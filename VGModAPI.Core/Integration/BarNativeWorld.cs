@@ -18,6 +18,9 @@ internal sealed class BarNativeWorld : IBarRosterWorld
     private readonly Type _patronType;
     private readonly int _capacity;
     private BarHostHealth? _health;
+    private bool _stopped;
+    private readonly ConditionalWeakTable<object, object> _knownBars = new();
+    private readonly List<WeakReference<object>> _trackedBars = new();
     internal void AttachHealth(BarHostHealth health)
     {
         if (_health != null) throw new InvalidOperationException("A native bar world already has a host.");
@@ -173,6 +176,7 @@ internal sealed class BarNativeWorld : IBarRosterWorld
 
     public object? CreateContact(BarPatronState state)
     {
+        if (_stopped) return null;
         var station = _station.Read();
         if (station == null || (string?)_guid.GetValue(station) != state.Station) return null;
         var contact = _create(state, station);
@@ -210,6 +214,13 @@ internal sealed class BarNativeWorld : IBarRosterWorld
         var replacement = (IList)Activator.CreateInstance(_patrons.FieldType)!;
         foreach (var patron in copy) replacement.Add(patron);
         if (!Stable(token) || !stillValid() || !Stable(token) || _refreshes.TryGetValue(token.Bar, out _)) return false;
+        if (!_knownBars.TryGetValue(token.Bar, out _))
+        {
+            _trackedBars.RemoveAll(reference => !reference.TryGetTarget(out _));
+            if (_trackedBars.Count >= 4096) return false;
+            _knownBars.Add(token.Bar, new object());
+            _trackedBars.Add(new WeakReference<object>(token.Bar));
+        }
         var retained = new RetainedRoster(replacement, copy, token.Vanilla);
         _patrons.SetValue(token.Bar, replacement);
         _retained.Remove(token.Bar);
@@ -217,9 +228,31 @@ internal sealed class BarNativeWorld : IBarRosterWorld
         return true;
     }
 
+    // Call before removing content guards. A false result requires keeping those guards alive.
+    // Validation and allocation finish for every tracked bar before any roster is restored.
+    internal bool StopAndRestore()
+    {
+        _stopped = true;
+        var replacements = new List<(object Bar, IList List)>();
+        foreach (var reference in _trackedBars)
+        {
+            if (!reference.TryGetTarget(out var bar) || !_retained.TryGetValue(bar, out var retained)) continue;
+            if (_refreshes.TryGetValue(bar, out _) || !retained.Matches(_patrons.GetValue(bar))) return false;
+            var list = (IList)Activator.CreateInstance(_patrons.FieldType)!;
+            foreach (var patron in retained.Vanilla) list.Add(patron);
+            replacements.Add((bar, list));
+        }
+        foreach (var replacement in replacements)
+        {
+            _patrons.SetValue(replacement.Bar, replacement.List);
+            _retained.Remove(replacement.Bar);
+        }
+        return true;
+    }
+
     private bool Stable(CaptureToken token)
     {
-        if (_health?.IsHealthy == false || !IsRefreshEpochCurrent(token.Bar, token.RefreshEpoch) || !ReferenceEquals(_station.Read(), token.Station) || (string?)_guid.GetValue(token.Station) != token.Identity
+        if (_stopped || _health?.IsHealthy == false || !IsRefreshEpochCurrent(token.Bar, token.RefreshEpoch) || !ReferenceEquals(_station.Read(), token.Station) || (string?)_guid.GetValue(token.Station) != token.Identity
             || !ReferenceEquals(_bar.GetValue(token.Station), token.Bar)
             || !ReferenceEquals(_patrons.GetValue(token.Bar), token.List) || token.List.Count != token.Entries.Length) return false;
         for (int i = 0; i < token.Entries.Length; i++) if (!ReferenceEquals(token.List[i], token.Entries[i]) || (int)_seat.GetValue(token.Entries[i])! != token.Seats[i]) return false;
