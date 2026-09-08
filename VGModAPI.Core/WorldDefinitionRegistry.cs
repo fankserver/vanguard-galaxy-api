@@ -47,6 +47,17 @@ internal sealed class WorldDefinitionRegistry : IDisposable
         if (_definitions.ContainsKey(key)) return false;
         Changed(); _definitions.Add(key, definition); return true;
     }
+    internal bool MatchesRetained(WorldSavedDefinition saved)
+    {
+        _checkThread();
+        if (saved == null) throw new ArgumentNullException(nameof(saved));
+        var retained = saved.Definition;
+        return !_disposed && _providers.ContainsKey(saved.Owner) &&
+            _definitions.TryGetValue((saved.Owner, retained.LocalId), out var live) &&
+            live.Revision == retained.Revision && live.Name == retained.Name &&
+            live.FactionId == retained.FactionId && live.Level == retained.Level;
+    }
+
     // Revision presence alone is not retained-definition compatibility or native admission.
     internal bool HasLiveRevision(WorldSavedObject saved)
     {
