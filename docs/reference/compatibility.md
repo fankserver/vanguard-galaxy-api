@@ -14,19 +14,26 @@ The controlled environment reports **game 0.8.2.3, Unity 6000.4.7f1, BepInEx 5.4
 
 An uninspected hash leaves the API available for diagnostics but disables game integration. The local mod-information catalog does not require native binding. Do not simply update the hash: reinspect semantics, update mappings/tests and qualify the new build. Injected hash rejection or a changed PE overlay tests refusal, not compatibility with an alternate game implementation.
 
+Lifecycle, save data, mission events and identity continuity, travel/station events,
+and the Mods menu initialize automatically. Existing `Persistence.Enabled`,
+`Missions.Enabled`, `Missions.IdentityContinuity`, `Travel.Enabled`, and
+`ModInformation.MenuEnabled` entries are ignored. `Persistence.Root` remains effective.
+Compatibility checks, initialization failures and service dependencies still determine
+availability; automatic initialization does not change qualification status.
+
 ## Available surface and limits
 
 | Surface | Current behavior | Qualification boundary |
 |---|---|---|
 | Core lifecycle/save outcomes | Session replacement, load/new-game attribution, player readiness, gameplay-manager initialization and logical save outcomes | Controlled load/save paths are exercised; no universal POI/UI readiness or arbitrary asynchronous callback guarantee |
-| Mod save data | Default-enabled experimental storage of additional custom mod payloads | MissionJournal/Stockpile pilots exercise bounded roundtrip, refusal/retry, import and teardown paths; no cross-file atomicity or exhaustive crash-recovery claim |
+| Mod save data | Automatically initialized experimental storage of additional custom mod payloads | MissionJournal/Stockpile pilots exercise bounded roundtrip, refusal/retry, import and teardown paths; no cross-file atomicity or exhaustive crash-recovery claim |
 | Boarding observation | Optional default-off inspected target/operation snapshots and scoped events | Host and installed-binding tests only; no native boarding qualification, command or authored-content capability |
 | Recipes and jobs | Optional default-off definitions, quotes, job/transfer observations and scoped Forge UI actions; guarded commands require an additional opt-in | Host/reflection and installed-binding tests only; complete Unity crafting acceptance remains pending |
-| Mission observation | Optional experimental transition and identity services | Only documented hooks and identity-continuity paths are supported; observation is not automatic content persistence |
-| Travel/station observation | Optional experimental native observers | Controlled routes and consumers are exercised; tutorial rewrite, latent inherited dispatch and recovery miss-cleanup limits remain explicit in the travel contract |
+| Mission observation | Automatically initialized transition and identity services | Only documented hooks and identity-continuity paths are supported; observation is not automatic content persistence |
+| Travel/station observation | Automatically bound native observers | Controlled routes and consumers are exercised; tutorial rewrite, latent inherited dispatch and recovery miss-cleanup limits remain explicit in the travel contract |
 | Owned story content | Optional, default-off experimental registration, catalog installation, occurrence reconstruction and automatic persistence of a closed subset | Bounded native story, new-game and absent-author paths are exercised; content/schema migration and objective integration remain partial, and host migration tests are not native migration qualification |
 | Story load protection | Default-on guard on the inspected build, independent of story-author registration | With the guard disabled or the game uninspected, the API cannot refuse unsafe owned-story loads; do not load those saves in that state |
-| Mod information | Process-local catalog and default-on native main-menu entry when binding succeeds | Bounded menu interactions are exercised; presentation acceptance, physical gamepad behavior and browser opening are not fully qualified. No automatic update-check service is provided |
+| Mod information | Process-local catalog and automatic native main-menu entry when binding succeeds | Bounded menu interactions are exercised; presentation acceptance, physical gamepad behavior and browser opening are not fully qualified. Supported author feeds are checked automatically |
 
 Story remains incomplete; the general scripted-objective API is not implemented. Supported payload-schema compatibility is separate from migration of arbitrary authored definitions or scripted objectives.
 

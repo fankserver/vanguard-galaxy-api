@@ -1,6 +1,6 @@
 # Travel observation
 
-Require API 0.1.9 and opt in with `[Travel] Enabled = true`. `TravelNativeAdapter` interprets native facts, `TravelPatches` installs hooks, and `ModApi.Travel`/`ModApi.Station` are exposed only when the group binds. Check `native-travel` availability before subscribing.
+Require API 0.1.9. The travel group initializes automatically. `TravelNativeAdapter` interprets native facts, `TravelPatches` installs hooks, and `ModApi.Travel`/`ModApi.Station` are exposed only when the group binds. Check `native-travel` availability before subscribing.
 
 Bounded controlled native evidence exists for the paths below; it is not full in-game acceptance or proof that the current checkout ran in Unity. `RuntimeQualified` remains **false**. Exact candidate identities and receipts stay outside the repository. See [compatibility](compatibility.md) and [runner instructions](https://github.com/fankserver/vanguard-galaxy-api/blob/main/docs/development/qualification-runner.md).
 

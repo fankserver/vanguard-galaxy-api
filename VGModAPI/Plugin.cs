@@ -79,8 +79,8 @@ public sealed partial class Plugin : BaseUnityPlugin
         _hub.SetCapability("crafting-commands", false, "Disabled or not bound; experimental.");
         _hub.SetCapability("crafting-jobs", false, "Disabled or not bound; experimental.");
         _hub.SetCapability("save-data", false, "Not initialized; experimental.");
-        _hub.SetCapability("mission-continuity", false, "Disabled by configuration; experimental.");
-        _hub.SetCapability("mission-transitions", false, "Disabled by configuration; experimental.");
+        _hub.SetCapability("mission-continuity", false, "Not initialized.");
+        _hub.SetCapability("mission-transitions", false, "Not bound.");
         _hub.SetCapability("owned-story", false, "Not initialized; experimental.");
         _hub.SetCapability("story-protection", false, "Not bound.");
         _hub.SetCapability("boarding-observation", false, "Disabled by configuration; experimental.");
@@ -116,14 +116,10 @@ public sealed partial class Plugin : BaseUnityPlugin
             _harmony = new Harmony(ModApi.PluginId);
             LifecyclePatches.Adapter = _adapter;
             SavePatches.Adapter = _adapter;
-            if (Config.Bind("Missions", "Enabled", false, "Experimental observed mission transitions; use disposable saves until qualified.").Value &&
-                Config.Bind("Missions", "IdentityContinuity", false, "Experimental exact-snapshot identity; requires API-managed saves.").Value)
-            {
-                InstallGroup("mission-continuity", bindings, BindingCatalog.MissionSnapshots,
-                    new Dictionary<string, Type> { ["missionSnapshot"] = typeof(MissionSerializationPatches) });
-                _identityHooksBound = _hub.Capabilities.Any(c => c.Name == "mission-continuity" && c.Available);
-                if (_identityHooksBound) _hub.SetCapability("mission-continuity", false, "Identity provider not initialized.");
-            }
+            InstallGroup("mission-continuity", bindings, BindingCatalog.MissionSnapshots,
+                new Dictionary<string, Type> { ["missionSnapshot"] = typeof(MissionSerializationPatches) });
+            _identityHooksBound = _hub.Capabilities.Any(c => c.Name == "mission-continuity" && c.Available);
+            if (_identityHooksBound) _hub.SetCapability("mission-continuity", false, "Identity provider not initialized.");
             InstallGroup("session-lifecycle", bindings, BindingCatalog.Session, new Dictionary<string, Type>
             {
                 ["load"] = typeof(LifecyclePatches.Load), ["loadRoutine"] = typeof(LifecyclePatches.LoadRoutine),
@@ -151,8 +147,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             // pay out while nobody vouches for it, and that is true whether or not the story module is
             // enabled. Bound before anything else story-related, and on by default.
             InstallStoryProtection(assembly, bindings);
-            if (Config.Bind("Travel", "Enabled", false, "Experimental native travel and station observation; use disposable saves until qualified.").Value)
-                InstallTravel(assembly, bindings);
+            InstallTravel(assembly, bindings);
         }
         catch (Exception ex)
         {
@@ -193,12 +188,6 @@ public sealed partial class Plugin : BaseUnityPlugin
         _hub!.SetCapability("mod-information-menu", false, "Not bound; local catalog remains available.");
         try
         {
-            if (!Config.Bind("ModInformation", "MenuEnabled", true, "Show the Mods entry on the inspected native main menu. Update checks run automatically without downloading or installing mods. Disable if another menu replacement conflicts.").Value)
-            {
-                _hub.SetCapability("mod-information-menu", false, "Disabled by configuration; local catalog remains available.");
-                Logger.LogInfo("Mods menu disabled by configuration; ModApi.Mods remains available.");
-                return;
-            }
             var assembly = _inspectedGameAssembly
                 ?? throw new NotSupportedException("No inspected game assembly; local catalog remains available.");
             _modMenu = new ModMenuModule(assembly, _modCatalog!, DisableModMenu, _updatePresenter);
@@ -215,7 +204,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         try
         {
             _hub?.SetCapability("mod-information-menu", false, "Menu unavailable (" + error.GetType().Name + "); local catalog remains available.");
-            Logger.LogWarning("Mods menu unavailable (" + error.GetType().Name + "). ModApi.Mods remains available; game/save services are unaffected. Check the inspected menu/input layout or disable ModInformation.MenuEnabled.");
+            Logger.LogWarning("Mods menu unavailable (" + error.GetType().Name + "). ModApi.Mods remains available; game/save services are unaffected. Check the inspected menu/input layout.");
         }
         catch (Exception) { /* Diagnostic sinks must not propagate UI errors into the game. */ }
     }
@@ -241,8 +230,6 @@ public sealed partial class Plugin : BaseUnityPlugin
 
     private void InitializePersistence()
     {
-        if (!Config.Bind("Persistence", "Enabled", true, "Enable API-managed mod save data. Experimental; use disposable saves until qualified.").Value)
-        { _hub!.SetCapability("save-data", false, "Disabled by configuration."); return; }
         if (_hub!.Capabilities.Count(c => (c.Name == "session-lifecycle" || c.Name == "save-outcomes") && c.Available) != 2)
         {
             _hub.SetCapability("save-data", false, "Lifecycle capabilities unavailable.");
@@ -267,7 +254,6 @@ public sealed partial class Plugin : BaseUnityPlugin
 
     private void InitializeMissions()
     {
-        if (!Config.Bind("Missions", "Enabled", false, "Experimental observed mission transitions; use disposable saves until qualified.").Value) return;
         if (!_hub!.Capabilities.Any(c => c.Name == "session-lifecycle" && c.Available))
         { _hub.SetCapability("mission-transitions", false, "Lifecycle capability unavailable."); return; }
         try
@@ -294,7 +280,6 @@ public sealed partial class Plugin : BaseUnityPlugin
 
     private void InitializeMissionIdentity(Assembly assembly)
     {
-        if (!Config.Bind("Missions", "IdentityContinuity", false, "Experimental exact-snapshot identity; requires API-managed saves.").Value) return;
         if (_persistence == null) { _hub!.SetCapability("mission-continuity", false, "API-managed saves unavailable."); return; }
         try
         {

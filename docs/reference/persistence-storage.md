@@ -1,6 +1,6 @@
 # Immutable generation storage
 
-Internal storage and lifecycle engine have a default-enabled runtime facade, exercised by MissionJournal and Stockpile API-managed save pilots. Full in-game acceptance remains pending. Calling Publish is not itself authorization to save; the coordinator calls it only for a matching successful vanilla operation.
+Internal storage and lifecycle engine have an automatically initialized runtime facade, exercised by MissionJournal and Stockpile API-managed save pilots. Full in-game acceptance remains pending. Calling Publish is not itself authorization to save; the coordinator calls it only for a matching successful vanilla operation.
 
 ## Layout and publication
 
@@ -50,7 +50,7 @@ when publication is blocked. Obey `MutationAllowed` before mutations; readiness 
 capability should treat readiness as UNKNOWN and refuse, not assume state exists. Using this interface requires API 0.1.12 or newer. Consumers that do not query it need not require
 that capability.
 
-The optional runtime facade is initialized only when both inspected lifecycle capabilities are available and configuration enables it (the default). Its file adapter accepts direct `.save` children of the inspected SavesPath only, normalizes absolute paths/case on Windows, and rejects reparse paths and tilde/short-name forms. Arbitrary alias/hard-link imports are not supported. Public registration/handles remain main-thread-only; service disposal makes all handles inactive. No account-wide fallback or implicit legacy-sidecar import exists.
+The runtime facade initializes whenever both inspected lifecycle capabilities are available. `Persistence.Root` selects the storage location; there is no enable switch. Its file adapter accepts direct `.save` children of the inspected SavesPath only, normalizes absolute paths/case on Windows, and rejects reparse paths and tilde/short-name forms. Arbitrary alias/hard-link imports are not supported. Public registration/handles remain main-thread-only; service disposal makes all handles inactive. No account-wide fallback or implicit legacy-sidecar import exists.
 
 ## Verification boundary
 

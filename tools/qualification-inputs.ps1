@@ -158,10 +158,15 @@ function Assert-StoryIsolation($Selection) {
 function Assert-StoryConfiguration([string]$Root) {
     $path = Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg'
     $entries = Get-TravelJournalConfigEntries $path
-    foreach ($key in @('Persistence/Enabled','Story/Enabled','Story/Protection','Missions/Enabled')) {
+    foreach ($key in @('Story/Enabled','Story/Protection')) {
         if (!$entries.ContainsKey($key) -or $entries[$key] -ine 'true') { throw "Story configuration requires $key=true." }
     }
-    if (!$entries.ContainsKey('Persistence/Root') -or [IO.Path]::GetFullPath($entries['Persistence/Root']) -ine [IO.Path]::GetFullPath((Join-Path $Root 'state'))) { throw 'Story persistence root changed.' }
+    Assert-ApiPersistenceRoot $Root
+}
+
+function Assert-ApiPersistenceRoot([string]$Root) {
+    $entries = Get-TravelJournalConfigEntries (Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg')
+    if (!$entries.ContainsKey('Persistence/Root') -or [IO.Path]::GetFullPath($entries['Persistence/Root']) -ine [IO.Path]::GetFullPath((Join-Path $Root 'state'))) { throw 'API persistence root must remain inside the sandbox state directory.' }
 }
 
 function Get-TravelJournalConfigEntries([string]$Path) {
@@ -1030,6 +1035,7 @@ function Assert-QualificationInputs([string]$Root) {
         (Get-Content -LiteralPath (Join-Path $Root 'scenario.txt') -Raw).Trim() -cne $provenance.scenario) { throw 'Prepared scenario changed.' }
     Assert-ForgeReadSelection $Root $provenance
     Assert-ModMenuProbeSelection $Root $provenance
+    if ($provenance.scenario -ne 'MissingApi') { Assert-ApiPersistenceRoot $Root }
     $menuProperty = $provenance.PSObject.Properties['menuInspection']
     if ($menuProperty -and $menuProperty.Value -isnot [bool]) { throw 'Menu inspection selection must be boolean.' }
     $menuInspection = $menuProperty -and $menuProperty.Value
@@ -1041,16 +1047,12 @@ function Assert-QualificationInputs([string]$Root) {
     if ([bool]$missionProbe -ne (Test-Path -LiteralPath $missionMarker -PathType Leaf)) { throw 'Mission probe selection changed.' }
     if ($missionProbe) {
         if ($provenance.scenario -ne 'Full' -or (Get-Content -LiteralPath $missionMarker -Raw).Trim() -ne 'missions-v1') { throw 'Invalid mission probe selection.' }
-        $config = Get-Content -LiteralPath (Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg') -Raw
-        $sections = [regex]::Matches($config, '(?ms)^\[Missions\]\r?\n(?<body>.*?)(?=^\[|\z)')
-        if ($sections.Count -ne 1 -or [regex]::Matches($sections[0].Groups['body'].Value, '(?m)^Enabled\s*=').Count -ne 1 -or [regex]::Matches($sections[0].Groups['body'].Value, '(?m)^Enabled\s*=\s*true\s*$').Count -ne 1) { throw 'Mission probe config changed.' }
     }
     $identityProbe = $provenance.PSObject.Properties['missionIdentityProbe'] -and [bool]$provenance.missionIdentityProbe
     $identityMarker = Join-Path $Root 'mission-identity.enabled'
     if ([bool]$identityProbe -ne (Test-Path -LiteralPath $identityMarker -PathType Leaf)) { throw 'Mission identity selection changed.' }
     if ($identityProbe) {
         if (!$missionProbe -or !$provenance.persistenceProbe -or (Get-Content -LiteralPath $identityMarker -Raw).Trim() -ne 'identity-v1') { throw 'Invalid mission identity selection.' }
-        if ([regex]::Matches($sections[0].Groups['body'].Value, '(?m)^IdentityContinuity\s*=').Count -ne 1 -or [regex]::Matches($sections[0].Groups['body'].Value, '(?m)^IdentityContinuity\s*=\s*true\s*$').Count -ne 1) { throw 'Mission identity config changed.' }
     }
     $anima = $provenance.PSObject.Properties['anima'] -and [bool]$provenance.anima
     $animaMarker = Join-Path $Root 'anima-missions.enabled'
@@ -1089,12 +1091,9 @@ function Assert-QualificationInputs([string]$Root) {
         if ($provenance.scenario -ne 'Full' -or (Get-Content -LiteralPath $travelMarker -Raw).Trim() -ne 'travel-v1') { throw 'Invalid travel/station selection.' }
         if (!$provenance.PSObject.Properties['travelStationBudgetSeconds'] -or
             [int]$provenance.travelStationBudgetSeconds -ne $TravelStationBudgetSeconds) { throw 'Travel/station budget reservation changed.' }
-        $tsConfig = Get-Content -LiteralPath (Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg') -Raw
-        $tsSections = [regex]::Matches($tsConfig, '(?ms)^\[Travel\]\s*\r?\n(?<body>.*?)(?=^\[|\z)')
-        if ($tsSections.Count -ne 1 -or [regex]::Matches($tsSections[0].Groups['body'].Value, '(?m)^Enabled\s*=').Count -ne 1 -or [regex]::Matches($tsSections[0].Groups['body'].Value, '(?m)^Enabled\s*=\s*true\s*$').Count -ne 1) { throw 'Travel/station config changed.' }
     }
     # The cross-system phase is an ADDITIONAL selection on top of the in-system phase; it reuses the
-    # same [Travel] capability configuration and reserves its own separate process budget.
+    # same native travel service and reserves its own separate process budget.
     $travelCrossSystem = $provenance.PSObject.Properties['travelCrossSystem'] -and [bool]$provenance.travelCrossSystem
     $crossMarker = Join-Path $Root 'travel-cross-system.enabled'
     if ([bool]$travelCrossSystem -ne (Test-Path -LiteralPath $crossMarker -PathType Leaf)) { throw 'Travel cross-system selection changed.' }
@@ -1215,7 +1214,7 @@ function Assert-QualificationInputs([string]$Root) {
             [int]$provenance.travelRecoveryBudgetSeconds -ne $TravelRecoveryBudgetSeconds) { throw 'Travel recovery/continuation budget reservation changed.' }
     }
     # The resilience phase is an ADDITIONAL selection on top of the in-system phase; it reuses the
-    # same [Travel] capability configuration and reserves its own separate process budget.
+    # same native travel service and reserves its own separate process budget.
     $travelResilience = $provenance.PSObject.Properties['travelResilience'] -and [bool]$provenance.travelResilience
     $resilienceMarker = Join-Path $Root 'travel-resilience.enabled'
     if ([bool]$travelResilience -ne (Test-Path -LiteralPath $resilienceMarker -PathType Leaf)) { throw 'Travel resilience selection changed.' }
@@ -1243,8 +1242,8 @@ function Assert-QualificationInputs([string]$Root) {
         }
         if ($provenance.scenario -ne 'Full' -or (Get-Content -LiteralPath (Join-Path $Root 'bars.enabled') -Raw) -cne 'owned-bars-v1') { throw 'Invalid bar phase.' }
         $entries = Get-TravelJournalConfigEntries (Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg')
-        foreach ($key in @('Persistence/Enabled','Bars/Enabled')) { if (!$entries.ContainsKey($key) -or $entries[$key] -ine 'true') { throw "Bar configuration requires $key=true." } }
-        if (!$entries.ContainsKey('Persistence/Root') -or [IO.Path]::GetFullPath($entries['Persistence/Root']) -ine [IO.Path]::GetFullPath((Join-Path $Root 'state'))) { throw 'Bar persistence root changed.' }
+        if (!$entries.ContainsKey('Bars/Enabled') -or $entries['Bars/Enabled'] -ine 'true') { throw 'Bar configuration requires Bars/Enabled=true.' }
+        Assert-ApiPersistenceRoot $Root
         if ($entries['Bars/ExclusiveProviders'] -cne 'vg-bar-author-a,vg-bar-author-b') { throw 'Bar permissions changed.' }
         Add-Type -Path (Join-Path $Root 'game\BepInEx\core\Mono.Cecil.dll')
         $pluginDir = Join-Path $Root 'game\BepInEx\plugins'
@@ -1281,19 +1280,6 @@ function Assert-QualificationInputs([string]$Root) {
     if ([bool]$probe -ne (Test-Path -LiteralPath $probeMarker -PathType Leaf)) { throw 'Persistence probe selection changed.' }
     if ($probe) {
         if ($provenance.scenario -ne 'Full' -or (Get-Content -LiteralPath $probeMarker -Raw).Trim() -ne 'probe-v1') { throw 'Invalid persistence probe marker.' }
-        $config = Get-Content -LiteralPath (Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg') -Raw
-        $sections = [regex]::Matches($config, '(?ms)^\[Persistence\]\r?\n(?<body>.*?)(?=^\[|\z)')
-        if ($sections.Count -ne 1) { throw 'Persistence probe section changed.' }
-        $config = $sections[0].Groups['body'].Value
-        $roots = [regex]::Matches($config, '(?m)^Root\s*=\s*([^\r\n]+)')
-        $settings = [regex]::Matches($config, '(?m)^Enabled\s*=')
-        $enabled = [regex]::Matches($config, '(?m)^Enabled\s*=\s*true\s*$')
-        if ($roots.Count -ne 1 -or $settings.Count -gt 1 -or $enabled.Count -ne $settings.Count -or [IO.Path]::GetFullPath($roots[0].Groups[1].Value.Trim()) -ine [IO.Path]::GetFullPath((Join-Path $Root 'state'))) { throw 'Persistence probe root/config changed.' }
-    }
-    if (!$probe -and !$story -and !$storyAbsent -and !$bars -and !$barConsumers) {
-        $config = Get-Content -LiteralPath (Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg') -Raw
-        $sections = [regex]::Matches($config, '(?ms)^\[Persistence\]\r?\n(?<body>.*?)(?=^\[|\z)')
-        if ($sections.Count -ne 1 -or [regex]::Matches($sections[0].Groups['body'].Value, '(?m)^Enabled\s*=').Count -ne 1 -or [regex]::Matches($sections[0].Groups['body'].Value, '(?m)^Enabled\s*=\s*false\s*$').Count -ne 1) { throw 'Legacy control must explicitly disable API-managed saves.' }
     }
     $journalCoordinated = $provenance.PSObject.Properties['journalCoordinated'] -and [bool]$provenance.journalCoordinated
     $journalMarker = Join-Path $Root 'journal-coordinated.enabled'

@@ -187,7 +187,7 @@ if ($Action -eq 'Prepare') {
     # Opt-in disposable sandbox test data. Without it the cross-system phase never creates native
     # content and a fixture world without a wormhole keeps reporting its honest mandatory NOT-RUN.
     if ($TravelWormholeFixture -and !$TravelCrossSystem) { throw 'Wormhole fixture creation requires the cross-system travel phase.' }
-    # The resilience phase reuses the same [Travel] capability configuration and reserves its own
+    # The resilience phase uses the same native travel service and reserves its own
     # process time; it is independent of the cross-system phase.
     if ($TravelResilience -and !$TravelStation) { throw 'Travel resilience phase requires the travel/station selection.' }
     # The recovery/continuation phase drives its own in-system routes and its own multi-waypoint gate
@@ -334,8 +334,10 @@ if ($Action -eq 'Prepare') {
         [IO.File]::WriteAllText((Join-Path $bep 'config\vganima.cfg'), "[General]`r`nEnabled = true`r`n[Llm]`r`nEnabled = false`r`nBaseUrl = `r`nApiKey = `r`n")
         [IO.File]::WriteAllText((Join-Path $root 'anima-missions.enabled'), 'anima-v1')
     }
-    # Unselected pilots explicitly use legacy mode; selected pilots exercise the new defaults.
+    # API save data is always active; every prepared run must keep its root inside the sandbox.
     New-Item -ItemType Directory -Path (Join-Path $bep 'config') -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $bep 'config\vgmodapi.cfg'), "[Persistence]`r`nRoot = $(Join-Path $root 'state')`r`n")
+    # Consumer save modes remain independent of API availability.
     if ($StockpileBin -and !$StockpileCoordinated) { [IO.File]::AppendAllText((Join-Path $bep 'config\vgstockpile.cfg'), "[Persistence]`r`nUseApiSaveData = false`r`n") }
     if ($MissionJournalBin -and !$JournalCoordinated) { [IO.File]::WriteAllText((Join-Path $bep 'config\vgmissionjournal.cfg'), "[Persistence]`r`nUseApiSaveData = false`r`n") }
     if ($StoryProbe -or $StoryAbsentProbe) {
@@ -352,17 +354,16 @@ if ($Action -eq 'Prepare') {
             finally { Close-ConsumerAssembly $reader }
             Copy-Item -LiteralPath $candidate -Destination $plugins
         } }
-        [IO.File]::WriteAllText((Join-Path $bep 'config\vgmodapi.cfg'), "[Persistence]`r`nEnabled = true`r`nRoot = $(Join-Path $root 'state')`r`n[Story]`r`nEnabled = true`r`nProtection = true`r`n[Missions]`r`nEnabled = true`r`n")
+        [IO.File]::AppendAllText((Join-Path $bep 'config\vgmodapi.cfg'), "[Story]`r`nEnabled = true`r`nProtection = true`r`n")
         if ($StoryProbe) { [IO.File]::WriteAllText((Join-Path $root 'story.enabled'), 'owned-story-v1') }
         if ($StoryAbsentProbe) { [IO.File]::WriteAllText((Join-Path $root 'story-absent.enabled'), 'owned-story-absent-v1') }
     }
     if ($BarProbe) { Initialize-BarProbe $root $BarAuthorABin $BarAuthorBBin }
     if ($BarLinkedStory) {
-        [IO.File]::AppendAllText((Join-Path $bep 'config\vgmodapi.cfg'), "[Missions]`r`nEnabled = true`r`nIdentityContinuity = true`r`n[Story]`r`nEnabled = true`r`nProtection = true`r`n")
+        [IO.File]::AppendAllText((Join-Path $bep 'config\vgmodapi.cfg'), "[Story]`r`nEnabled = true`r`nProtection = true`r`n")
         [IO.File]::WriteAllText((Join-Path $root 'bar-linked.enabled'), 'linked-bars-v1')
     }
     if ($BarConsumerManifest) { Initialize-BarConsumers $root $BarConsumerManifest }
-    if (!$PersistenceProbe -and !$StoryProbe -and !$StoryAbsentProbe -and !$BarProbe -and !$BarConsumerManifest) { [IO.File]::WriteAllText((Join-Path $bep 'config\vgmodapi.cfg'), "[Persistence]`r`nEnabled = false`r`n") }
     if ($StockpileCoordinated) {
         [IO.File]::AppendAllText((Join-Path $bep 'config\vgstockpile.cfg'), "[Persistence]`r`nImportLegacySidecars = true`r`n")
         [IO.File]::WriteAllText((Join-Path $root 'stockpile-coordinated.enabled'), 'stockpile-v1')
@@ -372,21 +373,15 @@ if ($Action -eq 'Prepare') {
         [IO.File]::WriteAllText((Join-Path $bep 'config\vgmissionjournal.cfg'), "[Persistence]`r`nImportLegacySidecars = true`r`n")
         [IO.File]::WriteAllText((Join-Path $root 'journal-coordinated.enabled'), 'journal-v1')
     }
-    if ($PersistenceProbe) {
-        New-Item -ItemType Directory -Path (Join-Path $bep 'config') -Force | Out-Null
-        [IO.File]::WriteAllText((Join-Path $bep 'config\vgmodapi.cfg'), "[Persistence]`r`nRoot = $(Join-Path $root 'state')`r`n")
-        [IO.File]::WriteAllText((Join-Path $root 'persistence-probe.enabled'), 'probe-v1')
-    }
+    if ($PersistenceProbe) { [IO.File]::WriteAllText((Join-Path $root 'persistence-probe.enabled'), 'probe-v1') }
     if ($VanillaLoadControl) { [IO.File]::WriteAllText((Join-Path $root 'vanilla-load.enabled'), 'control-v1') }
     [IO.File]::WriteAllText((Join-Path $root 'scenario.txt'), $Scenario)
     $hashes = @{}
     Get-ChildItem -LiteralPath $plugins -File | ForEach-Object { $hashes[$_.Name] = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
     if ($MissionTransitionsProbe) {
-        [IO.File]::AppendAllText((Join-Path $bep 'config\vgmodapi.cfg'), "`r`n[Missions]`r`nEnabled = true`r`n")
         [IO.File]::WriteAllText((Join-Path $root 'mission-transitions.enabled'), 'missions-v1')
     }
     if ($MissionIdentityProbe) {
-        [IO.File]::AppendAllText((Join-Path $bep 'config\vgmodapi.cfg'), "IdentityContinuity = true`r`n")
         [IO.File]::WriteAllText((Join-Path $root 'mission-identity.enabled'), 'identity-v1')
     }
     if ($ForgeReadProbe) {
@@ -412,7 +407,6 @@ if ($Action -eq 'Prepare') {
         [IO.File]::WriteAllText((Join-Path $root 'journal-mission-events.enabled'), 'journal-events-v1')
     }
     if ($TravelStation) {
-        [IO.File]::AppendAllText((Join-Path $bep 'config\vgmodapi.cfg'), "`r`n[Travel]`r`nEnabled = true`r`n")
         [IO.File]::WriteAllText((Join-Path $root 'travel-station.enabled'), 'travel-v1')
     }
     if ($TravelCrossSystem) { [IO.File]::WriteAllText((Join-Path $root 'travel-cross-system.enabled'), 'cross-system-v1') }

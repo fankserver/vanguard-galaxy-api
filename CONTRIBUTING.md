@@ -23,6 +23,10 @@ overrides are defined in the [Makefile](Makefile).
 
 ## Implementation boundaries
 
+Completed API modules initialize automatically. Enable switches are temporary for
+unfinished modules and must be removed when their milestone closes—not merely
+changed to default-on. Keep compatibility and dependency safety gates.
+
 - Public contracts belong in Abstractions and must not expose vanilla/Unity types.
   Core and adapter internals are not a supported consumer API.
 - Keep Harmony hooks in `VGModAPI/Patches`. Inspect original game semantics, not

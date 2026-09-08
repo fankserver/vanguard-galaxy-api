@@ -63,11 +63,11 @@ public static class ModApi
     public static ILifecycleApi? Current { get; internal set; }
     /// <summary>Process-scoped loader inventory, independent of game-hook availability. Refresh on the main thread.</summary>
     public static IModInformationCatalog? Mods { get; internal set; }
-    /// <summary>Null unless experimental persistence is explicitly enabled and initialized.</summary>
+    /// <summary>Initialized automatically; null when lifecycle bindings or storage initialization are unavailable.</summary>
     public static IPersistenceApi? Persistence { get; internal set; }
-    /// <summary>Optional mission observer. Availability does not establish persistent instance continuity.</summary>
+    /// <summary>Automatically bound mission observer. Check mission-continuity separately for persistent instance identity.</summary>
     public static IMissionEvents? Missions { get; internal set; }
-    /// <summary>Optional native travel observer; non-null only when the travel group is bound and enabled.</summary>
+    /// <summary>Native travel observer; non-null when automatic binding succeeds.</summary>
     public static ITravelEvents? Travel { get; internal set; }
     /// <summary>Optional experimental recipe definitions for the current station; null when disabled/unavailable.</summary>
     public static IRecipeCatalog? Recipes { get; internal set; }
@@ -89,7 +89,7 @@ public static class ModApi
     public static IDungeonContent? Dungeons { get; internal set; }
     public static IDungeonRewardRules? DungeonRewards { get; internal set; }
     public static IDungeonSettlement? DungeonSettlement { get; internal set; }
-    /// <summary>Optional station-lifetime observer; non-null only when the travel group is bound and enabled.</summary>
+    /// <summary>Station-lifetime observer; non-null when automatic travel binding succeeds.</summary>
     public static IStationEvents? Station { get; internal set; }
     /// <summary>
     /// Optional owned-story surface (since 0.1.12); non-null only when the story group is bound and
