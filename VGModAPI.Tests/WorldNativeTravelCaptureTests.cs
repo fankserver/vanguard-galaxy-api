@@ -11,21 +11,26 @@ namespace VGModAPI.Tests;
 public sealed class WorldNativeTravelCaptureTests
 {
     [Fact]
-    public void NativeRequestFirstLegAndSynchronousWaypointHandoffKeepSuccessorState()
+    public async System.Threading.Tasks.Task NativeRequestFirstLegAndSynchronousWaypointHandoffKeepSuccessorState()
     {
         var oldPlayer = Source.Player.GamePlayer.current;
         var singleton = typeof(Behaviour.Util.Singleton<Behaviour.Managers.TravelManager>).GetField("instance", BindingFlags.NonPublic | BindingFlags.Static)!;
         var oldTravel = singleton.GetValue(null);
+        var loaderField = typeof(Behaviour.Util.PersistentSingleton<Behaviour.Bootstrap.SceneLoader>).GetField("instance", BindingFlags.NonPublic | BindingFlags.Static)!;
+        var oldLoader = loaderField.GetValue(null);
+        var loader = new Behaviour.Bootstrap.SceneLoader(); loaderField.SetValue(null, loader);
         try
         {
             var hub = new LifecycleHub((_, error) => throw error);
-            using var host = new WorldLifetimeHookHost(typeof(Source.Galaxy.MapElement).Assembly, hub);
+            var host = new WorldLifetimeHookHost(typeof(Source.Galaxy.MapElement).Assembly, hub);
             var manager = new Behaviour.Managers.TravelManager(); singleton.SetValue(null, manager);
             var player = new Source.Player.GamePlayer(); Source.Player.GamePlayer.current = player;
             hub.Begin(SessionOrigin.NewGame, null);
             var first = new Source.Galaxy.MapPointOfInterest { guid = "first" };
             var second = new Source.Galaxy.MapPointOfInterest { guid = "second" };
             player.waypoints.Add(first); player.waypoints.Add(second);
+            var pendingUnload = new System.Threading.Tasks.TaskCompletionSource<bool>();
+            System.Threading.Tasks.Task<bool>? unloadResult = null;
             int obsoleteTailWrites = 0, prepSteps = 0; IEnumerator? successor = null, background = null;
             IEnumerator Preparation()
             {
@@ -46,6 +51,14 @@ public sealed class WorldNativeTravelCaptureTests
             {
                 manager.localTarget = first;
                 host.RequireSceneTransition(manager);
+                manager.loadingNextScene = true;
+                Assert.True(host.CaptureSceneUnload(manager, "Combat")!.GetAwaiter().GetResult());
+                Assert.False(manager.loadingNextScene);
+                loader.Unload = scene => { Assert.Equal("Combat", scene); return pendingUnload.Task; };
+                manager.loadingNextScene = true;
+                var context = System.Threading.SynchronizationContext.Current;
+                try { System.Threading.SynchronizationContext.SetSynchronizationContext(null); unloadResult = host.CaptureSceneUnload(manager, "Combat"); }
+                finally { System.Threading.SynchronizationContext.SetSynchronizationContext(context); }
                 manager.localTarget = second;
                 Assert.Throws<InvalidDataException>(() => host.RequireSceneTransition(manager));
                 manager.localTarget = first;
@@ -66,7 +79,11 @@ public sealed class WorldNativeTravelCaptureTests
             ((IDisposable)successor).Dispose(); child.Dispose(); ((IDisposable)root).Dispose();
             var owned = new Source.Galaxy.MapPointOfInterest { guid = WorldObjectIdentity.ReservedPrefix + "unknown" };
             Assert.Throws<InvalidDataException>(() => host.WrapLeg(manager, owned, Second()));
+            host.Dispose();
+            pendingUnload.SetResult(true);
+            Assert.NotNull(unloadResult); Assert.False(await unloadResult!);
+            Assert.True(manager.loadingNextScene);
         }
-        finally { Source.Player.GamePlayer.current = oldPlayer; singleton.SetValue(null, oldTravel); }
+        finally { Source.Player.GamePlayer.current = oldPlayer; singleton.SetValue(null, oldTravel); loaderField.SetValue(null, oldLoader); }
     }
 }

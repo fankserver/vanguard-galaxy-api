@@ -11,6 +11,7 @@ internal interface IWorldTravelCaptureHost
     IEnumerator WrapLeg(object manager, object target, IEnumerator inner);
     IEnumerator WrapChild(object manager, IEnumerator inner);
     void RequireSceneTransition(object manager);
+    System.Threading.Tasks.Task<bool>? CaptureSceneUnload(object manager, string sceneName);
     object? BeginWaypoint(object manager);
     void EndWaypoint(object token);
 }

@@ -70,6 +70,7 @@ namespace Behaviour.Managers
     public sealed class TestPoiManager : BasePoiManager { }
     public sealed class TravelManager
     {
+        public bool loadingNextScene;
         public BasePoiManager? localPoiManager { get; set; }
         public Source.Galaxy.MapPointOfInterest? targetPoi { get; set; }
         public Source.Galaxy.MapPointOfInterest? localTarget { get; set; }
