@@ -19,6 +19,7 @@ internal sealed class WorldTravelScopes
         internal readonly Route Route;
         internal readonly object Target;
         internal bool HandedOff, Completed;
+        internal AsyncCompletion? PendingCompletion;
         internal Leg(Route route, object target) { Route = route; Target = target; }
     }
     internal sealed class Handoff
@@ -27,6 +28,24 @@ internal sealed class WorldTravelScopes
         internal readonly object Target;
         internal bool Consumed;
         internal Handoff(Leg predecessor, object target) { Predecessor = predecessor; Target = target; }
+    }
+    internal sealed class AsyncCompletion
+    {
+        internal readonly Leg Leg;
+        internal AsyncCompletion(Leg leg) => Leg = leg;
+    }
+    // A delayed writer needs both the current leg and its own latest operation, not just a destination match.
+    internal AsyncCompletion BeginAsync(Leg leg)
+    {
+        RequireLeg(leg);
+        return leg.PendingCompletion = new AsyncCompletion(leg);
+    }
+    internal bool ClaimCompletion(AsyncCompletion completion)
+    {
+        var leg = completion.Leg;
+        if (!ReferenceEquals(_current, leg.Route) || !ReferenceEquals(leg.Route.Current, leg) || leg.HandedOff || leg.Completed ||
+            !ReferenceEquals(leg.PendingCompletion, completion)) return false;
+        leg.PendingCompletion = null; return true;
     }
     private sealed class Execution : IDisposable
     {

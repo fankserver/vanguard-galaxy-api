@@ -62,6 +62,21 @@ public sealed class WorldTravelScopesTests
         Assert.True(scopes.Cancel(next));
     }
     [Fact]
+    public void DelayedCompletionCannotOverwriteNewOperationOrSuccessorLeg()
+    {
+        var scopes = new WorldTravelScopes(); var session = Guid.NewGuid(); var player = new object(); var manager = new object();
+        var route = scopes.Begin(session, player, manager, new object()); var first = scopes.First(route, new object());
+        var oldOperation = scopes.BeginAsync(first); var currentOperation = scopes.BeginAsync(first);
+        Assert.False(scopes.ClaimCompletion(oldOperation));
+        Assert.True(scopes.ClaimCompletion(currentOperation)); Assert.False(scopes.ClaimCompletion(currentOperation));
+        var pending = scopes.BeginAsync(first); var waypoint = new object();
+        var next = scopes.AcceptHandoff(scopes.PrepareHandoff(first, waypoint), waypoint);
+        Assert.False(scopes.ClaimCompletion(pending));
+        var nextOperation = scopes.BeginAsync(next);
+        Assert.True(scopes.Cancel(next)); Assert.False(scopes.ClaimCompletion(nextOperation));
+    }
+
+    [Fact]
     public void HandoffAndContinuationRequireExactObservedIdentities()
     {
         var scopes = new WorldTravelScopes(); var session = Guid.NewGuid(); var player = new object(); var manager = new object();
