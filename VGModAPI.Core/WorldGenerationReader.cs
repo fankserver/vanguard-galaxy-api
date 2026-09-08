@@ -49,6 +49,8 @@ internal sealed class WorldGenerationReader
         if (!generation.Identity.Matches(canonicalPath, hash)) throw new InvalidDataException("World generation association mismatch.");
         if (!generation.Owners.TryGetValue(WorldStateCodec.Owner, out var envelope))
         {
+            if (generation.Owners.ContainsKey(WorldDefinitionCodec.Owner))
+                throw new InvalidDataException("Retained world declarations have no paired instance inventory.");
             if (!required) return null;
             throw new InvalidDataException("Owned world metadata is missing from the committed generation.");
         }

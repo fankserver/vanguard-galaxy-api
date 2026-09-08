@@ -76,6 +76,21 @@ public sealed class WorldGenerationReaderTests : IDisposable
         else Assert.Throws<InvalidDataException>(() => reader.Read(Slot, _native));
     }
 
+    [Theory]
+    [InlineData(1, false)]
+    [InlineData(2, false)]
+    [InlineData(1, true)]
+    public void DefinitionsWithoutInventoryAreNotOptionalAbsence(int version, bool malformed)
+    {
+        var payload = malformed ? new byte[] { 0 } : WorldDefinitionCodec.Encode(Array.Empty<WorldSavedDefinition>());
+        var envelope = new OwnerSchemaCodec(WorldDefinitionCodec.Owner, version, _ => true).Encode(payload);
+        var store = Store;
+        store.Publish(Slot, GenerationStore.Hash(_native), Guid.NewGuid(), new Dictionary<string, byte[]> { [WorldDefinitionCodec.Owner] = envelope });
+        var reader = new WorldGenerationReader(store);
+        Assert.Throws<InvalidDataException>(() => reader.ReadOptional(Slot, _native));
+        Assert.Throws<InvalidDataException>(() => reader.Read(Slot, _native));
+    }
+
     [Fact]
     public void CorruptPublishedMetadataDoesNotFallBackToEmpty()
     {
