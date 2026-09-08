@@ -1,6 +1,6 @@
 # VGModAPI contributor guidance
 
-Unofficial Vanguard Galaxy API: lifecycle, mod save data, optional mission/travel/story services, and mod information. Read `docs/lifecycle-contract.md` and `docs/compatibility.md` before modifying hooks. `docs/implementation-plan.md` defines development constraints; GitHub issues track future work.
+Unofficial Vanguard Galaxy API: lifecycle, mod save data, optional mission/travel/story services, and mod information. Read `docs/reference/lifecycle-contract.md` and `docs/reference/compatibility.md` before modifying hooks. `docs/development/design.md` defines development constraints; GitHub issues track future work.
 
 ## Current-state-only content
 
@@ -9,6 +9,13 @@ Every repository file must describe current behavior, supported compatibility or
 Keep current testing limits explicit: controlled native evidence is not full in-game acceptance or proof for an untested source revision. Detailed execution history and private receipts stay outside the repository. Supported save schemas and migrations remain current behavior, not historical narrative. Retain superseded public APIs only with explicit deprecation and replacement guidance; do not silently break consumers.
 
 Use precise terms: a mod/provider identifier and an operation's owning instance are technical concepts; human approval and acceptance are not properties of those identities. Implementers apply this policy to every change, and reviewers check it alongside correctness.
+
+Keep one source of truth: commands and filters belong in the Makefile/workflows,
+package layout in `tools/release_archive.py`, public contracts in `docs/reference/`,
+and contributor guidance in `docs/development/`. Link rather than restate mechanics.
+Simplify confusing interfaces before adding explanatory prose; retain necessary
+safety constraints and contract semantics. Documentation indexes provide navigation,
+not duplicate summaries. Keep Markdown portable for future documentation hosting.
 
 ## Implementation and delivery
 

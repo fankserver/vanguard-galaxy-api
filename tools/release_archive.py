@@ -1,29 +1,49 @@
-"""Create a deterministic, owned-files-only archive after make check-package."""
+"""Validate package layout and create a deterministic archive; assembly checks live in make check-package."""
 import argparse
 import hashlib
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import zipfile
 
-FILES = {
+REQUIRED_FILES = {
     'VGModAPI.dll', 'VGModAPI.Core.dll', 'VGModAPI.Abstractions.dll',
     'README.md', 'LICENSE', 'vgmodapi.vgmod.json',
-    *('docs/' + name + '.md' for name in (
-        'checks', 'compatibility', 'implementation-plan', 'lifecycle-contract',
-        'qualification-runner', 'research-findings', 'persistence-identity', 'persistence-schema', 'persistence-storage', 'content-safety', 'mission-events', 'travel-events', 'story-content', 'bar-rosters', 'mod-information', 'mod-update-publishing', 'boarding-contract', 'recipes', 'dungeon-content')),
 }
 
 
-def create(root: Path, output: Path):
+def validate_layout(root: Path):
     if root.is_symlink() or not root.is_dir():
         raise ValueError('Package must be a real directory')
-    entries = list(root.rglob('*'))
-    if any(p.is_symlink() for p in entries):
-        raise ValueError('Package links are forbidden')
-    if any(p.is_dir() and p.relative_to(root).as_posix() != 'docs' for p in entries):
-        raise ValueError('Unexpected package directory')
-    actual = {p.relative_to(root).as_posix() for p in entries if p.is_file()}
-    if actual != FILES or any(not p.is_file() and not p.is_dir() for p in entries):
-        raise ValueError('Package allowlist mismatch')
+    actual = set()
+    for path in root.rglob('*'):
+        relative = path.relative_to(root)
+        name = relative.as_posix()
+        # Archives are installed on Windows as well as Unix; forbid alternate separators/devices.
+        if any('\\' in part or ':' in part or part.endswith((' ', '.'))
+               or any(ord(c) < 32 for c in part) or PureWindowsPath(part).is_reserved()
+               for part in relative.parts):
+            raise ValueError(f'Nonportable package path: {name}')
+        if path.is_symlink():
+            raise ValueError('Package links are forbidden')
+        reference = relative.parts[:2] == ('docs', 'reference')
+        asset = relative.parts[:2] == ('docs', 'assets')
+        if path.is_dir():
+            if name != 'docs' and not reference and not asset:
+                raise ValueError(f'Unexpected package directory: {name}')
+        elif path.is_file():
+            if name not in REQUIRED_FILES and not (reference and path.suffix == '.md') and not (asset and path.suffix == '.png'):
+                raise ValueError(f'Unexpected package file: {name}')
+            actual.add(name)
+        else:
+            raise ValueError(f'Unsupported package entry: {name}')
+    if not REQUIRED_FILES <= actual:
+        raise ValueError('Missing package files: ' + ', '.join(sorted(REQUIRED_FILES - actual)))
+    if not any(name.startswith('docs/reference/') and name.endswith('.md') for name in actual):
+        raise ValueError('Package reference documentation is missing')
+    return actual
+
+
+def create(root: Path, output: Path):
+    files = validate_layout(root)
     if root.resolve() in output.resolve().parents or output.is_symlink():
         raise ValueError('Archive must be outside the package and not a link')
     checksum = output.with_suffix(output.suffix + '.sha256')
@@ -31,7 +51,7 @@ def create(root: Path, output: Path):
         raise ValueError('Checksum must not be a link')
     output.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(output, 'w', compression=zipfile.ZIP_STORED) as archive:
-        for name in sorted(FILES):
+        for name in sorted(files):
             info = zipfile.ZipInfo('VGModAPI/' + name, (1980, 1, 1, 0, 0, 0))
             info.create_system = 3
             info.external_attr = 0o100644 << 16
@@ -44,6 +64,11 @@ def create(root: Path, output: Path):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, required=True)
-    parser.add_argument('--output', type=Path, required=True)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument('--output', type=Path)
+    mode.add_argument('--validate-only', action='store_true')
     args = parser.parse_args()
-    print(create(args.root, args.output))
+    if args.validate_only:
+        validate_layout(args.root)
+    else:
+        print(create(args.root, args.output))

@@ -29,11 +29,10 @@ jobs:
           # Debug retains symbols; binary checks must inspect uninstrumented assemblies.
           make test CONFIGURATION=Debug GAME_DIR=/nonexistent/vgmodapi-game
           rm -rf artifacts/coverage
-          dotnet test VGModAPI.Tests/VGModAPI.Tests.csproj -c Debug --no-build \
-            --filter 'Category!=InstalledGame&Category!=InstalledConsumer&Category!=InstalledArchive&Category!=Package&FullyQualifiedName!~VGModAPI.Tests.PackageValidationTests.CoreRemainsLoaderAndUnityFree&FullyQualifiedName!~VGModAPI.Tests.PackageValidationTests.StableContractHasOnlyFrameworkReferences' \
-            --collect:'XPlat Code Coverage' --results-directory artifacts/coverage/raw \
+          make test CONFIGURATION=Debug GAME_DIR=/nonexistent/vgmodapi-game TEST_EXCLUDE_CATEGORY=BinaryInspection \
+            TEST_ARGS="--no-build --collect:'XPlat Code Coverage' --results-directory artifacts/coverage/raw \
             -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Include='[VGModAPI.Core]*,[VGModAPI.Abstractions]*' \
-            DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.ExcludeAssembliesWithoutSources=None
+            DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.ExcludeAssembliesWithoutSources=None"
           # ExcludeAssembliesWithoutSources=None accepts deterministic /src PDB paths.
           test ! -e VGModAPI/lib
       - name: Validate coverage and generate badge

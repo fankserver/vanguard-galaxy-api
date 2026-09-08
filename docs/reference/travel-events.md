@@ -2,7 +2,7 @@
 
 Require API 0.1.9 and opt in with `[Travel] Enabled = true`. `TravelNativeAdapter` interprets native facts, `TravelPatches` installs hooks, and `ModApi.Travel`/`ModApi.Station` are exposed only when the group binds. Check `native-travel` availability before subscribing.
 
-Bounded controlled native evidence exists for the paths below; it is not full in-game acceptance or proof that the current checkout ran in Unity. `RuntimeQualified` remains **false**. Exact candidate identities and receipts stay outside the repository. See [compatibility](compatibility.md) and [runner instructions](qualification-runner.md).
+Bounded controlled native evidence exists for the paths below; it is not full in-game acceptance or proof that the current checkout ran in Unity. `RuntimeQualified` remains **false**. Exact candidate identities and receipts stay outside the repository. See [compatibility](compatibility.md) and [runner instructions](https://github.com/fankserver/vanguard-galaxy-api/blob/main/docs/development/qualification-runner.md).
 
 ## Leg identity and transport boundaries
 
@@ -56,7 +56,7 @@ Caught nested failures cannot manufacture success. Before publication the adapte
 
 ## Coverage and exclusions
 
-These are evidence categories, not full runtime-qualification badges. Each named phase is evidence only for its own cases, with source/host/installed-metadata checks supporting distinct layers. The [runner](qualification-runner.md) defines mandatory cases, selections, budgets, fixtures and refusal rules.
+These are evidence categories, not full runtime-qualification badges. Each named phase is evidence only for its own cases, with source/host/installed-metadata checks supporting distinct layers. The [runner](https://github.com/fankserver/vanguard-galaxy-api/blob/main/docs/development/qualification-runner.md) defines mandatory cases, selections, budgets, fixtures and refusal rules.
 
 | Path | Evidence scope | Limit |
 |---|---|---|

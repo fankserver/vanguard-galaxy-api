@@ -9,64 +9,14 @@ public sealed class PackageValidationTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "vgmodapi-package-" + Guid.NewGuid().ToString("N"));
 
-    public PackageValidationTests()
-    {
-        foreach (var relative in PackageChecks.Files)
-        {
-            var path = Path.Combine(_root, relative);
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            File.WriteAllText(path, "synthetic layout fixture");
-        }
-    }
+    public PackageValidationTests() => Directory.CreateDirectory(_root);
 
     [Fact]
-    public void ExactLayoutIsAccepted() => PackageChecks.ValidateLayout(_root);
-
-    [Theory]
-    [InlineData("Assembly-CSharp.dll")]
-    [InlineData("UnityEngine.dll")]
-    [InlineData("BepInEx.dll")]
-    [InlineData("0Harmony.dll")]
-    [InlineData("QualificationRunner.dll")]
-    [InlineData("old-build.pdb")]
-    [InlineData("docs/unlisted.md")]
-    public void ExtraFilesAreRejected(string name)
-    {
-        File.WriteAllText(Path.Combine(_root, name), "not allowed");
-        Assert.Throws<InvalidOperationException>(() => PackageChecks.ValidateLayout(_root));
-    }
-
-    [Fact]
-    public void MissingOwnedAssemblyIsRejected()
-    {
-        File.Delete(Path.Combine(_root, "VGModAPI.Core.dll"));
-        Assert.Throws<InvalidOperationException>(() => PackageChecks.ValidateLayout(_root));
-    }
-
-    [Fact]
-    public void EmptyUnexpectedDirectoriesAreRejected()
-    {
-        Directory.CreateDirectory(Path.Combine(_root, "lib"));
-        Assert.Throws<InvalidOperationException>(() => PackageChecks.ValidateLayout(_root));
-    }
-
-    [UnixFact]
-    public void LinkedRootsAndFilesAreRejectedWithoutFollowingThem()
-    {
-        var linkedRoot = _root + "-link";
-        Directory.CreateSymbolicLink(linkedRoot, _root);
-        try { Assert.Throws<InvalidOperationException>(() => PackageChecks.ValidateLayout(linkedRoot + Path.DirectorySeparatorChar)); }
-        finally { Directory.Delete(linkedRoot); }
-        var dll = Path.Combine(_root, "VGModAPI.dll");
-        File.Delete(dll);
-        File.CreateSymbolicLink(dll, Path.Combine(_root, "README.md"));
-        Assert.Throws<InvalidOperationException>(() => PackageChecks.ValidateLayout(_root));
-    }
-
-    [Fact]
+    [Trait("Category", "BinaryInspection")]
     public void StableContractHasOnlyFrameworkReferences() => PackageChecks.ValidateContract(typeof(ILifecycleApi).Assembly.Location);
 
     [Fact]
+    [Trait("Category", "BinaryInspection")]
     public void CoreRemainsLoaderAndUnityFree() => PackageChecks.ValidateAssembly(typeof(Core.LifecycleHub).Assembly.Location, "VGModAPI.Core");
 
     [Fact]
@@ -130,23 +80,14 @@ public sealed class PackageValidationTests : IDisposable
     public void Dispose() => Directory.Delete(_root, recursive: true);
 }
 
-internal sealed class UnixFactAttribute : FactAttribute
-{
-    public UnixFactAttribute()
-    {
-        if (OperatingSystem.IsWindows()) Skip = "Unix link behavior; Windows link creation may require additional privileges.";
-    }
-}
-
 [Trait("Category", "Package")]
 public sealed class BuiltPackageTests
 {
     [Fact]
-    public void BuiltPackageContainsOnlyOwnedAssembliesAndAllowedDocumentation()
+    public void BuiltPackageAssembliesAndMetadataAreValid()
     {
         var root = Environment.GetEnvironmentVariable("VG_PACKAGE_ROOT")
             ?? throw new InvalidOperationException("Run make package or set VG_PACKAGE_ROOT for built-package checks.");
-        PackageChecks.ValidateLayout(root);
         PackageChecks.ValidatePluginVersion(Path.Combine(root, "VGModAPI.dll"));
         var metadata = Core.ModMetadataCodec.Parse(File.ReadAllBytes(Path.Combine(root, "vgmodapi.vgmod.json")), ModApi.PluginId);
         Assert.Equal("https://github.com/fankserver/vanguard-galaxy-api", metadata.ProjectUrl);
