@@ -34,7 +34,7 @@ public sealed class ModUpdateQualificationTests
             using var service = new ModUpdateService(new BlockedWire(), cache);
             service.Sync(new[] { mod });
             await ModUpdateChecks.Until(() => { service.Pump(); return service.Status(mod).State == ModUpdateState.Available; });
-            var presenter = new ModUpdatePresenter(service, _ => { });
+            var presenter = new ModUpdatePresenter(service);
             string? destination = null;
             Assert.True(presenter.OpenRelease(mod, url => destination = url));
             Assert.Equal(ModUpdateChecks.Release, destination);

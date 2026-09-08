@@ -18,7 +18,7 @@ internal sealed class ModInformationPresenter
     internal void Open()
     {
         try { _catalog.Refresh(); RefreshWarning = null; }
-        catch (Exception) { RefreshWarning = "Could not refresh the loader inventory. This is the previous snapshot, not a fresh health check."; }
+        catch (Exception) { RefreshWarning = "Couldn't refresh the mod list. Showing the previous list."; }
         Rows = _catalog.Snapshot;
         if (Selected == null) SelectedId = Rows.FirstOrDefault()?.PluginId;
     }
@@ -56,34 +56,22 @@ internal sealed class ModInformationPresenter
         open(Selected!.Metadata!.ProjectUrl!); return true;
     }
 
-    internal string Details(string diagnostics, bool showDiagnostics = false, bool includeUpdateStatus = true)
+    internal string Details(bool includeUpdateStatus = true)
     {
-        var text = new StringBuilder("Loader presence only; not initialization or compatibility.\n");
+        var text = new StringBuilder();
         if (RefreshWarning != null) text.Append(RefreshWarning).Append('\n');
         var row = Selected;
-        if (row == null) text.Append("No local API consumers in this snapshot.\n");
+        if (row == null) text.Append("No mods to show.\n");
         else
         {
-            text.Append("Name: ").Append(DisplayName(row)).Append("\nID: ").Append(PlainText(row.PluginId, 128, false))
-                .Append("\nInstalled: ").Append(row.InstalledVersion).Append('\n')
-                .Append(MetadataNotice(row)).Append('\n');
+            text.Append(DisplayName(row)).Append("\nInstalled version: ").Append(row.InstalledVersion).Append('\n');
             if (includeUpdateStatus) text.Append("Updates: ").Append(UpdateNotice(row)).Append('\n');
             if (row.Metadata != null)
             {
                 if (row.Metadata.Author != null) text.Append("Author: ").Append(PlainText(row.Metadata.Author, 256, false)).Append('\n');
                 if (row.Metadata.Description != null) text.Append("Description:\n").Append(PlainText(row.Metadata.Description, 4096, true)).Append('\n');
             }
-            if (showDiagnostics)
-            {
-                text.Append("Declared dependencies: ").Append(row.Dependencies.Count).Append('\n');
-                foreach (var dependency in row.Dependencies.Take(64))
-                    text.Append(PlainText(dependency.PluginId, 128, false)).Append(dependency.HardDependency ? " (hard)" : " (soft)")
-                        .Append(dependency.MinimumVersion == null ? "" : " >= " + dependency.MinimumVersion).Append('\n');
-                if (row.Dependencies.Count > 64) text.Append("Additional dependencies omitted from this display.\n");
-            }
         }
-        if (showDiagnostics)
-            text.Append("\nAPI capabilities (not mod update status):\n").Append(PlainText(diagnostics, 4096, true));
         return text.ToString();
     }
 

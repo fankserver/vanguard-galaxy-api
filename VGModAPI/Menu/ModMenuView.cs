@@ -18,14 +18,13 @@ internal sealed class ModMenuView : IModMenuView
     private readonly Canvas _canvas;
     private readonly ModMenuBindings _bindings;
     private readonly ModInformationPresenter _presenter;
-    private readonly Func<string> _diagnostics;
     private readonly Action<Exception> _fault;
     private Action<string> _openUrl = Application.OpenURL;
     private readonly List<Button> _rows = new();
     private readonly List<Selectable> _navigation = new();
     private readonly List<Action> _removeListeners = new();
     private readonly List<GameObject> _ownedRoots = new();
-    private Button _entry = null!, _close = null!, _diagnosticToggle = null!, _previous = null!, _next = null!, _project = null!;
+    private Button _entry = null!, _close = null!, _previous = null!, _next = null!, _project = null!;
     private RectTransform _panel = null!, _body = null!, _listContent = null!, _detailsContent = null!;
     private ScrollRect _list = null!, _details = null!;
     private TMP_Text _heading = null!, _destination = null!, _detailText = null!;
@@ -42,19 +41,18 @@ internal sealed class ModMenuView : IModMenuView
     private bool _rowsDirty = true;
     private float _width = -1, _height = -1;
     private bool _disposed;
-    private bool _showDiagnostics;
     private readonly ModUpdatePresenter? _updates;
-    private Button _checkUpdate = null!, _autoUpdate = null!, _release = null!;
+    private Button _checkUpdate = null!, _release = null!;
     private string _updateText = "";
 
     private ModMenuView(MonoBehaviour menu, RectTransform viewport, Canvas canvas, ModMenuBindings bindings,
-        ModInformationPresenter presenter, Func<string> diagnostics, Action<Exception> fault, ModUpdatePresenter? updates)
-    { _menu = menu; _viewport = viewport; _canvas = canvas; _bindings = bindings; _presenter = presenter; _diagnostics = diagnostics; _fault = fault; _updates = updates; }
+        ModInformationPresenter presenter, Action<Exception> fault, ModUpdatePresenter? updates)
+    { _menu = menu; _viewport = viewport; _canvas = canvas; _bindings = bindings; _presenter = presenter; _fault = fault; _updates = updates; }
 
     internal static ModMenuView Create(MonoBehaviour menu, RectTransform viewport, Canvas canvas, ModMenuBindings bindings,
-        ModInformationPresenter presenter, Func<string> diagnostics, Action<Exception> fault, ModUpdatePresenter? updates = null)
+        ModInformationPresenter presenter, Action<Exception> fault, ModUpdatePresenter? updates = null)
     {
-        var view = new ModMenuView(menu, viewport, canvas, bindings, presenter, diagnostics, fault, updates);
+        var view = new ModMenuView(menu, viewport, canvas, bindings, presenter, fault, updates);
         try { view.Build(); return view; }
         catch { view.Dispose(); throw; }
     }
@@ -88,15 +86,9 @@ internal sealed class ModMenuView : IModMenuView
         var backdrop = _panel.gameObject.AddComponent<Image>();
         backdrop.color = new Color(.035f, .045f, .06f, 1); backdrop.raycastTarget = true;
         _body = Rect(_panel, "Content");
-        _heading = Text(_body, "Title", "Mods - local API consumers");
+        _heading = Text(_body, "Title", "Mods");
         Stretch(_heading.rectTransform, 0, 1, 1, 1, 8, -36, -112, -4);
         _close = Button(_body, "Close", "Close [Esc]", () => Close(true));
-        _diagnosticToggle = Button(_body, "Diagnostics", "Show diagnostics", () =>
-        {
-            _showDiagnostics = !_showDiagnostics;
-            _diagnosticToggle.GetComponentInChildren<TMP_Text>().text = _showDiagnostics ? "Hide diagnostics" : "Show diagnostics";
-            RenderDetails();
-        });
         Stretch((RectTransform)_close.transform, 1, 1, 1, 1, -108, -36, -4, -4);
 
         _list = Scroll(_body, "Local mods", out _listContent);
@@ -122,12 +114,10 @@ internal sealed class ModMenuView : IModMenuView
         {
             _project.GetComponentInChildren<TMP_Text>().text = "Open project";
             Stretch((RectTransform)_project.transform, .38f, 0, .69f, 0, 4, 6, -4, 38);
-            _release = Button(_body, "Release link", "Open release", () => { if (_presenter.Selected != null) _updates.OpenRelease(_presenter.Selected, _openUrl); });
+            _release = Button(_body, "Release link", "Open download page", () => { if (_presenter.Selected != null) _updates.OpenRelease(_presenter.Selected, _openUrl); });
             Stretch((RectTransform)_release.transform, .69f, 0, 1, 0, 4, 6, -8, 38);
-            _checkUpdate = Button(_body, "Check update", "Check update", () => { if (_presenter.Selected != null) _updates.Check(_presenter.Selected); RenderDetails(true); });
-            _autoUpdate = Button(_body, "Automatic updates", "Auto: off", () => { _updates.ToggleAutomatic(); RenderDetails(true); });
-            Stretch((RectTransform)_checkUpdate.transform, .38f, 0, .69f, 0, 4, 46, -4, 78);
-            Stretch((RectTransform)_autoUpdate.transform, .69f, 0, 1, 0, 4, 46, -8, 78);
+            _checkUpdate = Button(_body, "Check updates", "Check for updates", () => { if (_presenter.Selected != null) _updates.Check(_presenter.Selected); RenderDetails(); });
+            Stretch((RectTransform)_checkUpdate.transform, .38f, 0, 1, 0, 4, 46, -8, 78);
             Stretch((RectTransform)_details.transform, .38f, 0, 1, 1, 4, 86, -8, -42);
         }
     }
@@ -144,12 +134,11 @@ internal sealed class ModMenuView : IModMenuView
         _events = EventSystem.current;
         _savedFocus = _events == null ? null : _events.currentSelectedGameObject;
         _presenter.Open();
-        _updates?.Cancel();
         _updates?.Sync(_presenter.Rows);
         _panel.gameObject.SetActive(true); _panel.SetAsLastSibling();
         _entry.interactable = false;
         _listContent.anchoredPosition = Vector2.zero; _first = -1;
-        _heading.text = "Mods - " + _presenter.Rows.Count + " local API consumers";
+        _heading.text = "Mods";
         Layout(); RenderDetails(); RefreshRows();
         Select(_close.gameObject);
     }
@@ -163,8 +152,8 @@ internal sealed class ModMenuView : IModMenuView
         if (!Open) return;
         if (_events != EventSystem.current) { Close(false); return; }
         Layout(); RefreshRows();
-        if (_updates != null && _presenter.Selected != null && !_updates.Confirming &&
-            _updates.Text(_presenter.Selected, DateTimeOffset.UtcNow) != _updateText) RenderDetails(true, false);
+        if (_updates != null && _presenter.Selected != null &&
+            _updates.Text(_presenter.Selected, DateTimeOffset.UtcNow) != _updateText) RenderDetails(false);
         if (Keyboard.current?.escapeKey.wasPressedThisFrame == true) { Close(true); return; }
         // All owned selectables use an explicit closed navigation ring; never edit native navigation.
         // Repair foreign/cleared selection without disabling the EventSystem or its input module.
@@ -186,10 +175,7 @@ internal sealed class ModMenuView : IModMenuView
         var caption = _close.GetComponentInChildren<TMP_Text>();
         var closeWidth = Mathf.Max(104, Mathf.Ceil(caption.GetPreferredValues(caption.text).x) + 24);
         Stretch((RectTransform)_close.transform, 1, 1, 1, 1, -closeWidth - 4, -36, -4, -4);
-        var diagnosticCaption = _diagnosticToggle.GetComponentInChildren<TMP_Text>();
-        var diagnosticWidth = Mathf.Ceil(diagnosticCaption.GetPreferredValues("Show diagnostics").x) + 24;
-        Stretch((RectTransform)_diagnosticToggle.transform, 1, 1, 1, 1, -closeWidth - diagnosticWidth - 12, -36, -closeWidth - 12, -4);
-        Stretch(_heading.rectTransform, 0, 1, 1, 1, 8, -36, -closeWidth - diagnosticWidth - 20, -4);
+        Stretch(_heading.rectTransform, 0, 1, 1, 1, 8, -36, -closeWidth - 20, -4);
         var height = _viewport.rect.height;
         if (Math.Abs(_width - width) > .5f || Math.Abs(_height - height) > .5f)
         {
@@ -251,32 +237,26 @@ internal sealed class ModMenuView : IModMenuView
         RenderDetails(); RefreshRows();
     }
 
-    private void RenderDetails(bool preserveConfirmation = false, bool resetScroll = true)
+    private void RenderDetails(bool resetScroll = true)
     {
-        if (!preserveConfirmation) _updates?.Cancel();
         _rowsDirty = true;
-        _detailText.text = _presenter.Details(_showDiagnostics ? _diagnostics() : "", _showDiagnostics, _updates == null);
+        _detailText.text = _presenter.Details(includeUpdateStatus: _updates == null);
         if (_updates != null)
         {
-            ModUpdateControls.Apply(_presenter.Selected != null,
-                _presenter.Selected != null && _updates.CanCheck(_presenter.Selected),
-                _presenter.Selected != null && _updates.ReleaseHost(_presenter.Selected) != null,
-                value => _checkUpdate.interactable = value, value => _autoUpdate.interactable = value,
-                value => _release.interactable = value);
+            _checkUpdate.interactable = _presenter.Selected != null && _updates.CanCheck(_presenter.Selected);
+            _release.gameObject.SetActive(_presenter.Selected != null && _updates.ReleaseHost(_presenter.Selected) != null);
         }
         if (_updates != null && _presenter.Selected != null)
         {
             _updateText = _updates.Text(_presenter.Selected, DateTimeOffset.UtcNow);
-            _detailText.text = _updates.Confirming ? _updateText : _updateText + "\n" + _detailText.text;
-            _checkUpdate.GetComponentInChildren<TMP_Text>().text = _updates.Confirming && !_updates.ConfirmingAutomatic ? "Confirm check" : "Check update";
-            _autoUpdate.GetComponentInChildren<TMP_Text>().text = _updates.Automatic ? "Auto: on" : _updates.ConfirmingAutomatic ? "Confirm auto" : "Auto: off";
+            _detailText.text += "\n" + _updateText;
         }
         _project.interactable = _presenter.TryProjectDestination(out var host);
-        _destination.text = _project.interactable ? "Project destination (HTTPS):\n" + host : "No validated project link.";
+        _destination.text = _project.interactable ? "Project: " + host : "";
         if (_updates != null && _presenter.Selected != null)
         {
             var releaseHost = _updates.ReleaseHost(_presenter.Selected);
-            if (releaseHost != null) _destination.text += "\nRelease destination (HTTPS):\n" + releaseHost;
+            if (releaseHost != null) _destination.text += "\nDownload page: " + releaseHost;
         }
         _previous.interactable = _next.interactable = _presenter.Rows.Count > 1;
         if (resetScroll) { _details.StopMovement(); _detailsContent.anchoredPosition = Vector2.zero; }
@@ -295,7 +275,7 @@ internal sealed class ModMenuView : IModMenuView
 
     private void RebuildNavigation()
     {
-        _navigation.Clear(); _navigation.Add(_close); _navigation.Add(_diagnosticToggle);
+        _navigation.Clear(); _navigation.Add(_close);
         foreach (var row in _rows) if (row.gameObject.activeSelf) _navigation.Add(row);
         if (_previous.interactable) _navigation.Add(_previous);
         if (_next.interactable) _navigation.Add(_next);
@@ -303,8 +283,7 @@ internal sealed class ModMenuView : IModMenuView
         if (_updates != null)
         {
             if (_checkUpdate.interactable) _navigation.Add(_checkUpdate);
-            if (_autoUpdate.interactable) _navigation.Add(_autoUpdate);
-            if (_release.interactable) _navigation.Add(_release);
+            if (_release.gameObject.activeSelf && _release.interactable) _navigation.Add(_release);
         }
         _navigation.Add(_list.verticalScrollbar); _navigation.Add(_details.verticalScrollbar);
         for (var i = 0; i < _navigation.Count; ++i)
@@ -324,7 +303,6 @@ internal sealed class ModMenuView : IModMenuView
 
     private void Close(bool restore)
     {
-        _updates?.Cancel();
         if (!Open) return;
         var events = _events;
         var ownedFocus = events != null && events == EventSystem.current && IsPanelFocus(events.currentSelectedGameObject);

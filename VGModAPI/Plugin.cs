@@ -35,7 +35,6 @@ public sealed class Plugin : BaseUnityPlugin
     private ModMenuModule? _modMenu;
     private ModUpdateService? _updates;
     private ModUpdatePresenter? _updatePresenter;
-    private BepInEx.Configuration.ConfigEntry<bool>? _updatesEnabled, _automaticUpdates;
     private Assembly? _inspectedGameAssembly;
 
     private void Start()
@@ -125,11 +124,9 @@ public sealed class Plugin : BaseUnityPlugin
     {
         try
         {
-            _updatesEnabled = Config.Bind("ModUpdates", "Enabled", true, "Allow explicit update checks. No network unless manually confirmed or Automatic is enabled. Disable to stop future checks; in-flight requests may finish.");
-            _automaticUpdates = Config.Bind("ModUpdates", "Automatic", false, "Opt in to HTTPS feed requests for all declared API consumers, exposing IP and feed paths to GitHub hosts/redirects. No saves, profile, machine ID or full inventory sent. Six-hour success interval; no downloads or installs.");
             _updates = new ModUpdateService(new HttpModFeedTransport(), new ModUpdateCache(Path.Combine(Paths.CachePath, "VGModAPI-updates-v1")))
-                { Enabled = _updatesEnabled.Value, Automatic = _automaticUpdates.Value };
-            _updatePresenter = new ModUpdatePresenter(_updates, value => _automaticUpdates.Value = value);
+                { Enabled = true, Automatic = true };
+            _updatePresenter = new ModUpdatePresenter(_updates);
         }
         catch (Exception error) { Logger.LogWarning("Update checker unavailable (" + error.GetType().Name + "); offline inventory is unaffected."); }
     }
@@ -139,7 +136,7 @@ public sealed class Plugin : BaseUnityPlugin
         _hub!.SetCapability("mod-information-menu", false, "Not bound; local catalog remains available.");
         try
         {
-            if (!Config.Bind("ModInformation", "MenuEnabled", true, "Show the Mods entry on the inspected native main menu. Inventory is offline; optional update requests have separate configuration and confirmation. Disable if another menu replacement conflicts.").Value)
+            if (!Config.Bind("ModInformation", "MenuEnabled", true, "Show the Mods entry on the inspected native main menu. Update checks run automatically without downloading or installing mods. Disable if another menu replacement conflicts.").Value)
             {
                 _hub.SetCapability("mod-information-menu", false, "Disabled by configuration; local catalog remains available.");
                 Logger.LogInfo("Mods menu disabled by configuration; ModApi.Mods remains available.");
@@ -147,8 +144,7 @@ public sealed class Plugin : BaseUnityPlugin
             }
             var assembly = _inspectedGameAssembly
                 ?? throw new NotSupportedException("No inspected game assembly; local catalog remains available.");
-            _modMenu = new ModMenuModule(assembly, _modCatalog!, () => string.Join("\n", _hub.Capabilities.Select(capability =>
-                capability.Name + ": " + capability.Detail)), DisableModMenu, _updatePresenter);
+            _modMenu = new ModMenuModule(assembly, _modCatalog!, DisableModMenu, _updatePresenter);
             _hub.SetCapability("mod-information-menu", true, "Inspected native menu binding; UI qualification pending.");
         }
         catch (Exception error) { DisableModMenu(error); }
@@ -173,9 +169,6 @@ public sealed class Plugin : BaseUnityPlugin
         {
             if (_updates != null)
             {
-                _updates.Enabled = _updatesEnabled!.Value;
-                if (!_updates.Enabled) _updatePresenter?.Cancel();
-                _updates.Automatic = _automaticUpdates!.Value;
                 _updates.Pump();
             }
         }
@@ -183,7 +176,6 @@ public sealed class Plugin : BaseUnityPlugin
         {
             try { _updates?.Dispose(); } catch (Exception) { }
             _updates = null;
-            _updatePresenter?.Cancel();
             Logger.LogWarning("Update checker stopped (" + error.GetType().Name + "); offline inventory remains available.");
         }
         try { _modMenu?.Poll(); }

@@ -2,7 +2,7 @@
 
 ## Listing versus update participation
 
-A loaded plugin declaring a direct hard or soft dependency on `vgmodapi` is listed automatically. There is no registration callback, networking implementation or author-supplied executable checker. Optional `<plugin-guid>.vgmod.json` beside the loaded DLL supplies description/project/update URLs and a channel; it never supplies installed version. See [mod-information.md](mod-information.md) for the exact schemas, limits, consent and host policy.
+A loaded plugin declaring a direct hard or soft dependency on `vgmodapi` is listed automatically. There is no registration callback, networking implementation or author-supplied executable checker. Optional `<plugin-guid>.vgmod.json` beside the loaded DLL supplies description/project/update URLs and a channel; it never supplies installed version. See [mod-information.md](mod-information.md) for the exact schemas, limits and host policy.
 
 `examples/UpdateParticipant` is a compile/package example. Its `ExampleVersion` MSBuild property generates both the assembly version and the constant used by `BepInPlugin`. Release labels are separate from that numeric value. With lawful local BepInEx/Unity compile references available:
 
@@ -68,7 +68,7 @@ Its feed links to the already-public, immutable versioned release, not to the ro
 ## Author test cases
 
 - **Missing source:** omit `updateUrl` from a disposable package's author metadata. The normal loader row remains; no check is offered.
-- **Failed check:** use an unavailable/invalid feed on a supported host in a disposable package and explicitly confirm a check. It must report failed/invalid, not up to date. Do not alter player configuration to publish feeds.
+- **Failed check:** use an unavailable/invalid feed on a supported host in a disposable package and click **Check for updates**. It must report failed/invalid, not up to date. Do not alter player configuration to publish feeds.
 - **Installed ahead:** use a valid older feed with a newer numeric installed example build. It must report installed-ahead and not recommend downgrade.
 - **Wrong GUID/channel/version:** validate generated feeds and intentionally mismatched packaged assemblies; generation must fail before publication.
 - **Partial publication:** fake-remote tests inject failures at archive, public-release, feed and discovery stages and exercise retries without announcing missing artifacts.
