@@ -12,7 +12,7 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
     internal DungeonOperationResumeAdapter Operations { get; }
     internal DungeonPodReturnObserver ReturnObserver { get; }
     private readonly DungeonReturnRecoveryCoordinator _returns;
-    private readonly DungeonInitialRecoveryRuntime _initial;
+    private readonly DungeonInitialRecoveryCoordinator _initial;
     private readonly DungeonRecoveryWorld _world;
     private readonly IDisposable _lifetime;
     private readonly Action<Exception> _report;
@@ -57,7 +57,19 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
                 _podOwners.Add(pod.Pod, pod.Operation);
                 Pods.DetachSource(pod.Data);
             }, report, saved => !Pods.Conflicted(saved.Id) && (Pods.DataFor(saved.Id) is not { } data || !world.HasLivePod(data)));
-        _initial = new(this, native, world, new DungeonInitialOperationFactory(game.Assembly, native, _options), factory, report);
+        var initialFactory = new DungeonInitialOperationFactory(game.Assembly, native, _options);
+        _initial = new(State, Operations, Pods, native, new DungeonInitialRecoveryPorts
+        {
+            ContainsWalkLocation = world.ContainsWalkLocation, IsLiveTarget = value => value is Component component && component,
+            HasLivePod = world.HasLivePod, Resolve = world.Resolve,
+            SimulationReady = value => SimulationReady?.Invoke(value) ?? true,
+            ValidateOperation = operation => OperationReady(operation) && (ValidateInitialOperation?.Invoke(operation) ?? true),
+            Create = initialFactory.Create,
+            BuildPod = (saved, donor, target, operation, data) => new DungeonReturnPodInstance(factory.BuildInitial(saved, donor, target, operation, data)),
+            BindPod = (instance, id) => BindInitialPod((DungeonReturnPodInstance)instance, id), Register = initialFactory.Register,
+            Observe = operation => (ObserveInitialOperation ?? throw new InvalidOperationException("Boarding observation unavailable."))(operation),
+            Quarantine = Quarantine
+        }, report);
         _lifetime = hub.Subscribe("vgmodapi.dungeon-recovery-runtime", message =>
         {
             if (message.Kind is LifecycleEventKind.SessionStarting or LifecycleEventKind.SessionInvalidated or LifecycleEventKind.SessionStartFailed)
