@@ -1,6 +1,6 @@
 # Immutable generation storage
 
-Internal storage and lifecycle engine have an automatically initialized runtime facade, exercised by MissionJournal and Stockpile API-managed save pilots. Full in-game acceptance remains pending. Calling Publish is not itself authorization to save; the coordinator calls it only for a matching successful vanilla operation.
+`ModApi.Services.SaveData` provides typed registration and provider state over the internal storage and lifecycle engine. Full in-game acceptance remains pending. Calling Publish is not itself authorization to save; the coordinator calls it only for a matching successful vanilla operation.
 
 ## Layout and publication
 
@@ -34,24 +34,18 @@ Registered plus retained owner namespaces must fit the 32-owner union limit; ove
 
 If the filesystem cannot record even the pre-write intent for a previously unseen destination, vanilla cannot be stopped by this observer and no durable lineage proof can be guaranteed. The current session pauses, but a later process cannot distinguish wholly absent metadata from first use. Deleting all storage has the same limitation. This is an explicit unresolved cross-file availability/durability boundary, not a safe-empty recovery promise; native qualification and installation guidance must expose it. No vanilla metadata or save suppression is introduced.
 
-Inspected vanilla SideMenuOptions.MainMenu saves before player Cleanup and SceneLoader.StartMenu; the lifecycle menu-invalidation hook runs at that later transition. GameManager.HandleApplicationQuit likewise saves before clearing the player. Controlled native pilots exercise both consumer teardowns and the resulting shared persistence pause. A successful post-invalidation save retains intent and blocks unmatched reloads. Recovery is explicit: select a validated prior backup/generation; never delete intent/conflict evidence merely to force an empty load. Resolving an identical-byte conflict requires an explicit choice to retain older state and archival of evidence; no automatic resolution tool is provided here.
+Inspected vanilla SideMenuOptions.MainMenu saves before player Cleanup and SceneLoader.StartMenu; the lifecycle menu-invalidation hook runs at that later transition. GameManager.HandleApplicationQuit likewise saves before clearing the player. A successful post-invalidation save retains intent and blocks unmatched reloads. Recovery is explicit: select a validated prior backup/generation; never delete intent/conflict evidence merely to force an empty load. Resolving an identical-byte conflict requires an explicit choice to retain older state and archival of evidence; no automatic resolution tool is provided here.
 
-### Optional readiness capability
+### Registration and provider state
 
-`IPersistenceRegistration` exposes `MutationAllowed`, `Status` and disposal. Readability is a separate
-optional capability, `IPersistenceReadiness`, implemented by the runtime registration. Cast the
-returned handle to query it; wrappers need not implement that optional interface.
+Call `ISaveDataService.Register(PersistenceProvider)` before a session starts. Its typed result contains an `ISaveDataRegistration` only on success; unavailable storage, duplicate identifiers, capacity limits and late registration are ordinary refusal results. Retain one registration for the consumer lifetime.
 
-`StateReady` answers whether this owner's restored state for the CURRENT session is READABLE, which is
-deliberately broader than `MutationAllowed`: it stays true while lifecycle callbacks dispatch and
-while a save is in flight, because reading is safe in those moments and mutating is not. It is false
-when there is no current session, when the owner's data was blocked, unreadable or restore-failed, or
-when publication is blocked. Obey `MutationAllowed` before mutations; readiness never authorises a mutation. A consumer that receives a handle without the
-capability should treat readiness as UNKNOWN and refuse, not assume state exists. Using this interface requires API 0.1.12 or newer. Consumers that do not query it need not require
-that capability.
+The registration exposes `State`, `StateChanged`, `CanRead`, `CanMutate` and disposal. Subscribe before reading state; notifications do not replay. State identifies the tracked session and any structured block reason. Subscriber failures are isolated.
 
-The runtime facade initializes whenever both inspected lifecycle capabilities are available. `Persistence.Root` selects the storage location; there is no enable switch. Its file adapter accepts direct `.save` children of the inspected SavesPath only, normalizes absolute paths/case on Windows, and rejects reparse paths and tilde/short-name forms. Arbitrary alias/hard-link imports are not supported. Public registration/handles remain main-thread-only; service disposal makes all handles inactive. No account-wide fallback or implicit legacy-sidecar import exists.
+`CanRead` requires restored, unblocked state for the current session and available service dependencies. It stays true during lifecycle callbacks and saves in flight. `CanMutate` additionally excludes callback dispatch and pending saves; always read this live gate immediately before mutation. These transient restrictions do not generate durable state changes. Disposed handles are unreadable and cannot mutate.
+
+Storage initializes whenever both inspected lifecycle capabilities are available. The service reference remains non-null when storage is unavailable and reports its availability explicitly. `Persistence.Root` selects the storage location; there is no enable switch. Its file adapter accepts direct `.save` children of the inspected SavesPath only, normalizes absolute paths/case on Windows, and rejects reparse paths and tilde/short-name forms. Arbitrary alias/hard-link imports are not supported. Public registration/handles remain main-thread-only; service disposal makes all handles disposed. No account-wide fallback or implicit legacy-sidecar import exists.
 
 ## Verification boundary
 
-Real temporary-directory fixtures exercise pre/post-publication interruption, idempotent recovery, conflicting retries, slot rotation/save-as/rollback, corrupt/future published data, extra entries, defensive copies and link refusal. These fixtures model interruption, not real power cuts. Controlled Windows/Mono runs additionally exercised coordinated save/reload with actual MissionJournal and Stockpile, preserved legacy sources, shared initial-intent write refusal/retry, protected import and teardown. This establishes those observed paths, not universal filesystem durability or safe uninstall. Consumer imports are separately opted in and cannot prove historical legacy snapshot consistency. The service remains experimental and RuntimeQualified remains false.
+Real temporary-directory fixtures exercise pre/post-publication interruption, idempotent recovery, conflicting retries, slot rotation/save-as/rollback, corrupt/future published data, extra entries, defensive copies and link refusal. These fixtures model interruption, not real power cuts. The typed runtime and consumer integration require native qualification; host fixtures do not establish Unity behavior, filesystem durability or safe uninstall. Consumer imports require separate opt-in and cannot prove historical snapshot consistency. The service remains experimental and RuntimeQualified remains false.

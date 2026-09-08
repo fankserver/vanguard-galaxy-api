@@ -141,13 +141,7 @@ internal sealed partial class StoryContentService : IStoryApi, IStoryUiTransacti
     private readonly StoryHostAuthenticator _authenticate;
     private readonly Action? _checkThread;
     private readonly Func<SessionSnapshot?> _currentSession;
-    /// <summary>
-    /// The module's own registration handle. Readiness is an OPTIONAL capability
-    /// (<see cref="IPersistenceReadiness"/>) on that handle: the runtime implementation provides it,
-    /// and a handle that does not is treated as "readiness unknown", which makes every answer
-    /// unavailable rather than assuming restored state exists.
-    /// </summary>
-    private readonly IPersistenceRegistration? _persistence;
+    private readonly ISaveDataRegistration? _persistence;
     /// <summary>
     /// The native world this module installs into and drives. Without it the module owns definitions
     /// and state but nothing exists in the game, so accepting content is refused rather than recorded:
@@ -200,7 +194,7 @@ internal sealed partial class StoryContentService : IStoryApi, IStoryUiTransacti
     /// paused coordinator behind.
     /// </summary>
     /// <exception cref="InvalidOperationException">A session is already running.</exception>
-    internal StoryContentService(IPersistenceApi? persistence, ILifecycleApi? lifecycle, StoryHostAuthenticator authenticate,
+    internal StoryContentService(ISaveDataService? persistence, ILifecycleApi? lifecycle, StoryHostAuthenticator authenticate,
         Func<Guid>? newOccurrence = null, Action? checkThread = null, IStoryWorld? world = null,
         IMissionEvents? missions = null, Action<string, bool>? report = null, StoryProtection? protection = null,
         Func<bool>? protectionHealthy = null)
@@ -225,7 +219,8 @@ internal sealed partial class StoryContentService : IStoryApi, IStoryUiTransacti
             // Schema 1 rows are read as what they meant: no declaration staged for a future outcome
             // and no observed failure. The bytes are handed through unchanged; the decoder does the
             // reading, so nothing is rewritten to fit a newer shape.
-            migrations: new Dictionary<int, Func<byte[], byte[]>> { [StoryStateCodec.FirstSchemaVersion] = payload => payload, [2] = payload => payload, [3] = payload => payload }));
+            migrations: new Dictionary<int, Func<byte[], byte[]>> { [StoryStateCodec.FirstSchemaVersion] = payload => payload, [2] = payload => payload, [3] = payload => payload })).Registration;
+        if (persistence != null && _persistence == null) throw new InvalidOperationException("Story save provider registration refused.");
         // Availability is bound to the lifecycle independently of restore: a failed or invalidated
         // session never calls restore, and its queries must not answer from the previous save.
         _lifecycle = lifecycle?.Subscribe("vgmodapi.story-content", OnLifecycle);
@@ -633,8 +628,8 @@ internal sealed partial class StoryContentService : IStoryApi, IStoryUiTransacti
         if (_disposed) return "the story module is disposed";
         if (_protectionHealthy?.Invoke() == false)
             return "the native story protection cannot currently decide about owned content";
-        if (_persistence is not IPersistenceReadiness readiness) return "story persistence does not report readiness";
-        if (!readiness.StateReady) return "story persistence is " + PersistenceStatus;
+        if (_persistence == null) return "story persistence is unavailable";
+        if (!_persistence.CanRead) return "story persistence is " + PersistenceStatus;
         if (_readiness != Readiness.Restored) return _readinessDetail;
         var session = _currentSession();
         if (session == null || session.Id != _restoredSession) return "the restored session is no longer current";
@@ -642,7 +637,7 @@ internal sealed partial class StoryContentService : IStoryApi, IStoryUiTransacti
         return null;
     }
 
-    internal string PersistenceStatus => _disposed ? "inactive" : _persistence?.Status ?? "unavailable";
+    internal string PersistenceStatus => _disposed ? "inactive" : _persistence?.State.Kind.ToString() ?? "unavailable";
     internal StoryLedger Ledger => _ledger;
     internal StoryDefinitionRegistry Registry => _registry;
     internal string ReadinessDetail => _readinessDetail;
@@ -1319,7 +1314,7 @@ internal sealed partial class StoryContentService : IStoryApi, IStoryUiTransacti
             refusal = "Story state is unavailable: " + unavailable + "; refusing to accept unsaved persistent content.";
             return false;
         }
-        if (_persistence is not { MutationAllowed: true })
+        if (_persistence is not { CanMutate: true })
         {
             status = StoryTransitionStatus.Busy;
             refusal = "Story state is readable but mutations are paused while lifecycle callbacks dispatch or a save is in flight; "

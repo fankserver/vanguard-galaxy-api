@@ -31,7 +31,7 @@ public sealed class SaveDataServiceTests : IDisposable
     {
         using var hub = Bound();
         using var source = Source(hub);
-        var service = new SaveDataServiceView(hub, source);
+        ISaveDataService service = source;
         using var registration = service.Register(Provider()).Registration!;
         var states = new List<SaveDataState>();
         var writes = new List<bool>();
@@ -60,15 +60,15 @@ public sealed class SaveDataServiceTests : IDisposable
     }
 
     [Fact]
-    public void RefusalsAreTypedAndTheLegacyExceptionContractRemains()
+    public void RefusalsAreTyped()
     {
         using var hub = Bound();
         using var source = Source(hub);
-        var service = new SaveDataServiceView(hub, source);
+        ISaveDataService service = source;
         Assert.Equal(SaveDataRegistrationStatus.InvalidProvider, service.Register(Provider("BAD ID")).Status);
         Assert.Equal(SaveDataRegistrationStatus.Registered, service.Register(Provider()).Status);
         Assert.Equal(SaveDataRegistrationStatus.DuplicateProvider, service.Register(Provider()).Status);
-        Assert.Throws<InvalidOperationException>(() => source.Register(Provider()));
+        Assert.Equal(SaveDataRegistrationStatus.InvalidProvider, service.Register(null!).Status);
         hub.Begin(SessionOrigin.NewGame, null);
         Assert.Equal(SaveDataRegistrationStatus.SessionAlreadyStarted, service.Register(Provider("another")).Status);
         source.Dispose();
@@ -76,11 +76,45 @@ public sealed class SaveDataServiceTests : IDisposable
     }
 
     [Fact]
+    public void MissingStorageClosesAvailabilityAndRefusesRegistration()
+    {
+        using var hub = Bound();
+        using var service = new PersistenceService(hub);
+        Assert.False(service.Availability.IsAvailable);
+        Assert.Equal(ServiceUnavailableReason.BindingFailed, service.Availability.Reason);
+        var result = service.Register(Provider());
+        Assert.Equal(SaveDataRegistrationStatus.Unavailable, result.Status);
+        Assert.Null(result.Registration);
+        Assert.Throws<InvalidOperationException>(() => new BarPatronPersistence(service, hub, hub.CheckThread));
+        Assert.Throws<InvalidOperationException>(() => new DungeonStateStore(hub, service));
+    }
+
+    [Fact]
+    public void DirectServiceDisposalClosesHealthBeforeNotifyingConsumers()
+    {
+        using var hub = Bound();
+        using var service = Source(hub);
+        using var registration = service.Register(Provider()).Registration!;
+        var changes = new List<ServiceAvailability>();
+        service.AvailabilityChanged += state =>
+        {
+            changes.Add(state);
+            Assert.False(registration.CanRead);
+            Assert.False(registration.CanMutate);
+            Assert.Equal(SaveDataRegistrationStatus.Unavailable, service.Register(Provider("another")).Status);
+        };
+        service.Dispose();
+        Assert.False(Assert.Single(changes).IsAvailable);
+        Assert.Equal(ServiceUnavailableReason.ApiStopped, service.Availability.Reason);
+        Assert.Equal(SaveDataStateKind.Disposed, registration.State.Kind);
+    }
+
+    [Fact]
     public void CapacityRefusalIsDistinct()
     {
         using var hub = Bound();
         using var source = Source(hub);
-        var service = new SaveDataServiceView(hub, source);
+        ISaveDataService service = source;
         for (var index = 0; index < GenerationStore.MaxOwners; index++)
             Assert.True(service.Register(Provider("owner" + index)).Succeeded);
         Assert.Equal(SaveDataRegistrationStatus.LimitExceeded, service.Register(Provider("overflow")).Status);
@@ -91,7 +125,7 @@ public sealed class SaveDataServiceTests : IDisposable
     {
         using var hub = Bound();
         using var source = Source(hub);
-        var service = new SaveDataServiceView(hub, source);
+        ISaveDataService service = source;
         using var brokenRestore = service.Register(Provider("restore", (_, _) => throw new IOException())).Registration!;
         var captureFails = true;
         using var capture = service.Register(Provider("capture", capture: () => captureFails ? throw new IOException() : new byte[] { 1 })).Registration!;
@@ -113,7 +147,7 @@ public sealed class SaveDataServiceTests : IDisposable
     {
         using var hub = Bound();
         using var source = Source(hub);
-        var service = new SaveDataServiceView(hub, source);
+        ISaveDataService service = source;
         using var first = service.Register(Provider("first")).Registration!;
         using var second = service.Register(Provider("second")).Registration!;
         first.StateChanged += state => { if (state.Kind == SaveDataStateKind.Ready) first.Dispose(); };
@@ -131,7 +165,7 @@ public sealed class SaveDataServiceTests : IDisposable
     {
         using var hub = Bound();
         using var source = Source(hub);
-        var service = new SaveDataServiceView(hub, source);
+        ISaveDataService service = source;
         using var first = service.Register(Provider("first")).Registration!;
         using var second = service.Register(Provider("second")).Registration!;
         first.StateChanged += state => { if (state.Kind == SaveDataStateKind.Ready) source.Dispose(); };
@@ -150,7 +184,7 @@ public sealed class SaveDataServiceTests : IDisposable
     {
         using var hub = Bound();
         using var source = Source(hub);
-        using var registration = new SaveDataServiceView(hub, source).Register(Provider()).Registration!;
+        using var registration = source.Register(Provider()).Registration!;
         Assert.IsType<InvalidOperationException>(ServiceNotificationTests.OnWorker(() => _ = registration.State));
         Assert.IsType<InvalidOperationException>(ServiceNotificationTests.OnWorker(registration.Dispose));
         hub.Dispose();

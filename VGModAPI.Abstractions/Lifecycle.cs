@@ -84,8 +84,6 @@ public static class ModApi
         if (ReferenceEquals(_services, services)) _services = null;
     }
     public static ILifecycleApi? Current { get; internal set; }
-    /// <summary>Initialized automatically; null when lifecycle bindings or storage initialization are unavailable.</summary>
-    public static IPersistenceApi? Persistence { get; internal set; }
     /// <summary>Automatically bound mission observer. Check mission-continuity separately for persistent instance identity.</summary>
     public static IMissionEvents? Missions { get; internal set; }
     /// <summary>Native travel observer; non-null when automatic binding succeeds.</summary>

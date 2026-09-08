@@ -97,7 +97,6 @@ public sealed partial class Plugin : BaseUnityPlugin
         ModApi.Bars = null;
         _hub.SetCapability("owned-bars", false, "Not initialized; experimental.");
         ModApi.Current = _hub;
-        ModApi.Persistence = null;
         _modCatalog = new ModInformationCatalog(_hub, ModInformationSource.Snapshot);
         InitializeUpdates();
         try
@@ -247,7 +246,6 @@ public sealed partial class Plugin : BaseUnityPlugin
             var saves = (string)AccessTools.Field(AccessTools.TypeByName("Source.Util.SaveGame"), "SavesPath").GetValue(null)!;
             var files = new PersistenceFiles(saves);
             _persistence = new PersistenceService(_hub, new GenerationStore(root), files.Canonical, files.HashFile);
-            ModApi.Persistence = _persistence;
             _hub.SetCapability("save-data", true, "Experimental API-managed saves enabled; full in-game acceptance remains pending.");
         }
         catch (Exception error)
@@ -908,7 +906,6 @@ public sealed partial class Plugin : BaseUnityPlugin
         try { _storyWorld?.Dispose(); } catch (Exception error) { Logger.LogError("Story world shutdown failed: " + error); }
         _story = null; _storyWorld = null;
         _persistence?.Dispose();
-        ModApi.Persistence = null;
         _harmony?.UnpatchSelf();
         LifecyclePatches.Adapter = null;
         SavePatches.Adapter = null;

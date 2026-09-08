@@ -6,14 +6,16 @@ namespace VGModAPI.Tests;
 
 public sealed class DungeonStateStoreTests
 {
-    private sealed class Persistence : IPersistenceApi, IPersistenceRegistration, IPersistenceReadiness
+    private sealed class Persistence : TestSaveDataService
     {
         internal PersistenceProvider Provider = null!;
         public bool MutationAllowed { get; set; }
         public bool StateReady { get; set; }
         public string Status => StateReady ? "ready" : "unavailable";
-        public IPersistenceRegistration Register(PersistenceProvider provider) { Provider = provider; return this; }
-        public void Dispose() { StateReady = MutationAllowed = false; }
+        public override bool CanRead => StateReady;
+        public override bool CanMutate => StateReady && MutationAllowed;
+        public override SaveDataRegistrationResult Register(PersistenceProvider provider) { Provider = provider; return new(SaveDataRegistrationStatus.Registered, this); }
+        public override void Dispose() { StateReady = MutationAllowed = false; }
     }
     private static DungeonOccurrence Occurrence() => new(Guid.NewGuid(), new("mod", "dungeon"), new DungeonDefinition(1, "Dungeon", new DungeonLayout(new[]
     {

@@ -8,14 +8,16 @@ namespace VGModAPI.Tests;
 
 public sealed class MissionIdentityPersistenceTests
 {
-    private sealed class Persistence : IPersistenceApi, IPersistenceRegistration
+    private sealed class Persistence : TestSaveDataService
     {
         internal PersistenceProvider Provider = null!;
         internal bool Disposed;
-        public IPersistenceRegistration Register(PersistenceProvider provider) { Provider = provider; return this; }
+        public override bool CanRead => !Disposed;
+        public override bool CanMutate => !Disposed;
+        public override SaveDataRegistrationResult Register(PersistenceProvider provider) { Provider = provider; return new(SaveDataRegistrationStatus.Registered, this); }
         public bool MutationAllowed => !Disposed;
         public string Status => Disposed ? "inactive" : "ready";
-        public void Dispose() => Disposed = true;
+        public override void Dispose() => Disposed = true;
     }
     [Theory]
     [InlineData(true)]

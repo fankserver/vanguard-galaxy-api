@@ -8,14 +8,16 @@ namespace VGModAPI.Tests;
 
 public sealed class DungeonContentAdapterTests
 {
-    private sealed class Persistence : IPersistenceApi, IPersistenceRegistration, IPersistenceReadiness
+    private sealed class Persistence : TestSaveDataService
     {
         internal PersistenceProvider Provider = null!;
         public bool MutationAllowed => StateReady;
         public bool StateReady { get; set; } = true;
         public string Status => "test";
-        public IPersistenceRegistration Register(PersistenceProvider provider) { Provider = provider; return this; }
-        public void Dispose() { }
+        public override bool CanRead => StateReady;
+        public override bool CanMutate => StateReady && MutationAllowed;
+        public override SaveDataRegistrationResult Register(PersistenceProvider provider) { Provider = provider; return new(SaveDataRegistrationStatus.Registered, this); }
+        public override void Dispose() { }
     }
     private sealed class Fixture : IDisposable
     {

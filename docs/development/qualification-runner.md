@@ -73,7 +73,7 @@ Select a mode during **Prepare** using `-Scenario` (the prepared mode is recorde
 
 By default the mismatch is **injected input**, not an altered or alternate game DLL. It checks the live rejection path, not compatibility with another game version. Selected pilots additionally test consumer dependency refusal as described below. Run verifies the exact flat plugin set, hashes, and scenario before launch; extra files/directories or reparse-point plugins are rejected. A guard must remain active through quit-time writes. Do not deploy legacy plugins that can write before this ordering boundary; consumer coexistence requires its own reviewed setup.
 
-### Optional persistence facade probe
+### Optional save-data service probe
 
 `-PersistenceProbe` requires Full and selects the persistence test cases. Every preparation sets the API save-data folder to the sandbox's `state` directory, whether this probe is selected or not; API save data has no enable switch. Selection/root and a fresh completion receipt are checked by the launcher. Two synthetic providers exercise native capture/save/reload, mutation gates, provider removal and retained-intent reload refusal. Without additional consumer switches, real consumers may coexist but remain on their own persistence paths; this alone does not qualify their coordinated-storage migration.
 

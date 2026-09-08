@@ -12,10 +12,10 @@ internal sealed class PersistenceCoordinator : IDisposable
         internal readonly Func<byte[]> Capture;
         internal readonly Action<byte[]?> Restore;
         internal bool Ready;
-        internal string Status = "inactive";
+        internal string Detail = "inactive";
         internal SaveDataBlockReason Reason;
         internal void Set(bool ready, string status, SaveDataBlockReason reason = SaveDataBlockReason.None)
-        { Ready = ready; Status = status; Reason = reason; }
+        { Ready = ready; Detail = status; Reason = reason; }
         internal Owner(OwnerSchemaCodec codec, Func<byte[]> capture, Action<byte[]?> restore)
         { Codec = codec; Capture = capture; Restore = restore; }
     }
@@ -80,28 +80,6 @@ internal sealed class PersistenceCoordinator : IDisposable
             && _owners.TryGetValue(owner, out var registered) && registered.Ready;
     }
 
-    /// <summary>
-    /// Whether this owner's restored state can be READ for the current session. Deliberately narrower
-    /// than <see cref="MutationAllowed"/>: it ignores the transient conditions that only forbid a
-    /// mutation (callbacks dispatching, a save in flight, the pre-gameplay phase), and keeps every
-    /// condition that means the owner has no trustworthy state for this session.
-    /// </summary>
-    internal bool StateReady(string owner)
-    {
-        _hub.CheckThread();
-        return !_disposed && !_sessionFault && !_writeFault && _session.HasValue && Current(_session.Value)
-            && _owners.TryGetValue(owner, out var registered) && registered.Ready;
-    }
-
-    internal string Status(string owner)
-    {
-        _hub.CheckThread();
-        if (_disposed || !_session.HasValue) return "inactive";
-        if (_sessionFault) return "load-blocked";
-        if (_writeFault) return _faultDetail ?? "publication-blocked";
-        return _owners.TryGetValue(owner, out var registered) ? registered.Status : "unregistered";
-    }
-
     internal SaveDataRegistrationStatus Admission(string owner)
     {
         _hub.CheckThread();
@@ -119,13 +97,13 @@ internal sealed class PersistenceCoordinator : IDisposable
         if (!_session.HasValue || current == null || current.Id != _session.Value ||
             current.Phase is SessionPhase.Failed or SessionPhase.Invalidated)
             return new SaveDataState(SaveDataStateKind.Inactive);
-        if (_sessionFault) return new SaveDataState(SaveDataStateKind.Blocked, _session, _sessionReason, Status(owner));
-        if (_writeFault) return new SaveDataState(SaveDataStateKind.Blocked, _session, _writeReason, Status(owner));
+        if (_sessionFault) return new SaveDataState(SaveDataStateKind.Blocked, _session, _sessionReason, "Session persistence is blocked.");
+        if (_writeFault) return new SaveDataState(SaveDataStateKind.Blocked, _session, _writeReason, _faultDetail ?? "Publication is blocked.");
         if (!_owners.TryGetValue(owner, out var registered))
             return new SaveDataState(SaveDataStateKind.Blocked, _session, SaveDataBlockReason.ProviderRemoved);
-        if (registered.Ready) return new SaveDataState(SaveDataStateKind.Ready, _session, detail: registered.Status);
+        if (registered.Ready) return new SaveDataState(SaveDataStateKind.Ready, _session, detail: registered.Detail);
         if (registered.Reason != SaveDataBlockReason.None)
-            return new SaveDataState(SaveDataStateKind.Blocked, _session, registered.Reason, registered.Status);
+            return new SaveDataState(SaveDataStateKind.Blocked, _session, registered.Reason, registered.Detail);
         return new SaveDataState(SaveDataStateKind.Restoring, _session);
     }
 

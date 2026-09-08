@@ -231,14 +231,16 @@ public sealed class BarContentServiceTests
     }
 
     private static readonly object FixedPermissionStamp = new();
-    private sealed class Storage : IPersistenceApi, IPersistenceRegistration, IPersistenceReadiness
+    private sealed class Storage : TestSaveDataService
     {
         internal PersistenceProvider Provider = null!;
         public bool MutationAllowed { get; set; } = true;
         public bool StateReady { get; set; } = true;
         public string Status => "test";
-        public IPersistenceRegistration Register(PersistenceProvider provider) { Provider = provider; return this; }
-        public void Dispose() { MutationAllowed = false; StateReady = false; }
+        public override bool CanRead => StateReady;
+        public override bool CanMutate => StateReady && MutationAllowed;
+        public override SaveDataRegistrationResult Register(PersistenceProvider provider) { Provider = provider; return new(SaveDataRegistrationStatus.Registered, this); }
+        public override void Dispose() { MutationAllowed = false; StateReady = false; }
     }
     private sealed class World : IBarRosterWorld
     {

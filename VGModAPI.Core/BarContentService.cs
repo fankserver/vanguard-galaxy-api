@@ -21,7 +21,7 @@ internal sealed partial class BarContentService : IBarApi, IDisposable
     private readonly IDisposable _subscription;
     private bool _disposed;
 
-    internal BarContentService(IPersistenceApi persistence, ILifecycleApi lifecycle, StoryHostAuthenticator authenticate,
+    internal BarContentService(ISaveDataService persistence, ILifecycleApi lifecycle, StoryHostAuthenticator authenticate,
         Func<string, bool> exclusivePermission, Action checkThread, Func<object>? permissionStamp = null, Action<string, Exception>? reportObserver = null)
     {
         _reportObserver = reportObserver;

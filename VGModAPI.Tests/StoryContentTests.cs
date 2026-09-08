@@ -590,23 +590,19 @@ public sealed class StoryContentTests
         Assert.Single(provider.Occurrences("salvage-run").Records);
     }
 
-    /// <summary>
-    /// Readiness is an optional capability of the registration handle. A handle that does not report
-    /// it says nothing about whether restored state exists, so the module refuses instead of assuming
-    /// it does: unknown readiness is unavailable, not ready.
-    /// </summary>
     [Fact]
-    public void APersistenceHandleWithoutTheReadinessCapabilityMakesEveryAnswerUnavailable()
+    public void BlockedProviderStateMakesEveryAnswerUnavailable()
     {
         var host = new FakeHost();
-        var world = new FakeWorld(readiness: false);
+        var world = new FakeWorld();
         using var service = world.Service(host);
         world.StartAndRestore();
         var plugin = new object();
         host.Register(plugin, AnimaPlugin);
         var provider = service.AcquireProvider(plugin).Provider!;
         Assert.True(provider.Register(Definition(retention: StoryRetention.Campaign)).Succeeded);
-        Assert.False(world.Persistence is IPersistenceReadiness);
+        world.Persistence.StateReady = false;
+        Assert.False(world.Persistence.CanRead);
 
         var completion = provider.IsCompleted("salvage-run");
         Assert.Equal(StoryKnowledge.Unavailable, completion.Knowledge);
@@ -615,7 +611,7 @@ public sealed class StoryContentTests
         Assert.Equal(StoryKnowledge.Unavailable, provider.Unresolved("salvage-run").Knowledge);
         var refused = provider.Offer("salvage-run");
         Assert.Equal(StoryTransitionStatus.Unavailable, refused.Status);
-        Assert.Contains("does not report readiness", refused.Detail);
+        Assert.Contains("Blocked", refused.Detail);
         Assert.Empty(service.Ledger.Entries);
     }
 
@@ -662,11 +658,11 @@ public sealed class StoryContentTests
         using var hub = new LifecycleHub((_, error) => throw new Exception("Unexpected subscriber fault", error));
         try
         {
+            hub.SetCapability("session-lifecycle", true, "Bound."); hub.SetCapability("save-outcomes", true, "Bound.");
             using var persistence = new PersistenceService(hub, new GenerationStore(root), path => path, _ => new string('a', 64));
             var control = persistence.Register(new PersistenceProvider("vgmodapi.tests.control", 1,
-                capture: () => new byte[] { 1 }, restore: (_, _) => { }, validate: bytes => bytes.Length == 1));
-            // The runtime handle carries the optional readiness capability the story module casts for.
-            Assert.True(control is IPersistenceReadiness);
+                capture: () => new byte[] { 1 }, restore: (_, _) => { }, validate: bytes => bytes.Length == 1)).Registration!;
+            Assert.Equal(SaveDataStateKind.Inactive, control.State.Kind);
             var host = new FakeHost();
             using var service = new StoryContentService(persistence, hub, host.Authenticate, null, hub.CheckThread);
             var session = hub.Begin(SessionOrigin.NewGame, null);
@@ -684,7 +680,7 @@ public sealed class StoryContentTests
 
             // Another owner unregistering mid-session is a real coordinator load block.
             control.Dispose();
-            Assert.Equal("load-blocked", service.PersistenceStatus);
+            Assert.Equal("Blocked", service.PersistenceStatus);
             var blocked = provider.IsCompleted("salvage-run");
             Assert.Equal(StoryKnowledge.Unavailable, blocked.Knowledge);
             Assert.Null(blocked.Completed);
@@ -707,6 +703,7 @@ public sealed class StoryContentTests
         using var hub = new LifecycleHub((_, error) => throw new Exception("Unexpected subscriber fault", error));
         try
         {
+            hub.SetCapability("session-lifecycle", true, "Bound."); hub.SetCapability("save-outcomes", true, "Bound.");
             using var persistence = new PersistenceService(hub, new GenerationStore(root), path => path, _ => new string('a', 64));
             var host = new FakeHost();
             using var service = new StoryContentService(persistence, hub, host.Authenticate, null, hub.CheckThread);
@@ -740,7 +737,7 @@ public sealed class StoryContentTests
             Assert.Equal(StoryTransitionStatus.Busy, mutationInCallback.Status);
             Assert.Contains("mutations are paused", mutationInCallback.Detail);
             Assert.DoesNotContain("unavailable", mutationInCallback.Detail);
-            Assert.Equal("ready", service.PersistenceStatus);
+            Assert.Equal("Ready", service.PersistenceStatus);
 
             // Outside the dispatch the same call is accepted, and the state it records is queryable.
             var offer = provider.Offer("salvage-run");
@@ -812,10 +809,11 @@ public sealed class StoryContentTests
         using var hub = new LifecycleHub((_, error) => throw new Exception("Unexpected subscriber fault", error));
         try
         {
+            hub.SetCapability("session-lifecycle", true, "Bound."); hub.SetCapability("save-outcomes", true, "Bound.");
             using var persistence = new PersistenceService(hub, new GenerationStore(root), path => path, _ => new string('a', 64));
             byte[]? restored = null;
             using var control = persistence.Register(new PersistenceProvider("vgmodapi.tests.control", 1,
-                capture: () => new byte[] { 1 }, restore: (_, bytes) => restored = bytes, validate: bytes => bytes.Length == 1));
+                capture: () => new byte[] { 1 }, restore: (_, bytes) => restored = bytes, validate: bytes => bytes.Length == 1)).Registration!;
             var session = hub.Begin(SessionOrigin.NewGame, null);
             hub.PlayerReady(session);
             hub.GameplayInitialized(session);
@@ -825,8 +823,8 @@ public sealed class StoryContentTests
                 () => new StoryContentService(persistence, hub, host.Authenticate, null, hub.CheckThread));
             Assert.Contains("before a session begins", failure.Message);
             // No story owner exists, and the other registered owner is neither paused nor faulted.
-            Assert.True(control.MutationAllowed);
-            Assert.Equal("ready", control.Status);
+            Assert.True(control.CanMutate);
+            Assert.Equal(SaveDataStateKind.Ready, control.State.Kind);
             Assert.Null(restored);
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
@@ -2250,6 +2248,7 @@ public sealed class StoryContentTests
             var oldCodec = new OwnerSchemaCodec(StoryStateCodec.Owner, 2, StoryStateCodec.Validate);
             store.Publish("slot", hash, Guid.NewGuid(), new Dictionary<string, byte[]> { [StoryStateCodec.Owner] = oldCodec.Encode(legacy) });
             using var hub = new LifecycleHub((_, error) => throw new Exception("Unexpected migration fault", error));
+            hub.SetCapability("session-lifecycle", true, "Bound."); hub.SetCapability("save-outcomes", true, "Bound.");
             using var persistence = new PersistenceService(hub, store, path => path, _ => hash);
             var host = new FakeHost();
             using var service = new StoryContentService(persistence, hub, host.Authenticate, null, hub.CheckThread);
@@ -2292,6 +2291,7 @@ public sealed class StoryContentTests
             var oldCodec = new OwnerSchemaCodec(StoryStateCodec.Owner, 1, StoryStateCodec.Validate);
             store.Publish("slot", hash, Guid.NewGuid(), new Dictionary<string, byte[]> { [StoryStateCodec.Owner] = oldCodec.Encode(legacy) });
             using var hub = new LifecycleHub((_, error) => throw new Exception("Unexpected migration fault", error));
+            hub.SetCapability("session-lifecycle", true, "Bound."); hub.SetCapability("save-outcomes", true, "Bound.");
             using var persistence = new PersistenceService(hub, store, path => path, _ => hash);
             var host = new FakeHost();
             using var service = new StoryContentService(persistence, hub, host.Authenticate, null, hub.CheckThread);
@@ -3338,7 +3338,7 @@ public sealed class StoryContentTests
     private sealed class FakeWorld
     {
         internal readonly FakePersistence Persistence;
-        internal FakeWorld(bool readiness = true) => Persistence = readiness ? new ReadyFakePersistence() : new FakePersistence();
+        internal FakeWorld() => Persistence = new FakePersistence();
         internal readonly FakeLifecycle Lifecycle = new();
         internal Guid SessionId => Lifecycle.CurrentSession?.Id ?? Guid.Empty;
 
@@ -3702,8 +3702,7 @@ public sealed class StoryContentTests
             => Unavailable ? null : new StoryWorldSnapshot(InstalledIdentifiers(), _active.ToArray(), _archived.ToArray());
     }
 
-    /// <summary>A handle that implements only the SHIPPED registration interface, with no readiness capability.</summary>
-    private class FakePersistence : IPersistenceApi, IPersistenceRegistration
+    private class FakePersistence : TestSaveDataService
     {
         internal PersistenceProvider? Provider;
         /// <summary>The owner's restored state is readable. False models blocked, unreadable or restore-failed data.</summary>
@@ -3711,20 +3710,15 @@ public sealed class StoryContentTests
         /// <summary>Transient: callbacks dispatching or a save in flight. Reading stays safe, mutating does not.</summary>
         internal bool MutationsPaused;
         internal bool OwnerDisposed;
-        public IPersistenceRegistration Register(PersistenceProvider provider)
+        public override SaveDataRegistrationResult Register(PersistenceProvider provider)
         {
             Assert.Null(Provider);
             Provider = provider;
-            return this;
+            return new(SaveDataRegistrationStatus.Registered, this);
         }
-        bool IPersistenceRegistration.MutationAllowed => !OwnerDisposed && StateReady && !MutationsPaused;
-        string IPersistenceRegistration.Status => OwnerDisposed ? "inactive" : StateReady ? "ready" : "load-blocked";
-        public void Dispose() => OwnerDisposed = true;
+        public override bool CanMutate => !OwnerDisposed && StateReady && !MutationsPaused;
+        public override bool CanRead => !OwnerDisposed && StateReady;
+        public override void Dispose() => OwnerDisposed = true;
     }
 
-    /// <summary>The same handle plus the optional readiness capability the runtime implementation provides.</summary>
-    private sealed class ReadyFakePersistence : FakePersistence, IPersistenceReadiness
-    {
-        bool IPersistenceReadiness.StateReady => !OwnerDisposed && StateReady;
-    }
 }
