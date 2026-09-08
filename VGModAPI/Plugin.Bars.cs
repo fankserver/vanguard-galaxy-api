@@ -49,7 +49,8 @@ public sealed partial class Plugin
             var assembly = Assembly.Load("Assembly-CSharp");
             var native = new BarNativeBindings(assembly);
             var bars = new BarContentService(_persistence, _hub, StoryHostAuthentication.Resolve,
-                plugin => _barPermissions.Allowed.Contains(plugin), _hub.CheckThread, () => _barPermissions);
+                plugin => _barPermissions.Allowed.Contains(plugin), _hub.CheckThread, () => _barPermissions,
+                (owner, error) => Logger.LogError("Bar observer '" + owner + "' failed: " + error));
             _bars = bars;
             _barHost = new BarRuntimeHost(bars, native.World, native.Contacts, native.Serialization,
                 station => _hub.CurrentSession is { } session ? bars.Plan(session.Id, station) : null,

@@ -171,6 +171,40 @@ public sealed class BarContentServiceTests
         host.Interact(contact); Assert.Equal(1, clicks);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void FinalizedObserversRespectDisposalStalenessAndReentrantValidation(bool invalidate)
+    {
+        using var hub = new LifecycleHub((_, error) => throw error);
+        var storage = new Storage();
+        var reported = new System.Collections.Generic.List<string>();
+        using var service = new BarContentService(storage, hub,
+            (_, _) => new StoryHostPlugin("author", typeof(BarContentServiceTests).Assembly), _ => false, hub.CheckThread,
+            reportObserver: (owner, error) => { reported.Add(owner); throw new Exception("logger failure"); });
+        var snapshot = new BarRosterFinalized(Guid.NewGuid(), "station", Array.Empty<BarRosterMember>(),
+            new System.Collections.Generic.Dictionary<string, string>());
+        var delivered = new System.Collections.Generic.List<string>();
+        IDisposable? second = null;
+        bool valid = true;
+        using var first = service.Subscribe("first", _ =>
+        {
+            delivered.Add("first"); second!.Dispose(); valid = !invalidate;
+            throw new Exception("observer failure");
+        });
+        second = service.Subscribe("second", _ => delivered.Add("second"));
+        using var third = service.Subscribe("third", _ => delivered.Add("third"));
+        var nestedResults = new System.Collections.Generic.List<bool>();
+        Assert.True(service.Publish(snapshot, () =>
+        {
+            nestedResults.Add(service.Publish(snapshot, () => true));
+            return valid;
+        }));
+        Assert.All(nestedResults, value => Assert.False(value));
+        Assert.Equal(invalidate ? new[] { "first" } : new[] { "first", "third" }, delivered);
+        Assert.Equal(new[] { "first" }, reported);
+    }
+
     private static readonly object FixedPermissionStamp = new();
     private sealed class Storage : IPersistenceApi, IPersistenceRegistration, IPersistenceReadiness
     {

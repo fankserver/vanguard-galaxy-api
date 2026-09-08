@@ -10,8 +10,9 @@ internal sealed partial class BarContentService
     {
         private readonly BarContentService _service;
         internal readonly Action<BarRosterFinalized> Callback;
+        internal readonly string Owner;
         internal bool Active = true;
-        internal Observer(BarContentService service, Action<BarRosterFinalized> callback) { _service = service; Callback = callback; }
+        internal Observer(BarContentService service, string owner, Action<BarRosterFinalized> callback) { _service = service; Owner = owner; Callback = callback; }
         public void Dispose() { _service._checkThread(); Active = false; _service._observers.Remove(this); }
     }
     private readonly List<Observer> _observers = new();
@@ -24,7 +25,7 @@ internal sealed partial class BarContentService
         if (string.IsNullOrWhiteSpace(owner)) throw new ArgumentException("Observer identity required.", nameof(owner));
         if (callback == null) throw new ArgumentNullException(nameof(callback));
         if (_observers.Count >= 128) throw new InvalidOperationException("Bar observer limit reached.");
-        var observer = new Observer(this, callback);
+        var observer = new Observer(this, owner, callback);
         _observers.Add(observer);
         return observer;
     }
@@ -32,16 +33,17 @@ internal sealed partial class BarContentService
     internal bool Publish(BarRosterFinalized snapshot, Func<bool> current)
     {
         _checkThread();
-        if (_disposed || _publishing || !current()) return false;
+        if (_disposed || _publishing) return false;
         _publishing = true;
         try
         {
+            if (!current()) return false;
             foreach (var observer in _observers.ToArray())
             {
                 if (_disposed || !current()) break;
                 if (!observer.Active) continue;
                 try { observer.Callback(snapshot); }
-                catch { /* Observers cannot break roster application or another observer. */ }
+                catch (Exception error) { try { _reportObserver?.Invoke(observer.Owner, error); } catch { } }
             }
             return true;
         }

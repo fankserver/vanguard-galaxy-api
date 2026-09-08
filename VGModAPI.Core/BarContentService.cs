@@ -13,6 +13,7 @@ internal sealed partial class BarContentService : IBarApi, IDisposable
     private readonly Func<object>? _permissionStamp;
     private readonly ILifecycleApi _lifecycle;
     private readonly Action _checkThread;
+    private readonly Action<string, Exception>? _reportObserver;
     private readonly BarPatronPersistence _persistence;
     private readonly StoryProviderBindings _bindings = new();
     private readonly Dictionary<string, Lease> _leases = new(StringComparer.Ordinal);
@@ -21,8 +22,9 @@ internal sealed partial class BarContentService : IBarApi, IDisposable
     private bool _disposed;
 
     internal BarContentService(IPersistenceApi persistence, ILifecycleApi lifecycle, StoryHostAuthenticator authenticate,
-        Func<string, bool> exclusivePermission, Action checkThread, Func<object>? permissionStamp = null)
+        Func<string, bool> exclusivePermission, Action checkThread, Func<object>? permissionStamp = null, Action<string, Exception>? reportObserver = null)
     {
+        _reportObserver = reportObserver;
         _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
         _authenticate = authenticate ?? throw new ArgumentNullException(nameof(authenticate));
         _exclusivePermission = exclusivePermission ?? throw new ArgumentNullException(nameof(exclusivePermission));
