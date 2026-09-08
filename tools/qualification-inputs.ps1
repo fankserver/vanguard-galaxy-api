@@ -300,6 +300,33 @@ function Assert-ModInformationProbeReceipt([string]$Root, $Provenance) {
         if (@($facts | Where-Object { $_ -ceq ($fact + '=PASS') }).Count -ne 1) { throw "Missing or duplicate information probe fact: $fact" }
     }
 }
+function Assert-ForgeReadSelection([string]$Root, $Provenance) {
+    $property = $Provenance.PSObject.Properties['forgeReadProbe']
+    if ($property -and $property.Value -isnot [bool]) { throw 'Invalid Forge read flag.' }
+    $selected = $property -and $property.Value
+    $marker = Join-Path $Root 'forge-reads.enabled'
+    if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Forge read selection changed.' }
+    if (!$selected) { return }
+    if ($Provenance.scenario -ne 'Full' -or [IO.File]::ReadAllText($marker) -cne 'forge-reads-v1') { throw 'Invalid Forge read selection.' }
+    foreach ($entry in $Provenance.PSObject.Properties) {
+        if ($entry.Name -ne 'forgeReadProbe' -and $entry.Value -is [bool] -and $entry.Value) { throw 'Forge reads cannot combine other scenarios or consumers.' }
+    }
+    if ($null -ne $Provenance.assemblyOverlay) { throw 'Forge reads cannot use an assembly overlay.' }
+    $config = [IO.File]::ReadAllText((Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg'))
+    if ($config -cnotmatch '(?ms)^\[Recipes\]\r?\n(?:(?!^\[).)*?^Enabled = true\r?$') { throw 'Forge read recipe integration is not enabled.' }
+}
+function Assert-ForgeReadReceipt([string]$Root, $Provenance) {
+    Assert-ForgeReadSelection $Root $Provenance
+    if (!$Provenance.PSObject.Properties['forgeReadProbe'] -or !$Provenance.forgeReadProbe) { return }
+    Assert-QualificationExitOutcome (Get-Content -LiteralPath (Join-Path $Root 'run-outcome.json') -Raw | ConvertFrom-Json) 'Forge reads'
+    $receipt = Join-Path $Root 'forge-reads.receipt'; $snapshot = Join-Path $Root 'forge-reads.txt'
+    if ((Get-Item -LiteralPath $receipt).Length -gt 256 -or (Get-Item -LiteralPath $snapshot).Length -gt 4096) { throw 'Forge evidence too large.' }
+    $lines = @(Get-Content -LiteralPath $receipt)
+    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'forge-reads-v1' -or $lines[2] -cnotmatch '^sha256=[0-9a-f]{64}$') { throw 'Invalid Forge receipt.' }
+    if ((Get-FileHash -LiteralPath $snapshot -Algorithm SHA256).Hash.ToLowerInvariant() -cne $lines[2].Substring(7)) { throw 'Forge evidence changed.' }
+    $facts = @(Get-Content -LiteralPath $snapshot)
+    if ($facts.Count -ne 5 -or $facts[0] -cne 'PASS' -or $facts[1] -cne 'forge-reads-v1' -or $facts[2] -cnotmatch '^catalog=[1-9][0-9]*$' -or $facts[3] -cnotmatch '^quotes=[1-9][0-9]*$' -or $facts[4] -cnotmatch '^restored=[0-9]+$') { throw 'Invalid Forge facts.' }
+}
 function Assert-ModMenuProbeSelection([string]$Root, $Provenance) {
     Assert-ModInformationProbeSelection $Root $Provenance
     $property = $Provenance.PSObject.Properties['modMenuProbe']
@@ -923,6 +950,7 @@ function Assert-QualificationInputs([string]$Root) {
     $provenance = Get-Content -LiteralPath (Join-Path $Root 'build-provenance.json') -Raw | ConvertFrom-Json
     if ($provenance.scenario -notin @('Full','MissingApi','UnavailableApi') -or
         (Get-Content -LiteralPath (Join-Path $Root 'scenario.txt') -Raw).Trim() -cne $provenance.scenario) { throw 'Prepared scenario changed.' }
+    Assert-ForgeReadSelection $Root $provenance
     Assert-ModMenuProbeSelection $Root $provenance
     $menuProperty = $provenance.PSObject.Properties['menuInspection']
     if ($menuProperty -and $menuProperty.Value -isnot [bool]) { throw 'Menu inspection selection must be boolean.' }

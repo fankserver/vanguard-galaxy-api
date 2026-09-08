@@ -2,6 +2,12 @@
 
 This development tooling is not part of the API distribution. Explicit authorization is required before test deployment or native execution. Full in-game acceptance remains a separate gate. Commands and case definitions describe current tooling; exact candidate receipts and execution reports stay outside this repository.
 
+## Forge/refinery read probe (development)
+
+`-Scenario Full -ForgeReadProbe` selects a read-only phase using a copied station fixture as SaveA, without other probes or consumers. It enables recipe integration only. The native driver compares public station/session/credits and restored-job counts with native state, enumerates supported/refused quotes, and verifies that synchronous reads do not change recipe pricing caches, credits or native job lists. A selected marker, recipe configuration, successful process exit and bounded hash-bound receipt are required by the launcher. Run `tools/tests/forge-reads.Tests.ps1` for synthetic selection/evidence checks without Unity.
+
+This phase does **not** qualify queue/cancel/extraction mutations, all inventory economics, save recovery, UI input/scaling or consumer coexistence. Passing it cannot close the full Forge/refinery acceptance matrix. Native receipts and source findings remain private; the phase must actually execute before its behavior is claimed as qualified.
+
 ## Offline Mods screen input probe (development)
 
 Prepare with `-Scenario Full -ModMenuProbe`, without consumer DLLs or other probe switches. It runs only the native menu input probe instead of loading fixtures. The preparation marker is validated against provenance before launch; a bounded SHA-256 receipt is accepted only after a valid recorded process exit. A source review does not grant a native lease: coordinate exclusive ownership before Prepare/Run.
