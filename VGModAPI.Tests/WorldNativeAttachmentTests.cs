@@ -20,6 +20,7 @@ public sealed class WorldNativeAttachmentTests
     [InlineData(2)]
     [InlineData(3)]
     [InlineData(4)]
+    [InlineData(5)]
     public void AttachmentRequiresUnchangedObservedPlayerMapAndAdmission(int change)
     {
         var hub = new LifecycleHub((_, _) => { });
@@ -37,8 +38,12 @@ public sealed class WorldNativeAttachmentTests
             var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
             var definition = new WorldSavedDefinition("author.a", new WorldCombatDefinition("PoiX", 1, "世界", faction, 2));
             var attachment = new WorldNativeAttachment(game);
-            var result = attachment.TryAppend(request.Id, definition, identity, "system", 10, 20, () =>
+            var coordinator = new WorldCreationCoordinator(attachment, hub.CheckThread);
+            coordinator.Reset(request.Id);
+            var result = coordinator.TryCreate(request.Id, definition, identity, "system", 10, 20, () =>
             {
+                Assert.Throws<InvalidDataException>(() => coordinator.Snapshot());
+                if (change == 5) coordinator.Reset(Guid.NewGuid());
                 if (change == 1) GamePlayer.current = new GamePlayer { map = map };
                 if (change == 2) GamePlayer.current!.map = new GalaxyMapData();
                 if (change == 3) neighbour.position = new UnityEngine.Vector2 { x = 10, y = 20 };
@@ -48,9 +53,11 @@ public sealed class WorldNativeAttachmentTests
             {
                 Assert.NotNull(result); Assert.Equal(2, system.pointsOfInterest.Count);
                 Assert.Same(result!.Native, system.pointsOfInterest[1]);
+                Assert.Same(result, Assert.Single(coordinator.Snapshot()));
+                Assert.Null(coordinator.TryCreate(request.Id, definition, identity, "system", 30, 40, () => true));
                 Assert.Null(attachment.TryAppend(request.Id, definition, identity, "system", 30, 40, () => true));
             }
-            else { Assert.Null(result); Assert.Same(neighbour, Assert.Single(system.pointsOfInterest)); }
+            else { Assert.Null(result); Assert.Same(neighbour, Assert.Single(system.pointsOfInterest)); Assert.Empty(coordinator.Snapshot()); }
             Assert.Equal(0, neighbour.NameReads);
         }
         finally { Faction.allFactions.Remove(faction); GamePlayer.current = null; }

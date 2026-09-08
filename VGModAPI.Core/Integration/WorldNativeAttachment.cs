@@ -24,7 +24,7 @@ internal sealed class WorldNativeAttachment
             ?? throw new MissingFieldException("SystemMapData.pointsOfInterest");
     }
     internal WorldSnapshotInstance? TryAppend(Guid session, WorldSavedDefinition definition, WorldObjectIdentity identity,
-        string systemId, float x, float y, Func<bool> admission)
+        string systemId, float x, float y, Func<bool> admission, Action<WorldSnapshotInstance>? prepare = null)
     {
         if (admission == null) throw new ArgumentNullException(nameof(admission));
         if (!_game.TryGetCurrentReadyPlayer(session, out var player)) return null;
@@ -37,6 +37,7 @@ internal sealed class WorldNativeAttachment
         var created = _factory.Create(definition, identity, system, x, y);
         // Validate and allocate the returned descriptor before the only native mutation.
         var record = new WorldSnapshotInstance(created, identity, systemId, definition);
+        prepare?.Invoke(record);
         bool appended = WorldMembershipTransaction.TryAppend(members, expected, created, () =>
             admission() && _game.TryGetCurrentReadyPlayer(session, out var current) && ReferenceEquals(current, player) &&
             ReferenceEquals(_map.GetValue(current), map) && before.SameMembership(_index.Read(map)) &&
