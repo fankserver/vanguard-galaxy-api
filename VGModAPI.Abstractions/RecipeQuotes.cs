@@ -20,7 +20,7 @@ public sealed class RecipeStationHandle : IEquatable<RecipeStationHandle>
 }
 
 public enum RecipeQuoteStatus { Available, IntegrationUnavailable, SessionUnavailable, StationUnavailable, StaleHandle, InvalidRequest, RecipeUnavailable, Unsupported, NativeFailure, LimitExceeded }
-public enum RecipeBlocker { InsufficientCredits, MissingIngredients, QueueFull, InventoryUnavailable, OutputUnresolved, AutomaticRefiningDisabled }
+public enum RecipeBlocker { InsufficientCredits, MissingIngredients, QueueFull, InventoryUnavailable, OutputUnresolved, AutomaticRefiningDisabled, PricingUnavailable }
 /// <summary>Native inventory purposes are distinct even when their balances belong to the same player.</summary>
 public enum RecipeInventoryKind { PlayerRefinedMaterials, StationMaterials, PlayerArmory, PlayerData, ShipCargo }
 public enum RefineryInputPolicy { Manual, AutomaticSelection }
@@ -118,8 +118,8 @@ public sealed class RecipeQuote
         if (!Enum.IsDefined(typeof(RecipeQuoteStatus), status)) throw new ArgumentOutOfRangeException(nameof(status));
         if (revision < 0 || creditsRequired < 0 || creditsAvailable < 0 || queueUsed < 0 || queueCapacity < 0) throw new ArgumentOutOfRangeException(nameof(revision));
         if (secondsPerBatch.HasValue && (double.IsNaN(secondsPerBatch.Value) || double.IsInfinity(secondsPerBatch.Value) || secondsPerBatch.Value <= 0)) throw new ArgumentOutOfRangeException(nameof(secondsPerBatch));
-        if (status == RecipeQuoteStatus.Available && (station == null || batches < 1 || revision < 1 || !creditsRequired.HasValue || !creditsAvailable.HasValue))
-            throw new ArgumentException("An available quote requires station, revision, positive batches and known credits.");
+        if (status == RecipeQuoteStatus.Available && (station == null || batches < 1 || revision < 1 || !creditsAvailable.HasValue))
+            throw new ArgumentException("An available quote requires station, revision, positive batches and known player credits.");
         Status = status; Detail = detail ?? throw new ArgumentNullException(nameof(detail)); Station = station;
         Recipe = recipe ?? throw new ArgumentNullException(nameof(recipe)); Batches = batches; Revision = revision;
         Inputs = RecipeValues.Copy(inputs, 256); Outputs = RecipeValues.Copy(outputs, 512);
@@ -129,6 +129,8 @@ public sealed class RecipeQuote
             if (!Enum.IsDefined(typeof(RecipeBlocker), blocker) || copy.Count >= 16) throw new ArgumentOutOfRangeException(nameof(blockers));
             if (!copy.Contains(blocker)) copy.Add(blocker);
         }
+        if (status == RecipeQuoteStatus.Available && !creditsRequired.HasValue && !copy.Contains(RecipeBlocker.PricingUnavailable))
+            throw new ArgumentException("Unknown price requires a PricingUnavailable blocker.");
         Blockers = copy.AsReadOnly(); OutputLevel = outputLevel; CreditsRequired = creditsRequired; CreditsAvailable = creditsAvailable;
         if (!Enum.IsDefined(typeof(RefineryInputPolicy), refineryPolicy)) throw new ArgumentOutOfRangeException(nameof(refineryPolicy));
         RefineryPolicy = refineryPolicy;

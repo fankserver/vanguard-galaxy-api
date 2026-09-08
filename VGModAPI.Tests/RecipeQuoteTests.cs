@@ -179,6 +179,40 @@ public sealed class RecipeQuoteTests : IDisposable
         Assert.Equal(RecipeQuoteStatus.SessionUnavailable, _service.Quote(_handle, Id).Status);
     }
     [Fact]
+    public void ColdForgePricingCannotInvokeTransitivePreviewBuilder()
+    {
+        _recipe.customCost = 0; _recipe.dynamicCost = -1; _item.calcCost = -1;
+        var cold = _service.Quote(_handle, Id);
+        Assert.Equal(RecipeQuoteStatus.Available, cold.Status); Assert.NotEmpty(cold.Inputs); Assert.NotEmpty(cold.Outputs);
+        Assert.Null(cold.CreditsRequired); Assert.Contains(RecipeBlocker.PricingUnavailable, cold.Blockers); Assert.False(cold.RequirementsMet);
+        Assert.Equal(0, _item.PreviewBuilderCalls); Assert.Equal(-1, _recipe.dynamicCost); Assert.Equal(-1, _item.calcCost);
+        _item.calcCost = 25;
+        Assert.Equal(25L, _service.Quote(_handle, Id).CreditsRequired); Assert.Equal(0, _item.PreviewBuilderCalls);
+        _item.calcCost = -1; // A warm recipe price does not need to read a cold ingredient price.
+        Assert.Equal(25L, _service.Quote(_handle, Id).CreditsRequired); Assert.Equal(0, _item.PreviewBuilderCalls);
+    }
+    [Fact]
+    public void ColdRefineryPricingCannotInvokeTransitivePreviewBuilder()
+    {
+        _item.calcCost = -1;
+        _item.gameObject.Components[typeof(OreItemData)] = new OreItemData { PricingItem = _item, contents = new() { new() { yield = .5f } } };
+        var quote = _service.Quote(_handle, new RecipeId("vanilla", "refining/component"));
+        Assert.Equal(RecipeQuoteStatus.Available, quote.Status); Assert.Single(quote.Inputs); Assert.Single(quote.Outputs);
+        Assert.Null(quote.CreditsRequired); Assert.Contains(RecipeBlocker.PricingUnavailable, quote.Blockers);
+        Assert.Equal(0, _item.PreviewBuilderCalls); Assert.Equal(-1, _item.calcCost);
+    }
+    [Theory]
+    [InlineData(16777215, true)] [InlineData(16777216, true)] [InlineData(16777217, false)] [InlineData(16777218, true)]
+    public void ExtractionRefusesLossyNativeMaterialCounts(int count, bool supported)
+    {
+        _player.Materials = 33554432; _player.credits = long.MaxValue;
+        InventoryItemType.all = new[] { new InventoryItemType { identifier = "CanisterTestMetal" } };
+        var quote = _service.QuoteMaterialExtraction(_handle, new RecipeResourceId("vanilla", "TestMetal", RecipeResourceKind.RefinedMaterial), count);
+        Assert.Equal(supported ? RecipeQuoteStatus.Available : RecipeQuoteStatus.InvalidRequest, quote.Status);
+        if (supported) Assert.Equal(count, Assert.Single(quote.Inputs).Required);
+        else Assert.Empty(quote.Inputs);
+    }
+    [Fact]
     public void ExtractionQuotesCreditsAndCanistersWithoutQueueOrMutation()
     {
         var canister = new InventoryItemType { identifier = "CanisterTestMetal" };

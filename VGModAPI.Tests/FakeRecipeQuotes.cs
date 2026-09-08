@@ -74,7 +74,19 @@ namespace Behaviour.Crafting
     {
         public int TestLevel = 10;
         public float TestScale = 1;
-        public int craftingCost { get; set; } = 10;
+        public int customCost = 10;
+        public int dynamicCost = -1;
+        public int craftingCost
+        {
+            get
+            {
+                if (customCost > 0) return customCost;
+                if (dynamicCost < 0)
+                    dynamicCost = itemMaterials.Sum(row => ((Behaviour.Item.InventoryItemType)row.item!.Components[typeof(Behaviour.Item.InventoryItemType)]).cost);
+                return dynamicCost;
+            }
+            set => customCost = value;
+        }
         public float craftingTime { get; set; } = 5;
         public int GetAdjustedOutputLevel() => TestLevel;
         public IEnumerable<(Source.Item.RefinedMaterial, float)> GetIngredientMaterials(int level) => materials.Select(row => (row.material, row.amount * TestScale));
@@ -88,6 +100,16 @@ namespace Behaviour.Item
     {
         public Source.Item.ItemCategory itemCategory { get; set; } = Source.Item.ItemCategory.Material;
         public float m3 { get; set; } = 1;
+        public float calcCost = 100;
+        public int PreviewBuilderCalls { get; private set; }
+        public int cost
+        {
+            get
+            {
+                if (calcCost < 0) { PreviewBuilderCalls++; calcCost = 77; }
+                return (int)calcCost;
+            }
+        }
         public bool CanGoInArmory() => itemCategory == Source.Item.ItemCategory.Module;
         public bool CanGoInMaterials() => itemCategory != Source.Item.ItemCategory.Module;
     }
@@ -96,7 +118,13 @@ namespace Behaviour.Mining
 {
     public sealed partial class OreItemData
     {
-        public int refinementCost { get; set; } = 5;
+        public Behaviour.Item.InventoryItemType? PricingItem;
+        private int _cost = 5;
+        public int refinementCost
+        {
+            get { if (PricingItem != null) _ = PricingItem.cost; return _cost; }
+            set => _cost = value;
+        }
         public float refinementTime { get; set; } = 3;
         public bool ignoreExtraRewards { get; set; }
         public bool disableAutoRefine { get; set; }

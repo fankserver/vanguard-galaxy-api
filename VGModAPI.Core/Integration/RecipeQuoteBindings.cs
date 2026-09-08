@@ -35,6 +35,8 @@ internal static class RecipeQuoteBindings
         (Player, "globalInventory", Inventory, false, false), (Player, "dataInventory", Inventory, false, false),
         ("Source.Data.AbstractUnitData", "cargo", Inventory, false, true),
         ("Behaviour.UI.Spacestation.SpaceStationInterior", "instance", "Behaviour.UI.Spacestation.SpaceStationInterior", true, true),
+        (Recipe, "customCost", "System.Int32", false, true), (Recipe, "dynamicCost", "System.Int32", false, true),
+        (Item, "calcCost", "System.Single", false, true),
         (Recipe, "craftingCost", "System.Int32", false, false), (Recipe, "craftingTime", "System.Single", false, false),
         (Refinery, "jobs", "System.Collections.Generic.List`1<Source.Mining.RefineryJob>", false, true),
         (Refinery, "maxJobs", "System.Int32", false, false),

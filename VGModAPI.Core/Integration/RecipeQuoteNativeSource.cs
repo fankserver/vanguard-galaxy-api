@@ -78,7 +78,7 @@ internal sealed partial class RecipeCatalogNativeSource
             if (bonus > 0) outputs.Add(new RecipeOutputPreview(output.Resource, count, Math.Min(1, bonus), "Independent bonus roll per completed batch; amount is the maximum across requested batches.", destinations));
         }
         // Both Forge and refinery charge through GamePlayer.RemoveCredits(float).
-        var cost = checked((long)(float)(checked(Convert.ToInt64(Get(recipe, "craftingCost")) * batches)));
+        long? cost = CanReadForgeCost(recipe) ? checked((long)(float)(checked(Convert.ToInt64(Get(recipe, "craftingCost")) * batches))) : null;
         var seconds = Convert.ToDouble(Get(recipe, "craftingTime")) / Convert.ToDouble(Get(forge, "craftingSpeed"));
         return BuildQuote(handle, id, batches, revision, player, requirements, outputs, cost, seconds,
             Enumerate(Get(forge, "jobs")).Count(), Convert.ToInt32(Get(forge, "maxJobs")), level);
@@ -114,7 +114,7 @@ internal sealed partial class RecipeCatalogNativeSource
                 ? new[] { RecipeInventoryKind.ShipCargo, RecipeInventoryKind.PlayerArmory, RecipeInventoryKind.StationMaterials }
                 : new[] { RecipeInventoryKind.PlayerArmory, RecipeInventoryKind.StationMaterials }));
         // Vanilla refinery charges through a float amount even though its inputs are integer costs.
-        var cost = checked((long)(float)(checked(Convert.ToInt64(Get(ore, "refinementCost")) * batches)));
+        long? cost = HasCachedItemCost(item!) ? checked((long)(float)(checked(Convert.ToInt64(Get(ore, "refinementCost")) * batches))) : null;
         var extra = automatic && (bool)Get(ore, "disableAutoRefine")! ? new[] { RecipeBlocker.AutomaticRefiningDisabled } : Array.Empty<RecipeBlocker>();
         return BuildQuote(handle, id, batches, revision, player, requirements, outputs, cost, Convert.ToDouble(Get(ore, "refinementTime")),
             Enumerate(Get(refinery, "jobs")).Count(), Convert.ToInt32(Get(refinery, "maxJobs")), null, extra, policy);
@@ -122,6 +122,9 @@ internal sealed partial class RecipeCatalogNativeSource
     private RecipeQuote QuoteExtraction(object station, object player, RecipeStationHandle handle, RecipeId id, int count, long revision)
     {
         if (Get(station, "refinery") == null) return RecipeQuoteService.Failure(RecipeQuoteStatus.StationUnavailable, handle, id, count, "Station has no refinery.");
+        var materialDebit = (float)count;
+        if ((double)materialDebit != count) return RecipeQuoteService.Failure(RecipeQuoteStatus.InvalidRequest, handle, id, count,
+            "Extraction count cannot be represented exactly by native material arithmetic.");
         var type = _assembly.GetType("Source.Item.RefinedMaterial", true)!;
         var name = id.LocalId.Substring("extraction/".Length);
         if (!Enum.GetNames(type).Contains(name, StringComparer.Ordinal)) return RecipeQuoteService.Failure(RecipeQuoteStatus.RecipeUnavailable, handle, id, count, "Material unavailable.");
@@ -136,7 +139,7 @@ internal sealed partial class RecipeCatalogNativeSource
             !IsLocal(station) ? new[] { RecipeBlocker.InventoryUnavailable } : Array.Empty<RecipeBlocker>());
     }
     private RecipeQuote BuildQuote(RecipeStationHandle handle, RecipeId id, int batches, long revision, object player,
-        IEnumerable<RecipeIngredientRequirement> inputs, IEnumerable<RecipeOutputPreview> outputs, long cost, double? seconds, int? used, int? capacity, int? level, IEnumerable<RecipeBlocker>? extra = null, RefineryInputPolicy policy = RefineryInputPolicy.Manual)
+        IEnumerable<RecipeIngredientRequirement> inputs, IEnumerable<RecipeOutputPreview> outputs, long? cost, double? seconds, int? used, int? capacity, int? level, IEnumerable<RecipeBlocker>? extra = null, RefineryInputPolicy policy = RefineryInputPolicy.Manual)
     {
         // A repeated resource row still spends from the same inventory; do not count its stock twice.
         var requirements = inputs.GroupBy(input => input.Resource)
@@ -145,15 +148,32 @@ internal sealed partial class RecipeCatalogNativeSource
         if (requirements.Length > 256 || results.Length > 512) throw new RecipeCatalogLimitException();
         if (cost < 0 || seconds.HasValue && (!double.IsFinite(seconds.Value) || seconds <= 0))
             return RecipeQuoteService.Failure(RecipeQuoteStatus.Unsupported, handle, id, batches, "Invalid native cost or timing.");
-        cost = checked((long)(float)cost); // Include extraction's integer fee through the same native debit conversion.
+        if (cost.HasValue) cost = checked((long)(float)cost.Value); // Include extraction's native debit conversion.
         var blockers = new List<RecipeBlocker>(extra ?? Array.Empty<RecipeBlocker>());
-        if (!(bool)Call(player, "CanAfford", (float)cost)!) blockers.Add(RecipeBlocker.InsufficientCredits);
+        if (!cost.HasValue) blockers.Add(RecipeBlocker.PricingUnavailable);
+        else if (!(bool)Call(player, "CanAfford", (float)cost.Value)!) blockers.Add(RecipeBlocker.InsufficientCredits);
         if (requirements.Any(input => !input.Available.HasValue)) blockers.Add(RecipeBlocker.InventoryUnavailable);
         if (requirements.Any(input => input.Missing > 0)) blockers.Add(RecipeBlocker.MissingIngredients);
         if (used.HasValue && capacity.HasValue && used >= capacity) blockers.Add(RecipeBlocker.QueueFull);
         if (results.Length == 0 || results.Any(output => output.PossibleDestinations.Count == 0)) blockers.Add(RecipeBlocker.OutputUnresolved);
         return new RecipeQuote(RecipeQuoteStatus.Available, "Advisory native requirements; execution must revalidate.", handle, id, batches, revision,
             requirements, results, blockers, level, cost, Convert.ToInt64(Get(player, "credits")), seconds, used, capacity, policy);
+    }
+    private bool CanReadForgeCost(object recipe)
+    {
+        if (Convert.ToInt32(Get(recipe, "customCost")) > 0 || Convert.ToInt32(Get(recipe, "dynamicCost")) >= 0) return true;
+        // Cold item.cost can scan recipe outputs and instantiate builder previews. Never prime it in a read.
+        foreach (var row in Enumerate(Call(recipe, "GetIngredientItems", 0)))
+        {
+            var item = Get(row, "Item1");
+            if (item == null || !HasCachedItemCost(item)) return false;
+        }
+        return true; // Material values are an inspected constant enum table; warm item costs do not build previews.
+    }
+    private static bool HasCachedItemCost(object item)
+    {
+        var value = Convert.ToSingle(Get(item, "calcCost"));
+        return !float.IsNaN(value) && !float.IsInfinity(value) && value >= 0;
     }
     private bool StationStillPresent(object station)
     {
