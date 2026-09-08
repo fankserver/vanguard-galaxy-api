@@ -19,11 +19,9 @@ internal sealed partial class WorldJsonInspection
         }
         else if (kind == "UnitPayloadDescriptor")
         {
-            Number(descriptor, "pointsScale", 0, 100, false);
-            var min = Number(descriptor, "minUnits", 0, 128, true);
-            if (Number(descriptor, "maxUnits", 0, 128, true) < min) throw new InvalidDataException("Reversed unit count bounds.");
-            Number(descriptor, "minPointsPerUnit", 0, 1000000, true);
-            Number(descriptor, "maxPointsPerUnit", 0, 1000000, true);
+            // ResolveMaxUnits expands the requested count using level and faction budget.
+            // Input bounds alone do not bound execution; refuse until that calculation is validated.
+            throw new InvalidDataException("Budget-expanded unit generation is not admitted.");
         }
         else throw new InvalidDataException("Unsupported unit generation descriptor schema.");
     }

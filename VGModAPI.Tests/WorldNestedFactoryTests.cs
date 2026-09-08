@@ -14,6 +14,7 @@ namespace Source.Data.Persistable
 namespace Source.Galaxy
 {
     public abstract class UnitGenerationDescriptor { }
+    public sealed class UnitPayloadDescriptor : UnitGenerationDescriptor { public UnitPayloadDescriptor() => throw new Exception("Must not generate during inspection"); }
     public sealed class FixedPayloadDescriptor : UnitGenerationDescriptor { public FixedPayloadDescriptor() => throw new Exception("Must not construct during inspection"); }
 }
 namespace VGModAPI.Tests
@@ -45,6 +46,27 @@ namespace VGModAPI.Tests
             var inspection = new WorldJsonInspection(typeof(JsonObject).Assembly);
             if (allowed) Assert.Single(inspection.Read(root));
             else Assert.Throws<InvalidDataException>(() => inspection.Read(root));
+        }
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void BudgetExpandedDescriptorsRefuseBeforeImmediateOrDeferredGeneration(bool deferred)
+        {
+            var descriptor = new JsonObject
+            {
+                ["type"] = new("UnitPayloadDescriptor"), ["pointsScale"] = new(100),
+                ["minUnits"] = new(1), ["maxUnits"] = new(128),
+                ["minPointsPerUnit"] = new(0), ["maxPointsPerUnit"] = new(0)
+            };
+            // Previously accepted inputs: native Combat expansion alone adds 50,000 at level 10,000.
+            var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
+            var poi = new JsonObject { ["guid"] = new(identity.NativeId), ["type"] = new("Combat"), ["systemName"] = new("system"), ["level"] = new(10000) };
+            if (deferred) poi["guardDescriptors"] = new(new List<JsonValue> { new(descriptor) });
+            else poi["payloads"] = new(new List<JsonValue> { new(new JsonObject { ["descriptor"] = new(descriptor) }) });
+            var system = new JsonObject { ["guid"] = new("system"), ["pointsOfInterest"] = new(new List<JsonValue> { new(poi) }) };
+            var root = new JsonObject { ["Player"] = new(new JsonObject { ["map"] = new(new JsonObject { ["systems"] = new(new List<JsonValue> { new(system) }) }) }) };
+            var error = Assert.Throws<InvalidDataException>(() => new WorldJsonInspection(typeof(JsonObject).Assembly).Read(root));
+            Assert.Contains("Budget-expanded", error.Message);
         }
         [Fact]
         public void UnitDispatchRemainsTheInspectedClosedSwitch()
