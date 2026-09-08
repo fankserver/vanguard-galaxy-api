@@ -149,6 +149,8 @@ internal sealed class ServiceStatusRegistry : IDisposable
         }
     }
 
+    internal bool IsStopping => _stopped;
+
     /// <summary>Close gates first. The caller invalidates session state before publishing stopped notifications.</summary>
     internal void BeginStop() { _checkThread(); _stopped = true; }
 

@@ -119,10 +119,12 @@ public sealed class LifecycleHubTests
     public void LateSubscribersQueryWithoutReplayAndShutdownStopsDelivery()
     {
         var hub = Hub(); var id = hub.Begin(SessionOrigin.NewGame, null);
-        int count = 0; var subscription = hub.Subscribe("late", _ => count++);
-        Assert.Equal(id, hub.CurrentSession!.Id); Assert.Equal(0, count);
+        var seen = new List<LifecycleEvent>(); var subscription = hub.Subscribe("late", seen.Add);
+        Assert.Equal(id, hub.CurrentSession!.Id); Assert.Empty(seen);
         hub.Dispose(); subscription.Dispose(); hub.PlayerReady(id);
-        Assert.Equal(0, count);
+        Assert.Equal(LifecycleEventKind.SessionInvalidated, Assert.Single(seen).Kind);
+        Assert.Equal(SessionPhase.Invalidated, hub.CurrentSession!.Phase);
+        Assert.Throws<ObjectDisposedException>(() => hub.Begin(SessionOrigin.NewGame, null));
         Assert.Throws<ObjectDisposedException>(() => hub.Subscribe("late", _ => { }));
     }
 

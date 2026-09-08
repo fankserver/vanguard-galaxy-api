@@ -65,6 +65,7 @@ internal sealed class LifecycleHub : ILifecycleApi, ILifecycleDispatchState, IDi
     internal Guid Begin(SessionOrigin origin, string? path)
     {
         CheckThread();
+        if (Services.IsStopping) throw new ObjectDisposedException(nameof(LifecycleHub));
         // Install the new snapshot before delivering either event: reentrant game actions
         // must never be overwritten by the remainder of this operation.
         var previous = _session;
@@ -107,7 +108,7 @@ internal sealed class LifecycleHub : ILifecycleApi, ILifecycleDispatchState, IDi
     internal void Publish(LifecycleEvent message)
     {
         CheckThread();
-        if (_disposed) return;
+        if (_disposed || (Services.IsStopping && message.Kind != LifecycleEventKind.SessionInvalidated)) return;
         _pending.Enqueue(message);
         if (_dispatching) return;
         _dispatching = true;
@@ -141,6 +142,7 @@ internal sealed class LifecycleHub : ILifecycleApi, ILifecycleDispatchState, IDi
         CheckThread();
         if (_disposed) return;
         Services.BeginStop();
+        Invalidate("API shutting down.");
         _disposed = true;
         foreach (var sub in _subscriptions) sub.Active = false;
         _subscriptions.Clear();

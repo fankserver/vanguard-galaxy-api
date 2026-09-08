@@ -101,15 +101,18 @@ public sealed class ServiceStatusRegistryTests
     public void StoppingClosesGatesBeforePublishingAndRetainedViewsRemainReadable()
     {
         var hub = Bound();
+        hub.Begin(SessionOrigin.NewGame, null);
         var view = hub.Services.Get("mission-transitions");
         var notices = new List<ServiceAvailability>();
-        Action<ServiceAvailability> callback = notices.Add;
+        var phases = new List<SessionPhase?>();
+        Action<ServiceAvailability> callback = state => { notices.Add(state); phases.Add(hub.CurrentSession?.Phase); };
         view.AvailabilityChanged += callback;
         hub.Services.BeginStop();
         Assert.Empty(notices);
         Assert.Equal(ServiceUnavailableReason.ApiStopped, view.Availability.Reason);
         hub.Dispose();
         Assert.Single(notices);
+        Assert.Equal(new SessionPhase?[] { SessionPhase.Invalidated }, phases);
         Assert.Equal(ServiceUnavailableReason.ApiStopped, notices[0].Reason);
         view.AvailabilityChanged -= callback;
         hub.Dispose();
@@ -134,6 +137,25 @@ public sealed class ServiceStatusRegistryTests
         hub.SetCapability("session-lifecycle", false, "Failure.");
         Assert.Equal(new[] { "primary", "dependent" }, stops);
         Assert.False(hub.IsDispatchingCallbacks);
+    }
+
+    [Fact]
+    public void ShutdownCallbacksCannotCreateANewSessionOrPublishOrdinaryEvents()
+    {
+        using var hub = Bound();
+        hub.Begin(SessionOrigin.NewGame, null);
+        var events = new List<LifecycleEvent>();
+        Exception? restart = null;
+        hub.Subscribe("shutdown", fact =>
+        {
+            events.Add(fact);
+            restart = Record.Exception(() => hub.Begin(SessionOrigin.NewGame, null));
+            hub.Publish(new LifecycleEvent(LifecycleEventKind.SaveStarted, hub.CurrentSession));
+        });
+        hub.Dispose();
+        Assert.IsType<ObjectDisposedException>(restart);
+        Assert.Equal(LifecycleEventKind.SessionInvalidated, Assert.Single(events).Kind);
+        Assert.Equal(SessionPhase.Invalidated, hub.CurrentSession!.Phase);
     }
 
     [Fact]
