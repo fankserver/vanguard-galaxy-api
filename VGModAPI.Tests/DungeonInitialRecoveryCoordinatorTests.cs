@@ -101,6 +101,22 @@ public sealed class DungeonInitialRecoveryCoordinatorTests
         Assert.Equal(new[] { "create", "validate", "donor", "register", "observe" }, f.Calls);
         Assert.Equal(2, Assert.Single(f.State.Operation(f.Id)!.Donors).Crew["Marine"]);
     }
+    [Fact]
+    public void ReconstructedDonorAbortRetiresReservationAcrossAnotherSave()
+    {
+        using var f = new Fixture(true, donor: true); f.Queue.Poll(); Assert.Contains("donor", f.Calls);
+        var token = f.State.RestoreToken;
+        using (var abort = f.State.BeginTransfer())
+        {
+            Assert.NotNull(abort); Assert.Throws<InvalidOperationException>(() => f.Persistence.Provider.Capture());
+            Assert.False(f.State.CompleteDonorAbort(f.Id, "donor", token));
+        }
+        Assert.True(f.State.CompleteDonorAbort(f.Id, "donor", token));
+        var payload = f.Persistence.Provider.Capture(); f.Queue.Clear(); f.Persistence.Provider.Restore(f.Hub.CurrentSession!, payload);
+        Assert.Empty(f.State.Operation(f.Id)!.Donors); f.Calls.Clear();
+        Assert.True(f.Queue.Queue(f.Location, new object())); f.Queue.Poll();
+        Assert.Contains("register", f.Calls); Assert.DoesNotContain("donor", f.Calls);
+    }
     [Theory]
     [InlineData("Approach")]
     [InlineData("Extraction")]
