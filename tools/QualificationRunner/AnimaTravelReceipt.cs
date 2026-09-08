@@ -601,7 +601,7 @@ internal static class AnimaTravelReceipt
         text.AppendLine("Actual-consumer evidence over the public travel surface only. The gate and wormhole arrivals it reduces are qualified by "
             + TravelCrossSystemReceipt.Phase + " and the non-travel facts by " + TravelStationReceipt.Phase
             + "; this phase adds no travel coverage of its own and fulfils no content-persistence milestone.");
-        text.AppendLine("RuntimeQualified=false; #12 open pending owner in-game qualification and the remaining consumer reconciliation.");
+        text.AppendLine("RuntimeQualified=false; full in-game qualification and remaining consumer reconciliation are pending.");
         return text.ToString();
     }
 }

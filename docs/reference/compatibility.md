@@ -28,7 +28,7 @@ An uninspected hash leaves the API available for diagnostics but disables game i
 | Story load protection | Default-on guard on the inspected build, independent of story-author registration | With the guard disabled or the game uninspected, the API cannot refuse unsafe owned-story loads; do not load those saves in that state |
 | Mod information | Process-local catalog and default-on native main-menu entry when binding succeeds | Bounded menu interactions are exercised; presentation acceptance, physical gamepad behavior and browser opening are not fully qualified. No automatic update-check service is provided |
 
-Story remains incomplete under [#13](https://github.com/fankserver/vanguard-galaxy-api/issues/13); the general scripted-objective API in [#14](https://github.com/fankserver/vanguard-galaxy-api/issues/14) is not implemented. Supported payload-schema compatibility is separate from migration of arbitrary authored definitions or scripted objectives.
+Story remains incomplete; the general scripted-objective API is not implemented. Supported payload-schema compatibility is separate from migration of arbitrary authored definitions or scripted objectives.
 
 ## Controlled coverage
 
@@ -44,7 +44,7 @@ Core probes cover:
 - Manual and quit saving, autosave rotation, ephemeral-player skips, exhausted recursive retries and recovery after a transient write failure.
 - Individual throwing subscribers and disposal, plus bounded MissionJournal/Stockpile coexistence and missing/unavailable API refusal.
 
-Additional controlled probes cover documented mission/travel consumer paths, owned-story reconstruction and absent-author handling, and menu input/lifecycle interactions. Consult [mission](mission-events.md), [travel](travel-events.md), [story](story-content.md), [mod information](mod-information.md) and [runner instructions](qualification-runner.md) for their supported cases and exclusions. A phase's evidence must not be extended to unrelated phases or consumers.
+Additional controlled probes cover documented mission/travel consumer paths, owned-story reconstruction and absent-author handling, and menu input/lifecycle interactions. Consult [mission](mission-events.md), [travel](travel-events.md), [story](story-content.md), [mod information](mod-information.md) and [runner instructions](https://github.com/fankserver/vanguard-galaxy-api/blob/main/docs/development/qualification-runner.md) for their supported cases and exclusions. A phase's evidence must not be extended to unrelated phases or consumers.
 
 ## Verification layers
 
@@ -55,35 +55,3 @@ Additional controlled probes cover documented mission/travel consumer paths, own
 - **Full in-game acceptance** remains separate, including unexercised configurations, presentation, broader input behavior and remaining content integration.
 
 No fixed test count or historical PASS table substitutes for checking the candidate being delivered.
-
-## Binding and harness invariants
-
-These constraints apply to the inspected build and current tooling:
-
-- Install coroutine factories before callers that can trigger them. A missing expected coroutine hook must fail attribution rather than manufacture readiness.
-- Reflection binding compares canonical type shapes, including generic arguments, array ranks, by-ref/pointer decoration, namespace, arity, return type and staticness. Reflection's assembly-qualified constructed-generic spelling is not directly comparable to metadata spelling.
-- New-game attribution captures the created player and rejects an unchanged or replaced player. A replacement cannot inherit a pending attempt's identity.
-- Accept a native run only when required receipts pass, the process was neither timed out nor launcher-killed, and its exit code is known and allowed. The inspected `ApplicationQuitHandler.OnApplicationQuit` calls `Process.Kill`; shipped Mono implements this as `TerminateProcess(handle, -1)`. Consequently, the runner accepts clean `0` or self-termination `-1`, not arbitrary crash codes. Exit code alone never proves success.
-- Travel probes share a conservative Mining/Salvage target allowlist, exclude known unsafe/guarded/story/dynamic destinations, and require a quiet native travel surface. The selector reduces risk but cannot prove absence of hostility. Unexpected autonomous routes fail the case; they are not filtered away or silently replaced.
-- Consumer collection observations must use verified declared members. A `HashSet<T>` does not implement non-generic `ICollection`; missing or malformed counts must fail, not default to zero.
-- Dismiss only expected rejection dialogs through their actual confirmation handlers, and require modal closure before advancing the wizard. Do not suppress vanilla exceptions.
-- The autosave selector uses the first missing slot, then the oldest modification time. A deterministic rotation assertion requires distinct timestamps; filesystem timestamp granularity can affect the fixture.
-
-## Repeatable commands
-
-```sh
-make build
-make test
-make check-bindings
-make package CONFIGURATION=Release
-make test CONFIGURATION=Release
-make check-bindings CONFIGURATION=Release
-```
-
-Tests require .NET SDK 10. Override `GAME_DIR` for another installation. Pure `make test` needs no game installation; build/package need local compile references and `check-bindings` needs the original game DLL. Never use a stripped/publicized stub as compatibility evidence. `make check-local CONFIGURATION=Release` runs the local validation chain defined in the [Makefile](https://github.com/fankserver/vanguard-galaxy-api/blob/main/Makefile). Its provenance report identifies inputs and outputs, not Unity qualification; never publish reference binaries or raw profiles.
-
-## Native testing safety
-
-Explicit authorization is required before deployment or native testing. Use disposable/copied saves and an isolated sandbox; capture assembly identities, selected phases and relevant environment details. Verify original-file hashes, complete direct file sets and preference restoration independently. Do not infer preference preservation from save hashes alone.
-
-Never force disk failures, delete or corrupt real player saves. Raw logs, profiles, screenshots and fixtures remain private and outside the repository. A missing mandatory case, unobserved prerequisite, timeout or incomplete receipt is not a pass. Record unexercised scope as unqualified rather than inferring it from nearby successful cases.

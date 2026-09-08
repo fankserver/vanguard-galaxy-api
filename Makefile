@@ -1,6 +1,9 @@
 DOTNET ?= $(shell command -v dotnet 2>/dev/null || echo /tmp/dnsdk/dotnet/dotnet)
 GAME_DIR ?= /mnt/c/Program Files (x86)/Steam/steamapps/common/Vanguard Galaxy
 CONFIGURATION ?= Debug
+TEST_EXCLUDE_CATEGORY ?=
+TEST_ARGS ?=
+TEST_FILTER = Category!=InstalledGame&Category!=InstalledConsumer&Category!=InstalledArchive&Category!=Package$(if $(TEST_EXCLUDE_CATEGORY),&Category!=$(TEST_EXCLUDE_CATEGORY))
 RELEASE_VERSION := $(shell python3 -c 'import xml.etree.ElementTree as E; print(E.parse("Directory.Build.props").findtext("PropertyGroup/Version"))')
 MANAGED = $(GAME_DIR)/VanguardGalaxy_Data/Managed
 CORE = $(GAME_DIR)/BepInEx/core
@@ -22,7 +25,7 @@ build-story-authors: link-libs
 	$(DOTNET) build examples/OwnedStoryJob/OwnedStoryJob.csproj -c $(CONFIGURATION)
 test:
 	python3 -m unittest discover -s tools -p 'test_*.py'
-	$(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter 'Category!=InstalledGame&Category!=InstalledConsumer&Category!=InstalledArchive&Category!=Package'
+	$(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter '$(TEST_FILTER)' $(TEST_ARGS)
 check-bindings:
 	VG_GAME_ASSEMBLY="$(MANAGED)/Assembly-CSharp.dll" $(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter 'Category=InstalledGame'
 # Metadata evidence for the members the actual-consumer qualification probe reflects. Needs the
@@ -69,7 +72,7 @@ package: build
 	cp README.md LICENSE artifacts/VGModAPI/
 	python3 tools/local_update_metadata.py vgmodapi.vgmod.json artifacts/VGModAPI/vgmodapi.vgmod.json $(RELEASE_CHANNEL)
 	@mkdir -p artifacts/VGModAPI/docs
-	cp docs/*.md artifacts/VGModAPI/docs/
+	cp -R docs/reference docs/assets artifacts/VGModAPI/docs/
 	$(MAKE) check-package
 RELEASE_CHANNEL ?= experimental
 EXAMPLE_VERSION ?= 1.0.0
@@ -80,6 +83,7 @@ example-update-package: link-libs
 	python3 tools/package_update_example.py examples/UpdateParticipant/bin/$(CONFIGURATION)/netstandard2.1/UpdateParticipant.dll examples/UpdateParticipant/vgmodapi.example.updates.vgmod.json artifacts/UpdateParticipant
 	python3 tools/publish_update.py --repo example/mod --tag v$(EXAMPLE_VERSION) --plugin vgmodapi.example.updates --version $(EXAMPLE_VERSION) --channel stable --archive artifacts/UpdateParticipant.zip --assembly artifacts/UpdateParticipant/UpdateParticipant.dll --dotnet $(DOTNET)
 check-package:
+	python3 tools/release_archive.py --root artifacts/VGModAPI --validate-only
 	VG_PACKAGE_ROOT="$(CURDIR)/artifacts/VGModAPI" $(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter 'Category=Package'
 check-local:
 	$(MAKE) test

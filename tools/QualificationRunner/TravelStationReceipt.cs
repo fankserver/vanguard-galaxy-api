@@ -223,7 +223,7 @@ internal static class TravelStationReceipt
         text.AppendLine("fault=" + (string.IsNullOrEmpty(fault) ? "none" : Clean(fault)));
         text.AppendLine("result=" + (failure ?? "phase satisfied"));
         text.AppendLine("Controlled native evidence for this phase only; the residual travel matrix (cross-system jump/wormhole, empty-origin reroute, reinit suppression, stale-session replay) stays open.");
-        text.AppendLine("RuntimeQualified=false; #12 open pending owner in-game qualification.");
+        text.AppendLine("RuntimeQualified=false; full in-game qualification remains pending.");
         return text.ToString();
     }
 

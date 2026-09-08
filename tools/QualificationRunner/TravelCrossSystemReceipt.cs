@@ -419,7 +419,7 @@ internal static class TravelCrossSystemReceipt
         text.AppendLine("result=" + (failure ?? "phase satisfied"));
         text.AppendLine("Controlled native evidence for this phase only; it does not widen " + TravelStationReceipt.Phase
             + ", whose own optional cross-system rows stay NOT-RUN, and the residual travel matrix (empty-origin reroute, restore/relink dock, stale-session replay) stays open.");
-        text.AppendLine("RuntimeQualified=false; #12 open pending owner in-game qualification.");
+        text.AppendLine("RuntimeQualified=false; full in-game qualification remains pending.");
         return text.ToString();
     }
 }
