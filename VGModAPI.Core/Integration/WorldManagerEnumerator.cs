@@ -8,15 +8,16 @@ namespace VGModAPI.Core.Integration;
 internal sealed class WorldManagerEnumerator : IEnumerator, IDisposable
 {
     private readonly IEnumerator _inner;
-    private readonly object _manager;
-    private readonly IWorldLifetimeHookHost _host;
+    private readonly Func<bool> _admitted;
     private bool _ended, _disposed;
     public object? Current { get; private set; }
     internal WorldManagerEnumerator(IEnumerator inner, object manager, IWorldLifetimeHookHost host)
-    { _inner = inner; _manager = manager; _host = host; }
+        : this(inner, host.CaptureManager(manager)) { }
+    private WorldManagerEnumerator(IEnumerator inner, Func<bool> admitted)
+    { _inner = inner; _admitted = admitted; }
     private void Require()
     {
-        if (!_host.AllowManager(_manager)) throw new InvalidDataException("Quarantined world manager cannot resume initialization.");
+        if (!_admitted()) throw new InvalidDataException("Quarantined world manager cannot resume initialization.");
     }
     public bool MoveNext()
     {
@@ -29,7 +30,7 @@ internal sealed class WorldManagerEnumerator : IEnumerator, IDisposable
             if (!moved) { _ended = true; Current = null; return false; }
             var value = _inner.Current;
             Require();
-            Current = value is IEnumerator child ? new WorldManagerEnumerator(child, _manager, _host) : value;
+            Current = value is IEnumerator child ? new WorldManagerEnumerator(child, _admitted) : value;
             return true;
         }
         catch { _ended = true; Current = null; throw; }

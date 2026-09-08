@@ -45,6 +45,33 @@ public sealed class WorldManagerEnumeratorTests
         }
         finally { WorldLifetimePatches.Host = null; }
     }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SuspendedOwnedWorkCannotFollowManagerRebindingOrAReplacementSession(bool newSession)
+    {
+        var hub = new LifecycleHub((_, error) => throw error);
+        var guard = new WorldLifetimeGuard();
+        using var host = new WorldLifetimeHookHost(typeof(Source.Galaxy.MapElement).Assembly, hub, guard);
+        var session = hub.Begin(SessionOrigin.NewGame, null);
+        var identity = new WorldObjectIdentity(new ContentDeclaration("author.one", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
+        var poi = new Source.Galaxy.MapPointOfInterest { guid = identity.NativeId };
+        guard.Track(session, poi, identity); guard.Ready(session);
+        var manager = new Behaviour.Managers.TestPoiManager { poi = poi };
+        var child = new Probe(); var parent = new Probe { Current = child };
+        using var wrapper = new WorldManagerEnumerator(parent, manager, host);
+        Assert.True(wrapper.MoveNext());
+        var nested = Assert.IsType<WorldManagerEnumerator>(wrapper.Current);
+        Assert.True(nested.MoveNext());
+        if (newSession) hub.Begin(SessionOrigin.NewGame, null);
+        manager.poi = new Source.Galaxy.MapPointOfInterest { guid = "replacement-vanilla" };
+        Assert.True(host.AllowManager(manager));
+        Assert.Throws<InvalidDataException>(() => nested.MoveNext());
+        Assert.Throws<InvalidDataException>(() => wrapper.MoveNext());
+        Assert.Equal(1, child.Moves); Assert.Equal(1, parent.Moves);
+        nested.Dispose(); Assert.Equal(1, child.Disposals);
+    }
+
     [Fact]
     public void NativeIteratorExceptionIsPreserved()
     {

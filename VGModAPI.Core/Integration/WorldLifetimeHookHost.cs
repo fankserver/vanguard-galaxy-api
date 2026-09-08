@@ -10,6 +10,7 @@ internal interface IWorldLifetimeHookHost
     bool AllowRemoval(object poi);
     bool AllowUse(object poi);
     bool AllowManager(object manager);
+    Func<bool> CaptureManager(object manager);
 }
 
 /// <summary>Refuses reserved ambient/removal paths before their native bodies; no world readiness is inferred.</summary>
@@ -18,12 +19,13 @@ internal sealed class WorldLifetimeHookHost : IWorldLifetimeHookHost, IDisposabl
     private readonly LifecycleHub _hub;
     private readonly FieldInfo _guid;
     private readonly FieldInfo _managerPoi;
-    private readonly WorldLifetimeGuard _guard = new();
+    private readonly WorldLifetimeGuard _guard;
     private readonly IDisposable _subscription;
     private Guid _session;
     private bool _disposed;
-    internal WorldLifetimeHookHost(Assembly assembly, LifecycleHub hub)
+    internal WorldLifetimeHookHost(Assembly assembly, LifecycleHub hub, WorldLifetimeGuard? guard = null)
     {
+        _guard = guard ?? new WorldLifetimeGuard();
         _hub = hub; _hub.CheckThread();
         if (_hub.CurrentSession != null) throw new InvalidOperationException("World lifetime guards must attach before a session.");
         _guid = assembly.GetType("Source.Galaxy.MapElement", true)!.GetField("<guid>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance)
@@ -52,6 +54,19 @@ internal sealed class WorldLifetimeHookHost : IWorldLifetimeHookHost, IDisposabl
         _hub.CheckThread();
         var poi = _managerPoi.GetValue(manager);
         return poi == null || AllowUse(poi);
+    }
+    public Func<bool> CaptureManager(object manager)
+    {
+        _hub.CheckThread();
+        var poi = _managerPoi.GetValue(manager);
+        var session = _hub.CurrentSession?.Id ?? Guid.Empty;
+        if (poi != null) _ = AllowUse(poi); // Retain reserved classification even before first advancement.
+        return () =>
+        {
+            _hub.CheckThread();
+            return session == (_hub.CurrentSession?.Id ?? Guid.Empty) && ReferenceEquals(poi, _managerPoi.GetValue(manager)) &&
+                (poi == null || AllowUse(poi));
+        };
     }
     public bool AllowRemoval(object poi)
     {
