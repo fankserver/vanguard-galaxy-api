@@ -22,6 +22,27 @@ public sealed class PersistenceCoordinatorTests : IDisposable
     private void EndSave(Guid id, LifecycleEventKind kind = LifecycleEventKind.SaveSucceeded, string path = "slot")
         => _hub.Publish(new LifecycleEvent(kind, _hub.CurrentSession, id, path));
 
+    [Fact]
+    public void EarlyLoadFingerprintIsAttemptBoundAndDoesNotRestoreOwners()
+    {
+        using var coordinator = Coordinator(new GenerationStore(_root));
+        int restores = 0;
+        coordinator.Register(Codec(), () => new byte[] { 1 }, _ => restores++);
+        var first = _hub.Begin(SessionOrigin.SaveLoad, "slot");
+        Assert.True(coordinator.TryGetStartingLoad(first, out var path, out var hash));
+        Assert.Equal("slot", path); Assert.Equal(H('a'), hash);
+        Assert.Equal(0, restores); Assert.False(coordinator.StateReady("owner"));
+        _hashes["slot"] = H('b');
+        Assert.True(coordinator.TryGetStartingLoad(first, out _, out hash));
+        Assert.Equal(H('a'), hash); // Frozen observation, not a fresh read disguised as the original input.
+        var next = _hub.Begin(SessionOrigin.SaveLoad, "slot");
+        Assert.False(coordinator.TryGetStartingLoad(first, out path, out hash));
+        Assert.Null(path); Assert.Null(hash);
+        Assert.True(coordinator.TryGetStartingLoad(next, out _, out hash)); Assert.Equal(H('b'), hash);
+        _hub.PlayerReady(next);
+        Assert.False(coordinator.TryGetStartingLoad(next, out _, out _));
+    }
+
     [Theory]
     [InlineData(LifecycleEventKind.SaveSucceeded)]
     [InlineData(LifecycleEventKind.SaveFailed)]

@@ -94,6 +94,16 @@ internal sealed class PersistenceCoordinator : IDisposable
         return _owners.TryGetValue(owner, out var registered) ? registered.Status : "unregistered";
     }
 
+    // Early protection may compare actual read bytes to the observed attempt's fingerprint.
+    // This does not restore owners or grant mutation/readiness.
+    internal bool TryGetStartingLoad(Guid session, out string? path, out string? hash)
+    {
+        _hub.CheckThread();
+        path = null; hash = null;
+        if (!Current(session) || _hub.CurrentSession?.Phase != SessionPhase.Starting || _loadPath == null || _loadHash == null) return false;
+        path = _loadPath; hash = _loadHash; return true;
+    }
+
     private bool Current(Guid id) => !_disposed && !_sessionFault && _session == id && _hub.CurrentSession?.Id == id
         && _hub.CurrentSession.Phase != SessionPhase.Failed && _hub.CurrentSession.Phase != SessionPhase.Invalidated;
 
