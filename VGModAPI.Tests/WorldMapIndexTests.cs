@@ -40,6 +40,24 @@ namespace VGModAPI.Tests
         }
 
         [Fact]
+        public void ReplacingCollectionsOrMovingNeighboursInvalidatesTheSnapshot()
+        {
+            var map = new GalaxyMapData(); var sector = new SectorMapData { guid = "sector" };
+            var system = new SystemMapData { guid = "system" };
+            var poi = new MapPointOfInterest { guid = "poi", system = system };
+            map.TestSectors.Add(sector); sector.TestSystems.Add(system); system.pointsOfInterest.Add(poi);
+            var index = new WorldMapIndex(typeof(GalaxyMapData).Assembly);
+            var snapshot = index.Read(map);
+            system.pointsOfInterest = new List<MapPointOfInterest> { poi };
+            Assert.False(snapshot.SameMembership(index.Read(map)));
+            snapshot = index.Read(map);
+            poi.position = new UnityEngine.Vector2 { x = 10, y = 20 };
+            Assert.False(snapshot.SameMembership(index.Read(map)));
+            poi.position = new UnityEngine.Vector2 { x = float.NaN };
+            Assert.Throws<InvalidDataException>(() => index.Read(map));
+        }
+
+        [Fact]
         public void ReplacingTheMapOrReparentingMembersCannotReuseASnapshot()
         {
             var map = new GalaxyMapData(); var sector = new SectorMapData { guid = "sector" };
