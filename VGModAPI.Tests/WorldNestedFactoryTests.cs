@@ -12,7 +12,8 @@ namespace Source.Hazard
     public class HazardData { }
     public sealed class KnownHazardData : HazardData { public KnownHazardData() => throw new Exception("Must not construct hazards during inspection"); }
 }
-namespace Behaviour.Unit { public abstract class AbstractUnit { } }
+namespace Source.Util { public enum GameplayType { Combat, Trade } }
+namespace Behaviour.Unit { public enum UnitRank { Rookie } public abstract class AbstractUnit { } }
 namespace Source.SpaceShip { public abstract class AutoActions { } }
 namespace Source.SpaceShip.Auto
 {
@@ -112,6 +113,24 @@ namespace VGModAPI.Tests
             Assert.Throws<InvalidDataException>(() => catalog.Hazard("Missing"));
             Assert.Throws<InvalidDataException>(() => catalog.EnumName("Source.Combat.DamageType", "0"));
             Assert.Throws<InvalidDataException>(() => catalog.EnumName("Source.Combat.DamageType", "Unknown"));
+        }
+        [Theory]
+        [InlineData("rank", "Rookie", true)]
+        [InlineData("rank", "0", false)]
+        [InlineData("rank", "Unknown", false)]
+        [InlineData("loadout", "Combat", true)]
+        [InlineData("loadout", "Combat, Trade", false)]
+        [InlineData("bonusEquipBuilderId", "Native", false)]
+        public void FixedDescriptorRequiresNamedEnumsAndPairedBonusChance(string field, string value, bool valid)
+        {
+            var descriptor = new JsonObject { ["type"] = new("FixedPayloadDescriptor"), ["fixedUnit"] = new("NativeShip"), ["unitCount"] = new(1), [field] = new(value) };
+            var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
+            var poi = new JsonObject { ["guid"] = new(identity.NativeId), ["type"] = new("Combat"), ["systemName"] = new("system"), ["guardDescriptors"] = new(new List<JsonValue> { new(descriptor) }) };
+            var system = new JsonObject { ["guid"] = new("system"), ["pointsOfInterest"] = new(new List<JsonValue> { new(poi) }) };
+            var root = new JsonObject { ["Player"] = new(new JsonObject { ["map"] = new(new JsonObject { ["systems"] = new(new List<JsonValue> { new(system) }) }) }) };
+            var inspection = new WorldJsonInspection(typeof(JsonObject).Assembly);
+            if (valid) Assert.Single(inspection.Read(root));
+            else Assert.Throws<InvalidDataException>(() => inspection.Read(root));
         }
         [Fact]
         public void UnitDispatchRemainsTheInspectedClosedSwitch()

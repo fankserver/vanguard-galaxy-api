@@ -17,6 +17,13 @@ internal sealed partial class WorldJsonInspection
             Number(descriptor, "unitCount", 0, 128, true);
             OptionalNumber(descriptor, "overrideLevel", 1, 10000, true);
             OptionalNumber(descriptor, "bonusEquipChance", 0, 1, false);
+            OptionalEnum(descriptor, "rank", "Behaviour.Unit.UnitRank");
+            OptionalEnum(descriptor, "loadout", "Source.Util.GameplayType");
+            if (!(bool)_isNull.GetValue(Field(descriptor, "bonusEquipBuilderId"))!)
+            {
+                Text(descriptor, "bonusEquipBuilderId");
+                Number(descriptor, "bonusEquipChance", 0, 1, false);
+            }
         }
         else if (kind == "UnitPayloadDescriptor")
         {
@@ -25,6 +32,10 @@ internal sealed partial class WorldJsonInspection
             throw new InvalidDataException("Budget-expanded unit generation is not admitted.");
         }
         else throw new InvalidDataException("Unsupported unit generation descriptor schema.");
+    }
+    private void OptionalEnum(object parent, string key, string typeName)
+    {
+        if (!(bool)_isNull.GetValue(Field(parent, key))!) _nested.EnumName(typeName, Text(parent, key));
     }
     private void OptionalNumber(object parent, string key, double min, double max, bool integer)
     {
