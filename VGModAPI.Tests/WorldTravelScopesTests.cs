@@ -36,6 +36,32 @@ public sealed class WorldTravelScopesTests
         Assert.Throws<InvalidDataException>(() => scopes.RequireActive(next, session, player, manager));
     }
     [Fact]
+    public void IndependentChildrenKeepOriginAndStaleLegFailureCannotCancelSuccessor()
+    {
+        var scopes = new WorldTravelScopes(); var session = Guid.NewGuid(); var player = new object(); var manager = new object();
+        var route = scopes.Begin(session, player, manager, new object()); var first = scopes.First(route, new object());
+        using var execution = scopes.Enter(first);
+        var childOrigin = scopes.CaptureExecuting(); Assert.Same(first, childOrigin);
+        var waypoint = new object(); var next = scopes.AcceptHandoff(scopes.PrepareHandoff(first, waypoint), waypoint);
+        Assert.Throws<InvalidDataException>(() => scopes.CaptureExecuting());
+        Assert.False(scopes.Cancel(first));
+        using (scopes.Enter(next)) Assert.Same(next, scopes.CaptureExecuting());
+        Assert.Throws<InvalidDataException>(() => scopes.RequireActive(childOrigin!, session, player, manager));
+        scopes.RequireActive(next, session, player, manager);
+    }
+    [Fact]
+    public void OutOfOrderScopeDisposalPreservesCurrentNestedOrigin()
+    {
+        var scopes = new WorldTravelScopes(); var session = Guid.NewGuid(); var player = new object(); var manager = new object();
+        var route = scopes.Begin(session, player, manager, new object()); var first = scopes.First(route, new object());
+        var outer = scopes.Enter(first); var waypoint = new object();
+        var next = scopes.AcceptHandoff(scopes.PrepareHandoff(first, waypoint), waypoint);
+        var inner = scopes.Enter(next);
+        outer.Dispose(); Assert.Same(next, scopes.CaptureExecuting());
+        inner.Dispose(); Assert.Null(scopes.CaptureExecuting());
+        Assert.True(scopes.Cancel(next));
+    }
+    [Fact]
     public void HandoffAndContinuationRequireExactObservedIdentities()
     {
         var scopes = new WorldTravelScopes(); var session = Guid.NewGuid(); var player = new object(); var manager = new object();

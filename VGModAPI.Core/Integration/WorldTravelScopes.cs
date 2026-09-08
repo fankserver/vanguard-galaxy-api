@@ -28,7 +28,37 @@ internal sealed class WorldTravelScopes
         internal bool Consumed;
         internal Handoff(Leg predecessor, object target) { Predecessor = predecessor; Target = target; }
     }
+    private sealed class Execution : IDisposable
+    {
+        internal readonly Leg Leg;
+        internal readonly Execution? Parent;
+        private readonly WorldTravelScopes _owner;
+        internal bool Disposed;
+        internal Execution(WorldTravelScopes owner, Leg leg, Execution? parent) { _owner = owner; Leg = leg; Parent = parent; }
+        public void Dispose()
+        {
+            if (Disposed) return;
+            Disposed = true;
+            if (!ReferenceEquals(_owner._execution, this)) return;
+            var parent = Parent;
+            while (parent != null && parent.Disposed) parent = parent.Parent;
+            _owner._execution = parent;
+        }
+    }
     private Route? _current;
+    private Execution? _execution;
+    internal IDisposable Enter(Leg leg)
+    {
+        RequireLeg(leg);
+        var scope = new Execution(this, leg, _execution);
+        _execution = scope; return scope;
+    }
+    // Independent native child factories must capture this origin, never infer it from the latest route.
+    internal Leg? CaptureExecuting()
+    {
+        if (_execution == null) return null;
+        RequireLeg(_execution.Leg); return _execution.Leg;
+    }
     internal Route Begin(Guid session, object player, object manager, object destination)
     {
         if (session == Guid.Empty || player == null || manager == null || destination == null)
@@ -73,6 +103,11 @@ internal sealed class WorldTravelScopes
     internal void Complete(Leg leg)
     {
         RequireLeg(leg); leg.Completed = true;
+    }
+    internal bool Cancel(Leg leg)
+    {
+        if (leg == null || !ReferenceEquals(_current, leg.Route) || !ReferenceEquals(leg.Route.Current, leg) || leg.HandedOff || leg.Completed) return false;
+        _current = null; return true;
     }
     internal bool Cancel(Route route)
     {
