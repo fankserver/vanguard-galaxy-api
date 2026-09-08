@@ -85,7 +85,7 @@ public sealed partial class Plugin
                     Require(character < 128 && label.font.HasCharacter(character), "UI-owned heading uses an unsupported native glyph.");
             var apiRow = ModApi.Mods!.Snapshot.Single(item => item.PluginId == ModApi.PluginId);
             Require(apiRow.Metadata?.ProjectUrl == "https://github.com/fankserver/vanguard-galaxy-api", "Official API project metadata is missing.");
-            var officialRow = list.GetComponentsInChildren<Button>().Single(button => button.GetComponentInChildren<TMP_Text>().text.Contains("Vanguard Galaxy Mod API"));
+            var officialRow = list.GetComponentsInChildren<Button>().Single(button => button.GetComponentInChildren<TMP_Text>().text == "Mod API");
             var officialName = officialRow.GetComponentInChildren<TMP_Text>();
             Require(officialName.GetPreferredValues(officialName.text, officialName.rectTransform.rect.width, float.PositiveInfinity).y <= officialName.rectTransform.rect.height + 1,
                 "Official mod name does not fit its wrapping area.");

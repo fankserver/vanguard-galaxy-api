@@ -238,7 +238,7 @@ internal sealed class ModMenuView : IModMenuView
             });
             var name = row.GetComponentInChildren<TMP_Text>();
             name.enableAutoSizing = false;
-            name.textWrappingMode = TextWrappingModes.Normal;
+            name.textWrappingMode = TextWrappingModes.NoWrap;
             name.overflowMode = TextOverflowModes.Ellipsis;
             name.alignment = TextAlignmentOptions.TopLeft;
             Stretch(name.rectTransform, 0, 0, 1, 1, 10, 28, -10, -8);
