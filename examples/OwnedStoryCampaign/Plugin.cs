@@ -59,6 +59,13 @@ public sealed class Plugin : BaseUnityPlugin
                 new StoryStep("Visit the destination", new[] { StoryObjective.TravelTo(destination).WithKey("visit") }) },
             retention: StoryRetention.Temporary));
 
+    public StoryRegistrationResult RegisterChangedObservedObjectives(string sourceFaction)
+        => Provider.Register(new StoryMissionDefinition("observed-x", "Replacement startup title", "Replacement startup description",
+            new StoryFactionId(sourceFaction), new[] {
+                new StoryStep("Different credits", new[] { StoryObjective.CollectCredits(101).WithKey("credits") }),
+                new StoryStep("Different destination", new[] { StoryObjective.TravelTo("missing-replacement-poi").WithKey("visit") }) },
+            retention: StoryRetention.Temporary));
+
     // Invoked by the consumer's conversation controller when the authored answer is chosen.
     public StoryTransitionResult AnswerWitness(Guid session, Guid occurrence)
         => ((IStoryObjectiveProvider)Provider).SetProgress(session,

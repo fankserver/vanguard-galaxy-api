@@ -34,10 +34,12 @@ internal sealed class StoryOccurrenceEntry
     /// </summary>
     internal int ChoiceReservation { get; }
     internal StoryObjectiveLayout ObjectiveLayout { get; private set; }
+    internal StoryMissionDefinition? RetainedDefinition { get; private set; }
+    internal void ReplaceDefinition(StoryMissionDefinition definition) => RetainedDefinition = definition;
     internal void SetObjectiveProgress(string key, int progress) => ObjectiveLayout = ObjectiveLayout.WithProgress(key, progress);
     internal void ReplaceObjectiveLayout(StoryObjectiveLayout layout) => ObjectiveLayout = layout;
-    internal StoryOccurrenceEntry WithObjectiveLayout(StoryObjectiveLayout layout) => new(Id, OccurrenceId, Retention, Sequence,
-        State, Outcome, Choices, ChoiceReservation, PendingChoices, FailureObserved, layout);
+    internal StoryOccurrenceEntry WithObjectiveLayout(StoryObjectiveLayout layout, StoryMissionDefinition? definition = null) => new(Id, OccurrenceId, Retention, Sequence,
+        State, Outcome, Choices, ChoiceReservation, PendingChoices, FailureObserved, layout, definition ?? RetainedDefinition);
     internal void ResetObjectiveProgress() => ObjectiveLayout = new StoryObjectiveLayout(ObjectiveLayout.Slots.Select(slot =>
         new StoryObjectiveLayout.Slot(slot.Key, slot.Step, slot.Objective, slot.Kind, slot.Required)), ObjectiveLayout.Revision, ObjectiveLayout.FullyScripted);
     private readonly Dictionary<string, string> _choices = new(StringComparer.Ordinal);
@@ -68,7 +70,7 @@ internal sealed class StoryOccurrenceEntry
         StoryOccurrenceState state = StoryOccurrenceState.Offered, StoryOutcome? outcome = null,
         IEnumerable<KeyValuePair<string, string>>? choices = null, int choiceReservation = 0,
         IEnumerable<KeyValuePair<string, string>>? pendingChoices = null, bool failureObserved = false,
-        StoryObjectiveLayout? objectiveLayout = null)
+        StoryObjectiveLayout? objectiveLayout = null, StoryMissionDefinition? retainedDefinition = null)
     {
         if (occurrenceId == Guid.Empty) throw new ArgumentException("An occurrence requires its own identity.", nameof(occurrenceId));
         if (choiceReservation is < 0 or > StoryMissionDefinition.MaxChoiceBytesPerOccurrence)
@@ -76,6 +78,7 @@ internal sealed class StoryOccurrenceEntry
         Id = id; OccurrenceId = occurrenceId; Retention = retention; Sequence = sequence; State = state; Outcome = outcome;
         ChoiceReservation = choiceReservation;
         ObjectiveLayout = objectiveLayout ?? new StoryObjectiveLayout(Array.Empty<StoryObjectiveLayout.Slot>());
+        RetainedDefinition = retainedDefinition;
         if (choices != null) foreach (var pair in choices) _choices[pair.Key] = pair.Value;
         if (pendingChoices != null) foreach (var pair in pendingChoices) _pending[pair.Key] = pair.Value;
         FailureObserved = failureObserved;
@@ -86,6 +89,7 @@ internal sealed class StoryOccurrenceEntry
     {
         State = StoryOccurrenceState.Retired;
         Outcome = outcome;
+        RetainedDefinition = null;
         // The recorded choices REPLACE whatever the entry carried; they are never merged into it, so
         // the terminal record is exactly what this outcome declared and can never grow past the
         // bound that was checked for it.
@@ -175,7 +179,7 @@ internal sealed class StoryLedger
     /// reserved from the provider's own budget here, so an accepted offer can always be retired: an
     /// occurrence is never admitted that the API could not finish.
     /// </summary>
-    internal StoryLedgerStatus Offer(StoryContentId id, StoryRetention retention, Guid occurrenceId, int choiceReservation, out string diagnostic, StoryObjectiveLayout? objectiveLayout = null)
+    internal StoryLedgerStatus Offer(StoryContentId id, StoryRetention retention, Guid occurrenceId, int choiceReservation, out string diagnostic, StoryObjectiveLayout? objectiveLayout = null, StoryMissionDefinition? retainedDefinition = null)
     {
         diagnostic = "";
         if (occurrenceId == Guid.Empty) { diagnostic = "An occurrence requires its own identity."; return StoryLedgerStatus.InvalidTransition; }
@@ -207,7 +211,7 @@ internal sealed class StoryLedger
         }
         if (retention != StoryRetention.Campaign && choiceReservation > 0)
         { diagnostic = "Only a campaign definition reserves declared-choice space."; return StoryLedgerStatus.InvalidTransition; }
-        var candidate = new StoryOccurrenceEntry(id, occurrenceId, retention, _sequence + 1, choiceReservation: choiceReservation, objectiveLayout: objectiveLayout);
+        var candidate = new StoryOccurrenceEntry(id, occurrenceId, retention, _sequence + 1, choiceReservation: choiceReservation, objectiveLayout: objectiveLayout, retainedDefinition: retainedDefinition);
         if (ProviderFootprint(id.Provider!) + Footprint(candidate) > ProviderPayloadBudget)
         {
             diagnostic = "Provider '" + id.Provider + "' would exceed its " + ProviderPayloadBudget
@@ -320,11 +324,15 @@ internal sealed class StoryLedger
     /// Clears a reported failure, because the game accepted this occurrence again. Only a verified
     /// re-acceptance clears it; nothing else forgets that the game once failed this mission.
     /// </summary>
-    internal bool CanReplaceObjectiveLayout(StoryOccurrenceEntry entry, StoryObjectiveLayout layout)
+    internal bool CanReplaceObjectiveLayout(StoryOccurrenceEntry entry, StoryObjectiveLayout layout, StoryMissionDefinition? definition = null)
     {
         if (!_byOccurrence.TryGetValue(entry.OccurrenceId, out var current) || !ReferenceEquals(current, entry)) return false;
-        var candidate = entry.WithObjectiveLayout(layout);
-        int growth = Footprint(candidate) - Footprint(entry);
+        if (definition != null && (definition.Retention != entry.Retention || definition.ReservedChoiceBytes != entry.ChoiceReservation
+            || (entry.RetainedDefinition != null && !entry.RetainedDefinition.ChoiceKeys.SequenceEqual(definition.ChoiceKeys)))) return false;
+        var candidate = entry.WithObjectiveLayout(layout, definition);
+        int growth;
+        try { growth = Footprint(candidate) - Footprint(entry); }
+        catch (Exception error) when (error is System.IO.InvalidDataException || error is System.Text.EncoderFallbackException) { return false; }
         return ProviderFootprint(entry.Id.Provider!) + growth <= ProviderPayloadBudget
             && ReservedFootprint() + growth <= LedgerPayloadBudget;
     }
@@ -507,6 +515,16 @@ internal sealed class StoryLedger
     {
         if (rows == null) throw new ArgumentNullException(nameof(rows));
         if (rows.Count > MaxOccurrences) return "Too many story occurrences: " + rows.Count + ".";
+        foreach (var row in rows)
+        {
+            var definition = row.RetainedDefinition;
+            if (definition == null) continue;
+            if (row.State == StoryOccurrenceState.Retired || definition.LocalId != row.Id.LocalId || definition.Retention != row.Retention
+                || definition.ReservedChoiceBytes != row.ChoiceReservation
+                || !row.ObjectiveLayout.SamePositions(new StoryObjectiveLayout(definition))
+                || definition.Steps.SelectMany(step => step.Objectives).Any(objective => StoryContentPolicy.RefuseObjective(objective.Kind) != null))
+                return "Retained definition does not match its occurrence.";
+        }
         if (StoryStateCodec.HeaderBytes + rows.Sum(StoryStateCodec.EncodedSize) > StoryStateCodec.MaxBytes)
             return "Story state exceeds its bounded payload size.";
         // The RESERVED footprint, not just today's bytes: a restored ledger must still be able to

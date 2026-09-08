@@ -135,6 +135,12 @@ public sealed partial class Plugin : BaseUnityPlugin
     {
         foreach (var frame in Wait(() => SceneManager.GetSceneByName("Main Menu").isLoaded, "main menu")) yield return frame;
         foreach (var frame in Settle()) yield return frame;
+        if (Environment.GetCommandLineArgs().Contains("--vgmodapi-story-definition-cold"))
+        {
+            foreach (var frame in StoryLoadReady("fixture-a")) yield return frame;
+            foreach (var frame in CheckOwnedStories()) yield return frame;
+            yield break;
+        }
         for (int n = 0; n < 2; n++)
         {
             var previous = _api!.CurrentSession?.Id;

@@ -21,7 +21,7 @@ internal static class StoryStateCodec
     /// that the game reported a mission failed while still holding it. Schema 1 is read unchanged:
     /// its rows simply have neither, which is exactly what they meant.
     /// </summary>
-    internal const int SchemaVersion = 3;
+    internal const int SchemaVersion = 4;
     internal const int FirstSchemaVersion = 1;
     private const uint Magic = 0x31435356; // VSC1, little-endian.
     /// <summary>Strict UTF-8 on BOTH sides: invalid bytes or unpaired surrogates throw instead of decoding to U+FFFD.</summary>
@@ -64,6 +64,7 @@ internal static class StoryStateCodec
         if (entry == null) throw new ArgumentNullException(nameof(entry));
         // The row carries a pending-choice block and a flags byte as well since schema 2.
         int size = 1 + entry.Id.Provider!.Length + 1 + entry.Id.LocalId.Length + 16 + 8 + 3 + 2 + 1 + 1 + 1 + PendingSize(entry) + (entry.ObjectiveLayout.Slots.Count == 0 ? 0 : StoryObjectiveLayoutCodec.EncodedSize(entry.ObjectiveLayout));
+        if (entry.RetainedDefinition != null) size += 4 + StoryDefinitionCodec.Encode(entry.RetainedDefinition).Length;
         if (entry.Retention != StoryRetention.Campaign) return size;
         foreach (var pair in entry.Choices)
             // Strict UTF-8 again: text that cannot be encoded has no size, it is simply refused.
@@ -111,8 +112,14 @@ internal static class StoryStateCodec
                     WriteText(writer, pair.Value, StoryMissionDefinition.MaxChoiceValueBytes);
                 }
                 bool hasLayout = row.ObjectiveLayout.Slots.Count != 0;
-                writer.Write((byte)((row.FailureObserved ? 1 : 0) | (hasLayout ? 2 : 0)));
+                writer.Write((byte)((row.FailureObserved ? 1 : 0) | (hasLayout ? 2 : 0) | (row.RetainedDefinition != null ? 4 : 0)));
                 if (hasLayout) StoryObjectiveLayoutCodec.Write(writer, row.ObjectiveLayout);
+                if (row.RetainedDefinition != null)
+                {
+                    var definition = StoryDefinitionCodec.Encode(row.RetainedDefinition);
+                    writer.Write(definition.Length);
+                    writer.Write(definition);
+                }
             }
             writer.Flush();
         }
@@ -176,6 +183,7 @@ internal static class StoryStateCodec
             var pending = new List<KeyValuePair<string, string>>();
             bool failure = false;
             bool hasLayout = false;
+            bool hasDefinition = false;
             if (version >= 2)
             {
                 int pendingCount = reader.ReadByte();
@@ -190,13 +198,22 @@ internal static class StoryStateCodec
                 if (pending.Select(pair => pair.Key).Distinct(StringComparer.Ordinal).Count() != pending.Count)
                     throw new InvalidDataException("Duplicate story choice key.");
                 int flags = reader.ReadByte();
-                if (flags > (version >= 3 ? 3 : 1)) throw new InvalidDataException("Malformed story occurrence flags.");
+                if (flags > (version >= 4 ? 7 : version >= 3 ? 3 : 1)) throw new InvalidDataException("Malformed story occurrence flags.");
                 failure = (flags & 1) != 0;
                 hasLayout = (flags & 2) != 0;
+                hasDefinition = (flags & 4) != 0;
             }
             var layout = hasLayout ? StoryObjectiveLayoutCodec.Read(reader) : null;
             if (hasLayout && layout!.Slots.Count == 0) throw new InvalidDataException("Empty objective layout must omit its presence flag.");
-            rows[index] = new StoryOccurrenceEntry(new StoryContentId(provider, local), occurrence, retention, sequence, state, outcome, choices, reservation, pending, failure, layout);
+            StoryMissionDefinition? definition = null;
+            if (hasDefinition)
+            {
+                int length = reader.ReadInt32();
+                if (length < 1 || length > StoryDefinitionCodec.MaxBytes || length > stream.Length - stream.Position)
+                    throw new InvalidDataException("Invalid retained definition length.");
+                definition = StoryDefinitionCodec.Decode(reader.ReadBytes(length));
+            }
+            rows[index] = new StoryOccurrenceEntry(new StoryContentId(provider, local), occurrence, retention, sequence, state, outcome, choices, reservation, pending, failure, layout, definition);
         }
         if (stream.Position != bytes.Length) throw new InvalidDataException("Trailing story state bytes.");
         var refusal = StoryLedger.RefuseBounds(rows);

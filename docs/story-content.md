@@ -297,7 +297,7 @@ incomplete; this coverage does not make the entire API runtime-qualified.
 
 ## Automatic persistence
 
-The module registers the reserved persistence owner `vgmodapi.story-content` (schema 3) with its own
+The module registers the reserved persistence owner `vgmodapi.story-content` (schema 4) with its own
 capture/restore/validate. The payload is a bounded `VSC1` binary record set written with netstandard
 binary IO and STRICT UTF-8 only (invalid bytes and unpaired surrogates are refused on both read and
 write, never decoded to replacement characters) — no JSON library is introduced. The occurrence
@@ -305,9 +305,21 @@ sequence is the authoritative timeline and must be positive, unique and strictly
 sides. Payloads are capped well below the 1 MiB
 envelope bound; truncated, extended, malformed or newer-version payloads are refused.
 
-Schemas 1 and 2 are readable through registered owner migrations. Schema 1 has no pending choices
-or observed-failure flag; neither older schema carries objective layouts. Capture writes schema 3
-without modifying older snapshots. Keyed layouts retain objective positions, kinds, required amounts,
+Schemas 1–3 are readable through registered owner migrations. Schema 1 has no pending choices
+or observed-failure flag; schemas 1 and 2 have no objective layouts. Schema 3 has no retained definition
+payload. Such legacy occurrences still require matching startup definitions for reconstruction.
+Capture writes schema 4 without modifying older snapshots. Newly offered occurrences retain their
+immutable definition data: text, faction, steps, native targets, rewards and declared choice keys.
+Startup registration still establishes provider ownership and behavior, but same-revision definitions
+cannot replace saved generated data. Explicit supported revision migration replaces the snapshot
+transactionally. Active revision migration requires unchanged non-step metadata, including rewards
+and choice declarations; legacy active occurrences without a retained definition cannot prove that
+condition and refuse revision migration. Offered occurrences may migrate the full definition.
+Definition bytes consume existing quotas and are discarded at retirement; outcomes,
+choices and keyed progress remain governed by retention policy. Cold-start restoration has host checks and bounded two-process native evidence: offered and active
+occurrences retain their target and required amount despite changed startup definitions, then survive
+reload and normal retirement. This uses the same canonical save directory; cross-directory migration
+and native verification of every retained metadata field are not covered. Keyed layouts retain objective positions, kinds, required amounts,
 scripted progress and content revision. Their space is charged before admission or migration.
 Host regressions cover coordinator migration at the provider/global limits, service restoration,
 completion and older-snapshot rollback. Controlled in-game verification covers scripted objective revision migration; arbitrary non-scripted

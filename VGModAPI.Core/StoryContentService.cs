@@ -225,7 +225,7 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
             // Schema 1 rows are read as what they meant: no declaration staged for a future outcome
             // and no observed failure. The bytes are handed through unchanged; the decoder does the
             // reading, so nothing is rewritten to fit a newer shape.
-            migrations: new Dictionary<int, Func<byte[], byte[]>> { [StoryStateCodec.FirstSchemaVersion] = payload => payload, [2] = payload => payload }));
+            migrations: new Dictionary<int, Func<byte[], byte[]>> { [StoryStateCodec.FirstSchemaVersion] = payload => payload, [2] = payload => payload, [3] = payload => payload }));
         // Availability is bound to the lifecycle independently of restore: a failed or invalidated
         // session never calls restore, and its queries must not answer from the previous save.
         _lifecycle = lifecycle?.Subscribe("vgmodapi.story-content", OnLifecycle);
@@ -299,9 +299,13 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
             var identifier = StoryContentPolicy.OccurrenceIdentifier(entry.Id, entry.OccurrenceId);
             if (!_registry.TryGet(entry.Id, out var definition))
             { Suspend(identifier + ": this save holds owned story content whose provider is not registered."); continue; }
+            var registrationDefinition = definition;
+            if (entry.RetainedDefinition != null && entry.RetainedDefinition.ContentRevision == definition.ContentRevision)
+                definition = entry.RetainedDefinition;
             StoryObjectiveLayout? migrated = null;
             if (!entry.ObjectiveLayout.SamePositions(new StoryObjectiveLayout(definition))
-                && (!entry.ObjectiveLayout.TryMigrate(definition, out migrated) || !_ledger.CanReplaceObjectiveLayout(entry, migrated)))
+                && ((entry.State == StoryOccurrenceState.Active && !StoryDefinitionCodec.SameMetadata(entry.RetainedDefinition, definition))
+                    || !entry.ObjectiveLayout.TryMigrate(definition, out migrated) || !_ledger.CanReplaceObjectiveLayout(entry, migrated, definition)))
             {
                 _unrunnable.Add(entry.OccurrenceId);
                 _reconciliation.Add(identifier + ": objective layout differs from the retained occurrence and requires migration.");
@@ -327,7 +331,7 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
                     bool Stable() => !_disposed && _fault == null && _restoredSession == session && _currentSession()?.Id == session
                         && _leasesBySegment.TryGetValue(entry.Id.Provider!, out var owner) && owner.Active
                         && _ledger.TryGet(entry.OccurrenceId, out var current) && ReferenceEquals(current, entry)
-                        && _registry.TryGet(entry.Id, out var registered) && ReferenceEquals(registered, definition);
+                        && _registry.TryGet(entry.Id, out var registered) && ReferenceEquals(registered, registrationDefinition);
                     if (!BeginOperation(out _, entry.OccurrenceId))
                     {
                         _unrunnable.Add(entry.OccurrenceId);
@@ -339,7 +343,7 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
                         applied = entry.State != StoryOccurrenceState.Active || (_world is IStoryObjectiveWorld objectiveWorld
                             && objectiveWorld.MigrateScripted(identifier, definition, entry.ObjectiveLayout, migrated, Stable).Applied);
                         if (!Stable()) return;
-                        if (applied) entry.ReplaceObjectiveLayout(migrated);
+                        if (applied) { entry.ReplaceObjectiveLayout(migrated); entry.ReplaceDefinition(definition); }
                     }
                     finally { EndOperation(); }
                     if (!Stable()) return;
@@ -697,14 +701,16 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
         StoryObjectiveQuery Refused() => new(StoryKnowledge.Unavailable, null, null, null, "The current native objective cannot be verified.");
         if (entry.State != StoryOccurrenceState.Active || _world is not IStoryObjectiveObservationWorld world
             || _unrunnable.Contains(entry.OccurrenceId) || !_registry.TryGet(entry.Id, out var definition)
-            || !entry.ObjectiveLayout.SamePositions(new StoryObjectiveLayout(definition))
             || !_occurrenceIdentifiers.TryGetValue(entry.OccurrenceId, out var identifier)) return Refused();
+        var registrationDefinition = definition;
+        definition = entry.RetainedDefinition ?? definition;
+        if (!entry.ObjectiveLayout.SamePositions(new StoryObjectiveLayout(definition))) return Refused();
         if (!BeginOperation(out _, entry.OccurrenceId)) return Refused();
         try
         {
             bool Stable() => Unavailable() == null && GuardStable(lease, session, out _, out _)
                 && _ledger.TryGet(entry.OccurrenceId, out var current) && ReferenceEquals(entry, current)
-                && _registry.TryGet(entry.Id, out var registered) && ReferenceEquals(registered, definition);
+                && _registry.TryGet(entry.Id, out var registered) && ReferenceEquals(registered, registrationDefinition);
             var expected = definition.Steps[slot.Step].Objectives[slot.Objective];
             var progress = world.ReadProgress(identifier, slot, expected, Stable);
             if (!Stable() || !progress.HasValue) return Refused();
@@ -833,7 +839,10 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
                 "This world holds no point of interest '" + targets + "', so the mission could never be completed.");
         var occurrenceId = _newOccurrence();
         // The outcome's worst-case payload is reserved now, so this occurrence can always be retired.
-        var result = _ledger.Offer(id, definition!.Retention, occurrenceId, definition.ReservedChoiceBytes, out var diagnostic, new StoryObjectiveLayout(definition));
+        try { StoryDefinitionCodec.Encode(definition!); }
+        catch (Exception error) when (error is System.IO.InvalidDataException || error is System.Text.EncoderFallbackException)
+        { return new StoryTransitionResult(StoryTransitionStatus.LimitExceeded, Guid.Empty, "The definition cannot fit the bounded retained payload."); }
+        var result = _ledger.Offer(id, definition!.Retention, occurrenceId, definition.ReservedChoiceBytes, out var diagnostic, new StoryObjectiveLayout(definition), definition);
         if (result != StoryLedgerStatus.Accepted) return new StoryTransitionResult(Map(result), Guid.Empty, diagnostic);
         if (_world != null)
         {
@@ -969,6 +978,7 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
         // right before the game is asked to hold this mission.
         if (_registry.TryGet(entry!.Id, out var definition))
         {
+            definition = entry.RetainedDefinition ?? definition;
             if (!entry.ObjectiveLayout.SamePositions(new StoryObjectiveLayout(definition)))
                 return new StoryTransitionResult(StoryTransitionStatus.Unavailable, occurrenceId,
                     "The retained objective layout requires migration before activation.");
@@ -1076,6 +1086,7 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
                     "Declared choices need the definition registered in this session; '" + id.LocalId + "' is not.");
                 return false;
             }
+            definition = entry.RetainedDefinition ?? definition;
             var undeclared = copy.Keys.FirstOrDefault(key => !definition.ChoiceKeys.Contains(key, StringComparer.Ordinal));
             if (undeclared != null)
             {

@@ -27,6 +27,13 @@ public sealed partial class Plugin
         Require(!queries.SetProgress(session, credits, StoryObjective.MaxAmount).Accepted
             && Convert.ToInt64(SpGet(CurrentPlayer, "credits")) == beforeDeniedWrite, "Native credit objective accepted a scripted resource write.");
         var previous = HeldStory(provider, occurrence.OccurrenceId, local);
+        var coldOffered = provider.Offer(session, local);
+        Require(coldOffered.Accepted, "Cold-start donor could not retain an offered occurrence.");
+        Save("qa-story-definition-cold", LifecycleEventKind.SaveSucceeded);
+        WriteAtomic("story-definition-donor.txt", new[] { "PASS", provider.ProviderId, faction, target,
+            occurrence.OccurrenceId.ToString("D"), coldOffered.OccurrenceId.ToString("D") });
+        Require(provider.Retire(session, coldOffered.OccurrenceId, StoryOutcome.Abandoned).Accepted,
+            "Cold-start donor offered fixture could not retire normally.");
         Save("qa-native-objective-observation", LifecycleEventKind.SaveSucceeded);
         foreach (var frame in StoryLoadReady("qa-native-objective-observation")) yield return frame;
         Require(!ReferenceEquals(previous, HeldStory(provider, occurrence.OccurrenceId, local)), "Native observation reused a pre-load object.");
