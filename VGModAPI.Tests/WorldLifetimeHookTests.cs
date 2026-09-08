@@ -10,6 +10,35 @@ public sealed class WorldLifetimeHookTests : IDisposable
 {
     public void Dispose() => WorldLifetimePatches.Host = null;
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AwakeRefusalPersistsEvenWhileManagerPoiIsNull(bool localTarget)
+    {
+        var oldPlayer = Source.Player.GamePlayer.current;
+        var singleton = typeof(Behaviour.Util.Singleton<Behaviour.Managers.TravelManager>).GetField("instance", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+        var oldTravel = singleton.GetValue(null);
+        try
+        {
+            var hub = new LifecycleHub((_, error) => throw error);
+            using var host = new WorldLifetimeHookHost(typeof(Source.Galaxy.MapElement).Assembly, hub);
+            hub.Begin(SessionOrigin.NewGame, null);
+            var owned = new Source.Galaxy.MapPointOfInterest { guid = WorldObjectIdentity.ReservedPrefix + "unknown" };
+            var vanilla = new Source.Galaxy.MapPointOfInterest { guid = "vanilla" };
+            Source.Player.GamePlayer.current = new Source.Player.GamePlayer { currentPointOfInterest = localTarget ? vanilla : owned };
+            singleton.SetValue(null, new Behaviour.Managers.TravelManager { localTarget = localTarget ? owned : vanilla });
+            var manager = new Behaviour.Managers.TestPoiManager();
+            Assert.False(host.AllowManagerAwake(manager));
+            Assert.Null(manager.poi); Assert.False(host.AllowManager(manager));
+            Source.Player.GamePlayer.current.currentPointOfInterest = vanilla;
+            singleton.SetValue(null, null);
+            Assert.False(host.AllowManagerAwake(manager));
+            Assert.False(host.CaptureManager(manager)());
+            Assert.True(host.AllowManagerAwake(new Behaviour.Managers.TestPoiManager()));
+        }
+        finally { Source.Player.GamePlayer.current = oldPlayer; singleton.SetValue(null, oldTravel); }
+    }
+
     [Fact]
     public void ConcreteHostRefusesOwnedBodiesBeforeAndAfterTeardown()
     {

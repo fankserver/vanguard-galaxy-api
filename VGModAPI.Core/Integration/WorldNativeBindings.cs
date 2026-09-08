@@ -12,6 +12,8 @@ internal static class WorldNativeBindings
         new("worldStore", BindingCatalog.Save, "Store", true, "System.Void", "LightJson.JsonObject", "System.String", "Source.Util.SaveGameFormat", "System.Int32"),
         new("worldElementWrite", "Source.Galaxy.MapElement", "ToJson", false, "LightJson.JsonValue"),
         new("worldRemove", "Source.Galaxy.SystemMapData", "RemovePointOfInterest", false, "System.Void", "Source.Galaxy.MapPointOfInterest"),
+        new("worldBaseAwake", "Behaviour.Managers.BasePoiManager", "Awake", false, "System.Void"),
+        new("worldCombatAwake", "Behaviour.Combat.CombatManager", "Awake", false, "System.Void"),
         new("worldManagerStart", "Behaviour.Managers.BasePoiManager", "Start", false, "System.Void"),
         new("worldManagerUpdate", "Behaviour.Managers.BasePoiManager", "Update", false, "System.Void"),
         new("worldSecurityPatrol", "Behaviour.Managers.BasePoiManager", "EvaluateSecurityPatrol", false, "System.Void"),

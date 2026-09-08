@@ -9,6 +9,10 @@ internal static class WorldLifetimePatches
     {
         internal static bool Prefix(object __instance) => Host?.AllowAmbient(__instance) ?? true;
     }
+    internal static class Awake
+    {
+        internal static bool Prefix(object __instance) => Host?.AllowManagerAwake(__instance) ?? true;
+    }
     internal static class Initialization
     {
         internal static void Postfix(object __instance, ref System.Collections.IEnumerator __result)

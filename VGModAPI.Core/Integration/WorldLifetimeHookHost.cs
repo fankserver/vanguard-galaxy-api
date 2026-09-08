@@ -11,6 +11,7 @@ internal interface IWorldLifetimeHookHost
     bool AllowUse(object poi);
     bool AllowManager(object manager);
     Func<bool> CaptureManager(object manager);
+    bool AllowManagerAwake(object manager);
 }
 
 /// <summary>Refuses reserved ambient/removal paths before their native bodies; no world readiness is inferred.</summary>
@@ -19,6 +20,8 @@ internal sealed class WorldLifetimeHookHost : IWorldLifetimeHookHost, IDisposabl
     private readonly LifecycleHub _hub;
     private readonly FieldInfo _guid;
     private readonly FieldInfo _managerPoi;
+    private readonly FieldInfo _player, _playerPoi, _travelInstance, _localTarget;
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<object, object> _blockedManagers = new();
     private readonly WorldLifetimeGuard _guard;
     private readonly IDisposable _subscription;
     private Guid _session;
@@ -33,6 +36,13 @@ internal sealed class WorldLifetimeHookHost : IWorldLifetimeHookHost, IDisposabl
         if (_guid.FieldType != typeof(string)) throw new MissingFieldException("MapElement.guid must be a string.");
         _managerPoi = assembly.GetType("Behaviour.Managers.BasePoiManager", true)!.GetField("<poi>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance)
             ?? throw new MissingFieldException("BasePoiManager.poi backing field");
+        var player = assembly.GetType("Source.Player.GamePlayer", true)!;
+        var travel = assembly.GetType("Behaviour.Managers.TravelManager", true)!;
+        _player = player.GetField("current", BindingFlags.Public | BindingFlags.Static) ?? throw new MissingFieldException("GamePlayer.current");
+        _playerPoi = player.GetField("currentPointOfInterest", BindingFlags.Public | BindingFlags.Instance) ?? throw new MissingFieldException("GamePlayer.currentPointOfInterest");
+        _travelInstance = assembly.GetType("Behaviour.Util.Singleton`1", true)!.MakeGenericType(travel).GetField("instance", BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new MissingFieldException("Singleton<TravelManager>.instance");
+        _localTarget = travel.GetField("<localTarget>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance) ?? throw new MissingFieldException("TravelManager.localTarget backing field");
         _subscription = hub.Subscribe("vgmodapi.world-lifetime", OnLifecycle);
     }
     private void OnLifecycle(LifecycleEvent e)
@@ -53,7 +63,20 @@ internal sealed class WorldLifetimeHookHost : IWorldLifetimeHookHost, IDisposabl
     {
         _hub.CheckThread();
         var poi = _managerPoi.GetValue(manager);
-        return poi == null || AllowUse(poi);
+        return !_blockedManagers.TryGetValue(manager, out _) && (poi == null || AllowUse(poi));
+    }
+    public bool AllowManagerAwake(object manager)
+    {
+        _hub.CheckThread();
+        if (_blockedManagers.TryGetValue(manager, out _)) return false;
+        var player = _player.GetValue(null);
+        var travel = _travelInstance.GetValue(null);
+        var current = player == null ? null : _playerPoi.GetValue(player);
+        var target = travel == null ? null : _localTarget.GetValue(travel);
+        // Before poi assignment, conservatively require both possible native resolution candidates.
+        if ((current == null || AllowUse(current)) && (target == null || AllowUse(target))) return true;
+        _blockedManagers.GetValue(manager, _ => new object());
+        return false;
     }
     public Func<bool> CaptureManager(object manager)
     {
@@ -64,7 +87,7 @@ internal sealed class WorldLifetimeHookHost : IWorldLifetimeHookHost, IDisposabl
         return () =>
         {
             _hub.CheckThread();
-            return session == (_hub.CurrentSession?.Id ?? Guid.Empty) && ReferenceEquals(poi, _managerPoi.GetValue(manager)) &&
+            return !_blockedManagers.TryGetValue(manager, out _) && session == (_hub.CurrentSession?.Id ?? Guid.Empty) && ReferenceEquals(poi, _managerPoi.GetValue(manager)) &&
                 (poi == null || AllowUse(poi));
         };
     }
