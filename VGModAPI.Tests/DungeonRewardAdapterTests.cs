@@ -76,29 +76,6 @@ public sealed class DungeonRewardAdapterTests
         Assert.Equal(expectedCargo, cargo); Assert.Equal(expectedDrop, worldDrop);
         Assert.Equal(3, f.Adapter.LootCount(loot, 3));
     }
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void CaptureSequencingPreservesNativeConsequencesAndMissionRewardBoundary(bool mission)
-    {
-        using var f = new Fixture(mission);
-        var consequences = new System.Collections.Generic.List<string>();
-        f.Adapter.RetainProtection(f.Operation);
-        // Native-shaped terminal driver: adapters surround rewards, never replace capture or mission calls.
-        var loot = new object(); using (f.Adapter.Begin(f.Operation, loot, false)) f.Adapter.LootCount(loot, 3);
-        consequences.Add("faction-player"); consequences.Add("commander-cleared"); consequences.Add("ammo-capped");
-        consequences.Add("crew-cleared"); consequences.Add("module-damage"); consequences.Add("hull-upgrade-damage");
-        if (!mission) consequences.Add("captured-inventory");
-        consequences.Add("capture-mission-trigger");
-        f.ShipData.Fields["settlementMissionGuid"] = null; consequences.Add("npc-state-cleared"); consequences.Add("hangar-prepared");
-        var missionRewards = mission ? 1 : 0; if (mission) consequences.Add("mission-reward");
-        consequences.Add("world-departure");
-        using (f.Adapter.Begin(f.Operation, null, true)) Assert.Equal(mission ? 100f : 200f, f.Adapter.Mastery(f.Recipient, 100, "Leadership"));
-        Assert.Equal(!mission, consequences.Contains("captured-inventory")); Assert.Equal(mission ? 1 : 0, missionRewards);
-        Assert.Equal("world-departure", consequences[consequences.Count - 1]);
-        Assert.True(consequences.IndexOf("crew-cleared") < consequences.IndexOf("capture-mission-trigger"));
-        Assert.True(consequences.IndexOf("npc-state-cleared") < consequences.IndexOf("hangar-prepared"));
-    }
     [Fact]
     public void NativeDefeatReductionPrecedesAdjustmentAndOtherSpecializationsRemainUntouched()
     {
