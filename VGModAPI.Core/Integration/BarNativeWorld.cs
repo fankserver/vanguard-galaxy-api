@@ -228,7 +228,8 @@ internal sealed class BarNativeWorld : IBarRosterWorld
         return true;
     }
 
-    // Call before removing content guards. A false result requires keeping those guards alive.
+    // Restore roster storage during shutdown. Contact guards must still outlive stale UI
+    // references; a false result also requires retaining bar serialization guards.
     // Validation and allocation finish for every tracked bar before any roster is restored.
     internal bool StopAndRestore()
     {
