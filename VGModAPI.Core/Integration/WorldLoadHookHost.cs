@@ -64,7 +64,10 @@ internal sealed class WorldLoadHookHost : IWorldLoadHookHost, IDisposable
         var session = _hub.CurrentSession;
         if (_disposed || session?.Phase != SessionPhase.Starting) _gate.Invalidate();
         long revision = _disposed ? -1 : _providerRevision();
-        _json.RequireFactory(_gate, session?.Id ?? Guid.Empty, value, revision);
+        var current = _hub.CurrentSession;
+        if (_disposed || current?.Phase != SessionPhase.Starting || current?.Id != session?.Id)
+            _gate.Invalidate();
+        _json.RequireFactory(_gate, current?.Id ?? Guid.Empty, value, revision);
     }
 
     public void Dispose()
