@@ -4,7 +4,6 @@ using System.Linq;
 
 namespace VGModAPI.Core;
 
-// Internal engine. Runtime discovery/registration and consumer migrations are separate deliveries.
 internal sealed class PersistenceCoordinator : IDisposable
 {
     private sealed class Owner
@@ -14,6 +13,9 @@ internal sealed class PersistenceCoordinator : IDisposable
         internal readonly Action<byte[]?> Restore;
         internal bool Ready;
         internal string Status = "inactive";
+        internal SaveDataBlockReason Reason;
+        internal void Set(bool ready, string status, SaveDataBlockReason reason = SaveDataBlockReason.None)
+        { Ready = ready; Status = status; Reason = reason; }
         internal Owner(OwnerSchemaCodec codec, Func<byte[]> capture, Action<byte[]?> restore)
         { Codec = codec; Capture = capture; Restore = restore; }
     }
@@ -38,6 +40,9 @@ internal sealed class PersistenceCoordinator : IDisposable
     private string? _loadPath, _loadHash;
     private bool _sessionFault, _writeFault, _disposed, _restored;
     private string? _faultDetail;
+    private SaveDataBlockReason _sessionReason = SaveDataBlockReason.LoadRefused;
+    private SaveDataBlockReason _writeReason = SaveDataBlockReason.PublicationFailed;
+    internal event Action? StateChanged;
 
     internal PersistenceCoordinator(LifecycleHub hub, GenerationStore store, Func<string, string> canonical, Func<string, string> hashFile)
     {
@@ -50,10 +55,12 @@ internal sealed class PersistenceCoordinator : IDisposable
     internal void Register(OwnerSchemaCodec codec, Func<byte[]> capture, Action<byte[]?> restore)
     {
         _hub.CheckThread();
-        if (_disposed || _hub.CurrentSession != null) throw new InvalidOperationException("Register before a session begins.");
         if (codec == null || capture == null || restore == null) throw new ArgumentNullException();
-        if (_owners.ContainsKey(codec.Owner)) throw new InvalidOperationException("Owner is already registered.");
-        if (_owners.Count >= GenerationStore.MaxOwners) throw new InvalidOperationException("Owner limit reached.");
+        var admission = Admission(codec.Owner);
+        if (admission is SaveDataRegistrationStatus.Unavailable or SaveDataRegistrationStatus.SessionAlreadyStarted)
+            throw new InvalidOperationException("Register before a session begins.");
+        if (admission == SaveDataRegistrationStatus.DuplicateProvider) throw new InvalidOperationException("Owner is already registered.");
+        if (admission == SaveDataRegistrationStatus.LimitExceeded) throw new InvalidOperationException("Owner limit reached.");
         _owners.Add(codec.Owner, new Owner(codec, capture, restore));
     }
 
@@ -61,7 +68,8 @@ internal sealed class PersistenceCoordinator : IDisposable
     {
         _hub.CheckThread();
         if (_disposed || !_owners.Remove(owner)) return;
-        if (_session.HasValue) { _sessionFault = true; _pending.Clear(); }
+        if (_session.HasValue) { _sessionFault = true; _sessionReason = SaveDataBlockReason.ProviderRemoved; _pending.Clear(); }
+        StateChanged?.Invoke();
     }
 
     internal bool MutationAllowed(string owner)
@@ -94,6 +102,41 @@ internal sealed class PersistenceCoordinator : IDisposable
         return _owners.TryGetValue(owner, out var registered) ? registered.Status : "unregistered";
     }
 
+    internal SaveDataRegistrationStatus Admission(string owner)
+    {
+        _hub.CheckThread();
+        if (_disposed) return SaveDataRegistrationStatus.Unavailable;
+        if (_hub.CurrentSession != null) return SaveDataRegistrationStatus.SessionAlreadyStarted;
+        if (_owners.ContainsKey(owner)) return SaveDataRegistrationStatus.DuplicateProvider;
+        return _owners.Count >= GenerationStore.MaxOwners ? SaveDataRegistrationStatus.LimitExceeded : SaveDataRegistrationStatus.Registered;
+    }
+
+    internal SaveDataState State(string owner)
+    {
+        _hub.CheckThread();
+        if (_disposed) return new SaveDataState(SaveDataStateKind.Disposed);
+        var current = _hub.CurrentSession;
+        if (!_session.HasValue || current == null || current.Id != _session.Value ||
+            current.Phase is SessionPhase.Failed or SessionPhase.Invalidated)
+            return new SaveDataState(SaveDataStateKind.Inactive);
+        if (_sessionFault) return new SaveDataState(SaveDataStateKind.Blocked, _session, _sessionReason, Status(owner));
+        if (_writeFault) return new SaveDataState(SaveDataStateKind.Blocked, _session, _writeReason, Status(owner));
+        if (!_owners.TryGetValue(owner, out var registered))
+            return new SaveDataState(SaveDataStateKind.Blocked, _session, SaveDataBlockReason.ProviderRemoved);
+        if (registered.Ready) return new SaveDataState(SaveDataStateKind.Ready, _session, detail: registered.Status);
+        if (registered.Reason != SaveDataBlockReason.None)
+            return new SaveDataState(SaveDataStateKind.Blocked, _session, registered.Reason, registered.Status);
+        return new SaveDataState(SaveDataStateKind.Restoring, _session);
+    }
+
+    private void BlockWrites(SaveDataBlockReason reason = SaveDataBlockReason.PublicationFailed, string? detail = null)
+    {
+        // A missing publication candidate must not erase the capture/limit refusal that caused it.
+        if (!_writeFault || reason != SaveDataBlockReason.PublicationFailed)
+        { _writeReason = reason; _faultDetail = detail; }
+        _writeFault = true;
+    }
+
     private bool Current(Guid id) => !_disposed && !_sessionFault && _session == id && _hub.CurrentSession?.Id == id
         && _hub.CurrentSession.Phase != SessionPhase.Failed && _hub.CurrentSession.Phase != SessionPhase.Invalidated;
 
@@ -101,12 +144,19 @@ internal sealed class PersistenceCoordinator : IDisposable
     {
         _session = null; _pending.Clear(); _known.Clear(); _loadPath = null; _loadHash = null;
         _sessionFault = false; _writeFault = false; _restored = false; _faultDetail = null;
-        foreach (var owner in _owners.Values) { owner.Ready = false; owner.Status = "inactive"; }
+        _sessionReason = SaveDataBlockReason.LoadRefused; _writeReason = SaveDataBlockReason.PublicationFailed;
+        foreach (var owner in _owners.Values) owner.Set(false, "inactive");
     }
 
     private void OnEvent(LifecycleEvent e)
     {
         if (_disposed) return;
+        try { HandleEvent(e); }
+        finally { StateChanged?.Invoke(); }
+    }
+
+    private void HandleEvent(LifecycleEvent e)
+    {
         if (e.Kind == LifecycleEventKind.SessionStarting)
         {
             if (e.Session == null || e.Session.Id != _hub.CurrentSession?.Id) return;
@@ -137,7 +187,7 @@ internal sealed class PersistenceCoordinator : IDisposable
                 _intents.Add(e.OperationId.Value, (path, e.Session?.Id, !empty));
                 if (_session.HasValue && Current(_session.Value)) Capture(e);
             }
-            catch { _writeFault = true; }
+            catch { BlockWrites(); }
             return;
         }
         if (e.Kind == LifecycleEventKind.SaveSucceeded || e.Kind == LifecycleEventKind.SaveFailed || e.Kind == LifecycleEventKind.SaveSkipped)
@@ -167,14 +217,14 @@ internal sealed class PersistenceCoordinator : IDisposable
             var result = owner.Codec.Decode(_known.TryGetValue(pair.Key, out var bytes) ? bytes : null);
             if (!Current(id)) return;
             if (result.Status != SchemaReadStatus.Ready && result.Status != SchemaReadStatus.Missing)
-            { owner.Status = "schema-" + result.Status; continue; }
+            { owner.Set(false, "schema-" + result.Status, SaveDataBlockReason.SchemaUnavailable); continue; }
             try
             {
                 owner.Restore(result.Payload);
                 if (!Current(id)) return;
-                owner.Ready = true; owner.Status = result.Migrated ? "migration-pending" : "ready";
+                owner.Set(true, result.Migrated ? "migration-pending" : "ready");
             }
-            catch { owner.Ready = false; owner.Status = "restore-failed"; }
+            catch { owner.Set(false, "restore-failed", SaveDataBlockReason.RestoreFailed); }
         }
         if (Current(id)) _restored = true;
     }
@@ -183,29 +233,29 @@ internal sealed class PersistenceCoordinator : IDisposable
     {
         if (_sessionFault || !_restored || e.Session?.Id != _session || e.OperationId == null || e.Destination == null) return;
         if (_known.Keys.Union(_owners.Keys, StringComparer.Ordinal).Count() > GenerationStore.MaxOwners)
-        { _writeFault = true; _faultDetail = "owner-union-limit"; return; }
+        { BlockWrites(SaveDataBlockReason.LimitExceeded, "owner-union-limit"); return; }
         Guid id = _session!.Value;
         var data = _known.ToDictionary(p => p.Key, p => (byte[])p.Value.Clone(), StringComparer.Ordinal);
         bool captureFailed = false;
         foreach (var pair in _owners.ToArray())
         {
-            if (!pair.Value.Ready && pair.Value.Status != "capture-failed") continue; // Inactive owners retain their opaque bytes.
+            if (!pair.Value.Ready && pair.Value.Reason != SaveDataBlockReason.CaptureFailed) continue; // Inactive owners retain their opaque bytes.
             try
             {
                 data[pair.Key] = pair.Value.Codec.Encode(pair.Value.Capture());
-                pair.Value.Ready = true; pair.Value.Status = "ready";
+                pair.Value.Set(true, "ready");
             }
-            catch { pair.Value.Ready = false; pair.Value.Status = "capture-failed"; captureFailed = true; }
+            catch { pair.Value.Set(false, "capture-failed", SaveDataBlockReason.CaptureFailed); captureFailed = true; }
             if (!Current(id)) return;
         }
         // An active owner's failed capture must not label its older bytes as this save's state.
-        if (captureFailed) { _writeFault = true; _faultDetail = "capture-failed"; return; }
+        if (captureFailed) { BlockWrites(SaveDataBlockReason.CaptureFailed, "capture-failed"); return; }
         try
         {
             if (_pending.ContainsKey(e.OperationId.Value)) throw new InvalidOperationException("Duplicate save start.");
             _pending.Add(e.OperationId.Value, new Pending(id, _campaign, _canonical(e.Destination), data));
         }
-        catch { _writeFault = true; }
+        catch { BlockWrites(); }
     }
 
     private void Complete(LifecycleEvent e)
@@ -235,7 +285,7 @@ internal sealed class PersistenceCoordinator : IDisposable
             if (intent.Written) _store.ClearIntent(intent.Path, e.OperationId.Value);
             _writeFault = false; _faultDetail = null;
         }
-        catch { _writeFault = true; }
+        catch { BlockWrites(); }
     }
 
     public void Dispose()
@@ -243,5 +293,6 @@ internal sealed class PersistenceCoordinator : IDisposable
         _hub.CheckThread();
         if (_disposed) return;
         _subscription.Dispose(); Reset(); _disposed = true;
+        StateChanged?.Invoke();
     }
 }

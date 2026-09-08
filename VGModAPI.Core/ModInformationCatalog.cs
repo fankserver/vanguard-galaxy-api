@@ -25,15 +25,56 @@ internal sealed class ModInformationCatalog : IModInformationCatalog, IDisposabl
     private readonly Func<IEnumerable<LoadedPluginInformation>> _plugins;
     private readonly Func<string, byte[]?> _read;
     private readonly int _thread = Thread.CurrentThread.ManagedThreadId;
-    private bool _disposed;
+    private bool _disposed, _loaderComplete, _refreshing;
     internal ModInformationCatalog(Func<IEnumerable<LoadedPluginInformation>> plugins, Func<string, byte[]?>? read = null)
     { _plugins = plugins; _read = read ?? ReadFile; }
-    public IReadOnlyList<ModInformation> Snapshot { get; private set; } = Array.Empty<ModInformation>();
+    internal ModInventorySnapshot Inventory { get; private set; } = new(ModInventoryStatus.NotCollected, Array.Empty<ModInformation>());
+    internal event Action<ModInventorySnapshot>? InventoryChanged;
+    public IReadOnlyList<ModInformation> Snapshot => Inventory.Entries;
+
+    internal void CheckThread()
+    {
+        if (Thread.CurrentThread.ManagedThreadId != _thread) throw new InvalidOperationException("Catalog access requires its owning main thread.");
+    }
+
+    internal void MarkLoaderComplete()
+    {
+        CheckThread();
+        if (_disposed) throw new ObjectDisposedException(nameof(ModInformationCatalog));
+        _loaderComplete = true; // Existing partial rows need a new collection before claiming Current.
+    }
 
     public void Refresh()
     {
-        if (Thread.CurrentThread.ManagedThreadId != _thread) throw new InvalidOperationException("Catalog refresh requires its owning main thread.");
+        CheckThread();
         if (_disposed) throw new ObjectDisposedException(nameof(ModInformationCatalog));
+        // A refresh requested by its own notification observes the committed result.
+        if (_refreshing) return;
+        _refreshing = true;
+        try
+        {
+            try
+            {
+                var collected = Collect(_loaderComplete);
+                if (_disposed) return;
+                Inventory = collected;
+            }
+            catch (Exception error)
+            {
+                if (!_disposed)
+                {
+                    Inventory = new ModInventorySnapshot(ModInventoryStatus.RefreshFailed, Inventory.Entries, error.GetType().Name);
+                    InventoryChanged?.Invoke(Inventory);
+                }
+                throw; // The legacy refresh contract still reports collection failure to its caller.
+            }
+            InventoryChanged?.Invoke(Inventory);
+        }
+        finally { _refreshing = false; }
+    }
+
+    private ModInventorySnapshot Collect(bool loaderComplete)
+    {
         var rows = new List<ModInformation>();
         var ids = new HashSet<string>(StringComparer.Ordinal);
         var count = 0;
@@ -57,7 +98,7 @@ internal sealed class ModInformationCatalog : IModInformationCatalog, IDisposabl
             { status = ModMetadataStatus.Unreadable; }
             rows.Add(new ModInformation(plugin.Id, plugin.Name, plugin.Version, plugin.Dependencies, metadata, status));
         }
-        Snapshot = new ReadOnlyCollection<ModInformation>(rows.OrderBy(r => r.PluginId, StringComparer.Ordinal).ToArray());
+        return new ModInventorySnapshot(loaderComplete ? ModInventoryStatus.Current : ModInventoryStatus.Partial, rows);
     }
 
     internal static string MetadataPath(string location, string id)
@@ -89,5 +130,12 @@ internal sealed class ModInformationCatalog : IModInformationCatalog, IDisposabl
         catch (DirectoryNotFoundException) { return null; }
     }
 
-    public void Dispose() { _disposed = true; Snapshot = Array.Empty<ModInformation>(); }
+    public void Dispose()
+    {
+        CheckThread();
+        if (_disposed) return;
+        _disposed = true;
+        Inventory = new ModInventorySnapshot(ModInventoryStatus.Stopped, Array.Empty<ModInformation>());
+        InventoryChanged?.Invoke(Inventory);
+    }
 }

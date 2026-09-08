@@ -138,6 +138,11 @@ internal sealed class LifecycleHub : ILifecycleApi, ILifecycleDispatchState, IDi
         }
     }
 
+    internal void ReportSubscriberFailure(string owner, Exception error)
+    {
+        try { _report(owner, error); } catch { /* Diagnostics must not interrupt observers. */ }
+    }
+
     internal void CheckThread()
     {
         if (Thread.CurrentThread.ManagedThreadId != _thread)

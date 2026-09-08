@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
 using VGModAPI.Core;
 using Xunit;
 
@@ -79,15 +78,14 @@ public sealed class ModInformationTests
     }
 
     [Fact]
-    public async Task DisposalAndForeignThreadCannotRefresh()
+    public void DisposalAndForeignThreadCannotRefresh()
     {
         var catalog = new ModInformationCatalog(() => new[] { Plugin("a", true) }, _ => null);
         catalog.Refresh(); catalog.Dispose(); catalog.Dispose(); Assert.Empty(catalog.Snapshot);
         Assert.Throws<ObjectDisposedException>(catalog.Refresh);
         using var live = new ModInformationCatalog(() => Array.Empty<LoadedPluginInformation>(), _ => null);
-        var error = await Task.Factory.StartNew(() => Record.Exception(live.Refresh),
-            System.Threading.CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
-        Assert.IsType<InvalidOperationException>(error);
+        Assert.IsType<InvalidOperationException>(ServiceNotificationTests.OnWorker(live.Refresh));
+        Assert.IsType<InvalidOperationException>(ServiceNotificationTests.OnWorker(live.Dispose));
     }
 
     [Fact]
