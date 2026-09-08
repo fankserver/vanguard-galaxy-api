@@ -54,6 +54,7 @@ public sealed class Plugin : BaseUnityPlugin
         _hub.SetCapability("save-outcomes", false, "Not bound.");
         _hub.SetCapability("world-ready", false, "No universal POI/UI-ready guarantee; GameplayInitialized is narrower.");
         _hub.SetCapability("native-travel", false, "Not bound; experimental.");
+        _hub.SetCapability("recipe-catalog", false, "Disabled or not bound; experimental.");
         _hub.SetCapability("save-data", false, "Not initialized; experimental.");
         _hub.SetCapability("mission-continuity", false, "Disabled by configuration; experimental.");
         _hub.SetCapability("mission-transitions", false, "Disabled by configuration; experimental.");

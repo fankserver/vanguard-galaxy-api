@@ -60,6 +60,7 @@ internal sealed class RecipeCatalogNativeSource : IRecipeCatalogSource
                 if (!Positive(amount)) { invalid = true; continue; }
                 outputs.Add(new RecipeResourceAmount(Resource(Get(product, "product")!.ToString()!, RecipeResourceKind.RefinedMaterial), amount));
             }
+            if (outputs.Count > 256) throw new RecipeCatalogLimitException();
             Add(definitions, new RecipeSnapshot(new RecipeId("vanilla", "refining/" + id), null, _translate(Text(item, "displayName")),
                 RecipeProcess.Refining, invalid || outputs.Count == 0 ? RecipeAvailability.Unresolved : RecipeAvailability.Available,
                 "Base yields; skill-dependent bonus outputs require a context quote.",
@@ -105,6 +106,7 @@ internal sealed class RecipeCatalogNativeSource : IRecipeCatalogSource
             if (builder == null) { invalid = true; continue; }
             outputs.Add(new RecipeResourceAmount(Resource(Text(builder, "identifier"), kind), count)); generated = true;
         }
+        if (inputs.Count > 256 || outputs.Count > 256) throw new RecipeCatalogLimitException();
         return new RecipeSnapshot(new RecipeId("vanilla", "forge/" + id),
             parentId == null || parentId == id ? null : new RecipeId("vanilla", "forge/" + parentId),
             _translate(Text(recipe, "displayName")), RecipeProcess.Forge,
@@ -123,7 +125,13 @@ internal sealed class RecipeCatalogNativeSource : IRecipeCatalogSource
     private object? Component(object prefab, string type) => _component(prefab, _assembly.GetType(type, true)!);
     private object? GetStatic(string type, string member) => ReadMember(RequireMember(_assembly.GetType(type, true)!, member), null);
     private static object? Get(object instance, string member) => ReadMember(RequireMember(instance.GetType(), member), instance);
-    private static string Text(object instance, string member) => Get(instance, member) as string ?? throw new InvalidOperationException("Missing string: " + member);
+    private static string Text(object instance, string member)
+    {
+        var text = Get(instance, member) as string ?? throw new InvalidOperationException("Missing string: " + member);
+        if (member == "identifier" && (string.IsNullOrWhiteSpace(text) || text.Length > 500 || text.Any(char.IsControl)))
+            throw new InvalidOperationException("Missing or invalid native identity.");
+        return text;
+    }
     private static MemberInfo RequireMember(Type type, string name) => (MemberInfo?)type.GetField(name, Flags) ?? type.GetProperty(name, Flags) ?? throw new MissingMemberException(type.FullName, name);
     private static object? ReadMember(MemberInfo member, object? instance) => member is FieldInfo field ? field.GetValue(instance) : ((PropertyInfo)member).GetValue(instance);
     private static IEnumerable<object> Enumerate(object? source)

@@ -69,6 +69,35 @@ public sealed class RecipeCatalogNativeSourceTests : IDisposable
         Forge.current.recipes = new[] { a, Recipe("a") };
         Assert.Throws<InvalidOperationException>(() => Source().Read(Guid.NewGuid(), false));
     }
+    [Theory]
+    [InlineData("", false)] [InlineData(" ", false)] [InlineData("", true)] [InlineData(" \t", true)]
+    public void MissingNativeRecipeOrParentIdentityCannotBecomePrefixedIdentity(string identity, bool parent)
+    {
+        var recipe = Recipe(parent ? "valid" : identity);
+        if (parent) recipe.parentRecipe = Recipe(identity);
+        Forge.current = new Forge { recipes = new[] { recipe } };
+        using var hub = new VGModAPI.Core.LifecycleHub((_, _) => { });
+        var id = hub.Begin(SessionOrigin.NewGame, null); hub.PlayerReady(id); hub.GameplayInitialized(id);
+        using var service = new VGModAPI.Core.RecipeCatalogService(hub, Source(), _ => { });
+        var result = service.Read();
+        Assert.Equal(RecipeCatalogStatus.NativeFailure, result.Status); Assert.Empty(result.Recipes);
+    }
+    [Theory]
+    [InlineData(true)] [InlineData(false)]
+    public void ResourceRowOverflowReportsLimitExceededThroughService(bool inputs)
+    {
+        var recipe = Recipe("large");
+        if (inputs)
+            for (var i = 0; i < 257; i++) recipe.materials.Add(new() { amount = 1 });
+        else
+            for (var i = 0; i < 256; i++) recipe.results.Add(recipe.results[0]);
+        Forge.current = new Forge { recipes = new[] { recipe } };
+        using var hub = new VGModAPI.Core.LifecycleHub((_, _) => { });
+        var id = hub.Begin(SessionOrigin.NewGame, null); hub.PlayerReady(id); hub.GameplayInitialized(id);
+        using var service = new VGModAPI.Core.RecipeCatalogService(hub, Source(), _ => { });
+        var result = service.Read();
+        Assert.Equal(RecipeCatalogStatus.LimitExceeded, result.Status); Assert.Empty(result.Recipes);
+    }
     [Fact]
     public void MissingOutputComponentIsExplicitUnsupported()
     {
