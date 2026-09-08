@@ -66,7 +66,9 @@ try {
                 Start-Sleep -Milliseconds 150
                 $documentCondition = New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::ControlTypeProperty, [Windows.Automation.ControlType]::Document)
                 $documents = @($element.FindAll([Windows.Automation.TreeScope]::Descendants, $documentCondition) | Where-Object { !$_.Current.IsOffscreen -and $_.Current.Name -match 'Releases.*fankserver/vanguard-galaxy-api' })
-                if ($documents.Count -ne 1) { throw 'A unique public release document was not found.' }
+                # Navigation can expose the destination before its document tree is ready.
+                # Retry observation within the existing deadline; never capture an absent/ambiguous tree.
+                if ($documents.Count -ne 1) { continue }
                 $document = $documents[0]
                 $bounds = $document.Current.BoundingRectangle
                 $windowBounds = $element.Current.BoundingRectangle
