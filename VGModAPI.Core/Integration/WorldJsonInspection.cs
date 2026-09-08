@@ -22,12 +22,15 @@ internal sealed class WorldJsonInspection
 {
     private readonly PropertyInfo _item, _isObject, _object, _isArray, _array, _isString, _string;
     private readonly Type _objectType;
+    private readonly MethodInfo _parse;
     private static readonly UTF8Encoding Utf8 = new(false, true);
     private const int MaxVisited = 100000;
     internal WorldJsonInspection(Assembly assembly)
     {
         _objectType = assembly.GetType("LightJson.JsonObject", true)!;
         var value = assembly.GetType("LightJson.JsonValue", true)!;
+        _parse = value.GetMethod("Parse", BindingFlags.Public | BindingFlags.Static, null, new[] { typeof(string) }, null)
+            ?? throw new MissingMethodException("JsonValue.Parse");
         _item = _objectType.GetProperty("Item", new[] { typeof(string) }) ?? throw new MissingMemberException("JsonObject.Item");
         _isObject = Property(value, "IsJsonObject"); _object = Property(value, "AsJsonObject");
         _isArray = Property(value, "IsJsonArray"); _array = Property(value, "AsJsonArray");
@@ -44,6 +47,17 @@ internal sealed class WorldJsonInspection
         var text = (string)_string.GetValue(value)!;
         if (string.IsNullOrEmpty(text) || Utf8.GetByteCount(text) > 128) throw new InvalidDataException("Invalid world identity length.");
         return text;
+    }
+
+    internal byte[] VerifyInput(byte[] nativeBytes, object root)
+    {
+        if (!_objectType.IsInstanceOfType(root)) throw new InvalidDataException("Expected native save JSON root.");
+        if (nativeBytes == null || nativeBytes.Length > WorldLoadBytes.MaxNativeBytes) throw new InvalidDataException("Invalid native load bytes.");
+        var frozen = (byte[])nativeBytes.Clone();
+        var parsed = Object(_parse.Invoke(null, new object[] { WorldLoadBytes.Decode(frozen) })!);
+        if (!string.Equals(parsed.ToString(), root.ToString(), StringComparison.Ordinal))
+            throw new InvalidDataException("Parsed load input does not match the captured native bytes.");
+        return frozen;
     }
 
     internal WorldParsedNode[] Read(object root)
