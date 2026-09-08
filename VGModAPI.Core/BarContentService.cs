@@ -55,6 +55,17 @@ internal sealed partial class BarContentService : IBarApi, IDisposable
         return new BarProviderResult(BarStatus.Succeeded, lease);
     }
 
+    internal bool CanSerializeCurrent()
+    {
+        _checkThread();
+        return !_disposed && _lifecycle.CurrentSession is { } session && _persistence.Read(session.Id, out _);
+    }
+    internal bool CanMutateCurrent()
+    {
+        _checkThread();
+        return !_disposed && _lifecycle.CurrentSession is { } session && _persistence.CanMutate(session.Id);
+    }
+
     private bool Active(Lease lease) => !_disposed && _leases.TryGetValue(lease.ProviderId, out var current) && ReferenceEquals(current, lease);
     private BarResult? Guard(Lease lease, Guid session)
     {
