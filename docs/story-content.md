@@ -1,11 +1,9 @@
-# Owned story content — foundation (#13, part 1 of the delivery)
+# Owned story content
 
-This document describes the API-owned story contract delivered so far: the public types, the
-owner-scoped identity model, the explicitly supported mission subset and the automatic persistence
-of API-owned story state. **It does not yet install anything into the game.** Registration handles
-record what must be installed; driving vanilla registration, reconstruction and mission acceptance
-is separate work, and no runtime qualification is claimed. `#13` stays open; this foundation is not
-its acceptance.
+This document describes the public types, owner-scoped identity model, supported mission subset,
+automatic persistence, native registration, reconstruction and acceptance of API-owned story content.
+Controlled in-game evidence covers the bounded scenarios described below; it does not qualify the
+entire API or every possible content combination.
 
 ## The contract in one paragraph
 
@@ -43,10 +41,11 @@ Inspected in the shipped assembly for this delivery (pinned by `InstalledStoryBi
 - `AddMissionWithLog(Mission, bool)` refuses a duplicate story identifier while it is active or
   archived, so a repeated run is a LATER occurrence, never the earlier one revived.
 
-Supported today: objectives `TravelToPoi`, `KillEnemies`, `CollectCredits`; rewards `Credits`,
+Supported today: objectives `TravelToPoi`, `CollectCredits`, `Scripted`; rewards `Credits`,
 `Experience`. Item and reputation rewards need owner-scoped item/faction identities and are
 deliberately absent until that content path exists. This is a deliberately minimal, explicitly
-defined subset, not a generic string payload model and not a universal mission DSL.
+defined subset, not a generic string payload model and not a universal mission DSL. `KillEnemies`
+is refused because its native dependency and serialization requirements are not supported.
 
 ## Identity and collisions
 
@@ -70,10 +69,8 @@ injected code, or an assembly that itself declares several plugins: association 
 granularity, so such an assembly can acquire any of its own plugins' segments. Plugins share one
 process, and nothing here contains a determined mod.
 
-The host adapter that performs the plugin lookup is NOT implemented yet: nothing constructs this
-module at runtime, so the association above is enforced by the module and still has to be honoured
-by the PR2 adapter (resolve the instance to a loaded plugin and report the assembly the host loaded
-it from). `#13` is not complete.
+The runtime host adapter resolves the instance against loaded BepInEx plugins and supplies the
+assembly associated with that instance. The module enforces that association before issuing a lease.
 
 `StoryContentId` segments are 1–48 lowercase ASCII letters/digits/hyphens starting with a letter —
 never a path, alias or display name. The identifier is `vgmodapi.story.<provider>.<local>`, so two
@@ -580,6 +577,11 @@ ledger with its retention policy, bounded codec, automatic persistence registrat
 install/accept/abandon adapter with per-occurrence catalog entries and rollback, observed outcomes
 from the game's own mission boundary, the orphan suspension policy, the `ModApi.Story` surface behind
 the inspected-assembly gate, host tests against the production adapter and installed-assembly pins.
-**Not** delivered here: the qualification probe phase and the two-consumer demonstration. Those remain
-required for #13, NO case has been run in the game — every native claim here is metadata, IL and host
-doubles — and `RuntimeQualified` stays false.
+Two independently loaded example authors exercise a generated job and a hand-authored campaign
+through the same API without provider save/load hooks. Controlled native probes cover ownership,
+offered/active restoration, outcomes, save refusal, rollback, repeated instances, provider absence,
+scripted objective progress and revision migration. A separate process verifies retained definitions
+at the same canonical save path despite changed startup data. Host and codec tests cover additional
+malformed-input, quota and schema boundaries. These are bounded checks, not exhaustive native
+coverage; `RuntimeQualified` remains false. Narrative choreography, extra custom mechanics and voice
+synthesis remain provider responsibilities.
