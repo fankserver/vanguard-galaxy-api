@@ -8,4 +8,5 @@
 - [Owned story content](story-content.md) and [bar rosters](bar-rosters.md)
 - Boarding: [operations and policies](boarding-contract.md), [authored dungeons](dungeon-content.md), [reward and settlement](dungeon-settlement.md)
 - [Forge and refinery](recipes.md)
+- [Shared HUD and presentation](hud.md)
 - [Mod information](mod-information.md) and [publishing mod updates](mod-update-publishing.md)
