@@ -47,6 +47,26 @@ internal static class WorldLifetimePatches
     }
     internal static class Route
     {
+        internal sealed class Capture
+        {
+            internal readonly IWorldRouteCaptureHost Host;
+            internal readonly object Token;
+            internal Capture(IWorldRouteCaptureHost host, object token) { Host = host; Token = token; }
+        }
+        internal static bool CapturePrefix(object __instance, object poi, ref bool __result, out Capture? __state)
+        {
+            __state = null;
+            if (!Prefix(poi, ref __result)) return false;
+            if (Host is IWorldRouteCaptureHost host && host.BeginRoute(__instance, poi) is { } token) __state = new Capture(host, token);
+            return true;
+        }
+        internal static System.Exception? Finalizer(Capture? __state, bool __result, System.Exception? __exception)
+        {
+            if (__state == null) return __exception;
+            try { __state.Host.CompleteRoute(__state.Token, __exception == null && __result); }
+            catch (System.Exception error) { return __exception ?? error; }
+            return __exception;
+        }
         internal static bool Prefix(object poi, ref bool __result)
         {
             if (Host?.AllowUse(poi) ?? true) return true;

@@ -15,7 +15,7 @@ internal interface IWorldLifetimeHookHost
 }
 
 /// <summary>Refuses reserved ambient/removal paths before their native bodies; no world readiness is inferred.</summary>
-internal sealed class WorldLifetimeHookHost : IWorldLifetimeHookHost, IDisposable
+internal sealed partial class WorldLifetimeHookHost : IWorldLifetimeHookHost, IDisposable
 {
     private readonly LifecycleHub _hub;
     internal WorldTravelScopes Travel { get; } = new();

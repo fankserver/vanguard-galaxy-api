@@ -43,6 +43,34 @@ public sealed class WorldLifetimeHookTests : IDisposable
     }
 
     [Fact]
+    public void RoutePatchRetainsRequestOriginAndPreservesReentrantReplacement()
+    {
+        var oldPlayer = Source.Player.GamePlayer.current;
+        var singleton = typeof(Behaviour.Util.Singleton<Behaviour.Managers.TravelManager>).GetField("instance", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+        var oldTravel = singleton.GetValue(null);
+        try
+        {
+            var hub = new LifecycleHub((_, error) => throw error);
+            using var host = new WorldLifetimeHookHost(typeof(Source.Galaxy.MapElement).Assembly, hub);
+            var manager = new Behaviour.Managers.TravelManager(); singleton.SetValue(null, manager);
+            Source.Player.GamePlayer.current = new Source.Player.GamePlayer(); hub.Begin(SessionOrigin.NewGame, null);
+            WorldLifetimePatches.Host = host;
+            var target = new Source.Galaxy.MapPointOfInterest { guid = "vanilla" }; bool result = false;
+            Assert.True(WorldLifetimePatches.Route.CapturePrefix(manager, target, ref result, out var outer));
+            var first = host.Travel.CaptureRequest();
+            Assert.True(WorldLifetimePatches.Route.CapturePrefix(manager, target, ref result, out var inner));
+            var second = host.Travel.CaptureRequest(); Assert.NotSame(first, second);
+            Assert.Null(WorldLifetimePatches.Route.Finalizer(inner, true, null));
+            Assert.Throws<System.IO.InvalidDataException>(() => host.Travel.CaptureRequest());
+            WorldLifetimePatches.Host = null;
+            var nativeError = new InvalidOperationException("native failure");
+            Assert.Same(nativeError, WorldLifetimePatches.Route.Finalizer(outer, false, nativeError));
+            Assert.True(host.Travel.IsCurrent(second!)); Assert.Null(host.Travel.CaptureRequest());
+        }
+        finally { WorldLifetimePatches.Host = null; Source.Player.GamePlayer.current = oldPlayer; singleton.SetValue(null, oldTravel); }
+    }
+
+    [Fact]
     public void LifecycleRevokesTravelScopesWithoutLettingStaleInvalidationRevokeReplacement()
     {
         var hub = new LifecycleHub((_, error) => throw error);

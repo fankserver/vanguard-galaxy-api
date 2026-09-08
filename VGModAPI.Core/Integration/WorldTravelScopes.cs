@@ -72,6 +72,34 @@ internal sealed class WorldTravelScopes
             _owner._execution = parent;
         }
     }
+    private sealed class RequestExecution : IDisposable
+    {
+        internal readonly Route Route;
+        private readonly WorldTravelScopes _owner;
+        private readonly RequestExecution? _parent;
+        private bool _disposed;
+        internal RequestExecution(WorldTravelScopes owner, Route route, RequestExecution? parent) { _owner = owner; Route = route; _parent = parent; }
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            if (!ReferenceEquals(_owner._request, this)) return;
+            var parent = _parent;
+            while (parent != null && parent._disposed) parent = parent._parent;
+            _owner._request = parent;
+        }
+    }
+    private RequestExecution? _request;
+    internal IDisposable EnterRequest(Route route)
+    {
+        RequireRoute(route);
+        var execution = new RequestExecution(this, route, _request); _request = execution; return execution;
+    }
+    internal Route? CaptureRequest()
+    {
+        if (_request == null) return null;
+        RequireRoute(_request.Route); return _request.Route;
+    }
     private Route? _current;
     private bool _stopped;
     private Execution? _execution;
@@ -93,6 +121,7 @@ internal sealed class WorldTravelScopes
         if (_execution == null) return null;
         RequireLeg(_execution.Leg); return _execution.Leg;
     }
+    internal bool IsCurrent(Route route) => ReferenceEquals(_current, route);
     internal void Reset() => _current = null;
     internal void Stop() { _stopped = true; Reset(); }
     internal void InvalidateSession(Guid session)

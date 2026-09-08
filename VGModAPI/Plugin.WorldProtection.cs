@@ -59,7 +59,8 @@ public sealed partial class Plugin
                         finalizer: new HarmonyMethod(typeof(WorldSnapshotPatches.Snapshot).GetMethod("Finalizer", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.Last });
                     _worldLoadHarmony.Patch(targets["worldActiveUpdate"], prefix: new HarmonyMethod(typeof(WorldLifetimePatches.Active).GetMethod("Prefix", BindingFlags.NonPublic | BindingFlags.Static)));
                     _worldLoadHarmony.Patch(targets["worldCanTravel"], prefix: new HarmonyMethod(typeof(WorldLifetimePatches.CanTravel).GetMethod("Prefix", BindingFlags.NonPublic | BindingFlags.Static)));
-                    _worldLoadHarmony.Patch(targets["worldRoute"], prefix: new HarmonyMethod(typeof(WorldLifetimePatches.Route).GetMethod("Prefix", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.First });
+                    _worldLoadHarmony.Patch(targets["worldRoute"], prefix: new HarmonyMethod(typeof(WorldLifetimePatches.Route).GetMethod("CapturePrefix", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.First },
+                        finalizer: new HarmonyMethod(typeof(WorldLifetimePatches.Route).GetMethod("Finalizer", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.Last });
                     foreach (var key in new[] { "worldBaseArrival", "worldCombatArrival", "worldManagerStart", "worldManagerUpdate", "worldSecurityPatrol", "worldStoreLastX", "worldStorePosition", "worldIncomingReinforcements", "worldCreateSecurityPatrol" })
                         _worldLoadHarmony.Patch(targets[key], prefix: new HarmonyMethod(typeof(WorldLifetimePatches.Arrival).GetMethod("Prefix", BindingFlags.NonPublic | BindingFlags.Static)));
                     foreach (var key in new[] { "worldSpawnPersistable", "worldSpawnUnit" })
