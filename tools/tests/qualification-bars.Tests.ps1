@@ -16,7 +16,7 @@ try {
     Reject { Assert-BarReceipt $root }
     Set-Content (Join-Path $root 'owned-bars.txt') @('INCOMPLETE')
     Reject { Assert-BarReceipt $root }
-    $cases = 'independent-authors;repeated-check-update;native-json;exclusive-denial;exclusive-conflict;reload;stale-session;provider-reconstruction'
+    $cases = 'independent-authors;repeated-check-update;ui-open;interaction;native-json;exclusive-denial;exclusive-conflict;reload;stale-session;stale-interaction;provider-reconstruction'
     Set-Content (Join-Path $root 'owned-bars.txt') @('PASS', $cases)
     Assert-BarReceipt $root
     Add-Content (Join-Path $root 'owned-bars.txt') 'unexpected'

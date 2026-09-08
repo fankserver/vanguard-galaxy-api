@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using BepInEx.Bootstrap;
 using VGModAPI;
+using UnityEngine;
 
 namespace VGModAPI.Qualification;
 
@@ -88,6 +89,26 @@ public sealed partial class Plugin
         Require(latest!.Members.Where(member => member.OwnedId.HasValue).Select(member => member.OwnedId!.Value)
             .ToHashSet().SetEquals(new[] { new BarPatronId(pa.ProviderId, local), new BarPatronId(pb.ProviderId, local) }),
             "Same-local-ID contacts were not independently admitted.");
+        var interior = SceneComponent("Behaviour.UI.Spacestation.SpaceStationInterior");
+        var facilityType = interior.GetType().GetMethod("GoToLocation")!.GetParameters()[0].ParameterType;
+        Component? barUi = null;
+        for (int opening = 0; opening < 2; opening++)
+        {
+            SpCall(interior, "GoToLocation", Enum.Parse(facilityType, "Airlock"), true);
+            foreach (var frame in Settle()) yield return frame;
+            latest = null;
+            SpCall(interior, "GoToLocation", Enum.Parse(facilityType, "Bar"), true);
+            foreach (var frame in Settle()) yield return frame;
+            barUi = SceneComponent("Behaviour.UI.Spacestation.Bar.BarUI");
+            Require(barUi.gameObject.activeInHierarchy && SpGet(interior, "currentTab")!.ToString() == "Bar",
+                "Native bar UI did not open.");
+            Require(latest != null && latest.SessionId == session && latest.StationId == stationId
+                && latest.Members.Count(member => member.OwnedId.HasValue) == 2, "UI opening did not observe both finalized contacts.");
+        }
+        var contactA = ((IEnumerable)SpGet(bar, "availablePatrons")!).Cast<object>().Single(patron => (string)SpGet(patron, "seed")! == "owned-bar-a");
+        int interactions = (int)SpGet(a, "Interactions")!;
+        SpCall(contactA, "InteractWithPatron", barUi!);
+        Require((int)SpGet(a, "Interactions")! == interactions + 1, "Native owned interaction did not dispatch exactly once.");
         var before = SpGet(bar, "availablePatrons");
         var serialized = SpCall(bar, "ToJson").ToString()!;
         Require(ReferenceEquals(before, SpGet(bar, "availablePatrons")), "Serialization replaced the native roster.");
@@ -110,9 +131,12 @@ public sealed partial class Plugin
         Refresh(2); // No provider Place or save/load callback after reload.
         Require(pa.Remove(session, local).Status == BarStatus.StaleSession, "Stale session removal was accepted.");
         SpCall(a, "Release"); Refresh(1);
+        interactions = (int)SpGet(a, "Interactions")!;
+        SpCall(contactA, "InteractWithPatron", new object[] { null! });
+        Require((int)SpGet(a, "Interactions")! == interactions, "Stale owned contact dispatched after reload/provider release.");
         Require(((BarResult)SpCall(a, "Register", stationId, local, "owned-bar-a")).Succeeded, "Re-registration refused.");
         Refresh(2); // Persistent row survived runtime provider removal.
-        WriteAtomic("owned-bars.txt", new[] { "PASS", "independent-authors;repeated-check-update;native-json;exclusive-denial;exclusive-conflict;reload;stale-session;provider-reconstruction" });
+        WriteAtomic("owned-bars.txt", new[] { "PASS", "independent-authors;repeated-check-update;ui-open;interaction;native-json;exclusive-denial;exclusive-conflict;reload;stale-session;stale-interaction;provider-reconstruction" });
         Passed("owned-bar-core-composition");
     }
 }
