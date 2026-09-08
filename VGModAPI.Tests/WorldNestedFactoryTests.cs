@@ -6,6 +6,15 @@ using VGModAPI.Core;
 using VGModAPI.Core.Integration;
 using Xunit;
 
+namespace UnityEngine
+{
+    public class Object
+    {
+        private IntPtr m_CachedPtr = new(1);
+        internal bool TestAlive => m_CachedPtr != IntPtr.Zero;
+        internal void DestroyForTest() => m_CachedPtr = IntPtr.Zero;
+    }
+}
 namespace Source.Combat { public enum DamageType { Kinetic } }
 namespace Source.Hazard
 {
@@ -16,7 +25,7 @@ namespace Source.Util { public enum GameplayType { Combat, Trade } }
 namespace Behaviour.Unit
 {
     public enum UnitRank { Rookie }
-    public abstract class AbstractUnit { }
+    public abstract class AbstractUnit : UnityEngine.Object { }
     public sealed partial class SpaceShip : AbstractUnit
     {
         public static Dictionary<string, SpaceShip> allShips = new() { ["NativeShip"] = new SpaceShip() };
@@ -24,7 +33,7 @@ namespace Behaviour.Unit
 }
 namespace Behaviour.Equipment.Builder
 {
-    public sealed partial class EquipmentBuilder
+    public sealed partial class EquipmentBuilder : UnityEngine.Object
     {
         private static readonly Dictionary<string, EquipmentBuilder> allBuilders = new() { ["Native"] = new EquipmentBuilder() };
     }
@@ -172,6 +181,22 @@ namespace VGModAPI.Tests
                 Assert.Throws<InvalidDataException>(() => assets.Validate());
             }
             finally { registry["NativeShip"] = ship; Behaviour.Unit.SpaceShip.allShips = registry; }
+        }
+        [Fact]
+        public void AssetReceiptRejectsDestroyedUnityObjectsEvenWhenRegistryIdentityIsUnchanged()
+        {
+            var id = "destroyed-" + Guid.NewGuid().ToString("N");
+            var ship = new Behaviour.Unit.SpaceShip();
+            Behaviour.Unit.SpaceShip.allShips.Add(id, ship);
+            try
+            {
+                var assets = new WorldNativeAssetInspection(typeof(JsonObject).Assembly);
+                assets.Ship(id); Assert.True(ship.TestAlive);
+                ship.DestroyForTest();
+                Assert.Throws<InvalidDataException>(() => assets.Validate());
+                Assert.Throws<InvalidDataException>(() => new WorldNativeAssetInspection(typeof(JsonObject).Assembly).Ship(id));
+            }
+            finally { Behaviour.Unit.SpaceShip.allShips.Remove(id); }
         }
         [Fact]
         public void UnitDispatchRemainsTheInspectedClosedSwitch()

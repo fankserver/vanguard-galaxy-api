@@ -14,9 +14,20 @@ internal sealed class WorldNativeAssetInspection
     internal void Validate()
     {
         foreach (var entry in _references)
+        {
+            RequireAlive(entry.Value.Value);
             if (!ReferenceEquals(entry.Key.Field.GetValue(null), entry.Value.Registry) || entry.Value.Registry.Count > 10000 ||
                 !entry.Value.Registry.Contains(entry.Key.Id) || !ReferenceEquals(entry.Value.Registry[entry.Key.Id], entry.Value.Value))
                 throw new InvalidDataException("Native asset registry changed after inspection.");
+        }
+    }
+    private static void RequireAlive(object value)
+    {
+        var type = value.GetType();
+        while (type != null && type.FullName != "UnityEngine.Object") type = type.BaseType;
+        var pointer = type?.GetField("m_CachedPtr", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly);
+        if (pointer?.FieldType != typeof(IntPtr) || (IntPtr)pointer.GetValue(value)! == IntPtr.Zero)
+            throw new InvalidDataException("Native asset is destroyed or its Unity lifetime cannot be inspected.");
     }
     internal WorldNativeAssetInspection(Assembly assembly) => _assembly = assembly;
     internal void Ship(string id) => Require("Behaviour.Unit.SpaceShip", "allShips", id);
@@ -31,6 +42,7 @@ internal sealed class WorldNativeAssetInspection
         var value = registry[id];
         if (value == null || !type!.IsInstanceOfType(value) || value.GetType().Assembly != _assembly)
             throw new InvalidDataException("Provider-defined asset types are not admitted as native content.");
+        RequireAlive(value);
         var key = (field, id);
         if (_references.TryGetValue(key, out var prior))
         {
