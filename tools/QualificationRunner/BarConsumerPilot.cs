@@ -22,8 +22,9 @@ public sealed partial class Plugin
         var tts = Chainloader.PluginInfos["vgtts"].Instance;
         Require(anima.enabled && (bool)SpGet(anima, "_active")! && (bool)SpGet(anima, "ManagedBarsSelected")!, "Anima managed provider inactive.");
         Require(SpGet(anima, "LlmClient") == null, "Consumer fixture must not contact an LLM endpoint.");
-        var origin = SpGet(CurrentPlayer, "currentPointOfInterest")!;
-        var originSystem = SpGet(CurrentPlayer, "currentSystem")!;
+        var player = CurrentPlayer;
+        var origin = SpGet(player, "currentPointOfInterest")!;
+        var originSystem = SpGet(player, "currentSystem")!;
         // Exercise the real lazy campaign builder with a controlled source, without accepting a
         // campaign mission or claiming natural travel/progression to the resulting station.
         var mission = Activator.CreateInstance(NativeType("Source.MissionSystem.Mission"))!;
@@ -47,6 +48,15 @@ public sealed partial class Plugin
         var session = _api!.CurrentSession!.Id;
         var bar = SpGet(foundation!, "bar")!;
         var customProvider = (IBarProvider)SpGet(managed, "_provider")!;
+        var animaProvider = (IBarProvider)SpGet(SpGet(anima, "ManagedBars")!, "_provider")!;
+        int VanillaCount()
+        {
+            var json = SpCall(bar, "ToJson");
+            Require((bool)SpGet(json, "IsJsonObject")!, "Native bar JSON is not an object.");
+            var rows = json.GetType().GetProperty("Item", new[] { typeof(string) })!.GetValue(json, new object[] { "availablePatrons" })!;
+            Require((bool)SpGet(rows, "IsJsonArray")!, "Native bar JSON has no patron array.");
+            return (int)SpGet(SpGet(rows, "AsJsonArray")!, "Count")!;
+        }
         void CheckTtsBoundary()
         {
             var bridgeType = tts.GetType().Assembly.GetType("VGTTS.Patches.BarRosterBridge", true)!;
@@ -64,9 +74,17 @@ public sealed partial class Plugin
         {
             // No frame advances and no save occurs inside this scoped context. Restore both fields
             // even on failure. This is a bar-composition fixture, not a fabricated travel event.
-            AccessTools.Field(CurrentPlayer.GetType(), "currentPointOfInterest").SetValue(CurrentPlayer, foundation);
-            AccessTools.Field(CurrentPlayer.GetType(), "currentSystem").SetValue(CurrentPlayer, SpGet(foundation!, "system"));
+            AccessTools.Field(player.GetType(), "currentPointOfInterest").SetValue(player, foundation);
+            AccessTools.Field(player.GetType(), "currentSystem").SetValue(player, SpGet(foundation!, "system"));
             SpCall(bar, "CheckUpdatePatrons", false);
+            int refreshes = 0;
+            while (VanillaCount() > 4 && refreshes < 8)
+            {
+                SpCall(bar, "CheckUpdatePatrons", true);
+                refreshes++;
+            }
+            Require(VanillaCount() <= 4, "Controlled preparation could not provide an additive seat.");
+            WriteAtomic("bar-consumer-preparation.txt", new[] { "native-force-refreshes=" + refreshes, "retained-vanilla=" + VanillaCount() });
             Require(latest?.SessionId == session && latest.StationId == stationId
                 && latest.Members.Count == 4 && latest.Members.All(member => member.OwnedId?.Provider == customProvider.ProviderId), "Foundation exclusive roster was not exactly four owned contacts.");
             CheckTtsBoundary();
@@ -86,21 +104,28 @@ public sealed partial class Plugin
             Require(entry != null, "Real Anima finalization did not retain its narrative offer.");
             latest = null; SpCall(bar, "CheckUpdatePatrons", false);
             Require(latest != null && latest.Members.Count == 4 && latest.Members.All(member => member.OwnedId?.Provider == customProvider.ProviderId)
-                && latest.DeniedProviders.Count > 0, "Anima displaced Foundation or lacked denial diagnostics.");
+                && latest.DeniedProviders.TryGetValue(animaProvider.ProviderId, out var denial)
+                && denial == "StationOwnedExclusively"
+                && latest.Members.All(member => member.OwnedId?.Provider != animaProvider.ProviderId), "Anima displaced Foundation or lacked its exclusive-owner denial.");
             CheckTtsBoundary();
             permissions.GetType().GetProperty("BoxedValue")!.SetValue(permissions, "");
             latest = null; SpCall(bar, "CheckUpdatePatrons", false);
             Require(latest != null && latest.DeniedProviders.ContainsKey(customProvider.ProviderId)
-                && latest.Members.All(member => member.OwnedId?.Provider != customProvider.ProviderId), "Revoked Foundation permission remained effective.");
+                && latest.Members.All(member => member.OwnedId?.Provider != customProvider.ProviderId)
+                && latest.Members.Count(member => member.OwnedId?.Provider == animaProvider.ProviderId) == 1,
+                "Revocation did not replace Foundation with the retained additive Anima contact.");
             CheckTtsBoundary();
         }
         finally
         {
-            permissions.GetType().GetProperty("BoxedValue")!.SetValue(permissions, originalPermissions);
-            AccessTools.Field(CurrentPlayer.GetType(), "currentPointOfInterest").SetValue(CurrentPlayer, origin);
-            AccessTools.Field(CurrentPlayer.GetType(), "currentSystem").SetValue(CurrentPlayer, originSystem);
+            try { permissions.GetType().GetProperty("BoxedValue")!.SetValue(permissions, originalPermissions); }
+            finally
+            {
+                try { AccessTools.Field(player.GetType(), "currentPointOfInterest").SetValue(player, origin); }
+                finally { AccessTools.Field(player.GetType(), "currentSystem").SetValue(player, originSystem); }
+            }
         }
-        Require(ReferenceEquals(SpGet(CurrentPlayer, "currentPointOfInterest"), origin) && ReferenceEquals(SpGet(CurrentPlayer, "currentSystem"), originSystem), "Controlled context was not restored.");
+        Require(ReferenceEquals(CurrentPlayer, player) && ReferenceEquals(SpGet(player, "currentPointOfInterest"), origin) && ReferenceEquals(SpGet(player, "currentSystem"), originSystem), "Controlled context was not restored.");
         WriteAtomic("bar-consumers.txt", new[] { "PASS", "actual-foundation-builder;four-exclusive-contacts;actual-anima-finalization;denied-additive-offer;tts-finalized-boundary;permission-revocation;context-restored" });
         Passed("controlled-bar-consumer-composition");
     }
