@@ -91,4 +91,7 @@ public static class ModApi
     /// catalog. Acquire a provider lease from your plugin's own Awake, before any session begins.
     /// </summary>
     public static IStoryApi? Story { get; internal set; }
+
+    /// <summary>Optional experimental owned station-bar content. Null when unavailable.</summary>
+    public static IBarApi? Bars { get; internal set; }
 }

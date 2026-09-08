@@ -25,7 +25,7 @@ namespace VGModAPI.Core;
 /// This type is pure with respect to the game: it decides what must be installed and what must be
 /// remembered. Driving vanilla registration/reconstruction is separate work.
 /// </summary>
-internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDisposable
+internal sealed partial class StoryContentService : IStoryApi, IStoryUiTransaction, IDisposable
 {
     private enum Readiness { None, Pending, Restored, Blocked }
 
@@ -244,6 +244,7 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
     /// </summary>
     private void ResetSession(string reason)
     {
+        _barOperationEpoch = new object();
         foreach (var identifier in _occurrenceIdentifiers.Values.ToArray()) _world?.Uninstall(identifier);
         _occurrenceIdentifiers.Clear();
         _deferredUninstall.Clear();
@@ -510,6 +511,7 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
         if (!StoryContentPolicy.TryParseOccurrenceIdentifier(identifier, out var id, out var occurrenceId)) return null;
         if (!_ledger.TryGet(occurrenceId, out var entry) || entry.Id != id
             || entry.State == StoryOccurrenceState.Retired) return null;
+        _barOperationEpoch = new object();
         _uiAbandon = occurrenceId;
         _uiToken = new StoryUiTransactionToken(Guid.NewGuid(), _restoredSession, occurrenceId);
         return _uiToken;
@@ -548,6 +550,7 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
         var occurrenceId = _uiAbandon;
         // Cleared only once this settlement is known to own the transaction, so the shared boundary
         // always closes for the transaction that actually opened it.
+        _barOperationEpoch = new object();
         _uiAbandon = Guid.Empty;
         _uiToken = null;
         try
@@ -747,6 +750,19 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
 
     private StoryRegistrationResult Register(Lease lease, StoryMissionDefinition definition)
     {
+        _barRegistrationDepth++;
+        _barOperationEpoch = new object();
+        try { return RegisterCore(lease, definition); }
+        catch (Exception error)
+        {
+            Fault("Registration ended unexpectedly; its native installation is uncertain: " + error.Message);
+            throw;
+        }
+        finally { _barRegistrationDepth--; _barOperationEpoch = new object(); }
+    }
+
+    private StoryRegistrationResult RegisterCore(Lease lease, StoryMissionDefinition definition)
+    {
         var id = new StoryContentId(lease.ProviderId, definition.LocalId);
         // Registration installs into the same catalog an open operation is holding entries in, and a
         // teardown queued during that operation removes an identifier by NAME: registering the same
@@ -921,12 +937,14 @@ internal sealed class StoryContentService : IStoryApi, IStoryUiTransaction, IDis
                 "Another owned-story operation is already running on this thread; retry after it completes.");
             return false;
         }
+        _barOperationEpoch = new object();
         _operationInFlight = true;
         return true;
     }
 
     private void EndOperation()
     {
+        _barOperationEpoch = new object();
         _operationInFlight = false;
         DrainDeferredUninstalls();
     }

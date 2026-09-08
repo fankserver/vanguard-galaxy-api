@@ -16,7 +16,7 @@ namespace VGModAPI;
 [BepInPlugin(ModApi.PluginId, "Mod API", PluginBuildVersion.Value)]
 [BepInProcess("VanguardGalaxy.exe")]
 [BepInDependency("vgmodapi.qualification.guard", BepInDependency.DependencyFlags.SoftDependency)]
-public sealed class Plugin : BaseUnityPlugin
+public sealed partial class Plugin : BaseUnityPlugin
 {
     private LifecycleHub? _hub;
     private Harmony? _harmony;
@@ -78,6 +78,8 @@ public sealed class Plugin : BaseUnityPlugin
         _hub.SetCapability("boarding-rules", false, "Disabled by configuration; experimental.");
         ModApi.Missions = null;
         ModApi.Story = null;
+        ModApi.Bars = null;
+        _hub.SetCapability("owned-bars", false, "Not initialized; experimental.");
         ModApi.Current = _hub;
         ModApi.Persistence = null;
         _modCatalog = new ModInformationCatalog(ModInformationSource.Snapshot);
@@ -148,6 +150,7 @@ public sealed class Plugin : BaseUnityPlugin
         InitializeDungeons();
         InitializeMissions();
         InitializeStory();
+        InitializeBars();
         InitializeModMenu();
         Logger.LogInfo("VGModAPI " + Info.Metadata.Version + ": experimental, NOT runtime-qualified. Query capabilities; startup does not prove compatibility.");
     }
@@ -747,6 +750,7 @@ public sealed class Plugin : BaseUnityPlugin
     }
     private void OnDestroy()
     {
+        StopBars();
         StopDungeons();
         BoardingTacticalPatches.Adapter = null; ModApi.BoardingTactics = null;
         BoardingCombatPatches.Adapter = null; _boardingCombat?.Dispose(); _boardingCombat = null; ModApi.BoardingCombat = null;

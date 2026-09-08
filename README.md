@@ -6,7 +6,7 @@
 
 Unofficial community mod API for Vanguard Galaxy, using BepInEx 5 and HarmonyX.
 
-**0.1.31 development / experimental: automatically tested and partially exercised in-game, not fully runtime-qualified.** The API provides lifecycle, mod save data, optional mission/travel/story services and mod information, not a complete modding SDK. Controlled native evidence covers bounded paths; full in-game acceptance remains pending. See [compatibility](docs/compatibility.md) for coverage and limitations.
+**0.1.32 development / experimental: automatically tested and partially exercised in-game, not fully runtime-qualified.** The API provides lifecycle, mod save data, optional mission/travel/story services and mod information, not a complete modding SDK. Controlled native evidence covers bounded paths; full in-game acceptance remains pending. See [compatibility](docs/compatibility.md) for coverage and limitations.
 
 ## Implemented
 
@@ -104,10 +104,14 @@ The API can manage each mod's save data alongside a particular game save. It pub
 
 Enabled by default. Set `[Persistence] Enabled = false` in `BepInEx/config/vgmodapi.cfg` to opt out. For disposable-save testing, choose an absolute, short, non-linked `Root`. Never share the root across installations or delete it to work around a blocked load. The default save-data folder is under BepInEx config. An existing explicit `Enabled = false` remains an opt-out. Binding or path failures leave `ModApi.Persistence` null; check the `save-data` capability for availability.
 
+## Owned bar rosters (experimental)
+
+API 0.1.32 provides opt-in owner-scoped patrons, automatic persistent presentation, explicit additive/exclusive station policy, guarded interaction and finalized roster observation. A stored contribution is not a visibility guarantee. Narrative and voice data remain consumer-owned. See [bar rosters](docs/bar-rosters.md) for the contract and current qualification limits.
+
 ## Owned story content (experimental)
 
 Require API 0.1.12, declare a hard BepInEx dependency, and acquire a provider lease from your own
-`Awake` with `ModApi.Story?.AcquireProvider(this)`. The lease registers immutable mission definitions
+`Start` with `ModApi.Story?.AcquireProvider(this)` (after Chainloader publishes the plugin instance). The lease registers immutable mission definitions
 from a closed supported subset; the API installs them into the game's own story catalog, mints and
 persists occurrence identity, and captures/restores that state itself, so you write no codec, no
 save/load callback and no restoration scheduling for it. Definitions declare their source faction, because the game requires one to save a held mission.

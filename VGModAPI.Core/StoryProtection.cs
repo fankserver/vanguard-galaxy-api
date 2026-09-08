@@ -27,6 +27,11 @@ internal sealed class StoryProtection
     private string _state = "no session has admitted owned story content";
     /// <summary>Bumped whenever admissions change, so caches derived from them can notice.</summary>
     internal long Version { get; private set; } = 1;
+    /// <summary>Non-recycled identity for consumers that must reject admission changes, including ABA.</summary>
+    internal object Epoch { get; private set; } = new object();
+
+    internal bool IsAdmitted(Guid session, string identifier)
+        => session != Guid.Empty && session == _session && _admitted.Contains(identifier);
 
     internal StoryProtection(Action? checkThread = null) => _checkThread = checkThread;
 
@@ -38,6 +43,7 @@ internal sealed class StoryProtection
         _session = session;
         _state = state ?? "";
         Version++;
+        Epoch = new object();
         if (session == Guid.Empty || identifiers == null) return;
         foreach (var identifier in identifiers) if (!string.IsNullOrEmpty(identifier)) _admitted.Add(identifier);
     }
@@ -50,6 +56,7 @@ internal sealed class StoryProtection
         _session = Guid.Empty;
         _state = state ?? "";
         Version++;
+        Epoch = new object();
         _reasons.Clear();
     }
 

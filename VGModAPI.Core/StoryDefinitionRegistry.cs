@@ -25,6 +25,7 @@ internal sealed class StoryDefinitionRegistry
     /// </summary>
     private readonly Dictionary<string, long> _entryByIdentifier = new(StringComparer.Ordinal);
     private long _entries;
+    internal object Epoch { get; private set; } = new object();
 
     /// <summary>
     /// Identifiers that already exist in the WORLD (vanilla or foreign). Reserving is not
@@ -82,6 +83,7 @@ internal sealed class StoryDefinitionRegistry
             diagnostic = "The registry holds its maximum of " + StoryContentPolicy.MaxDefinitions + " definitions; nothing was dropped.";
             return StoryRegistrationStatus.LimitExceeded;
         }
+        Epoch = new object();
         _byIdentifier.Add(identifier, definition);
         _providerByIdentifier[identifier] = id.Provider;
         entry = ++_entries;
@@ -94,6 +96,7 @@ internal sealed class StoryDefinitionRegistry
     internal bool Unregister(StoryContentId id)
     {
         var identifier = StoryContentPolicy.Identifier(id);
+        Epoch = new object();
         _providerByIdentifier.Remove(identifier);
         _entryByIdentifier.Remove(identifier);
         return _byIdentifier.Remove(identifier);
@@ -109,6 +112,7 @@ internal sealed class StoryDefinitionRegistry
     {
         var identifier = StoryContentPolicy.Identifier(id);
         if (!_entryByIdentifier.TryGetValue(identifier, out var current) || current != entry) return false;
+        Epoch = new object();
         _entryByIdentifier.Remove(identifier);
         _providerByIdentifier.Remove(identifier);
         return _byIdentifier.Remove(identifier);
@@ -128,10 +132,11 @@ internal sealed class StoryDefinitionRegistry
     /// <summary>Releases every definition of one provider lease. Saved occurrences are untouched.</summary>
     internal void RemoveProvider(string provider)
     {
+        Epoch = new object();
         foreach (var pair in _providerByIdentifier.Where(pair => pair.Value == provider).Select(pair => pair.Key).ToArray())
         { _providerByIdentifier.Remove(pair); _byIdentifier.Remove(pair); _entryByIdentifier.Remove(pair); }
     }
 
     /// <summary>Drops every registered definition. World reservations survive; they are session-scoped, not provider-scoped.</summary>
-    internal void Clear() { _byIdentifier.Clear(); _providerByIdentifier.Clear(); _entryByIdentifier.Clear(); }
+    internal void Clear() { Epoch = new object(); _byIdentifier.Clear(); _providerByIdentifier.Clear(); _entryByIdentifier.Clear(); }
 }
