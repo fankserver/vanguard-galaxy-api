@@ -52,7 +52,7 @@ public sealed partial class Plugin
                 foreach (var row in ((IEnumerable)SpCall(nativeRecipe, "GetIngredientMaterials", level)).Cast<object>())
                 {
                     var key = (RecipeInventoryKind.PlayerRefinedMaterials, SpGet(row, "Item1")!.ToString()!, 0, "");
-                    expectedRefund[key] = (float)expectedRefund[key] + Convert.ToSingle(SpGet(row, "Item2"));
+                    expectedRefund[key] = (double)(float)((float)expectedRefund[key] + Convert.ToSingle(SpGet(row, "Item2")));
                 }
                 foreach (var row in ((IEnumerable)SpCall(nativeRecipe, "GetIngredientItems", level)).Cast<object>())
                 {

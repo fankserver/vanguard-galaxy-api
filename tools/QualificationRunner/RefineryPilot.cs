@@ -40,7 +40,7 @@ public sealed partial class Plugin
             foreach (var content in ((IEnumerable)SpGet(nativeOre, "contents")!).Cast<object>())
             {
                 var key = (RecipeInventoryKind.PlayerRefinedMaterials, SpGet(content, "product")!.ToString()!, 0, "");
-                expected[key] = (float)expected[key] + Convert.ToSingle(SpGet(content, "yield")) * multiplier;
+                expected[key] = (double)(float)((float)expected[key] + Convert.ToSingle(SpGet(content, "yield")) * multiplier);
             }
             expectedMaterials.Add(expected);
         }
