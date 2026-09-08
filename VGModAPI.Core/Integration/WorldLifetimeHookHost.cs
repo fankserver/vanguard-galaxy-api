@@ -18,6 +18,7 @@ internal interface IWorldLifetimeHookHost
 internal sealed class WorldLifetimeHookHost : IWorldLifetimeHookHost, IDisposable
 {
     private readonly LifecycleHub _hub;
+    internal WorldTravelScopes Travel { get; } = new();
     private readonly FieldInfo _guid;
     private readonly FieldInfo _managerPoi;
     private readonly FieldInfo _player, _playerPoi, _travelInstance, _localTarget;
@@ -48,9 +49,9 @@ internal sealed class WorldLifetimeHookHost : IWorldLifetimeHookHost, IDisposabl
     private void OnLifecycle(LifecycleEvent e)
     {
         if (e.Kind == LifecycleEventKind.SessionStarting && e.Session?.Id == _hub.CurrentSession?.Id)
-        { _session = e.Session!.Id; _guard.Start(_session); }
+        { _session = e.Session!.Id; _guard.Start(_session); Travel.Reset(); }
         else if ((e.Kind == LifecycleEventKind.SessionInvalidated || e.Kind == LifecycleEventKind.SessionStartFailed) && e.Session?.Id == _session)
-            _guard.Invalidate();
+        { _guard.Invalidate(); Travel.InvalidateSession(_session); }
     }
     private string Identity(object poi) => _guid.GetValue(poi) as string ?? throw new InvalidDataException("Missing native POI identity.");
     public bool AllowAmbient(object poi)
@@ -98,6 +99,6 @@ internal sealed class WorldLifetimeHookHost : IWorldLifetimeHookHost, IDisposabl
     public void Dispose()
     {
         _hub.CheckThread(); if (_disposed) return;
-        _disposed = true; _guard.Stop(); _subscription.Dispose();
+        _disposed = true; _guard.Stop(); Travel.Stop(); _subscription.Dispose();
     }
 }

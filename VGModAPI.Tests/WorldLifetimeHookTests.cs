@@ -43,6 +43,26 @@ public sealed class WorldLifetimeHookTests : IDisposable
     }
 
     [Fact]
+    public void LifecycleRevokesTravelScopesWithoutLettingStaleInvalidationRevokeReplacement()
+    {
+        var hub = new LifecycleHub((_, error) => throw error);
+        using var host = new WorldLifetimeHookHost(typeof(Source.Galaxy.MapElement).Assembly, hub);
+        var player = new object(); var manager = new object(); var target = new object();
+        var firstSession = hub.Begin(SessionOrigin.NewGame, null);
+        var first = host.Travel.First(host.Travel.Begin(firstSession, player, manager, target), target);
+        using var execution = host.Travel.Enter(first);
+        var secondSession = hub.Begin(SessionOrigin.NewGame, null);
+        Assert.Throws<System.IO.InvalidDataException>(() => host.Travel.CaptureExecuting());
+        var second = host.Travel.First(host.Travel.Begin(secondSession, player, manager, target), target);
+        host.Travel.InvalidateSession(firstSession);
+        host.Travel.RequireActive(second, secondSession, player, manager);
+        host.Dispose();
+        Assert.Throws<System.IO.InvalidDataException>(() => host.Travel.RequireActive(second, secondSession, player, manager));
+        host.Travel.Reset();
+        Assert.Throws<InvalidOperationException>(() => host.Travel.Begin(secondSession, player, manager, target));
+    }
+
+    [Fact]
     public void ConcreteHostRefusesOwnedBodiesBeforeAndAfterTeardown()
     {
         var hub = new LifecycleHub((_, error) => throw new Exception("Unexpected fault", error));

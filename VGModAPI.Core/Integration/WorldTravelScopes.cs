@@ -73,6 +73,7 @@ internal sealed class WorldTravelScopes
         }
     }
     private Route? _current;
+    private bool _stopped;
     private Execution? _execution;
     internal IDisposable Enter(Leg leg)
     {
@@ -92,8 +93,15 @@ internal sealed class WorldTravelScopes
         if (_execution == null) return null;
         RequireLeg(_execution.Leg); return _execution.Leg;
     }
+    internal void Reset() => _current = null;
+    internal void Stop() { _stopped = true; Reset(); }
+    internal void InvalidateSession(Guid session)
+    {
+        if (_current?.Session == session) _current = null;
+    }
     internal Route Begin(Guid session, object player, object manager, object destination)
     {
+        if (_stopped) throw new InvalidOperationException("Travel protection requires process restart.");
         if (session == Guid.Empty || player == null || manager == null || destination == null)
             throw new ArgumentException("Observed route identity required.");
         return _current = new Route(this, session, player, manager, destination);
