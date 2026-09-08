@@ -16,7 +16,7 @@ internal sealed class BarRuntimeHost : IBarHookHost
     private readonly Action _checkThread;
     private readonly Action<Exception> _report;
     private readonly ConditionalWeakTable<object, BarRosterPlan> _applied = new();
-    private bool _faulted;
+    private readonly BarHostHealth _health = new();
 
     internal BarRuntimeHost(BarContentService service, BarNativeWorld world, BarNativeContacts contacts,
         BarNativeSerialization serialization, Func<string, BarRosterPlan?> plan, Func<bool> canSerialize,
@@ -24,6 +24,7 @@ internal sealed class BarRuntimeHost : IBarHookHost
     {
         _service = service; _world = world; _contacts = contacts; _serialization = serialization;
         _plan = plan; _canSerialize = canSerialize; _canMutate = canMutate; _checkThread = checkThread; _report = report;
+        _world.AttachHealth(_health);
     }
 
     public IBarRefreshScope BeginRefresh(object bar)
@@ -53,7 +54,7 @@ internal sealed class BarRuntimeHost : IBarHookHost
     internal BarRosterApplyStatus Reconcile(object bar)
     {
         _checkThread();
-        if (_faulted || !_canMutate()) return BarRosterApplyStatus.Unavailable;
+        if (!_health.IsHealthy || !_canMutate()) return BarRosterApplyStatus.Unavailable;
         var station = _world.CurrentStationId(bar);
         if (station == null) return BarRosterApplyStatus.Unavailable;
         var plan = _plan(station);
@@ -78,7 +79,7 @@ internal sealed class BarRuntimeHost : IBarHookHost
     public bool TrySerialize(object bar, out object? result)
     {
         _checkThread();
-        return _serialization.TrySerialize(bar, () => !_faulted && _canSerialize(), out result);
+        return _serialization.TrySerialize(bar, () => _canSerialize() && _health.IsHealthy, out result);
     }
 
     public bool IsOwned(object patron) => _contacts.IsOwned(patron);
@@ -86,14 +87,14 @@ internal sealed class BarRuntimeHost : IBarHookHost
     public void Interact(object patron)
     {
         _checkThread();
-        if (_faulted || !_applied.TryGetValue(patron, out var plan) || !_contacts.TryGet(patron, out var state)) return;
+        if (!_health.IsHealthy || !_applied.TryGetValue(patron, out var plan) || !_contacts.TryGet(patron, out var state)) return;
         var admission = _world.CaptureContact(patron);
         if (admission != null) _service.Interact(plan, state, admission);
     }
 
     public void Fault(Exception error)
     {
-        _faulted = true;
+        _health.Fault();
         _report(error);
     }
 }

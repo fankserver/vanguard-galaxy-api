@@ -17,6 +17,12 @@ internal sealed class BarNativeWorld : IBarRosterWorld
     private readonly FieldInfo _bar, _guid, _patrons, _seat, _updateTime;
     private readonly Type _patronType;
     private readonly int _capacity;
+    private BarHostHealth? _health;
+    internal void AttachHealth(BarHostHealth health)
+    {
+        if (_health != null) throw new InvalidOperationException("A native bar world already has a host.");
+        _health = health ?? throw new ArgumentNullException(nameof(health));
+    }
     private readonly ConditionalWeakTable<object, RetainedRoster> _retained = new();
     private readonly ConditionalWeakTable<object, RefreshToken> _refreshes = new();
     private readonly ConditionalWeakTable<object, object> _refreshEpochs = new();
@@ -213,7 +219,7 @@ internal sealed class BarNativeWorld : IBarRosterWorld
 
     private bool Stable(CaptureToken token)
     {
-        if (!IsRefreshEpochCurrent(token.Bar, token.RefreshEpoch) || !ReferenceEquals(_station.Read(), token.Station) || (string?)_guid.GetValue(token.Station) != token.Identity
+        if (_health?.IsHealthy == false || !IsRefreshEpochCurrent(token.Bar, token.RefreshEpoch) || !ReferenceEquals(_station.Read(), token.Station) || (string?)_guid.GetValue(token.Station) != token.Identity
             || !ReferenceEquals(_bar.GetValue(token.Station), token.Bar)
             || !ReferenceEquals(_patrons.GetValue(token.Bar), token.List) || token.List.Count != token.Entries.Length) return false;
         for (int i = 0; i < token.Entries.Length; i++) if (!ReferenceEquals(token.List[i], token.Entries[i]) || (int)_seat.GetValue(token.Entries[i])! != token.Seats[i]) return false;

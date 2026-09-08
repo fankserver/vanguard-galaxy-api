@@ -84,14 +84,24 @@ public sealed class BarContentServiceTests
         Assert.Equal(0, calls);
     }
 
-    [Fact]
-    public void RuntimeHostAppliesClicksAndRestoresVanillaAfterProviderRemoval()
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    public void RuntimeHostHonorsCallbackFaultsAndRestoresVanillaAfterProviderRemoval(int faultStage)
     {
         using var hub = new LifecycleHub((_, error) => throw error);
         var storage = new Storage();
+        VGModAPI.Core.Integration.BarRuntimeHost? host = null;
+        bool armed = false;
+        void FaultAt(int stage) { if (armed && faultStage == stage) host!.Fault(new InvalidOperationException("injected host fault")); }
         using var service = new BarContentService(storage, hub,
-            (_, _) => new StoryHostPlugin("author", typeof(BarContentServiceTests).Assembly), _ => false, hub.CheckThread);
+            (_, _) => new StoryHostPlugin("author", typeof(BarContentServiceTests).Assembly),
+            _ => { FaultAt(3); return true; }, hub.CheckThread, () => FixedPermissionStamp);
         var author = service.AcquireProvider("author").Provider!;
+        if (faultStage == 3) author.ConfigureStation("station", BarRosterOwnership.Exclusive);
         int clicks = 0;
         author.Register(Definition(), _ => clicks++);
         var session = Ready(hub, storage); author.Place(session, "contact");
@@ -99,16 +109,30 @@ public sealed class BarContentServiceTests
         var vanilla = new BarNativeSerializationTests.Patron(); station.bar.availablePatrons.Add(vanilla);
         ClickPlayer.current = new ClickPlayer { currentPointOfInterest = station };
         var contacts = new VGModAPI.Core.Integration.BarNativeContacts(typeof(BarNativeSerializationTests.Salesman),
-            typeof(BarNativeSerializationTests.Patron), typeof(BarNativeSerializationTests.Station), _ => new UnityEngine.Sprite());
+            typeof(BarNativeSerializationTests.Patron), typeof(BarNativeSerializationTests.Station), _ => { FaultAt(2); return new UnityEngine.Sprite(); });
         var world = new VGModAPI.Core.Integration.BarNativeWorld(typeof(BarNativeSerializationTests.Station), typeof(BarNativeSerializationTests.Bar),
             typeof(BarNativeSerializationTests.Patron), new VGModAPI.Core.Integration.BarStationSource(typeof(ClickPlayer), typeof(BarNativeSerializationTests.Station)),
             contacts.IsOwned, contacts.Create, 5);
         var serialization = new VGModAPI.Core.Integration.BarNativeSerialization(typeof(BarNativeSerializationTests.Bar), typeof(BarNativeSerializationTests.Patron),
             typeof(BarNativeSerializationTests.Value), typeof(BarNativeSerializationTests.JsonObject), typeof(BarNativeSerializationTests.JsonArray), contacts, world);
-        var host = new VGModAPI.Core.Integration.BarRuntimeHost(service, world, contacts, serialization, id => service.Plan(session, id),
-            () => storage.StateReady, () => storage.MutationAllowed, hub.CheckThread, error => throw error);
+        int readinessCalls = 0;
+        host = new VGModAPI.Core.Integration.BarRuntimeHost(service, world, contacts, serialization,
+            id => { FaultAt(1); return service.Plan(session, id); },
+            () => { if (++readinessCalls == 2) FaultAt(4); return storage.StateReady; },
+            () => storage.MutationAllowed, hub.CheckThread, _ => { });
         Assert.Equal(BarRosterApplyStatus.Applied, host.Reconcile(station.bar));
         var contact = Assert.Single(station.bar.availablePatrons, patron => contacts.IsOwned(patron));
+        armed = true;
+        if (faultStage != 0)
+        {
+            var original = station.bar.availablePatrons;
+            if (faultStage <= 2) Assert.Equal(BarRosterApplyStatus.Unavailable, host.Reconcile(station.bar));
+            else if (faultStage == 3) host.Interact(contact);
+            else Assert.Throws<InvalidOperationException>(() => host.TrySerialize(station.bar, out _));
+            Assert.Equal(0, clicks);
+            Assert.Same(original, station.bar.availablePatrons);
+            return;
+        }
         host.Interact(contact); Assert.Equal(1, clicks);
         Assert.True(host.TrySerialize(station.bar, out _));
         storage.MutationAllowed = false;
