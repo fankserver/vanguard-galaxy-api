@@ -21,6 +21,8 @@ internal static class DungeonPodResumeBindings
     };
     internal static readonly (string Key, string Type, string Name, string ValueType)[] Members =
     {
+        ("resumeExplosionTimer", "Source.Dungeon.DungeonSimulation", "_explosionTimer", "System.Single"),
+        ("resumeVentTargets", "Source.Dungeon.DungeonSimulation", "structuralVentTargets", "System.Collections.Generic.HashSet`1<System.Int32>"),
         ("resumeOperations", BindingCatalog.BoardingManager, "_operations", "System.Collections.Generic.List`1<Behaviour.Dungeon.DungeonOperation>"),
         ("resumeCrewWalking", BindingCatalog.BoardingOperation, "_crewWalking", "System.Boolean"),
         ("resumeWalkLocation", "Behaviour.Unit.DungeonLocationUnit", "data", BindingCatalog.BoardingLocation),

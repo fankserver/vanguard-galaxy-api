@@ -16,6 +16,7 @@ internal sealed class DungeonOperationRecoveryLedger
         {
             if (previous.LocationId != next.LocationId || previous.ContentOccurrence != next.ContentOccurrence || previous.AttackerShipId != next.AttackerShipId || previous.DungeonType != next.DungeonType || previous.Autonomous != next.Autonomous)
                 throw new InvalidOperationException("Persistent operation identity cannot change.");
+            if (previous.Retired && !next.Retired) throw new InvalidOperationException("Retired operation cannot resume.");
             if (previous.WalkReturn is { } walk)
             {
                 var restored = next.WalkReturn;

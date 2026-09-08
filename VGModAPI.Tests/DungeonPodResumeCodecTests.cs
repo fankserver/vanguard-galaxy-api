@@ -28,7 +28,7 @@ public sealed class DungeonPodResumeCodecTests
         var states = Enum.GetValues<DungeonPodPhase>().Select(phase => new DungeonPodResumeState(Guid.NewGuid(), occurrence, phase, true,
             phase is DungeonPodPhase.Returning or DungeonPodPhase.Arrived, phase == DungeonPodPhase.Arrived, new Dictionary<string, int>())).ToArray();
         var bytes = DungeonPodResumeCodec.Encode(states); var restored = DungeonPodResumeCodec.Decode(bytes);
-        Assert.Equal(5, restored.Count); Assert.Equal(bytes, DungeonPodResumeCodec.Encode(restored));
+        Assert.Equal(6, restored.Count); Assert.Equal(bytes, DungeonPodResumeCodec.Encode(restored));
         Assert.True(restored.Single(p => p.Phase == DungeonPodPhase.Returning).CanRecover);
         Assert.True(restored.Single(p => p.Phase == DungeonPodPhase.Arrived).ReturnDelivered);
     }

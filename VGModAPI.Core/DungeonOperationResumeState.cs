@@ -20,11 +20,12 @@ internal sealed class DungeonOperationResumeState
     internal DungeonTerminalProgress TerminalProgress { get; }
     internal bool Autonomous { get; }
     internal bool WalkDispatched { get; }
+    internal bool Retired { get; }
     internal DungeonWalkReturnState? WalkReturn { get; }
     internal DungeonOperationOptions? Options { get; }
     internal IReadOnlyList<DungeonDonorApproachState> Donors { get; }
     internal DungeonOperationResumeState(Guid id, Guid locationId, Guid? contentOccurrence, string attackerShipId, string dungeonType,
-        string nativePhase, string outcome, string missionProtection, DungeonTerminalProgress terminalProgress, bool autonomous, DungeonOperationOptions? options = null, IEnumerable<DungeonDonorApproachState>? donors = null, bool walkDispatched = false, DungeonWalkReturnState? walkReturn = null)
+        string nativePhase, string outcome, string missionProtection, DungeonTerminalProgress terminalProgress, bool autonomous, DungeonOperationOptions? options = null, IEnumerable<DungeonDonorApproachState>? donors = null, bool walkDispatched = false, DungeonWalkReturnState? walkReturn = null, bool retired = false)
     {
         if (id == Guid.Empty || locationId == Guid.Empty || contentOccurrence == Guid.Empty || !Enum.IsDefined(typeof(DungeonTerminalProgress), terminalProgress))
             throw new ArgumentException("Invalid persistent operation identity or terminal state.");
@@ -38,10 +39,10 @@ internal sealed class DungeonOperationResumeState
         if (reservations.Length > 64 || reservations.Any(item => item == null) || reservations.Select(item => item.ShipId).Distinct(StringComparer.Ordinal).Count() != reservations.Length)
             throw new ArgumentException("Invalid donor reservations.");
         Donors = Array.AsReadOnly(reservations);
-        TerminalProgress = terminalProgress; Autonomous = autonomous; Options = options; WalkDispatched = walkDispatched; WalkReturn = walkReturn;
+        TerminalProgress = terminalProgress; Autonomous = autonomous; Options = options; WalkDispatched = walkDispatched; WalkReturn = walkReturn; Retired = retired;
     }
-    internal DungeonOperationResumeState WithoutDonor(string shipId) => new(Id, LocationId, ContentOccurrence, AttackerShipId, DungeonType, NativePhase, Outcome, MissionProtection, TerminalProgress, Autonomous, Options, Donors.Where(donor => donor.ShipId != shipId), WalkDispatched, WalkReturn);
-    internal DungeonOperationResumeState WithWalkReturn(DungeonWalkReturnState state) => new(Id, LocationId, ContentOccurrence, AttackerShipId, DungeonType, NativePhase, Outcome, MissionProtection, TerminalProgress, Autonomous, Options, Donors, WalkDispatched, state);
-    internal bool MayResumeWalkExtraction => NativePhase == "Extraction" && TerminalProgress == DungeonTerminalProgress.Completed && WalkReturn?.Progress == DungeonWalkReturnProgress.Pending;
-    internal bool MayStartTerminalEffects => TerminalProgress == DungeonTerminalProgress.NotStarted;
+    internal DungeonOperationResumeState WithoutDonor(string shipId) => new(Id, LocationId, ContentOccurrence, AttackerShipId, DungeonType, NativePhase, Outcome, MissionProtection, TerminalProgress, Autonomous, Options, Donors.Where(donor => donor.ShipId != shipId), WalkDispatched, WalkReturn, Retired);
+    internal DungeonOperationResumeState WithWalkReturn(DungeonWalkReturnState state) => new(Id, LocationId, ContentOccurrence, AttackerShipId, DungeonType, NativePhase, Outcome, MissionProtection, TerminalProgress, Autonomous, Options, Donors, WalkDispatched, state, Retired);
+    internal bool MayResumeWalkExtraction => !Retired && NativePhase == "Extraction" && TerminalProgress == DungeonTerminalProgress.Completed && WalkReturn?.Progress == DungeonWalkReturnProgress.Pending;
+    internal bool MayStartTerminalEffects => !Retired && TerminalProgress == DungeonTerminalProgress.NotStarted;
 }

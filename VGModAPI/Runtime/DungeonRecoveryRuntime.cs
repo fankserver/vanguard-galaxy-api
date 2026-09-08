@@ -14,6 +14,7 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
     private readonly DungeonReturnRecoveryCoordinator _returns;
     private readonly DungeonInitialRecoveryCoordinator _initial;
     private readonly DungeonRecoveryWorld _world;
+    private readonly DungeonLiveTransportIndex _liveTransports = new(value => value is UnityEngine.Object native && native);
     private System.Runtime.CompilerServices.ConditionalWeakTable<object, DonorOwnership> _donors = new();
     private sealed class DonorOwnership
     {
@@ -60,7 +61,7 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
                 Pods.Loaded(pod.Data, id);
                 if (Pods.Conflicted(id)) throw new InvalidOperationException("Duplicate restored pod identity.");
                 Operations.BindReturnCarrier(pod.Operation, saved.OperationId);
-                _podOwners.Add(pod.Pod, pod.Operation);
+                _podOwners.Add(pod.Pod, pod.Operation); _liveTransports.Track(id, pod.Pod);
                 Pods.DetachSource(pod.Data);
             }, report, saved => !Pods.Conflicted(saved.Id) && (Pods.DataFor(saved.Id) is not { } data || !world.HasLivePod(data)));
         var initialFactory = new DungeonInitialOperationFactory(game.Assembly, native, _options);
@@ -83,7 +84,7 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
         _lifetime = hub.Subscribe("vgmodapi.dungeon-recovery-runtime", message =>
         {
             if (message.Kind is LifecycleEventKind.SessionStarting or LifecycleEventKind.SessionInvalidated or LifecycleEventKind.SessionStartFailed)
-            { _initial.Clear(); _returns.Poll(); Pods.Clear(); Operations.Clear(); _captureFaults = new(); _podOwners = new(); _donors = new(); }
+            { _initial.Clear(); _liveTransports.Clear(); _returns.Poll(); Pods.Clear(); Operations.Clear(); _captureFaults = new(); _podOwners = new(); _donors = new(); }
         });
     }
     internal bool BeginDonorUpdate(object actions, out DungeonMutationFence.Lease? abort)
@@ -166,7 +167,7 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
             walkReturn = new DungeonWalkReturnState((System.Collections.Generic.IReadOnlyDictionary<string, int>)_native.Call("walkManifest", operation, _native.Get(operation, "simulation")!)!);
         if (!State.TrackOperation(new(previous.Id, previous.LocationId, previous.ContentOccurrence, previous.AttackerShipId, previous.DungeonType,
             phase, outcome, previous.MissionProtection, previous.TerminalProgress, previous.Autonomous, _options.Capture(_native.Get(operation, "options")!), _world.CaptureDonors(_native.Get(operation, "boardableTarget"), (actions, ship, shipId) =>
-            { _donors.Remove(actions); _donors.Add(actions, new(previous.Id, shipId, ship, State.RestoreToken)); }), (bool)_native.Get(operation, "resumeCrewWalking")!, walkReturn))) return false;
+            { _donors.Remove(actions); _donors.Add(actions, new(previous.Id, shipId, ship, State.RestoreToken)); }), (bool)_native.Get(operation, "resumeCrewWalking")!, walkReturn, previous.Retired || _native.Get(operation, "isComplete") is true))) return false;
         Pods.TrackLocation(location);
         var pending = (System.Collections.IList)_native.Get(operation, "resumePendingPods")!;
         foreach (var pod in (System.Collections.IEnumerable)_native.Get(operation, "_activePods")!)
@@ -181,7 +182,7 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
             var transport = Pods.CaptureTransport(pod, pending.Contains(pod), value => { var v = (Vector2)value; return (v.x, v.y); }, originalDonor ?? parentId);
             if (!Pods.Observe(pod, id.Value, parentId, true, transport)) return false;
             if (!_podOwners.TryGetValue(pod, out _)) _podOwners.Add(pod, operation);
-            if (Pods.IdentityFor(data) is { } tracked) MarkLive(tracked);
+            if (Pods.IdentityFor(data) is { } tracked) { _liveTransports.Track(tracked, pod); MarkLive(tracked); }
         }
         return true;
     }
@@ -226,11 +227,14 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
                 foreach (var operation in (System.Collections.IEnumerable)_native.Get(manager, "resumeOperations")!)
                     if (!ObserveOperation(operation)) throw new InvalidOperationException("Cannot checkpoint unresolved native operation.");
             });
-        _returns.Checkpoint((id, instance) =>
+        _returns.Checkpoint((_, _) => { });
+        _liveTransports.Checkpoint((id, pod) =>
         {
-            var pod = (DungeonReturnPodInstance)instance;
+            var data = _native.Get(pod, "resumePodData");
+            if (_native.Get(data, "resumePodPhase")?.ToString() != "Returning") return;
             var previous = State.Get(id) ?? throw new InvalidOperationException("Missing live return state.");
-            var transport = Pods.CaptureTransport(pod.Pod, previous.Transport!.PendingReinforcement,
+            if (previous.ReturnDelivered) return;
+            var transport = Pods.CaptureTransport(pod, previous.Transport!.PendingReinforcement,
                 value => { var v = (Vector2)value; return (v.x, v.y); }, previous.Transport.DonorShipId);
             if (!State.RefreshTransportPose(id, transport.Pose)) throw new InvalidOperationException("Unable to checkpoint live return pose.");
         });
@@ -244,8 +248,8 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
     {
         Pods.Loaded(instance.Data, id);
         if (Pods.Conflicted(id)) throw new InvalidOperationException("Duplicate initial pod identity.");
-        _podOwners.Add(instance.Pod, instance.Operation); MarkLive(id);
+        _podOwners.Add(instance.Pod, instance.Operation); _liveTransports.Track(id, instance.Pod); MarkLive(id);
     }
     internal void MarkLive(Guid id) => _returns.MarkLive(id);
-    public void Dispose() { _lifetime.Dispose(); _initial.Dispose(); _returns.Dispose(); Pods.Clear(); Operations.Clear(); State.Dispose(); }
+    public void Dispose() { _lifetime.Dispose(); _initial.Dispose(); _returns.Dispose(); _liveTransports.Clear(); Pods.Clear(); Operations.Clear(); State.Dispose(); }
 }

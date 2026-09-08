@@ -26,6 +26,12 @@ internal sealed class DungeonCrewResumeJson
     }
     internal void Write(object nativeJsonValue, DungeonCrewResumeState state) => WritePayload(nativeJsonValue, Key, DungeonCrewResumeCodec.Encode(state));
     internal void WriteDirectives(object nativeJsonValue, System.Collections.Generic.IEnumerable<DungeonDirectiveState> states) => WritePayload(nativeJsonValue, "vgmodapiDirectives", DungeonDirectiveCodec.Encode(states));
+    internal void WriteExecution(object json, DungeonSimulationExecutionState state) => WritePayload(json, "vgmodapiSimulationExecution", state.Encode());
+    internal DungeonSimulationExecutionState? ReadExecution(object json)
+    {
+        var bytes = ReadPayload(json, "vgmodapiSimulationExecution", 16396);
+        return bytes == null ? null : DungeonSimulationExecutionState.Decode(bytes);
+    }
     private void WritePayload(object nativeJsonValue, string key, byte[] payload)
     {
         var json = _object.GetValue(nativeJsonValue) ?? throw new InvalidDataException("Native crew JSON is not an object.");

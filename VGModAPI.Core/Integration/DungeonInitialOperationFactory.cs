@@ -27,6 +27,7 @@ internal sealed class DungeonInitialOperationFactory
     }
     internal object Create(DungeonOperationResumeState saved, object recipient, object location, object? boardable, bool active)
     {
+        if (saved.Retired) throw new InvalidOperationException("Retired operations cannot be reconstructed.");
         if ((string?)_native.Get(_native.Get(recipient, "resumeShipData"), "resumeShipGuid") != saved.AttackerShipId || (saved.TerminalProgress != DungeonTerminalProgress.NotStarted && !saved.MayResumeWalkExtraction))
             throw new InvalidOperationException("Exact recipient and unprocessed terminal state required.");
         if (saved.MayResumeWalkExtraction)

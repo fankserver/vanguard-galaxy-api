@@ -581,6 +581,12 @@ public sealed partial class Plugin : BaseUnityPlugin
             DungeonRecoveryCapturePatches.Runtime = _dungeonRecovery;
             InstallGroup("dungeon-recovery-capture", bindings, DungeonRecoveryCaptureBindings.Hooks, new Dictionary<string, Type>
             {
+                ["recoveryCancelPods"] = typeof(DungeonRecoveryCapturePatches.Cancellation),
+                ["recoveryCancelMovement"] = typeof(DungeonRecoveryCapturePatches.Cancellation),
+                ["recoveryRefundRecall"] = typeof(DungeonRecoveryCapturePatches.DockedRefund),
+                ["recoveryRefundDocked"] = typeof(DungeonRecoveryCapturePatches.DockedRefund),
+                ["recoveryRefundTerminal"] = typeof(DungeonRecoveryCapturePatches.DockedRefund),
+                ["recoveryRetired"] = typeof(DungeonRecoveryCapturePatches.Retired),
                 ["recoveryPendingExtraction"] = typeof(DungeonRecoveryCapturePatches.PendingExtraction),
                 ["recoveryWalkComplete"] = typeof(DungeonRecoveryCapturePatches.WalkComplete),
                 ["recoveryWalkDispatch"] = typeof(DungeonRecoveryCapturePatches.Transfer),
@@ -618,7 +624,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             var filterType = bindings.Assembly.GetType("Source.CompartmentSystem.MovementOrderFilter", true)!;
             var directives = new DungeonDirectiveAdapter(crewNative, () => Activator.CreateInstance(directiveType)!,
                 (kind, value) => Enum.ToObject(kind == "priority" ? priorityType : filterType, value));
-            DungeonCrewResumePatches.Coordinator = new DungeonCrewResumeCoordinator(crewNative, new DungeonCrewResumeJson(bindings.Assembly), error => Logger.LogError(error), directives);
+            DungeonCrewResumePatches.Coordinator = new DungeonCrewResumeCoordinator(crewNative, new DungeonCrewResumeJson(bindings.Assembly), error => Logger.LogError(error), directives, execution: true);
             _dungeonRecovery.SimulationReady = DungeonCrewResumePatches.Coordinator.CanTick;
             InstallGroup("dungeon-crew-resume", bindings, DungeonCrewResumeBindings.Hooks, new Dictionary<string, Type>
             {

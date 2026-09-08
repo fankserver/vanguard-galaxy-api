@@ -26,7 +26,7 @@ public sealed class DungeonInitialRecoveryCoordinatorTests
         internal readonly List<string> Calls = new();
         internal readonly Guid Id = Guid.NewGuid();
         internal bool LiveLocation = true, Hydrated = true;
-        internal Fixture(bool ship, DungeonPodPhase? phase = null, string savedPhase = "Active", bool donor = false)
+        internal Fixture(bool ship, DungeonPodPhase? phase = null, string savedPhase = "Active", bool donor = false, bool retired = false)
         {
             State = new(Hub, Persistence); var session = Hub.Begin(SessionOrigin.SaveLoad, "save"); Hub.PlayerReady(session); Persistence.Provider.Restore(Hub.CurrentSession!, null);
             var native = new DungeonLayoutBuilderTests.Native(); var identity = new DungeonOperationResumeAdapter(State, native); var pods = new DungeonPodResumeAdapter(State, native);
@@ -38,7 +38,7 @@ public sealed class DungeonInitialRecoveryCoordinatorTests
             Operation.Fields["restoreDocking"] = (Action)(() => Calls.Add("dock"));
             State.TrackOperation(new(Id, Guid.NewGuid(), null, "ship", "Station", savedPhase, "", "", DungeonTerminalProgress.NotStarted, false,
                 donors: donor ? new[] { new DungeonDonorApproachState("donor", new Dictionary<string, int> { ["Marine"] = 2 }) } : null,
-                walkReturn: savedPhase == "Extraction" ? new DungeonWalkReturnState(new Dictionary<string, int>()) : null));
+                walkReturn: savedPhase == "Extraction" ? new DungeonWalkReturnState(new Dictionary<string, int>()) : null, retired: retired));
             if (savedPhase == "Extraction") using (var terminal = State.BeginTerminal(Id)) terminal!.Completed();
             identity.LoadedLocation(Location, Id);
             if (phase.HasValue)
@@ -52,6 +52,7 @@ public sealed class DungeonInitialRecoveryCoordinatorTests
                 BuildPod = (_, _, _, _, _) => { Calls.Add("build"); return new Instance(Calls); }, BindPod = (_, _) => Calls.Add("bind"),
                 Register = _ => Calls.Add("register"), Observe = _ => Calls.Add("observe"), Quarantine = (_, _) => Calls.Add("quarantine")
             };
+            var payload = Persistence.Provider.Capture(); Persistence.Provider.Restore(Hub.CurrentSession!, payload);
             Queue = new(State, identity, pods, native, Ports, _ => Calls.Add("error")); Assert.True(Queue.Queue(Location, ship ? new object() : null));
         }
         public void Dispose() { Queue.Dispose(); State.Dispose(); Hub.Dispose(); }
@@ -64,6 +65,23 @@ public sealed class DungeonInitialRecoveryCoordinatorTests
     {
         using var f = new Fixture(true, (DungeonPodPhase)phase); f.Queue.Poll(); f.Queue.Poll();
         Assert.Equal(new[] { "create", "validate", "build", "bind", "register", "observe", "activate" }, f.Calls);
+    }
+    [Theory]
+    [InlineData("Approach")]
+    [InlineData("Active")]
+    public void RetiredOperationCannotReconstructPodsOrStartTerminalEffectsAfterReload(string phase)
+    {
+        using var f = new Fixture(true, DungeonPodPhase.Docked, savedPhase: phase, retired: true);
+        f.Queue.Poll(); Assert.Empty(f.Calls); Assert.Null(f.State.BeginTerminal(f.Id)); Assert.True(f.State.Operation(f.Id)!.Retired);
+    }
+    [Fact]
+    public void UncertainDockedRefundQuarantinesInitialReconstructionAfterReload()
+    {
+        using var f = new Fixture(true, DungeonPodPhase.Docked);
+        var pod = Assert.Single(f.State.Snapshot);
+        using (var attempt = f.State.BeginDockedRefunds(f.Id, new[] { pod.Id })) Assert.NotNull(attempt);
+        var payload = f.Persistence.Provider.Capture(); f.Persistence.Provider.Restore(f.Hub.CurrentSession!, payload);
+        f.Queue.Poll(); Assert.Empty(f.Calls);
     }
     [Fact]
     public void UnloadedLocationCannotUseReadyRecipientOrCurrentDockingFacilities()

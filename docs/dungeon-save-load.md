@@ -8,7 +8,7 @@ These mappings apply to the inspected game assembly identified in `compatibility
 
 | Native boundary | Retained state | Limit |
 |---|---|---|
-| `DungeonSimulation.ToJson` / `FromJson` | Core progress, integrity, outcome and reasons, extraction/collapse state, level scaling, options, compartments, both crew lists, collected loot, event log, configuration flags, event state, unlock and lockdown timers | Pending crew directives are not serialized by these methods. A reconstructed simulation alone does not prove complete encounter continuity. |
+| `DungeonSimulation.ToJson` / `FromJson` | Core progress, integrity, outcome and reasons, extraction/collapse state, level scaling, options, compartments, both crew lists, collected loot, event log, configuration flags, event state, unlock and lockdown timers | Pending crew directives, explosion elapsed time and structural-vent target history are not serialized by these methods. A reconstructed simulation alone does not prove complete encounter continuity. |
 | `SimCrewUnit.ToJson` / `FromJson` | Per-unit `isPlayerUnit`, alongside native crew state | Do not infer operation ownership solely from friendly/hostile list membership. |
 | `BoardingPodData.DataToJson` / `LoadFromJson` | Pod identifier, phase, outbound crew, optional parent ship identifier, hull offsets and target positions | The runtime `_returnCrew` manifest is separate and absent from this payload. Outbound crew must not replace surviving return crew. |
 | `DungeonManager.ReconstructSinglePod` | Docked, launching and attached pod reconstruction | Returning and arrived phases take the default null branch. |
@@ -23,9 +23,17 @@ With experimental Dungeons enabled, crew save/load hooks retain the six native e
 
 Simulation JSON also retains pending directives. Claimants reference only the ordered crew arrays of that same snapshot. Restoration validates compartment references and claimant assignments after crew execution state is restored, before enabling simulation ticks. Invalid supplements quarantine the affected simulation and refuse its serialization; they are not rewritten as default state. Missing supplements retain native compatibility defaults, not proof of complete continuity for an older save. Host patch-entry tests cover save/restore/save; these hooks have not been qualified in Unity.
 
+Simulation execution supplements retain explosion elapsed time and the set of already-vented compartment indices. Restore rejects non-finite/negative time, duplicate indices and references outside the restored compartment list before ticks resume. This preserves the explosion interval and structural-vent exclusion/count history rather than restarting them on load.
+
+## Retirement and direct refunds
+
+Native completion is persisted independently of simulation phase and terminal reward progress. Retired operations cannot reconstruct an approach or restart terminal effects; independent in-flight return obligations remain recoverable. Live pod poses are checkpointed independently of operation-manager membership.
+
+Docked refunds in recall, movement cancellation and terminal pod return record a batch attempt before native roster changes or destruction. Aggregate receipts require both accepted roster counts and actual persisted overflow. A completed direct refund has a distinct `Refunded` state rather than claiming a native arrival. Incomplete attempts are never automatically replayed; failed native cancellation/refund boundaries refuse subsequent saves until reload. Cancellation fences remain active through native retirement. Host tests compose the receipt hooks, pod removal and save/reload; they do not qualify Unity execution.
+
 ## Compatibility and removal policy
 
-The recovery provider uses envelope schema 1, operation schema 5 and pod schema 1. Only these versions are accepted; no automatic conversion of unsupported recovery payloads is provided. Unknown schemas, corrupt payloads and inconsistent identities must not be replaced with empty obligations. Restore a compatible API version or a matching backup rather than editing markers to bypass validation.
+The recovery provider uses envelope schema 1, operation schema 6 and pod schema 2. Only these versions are accepted; no automatic conversion of unsupported recovery payloads is provided. Unknown schemas, corrupt payloads and inconsistent identities must not be replaced with empty obligations. Restore a compatible API version or a matching backup rather than editing markers to bypass validation.
 
 A missing content provider does not erase retained authored definitions, but provider-owned choices require its registered behavior; see [authored content](dungeon-content.md). New API-owned creation requires restored, writable persistence. Missing original ships or live locations leave recovery staged, without substituting the current player ship or creating a replacement location.
 

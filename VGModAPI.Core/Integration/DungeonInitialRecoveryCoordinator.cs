@@ -44,11 +44,12 @@ internal sealed class DungeonInitialRecoveryCoordinator : IDisposable
         {
             var id = _identity.LocationMarker(request.Key);
             if (!id.HasValue || _attempted.Contains(id.Value)) continue;
-            var saved = _state.Operation(id.Value); if (saved == null || (saved.TerminalProgress != DungeonTerminalProgress.NotStarted && !saved.MayResumeWalkExtraction)) continue;
+            var saved = _state.Operation(id.Value); if (saved == null || saved.Retired || (saved.TerminalProgress != DungeonTerminalProgress.NotStarted && !saved.MayResumeWalkExtraction)) continue;
             if (request.Value == null && !_ports.ContainsWalkLocation(request.Key)) continue;
             if (request.Value != null && !_ports.IsLiveTarget(request.Value)) continue;
             var recipient = _ports.Resolve(saved.AttackerShipId); if (recipient == null) continue;
             var records = _state.Snapshot.Where(pod => pod.OperationId == saved.Id && pod.Phase is DungeonPodPhase.Docked or DungeonPodPhase.Launching or DungeonPodPhase.Attached).ToArray();
+            if (records.Any(pod => pod.ReturnAttempted)) continue;
             var donors = new Dictionary<string, object>(StringComparer.Ordinal); var ready = true;
             foreach (var pod in records)
             {

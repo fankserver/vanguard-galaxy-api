@@ -14,9 +14,10 @@ internal sealed class DungeonCrewResumeCoordinator
     private readonly IBoardingTacticalNativeBindings _native;
     private readonly Action<Exception> _report;
     private readonly DungeonDirectiveAdapter? _directives;
+    private readonly bool _execution;
     private ConditionalWeakTable<object, Exception> _invalid = new();
-    internal DungeonCrewResumeCoordinator(IBoardingTacticalNativeBindings native, DungeonCrewResumeJson json, Action<Exception> report, DungeonDirectiveAdapter? directives = null)
-    { _directives = directives; _native = native; _json = json; _report = report; _adapter = new(native); _hydrator = new(_adapter); }
+    internal DungeonCrewResumeCoordinator(IBoardingTacticalNativeBindings native, DungeonCrewResumeJson json, Action<Exception> report, DungeonDirectiveAdapter? directives = null, bool execution = false)
+    { _execution = execution; _directives = directives; _native = native; _json = json; _report = report; _adapter = new(native); _hydrator = new(_adapter); }
     internal void Clear() { _invalid = new(); _hydrator.Clear(); }
     internal void SaveCrew(object crew, object json) => _json.Write(json, _adapter.Capture(crew));
     internal void LoadCrew(object crew, object json)
@@ -27,6 +28,12 @@ internal sealed class DungeonCrewResumeCoordinator
     internal void SaveSimulation(object simulation, object json)
     {
         if (!CanTick(simulation)) throw new InvalidOperationException("Cannot serialize invalid simulation.");
+        if (_execution)
+        {
+            var saved = new VGModAPI.Core.DungeonSimulationExecutionState((float)_native.Get(simulation, "resumeExplosionTimer")!, (IEnumerable<int>)_native.Get(simulation, "resumeVentTargets")!);
+            saved.ValidateRooms(((ICollection)_native.Get(simulation, "compartments")!).Count);
+            _json.WriteExecution(json, saved);
+        }
         if (_directives == null) return;
         var units = new List<object>();
         foreach (var key in new[] { "friendlyUnits", "hostileUnits" })
@@ -50,6 +57,12 @@ internal sealed class DungeonCrewResumeCoordinator
                     if (_invalid.TryGetValue(crew, out var error)) throw new InvalidOperationException("Crew supplement is invalid.", error);
                     units.Add(crew);
                 }
+            }
+            if (_execution && _json.ReadExecution(json ?? throw new InvalidOperationException("Missing simulation snapshot.")) is { } execution)
+            {
+                execution.ValidateRooms(rooms.Count);
+                _native.Set(simulation, "resumeExplosionTimer", execution.ExplosionTimer);
+                _native.Set(simulation, "resumeVentTargets", new HashSet<int>(execution.VentTargets));
             }
             if (!_hydrator.Apply(units, rooms.Count)) throw new InvalidOperationException("Crew supplement refers to missing compartments.");
             if (_directives != null)

@@ -14,6 +14,20 @@ internal sealed class DungeonPodPersistence : IDisposable
     private Guid? _restoredSession;
     private bool _disposed;
     private int _returnDepth;
+    private Guid? _terminalOperation, _cancellationOperation;
+    private object? _terminalToken, _cancellationToken;
+    internal Cancellation? BeginCancellation(Guid id)
+    {
+        if (!CanMutate || _operations.Get(id) == null) return null;
+        var lease = _effects.Enter(); _cancellationOperation = id; _cancellationToken = RestoreToken; return new(this, lease);
+    }
+    internal sealed class Cancellation : IDisposable
+    {
+        private readonly DungeonPodPersistence _owner; private readonly DungeonMutationFence.Lease _lease; private bool _disposed;
+        internal Cancellation(DungeonPodPersistence owner, DungeonMutationFence.Lease lease) { _owner = owner; _lease = lease; }
+        internal void Failed() => _lease.Failed();
+        public void Dispose() { if (_disposed) return; _disposed = true; _lease.Dispose(); _owner._cancellationOperation = null; }
+    }
     internal bool IsCheckpointing { get; private set; }
     internal bool CanObserveSnapshots => CanMutate || (IsCheckpointing && Ready);
     internal void Checkpoint(Action capture)
@@ -116,12 +130,39 @@ internal sealed class DungeonPodPersistence : IDisposable
         }
         public void Dispose() { _owner._hub.CheckThread(); if (_disposed) return; _disposed = true; _owner._returnDepth--; }
     }
+    internal RefundAttempt? BeginDockedRefunds(Guid operationId, IReadOnlyList<Guid> ids)
+    {
+        if (!Ready || !_registration!.MutationAllowed || _hub.IsDispatchingCallbacks || IsCheckpointing || _effects.Uncertain ||
+            (!CanMutate && !(_returnDepth == 1 && _terminalOperation == operationId && ReferenceEquals(_terminalToken, RestoreToken)) && !(_returnDepth == 0 && _cancellationOperation == operationId && ReferenceEquals(_cancellationToken, RestoreToken))) || _operations.Get(operationId) is not { } operation) return null;
+        var attempts = _ledger.BeginDockedRefunds(ids, operationId, operation.AttackerShipId); if (attempts == null) return null;
+        _returnDepth++; return new(this, RestoreToken, attempts);
+    }
+    internal sealed class RefundAttempt : IDisposable
+    {
+        private readonly DungeonPodPersistence _owner; private readonly object _token; private readonly IReadOnlyList<DungeonPodResumeState> _attempts; private bool _disposed;
+        internal RefundAttempt(DungeonPodPersistence owner, object token, IReadOnlyList<DungeonPodResumeState> attempts) { _owner = owner; _token = token; _attempts = attempts; }
+        internal bool Complete(DungeonPodDeliveryReceipt receipt)
+        {
+            _owner._hub.CheckThread();
+            if (_disposed || !_owner.Ready || !ReferenceEquals(_token, _owner.RestoreToken) || !_owner._registration!.MutationAllowed) return false;
+            var crew = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (var attempt in _attempts)
+            {
+                if (!ReferenceEquals(_owner._ledger.Get(attempt.Id), attempt)) return false;
+                foreach (var pair in attempt.ReturnCrew) { crew.TryGetValue(pair.Key, out var count); crew[pair.Key] = checked(count + pair.Value); }
+            }
+            if (!receipt.AccountsFor(crew)) return false;
+            foreach (var attempt in _attempts) _owner._ledger.Refunded(attempt.Id);
+            return true;
+        }
+        public void Dispose() { _owner._hub.CheckThread(); if (_disposed) return; _disposed = true; _owner._returnDepth--; }
+    }
     internal TerminalAttempt? BeginTerminal(Guid id)
     {
         if (!CanMutate || _operations.Get(id) is not { MayStartTerminalEffects: true } operation) return null;
         var attempted = new DungeonOperationResumeState(operation.Id, operation.LocationId, operation.ContentOccurrence, operation.AttackerShipId,
-            operation.DungeonType, operation.NativePhase, operation.Outcome, operation.MissionProtection, DungeonTerminalProgress.Attempted, operation.Autonomous, operation.Options, operation.Donors, operation.WalkDispatched, operation.WalkReturn);
-        _operations.Track(attempted); _returnDepth++;
+            operation.DungeonType, operation.NativePhase, operation.Outcome, operation.MissionProtection, DungeonTerminalProgress.Attempted, operation.Autonomous, operation.Options, operation.Donors, operation.WalkDispatched, operation.WalkReturn, operation.Retired);
+        _operations.Track(attempted); _returnDepth++; _terminalOperation = id; _terminalToken = RestoreToken;
         return new TerminalAttempt(this, RestoreToken, attempted);
     }
     internal sealed class TerminalAttempt : IDisposable
@@ -133,9 +174,9 @@ internal sealed class DungeonPodPersistence : IDisposable
             _owner._hub.CheckThread();
             if (_disposed || !_owner.Ready || !ReferenceEquals(_token, _owner.RestoreToken) || !ReferenceEquals(_owner._operations.Get(_attempted.Id), _attempted)) return;
             _owner._operations.Track(new(_attempted.Id, _attempted.LocationId, _attempted.ContentOccurrence, _attempted.AttackerShipId, _attempted.DungeonType,
-                _attempted.NativePhase, _attempted.Outcome, _attempted.MissionProtection, DungeonTerminalProgress.Completed, _attempted.Autonomous, _attempted.Options, _attempted.Donors, _attempted.WalkDispatched, _attempted.WalkReturn));
+                _attempted.NativePhase, _attempted.Outcome, _attempted.MissionProtection, DungeonTerminalProgress.Completed, _attempted.Autonomous, _attempted.Options, _attempted.Donors, _attempted.WalkDispatched, _attempted.WalkReturn, _attempted.Retired));
         }
-        public void Dispose() { _owner._hub.CheckThread(); if (_disposed) return; _disposed = true; _owner._returnDepth--; }
+        public void Dispose() { _owner._hub.CheckThread(); if (_disposed) return; _disposed = true; _owner._returnDepth--; _owner._terminalOperation = null; }
     }
     internal ReturnAttempt? BeginObservedReturn(Guid id, string parentShipId)
     {

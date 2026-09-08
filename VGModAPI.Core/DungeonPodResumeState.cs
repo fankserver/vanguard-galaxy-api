@@ -5,7 +5,7 @@ using System.Linq;
 
 namespace VGModAPI.Core;
 
-internal enum DungeonPodPhase { Docked, Launching, Attached, Returning, Arrived }
+internal enum DungeonPodPhase { Docked, Launching, Attached, Returning, Arrived, Refunded }
 
 /// <summary>Supplemental saved return obligation; outbound crew is not a substitute for the actual return manifest.</summary>
 internal sealed class DungeonPodResumeState
@@ -32,7 +32,7 @@ internal sealed class DungeonPodResumeState
         }
         if (copy.Count > 64 || copy.Values.Sum(v => (long)v) > 10000) throw new ArgumentException("Saved pod crew exceeds bounds.");
         if (!returnManifestKnown && copy.Count != 0) throw new ArgumentException("An unknown manifest cannot contain inferred crew.");
-        if (returnDelivered && (!returnManifestKnown || phase != DungeonPodPhase.Arrived)) throw new ArgumentException("Delivery requires an observed arrival and known manifest.");
+        if (returnDelivered && (!returnManifestKnown || phase is not (DungeonPodPhase.Arrived or DungeonPodPhase.Refunded))) throw new ArgumentException("Delivery requires an observed arrival or direct refund and known manifest.");
         if (parentShipId == null || parentShipId.Length > 128 || parentShipId.IndexOf('\0') >= 0) throw new ArgumentException("Invalid parent ship identity.");
         ParentShipId = parentShipId; Transport = transport;
         Id = id; OperationId = occurrence; Phase = phase; PlayerOwned = playerOwned; ReturnManifestKnown = returnManifestKnown;

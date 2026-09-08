@@ -16,7 +16,7 @@ internal static class DungeonPodResumeCodec
         if (entries.Length > MaximumPods || entries.Any(p => p == null) || entries.Select(p => p.Id).Distinct().Count() != entries.Length)
             throw new InvalidDataException("Invalid saved pod collection.");
         using var stream = new MemoryStream(); using var writer = new BinaryWriter(stream, Utf8, true);
-        writer.Write(1); writer.Write(entries.Length);
+        writer.Write(2); writer.Write(entries.Length);
         foreach (var pod in entries.OrderBy(p => p.Id))
         {
             writer.Write(pod.Id.ToByteArray()); writer.Write(pod.OperationId.ToByteArray());
@@ -47,7 +47,7 @@ internal static class DungeonPodResumeCodec
     {
         if (payload == null || payload.Length > OwnerSchemaCodec.MaxPayload) throw new InvalidDataException("Invalid pod recovery payload size.");
         using var stream = new MemoryStream(payload, false); using var reader = new BinaryReader(stream, Utf8, true);
-        if (reader.ReadInt32() != 1) throw new InvalidDataException("Unsupported pod recovery schema.");
+        if (reader.ReadInt32() != 2) throw new InvalidDataException("Unsupported pod recovery schema.");
         var count = Count(reader, MaximumPods); var entries = new List<DungeonPodResumeState>(); var ids = new HashSet<Guid>();
         for (var index = 0; index < count; index++)
         {

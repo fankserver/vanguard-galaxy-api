@@ -47,6 +47,35 @@ internal sealed class DungeonPodReturnObserver
         var attempt = _state.BeginObservedReturn(id.Value, shipId); if (attempt == null) return false;
         scope = new(attempt, _receipts.Begin(recipient, origin)); return true;
     }
+    internal bool BeginDockedRefunds(object operation, bool playerOnly, out RefundScope? scope)
+    {
+        scope = null; var operationId = _operationId(operation);
+        if (!operationId.HasValue) { scope = new(null, _receipts.Begin(null, null)); return true; }
+        var ship = _native.Get(operation, "operationShip"); if (ship == null || !_ready(ship)) return false;
+        var recipient = _native.Get(ship, "resumeShipData"); var saved = _state.Operation(operationId.Value);
+        if (saved == null || (string?)_native.Get(recipient, "resumeShipGuid") != saved.AttackerShipId) return false;
+        var ids = new List<Guid>();
+        foreach (var pod in (IEnumerable)_native.Get(operation, "_activePods")!)
+        {
+            if (pod == null) continue;
+            var data = _native.Get(pod, "resumePodData");
+            if (_native.Get(data, "resumePodPhase")?.ToString() != "Docked" || (playerOnly && _native.Get(data, "resumePodPlayer") is not true)) continue;
+            if (_pods.IdentityFor(data!) is not { } id || _pods.Conflicted(id) || _state.Get(id)?.Transport is not { } transport) return false;
+            if (_native.Get(data, "resumePodCrew") is not IReadOnlyDictionary<string, int> crew || crew.Count != transport.OutboundCrew.Count) return false;
+            foreach (var pair in crew) if (!transport.OutboundCrew.TryGetValue(pair.Key, out var count) || count != pair.Value) return false;
+            ids.Add(id);
+        }
+        var origin = _origin(ship); var attempt = _state.BeginDockedRefunds(operationId.Value, ids); if (attempt == null) return false;
+        scope = new(attempt, _receipts.Begin(recipient, origin)); return true;
+    }
+    internal sealed class RefundScope : IDisposable
+    {
+        private readonly DungeonPodPersistence.RefundAttempt? _attempt;
+        private readonly DungeonReturnReceiptCollector.Scope _receipt;
+        internal RefundScope(DungeonPodPersistence.RefundAttempt? attempt, DungeonReturnReceiptCollector.Scope receipt) { _attempt = attempt; _receipt = receipt; }
+        internal bool Complete() => _attempt?.Complete(_receipt.Receipt) ?? true;
+        public void Dispose() { _receipt.Dispose(); _attempt?.Dispose(); }
+    }
     internal bool BeginWalk(object operation, out WalkScope? scope)
     {
         scope = null;

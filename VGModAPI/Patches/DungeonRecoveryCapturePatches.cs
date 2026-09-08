@@ -5,6 +5,43 @@ namespace VGModAPI.Patches;
 internal static class DungeonRecoveryCapturePatches
 {
     internal static DungeonRecoveryRuntime? Runtime { get; set; }
+    internal static class Cancellation
+    {
+        internal static bool Prefix(object __instance, out VGModAPI.Core.DungeonPodPersistence.Cancellation? __state)
+        {
+            __state = null; if (Runtime == null) return true;
+            if (!Runtime.ObserveOperation(__instance) || Runtime.Operations.OperationId(__instance) is not { } id) return false;
+            __state = Runtime.State.BeginCancellation(id); return __state != null;
+        }
+        internal static System.Exception? Finalizer(object __instance, System.Exception? __exception, VGModAPI.Core.DungeonPodPersistence.Cancellation? __state)
+        {
+            if (__state == null) return __exception;
+            if (__exception != null) __state.Failed(); __state.Dispose();
+            if (__exception == null && Runtime?.State.CanMutate == true && !Runtime.ObserveOperation(__instance)) Runtime.State.RejectTransferSnapshot();
+            return __exception;
+        }
+    }
+    internal static class DockedRefund
+    {
+        internal static bool Prefix(object __instance, System.Reflection.MethodBase __originalMethod, out DungeonPodReturnObserver.RefundScope? __state)
+        {
+            __state = null; if (Runtime == null) return true;
+            if (Runtime.State.CanMutate && !Runtime.ObserveOperation(__instance)) return false;
+            if (Runtime.ReturnObserver.BeginDockedRefunds(__instance, __originalMethod.Name == "TriggerPodReturn", out __state)) return true;
+            Runtime.State.RejectTransferSnapshot(); return false;
+        }
+        internal static void Postfix(DungeonPodReturnObserver.RefundScope? __state)
+        { if (__state != null && !__state.Complete()) Runtime?.State.RejectTransferSnapshot(); }
+        internal static System.Exception? Finalizer(object __instance, System.Exception? __exception, DungeonPodReturnObserver.RefundScope? __state)
+        {
+            if (__state == null) return __exception;
+            if (__exception != null) Runtime?.State.RejectTransferSnapshot(); __state.Dispose();
+            if (__exception == null && Runtime?.State.CanMutate == true && !Runtime.ObserveOperation(__instance)) Runtime.State.RejectTransferSnapshot();
+            return __exception;
+        }
+    }
+    internal static class Retired
+    { internal static void Postfix(object __instance) { if (Runtime?.State.CanMutate == true) Runtime.ObserveOperation(__instance); } }
     internal static class PendingExtraction
     { internal static bool Prefix(object __1) => Runtime == null || !Runtime.QueueRestore(__1, out _); }
     internal static class WalkComplete

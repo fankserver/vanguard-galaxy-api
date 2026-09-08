@@ -30,6 +30,32 @@ internal sealed class DungeonPodRecoveryLedger
         DungeonPodResumeCodec.Encode(_pods.Values.Where(p => p.Id != pod.Id).Concat(new[] { pod }));
         _pods[pod.Id] = pod;
     }
+    internal IReadOnlyList<DungeonPodResumeState>? BeginDockedRefunds(IReadOnlyList<Guid> ids, Guid operationId, string recipient)
+    {
+        if (ids.Count > 256 || ids.Distinct().Count() != ids.Count) return null;
+        var next = new Dictionary<Guid, DungeonPodResumeState>(_pods); var attempts = new List<DungeonPodResumeState>();
+        foreach (var id in ids)
+        {
+            var pod = Get(id);
+            if (pod == null || pod.OperationId != operationId || pod.ParentShipId != recipient || pod.Phase != DungeonPodPhase.Docked || pod.ReturnAttempted || pod.Transport == null) return null;
+            var attempted = new DungeonPodResumeState(pod.Id, pod.OperationId, pod.Phase, pod.PlayerOwned, true, false, pod.Transport.OutboundCrew, true, pod.ParentShipId, pod.Transport);
+            next[id] = attempted; attempts.Add(attempted);
+        }
+        DungeonPodResumeCodec.Encode(next.Values); _pods = next; return attempts.AsReadOnly();
+    }
+    internal DungeonPodResumeState? BeginDockedRefund(Guid id)
+    {
+        var pod = Get(id);
+        if (pod == null || pod.Phase != DungeonPodPhase.Docked || pod.ReturnAttempted || pod.Transport == null) return null;
+        var attempted = new DungeonPodResumeState(pod.Id, pod.OperationId, pod.Phase, pod.PlayerOwned, true, false, pod.Transport.OutboundCrew, true, pod.ParentShipId, pod.Transport);
+        Track(attempted); return attempted;
+    }
+    internal void Refunded(Guid id)
+    {
+        var pod = Get(id) ?? throw new InvalidOperationException("Unknown refund pod.");
+        if (pod.Phase != DungeonPodPhase.Docked || !pod.ReturnAttempted || !pod.ReturnManifestKnown) throw new InvalidOperationException("Refund was not attempted.");
+        Track(new(pod.Id, pod.OperationId, DungeonPodPhase.Refunded, pod.PlayerOwned, true, true, pod.ReturnCrew, true, pod.ParentShipId, pod.Transport));
+    }
     internal DungeonPodResumeState? BeginReturn(Guid id)
     {
         var pod = Get(id); if (pod == null || !pod.CanRecover) return null;

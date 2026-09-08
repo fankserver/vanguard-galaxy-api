@@ -12,6 +12,56 @@ namespace VGModAPI.Tests;
 [Collection("Dungeon crew resume")]
 public sealed class DungeonPodReturnPatchTests
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void DockedRefundComposesNativeReceiptHooksWithSaveReload(bool persistedOverflow)
+    {
+        using var hub = new LifecycleHub((_, _) => { }); var persistence = new DungeonPodPersistenceTests.Persistence(); using var state = new DungeonPodPersistence(hub, persistence);
+        var session = hub.Begin(SessionOrigin.SaveLoad, "save"); hub.PlayerReady(session); persistence.Provider.Restore(hub.CurrentSession!, null);
+        var operationId = Guid.NewGuid(); DungeonPodPersistenceTests.TrackOperation(state, operationId);
+        var native = new DungeonLayoutBuilderTests.Native(); var pods = new DungeonPodResumeAdapter(state, native); var active = new ArrayList();
+        var ids = new List<Guid>();
+        for (var i = 0; i < 2; i++)
+        {
+            var id = Guid.NewGuid(); ids.Add(id); var crew = new Dictionary<string, int> { ["Marine"] = 2 };
+            state.Track(new(id, operationId, DungeonPodPhase.Docked, true, false, false, new Dictionary<string, int>(), parentShipId: "ship-guid", transport: new("pod" + i, false, crew, new float[9], "ship-guid")));
+            var data = new NativeObject(); data.Fields["resumePodPhase"] = "Docked"; data.Fields["resumePodPlayer"] = true; data.Fields["resumePodCrew"] = crew; pods.Loaded(data, id);
+            var pod = new NativeObject(); pod.Fields["resumePodData"] = data; active.Add(pod);
+        }
+        var recipient = new NativeObject(); recipient.Fields["resumeShipGuid"] = "ship-guid"; var ship = new NativeObject(); ship.Fields["resumeShipData"] = recipient;
+        var operation = new NativeObject(); operation.Fields["operationShip"] = ship; operation.Fields["_activePods"] = active; var origin = new object();
+        var observer = new DungeonPodReturnObserver(state, pods, native, _ => origin, _ => true, _ => operationId); DungeonPodReturnPatches.Observer = observer;
+        try
+        {
+            using (var cancellation = state.BeginCancellation(operationId))
+            {
+                Assert.NotNull(cancellation); Assert.True(observer.BeginDockedRefunds(operation, false, out var scope));
+                using (scope)
+                {
+                    Assert.Throws<InvalidOperationException>(() => persistence.Provider.Capture());
+                    DungeonPodReturnPatches.Crew.Postfix(recipient, "Marine", 2, 1);
+                    DungeonPodReturnPatches.Crew.Postfix(recipient, "Marine", 2, 1);
+                    active.Clear(); // Native destruction/removal happens before batched overflow emission.
+                    DungeonPodReturnPatches.Overflow.Prefix("Marine", 2, origin, out var overflow);
+                    var poi = new NativeObject(); var list = new ArrayList(); poi.Fields["persistables"] = list; var data = new Source.Data.Persistable.CrewPodData();
+                    DungeonPodReturnPatches.Persisted.Prefix(poi, data);
+                    if (persistedOverflow) list.Add(data);
+                    DungeonPodReturnPatches.Persisted.Postfix(poi, data);
+                    DungeonPodReturnPatches.Overflow.Postfix(overflow); DungeonPodReturnPatches.Overflow.Finalizer(null, overflow);
+                    Assert.Equal(persistedOverflow, scope!.Complete());
+                }
+            }
+            var payload = persistence.Provider.Capture(); persistence.Provider.Restore(hub.CurrentSession!, payload);
+            foreach (var id in ids)
+            {
+                Assert.True(state.Get(id)!.ReturnAttempted); Assert.Equal(persistedOverflow, state.Get(id)!.ReturnDelivered);
+                Assert.Equal(persistedOverflow ? DungeonPodPhase.Refunded : DungeonPodPhase.Docked, state.Get(id)!.Phase);
+            }
+            Assert.Null(state.BeginDockedRefunds(operationId, ids));
+        }
+        finally { DungeonPodReturnPatches.Observer = null; }
+    }
     [Fact]
     public void NativeShapedReturnAccountsForRosterAndPersistedOverflowThenRejectsReplay()
     {

@@ -20,7 +20,9 @@ public sealed class DungeonReturnRecoveryCoordinatorTests
     {
         using var hub = new LifecycleHub((_, _) => { }); var persistence = new DungeonPodPersistenceTests.Persistence(); using var state = new DungeonPodPersistence(hub, persistence);
         var session = hub.Begin(SessionOrigin.SaveLoad, "save"); hub.PlayerReady(session); persistence.Provider.Restore(hub.CurrentSession!, null);
-        var operation = Guid.NewGuid(); DungeonPodPersistenceTests.TrackOperation(state, operation);
+        var operation = Guid.NewGuid();
+        state.TrackOperation(new(operation, Guid.NewGuid(), null, "original", "HostileShip", "Approach", "", "", DungeonTerminalProgress.NotStarted, false, retired: true));
+        Assert.Null(state.BeginTerminal(operation));
         var crew = new Dictionary<string, int> { ["Marine"] = 2 };
         var pod = new DungeonPodResumeState(Guid.NewGuid(), operation, DungeonPodPhase.Returning, true, true, false, crew, parentShipId: "original", transport: new("native", false, crew, new float[9])); state.Track(pod);
         object? recipient = null; var made = new List<Instance>();
