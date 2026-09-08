@@ -7,11 +7,12 @@ namespace VGModAPI.Runtime;
 /// <summary>The native location carries only occurrence identity; API-owned data stays in its provider envelope.</summary>
 internal sealed class DungeonMarkerJson
 {
-    private const string Key = "vgmodapiDungeonOccurrence";
+    private readonly string Key;
     private readonly PropertyInfo _item, _string, _isString;
     private readonly MethodInfo _convert;
-    internal DungeonMarkerJson(Assembly assembly)
+    internal DungeonMarkerJson(Assembly assembly, string key = "vgmodapiDungeonOccurrence")
     {
+        Key = key;
         var json = assembly.GetType("LightJson.JsonObject", true)!; var value = assembly.GetType("LightJson.JsonValue", true)!;
         _item = json.GetProperty("Item", new[] { typeof(string) }) ?? throw new MissingMemberException(json.FullName, "Item");
         if (_item.PropertyType != value || _item.GetMethod == null || _item.SetMethod == null) throw new MissingMemberException("Writable JsonObject string indexer required.");
