@@ -274,6 +274,25 @@ public sealed class GameAdapterTests
     }
 
     [Fact]
+    public void FaultLatchClosesTypedAndLegacyHealthBeforeMainThreadNotification()
+    {
+        _hub.SetCapability("session-lifecycle", true, "Bound.");
+        _hub.SetCapability("save-outcomes", true, "Bound.");
+        _hub.SetCapability("save-data", true, "Bound.");
+        var status = _hub.Services.Get("session-lifecycle");
+        var phases = new List<SessionPhase?>();
+        status.AvailabilityChanged += _ => phases.Add(_hub.CurrentSession?.Phase);
+        _hub.Begin(SessionOrigin.NewGame, null);
+        Assert.Null(ServiceNotificationTests.OnWorker(() => _adapter.Guard(() => { })));
+        Assert.False(status.Availability.IsAvailable);
+        Assert.False(_hub.Services.Get("save-data").Availability.IsAvailable);
+        Assert.All(_hub.Capabilities, capability => Assert.False(capability.Available));
+        Assert.Empty(phases);
+        _adapter.Poll();
+        Assert.Equal(new SessionPhase?[] { SessionPhase.Invalidated }, phases);
+    }
+
+    [Fact]
     public void ObserverFaultIsContainedAndDisablesFutureObservations()
     {
         _adapter.BeginNewPlayer();

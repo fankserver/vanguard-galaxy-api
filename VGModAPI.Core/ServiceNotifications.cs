@@ -18,7 +18,7 @@ internal sealed class ServiceNotifications<T> : IDisposable
     private readonly Func<IDisposable> _enterDispatch;
     private readonly List<Slot> _handlers = new();
     private readonly Queue<T> _pending = new();
-    private bool _dispatching, _disposed;
+    private bool _dispatching, _disposed, _completing;
 
     internal ServiceNotifications(Action checkThread, Action<string, Exception> report, Func<IDisposable> enterDispatch)
     { _checkThread = checkThread; _report = report; _enterDispatch = enterDispatch; }
@@ -26,7 +26,7 @@ internal sealed class ServiceNotifications<T> : IDisposable
     internal void Add(Action<T>? callback)
     {
         _checkThread();
-        if (_disposed) throw new ObjectDisposedException(nameof(ServiceNotifications<T>));
+        if (_disposed || _completing) throw new ObjectDisposedException(nameof(ServiceNotifications<T>));
         if (callback == null) return;
         foreach (Action<T> handler in callback.GetInvocationList()) _handlers.Add(new Slot(handler));
     }
@@ -73,7 +73,20 @@ internal sealed class ServiceNotifications<T> : IDisposable
                 }
             }
         }
-        finally { _dispatching = false; }
+        finally
+        {
+            _dispatching = false;
+            if (_completing) Dispose();
+        }
+    }
+
+    internal void Complete(T terminal)
+    {
+        _checkThread();
+        if (_disposed || _completing) return;
+        _completing = true;
+        Publish(terminal);
+        if (!_dispatching) Dispose();
     }
 
     public void Dispose()

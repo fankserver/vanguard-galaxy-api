@@ -12,11 +12,11 @@ public sealed class ModInformationServiceTests
         Path.Combine(Path.GetTempPath(), "api.dll"), Array.Empty<ModDependencyInformation>());
 
     [Fact]
-    public void InventoryAndLegacyRowsShareOneSourceWithExplicitStartupFreshness()
+    public void InventoryHasExplicitStartupFreshness()
     {
         using var hub = new LifecycleHub((_, _) => { });
-        using var catalog = new ModInformationCatalog(() => new[] { Plugin() }, _ => null);
-        using var service = new ModInformationServiceView(hub, catalog);
+        using var catalog = new ModInformationCatalog(hub, () => new[] { Plugin() }, _ => null);
+        IModInformationService service = catalog;
         var changes = new List<ModInventorySnapshot>();
         service.InventoryChanged += changes.Add;
         Assert.True(service.Availability.IsAvailable);
@@ -24,26 +24,26 @@ public sealed class ModInformationServiceTests
         Assert.Equal(ModInventoryStatus.NotCollected, service.Inventory.Status);
         Assert.Empty(changes);
         Assert.Equal(ModInventoryStatus.Partial, service.Refresh().Status);
-        Assert.Same(service.Inventory.Entries, catalog.Snapshot);
+        Assert.Same(service.Inventory.Entries, catalog.Inventory.Entries);
         catalog.MarkLoaderComplete();
         Assert.Equal(ModInventoryStatus.Partial, service.Inventory.Status);
-        catalog.Refresh(); // Legacy refresh also updates modern state and notifications.
+        catalog.Refresh();
         Assert.Equal(ModInventoryStatus.Current, service.Inventory.Status);
         Assert.Equal(2, changes.Count);
         Assert.Same(changes[1], service.Inventory);
     }
 
     [Fact]
-    public void FailedRefreshRetainsRowsWithoutClaimingFreshnessAndLegacyStillThrows()
+    public void FailedRefreshRetainsRowsWithoutClaimingFreshness()
     {
         using var hub = new LifecycleHub((_, _) => { });
         var fail = false;
-        using var catalog = new ModInformationCatalog(() => fail ? throw new IOException("private path") : new[] { Plugin() }, _ => null);
-        using var service = new ModInformationServiceView(hub, catalog);
+        using var catalog = new ModInformationCatalog(hub, () => fail ? throw new IOException("private path") : new[] { Plugin() }, _ => null);
+        IModInformationService service = catalog;
         catalog.MarkLoaderComplete();
         var current = service.Refresh();
         fail = true;
-        Assert.Throws<IOException>(catalog.Refresh);
+        Assert.Equal(ModInventoryStatus.RefreshFailed, catalog.Refresh().Status);
         Assert.Equal(ModInventoryStatus.RefreshFailed, service.Inventory.Status);
         Assert.Single(service.Inventory.Entries);
         Assert.Same(current.Entries[0], service.Inventory.Entries[0]);
@@ -60,8 +60,8 @@ public sealed class ModInformationServiceTests
         var errors = new List<Exception>();
         using var hub = new LifecycleHub((_, error) => errors.Add(error));
         var collections = 0;
-        using var catalog = new ModInformationCatalog(() => { collections++; return new[] { Plugin() }; }, _ => null);
-        using var service = new ModInformationServiceView(hub, catalog);
+        using var catalog = new ModInformationCatalog(hub, () => { collections++; return new[] { Plugin() }; }, _ => null);
+        IModInformationService service = catalog;
         var scopes = new List<bool>();
         service.InventoryChanged += _ => throw new Exception();
         service.InventoryChanged += snapshot => scopes.Add(hub.IsDispatchingCallbacks && ReferenceEquals(snapshot, service.Refresh()));
@@ -76,8 +76,8 @@ public sealed class ModInformationServiceTests
     public void ApiShutdownProducesStoppedInventoryAndClosesRegistration()
     {
         using var hub = new LifecycleHub((_, _) => { });
-        using var catalog = new ModInformationCatalog(() => new[] { Plugin() }, _ => null);
-        using var service = new ModInformationServiceView(hub, catalog);
+        using var catalog = new ModInformationCatalog(hub, () => new[] { Plugin() }, _ => null);
+        IModInformationService service = catalog;
         service.Refresh();
         var stopped = new List<ModInventorySnapshot>();
         service.InventoryChanged += stopped.Add;
@@ -85,7 +85,7 @@ public sealed class ModInformationServiceTests
         Assert.Equal(ModInventoryStatus.Stopped, Assert.Single(stopped).Status);
         Assert.Equal(ModInventoryStatus.Stopped, service.Inventory.Status);
         Assert.Equal(ModInventoryStatus.Stopped, service.Refresh().Status);
-        Assert.Empty(catalog.Snapshot);
+        Assert.Empty(catalog.Inventory.Entries);
         Assert.Equal(ServiceUnavailableReason.ApiStopped, service.Availability.Reason);
         Assert.Throws<ObjectDisposedException>(() => service.InventoryChanged += stopped.Add);
         service.InventoryChanged -= stopped.Add;
@@ -96,19 +96,33 @@ public sealed class ModInformationServiceTests
     {
         using var hub = new LifecycleHub((_, _) => { });
         ModInformationCatalog? source = null;
-        using var catalog = source = new ModInformationCatalog(() => { source!.Dispose(); return new[] { Plugin() }; }, _ => null);
-        using var service = new ModInformationServiceView(hub, catalog);
+        using var catalog = source = new ModInformationCatalog(hub, () => { source!.Dispose(); return new[] { Plugin() }; }, _ => null);
+        IModInformationService service = catalog;
         Assert.Equal(ModInventoryStatus.Stopped, service.Refresh().Status);
         Assert.False(service.Availability.IsAvailable);
-        Assert.Empty(catalog.Snapshot);
+        Assert.Empty(catalog.Inventory.Entries);
+    }
+
+    [Fact]
+    public void DisposalInsideInventoryCallbackDrainsStoppedBeforeClearingHandlers()
+    {
+        using var hub = new LifecycleHub((_, _) => { });
+        using var catalog = new ModInformationCatalog(hub, () => new[] { Plugin() }, _ => null);
+        var states = new List<ModInventoryStatus>();
+        catalog.InventoryChanged += snapshot => { if (snapshot.Status != ModInventoryStatus.Stopped) catalog.Dispose(); };
+        catalog.InventoryChanged += snapshot => states.Add(snapshot.Status);
+        Assert.Equal(ModInventoryStatus.Stopped, catalog.Refresh().Status);
+        Assert.Equal(new[] { ModInventoryStatus.Partial, ModInventoryStatus.Stopped }, states);
+        Assert.False(hub.IsDispatchingCallbacks);
+        Assert.Throws<ObjectDisposedException>(() => catalog.InventoryChanged += _ => { });
     }
 
     [Fact]
     public void InventoryAccessRefreshAndRegistrationRejectForeignThreads()
     {
         using var hub = new LifecycleHub((_, _) => { });
-        using var catalog = new ModInformationCatalog(() => new[] { Plugin() }, _ => null);
-        using var service = new ModInformationServiceView(hub, catalog);
+        using var catalog = new ModInformationCatalog(hub, () => new[] { Plugin() }, _ => null);
+        IModInformationService service = catalog;
         foreach (Action action in new Action[] { () => _ = service.Inventory, () => service.Refresh(), () => _ = service.Menu,
             () => service.InventoryChanged += _ => { } })
             Assert.IsType<InvalidOperationException>(ServiceNotificationTests.OnWorker(action));

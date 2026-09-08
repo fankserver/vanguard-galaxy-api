@@ -56,7 +56,7 @@ public sealed partial class Plugin : BaseUnityPlugin
 
     private void Start()
     {
-        try { _modCatalog?.Refresh(); if (_modCatalog != null) _updates?.Sync(_modCatalog.Snapshot); }
+        try { _modCatalog?.MarkLoaderComplete(); _modCatalog?.Refresh(); if (_modCatalog != null) _updates?.Sync(_modCatalog.Inventory.Entries); }
         catch (Exception error) { Logger.LogWarning($"Mod information inventory could not be refreshed ({error.GetType().Name}); game services are unaffected."); }
     }
     private void Awake()
@@ -98,8 +98,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         _hub.SetCapability("owned-bars", false, "Not initialized; experimental.");
         ModApi.Current = _hub;
         ModApi.Persistence = null;
-        _modCatalog = new ModInformationCatalog(ModInformationSource.Snapshot);
-        ModApi.Mods = _modCatalog;
+        _modCatalog = new ModInformationCatalog(_hub, ModInformationSource.Snapshot);
         InitializeUpdates();
         try
         {
@@ -115,9 +114,8 @@ public sealed partial class Plugin : BaseUnityPlugin
             _harmony = new Harmony(ModApi.PluginId);
             LifecyclePatches.Adapter = _adapter;
             SavePatches.Adapter = _adapter;
-            InstallGroup("mission-continuity", bindings, BindingCatalog.MissionSnapshots,
+            _identityHooksBound = InstallGroup("mission-continuity", bindings, BindingCatalog.MissionSnapshots,
                 new Dictionary<string, Type> { ["missionSnapshot"] = typeof(MissionSerializationPatches) });
-            _identityHooksBound = _hub.Capabilities.Any(c => c.Name == "mission-continuity" && c.Available);
             if (_identityHooksBound) _hub.SetCapability("mission-continuity", false, "Identity provider not initialized.");
             InstallGroup("session-lifecycle", bindings, BindingCatalog.Session, new Dictionary<string, Type>
             {
@@ -157,8 +155,15 @@ public sealed partial class Plugin : BaseUnityPlugin
             TeardownCraftingJobs();
             try { _harmony?.UnpatchSelf(); }
             catch (Exception cleanupError) { Logger.LogError($"Patch rollback failed: {cleanupError}"); }
-            _hub.SetCapability("session-lifecycle", false, ex.Message);
-            _hub.SetCapability("save-outcomes", false, ex.Message);
+            var reason = ex is NotSupportedException && _inspectedGameAssembly == null
+                ? ServiceUnavailableReason.UnsupportedGame : ServiceUnavailableReason.BindingFailed;
+            _hub.SetCapability("session-lifecycle", false, ex.Message, reason);
+            _hub.SetCapability("save-outcomes", false, ex.Message, reason);
+            if (_inspectedGameAssembly == null)
+            {
+                _hub.SetCapability("native-travel", false, ex.Message, reason);
+                _hub.SetCapability("mission-continuity", false, ex.Message, reason);
+            }
             Logger.LogError(ex);
         }
         // Subscription order is contractual: coordinated owners restore before mission PlayerReady identity seeding.
@@ -168,6 +173,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         InitializeStory();
         InitializeBars();
         InitializeModMenu();
+        PublishServiceRoot();
         Logger.LogInfo("VGModAPI " + Info.Metadata.Version + ": experimental, NOT runtime-qualified. Query capabilities; startup does not prove compatibility.");
     }
 
@@ -203,7 +209,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         try
         {
             _hub?.SetCapability("mod-information-menu", false, "Menu unavailable (" + error.GetType().Name + "); local catalog remains available.");
-            Logger.LogWarning("Mods menu unavailable (" + error.GetType().Name + "). ModApi.Mods remains available; game/save services are unaffected. Check the inspected menu/input layout.");
+            Logger.LogWarning("Mods menu unavailable (" + error.GetType().Name + "). ModApi.Services.Mods remains available; game/save services are unaffected. Check the inspected menu/input layout.");
         }
         catch (Exception) { /* Diagnostic sinks must not propagate UI errors into the game. */ }
     }
@@ -231,7 +237,7 @@ public sealed partial class Plugin : BaseUnityPlugin
     {
         if (_hub!.Capabilities.Count(c => (c.Name == "session-lifecycle" || c.Name == "save-outcomes") && c.Available) != 2)
         {
-            _hub.SetCapability("save-data", false, "Lifecycle capabilities unavailable.");
+            _hub.SetCapability("save-data", false, "Lifecycle capabilities unavailable.", ServiceUnavailableReason.DependencyUnavailable);
             return;
         }
         try
@@ -254,7 +260,7 @@ public sealed partial class Plugin : BaseUnityPlugin
     private void InitializeMissions()
     {
         if (!_hub!.Capabilities.Any(c => c.Name == "session-lifecycle" && c.Available))
-        { _hub.SetCapability("mission-transitions", false, "Lifecycle capability unavailable."); return; }
+        { _hub.SetCapability("mission-transitions", false, "Lifecycle capability unavailable.", ServiceUnavailableReason.DependencyUnavailable); return; }
         try
         {
             var assembly = Assembly.Load("Assembly-CSharp");
@@ -279,7 +285,7 @@ public sealed partial class Plugin : BaseUnityPlugin
 
     private void InitializeMissionIdentity(Assembly assembly)
     {
-        if (_persistence == null) { _hub!.SetCapability("mission-continuity", false, "API-managed saves unavailable."); return; }
+        if (_persistence == null) { _hub!.SetCapability("mission-continuity", false, "API-managed saves unavailable.", ServiceUnavailableReason.DependencyUnavailable); return; }
         try
         {
             if (!_identityHooksBound) throw new InvalidOperationException("Early snapshot hooks unavailable.");
@@ -423,7 +429,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         return BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
     }
 
-    private void InstallGroup(string name, GameBindings bindings, MethodBinding[] catalog, Dictionary<string, Type> patches)
+    private bool InstallGroup(string name, GameBindings bindings, MethodBinding[] catalog, Dictionary<string, Type> patches)
     {
         var touched = new List<MethodInfo>();
         try
@@ -442,12 +448,14 @@ public sealed partial class Plugin : BaseUnityPlugin
                 _harmony!.Patch(target, prefix: Hook("Prefix"), postfix: Hook("Postfix"), finalizer: Hook("Finalizer"));
             }
             _hub!.SetCapability(name, true, "Bound to inspected assembly; in-game qualification pending.");
+            return true;
         }
         catch (Exception ex)
         {
             foreach (var method in touched) _harmony!.Unpatch(method, HarmonyPatchType.All, ModApi.PluginId);
             _hub!.SetCapability(name, false, "Binding failed: " + ex.Message);
             Logger.LogError($"Capability {name} disabled: {ex}");
+            return false;
         }
     }
 
@@ -804,6 +812,7 @@ public sealed partial class Plugin : BaseUnityPlugin
                 Patch(resolved[binding.Key], holder);
             }
             _travel = adapter;
+            _hub.Services.WatchFault("native-travel", () => adapter.IsFaulted);
             ModApi.Travel = adapter.Events;
             ModApi.Station = adapter.Station;
             _hub!.SetCapability("native-travel", true, "Bound to inspected assembly; in-game qualification pending.");
@@ -815,7 +824,8 @@ public sealed partial class Plugin : BaseUnityPlugin
         }
     }
 
-    private void TeardownTravel(string reason, Exception? ex = null)
+    private void TeardownTravel(string reason, Exception? ex = null,
+        ServiceUnavailableReason unavailableReason = ServiceUnavailableReason.BindingFailed)
     {
         if (_travel != null)
         {
@@ -823,7 +833,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         }
         TravelPatches.Adapter = null;
         ModApi.Travel = null; ModApi.Station = null;
-        _hub?.SetCapability("native-travel", false, reason);
+        _hub?.SetCapability("native-travel", false, reason, unavailableReason);
         Logger.LogError(ex == null ? reason : reason + " " + ex);
     }
 
@@ -842,7 +852,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             // A genuine travel adapter fault (main-thread violation) disables the whole group.
             if (_travel.IsFaulted)
             {
-                TeardownTravel("Travel observer fault; capability disabled.");
+                TeardownTravel("Travel observer fault; capability disabled.", unavailableReason: ServiceUnavailableReason.ObserverFault);
                 return;
             }
             var session = _hub?.CurrentSession;
@@ -863,6 +873,8 @@ public sealed partial class Plugin : BaseUnityPlugin
     }
     private void OnDestroy()
     {
+        ModApi.ClearServices(_serviceRoot);
+        _hub?.Dispose(); // Close gates and preserve queued terminal delivery before releasing service views.
         TeardownHud();
         TeardownForgeUi();
         TeardownCraftingCommands();
@@ -879,7 +891,6 @@ public sealed partial class Plugin : BaseUnityPlugin
         try { _modMenu?.Dispose(); } catch (Exception error) { DisableModMenu(error); }
         _modMenu = null;
         _modCatalog?.Dispose();
-        ModApi.Mods = null;
         _adapter?.Guard(() => _adapter.Invalidate("API shutting down."));
         _missions?.Dispose(); _missions = null;
         MissionPatches.Adapter = null; ModApi.Missions = null;

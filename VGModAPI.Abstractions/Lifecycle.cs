@@ -60,9 +60,30 @@ public interface ILifecycleDispatchState
 public static class ModApi
 {
     public const string PluginId = "vgmodapi";
+    private static ModServices? _services;
+    /// <summary>Stable foundational services after API Awake. Access before bootstrap or after shutdown throws.</summary>
+    public static ModServices Services
+    {
+        get
+        {
+            var services = _services ?? throw new InvalidOperationException("VGModAPI services require completed API startup and a live plugin lifetime.");
+            services.CheckThread();
+            return services;
+        }
+    }
+    internal static void PublishServices(ModServices services)
+    {
+        if (services == null) throw new ArgumentNullException(nameof(services));
+        services.CheckThread();
+        if (_services != null) throw new InvalidOperationException("VGModAPI services are already published.");
+        _services = services;
+    }
+    internal static void ClearServices(ModServices? services)
+    {
+        services?.CheckThread();
+        if (ReferenceEquals(_services, services)) _services = null;
+    }
     public static ILifecycleApi? Current { get; internal set; }
-    /// <summary>Process-scoped loader inventory, independent of game-hook availability. Refresh on the main thread.</summary>
-    public static IModInformationCatalog? Mods { get; internal set; }
     /// <summary>Initialized automatically; null when lifecycle bindings or storage initialization are unavailable.</summary>
     public static IPersistenceApi? Persistence { get; internal set; }
     /// <summary>Automatically bound mission observer. Check mission-continuity separately for persistent instance identity.</summary>

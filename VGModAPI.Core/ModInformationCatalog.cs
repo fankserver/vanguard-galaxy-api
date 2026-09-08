@@ -1,10 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Text;
-using System.Threading;
 
 namespace VGModAPI.Core;
 
@@ -20,22 +18,43 @@ internal sealed class LoadedPluginInformation
     internal IReadOnlyList<ModDependencyInformation> Dependencies { get; }
 }
 
-internal sealed class ModInformationCatalog : IModInformationCatalog, IDisposable
+internal sealed class ModInformationCatalog : IModInformationService, IDisposable
 {
     private readonly Func<IEnumerable<LoadedPluginInformation>> _plugins;
     private readonly Func<string, byte[]?> _read;
-    private readonly int _thread = Thread.CurrentThread.ManagedThreadId;
+    private readonly LifecycleHub _hub;
+    private readonly IServiceStatus _status, _menu;
+    private readonly ServiceNotifications<ModInventorySnapshot> _events;
     private bool _disposed, _loaderComplete, _refreshing;
-    internal ModInformationCatalog(Func<IEnumerable<LoadedPluginInformation>> plugins, Func<string, byte[]?>? read = null)
-    { _plugins = plugins; _read = read ?? ReadFile; }
-    internal ModInventorySnapshot Inventory { get; private set; } = new(ModInventoryStatus.NotCollected, Array.Empty<ModInformation>());
-    internal event Action<ModInventorySnapshot>? InventoryChanged;
-    public IReadOnlyList<ModInformation> Snapshot => Inventory.Entries;
-
-    internal void CheckThread()
+    private ModInventorySnapshot _inventory = new(ModInventoryStatus.NotCollected, Array.Empty<ModInformation>());
+    private static readonly ModInventorySnapshot Stopped = new(ModInventoryStatus.Stopped, Array.Empty<ModInformation>());
+    internal ModInformationCatalog(LifecycleHub hub, Func<IEnumerable<LoadedPluginInformation>> plugins, Func<string, byte[]?>? read = null)
     {
-        if (Thread.CurrentThread.ManagedThreadId != _thread) throw new InvalidOperationException("Catalog access requires its owning main thread.");
+        _hub = hub; _plugins = plugins; _read = read ?? ReadFile;
+        _status = hub.Services.Get("mod-information");
+        _menu = hub.Services.Get("mod-information-menu");
+        _events = new ServiceNotifications<ModInventorySnapshot>(hub.CheckThread, hub.ReportSubscriberFailure, hub.EnterServiceDispatch);
+        _status.AvailabilityChanged += OnAvailabilityChanged;
+        hub.SetCapability("mod-information", true, "Local loader inventory.");
     }
+    public ServiceAvailability Availability => _status.Availability;
+    public IServiceStatus Menu { get { CheckThread(); return _menu; } }
+    public event Action<ServiceAvailability>? AvailabilityChanged
+    { add => _status.AvailabilityChanged += value; remove => _status.AvailabilityChanged -= value; }
+    public ModInventorySnapshot Inventory { get { CheckThread(); return _hub.Services.IsStopping ? Stopped : _inventory; } }
+    public event Action<ModInventorySnapshot>? InventoryChanged
+    {
+        add
+        {
+            CheckThread();
+            if (_disposed || _hub.Services.IsStopping) throw new ObjectDisposedException(nameof(ModInformationCatalog));
+            _events.Add(value);
+        }
+        remove => _events.Remove(value);
+    }
+    private void OnAvailabilityChanged(ServiceAvailability state)
+    { if (state.Reason == ServiceUnavailableReason.ApiStopped) Dispose(); }
+    internal void CheckThread() => _hub.CheckThread();
 
     internal void MarkLoaderComplete()
     {
@@ -44,31 +63,32 @@ internal sealed class ModInformationCatalog : IModInformationCatalog, IDisposabl
         _loaderComplete = true; // Existing partial rows need a new collection before claiming Current.
     }
 
-    public void Refresh()
+    public ModInventorySnapshot Refresh()
     {
         CheckThread();
-        if (_disposed) throw new ObjectDisposedException(nameof(ModInformationCatalog));
+        if (_disposed || _hub.Services.IsStopping) return Inventory;
         // A refresh requested by its own notification observes the committed result.
-        if (_refreshing) return;
+        if (_refreshing) return Inventory;
         _refreshing = true;
         try
         {
             try
             {
                 var collected = Collect(_loaderComplete);
-                if (_disposed) return;
-                Inventory = collected;
+                if (_disposed) return Inventory;
+                _inventory = collected;
             }
             catch (Exception error)
             {
                 if (!_disposed)
                 {
-                    Inventory = new ModInventorySnapshot(ModInventoryStatus.RefreshFailed, Inventory.Entries, error.GetType().Name);
-                    InventoryChanged?.Invoke(Inventory);
+                    _inventory = new ModInventorySnapshot(ModInventoryStatus.RefreshFailed, _inventory.Entries, error.GetType().Name);
+                    _events.Publish(_inventory);
                 }
-                throw; // The legacy refresh contract still reports collection failure to its caller.
+                return Inventory;
             }
-            InventoryChanged?.Invoke(Inventory);
+            _events.Publish(_inventory);
+            return Inventory;
         }
         finally { _refreshing = false; }
     }
@@ -135,7 +155,9 @@ internal sealed class ModInformationCatalog : IModInformationCatalog, IDisposabl
         CheckThread();
         if (_disposed) return;
         _disposed = true;
-        Inventory = new ModInventorySnapshot(ModInventoryStatus.Stopped, Array.Empty<ModInformation>());
-        InventoryChanged?.Invoke(Inventory);
+        _inventory = Stopped;
+        _hub.SetCapability("mod-information", false, "Catalog stopped.", ServiceUnavailableReason.ObserverFault);
+        _status.AvailabilityChanged -= OnAvailabilityChanged;
+        _events.Complete(_inventory);
     }
 }

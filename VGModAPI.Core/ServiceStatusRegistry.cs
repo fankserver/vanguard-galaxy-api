@@ -52,6 +52,14 @@ internal sealed class ServiceStatusRegistry : IDisposable
     private readonly Dictionary<string, Func<bool>> _faults = new(StringComparer.Ordinal);
     private readonly Queue<(View View, ServiceAvailability State)> _pending = new();
     private bool _notifying, _stopped, _disposed, _disposeRequested;
+    private readonly List<Action> _cleanup = new();
+
+    internal void AfterStopped(Action cleanup)
+    {
+        _checkThread();
+        if (cleanup == null) throw new ArgumentNullException(nameof(cleanup));
+        if (_disposed) cleanup(); else _cleanup.Add(cleanup);
+    }
     private readonly Dictionary<string, string[]> _dependencies = new(StringComparer.Ordinal)
     {
         ["save-data"] = new[] { "session-lifecycle", "save-outcomes" },
@@ -169,5 +177,11 @@ internal sealed class ServiceStatusRegistry : IDisposable
         _disposed = true;
         foreach (var view in _views.Values) view.Dispose();
         _pending.Clear(); _faults.Clear();
+        foreach (var cleanup in _cleanup.ToArray())
+        {
+            try { cleanup(); }
+            catch (Exception error) { try { _report("service cleanup", error); } catch { } }
+        }
+        _cleanup.Clear();
     }
 }

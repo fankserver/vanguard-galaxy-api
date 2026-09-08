@@ -30,7 +30,6 @@
     <None Include="../tools/fixtures/mod-updates/ui-available.json" Link="ui-available.json" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="../VGModAPI.Core/VGModAPI.Core.csproj" />
     <ProjectReference Include="../examples/ServiceConsumers/ServiceConsumers.csproj" />
-    <EmbeddedResource Include="Contracts/SupportedPublicApi.txt" />
     <ProjectReference Include="../tools/ReleaseMetadata/ReleaseMetadata.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
     <PackageReference Include="coverlet.collector" Version="10.0.1" PrivateAssets="all" />

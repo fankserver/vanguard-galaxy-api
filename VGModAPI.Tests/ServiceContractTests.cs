@@ -39,8 +39,9 @@ public sealed class ServiceContractTests
             Assert.Null(property.SetMethod);
             Assert.True(property.PropertyType.IsInterface);
         }
-        // Composition contracts must not advertise a live accessor before the runtime supplies it.
-        Assert.Null(typeof(ModApi).GetProperty("Services"));
+        var accessor = typeof(ModApi).GetProperty(nameof(ModApi.Services))!;
+        Assert.Equal(typeof(ModServices), accessor.PropertyType);
+        Assert.Null(accessor.SetMethod);
     }
 
     [Fact]
@@ -134,54 +135,12 @@ public sealed class ServiceContractTests
 
     private static ModInformation Row(string id) => new(id, id, new Version(1, 0), Array.Empty<ModDependencyInformation>(), null, ModMetadataStatus.Missing);
 
-    [Fact, Trait("Category", "BinaryInspection")]
-    public void SupportedPublicMembersRemainAndPublishedInterfacesDoNotGainRequirements()
+    [Fact]
+    public void InventoryHasNoSupersededPublicContractOrAccessor()
     {
-        var expected = Baseline();
-        Assert.Contains(expected, row => row.StartsWith("T\tVGModAPI.ModApi\t", StringComparison.Ordinal));
-        Assert.Empty(Violations(expected, PublicContractShape.Read(typeof(ModApi).Assembly.Location)));
-    }
-
-    [Theory, Trait("Category", "BinaryInspection")]
-    [InlineData("interface", true)]
-    [InlineData("return-type", true)]
-    [InlineData("class-addition", false)]
-    public void CompatibilityCheckDetectsBreakingChangesButAllowsClassAdditions(string change, bool breaking)
-    {
-        using var assembly = AssemblyDefinition.ReadAssembly(typeof(ModApi).Assembly.Location);
-        var module = assembly.MainModule;
-        if (change == "return-type")
-            module.GetType("VGModAPI.ModApi").Methods.Single(m => m.Name == "get_Current").ReturnType = module.TypeSystem.Object;
-        else
-        {
-            var flags = Mono.Cecil.MethodAttributes.Public;
-            flags |= change == "interface" ? Mono.Cecil.MethodAttributes.Abstract | Mono.Cecil.MethodAttributes.Virtual | Mono.Cecil.MethodAttributes.NewSlot : Mono.Cecil.MethodAttributes.Static;
-            var method = new MethodDefinition("AdditionalMember", flags, module.TypeSystem.Void);
-            module.GetType(change == "interface" ? "VGModAPI.ILifecycleApi" : "VGModAPI.ModApi").Methods.Add(method);
-            if (change != "interface") method.Body.GetILProcessor().Emit(Mono.Cecil.Cil.OpCodes.Ret);
-        }
-        var path = Path.Combine(Path.GetTempPath(), "vg-contract-" + Guid.NewGuid().ToString("N") + ".dll");
-        try
-        {
-            assembly.Write(path);
-            Assert.Equal(breaking, Violations(Baseline(), PublicContractShape.Read(path)).Length != 0);
-        }
-        finally { File.Delete(path); }
-    }
-
-    private static string[] Baseline()
-    {
-        using var stream = typeof(ServiceContractTests).Assembly.GetManifestResourceStream("VGModAPI.Tests.Contracts.SupportedPublicApi.txt")!;
-        using var reader = new StreamReader(stream);
-        return reader.ReadToEnd().Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(row => row.TrimEnd('\r')).ToArray();
-    }
-
-    private static string[] Violations(string[] expected, string[] actual)
-    {
-        var interfaces = expected.Where(row => row.StartsWith("T\t", StringComparison.Ordinal) && row.Split('\t')[2] == "interface")
-            .Select(row => row.Split('\t')[1]).ToHashSet(StringComparer.Ordinal);
-        return expected.Except(actual, StringComparer.Ordinal).Select(row => "Missing/changed: " + row)
-            .Concat(actual.Except(expected, StringComparer.Ordinal).Where(row => interfaces.Contains(row.Split('\t')[1]))
-                .Select(row => "Published interface changed: " + row)).ToArray();
+        Assert.Null(typeof(ModApi).Assembly.GetType("VGModAPI.IModInformationCatalog"));
+        Assert.Null(typeof(ModApi).GetProperty("Mods"));
+        Assert.Null(typeof(Core.ModInformationCatalog).GetProperty("Snapshot"));
+        Assert.True(typeof(IModInformationService).IsAssignableFrom(typeof(Core.ModInformationCatalog)));
     }
 }

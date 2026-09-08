@@ -156,7 +156,7 @@ internal sealed class ModMenuView : IModMenuView
         if (refreshStatus)
         {
             _nextStatusRefresh = Time.unscaledTime + .25f;
-            var available = _updates?.AvailableCount(ModApi.Mods?.Snapshot ?? Array.Empty<ModInformation>()) ?? 0;
+            var available = _updates?.AvailableCount(_presenter.Inventory) ?? 0;
             _entry.GetComponentInChildren<TMP_Text>().text = available > 0 ? "Mods (" + available + (available == 1 ? " update)" : " updates)") : "Mods";
         }
         if (!Open) return;

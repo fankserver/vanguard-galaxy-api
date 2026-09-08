@@ -1,9 +1,9 @@
 # Typed service composition contracts
 
-`ModServices` and its leaf interfaces support injected, host-tested consumer logic.
-**The plugin does not expose a `ModApi.Services` accessor.** Runtime bootstrap still
-uses the accessors in the [lifecycle contract](lifecycle-contract.md). These types
-are not evidence of runtime binding, startup ordering or Unity/Mono qualification.
+`ModApi.Services` exposes the API-constructed foundational service root after the
+API plugin's Awake. Access before bootstrap or after shutdown throws; retained
+service references report stopped state. Host tests do not establish Unity/Mono
+qualification.
 
 ## Access and state
 
@@ -85,13 +85,11 @@ An empty successful inventory is not the same state as an uncollected inventory.
 The scope remains loaded, declared API consumers—not every installed mod or proof
 that a listed plugin initialized successfully.
 
-## Compatibility and examples
+## Consumer examples
 
-Existing interfaces and nullable `ModApi` accessors are unchanged. They are still the
-runtime access path, not deprecated in favor of an unavailable replacement. The
-supported public-member snapshot checks signatures and prevents adding requirements
-to published interfaces. It does **not** prove precompiled consumer execution or
-Unity/Mono assembly loading. Package/assembly versions are unchanged by these contracts.
+Access inventory through `ModApi.Services.Mods`, which implements
+`IModInformationService`. Saved-data integrity checks and supported schema migrations
+remain required. Host-test results do not establish precompiled binary support.
 
 The [service consumer examples](https://github.com/fankserver/vanguard-galaxy-api/tree/main/examples/ServiceConsumers)
 compile during host tests. They demonstrate required mission observation, a genuinely
