@@ -35,7 +35,7 @@ public interface IBarApi
 public interface IBarProvider : IDisposable
 {
     string ProviderId { get; }
-    BarResult Register(BarPatronDefinition definition);
+    BarResult Register(BarPatronDefinition definition, Action<BarInteraction>? interact = null);
     BarResult ConfigureStation(string stationId, BarRosterOwnership ownership);
     BarResult Place(Guid expectedSessionId, string localId);
     BarResult Remove(Guid expectedSessionId, string localId);

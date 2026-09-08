@@ -12,10 +12,11 @@ internal sealed partial class BarContentService
         private readonly string _pluginId;
         internal string PluginId => _pluginId;
         internal readonly Dictionary<string, BarPatronDefinition> Definitions = new(StringComparer.Ordinal);
+        internal readonly Dictionary<string, Action<BarInteraction>> Interactions = new(StringComparer.Ordinal);
         internal readonly Dictionary<string, BarRosterOwnership> Stations = new(StringComparer.Ordinal);
         public string ProviderId { get; }
         internal Lease(BarContentService owner, string provider, string pluginId) { _owner = owner; ProviderId = provider; _pluginId = pluginId; }
-        public BarResult Register(BarPatronDefinition definition)
+        public BarResult Register(BarPatronDefinition definition, Action<BarInteraction>? interact = null)
         {
             _owner._checkThread();
             if (!_owner.Active(this)) return new BarResult(BarStatus.Unavailable);
@@ -23,6 +24,7 @@ internal sealed partial class BarContentService
             if (Definitions.ContainsKey(definition.LocalId)) return new BarResult(BarStatus.DuplicateLocalId);
             if (Definitions.Count >= BarPatronCodec.MaxPerProvider) return new BarResult(BarStatus.LimitExceeded);
             Definitions.Add(definition.LocalId, definition);
+            if (interact != null) Interactions.Add(definition.LocalId, interact);
             _owner.Changed();
             return new BarResult(BarStatus.Succeeded);
         }
@@ -81,7 +83,7 @@ internal sealed partial class BarContentService
             _owner._leases.Remove(ProviderId);
             _owner.Changed();
             foreach (var local in Definitions.Keys) _owner._transient.Remove(new BarPatronId(ProviderId, local));
-            Definitions.Clear(); Stations.Clear();
+            Definitions.Clear(); Stations.Clear(); Interactions.Clear();
         }
     }
 }

@@ -7,6 +7,51 @@ namespace VGModAPI.Tests;
 
 public sealed class BarContentServiceTests
 {
+    [Fact]
+    public void InteractionsArePlanBoundNonReentrantAndRevokedWithTheLease()
+    {
+        using var hub = new LifecycleHub((_, error) => throw error);
+        var storage = new Storage();
+        using var service = new BarContentService(storage, hub,
+            (_, _) => new StoryHostPlugin("author", typeof(BarContentServiceTests).Assembly), _ => false, hub.CheckThread);
+        var author = service.AcquireProvider("author").Provider!;
+        BarRosterPlan? plan = null;
+        int calls = 0;
+        author.Register(Definition(), interaction =>
+        {
+            calls++;
+            Assert.Equal(plan!.Session, interaction.SessionId);
+            Assert.Equal(plan.Patrons[0].Id, interaction.PatronId);
+            Assert.False(service.Interact(plan, plan.Patrons[0]));
+        });
+        var session = Ready(hub, storage);
+        author.Place(session, "contact");
+        plan = service.Plan(session, "station")!;
+        Assert.True(service.Interact(plan, plan.Patrons[0]));
+        Assert.Equal(1, calls);
+        author.Dispose();
+        Assert.False(service.Interact(plan, plan.Patrons[0]));
+        Assert.Equal(1, calls);
+    }
+
+    [Fact]
+    public void ThrowingInteractionIsIsolatedAndDoesNotPermanentlyLockTheContact()
+    {
+        using var hub = new LifecycleHub((_, error) => throw error);
+        var storage = new Storage();
+        using var service = new BarContentService(storage, hub,
+            (_, _) => new StoryHostPlugin("author", typeof(BarContentServiceTests).Assembly), _ => false, hub.CheckThread);
+        var author = service.AcquireProvider("author").Provider!;
+        int calls = 0;
+        author.Register(Definition(), _ => { calls++; throw new InvalidOperationException("provider failure"); });
+        var session = Ready(hub, storage);
+        author.Place(session, "contact");
+        var plan = service.Plan(session, "station")!;
+        Assert.False(service.Interact(plan, plan.Patrons[0]));
+        Assert.False(service.Interact(plan, plan.Patrons[0]));
+        Assert.Equal(2, calls);
+    }
+
     private static readonly object FixedPermissionStamp = new();
     private sealed class Storage : IPersistenceApi, IPersistenceRegistration, IPersistenceReadiness
     {
