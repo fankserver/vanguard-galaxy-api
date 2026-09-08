@@ -71,6 +71,8 @@ public static class ModApi
     public static ITravelEvents? Travel { get; internal set; }
     /// <summary>Optional inspected-build boarding observations; consult boarding-observation capability.</summary>
     public static IBoardingEvents? Boarding { get; internal set; }
+    /// <summary>Optional inspected-build boarding policies, independent of observation subscribers.</summary>
+    public static IBoardingRules? BoardingRules { get; internal set; }
     /// <summary>Optional station-lifetime observer; non-null only when the travel group is bound and enabled.</summary>
     public static IStationEvents? Station { get; internal set; }
     /// <summary>
