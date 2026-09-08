@@ -1,4 +1,4 @@
-# Recipe catalog — experimental
+# Forge and refinery services — experimental
 
 Requires API **0.1.29** or newer. `ModApi.Recipes` exposes immutable Forge/refining definitions for the current station. Enable `[Recipes] Enabled = true`; the service is absent when disabled, uninspected or unable to bind. Calls are main-thread-only and require a tracked `GameplayInitialized` session plus an accessible station with supported crafting facilities. Refining does not require that the station also has a Forge. This is not universal UI/world readiness or native qualification.
 
@@ -57,7 +57,7 @@ Output amounts are base or conditional estimates for the requested batches. `Pro
 
 `QuoteMaterialExtraction(station, refinedMaterialId, count)` estimates credits and canisters without extracting anything. Extraction is immediate, not queued: queue and duration fields are null. Native extraction forces output into cargo; this preview does not authorize bypassing capacity or access checks in a separately supported command. Counts that cannot be represented exactly by native float material arithmetic are refused rather than quoting a different debit from the actual canister count.
 
-## Job observations and save/load
+## Job observations and save/load (API 0.1.34)
 
 With `[Recipes] Enabled=true`, `ModApi.CraftingJobs` exposes optional `ICraftingJobs` observations when the `crafting-jobs` capability is available. Access and subscription disposal are main-thread-only. Obtain a station handle from `ModApi.RecipeQuotes.CurrentStation`, or from a job event, then call `Read(station)`. Only an `Available` result is a successful queue snapshot; missing definitions, malformed rows and inaccessible/stale stations are not successful empty queues.
 
@@ -75,5 +75,29 @@ Subscribe with `Subscribe(pluginId, callback)` and retain/dispose the subscripti
 Verified transfers use actual destination quantity changes, not result previews or requested amounts alone. Inventory receipts check the returned row, storage ownership and compatible item identity/level/rarity. Generated equipment does not need to stack or appear in native `GetCount` to be observed. Nested additions are excluded from enclosing deltas. Subscriber work cannot inherit a native scope enclosing callback dispatch; a genuinely new nested job operation has its own scope. Mixed unsupported Forge output shapes keep aggregate batch status unresolved even when some individual transfers are verified. Refined-material receipts preserve actual float-balance changes; a rounded-away addition does not satisfy its requested amount. Unsupported stack effects, currency conversion, unknown identity, exceptions or unresolvable destinations remain explicit. These snapshots are not full generated-item descriptions or a general inventory API. No previews are built by these observers.
 
 Native Forge/refinery jobs already own their supported save data. The API reuses native serialization rather than adding a second serializer: recipe/ore identity, initial and remaining quantity, progress and captured Forge level are restored by the game. Consumers do not implement save callbacks for these fields. Query reconstructed jobs after gameplay initialization; they are not replayed as newly queued. Save-as, rollback and slot replacement may issue new handles while preserving the restored native job meaning. Custom recipe registration/missing-provider migrations are separate from this observer; the API neither invents replacement definitions nor silently filters unresolved queue rows.
+
+## Guarded commands (API 0.1.35)
+
+`ModApi.CraftingCommands` is separately default-off: set `[Recipes] CommandsEnabled=true` as well as `Enabled=true`. The `crafting-commands` capability requires the inspected job/transfer observers and serialization guards. Accessing a service or reading settings changes no setting. All calls are main-thread-only; mutations require the tracked, initialized player instance and refuse save, reconstruction, callback and reentrant contexts.
+
+```csharp
+var request = CraftingCommandRequest.Queue(
+    pluginId, Guid.NewGuid(), station, selectedRecipe.Id, batches: 2,
+    CraftingProtectionPolicy.ProtectFavouritesAndMissionItems);
+var result = ModApi.CraftingCommands?.Execute(request);
+// Keep this request/result. An uncertain outcome must be reconciled, not blindly retried.
+```
+
+Factories provide `Queue`, `Cancel`, `Extract` and `Configure` intents. Counts are bounded to 1–10,000. Queue execution refreshes availability, ingredients, credits and capacity; it does not trust an earlier quote. An explicit action may initialize cold native pricing and its previews before final admission, unlike an observational quote. `Succeeded` requires the requested queue entry and expected credit/input deltas, not only a native boolean return. It does not guarantee future outputs.
+
+Protection is explicit. `NativeConsumption` permits vanilla favourite/mission-item consumption. `ProtectFavourites` checks Forge consumption order and refuses a debit that would touch a favourite; refining uses the native exclusion option after checking queue capacity. `ProtectFavouritesAndMissionItems` additionally refuses any ingredient with an active mission reservation rather than guessing which physical stack is reserved. Protection/stock refusals do not change automation settings.
+
+Cancellation uses the job's owning parent, not the current station helper. Native input refunds use the saved crafting-level argument (including native fallback for zero); credits use the **current** recipe price and remaining batches, not the original payment. Item refunds go to the owning station's material storage; refined materials return to player-wide balances. The result requires observed refunds and removal. A partial failure remains `Uncertain`, without an automatic compensating transaction.
+
+Extraction is immediate, not queued. It requires the owning station interior, supported canister semantics, sufficient material/credits and cargo capacity even though the underlying native call forces delivery. Success verifies the material debit, fee and actual cargo transfer. Native notifications remain intact when the action runs; preflight refusals return a status without invoking the rejected native action. Visible native controls/job displays are refreshed without selecting a different refinery tab or firing toggle callbacks.
+
+`ReadSettings(sessionId, optionalStation)` reports station auto-refine, player cargo-delivery preference, the saved auto-sell flag and its effective cache. `Configure` accepts a station only for `StationAutoRefine`; `PlayerCargoDelivery` and `PlayerAutoSell` belong to the player save. Auto-sell is **not installation-wide**: the native player register persists its flag and restoration refreshes the static cache. Reads expose a mismatch without silently synchronizing it; setting auto-sell explicitly updates both.
+
+A request ID is scoped to its plugin and runtime session. Repeating the same immutable intent returns its cached result with `IsReplay`; changing the payload gives `RequestConflict`. The session retains at most 4,096 intents and refuses new ones at the limit rather than evicting uncertain outcomes. This cache is not saved. After reload, old session handles are stale; reconcile restored jobs/inventory before creating a new intent. `MutationMayHaveRun` includes native price initialization and possible partial effects. `CreditDelta` on an uncertain result is a net observation, not exclusive attribution. No outcome promises cross-operation atomicity.
 
 Host tests exercise duplicate names, multiple producers, template identity, multi-output/fractional quantities, station-specific availability, registry rereads, unresolved outputs, conflicting IDs, session invalidation and failure isolation. Installed-metadata tests verify the declared native member shapes. These do not execute Unity; full in-game recipe/Forge/refining acceptance remains pending.

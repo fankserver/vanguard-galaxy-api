@@ -32,6 +32,9 @@ internal sealed partial class RecipeCatalogNativeSource
         else return CommandResult(request, CraftingCommandStatus.Unsupported, "This process is not a queued production job.");
         var quote = Quote(request.Station!, recipeId, request.Count, RefineryInputPolicy.Manual, 1);
         if (quote.Status != RecipeQuoteStatus.Available) return CommandResult(request, CraftingCommandStatus.Rejected, quote.Detail);
+        if (quote.Blockers.Contains(RecipeBlocker.QueueFull)) return CommandResult(request, CraftingCommandStatus.QueueFull, "Queue is full.");
+        if (quote.Blockers.Contains(RecipeBlocker.MissingIngredients)) return CommandResult(request, CraftingCommandStatus.MissingInputs, "Inputs are missing.");
+        if (quote.Blockers.Contains(RecipeBlocker.InventoryUnavailable)) return CommandResult(request, CraftingCommandStatus.StorageUnavailable, "Input inventory is unavailable.");
         var prepared = false;
         if (!quote.CreditsRequired.HasValue)
         {
@@ -48,6 +51,18 @@ internal sealed partial class RecipeCatalogNativeSource
         var before = new HashSet<object>(NativeJobs(parent!), NativeObjectIdentity.Instance);
         if (before.Count >= Convert.ToInt32(Get(parent!, "maxJobs"))) return CommandResult(request, CraftingCommandStatus.QueueFull, "Queue filled before admission.", prepared);
         var credits = Convert.ToInt64(Get(player, "credits"));
+        var expectedInputs = quote.Inputs.ToDictionary(input => input.Resource, input => input.Available!.Value - input.Required);
+        if (forge)
+        {
+            foreach (var input in quote.Inputs.Where(input => input.Resource.Kind == RecipeResourceKind.RefinedMaterial))
+                expectedInputs[input.Resource] = input.Available!.Value;
+            // Vanilla subtracts each float row separately; aggregating first changes rounding.
+            foreach (var row in Enumerate(Call(definition, "GetIngredientMaterials", 0)))
+            {
+                var id = Resource(Get(row, "Item1")!.ToString()!, RecipeResourceKind.RefinedMaterial);
+                expectedInputs[id] = (float)((float)expectedInputs[id] - Convert.ToSingle(Get(row, "Item2")) * request.Count);
+            }
+        }
         if (!CommandLive(request.SessionId, player) || !ReferenceEquals(ResolveStation(request.Station!), station))
             return CommandResult(request, CraftingCommandStatus.StaleHandle, "Context changed before queue admission.", prepared);
         var admitted = forge || request.Protection == CraftingProtectionPolicy.NativeConsumption
@@ -60,7 +75,7 @@ internal sealed partial class RecipeCatalogNativeSource
         var added = NativeJobs(parent!).Where(job => !before.Contains(job)).ToArray();
         var debit = checked(Convert.ToInt64(Get(player, "credits")) - credits);
         var after = Quote(request.Station!, recipeId, request.Count, RefineryInputPolicy.Manual, 3);
-        var inputsMatch = after.Status == RecipeQuoteStatus.Available && InputsDebited(quote, after);
+        var inputsMatch = after.Status == RecipeQuoteStatus.Available && expectedInputs.All(pair => after.Inputs.SingleOrDefault(input => input.Resource.Equals(pair.Key))?.Available == pair.Value);
         var exactJob = added.Length == 1 && ReferenceEquals(Get(added[0], forge ? "recipe" : "ore"), definition) &&
             Convert.ToInt32(Get(added[0], "initialAmount")) == request.Count;
         var success = CommandObserver?.IsHealthy == true && admitted && exactJob && inputsMatch && debit == -quote.CreditsRequired!.Value;
@@ -114,14 +129,6 @@ internal sealed partial class RecipeCatalogNativeSource
         }
         return true;
     }
-    private static bool InputsDebited(RecipeQuote before, RecipeQuote after) => before.Inputs.All(input =>
-    {
-        var current = after.Inputs.SingleOrDefault(item => item.Resource.Equals(input.Resource));
-        if (!input.Available.HasValue || current?.Available == null) return false;
-        var expected = input.Resource.Kind == RecipeResourceKind.RefinedMaterial
-            ? (double)(float)(input.Available.Value - (float)input.Required) : input.Available.Value - input.Required;
-        return current.Available.Value == expected;
-    });
     private static bool InputsUnchanged(RecipeQuote before, RecipeQuote after) => after.Status == RecipeQuoteStatus.Available && before.Inputs.All(input =>
         input.Available.HasValue && after.Inputs.SingleOrDefault(item => item.Resource.Equals(input.Resource))?.Available == input.Available);
 }

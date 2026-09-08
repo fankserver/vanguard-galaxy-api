@@ -62,7 +62,8 @@ public sealed class CraftingCommandNativeTests : IDisposable
     private bool Queue(CraftingRecipe recipe, int count)
     {
         var scope = _observer.Begin("jobQueueForge", _station.forge!, new object[] { recipe, count });
-        _player.credits -= (long)(float)((long)recipe.craftingCost * count); _player.Materials -= .25f * count;
+        _player.credits -= (long)(float)((long)recipe.craftingCost * count);
+        foreach (var material in recipe.materials) _player.Materials -= material.amount * count;
         _station.materialStorage.items.Single().count -= 2 * count;
         _station.forge!.jobs.Add(new Job { parent = _station.forge, recipe = recipe, initialAmount = count, remainingAmount = count });
         _observer.End(scope, true, null); return true;
@@ -86,6 +87,16 @@ public sealed class CraftingCommandNativeTests : IDisposable
         var cancelled = _commands.Execute(CraftingCommandRequest.Cancel("test", Guid.NewGuid(), queued.Jobs.Single()));
         Assert.Equal(CraftingCommandStatus.Succeeded, cancelled.Status); Assert.Equal(60, cancelled.CreditDelta);
         Assert.Equal(10, _station.materialStorage.items.Single().count); Assert.Equal(100, _player.Materials);
+    }
+    [Fact]
+    public void DuplicateMaterialRowsUseSequentialNativeFloatDebits()
+    {
+        _recipe.materials.Clear();
+        _recipe.materials.Add(new() { material = RefinedMaterial.TestMetal, amount = .1f });
+        _recipe.materials.Add(new() { material = RefinedMaterial.TestMetal, amount = .2f });
+        var expected = 100f; expected -= .1f * 2; expected -= .2f * 2;
+        var result = _commands.Execute(QueueRequest());
+        Assert.Equal(CraftingCommandStatus.Succeeded, result.Status); Assert.Equal(expected, _player.Materials);
     }
     [Fact]
     public void ExplicitActionCanPrepareColdPriceWithoutChangingReadOnlyQuotePolicy()
@@ -113,6 +124,24 @@ public sealed class CraftingCommandNativeTests : IDisposable
         _player.currentSpaceShip!.cargo.Capacity = 0;
         Assert.Equal(CraftingCommandStatus.StorageUnavailable, _commands.Execute(CraftingCommandRequest.Extract("test", Guid.NewGuid(), _handle, material, 1)).Status);
         Assert.Equal(95, _player.Materials);
+    }
+    [Fact]
+    public void ExtractionFailureAfterDebitIsUncertainAndNeverRetried()
+    {
+        var calls = 0;
+        _station.refinery.ExtractHandler = (_, count) =>
+        { calls++; _player.Materials -= count; _player.credits -= count * 2; throw new InvalidOperationException("Delivery failed"); };
+        var request = CraftingCommandRequest.Extract("test", Guid.NewGuid(), _handle, new("vanilla", "TestMetal", RecipeResourceKind.RefinedMaterial), 5);
+        var result = _commands.Execute(request); Assert.Equal(CraftingCommandStatus.Uncertain, result.Status);
+        Assert.True(result.MutationMayHaveRun); Assert.Equal(-10, result.CreditDelta); Assert.Empty(result.Deliveries);
+        Assert.True(_commands.Execute(request).IsReplay); Assert.Equal(1, calls); Assert.Equal(95, _player.Materials);
+    }
+    [Fact]
+    public void FullQueueRefusesBeforeColdPriceInitialization()
+    {
+        _station.forge!.maxJobs = 0; _recipe.customCost = 0; _recipe.dynamicCost = -1; _item.calcCost = -1;
+        Assert.Equal(CraftingCommandStatus.QueueFull, _commands.Execute(QueueRequest()).Status);
+        Assert.Equal(0, _item.PreviewBuilderCalls); Assert.Equal(1000, _player.credits);
     }
     [Fact]
     public void ProtectedRefiningUsesExplicitExclusionAndFreshCapacityGuard()
