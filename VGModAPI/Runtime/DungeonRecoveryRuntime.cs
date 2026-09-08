@@ -15,12 +15,8 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
     private readonly DungeonInitialRecoveryCoordinator _initial;
     private readonly DungeonRecoveryWorld _world;
     private readonly DungeonLiveTransportIndex _liveTransports = new(value => value is UnityEngine.Object native && native);
-    private System.Runtime.CompilerServices.ConditionalWeakTable<object, DonorOwnership> _donors = new();
-    private sealed class DonorOwnership
-    {
-        internal readonly Guid Operation; internal readonly string ShipId; internal readonly object Ship, Token;
-        internal DonorOwnership(Guid operation, string shipId, object ship, object token) { Operation = operation; ShipId = shipId; Ship = ship; Token = token; }
-    }
+    internal DungeonDonorRecoveryHooks DonorHooks { get; }
+
     private readonly IDisposable _lifetime;
     private readonly Action<Exception> _report;
     private readonly DungeonMarkerJson _podJson, _operationJson;
@@ -52,6 +48,7 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
         var factory = new DungeonReturnPodFactory(game.Assembly, native); var world = new DungeonRecoveryWorld(game.Assembly, native); _world = world;
         State = new(hub, persistence); Pods = new(State, native); Operations = new(State, native);
         ReturnObserver = new(State, Pods, native, ship => ((Component)ship).transform, world.Ready, Operations.OperationId);
+        DonorHooks = new(State, native, target => target is Transform transform && transform, DonorReady, report);
         RefundHooks = new(State, ReturnObserver, value => ObserveOperation(value), Operations.OperationId);
         _returns = new(State, world.Resolve,
             (pod, operation, recipient) => new DungeonReturnPodInstance(factory.Build(pod, recipient, operation.DungeonType, operation.Autonomous, Pods.DataFor(pod.Id))),
@@ -85,31 +82,8 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
         _lifetime = hub.Subscribe("vgmodapi.dungeon-recovery-runtime", message =>
         {
             if (message.Kind is LifecycleEventKind.SessionStarting or LifecycleEventKind.SessionInvalidated or LifecycleEventKind.SessionStartFailed)
-            { _initial.Clear(); _liveTransports.Clear(); _returns.Poll(); Pods.Clear(); Operations.Clear(); _captureFaults = new(); _podOwners = new(); _donors = new(); }
+            { _initial.Clear(); _liveTransports.Clear(); _returns.Poll(); Pods.Clear(); Operations.Clear(); _captureFaults = new(); _podOwners = new(); DonorHooks.Clear(); }
         });
-    }
-    internal bool BeginDonorUpdate(object actions, out DungeonMutationFence.Lease? abort)
-    {
-        abort = null;
-        if (_native.Get(actions, "donorDispatched") is true) return true;
-        if (_native.Get(actions, "donorTarget") is not Transform target || !target)
-        { abort = State.BeginTransfer(); return abort != null; }
-        return DonorReady(actions);
-    }
-    internal void DonorAborted(object actions)
-    {
-        try
-        {
-            if (!_donors.TryGetValue(actions, out var owner) || !ReferenceEquals(owner.Token, State.RestoreToken)) return;
-            if (ReferenceEquals(_native.Get(owner.Ship, "donorActions"), actions)) return;
-            if (!State.CompleteDonorAbort(owner.Operation, owner.ShipId, owner.Token)) State.RejectTransferSnapshot();
-            _donors.Remove(actions);
-        }
-        catch (Exception error)
-        {
-            try { State.RejectTransferSnapshot(); } catch { }
-            try { _report(error); } catch { }
-        }
     }
     internal bool DonorReady(object actions)
     {
@@ -168,7 +142,7 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
             walkReturn = new DungeonWalkReturnState((System.Collections.Generic.IReadOnlyDictionary<string, int>)_native.Call("walkManifest", operation, _native.Get(operation, "simulation")!)!);
         if (!State.TrackOperation(new(previous.Id, previous.LocationId, previous.ContentOccurrence, previous.AttackerShipId, previous.DungeonType,
             phase, outcome, previous.MissionProtection, previous.TerminalProgress, previous.Autonomous, _options.Capture(_native.Get(operation, "options")!), _world.CaptureDonors(_native.Get(operation, "boardableTarget"), (actions, ship, shipId) =>
-            { _donors.Remove(actions); _donors.Add(actions, new(previous.Id, shipId, ship, State.RestoreToken)); }), (bool)_native.Get(operation, "resumeCrewWalking")!, walkReturn, previous.Retired || _native.Get(operation, "isComplete") is true))) return false;
+            { DonorHooks.Capture(actions, previous.Id, shipId, ship); }), (bool)_native.Get(operation, "resumeCrewWalking")!, walkReturn, previous.Retired || _native.Get(operation, "isComplete") is true))) return false;
         Pods.TrackLocation(location);
         var pending = (System.Collections.IList)_native.Get(operation, "resumePendingPods")!;
         foreach (var pod in (System.Collections.IEnumerable)_native.Get(operation, "_activePods")!)
@@ -221,15 +195,9 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
     }
     internal void Checkpoint()
     {
-        State.EnsureSerializationAllowed();
-        if (State.Ready && _native.Manager is { } manager)
-            State.Checkpoint(() =>
-            {
-                foreach (var operation in (System.Collections.IEnumerable)_native.Get(manager, "resumeOperations")!)
-                    if (!ObserveOperation(operation)) throw new InvalidOperationException("Cannot checkpoint unresolved native operation.");
-            });
-        _returns.Checkpoint((_, _) => { });
-        _liveTransports.Checkpoint((id, pod) =>
+        var checkpoint = new DungeonRecoveryCheckpoint(State,
+            () => _native.Manager is { } manager ? (System.Collections.IEnumerable)_native.Get(manager, "resumeOperations")! : null,
+            operation => ObserveOperation(operation), () => _returns.Checkpoint((_, _) => { }), _liveTransports, (id, pod) =>
         {
             var data = _native.Get(pod, "resumePodData");
             if (_native.Get(data, "resumePodPhase")?.ToString() != "Returning") return;
@@ -239,6 +207,7 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
                 value => { var v = (Vector2)value; return (v.x, v.y); }, previous.Transport.DonorShipId);
             if (!State.RefreshTransportPose(id, transport.Pose)) throw new InvalidOperationException("Unable to checkpoint live return pose.");
         });
+        checkpoint.Run();
     }
     internal DungeonRefundHooks RefundHooks { get; }
     internal void Poll()

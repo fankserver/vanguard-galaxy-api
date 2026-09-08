@@ -9,6 +9,23 @@ namespace VGModAPI.Tests;
 public sealed class InstalledPodRecoveryBindingTests
 {
     [Fact]
+    public void ActiveResumeConstructorsRetainSimulationAndDoNotInitializeFreshCrew()
+    {
+        using var assembly = AssemblyDefinition.ReadAssembly(Environment.GetEnvironmentVariable("VG_GAME_ASSEMBLY") ?? throw new InvalidOperationException("Run make check-bindings."));
+        var operation = assembly.MainModule.GetType("Behaviour.Dungeon.DungeonOperation");
+        var constructors = operation.Methods.Where(method => method.IsConstructor && method.Parameters.Count == 3 && method.Parameters[2].ParameterType.FullName == "System.Boolean").ToArray();
+        Assert.Equal(2, constructors.Length);
+        foreach (var constructor in constructors)
+        {
+            var reads = constructor.Body.Instructions.Where(instruction => instruction.OpCode.Code == Mono.Cecil.Cil.Code.Ldfld).Select(instruction => (FieldReference)instruction.Operand).ToArray();
+            Assert.Contains(reads, field => field.DeclaringType.FullName == "Source.Dungeon.DungeonData" && field.Name == "simulation");
+            Assert.Contains(reads, field => field.DeclaringType.FullName == "Source.Dungeon.DungeonSimulation" && field.Name == "options");
+            var calls = constructor.Body.Instructions.Select(instruction => instruction.Operand).OfType<MethodReference>().ToArray();
+            Assert.DoesNotContain(calls, method => method.Name is "Initialize" or "AddCrew" or "AddAttackers" or "RemoveAssignedCrewFromShip" or "SpawnPods" or "BeginWalkSimulation");
+            Assert.DoesNotContain(calls, method => method.Name == ".ctor" && method.DeclaringType.FullName == "Source.Dungeon.DungeonSimulation");
+        }
+    }
+    [Fact]
     public void NativeDonorAbortResumesBehaviorWithoutCreditingReservedCrew()
     {
         using var assembly = AssemblyDefinition.ReadAssembly(Environment.GetEnvironmentVariable("VG_GAME_ASSEMBLY") ?? throw new InvalidOperationException("Run make check-bindings."));

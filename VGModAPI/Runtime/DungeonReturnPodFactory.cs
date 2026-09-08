@@ -66,15 +66,16 @@ internal sealed class DungeonReturnPodFactory
             var travel = _travel.TravelManager();
             var local = travel == null ? null : _travel.LocalManager(travel) as Component;
             var flightParent = local ? local!.transform : manager.transform;
-            clone.transform.SetParent(saved.Phase == DungeonPodPhase.Docked ? ship.transform : saved.Phase == DungeonPodPhase.Attached ? destination.transform : flightParent, false);
-            if (saved.Phase is DungeonPodPhase.Docked or DungeonPodPhase.Attached) clone.transform.localPosition = new Vector3(p[3], p[4], 0);
-            else clone.transform.position = new Vector3(p[0], p[1], destination.transform.position.z);
-            if (saved.Phase == DungeonPodPhase.Docked) clone.transform.localRotation = Quaternion.Euler(0, 0, -90);
-            else clone.transform.rotation = Quaternion.Euler(0, 0, p[2]);
+            var placement = new DungeonInitialPodPlacement(saved);
+            clone.transform.SetParent(placement.Parent == DungeonPodParent.Donor ? ship.transform : placement.Parent == DungeonPodParent.Target ? destination.transform : flightParent, false);
+            if (placement.LocalPosition) clone.transform.localPosition = new Vector3(placement.X, placement.Y, 0);
+            else clone.transform.position = new Vector3(placement.X, placement.Y, destination.transform.position.z);
+            if (placement.LocalRotation) clone.transform.localRotation = Quaternion.Euler(0, 0, placement.Angle);
+            else clone.transform.rotation = Quaternion.Euler(0, 0, placement.Angle);
             var location = _native.Get(operation, "location");
             var pods = (System.Collections.IList)_native.Get(location, "resumeLocationPods")!; if (!pods.Contains(data)) pods.Add(data);
             _native.Call("podRegister", operation, pod);
-            if (transport.PendingReinforcement && saved.Phase == DungeonPodPhase.Docked)
+            if (placement.PendingReinforcement)
                 ((System.Collections.IList)_native.Get(operation, "resumePendingPods")!).Add(pod);
             return (clone, pod, data, operation);
         }
