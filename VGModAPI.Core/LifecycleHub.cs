@@ -11,21 +11,44 @@ internal sealed class LifecycleHub : ILifecycleApi, ILifecycleDispatchState, IDi
     private readonly Action<string, Exception> _report;
     private readonly List<Subscription> _subscriptions = new();
     private readonly Queue<LifecycleEvent> _pending = new();
-    private readonly Dictionary<string, CapabilityStatus> _capabilities = new();
+    internal ServiceStatusRegistry Services { get; }
+    private int _serviceDispatchDepth;
     private SessionSnapshot? _session;
     private bool _dispatching;
     private bool _disposed;
 
-    internal LifecycleHub(Action<string, Exception> report) => _report = report;
-    public bool IsDispatchingCallbacks { get { CheckThread(); return _dispatching; } }
+    internal LifecycleHub(Action<string, Exception> report)
+    {
+        _report = report;
+        Services = new ServiceStatusRegistry(CheckThread, report, EnterServiceDispatch);
+    }
+    public bool IsDispatchingCallbacks { get { CheckThread(); return _dispatching || _serviceDispatchDepth != 0; } }
     public SessionSnapshot? CurrentSession { get { CheckThread(); return _session; } }
-    public IReadOnlyList<CapabilityStatus> Capabilities
-    { get { CheckThread(); return Array.AsReadOnly(_capabilities.Values.OrderBy(c => c.Name).ToArray()); } }
+    public IReadOnlyList<CapabilityStatus> Capabilities => Services.Legacy;
 
-    internal void SetCapability(string name, bool available, string detail)
+    internal void SetCapability(string name, bool available, string detail,
+        ServiceUnavailableReason reason = ServiceUnavailableReason.BindingFailed)
+        => Services.Set(name, available, detail, reason);
+
+    internal IDisposable EnterServiceDispatch()
     {
         CheckThread();
-        _capabilities[name] = new CapabilityStatus(name, available, false, detail);
+        ++_serviceDispatchDepth;
+        return new DispatchScope(this);
+    }
+
+    private sealed class DispatchScope : IDisposable
+    {
+        private readonly LifecycleHub _hub;
+        private bool _disposed;
+        internal DispatchScope(LifecycleHub hub) { _hub = hub; }
+        public void Dispose()
+        {
+            _hub.CheckThread();
+            if (_disposed) return;
+            _disposed = true;
+            --_hub._serviceDispatchDepth;
+        }
     }
 
     public IDisposable Subscribe(string owner, Action<LifecycleEvent> callback)
@@ -116,10 +139,13 @@ internal sealed class LifecycleHub : ILifecycleApi, ILifecycleDispatchState, IDi
     public void Dispose()
     {
         CheckThread();
+        if (_disposed) return;
+        Services.BeginStop();
         _disposed = true;
         foreach (var sub in _subscriptions) sub.Active = false;
         _subscriptions.Clear();
         _pending.Clear();
+        Services.Dispose();
     }
 
     private sealed class Subscription : IDisposable
