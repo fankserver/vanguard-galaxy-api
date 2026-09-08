@@ -98,13 +98,30 @@ class ArchiveTests(unittest.TestCase):
 
     @unittest.skipIf(os.name == 'nt', 'Names are only creatable on Unix')
     def test_nonportable_archive_paths_refused(self):
-        for name in ('..\\escape.md', 'topic:stream.md', 'NUL.md', 'trailing.', 'trailing ', 'line\nfeed.md'):
+        for name in ('..\\escape.md', 'topic:stream.md', 'NUL.md', 'trailing.', 'trailing ', 'line\nfeed.md',
+                     'a?.md', 'a*.md', 'a<.md', 'a>.md', 'a".md', 'a|.md'):
             with self.subTest(name=name):
                 path = self.root / 'docs/reference' / name
                 path.write_text('not portable')
                 with self.assertRaises(ValueError):
                     create(self.root, self.output)
                 path.unlink()
+
+    def test_case_colliding_paths_refused(self):
+        folder = self.root / 'docs/reference'
+        for directory in (False, True):
+            with self.subTest(directory=directory):
+                first, second = folder / 'Topic.md', folder / 'topic.md'
+                first.mkdir() if directory else first.write_text('one')
+                if second.exists():
+                    self.skipTest('Filesystem is case-insensitive')
+                second.mkdir() if directory else second.write_text('two')
+                with self.assertRaises(ValueError):
+                    create(self.root, self.output)
+                if directory:
+                    first.rmdir(); second.rmdir()
+                else:
+                    first.unlink(); second.unlink()
 
     def test_output_inside_package_refused(self):
         with self.assertRaises(ValueError):

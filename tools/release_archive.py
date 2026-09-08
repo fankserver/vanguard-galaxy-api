@@ -14,14 +14,18 @@ def validate_layout(root: Path):
     if root.is_symlink() or not root.is_dir():
         raise ValueError('Package must be a real directory')
     actual = set()
+    windows_paths = set()
     for path in root.rglob('*'):
         relative = path.relative_to(root)
         name = relative.as_posix()
         # Archives are installed on Windows as well as Unix; forbid alternate separators/devices.
-        if any('\\' in part or ':' in part or part.endswith((' ', '.'))
+        if any(any(c in '<>:"\\|?*' for c in part) or part.endswith((' ', '.'))
                or any(ord(c) < 32 for c in part) or PureWindowsPath(part).is_reserved()
                for part in relative.parts):
             raise ValueError(f'Nonportable package path: {name}')
+        if name.casefold() in windows_paths:
+            raise ValueError(f'Case-colliding package path: {name}')
+        windows_paths.add(name.casefold())
         if path.is_symlink():
             raise ValueError('Package links are forbidden')
         reference = relative.parts[:2] == ('docs', 'reference')
