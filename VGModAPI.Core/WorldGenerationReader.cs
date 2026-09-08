@@ -14,9 +14,15 @@ internal sealed class WorldGenerationReader
         internal WorldSavedObject[] Rows => (WorldSavedObject[])_rows.Clone();
         private readonly Dictionary<(string, string), WorldSavedDefinition> _definitions = new();
         internal WorldSavedDefinition DefinitionFor(WorldSavedObject row) => _definitions[(row.Identity.Owner, row.Identity.LocalId)];
-        internal Result(SnapshotAssociation association, WorldSavedObject[] rows, WorldSavedDefinition[] definitions)
+        private readonly byte[] _statePayload;
+        private readonly byte[]? _definitionPayload;
+        internal byte[]? PayloadFor(string owner) => owner == WorldStateCodec.Owner ? (byte[])_statePayload.Clone() :
+            owner == WorldDefinitionCodec.Owner ? (_definitionPayload == null ? null : (byte[])_definitionPayload.Clone()) : throw new ArgumentException("Unknown world owner.", nameof(owner));
+        internal Result(SnapshotAssociation association, WorldSavedObject[] rows, WorldSavedDefinition[] definitions, bool definitionsPresent)
         {
             Association = association; _rows = (WorldSavedObject[])rows.Clone();
+            _statePayload = WorldStateCodec.Encode(rows);
+            _definitionPayload = definitionsPresent ? WorldDefinitionCodec.Encode(definitions) : null;
             foreach (var definition in definitions) _definitions.Add((definition.Owner, definition.Definition.LocalId), definition);
             foreach (var row in rows)
                 if (!_definitions.TryGetValue((row.Identity.Owner, row.Identity.LocalId), out var definition) || definition.Definition.Revision != row.DefinitionRevision)
@@ -66,7 +72,7 @@ internal sealed class WorldGenerationReader
                 throw new InvalidDataException("Retained world declarations are protected: " + result.Status);
             definitions = WorldDefinitionCodec.Decode(definitionPayload);
         }
-        return new Result(generation.Identity, rows, definitions);
+        return new Result(generation.Identity, rows, definitions, generation.Owners.ContainsKey(WorldDefinitionCodec.Owner));
     }
 
     private static bool ValidateDefinitions(byte[] payload)

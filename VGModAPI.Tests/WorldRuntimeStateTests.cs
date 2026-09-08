@@ -45,6 +45,8 @@ public sealed class WorldRuntimeStateTests
             Assert.True(provider.Register(new WorldCombatDefinition("PoiX", 1, "Site", "player", 1)));
             using var loads = new WorldLoadHookHost(typeof(GamePlayer).Assembly, hub, persistence, persistence.CreateWorldReader(), Path.GetFullPath, definitions.MatchesRetained, () => definitions.Revision);
             var creation = new WorldCreationCoordinator(new WorldNativeAttachment(game), hub.CheckThread);
+            using var snapshots = new WorldSnapshotHookHost(hub, new WorldSnapshotRecorder(new WorldJsonInspection(typeof(GamePlayer).Assembly)), creation.Snapshot, () => creation.Revision);
+            using var bindings = new WorldPersistenceBindings(persistence, hub, loads, snapshots, creation);
             using var runtime = new WorldRuntimeState(game, loads, definitions, creation);
             bool dependentSawRestored = false;
             using var dependent = hub.Subscribe("dependent-content", e =>
@@ -62,7 +64,24 @@ public sealed class WorldRuntimeStateTests
             }
             var routine = game.ObserveLoad(Load()); game.EndLoadRequest(request, null); while (routine.MoveNext()) { }
             Assert.True(dependentSawRestored); Assert.Same(poi, Assert.Single(creation.Snapshot()).Native); Assert.Equal(9, poi.level);
+            Assert.False(bindings.CanMutate(request.Id));
+            game.GameplayCompleted(request.Id, new GameplayManager(true), null);
+            Assert.True(bindings.CanMutate(request.Id));
+            snapshots.CompleteSnapshot(snapshots.BeginSnapshot(), root);
+            string saveAs = Path.Combine(dir, "save-as.save");
+            using (snapshots.BeginStore(root))
+            {
+                var operation = Guid.NewGuid();
+                hub.Publish(new LifecycleEvent(LifecycleEventKind.SaveStarted, hub.CurrentSession, operation, saveAs));
+                Assert.False(bindings.CanMutate(request.Id));
+                File.WriteAllBytes(saveAs, bytes);
+                hub.Publish(new LifecycleEvent(LifecycleEventKind.SaveSucceeded, hub.CurrentSession, operation, saveAs));
+            }
+            var saved = new WorldGenerationReader(store).Read(saveAs, bytes);
+            Assert.Equal(identity.NativeId, Assert.Single(saved.Rows).Identity.NativeId);
+            Assert.Equal("Site", saved.DefinitionFor(Assert.Single(saved.Rows)).Definition.Name);
             hub.Invalidate("leave"); Assert.False(creation.Restored(request.Id));
+            Assert.False(bindings.CanMutate(request.Id));
             Assert.Throws<InvalidDataException>(() => creation.Snapshot());
         }
         finally { GamePlayer.current = null; JsonValue.ParseFixtures.TryRemove(text, out _); Directory.Delete(dir, true); }
