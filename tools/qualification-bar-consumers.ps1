@@ -49,10 +49,9 @@ function Assert-BarConsumerInputs([string]$Root, $Provenance) {
     Assert-BarConsumerToolsInventory $Root $Provenance.barConsumerTools
     $configDir = Join-Path $Root 'game\BepInEx\config'
     $api = Get-TravelJournalConfigEntries (Join-Path $configDir 'vgmodapi.cfg')
-    foreach ($key in @('Persistence/Enabled','Bars/Enabled','Missions/Enabled','Missions/IdentityContinuity')) {
-        if (!$api.ContainsKey($key) -or $api[$key] -ine 'true') { throw "Consumer bars require $key." }
-    }
-    if (!$api.ContainsKey('Persistence/Root') -or [IO.Path]::GetFullPath($api['Persistence/Root']) -ine [IO.Path]::GetFullPath((Join-Path $Root 'state')) -or $api['Bars/ExclusiveProviders'] -cne 'com.vanguardgalaxy.custommission') { throw 'Consumer persistence/policy changed.' }
+    if (!$api.ContainsKey('Bars/Enabled') -or $api['Bars/Enabled'] -ine 'true') { throw 'Consumer bars require Bars/Enabled.' }
+    Assert-ApiPersistenceRoot $Root
+    if ($api['Bars/ExclusiveProviders'] -cne 'com.vanguardgalaxy.custommission') { throw 'Consumer bar policy changed.' }
     $anima = Get-TravelJournalConfigEntries (Join-Path $configDir 'vganima.cfg')
     if ($anima['Llm/Enabled'] -ine 'false' -or $anima['Llm/BaseUrl'] -or $anima['Llm/ApiKey']) { throw 'LLM requests must remain disabled.' }
     $tts = Get-TravelJournalConfigEntries (Join-Path $configDir 'vgtts.cfg')
@@ -91,7 +90,7 @@ function Initialize-BarConsumers([string]$Root, [string]$Manifest) {
     }
     Copy-Item -LiteralPath $Manifest -Destination (Join-Path $Root 'bar-consumer-sources.json') -ErrorAction Stop
     $config = Join-Path $Root 'game\BepInEx\config'
-    [IO.File]::WriteAllText((Join-Path $config 'vgmodapi.cfg'), "[Persistence]`r`nEnabled = true`r`nRoot = $(Join-Path $Root 'state')`r`n[Missions]`r`nEnabled = true`r`nIdentityContinuity = true`r`n[Bars]`r`nEnabled = true`r`nExclusiveProviders = com.vanguardgalaxy.custommission`r`n")
+    [IO.File]::WriteAllText((Join-Path $config 'vgmodapi.cfg'), "[Persistence]`r`nRoot = $(Join-Path $Root 'state')`r`n[Bars]`r`nEnabled = true`r`nExclusiveProviders = com.vanguardgalaxy.custommission`r`n")
     [IO.File]::WriteAllText((Join-Path $config 'vganima.cfg'), "[Llm]`r`nEnabled = false`r`nBaseUrl = `r`nApiKey = `r`n")
     [IO.File]::WriteAllText((Join-Path $config 'vgtts.cfg'), "[General]`r`nEnabled = false`r`nDialogueTTS = false`r`nEchoTTS = false`r`n")
     [IO.File]::WriteAllText((Join-Path $Root 'bar-consumers.enabled'), 'controlled-bar-consumers-v1')

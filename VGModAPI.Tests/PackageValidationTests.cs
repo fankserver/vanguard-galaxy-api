@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using Mono.Cecil;
+using Mono.Cecil.Cil;
 using Xunit;
 
 namespace VGModAPI.Tests;
@@ -83,6 +85,39 @@ public sealed class PackageValidationTests : IDisposable
 [Trait("Category", "Package")]
 public sealed class BuiltPackageTests
 {
+    [Fact]
+    public void CompletedApisHaveNoConfigurationSwitches()
+    {
+        var root = Environment.GetEnvironmentVariable("VG_PACKAGE_ROOT")
+            ?? throw new InvalidOperationException("Run make package or set VG_PACKAGE_ROOT for built-package checks.");
+        using var assembly = AssemblyDefinition.ReadAssembly(Path.Combine(root, "VGModAPI.dll"));
+        var bindings = new HashSet<(string Section, string Key)>();
+        foreach (var type in assembly.MainModule.GetTypes())
+        foreach (var method in type.Methods)
+        {
+            if (!method.HasBody) continue;
+            List<string>? arguments = null;
+            foreach (var instruction in method.Body.Instructions)
+            {
+                if (instruction.Operand is MethodReference getter && getter.Name == "get_Config" &&
+                    getter.DeclaringType.FullName == "BepInEx.BaseUnityPlugin")
+                    arguments = new List<string>();
+                if (arguments != null && instruction.OpCode == OpCodes.Ldstr)
+                    arguments.Add((string)instruction.Operand);
+                if (instruction.Operand is not MethodReference call || call.Name != "Bind" ||
+                    call.DeclaringType.FullName != "BepInEx.Configuration.ConfigFile") continue;
+                Assert.NotNull(arguments);
+                Assert.True(arguments!.Count >= 2, "Configuration bindings must expose their section and key.");
+                bindings.Add((arguments[0], arguments[1]));
+                arguments = null;
+            }
+        }
+        Assert.Contains(("Persistence", "Root"), bindings);
+        foreach (var setting in new[] { ("Persistence", "Enabled"), ("Missions", "Enabled"),
+            ("Missions", "IdentityContinuity"), ("Travel", "Enabled"), ("ModInformation", "MenuEnabled") })
+            Assert.DoesNotContain(setting, bindings);
+    }
+
     [Fact]
     public void BuiltPackageAssembliesAndMetadataAreValid()
     {

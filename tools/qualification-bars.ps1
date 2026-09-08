@@ -6,16 +6,12 @@ function Initialize-BarProbe([string]$Root, [string]$AuthorA, [string]$AuthorB) 
         if (!(Test-Path -LiteralPath $source -PathType Leaf)) { throw "Missing bar author: $source" }
         Copy-Item -LiteralPath $source -Destination $plugins
     }
-    [IO.File]::WriteAllText((Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg'), "[Persistence]`r`nEnabled = true`r`nRoot = $(Join-Path $Root 'state')`r`n[Bars]`r`nEnabled = true`r`nExclusiveProviders = vg-bar-author-a,vg-bar-author-b`r`n")
+    [IO.File]::WriteAllText((Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg'), "[Persistence]`r`nRoot = $(Join-Path $Root 'state')`r`n[Bars]`r`nEnabled = true`r`nExclusiveProviders = vg-bar-author-a,vg-bar-author-b`r`n")
     [IO.File]::WriteAllText((Join-Path $Root 'bars.enabled'), 'owned-bars-v1')
 }
 
 function Assert-BarLinkedConfiguration([string]$Root) {
     Assert-StoryConfiguration $Root
-    $entries = Get-TravelJournalConfigEntries (Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg')
-    if (!$entries.ContainsKey('Missions/IdentityContinuity') -or $entries['Missions/IdentityContinuity'] -ine 'true') {
-        throw 'Linked bars require mission identity continuity.'
-    }
 }
 
 function Assert-BarLinkedReceipt([string]$Root) {
