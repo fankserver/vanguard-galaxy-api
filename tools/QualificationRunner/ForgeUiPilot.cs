@@ -38,6 +38,7 @@ public sealed partial class Plugin
         {
             mouse = InputSystem.AddDevice<Mouse>();
             foreach (var frame in Wait(() => GameObject.Find("Mod API Forge actions") != null, "Forge action rendering")) yield return frame;
+            foreach (var frame in CaptureForgeActions()) yield return frame;
             var button = ForgeProbeButton("Forge probe first");
             Require(ForgeProbeButton("Forge probe second") != button, "Contributors did not render distinct buttons.");
             foreach (var frame in ForgeClick(mouse, button.transform)) yield return frame;
@@ -61,7 +62,6 @@ public sealed partial class Plugin
             Require(calls.Count == 1, "Held pointer activated a replacement selection.");
             foreach (var frame in ForgeClick(mouse, ForgeProbeButton("Forge probe first").transform)) yield return frame;
             Require(calls.Count == 2 && calls[1].SelectedRecipe.Equals(otherRecipe), "Fresh pointer did not activate the alternate variant.");
-            foreach (var frame in CaptureForgeActions()) yield return frame;
             var oldView = ui.Current!.View;
             var interior = SpGet(NativeType("Behaviour.UI.Spacestation.SpaceStationInterior"), "instance")!;
             SpCall(interior, "GoToLocation", Enum.Parse(NativeType("Source.Galaxy.POI.SpaceStationFacility"), "Refinery"), true);
@@ -94,6 +94,7 @@ public sealed partial class Plugin
     }
     private static Vector2 ForgePointerPoint(Transform target, Vector2? fixedPoint = null)
     {
+        Canvas.ForceUpdateCanvases();
         var canvas = target.GetComponentInParent<Canvas>().rootCanvas;
         var camera = canvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : canvas.worldCamera;
         Require(canvas.renderMode == RenderMode.ScreenSpaceOverlay || camera != null, "Forge canvas camera missing.");
@@ -104,7 +105,8 @@ public sealed partial class Plugin
         var hits = new List<RaycastResult>();
         events!.RaycastAll(new PointerEventData(events) { position = point }, hits);
         Require(hits.Count > 0 && (hits[0].gameObject.transform == target || hits[0].gameObject.transform.IsChildOf(target)),
-            "Forge pointer point does not hit its intended button.");
+            "Forge pointer point does not hit its intended button: point=" + point + " rect=" + rect.rect + " canvas=" + canvas.renderMode
+            + " hits=" + string.Join("|", hits.Take(8).Select(hit => hit.gameObject.name + "@" + hit.gameObject.transform.parent?.name)));
         return point;
     }
     private static IEnumerable<object?> ForgeClick(Mouse mouse, Transform target)
@@ -112,7 +114,7 @@ public sealed partial class Plugin
         var point = ForgePointerPoint(target);
         InputSystem.QueueStateEvent(mouse, new MouseState { position = point });
         yield return null; yield return null;
-        ForgePointerPoint(target);
+        ForgePointerPoint(target, point);
         InputSystem.QueueStateEvent(mouse, new MouseState { position = point }.WithButton(MouseButton.Left));
         yield return null; yield return null;
         InputSystem.QueueStateEvent(mouse, new MouseState { position = point });
