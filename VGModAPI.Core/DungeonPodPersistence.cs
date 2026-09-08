@@ -41,6 +41,14 @@ internal sealed class DungeonPodPersistence : IDisposable
     internal DungeonOperationResumeState? Operation(Guid id) => Ready ? _operations.Get(id) : null;
     internal bool TrackOperation(DungeonOperationResumeState state)
     { if (!CanMutate) return false; _operations.Track(state); return true; }
+    internal bool RefreshTransportPose(Guid id, IReadOnlyList<float> pose)
+    {
+        EnsureSerializationAllowed();
+        if (!Ready || _ledger.Get(id) is not { Transport: { } transport } pod) return false;
+        var refreshed = new DungeonPodTransport(transport.NativePodId, transport.PendingReinforcement, transport.OutboundCrew, pose, transport.DonorShipId);
+        _ledger.Track(new(pod.Id, pod.OperationId, pod.Phase, pod.PlayerOwned, pod.ReturnManifestKnown, pod.ReturnDelivered, pod.ReturnCrew, pod.ReturnAttempted, pod.ParentShipId, refreshed));
+        return true;
+    }
     internal bool Track(DungeonPodResumeState state)
     { if (!CanMutate || _operations.Get(state.OperationId) == null) return false; _ledger.Track(state); return true; }
     internal DungeonPodResumeState? BeginReturn(Guid id) => CanMutate ? _ledger.BeginReturn(id) : null;

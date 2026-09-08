@@ -581,6 +581,8 @@ public sealed partial class Plugin : BaseUnityPlugin
             DungeonRecoveryCapturePatches.Runtime = _dungeonRecovery;
             InstallGroup("dungeon-recovery-capture", bindings, DungeonRecoveryCaptureBindings.Hooks, new Dictionary<string, Type>
             {
+                ["recoveryAttach"] = typeof(DungeonRecoveryCapturePatches.Attach),
+                ["recoveryArrival"] = typeof(DungeonRecoveryCapturePatches.Arrival),
                 ["recoveryTerminal"] = typeof(DungeonRecoveryCapturePatches.Terminal), ["recoverySerialization"] = typeof(DungeonRecoveryCapturePatches.Serialization),
                 ["recoveryOperationTick"] = typeof(DungeonRecoveryCapturePatches.Tick),
                 ["recoveryStartShip"] = typeof(DungeonRecoveryCapturePatches.Started), ["recoveryStartLocation"] = typeof(DungeonRecoveryCapturePatches.Started)
@@ -607,12 +609,16 @@ public sealed partial class Plugin : BaseUnityPlugin
             var directives = new DungeonDirectiveAdapter(crewNative, () => Activator.CreateInstance(directiveType)!,
                 (kind, value) => Enum.ToObject(kind == "priority" ? priorityType : filterType, value));
             DungeonCrewResumePatches.Coordinator = new DungeonCrewResumeCoordinator(crewNative, new DungeonCrewResumeJson(bindings.Assembly), error => Logger.LogError(error), directives);
+            _dungeonRecovery.SimulationReady = DungeonCrewResumePatches.Coordinator.CanTick;
             InstallGroup("dungeon-crew-resume", bindings, DungeonCrewResumeBindings.Hooks, new Dictionary<string, Type>
             {
                 ["crewResumeSave"] = typeof(DungeonCrewResumePatches.Save), ["crewResumeLoad"] = typeof(DungeonCrewResumePatches.Load),
                 ["crewSimulationSave"] = typeof(DungeonCrewResumePatches.SimulationSave),
                 ["crewSimulationLoad"] = typeof(DungeonCrewResumePatches.SimulationLoad), ["crewSimulationTick"] = typeof(DungeonCrewResumePatches.Tick)
             });
+            InstallGroup("dungeon-hydration-actions", bindings, BoardingTacticalBindings.Actions,
+                BoardingTacticalBindings.Actions.ToDictionary(binding => binding.Key, _ => typeof(DungeonCrewResumePatches.Tick)));
+            if (!_hub.Capabilities.Any(c => c.Name == "dungeon-hydration-actions" && c.Available)) throw new NotSupportedException("Dungeon hydration action guards unavailable.");
             if (!_hub.Capabilities.Any(c => c.Name == "dungeon-crew-resume" && c.Available)) throw new NotSupportedException("Crew save/load hooks unavailable.");
             _dungeonState = new DungeonStateStore(_hub, _persistence);
             _dungeonAdapter = new DungeonContentAdapter(_hub, bindings, _boarding, _dungeonState);
@@ -731,6 +737,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         {
             var adapter = new BoardingCommandAdapter(new BoardingCommandNativeBindings(bindings), _boarding, ModApi.Boarding,
                 value => value is UnityEngine.Object native && native != null);
+            adapter.SimulationReady = simulation => DungeonCrewResumePatches.Coordinator?.CanTick(simulation) ?? true;
             _boardingCommands = new BoardingCommandService(_hub, ModApi.Boarding, adapter, () => (ModApi.BoardingRules?.IsEvaluating ?? false) || (_boardingCombat?.IsEvaluating ?? false) || (_dungeonRewards?.IsEvaluating ?? false) || (_dungeonSettlement?.IsDispatchingCallbacks ?? false));
             BoardingCommandPatches.Adapter = adapter; BoardingCommandPatches.Service = _boardingCommands;
             InstallGroup("boarding-commands", bindings, BoardingCommandBindings.Hooks, BoardingCommandBindings.Hooks.ToDictionary(b => b.Key, b => b.Key switch

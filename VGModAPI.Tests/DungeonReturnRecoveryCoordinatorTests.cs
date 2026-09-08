@@ -10,6 +10,7 @@ public sealed class DungeonReturnRecoveryCoordinatorTests
     private sealed class Instance : IDungeonReturnInstance
     {
         internal bool Bound, Activated, Disposed;
+        internal readonly float[] Pose = new float[9];
         public bool Alive => !Disposed;
         public void Activate() { Assert.True(Bound); Activated = true; }
         public void Dispose() { Disposed = true; }
@@ -30,6 +31,11 @@ public sealed class DungeonReturnRecoveryCoordinatorTests
         var payload = persistence.Provider.Capture(); persistence.Provider.Restore(hub.CurrentSession!, payload);
         coordinator.Poll(); Assert.Empty(made); recipient = new object(); coordinator.Poll(); coordinator.Poll();
         Assert.Single(made); Assert.True(made[0].Activated);
+        made[0].Pose[0] = 37; persistence.MutationAllowed = false;
+        coordinator.Checkpoint((id, instance) => Assert.True(state.RefreshTransportPose(id, ((Instance)instance).Pose)));
+        var moved = persistence.Provider.Capture(); persistence.Provider.Restore(hub.CurrentSession!, moved);
+        Assert.Equal(37, state.Get(pod.Id)!.Transport!.Pose[0]); Assert.False(state.Get(pod.Id)!.ReturnAttempted);
+        persistence.MutationAllowed = true;
         persistence.Provider.Restore(hub.CurrentSession!, payload); coordinator.Poll();
         Assert.Equal(2, made.Count); Assert.True(made[0].Disposed); Assert.True(made[1].Activated);
     }

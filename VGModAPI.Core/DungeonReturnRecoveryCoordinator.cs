@@ -55,6 +55,12 @@ internal sealed class DungeonReturnRecoveryCoordinator : IDisposable
         }
         finally { _polling = false; }
     }
+    internal void Checkpoint(Action<Guid, IDungeonReturnInstance> capture)
+    {
+        if (_disposed || _polling) throw new InvalidOperationException("Return construction cannot be checkpointed in progress.");
+        if (!ReferenceEquals(_token, _state.RestoreToken)) return;
+        foreach (var pair in _live) if (pair.Value.Alive) capture(pair.Key, pair.Value);
+    }
     internal void MarkLive(Guid id)
     {
         if (!ReferenceEquals(_token, _state.RestoreToken)) { Clear(); _token = _state.RestoreToken; }

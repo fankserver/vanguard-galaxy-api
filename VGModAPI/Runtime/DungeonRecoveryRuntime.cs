@@ -18,7 +18,10 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
     private readonly IBoardingTacticalNativeBindings _native;
     private readonly Type _shipType;
     internal Func<object, Guid?>? ContentOccurrence { get; set; }
+    internal Func<object, bool>? SimulationReady { get; set; }
+    internal bool OperationReady(object operation) => DungeonOperationMutationGate.Allows(operation, _native, SimulationReady);
     private System.Runtime.CompilerServices.ConditionalWeakTable<object, Exception> _captureFaults = new();
+    private System.Runtime.CompilerServices.ConditionalWeakTable<object, object> _podOwners = new();
     internal DungeonRecoveryRuntime(LifecycleHub hub, IPersistenceApi persistence, GameBindings game, Action<Exception> report)
     {
         _report = report;
@@ -37,22 +40,29 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
                 Pods.Loaded(pod.Data, id);
                 if (Pods.Conflicted(id)) throw new InvalidOperationException("Duplicate restored pod identity.");
                 Operations.BindReturnCarrier(pod.Operation, saved.OperationId);
+                _podOwners.Add(pod.Pod, pod.Operation);
                 Pods.DetachSource(pod.Data);
             }, report, saved => !Pods.Conflicted(saved.Id) && (Pods.DataFor(saved.Id) is not { } data || !world.HasLivePod(data)));
         _lifetime = hub.Subscribe("vgmodapi.dungeon-recovery-runtime", message =>
         {
             if (message.Kind is LifecycleEventKind.SessionStarting or LifecycleEventKind.SessionInvalidated or LifecycleEventKind.SessionStartFailed)
-            { _returns.Poll(); Pods.Clear(); Operations.Clear(); _captureFaults = new(); }
+            { _returns.Poll(); Pods.Clear(); Operations.Clear(); _captureFaults = new(); _podOwners = new(); }
         });
     }
-    internal bool ObserveOperation(object operation)
+    internal object? ExistingOperation(object? target)
     {
-        if (_captureFaults.TryGetValue(operation, out _)) return false;
-        try { return CaptureOperation(operation); }
+        if (target == null) return null;
+        var location = target.GetType().FullName == BindingCatalog.BoardingLocation ? target : _native.Get(target, "data");
+        return location == null ? null : _native.Call("commandGetOperation", _native.Manager, location);
+    }
+    internal bool ObserveOperation(object operation, bool fresh = false)
+    {
+        if (_captureFaults.TryGetValue(operation, out _) || !OperationReady(operation)) return false;
+        try { return CaptureOperation(operation, fresh); }
         catch (Exception error)
         { _captureFaults.Add(operation, error); try { _report(error); } catch { } return false; }
     }
-    internal bool CaptureOperation(object operation)
+    internal bool CaptureOperation(object operation, bool fresh = false)
     {
         if (DungeonReturnCarrier.IsSettlementOnly(operation)) return false;
         if (!State.CanMutate) return false;
@@ -60,7 +70,7 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
         var id = Operations.OperationId(operation);
         if (!id.HasValue)
         {
-            if (Operations.LocationMarker(location).HasValue)
+            if (!fresh && Operations.LocationMarker(location).HasValue)
             { if (!Operations.Resumed(operation)) return false; id = Operations.OperationId(operation); }
             else
             {
@@ -88,9 +98,22 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
             var originalDonor = savedId.HasValue ? State.Get(savedId.Value)?.Transport?.DonorShipId : null;
             var transport = Pods.CaptureTransport(pod, pending.Contains(pod), value => { var v = (Vector2)value; return (v.x, v.y); }, originalDonor ?? parentId);
             if (!Pods.Observe(pod, id.Value, parentId, true, transport)) return false;
+            if (!_podOwners.TryGetValue(pod, out _)) _podOwners.Add(pod, operation);
             if (Pods.IdentityFor(data) is { } tracked) MarkLive(tracked);
         }
         return true;
+    }
+    internal bool CanAttach(object pod)
+    {
+        var data = _native.Get(pod, "resumePodData");
+        if (data == null || !Pods.IdentityFor(data).HasValue) return true;
+        return State.CanMutate && _podOwners.TryGetValue(pod, out var operation) && OperationReady(operation);
+    }
+    internal bool CanArrive(object pod)
+    {
+        var data = _native.Get(pod, "resumePodData");
+        if (data == null || !Pods.IdentityFor(data).HasValue) return true;
+        return _podOwners.TryGetValue(pod, out var operation) && OperationReady(operation) && ReturnObserver.CanArrive(operation, pod);
     }
     internal void LoadPod(object data, object json)
     { if (_podJson.ReadStrict(json) is { } id) Pods.Loaded(data, id); }
@@ -110,6 +133,18 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
         if (Operations.LocationMarker(location) is not { } id) return;
         if (State.Operation(id) == null || Operations.Conflicted(id)) throw new InvalidOperationException("Cannot save unresolved operation state.");
         _operationJson.Write(json, id);
+    }
+    internal void Checkpoint()
+    {
+        State.EnsureSerializationAllowed();
+        _returns.Checkpoint((id, instance) =>
+        {
+            var pod = (DungeonReturnPodInstance)instance;
+            var previous = State.Get(id) ?? throw new InvalidOperationException("Missing live return state.");
+            var transport = Pods.CaptureTransport(pod.Pod, previous.Transport!.PendingReinforcement,
+                value => { var v = (Vector2)value; return (v.x, v.y); }, previous.Transport.DonorShipId);
+            if (!State.RefreshTransportPose(id, transport.Pose)) throw new InvalidOperationException("Unable to checkpoint live return pose.");
+        });
     }
     internal void Poll()
     { try { _returns.Poll(); } catch (Exception error) { try { _report(error); } catch { } } }

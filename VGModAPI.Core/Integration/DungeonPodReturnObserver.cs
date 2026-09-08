@@ -18,6 +18,19 @@ internal sealed class DungeonPodReturnObserver
     internal DungeonPodReturnObserver(DungeonPodPersistence state, DungeonPodResumeAdapter pods, IBoardingTacticalNativeBindings native,
         Func<object, object> origin, Func<object, bool> ready, Func<object, Guid?> operationId)
     { _operationId = operationId; _state = state; _pods = pods; _native = native; _origin = origin; _ready = ready; }
+    internal bool CanArrive(object operation, object pod)
+    {
+        var data = _native.Get(pod, "resumePodData"); var id = data == null ? null : _pods.IdentityFor(data);
+        if (!id.HasValue) return true;
+        if (!_state.CanMutate || _pods.Conflicted(id.Value)) return false;
+        var saved = _state.Get(id.Value); var ship = _native.Get(operation, "operationShip");
+        if (saved == null || !saved.CanRecover || ship == null || !_ready(ship) || _operationId(operation) != saved.OperationId) return false;
+        if ((string?)_native.Get(_native.Get(ship, "resumeShipData"), "resumeShipGuid") != saved.ParentShipId ||
+            (_native.Get(data, "resumePodPlayer") is true) != saved.PlayerOwned || _native.Get(data, "resumePodPhase")?.ToString() != "Returning") return false;
+        if (_native.Get(pod, "resumeReturnCrew") is not IReadOnlyDictionary<string, int> manifest || manifest.Count != saved.ReturnCrew.Count) return false;
+        foreach (var pair in saved.ReturnCrew) if (!manifest.TryGetValue(pair.Key, out var count) || count != pair.Value) return false;
+        return true;
+    }
     internal bool Begin(object operation, object pod, out ReturnScope? scope)
     {
         scope = null;

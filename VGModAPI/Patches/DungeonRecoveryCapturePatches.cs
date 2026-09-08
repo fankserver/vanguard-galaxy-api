@@ -5,8 +5,12 @@ namespace VGModAPI.Patches;
 internal static class DungeonRecoveryCapturePatches
 {
     internal static DungeonRecoveryRuntime? Runtime { get; set; }
+    internal static class Attach
+    { internal static bool Prefix(object __instance) => Runtime?.CanAttach(__instance) ?? true; }
+    internal static class Arrival
+    { internal static bool Prefix(object __instance) => Runtime?.CanArrive(__instance) ?? true; }
     internal static class Serialization
-    { internal static void Prefix() => Runtime?.State.EnsureSerializationAllowed(); }
+    { internal static void Prefix() => Runtime?.Checkpoint(); }
     internal static class Terminal
     {
         internal static bool Prefix(object __instance, out VGModAPI.Core.DungeonPodPersistence.TerminalAttempt? __state)
@@ -26,6 +30,8 @@ internal static class DungeonRecoveryCapturePatches
     }
     internal static class Started
     {
-        internal static void Postfix(object? __result) { if (__result != null) Runtime?.ObserveOperation(__result); }
+        internal static void Prefix(object? __1, out object? __state) => __state = Runtime?.ExistingOperation(__1);
+        internal static void Postfix(object? __result, object? __state)
+        { if (__result != null) Runtime?.ObserveOperation(__result, !object.ReferenceEquals(__result, __state)); }
     }
 }

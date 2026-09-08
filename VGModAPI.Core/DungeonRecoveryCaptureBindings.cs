@@ -4,6 +4,8 @@ internal static class DungeonRecoveryCaptureBindings
 {
     internal static readonly MethodBinding[] Hooks =
     {
+        new("recoveryAttach", DungeonPodResumeBindings.Pod, "Attach", false, "System.Void"),
+        new("recoveryArrival", DungeonPodResumeBindings.Pod, "Arrive", false, "System.Void"),
         new("recoveryTerminal", BindingCatalog.BoardingOperation, "HandleSimulationComplete", false, "System.Void", "Source.Dungeon.DungeonSimulation"),
         new("recoverySerialization", BindingCatalog.Save, "SaveCurrentState", true, "LightJson.JsonObject"),
         new("recoveryOperationTick", BindingCatalog.BoardingOperation, "Tick", false, "System.Void", "System.Single"),

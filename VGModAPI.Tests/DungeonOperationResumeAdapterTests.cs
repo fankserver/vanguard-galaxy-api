@@ -9,6 +9,22 @@ namespace VGModAPI.Tests;
 public sealed class DungeonOperationResumeAdapterTests
 {
     [Fact]
+    public void FreshGenerationOnUsedLocationRetainsPreviousReturnObligations()
+    {
+        using var hub = new LifecycleHub((_, _) => { }); var persistence = new DungeonPodPersistenceTests.Persistence(); using var state = new DungeonPodPersistence(hub, persistence);
+        var session = hub.Begin(SessionOrigin.SaveLoad, "save"); hub.PlayerReady(session); persistence.Provider.Restore(hub.CurrentSession!, null);
+        var adapter = new DungeonOperationResumeAdapter(state, new DungeonLayoutBuilderTests.Native());
+        var location = new NativeObject(); location.Fields["dungeonType"] = "HostileShip"; var content = Guid.NewGuid();
+        var old = adapter.Created(Operation(location, "ship"), content, "")!.Value;
+        var pod = new DungeonPodResumeState(Guid.NewGuid(), old, DungeonPodPhase.Returning, true, true, false, new System.Collections.Generic.Dictionary<string, int> { ["Marine"] = 2 }, parentShipId: "ship"); Assert.True(state.Track(pod));
+        using (var terminal = state.BeginTerminal(old)) terminal!.Completed();
+        var fresh = adapter.Created(Operation(location, "ship"), content, "")!.Value;
+        Assert.NotEqual(old, fresh); Assert.Equal(fresh, adapter.LocationMarker(location));
+        Assert.Equal(state.Operation(old)!.LocationId, state.Operation(fresh)!.LocationId);
+        Assert.Equal(content, state.Operation(fresh)!.ContentOccurrence); Assert.True(state.Get(pod.Id)!.CanRecover);
+        Assert.Equal(old, state.Get(pod.Id)!.OperationId);
+    }
+    [Fact]
     public void RestoreRequiresExactRecipientAndDuplicateOperationsCannotBorrowSavedIdentity()
     {
         using var hub = new LifecycleHub((_, _) => { }); var persistence = new DungeonPodPersistenceTests.Persistence(); using var state = new DungeonPodPersistence(hub, persistence);

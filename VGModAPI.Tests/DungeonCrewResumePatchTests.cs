@@ -39,6 +39,18 @@ public sealed class DungeonCrewResumePatchTests
             var brokenSim = new NativeObject(); brokenSim.Fields["compartments"] = new object[2]; brokenSim.Fields["friendlyUnits"] = new[] { broken }; brokenSim.Fields["hostileUnits"] = Array.Empty<object>();
             DungeonCrewResumePatches.SimulationLoad.Postfix(brokenSim);
             Assert.False(DungeonCrewResumePatches.Tick.Prefix(brokenSim)); Assert.Throws<InvalidOperationException>(() => DungeonCrewResumePatches.SimulationSave.Prefix(brokenSim));
+            var operation = new NativeObject(); operation.Fields["simulation"] = brokenSim;
+            var director = 0; var reinforcement = 0; var terminal = 0;
+            void OuterTick()
+            {
+                if (!DungeonOperationMutationGate.Allows(operation, native, DungeonCrewResumePatches.Coordinator!.CanTick)) return;
+                director++;
+                if (DungeonCrewResumePatches.Tick.Prefix(operation.Fields["simulation"]!)) { }
+                reinforcement++; terminal++;
+            }
+            OuterTick(); Assert.Equal(0, director); Assert.Equal(0, reinforcement); Assert.Equal(0, terminal);
+            operation.Fields["simulation"] = simulation; OuterTick();
+            Assert.Equal(1, director); Assert.Equal(1, reinforcement); Assert.Equal(1, terminal);
             Assert.True(DungeonCrewResumePatches.Tick.Prefix(simulation)); Assert.Equal(2, faults);
         }
         finally { DungeonCrewResumePatches.Coordinator = null; }
