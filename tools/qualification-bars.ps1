@@ -10,6 +10,14 @@ function Initialize-BarProbe([string]$Root, [string]$AuthorA, [string]$AuthorB) 
     [IO.File]::WriteAllText((Join-Path $Root 'bars.enabled'), 'owned-bars-v1')
 }
 
+function Assert-BarLinkedConfiguration([string]$Root) {
+    Assert-StoryConfiguration $Root
+    $entries = Get-TravelJournalConfigEntries (Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg')
+    if (!$entries.ContainsKey('Missions/IdentityContinuity') -or $entries['Missions/IdentityContinuity'] -ine 'true') {
+        throw 'Linked bars require mission identity continuity.'
+    }
+}
+
 function Assert-BarLinkedReceipt([string]$Root) {
     $rows = @(Get-Content -LiteralPath (Join-Path $Root 'bar-linked.txt') -ErrorAction Stop)
     if ($rows.Count -ne 2 -or $rows[0] -cne 'PASS' -or $rows[1] -cne 'active-mission;automatic-linked-restore;stale-session;provider-unavailable;registered-before-reload;rollback;no-replacement-placement') { throw 'Incomplete linked bar receipt.' }

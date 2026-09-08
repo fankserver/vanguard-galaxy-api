@@ -2,6 +2,7 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '..\qualification-bars.ps1')
 . (Join-Path $PSScriptRoot '..\qualification-bar-consumers.ps1')
 . (Join-Path $PSScriptRoot '..\qualification-profile.ps1')
+. (Join-Path $PSScriptRoot '..\qualification-inputs.ps1')
 # The helper test never launches a process; make its process-presence check deterministic.
 function Get-Process { param($Name, $ErrorAction) return $null }
 $root = Join-Path $env:TEMP ('vg-bar-receipt-' + [Guid]::NewGuid().ToString('N'))
@@ -91,6 +92,16 @@ try {
     if (!(Test-Path (Join-Path $root 'bar-producer-evidence\result.txt'))) { throw 'Producer evidence was not retained.' }
     Copy-Item (Join-Path $root 'bar-producer-evidence\result.txt') (Join-Path $root 'result.txt')
     Reject { Start-BarColdPhase $root $planned 'absent' }
+    $configDir = Join-Path $root 'game\BepInEx\config'
+    $null = New-Item -ItemType Directory -Path $configDir -Force
+    $configPath = Join-Path $configDir 'vgmodapi.cfg'
+    $linkedConfig = "[Persistence]`r`nEnabled = true`r`nRoot = $(Join-Path $root 'state')`r`n[Story]`r`nEnabled = true`r`nProtection = true`r`n[Missions]`r`nEnabled = true`r`n"
+    Set-Content $configPath $linkedConfig
+    Reject { Assert-BarLinkedConfiguration $root }
+    Set-Content $configPath ($linkedConfig + 'IdentityContinuity = false')
+    Reject { Assert-BarLinkedConfiguration $root }
+    Set-Content $configPath ($linkedConfig + 'IdentityContinuity = true')
+    Assert-BarLinkedConfiguration $root
     Reject { Assert-BarLinkedReceipt $root }
     $linkedCases = 'active-mission;automatic-linked-restore;stale-session;provider-unavailable;registered-before-reload;rollback;no-replacement-placement'
     Set-Content (Join-Path $root 'bar-linked.txt') @('PASS', $linkedCases)

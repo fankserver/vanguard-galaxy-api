@@ -1,5 +1,6 @@
 # Prepared-input helpers; safe to exercise with synthetic files.
 . (Join-Path $PSScriptRoot 'qualification-bar-consumers.ps1')
+. (Join-Path $PSScriptRoot 'qualification-bars.ps1')
 # Accepted Anima pilot shapes, each pinned to the exact hard API dependency that version declares.
 # The consumer travel probe additionally requires the 0.4.0 shape, which is the first one that
 # observes system visits through the public travel surface.
@@ -1127,7 +1128,7 @@ function Assert-QualificationInputs([string]$Root) {
     if ($linkedBars) {
         if (!$bars -or ($provenance.PSObject.Properties['barColdSequence'] -and $provenance.barColdSequence) -or
             (Get-Content -LiteralPath (Join-Path $Root 'bar-linked.enabled') -Raw) -cne 'linked-bars-v1') { throw 'Invalid linked bar selection.' }
-        Assert-StoryConfiguration $Root
+        Assert-BarLinkedConfiguration $Root
     }
     if ($bars) {
         Assert-StoryIsolation $provenance
