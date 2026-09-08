@@ -31,13 +31,14 @@ internal sealed partial class BarContentService
     internal bool IsCurrent(BarRosterPlan plan)
     {
         _checkThread();
-        if (_disposed || !ReferenceEquals(plan.Revision, _revision)) return false;
+        if (_disposed || !ReferenceEquals(plan.Revision, _revision) || !_persistence.CanMutate(plan.Session)) return false;
         var current = Plan(plan.Session, plan.Station, plan.MissionReady, plan.DependencyStamp);
         return current != null && ReferenceEquals(plan.Revision, current.Revision)
             && plan.Policy.KeepVanilla == current.Policy.KeepVanilla
             && plan.Policy.Admitted.SequenceEqual(current.Policy.Admitted)
             && plan.Policy.Denied.Count == current.Policy.Denied.Count
-            && plan.Policy.Denied.All(pair => current.Policy.Denied.TryGetValue(pair.Key, out var reason) && reason == pair.Value);
+            && plan.Policy.Denied.All(pair => current.Policy.Denied.TryGetValue(pair.Key, out var reason) && reason == pair.Value)
+            && _persistence.CanMutate(plan.Session) && ReferenceEquals(plan.Revision, _revision);
     }
 
     // A dependency stamp is an opaque immutable token. The integration must replace it whenever

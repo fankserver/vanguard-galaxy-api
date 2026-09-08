@@ -142,6 +142,19 @@ internal sealed class BarNativeWorld : IBarRosterWorld
         internal bool IsCurrent => _token.Entries.Any(entry => ReferenceEquals(entry, _contact)) && _world.Stable(_token);
     }
 
+    internal string? CurrentStationId(object bar)
+    {
+        var station = _station.Read();
+        return station != null && ReferenceEquals(_bar.GetValue(station), bar) ? (string?)_guid.GetValue(station) : null;
+    }
+
+    internal object[] CurrentRoster(object bar)
+    {
+        if (CurrentStationId(bar) == null || _patrons.GetValue(bar) is not IList list || list.Count > _capacity)
+            return Array.Empty<object>();
+        return list.Cast<object>().ToArray();
+    }
+
     internal ContactAdmission? CaptureContact(object contact)
     {
         var station = _station.Read();

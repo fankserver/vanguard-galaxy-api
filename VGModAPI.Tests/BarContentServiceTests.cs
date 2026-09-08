@@ -84,6 +84,43 @@ public sealed class BarContentServiceTests
         Assert.Equal(0, calls);
     }
 
+    [Fact]
+    public void RuntimeHostAppliesClicksAndRestoresVanillaAfterProviderRemoval()
+    {
+        using var hub = new LifecycleHub((_, error) => throw error);
+        var storage = new Storage();
+        using var service = new BarContentService(storage, hub,
+            (_, _) => new StoryHostPlugin("author", typeof(BarContentServiceTests).Assembly), _ => false, hub.CheckThread);
+        var author = service.AcquireProvider("author").Provider!;
+        int clicks = 0;
+        author.Register(Definition(), _ => clicks++);
+        var session = Ready(hub, storage); author.Place(session, "contact");
+        var station = new BarNativeSerializationTests.Station();
+        var vanilla = new BarNativeSerializationTests.Patron(); station.bar.availablePatrons.Add(vanilla);
+        ClickPlayer.current = new ClickPlayer { currentPointOfInterest = station };
+        var contacts = new VGModAPI.Core.Integration.BarNativeContacts(typeof(BarNativeSerializationTests.Salesman),
+            typeof(BarNativeSerializationTests.Patron), typeof(BarNativeSerializationTests.Station), _ => new UnityEngine.Sprite());
+        var world = new VGModAPI.Core.Integration.BarNativeWorld(typeof(BarNativeSerializationTests.Station), typeof(BarNativeSerializationTests.Bar),
+            typeof(BarNativeSerializationTests.Patron), new VGModAPI.Core.Integration.BarStationSource(typeof(ClickPlayer), typeof(BarNativeSerializationTests.Station)),
+            contacts.IsOwned, contacts.Create, 5);
+        var serialization = new VGModAPI.Core.Integration.BarNativeSerialization(typeof(BarNativeSerializationTests.Bar), typeof(BarNativeSerializationTests.Patron),
+            typeof(BarNativeSerializationTests.Value), typeof(BarNativeSerializationTests.JsonObject), typeof(BarNativeSerializationTests.JsonArray), contacts, world);
+        var host = new VGModAPI.Core.Integration.BarRuntimeHost(service, world, contacts, serialization, id => service.Plan(session, id),
+            () => storage.StateReady, () => storage.MutationAllowed, hub.CheckThread, error => throw error);
+        Assert.Equal(BarRosterApplyStatus.Applied, host.Reconcile(station.bar));
+        var contact = Assert.Single(station.bar.availablePatrons, patron => contacts.IsOwned(patron));
+        host.Interact(contact); Assert.Equal(1, clicks);
+        Assert.True(host.TrySerialize(station.bar, out _));
+        storage.MutationAllowed = false;
+        Assert.Equal(BarRosterApplyStatus.Unavailable, host.Reconcile(station.bar));
+        host.Interact(contact); Assert.Equal(1, clicks);
+        storage.MutationAllowed = true;
+        author.Dispose();
+        Assert.Equal(BarRosterApplyStatus.Applied, host.Reconcile(station.bar));
+        Assert.Same(vanilla, Assert.Single(station.bar.availablePatrons));
+        host.Interact(contact); Assert.Equal(1, clicks);
+    }
+
     private static readonly object FixedPermissionStamp = new();
     private sealed class Storage : IPersistenceApi, IPersistenceRegistration, IPersistenceReadiness
     {
