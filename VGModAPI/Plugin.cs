@@ -26,6 +26,9 @@ public sealed partial class Plugin : BaseUnityPlugin
     private TravelNativeAdapter? _travel;
     private RecipeCatalogService? _recipes;
     private RecipeQuoteService? _recipeQuotes;
+    private CraftingJobService? _craftingJobs;
+    private CraftingJobObserver? _craftingJobObserver;
+    private Harmony? _craftingJobHarmony;
     private BoardingObserver? _boarding;
     private BoardingRuleAdapter? _boardingRules;
     private BoardingCommandService? _boardingCommands;
@@ -63,6 +66,8 @@ public sealed partial class Plugin : BaseUnityPlugin
         _hub.SetCapability("recipe-catalog", false, "Disabled or not bound; experimental.");
         _hub.SetCapability("recipe-quotes", false, "Disabled or not bound; experimental.");
         ModApi.RecipeQuotes = null;
+        ModApi.CraftingJobs = null;
+        _hub.SetCapability("crafting-jobs", false, "Disabled or not bound; experimental.");
         _hub.SetCapability("save-data", false, "Not initialized; experimental.");
         _hub.SetCapability("mission-continuity", false, "Disabled by configuration; experimental.");
         _hub.SetCapability("mission-transitions", false, "Disabled by configuration; experimental.");
@@ -121,7 +126,7 @@ public sealed partial class Plugin : BaseUnityPlugin
                 ["store"] = typeof(SavePatches.Store), ["writeFile"] = typeof(SavePatches.WriteFile),
                 ["writeMetadata"] = typeof(SavePatches.WriteMetadata), ["storeFailure"] = typeof(SavePatches.StoreFailure)
             });
-            if (Config.Bind("Recipes", "Enabled", false, "Experimental read-only Forge and refinery recipe catalog.").Value)
+            if (Config.Bind("Recipes", "Enabled", false, "Experimental recipe catalog, advisory quotes and Forge/refinery job observations.").Value)
                 InstallRecipes(assembly);
             if (Config.Bind("Boarding", "Enabled", false, "Experimental boarding observation and rules on the inspected game build.").Value)
             {
@@ -142,6 +147,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         {
             // Stop observation even if a failed rollback leaves a detour installed.
             _adapter?.Guard(() => throw new InvalidOperationException("Adapter installation failed.", ex));
+            TeardownCraftingJobs();
             try { _harmony?.UnpatchSelf(); }
             catch (Exception cleanupError) { Logger.LogError($"Patch rollback failed: {cleanupError}"); }
             _hub.SetCapability("session-lifecycle", false, ex.Message);
@@ -472,12 +478,44 @@ public sealed partial class Plugin : BaseUnityPlugin
                 _recipeQuotes?.Dispose(); _recipeQuotes = null; ModApi.RecipeQuotes = null;
                 _hub.SetCapability("recipe-quotes", false, "Recipe quote binding failed."); Logger.LogError(quoteError);
             }
+            if (_recipeQuotes != null) InstallCraftingJobs(assembly, source);
         }
         catch (Exception error)
         {
             _recipes?.Dispose(); _recipes = null; ModApi.Recipes = null;
             _hub!.SetCapability("recipe-catalog", false, "Recipe catalog binding failed."); Logger.LogError(error);
         }
+    }
+    private void InstallCraftingJobs(Assembly assembly, RecipeCatalogNativeSource source)
+    {
+        try
+        {
+            var methods = CraftingJobBindings.Validate(assembly);
+            _craftingJobs = new CraftingJobService(_hub!, source, (owner, error) => Logger.LogError(owner + ": " + error));
+            _craftingJobObserver = new CraftingJobObserver(_hub!, _craftingJobs, source);
+            CraftingJobPatches.Keys = CraftingJobBindings.Hooks.ToDictionary(spec => (MethodBase)methods[spec.Key], spec => spec.Key);
+            CraftingJobPatches.Observer = _craftingJobObserver;
+            _craftingJobHarmony = new Harmony(ModApi.PluginId + ".crafting-jobs");
+            var flags = BindingFlags.Static | BindingFlags.NonPublic;
+            var prefix = new HarmonyMethod(typeof(CraftingJobPatches).GetMethod("Prefix", flags));
+            foreach (var spec in CraftingJobBindings.Hooks)
+            {
+                var name = spec.ReturnType == "System.Void" ? "VoidFinalizer" : spec.ReturnType == "System.Boolean" ? "BoolFinalizer" : "ObjectFinalizer";
+                _craftingJobHarmony.Patch(methods[spec.Key], prefix: prefix, finalizer: new HarmonyMethod(typeof(CraftingJobPatches).GetMethod(name, flags)));
+            }
+            _craftingJobs.SetAvailable(true); ModApi.CraftingJobs = _craftingJobs;
+        }
+        catch (Exception error) { TeardownCraftingJobs(); Logger.LogError(error); }
+    }
+    private void TeardownCraftingJobs()
+    {
+        CraftingJobPatches.Observer = null;
+        _craftingJobObserver?.Dispose(); _craftingJobObserver = null;
+        _craftingJobs?.Dispose(); _craftingJobs = null; ModApi.CraftingJobs = null;
+        CraftingJobPatches.Keys = new Dictionary<MethodBase, string>();
+        try { _craftingJobHarmony?.UnpatchSelf(); } catch (Exception error) { Logger.LogError(error); }
+        _craftingJobHarmony = null;
+        _hub?.SetCapability("crafting-jobs", false, "Crafting job observation unavailable.");
     }
     private void InitializeDungeons()
     {
@@ -756,6 +794,8 @@ public sealed partial class Plugin : BaseUnityPlugin
 
     private void Update()
     {
+        var craftingFault = _craftingJobObserver?.PumpFault();
+        if (craftingFault != null) Logger.LogError(craftingFault);
         _boarding?.Poll();
         _adapter?.Poll(); _missions?.Poll();
         if (_travel != null)
@@ -820,6 +860,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         LifecyclePatches.Adapter = null;
         SavePatches.Adapter = null;
         ModApi.Current = null;
+        TeardownCraftingJobs();
         _recipeQuotes?.Dispose(); _recipeQuotes = null; ModApi.RecipeQuotes = null;
         _recipes?.Dispose(); _recipes = null; ModApi.Recipes = null;
         _hub?.Dispose();
