@@ -27,12 +27,12 @@ try {
     [IO.File]::WriteAllLines($facts, @('PASS','forge-reads-v1','catalog=2','quotes=1','restored=0'))
     $p | Add-Member forgeCommandProbe $true
     Reject { Assert-ForgeReadSelection $root $p }
-    [IO.File]::WriteAllText((Join-Path $root 'forge-commands.enabled'), 'forge-commands-v1')
+    [IO.File]::WriteAllText((Join-Path $root 'forge-commands.enabled'), 'forge-commands-v2')
     Reject { Assert-ForgeReadSelection $root $p }
     [IO.File]::AppendAllText($config, "CommandsEnabled = true`r`n")
     Assert-ForgeReadSelection $root $p
     Reject { Assert-ForgeCommandReceipt $root $p }
-    [IO.File]::WriteAllLines((Join-Path $root 'forge-commands.txt'), @('PASS','forge-commands-v1','settings-replay-restored','forge-queue-cancel-replay'))
+    [IO.File]::WriteAllLines((Join-Path $root 'forge-commands.txt'), @('PASS','forge-commands-v2','settings-replay-restored','forge-queue-cancel-replay-refusal-direct-start'))
     Assert-ForgeCommandReceipt $root $p
     $p.forgeCommandProbe = $false; Reject { Assert-ForgeReadSelection $root $p }
     $p.forgeCommandProbe = $true
