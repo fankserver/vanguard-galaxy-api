@@ -8,6 +8,31 @@ A separate Windows job runs the fake-file and synthetic-registry harness tests u
 
 Public CI is not a full plugin build, a real-package validation, an installed-game binding check, or Unity qualification.
 
+## Host-test coverage
+
+`make coverage` runs the complete uninstrumented Debug host suite, then collects
+Coverlet line and branch coverage for **VGModAPI.Core and VGModAPI.Abstractions**.
+It always uses Debug because Release omits symbols. The collector accepts the
+mapped `/src` PDB paths used by deterministic builds. Two assembly-dependency
+checks run only in the uninstrumented suite: instrumentation adds framework
+references, so inspecting those modified binaries would not validate the shipped
+assembly contract. No other default host tests are excluded from collection.
+
+The command replaces `artifacts/coverage/` and writes `coverage.cobertura.xml`,
+`summary.json`, and `badge.svg`. Missing, empty, or unexpected-assembly reports
+fail the command. Python and PowerShell tests, the full Unity/BepInEx adapter,
+and production source linked into the test assembly are outside this metric.
+It is not full-plugin coverage or in-game acceptance.
+
+The `Coverage` workflow measures PRs and main without game references and retains
+only report artifacts for 14 days. Successful main runs publish the report, badge,
+and `source-revision.txt` to the `coverage` branch using a separate job with write
+permission. PR jobs have read-only repository permissions and cannot publish.
+The README badge displays line coverage from the latest published successful main
+run; it is unavailable until the first successful publication and does not imply
+that a newer failing revision passed. No external coverage account or secret is
+required. Repository rules must permit the workflow token to update `coverage`.
+
 ## Local checks with lawful references
 
 Use your own installed game plus BepInEx 5.x. Set `GAME_DIR` to that local installation; never obtain an unknown publicized stub to make CI green. Build uses only local BepInEx/Harmony and Unity compile references, not a compile-time Assembly-CSharp stub. Binding checks separately inspect the original installed Assembly-CSharp. `make link-libs` creates ignored local links, not distributable copies. The offline native menu additionally compiles against the installed `UnityEngine.UIModule`, `UnityEngine.UI`, `Unity.TextMeshPro`, and `Unity.InputSystem`; each has `Private=false` and explicit reference provenance. Only the adapter assembly may reference these UI modules, never Core/Abstractions. No reference DLL is copied into the package.

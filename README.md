@@ -1,5 +1,7 @@
 # VGModAPI
 
+[![Core + Abstractions coverage](https://raw.githubusercontent.com/fankserver/vanguard-galaxy-api/coverage/badge.svg)](docs/checks.md#host-test-coverage)
+
 <p align="center">
   <img src="docs/assets/vgmodapi-logo.png" alt="VGModAPI logo" width="480">
 </p>
