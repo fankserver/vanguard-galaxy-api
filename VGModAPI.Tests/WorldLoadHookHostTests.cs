@@ -11,6 +11,38 @@ namespace VGModAPI.Tests;
 
 public sealed class WorldLoadHookHostTests
 {
+    [Fact]
+    public void CaughtNestedRecallStillRejectsTheOuterOptionalLoad()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "vg-world-reentrant-" + Guid.NewGuid().ToString("N"));
+        string text = "fixture-" + Guid.NewGuid().ToString("N"); Directory.CreateDirectory(dir);
+        try
+        {
+            var root = new JsonObject { Text = text, ["Player"] = new(new JsonObject { ["map"] = new(new JsonObject { ["systems"] = new(new List<JsonValue>()) }) }) };
+            JsonValue.ParseFixtures[text] = root;
+            string path = Path.Combine(dir, "native.save"); File.WriteAllBytes(path, Encoding.UTF8.GetBytes(text));
+            var hub = new LifecycleHub((_, error) => throw new Exception("Unexpected observer failure", error));
+            var store = new GenerationStore(Path.Combine(dir, "generations"));
+            using var persistence = new PersistenceService(hub, store, Path.GetFullPath, p => GenerationStore.Hash(File.ReadAllBytes(p)));
+            WorldLoadHookHost? host = null;
+            int nested = 0;
+            long Revision()
+            {
+                nested++;
+                Assert.Throws<InvalidDataException>(() => host!.TryRecall(new Source.Util.SaveGameFile(path), out _));
+                return 1;
+            }
+            using (host = new WorldLoadHookHost(typeof(JsonObject).Assembly, hub, persistence, persistence.CreateWorldReader(), Path.GetFullPath, _ => true, Revision))
+            {
+                var session = hub.Begin(SessionOrigin.SaveLoad, path);
+                Assert.Throws<InvalidDataException>(() => host.TryRecall(new Source.Util.SaveGameFile(path), out _));
+                Assert.Equal(1, nested);
+                Assert.Null(host.PreparedFor(session));
+            }
+        }
+        finally { JsonValue.ParseFixtures.TryRemove(text, out _); Directory.Delete(dir, true); }
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

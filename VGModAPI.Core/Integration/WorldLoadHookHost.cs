@@ -41,6 +41,7 @@ internal sealed class WorldLoadHookHost : IWorldLoadHookHost, IDisposable
 
     private WorldPreparedLoad? _prepared;
     private bool _recallAttempted;
+    private bool _recallRejected;
 
     internal WorldPreparedLoad? PreparedFor(Guid session)
     {
@@ -57,7 +58,7 @@ internal sealed class WorldLoadHookHost : IWorldLoadHookHost, IDisposable
     private void OnLifecycle(LifecycleEvent e)
     {
         if (e.Kind == LifecycleEventKind.SessionStarting && e.Session?.Id == _hub.CurrentSession?.Id)
-        { _prepared = null; _recallAttempted = false; _sessionId = e.Session!.Id; _gate.Start(_sessionId); }
+        { _prepared = null; _recallAttempted = false; _recallRejected = false; _sessionId = e.Session!.Id; _gate.Start(_sessionId); }
         else if ((e.Kind == LifecycleEventKind.SessionInvalidated || e.Kind == LifecycleEventKind.SessionStartFailed) && e.Session?.Id == _sessionId)
         { _prepared = null; _gate.Invalidate(); }
     }
@@ -67,12 +68,13 @@ internal sealed class WorldLoadHookHost : IWorldLoadHookHost, IDisposable
         _hub.CheckThread(); result = null;
         if (_disposed || _hub.CurrentSession is not { } session || !_persistence.TryGetStartingLoad(session.Id, out var path, out var hash)) return false;
         _prepared = null;
-        if (_recallAttempted) { _gate.Invalidate(); throw new InvalidDataException("World Recall already attempted for this session."); }
+        if (_recallAttempted) { _recallRejected = true; _gate.Invalidate(); throw new InvalidDataException("World Recall already attempted for this session."); }
         _recallAttempted = true;
         var nativeFile = _file.GetValue(file) as FileInfo ?? throw new InvalidDataException("Missing native load file.");
         if (_canonical(nativeFile.FullName) != path) throw new InvalidDataException("Recall source does not match the observed attempt.");
-        bool StillStarting() => !_disposed && _persistence.TryGetStartingLoad(session.Id, out var currentPath, out var currentHash) && currentPath == path && currentHash == hash;
+        bool StillStarting() => !_disposed && !_recallRejected && _persistence.TryGetStartingLoad(session.Id, out var currentPath, out var currentHash) && currentPath == path && currentHash == hash;
         var prepared = _preparation.ReadPrepared(session.Id, path!, hash!, StillStarting, _definitionAvailable, _providerRevision);
+        if (!StillStarting()) throw new InvalidDataException("World Recall was invalidated during preparation.");
         _prepared = prepared;
         result = prepared.Root;
         return true;
