@@ -113,6 +113,29 @@ public sealed class BarNativeWorldTests
         Assert.Throws<InvalidOperationException>(() => world.RetainedVanilla(station.bar));
     }
 
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public void NestedRefreshRequiresSuccessfulOutermostOriginalCompletion(bool ran, bool succeeded)
+    {
+        var station = new Station(); var vanilla = new Patron(); station.bar.availablePatrons.Add(vanilla);
+        var world = World(() => station);
+        Assert.True(world.Apply(world.Capture("station")!, new object[] { new Patron { Owned = true } }, () => true));
+        var epoch = world.CaptureRefreshEpoch(station.bar);
+        var outer = world.BeginNativeRefresh(station.bar);
+        var inner = world.BeginNativeRefresh(station.bar);
+        station.bar.lastUpdateTime++;
+        Assert.False(world.CompleteNativeRefresh(outer, true, true));
+        Assert.False(world.CompleteNativeRefresh(inner, true, true));
+        Assert.Throws<InvalidOperationException>(() => world.RetainedVanilla(station.bar));
+        Assert.Equal(ran && succeeded, world.CompleteNativeRefresh(outer, ran, succeeded));
+        Assert.False(world.IsRefreshEpochCurrent(station.bar, epoch));
+        if (ran && succeeded) Assert.Null(world.RetainedVanilla(station.bar));
+        else Assert.Same(vanilla, Assert.Single(world.RetainedVanilla(station.bar)!));
+    }
+
     [Fact]
     public void ForeignSnapshotsAndDuplicateReferencesAreRefused()
     {

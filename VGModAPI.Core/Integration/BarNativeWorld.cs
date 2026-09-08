@@ -19,6 +19,16 @@ internal sealed class BarNativeWorld : IBarRosterWorld
     private readonly int _capacity;
     private readonly ConditionalWeakTable<object, RetainedRoster> _retained = new();
     private readonly ConditionalWeakTable<object, RefreshToken> _refreshes = new();
+    private readonly ConditionalWeakTable<object, object> _refreshEpochs = new();
+
+    internal object CaptureRefreshEpoch(object bar)
+    {
+        if (_refreshes.TryGetValue(bar, out _)) throw new InvalidOperationException("Native bar refresh is in progress.");
+        return _refreshEpochs.GetValue(bar, _ => new object());
+    }
+
+    internal bool IsRefreshEpochCurrent(object bar, object epoch) => !_refreshes.TryGetValue(bar, out _)
+        && _refreshEpochs.TryGetValue(bar, out var current) && ReferenceEquals(epoch, current);
 
     private sealed class RetainedRoster
     {
@@ -52,6 +62,8 @@ internal sealed class BarNativeWorld : IBarRosterWorld
 
     internal RefreshToken BeginNativeRefresh(object bar)
     {
+        _refreshEpochs.Remove(bar);
+        _refreshEpochs.Add(bar, new object());
         _refreshes.TryGetValue(bar, out var parent);
         var token = new RefreshToken(this, bar, (long)_updateTime.GetValue(bar)!, parent);
         _refreshes.Remove(bar);
@@ -93,13 +105,14 @@ internal sealed class BarNativeWorld : IBarRosterWorld
         internal readonly BarNativeWorld Owner;
         internal readonly object Station, Bar;
         internal readonly string Identity;
+        internal readonly object RefreshEpoch;
         internal readonly IList List;
         internal readonly object[] Entries;
         internal readonly int[] Seats;
         internal object[] Vanilla = Array.Empty<object>();
         internal int[] VanillaSeats = Array.Empty<int>();
-        internal CaptureToken(BarNativeWorld owner, object station, object bar, IList list, object[] entries, int[] seats, string identity)
-        { Owner = owner; Station = station; Bar = bar; List = list; Entries = entries; Seats = seats; Identity = identity; }
+        internal CaptureToken(BarNativeWorld owner, object station, object bar, IList list, object[] entries, int[] seats, string identity, object refreshEpoch)
+        { Owner = owner; Station = station; Bar = bar; List = list; Entries = entries; Seats = seats; Identity = identity; RefreshEpoch = refreshEpoch; }
     }
 
     public BarRosterSnapshot? Capture(string station)
@@ -108,9 +121,10 @@ internal sealed class BarNativeWorld : IBarRosterWorld
         if (current == null || (string?)_guid.GetValue(current) != station) return null;
         var bar = _bar.GetValue(current);
         if (bar == null || _patrons.GetValue(bar) is not IList list || list.Count > _capacity) return null;
+        var refreshEpoch = CaptureRefreshEpoch(bar);
         var entries = list.Cast<object>().ToArray();
         if (entries.Any(entry => entry == null || !_patronType.IsInstanceOfType(entry))) return null;
-        var token = new CaptureToken(this, current, bar, list, entries, entries.Select(entry => (int)_seat.GetValue(entry)!).ToArray(), station);
+        var token = new CaptureToken(this, current, bar, list, entries, entries.Select(entry => (int)_seat.GetValue(entry)!).ToArray(), station, refreshEpoch);
         var vanilla = RetainedVanilla(bar) ?? entries.Where(entry => !_owned(entry)).ToArray();
         token.Vanilla = vanilla;
         token.VanillaSeats = vanilla.Select(entry => (int)_seat.GetValue(entry)!).ToArray();
@@ -166,7 +180,7 @@ internal sealed class BarNativeWorld : IBarRosterWorld
 
     private bool Stable(CaptureToken token)
     {
-        if (!ReferenceEquals(_station.Read(), token.Station) || (string?)_guid.GetValue(token.Station) != token.Identity
+        if (!IsRefreshEpochCurrent(token.Bar, token.RefreshEpoch) || !ReferenceEquals(_station.Read(), token.Station) || (string?)_guid.GetValue(token.Station) != token.Identity
             || !ReferenceEquals(_bar.GetValue(token.Station), token.Bar)
             || !ReferenceEquals(_patrons.GetValue(token.Bar), token.List) || token.List.Count != token.Entries.Length) return false;
         for (int i = 0; i < token.Entries.Length; i++) if (!ReferenceEquals(token.List[i], token.Entries[i]) || (int)_seat.GetValue(token.Entries[i])! != token.Seats[i]) return false;

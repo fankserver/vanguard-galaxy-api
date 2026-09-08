@@ -37,6 +37,7 @@ internal sealed class BarNativeSerialization
         if (_patrons.GetValue(bar) is not IList list || list.Count > 32) throw new InvalidOperationException("Unbounded bar roster serialization.");
         var entries = list.Cast<object>().ToArray();
         var owned = entries.Select(entry => entry != null && _contacts.IsOwned(entry)).ToArray();
+        var refreshEpoch = _world?.CaptureRefreshEpoch(bar);
         var retained = _world?.RetainedVanilla(bar);
         bool hiddenVanilla = retained != null && retained.Any(patron => !entries.Any(entry => ReferenceEquals(entry, patron)));
         if (!owned.Any(value => value) && !hiddenVanilla) return false;
@@ -45,6 +46,7 @@ internal sealed class BarNativeSerialization
         var seed = (string?)_seed.GetValue(bar);
         bool Stable()
         {
+            if (_world != null && !_world.IsRefreshEpochCurrent(bar, refreshEpoch!)) return false;
             if (!ReferenceEquals(_patrons.GetValue(bar), list) || list.Count != entries.Length
                 || (long)_time.GetValue(bar)! != time || (string?)_seed.GetValue(bar) != seed) return false;
             for (int index = 0; index < entries.Length; index++) if (!ReferenceEquals(list[index], entries[index])) return false;

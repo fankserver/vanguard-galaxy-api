@@ -89,6 +89,8 @@ public sealed class BarNativeSerializationTests
     [InlineData(0)]
     [InlineData(1)]
     [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
     public void ExclusiveRosterPreservesSuppressedVanillaOrRefusesUncertainSerialization(int mutation)
     {
         var factory = new BarNativeContacts(typeof(Salesman), typeof(Patron), typeof(Station), _ => new UnityEngine.Sprite());
@@ -99,6 +101,17 @@ public sealed class BarNativeSerializationTests
         var contact = world.CreateContact(state)!;
         Assert.True(world.Apply(world.Capture("station")!, new[] { contact }, () => true));
         var serializer = new BarNativeSerialization(typeof(Bar), typeof(Patron), typeof(Value), typeof(JsonObject), typeof(JsonArray), factory, world);
+        if (mutation >= 3)
+        {
+            vanilla.DuringSerialization = () =>
+            {
+                var refresh = world.BeginNativeRefresh(station.bar);
+                if (mutation == 4) Assert.False(world.CompleteNativeRefresh(refresh, true, true));
+            };
+            Assert.Throws<InvalidOperationException>(() => serializer.TrySerialize(station.bar, () => true, out _));
+            Assert.Equal(1, vanilla.Calls);
+            return;
+        }
         if (mutation >= 0)
         {
             if (mutation == 0) station.bar.availablePatrons.Add(new Patron());
