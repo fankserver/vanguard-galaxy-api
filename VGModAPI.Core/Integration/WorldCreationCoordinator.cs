@@ -8,12 +8,13 @@ internal sealed class WorldCreationCoordinator
 {
     private readonly WorldNativeAttachment _native;
     private readonly Action _checkThread;
+    private readonly WorldLifetimeGuard? _lifetime;
     private WorldSnapshotInstance[] _instances = Array.Empty<WorldSnapshotInstance>();
     private Guid _session;
     private long _revision;
     private bool _creating;
     private bool _restored;
-    internal WorldCreationCoordinator(WorldNativeAttachment native, Action checkThread) { _native = native; _checkThread = checkThread; }
+    internal WorldCreationCoordinator(WorldNativeAttachment native, Action checkThread, WorldLifetimeGuard? lifetime = null) { _native = native; _checkThread = checkThread; _lifetime = lifetime; }
     internal bool Restored(Guid session) { _checkThread(); return !_creating && _restored && session == _session; }
     internal long Revision { get { _checkThread(); return _revision; } }
     internal void Reset(Guid session)
@@ -41,7 +42,9 @@ internal sealed class WorldCreationCoordinator
                     throw new InvalidDataException("Invalid reconstructed instance inventory.");
                 references.Add(instance.Native, new object());
             }
-            if (session != _session || revision != _revision) return false;
+            var tracking = _lifetime?.PrepareTracking(session, System.Linq.Enumerable.Select(prepared, item => (item.Native, item.Identity)));
+            if (session != _session || revision != _revision || (tracking != null && !tracking.Current)) return false;
+            tracking?.Commit();
             _instances = prepared; _revision = nextRevision; _restored = true;
             return true;
         }
@@ -73,19 +76,22 @@ internal sealed class WorldCreationCoordinator
         long revision = _revision, committedRevision = checked(_revision + 1);
         var before = _instances;
         WorldSnapshotInstance[]? prepared = null;
+        WorldLifetimeGuard.PreparedTracking? tracking = null;
         _creating = true;
         try
         {
             var created = _native.TryAppend(session, definition, identity, system, x, y,
-                () => admission() && session == _session && revision == _revision && ReferenceEquals(before, _instances),
+                () => admission() && session == _session && revision == _revision && ReferenceEquals(before, _instances) && (tracking == null || tracking.Current),
                 record =>
                 {
                     prepared = new WorldSnapshotInstance[before.Length + 1];
                     Array.Copy(before, prepared, before.Length); prepared[before.Length] = record;
+                    tracking = _lifetime?.PrepareTracking(session, new[] { (record.Native, record.Identity) });
                 });
             if (created == null) return null;
             // The concrete List<T> append invokes no callback after the final admission fence.
             // Prepared storage and the checked revision leave no fallible work in this commit.
+            tracking?.Commit();
             _instances = prepared!; _revision = committedRevision;
             return created;
         }

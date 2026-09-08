@@ -38,8 +38,9 @@ public sealed partial class Plugin
             var definitions = _worldDefinitions;
             _worldLoadHost = new WorldLoadHookHost(assembly, _hub, _persistence, _persistence.CreateWorldReader(),
                 _persistence.CanonicalLoadPath, _ => false, () => definitions.Revision);
-            _worldLifetimeHost = new WorldLifetimeHookHost(assembly, _hub);
-            var creation = new WorldCreationCoordinator(new WorldNativeAttachment(_adapter), _hub.CheckThread);
+            var lifetime = new WorldLifetimeGuard();
+            _worldLifetimeHost = new WorldLifetimeHookHost(assembly, _hub, lifetime);
+            var creation = new WorldCreationCoordinator(new WorldNativeAttachment(_adapter), _hub.CheckThread, lifetime);
             _worldSnapshotHost = new WorldSnapshotHookHost(_hub, new WorldSnapshotRecorder(new WorldJsonInspection(assembly)), creation.Snapshot, () => creation.Revision);
             _worldPersistence = new WorldPersistenceBindings(_persistence, _hub, _worldLoadHost, _worldSnapshotHost, creation);
             _worldRuntime = new WorldRuntimeState(_adapter, _worldLoadHost, definitions, creation);

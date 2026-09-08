@@ -10,6 +10,24 @@ public sealed class WorldLifetimeGuardTests
     private static WorldObjectIdentity Identity() => new(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
 
     [Fact]
+    public void PreparedTrackingDoesNotAdmitBeforeCommitAndCannotOverwriteReplacementInventory()
+    {
+        var guard = new WorldLifetimeGuard(); var session = Guid.NewGuid(); guard.Start(session); guard.Ready(session);
+        var identity = Identity(); var poi = new object();
+        var prepared = guard.PrepareTracking(session, new[] { (poi, identity) });
+        Assert.False(guard.AllowAmbient(session, poi, identity.NativeId));
+        Assert.False(guard.AllowNativeRemoval(poi, "stripped"));
+        prepared.Commit(); Assert.True(guard.AllowAmbient(session, poi, identity.NativeId));
+        Assert.Throws<InvalidDataException>(() => prepared.Commit());
+        var discarded = new object(); var discardedId = Identity();
+        var stale = guard.PrepareTracking(session, new[] { (discarded, discardedId) });
+        var successor = new object(); var successorId = Identity(); guard.Track(session, successor, successorId);
+        Assert.False(stale.Current); Assert.Throws<InvalidDataException>(() => stale.Commit());
+        Assert.True(guard.AllowAmbient(session, successor, successorId.NativeId));
+        Assert.False(guard.AllowAmbient(session, discarded, discardedId.NativeId));
+    }
+
+    [Fact]
     public void OwnedUpdatesWaitForScopedReadinessAndNativeCleanupCannotDeletePersistentSites()
     {
         var guard = new WorldLifetimeGuard(); var session = Guid.NewGuid(); guard.Start(session);
