@@ -57,12 +57,29 @@ try {
                     $url = $pattern.Current.Value.TrimEnd('/')
                 }
                 if ($url -cne $destination -or [BrowserObservation]::GetForegroundWindow() -ne $window) { continue }
-                $bounds = $element.Current.BoundingRectangle
-                if ($bounds.Width -le 0 -or $bounds.Height -le 0 -or $bounds.Width -gt 8192 -or $bounds.Height -gt 8192) { throw 'Unexpected browser bounds.' }
-                $bitmap = New-Object Drawing.Bitmap([int]$bounds.Width, [int]$bounds.Height)
+                # Close address suggestions before capturing any pixels. Never capture tabs, bookmarks or profile chrome.
+                $captureShell = New-Object -ComObject WScript.Shell
+                $captureShell.SendKeys('{ESC}')
+                Start-Sleep -Milliseconds 150
+                $documentCondition = New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::ControlTypeProperty, [Windows.Automation.ControlType]::Document)
+                $documents = @($element.FindAll([Windows.Automation.TreeScope]::Descendants, $documentCondition) | Where-Object { !$_.Current.IsOffscreen -and $_.Current.Name -match 'Releases.*fankserver/vanguard-galaxy-api' })
+                if ($documents.Count -ne 1) { throw 'A unique public release document was not found.' }
+                $document = $documents[0]
+                $bounds = $document.Current.BoundingRectangle
+                $windowBounds = $element.Current.BoundingRectangle
+                # Exclude the website's top account/navigation bar as well as all browser chrome.
+                $x = [Math]::Max($bounds.X + 8, $windowBounds.X + 8)
+                $y = $bounds.Y + 180
+                $width = [Math]::Min($bounds.Right, $windowBounds.Right) - $x - 8
+                $height = [Math]::Min($bounds.Bottom, $windowBounds.Bottom) - $y - 8
+                if ($width -lt 100 -or $height -lt 100 -or $width -gt 8192 -or $height -gt 8192) { throw 'Unexpected page-content bounds.' }
+                $bitmap = New-Object Drawing.Bitmap([int]$width, [int]$height)
                 $graphics = [Drawing.Graphics]::FromImage($bitmap)
                 try {
-                    $graphics.CopyFromScreen([int]$bounds.X, [int]$bounds.Y, 0, 0, $bitmap.Size)
+                    $freshUrl = $pattern.Current.Value.TrimEnd('/')
+                    if ([BrowserObservation]::GetForegroundWindow() -ne $window -or !$document.Current.BoundingRectangle.Equals($bounds) -or
+                        ($freshUrl -cne $destination -and $freshUrl -cne $destination.Substring(8))) { throw 'Browser identity changed before page capture.' }
+                    $graphics.CopyFromScreen([int]$x, [int]$y, 0, 0, $bitmap.Size)
                     $bitmap.Save($image, [Drawing.Imaging.ImageFormat]::Png)
                 } finally { $graphics.Dispose(); $bitmap.Dispose() }
                 $verified = $true; break

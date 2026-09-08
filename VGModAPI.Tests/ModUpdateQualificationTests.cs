@@ -12,6 +12,26 @@ namespace VGModAPI.Tests;
 public sealed class ModUpdateQualificationTests
 {
     [Fact]
+    public async Task ActualUiFixtureOffersReleaseForInstalledDriverVersion()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "vg-ui-fixture-" + Guid.NewGuid().ToString("N"));
+        var mod = ModUpdateChecks.Mod();
+        var feed = ModUpdateFeed.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "ui-available.json")), mod.PluginId, "stable");
+        try
+        {
+            var cache = new ModUpdateCache(root); cache.Write(mod, feed, DateTimeOffset.UtcNow);
+            using var service = new ModUpdateService(new BlockedWire(), cache);
+            service.Sync(new[] { mod });
+            await ModUpdateChecks.Until(() => { service.Pump(); return service.Status(mod).State == ModUpdateState.Available; });
+            var presenter = new ModUpdatePresenter(service, _ => { });
+            string? destination = null;
+            Assert.True(presenter.OpenRelease(mod, url => destination = url));
+            Assert.Equal(ModUpdateChecks.Release, destination);
+            Assert.Contains("Update available", presenter.Text(mod, DateTimeOffset.UtcNow));
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+    [Fact]
     public void WireHeartbeatCannotBorrowEarlierFramesOrAcceptAStall()
     {
         Assert.Throws<InvalidOperationException>(() => new ProbeHeartbeat(1000, 10).Complete(1001, 10.1));

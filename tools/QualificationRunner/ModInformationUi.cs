@@ -59,8 +59,8 @@ public sealed partial class Plugin
             foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
             Require(details.text.Contains("NETWORK CONFIRMATION") && service.Status(selected).State == ModUpdateState.NotChecked, "First click performed network I/O.");
             foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
-            foreach (var frame in Wait(() => service.Status(selected).State == ModUpdateState.Current && release.interactable, "confirmed UI update")) yield return frame;
-            Require(launches == 0 && details.text.Contains("Up to date"), "Update result opened a browser or was not presented.");
+            foreach (var frame in Wait(() => service.Status(selected).State == ModUpdateState.Available && release.interactable, "confirmed UI update")) yield return frame;
+            Require(launches == 0 && details.text.Contains("Update available"), "Update result opened a browser or was not presented.");
             record("ui-confirmed-manual-without-automatic-browser");
             events.SetSelectedGameObject(automatic.gameObject);
             foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;

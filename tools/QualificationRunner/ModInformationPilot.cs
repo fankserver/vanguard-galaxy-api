@@ -48,7 +48,7 @@ public sealed partial class Plugin
             LiveRecord("unity-main-thread-menu-responsive");
         }
         finally { lifetime.Cancel(); _updateProbeStop = null; }
-        var menu = RunModMenuProbe(Record, "https://raw.githubusercontent.com/fankserver/vanguard-galaxy-api/" + revisions[0].Groups[1].Value + "/tools/fixtures/mod-updates/stable.json");
+        var menu = RunModMenuProbe(Record, "https://raw.githubusercontent.com/fankserver/vanguard-galaxy-api/" + revisions[0].Groups[1].Value + "/tools/fixtures/mod-updates/ui-available.json");
         try { while (menu.MoveNext()) yield return menu.Current; }
         finally { (menu as IDisposable)?.Dispose(); }
         var bytes = Encoding.UTF8.GetBytes(evidence.ToString());
