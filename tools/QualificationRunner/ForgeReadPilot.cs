@@ -24,7 +24,9 @@ public sealed partial class Plugin
         var forge = SpGet(nativeStation, "forge")!;
         var refinery = SpGet(nativeStation, "refinery")!;
         // No yield between before/after: natural game ticks cannot mask read-side effects.
-        var nativeRecipes = ((IEnumerable)SpGet(NativeType("Behaviour.Crafting.CraftingRecipe"), "all")!).Cast<object>().ToArray();
+        var nativeRecipes = ForgeReadRegistry.Expand(
+            ((IEnumerable)SpGet(NativeType("Behaviour.Crafting.CraftingRecipe"), "all")!).Cast<object>(),
+            recipe => ((IEnumerable)SpGet(recipe, "subRecipes")!).Cast<object>());
         var costs = nativeRecipes.Select(recipe => (int)SpGet(recipe, "dynamicCost")!).ToArray();
         var credits = (long)SpGet(CurrentPlayer, "credits")!;
         var forgeJobs = ((IEnumerable)SpGet(forge, "jobs")!).Cast<object>().ToArray();
