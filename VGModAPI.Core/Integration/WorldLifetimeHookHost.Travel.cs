@@ -9,6 +9,7 @@ namespace VGModAPI.Core.Integration;
 internal interface IWorldTravelCaptureHost
 {
     IEnumerator WrapLeg(object manager, object target, IEnumerator inner);
+    IEnumerator WrapChild(object manager, IEnumerator inner);
     object? BeginWaypoint(object manager);
     void EndWaypoint(object token);
 }
@@ -65,6 +66,25 @@ internal sealed partial class WorldLifetimeHookHost : IWorldTravelCaptureHost
         var parent = request.Parent;
         while (parent != null && parent.Ended) parent = parent.Parent;
         _waypoint = parent;
+    }
+    public IEnumerator WrapChild(object manager, IEnumerator inner)
+    {
+        _hub.CheckThread();
+        var leg = Travel.CaptureExecuting();
+        if (leg == null)
+        {
+            var target = _localTarget.GetValue(manager);
+            if ((Travel.CurrentLeg is { Completed: false }) || (target != null && !AllowRemoval(target)))
+                throw new InvalidDataException("Travel preparation child lost its originating leg.");
+            return inner;
+        }
+        return new WorldTravelChildEnumerator(inner, Travel, leg, () =>
+        {
+            VerifyRouteNative(leg.Route, manager);
+            Travel.RequireActive(leg, _hub.CurrentSession!.Id, _player.GetValue(null)!, manager);
+            if (!ReferenceEquals(_localTarget.GetValue(manager), leg.Target) || !AllowUse(leg.Target))
+                throw new InvalidDataException("Travel preparation target changed or became unavailable.");
+        });
     }
     public IEnumerator WrapLeg(object manager, object target, IEnumerator inner)
     {

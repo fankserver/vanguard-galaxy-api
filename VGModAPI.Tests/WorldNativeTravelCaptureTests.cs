@@ -26,7 +26,11 @@ public sealed class WorldNativeTravelCaptureTests
             var first = new Source.Galaxy.MapPointOfInterest { guid = "first" };
             var second = new Source.Galaxy.MapPointOfInterest { guid = "second" };
             player.waypoints.Add(first); player.waypoints.Add(second);
-            int obsoleteTailWrites = 0; IEnumerator? successor = null;
+            int obsoleteTailWrites = 0, prepSteps = 0; IEnumerator? successor = null, background = null;
+            IEnumerator Preparation()
+            {
+                prepSteps++; yield return null; prepSteps++;
+            }
             IEnumerator Second()
             {
                 manager.localTarget = second; yield return null;
@@ -40,7 +44,9 @@ public sealed class WorldNativeTravelCaptureTests
             }
             IEnumerator First()
             {
-                manager.localTarget = first; yield return Arrive();
+                manager.localTarget = first;
+                background = host.WrapChild(manager, Preparation()); Assert.True(background.MoveNext());
+                yield return Arrive();
                 obsoleteTailWrites++;
             }
             var request = host.BeginRoute(manager, second); Assert.NotNull(request);
@@ -49,6 +55,8 @@ public sealed class WorldNativeTravelCaptureTests
             var child = Assert.IsType<WorldTravelLegEnumerator>(root.Current);
             Assert.False(child.MoveNext()); Assert.False(root.MoveNext());
             Assert.Equal(0, obsoleteTailWrites); Assert.Same(second, manager.localTarget);
+            Assert.Throws<InvalidDataException>(() => background!.MoveNext()); Assert.Equal(1, prepSteps);
+            ((IDisposable)background!).Dispose();
             Assert.NotNull(successor); Assert.False(successor!.MoveNext());
             ((IDisposable)successor).Dispose(); child.Dispose(); ((IDisposable)root).Dispose();
             var owned = new Source.Galaxy.MapPointOfInterest { guid = WorldObjectIdentity.ReservedPrefix + "unknown" };

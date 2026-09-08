@@ -15,6 +15,12 @@ internal static class WorldLifetimePatches
         internal static void Postfix(object __instance, object target, ref System.Collections.IEnumerator __result, IWorldTravelCaptureHost? __state)
         { if (__state != null) __result = __state.WrapLeg(__instance, target, __result); }
     }
+    internal static class TravelChild
+    {
+        internal static void Prefix(out IWorldTravelCaptureHost? __state) => __state = Host as IWorldTravelCaptureHost;
+        internal static void Postfix(object __instance, ref System.Collections.IEnumerator __result, IWorldTravelCaptureHost? __state)
+        { if (__state != null) __result = __state.WrapChild(__instance, __result); }
+    }
     internal static class Waypoint
     {
         internal sealed class Capture
