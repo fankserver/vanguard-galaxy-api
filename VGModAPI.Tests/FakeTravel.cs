@@ -105,7 +105,7 @@ public sealed class SpacestationExteriorManager
 
 namespace Source.Galaxy
 {
-    public sealed class GalaxyMapData
+    public sealed partial class GalaxyMapData
     {
         public static GalaxyMapData? current { get; set; }
         private readonly System.Collections.Generic.Dictionary<string, SystemMapData> _systems = new();
