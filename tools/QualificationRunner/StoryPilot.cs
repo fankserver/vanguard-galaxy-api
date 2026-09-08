@@ -40,6 +40,11 @@ public sealed partial class Plugin
             "Same local ID must resolve to independent owners.");
         var duplicate = (StoryRegistrationResult)campaign.GetType().GetMethod("Register")!.Invoke(campaign, new object[] { target, faction })!;
         Require(duplicate.Status == StoryRegistrationStatus.DuplicateLocalId, "Duplicate registration was not diagnosed.");
+        if (Environment.GetCommandLineArgs().Contains("--vgmodapi-story-definition-cold"))
+        {
+            foreach (var frame in CheckColdStoryDefinitions(campaign)) yield return frame;
+            yield break;
+        }
         Require(a.Unresolved("mission-x").Knowledge == StoryKnowledge.Known && a.Unresolved("mission-x").Occurrences.Count == 0,
             "New-game occurrences leaked into the pre-existing fixture slot.");
         StoryCase("independent-authors");
