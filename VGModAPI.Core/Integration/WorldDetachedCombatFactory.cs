@@ -66,5 +66,15 @@ internal sealed class WorldDetachedCombatFactory
         _content.SetValue(result, (ulong)uint.Parse(hash.Substring(8, 8), NumberStyles.HexNumber, CultureInfo.InvariantCulture));
         return result;
     }
+    internal bool MatchesCreated(object poi, WorldSavedDefinition saved, WorldObjectIdentity identity, object system, float x, float y)
+    {
+        var position = _position.GetValue(poi)!;
+        var factions = _factions.GetValue(null) as IDictionary;
+        var faction = factions?[saved.Definition.FactionId];
+        return faction != null && ReferenceEquals(_faction.GetValue(poi), faction) &&
+            (string?)_guid.GetValue(poi) == identity.NativeId && (string?)_name.GetValue(poi) == saved.Definition.Name &&
+            (int)_level.GetValue(poi)! == saved.Definition.Level && ReferenceEquals(_system.GetValue(poi), system) &&
+            (float)_x.GetValue(position)! == x && (float)_y.GetValue(position)! == y;
+    }
     private static bool Finite(float value) => !float.IsNaN(value) && !float.IsInfinity(value);
 }
