@@ -19,13 +19,6 @@ build-story-authors: link-libs
 test:
 	python3 -m unittest discover -s tools -p 'test_*.py'
 	$(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter 'Category!=InstalledGame&Category!=InstalledConsumer&Category!=InstalledArchive&Category!=Package'
-# Coverage needs Debug symbols; binary-dependency checks run only in the full baseline.
-.PHONY: coverage
-coverage:
-	$(MAKE) test CONFIGURATION=Debug
-	rm -rf artifacts/coverage
-	$(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c Debug --no-build --filter 'Category!=InstalledGame&Category!=InstalledConsumer&Category!=InstalledArchive&Category!=Package&FullyQualifiedName!~VGModAPI.Tests.PackageValidationTests.CoreRemainsLoaderAndUnityFree&FullyQualifiedName!~VGModAPI.Tests.PackageValidationTests.StableContractHasOnlyFrameworkReferences' --collect:'XPlat Code Coverage' --settings tools/coverage.runsettings --results-directory artifacts/coverage/raw
-	python3 tools/coverage_badge.py artifacts/coverage
 check-bindings:
 	VG_GAME_ASSEMBLY="$(MANAGED)/Assembly-CSharp.dll" $(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter 'Category=InstalledGame'
 # Metadata evidence for the members the actual-consumer qualification probe reflects. Needs the

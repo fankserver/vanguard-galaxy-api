@@ -10,16 +10,17 @@ Public CI is not a full plugin build, a real-package validation, an installed-ga
 
 ## Host-test coverage
 
-`make coverage` runs the complete uninstrumented Debug host suite, then collects
-Coverlet line and branch coverage for **VGModAPI.Core and VGModAPI.Abstractions**.
+The `Coverage` GitHub Action runs the complete uninstrumented Debug host suite,
+then collects Coverlet coverage for **VGModAPI.Core and VGModAPI.Abstractions**.
 It always uses Debug because Release omits symbols. The collector accepts the
 mapped `/src` PDB paths used by deterministic builds. Two assembly-dependency
 checks run only in the uninstrumented suite: instrumentation adds framework
 references, so inspecting those modified binaries would not validate the shipped
 assembly contract. No other default host tests are excluded from collection.
 
-The command replaces `artifacts/coverage/` and writes `coverage.cobertura.xml`,
-`summary.json`, and `badge.svg`. Missing, empty, or unexpected-assembly reports
+Collection settings, report validation, and badge generation live directly in
+`.github/workflows/coverage.yml`. It writes `coverage.cobertura.xml`, `summary.json`,
+and `badge.svg` under `artifacts/coverage/`. Missing, empty, or unexpected-assembly reports
 fail the command. Python and PowerShell tests, the full Unity/BepInEx adapter,
 and production source linked into the test assembly are outside this metric.
 It is not full-plugin coverage or in-game acceptance.
