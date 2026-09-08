@@ -19,6 +19,8 @@ Supported persistent API-owned content must save and reconstruct automatically. 
 
 These requirements apply to each content module's supported scope. Observer/storage plumbing alone does not satisfy them. Consumer integrations retaining their own save hooks are not evidence that the API manages those consumers' content.
 
+Boarding-specific source mappings and applicable contract constraints are documented in [boarding integration](boarding-contract.md). That document does not advertise an available boarding capability.
+
 ## Integration boundaries
 
 - Inspect the original installed game implementation before changing semantic hooks. Signature matching alone is insufficient. Reject uninspected hashes until reinspection and qualification.
