@@ -33,7 +33,7 @@ Boarding-specific source mappings and applicable contract constraints are docume
 
 ## Validation and delivery
 
-Use the checks defined in the [Makefile](../Makefile), including pure state-machine/adapter tests, installed binding checks and package validation. Cover nesting/reentrancy, stale sessions, retries, skips, subscriber disposal and individual observer failures. Test doubles do not simulate Unity scheduling; metadata checks do not execute Harmony.
+Use the checks defined in the [Makefile](https://github.com/fankserver/vanguard-galaxy-api/blob/main/Makefile), including pure state-machine/adapter tests, installed binding checks and package validation. Cover nesting/reentrancy, stale sessions, retries, skips, subscriber disposal and individual observer failures. Test doubles do not simulate Unity scheduling; metadata checks do not execute Harmony.
 
 Controlled native testing requires explicit authorization and disposable/copied saves. Record tested boundaries and remaining gaps without treating host tests or a bounded native probe as full in-game acceptance. `RuntimeQualified` remains false. Never deliberately damage real saves or redistribute game references, decompiled source, raw profiles or private fixtures.
 
