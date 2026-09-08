@@ -4,6 +4,7 @@ namespace VGModAPI.Core;
 
 internal interface IRecipeQuoteSource
 {
+    void Invalidate();
     RecipeStationHandle? CurrentStation(Guid sessionId);
     RecipeQuote Quote(RecipeStationHandle station, RecipeId recipe, int batches, RefineryInputPolicy policy, long revision);
 }
@@ -13,10 +14,18 @@ internal sealed class RecipeQuoteService : IRecipeQuotes, IDisposable
     private readonly LifecycleHub _hub;
     private readonly IRecipeQuoteSource _source;
     private readonly Action<Exception> _report;
+    private readonly IDisposable _lifetime;
     private bool _disposed;
     private long _revision;
     internal RecipeQuoteService(LifecycleHub hub, IRecipeQuoteSource source, Action<Exception> report)
-    { _hub = hub; _source = source; _report = report; }
+    {
+        _hub = hub; _source = source; _report = report;
+        _lifetime = hub.Subscribe("vgmodapi.recipe-quotes", message =>
+        {
+            if (message.Kind is LifecycleEventKind.SessionStarting or LifecycleEventKind.SessionInvalidated or LifecycleEventKind.SessionStartFailed)
+                _source.Invalidate();
+        });
+    }
     public RecipeStationHandle? CurrentStation
     {
         get
@@ -68,5 +77,10 @@ internal sealed class RecipeQuoteService : IRecipeQuotes, IDisposable
     private void Report(Exception error) { try { _report(error); } catch { } }
     internal static RecipeQuote Failure(RecipeQuoteStatus status, RecipeStationHandle? station, RecipeId recipe, int batches, string detail) =>
         new(status, detail, station, recipe, batches, 0, Array.Empty<RecipeIngredientRequirement>(), Array.Empty<RecipeOutputPreview>(), Array.Empty<RecipeBlocker>());
-    public void Dispose() { _hub.CheckThread(); _disposed = true; }
+    public void Dispose()
+    {
+        _hub.CheckThread(); if (_disposed) return;
+        _disposed = true; _lifetime.Dispose();
+        try { _source.Invalidate(); } catch (Exception exception) { Report(exception); }
+    }
 }

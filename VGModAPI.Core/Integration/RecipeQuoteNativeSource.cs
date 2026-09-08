@@ -11,6 +11,7 @@ internal sealed partial class RecipeCatalogNativeSource
     private Guid _quoteSession;
     private readonly Dictionary<Guid, object> _quoteStations = new();
     internal void BindQuotes() => RecipeQuoteBindings.Validate(_assembly);
+    public void Invalidate() { _quoteStations.Clear(); _quoteSession = Guid.Empty; }
     public RecipeStationHandle? CurrentStation(Guid sessionId)
     {
         if (_quoteSession != sessionId) { _quoteStations.Clear(); _quoteSession = sessionId; }

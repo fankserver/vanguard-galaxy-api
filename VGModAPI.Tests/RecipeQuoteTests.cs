@@ -18,6 +18,7 @@ public sealed class RecipeQuoteTests : IDisposable
 {
     private readonly LifecycleHub _hub = new((_, _) => { });
     private readonly RecipeQuoteService _service;
+    private readonly RecipeCatalogNativeSource _source;
     private readonly GamePlayer _player = new() { currentSpaceShip = new(), credits = 1000 };
     private readonly SpaceStation _station = new();
     private readonly InventoryItemType _item = new() { identifier = "component" };
@@ -37,9 +38,9 @@ public sealed class RecipeQuoteTests : IDisposable
         _recipe.results.Add(new() { item = _item.gameObject, count = 3 });
         _station.materialStorage.items = new[] { Stack(4) };
         _player.currentSpaceShip.cargo.items = new[] { Stack(6) };
-        var source = new RecipeCatalogNativeSource(typeof(CraftingRecipe).Assembly,
+        _source = new RecipeCatalogNativeSource(typeof(CraftingRecipe).Assembly,
             (prefab, type) => ((UnityEngine.GameObject)prefab).Components.TryGetValue(type, out var value) ? value : null, value => value);
-        _service = new RecipeQuoteService(_hub, source, _ => { }); _handle = _service.CurrentStation!;
+        _service = new RecipeQuoteService(_hub, _source, _ => { }); _handle = _service.CurrentStation!;
     }
     private Inventory.InventoryItem Stack(int count, bool favourite = false) => new() { item = _item, count = count, favourite = favourite };
     public void Dispose()
@@ -169,6 +170,13 @@ public sealed class RecipeQuoteTests : IDisposable
         Assert.Equal(3, quote.Outputs.Count); Assert.Equal(.1, quote.Outputs[1].ProbabilityPerBatch); Assert.Null(quote.Outputs[2].Resource);
         Assert.DoesNotContain(RecipeInventoryKind.ShipCargo, quote.Outputs[2].PossibleDestinations);
         ore.ignoreExtraRewards = true; Assert.Single(_service.Quote(_handle, id).Outputs);
+    }
+    [Fact]
+    public void SessionInvalidationReleasesIssuedNativeStationReferences()
+    {
+        _hub.Invalidate("menu");
+        Assert.Equal(RecipeQuoteStatus.StaleHandle, _source.Quote(_handle, Id, 1, RefineryInputPolicy.Manual, 1).Status);
+        Assert.Equal(RecipeQuoteStatus.SessionUnavailable, _service.Quote(_handle, Id).Status);
     }
     [Fact]
     public void ExtractionQuotesCreditsAndCanistersWithoutQueueOrMutation()
