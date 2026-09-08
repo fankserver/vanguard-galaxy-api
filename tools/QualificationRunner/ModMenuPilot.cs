@@ -21,7 +21,7 @@ public sealed partial class Plugin
     {
         Require(File.ReadAllText(Path.Combine(_root!, "mod-menu-probe.enabled")) == "mod-menu-probe-v3", "Invalid menu probe marker.");
         foreach (var frame in Wait(() => GameObject.Find("VGModAPI Mods") != null, "owned Mods entry")) yield return frame;
-        Require(_api!.CurrentSession == null, "Menu probe must not enter gameplay.");
+        Require(ModMenuSessionChecks.Inactive(_api!.CurrentSession, fullRecord != null), "Menu probe must not enter gameplay.");
         var entry = GameObject.Find("VGModAPI Mods").GetComponent<Button>();
         Require(entry.GetComponentInChildren<TMP_Text>().alignment == TextAlignmentOptions.Center, "Mods entry is not centered.");
         var menu = entry.transform.parent.gameObject;
@@ -156,7 +156,7 @@ public sealed partial class Plugin
             foreach (var frame in Wait(() => GameObject.Find("VGModAPI Mods") != null, "reattached Mods entry")) yield return frame;
             Require(menu.GetComponentsInChildren<Button>().Count(button => button.name == "VGModAPI Mods") == 1, "Duplicate Mods entry after reactivation.");
             Require(EventSystem.current == events && GameObject.Find("VGModAPI Mods").GetComponentInParent<Canvas>() == canvas, "Global UI infrastructure changed.");
-            Require(_api.CurrentSession == null && !_events.Any(item => item.Kind == LifecycleEventKind.PlayerReady), "Menu probe entered gameplay.");
+            Require(ModMenuSessionChecks.Inactive(_api.CurrentSession, fullRecord != null) && !_events.Any(item => item.Kind == LifecycleEventKind.PlayerReady), "Menu probe entered gameplay.");
             evidence.AppendLine("inactive-teardown=PASS reattach-single-entry=PASS " + (fullRecord == null ? "no-gameplay=PASS" : "menu-phase-no-gameplay=PASS"));
             foreach (var frame in MenuLifecycleProbe(keyboard, mouse, evidence)) yield return frame;
             var bytes = Encoding.UTF8.GetBytes(evidence.ToString());

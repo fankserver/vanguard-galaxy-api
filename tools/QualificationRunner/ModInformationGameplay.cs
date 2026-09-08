@@ -77,14 +77,14 @@ public sealed partial class Plugin
             foreach (var frame in Wait(() => (bool)SpGet(Stockpile, "IconAttached")!, "coexisting Stockpile UI")) yield return frame;
             Require(SpGet(Stockpile, "_icon") is UnityEngine.Object icon && icon, "Real UI consumer lost its icon.");
             Invoke(Instance(_scenes), "StartMenu");
-            foreach (var frame in Wait(() => SceneManager.GetSceneByName("Main Menu").isLoaded && _api.CurrentSession == null && GameObject.Find("VGModAPI Mods") != null, "information return from gameplay")) yield return frame;
+            foreach (var frame in Wait(() => SceneManager.GetSceneByName("Main Menu").isLoaded && ModMenuSessionChecks.Inactive(_api.CurrentSession, true) && AccessTools.Field(_player, "current").GetValue(null) == null && GameObject.Find("VGModAPI Mods") != null, "information return from gameplay")) yield return frame;
             var entry = GameObject.Find("VGModAPI Mods");
             Require(entry.transform.parent.GetComponentsInChildren<Button>().Count(button => button.name == "VGModAPI Mods") == 1, "Return duplicated the entry.");
         }
         record("gameplay-two-loads-return-single-entry");
         record("real-stockpile-ui-journal-coexistence");
         foreach (var frame in NewGameAndSpaceLoad(false)) yield return frame;
-        foreach (var frame in Wait(() => _api!.CurrentSession == null && GameObject.Find("VGModAPI Mods") != null, "information post-new-game menu")) yield return frame;
+        foreach (var frame in Wait(() => ModMenuSessionChecks.Inactive(_api!.CurrentSession, true) && AccessTools.Field(_player, "current").GetValue(null) == null && GameObject.Find("VGModAPI Mods") != null, "information post-new-game menu")) yield return frame;
         record("new-game-save-load-return");
         // Subsequent menu-only assertions cover that phase, not the already-recorded gameplay phases.
         _events.Clear();

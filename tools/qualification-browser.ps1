@@ -26,6 +26,7 @@ $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
 $game = $null
 try {
     while (!(Test-Path -LiteralPath $request -PathType Leaf)) {
+        if (Test-Path -LiteralPath (Join-Path $root 'run-outcome.json')) { throw 'Native run ended before requesting a browser.' }
         if ([DateTime]::UtcNow -gt $deadline) { throw 'No explicit browser launch request arrived.' }
         Start-Sleep -Milliseconds 100
     }
@@ -37,6 +38,7 @@ try {
     $browserDeadline = [DateTime]::UtcNow.AddSeconds(40)
     $verified = $false
     while ([DateTime]::UtcNow -lt $browserDeadline -and !$verified) {
+        if ($game.HasExited) { throw 'Owned game exited before browser verification.' }
         $window = [BrowserObservation]::GetForegroundWindow()
         $title = New-Object Text.StringBuilder 1024
         $null = [BrowserObservation]::GetWindowText($window, $title, 1024)

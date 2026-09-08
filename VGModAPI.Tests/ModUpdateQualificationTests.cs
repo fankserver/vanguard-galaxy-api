@@ -12,6 +12,17 @@ namespace VGModAPI.Tests;
 public sealed class ModUpdateQualificationTests
 {
     [Fact]
+    public void MenuAcceptsInvalidatedHistoryButNeverAnActiveSession()
+    {
+        Assert.True(ModMenuSessionChecks.Inactive(null, false));
+        foreach (SessionPhase phase in Enum.GetValues(typeof(SessionPhase)))
+        {
+            var session = new SessionSnapshot(Guid.NewGuid(), phase, SessionOrigin.NewGame, null);
+            Assert.Equal(phase == SessionPhase.Invalidated, ModMenuSessionChecks.Inactive(session, true));
+            Assert.False(ModMenuSessionChecks.Inactive(session, false));
+        }
+    }
+    [Fact]
     public async Task ActualUiFixtureOffersReleaseForInstalledDriverVersion()
     {
         var root = Path.Combine(Path.GetTempPath(), "vg-ui-fixture-" + Guid.NewGuid().ToString("N"));
