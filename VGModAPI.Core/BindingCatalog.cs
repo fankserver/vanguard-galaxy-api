@@ -74,6 +74,8 @@ internal static class BindingCatalog
         new("boardingWorldDelivery", "Source.Galaxy.MapPointOfInterest", "AddPersistable", false, "UnityEngine.GameObject", "Source.Data.Persistable.PersistableData"),
         new("boardingDataLoot", BoardingOperation, "HandleDataLootCollected", false, "System.Void", "Source.CompartmentSystem.SimLootEntry"),
         new("boardingRestoreApproach", BoardingManager, "EnsureApproachOperation", false, BoardingOperation, Boardable, "Behaviour.Unit.SpaceShip", "System.Boolean"),
+        new("boardingDockedSingleReturn", BoardingOperation, "ReturnAndDestroyDockedPod", false, "System.Void", "Behaviour.Persistables.BoardingPod", "System.Collections.Generic.Dictionary`2<System.String,System.Int32>"),
+        new("boardingTriggerReturn", BoardingOperation, "TriggerPodReturn", false, "System.Void", "Source.Dungeon.DungeonSimulation"),
         new("boardingDockedReturn", BoardingOperation, "ReturnDockedPodCrew", false, "System.Void"),
         new("boardingRecall", BoardingOperation, "RecallAllPods", false, "System.Void"),
         new("boardingMarkedComplete", BoardingOperation, "MarkComplete", false, "System.Void"),

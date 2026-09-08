@@ -115,11 +115,34 @@ internal sealed class BoardingObserver : IDisposable
         _operations.Add(native, operation); target.Operation = operation;
         Observe(operation, resumed ? BoardingEventKind.OperationResumed : BoardingEventKind.OperationStarted);
     }
-    internal void OperationSignal(object native, string method)
+    internal void BeforeOperation(object native)
+    {
+        if (_operations.TryGetValue(native, out var operation)) TrackPods(operation);
+    }
+    internal void OperationSignal(object native, string method, object? returnedPod = null)
     {
         if (!_operations.TryGetValue(native, out var operation)) return;
-        if (method is "ReturnCrewToShip" or "HandlePodCrewReturned" or "ReturnDockedPodCrew" or "RecallAllPods") operation.ReturnObserved = true;
+        if (method is "ReturnCrewToShip" or "HandlePodCrewReturned" or "ReturnAndDestroyDockedPod" or "ReturnDockedPodCrew" or "RecallAllPods" or "TriggerPodReturn") operation.ReturnObserved = true;
+        if (method is "HandlePodCrewReturned" or "ReturnAndDestroyDockedPod" && returnedPod != null) operation.PendingPods.Remove(returnedPod);
+        if (method is "ReturnDockedPodCrew" or "RecallAllPods" or "TriggerPodReturn")
+        {
+            var remaining = ((IEnumerable)Read(native, "_activePods")!).Cast<object>().ToArray();
+            foreach (var pod in operation.PendingPods.Where(pair => pair.Value == "Docked" && !remaining.Contains(pair.Key)).Select(pair => pair.Key).ToArray())
+                operation.PendingPods.Remove(pod);
+        }
         Observe(operation);
+    }
+    private void TrackPods(Operation operation)
+    {
+        var pods = ((IEnumerable)Read(operation.Native, "_activePods")!).Cast<object>().ToArray();
+        foreach (var pending in operation.PendingPods.Keys)
+            if (!pods.Contains(pending) || !_isLive(pending)) operation.ReturnUnresolved = true;
+        foreach (var pod in pods)
+        {
+            if (pod == null || !Read<bool>(pod, "isPlayerOwned")) continue;
+            if (!_isLive(pod)) operation.ReturnUnresolved = true;
+            operation.PendingPods[pod] = Read(pod, "state")!.ToString()!;
+        }
     }
     internal object? BeginRewards(object native)
     {
@@ -213,9 +236,10 @@ internal sealed class BoardingObserver : IDisposable
     }
     private void Observe(Operation operation, BoardingEventKind? explicitKind = null, BoardingDelivery? delivery = null)
     {
+        TrackPods(operation);
         var native = operation.Native; var sim = Read(native, "simulation"); var pods = Pods(native);
         var playerPods = PlayerPods(native);
-        var phase = Read<bool>(native, "isComplete") ? playerPods > 0 ? BoardingPhase.ReturningCrew : operation.ReturnObserved ? BoardingPhase.Settled : BoardingPhase.Resolved
+        var phase = Read<bool>(native, "isComplete") ? playerPods > 0 ? BoardingPhase.ReturningCrew : operation.ReturnObserved && !operation.ReturnUnresolved && operation.PendingPods.Count == 0 ? BoardingPhase.Settled : BoardingPhase.Resolved
             : Read(native, "phase")!.ToString() == "Approach" ? Read<int>(native, "_podsInFlight") > 0 ? BoardingPhase.AwaitingLanding : BoardingPhase.Approaching
             : Read(native, "phase")!.ToString() == "Extraction" || (sim != null && Read<bool>(sim, "awaitingPlayerExtraction")) ? BoardingPhase.Extracting : BoardingPhase.Active;
         var rooms = sim == null ? Array.Empty<BoardingCompartmentSnapshot>() : ((IEnumerable)Read(sim, "compartments")!).Cast<object>()
@@ -268,7 +292,8 @@ internal sealed class BoardingObserver : IDisposable
         internal BoardingOperationSnapshot? Snapshot;
         internal long Revision;
         internal string? Fingerprint;
-        internal bool Victory, Resolved, Settled, ReturnObserved;
+        internal bool Victory, Resolved, Settled, ReturnObserved, ReturnUnresolved;
+        internal readonly Dictionary<object, string> PendingPods = new();
         internal Operation(object native, Target target, BoardingHandle handle) { Native = native; Target = target; Handle = handle; }
     }
 }

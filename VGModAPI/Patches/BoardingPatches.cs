@@ -25,9 +25,11 @@ internal static class BoardingPatches
     }
     internal static class Operation
     {
-        internal static Exception? Finalizer(object __instance, MethodBase __originalMethod, Exception? __exception)
+        internal static void Prefix(object __instance) => Observer?.Guard(() => Observer.BeforeOperation(__instance));
+        internal static Exception? Finalizer(object __instance, MethodBase __originalMethod, object[] __args, Exception? __exception)
         {
-            if (__exception == null) Observer?.Guard(() => Observer.OperationSignal(__instance, __originalMethod.Name));
+            if (__exception == null) Observer?.Guard(() => Observer.OperationSignal(__instance, __originalMethod.Name,
+                __originalMethod.Name is "HandlePodCrewReturned" or "ReturnAndDestroyDockedPod" ? __args[0] : null));
             return __exception;
         }
     }

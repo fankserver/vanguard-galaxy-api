@@ -10,6 +10,7 @@ internal static class BoardingMembers
     internal static readonly (string Type, string Name, string ValueType)[] Schema =
     {
         ("Behaviour.Persistables.BoardingPod", "isPlayerOwned", "System.Boolean"),
+        ("Behaviour.Persistables.BoardingPod", "state", "Source.Data.Persistable.BoardingPodState"),
         (BindingCatalog.Player, "credits", "System.Int64"),
         ("Source.Galaxy.MapPointOfInterest", "persistables", "System.Collections.Generic.List`1<Source.Data.Persistable.PersistableData>"),
         ("Source.Data.Persistable.TractorableItemData", "itemAmount", "System.Int32"),

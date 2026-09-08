@@ -10,6 +10,7 @@ namespace VGModAPI.Tests;
 
 public sealed class BoardingObserverTests
 {
+    private static Dictionary<string, object?> Pod(bool player = true, string state = "Returning") => new() { ["isPlayerOwned"] = player, ["state"] = state };
     private sealed class Fixture : IDisposable
     {
         internal readonly LifecycleHub Hub = new((_, _) => { });
@@ -41,7 +42,7 @@ public sealed class BoardingObserverTests
             };
         }
         internal void Start(bool resume = false) => Observer.Guard(() => Observer.OperationReady(Native, resume));
-        internal void Signal(string method = "Tick") => Observer.Guard(() => Observer.OperationSignal(Native, method));
+        internal void Signal(string method = "Tick", object? returnedPod = null) => Observer.Guard(() => Observer.OperationSignal(Native, method, returnedPod));
         public void Dispose() { Observer.Dispose(); Hub.Dispose(); }
     }
     [Fact]
@@ -61,11 +62,11 @@ public sealed class BoardingObserverTests
     [Fact]
     public void CompletionAndCrewReturnAreSeparate()
     {
-        using var f = new Fixture(); ((ArrayList)f.Native["_activePods"]!).Add(new Dictionary<string, object?> { ["isPlayerOwned"] = true }); f.Start();
+        using var f = new Fixture(); var player = Pod(); ((ArrayList)f.Native["_activePods"]!).Add(player); f.Start();
         f.Native["isComplete"] = true; f.Sim["isComplete"] = true; f.Signal();
         Assert.Equal(BoardingPhase.ReturningCrew, Assert.Single(f.Service.GetOperations()).Phase);
         Assert.DoesNotContain(f.Events, e => e.Kind == BoardingEventKind.CrewReturnSettled);
-        ((ArrayList)f.Native["_activePods"]!).Clear(); f.Signal("HandlePodCrewReturned");
+        ((ArrayList)f.Native["_activePods"]!).Clear(); f.Signal("HandlePodCrewReturned", player);
         Assert.Equal(BoardingPhase.Settled, Assert.Single(f.Service.GetOperations()).Phase);
         Assert.Single(f.Events, e => e.Kind == BoardingEventKind.CrewReturnSettled);
         f.Signal("HandlePodCrewReturned"); Assert.Single(f.Events, e => e.Kind == BoardingEventKind.CrewReturnSettled);
@@ -129,13 +130,13 @@ public sealed class BoardingObserverTests
     public void SameLocationReplacementCannotReviveTargetWhileOldCrewReturns()
     {
         using var f = new Fixture();
-        ((ArrayList)f.Native["_activePods"]!).Add(new Dictionary<string, object?> { ["isPlayerOwned"] = true });
+        var player = Pod(); ((ArrayList)f.Native["_activePods"]!).Add(player);
         f.Start(); var target = Assert.Single(f.Service.GetTargets()); var operation = Assert.Single(f.Service.GetOperations());
         f.Dead.Add(f.Unit); f.Observer.Poll(); Assert.Null(f.Service.GetTarget(target.Handle));
         var replacement = new Dictionary<string, object?> { ["data"] = f.Location };
         f.Observer.Guard(() => f.Observer.TargetReady(replacement));
         var next = Assert.Single(f.Service.GetTargets()); Assert.NotEqual(target.Handle, next.Handle);
-        f.Native["isComplete"] = true; ((ArrayList)f.Native["_activePods"]!).Clear(); f.Signal("HandlePodCrewReturned");
+        f.Native["isComplete"] = true; ((ArrayList)f.Native["_activePods"]!).Clear(); f.Signal("HandlePodCrewReturned", player);
         Assert.Null(f.Service.GetTarget(target.Handle)); Assert.Same(next, f.Service.GetTarget(next.Handle));
         Assert.Contains(f.Events, e => e.Kind == BoardingEventKind.CrewReturnSettled && e.Operation!.Handle.Equals(operation.Handle));
         f.Observer.Poll(); Assert.Null(f.Service.GetOperation(operation.Handle));
@@ -143,7 +144,7 @@ public sealed class BoardingObserverTests
     [Fact]
     public void PoiUnloadInvalidatesActiveOperationWhenNoLiveReturnObligationRemains()
     {
-        using var f = new Fixture(); var pod = new Dictionary<string, object?> { ["isPlayerOwned"] = true };
+        using var f = new Fixture(); var pod = Pod();
         ((ArrayList)f.Native["_activePods"]!).Add(pod); f.Start();
         var old = Assert.Single(f.Service.GetOperations()).Handle;
         f.Dead.Add(f.Unit); f.Dead.Add(pod); f.Observer.Poll();
@@ -155,9 +156,9 @@ public sealed class BoardingObserverTests
     public void LandedEnemyPodDoesNotBlockLastPlayerReturn()
     {
         using var f = new Fixture(); var pods = (ArrayList)f.Native["_activePods"]!;
-        var player = new Dictionary<string, object?> { ["isPlayerOwned"] = true };
-        pods.Add(player); pods.Add(new Dictionary<string, object?> { ["isPlayerOwned"] = false }); f.Start();
-        f.Native["isComplete"] = true; pods.Remove(player); f.Signal("HandlePodCrewReturned");
+        var player = Pod();
+        pods.Add(player); pods.Add(Pod(false)); f.Start();
+        f.Native["isComplete"] = true; pods.Remove(player); f.Signal("HandlePodCrewReturned", player);
         Assert.Equal(BoardingPhase.Settled, Assert.Single(f.Service.GetOperations()).Phase);
         Assert.Equal(1, Assert.Single(f.Service.GetOperations()).ActivePods);
         Assert.Single(f.Events, e => e.Kind == BoardingEventKind.CrewReturnSettled);
@@ -171,14 +172,47 @@ public sealed class BoardingObserverTests
     {
         using var f = new Fixture(); f.Native["simulation"] = null; f.Native["phase"] = "Approach"; f.Start();
         var pods = (ArrayList)f.Native["_activePods"]!;
-        if (launching) pods.Add(new Dictionary<string, object?> { ["isPlayerOwned"] = true });
+        var player = Pod(); if (launching) pods.Add(player);
         f.Signal(boundary); f.Native["isComplete"] = true; f.Signal("MarkComplete");
         Assert.Equal(launching ? BoardingPhase.ReturningCrew : BoardingPhase.Settled, Assert.Single(f.Service.GetOperations()).Phase);
         if (launching)
         {
             Assert.DoesNotContain(f.Events, e => e.Kind == BoardingEventKind.CrewReturnSettled);
-            pods.Clear(); f.Signal("HandlePodCrewReturned");
+            pods.Clear(); f.Signal("HandlePodCrewReturned", player);
         }
+        Assert.Single(f.Events, e => e.Kind == BoardingEventKind.CrewReturnSettled);
+    }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RecallThenUnobservedPodLossCannotSettle(bool removedFromNativeList)
+    {
+        using var f = new Fixture(); var player = Pod(state: "Launching"); var pods = (ArrayList)f.Native["_activePods"]!;
+        pods.Add(player); f.Native["simulation"] = null; f.Native["phase"] = "Approach"; f.Start();
+        f.Signal("RecallAllPods"); f.Native["isComplete"] = true; f.Signal("MarkComplete");
+        Assert.Equal(BoardingPhase.ReturningCrew, Assert.Single(f.Service.GetOperations()).Phase);
+        f.Dead.Add(f.Unit); f.Dead.Add(player); if (removedFromNativeList) pods.Remove(player);
+        f.Observer.Poll();
+        Assert.Empty(f.Service.GetOperations());
+        Assert.DoesNotContain(f.Events, e => e.Kind == BoardingEventKind.CrewReturnSettled);
+    }
+    [Fact]
+    public void PartialReturnThenUnloadCannotSettleTheMissingSurvivors()
+    {
+        using var f = new Fixture(); var first = Pod(); var second = Pod(); var pods = (ArrayList)f.Native["_activePods"]!;
+        pods.Add(first); pods.Add(second); f.Start(); f.Native["isComplete"] = true;
+        pods.Remove(first); f.Signal("HandlePodCrewReturned", first);
+        f.Dead.Add(f.Unit); f.Dead.Add(second); f.Observer.Poll();
+        Assert.Empty(f.Service.GetOperations());
+        Assert.DoesNotContain(f.Events, e => e.Kind == BoardingEventKind.CrewReturnSettled);
+    }
+    [Fact]
+    public void DockedRecallDischargesOnlyDockedObligations()
+    {
+        using var f = new Fixture(); var docked = Pod(state: "Docked"); var pods = (ArrayList)f.Native["_activePods"]!;
+        pods.Add(docked); f.Native["simulation"] = null; f.Native["phase"] = "Approach"; f.Start();
+        f.Observer.BeforeOperation(f.Native); pods.Remove(docked); f.Dead.Add(docked); f.Signal("RecallAllPods");
+        f.Native["isComplete"] = true; f.Signal("MarkComplete");
         Assert.Single(f.Events, e => e.Kind == BoardingEventKind.CrewReturnSettled);
     }
     [Fact]
