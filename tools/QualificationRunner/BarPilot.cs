@@ -137,6 +137,7 @@ public sealed partial class Plugin
         Require(((BarResult)SpCall(a, "Register", stationId, local, "owned-bar-a")).Succeeded, "Re-registration refused.");
         Refresh(2); // Persistent row survived runtime provider removal.
         WriteAtomic("owned-bars.txt", new[] { "PASS", "independent-authors;repeated-check-update;ui-open;interaction;native-json;exclusive-denial;exclusive-conflict;reload;stale-session;stale-interaction;provider-reconstruction" });
+        WriteAtomic("bar-producer-generation.txt", ReadBarGeneration());
         WriteAtomic("bar-cold-donor.txt", new[] { "PASS", _api!.CurrentSession!.Id.ToString("D"), stationId });
         Passed("owned-bar-core-composition");
     }

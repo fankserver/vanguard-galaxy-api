@@ -19,10 +19,22 @@ function Assert-BarReceipt([string]$Root) {
     }
 }
 
+function Assert-BarGeneration([string]$Root, [string]$Name, [bool]$Current = $true) {
+    $rows = @(Get-Content -LiteralPath (Join-Path $Root $Name) -ErrorAction Stop)
+    $save = Join-Path $Root 'Saves\qa-owned-bars.save'
+    if ($rows.Count -ne 5 -or $rows[0] -cne 'PASS' -or $rows[1] -ine [IO.Path]::GetFullPath($save) -or $rows[2] -cnotmatch '^[0-9a-f]{64}$' -or $rows[3] -cnotmatch '^[0-9a-f]{64}$') { throw 'Invalid bar generation identity.' }
+    if ([Guid]::ParseExact($rows[4], 'D') -eq [Guid]::Empty) { throw 'Empty generation snapshot.' }
+    if ($Current -and (Get-FileHash -LiteralPath $save -Algorithm SHA256).Hash.ToLowerInvariant() -cne $rows[2]) { throw 'Current native save differs from the committed bar generation.' }
+    return ,$rows
+}
+
 function Assert-BarColdReceipt([string]$Root, [ValidateSet('absent','consumer')][string]$Phase) {
     $rows = @(Get-Content -LiteralPath (Join-Path $Root ('bar-cold-' + $Phase + '.txt')) -ErrorAction Stop)
-    $cases = if ($Phase -eq 'absent') { 'fresh-process;unregistered-providers;no-owned-presentation;same-save' } else { 'fresh-process;retained-identities;retained-seeds;no-place-after-absence' }
+    $cases = if ($Phase -eq 'absent') { 'fresh-process;unregistered-providers;no-owned-presentation;same-save;fresh-commit' } else { 'fresh-process;retained-identities;retained-seeds;no-place-after-absence;bound-generation' }
     if ($rows.Count -ne 2 -or $rows[0] -cne 'PASS' -or $rows[1] -cne $cases) { throw 'Incomplete cold bar receipt.' }
+    $producer = Assert-BarGeneration $Root 'bar-producer-generation.txt' $false
+    $committed = Assert-BarGeneration $Root 'bar-absent-generation.txt'
+    if ($producer[1] -cne $committed[1] -or $producer[2] -ceq $committed[2] -or $producer[4] -ceq $committed[4]) { throw 'Absent bar save did not commit a fresh generation at the same identity.' }
 }
 
 function Start-BarColdPhase([string]$Root, $Provenance, [ValidateSet('absent','consumer')][string]$Phase) {
@@ -31,7 +43,7 @@ function Start-BarColdPhase([string]$Root, $Provenance, [ValidateSet('absent','c
     $previous = if ($Phase -eq 'absent') { 'producer' } else { 'absent' }
     $finalized = Join-Path $Root ('bar-' + $previous + '-finalized.txt')
     if (!(Test-Path -LiteralPath $finalized -PathType Leaf) -or (Get-Content -LiteralPath $finalized -Raw).Trim() -cne 'PASS') { throw 'Prior bar phase was not finalized.' }
-    if ($previous -eq 'producer') { Assert-BarReceipt $Root } else { Assert-BarColdReceipt $Root 'absent' }
+    if ($previous -eq 'producer') { Assert-BarReceipt $Root; $null = Assert-BarGeneration $Root 'bar-producer-generation.txt' } else { Assert-BarColdReceipt $Root 'absent' }
     if (Test-Path -LiteralPath (Join-Path $Root 'playerprefs-restore-failed.txt')) { throw 'Prior preference restoration failed.' }
     $result = @(Get-Content -LiteralPath (Join-Path $Root 'result.txt'))
     $outcome = Get-Content -LiteralPath (Join-Path $Root 'run-outcome.json') -Raw | ConvertFrom-Json

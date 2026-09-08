@@ -25,8 +25,21 @@ try {
     Add-Content (Join-Path $root 'owned-bars.txt') 'unexpected'
     Reject { Assert-BarReceipt $root }
     Reject { Assert-BarColdReceipt $root 'absent' }
-    Set-Content (Join-Path $root 'bar-cold-absent.txt') @('PASS','fresh-process;unregistered-providers;no-owned-presentation;same-save')
+    $null = New-Item -ItemType Directory -Path (Join-Path $root 'Saves')
+    $save = Join-Path $root 'Saves\qa-owned-bars.save'
+    Set-Content $save 'producer'
+    $producer = @('PASS', [IO.Path]::GetFullPath($save), (Get-FileHash $save).Hash.ToLowerInvariant(), ('c' * 64), [Guid]::NewGuid().ToString('D'))
+    Set-Content (Join-Path $root 'bar-producer-generation.txt') $producer
+    Set-Content $save 'absent'
+    $committed = @('PASS', $producer[1], (Get-FileHash $save).Hash.ToLowerInvariant(), ('c' * 64), [Guid]::NewGuid().ToString('D'))
+    Set-Content (Join-Path $root 'bar-absent-generation.txt') $committed
+    Set-Content (Join-Path $root 'bar-cold-absent.txt') @('PASS','fresh-process;unregistered-providers;no-owned-presentation;same-save;fresh-commit')
     Assert-BarColdReceipt $root 'absent'
+    Set-Content (Join-Path $root 'bar-absent-generation.txt') $producer
+    Reject { Assert-BarColdReceipt $root 'absent' }
+    Set-Content (Join-Path $root 'bar-absent-generation.txt') $committed
+    Set-Content $save 'tampered'
+    Reject { Assert-BarColdReceipt $root 'absent' }
     Reject { Assert-BarColdReceipt $root 'consumer' }
     $planned = [pscustomobject]@{barProbe=$true;barColdSequence=$true}
     Reject { Start-BarColdPhase $root $planned 'absent' }
@@ -36,7 +49,9 @@ try {
     Set-Content (Join-Path $root 'run-outcome.json') '{"selfTerminated":true,"timedOut":false,"killed":false,"exitCode":-1}'
     Set-Content (Join-Path $root 'bar-cold-donor.txt') @('PASS',[Guid]::NewGuid().ToString('D'),'station')
     $null = New-Item -ItemType Directory -Path (Join-Path $root 'Saves'),(Join-Path $root 'game\BepInEx') -Force
-    Set-Content (Join-Path $root 'Saves\qa-owned-bars.save') 'fixture'
+    Set-Content $save 'fixture'
+    $producer[2] = (Get-FileHash $save).Hash.ToLowerInvariant()
+    Set-Content (Join-Path $root 'bar-producer-generation.txt') $producer
     Set-Content (Join-Path $root 'game\BepInEx\LogOutput.log') 'fixture'
     Reject { Start-BarColdPhase $root $planned 'consumer' }
     Start-BarColdPhase $root $planned 'absent'
