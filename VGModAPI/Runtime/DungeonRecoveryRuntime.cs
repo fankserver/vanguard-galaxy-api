@@ -116,8 +116,11 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
         var previous = State.Operation(id.Value)!;
         var phase = _native.Get(operation, "phase")?.ToString() ?? previous.NativePhase;
         var outcome = previous.TerminalProgress == DungeonTerminalProgress.NotStarted ? _native.Get(_native.Get(operation, "simulation"), "outcome")?.ToString() ?? previous.Outcome : previous.Outcome;
+        var walkReturn = previous.WalkReturn;
+        if (walkReturn == null && phase == "Extraction" && _native.Get(location, "isShipBased") is false)
+            walkReturn = new DungeonWalkReturnState((System.Collections.Generic.IReadOnlyDictionary<string, int>)_native.Call("walkManifest", operation, _native.Get(operation, "simulation")!)!);
         if (!State.TrackOperation(new(previous.Id, previous.LocationId, previous.ContentOccurrence, previous.AttackerShipId, previous.DungeonType,
-            phase, outcome, previous.MissionProtection, previous.TerminalProgress, previous.Autonomous, _options.Capture(_native.Get(operation, "options")!), _world.CaptureDonors(_native.Get(operation, "boardableTarget")), (bool)_native.Get(operation, "resumeCrewWalking")!))) return false;
+            phase, outcome, previous.MissionProtection, previous.TerminalProgress, previous.Autonomous, _options.Capture(_native.Get(operation, "options")!), _world.CaptureDonors(_native.Get(operation, "boardableTarget")), (bool)_native.Get(operation, "resumeCrewWalking")!, walkReturn))) return false;
         Pods.TrackLocation(location);
         var pending = (System.Collections.IList)_native.Get(operation, "resumePendingPods")!;
         foreach (var pod in (System.Collections.IEnumerable)_native.Get(operation, "_activePods")!)

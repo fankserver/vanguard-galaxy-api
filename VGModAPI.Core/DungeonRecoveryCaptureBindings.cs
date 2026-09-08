@@ -4,6 +4,8 @@ internal static class DungeonRecoveryCaptureBindings
 {
     internal static readonly MethodBinding[] Hooks =
     {
+        new("recoveryPendingExtraction", BindingCatalog.BoardingManager, "RecoverPendingExtraction", false, "System.Void", "Behaviour.Unit.SpaceShip", BindingCatalog.BoardingLocation),
+        new("recoveryWalkComplete", BindingCatalog.BoardingOperation, "CompleteExtraction", false, "System.Void"),
         new("recoveryWalkDispatch", BindingCatalog.BoardingOperation, "HandleDockedCrewDispatch", false, "System.Void"),
         new("recoveryWalkEntry", BindingCatalog.BoardingOperation, "BeginWalkSimulation", false, "System.Void"),
         new("recoveryDonorRequest", BindingCatalog.BoardingOperation, "CheckReinforcementRequest", false, "System.Void", "Source.Dungeon.DungeonSimulation"),

@@ -27,8 +27,15 @@ internal sealed class DungeonInitialOperationFactory
     }
     internal object Create(DungeonOperationResumeState saved, object recipient, object location, object? boardable, bool active)
     {
-        if ((string?)_native.Get(_native.Get(recipient, "resumeShipData"), "resumeShipGuid") != saved.AttackerShipId || saved.TerminalProgress != DungeonTerminalProgress.NotStarted)
+        if ((string?)_native.Get(_native.Get(recipient, "resumeShipData"), "resumeShipGuid") != saved.AttackerShipId || (saved.TerminalProgress != DungeonTerminalProgress.NotStarted && !saved.MayResumeWalkExtraction))
             throw new InvalidOperationException("Exact recipient and unprocessed terminal state required.");
+        if (saved.MayResumeWalkExtraction)
+        {
+            if (boardable != null || !active) throw new InvalidOperationException("Walk extraction requires its hydrated location simulation.");
+            var extraction = _activeLocation.Invoke(new[] { recipient, location, (object)saved.Autonomous });
+            _native.Set(extraction, "phase", Enum.Parse(_native.Get(extraction, "phase")!.GetType(), "Extraction"));
+            return extraction;
+        }
         if (saved.NativePhase != (active ? "Active" : "Approach")) throw new InvalidOperationException("Saved phase requires a different recovery path.");
         if (active)
             return boardable == null ? _activeLocation.Invoke(new[] { recipient, location, (object)saved.Autonomous }) : _activeShip.Invoke(new[] { recipient, boardable, (object)saved.Autonomous });

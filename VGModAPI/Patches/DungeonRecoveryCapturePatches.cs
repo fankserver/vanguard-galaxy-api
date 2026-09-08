@@ -5,6 +5,19 @@ namespace VGModAPI.Patches;
 internal static class DungeonRecoveryCapturePatches
 {
     internal static DungeonRecoveryRuntime? Runtime { get; set; }
+    internal static class PendingExtraction
+    { internal static bool Prefix(object __1) => Runtime == null || !Runtime.QueueRestore(__1, out _); }
+    internal static class WalkComplete
+    {
+        internal static bool Prefix(object __instance, out DungeonPodReturnObserver.WalkScope? __state)
+        {
+            __state = null; if (Runtime == null) return true;
+            return Runtime.ObserveOperation(__instance) && Runtime.ReturnObserver.BeginWalk(__instance, out __state);
+        }
+        internal static void Postfix(DungeonPodReturnObserver.WalkScope? __state) => __state?.Complete();
+        internal static System.Exception? Finalizer(System.Exception? __exception, DungeonPodReturnObserver.WalkScope? __state)
+        { __state?.Dispose(); return __exception; }
+    }
     internal static class DonorUpdate
     { internal static bool Prefix(object __instance) => Runtime?.DonorReady(__instance) ?? true; }
     internal static class Transfer

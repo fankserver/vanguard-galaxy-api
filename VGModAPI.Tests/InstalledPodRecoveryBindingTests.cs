@@ -9,6 +9,20 @@ namespace VGModAPI.Tests;
 public sealed class InstalledPodRecoveryBindingTests
 {
     [Fact]
+    public void ExtractionCompletionUsesCrewOverflowPathWithoutReplayingRewards()
+    {
+        using var assembly = AssemblyDefinition.ReadAssembly(Environment.GetEnvironmentVariable("VG_GAME_ASSEMBLY") ?? throw new InvalidOperationException("Run make check-bindings."));
+        var operation = assembly.MainModule.GetType("Behaviour.Dungeon.DungeonOperation");
+        var complete = Assert.Single(operation.Methods, method => method.Name == "CompleteExtraction");
+        var calls = complete.Body.Instructions.Select(instruction => instruction.Operand).OfType<MethodReference>().ToArray();
+        Assert.Single(calls, method => method.Name == "ReturnCrewToShip");
+        Assert.Contains(calls, method => method.Name == "FinishOperation");
+        Assert.DoesNotContain(calls, method => method.Name is "TransferLootToCargo" or "ApplyWalkOutcomeEffects" or "HandleSimulationComplete" or "TransferCapturedToBrig");
+        var returned = Assert.Single(operation.Methods, method => method.Name == "ReturnCrewToShip");
+        var returns = returned.Body.Instructions.Select(instruction => instruction.Operand).OfType<MethodReference>().Select(method => method.Name).ToArray();
+        Assert.Contains("AccumulateCrewOverflow", returns); Assert.Contains("JettisonOverflowCrew", returns);
+    }
+    [Fact]
     public void OutboundWalkerAnimationDoesNotRemoveCrewBeforeSimulationEntry()
     {
         using var assembly = AssemblyDefinition.ReadAssembly(Environment.GetEnvironmentVariable("VG_GAME_ASSEMBLY") ?? throw new InvalidOperationException("Run make check-bindings."));

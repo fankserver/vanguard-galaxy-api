@@ -57,7 +57,7 @@ internal sealed class DungeonPodPersistence : IDisposable
     internal DungeonOperationResumeState? Operation(Guid id) => Ready ? _operations.Get(id) : null;
     internal bool TrackOperation(DungeonOperationResumeState state)
     {
-        if (!CanObserveSnapshots || (IsCheckpointing && (_operations.Get(state.Id) is not { } previous || previous.TerminalProgress != state.TerminalProgress))) return false;
+        if (!CanObserveSnapshots || (IsCheckpointing && (_operations.Get(state.Id) is not { } previous || previous.TerminalProgress != state.TerminalProgress || (previous.WalkReturn?.Progress ?? DungeonWalkReturnProgress.Pending) != (state.WalkReturn?.Progress ?? DungeonWalkReturnProgress.Pending)))) return false;
         _operations.Track(state); return true;
     }
     internal bool RefreshTransportPose(Guid id, IReadOnlyList<float> pose)
@@ -93,11 +93,29 @@ internal sealed class DungeonPodPersistence : IDisposable
     }
     internal void EnsureSerializationAllowed()
     { _hub.CheckThread(); _effects.EnsureSettled(); if (_returnDepth != 0 || IsCheckpointing) throw new InvalidOperationException("Cannot save while dungeon effects or snapshot refresh are being applied."); }
+    internal WalkAttempt? BeginWalkReturn(Guid id)
+    {
+        if (!CanMutate || _operations.Get(id) is not { TerminalProgress: DungeonTerminalProgress.Completed, WalkReturn: { Progress: DungeonWalkReturnProgress.Pending } walk } operation) return null;
+        var attempted = operation.WithWalkReturn(walk.Begin()); _operations.Track(attempted); _returnDepth++;
+        return new(this, RestoreToken, attempted);
+    }
+    internal sealed class WalkAttempt : IDisposable
+    {
+        private readonly DungeonPodPersistence _owner; private readonly object _token; private readonly DungeonOperationResumeState _attempted; private bool _disposed;
+        internal WalkAttempt(DungeonPodPersistence owner, object token, DungeonOperationResumeState attempted) { _owner = owner; _token = token; _attempted = attempted; }
+        internal bool Complete(DungeonPodDeliveryReceipt receipt)
+        {
+            _owner._hub.CheckThread();
+            if (_disposed || !_owner.Ready || !ReferenceEquals(_token, _owner.RestoreToken) || !ReferenceEquals(_owner._operations.Get(_attempted.Id), _attempted) || !_owner._registration!.MutationAllowed || !receipt.AccountsFor(_attempted.WalkReturn!.Crew)) return false;
+            _owner._operations.Track(_attempted.WithWalkReturn(_attempted.WalkReturn!.Complete(receipt))); return true;
+        }
+        public void Dispose() { _owner._hub.CheckThread(); if (_disposed) return; _disposed = true; _owner._returnDepth--; }
+    }
     internal TerminalAttempt? BeginTerminal(Guid id)
     {
         if (!CanMutate || _operations.Get(id) is not { MayStartTerminalEffects: true } operation) return null;
         var attempted = new DungeonOperationResumeState(operation.Id, operation.LocationId, operation.ContentOccurrence, operation.AttackerShipId,
-            operation.DungeonType, operation.NativePhase, operation.Outcome, operation.MissionProtection, DungeonTerminalProgress.Attempted, operation.Autonomous, operation.Options, operation.Donors, operation.WalkDispatched);
+            operation.DungeonType, operation.NativePhase, operation.Outcome, operation.MissionProtection, DungeonTerminalProgress.Attempted, operation.Autonomous, operation.Options, operation.Donors, operation.WalkDispatched, operation.WalkReturn);
         _operations.Track(attempted); _returnDepth++;
         return new TerminalAttempt(this, RestoreToken, attempted);
     }
@@ -110,7 +128,7 @@ internal sealed class DungeonPodPersistence : IDisposable
             _owner._hub.CheckThread();
             if (_disposed || !_owner.Ready || !ReferenceEquals(_token, _owner.RestoreToken) || !ReferenceEquals(_owner._operations.Get(_attempted.Id), _attempted)) return;
             _owner._operations.Track(new(_attempted.Id, _attempted.LocationId, _attempted.ContentOccurrence, _attempted.AttackerShipId, _attempted.DungeonType,
-                _attempted.NativePhase, _attempted.Outcome, _attempted.MissionProtection, DungeonTerminalProgress.Completed, _attempted.Autonomous, _attempted.Options, _attempted.Donors, _attempted.WalkDispatched));
+                _attempted.NativePhase, _attempted.Outcome, _attempted.MissionProtection, DungeonTerminalProgress.Completed, _attempted.Autonomous, _attempted.Options, _attempted.Donors, _attempted.WalkDispatched, _attempted.WalkReturn));
         }
         public void Dispose() { _owner._hub.CheckThread(); if (_disposed) return; _disposed = true; _owner._returnDepth--; }
     }

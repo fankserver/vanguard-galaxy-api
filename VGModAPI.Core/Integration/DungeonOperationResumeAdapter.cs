@@ -43,7 +43,7 @@ internal sealed class DungeonOperationResumeAdapter
         if (!_state.CanMutate) return false;
         var location = _native.Get(operation, "location"); if (location == null) return false;
         var id = LocationMarker(location); var saved = id.HasValue ? _state.Operation(id.Value) : null;
-        if (saved == null || _conflicts.Contains(saved.Id) || saved.TerminalProgress != DungeonTerminalProgress.NotStarted) return false;
+        if (saved == null || _conflicts.Contains(saved.Id) || (saved.TerminalProgress != DungeonTerminalProgress.NotStarted && !saved.MayResumeWalkExtraction)) return false;
         var ship = _native.Get(_native.Get(operation, "operationShip"), "resumeShipData");
         if ((string?)_native.Get(ship, "resumeShipGuid") != saved.AttackerShipId ||
             (_native.Get(operation, "isAutonomous") is true) != saved.Autonomous || _native.Get(location, "dungeonType")?.ToString() != saved.DungeonType) return false;

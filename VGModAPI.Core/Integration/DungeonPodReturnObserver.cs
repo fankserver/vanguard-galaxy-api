@@ -47,6 +47,29 @@ internal sealed class DungeonPodReturnObserver
         var attempt = _state.BeginObservedReturn(id.Value, shipId); if (attempt == null) return false;
         scope = new(attempt, _receipts.Begin(recipient, origin)); return true;
     }
+    internal bool BeginWalk(object operation, out WalkScope? scope)
+    {
+        scope = null;
+        var id = _operationId(operation);
+        if (!id.HasValue) { scope = new(null, _receipts.Begin(null, null)); return true; }
+        var saved = _state.Operation(id.Value); var ship = _native.Get(operation, "operationShip");
+        if (saved?.WalkReturn is not { Progress: DungeonWalkReturnProgress.Pending } walk || ship == null || !_ready(ship)) return false;
+        var recipient = _native.Get(ship, "resumeShipData");
+        if ((string?)_native.Get(recipient, "resumeShipGuid") != saved.AttackerShipId) return false;
+        if (_native.Call("walkManifest", operation, _native.Get(operation, "simulation")!) is not IReadOnlyDictionary<string, int> manifest || manifest.Count != walk.Crew.Count) return false;
+        foreach (var pair in walk.Crew) if (!manifest.TryGetValue(pair.Key, out var count) || count != pair.Value) return false;
+        var origin = _origin(ship);
+        var attempt = _state.BeginWalkReturn(id.Value); if (attempt == null) return false;
+        scope = new(attempt, _receipts.Begin(recipient, origin)); return true;
+    }
+    internal sealed class WalkScope : IDisposable
+    {
+        private readonly DungeonPodPersistence.WalkAttempt? _attempt;
+        private readonly DungeonReturnReceiptCollector.Scope _receipt;
+        internal WalkScope(DungeonPodPersistence.WalkAttempt? attempt, DungeonReturnReceiptCollector.Scope receipt) { _attempt = attempt; _receipt = receipt; }
+        internal void Complete() => _attempt?.Complete(_receipt.Receipt);
+        public void Dispose() { _receipt.Dispose(); _attempt?.Dispose(); }
+    }
     internal void CrewAdded(object recipient, string type, int amount, int overflow) => _receipts.CrewAdded(recipient, type, amount, overflow);
     internal OverflowScope BeginOverflow(object origin, string type, int amount)
     { var scope = new OverflowScope(this, origin, type, amount); _overflow.Add(scope); return scope; }

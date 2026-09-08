@@ -32,7 +32,7 @@ internal sealed class DungeonInitialRecoveryRuntime : IDisposable
         {
             var id = _owner.Operations.LocationMarker(request.Key);
             if (!id.HasValue || _attempted.Contains(id.Value)) continue;
-            var saved = _owner.State.Operation(id.Value); if (saved == null || saved.TerminalProgress != DungeonTerminalProgress.NotStarted) continue;
+            var saved = _owner.State.Operation(id.Value); if (saved == null || (saved.TerminalProgress != DungeonTerminalProgress.NotStarted && !saved.MayResumeWalkExtraction)) continue;
             if (request.Value == null && !_world.ContainsWalkLocation(request.Key)) continue;
             if (request.Value != null && (request.Value is not Component target || !target)) continue;
             var recipient = _world.Resolve(saved.AttackerShipId); if (recipient == null) continue;
@@ -52,7 +52,7 @@ internal sealed class DungeonInitialRecoveryRuntime : IDisposable
             }
             if (!ready) continue;
             var simulation = _native.Get(_native.Get(request.Key, "dungeonData"), "savedSimulation");
-            var active = saved.NativePhase == "Active";
+            var active = saved.NativePhase == "Active" || saved.MayResumeWalkExtraction;
             if (active && (simulation == null || _owner.SimulationReady?.Invoke(simulation) == false)) continue;
             _attempted.Add(saved.Id); var built = new List<DungeonReturnPodInstance>(); object? operation = null;
             try

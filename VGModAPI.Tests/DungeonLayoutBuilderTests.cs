@@ -19,6 +19,7 @@ public sealed class DungeonLayoutBuilderTests
         public void Set(object obj, string key, object? value) => ((NativeObject)obj).Fields[key] = value;
         public object? Call(string key, object? target, params object[] arguments)
         {
+            if (key == "walkManifest") return Get(target, "walkManifest");
             if (key == "dungeonProfile") return arguments[0];
             if (key == "dungeonNoScuttleProfile") return "protected:" + arguments[0];
             if (key == "dungeonRoomCapacity") return 5;
