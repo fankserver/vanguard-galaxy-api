@@ -147,6 +147,14 @@ public sealed partial class Plugin : BaseUnityPlugin
                 var station = ModApi.RecipeQuotes!.CurrentStation ?? throw new InvalidOperationException("Command fixture lost station.");
                 CheckCraftingSettingCommands(station);
                 CheckCraftingQueueAndCancel(station);
+                if (File.Exists(Path.Combine(_root!, "refinery.enabled")))
+                {
+                    Require(File.ReadAllText(Path.Combine(_root!, "refinery.enabled")) == "refinery-v1", "Invalid refinery marker.");
+                    WriteAtomic("refinery.txt", new[] { "INCOMPLETE" });
+                    CheckRefineryDelivery(station);
+                    CheckMaterialExtraction(station);
+                    WriteAtomic("refinery.txt", new[] { "PASS", "refinery-v1", "fractional-partial-refund-extraction-replay" });
+                }
                 if (File.Exists(Path.Combine(_root!, "forge-delivery.enabled")))
                 {
                     Require(File.ReadAllText(Path.Combine(_root!, "forge-delivery.enabled")) == "forge-delivery-v1", "Invalid delivery marker.");

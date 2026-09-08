@@ -300,7 +300,26 @@ function Assert-ModInformationProbeReceipt([string]$Root, $Provenance) {
         if (@($facts | Where-Object { $_ -ceq ($fact + '=PASS') }).Count -ne 1) { throw "Missing or duplicate information probe fact: $fact" }
     }
 }
+function Assert-RefinerySelection([string]$Root, $Provenance) {
+    $flag = $Provenance.PSObject.Properties['refineryProbe']
+    if ($flag -and $flag.Value -isnot [bool]) { throw 'Invalid refinery flag.' }
+    $selected = $flag -and $flag.Value
+    $marker = Join-Path $Root 'refinery.enabled'
+    if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Refinery selection changed.' }
+    if (!$selected) { return }
+    if (!$Provenance.forgeCommandProbe -or $Provenance.forgePersistenceProbe -or $Provenance.forgeDeliveryProbe -or [IO.File]::ReadAllText($marker) -cne 'refinery-v1') { throw 'Invalid refinery selection.' }
+}
+function Assert-RefineryReceipt([string]$Root, $Provenance) {
+    Assert-ForgeCommandReceipt $Root $Provenance
+    Assert-RefinerySelection $Root $Provenance
+    if (!$Provenance.PSObject.Properties['refineryProbe'] -or !$Provenance.refineryProbe) { return }
+    $file = Join-Path $Root 'refinery.txt'
+    if ((Get-Item -LiteralPath $file).Length -gt 512) { throw 'Oversized refinery receipt.' }
+    $lines = @(Get-Content -LiteralPath $file)
+    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'refinery-v1' -or $lines[2] -cne 'fractional-partial-refund-extraction-replay') { throw 'Incomplete refinery receipt.' }
+}
 function Assert-ForgeDeliverySelection([string]$Root, $Provenance) {
+    Assert-RefinerySelection $Root $Provenance
     $flag = $Provenance.PSObject.Properties['forgeDeliveryProbe']
     if ($flag -and $flag.Value -isnot [bool]) { throw 'Invalid crafting delivery flag.' }
     $selected = $flag -and $flag.Value
@@ -368,7 +387,7 @@ function Assert-ForgeReadSelection([string]$Root, $Provenance) {
     if (!$selected) { return }
     if ($Provenance.scenario -ne 'Full' -or [IO.File]::ReadAllText($marker) -cne 'forge-reads-v1') { throw 'Invalid Forge read selection.' }
     foreach ($entry in $Provenance.PSObject.Properties) {
-        if ($entry.Name -notin @('forgeReadProbe','forgeCommandProbe','forgePersistenceProbe','forgeDeliveryProbe') -and $entry.Value -is [bool] -and $entry.Value) { throw 'Forge reads cannot combine other scenarios or consumers.' }
+        if ($entry.Name -notin @('forgeReadProbe','forgeCommandProbe','forgePersistenceProbe','forgeDeliveryProbe','refineryProbe') -and $entry.Value -is [bool] -and $entry.Value) { throw 'Forge reads cannot combine other scenarios or consumers.' }
     }
     if ($null -ne $Provenance.assemblyOverlay) { throw 'Forge reads cannot use an assembly overlay.' }
     $config = [IO.File]::ReadAllText((Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg'))
