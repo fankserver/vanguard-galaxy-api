@@ -72,6 +72,8 @@ public sealed partial class Plugin : BaseUnityPlugin
         ModApi.CraftingJobs = null;
         ModApi.CraftingCommands = null;
         ModApi.ForgeUi = null;
+        ModApi.Hud = null;
+        _hub.SetCapability("hud", false, "Disabled or not bound; experimental.");
         _hub.SetCapability("forge-ui", false, "Disabled or not bound; experimental.");
         _hub.SetCapability("crafting-commands", false, "Disabled or not bound; experimental.");
         _hub.SetCapability("crafting-jobs", false, "Disabled or not bound; experimental.");
@@ -129,6 +131,7 @@ public sealed partial class Plugin : BaseUnityPlugin
                 ["store"] = typeof(SavePatches.Store), ["writeFile"] = typeof(SavePatches.WriteFile),
                 ["writeMetadata"] = typeof(SavePatches.WriteMetadata), ["storeFailure"] = typeof(SavePatches.StoreFailure)
             });
+            if (Config.Bind("Hud", "Enabled", false, "Experimental shared HUD buttons and information panels.").Value) InstallHud(assembly);
             if (Config.Bind("Recipes", "Enabled", false, "Experimental recipe catalog, advisory quotes and Forge/refinery job observations.").Value)
                 InstallRecipes(assembly);
             if (Config.Bind("Boarding", "Enabled", false, "Experimental boarding observation and rules on the inspected game build.").Value)
@@ -149,6 +152,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         {
             // Stop observation even if a failed rollback leaves a detour installed.
             _adapter?.Guard(() => throw new InvalidOperationException("Adapter installation failed.", ex));
+            TeardownHud();
             TeardownForgeUi();
             TeardownCraftingJobs();
             try { _harmony?.UnpatchSelf(); }
@@ -825,6 +829,7 @@ public sealed partial class Plugin : BaseUnityPlugin
 
     private void Update()
     {
+        _hudRuntime?.Tick();
         _forgeUiRuntime?.Tick();
         var craftingFault = _craftingJobObserver?.PumpFault();
         if (craftingFault != null) { Logger.LogError(craftingFault); TeardownCraftingCommands(); }
@@ -858,6 +863,7 @@ public sealed partial class Plugin : BaseUnityPlugin
     }
     private void OnDestroy()
     {
+        TeardownHud();
         TeardownForgeUi();
         TeardownCraftingCommands();
         StopBars();

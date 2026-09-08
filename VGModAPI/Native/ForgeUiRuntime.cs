@@ -88,17 +88,18 @@ internal sealed class ForgeUiRuntime : IDisposable
             for (var index = 0; index < actions.Count; index++)
             {
                 var action = actions[index];
-                var go = new GameObject("Action", typeof(RectTransform), typeof(Image), typeof(Button), typeof(ForgeActionHover));
+                var go = new GameObject("Action", typeof(RectTransform), typeof(Image), typeof(RevisionButton), typeof(ForgeActionHover));
                 var rect = (RectTransform)go.transform; rect.SetParent(_content, false); rect.anchorMin = new Vector2(0, 0); rect.anchorMax = new Vector2(0, 1);
                 rect.pivot = new Vector2(0, .5f); rect.sizeDelta = new Vector2(120, 0); rect.anchoredPosition = new Vector2(index * 124, 0);
                 var image = go.GetComponent<Image>(); image.color = new Color(.1f, .17f, .22f, 1);
-                var button = go.GetComponent<Button>(); button.targetGraphic = image;
+                var button = go.GetComponent<RevisionButton>(); button.targetGraphic = image;
                 var row = new Row(action.Token, button, Text(rect, font), go.GetComponent<ForgeActionHover>());
                 var sprite = new GameObject("Selection icon", typeof(RectTransform), typeof(Image)).GetComponent<Image>();
                 var spriteRect = (RectTransform)sprite.transform; spriteRect.SetParent(rect, false); spriteRect.anchorMin = spriteRect.anchorMax = new Vector2(0, .5f);
                 spriteRect.pivot = new Vector2(0, .5f); spriteRect.sizeDelta = new Vector2(20, 20); spriteRect.anchoredPosition = new Vector2(2, 0);
                 sprite.preserveAspect = true; sprite.raycastTarget = false; row.Icon = sprite;
-                button.onClick.AddListener(() => { if (row.View != null) _service.Invoke(row.Token, row.View, row.Revision); });
+                button.ReadRevision = () => row.Revision;
+                button.onClick.AddListener(() => { if (row.View != null) _service.Invoke(row.Token, row.View, button.InvocationRevision); });
                 row.Hover.Show = text => { if (_tooltip != null && _tooltipText != null) { _tooltipText.text = text; _tooltip.SetActive(!string.IsNullOrEmpty(text)); } };
                 _rows.Add(row);
             }

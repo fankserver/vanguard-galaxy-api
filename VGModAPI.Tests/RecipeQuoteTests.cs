@@ -187,7 +187,9 @@ public sealed class RecipeQuoteTests : IDisposable
         Assert.Null(cold.CreditsRequired); Assert.Contains(RecipeBlocker.PricingUnavailable, cold.Blockers); Assert.False(cold.RequirementsMet);
         Assert.Equal(0, _item.PreviewBuilderCalls); Assert.Equal(-1, _recipe.dynamicCost); Assert.Equal(-1, _item.calcCost);
         _item.calcCost = 25;
-        Assert.Equal(25L, _service.Quote(_handle, Id).CreditsRequired); Assert.Equal(0, _item.PreviewBuilderCalls);
+        Assert.Null(_service.Quote(_handle, Id).CreditsRequired);
+        Assert.Equal(-1, _recipe.dynamicCost); Assert.Equal(0, _item.PreviewBuilderCalls);
+        _recipe.dynamicCost = 25; // Native presentation or mutation initialized the cache, not the quote.
         _item.calcCost = -1; // A warm recipe price does not need to read a cold ingredient price.
         Assert.Equal(25L, _service.Quote(_handle, Id).CreditsRequired); Assert.Equal(0, _item.PreviewBuilderCalls);
     }

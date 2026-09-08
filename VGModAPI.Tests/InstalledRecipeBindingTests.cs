@@ -14,7 +14,7 @@ public sealed class InstalledRecipeBindingTests
     {
         using var assembly = AssemblyDefinition.ReadAssembly(Environment.GetEnvironmentVariable("VG_GAME_ASSEMBLY")
             ?? throw new InvalidOperationException("Run make check-bindings."));
-        foreach (var spec in RecipeCatalogBindings.Members.Concat(RecipeQuoteBindings.Members).Concat(CraftingJobBindings.Members).Concat(CraftingCommandBindings.Members).Concat(ForgeUiBindings.Members))
+        foreach (var spec in RecipeCatalogBindings.Members.Concat(RecipeQuoteBindings.Members).Concat(CraftingJobBindings.Members).Concat(CraftingCommandBindings.Members).Concat(ForgeUiBindings.Members).Concat(HudBindings.Members))
         {
             var type = assembly.MainModule.GetType(spec.Type);
             Assert.NotNull(type);
@@ -30,7 +30,7 @@ public sealed class InstalledRecipeBindingTests
                 Assert.Empty(property.Parameters);
             }
         }
-        foreach (var spec in RecipeQuoteBindings.Methods.Concat(CraftingJobBindings.Hooks).Concat(CraftingJobBindings.Persistence).Concat(CraftingCommandBindings.Actions).Concat(CraftingCommandBindings.Serialization).Concat(ForgeUiBindings.Methods))
+        foreach (var spec in RecipeQuoteBindings.Methods.Concat(CraftingJobBindings.Hooks).Concat(CraftingJobBindings.Persistence).Concat(CraftingCommandBindings.Actions).Concat(CraftingCommandBindings.Serialization).Concat(ForgeUiBindings.Methods).Concat(HudBindings.Methods))
         {
             var type = assembly.MainModule.GetType(spec.Type);
             Assert.Contains(type.Methods, method => method.Name == spec.Name && method.IsStatic == spec.Static &&
