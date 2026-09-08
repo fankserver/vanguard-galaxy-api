@@ -15,6 +15,13 @@ internal sealed class WorldNestedTypeCatalog
         new[] { _assembly.GetType("Source.Galaxy.MapPointOfInterest", true)! });
     internal void AutoActions(string name) => Require(name + "Actions", "Source.SpaceShip.Auto.", "Source.SpaceShip.AutoActions",
         new[] { _assembly.GetType("Behaviour.Unit.AbstractUnit", true)! });
+    internal void Hazard(string name) => Require(name + "HazardData", "Source.Hazard.", "Source.Hazard.HazardData", Type.EmptyTypes);
+    internal void EnumName(string typeName, string name)
+    {
+        var type = _assembly.GetType(typeName, false);
+        if (type == null || !type.IsEnum || !Enum.IsDefined(type, name))
+            throw new InvalidDataException("Unsupported native enum value.");
+    }
     internal static void Unit(string name)
     {
         if (name != "SpaceShip" && name != "Turret" && name != "CombatStationPart") throw new InvalidDataException("Unsupported native unit selector.");

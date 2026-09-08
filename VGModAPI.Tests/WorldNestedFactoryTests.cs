@@ -6,6 +6,12 @@ using VGModAPI.Core;
 using VGModAPI.Core.Integration;
 using Xunit;
 
+namespace Source.Combat { public enum DamageType { Kinetic } }
+namespace Source.Hazard
+{
+    public class HazardData { }
+    public sealed class KnownHazardData : HazardData { public KnownHazardData() => throw new Exception("Must not construct hazards during inspection"); }
+}
 namespace Behaviour.Unit { public abstract class AbstractUnit { } }
 namespace Source.SpaceShip { public abstract class AutoActions { } }
 namespace Source.SpaceShip.Auto
@@ -43,7 +49,15 @@ namespace VGModAPI.Tests
         public void NestedSelectorsAreNativeMetadataOnly(string selector, bool allowed, double count)
         {
             var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
-            var persistable = new JsonObject { ["type"] = new(selector) };
+            var persistable = new JsonObject
+            {
+                ["type"] = new(selector),
+                ["hazard"] = new(new JsonObject
+                {
+                    ["hazard"] = new("Known"), ["damageType"] = new("Kinetic"),
+                    ["damageMultiplier"] = new(1), ["maxDamageFalloff"] = new(0.5), ["range"] = new(10)
+                })
+            };
             var payload = new JsonObject
             {
                 ["persistables"] = new(new List<JsonValue> { new(persistable) }),
@@ -87,6 +101,17 @@ namespace VGModAPI.Tests
             var catalog = new WorldNestedTypeCatalog(typeof(JsonObject).Assembly);
             if (valid) catalog.AutoActions(selector);
             else Assert.Throws<InvalidDataException>(() => catalog.AutoActions(selector));
+        }
+        [Fact]
+        public void HazardSelectorsAndEnumsDoNotResolveProviderTypesOrNumericAliases()
+        {
+            var catalog = new WorldNestedTypeCatalog(typeof(JsonObject).Assembly);
+            catalog.Hazard("Known");
+            catalog.EnumName("Source.Combat.DamageType", "Kinetic");
+            Assert.Throws<InvalidDataException>(() => catalog.Hazard("Known, foreign"));
+            Assert.Throws<InvalidDataException>(() => catalog.Hazard("Missing"));
+            Assert.Throws<InvalidDataException>(() => catalog.EnumName("Source.Combat.DamageType", "0"));
+            Assert.Throws<InvalidDataException>(() => catalog.EnumName("Source.Combat.DamageType", "Unknown"));
         }
         [Fact]
         public void UnitDispatchRemainsTheInspectedClosedSwitch()

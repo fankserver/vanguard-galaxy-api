@@ -124,7 +124,12 @@ internal sealed partial class WorldJsonInspection
         }
         void Bodies(object parent)
         {
-            OptionalArray(parent, "persistables", item => _nested.Persistable(Text(item, "type")));
+            OptionalArray(parent, "persistables", item =>
+            {
+                _nested.Persistable(Text(item, "type"));
+                var hazard = Field(item, "hazard");
+                if (!(bool)_isNull.GetValue(hazard)!) { visit(); CheckHazard(Object(hazard)); }
+            });
             OptionalArray(parent, "units", item => { WorldNestedTypeCatalog.Unit(Text(item, "type")); CheckAutoActions(item); });
         }
         Bodies(poi);
@@ -135,6 +140,8 @@ internal sealed partial class WorldJsonInspection
             var descriptor = Field(item, "descriptor");
             if (!(bool)_isNull.GetValue(descriptor)!) { visit(); CheckDescriptor(Object(descriptor)); }
         });
+        var field = Field(poi, "hazardFieldData");
+        if (!(bool)_isNull.GetValue(field)!) { visit(); CheckHazardField(Object(field)); }
         var storyteller = Field(poi, "storyteller");
         if (!(bool)_isNull.GetValue(storyteller)!) { visit(); _nested.Storyteller(Text(Object(storyteller), "identifier")); }
     }
