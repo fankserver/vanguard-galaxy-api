@@ -226,6 +226,7 @@ public sealed class BarContentServiceTests
         Assert.True(service.Interact(restored, restored.Patrons[0]));
         Assert.Equal(0, oldCalls); Assert.Equal(1, newCalls);
         Assert.True(author.Remove(session, "contact").Succeeded);
+        Assert.True(author.Remove(session, "contact").Succeeded); // Safe retry after an independently completed removal.
         Assert.Empty(service.Plan(session, "station")!.Patrons);
     }
 
@@ -516,6 +517,6 @@ public sealed class BarContentServiceTests
         var old = session;
         session = Ready(hub, storage);
         Assert.Equal(BarStatus.StaleSession, author.Remove(old, "contact").Status);
-        Assert.Equal(BarStatus.Unavailable, author.Remove(session, "contact").Status);
+        Assert.Equal(BarStatus.Succeeded, author.Remove(session, "contact").Status);
     }
 }

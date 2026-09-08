@@ -82,6 +82,8 @@ internal sealed partial class BarContentService
             if (refusal != null) return refusal;
             BarPatronId id;
             try { id = new BarPatronId(ProviderId, localId); } catch (ArgumentException) { return new BarResult(BarStatus.InvalidDefinition); }
+            if (!_owner._persistence.Read(expectedSessionId, out var saved)) return new BarResult(BarStatus.Unavailable);
+            if (!_owner._transient.ContainsKey(id) && !saved.Any(row => row.Id == id)) return new BarResult(BarStatus.Succeeded);
             bool removed = _owner._transient.Remove(id) || _owner._persistence.Remove(expectedSessionId, ProviderId, id);
             if (removed) _owner.Changed();
             return new BarResult(removed ? BarStatus.Succeeded : BarStatus.Unavailable);
