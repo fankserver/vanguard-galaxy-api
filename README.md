@@ -97,6 +97,10 @@ The API can manage each mod's save data alongside a particular game save. It pub
 
 Enabled by default. Set `[Persistence] Enabled = false` in `BepInEx/config/vgmodapi.cfg` to opt out. For disposable-save testing, choose an absolute, short, non-linked `Root`. Never share the root across installations or delete it to work around a blocked load. The default save-data folder is under BepInEx config. An existing explicit `Enabled = false` remains an opt-out. Binding or path failures leave `ModApi.Persistence` null; check the `save-data` capability for availability.
 
+## Owned bar rosters (experimental)
+
+API 0.1.25 provides opt-in owner-scoped patrons, automatic persistent presentation, explicit additive/exclusive station policy, guarded interaction and finalized roster observation. A stored contribution is not a visibility guarantee. Narrative and voice data remain consumer-owned. See [bar rosters](docs/bar-rosters.md) for the contract and current qualification limits.
+
 ## Owned story content (experimental)
 
 Require API 0.1.12, declare a hard BepInEx dependency, and acquire a provider lease from your own

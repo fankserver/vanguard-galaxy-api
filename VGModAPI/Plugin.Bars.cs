@@ -83,7 +83,7 @@ public sealed partial class Plugin
             BarHookInstallation.Install(installs, _barHarmony.UnpatchSelf);
             BarPatches.Host = _barHost;
             ModApi.Bars = bars;
-            _hub.SetCapability("owned-bars", true, "Experimental owned bar rosters; native qualification pending. Mission-linked contributions require additional readiness integration.");
+            _hub.SetCapability("owned-bars", true, "Experimental owned bar rosters with live story-dependency admission. Full consumer-combination qualification remains pending.");
         }
         catch (Exception error)
         {
