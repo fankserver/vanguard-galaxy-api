@@ -18,7 +18,7 @@ internal sealed class WorldParsedNode
 }
 
 /// <summary>Inspects the serialized galaxy before native constructors. Does not invoke a vanilla type factory.</summary>
-internal sealed class WorldJsonInspection
+internal sealed partial class WorldJsonInspection
 {
     private readonly PropertyInfo _item, _isObject, _object, _isArray, _array, _isString, _string;
     private readonly Type _objectType;
@@ -128,12 +128,12 @@ internal sealed class WorldJsonInspection
             OptionalArray(parent, "units", item => WorldNestedTypeCatalog.Unit(Text(item, "type")));
         }
         Bodies(poi);
-        OptionalArray(poi, "guardDescriptors", item => _nested.Descriptor(Text(item, "type")));
+        OptionalArray(poi, "guardDescriptors", item => CheckDescriptor(item));
         OptionalArray(poi, "payloads", item =>
         {
             Bodies(item);
             var descriptor = Field(item, "descriptor");
-            if (!(bool)_isNull.GetValue(descriptor)!) { visit(); _nested.Descriptor(Text(Object(descriptor), "type")); }
+            if (!(bool)_isNull.GetValue(descriptor)!) { visit(); CheckDescriptor(Object(descriptor)); }
         });
         var storyteller = Field(poi, "storyteller");
         if (!(bool)_isNull.GetValue(storyteller)!) { visit(); _nested.Storyteller(Text(Object(storyteller), "identifier")); }

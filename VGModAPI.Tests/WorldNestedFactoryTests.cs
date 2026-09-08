@@ -14,25 +14,30 @@ namespace Source.Data.Persistable
 namespace Source.Galaxy
 {
     public abstract class UnitGenerationDescriptor { }
-    public sealed class KnownDescriptor : UnitGenerationDescriptor { public KnownDescriptor() => throw new Exception("Must not construct during inspection"); }
+    public sealed class FixedPayloadDescriptor : UnitGenerationDescriptor { public FixedPayloadDescriptor() => throw new Exception("Must not construct during inspection"); }
 }
 namespace VGModAPI.Tests
 {
     public sealed class WorldNestedFactoryTests
     {
         [Theory]
-        [InlineData("KnownData", true)]
-        [InlineData("KnownData, foreign", false)]
-        [InlineData("KnownData+Nested", false)]
-        [InlineData("Missing", false)]
-        public void NestedSelectorsAreNativeMetadataOnly(string selector, bool allowed)
+        [InlineData("KnownData", true, 1)]
+        [InlineData("KnownData, foreign", false, 1)]
+        [InlineData("KnownData+Nested", false, 1)]
+        [InlineData("Missing", false, 1)]
+        [InlineData("KnownData", false, -1)]
+        [InlineData("KnownData", false, 129)]
+        [InlineData("KnownData", false, 1.5)]
+        [InlineData("KnownData", false, double.NaN)]
+        [InlineData("KnownData", false, double.PositiveInfinity)]
+        public void NestedSelectorsAreNativeMetadataOnly(string selector, bool allowed, double count)
         {
             var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
             var persistable = new JsonObject { ["type"] = new(selector) };
             var payload = new JsonObject
             {
                 ["persistables"] = new(new List<JsonValue> { new(persistable) }),
-                ["descriptor"] = new(new JsonObject { ["type"] = new("KnownDescriptor") })
+                ["descriptor"] = new(new JsonObject { ["type"] = new("FixedPayloadDescriptor"), ["fixedUnit"] = new("NativeShip"), ["unitCount"] = new(count) })
             };
             var poi = new JsonObject { ["guid"] = new(identity.NativeId), ["type"] = new("Combat"), ["systemName"] = new("system"), ["payloads"] = new(new List<JsonValue> { new(payload) }) };
             var system = new JsonObject { ["guid"] = new("system"), ["pointsOfInterest"] = new(new List<JsonValue> { new(poi) }) };
