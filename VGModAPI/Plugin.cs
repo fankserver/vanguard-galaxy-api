@@ -581,11 +581,11 @@ public sealed partial class Plugin : BaseUnityPlugin
             DungeonRecoveryCapturePatches.Runtime = _dungeonRecovery;
             InstallGroup("dungeon-recovery-capture", bindings, DungeonRecoveryCaptureBindings.Hooks, new Dictionary<string, Type>
             {
-                ["recoveryCancelPods"] = typeof(DungeonRecoveryCapturePatches.Cancellation),
-                ["recoveryCancelMovement"] = typeof(DungeonRecoveryCapturePatches.Cancellation),
-                ["recoveryRefundRecall"] = typeof(DungeonRecoveryCapturePatches.DockedRefund),
-                ["recoveryRefundDocked"] = typeof(DungeonRecoveryCapturePatches.DockedRefund),
-                ["recoveryRefundTerminal"] = typeof(DungeonRecoveryCapturePatches.DockedRefund),
+                ["recoveryCancelPods"] = typeof(DungeonRefundPatches.Cancellation),
+                ["recoveryCancelMovement"] = typeof(DungeonRefundPatches.Cancellation),
+                ["recoveryRefundRecall"] = typeof(DungeonRefundPatches.DockedRefund),
+                ["recoveryRefundDocked"] = typeof(DungeonRefundPatches.DockedRefund),
+                ["recoveryRefundTerminal"] = typeof(DungeonRefundPatches.DockedRefund),
                 ["recoveryRetired"] = typeof(DungeonRecoveryCapturePatches.Retired),
                 ["recoveryPendingExtraction"] = typeof(DungeonRecoveryCapturePatches.PendingExtraction),
                 ["recoveryWalkComplete"] = typeof(DungeonRecoveryCapturePatches.WalkComplete),

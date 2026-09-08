@@ -17,6 +17,20 @@ These mappings apply to the inspected game assembly identified in `compatibility
 | `DungeonManager.RecoverPendingExtraction` | Eligible surviving simulation crew returned through the native ship API | This is not a substitute for all in-flight return manifests. |
 | `DungeonOperation.HandlePodCrewReturned` | Removes pod membership, applies crew with capacity handling and jettisons overflow | Removing subscriptions/membership precedes crew effects. An exception can leave partial effects, so retrying the whole call is unsafe. |
 
+### Native save and restore ordering
+
+`SaveGame.DoSave` and `StoreAutosaveState` evaluate `SaveCurrentState()` before entering `Store`. `SaveCurrentState` calls `GamePlayer.ToJson`, which first runs `CleanupSaveData`; its object initializer serializes the galaxy map before the owned fleet and then the captured fleet. The map chain is `GalaxyMapData.ToJson` → sector `DataToJson` → system `DataToJson` → POI `DataToJson`. POI persistable serialization excludes cargo/station-backed entries and, for non-recent retention buckets, asteroid/salvage-backed entries; it is not an unconditional copy of every live object.
+
+`DungeonLocationData.DataToJson` writes dungeon state before optional embedded ship state and boarding-pod entries. `DungeonData.ToJson` calls the simulation serializer. Pod records are serialized through their persistable data, not through live operation instances. Runtime operation retirement, return manifests and transport execution therefore require the supplemental recovery provider.
+
+Capture changes which native container owns the ship: `BoardableUnit.FinalizeCapture` updates the ship faction/crew, clears simulation state, adds non-mission ships to `GamePlayer.capturedShips`, then signals capture objectives and clears NPC state. `LaunchCapturedShip` removes the dungeon location from the current POI. A mission-associated capture is not unconditionally added to the captured fleet. Neither retained POI membership nor an operation phase alone proves capture settlement.
+
+On load, `GamePlayer.FromJsonStaged` loads crew, then fleet (including captured ships), then galaxy data. The galaxy rebuilds sector/system/POI records and their persistables; location loading restores dungeon simulation and pod records. `SaveGame.LoadStateStaged` waits for player reconstruction, publishes the loaded player and requests scenes afterward. Deserialized data is consequently earlier than live target/recipient readiness. Native serialization/restoration order is inspected-source evidence, not proof of successful disk writing or Unity qualification.
+
+The API's `SaveCurrentState` prefix checkpoints known operation snapshots and live return poses before native JSON construction. Location/pod serialization postfixes write identity markers only when the matching supplemental record exists and is unambiguous. Provider capture happens at `SaveStarted`; the persistence coordinator publishes a generation only for its matching successful save. This ordering is not a native-save/sidecar atomic transaction.
+
+During native data loading, location/pod postfixes register strict identity markers and source membership; a non-ship location may be queued before the recovery provider is restored. `PersistenceCoordinator` restores providers at `PlayerReady`. Reconstruction polling still requires the recovery restore token, writable provider state, hydrated simulation and the actual live location/recipient. Marker presence alone cannot release queued construction. Session changes clear identity/live-transport tracking, while provider restore replaces the generation token and invalidates prior recovery work.
+
 ## Crew and directive supplements
 
 With experimental Dungeons enabled, crew save/load hooks retain the six native execution fields omitted by the native serializer: assigned directive target, flee delay, withdrawal flag, retreat origin, fractional healing progress and daze timer. The bounded binary supplement is stored as base64 beside the corresponding native crew JSON, so it is restored to that unit rather than matched by crew type or faction.

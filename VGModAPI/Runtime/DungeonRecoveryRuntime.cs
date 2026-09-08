@@ -52,6 +52,7 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
         var factory = new DungeonReturnPodFactory(game.Assembly, native); var world = new DungeonRecoveryWorld(game.Assembly, native); _world = world;
         State = new(hub, persistence); Pods = new(State, native); Operations = new(State, native);
         ReturnObserver = new(State, Pods, native, ship => ((Component)ship).transform, world.Ready, Operations.OperationId);
+        RefundHooks = new(State, ReturnObserver, value => ObserveOperation(value), Operations.OperationId);
         _returns = new(State, world.Resolve,
             (pod, operation, recipient) => new DungeonReturnPodInstance(factory.Build(pod, recipient, operation.DungeonType, operation.Autonomous, Pods.DataFor(pod.Id))),
             (instance, id) =>
@@ -239,6 +240,7 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
             if (!State.RefreshTransportPose(id, transport.Pose)) throw new InvalidOperationException("Unable to checkpoint live return pose.");
         });
     }
+    internal DungeonRefundHooks RefundHooks { get; }
     internal void Poll()
     {
         try { _initial.Poll(); _returns.Poll(); }

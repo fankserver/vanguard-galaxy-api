@@ -13,9 +13,10 @@ namespace VGModAPI.Tests;
 public sealed class DungeonPodReturnPatchTests
 {
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void DockedRefundComposesNativeReceiptHooksWithSaveReload(bool persistedOverflow)
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    public void DockedRefundComposesNativeReceiptHooksWithSaveReload(bool persistedOverflow, bool nativeFailure)
     {
         using var hub = new LifecycleHub((_, _) => { }); var persistence = new DungeonPodPersistenceTests.Persistence(); using var state = new DungeonPodPersistence(hub, persistence);
         var session = hub.Begin(SessionOrigin.SaveLoad, "save"); hub.PlayerReady(session); persistence.Provider.Restore(hub.CurrentSession!, null);
@@ -32,11 +33,18 @@ public sealed class DungeonPodReturnPatchTests
         var recipient = new NativeObject(); recipient.Fields["resumeShipGuid"] = "ship-guid"; var ship = new NativeObject(); ship.Fields["resumeShipData"] = recipient;
         var operation = new NativeObject(); operation.Fields["operationShip"] = ship; operation.Fields["_activePods"] = active; var origin = new object();
         var observer = new DungeonPodReturnObserver(state, pods, native, _ => origin, _ => true, _ => operationId); DungeonPodReturnPatches.Observer = observer;
+        var retired = false; var nativeError = nativeFailure ? new InvalidOperationException("native refund failure") : null;
+        DungeonRefundPatches.Hooks = new(state, observer, _ =>
+        {
+            var saved = state.Operation(operationId)!;
+            return state.TrackOperation(new(saved.Id, saved.LocationId, saved.ContentOccurrence, saved.AttackerShipId, saved.DungeonType, saved.NativePhase, saved.Outcome, saved.MissionProtection, saved.TerminalProgress, saved.Autonomous, retired: retired));
+        }, _ => operationId);
         try
         {
-            using (var cancellation = state.BeginCancellation(operationId))
+            Assert.True(DungeonRefundPatches.Cancellation.Prefix(operation, out var cancellation));
+            using (cancellation)
             {
-                Assert.NotNull(cancellation); Assert.True(observer.BeginDockedRefunds(operation, false, out var scope));
+                Assert.NotNull(cancellation); Assert.True(DungeonRefundPatches.DockedRefund.Prefix(operation, typeof(DungeonPodReturnPatchTests).GetMethod(nameof(DockedRefundComposesNativeReceiptHooksWithSaveReload))!, out var scope));
                 using (scope)
                 {
                     Assert.Throws<InvalidOperationException>(() => persistence.Provider.Capture());
@@ -49,10 +57,18 @@ public sealed class DungeonPodReturnPatchTests
                     if (persistedOverflow) list.Add(data);
                     DungeonPodReturnPatches.Persisted.Postfix(poi, data);
                     DungeonPodReturnPatches.Overflow.Postfix(overflow); DungeonPodReturnPatches.Overflow.Finalizer(null, overflow);
-                    Assert.Equal(persistedOverflow, scope!.Complete());
+                    if (!nativeFailure) DungeonRefundPatches.DockedRefund.Postfix(scope);
+                    Assert.Same(nativeError, DungeonRefundPatches.DockedRefund.Finalizer(operation, nativeError, scope));
                 }
+                retired = !nativeFailure;
+                Assert.Same(nativeError, DungeonRefundPatches.Cancellation.Finalizer(operation, nativeError, cancellation));
             }
-            var payload = persistence.Provider.Capture(); persistence.Provider.Restore(hub.CurrentSession!, payload);
+            if (persistedOverflow)
+            {
+                var payload = persistence.Provider.Capture(); persistence.Provider.Restore(hub.CurrentSession!, payload);
+                Assert.True(state.Operation(operationId)!.Retired);
+            }
+            else Assert.Throws<InvalidOperationException>(() => persistence.Provider.Capture());
             foreach (var id in ids)
             {
                 Assert.True(state.Get(id)!.ReturnAttempted); Assert.Equal(persistedOverflow, state.Get(id)!.ReturnDelivered);
@@ -60,7 +76,7 @@ public sealed class DungeonPodReturnPatchTests
             }
             Assert.Null(state.BeginDockedRefunds(operationId, ids));
         }
-        finally { DungeonPodReturnPatches.Observer = null; }
+        finally { DungeonPodReturnPatches.Observer = null; DungeonRefundPatches.Hooks = null; }
     }
     [Fact]
     public void NativeShapedReturnAccountsForRosterAndPersistedOverflowThenRejectsReplay()

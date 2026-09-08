@@ -38,7 +38,7 @@ public sealed class DungeonInitialRecoveryCoordinatorTests
             Operation.Fields["restoreDocking"] = (Action)(() => Calls.Add("dock"));
             State.TrackOperation(new(Id, Guid.NewGuid(), null, "ship", "Station", savedPhase, "", "", DungeonTerminalProgress.NotStarted, false,
                 donors: donor ? new[] { new DungeonDonorApproachState("donor", new Dictionary<string, int> { ["Marine"] = 2 }) } : null,
-                walkReturn: savedPhase == "Extraction" ? new DungeonWalkReturnState(new Dictionary<string, int>()) : null, retired: retired));
+                walkReturn: savedPhase == "Extraction" ? new DungeonWalkReturnState(new Dictionary<string, int> { ["Marine"] = 2 }) : null, retired: retired));
             if (savedPhase == "Extraction") using (var terminal = State.BeginTerminal(Id)) terminal!.Completed();
             identity.LoadedLocation(Location, Id);
             if (phase.HasValue)
@@ -109,6 +109,29 @@ public sealed class DungeonInitialRecoveryCoordinatorTests
         using var f = new Fixture(false, savedPhase: phase); f.Queue.Poll(); f.Queue.Poll();
         Assert.Equal(new[] { "create", "validate", "dock", "register", "observe" }, f.Calls);
         if (phase == "Extraction") Assert.Null(f.State.BeginTerminal(f.Id));
+    }
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void VictorySnapshotReconstructsExtractionThenSettlesCrewWithoutRestartingRewards(bool acceptedAll)
+    {
+        using var f = new Fixture(false, savedPhase: "Extraction");
+        f.Queue.Poll(); Assert.Contains("register", f.Calls); Assert.Null(f.State.BeginTerminal(f.Id));
+        var native = new DungeonLayoutBuilderTests.Native(); var pods = new DungeonPodResumeAdapter(f.State, native);
+        var ship = (NativeObject)f.Operation.Fields["operationShip"]!; var recipient = ship.Fields["resumeShipData"]!;
+        f.Operation.Fields["simulation"] = new object(); f.Operation.Fields["walkManifest"] = new Dictionary<string, int> { ["Marine"] = 2 };
+        var observer = new DungeonPodReturnObserver(f.State, pods, native, _ => new object(), _ => true, _ => f.Id);
+        Assert.True(observer.BeginWalk(f.Operation, out var scope));
+        using (scope)
+        {
+            Assert.Throws<InvalidOperationException>(() => f.Persistence.Provider.Capture());
+            observer.CrewAdded(recipient, "Marine", 2, acceptedAll ? 0 : 1); scope!.Complete();
+        }
+        var payload = f.Persistence.Provider.Capture(); f.Persistence.Provider.Restore(f.Hub.CurrentSession!, payload);
+        Assert.Equal(DungeonTerminalProgress.Completed, f.State.Operation(f.Id)!.TerminalProgress);
+        Assert.Equal(2, f.State.Operation(f.Id)!.WalkReturn!.Crew["Marine"]);
+        Assert.Equal(acceptedAll ? DungeonWalkReturnProgress.Delivered : DungeonWalkReturnProgress.Attempted, f.State.Operation(f.Id)!.WalkReturn!.Progress);
+        Assert.Null(f.State.BeginTerminal(f.Id)); Assert.False(observer.BeginWalk(f.Operation, out _));
     }
     [Fact]
     public void QuarantineFailureDoesNotPreventPodCleanup()
