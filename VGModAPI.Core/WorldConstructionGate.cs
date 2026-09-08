@@ -21,12 +21,14 @@ internal sealed class WorldConstructionGate
     private Guid _session;
     private long _providerRevision;
     private bool _ready;
+    private bool _inventoryRejected;
     private ConditionalWeakTable<object, WorldConstructionNode> _nodes = new();
     private readonly ConditionalWeakTable<object, object> _ownedNodes = new();
 
     internal void Start(Guid session)
     {
         _ready = false;
+        _inventoryRejected = false;
         _nodes = new ConditionalWeakTable<object, WorldConstructionNode>();
         _session = session;
         if (session == Guid.Empty) throw new ArgumentException("An observed load session is required.", nameof(session));
@@ -35,17 +37,22 @@ internal sealed class WorldConstructionGate
     internal void Open(Guid session, SnapshotAssociation? association, string canonicalPath, string nativeHash,
         long providerRevision, string[] availableProviders, WorldConstructionNode[] nodes)
     {
-        // Classification survives refusal; it does not confer permission to construct.
-        if (nodes != null)
-            foreach (var observed in nodes)
-                if (observed != null) _ownedNodes.GetValue(observed.Json, _ => new object());
         if (session == Guid.Empty || session != _session) throw new InvalidDataException("Stale world load.");
         _ready = false;
         _nodes = new ConditionalWeakTable<object, WorldConstructionNode>();
+        if (_inventoryRejected || availableProviders == null || nodes == null ||
+            nodes.Length > WorldSerializationAssociation.MaxObjects || availableProviders.Length > WorldSerializationAssociation.MaxObjects)
+        {
+            // Do not traverse invalid inventories. Refuse all construction for this failed load,
+            // including nodes whose owned markers could otherwise be stripped before observation.
+            _inventoryRejected = true;
+            throw new InvalidDataException("Invalid world load inventory.");
+        }
+        // Classification survives refusal; it does not confer permission to construct.
+        foreach (var observed in nodes)
+            if (observed != null) _ownedNodes.GetValue(observed.Json, _ => new object());
         if (association == null || !association.Matches(canonicalPath, nativeHash))
             throw new InvalidDataException("World loading requires exact committed generation metadata.");
-        if (availableProviders == null || nodes == null || nodes.Length > WorldSerializationAssociation.MaxObjects)
-            throw new InvalidDataException("Invalid world load inventory.");
         var providers = new HashSet<string>(availableProviders, StringComparer.Ordinal);
         var ids = new HashSet<string>(StringComparer.Ordinal);
         var result = new ConditionalWeakTable<object, WorldConstructionNode>();
@@ -66,6 +73,7 @@ internal sealed class WorldConstructionGate
     internal void RequireFactory(Guid session, object json, string nativeId, string digest, long providerRevision)
     {
         if (json == null) throw new ArgumentNullException(nameof(json));
+        if (_inventoryRejected) throw new InvalidDataException("World inventory rejection requires a new load attempt.");
         if (WorldObjectIdentity.IsReserved(nativeId)) _ownedNodes.GetValue(json, _ => new object());
         bool known = _nodes.TryGetValue(json, out var node);
         if (!known && !_ownedNodes.TryGetValue(json, out _) && !WorldObjectIdentity.IsReserved(nativeId)) return;

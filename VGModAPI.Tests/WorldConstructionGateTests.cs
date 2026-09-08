@@ -38,6 +38,25 @@ public sealed class WorldConstructionGateTests
     }
 
     [Fact]
+    public void OversizedInventoryRefusesTheLoadWithoutClassifyingEveryNode()
+    {
+        var gate = new WorldConstructionGate(); var session = Guid.NewGuid(); gate.Start(session);
+        var node = Node();
+        var oversized = new WorldConstructionNode[WorldSerializationAssociation.MaxObjects + 1];
+        oversized[0] = node;
+        Assert.Throws<InvalidDataException>(() => gate.Open(session, Association(), "/save/a", Hash, 1, new[] { "author.one" }, oversized));
+        Assert.Throws<InvalidDataException>(() => gate.RequireFactory(session, node.Json, "stripped", Hash, 1));
+        Assert.Throws<InvalidDataException>(() => gate.Open(session, Association(), "/save/a", Hash, 1, new[] { "author.one" }, new[] { node }));
+        var next = Guid.NewGuid(); gate.Start(next);
+        // Rejected inventory was not traversed or inserted into the process-lived weak table.
+        gate.RequireFactory(next, node.Json, "vanilla", Hash, 1);
+        gate.Open(next, Association(), "/save/a", Hash, 1, new[] { "author.one" }, new[] { node });
+        gate.RequireFactory(next, node.Json, node.Identity.NativeId, Hash, 1);
+        Assert.Throws<InvalidDataException>(() => gate.Open(session, Association(), "/save/a", Hash, 1, new[] { "author.one" }, oversized));
+        gate.RequireFactory(next, node.Json, node.Identity.NativeId, Hash, 1);
+    }
+
+    [Fact]
     public void ExactNodeGenerationAndProviderRevisionAreRequired()
     {
         var gate = new WorldConstructionGate(); var session = Guid.NewGuid(); gate.Start(session);
