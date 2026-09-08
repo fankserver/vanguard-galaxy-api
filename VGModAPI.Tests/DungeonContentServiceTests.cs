@@ -21,7 +21,7 @@ public sealed class DungeonContentServiceTests
         internal readonly DungeonStateStore State;
         internal readonly DungeonContentService Service;
         internal readonly Persistence Persistence = new();
-        internal int Applied, Diagnosed;
+        internal int Applied, Diagnosed, ChoiceChecks;
         internal bool ThrowNative;
         internal Fixture()
         {
@@ -29,7 +29,7 @@ public sealed class DungeonContentServiceTests
             var session = Hub.Begin(SessionOrigin.SaveLoad, "save"); Hub.PlayerReady(session);
             Persistence.Provider.Restore(Hub.CurrentSession!, null);
             Service = new(Hub, new(_ => true, _ => true, _ => true), State,
-                new((_, _) => DungeonContentStatus.Attached, (_, _) => { }, (_, _, _) => DungeonContentStatus.ChoiceApplied,
+                new((_, _) => DungeonContentStatus.Attached, (_, _) => { }, (_, _, _) => { ChoiceChecks++; return DungeonContentStatus.ChoiceApplied; },
                     (_, _, _) => { Applied++; if (ThrowNative) throw new InvalidOperationException("native failure"); }), (_, _) => Diagnosed++);
         }
         internal BoardingHandle Target => new(Hub.CurrentSession!.Id, Guid.NewGuid());
@@ -62,6 +62,24 @@ public sealed class DungeonContentServiceTests
         Assert.True(panel.Activate(rows[1].Registration, rows[1].Snapshot.ViewId, rows[1].Snapshot.Revision));
         bridge.Refresh(); Assert.Empty(panel.Render()); Assert.Equal(1, f.Applied);
         source.Snapshot = null; bridge.Refresh(); Assert.Empty(panel.Render());
+    }
+    [Fact]
+    public void ChoiceRefreshSkipsUnchangedContentAndPreservesLeasesAcrossSerialization()
+    {
+        using var f = new Fixture(); f.Hub.GameplayInitialized(f.Hub.CurrentSession!.Id);
+        using var provider = f.Service.AcquireProvider("owner"); using var registration = provider.Register("content", Definition());
+        var target = f.Target; var id = provider.Attach("content", target).OccurrenceId!.Value;
+        var source = new PanelSource { Snapshot = new(Guid.NewGuid(), 1, new(target, 1, BoardingEncounterKind.Installation, "Site", null, null, BoardingAvailability.Available, null), null) };
+        using var panel = new DungeonPanelService(f.Hub, source, (_, error) => throw error);
+        using var bridge = new DungeonPanelChoices(panel, f.Service, _ => id);
+        bridge.Refresh(); var checks = f.ChoiceChecks; bridge.Refresh(); Assert.Equal(checks, f.ChoiceChecks);
+        var before = panel.Render();
+        f.State.BeginSerialization();
+        try { bridge.Refresh(); Assert.Empty(panel.Render()); }
+        finally { f.State.EndSerialization(); }
+        bridge.Refresh(); var after = panel.Render(); Assert.Equal(before.Count, after.Count);
+        for (var i = 0; i < before.Count; i++) Assert.Equal(before[i].Registration, after[i].Registration);
+        provider.Dispose(); bridge.Refresh(); Assert.Empty(panel.Render());
     }
     [Fact]
     public void PanelChoiceUsesRegisteredBehaviorAndDisappearsAfterSelectionOrDisposal()

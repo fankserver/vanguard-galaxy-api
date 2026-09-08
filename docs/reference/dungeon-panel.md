@@ -2,7 +2,7 @@
 
 `ModApi.DungeonPanel` exposes Unity-free panel opening, status sections and contextual actions when boarding observation is installed. Check its independent `Capabilities` and the lifecycle capabilities `dungeon-panel-opening`, `dungeon-panel-sections` and `dungeon-panel-actions`. Availability describes installed integration, not in-game qualification.
 
-`Open(target)` resolves the current observed target generation and requires a live target. Opening a native location panel can resume native operations; experimental dungeon recovery must be writable and ready before this API opens it. Ambiguous panel instances, unavailable targets and busy contexts are refused rather than substituted.
+`Open(target)` resolves the current observed target generation and requires a live target. Opening a native location panel can resume native operations; when experimental dungeon recovery is installed, it must be writable and ready before this API opens the panel. When that recovery integration is disabled, native resume behavior applies. Ambiguous panel instances, unavailable targets and busy contexts are refused rather than substituted.
 
 ## Contributions
 
@@ -18,7 +18,7 @@ status.Dispose();
 
 Action presenters are reevaluated on activation. A changed view, target generation, snapshot revision, disposed lease or disabled/hidden action refuses dispatch. Gameplay commands must independently validate their current conditions; an enabled button is never authorization. Contributor exceptions are isolated and reported. Calls and lease disposal require the main thread; nested activation/navigation is refused.
 
-Sections accept titles up to 128 characters and text up to 4096. Actions accept labels up to 128 and tooltip text up to 1024. Rendering disables rich-text parsing, wraps text and uses a scrollable region beside, above or below the native panel without covering its controls. Native panel scale and position are respected; keyboard/controller selection scrolls into view. If no unobstructed region fits, contributions are hidden until the window is moved or resized. This constrained-layout limitation is not proof of full viewport acceptance.
+Sections accept titles up to 128 characters and text up to 4096. Actions accept labels up to 128 and tooltip text up to 1024. Rendering disables rich-text parsing, wraps text and uses a scrollable region beside, above or below the native panel without covering its controls. Native panel scale and position are respected; keyboard/controller selection scrolls into view. If no unobstructed region fits, a “Mod actions” button opens an explicitly requested overlay drawer with a close button. This compact mode does not resize or change native window preferences. Viewports too small for a 160×120 drawer plus its toggle remain unsupported; input and scaling still require native acceptance.
 
 ## Authored choices and estimates
 

@@ -3,6 +3,12 @@ namespace VGModAPI.Core;
 
 internal static class DungeonPanelPlacement
 {
+    internal static (float X, float Top, float Width, float Height)? Compact(float left, float bottom, float right, float top)
+    {
+        foreach (var value in new[] { left, bottom, right, top }) if (float.IsNaN(value) || float.IsInfinity(value)) return null;
+        var width = Math.Min(360, right - left); var height = Math.Min(360, top - bottom - 44);
+        return width >= 160 && height >= 120 ? (right - width, top - 44, width, height) : null;
+    }
     internal static (float X, float Top, float Width, float Height)? Around(float left, float bottom, float right, float top, float panelLeft, float panelBottom, float panelRight, float panelTop)
     {
         var beside = Beside(left, bottom, right, top, panelLeft, panelRight, panelTop);

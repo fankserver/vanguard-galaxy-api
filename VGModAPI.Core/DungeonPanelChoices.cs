@@ -10,6 +10,9 @@ internal sealed class DungeonPanelChoices : IDisposable
     private readonly DungeonContentService _content;
     private readonly Func<BoardingHandle, Guid?> _occurrence;
     private readonly Dictionary<string, IDisposable> _leases = new(StringComparer.Ordinal);
+    private Guid? _lastView, _lastOccurrence;
+    private long _lastRevision;
+    private (object? Occurrence, object? Provider, object? Definition) _lastToken;
     private readonly string _identity = "vgmodapi.choices." + Guid.NewGuid().ToString("N");
     internal DungeonPanelChoices(DungeonPanelService panel, DungeonContentService content, Func<BoardingHandle, Guid?> occurrence)
     { _panel = panel; _content = content; _occurrence = occurrence; }
@@ -17,6 +20,9 @@ internal sealed class DungeonPanelChoices : IDisposable
     {
         var view = _panel.Current;
         var id = view == null ? null : _occurrence(view.Target.Handle);
+        if (view != null && id.HasValue && _content.PanelBusy) return;
+        var token = id.HasValue ? _content.PanelToken(id.Value) : default;
+        if (_lastView == view?.ViewId && _lastRevision == (view?.Revision ?? 0) && _lastOccurrence == id && _lastToken.Equals(token)) return;
         var wanted = new HashSet<string>(StringComparer.Ordinal);
         if (id.HasValue)
         {
@@ -43,7 +49,8 @@ internal sealed class DungeonPanelChoices : IDisposable
             }
         }
         foreach (var key in _leases.Keys.Where(key => !wanted.Contains(key)).ToArray()) { _leases[key].Dispose(); _leases.Remove(key); }
+        _lastView = view?.ViewId; _lastRevision = view?.Revision ?? 0; _lastOccurrence = id; _lastToken = token;
     }
     private static string Short(string text, int limit) => text.Length <= limit ? text : text.Substring(0, limit - 1) + "…";
-    public void Dispose() { foreach (var lease in _leases.Values) lease.Dispose(); _leases.Clear(); }
+    public void Dispose() { foreach (var lease in _leases.Values) lease.Dispose(); _leases.Clear(); _lastView = null; _lastOccurrence = null; _lastRevision = 0; _lastToken = default; }
 }

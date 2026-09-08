@@ -39,6 +39,15 @@ internal sealed class DungeonContentService : IDungeonContent, IDisposable
         if (_providers.ContainsKey(pluginId)) throw new InvalidOperationException("Dungeon provider already acquired.");
         var provider = new Provider(this, pluginId); _providers.Add(pluginId, provider); return provider;
     }
+    internal bool PanelBusy { get { _hub.CheckThread(); return MutationBlocked || !_state.MutationAllowed; } }
+    internal (object? Occurrence, object? Provider, object? Definition) PanelToken(Guid id)
+    {
+        _hub.CheckThread(); var occurrence = _state.Get(id);
+        if (occurrence == null) return (null, null, null);
+        _providers.TryGetValue(occurrence.DefinitionId.ProviderId, out var provider);
+        _registry.TryGet(occurrence.DefinitionId, out var definition);
+        return (occurrence, provider, definition);
+    }
     internal IReadOnlyList<(string EventId, string EventText, string ChoiceId, string ChoiceText)> PanelChoices(Guid id, string? eventId = null, string? choiceId = null)
     {
         _hub.CheckThread();

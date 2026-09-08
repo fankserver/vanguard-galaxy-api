@@ -14,6 +14,14 @@ public sealed class DungeonPanelPlacementTests
         Assert.InRange(result.Top - result.Height, 0, 600);
     }
     [Fact]
+    public void CompactDrawerReservesVisibleToggleSpaceInsideViewport()
+    {
+        var area = DungeonPanelPlacement.Compact(8, 8, 592, 392)!.Value;
+        Assert.True(area.X >= 8); Assert.True(area.X + area.Width <= 592);
+        Assert.Equal(348, area.Top); Assert.True(area.Top - area.Height >= 8);
+        Assert.Null(DungeonPanelPlacement.Compact(0, 0, 100, 100));
+    }
+    [Fact]
     public void WideNativePanelUsesVerticalSpaceWithoutOcclusion()
     {
         var below = DungeonPanelPlacement.Around(0, 0, 600, 600, 20, 200, 580, 580)!.Value;

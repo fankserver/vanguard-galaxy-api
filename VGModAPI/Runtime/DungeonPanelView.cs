@@ -11,7 +11,9 @@ internal sealed class DungeonPanelView : IDisposable
     private readonly DungeonPanelRuntime _source;
     private readonly DungeonPanelService _service;
     private readonly List<Entry> _entries = new();
-    private GameObject? _root;
+    private GameObject? _root, _compactToggle;
+    private TMP_Text? _compactLabel;
+    private bool _drawerOpen;
     private RectTransform? _content;
     private Guid _view;
     private sealed class Entry
@@ -49,8 +51,29 @@ internal sealed class DungeonPanelView : IDisposable
         var lower = canvas!.InverseTransformPoint(corners[0]); var upper = canvas.InverseTransformPoint(corners[2]);
         var bounds = canvas.rect;
         var placement = DungeonPanelPlacement.Around(bounds.xMin + 8, bounds.yMin + 8, bounds.xMax - 8, bounds.yMax - 8, lower.x, lower.y, upper.x, upper.y);
-        _root!.SetActive(placement.HasValue);
-        if (!placement.HasValue) return;
+        var compact = !placement.HasValue;
+        if (compact) placement = DungeonPanelPlacement.Compact(bounds.xMin + 8, bounds.yMin + 8, bounds.xMax - 8, bounds.yMax - 8);
+        if (compact && placement.HasValue)
+        {
+            if (!_compactToggle)
+            {
+                _compactToggle = new GameObject("Dungeon mod actions toggle", typeof(RectTransform), typeof(Image), typeof(Button));
+                var toggleRect = (RectTransform)_compactToggle.transform; toggleRect.SetParent(anchor, false); toggleRect.pivot = new Vector2(0, 1);
+                var image = _compactToggle.GetComponent<Image>(); image.color = new Color(.08f, .18f, .23f, 1);
+                var button = _compactToggle.GetComponent<Button>(); button.targetGraphic = image; button.onClick.AddListener(() => _drawerOpen = !_drawerOpen);
+                _compactLabel = new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI)).GetComponent<TextMeshProUGUI>();
+                _compactLabel.transform.SetParent(toggleRect, false); _compactLabel.font = font; _compactLabel.fontSize = 14; _compactLabel.richText = false; _compactLabel.raycastTarget = false; _compactLabel.alignment = TextAlignmentOptions.Center;
+                _compactLabel.rectTransform.anchorMin = Vector2.zero; _compactLabel.rectTransform.anchorMax = Vector2.one; _compactLabel.rectTransform.offsetMin = new Vector2(4, 0); _compactLabel.rectTransform.offsetMax = new Vector2(-4, 0);
+            }
+            var toggle = (RectTransform)_compactToggle!.transform;
+            toggle.position = canvas.TransformPoint(new Vector3(bounds.xMax - 168, bounds.yMax - 8, 0));
+            var toggleSize = anchor.InverseTransformVector(canvas.TransformVector(new Vector3(160, 36, 0))); toggle.sizeDelta = new Vector2(Mathf.Abs(toggleSize.x), Mathf.Abs(toggleSize.y));
+            _compactLabel!.text = _drawerOpen ? "Close mod actions" : "Mod actions";
+        }
+        if (_compactToggle) _compactToggle!.SetActive(compact && placement.HasValue);
+        if (!compact) _drawerOpen = false;
+        _root!.SetActive(placement.HasValue && (!compact || _drawerOpen));
+        if (!placement.HasValue || (compact && !_drawerOpen)) return;
         var area = placement.Value; var placed = (RectTransform)_root.transform;
         placed.position = canvas.TransformPoint(new Vector3(area.X, area.Top, 0));
         var size = anchor.InverseTransformVector(canvas.TransformVector(new Vector3(area.Width, area.Height, 0)));
@@ -82,6 +105,6 @@ internal sealed class DungeonPanelView : IDisposable
             if (entry.Button != null) entry.Button.interactable = rows[i].Action!.Enabled;
         }
     }
-    private void Clear() { if (_root) { _root!.SetActive(false); UnityEngine.Object.Destroy(_root); } _root = null; _content = null; _entries.Clear(); }
+    private void Clear() { if (_compactToggle) { _compactToggle!.SetActive(false); UnityEngine.Object.Destroy(_compactToggle); } _compactToggle = null; _compactLabel = null; _drawerOpen = false; if (_root) { _root!.SetActive(false); UnityEngine.Object.Destroy(_root); } _root = null; _content = null; _entries.Clear(); }
     public void Dispose() => Clear();
 }
