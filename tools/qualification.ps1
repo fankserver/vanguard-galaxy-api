@@ -539,3 +539,8 @@ if ($provenance.PSObject.Properties['journalCoordinated'] -and $provenance.journ
     foreach ($file in $journalAfter) { if ($journalBefore[$file.Name] -ne (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash) { throw 'Coordinated journal changed legacy source bytes.' } }
 }
 if ((Get-Content -LiteralPath $result -TotalCount 1) -ne 'PASS') { throw 'Qualification failed; inspect sandbox logs.' }
+if (!$StoryDefinitionColdPhase -and $provenance.PSObject.Properties['storyColdSequence'] -and $provenance.storyColdSequence) {
+    $finalized = Join-Path $root 'story-producer-finalized.txt'
+    [IO.File]::WriteAllText(($finalized + '.tmp'), 'PASS')
+    [IO.File]::Move(($finalized + '.tmp'), $finalized)
+}

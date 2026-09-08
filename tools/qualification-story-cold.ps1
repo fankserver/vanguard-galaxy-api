@@ -2,6 +2,9 @@
 function Start-StoryColdPhase([string]$Root, $Provenance) {
     if (!$Provenance.PSObject.Properties['storyColdSequence'] -or !$Provenance.storyColdSequence -or !$Provenance.storyProbe) { throw 'Cold phase was not planned at preparation.' }
     if (Get-Process VanguardGalaxy -ErrorAction SilentlyContinue) { throw 'A game process is still active.' }
+    $finalized = Join-Path $Root 'story-producer-finalized.txt'
+    if (!(Test-Path -LiteralPath $finalized -PathType Leaf) -or (Get-Content -LiteralPath $finalized -Raw).Trim() -cne 'PASS') { throw 'Producer launcher finalization is missing.' }
+    if (Test-Path -LiteralPath (Join-Path $Root 'playerprefs-restore-failed.txt')) { throw 'Producer preference restoration failed.' }
     Assert-StoryReceipt $Root
     $result = @(Get-Content -LiteralPath (Join-Path $Root 'result.txt'))
     $outcome = Get-Content -LiteralPath (Join-Path $Root 'run-outcome.json') -Raw | ConvertFrom-Json
@@ -22,6 +25,15 @@ function Start-StoryColdPhase([string]$Root, $Provenance) {
 }
 
 function Assert-StoryColdReceipt([string]$Root) {
+    $outcome = Get-Content -LiteralPath (Join-Path $Root 'run-outcome.json') -Raw -ErrorAction Stop | ConvertFrom-Json
+    foreach ($field in @('timedOut','killed','exitCode','selfTerminated')) {
+        if (!$outcome.PSObject.Properties[$field]) { throw "Missing cold outcome field $field" }
+    }
+    foreach ($field in @('timedOut','killed','selfTerminated')) {
+        if ($outcome.$field -isnot [bool]) { throw "Invalid cold outcome boolean $field" }
+    }
+    if (!$outcome.selfTerminated) { throw 'Cold process did not self-terminate.' }
+    Assert-QualificationExitOutcome $outcome 'Cold story probe'
     $receipt = @(Get-Content -LiteralPath (Join-Path $Root 'story-definition-cold.txt'))
     if ($receipt.Count -ne 2 -or $receipt[0] -cne 'PASS' -or $receipt[1] -cne 'changed-startup;active;offered;retained-target;retained-amount;reload;normal-retirement') { throw 'Cold-start receipt incomplete.' }
 }
