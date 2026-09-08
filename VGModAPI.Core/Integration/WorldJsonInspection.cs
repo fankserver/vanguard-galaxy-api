@@ -52,6 +52,7 @@ internal sealed class WorldJsonInspection
         var map = Object(Field(Object(Field(root, "Player")), "map"));
         var result = new List<WorldParsedNode>();
         var ids = new HashSet<string>(StringComparer.Ordinal);
+        var systemIds = new HashSet<string>(StringComparer.Ordinal);
         int visited = 0;
         // The native loader also supports a single-sector map represented directly by its systems.
         if ((bool)_isArray.GetValue(Field(map, "systems"))!) ReadSystems(map);
@@ -64,6 +65,7 @@ internal sealed class WorldJsonInspection
             foreach (var value in Array(Field(sector, "systems")))
             {
                 Visit(); var system = Object(value); string systemId = Text(system, "guid");
+                if (!systemIds.Add(systemId)) throw new InvalidDataException("Ambiguous parent system identity.");
                 foreach (var entry in Array(Field(system, "pointsOfInterest")))
                 {
                     Visit(); var poi = Object(entry); string id = Text(poi, "guid");

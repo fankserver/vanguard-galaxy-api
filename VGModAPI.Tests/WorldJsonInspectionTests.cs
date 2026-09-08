@@ -44,6 +44,21 @@ public sealed class WorldJsonInspectionTests
         Assert.Throws<InvalidDataException>(() => scanner.Read(Root(Poi(identity.NativeId, parent: "other-system"))));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void DuplicateParentSystemsAreRejectedAcrossTheWholeMap(bool acrossSectors)
+    {
+        var root = Root(Poi(Identity().NativeId));
+        var sectors = root["Player"].AsJsonObject["map"].AsJsonObject["sectors"].AsJsonArray;
+        var systems = sectors[0].AsJsonObject["systems"].AsJsonArray;
+        var earlier = new JsonObject { ["guid"] = new("system-a"), ["pointsOfInterest"] = new(new List<JsonValue>()) };
+        if (acrossSectors)
+            sectors.Insert(0, new(new JsonObject { ["systems"] = new(new List<JsonValue> { new(earlier) }) }));
+        else systems.Insert(0, new(earlier));
+        Assert.Throws<InvalidDataException>(() => new WorldJsonInspection(typeof(JsonObject).Assembly).Read(root));
+    }
+
     [Fact]
     public void MetadataMustCoverExactlyTheParsedNodesAndMutableState()
     {
