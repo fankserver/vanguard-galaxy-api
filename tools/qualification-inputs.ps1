@@ -364,7 +364,7 @@ function Assert-ForgeCommandSelection([string]$Root, $Provenance) {
     $marker = Join-Path $Root 'forge-commands.enabled'
     if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Forge command selection changed.' }
     if (!$selected) { return }
-    if (!$Provenance.forgeReadProbe -or [IO.File]::ReadAllText($marker) -cne 'forge-commands-v1') { throw 'Invalid Forge command selection.' }
+    if (!$Provenance.forgeReadProbe -or [IO.File]::ReadAllText($marker) -cne 'forge-commands-v2') { throw 'Invalid Forge command selection.' }
     $config = [IO.File]::ReadAllText((Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg'))
     if ($config -cnotmatch '(?ms)^\[Recipes\]\r?\n(?:(?!^\[).)*?^CommandsEnabled = true\r?$') { throw 'Crafting commands not enabled.' }
 }
@@ -375,7 +375,7 @@ function Assert-ForgeCommandReceipt([string]$Root, $Provenance) {
     $file = Join-Path $Root 'forge-commands.txt'
     if ((Get-Item -LiteralPath $file).Length -gt 512) { throw 'Oversized Forge command receipt.' }
     $lines = @(Get-Content -LiteralPath $file)
-    if ($lines.Count -ne 4 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'forge-commands-v1' -or $lines[2] -cne 'settings-replay-restored' -or $lines[3] -cne 'forge-queue-cancel-replay') { throw 'Incomplete Forge command receipt.' }
+    if ($lines.Count -ne 4 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'forge-commands-v2' -or $lines[2] -cne 'settings-replay-restored' -or $lines[3] -cne 'forge-queue-cancel-replay-refusal-direct-start') { throw 'Incomplete Forge command receipt.' }
 }
 function Assert-ForgeReadSelection([string]$Root, $Provenance) {
     Assert-ForgeCommandSelection $Root $Provenance
