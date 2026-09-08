@@ -14,6 +14,7 @@ public sealed class WorldObjectIdentityTests
     public void ReconstructedTupleHasStableBoundedNativeIdentity()
     {
         var first = Identity("author.one", "PoiX");
+        Assert.Equal("vgmodapi.world.v1.b652ff56f4ee476e5c237721d12c81006d60f7af3e9e549ad133a4908c346918", first.NativeId);
         Assert.Equal(first.NativeId, Identity("author.one", "PoiX").NativeId);
         Assert.True(WorldObjectIdentity.IsReserved(first.NativeId));
         Assert.True(first.NativeId.Length <= 128);
