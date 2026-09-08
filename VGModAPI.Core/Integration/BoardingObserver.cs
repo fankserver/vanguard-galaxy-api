@@ -17,6 +17,7 @@ internal sealed class BoardingObserver : IDisposable
     private readonly Func<object, string, object?> _read;
     private readonly Dictionary<object, Target> _targets = new();
     private readonly Dictionary<object, Operation> _operations = new();
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<object, object> _retiredOperations = new();
     private Guid? _session;
     private bool _stopped;
     private readonly Stack<RewardScope> _rewards = new();
@@ -69,6 +70,9 @@ internal sealed class BoardingObserver : IDisposable
     private object? Read(object obj, string name) => _read(obj, name);
     private T Read<T>(object obj, string name) => (T)Read(obj, name)!;
     private int Pods(object obj) => ((ICollection)Read(obj, "_activePods")!).Count;
+    private int PlayerPods(object obj) => ((IEnumerable)Read(obj, "_activePods")!).Cast<object>()
+        .Count(pod => pod != null && _isLive(pod) && Read<bool>(pod, "isPlayerOwned"));
+    private bool TargetLive(Target target) => target.Components.Count == 0 || target.Components.Any(_isLive);
     internal void Guard(Action action)
     {
         if (_stopped) return;
@@ -83,7 +87,7 @@ internal sealed class BoardingObserver : IDisposable
     private void SyncSession()
     {
         if (_session == _service.SessionId) return;
-        _targets.Clear(); _operations.Clear(); _rewards.Clear(); _session = _service.SessionId;
+        _targets.Clear(); _operations.Clear(); _retiredOperations.Clear(); _rewards.Clear(); _session = _service.SessionId;
     }
     internal void TargetReady(object native)
     {
@@ -92,14 +96,18 @@ internal sealed class BoardingObserver : IDisposable
     }
     private Target EnsureTarget(object data, object? component = null)
     {
-        if (!_targets.TryGetValue(data, out var target))
+        _targets.TryGetValue(data, out var target);
+        if (target != null && component != null && target.Components.Count > 0 && !target.Components.Contains(component) &&
+            (!TargetLive(target) || Read<bool>(data, "isShipBased")))
+        { RetireTarget(target); target = null; }
+        if (target == null)
         { target = new Target(data, new BoardingHandle(_session!.Value, Guid.NewGuid())); _targets.Add(data, target); }
-        if (component != null) target.Component = component;
+        if (component != null) target.Components.Add(component);
         return target;
     }
     internal void OperationReady(object? native, bool resumed)
     {
-        if (native == null || _operations.ContainsKey(native)) return;
+        if (native == null || _operations.ContainsKey(native) || _retiredOperations.TryGetValue(native, out _)) return;
         var target = EnsureTarget(Read(native, "location")!, Read(native, "boardableTarget"));
         var operation = new Operation(native, target, new BoardingHandle(_session!.Value, Guid.NewGuid()));
         if (resumed && Read(native, "simulation") is object saved)
@@ -110,7 +118,7 @@ internal sealed class BoardingObserver : IDisposable
     internal void OperationSignal(object native, string method)
     {
         if (!_operations.TryGetValue(native, out var operation)) return;
-        if ((method == "ReturnCrewToShip" || method == "HandlePodCrewReturned") && Pods(native) == 0) operation.ReturnObserved = true;
+        if (method is "ReturnCrewToShip" or "HandlePodCrewReturned" or "ReturnDockedPodCrew" or "RecallAllPods") operation.ReturnObserved = true;
         Observe(operation);
     }
     internal object? BeginRewards(object native)
@@ -163,16 +171,26 @@ internal sealed class BoardingObserver : IDisposable
         {
             foreach (var target in _targets.Values.ToArray())
             {
-                if (target.Component == null || _isLive(target.Component)) { PublishTarget(target); continue; }
-                if (target.Operation == null || (Read<bool>(target.Operation.Native, "isComplete") && Pods(target.Operation.Native) == 0))
-                {
-                    if (target.Snapshot != null) _service.Observe(BoardingEventKind.Retired, target.Snapshot, target.Operation?.Snapshot);
-                    foreach (var old in _operations.Where(pair => pair.Value.Target == target).Select(pair => pair.Key).ToArray()) _operations.Remove(old);
-                    _targets.Remove(target.Data);
-                }
-                else PublishTarget(target);
+                if (TargetLive(target)) PublishTarget(target);
+                else RetireTarget(target);
+            }
+            foreach (var operation in _operations.Values.ToArray())
+            {
+                if ((!Read<bool>(operation.Native, "isComplete") && !operation.Target.Retired) || PlayerPods(operation.Native) != 0) continue;
+                Observe(operation);
+                if (operation.Target.Operation == operation) operation.Target.Operation = null;
+                if (operation.Snapshot != null) _service.Observe(BoardingEventKind.OperationRetired, Snapshot(operation.Target), operation.Snapshot);
+                _operations.Remove(operation.Native); _retiredOperations.Add(operation.Native, new object());
             }
         });
+    }
+    private void RetireTarget(Target target)
+    {
+        if (target.Retired) return;
+        target.Retired = true;
+        var snapshot = Snapshot(target); target.Snapshot = snapshot;
+        _service.Observe(BoardingEventKind.Retired, snapshot, target.Operation?.Snapshot);
+        if (_targets.TryGetValue(target.Data, out var current) && current == target) _targets.Remove(target.Data);
     }
     private void PublishTarget(Target target)
     {
@@ -185,7 +203,7 @@ internal sealed class BoardingObserver : IDisposable
     }
     private BoardingTargetSnapshot Snapshot(Target target)
     {
-        var data = target.Data; var dead = target.Component != null && !_isLive(target.Component);
+        var data = target.Data; var dead = target.Retired || !TargetLive(target);
         var availability = dead ? BoardingAvailability.TargetUnavailable : target.Operation != null && !Read<bool>(target.Operation.Native, "isComplete")
             ? BoardingAvailability.OperationActive : Read<BoardingAvailability>(data, "availability");
         var template = Read(data, "shipTemplate") as string; var faction = Read(data, "faction");
@@ -196,7 +214,8 @@ internal sealed class BoardingObserver : IDisposable
     private void Observe(Operation operation, BoardingEventKind? explicitKind = null, BoardingDelivery? delivery = null)
     {
         var native = operation.Native; var sim = Read(native, "simulation"); var pods = Pods(native);
-        var phase = Read<bool>(native, "isComplete") ? operation.ReturnObserved ? BoardingPhase.Settled : pods > 0 ? BoardingPhase.ReturningCrew : BoardingPhase.Resolved
+        var playerPods = PlayerPods(native);
+        var phase = Read<bool>(native, "isComplete") ? playerPods > 0 ? BoardingPhase.ReturningCrew : operation.ReturnObserved ? BoardingPhase.Settled : BoardingPhase.Resolved
             : Read(native, "phase")!.ToString() == "Approach" ? Read<int>(native, "_podsInFlight") > 0 ? BoardingPhase.AwaitingLanding : BoardingPhase.Approaching
             : Read(native, "phase")!.ToString() == "Extraction" || (sim != null && Read<bool>(sim, "awaitingPlayerExtraction")) ? BoardingPhase.Extracting : BoardingPhase.Active;
         var rooms = sim == null ? Array.Empty<BoardingCompartmentSnapshot>() : ((IEnumerable)Read(sim, "compartments")!).Cast<object>()
@@ -234,7 +253,8 @@ internal sealed class BoardingObserver : IDisposable
     {
         internal readonly object Data;
         internal readonly BoardingHandle Handle;
-        internal object? Component;
+        internal readonly HashSet<object> Components = new();
+        internal bool Retired;
         internal Operation? Operation;
         internal BoardingTargetSnapshot? Snapshot;
         internal long Revision;

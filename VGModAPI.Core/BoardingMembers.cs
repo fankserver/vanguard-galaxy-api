@@ -9,6 +9,7 @@ internal static class BoardingMembers
     private const string Crew = "Source.CompartmentSystem.SimCrewUnit";
     internal static readonly (string Type, string Name, string ValueType)[] Schema =
     {
+        ("Behaviour.Persistables.BoardingPod", "isPlayerOwned", "System.Boolean"),
         (BindingCatalog.Player, "credits", "System.Int64"),
         ("Source.Galaxy.MapPointOfInterest", "persistables", "System.Collections.Generic.List`1<Source.Data.Persistable.PersistableData>"),
         ("Source.Data.Persistable.TractorableItemData", "itemAmount", "System.Int32"),

@@ -19,7 +19,7 @@ internal static class BoardingPatches
     {
         internal static Exception? Finalizer(object? __result, MethodBase __originalMethod, Exception? __exception)
         {
-            if (__exception == null) Observer?.Guard(() => Observer.OperationReady(__result, __originalMethod.Name == "ResumeOperation"));
+            if (__exception == null) Observer?.Guard(() => Observer.OperationReady(__result, __originalMethod.Name is "ResumeOperation" or "EnsureApproachOperation"));
             return __exception;
         }
     }

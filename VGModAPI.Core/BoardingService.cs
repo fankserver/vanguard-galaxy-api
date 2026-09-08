@@ -14,6 +14,7 @@ internal sealed class BoardingService : IBoardingEvents, IDisposable
     private readonly Dictionary<BoardingHandle, BoardingOperationSnapshot> _operations = new();
     private readonly List<Subscription> _subscribers = new();
     private readonly HashSet<BoardingHandle> _retired = new();
+    private readonly HashSet<BoardingHandle> _retiredOperations = new();
     private readonly Queue<BoardingEvent> _pending = new();
     private Guid? _session;
     private long _sequence;
@@ -40,23 +41,31 @@ internal sealed class BoardingService : IBoardingEvents, IDisposable
     }
     internal void Invalidate()
     {
-        _hub.CheckThread(); _session = null; _targets.Clear(); _operations.Clear(); _pending.Clear(); _retired.Clear();
+        _hub.CheckThread(); _session = null; _targets.Clear(); _operations.Clear(); _pending.Clear(); _retired.Clear(); _retiredOperations.Clear();
     }
     internal bool Observe(BoardingEventKind kind, BoardingTargetSnapshot target, BoardingOperationSnapshot? operation = null, BoardingDelivery? delivery = null)
     {
         _hub.CheckThread();
-        if (_disposed || !_session.HasValue || target.Handle.SessionId != _session || _retired.Contains(target.Handle)) return false;
+        if (_disposed || !_session.HasValue || target.Handle.SessionId != _session) return false;
+        var targetRetired = _retired.Contains(target.Handle);
+        if (targetRetired && (operation == null || !_operations.ContainsKey(operation.Handle) || kind is BoardingEventKind.Retired or BoardingEventKind.TargetAvailable or BoardingEventKind.TargetChanged)) return false;
+        if (operation != null && _retiredOperations.Contains(operation.Handle)) return false;
         if (operation != null && !operation.Target.Equals(target.Handle)) throw new ArgumentException("Operation target mismatch.");
         if (_targets.TryGetValue(target.Handle, out var oldTarget) && target.Revision < oldTarget.Revision) return false;
         if (operation != null && _operations.TryGetValue(operation.Handle, out var oldOperation) && operation.Revision < oldOperation.Revision) return false;
         if (kind == BoardingEventKind.Retired)
         {
             _retired.Add(target.Handle); _targets.Remove(target.Handle);
-            foreach (var handle in _operations.Where(pair => pair.Value.Target.Equals(target.Handle)).Select(pair => pair.Key).ToArray()) _operations.Remove(handle);
+        }
+        else if (kind == BoardingEventKind.OperationRetired)
+        {
+            if (operation == null) throw new ArgumentException("Operation retirement requires an operation.");
+            _operations.Remove(operation.Handle); _retiredOperations.Add(operation.Handle);
+            if (!targetRetired) _targets[target.Handle] = target;
         }
         else
         {
-            _targets[target.Handle] = target;
+            if (!targetRetired) _targets[target.Handle] = target;
             if (operation != null) _operations[operation.Handle] = operation;
         }
         _pending.Enqueue(new BoardingEvent(++_sequence, kind, target, operation, delivery));

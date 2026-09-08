@@ -61,7 +61,7 @@ public sealed class BoardingObserverTests
     [Fact]
     public void CompletionAndCrewReturnAreSeparate()
     {
-        using var f = new Fixture(); ((ArrayList)f.Native["_activePods"]!).Add(new object()); f.Start();
+        using var f = new Fixture(); ((ArrayList)f.Native["_activePods"]!).Add(new Dictionary<string, object?> { ["isPlayerOwned"] = true }); f.Start();
         f.Native["isComplete"] = true; f.Sim["isComplete"] = true; f.Signal();
         Assert.Equal(BoardingPhase.ReturningCrew, Assert.Single(f.Service.GetOperations()).Phase);
         Assert.DoesNotContain(f.Events, e => e.Kind == BoardingEventKind.CrewReturnSettled);
@@ -103,6 +103,83 @@ public sealed class BoardingObserverTests
         f.Location["availability"] = BoardingAvailability.Travelling; f.Observer.Poll();
         Assert.Equal(BoardingAvailability.Travelling, Assert.Single(f.Service.GetTargets()).Availability);
         Assert.Equal(BoardingEventKind.TargetChanged, f.Events.Last().Kind);
+    }
+    public static object EnsureApproachOperation() => new object();
+    [Fact]
+    public void RestoredApproachIsResumedAndTracksLandingAndCancellation()
+    {
+        using var f = new Fixture(); f.Native["simulation"] = null; f.Native["phase"] = "Approach";
+        Assert.Contains(BindingCatalog.Boarding, binding => binding.Name == "EnsureApproachOperation");
+        VGModAPI.Patches.BoardingPatches.Observer = f.Observer;
+        try
+        {
+            VGModAPI.Patches.BoardingPatches.Start.Finalizer(f.Native, typeof(BoardingObserverTests).GetMethod(nameof(EnsureApproachOperation))!, null);
+        }
+        finally { VGModAPI.Patches.BoardingPatches.Observer = null; }
+        Assert.Equal(BoardingEventKind.OperationResumed, f.Events[0].Kind);
+        Assert.Equal(BoardingPhase.Approaching, Assert.Single(f.Service.GetOperations()).Phase);
+        f.Native["_podsInFlight"] = 1; f.Signal();
+        Assert.Equal(BoardingPhase.AwaitingLanding, Assert.Single(f.Service.GetOperations()).Phase);
+        f.Native["_podsInFlight"] = 0; f.Native["simulation"] = f.Sim; f.Native["phase"] = "Active"; f.Signal();
+        Assert.Equal(BoardingPhase.Active, Assert.Single(f.Service.GetOperations()).Phase);
+        f.Signal("ReturnCrewToShip"); f.Native["isComplete"] = true; f.Signal("MarkOperationComplete");
+        Assert.Contains(f.Events, e => e.Kind == BoardingEventKind.CrewReturnSettled);
+    }
+    [Fact]
+    public void SameLocationReplacementCannotReviveTargetWhileOldCrewReturns()
+    {
+        using var f = new Fixture();
+        ((ArrayList)f.Native["_activePods"]!).Add(new Dictionary<string, object?> { ["isPlayerOwned"] = true });
+        f.Start(); var target = Assert.Single(f.Service.GetTargets()); var operation = Assert.Single(f.Service.GetOperations());
+        f.Dead.Add(f.Unit); f.Observer.Poll(); Assert.Null(f.Service.GetTarget(target.Handle));
+        var replacement = new Dictionary<string, object?> { ["data"] = f.Location };
+        f.Observer.Guard(() => f.Observer.TargetReady(replacement));
+        var next = Assert.Single(f.Service.GetTargets()); Assert.NotEqual(target.Handle, next.Handle);
+        f.Native["isComplete"] = true; ((ArrayList)f.Native["_activePods"]!).Clear(); f.Signal("HandlePodCrewReturned");
+        Assert.Null(f.Service.GetTarget(target.Handle)); Assert.Same(next, f.Service.GetTarget(next.Handle));
+        Assert.Contains(f.Events, e => e.Kind == BoardingEventKind.CrewReturnSettled && e.Operation!.Handle.Equals(operation.Handle));
+        f.Observer.Poll(); Assert.Null(f.Service.GetOperation(operation.Handle));
+    }
+    [Fact]
+    public void PoiUnloadInvalidatesActiveOperationWhenNoLiveReturnObligationRemains()
+    {
+        using var f = new Fixture(); var pod = new Dictionary<string, object?> { ["isPlayerOwned"] = true };
+        ((ArrayList)f.Native["_activePods"]!).Add(pod); f.Start();
+        var old = Assert.Single(f.Service.GetOperations()).Handle;
+        f.Dead.Add(f.Unit); f.Dead.Add(pod); f.Observer.Poll();
+        Assert.Empty(f.Service.GetTargets()); Assert.Empty(f.Service.GetOperations());
+        f.Signal(); f.Start(); Assert.Null(f.Service.GetOperation(old));
+        Assert.DoesNotContain(f.Events, e => e.Kind == BoardingEventKind.CrewReturnSettled);
+    }
+    [Fact]
+    public void LandedEnemyPodDoesNotBlockLastPlayerReturn()
+    {
+        using var f = new Fixture(); var pods = (ArrayList)f.Native["_activePods"]!;
+        var player = new Dictionary<string, object?> { ["isPlayerOwned"] = true };
+        pods.Add(player); pods.Add(new Dictionary<string, object?> { ["isPlayerOwned"] = false }); f.Start();
+        f.Native["isComplete"] = true; pods.Remove(player); f.Signal("HandlePodCrewReturned");
+        Assert.Equal(BoardingPhase.Settled, Assert.Single(f.Service.GetOperations()).Phase);
+        Assert.Equal(1, Assert.Single(f.Service.GetOperations()).ActivePods);
+        Assert.Single(f.Events, e => e.Kind == BoardingEventKind.CrewReturnSettled);
+        f.Observer.Poll(); Assert.Empty(f.Service.GetOperations());
+    }
+    [Theory]
+    [InlineData("RecallAllPods", false)]
+    [InlineData("ReturnDockedPodCrew", false)]
+    [InlineData("RecallAllPods", true)]
+    public void CancellationSettlesOnlyAfterOutstandingPlayerPodsReturn(string boundary, bool launching)
+    {
+        using var f = new Fixture(); f.Native["simulation"] = null; f.Native["phase"] = "Approach"; f.Start();
+        var pods = (ArrayList)f.Native["_activePods"]!;
+        if (launching) pods.Add(new Dictionary<string, object?> { ["isPlayerOwned"] = true });
+        f.Signal(boundary); f.Native["isComplete"] = true; f.Signal("MarkComplete");
+        Assert.Equal(launching ? BoardingPhase.ReturningCrew : BoardingPhase.Settled, Assert.Single(f.Service.GetOperations()).Phase);
+        if (launching)
+        {
+            Assert.DoesNotContain(f.Events, e => e.Kind == BoardingEventKind.CrewReturnSettled);
+            pods.Clear(); f.Signal("HandlePodCrewReturned");
+        }
+        Assert.Single(f.Events, e => e.Kind == BoardingEventKind.CrewReturnSettled);
     }
     [Fact]
     public void RewardBatchReturnWithoutApplicationDoesNotReportDelivery()

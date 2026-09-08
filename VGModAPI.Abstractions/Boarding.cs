@@ -8,7 +8,7 @@ namespace VGModAPI;
 public enum BoardingEncounterKind { Ship, Installation }
 public enum BoardingPhase { Available, Approaching, AwaitingLanding, Active, Extracting, Resolved, ReturningCrew, Settled, Retired }
 public enum BoardingAvailability { Available, Travelling, OperationActive, NoCrew, TargetUnavailable, SessionUnavailable, IntegrationUnavailable, IntegrityTooLow, LevelTooHigh }
-public enum BoardingEventKind { TargetAvailable, TargetChanged, OperationStarted, OperationResumed, PhaseChanged, TacticalChanged, VictorySecured, SimulationResolved, CaptureApplied, RewardsDelivered, CrewReturnSettled, Retired }
+public enum BoardingEventKind { TargetAvailable, TargetChanged, OperationStarted, OperationResumed, PhaseChanged, TacticalChanged, VictorySecured, SimulationResolved, CaptureApplied, RewardsDelivered, CrewReturnSettled, Retired, OperationRetired }
 
 /// <summary>Runtime identity only. A new session or native instance requires a new identity.</summary>
 public sealed class BoardingHandle : IEquatable<BoardingHandle>

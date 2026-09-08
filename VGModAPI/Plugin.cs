@@ -427,7 +427,7 @@ public sealed class Plugin : BaseUnityPlugin
             var patches = BindingCatalog.Boarding.ToDictionary(binding => binding.Key, binding => binding.Key switch
             {
                 "boardingShipReady" or "boardingLocationReady" => typeof(BoardingPatches.Target),
-                "boardingStartShip" or "boardingStartLocation" or "boardingResumeShip" or "boardingResumeLocation" => typeof(BoardingPatches.Start),
+                "boardingStartShip" or "boardingStartLocation" or "boardingResumeShip" or "boardingResumeLocation" or "boardingRestoreApproach" => typeof(BoardingPatches.Start),
                 "boardingCapture" => typeof(BoardingPatches.Capture),
                 "boardingLoot" or "boardingPartialLoot" or "boardingDataLoot" => typeof(BoardingPatches.Rewards),
                 "boardingInventoryDelivery" => typeof(BoardingPatches.Inventory),
