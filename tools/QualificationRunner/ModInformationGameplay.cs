@@ -10,6 +10,7 @@ using UnityEngine.UI;
 using UnityEngine.InputSystem;
 using UnityEngine.EventSystems;
 using TMPro;
+using VGModAPI.Core;
 
 namespace VGModAPI.Qualification;
 
@@ -54,7 +55,11 @@ public sealed partial class Plugin
                 var driverRow = panel.GetComponentsInChildren<Button>().Single(button => button.GetComponentInChildren<TMP_Text>().text.Contains("Controlled Qualification"));
                 events.SetSelectedGameObject(driverRow.gameObject);
                 foreach (var frame in MenuKey(keyboard, Key.Enter)) yield return frame;
-                Require(panel.GetComponentsInChildren<TMP_Text>().Any(text => text.text.Contains("Optional author metadata is invalid; installed identity is still shown.")), "Invalid metadata was not presented truthfully.");
+                var playerDetails = panel.GetComponentsInChildren<TMP_Text>().Single(text => text.name == "Plain details").text;
+                Require(playerDetails.Contains(ModInformationPresenter.DisplayName(row)) &&
+                    driverRow.transform.Find("Installed version").GetComponent<TMP_Text>().text == "v" + row.InstalledVersion &&
+                    !playerDetails.Contains("Optional author metadata") && !playerDetails.Contains("broken"),
+                    "Invalid metadata must preserve player-facing identity without technical warnings or invented health claims.");
                 foreach (var frame in MenuKey(keyboard, Key.Escape)) yield return frame;
                 Require(!panel.activeSelf, "Metadata fixture menu did not close.");
             }

@@ -9,7 +9,7 @@ Unofficial community mod API for Vanguard Galaxy, using BepInEx 5 and HarmonyX.
 - Default-enabled experimental mod save data for additional custom payloads.
 - Optional experimental mission transitions and native travel/station observations.
 - Optional experimental owned story definitions, native catalog installation, occurrence reconstruction and API-managed persistence for a closed mission subset.
-- Local mod-information catalog and a native main-menu interface; no automatic update-check service.
+- Mods menu with installed versions, descriptions and automatic update checks; no automatic downloads or installations.
 - Runtime session identity, replacement/menu invalidation, player readiness, and gameplay-manager initialization.
 - Coroutine-aware file-load observation and detected failure reporting.
 - Save success/failure/skip outcomes, with recursive retries grouped into one operation.
