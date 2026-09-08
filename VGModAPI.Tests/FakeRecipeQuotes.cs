@@ -120,7 +120,8 @@ namespace Behaviour.Item
         public Source.Item.Rarity rarity { get; set; }
         public object? itemBuilder { get; set; }
         public object? equipmentBuilder { get; set; }
-        public bool CanStackWith(InventoryItemType other) => ReferenceEquals(this, other);
+        public Func<InventoryItemType, bool>? StackRule;
+        public bool CanStackWith(InventoryItemType other) => StackRule?.Invoke(other) ?? ReferenceEquals(this, other);
         public bool CanGoInDataInventory() => false;
         public float calcCost = 100;
         public int PreviewBuilderCalls { get; private set; }

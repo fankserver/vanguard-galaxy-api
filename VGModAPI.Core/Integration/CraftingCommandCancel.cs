@@ -28,6 +28,7 @@ internal sealed partial class RecipeCatalogNativeSource
         var credits = Convert.ToInt64(Get(player, "credits"));
         if (credits > long.MaxValue - refund) return CommandResult(request, CraftingCommandStatus.InvalidRequest, "Credit refund would overflow.", true);
         var expected = new Dictionary<RecipeResourceId, double>();
+        var itemRefunds = new List<(object Item, int Amount)>();
         if (forge)
         {
             var balances = new Dictionary<RecipeResourceId, (double Before, float After)>();
@@ -46,9 +47,12 @@ internal sealed partial class RecipeCatalogNativeSource
             }
             foreach (var pair in balances) expected.Add(pair.Key, pair.Value.After - pair.Value.Before);
             foreach (var row in Enumerate(Call(definition, "GetIngredientItems", before.CraftedLevel.Value)))
-                AddExpectedItem(expected, Get(row, "Item1")!, checked(Convert.ToInt32(Get(row, "Item2")) * before.RemainingBatches));
+                itemRefunds.Add((Get(row, "Item1")!, checked(Convert.ToInt32(Get(row, "Item2")) * before.RemainingBatches)));
         }
-        else AddExpectedItem(expected, Get(definition, "item")!, before.RemainingBatches);
+        else itemRefunds.Add((Get(definition, "item")!, before.RemainingBatches));
+        foreach (var item in itemRefunds) AddExpectedItem(expected, item.Item, item.Amount);
+        if (!RefundStacksFit(Get(station, "materialStorage")!, itemRefunds))
+            return CommandResult(request, CraftingCommandStatus.InvalidRequest, "Refund may overflow a destination stack.", true);
         var captured = new List<CraftingJobEvent>();
         using var listener = CommandJobEvents.Subscribe("vgmodapi.crafting-command-receipt", fact =>
         { if (fact.Job.Handle.Equals(request.Job)) captured.Add(fact); });
@@ -67,6 +71,25 @@ internal sealed partial class RecipeCatalogNativeSource
         return new CraftingCommandResult(request.RequestId, success ? CraftingCommandStatus.Succeeded : CraftingCommandStatus.Uncertain,
             success ? "Removal, captured-level input refunds and current-cost credit refund verified." : "Cancellation effects are partial or unverified; do not retry blindly.",
             true, creditDelta: delta, deliveries: deliveries);
+    }
+    private static bool RefundStacksFit(object inventory, IReadOnlyList<(object Item, int Amount)> refunds)
+    {
+        var rows = Enumerate(Get(inventory, "items")).Select(row => (Item: Get(row, "item")!, Count: Convert.ToInt64(Get(row, "count")))).ToList();
+        foreach (var refund in refunds)
+        {
+            var matched = false;
+            for (var index = 0; index < rows.Count; index++)
+            {
+                var row = rows[index];
+                if (!Convert.ToBoolean(Call(row.Item, "CanStackWith", refund.Item))) continue;
+                // Conservatively bound every compatible destination, including accumulated refunds.
+                var count = row.Count + refund.Amount;
+                if (row.Count < 0 || count > int.MaxValue) return false;
+                rows[index] = (row.Item, count); matched = true;
+            }
+            if (!matched) rows.Add((refund.Item, refund.Amount));
+        }
+        return true;
     }
     private static void AddExpectedItem(Dictionary<RecipeResourceId, double> expected, object item, int amount)
     {

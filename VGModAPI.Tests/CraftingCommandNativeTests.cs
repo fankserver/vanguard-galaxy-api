@@ -89,6 +89,42 @@ public sealed class CraftingCommandNativeTests : IDisposable
         Assert.Equal(10, _station.materialStorage.items.Single().count); Assert.Equal(100, _player.Materials);
     }
     [Fact]
+    public void CompatibleCloneCannotHideFavouriteExactReferenceConsumption()
+    {
+        var favourite = _station.materialStorage.items.Single(); favourite.favourite = true;
+        var clone = new InventoryItemType { identifier = "part", StackRule = other => ReferenceEquals(other, _item) };
+        _station.materialStorage.items = new[] { new Inventory.InventoryItem { inventory = _station.materialStorage, item = clone, count = 10 }, favourite };
+        _station.forge!.QueueHandler = (_, _) => throw new InvalidOperationException("Must not invoke admission");
+        Assert.Equal(CraftingCommandStatus.ProtectedInputs, _commands.Execute(QueueRequest(CraftingProtectionPolicy.ProtectFavourites)).Status);
+        Assert.Equal(10, favourite.count); Assert.Equal(1000, _player.credits);
+    }
+    [Fact]
+    public void NativeCancellationInFlightRefusesNestedCommand()
+    {
+        var queued = _commands.Execute(QueueRequest());
+        var scope = _observer.Begin("jobCancelForge", _station.forge!, new[] { _station.forge!.jobs.Single() });
+        try
+        {
+            var result = _commands.Execute(CraftingCommandRequest.Cancel("test", Guid.NewGuid(), queued.Jobs.Single()));
+            Assert.Equal(CraftingCommandStatus.Busy, result.Status); Assert.False(result.MutationMayHaveRun);
+            Assert.Equal(980, _player.credits); Assert.Single(_station.forge.jobs);
+        }
+        finally { _observer.End(scope, null, null); }
+    }
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void CancellationRefusesPredictableStackOverflow(bool forge)
+    {
+        if (forge) _station.forge!.jobs.Add(new Job { parent = _station.forge, recipe = _recipe, initialAmount = 2, remainingAmount = 2 });
+        else _station.refinery.jobs.Add(new RefineJob { parent = _station.refinery, ore = new Behaviour.Mining.OreItemData { item = _item }, initialAmount = 2, remainingAmount = 2 });
+        _station.materialStorage.items.Single().count = int.MaxValue - 1;
+        var handle = _jobs.Read(_handle).Jobs.Single().Handle;
+        Assert.Equal(CraftingCommandStatus.InvalidRequest, _commands.Execute(CraftingCommandRequest.Cancel("test", Guid.NewGuid(), handle)).Status);
+        Assert.Equal(int.MaxValue - 1, _station.materialStorage.items.Single().count); Assert.Equal(1000, _player.credits);
+        Assert.Single(forge ? _station.forge!.jobs : _station.refinery.jobs);
+    }
+    [Fact]
     public void DuplicateMaterialRowsUseSequentialNativeFloatDebits()
     {
         _recipe.materials.Clear();

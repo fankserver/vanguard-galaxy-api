@@ -18,6 +18,7 @@ internal sealed partial class CraftingJobObserver : IDisposable
     internal CraftingJobObserver(LifecycleHub hub, CraftingJobService service, RecipeCatalogNativeSource source)
     { _hub = hub; _service = service; _source = source; source.JobsInvalidated += Reset; }
     internal bool IsHealthy => !_disposed && _fault == null;
+    internal bool IsOperationInFlight => _scopes.Count != 0;
     internal Scope? BeginExtraction(RecipeStationHandle station, object refinery)
     {
         _hub.CheckThread();

@@ -119,7 +119,7 @@ internal sealed partial class RecipeCatalogNativeSource
                 foreach (var row in Enumerate(Get(inventory, "items")))
                 {
                     if (needed == 0) break;
-                    var item = Get(row, "item"); if (item == null || !Convert.ToBoolean(Call(item, "CanStackWith", group.Key))) continue;
+                    var item = Get(row, "item"); if (!ReferenceEquals(item, group.Key)) continue;
                     var count = Convert.ToInt32(Get(row, "count")); if (count <= 0) continue;
                     if (Convert.ToBoolean(Get(row, "favourite"))) { if (forge) return false; continue; }
                     needed -= Math.Min(needed, count);

@@ -78,7 +78,7 @@ Native Forge/refinery jobs already own their supported save data. The API reuses
 
 ## Guarded commands (API 0.1.35)
 
-`ModApi.CraftingCommands` is separately default-off: set `[Recipes] CommandsEnabled=true` as well as `Enabled=true`. The `crafting-commands` capability requires the inspected job/transfer observers and serialization guards. Accessing a service or reading settings changes no setting. All calls are main-thread-only; mutations require the tracked, initialized player instance and refuse save, reconstruction, callback and reentrant contexts.
+`ModApi.CraftingCommands` is separately default-off: set `[Recipes] CommandsEnabled=true` as well as `Enabled=true`. The `crafting-commands` capability requires the inspected job/transfer observers and serialization guards. Accessing a service or reading settings changes no setting. All calls are main-thread-only; mutations require the tracked, initialized player instance and refuse save, reconstruction, callback, already-running native crafting operations and reentrant contexts.
 
 ```csharp
 var request = CraftingCommandRequest.Queue(
@@ -94,7 +94,7 @@ Protection is explicit. `NativeConsumption` permits vanilla favourite/mission-it
 
 Cancellation uses the job's owning parent, not the current station helper. Native input refunds use the saved crafting-level argument (including native fallback for zero); credits use the **current** recipe price and remaining batches, not the original payment. Item refunds go to the owning station's material storage; refined materials return to player-wide balances. The result requires observed refunds and removal. A partial failure remains `Uncertain`, without an automatic compensating transaction.
 
-Extraction is immediate, not queued. It requires the owning station interior, supported canister semantics, sufficient material/credits and cargo capacity even though the underlying native call forces delivery. Success verifies the material debit, fee and actual cargo transfer. Native notifications remain intact when the action runs; preflight refusals return a status without invoking the rejected native action. Visible native controls/job displays are refreshed without selecting a different refinery tab or firing toggle callbacks.
+Extraction is immediate, not queued. It requires the owning station interior, supported canister semantics, sufficient material/credits and cargo capacity even though the underlying native call forces delivery. Success verifies the material debit, fee and actual cargo transfer. Native notifications remain intact when the action runs; preflight refusals return a status without invoking the rejected native action. The API's additional UI refresh does not select a different refinery tab or fire toggle callbacks. Native cancellation itself can select the refinery jobs display, including when cancelling a remote station's job; the API does not suppress that native presentation effect.
 
 `ReadSettings(sessionId, optionalStation)` reports station auto-refine, player cargo-delivery preference, the saved auto-sell flag and its effective cache. `Configure` accepts a station only for `StationAutoRefine`; `PlayerCargoDelivery` and `PlayerAutoSell` belong to the player save. Auto-sell is **not installation-wide**: the native player register persists its flag and restoration refreshes the static cache. Reads expose a mismatch without silently synchronizing it; setting auto-sell explicitly updates both.
 

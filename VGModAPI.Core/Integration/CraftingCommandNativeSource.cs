@@ -14,6 +14,8 @@ internal sealed partial class RecipeCatalogNativeSource : ICraftingCommandBacken
         if (!CommandLive(request.SessionId, player)) return CommandResult(request, CraftingCommandStatus.SessionUnavailable, "Gameplay player unavailable.");
         if (CommandObserver?.IsHealthy != true || CommandJobEvents == null)
             return CommandResult(request, CraftingCommandStatus.IntegrationUnavailable, "Job/transfer observation is unavailable.");
+        if (CommandObserver.IsOperationInFlight)
+            return CommandResult(request, CraftingCommandStatus.Busy, "A native crafting operation is already in flight.");
         if (request.Kind == CraftingCommandKind.SetSetting) return ConfigureNative(request, player!);
         var station = request.Station == null ? null : ResolveStation(request.Station);
         if (station == null) return CommandResult(request, CraftingCommandStatus.StaleHandle, "Station handle was not issued here or has been replaced.");
