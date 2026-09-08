@@ -316,8 +316,10 @@ transactionally. Active revision migration requires unchanged non-step metadata,
 and choice declarations; legacy active occurrences without a retained definition cannot prove that
 condition and refuse revision migration. Offered occurrences may migrate the full definition.
 Definition bytes consume existing quotas and are discarded at retirement; outcomes,
-choices and keyed progress remain governed by retention policy. Cold-start restoration has host checks;
-native cold-start acceptance remains pending. Keyed layouts retain objective positions, kinds, required amounts,
+choices and keyed progress remain governed by retention policy. Cold-start restoration has host checks and bounded two-process native evidence: offered and active
+occurrences retain their target and required amount despite changed startup definitions, then survive
+reload and normal retirement. This uses the same canonical save directory; cross-directory migration
+and native verification of every retained metadata field are not covered. Keyed layouts retain objective positions, kinds, required amounts,
 scripted progress and content revision. Their space is charged before admission or migration.
 Host regressions cover coordinator migration at the provider/global limits, service restoration,
 completion and older-snapshot rollback. Controlled in-game verification covers scripted objective revision migration; arbitrary non-scripted
