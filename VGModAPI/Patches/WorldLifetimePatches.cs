@@ -77,6 +77,10 @@ internal static class WorldLifetimePatches
             return __exception;
         }
     }
+    internal static class PayloadAttachment
+    {
+        internal static void Prefix(object __instance, object payload) => (Host as IWorldPayloadLifetimeHost)?.RequirePayloadAttachment(__instance, payload);
+    }
     internal static class Payload
     {
         internal static void Prefix(object __instance) => (Host as IWorldPayloadLifetimeHost)?.RequirePayload(__instance);
