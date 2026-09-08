@@ -11,6 +11,23 @@ namespace VGModAPI.Tests;
 public sealed class InstalledWorldBindingTests
 {
     [Fact]
+    public void PoiMembershipChangesPrecedeManagerSpawnAndRequireTheirOwnFence()
+    {
+        var path = Environment.GetEnvironmentVariable("VG_GAME_ASSEMBLY")
+            ?? throw new InvalidOperationException("Run make check-bindings against the original installed assembly.");
+        using var game = AssemblyDefinition.ReadAssembly(path);
+        var poi = game.MainModule.GetType("Source.Galaxy.MapPointOfInterest");
+        foreach (var name in new[] { "AddUnit", "AddPersistable" })
+        {
+            var calls = poi.Methods.Single(method => method.Name == name).Body.Instructions
+                .Where(instruction => instruction.Operand is MethodReference).Select(instruction => (MethodReference)instruction.Operand).ToArray();
+            var append = Array.FindIndex(calls, method => method.Name == "Add" && method.DeclaringType.FullName.StartsWith("System.Collections.Generic.List`1", StringComparison.Ordinal));
+            var spawn = Array.FindIndex(calls, method => method.Name == "AddToWorld");
+            Assert.True(append >= 0 && spawn > append);
+        }
+    }
+
+    [Fact]
     public void NativeAssetRegistriesAndUnityLifetimeMatchInspection()
     {
         var path = Environment.GetEnvironmentVariable("VG_GAME_ASSEMBLY")
