@@ -28,7 +28,7 @@ Unknown modifications to a retained native roster are refused rather than silent
 
 ## Persistence and linked missions
 
-Supported persistent presentation and same-owner mission/occurrence references are automatically saved by the API. Consumers do not supply serializers or save/load hooks for these fields. Transient presentation is rebuilt from registrations. State remains bounded and owner-scoped; refusal never means that older or unreadable state was accepted as empty.
+Supported persistent presentation and same-owner mission/occurrence references are automatically saved by the API. Consumers do not supply serializers or save/load hooks for these fields. After session/provider loss, consumers must explicitly place transient contributions again. State remains bounded and owner-scoped; refusal never means that older or unreadable state was accepted as empty.
 
 A linked contact requires a current live story provider, registered definition, matching unresolved occurrence, valid story admission and healthy runtime. Tentative registration and in-flight story operations cannot admit it. Registration, admission and operation epochs invalidate stale plans, including changes that return to an apparently identical state. Missing dependencies fail closed; consumers must not replace readiness tokens with constants.
 
