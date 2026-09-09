@@ -14,6 +14,25 @@ try {
     [IO.File]::WriteAllText((Join-Path $root 'qualification.marker'), 'vgmodapi-disposable-sandbox-v1')
     [IO.File]::WriteAllText((Join-Path $root 'scenario.txt'), 'Full')
     [IO.File]::WriteAllText((Join-Path $root 'world.enabled'), 'world-empty-v1')
+    $null = New-Item -ItemType Directory (Join-Path $root 'game\BepInEx\config')
+    $config = Join-Path $root 'game\BepInEx\config\vgmodapi.cfg'
+    $configText = "[WorldProtection]`nEnabled = true`n[Persistence]`nRoot = $(Join-Path $root 'state')`n"
+    [IO.File]::WriteAllText($config, $configText)
+    $doorstop = Join-Path $root 'game\doorstop_config.ini'
+    $doorstopText = "[General]`nenabled=true`ntarget_assembly=BepInEx\core\BepInEx.Preloader.dll`nboot_config_override=`nignore_disable_switch=false`n[UnityMono]`ndll_search_path_override=`ndebug_enabled=false`ndebug_suspend=false`n"
+    [IO.File]::WriteAllText($doorstop, $doorstopText)
+    Assert-WorldConfiguration $root
+    [IO.File]::WriteAllText($config, $configText.Replace('[Persistence]', '[persistence]'))
+    Reject { Assert-WorldConfiguration $root }
+    [IO.File]::WriteAllText($config, ($configText + "Root=duplicate`n"))
+    Reject { Assert-WorldConfiguration $root }
+    [IO.File]::WriteAllText($config, $configText.Replace((Join-Path $root 'state'), $source))
+    Reject { Assert-WorldConfiguration $root }
+    [IO.File]::WriteAllText($config, $configText)
+    [IO.File]::WriteAllText($doorstop, $doorstopText.Replace('target_assembly=BepInEx\core\BepInEx.Preloader.dll', 'target_assembly=C:\outside.dll'))
+    Reject { Assert-WorldConfiguration $root }
+    [IO.File]::WriteAllText($doorstop, $doorstopText)
+    Assert-WorldConfiguration $root
     $game = Join-Path $root 'game\VanguardGalaxy_Data\Managed\Assembly-CSharp.dll'
     [IO.File]::WriteAllText($game, 'synthetic game hash fixture; not executable')
     $names = @('VGModAPI.dll', 'VGModAPI.Core.dll', 'VGModAPI.Abstractions.dll', 'QualificationGuard.dll', 'WorldAuthorA.dll', 'WorldAuthorB.dll', 'QualificationRunner.dll')

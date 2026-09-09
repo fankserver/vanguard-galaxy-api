@@ -1,6 +1,7 @@
 . (Join-Path $PSScriptRoot 'qualification-world-approval.ps1')
 . (Join-Path $PSScriptRoot 'qualification-world-inputs.ps1')
 . (Join-Path $PSScriptRoot 'qualification-world-inventory.ps1')
+. (Join-Path $PSScriptRoot 'qualification-world-config.ps1')
 
 function Get-WorldDataInventory([string]$Directory) {
     $base = (Assert-WorldUnlinkedPath $Directory).TrimEnd('\')
@@ -29,6 +30,7 @@ function Convert-WorldApprovedInventory($Object) {
 function Assert-WorldRunPreflight([string]$Root, [Guid]$RunId, [ValidateSet('create','cold')][string]$Phase,
     [string]$ReviewedHead, [string]$ApprovalPath, [string]$ApprovalDigest) {
     $record = Read-WorldApprovedRun $ApprovalPath $ApprovalDigest $Root $RunId $Phase $ReviewedHead
+    Assert-WorldConfiguration $Root
     $observed = Assert-WorldQualificationInputs $Root $RunId
     if ($observed.authorizationSha256 -cne $record.authorizationSha256) { throw 'Authorization file differs from approved run record.' }
     $conflicts = @(Get-ChildItem -LiteralPath $Root -Filter '*.enabled' -Force | Where-Object { $_.Name -cne 'world.enabled' })
