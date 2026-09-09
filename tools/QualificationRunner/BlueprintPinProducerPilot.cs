@@ -19,13 +19,18 @@ public sealed partial class Plugin
         var station = quotes.CurrentStation!;
         var jobs = ModApi.CraftingJobs!.Read(station);
         Require(jobs.Status == CraftingJobQueryStatus.Available, "Producer test needs an available job query.");
+        var discovery = new List<string>();
         IReadOnlyList<RecipeSnapshot>? producers = null;
         var ingredientIndex = -1; var inputCount = 0;
         foreach (var recipe in catalog.Recipes.Where(recipe => recipe.Process == RecipeProcess.Forge))
         {
             if (jobs.Jobs.Any(job => job.Recipe.Equals(recipe.Id))) continue;
-            if (ui.Open(recipe.Id) != ForgeNavigationStatus.Selected) { yield return null; continue; }
+            var navigation = ui.Open(recipe.Id);
+            discovery.Add(recipe.Id.LocalId + " navigation=" + navigation);
+            if (navigation != ForgeNavigationStatus.Selected) { yield return null; continue; }
             var quote = quotes.Quote(station, recipe.Id, 1);
+            discovery.Add("quote=" + quote.Status + " batches=" + ui.Current?.Batches + " inputs=" + quote.Inputs.Count + " " +
+                string.Join(";", quote.Inputs.Select(input => input.Resource.Kind + ":" + input.Resource.LocalId + " producers=" + catalog.FindProducers(input.Resource).Count)));
             if (quote.Status != RecipeQuoteStatus.Available || quote.Inputs.Count > 7 || ui.Current!.Batches != 1) { yield return null; continue; }
             for (var index = 0; index < quote.Inputs.Count; index++)
             {
@@ -37,6 +42,7 @@ public sealed partial class Plugin
             if (producers != null) break;
             yield return null;
         }
+        WriteAtomic(multiple ? "producer-discovery-alternative.txt" : "producer-discovery-single.txt", discovery.ToArray());
         Require(producers != null, "Fixture lacks selectable " + (multiple ? "alternative" : "single Forge") + " producer ingredients.");
         foreach (var frame in Wait(() => PinButton("Mod API Forge actions", "Pin") != null, "Producer test pin action")) yield return frame;
         foreach (var frame in ForgeClick(mouse, PinButton("Mod API Forge actions", "Pin")!.transform)) yield return frame;
