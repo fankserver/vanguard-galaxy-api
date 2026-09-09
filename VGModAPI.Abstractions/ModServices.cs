@@ -11,6 +11,8 @@ public sealed class ModServices
 {
     private readonly int _thread = Thread.CurrentThread.ManagedThreadId;
     private readonly ILifecycleService _lifecycle;
+    private readonly IDeferredActionService _actions;
+    public IDeferredActionService Actions { get { CheckThread(); return _actions; } }
     private readonly IModInformationService _mods;
     private readonly ISaveDataService _saveData;
     private readonly IMissionService _missions;
@@ -85,8 +87,9 @@ public sealed class ModServices
 
     internal ModServices(ILifecycleService lifecycle, IModInformationService mods, ISaveDataService saveData,
         IMissionService missions, ITravelService travel, IStationService station, IRecipeService recipes, IRecipeQuoteService recipeQuotes,
-        ICraftingJobService craftingJobs, ICraftingCommandService craftingCommands, IHudService hud, IForgeUiService forgeUi, IBoardingRuleService boardingRules, IDungeonCombatService dungeonCombat, IDungeonRewardService dungeonRewards, IDungeonCommandService dungeonCommands, IDungeonTacticalService dungeonTactics, IDungeonOperationService dungeonOperations, IDungeonSettlementService dungeonSettlement, IDungeonPanelService dungeonPanel, IDungeonContentService dungeons, IStoryService story, IBarService bars, IWorldService world, IDialogueService dialogue, INavigationService navigation, IOwnedItemService items, IOwnedRecipeService recipeRegistration, IInventoryService inventories, IGameplayUiService gameplayUi)
+        ICraftingJobService craftingJobs, ICraftingCommandService craftingCommands, IHudService hud, IForgeUiService forgeUi, IBoardingRuleService boardingRules, IDungeonCombatService dungeonCombat, IDungeonRewardService dungeonRewards, IDungeonCommandService dungeonCommands, IDungeonTacticalService dungeonTactics, IDungeonOperationService dungeonOperations, IDungeonSettlementService dungeonSettlement, IDungeonPanelService dungeonPanel, IDungeonContentService dungeons, IStoryService story, IBarService bars, IWorldService world, IDialogueService dialogue, INavigationService navigation, IOwnedItemService items, IOwnedRecipeService recipeRegistration, IInventoryService inventories, IGameplayUiService gameplayUi, IDeferredActionService actions)
     {
+        _actions = actions ?? throw new ArgumentNullException(nameof(actions));
         _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
         _mods = mods ?? throw new ArgumentNullException(nameof(mods));
         _saveData = saveData ?? throw new ArgumentNullException(nameof(saveData));

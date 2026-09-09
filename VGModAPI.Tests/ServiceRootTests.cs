@@ -33,7 +33,7 @@ public sealed class ServiceRootTests
                 new NavigationService(hub, _ => null, (_, _, _) => NavigationStatus.Unavailable, (_, _) => null),
                 new OwnedItemService(hub, (_, _) => null),
                 new OwnedRecipeService(hub, (_, _) => null, _ => null, _ => { }, _ => { }),
-                new InventoryService(hub, () => null), gameplayUi });
+                new InventoryService(hub, () => null), gameplayUi, hub.Actions });
     }
 
     [Fact]
@@ -53,6 +53,8 @@ public sealed class ServiceRootTests
             Assert.True(root.Mods.Availability.IsAvailable);
             Assert.False(root.SaveData.Availability.IsAvailable);
             Assert.False(root.Missions.Availability.IsAvailable);
+            Assert.Same(root.Actions, ModApi.Services.Actions);
+            Assert.IsType<InvalidOperationException>(ServiceNotificationTests.OnWorker(() => _ = root.Actions));
             Assert.Same(root.GameplayUi, ModApi.Services.GameplayUi);
             Assert.False(root.GameplayUi.Availability.IsAvailable);
             Assert.Null(root.GameplayUi.Current);

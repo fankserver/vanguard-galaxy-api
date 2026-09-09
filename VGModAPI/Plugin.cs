@@ -231,6 +231,8 @@ public sealed partial class Plugin : BaseUnityPlugin
         }
         try { _modMenu?.Poll(); }
         catch (Exception error) { DisableModMenu(error); }
+        // Never drain by unwinding a dispatch scope inside a vanilla operation.
+        _hub?.Actions.Tick();
     }
 
     private void InitializePersistence()

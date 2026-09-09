@@ -9,7 +9,7 @@ Reference `VGModAPI.Abstractions.dll`, declare a hard BepInEx dependency on `vgm
 All service access, event registration/removal and callbacks are main-thread-only. Subscribe with `Changed += handler`, then query `CurrentSession`; events do not replay. Null means no available observed attempt, not proof that the game is at the menu. Terminal invalidation remains visible when tracking becomes unavailable.
 
 - Callbacks run synchronously in registration order and should be short, observational, and nonblocking.
-- Do not mutate the in-progress vanilla load/save operation from a callback. Defer gameplay actions until an appropriate later boundary.
+- Do not mutate the in-progress vanilla load/save operation from a callback. Use [deferred actions](deferred-actions.md) for session-scoped reactions at a later API boundary.
 - Each delegate exception is logged with its declaring assembly and does not suppress other subscribers.
 - Newly registered callbacks start with the next dispatched event. Removing a callback before its turn suppresses that invocation.
 - Reentrant events are queued until current-event delivery finishes. Payload snapshots describe the event; querying current state can return a later state, especially during reentrant game actions.

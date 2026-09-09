@@ -25,6 +25,7 @@ Use typed health and per-call results, not null checks, to decide whether to act
 | Current location/window | Domain snapshots and events; absence does not imply a broken service |
 | This mod's save data | `ISaveDataRegistration.State`, `StateChanged`, `CanRead`, `CanMutate` |
 | Action permission | Live domain checks/results; never an earlier availability notification |
+| React to an observation | `Actions.Defer`, a [session-scoped later action boundary](deferred-actions.md) |
 
 `ServiceUnavailableReason` is for program decisions. `Detail` is diagnostic text,
 not a value to parse. Availability is not permission to act.
