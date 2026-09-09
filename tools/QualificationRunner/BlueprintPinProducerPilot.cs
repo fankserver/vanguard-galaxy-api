@@ -17,10 +17,13 @@ public sealed partial class Plugin
         var catalog = ModApi.Recipes!.Read();
         var quotes = ModApi.RecipeQuotes!;
         var station = quotes.CurrentStation!;
+        var jobs = ModApi.CraftingJobs!.Read(station);
+        Require(jobs.Status == CraftingJobQueryStatus.Available, "Producer test needs an available job query.");
         IReadOnlyList<RecipeSnapshot>? producers = null;
         var ingredientIndex = -1; var inputCount = 0;
         foreach (var recipe in catalog.Recipes.Where(recipe => recipe.Process == RecipeProcess.Forge))
         {
+            if (jobs.Jobs.Any(job => job.Recipe.Equals(recipe.Id))) continue;
             if (ui.Open(recipe.Id) != ForgeNavigationStatus.Selected) { yield return null; continue; }
             var quote = quotes.Quote(station, recipe.Id, 1);
             if (quote.Status != RecipeQuoteStatus.Available || quote.Inputs.Count > 7 || ui.Current!.Batches != 1) { yield return null; continue; }
@@ -51,10 +54,12 @@ public sealed partial class Plugin
             for (var index = 0; index < producers!.Count; index++)
             {
                 Require(rows[index].GetComponentInChildren<TMP_Text>().text.Contains("producer" + index + " · " + producers[index].Process), "Producer choice identity/process missing.");
+                Require(rows[index].GetComponentInChildren<TMP_Text>().text.Contains(" · " + producers[index].Id.LocalId), "Exact producer identity missing.");
                 Require(rows[index].interactable == (producers[index].Process == RecipeProcess.Forge), "Unsupported refining route offered Forge navigation.");
             }
             foreach (var frame in CaptureForgeActions("blueprint-pin-producers")) yield return frame;
             // Back out of the chooser through the real close button; this must retain the pin.
+            foreach (var frame in Wait(() => PinCloseButton() != null, "Producer chooser close")) yield return frame;
             foreach (var frame in ForgeClick(mouse, PinCloseButton()!.transform)) yield return frame;
             foreach (var frame in Wait(() => PinHudText("1 batches remaining"), "Producer chooser back preserves pin")) yield return frame;
         }
