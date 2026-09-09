@@ -8,7 +8,7 @@ function Read-DungeonConsumerManifest([string]$Path) {
         $entries = @($m.binaries | Where-Object { $_.name -ceq $name })
         if ($entries.Count -ne 1 -or $entries[0].sha256 -isnot [string] -or $entries[0].revision -isnot [string] -or $entries[0].path -isnot [string] -or $entries[0].sha256 -cnotmatch '^[0-9a-f]{64}$' -or $entries[0].revision -cnotmatch '^[0-9a-f]{40}$' -or ![IO.Path]::IsPathRooted($entries[0].path)) { throw 'Invalid dungeon consumer binary identity.' }
     }
-    if ($m.PSObject.Properties['mode'] -and ($m.mode -isnot [string] -or $m.mode -cnotin @('Retreat','Combat','Reward'))) { throw 'Invalid dungeon consumer mode.' }
+    if ($m.PSObject.Properties['mode'] -and ($m.mode -isnot [string] -or $m.mode -cnotin @('Retreat','Combat','Reward','SaveLoad'))) { throw 'Invalid dungeon consumer mode.' }
     if ($m.PSObject.Properties['mode'] -and $m.mode -ceq 'Reward' -and $m.rewardItemId -cne 'Titanium Plate') { throw 'Reward fixture requires Titanium Plate.' }
     return $m
 }
@@ -34,6 +34,7 @@ function Install-DungeonConsumers([string]$Manifest, [string]$Root, [string]$Plu
     }
     if ($m.PSObject.Properties['mode'] -and $m.mode -cin @('Combat','Reward')) { [IO.File]::WriteAllText((Join-Path $Root 'dungeon-combat.enabled'), 'dungeon-combat-v1') }
     if ($m.PSObject.Properties['mode'] -and $m.mode -ceq 'Reward') { [IO.File]::WriteAllText((Join-Path $Root 'dungeon-reward.enabled'), 'dungeon-reward-v1') }
+    if ($m.PSObject.Properties['mode'] -and $m.mode -ceq 'SaveLoad') { [IO.File]::WriteAllText((Join-Path $Root 'dungeon-save.enabled'), 'dungeon-save-v1') }
     Copy-Item -LiteralPath $Manifest -Destination (Join-Path $Root 'dungeon-consumer-sources.json')
     [IO.File]::WriteAllText((Join-Path $Root 'dungeon-consumers.enabled'), 'dungeon-consumers-v3')
 }
@@ -52,12 +53,15 @@ function Assert-DungeonConsumerSelection([string]$Root, $Provenance) {
     $marker = Join-Path $Root 'dungeon-consumers.enabled'; $sources = Join-Path $Root 'dungeon-consumer-sources.json'
     if ((Test-Path -LiteralPath $marker) -ne [bool]$selected -or (Test-Path -LiteralPath $sources) -ne [bool]$selected) { throw 'Dungeon consumer selection mismatch.' }
     if (!$selected) {
-        if ((Test-Path -LiteralPath (Join-Path $Root 'dungeon-combat.enabled')) -or (Test-Path -LiteralPath (Join-Path $Root 'dungeon-reward.enabled'))) { throw 'Unselected dungeon combat/reward marker.' }
+        if ((Test-Path -LiteralPath (Join-Path $Root 'dungeon-combat.enabled')) -or (Test-Path -LiteralPath (Join-Path $Root 'dungeon-reward.enabled')) -or (Test-Path -LiteralPath (Join-Path $Root 'dungeon-save.enabled'))) { throw 'Unselected dungeon combat/reward marker.' }
         return
     }
     if (!$Provenance.dungeonPanelProbe -or !$Provenance.dungeonReadinessProbe -or $Provenance.scenario -cne 'Full' -or [IO.File]::ReadAllText($marker) -cne 'dungeon-consumers-v3') { throw 'Dungeon consumers require the isolated full panel phase.' }
     if ($Provenance.dungeonConsumerManifestHash -cnotmatch '^[0-9a-f]{64}$' -or (Get-FileHash -LiteralPath $sources -Algorithm SHA256).Hash.ToLowerInvariant() -cne $Provenance.dungeonConsumerManifestHash) { throw 'Dungeon consumer manifest changed.' }
     $m = Read-DungeonConsumerManifest $sources
+    $save = $m.PSObject.Properties['mode'] -and $m.mode -ceq 'SaveLoad'
+    $saveMarker = Join-Path $Root 'dungeon-save.enabled'
+    if ((Test-Path -LiteralPath $saveMarker) -ne [bool]$save -or ($save -and [IO.File]::ReadAllText($saveMarker) -cne 'dungeon-save-v1')) { throw 'Dungeon save selection mismatch.' }
     $combat = $m.PSObject.Properties['mode'] -and $m.mode -cin @('Combat','Reward')
     $reward = $m.PSObject.Properties['mode'] -and $m.mode -ceq 'Reward'
     $rewardMarker = Join-Path $Root 'dungeon-reward.enabled'
@@ -85,6 +89,10 @@ function Assert-DungeonConsumerReceipt([string]$Root, $Provenance) {
     if (Test-Path -LiteralPath (Join-Path $Root 'dungeon-reward.enabled')) {
         $reward = [IO.File]::ReadAllLines((Join-Path $Root 'dungeon-reward.txt'))
         if (($reward -join "`n") -cne "PASS`ndungeon-reward-v1`nauthored-two-multiplied-four-cargo-delivered") { throw 'Incomplete dungeon reward receipt.' }
+    }
+    if (Test-Path -LiteralPath (Join-Path $Root 'dungeon-save.enabled')) {
+        $save = [IO.File]::ReadAllLines((Join-Path $Root 'dungeon-save.txt'))
+        if (($save -join "`n") -cne "PASS`ndungeon-save-v1`nactive-save-reload-occurrence-control-crew-return") { throw 'Incomplete dungeon save receipt.' }
     }
     $commands = [IO.File]::ReadAllLines((Join-Path $Root 'dungeon-commands.txt'))
     if (($commands -join "`n") -cne "PASS`ndungeon-commands-v1`ncontrol-start-options-refusals-cancel-before-tick`ncrew-and-docking-preserved") { throw 'Incomplete dungeon command admission receipt.' }
