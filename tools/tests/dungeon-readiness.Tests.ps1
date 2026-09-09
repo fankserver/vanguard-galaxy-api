@@ -11,6 +11,9 @@ try {
     $config = Join-Path $root 'game/BepInEx/config/vgmodapi.cfg'
     [IO.File]::WriteAllText($config, "[Boarding]`r`nEnabled = true`r`n[Dungeons]`r`nEnabled = true`r`n")
     Assert-DungeonReadinessSelection $root $p
+    [IO.File]::WriteAllText($config, "[Boarding]`r`nEnabled = false`r`n[Dungeons]`r`nEnabled = true`r`n")
+    Reject { Assert-DungeonReadinessSelection $root $p }
+    [IO.File]::WriteAllText($config, "[Boarding]`r`nEnabled = true`r`n[Dungeons]`r`nEnabled = true`r`n")
     $p.forgeReadProbe=$true; Reject { Assert-DungeonReadinessSelection $root $p }; $p.forgeReadProbe=$false
     $p.dungeonReadinessProbe='true'; Reject { Assert-DungeonReadinessSelection $root $p }; $p.dungeonReadinessProbe=$true
     $p.scenario='MissingApi'; Reject { Assert-DungeonReadinessSelection $root $p }; $p.scenario='Full'
@@ -21,6 +24,11 @@ try {
     $hash=(Get-FileHash $facts -Algorithm SHA256).Hash.ToLowerInvariant()
     [IO.File]::WriteAllLines($receipt, @('PASS','dungeon-readiness-v1',"sha256=$hash"))
     Assert-DungeonReadinessReceipt $root $p
+    [IO.File]::WriteAllLines($receipt, @('PASS','dungeon-readiness-v0',"sha256=$hash"))
+    Reject { Assert-DungeonReadinessReceipt $root $p }
+    [IO.File]::WriteAllLines($receipt, @('PASS','dungeon-readiness-v1',"sha256=$hash",'extra'))
+    Reject { Assert-DungeonReadinessReceipt $root $p }
+    [IO.File]::WriteAllLines($receipt, @('PASS','dungeon-readiness-v1',"sha256=$hash"))
     [IO.File]::AppendAllText($facts, 'changed'); Reject { Assert-DungeonReadinessReceipt $root $p }
     [IO.File]::WriteAllLines($facts, @('PASS','dungeon-readiness-v1','targets=0','operations=0'))
     @{timedOut=$true;killed=$true;exitCode=0} | ConvertTo-Json | Set-Content (Join-Path $root 'run-outcome.json')

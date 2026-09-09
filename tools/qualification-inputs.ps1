@@ -434,7 +434,7 @@ function Assert-DungeonReadinessReceipt([string]$Root, $Provenance) {
     $lines = @(Get-Content -LiteralPath $receipt); $facts = @(Get-Content -LiteralPath $snapshot)
     if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'dungeon-readiness-v1' -or $lines[2] -cnotmatch '^sha256=[0-9a-f]{64}$') { throw 'Invalid dungeon readiness receipt.' }
     if ((Get-FileHash -LiteralPath $snapshot -Algorithm SHA256).Hash.ToLowerInvariant() -cne $lines[2].Substring(7)) { throw 'Dungeon readiness evidence changed.' }
-    if ($facts.Count -ne 4 -or $facts[0] -cne 'PASS' -or $facts[1] -cne 'dungeon-readiness-v1' -or $facts[2] -cnotmatch '^targets=[0-9]+$' -or $facts[3] -cnotmatch '^operations=[0-9]+$') { throw 'Invalid dungeon readiness facts.' }
+    if ($facts.Count -ne 4 -or $facts[0] -cne 'PASS' -or $facts[1] -cne 'dungeon-readiness-v1' -or $facts[2] -cnotmatch '^targets=[0-9]+$' -or $facts[3] -cne 'operations=0') { throw 'Invalid dungeon readiness facts.' }
 }
 function Assert-ForgeReadSelection([string]$Root, $Provenance) {
     Assert-ForgeCommandSelection $Root $Provenance
