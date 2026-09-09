@@ -27,7 +27,8 @@ public sealed class ServiceRootTests
         return (ModServices)typeof(ModServices).GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance)[0].Invoke(
             new object[] { lifecycle, mods, new PersistenceService(hub), missions, travel, station,
                 new RecipeCatalogService(hub, null, _ => { }), new RecipeQuoteService(hub, null, _ => { }), jobs, commands, new HudService(hub, hub.ReportSubscriberFailure), new ForgeUiService(hub, null, hub.ReportSubscriberFailure), new BoardingRuleService(hub, hub.ReportSubscriberFailure), new BoardingCombatService(hub, hub.ReportSubscriberFailure), new DungeonRewardService(hub, hub.ReportSubscriberFailure), new BoardingCommandService(hub, null, null, () => false), new VGModAPI.Runtime.BoardingTacticalAdapter(hub, null!), new BoardingService(hub, hub.ReportSubscriberFailure), new DungeonSettlementService(hub, new BoardingService(hub, hub.ReportSubscriberFailure), hub.ReportSubscriberFailure), new DungeonPanelService(hub, null, hub.ReportSubscriberFailure), new DungeonContentService(hub, null, null, null, hub.ReportSubscriberFailure), new StoryContentService(hub.Services, null, null, (_, _) => null, checkThread: hub.CheckThread), new BarContentService(null, hub, (_, _) => null, _ => false, hub.CheckThread),
-                new WorldContentService(hub, new WorldDefinitionRegistry((_, _) => null, hub.CheckThread), null!, () => false) });
+                new WorldContentService(hub, new WorldDefinitionRegistry((_, _) => null, hub.CheckThread), null!, () => false),
+                new DialogueService(hub.Services.Get("dialogue"), hub.CheckThread, _ => { }) });
     }
 
     [Fact]
