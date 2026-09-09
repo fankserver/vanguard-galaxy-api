@@ -64,4 +64,5 @@ jobs:
           & ./tools/tests/qualification-world-approval.Tests.ps1
           & ./tools/tests/qualification-world-process.Tests.ps1
           & ./tools/tests/qualification-world-supervision.Tests.ps1
+          & ./tools/tests/qualification-world-preservation.Tests.ps1
           & ./tools/tests/qualification-world-receipts.Tests.ps1
