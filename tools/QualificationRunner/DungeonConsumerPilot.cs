@@ -28,7 +28,7 @@ public sealed partial class Plugin
     {
         var marker = Path.Combine(_root!, "dungeon-consumers.enabled");
         if (!File.Exists(marker)) yield break;
-        Require(File.ReadAllText(marker) == "dungeon-consumers-v2", "Invalid dungeon consumer marker.");
+        Require(File.ReadAllText(marker) == "dungeon-consumers-v3", "Invalid dungeon consumer marker.");
         WriteAtomic("dungeon-consumers.txt", new[] { "INCOMPLETE" });
         Require(Chainloader.PluginInfos.ContainsKey("vg.boardalways") && Chainloader.PluginInfos.ContainsKey("vgmodapi.example.cargo"), "Both actual consumer plugins must be loaded.");
         var records = new List<string>();
@@ -42,7 +42,8 @@ public sealed partial class Plugin
             foreach (var frame in DungeonClick(mouse, DungeonProbeButton("Attach cargo encounter")!.transform)) yield return frame;
             // Post-exit verification requires exactly one Attached and one TargetInUse result in the consumer log.
             foreach (var frame in CheckDungeonCommandAdmission()) yield return frame;
-            WriteAtomic("dungeon-consumers.txt", new[] { "INPUTS_SENT", "dungeon-consumers-v2", "attach-then-duplicate-command-admission-cancel" });
+            foreach (var frame in CheckDungeonWalk()) yield return frame;
+            WriteAtomic("dungeon-consumers.txt", new[] { "INPUTS_SENT", "dungeon-consumers-v3", "attach-duplicate-commands-active-walk-retreat" });
         }
         finally { if (EventSystem.current) EventSystem.current.SetSelectedGameObject(previous ? previous : null); }
     }
