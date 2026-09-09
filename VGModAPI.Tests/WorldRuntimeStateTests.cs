@@ -52,7 +52,8 @@ public sealed class WorldRuntimeStateTests
             using var bindings = new WorldPersistenceBindings(persistence, hub, loads, snapshots, creation);
             using var world = new WorldContentService(hub, definitions, new WorldAuthoringGate(definitions, creation, bindings.CanMutate), () => true);
             var provider = world.AcquireProvider(new object())!;
-            Assert.Equal(WorldStatus.Succeeded, provider.Register(new WorldCombatSiteDefinition("PoiX", 1, "Site", "player", 1)));
+            Assert.Equal(WorldStatus.Succeeded, provider.Register(new WorldCombatSiteDefinition("PoiX", 2, "Renamed site", "player", 1),
+                new WorldCombatSiteDefinition("PoiX", 1, "Site", "player", 1)));
             Action? runtimeChange = null;
             using var runtime = new WorldRuntimeState(game, loads, definitions, creation, lifetime, bindings.StateReady, () => { runtimeChange?.Invoke(); return true; });
             var references = new WorldReferenceResolver(hub, creation, definitions, bindings, lifetimeHost);
@@ -61,7 +62,7 @@ public sealed class WorldRuntimeStateTests
             { if (e.Kind == LifecycleEventKind.PlayerReady) dependentSawRestored = creation.Restored(e.Session!.Id) && lifetimeHost.AllowUse(Assert.Single(creation.Snapshot()).Native) && references.Knows("author.a", identity.NativeId) == true; });
             var map = new GalaxyMapData(); var sector = new SectorMapData { guid = "sector" }; var system = new SystemMapData { guid = "system" };
             map.TestSectors.Add(sector); sector.TestSystems.Add(system);
-            var poi = new Source.Galaxy.POI.Combat { guid = identity.NativeId, system = system, level = 9 };
+            var poi = new Source.Galaxy.POI.Combat { guid = identity.NativeId, system = system, level = 9, name = readinessLoss == 1 ? "Custom name" : "Site" };
             var file = new SaveGameFile(path); var request = game.BeginLoad(file);
             IEnumerator Load()
             {
@@ -72,6 +73,7 @@ public sealed class WorldRuntimeStateTests
             }
             var routine = game.ObserveLoad(Load()); game.EndLoadRequest(request, null); while (routine.MoveNext()) { }
             Assert.True(dependentSawRestored); Assert.Same(poi, Assert.Single(creation.Snapshot()).Native); Assert.Equal(9, poi.level);
+            Assert.Equal(readinessLoss == 1 ? "Custom name" : "Renamed site", poi.name);
             Assert.False(bindings.CanMutate(request.Id));
             Assert.False(references.Knows("other.owner", identity.NativeId));
             game.GameplayCompleted(request.Id, new GameplayManager(true), null);
@@ -89,7 +91,8 @@ public sealed class WorldRuntimeStateTests
             }
             var saved = new WorldGenerationReader(store).Read(saveAs, bytes);
             Assert.Equal(identity.NativeId, Assert.Single(saved.Rows).Identity.NativeId);
-            Assert.Equal("Site", saved.DefinitionFor(Assert.Single(saved.Rows)).Definition.Name);
+            Assert.Equal("Renamed site", saved.DefinitionFor(Assert.Single(saved.Rows)).Definition.Name);
+            Assert.Equal(2, Assert.Single(saved.Rows).DefinitionRevision);
             bool hadFaction = Faction.allFactions.TryGetValue("player", out var oldFaction);
             try
             {

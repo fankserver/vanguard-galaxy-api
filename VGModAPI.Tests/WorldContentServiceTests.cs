@@ -24,6 +24,11 @@ public sealed class WorldContentServiceTests
         Assert.Equal(WorldStatus.DuplicateDefinition, provider.Register(definition));
         Assert.Equal(WorldStatus.InvalidDefinition, provider.Register(new WorldCombatSiteDefinition("Bad", 0, "Site", "player", 1)));
         Assert.Null(service.AcquireProvider(plugin));
+        Assert.Equal(WorldStatus.Succeeded, provider.Register(new WorldCombatSiteDefinition("Migrate", 2, "New", "player", 1), new WorldCombatSiteDefinition("Migrate", 1, "Old", "player", 1)));
+        var prior = new WorldSavedDefinition("author.a", new WorldCombatDefinition("Migrate", 1, "Old", "player", 1));
+        Assert.True(definitions.MatchesRetained(prior)); Assert.Equal("New", definitions.Effective(prior)!.Definition.Name);
+        Assert.False(definitions.MatchesRetained(new WorldSavedDefinition("author.a", new WorldCombatDefinition("Migrate", 1, "Different", "player", 1))));
+        Assert.Equal(WorldStatus.InvalidDefinition, provider.Register(new WorldCombatSiteDefinition("BadMigration", 2, "New", "player", 2), new WorldCombatSiteDefinition("BadMigration", 1, "Old", "player", 1)));
         Assert.Equal(WorldStatus.Unavailable, provider.CreatePersistentCombatSite(Guid.NewGuid(), "PoiX", Guid.NewGuid(), "system", 0, 0).Status);
         service.Dispose();
         Assert.Equal(WorldStatus.UnknownProvider, provider.Register(definition));

@@ -44,7 +44,7 @@ internal sealed class WorldRuntimeState : IDisposable
             {
                 // Empty is established by inspecting the actual new map, not by assuming absence.
                 var empty = new WorldPreparedLoad(session, new object(), null, revision);
-                if (!_creation.TryRestore(session, () => _reconstruction.Read(empty, Current, _ => false)))
+                if (!_creation.TryRestore(session, () => _reconstruction.Read(empty, Current, _ => false, _definitions.Effective)))
                     throw new InvalidDataException("New-game world state could not be established.");
             }
             else
@@ -52,7 +52,7 @@ internal sealed class WorldRuntimeState : IDisposable
                 var prepared = _loads.PreparedFor(session) ?? throw new InvalidDataException("World restoration lacks verified load metadata.");
                 if (prepared.ProviderRevision != revision || !_creation.TryRestore(session, () => _reconstruction.Read(prepared,
                     () => Current() && ReferenceEquals(_loads.PreparedFor(session), prepared) && Current(),
-                    record => _loads.ConstructedBy(prepared, record))))
+                    record => _loads.ConstructedBy(prepared, record), _definitions.Effective)))
                     throw new InvalidDataException("World reconstruction could not be published.");
             }
             if (_lifetime != null && _persistenceReady != null && _allowOwnedRuntime != null)

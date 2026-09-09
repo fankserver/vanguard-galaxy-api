@@ -27,6 +27,10 @@ Exact-count and point-budgeted operations must be distinct contracts:
 
 No public spawn operation is exposed. `UnitPayloadDescriptor` is refused by world inspection until effective generation bounds are validated. Fixed-descriptor input bounds and native selector checks are not complete validation of generated content.
 
+## Declarative revision migration
+
+Registration may supply one exact previous declaration. Supported migration advances the revision and may rename the site; local identity, faction and level must be unchanged. Matching only a previous revision number is insufficient: the complete retained declaration must match. During verified reconstruction, the API updates a native name only if it still equals the old declared default, preserving customized names and mutable instance level/state. The next automatic save records the current declaration/revision. Instance and mission-target identities do not change. Undeclared or incompatible older definitions remain refused; this is not arbitrary provider serialization or a general migration callback.
+
 ## Persistence and activation constraints
 
 Supported persistent creation must automatically preserve existence, owner/local identity, instance identity, supported properties, links and lifecycle state. Providers must not implement save hooks or rebuild timing for those fields. Temporary lifetime must be explicit; it must not replace persistence merely to avoid reconstruction.

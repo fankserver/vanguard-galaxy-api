@@ -53,7 +53,8 @@ public interface IWorldApi
 public interface IWorldProvider : IDisposable
 {
     string ProviderId { get; }
-    WorldStatus Register(WorldCombatSiteDefinition definition);
+    /// <summary>Optional exact previous declaration permits a revision/name migration; faction, level and local identity must remain unchanged.</summary>
+    WorldStatus Register(WorldCombatSiteDefinition definition, WorldCombatSiteDefinition? previous = null);
     /// <summary>Resolves this provider's reference against the current observed session and native membership.</summary>
     WorldSiteResult FindPersistentCombatSite(Guid expectedSessionId, WorldSiteReference reference);
     /// <summary>Creates a persistent site in an existing system. Supported state is saved automatically; no provider save hooks are required.</summary>

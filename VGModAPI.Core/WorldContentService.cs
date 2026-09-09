@@ -30,7 +30,7 @@ internal sealed class WorldContentService : IWorldApi, IDisposable
         private bool _disposed;
         internal Provider(WorldContentService service, WorldDefinitionRegistry.Provider provider) { _service = service; _provider = provider; }
         public string ProviderId => _provider.Owner;
-        public WorldStatus Register(WorldCombatSiteDefinition definition)
+        public WorldStatus Register(WorldCombatSiteDefinition definition, WorldCombatSiteDefinition? previous = null)
         {
             _service._hub.CheckThread();
             if (_disposed || _service._disposed) return WorldStatus.UnknownProvider;
@@ -40,7 +40,8 @@ internal sealed class WorldContentService : IWorldApi, IDisposable
             {
                 var native = new WorldCombatDefinition(definition.LocalId, definition.Revision, definition.Name, definition.FactionId, definition.Level);
                 if (_service._definitions.TryResolve(_provider, native.LocalId, out _)) return WorldStatus.DuplicateDefinition;
-                return _provider.Register(native) ? WorldStatus.Succeeded : WorldStatus.Rejected;
+                var prior = previous == null ? null : new WorldCombatDefinition(previous.LocalId, previous.Revision, previous.Name, previous.FactionId, previous.Level);
+                return _provider.Register(native, prior) ? WorldStatus.Succeeded : WorldStatus.Rejected;
             }
             catch (ArgumentException) { return WorldStatus.InvalidDefinition; }
         }
