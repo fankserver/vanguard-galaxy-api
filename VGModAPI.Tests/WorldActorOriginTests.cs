@@ -26,6 +26,7 @@ public sealed class WorldActorOriginTests
     [Fact]
     public void ActorsRetainSpawnManagerAndNestedVanillaSpawnDoesNotInheritOwnership()
     {
+        var oldHost = VGModAPI.Patches.WorldLifetimePatches.Host;
         var oldPlayer = Source.Player.GamePlayer.current;
         var singleton = typeof(Behaviour.Util.Singleton<Behaviour.Managers.TravelManager>).GetField("instance", BindingFlags.NonPublic | BindingFlags.Static)!;
         var oldTravel = singleton.GetValue(null);
@@ -47,16 +48,20 @@ public sealed class WorldActorOriginTests
                 using (host.BeginSpawn(new Behaviour.Managers.TestPoiManager { poi = new Source.Galaxy.MapPointOfInterest { guid = "vanilla" } }))
                     host.CaptureActor(vanilla);
             }
+            VGModAPI.Patches.WorldLifetimePatches.Host = host;
+            VGModAPI.Patches.WorldLifetimePatches.ActorMutation.Prefix(actor);
             Assert.True(host.AllowActor(actor)); Assert.True(host.AllowActor(destroyed));
             typeof(UnityEngine.Object).GetField("m_CachedPtr", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(destroyed, IntPtr.Zero);
             Assert.False(host.AllowActor(destroyed));
             manager.poi = new Source.Galaxy.MapPointOfInterest { guid = "rebound" };
             Assert.False(host.AllowActor(actor)); Assert.True(host.AllowActor(vanilla));
+            Assert.Throws<System.IO.InvalidDataException>(() => VGModAPI.Patches.WorldLifetimePatches.ActorMutation.Prefix(actor));
+            VGModAPI.Patches.WorldLifetimePatches.ActorMutation.Prefix(vanilla);
             manager.poi = poi;
             typeof(UnityEngine.Object).GetField("m_CachedPtr", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(actor, IntPtr.Zero);
             Assert.False(host.AllowActor(actor));
             host.Dispose(); Assert.False(host.AllowActor(actor)); Assert.True(host.AllowActor(vanilla));
         }
-        finally { Source.Player.GamePlayer.current = oldPlayer; singleton.SetValue(null, oldTravel); }
+        finally { VGModAPI.Patches.WorldLifetimePatches.Host = oldHost; Source.Player.GamePlayer.current = oldPlayer; singleton.SetValue(null, oldTravel); }
     }
 }

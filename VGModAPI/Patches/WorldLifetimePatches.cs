@@ -116,6 +116,14 @@ internal static class WorldLifetimePatches
     {
         internal static void Prefix(object __instance) => (Host as IWorldActorLifetimeHost)?.CaptureActor(__instance);
     }
+    internal static class ActorMutation
+    {
+        internal static void Prefix(object __instance)
+        {
+            if (!((Host as IWorldActorLifetimeHost)?.AllowActor(__instance) ?? true))
+                throw new System.IO.InvalidDataException("Quarantined world actor cannot initialize or take damage.");
+        }
+    }
     internal static class ActorActivity
     {
         internal static bool Prefix(object __instance) => (Host as IWorldActorLifetimeHost)?.AllowActor(__instance) ?? true;
