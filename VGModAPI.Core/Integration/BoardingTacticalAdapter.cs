@@ -5,7 +5,7 @@ using VGModAPI.Core;
 
 namespace VGModAPI.Runtime;
 
-internal sealed class BoardingTacticalAdapter : IBoardingTacticalService, IDisposable
+internal sealed class BoardingTacticalAdapter : IDungeonTacticalService, IDisposable
 {
     private readonly LifecycleHub _hub;
     private readonly IBoardingTacticalNativeBindings? _bindings;

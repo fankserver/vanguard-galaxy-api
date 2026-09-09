@@ -62,13 +62,21 @@ public sealed class ModServices
 
     public IBoardingRuleService BoardingRules { get { CheckThread(); return _boardingRules; } }
 
+    public IDungeonCombatService DungeonCombat { get { CheckThread(); return (IDungeonCombatService)_boardingCombat; } }
+    [Obsolete("Use DungeonCombat. This compatibility property returns the same service.")]
     public IBoardingCombatService BoardingCombat { get { CheckThread(); return _boardingCombat; } }
     public IDungeonRewardService DungeonRewards { get { CheckThread(); return _dungeonRewards; } }
 
+    public IDungeonCommandService DungeonCommands { get { CheckThread(); return (IDungeonCommandService)_boardingCommands; } }
+    [Obsolete("Use DungeonCommands. This compatibility property returns the same service.")]
     public IBoardingCommandService BoardingCommands { get { CheckThread(); return _boardingCommands; } }
 
+    public IDungeonTacticalService DungeonTactics { get { CheckThread(); return (IDungeonTacticalService)_boardingTactics; } }
+    [Obsolete("Use DungeonTactics. This compatibility property returns the same service.")]
     public IBoardingTacticalService BoardingTactics { get { CheckThread(); return _boardingTactics; } }
 
+    public IDungeonOperationService DungeonOperations { get { CheckThread(); return (IDungeonOperationService)_boarding; } }
+    [Obsolete("Use DungeonOperations. This compatibility property returns the same service.")]
     public IBoardingService Boarding { get { CheckThread(); return _boarding; } }
 
     public IDungeonSettlementService DungeonSettlement { get { CheckThread(); return _dungeonSettlement; } }

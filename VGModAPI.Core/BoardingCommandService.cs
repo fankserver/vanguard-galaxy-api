@@ -15,7 +15,7 @@ internal interface IBoardingCommandBackend
         BoardingCommandOptions? options, bool allowFactionConsequences);
 }
 
-internal sealed class BoardingCommandService : IBoardingCommandService, IDisposable
+internal sealed class BoardingCommandService : IDungeonCommandService, IDisposable
 {
     private readonly LifecycleHub _hub;
     private readonly IBoardingService? _events;
