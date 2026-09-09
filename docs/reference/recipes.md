@@ -1,12 +1,12 @@
 # Forge and refinery services — experimental
 
-Requires API **0.1.29** or newer. `ModApi.Recipes` exposes immutable Forge/refining definitions for the current station. Enable `[Recipes] Enabled = true`; the service is absent when disabled, uninspected or unable to bind. Calls are main-thread-only and require a tracked `GameplayInitialized` session plus an accessible station with supported crafting facilities. Refining does not require that the station also has a Forge. This is not universal UI/world readiness or native qualification.
+`ModApi.Services.Recipes` exposes immutable Forge/refining definitions for the current station. Enable `[Recipes] Enabled = true`; the stable service reports unavailable when disabled, uninspected or unable to bind. Calls are main-thread-only and require a tracked `GameplayInitialized` session plus an accessible station with supported crafting facilities. Refining does not require that the station also has a Forge. This is not universal UI/world readiness or native qualification.
 
 ## Querying
 
 ```csharp
-var catalog = ModApi.Recipes?.Read();
-if (catalog?.Status != RecipeCatalogStatus.Available) return;
+var catalog = ModApi.Services.Recipes.Read();
+if (catalog.Status != RecipeCatalogStatus.Available) return;
 var wanted = new RecipeResourceId("vanilla", "MyKnownItemId", RecipeResourceKind.Item);
 var alternatives = catalog.FindProducers(wanted);
 // Let the player/mod select a route; there can be zero, one or many producers.
@@ -29,16 +29,16 @@ The graph is many-to-many. Producer lookup does not recursively expand requireme
 
 ## Scope and evidence
 
-This service is observational. It does not register custom content, queue/cancel jobs, extract canisters, guarantee output delivery or attach UI. Contextual requirements are provided separately by `ModApi.RecipeQuotes` below. Existing vanilla catalog access does not require custom item/recipe registration. Capability status means inspected bindings resolved, not runtime acceptance.
+This service is observational. It does not register custom content, queue/cancel jobs, extract canisters, guarantee output delivery or attach UI. Contextual requirements are provided separately by `ModApi.Services.RecipeQuotes` below. Existing vanilla catalog access does not require custom item/recipe registration. Capability status means inspected bindings resolved, not runtime acceptance.
 
-## Contextual requirements (API 0.1.31)
+## Contextual requirements
 
-The same `[Recipes] Enabled` setting enables `ModApi.RecipeQuotes` when its additional inspected bindings succeed. Catalog and quote capabilities are reported separately; quote failure does not disable an otherwise usable catalog.
+The same `[Recipes] Enabled` setting enables `ModApi.Services.RecipeQuotes` when its additional inspected bindings succeed. `IRecipeService` and `IRecipeQuoteService` each expose typed `Availability` and `AvailabilityChanged`; quote failure does not disable an otherwise usable catalog. The typed runtime requires native qualification.
 
 ```csharp
-var quotes = ModApi.RecipeQuotes;
-var station = quotes?.CurrentStation;
-if (station == null || quotes == null) return;
+var quotes = ModApi.Services.RecipeQuotes;
+var station = quotes.CurrentStation;
+if (station == null) return;
 var result = quotes.Quote(station, selectedRecipe.Id, batches: 3);
 if (result.Status != RecipeQuoteStatus.Available) return;
 // RequirementsMet is an advisory evaluation, not a reservation or a queued job.
@@ -59,7 +59,7 @@ Output amounts are base or conditional estimates for the requested batches. `Pro
 
 ## Job observations and save/load (API 0.1.34)
 
-With `[Recipes] Enabled=true`, `ModApi.CraftingJobs` exposes optional `ICraftingJobs` observations when the `crafting-jobs` capability is available. Access and subscription disposal are main-thread-only. Obtain a station handle from `ModApi.RecipeQuotes.CurrentStation`, or from a job event, then call `Read(station)`. Only an `Available` result is a successful queue snapshot; missing definitions, malformed rows and inaccessible/stale stations are not successful empty queues.
+With `[Recipes] Enabled=true`, `ModApi.CraftingJobs` exposes optional `ICraftingJobs` observations when the `crafting-jobs` capability is available. Access and subscription disposal are main-thread-only. Obtain a station handle from `ModApi.Services.RecipeQuotes.CurrentStation`, or from a job event, then call `Read(station)`. Only an `Available` result is a successful queue snapshot; missing definitions, malformed rows and inaccessible/stale stations are not successful empty queues.
 
 `CraftingJobHandle` identifies one native job instance at one issued station in one session. It is not a persistent save identifier. Snapshots copy process/recipe identity, initial/remaining batches, captured Forge level, bounded display progress and per-batch duration. Unknown timing remains null. No native object is exposed.
 

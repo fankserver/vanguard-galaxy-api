@@ -61,10 +61,10 @@ public sealed partial class Plugin
                 "Could not free one copied-fixture Forge slot.");
         }
         Require(nativeJobs.Count < Convert.ToInt32(SpGet(nativeForge, "maxJobs")), "Fixture requires a free Forge slot.");
-        var catalog = ModApi.Recipes!.Read();
+        var catalog = ModApi.Services.Recipes!.Read();
         var candidate = catalog.Recipes.Where(recipe => recipe.Process == RecipeProcess.Forge).FirstOrDefault(recipe =>
         {
-            var quote = ModApi.RecipeQuotes!.Quote(station, recipe.Id, 2);
+            var quote = ModApi.Services.RecipeQuotes!.Quote(station, recipe.Id, 2);
             return quote.Status == RecipeQuoteStatus.Available && quote.Blockers.All(blocker => blocker == RecipeBlocker.PricingUnavailable);
         });
         Require(candidate != null, "Fixture needs inputs and credits for a two-batch Forge recipe.");

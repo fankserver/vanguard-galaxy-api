@@ -68,10 +68,6 @@ public static class ModApi
         services?.CheckThread();
         if (ReferenceEquals(_services, services)) _services = null;
     }
-    /// <summary>Optional experimental recipe definitions for the current station; null when disabled/unavailable.</summary>
-    public static IRecipeCatalog? Recipes { get; internal set; }
-    /// <summary>Optional main-thread station requirements and output estimates; advisory, not reservations.</summary>
-    public static IRecipeQuotes? RecipeQuotes { get; internal set; }
     public static ICraftingJobs? CraftingJobs { get; internal set; }
     public static ICraftingCommands? CraftingCommands { get; internal set; }
     public static IForgeUi? ForgeUi { get; internal set; }

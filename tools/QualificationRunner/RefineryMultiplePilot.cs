@@ -12,9 +12,9 @@ public sealed partial class Plugin
     {
         var nativeStation = SpGet(CurrentPlayer, "currentPointOfInterest")!;
         var jobs = (IList)SpGet(SpGet(nativeStation, "refinery")!, "jobs")!;
-        var recipe = ModApi.Recipes!.Read().Recipes.FirstOrDefault(candidate => candidate.Process == RecipeProcess.Refining
+        var recipe = ModApi.Services.Recipes!.Read().Recipes.FirstOrDefault(candidate => candidate.Process == RecipeProcess.Refining
             && candidate.Outputs.Any(output => output.Amount != Math.Truncate(output.Amount))
-            && ModApi.RecipeQuotes!.Quote(station, candidate.Id, 2) is var quote && quote.Status == RecipeQuoteStatus.Available
+            && ModApi.Services.RecipeQuotes!.Quote(station, candidate.Id, 2) is var quote && quote.Status == RecipeQuoteStatus.Available
             && quote.Blockers.All(blocker => blocker == RecipeBlocker.PricingUnavailable));
         Require(recipe != null, "Fixture needs two further affordable fractional ore batches.");
         var oldJobs = jobs.Cast<object>().ToArray();

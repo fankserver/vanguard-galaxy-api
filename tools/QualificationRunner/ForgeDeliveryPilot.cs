@@ -19,8 +19,8 @@ public sealed partial class Plugin
         foreach (var partial in new[] { true, false })
         {
             Require(nativeJobs.Count < Convert.ToInt32(SpGet(nativeForge, "maxJobs")), "Delivery fixture needs a free Forge slot.");
-            var recipe = ModApi.Recipes!.Read().Recipes.FirstOrDefault(candidate => candidate.Process == RecipeProcess.Forge &&
-            ModApi.RecipeQuotes!.Quote(station, candidate.Id, 2) is var quote && quote.Status == RecipeQuoteStatus.Available
+            var recipe = ModApi.Services.Recipes!.Read().Recipes.FirstOrDefault(candidate => candidate.Process == RecipeProcess.Forge &&
+            ModApi.Services.RecipeQuotes!.Quote(station, candidate.Id, 2) is var quote && quote.Status == RecipeQuoteStatus.Available
                 && quote.Blockers.All(blocker => blocker == RecipeBlocker.PricingUnavailable));
             Require(recipe != null, "Delivery fixture lacks a supported affordable recipe.");
             var beforeJobs = nativeJobs.Cast<object>().ToArray();

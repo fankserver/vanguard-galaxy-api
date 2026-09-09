@@ -11,12 +11,12 @@ public sealed class Inspector : IDisposable
 {
     private readonly List<IDisposable> _owned = new();
     private readonly IForgeUi _forge;
-    private readonly IRecipeCatalog _catalog;
-    private readonly IRecipeQuotes _quotes;
+    private readonly IRecipeService _catalog;
+    private readonly IRecipeQuoteService _quotes;
     private readonly IHudRegistration _hud;
     private readonly ILifecycleService _lifecycle;
     private RecipeId? _recipe;
-    public Inspector(string pluginId, ILifecycleService lifecycle, IForgeUi forge, IRecipeCatalog catalog, IRecipeQuotes quotes, IModHud hud)
+    public Inspector(string pluginId, ILifecycleService lifecycle, IForgeUi forge, IRecipeService catalog, IRecipeQuoteService quotes, IModHud hud)
     {
         _forge = forge; _catalog = catalog; _quotes = quotes; _lifecycle = lifecycle;
         try

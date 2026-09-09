@@ -73,7 +73,6 @@ public sealed partial class Plugin : BaseUnityPlugin
         _hub.SetCapability("native-travel", false, "Not bound; experimental.");
         _hub.SetCapability("recipe-catalog", false, "Disabled or not bound; experimental.");
         _hub.SetCapability("recipe-quotes", false, "Disabled or not bound; experimental.");
-        ModApi.RecipeQuotes = null;
         ModApi.CraftingJobs = null;
         ModApi.CraftingCommands = null;
         ModApi.ForgeUi = null;
@@ -88,7 +87,6 @@ public sealed partial class Plugin : BaseUnityPlugin
         _hub.SetCapability("owned-story", false, "Not initialized; experimental.");
         _hub.SetCapability("story-protection", false, "Not bound.");
         _hub.SetCapability("boarding-observation", false, "Disabled by configuration; experimental.");
-        ModApi.Recipes = null;
         ModApi.Boarding = null;
         ModApi.BoardingRules = null;
         ModApi.BoardingCommands = null;
@@ -470,25 +468,23 @@ public sealed partial class Plugin : BaseUnityPlugin
                 (prefab, type) => prefab is UnityEngine.GameObject gameObject && gameObject != null ? gameObject.GetComponent(type) : null,
                 text => (string)translate.Invoke(null, new object[] { text, Array.Empty<object>() })!);
             _recipes = new RecipeCatalogService(_hub!, source, error => Logger.LogError(error));
-            ModApi.Recipes = _recipes;
             _hub!.SetCapability("recipe-catalog", true, "Experimental read-only definitions; not runtime-qualified.");
             try
             {
                 source.BindQuotes();
                 _recipeQuotes = new RecipeQuoteService(_hub, source, error => Logger.LogError(error));
-                ModApi.RecipeQuotes = _recipeQuotes;
                 _hub.SetCapability("recipe-quotes", true, "Experimental advisory requirements; not runtime-qualified.");
             }
             catch (Exception quoteError)
             {
-                _recipeQuotes?.Dispose(); _recipeQuotes = null; ModApi.RecipeQuotes = null;
+                _recipeQuotes?.Dispose(); _recipeQuotes = null;
                 _hub.SetCapability("recipe-quotes", false, "Recipe quote binding failed."); Logger.LogError(quoteError);
             }
             if (_recipeQuotes != null) { InstallCraftingJobs(assembly, source); InstallForgeUi(assembly, source); }
         }
         catch (Exception error)
         {
-            _recipes?.Dispose(); _recipes = null; ModApi.Recipes = null;
+            _recipes?.Dispose(); _recipes = null;
             _hub!.SetCapability("recipe-catalog", false, "Recipe catalog binding failed."); Logger.LogError(error);
         }
     }
@@ -1026,8 +1022,8 @@ public sealed partial class Plugin : BaseUnityPlugin
         LifecyclePatches.Adapter = null;
         SavePatches.Adapter = null;
         TeardownCraftingJobs();
-        _recipeQuotes?.Dispose(); _recipeQuotes = null; ModApi.RecipeQuotes = null;
-        _recipes?.Dispose(); _recipes = null; ModApi.Recipes = null;
+        _recipeQuotes?.Dispose(); _recipeQuotes = null;
+        _recipes?.Dispose(); _recipes = null;
         _hub?.Dispose();
         _adapter = null;
     }

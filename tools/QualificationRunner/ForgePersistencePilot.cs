@@ -16,7 +16,7 @@ public sealed partial class Plugin
     {
         var harmony = new Harmony(Id + ".crafting-persistence");
         var jobs = ModApi.CraftingJobs ?? throw new InvalidOperationException("Crafting jobs unavailable.");
-        var quotes = ModApi.RecipeQuotes!;
+        var quotes = ModApi.Services.RecipeQuotes!;
         var commands = ModApi.CraftingCommands!;
         var facts = new List<CraftingJobEvent>();
         using var subscription = jobs.Subscribe(Id, facts.Add);

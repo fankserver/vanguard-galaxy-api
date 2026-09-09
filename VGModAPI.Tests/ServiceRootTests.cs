@@ -23,7 +23,8 @@ public sealed class ServiceRootTests
         var station = new StationEvents(hub);
         foreach (var disposable in new IDisposable[] { lifecycle, mods, missions, travel, station }) hub.Services.AfterStopped(disposable.Dispose);
         return (ModServices)typeof(ModServices).GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance)[0].Invoke(
-            new object[] { lifecycle, mods, new PersistenceService(hub), missions, travel, station });
+            new object[] { lifecycle, mods, new PersistenceService(hub), missions, travel, station,
+                new RecipeCatalogService(hub, null, _ => { }), new RecipeQuoteService(hub, null, _ => { }) });
     }
 
     [Fact]

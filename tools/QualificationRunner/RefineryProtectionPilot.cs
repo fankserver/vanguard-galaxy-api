@@ -11,7 +11,7 @@ public sealed partial class Plugin
 {
     private void CheckRefineryFavouriteProtection(RecipeStationHandle station, RecipeId recipe, object item)
     {
-        Require(ModApi.RecipeQuotes!.Quote(station, recipe, 1).RequirementsMet, "Favourite fixture requires affordable remaining ore.");
+        Require(ModApi.Services.RecipeQuotes!.Quote(station, recipe, 1).RequirementsMet, "Favourite fixture requires affordable remaining ore.");
         var nativeStation = SpGet(CurrentPlayer, "currentPointOfInterest")!;
         var jobs = (IList)SpGet(SpGet(nativeStation, "refinery")!, "jobs")!;
         var priorJobs = jobs.Cast<object>().ToArray();

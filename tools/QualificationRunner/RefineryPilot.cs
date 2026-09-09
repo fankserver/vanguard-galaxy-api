@@ -19,9 +19,9 @@ public sealed partial class Plugin
             var existing = observations.Read(station).Jobs.First(job => job.Process == RecipeProcess.Refining);
             Require(commands.Execute(CraftingCommandRequest.Cancel(Id, Guid.NewGuid(), existing.Handle)).Status == CraftingCommandStatus.Succeeded, "Could not free copied refinery slot.");
         }
-        var recipe = ModApi.Recipes!.Read().Recipes.FirstOrDefault(candidate => candidate.Process == RecipeProcess.Refining
+        var recipe = ModApi.Services.Recipes!.Read().Recipes.FirstOrDefault(candidate => candidate.Process == RecipeProcess.Refining
             && candidate.Outputs.Any(output => output.Amount != Math.Truncate(output.Amount))
-            && ModApi.RecipeQuotes!.Quote(station, candidate.Id, 2) is var quote && quote.Status == RecipeQuoteStatus.Available
+            && ModApi.Services.RecipeQuotes!.Quote(station, candidate.Id, 2) is var quote && quote.Status == RecipeQuoteStatus.Available
             && quote.Blockers.All(blocker => blocker == RecipeBlocker.PricingUnavailable));
         Require(recipe != null, "Fixture needs affordable fractional-yield ore and a free refinery slot.");
         var oldJobs = nativeJobs.Cast<object>().ToArray();
@@ -75,7 +75,7 @@ public sealed partial class Plugin
         foreach (var material in Enum.GetValues(NativeType("Source.Item.RefinedMaterial")))
         {
             var id = new RecipeResourceId("vanilla", material.ToString()!, RecipeResourceKind.RefinedMaterial);
-            if (ModApi.RecipeQuotes!.QuoteMaterialExtraction(station, id, 1).RequirementsMet) { selected = id; break; }
+            if (ModApi.Services.RecipeQuotes!.QuoteMaterialExtraction(station, id, 1).RequirementsMet) { selected = id; break; }
         }
         Require(selected != null, "Fixture lacks extractable material, credits or cargo space.");
         var before = ForgeInventoryCounts(nativeStation); var credits = (long)SpGet(CurrentPlayer, "credits")!;
