@@ -9,6 +9,21 @@ namespace VGModAPI.Tests;
 public sealed class WorldActorOriginTests
 {
     [Fact]
+    public void FailedCaptureRemainsOwnedAndDeniedAfterScopeEnds()
+    {
+        var origins = new WorldActorOrigins(); var actor = new object(); bool ready = false;
+        using (origins.Enter(() => ready))
+            Assert.Throws<System.IO.InvalidDataException>(() => origins.Capture(actor));
+        ready = true;
+        Assert.True(origins.Known(actor)); Assert.False(origins.Allow(actor));
+        var changedScopeActor = new object(); IDisposable? nested = null;
+        using (origins.Enter(() => { nested = origins.Enter(null); return true; }))
+            Assert.Throws<System.IO.InvalidDataException>(() => origins.Capture(changedScopeActor));
+        nested!.Dispose();
+        Assert.True(origins.Known(changedScopeActor)); Assert.False(origins.Allow(changedScopeActor));
+    }
+
+    [Fact]
     public void ActorsRetainSpawnManagerAndNestedVanillaSpawnDoesNotInheritOwnership()
     {
         var oldPlayer = Source.Player.GamePlayer.current;
@@ -25,14 +40,16 @@ public sealed class WorldActorOriginTests
             var travel = new Behaviour.Managers.TravelManager { localPoiManager = manager, localTarget = poi };
             singleton.SetValue(null, travel); Source.Player.GamePlayer.current = new Source.Player.GamePlayer { currentPointOfInterest = poi };
             guard.Track(session, poi, identity); guard.Ready(session);
-            var actor = new UnityEngine.Object(); var vanilla = new UnityEngine.Object();
+            var actor = new UnityEngine.Object(); var vanilla = new UnityEngine.Object(); var destroyed = new UnityEngine.Object();
             using (host.BeginSpawn(manager))
             {
-                host.CaptureActor(actor);
+                host.CaptureActor(actor); host.CaptureActor(destroyed);
                 using (host.BeginSpawn(new Behaviour.Managers.TestPoiManager { poi = new Source.Galaxy.MapPointOfInterest { guid = "vanilla" } }))
                     host.CaptureActor(vanilla);
             }
-            Assert.True(host.AllowActor(actor));
+            Assert.True(host.AllowActor(actor)); Assert.True(host.AllowActor(destroyed));
+            typeof(UnityEngine.Object).GetField("m_CachedPtr", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(destroyed, IntPtr.Zero);
+            Assert.False(host.AllowActor(destroyed));
             manager.poi = new Source.Galaxy.MapPointOfInterest { guid = "rebound" };
             Assert.False(host.AllowActor(actor)); Assert.True(host.AllowActor(vanilla));
             manager.poi = poi;

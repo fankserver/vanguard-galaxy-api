@@ -28,7 +28,13 @@ internal sealed class WorldActorOrigins
         }
     }
     private Scope? _scope;
-    private readonly ConditionalWeakTable<object, Origin> _actors = new();
+    private sealed class Actor
+    {
+        internal readonly Origin Origin;
+        internal bool Admitted, Rejected, Validating;
+        internal Actor(Origin origin) => Origin = origin;
+    }
+    private readonly ConditionalWeakTable<object, Actor> _actors = new();
     internal IDisposable Enter(Func<bool>? valid)
     {
         var scope = new Scope(this, valid == null ? null : new Origin(valid), _scope); _scope = scope; return scope;
@@ -37,13 +43,34 @@ internal sealed class WorldActorOrigins
     {
         var scope = _scope; var origin = scope?.Origin;
         if (origin == null) return;
-        if (!origin.Valid() || !ReferenceEquals(scope, _scope)) throw new InvalidDataException("Actor spawn origin is no longer admitted.");
-        if (_actors.TryGetValue(actor, out var previous))
+        if (_actors.TryGetValue(actor, out var entry))
         {
-            if (!ReferenceEquals(previous, origin)) throw new InvalidDataException("Actor already belongs to a different spawn origin.");
+            if (!ReferenceEquals(entry.Origin, origin)) throw new InvalidDataException("Actor already belongs to a different spawn origin.");
         }
-        else _actors.Add(actor, origin);
+        else { entry = new Actor(origin); _actors.Add(actor, entry); }
+        try
+        {
+            if (entry.Rejected || entry.Validating) throw new InvalidDataException("Actor capture is rejected or reentrant.");
+            entry.Validating = true;
+            if (!origin.Valid() || entry.Rejected || !ReferenceEquals(scope, _scope))
+                throw new InvalidDataException("Actor spawn origin is no longer admitted.");
+            entry.Admitted = true;
+        }
+        catch { entry.Admitted = false; entry.Rejected = true; throw; }
+        finally { entry.Validating = false; }
     }
     internal bool Known(object actor) => _actors.TryGetValue(actor, out _);
-    internal bool Allow(object actor) => !_actors.TryGetValue(actor, out var origin) || origin.Valid();
+    internal bool Allow(object actor)
+    {
+        if (!_actors.TryGetValue(actor, out var entry)) return true;
+        if (!entry.Admitted || entry.Rejected || entry.Validating) return false;
+        entry.Validating = true;
+        try
+        {
+            if (!entry.Origin.Valid() || !entry.Admitted || entry.Rejected) { entry.Rejected = true; return false; }
+            return true;
+        }
+        catch { entry.Rejected = true; throw; }
+        finally { entry.Validating = false; }
+    }
 }
