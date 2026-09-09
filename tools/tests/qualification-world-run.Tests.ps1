@@ -23,11 +23,15 @@ function Invoke-WorldProcessLifetime($Info, $Timeout, $Process) {
     if ($script:preflights -ne 2 -or !(Test-Path (Join-Path $Info.WorkingDirectory 'world-launch-before.json')) -or
         !(Test-Path (Join-Path $Info.WorkingDirectory 'world-prefs-receipt.json'))) { throw 'Launch preceded durable recovery inputs.' }
     $script:starts++
+    if ($script:mode -ne 'missing-result') {
+        $verdict = if ($script:mode -eq 'failed-result') { 'FAIL' } else { 'PASS' }
+        [IO.File]::WriteAllText((Join-Path $Info.WorkingDirectory 'result.txt'), ($verdict + "`nSynthetic runner verdict"))
+    }
     $Process.Dispose() # This is an unstarted object; no OS child exists in this test.
     return @{ started=$true; pid=42; timedOut=($script:mode -eq 'timeout'); killed=($script:mode -eq 'timeout');
         exitCode=0; cleanupPending=($script:mode -eq 'pending'); failure=$null; cleanupFailure=$null }
 }
-foreach ($case in @('clean','timeout','pending','preservation','receipt')) {
+foreach ($case in @('clean','timeout','pending','preservation','receipt','missing-result','failed-result')) {
     $script:mode=$case; $script:preflights=0; $script:observations=0; $script:restores=0; $script:starts=0
     $root = Join-Path ([IO.Path]::Combine([Environment]::GetFolderPath('LocalApplicationData'), 'Temp')) ('VGModAPI-qa-' + (Get-Random -Minimum 1000000000 -Maximum 2000000000))
     $created=$false

@@ -64,6 +64,9 @@ function Invoke-WorldQualificationPhase([string]$Root, [Guid]$RunId,
         }
         if ($null -ne $prefsFailure -or $null -ne $preservationFailure -or $null -ne $evidenceFailure) { throw 'World preservation failed; retain private recovery evidence.' }
         Assert-WorldProcessOutcome $outcome
+        $resultPath = Assert-WorldUnlinkedPath (Join-Path $Root 'result.txt')
+        $result = Read-WorldReceipt $resultPath
+        if ($result.Count -lt 1 -or $result[0] -cne 'PASS') { throw 'World runner did not report PASS.' }
         Assert-WorldReceiptPaths $Root $Phase
         Assert-WorldPhaseReceipt $Root $Phase
         return $outcome
