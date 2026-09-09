@@ -12,7 +12,8 @@ internal sealed class WorldNativeAttachment
     private readonly GameAdapter _game;
     private readonly WorldMapIndex _index;
     private readonly WorldDetachedCombatFactory _factory;
-    private readonly FieldInfo _map, _points, _parent;
+    private readonly PropertyInfo _map;
+    private readonly FieldInfo _points, _parent;
     // Fixed callback-free inspection only; no callbacks or mutation may follow the final admission fence.
     private readonly Action<object>? _profile;
     internal WorldNativeAttachment(GameAdapter game, Action<object>? profile = null)
@@ -20,8 +21,8 @@ internal sealed class WorldNativeAttachment
         _game = game; _profile = profile;
         var assembly = game.Bindings.Assembly;
         _index = new WorldMapIndex(assembly); _factory = new WorldDetachedCombatFactory(assembly);
-        _map = assembly.GetType("Source.Player.GamePlayer", true)!.GetField("map", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
-            ?? throw new MissingFieldException("GamePlayer.map");
+        _map = assembly.GetType("Source.Player.GamePlayer", true)!.GetProperty("map", BindingFlags.Public | BindingFlags.Instance)
+            ?? throw new MissingMemberException("GamePlayer.map");
         _parent = assembly.GetType("Source.Galaxy.MapElement", true)!.GetField("system", BindingFlags.Public | BindingFlags.Instance)
             ?? throw new MissingFieldException("MapElement.system");
         _points = assembly.GetType("Source.Galaxy.SystemMapData", true)!.GetField("pointsOfInterest", BindingFlags.Public | BindingFlags.Instance)

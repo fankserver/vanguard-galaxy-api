@@ -10,14 +10,15 @@ internal sealed class WorldNativeReconstruction
 {
     private readonly GameAdapter _game;
     private readonly WorldMapIndex _index;
-    private readonly FieldInfo _map, _parent, _name;
+    private readonly PropertyInfo _map;
+    private readonly FieldInfo _parent, _name;
     private readonly Type _combat;
     internal WorldNativeReconstruction(GameAdapter game)
     {
         _game = game; var assembly = game.Bindings.Assembly;
         _index = new WorldMapIndex(assembly);
-        _map = assembly.GetType("Source.Player.GamePlayer", true)!.GetField("map", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
-            ?? throw new MissingFieldException("GamePlayer.map");
+        _map = assembly.GetType("Source.Player.GamePlayer", true)!.GetProperty("map", BindingFlags.Public | BindingFlags.Instance)
+            ?? throw new MissingMemberException("GamePlayer.map");
         _parent = assembly.GetType("Source.Galaxy.MapElement", true)!.GetField("system", BindingFlags.Public | BindingFlags.Instance)
             ?? throw new MissingFieldException("MapElement.system");
         _name = assembly.GetType("Source.Galaxy.MapElement", true)!.GetField("_name", BindingFlags.NonPublic | BindingFlags.Instance)

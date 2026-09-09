@@ -23,7 +23,7 @@ namespace Source.Player
         public double elapsedTime { get; set; }
         public Source.SpaceShip.SpaceShipData? currentSpaceShip { get; set; }
         public System.Collections.Generic.List<Source.Galaxy.MapPointOfInterest> waypoints = new();
-        public Source.Galaxy.GalaxyMapData? map;
+        public Source.Galaxy.GalaxyMapData? map { get; set; }
     }
 }
 namespace Source.SpaceShip.Auto
