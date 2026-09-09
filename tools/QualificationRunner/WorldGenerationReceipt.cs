@@ -31,7 +31,21 @@ public sealed partial class Plugin
         Require(ids.Distinct(StringComparer.Ordinal).Count() == 2 && ids.Contains(first) && ids.Contains(second),
             "Committed world identities differ from native/public identities.");
         foreach (var row in rows)
-            Require(SpCall(generation, "DefinitionFor", row) != null, "Missing paired retained declaration.");
+        {
+            var identity = SpGet(row, "Identity")!;
+            bool authorA = (string)SpGet(identity, "NativeId")! == first;
+            var owner = authorA ? "vgmodapi.qualification.world.a" : "vgmodapi.qualification.world.b";
+            var instance = Guid.Parse(authorA ? "681a3868-4420-4a76-bb83-e7155a036017" : "335308ee-24dc-4c52-8c2d-3d46a0b523ac");
+            Require((string)SpGet(identity, "Owner")! == owner && (string)SpGet(identity, "LocalId")! == "PoiX" &&
+                (Guid)SpGet(identity, "InstanceId")! == instance, "Persisted author/instance tuple mismatch.");
+            var retained = SpCall(generation, "DefinitionFor", row) ?? throw new InvalidOperationException("Missing paired retained declaration.");
+            var definition = SpGet(retained, "Definition")!;
+            Require((string)SpGet(retained, "Owner")! == owner && (string)SpGet(definition, "LocalId")! == "PoiX" &&
+                (int)SpGet(definition, "Revision")! == 1 && (int)SpGet(row, "DefinitionRevision")! == 1 &&
+                (string)SpGet(definition, "Name")! == "Empty qualification site" &&
+                (string)SpGet(definition, "FactionId")! == "player" && (int)SpGet(definition, "Level")! == 1,
+                "Retained declaration differs from the expected author definition.");
+        }
         Require(SpCall(generation, "PayloadFor", "vgmodapi.world-definitions") is byte[], "World definitions payload missing.");
         return new[] { "PAIRED-WORLD-GENERATION", slot, hash, (string)SpGet(association, "StateHash")!,
             SpGet(association, "Snapshot")!.ToString()!, first, second };
