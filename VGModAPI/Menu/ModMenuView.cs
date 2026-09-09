@@ -239,7 +239,7 @@ internal sealed class ModMenuView : IModMenuView
             var name = row.GetComponentInChildren<TMP_Text>();
             name.enableAutoSizing = false;
             name.textWrappingMode = TextWrappingModes.NoWrap;
-            name.overflowMode = TextOverflowModes.Ellipsis;
+            name.overflowMode = TextOverflowModes.Truncate;
             name.alignment = TextAlignmentOptions.TopLeft;
             Stretch(name.rectTransform, 0, 0, 1, 1, 10, 28, -10, -8);
             var version = Text(row.transform, "Installed version", "");
