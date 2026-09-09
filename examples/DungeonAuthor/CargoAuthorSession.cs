@@ -13,7 +13,9 @@ public sealed class CargoAuthorSession : IDisposable
     private readonly Dictionary<BoardingHandle, CargoRecoveryPanel> _panels = new();
     private CargoRecovery? _author;
     private bool _disposed;
-    public CargoAuthorSession(string reward, ILifecycleApi? lifecycle, IBoardingEvents? boarding, IDungeonContent? content,
+    private ILifecycleService? _lifecycle;
+    private Action<LifecycleEvent>? _lifecycleHandler;
+    public CargoAuthorSession(string reward, ILifecycleService? lifecycle, IBoardingEvents? boarding, IDungeonContent? content,
         IDungeonPanelApi? panel, IBoardingCommands? commands, IBoardingTactics? tactics, IDungeonSettlement? settlement,
         Action<string> log, Action<string>? warn = null)
     {
@@ -60,12 +62,14 @@ public sealed class CargoAuthorSession : IDisposable
         }
         try
         {
-            _leases.Add(lifecycle.Subscribe(Id, fact =>
+            _lifecycle = lifecycle;
+            _lifecycleHandler = fact =>
             {
                 if (fact.Kind == LifecycleEventKind.SessionInvalidated) ClearTargets();
                 if (fact.Kind == LifecycleEventKind.GameplayInitialized && !retried && _author == null)
                 { retried = true; Initialize(); }
-            }));
+            };
+            lifecycle.Changed += _lifecycleHandler;
             Initialize();
         }
         catch { Dispose(); throw; }
@@ -75,6 +79,8 @@ public sealed class CargoAuthorSession : IDisposable
     public void Dispose()
     {
         if (_disposed) return; _disposed = true;
+        if (_lifecycle != null) _lifecycle.Changed -= _lifecycleHandler;
+        _lifecycle = null; _lifecycleHandler = null;
         ClearTargets();
         for (var i = _leases.Count - 1; i >= 0; i--) _leases[i].Dispose();
         _leases.Clear(); _author?.Dispose(); _author = null;

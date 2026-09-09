@@ -23,8 +23,13 @@ public sealed class CargoAuthorSessionTests
         internal BoardingOperationSnapshot[] Seed = Array.Empty<BoardingOperationSnapshot>();
         internal readonly Dictionary<string, Func<DungeonPanelSnapshot, DungeonPanelAction?>> Presenters = new();
         internal readonly Guid Session = Guid.NewGuid();
-        internal ILifecycleApi Life => Fake<ILifecycleApi>((name, args) =>
-        { Assert.Equal("Subscribe", name); var callback = (Action<LifecycleEvent>)args[1]!; Lifecycle.Add(callback); return new Lease(() => Lifecycle.Remove(callback)); });
+        internal ILifecycleService Life => Fake<ILifecycleService>((name, args) =>
+        {
+            var callback = (Action<LifecycleEvent>)args[0]!;
+            if (name == "add_Changed") Lifecycle.Add(callback);
+            else { Assert.Equal("remove_Changed", name); Lifecycle.Remove(callback); }
+            return null;
+        });
         internal IBoardingEvents Events => Fake<IBoardingEvents>((name, args) =>
         {
             if (name == "GetOperations") { Assert.NotEmpty(Boarding); return Seed; }
