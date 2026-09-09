@@ -15,11 +15,12 @@ public sealed class CargoAuthorSession : IDisposable
     private bool _disposed;
     public CargoAuthorSession(string reward, ILifecycleApi? lifecycle, IBoardingEvents? boarding, IDungeonContent? content,
         IDungeonPanelApi? panel, IBoardingCommands? commands, IBoardingTactics? tactics, IDungeonSettlement? settlement,
-        Action<string> log)
+        Action<string> log, Action<string>? warn = null)
     {
         if (log == null) throw new ArgumentNullException(nameof(log));
+        warn ??= log;
         if (lifecycle == null || boarding == null || content == null || string.IsNullOrWhiteSpace(reward))
-        { log("Cargo example requires configured RewardItemId and available boarding/dungeon content."); return; }
+        { warn("Cargo example requires configured RewardItemId and available boarding/dungeon content."); return; }
         var retried = false;
         void Initialize()
         {
@@ -27,13 +28,13 @@ public sealed class CargoAuthorSession : IDisposable
             try { _author = new CargoRecovery(content, Id, reward); }
             catch (ArgumentException error)
             {
-                log($"Cargo definition unavailable for RewardItemId '{reward}': {error.Message}. Check native item/crew catalogs; one retry is allowed at gameplay readiness.");
+                warn($"Cargo definition unavailable for RewardItemId '{reward}': {error.Message}. Check native item/crew catalogs; one retry is allowed at gameplay readiness.");
                 return;
             }
             try
             {
                 if (panel == null || !panel.Capabilities.ContextualActions || commands == null || tactics == null || settlement == null)
-                { log("Content registered; optional contextual control/settlement services unavailable."); return; }
+                { warn("Content registered; optional contextual control/settlement services unavailable."); return; }
                 _leases.Add(panel.RegisterAction(Id, "attach-cargo", view => view.Operation == null
                     ? new DungeonPanelAction("Attach cargo encounter", "Explicitly attach cargo content to this observed target. Existing attachments are never replaced.") : null,
                     view => log("Cargo attach: " + _author.Attach(view.Target.Handle).Status)));

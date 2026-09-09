@@ -18,13 +18,16 @@ public sealed class CargoAuthorSessionTests
         internal readonly Dictionary<string, Action<DungeonPanelSnapshot>> Actions = new();
         internal readonly List<string> Logs = new();
         internal int RegisterCalls, AttachCalls, ProviderDisposals, SettlementLeases;
-        internal bool RejectDefinition;
+        internal bool RejectDefinition, RejectAction;
+        internal bool ContextualActions = true;
+        internal BoardingOperationSnapshot[] Seed = Array.Empty<BoardingOperationSnapshot>();
+        internal readonly Dictionary<string, Func<DungeonPanelSnapshot, DungeonPanelAction?>> Presenters = new();
         internal readonly Guid Session = Guid.NewGuid();
         internal ILifecycleApi Life => Fake<ILifecycleApi>((name, args) =>
         { Assert.Equal("Subscribe", name); var callback = (Action<LifecycleEvent>)args[1]!; Lifecycle.Add(callback); return new Lease(() => Lifecycle.Remove(callback)); });
         internal IBoardingEvents Events => Fake<IBoardingEvents>((name, args) =>
         {
-            if (name == "GetOperations") { Assert.NotEmpty(Boarding); return Array.Empty<BoardingOperationSnapshot>(); }
+            if (name == "GetOperations") { Assert.NotEmpty(Boarding); return Seed; }
             if (name == "GetOperation") return null;
             Assert.Equal("Subscribe", name); var callback = (Action<BoardingEvent>)args[1]!; Boarding.Add(callback); return new Lease(() => Boarding.Remove(callback));
         });
@@ -40,9 +43,9 @@ public sealed class CargoAuthorSessionTests
         });
         internal IDungeonPanelApi Panel => Fake<IDungeonPanelApi>((name, args) =>
         {
-            if (name == "get_Capabilities") return new DungeonPanelCapabilities(true, true, true);
-            Assert.Equal("RegisterAction", name); var key = (string)args[1]!; Assert.False(Actions.ContainsKey(key)); Actions.Add(key, (Action<DungeonPanelSnapshot>)args[3]!);
-            return new Lease(() => Actions.Remove(key));
+            if (name == "get_Capabilities") return new DungeonPanelCapabilities(true, true, ContextualActions);
+            Assert.Equal("RegisterAction", name); if (RejectAction) throw new InvalidOperationException("Rejected action"); var key = (string)args[1]!; Assert.False(Actions.ContainsKey(key)); Actions.Add(key, (Action<DungeonPanelSnapshot>)args[3]!); Presenters.Add(key, (Func<DungeonPanelSnapshot, DungeonPanelAction?>)args[2]!);
+            return new Lease(() => { Actions.Remove(key); Presenters.Remove(key); });
         });
         internal CargoAuthorSession Create(bool optional = true, bool required = true) => new("item", Life, Events, required ? Content : null,
             optional ? Panel : null, Fake<IBoardingCommands>((_, _) => throw new InvalidOperationException()), Fake<IBoardingTactics>((_, _) => throw new InvalidOperationException()),
@@ -67,8 +70,27 @@ public sealed class CargoAuthorSessionTests
         f.Emit(f.Event(a, BoardingEventKind.Retired)); Assert.Equal(2, f.Actions.Count); Assert.Equal(1, f.SettlementLeases);
         f.Emit(LifecycleEventKind.SessionInvalidated); Assert.Single(f.Actions); Assert.Equal(0, f.SettlementLeases); Assert.Equal(1, f.RegisterCalls);
         var fact = f.Event(b, BoardingEventKind.OperationStarted);
-        f.Actions["attach-cargo"](new(Guid.NewGuid(), 1, fact.Target, fact.Operation)); Assert.Equal(1, f.AttachCalls); Assert.Contains("Cargo attach: TargetInUse", f.Logs);
+        Assert.Null(f.Presenters["attach-cargo"](new(Guid.NewGuid(), 1, fact.Target, fact.Operation)));
+        var idle = new DungeonPanelSnapshot(Guid.NewGuid(), 1, new(b, 1, BoardingEncounterKind.Ship, "Ship", null, null, BoardingAvailability.Available, null), null);
+        Assert.Equal("Attach cargo encounter", f.Presenters["attach-cargo"](idle)!.Label);
+        f.Actions["attach-cargo"](idle); Assert.Equal(1, f.AttachCalls); Assert.Contains("Cargo attach: TargetInUse", f.Logs);
         author.Dispose(); Assert.Empty(f.Actions); Assert.Empty(f.Boarding); Assert.Empty(f.Lifecycle); Assert.Equal(1, f.ProviderDisposals);
+    }
+    [Fact]
+    public void UnavailableRendererKeepsContentWithoutControls()
+    { var f = new Fixture { ContextualActions = false }; using var author = f.Create(); Assert.Equal(1, f.RegisterCalls); Assert.Empty(f.Actions); }
+    [Fact]
+    public void SeedsExistingOperationsAndDoesNotReregisterSuccessfulDefinition()
+    {
+        var f = new Fixture(); f.Seed = new[] { f.Event(new(f.Session, Guid.NewGuid()), BoardingEventKind.OperationStarted).Operation! };
+        using var author = f.Create(); Assert.Equal(2, f.Actions.Count);
+        f.Emit(LifecycleEventKind.GameplayInitialized); Assert.Equal(1, f.RegisterCalls);
+    }
+    [Fact]
+    public void FailedActionRegistrationReleasesSessionResources()
+    {
+        var f = new Fixture { RejectAction = true }; Assert.Throws<InvalidOperationException>(() => f.Create());
+        Assert.Empty(f.Lifecycle); Assert.Empty(f.Boarding); Assert.Empty(f.Actions); Assert.Equal(1, f.ProviderDisposals);
     }
     [Theory]
     [InlineData(false)] [InlineData(true)]
@@ -81,5 +103,6 @@ public sealed class CargoAuthorSessionTests
         var f = new Fixture { RejectDefinition = true }; using var author = f.Create(); Assert.Equal(1, f.RegisterCalls);
         f.RejectDefinition = !recover; f.Emit(LifecycleEventKind.GameplayInitialized); f.Emit(LifecycleEventKind.GameplayInitialized);
         Assert.Equal(2, f.RegisterCalls); Assert.Equal(recover ? 1 : 0, f.Actions.Count);
+        if (recover) { f.Emit(f.Event(new(f.Session, Guid.NewGuid()), BoardingEventKind.OperationStarted)); Assert.Equal(2, f.Actions.Count); }
     }
 }
