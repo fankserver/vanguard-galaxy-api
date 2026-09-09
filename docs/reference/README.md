@@ -1,6 +1,7 @@
 # API reference
 
 - [Compatibility and supported behavior](compatibility.md)
+- [Author examples and integration boundaries](authoring.md)
 - [Lifecycle events](lifecycle-contract.md)
 - [Typed services and injected consumers](service-contracts.md)
 - Mod save data: [identity](persistence-identity.md), [schema](persistence-schema.md), [storage and recovery](persistence-storage.md)
@@ -9,5 +10,7 @@
 - [Owned story content](story-content.md) and [bar rosters](bar-rosters.md)
 - Boarding: [operations and policies](boarding-contract.md), [authored dungeons](dungeon-content.md), [reward and settlement](dungeon-settlement.md), [save/load boundaries](dungeon-save-load.md), [panel integration](dungeon-panel.md)
 - [Forge and refinery](recipes.md)
+- [Owned items](owned-items.md), [owned recipes](owned-recipes.md) and [inventories](inventories.md)
+- [Persistent world content](world-content.md), [dialogue](dialogue.md) and [navigation](navigation.md)
 - [Shared HUD and presentation](hud.md)
 - [Mod information](mod-information.md) and [publishing mod updates](mod-update-publishing.md)
