@@ -16,7 +16,7 @@ public sealed class Inspector : IDisposable
     private readonly IHudRegistration _hud;
     private readonly ILifecycleService _lifecycle;
     private RecipeId? _recipe;
-    public Inspector(string pluginId, ILifecycleService lifecycle, IForgeUi forge, IRecipeService catalog, IRecipeQuoteService quotes, IModHud hud)
+    public Inspector(string pluginId, ILifecycleService lifecycle, IForgeUi forge, IRecipeService catalog, IRecipeQuoteService quotes, IHudService hud)
     {
         _forge = forge; _catalog = catalog; _quotes = quotes; _lifecycle = lifecycle;
         try

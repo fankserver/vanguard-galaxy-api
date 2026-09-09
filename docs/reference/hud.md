@@ -1,12 +1,12 @@
 # Shared HUD — experimental
 
-Requires API 0.1.38. Enable `[Hud] Enabled=true`; `ModApi.Hud` is available only when its inspected bindings succeed. The `hud` capability describes integration availability, not a visible canvas or in-game qualification. `Visible` additionally requires a tracked initialized player and the current active native HUD/cargo-indicator context.
+`ModApi.Services.Hud` exposes a stable `IHudService`. Its typed `Availability` requires `[Hud] Enabled=true` and inspected bindings; it does not imply a visible canvas or in-game qualification. `AvailabilityChanged` reports health changes independently of surface visibility. `Visible` additionally requires a tracked initialized player and the current active native HUD/cargo-indicator context.
 
 The service provides bounded buttons and information panels, not a window/widget framework. Consumers own their content models, actions, additional preferences and any separate windows. The API owns transient registrations, placement, native presentation and reattachment to the existing HUD canvas. It does not create another general-purpose canvas.
 
 ```csharp
-var hud = ModApi.Hud;
-if (hud == null) return;
+var hud = ModApi.Services.Hud;
+if (!hud.Availability.IsAvailable) return;
 var registration = hud.Register(pluginId, "status", interaction =>
 {
     if (interaction.Kind == HudInteractionKind.ClosePanel) HideMyPanel();

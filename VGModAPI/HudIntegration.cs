@@ -18,13 +18,13 @@ public sealed partial class Plugin
             _hudRuntime = new(_hudService, assembly, methods,
                 () => _hub?.CurrentSession?.Phase == SessionPhase.GameplayInitialized && _adapter?.IsBoundPlayer(_adapter.Bindings.CurrentPlayer) == true ? _hub.CurrentSession.Id : null,
                 error => Logger.LogError(error));
-            _hudService.SetAvailable(true); ModApi.Hud = _hudService;
+            _hudService.SetAvailable(true);
         }
         catch (Exception error) { TeardownHud(); Logger.LogError(error); }
     }
     private void TeardownHud()
     {
         _hudRuntime?.Dispose(); _hudRuntime = null;
-        _hudService?.Dispose(); _hudService = null; ModApi.Hud = null;
+        _hudService?.Dispose(); _hudService = null;
     }
 }

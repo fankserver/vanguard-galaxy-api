@@ -74,7 +74,7 @@ public interface IHudRegistration : IDisposable
     void Update(HudButton? button, HudPanel? panel);
 }
 /// <summary>Bounded shared HUD buttons and information panels, not a window/widget framework. Main-thread only.</summary>
-public interface IModHud
+public interface IHudService : IServiceStatus
 {
     bool Visible { get; }
     IHudRegistration Register(string pluginId, string localId, Action<HudInteraction> callback, int order = 0);

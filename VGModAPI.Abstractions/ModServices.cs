@@ -20,6 +20,7 @@ public sealed class ModServices
     private readonly IRecipeQuoteService _recipeQuotes;
     private readonly ICraftingJobService _craftingJobs;
     private readonly ICraftingCommandService _craftingCommands;
+    private readonly IHudService _hud;
     public ILifecycleService Lifecycle { get { CheckThread(); return _lifecycle; } }
     public IModInformationService Mods { get { CheckThread(); return _mods; } }
     public ISaveDataService SaveData { get { CheckThread(); return _saveData; } }
@@ -31,9 +32,11 @@ public sealed class ModServices
     public ICraftingJobService CraftingJobs { get { CheckThread(); return _craftingJobs; } }
     public ICraftingCommandService CraftingCommands { get { CheckThread(); return _craftingCommands; } }
 
+    public IHudService Hud { get { CheckThread(); return _hud; } }
+
     internal ModServices(ILifecycleService lifecycle, IModInformationService mods, ISaveDataService saveData,
         IMissionService missions, ITravelService travel, IStationService station, IRecipeService recipes, IRecipeQuoteService recipeQuotes,
-        ICraftingJobService craftingJobs, ICraftingCommandService craftingCommands)
+        ICraftingJobService craftingJobs, ICraftingCommandService craftingCommands, IHudService hud)
     {
         _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
         _mods = mods ?? throw new ArgumentNullException(nameof(mods));
@@ -45,6 +48,7 @@ public sealed class ModServices
         _recipeQuotes = recipeQuotes ?? throw new ArgumentNullException(nameof(recipeQuotes));
         _craftingJobs = craftingJobs ?? throw new ArgumentNullException(nameof(craftingJobs));
         _craftingCommands = craftingCommands ?? throw new ArgumentNullException(nameof(craftingCommands));
+        _hud = hud ?? throw new ArgumentNullException(nameof(hud));
     }
 
     internal void CheckThread()

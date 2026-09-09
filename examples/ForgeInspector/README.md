@@ -9,9 +9,9 @@ A BepInEx host with a hard dependency on `vgmodapi` can create this scope after 
 ```csharp
 // Keep this registration scope in a host field; dispose it during host teardown.
 if (ModApi.ForgeUi != null && ModApi.Services.Recipes.Availability.IsAvailable &&
-    ModApi.Services.RecipeQuotes.Availability.IsAvailable && ModApi.Hud != null)
+    ModApi.Services.RecipeQuotes.Availability.IsAvailable && ModApi.Services.Hud.Availability.IsAvailable)
     inspector = new ForgeInspector.Inspector(MyPluginId, ModApi.Services.Lifecycle,
-        ModApi.ForgeUi, ModApi.Services.Recipes, ModApi.Services.RecipeQuotes, ModApi.Hud);
+        ModApi.ForgeUi, ModApi.Services.Recipes, ModApi.Services.RecipeQuotes, ModApi.Services.Hud);
 ```
 
 Enable `[Recipes] Enabled` and `[Hud] Enabled` and restart. Missing services mean unavailable, not an empty successful catalog. This helper is not itself a deployable BepInEx plugin; integrate its source or reference its assembly from your own host. Do not deploy a duplicate Abstractions assembly.
