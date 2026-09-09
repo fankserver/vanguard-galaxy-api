@@ -158,7 +158,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             foreach (var frame in CheckForgeReads()) yield return frame;
             if (File.Exists(Path.Combine(_root!, "blueprint-pin.enabled")))
             {
-                Require(File.ReadAllText(Path.Combine(_root!, "blueprint-pin.enabled")) == "blueprint-pin-v9", "Invalid Blueprint Pin marker.");
+                Require(File.ReadAllText(Path.Combine(_root!, "blueprint-pin.enabled")) == "blueprint-pin-v10", "Invalid Blueprint Pin marker.");
                 foreach (var frame in CheckBlueprintPin()) yield return frame;
             }
             if (File.Exists(Path.Combine(_root!, "forge-ui.enabled")))
