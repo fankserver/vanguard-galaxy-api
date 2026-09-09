@@ -89,9 +89,9 @@ internal sealed class WorldSnapshotRecorder
             rows[i] = new WorldSavedObject(instance.Identity, node.SystemId, node.Digest, instance.Definition.Definition.Revision);
             objects[i] = instance.Native;
         }
-        var beforeValidation = WorldJsonInspection.Digest(root);
+        var beforeValidation = WorldJsonInspection.DigestRoot(root);
         validateBeforePublish?.Invoke();
-        if (operation != _operation || beforeValidation != WorldJsonInspection.Digest(root)) return false;
+        if (operation != _operation || beforeValidation != WorldJsonInspection.DigestRoot(root)) return false;
         foreach (var node in nodes) node.ValidateAssets();
         foreach (var node in nodes) _json.StampOwnedPoi(node.Json, node.NativeId);
         for (int i = 0; i < observed.Length; i++)
@@ -101,7 +101,7 @@ internal sealed class WorldSnapshotRecorder
         }
         var state = WorldStateCodec.Encode(rows);
         _json.SealSnapshot(root, rows.Length != 0);
-        var digest = WorldJsonInspection.Digest(root);
+        var digest = WorldJsonInspection.DigestRoot(root);
         foreach (var node in nodes) node.ValidateAssets();
         if (operation != _operation) return false;
         var stateToken = _states.Begin(revision, state, objects);
@@ -112,7 +112,7 @@ internal sealed class WorldSnapshotRecorder
 
     internal Dictionary<string, byte[]> ForStore(object root)
     {
-        var digest = WorldJsonInspection.Digest(root);
+        var digest = WorldJsonInspection.DigestRoot(root);
         return new Dictionary<string, byte[]>
         {
             [WorldStateCodec.Owner] = _states.ForStore(root, digest),
