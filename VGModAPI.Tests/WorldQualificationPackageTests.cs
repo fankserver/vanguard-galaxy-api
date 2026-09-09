@@ -17,5 +17,14 @@ public sealed class WorldQualificationPackageTests
         var plugin = Path.Combine(root, "VGModAPI.dll");
         PackageChecks.ValidatePluginVersion(plugin, qualification: true);
         Assert.Throws<InvalidOperationException>(() => PackageChecks.ValidatePluginVersion(plugin));
+        using var resolver = new Mono.Cecil.DefaultAssemblyResolver();
+        resolver.AddSearchDirectory(Environment.GetEnvironmentVariable("VG_QUALIFICATION_REFERENCE_DIR")
+            ?? throw new InvalidOperationException("Run the qualification package make target with local BepInEx references."));
+        using var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(plugin, new Mono.Cecil.ReaderParameters { AssemblyResolver = resolver });
+        Assert.NotNull(assembly.MainModule.GetType("VGModAPI.QualificationRunContext"));
+        var dependency = Assert.Single(assembly.MainModule.GetType("VGModAPI.Plugin").CustomAttributes,
+            attribute => attribute.AttributeType.FullName == "BepInEx.BepInDependency" &&
+                attribute.ConstructorArguments.Count == 2 && Equals(attribute.ConstructorArguments[0].Value, "vgmodapi.qualification.guard"));
+        Assert.Equal("0.1.0", dependency.ConstructorArguments[1].Value);
     }
 }

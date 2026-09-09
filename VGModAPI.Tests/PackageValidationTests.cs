@@ -20,7 +20,7 @@ public sealed class PackageValidationTests : IDisposable
     }
 
     [Fact]
-    public void QualificationMarkerRejectsOtherwiseNormalPluginPackage()
+    public void QualificationMarkerIsRejectedBeforePluginInspection()
     {
         using var assembly = AssemblyDefinition.ReadAssembly(typeof(VGModAPI.Patches.WorldLifetimePatches).Assembly.Location);
         var constructor = typeof(System.Reflection.AssemblyMetadataAttribute).GetConstructor(new[] { typeof(string), typeof(string) })!;
@@ -43,7 +43,8 @@ public sealed class PackageValidationTests : IDisposable
         Assert.Throws<InvalidOperationException>(() => PackageChecks.ValidateQualificationLayout(root)); File.Delete(foreign);
         Directory.CreateDirectory(Path.Combine(root, "docs"));
         Assert.Throws<InvalidOperationException>(() => PackageChecks.ValidateQualificationLayout(root));
-        Assert.Throws<InvalidOperationException>(() => PackageChecks.ValidatePluginVersion(typeof(VGModAPI.Patches.WorldLifetimePatches).Assembly.Location, qualification: true));
+        var error = Assert.Throws<InvalidOperationException>(() => PackageChecks.ValidatePluginVersion(typeof(VGModAPI.Patches.WorldLifetimePatches).Assembly.Location, qualification: true));
+        Assert.Contains("marker missing or invalid", error.Message);
     }
 
     [Fact]

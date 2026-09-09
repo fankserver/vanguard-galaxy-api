@@ -15,7 +15,9 @@ namespace VGModAPI;
 
 [BepInPlugin(ModApi.PluginId, "Mod API", PluginBuildVersion.Value)]
 [BepInProcess("VanguardGalaxy.exe")]
+#if !VG_WORLD_QUALIFICATION
 [BepInDependency("vgmodapi.qualification.guard", BepInDependency.DependencyFlags.SoftDependency)]
+#endif
 public sealed partial class Plugin : BaseUnityPlugin
 {
     private LifecycleHub? _hub;
