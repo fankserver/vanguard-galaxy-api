@@ -66,7 +66,7 @@ build-world-authors: link-libs
 	$(DOTNET) build tools/WorldAuthorB/WorldAuthorB.csproj -c $(CONFIGURATION)
 
 .PHONY: package-world-qualification
-package-world-qualification: link-libs
+package-world-qualification: link-libs build-world-authors
 	$(DOTNET) build tools/WorldQualificationApi/WorldQualificationApi.csproj -c $(CONFIGURATION)
 	@rm -rf artifacts/WorldQualificationApi
 	@mkdir -p artifacts/WorldQualificationApi
@@ -74,7 +74,7 @@ package-world-qualification: link-libs
 	cp tools/WorldQualificationApi/bin/$(CONFIGURATION)/netstandard2.1/VGModAPI.Core.dll artifacts/WorldQualificationApi/
 	cp tools/WorldQualificationApi/bin/$(CONFIGURATION)/netstandard2.1/VGModAPI.Abstractions.dll artifacts/WorldQualificationApi/
 	cp tools/WorldQualificationApi/README.md artifacts/WorldQualificationApi/
-	VG_WORLD_QUALIFICATION_PACKAGE_ROOT="$(CURDIR)/artifacts/WorldQualificationApi" VG_QUALIFICATION_REFERENCE_DIR="$(CORE)" $(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter 'Category=WorldQualificationPackage' -- RunConfiguration.TreatNoTestsAsError=true
+	VG_WORLD_AUTHOR_ROOT="$(CURDIR)/tools" VG_WORLD_AUTHOR_CONFIGURATION="$(CONFIGURATION)" VG_WORLD_QUALIFICATION_PACKAGE_ROOT="$(CURDIR)/artifacts/WorldQualificationApi" VG_QUALIFICATION_REFERENCE_DIR="$(CORE)" $(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter 'Category=WorldQualificationPackage' -- RunConfiguration.TreatNoTestsAsError=true
 
 package: build
 	@rm -rf artifacts/VGModAPI
