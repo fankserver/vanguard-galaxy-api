@@ -11,12 +11,14 @@ public sealed class WorldOwnedPoiReaderTests
     public sealed class Value
     {
         internal object? Data;
+        public bool IsNumber => Data is double;
         public double AsNumber => (double)Data!;
         public static implicit operator string?(Value value) => value.Data as string;
     }
     public sealed class Json
     {
-        public Value this[string key] => new() { Data = key == "lastVisitedTime" ? 3.0 : key == "lastVisitedX" ? 4.0 : "retained" };
+        public object? Seed = 1.0;
+        public Value this[string key] => new() { Data = key == "backgroundSeed" || key == "contentSeed" ? Seed : key == "lastVisitedTime" ? 3.0 : key == "lastVisitedX" ? 4.0 : "retained" };
     }
     public class Poi
     {
@@ -42,6 +44,18 @@ public sealed class WorldOwnedPoiReaderTests
         Assert.Empty(Poi.Calls);
         Assert.IsType<Combat>(reader.Read(new Json(), () => { }));
         Assert.Equal(new[] { "construct", "load", "optional" }, Poi.Calls);
+    }
+    [Theory]
+    [InlineData(null)]
+    [InlineData(-1.0)]
+    [InlineData(1.5)]
+    [InlineData(4294967296.0)]
+    public void MissingOrInvalidSeedsRefuseBeforeNativeConstruction(object? seed)
+    {
+        Poi.Calls.Clear();
+        var reader = new WorldOwnedPoiReader(typeof(Combat), typeof(Poi), typeof(Json), typeof(Value));
+        Assert.Throws<InvalidDataException>(() => reader.Read(new Json { Seed = seed }, () => { }));
+        Assert.Empty(Poi.Calls);
     }
     [Fact]
     public void AdmissionLossAfterLoadStopsOptionalFactoriesAndPreservesExceptions()

@@ -11,7 +11,7 @@ internal sealed class WorldOwnedPoiReader
 {
     private readonly ConstructorInfo _constructor;
     private readonly MethodInfo _load, _optional, _string;
-    private readonly PropertyInfo _item, _number, _storeLastX;
+    private readonly PropertyInfo _item, _number, _isNumber, _storeLastX;
     private readonly FieldInfo _danger, _hazards, _visited, _lastX;
     private readonly Type _json;
     internal WorldOwnedPoiReader(Assembly game) : this(game.GetType("Source.Galaxy.POI.Combat", true)!,
@@ -27,6 +27,7 @@ internal sealed class WorldOwnedPoiReader
         _item = json.GetProperty("Item", new[] { typeof(string) }) ?? throw new MissingMemberException("JsonObject.Item");
         _string = value.GetMethods(BindingFlags.Public | BindingFlags.Static).Single(method => method.Name == "op_Implicit" &&
             method.ReturnType == typeof(string) && method.GetParameters().Length == 1 && method.GetParameters()[0].ParameterType == value);
+        _isNumber = value.GetProperty("IsNumber") ?? throw new MissingMemberException("JsonValue.IsNumber");
         _number = value.GetProperty("AsNumber") ?? throw new MissingMemberException("JsonValue.AsNumber");
         _storeLastX = poi.GetProperty("storeLastX") ?? throw new MissingMemberException("MapPointOfInterest.storeLastX");
         _danger = Field(poi, "dangerLevel", typeof(string)); _hazards = Field(poi, "hazardsDescription", typeof(string));
@@ -45,6 +46,15 @@ internal sealed class WorldOwnedPoiReader
         object Value(string key) => _item.GetValue(json, new object[] { key })!;
         try
         {
+            requireAdmission();
+            foreach (var seed in new[] { "backgroundSeed", "contentSeed" })
+            {
+                var value = Value(seed);
+                if (!(bool)_isNumber.GetValue(value)!) throw new InvalidDataException("Owned POI requires explicit native seeds.");
+                var number = (double)_number.GetValue(value)!;
+                if (double.IsNaN(number) || number < 0 || number > uint.MaxValue || Math.Floor(number) != number)
+                    throw new InvalidDataException("Owned POI seed is outside the native uint range.");
+            }
             requireAdmission();
             var result = _constructor.Invoke(Array.Empty<object>());
             requireAdmission();
