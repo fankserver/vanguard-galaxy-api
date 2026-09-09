@@ -31,12 +31,14 @@ internal sealed class DungeonPanelView : IDisposable
         if (snapshot == null) { Clear(); return; }
         var rows = _service.Render(); if (rows.Count == 0) { Clear(); return; }
         var anchor = _source.PanelRect; var font = _source.PanelFont;
-        if (!anchor || !font) { Clear(); return; }
-        if (!_root || _view != snapshot.ViewId)
+        if (!anchor || !font || !anchor!.parent) { Clear(); return; }
+        // A sidecar must not inherit the native window's clipping rectangle.
+        var host = anchor.parent;
+        if (!_root || _view != snapshot.ViewId || _root!.transform.parent != host)
         {
             Clear(); _view = snapshot.ViewId;
             _root = new GameObject("Mod API dungeon contributions", typeof(RectTransform), typeof(Image), typeof(ScrollRect), typeof(RectMask2D));
-            var rect = (RectTransform)_root.transform; rect.SetParent(anchor, false); rect.anchorMin = rect.anchorMax = new Vector2(1, 1); rect.pivot = new Vector2(0, 1);
+            var rect = (RectTransform)_root.transform; rect.SetParent(host, false); rect.anchorMin = rect.anchorMax = new Vector2(1, 1); rect.pivot = new Vector2(0, 1);
             rect.anchoredPosition = new Vector2(8, 0); rect.sizeDelta = new Vector2(280, Mathf.Min(360, Mathf.Max(120, anchor!.rect.height)));
             _root.GetComponent<Image>().color = new Color(.025f, .035f, .05f, .97f);
             _content = new GameObject("Content", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter)).GetComponent<RectTransform>();
@@ -47,6 +49,7 @@ internal sealed class DungeonPanelView : IDisposable
         }
         var canvas = anchor!.GetComponentInParent<Canvas>()?.rootCanvas.transform as RectTransform;
         if (!canvas) { Clear(); return; }
+        _root!.transform.SetSiblingIndex(anchor.GetSiblingIndex() + 1);
         var corners = new Vector3[4]; anchor.GetWorldCorners(corners);
         var lower = canvas!.InverseTransformPoint(corners[0]); var upper = canvas.InverseTransformPoint(corners[2]);
         var bounds = canvas.rect;
@@ -58,7 +61,7 @@ internal sealed class DungeonPanelView : IDisposable
             if (!_compactToggle)
             {
                 _compactToggle = new GameObject("Dungeon mod actions toggle", typeof(RectTransform), typeof(Image), typeof(Button));
-                var toggleRect = (RectTransform)_compactToggle.transform; toggleRect.SetParent(anchor, false); toggleRect.pivot = new Vector2(0, 1);
+                var toggleRect = (RectTransform)_compactToggle.transform; toggleRect.SetParent(host, false); toggleRect.pivot = new Vector2(0, 1);
                 var image = _compactToggle.GetComponent<Image>(); image.color = new Color(.08f, .18f, .23f, 1);
                 var button = _compactToggle.GetComponent<Button>(); button.targetGraphic = image; button.onClick.AddListener(() => _drawerOpen = !_drawerOpen);
                 _compactLabel = new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI)).GetComponent<TextMeshProUGUI>();
@@ -66,8 +69,9 @@ internal sealed class DungeonPanelView : IDisposable
                 _compactLabel.rectTransform.anchorMin = Vector2.zero; _compactLabel.rectTransform.anchorMax = Vector2.one; _compactLabel.rectTransform.offsetMin = new Vector2(4, 0); _compactLabel.rectTransform.offsetMax = new Vector2(-4, 0);
             }
             var toggle = (RectTransform)_compactToggle!.transform;
+            toggle.SetSiblingIndex(_root!.transform.GetSiblingIndex() + 1);
             toggle.position = canvas.TransformPoint(new Vector3(bounds.xMax - 168, bounds.yMax - 8, 0));
-            var toggleSize = anchor.InverseTransformVector(canvas.TransformVector(new Vector3(160, 36, 0))); toggle.sizeDelta = new Vector2(Mathf.Abs(toggleSize.x), Mathf.Abs(toggleSize.y));
+            var toggleSize = host.InverseTransformVector(canvas.TransformVector(new Vector3(160, 36, 0))); toggle.sizeDelta = new Vector2(Mathf.Abs(toggleSize.x), Mathf.Abs(toggleSize.y));
             _compactLabel!.text = _drawerOpen ? "Close mod actions" : "Mod actions";
         }
         if (_compactToggle) _compactToggle!.SetActive(compact && placement.HasValue);
@@ -76,7 +80,7 @@ internal sealed class DungeonPanelView : IDisposable
         if (!placement.HasValue || (compact && !_drawerOpen)) return;
         var area = placement.Value; var placed = (RectTransform)_root.transform;
         placed.position = canvas.TransformPoint(new Vector3(area.X, area.Top, 0));
-        var size = anchor.InverseTransformVector(canvas.TransformVector(new Vector3(area.Width, area.Height, 0)));
+        var size = host.InverseTransformVector(canvas.TransformVector(new Vector3(area.Width, area.Height, 0)));
         placed.sizeDelta = new Vector2(Mathf.Abs(size.x), Mathf.Abs(size.y));
         var rebuild = _entries.Count != rows.Count;
         for (var i = 0; !rebuild && i < rows.Count; i++) rebuild = _entries[i].Row.Registration != rows[i].Registration || (_entries[i].Button != null) != (rows[i].Action != null);
