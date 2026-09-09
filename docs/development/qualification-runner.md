@@ -2,6 +2,12 @@
 
 This development tooling is not part of the API distribution. Explicit authorization is required before test deployment or native execution. Full in-game acceptance remains a separate gate. Commands and case definitions describe current tooling; exact candidate receipts and execution reports stay outside this repository.
 
+## Dungeon readiness probe (development)
+
+`-Scenario Full -DungeonReadinessProbe` enables experimental boarding and authored content on an isolated copied-save fixture, without other probes or consumers. It loads the fixture, requires published boarding/dungeon capabilities and services, and checks observed handles against the current lifecycle session. It deliberately does not open a panel, because native opening can resume operations or recover extraction. Zero observed targets is valid for this readiness-only phase, not evidence of encounter coverage.
+
+Selection, configuration, process exit and a bounded hash-bound receipt are mandatory. Run `tools/tests/dungeon-readiness.Tests.ps1` for synthetic rejection checks. A passing readiness receipt does not qualify eligibility, commands, tactics, capture, rewards, returning crew, UI input, combined consumers or save/load recovery; those require their own native scenarios. No native result is implied by compilation or synthetic receipt validation.
+
 ## Forge/refinery read probe (development)
 
 `-Scenario Full -ForgeReadProbe` selects a read-only phase using a copied station fixture as SaveA, without other probes or consumers. It enables recipe integration only. The native driver compares public station/session/credits and restored-job counts with native state, enumerates supported/refused quotes, and verifies that synchronous reads do not change recipe pricing caches, credits or native job lists. A selected marker, recipe configuration, successful process exit and bounded hash-bound receipt are required by the launcher. Run `tools/tests/forge-reads.Tests.ps1` for synthetic selection/evidence checks without Unity.

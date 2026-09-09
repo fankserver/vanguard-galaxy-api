@@ -408,6 +408,34 @@ function Assert-ForgeCommandReceipt([string]$Root, $Provenance) {
     $lines = @(Get-Content -LiteralPath $file)
     if ($lines.Count -ne 4 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'forge-commands-v3' -or $lines[2] -cne 'settings-replay-restored' -or $lines[3] -cne 'forge-queue-cancel-replay-refusal-direct-start-capacity') { throw 'Incomplete Forge command receipt.' }
 }
+function Assert-DungeonReadinessSelection([string]$Root, $Provenance) {
+    $flag = $Provenance.PSObject.Properties['dungeonReadinessProbe']
+    if ($flag -and $flag.Value -isnot [bool]) { throw 'Invalid dungeon readiness flag.' }
+    $selected = $flag -and $flag.Value
+    $marker = Join-Path $Root 'dungeon-readiness.enabled'
+    if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Dungeon readiness selection changed.' }
+    if (!$selected) { return }
+    if ($Provenance.scenario -ne 'Full' -or [IO.File]::ReadAllText($marker) -cne 'dungeon-readiness-v1') { throw 'Invalid dungeon readiness selection.' }
+    foreach ($entry in $Provenance.PSObject.Properties) {
+        if ($entry.Name -ne 'dungeonReadinessProbe' -and $entry.Value -is [bool] -and $entry.Value) { throw 'Dungeon readiness cannot combine other probes or consumers.' }
+    }
+    if ($null -ne $Provenance.assemblyOverlay) { throw 'Dungeon readiness cannot use an assembly overlay.' }
+    $config = [IO.File]::ReadAllText((Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg'))
+    foreach ($section in @('Boarding','Dungeons')) {
+        if ($config -cnotmatch ('(?ms)^\[' + $section + '\]\r?\n(?:(?!^\[).)*?^Enabled = true\r?$')) { throw 'Dungeon integration configuration changed.' }
+    }
+}
+function Assert-DungeonReadinessReceipt([string]$Root, $Provenance) {
+    Assert-DungeonReadinessSelection $Root $Provenance
+    if (!$Provenance.PSObject.Properties['dungeonReadinessProbe'] -or !$Provenance.dungeonReadinessProbe) { return }
+    Assert-QualificationExitOutcome (Get-Content -LiteralPath (Join-Path $Root 'run-outcome.json') -Raw | ConvertFrom-Json) 'Dungeon readiness'
+    $receipt = Join-Path $Root 'dungeon-readiness.receipt'; $snapshot = Join-Path $Root 'dungeon-readiness.txt'
+    if ((Get-Item -LiteralPath $receipt).Length -gt 256 -or (Get-Item -LiteralPath $snapshot).Length -gt 4096) { throw 'Dungeon evidence too large.' }
+    $lines = @(Get-Content -LiteralPath $receipt); $facts = @(Get-Content -LiteralPath $snapshot)
+    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'dungeon-readiness-v1' -or $lines[2] -cnotmatch '^sha256=[0-9a-f]{64}$') { throw 'Invalid dungeon readiness receipt.' }
+    if ((Get-FileHash -LiteralPath $snapshot -Algorithm SHA256).Hash.ToLowerInvariant() -cne $lines[2].Substring(7)) { throw 'Dungeon readiness evidence changed.' }
+    if ($facts.Count -ne 4 -or $facts[0] -cne 'PASS' -or $facts[1] -cne 'dungeon-readiness-v1' -or $facts[2] -cnotmatch '^targets=[0-9]+$' -or $facts[3] -cnotmatch '^operations=[0-9]+$') { throw 'Invalid dungeon readiness facts.' }
+}
 function Assert-ForgeReadSelection([string]$Root, $Provenance) {
     Assert-ForgeCommandSelection $Root $Provenance
     $property = $Provenance.PSObject.Properties['forgeReadProbe']
@@ -1059,6 +1087,7 @@ function Assert-QualificationInputs([string]$Root) {
     $provenance = Get-Content -LiteralPath (Join-Path $Root 'build-provenance.json') -Raw | ConvertFrom-Json
     if ($provenance.scenario -notin @('Full','MissingApi','UnavailableApi') -or
         (Get-Content -LiteralPath (Join-Path $Root 'scenario.txt') -Raw).Trim() -cne $provenance.scenario) { throw 'Prepared scenario changed.' }
+    Assert-DungeonReadinessSelection $Root $provenance
     Assert-ForgeReadSelection $Root $provenance
     Assert-ModMenuProbeSelection $Root $provenance
     if ($provenance.scenario -ne 'MissingApi') { Assert-ApiPersistenceRoot $Root }
