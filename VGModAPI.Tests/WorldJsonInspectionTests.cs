@@ -76,9 +76,15 @@ public sealed class WorldJsonInspectionTests
             ["angle"] = new(0), ["angularVelocity"] = new(0), ["initialBattleDamage"] = new(0), ["showOutline"] = new(true), ["hasHazard"] = new(false) };
         descriptor["initialBattleDamagePoints"] = new(new List<JsonValue> { new(new JsonObject { ["size"] = new(1), ["core"] = new(false),
             ["position"] = new(new JsonObject { ["x"] = new(0), ["y"] = new(0) }) }) });
+        descriptor["literalLootItems"] = new(new List<JsonValue> { new("NativeItem") });
         poi["salvageDescriptors"] = new(new List<JsonValue> { new(descriptor) });
         var reader = new WorldJsonInspection(typeof(JsonObject).Assembly);
         Assert.Single(reader.Read(Root(poi)));
+        descriptor["literalLootItems"] = new(new List<JsonValue> { new("UnknownItem") });
+        Assert.Throws<InvalidDataException>(() => reader.Read(Root(poi)));
+        descriptor["literalLootItems"] = new(new List<JsonValue> { new(new JsonObject { ["equipmentType"] = new("Native") }) });
+        Assert.Throws<InvalidDataException>(() => reader.Read(Root(poi)));
+        descriptor["literalLootItems"] = new(new List<JsonValue> { new("NativeItem") });
         descriptor["hasHazard"] = new(true); descriptor["hazardName"] = new("Uninspected");
         Assert.Throws<InvalidDataException>(() => reader.Read(Root(poi)));
         descriptor["hasHazard"] = new(false);

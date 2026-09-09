@@ -172,6 +172,20 @@ internal sealed partial class WorldJsonInspection
                 _nested.EnumName("Behaviour.Hazard.HazardName", Text(item, "hazardName"));
                 _nested.EnumName("Source.Combat.DamageType", Text(item, "hazardDamageType"));
             }
+            var literalLoot = Field(item, "literalLootItems");
+            if (!(bool)_isNull.GetValue(literalLoot)!)
+            {
+                int lootCount = 0;
+                foreach (var loot in Array(literalLoot))
+                {
+                    visit();
+                    if (++lootCount > 128 || !(bool)_isString.GetValue(loot)!)
+                        throw new InvalidDataException("Owned literal loot requires bounded native item identifiers; generated item objects are not inspected.");
+                    var id = (string)_string.GetValue(loot)!;
+                    if (string.IsNullOrEmpty(id) || Utf8.GetByteCount(id) > 128) throw new InvalidDataException("Invalid literal loot identity.");
+                    assets.Item(id);
+                }
+            }
             int breakPoints = 0, breakArea = 0;
             OptionalArray(item, "initialBattleDamagePoints", point =>
             {

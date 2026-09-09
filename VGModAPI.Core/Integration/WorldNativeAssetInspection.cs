@@ -31,6 +31,7 @@ internal sealed class WorldNativeAssetInspection
     }
     internal WorldNativeAssetInspection(Assembly assembly) => _assembly = assembly;
     internal void Ship(string id) => Require("Behaviour.Unit.SpaceShip", "allShips", id);
+    internal void Item(string id) => Require("Behaviour.Item.InventoryItemType", "allItems", id);
     internal void Equipment(string id) => Require("Behaviour.Equipment.Builder.EquipmentBuilder", "allBuilders", id);
     internal void Faction(string id) => Require("Source.Galaxy.Faction", "allFactions", id, false);
     private void Require(string typeName, string fieldName, string id, bool unity = true)

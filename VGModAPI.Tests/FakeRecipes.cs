@@ -17,8 +17,9 @@ namespace Source.Item
 }
 namespace Behaviour.Item
 {
-    public sealed partial class InventoryItemType
+    public sealed partial class InventoryItemType : UnityEngine.Object
     {
+        private static readonly Dictionary<string, InventoryItemType> allItems = new() { ["NativeItem"] = new InventoryItemType() };
         public static IEnumerable<InventoryItemType> all { get; set; } = Array.Empty<InventoryItemType>();
         public string identifier { get; set; } = "item";
         public string displayName { get; set; } = "@item";
