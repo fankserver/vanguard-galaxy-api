@@ -30,6 +30,8 @@ public sealed partial class Plugin
         Save("qa-pin-save-as", LifecycleEventKind.SaveSucceeded);
         Require(PinHudText("1 batches remaining"), "Save-as unexpectedly cleared the session pin.");
         foreach (var frame in LoadReady("fixture-b")) yield return frame;
+        foreach (var frame in Wait(NativeTravelReady, "Slot-switch native manager readiness")) yield return frame;
+        foreach (var frame in Settle()) yield return frame;
         foreach (var frame in Wait(() => GameObject.Find("Mod API shared HUD") == null, "Slot switch clears session pin")) yield return frame;
         foreach (var frame in LoadReady("qa-pin-save-as")) yield return frame;
         foreach (var frame in WaitForPinReload(recipe, secondStation)) yield return frame;
@@ -39,11 +41,12 @@ public sealed partial class Plugin
         var services = ModApi.Services;
         var loadingScreen = NativeType("Behaviour.UI.Main_Menu.LoadingScreen");
         foreach (var frame in Wait(() => UnityEngine.Object.FindObjectsByType(loadingScreen, FindObjectsInactive.Exclude).Length == 0
-            && services.RecipeQuotes.CurrentStation != null, "Reload station and loading overlay readiness")) yield return frame;
+            && NativeTravelReady() && services.RecipeQuotes.CurrentStation != null, "Reload station and loading overlay readiness")) yield return frame;
+        foreach (var frame in Settle()) yield return frame;
         Require(services.RecipeQuotes.CurrentStation!.SessionId != oldStation.SessionId, "Reload retained session identity.");
         Require(services.CraftingJobs.Read(oldStation).Status == CraftingJobQueryStatus.StaleHandle, "Old pin station remains usable after reload.");
         Require(GameObject.Find("Mod API shared HUD") == null, "Session pin was restored unexpectedly.");
-        Require(services.ForgeUi.Open(recipe) == ForgeNavigationStatus.Selected, "Exact recipe cannot reopen after reload.");
+        foreach (var frame in Wait(() => services.ForgeUi.Open(recipe) == ForgeNavigationStatus.Selected, "Exact recipe reopens after reload")) yield return frame;
         Require(TrySetPinFixtureBatchOne(), "Reopened recipe cannot select one future batch.");
         foreach (var frame in Wait(() => PinButton("Mod API Forge actions", "Pin") != null, "New view has unpinned action")) yield return frame;
         Require(services.ForgeUi.Current?.SelectedRecipe.Equals(recipe) == true, "Reload opened a different recipe.");
