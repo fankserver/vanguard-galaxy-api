@@ -15,6 +15,11 @@ link-libs:
 	@set -eu; for name in UnityEngine UnityEngine.CoreModule UnityEngine.UIModule UnityEngine.ScreenCaptureModule UnityEngine.UI Unity.TextMeshPro Unity.InputSystem; do test -f "$(MANAGED)/$$name.dll"; ln -sfn "$(MANAGED)/$$name.dll" "VGModAPI/lib/$$name.dll"; done
 build: link-libs
 	$(DOTNET) build VGModAPI.sln -c $(CONFIGURATION)
+.PHONY: build-dungeon-example build-dungeon-author
+build-dungeon-example:
+	$(DOTNET) build examples/AuthoredDungeon/AuthoredDungeon.csproj -c $(CONFIGURATION)
+build-dungeon-author: link-libs
+	$(DOTNET) build examples/DungeonAuthor/DungeonAuthor.csproj -c $(CONFIGURATION)
 .PHONY: build-forge-example
 build-forge-example:
 	$(DOTNET) build examples/ForgeInspector/ForgeInspector.csproj -c $(CONFIGURATION)
