@@ -2,6 +2,7 @@
 . (Join-Path $PSScriptRoot 'qualification-world-inputs.ps1')
 . (Join-Path $PSScriptRoot 'qualification-world-inventory.ps1')
 . (Join-Path $PSScriptRoot 'qualification-world-config.ps1')
+. (Join-Path $PSScriptRoot 'qualification-world-process.ps1')
 
 function Get-WorldDataInventory([string]$Directory) {
     $base = (Assert-WorldUnlinkedPath $Directory).TrimEnd('\')
@@ -44,5 +45,6 @@ function Assert-WorldRunPreflight([string]$Root, [Guid]$RunId, [ValidateSet('cre
             if (!$expected.ContainsKey($entry.Key) -or $expected[$entry.Key] -cne $entry.Value) { throw 'World data differs from approved input.' }
         }
     }
+    Assert-WorldProcessDescription (New-WorldProcessStartInfo $Root $RunId $Phase) $record.process
     return $record
 }

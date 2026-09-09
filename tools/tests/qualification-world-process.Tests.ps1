@@ -2,6 +2,7 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '..\qualification-world-process.ps1')
 $root = Join-Path ([IO.Path]::Combine([Environment]::GetFolderPath('LocalApplicationData'), 'Temp')) ('VGModAPI-qa-' + (Get-Random -Minimum 1000000000 -Maximum 2000000000))
 $created = $false; $old = @{}
+function Reject([scriptblock]$Action) { $failed = $false; try { & $Action } catch { $failed = $true }; if (!$failed) { throw 'Invalid process description accepted.' } }
 try {
     if (Test-Path $root) { throw 'Test root exists.' }
     $null = New-Item -ItemType Directory $root; $created = $true
@@ -23,7 +24,20 @@ try {
         if ($info.EnvironmentVariables['TEMP'] -cne (Join-Path $root 'temp') -or $info.EnvironmentVariables['TMP'] -cne (Join-Path $root 'temp')) { throw 'Temporary output escaped sandbox.' }
         $expected = if ($phase -eq 'create') { '--vgmodapi-world-only' } else { '--vgmodapi-world-cold' }
         if (!$info.Arguments.EndsWith(' --vgmodapi-world-run ' + $run.ToString('D') + ' ' + $expected)) { throw 'Wrong world process phase/run.' }
+        $approved = Get-WorldProcessDescription $info | ConvertTo-Json -Depth 4 | ConvertFrom-Json
+        Assert-WorldProcessDescription $info $approved
+        $approved.arguments += ' --unexpected'
+        Reject { Assert-WorldProcessDescription $info $approved }
+        $approved.arguments = $info.Arguments
+        $approved.environment.path = 'unexpected'
+        Reject { Assert-WorldProcessDescription $info $approved }
     }
+    $log = Join-Path $root 'Player.log'; [IO.File]::WriteAllText($log, 'prior evidence')
+    Reject { New-WorldProcessStartInfo $root $run 'create' }
+    Remove-Item -LiteralPath $log
+    $null = New-Item -ItemType Junction -Path $log -Target (Join-Path $root 'temp')
+    try { Reject { New-WorldProcessStartInfo $root $run 'create' } }
+    finally { [IO.Directory]::Delete($log, $false) }
     Write-Output 'World launch-description tests passed; no process started.'
 } finally {
     foreach ($key in $old.Keys) { [Environment]::SetEnvironmentVariable($key, $old[$key], 'Process') }

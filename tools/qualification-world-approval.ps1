@@ -25,7 +25,7 @@ function Read-WorldApprovedRun([string]$Path, [string]$ExpectedDigest, [string]$
     # Check the JSON root token before conversion can erase the distinction.
     if (!$json.TrimStart([char[]]@(' ', "`t", "`r", "`n")).StartsWith('{', [StringComparison]::Ordinal)) { throw 'Approved world record must be a JSON object.' }
     $record = $json | ConvertFrom-Json
-    $names = @('schema','root','gameDirectory','runId','phase','reviewedHead','authorizationSha256','gameInventory','saveInventory','stateInventory')
+    $names = @('schema','root','gameDirectory','runId','phase','reviewedHead','authorizationSha256','gameInventory','saveInventory','stateInventory','process')
     if ($null -eq $record -or @($record.PSObject.Properties).Count -ne $names.Count -or
         @($record.PSObject.Properties | Where-Object { $_.Name -cnotin $names }).Count) { throw 'Unexpected world approval schema.' }
     foreach ($name in @('schema','root','gameDirectory','runId','phase','reviewedHead','authorizationSha256')) {
@@ -43,5 +43,13 @@ function Read-WorldApprovedRun([string]$Path, [string]$ExpectedDigest, [string]$
         }
     }
     if (@($record.gameInventory.PSObject.Properties).Count -eq 0 -or @($record.saveInventory.PSObject.Properties).Count -eq 0) { throw 'Empty required approved inventory.' }
+    if ($record.process -isnot [System.Management.Automation.PSCustomObject] -or
+        @($record.process.PSObject.Properties).Count -ne 4 -or
+        @($record.process.PSObject.Properties | Where-Object { $_.Name -cnotin @('fileName','workingDirectory','arguments','environment') }).Count) { throw 'Invalid approved process shape.' }
+    foreach ($name in @('fileName','workingDirectory','arguments')) {
+        if ($record.process.$name -isnot [string]) { throw 'Invalid approved process field.' }
+    }
+    if ($record.process.environment -isnot [System.Management.Automation.PSCustomObject] -or @($record.process.environment.PSObject.Properties).Count -ne 10) { throw 'Invalid approved process environment.' }
+    foreach ($entry in $record.process.environment.PSObject.Properties) { if ($entry.Value -isnot [string]) { throw 'Invalid approved environment value.' } }
     return $record
 }
