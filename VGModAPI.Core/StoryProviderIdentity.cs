@@ -110,6 +110,7 @@ internal sealed class StoryProviderBindings
     private readonly Dictionary<string, string> _pluginBySegment = new(StringComparer.Ordinal);
 
     internal int Count => _pluginBySegment.Count;
+    internal string? HostOwner(string segment) => _pluginBySegment.TryGetValue(segment, out var owner) ? owner : null;
 
     internal StoryBindingStatus Bind(string segment, string pluginId)
     {

@@ -171,6 +171,24 @@ internal sealed class GameAdapter
             Invalidate("Player identity changed outside the tracked initialization boundary.");
     }
 
+    // Identity fence for scoped mutators, not a claim that every world/scene object is ready.
+    internal bool TryGetCurrentReadyPlayer(Guid sessionId, out object? player)
+    {
+        Hub.CheckThread();
+        player = null;
+        if (Hub.IsDispatchingCallbacks || Hub.CurrentSession?.Phase != SessionPhase.GameplayInitialized) return false;
+        return TryGetObservedPlayer(sessionId, out player);
+    }
+
+    // Read-only reconstruction can inspect the bound player during PlayerReady dispatch.
+    internal bool TryGetObservedPlayer(Guid sessionId, out object? player)
+    {
+        Hub.CheckThread(); player = null;
+        if (_faulted || SaveSession()?.Id != sessionId) return false;
+        player = _boundPlayer;
+        return player != null;
+    }
+
     internal SessionSnapshot? SaveSession()
     {
         var session = Hub.CurrentSession;

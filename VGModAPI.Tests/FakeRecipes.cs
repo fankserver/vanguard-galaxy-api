@@ -17,8 +17,9 @@ namespace Source.Item
 }
 namespace Behaviour.Item
 {
-    public sealed partial class InventoryItemType
+    public sealed partial class InventoryItemType : UnityEngine.Object
     {
+        private static readonly Dictionary<string, InventoryItemType> allItems = new() { ["NativeItem"] = new InventoryItemType() };
         public static IEnumerable<InventoryItemType> all { get; set; } = Array.Empty<InventoryItemType>();
         public string identifier { get; set; } = "item";
         public string displayName { get; set; } = "@item";
@@ -31,7 +32,7 @@ namespace Behaviour.Item.Builder
 }
 namespace Behaviour.Equipment.Builder
 {
-    public sealed class EquipmentBuilder { public string identifier { get; set; } = "equipment"; public Behaviour.Item.InventoryItemType prefab { get; set; } = new(); }
+    public sealed partial class EquipmentBuilder { public string identifier { get; set; } = "equipment"; public Behaviour.Item.InventoryItemType prefab { get; set; } = new(); }
 }
 namespace Behaviour.Mining
 {

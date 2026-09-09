@@ -32,15 +32,16 @@ try {
     $refused = $false
     try { Restore-QualificationPrefs $key ($snapshot + '.missing') $true } catch { $refused = $true }
     if (!$refused -or !(Test-Path -LiteralPath $path)) { throw 'Missing snapshot did not preserve the current key.' }
-    # Shadow only the native registry command to simulate a successful but mismatched export.
-    function reg.exe {
-        $global:LASTEXITCODE = 0
-        if ($args[0] -eq 'export') { [IO.File]::WriteAllText([string]$args[2], 'mismatched export') }
+    # Replace the registry adapter; production resolves reg.exe by its fixed OS path.
+    $registryAdapter = (Get-Command Invoke-QualificationRegistry).ScriptBlock
+    function Invoke-QualificationRegistry([string[]]$Arguments) {
+        if ($Arguments[0] -eq 'export') { [IO.File]::WriteAllText($Arguments[2], 'mismatched export') }
+        return 0
     }
     $mismatch = $false
     try { Restore-QualificationPrefs $key $snapshot $true }
     catch { $mismatch = $_.Exception.Message.Contains('differ from the snapshot') }
-    finally { Remove-Item Function:\reg.exe }
+    finally { Set-Item Function:Invoke-QualificationRegistry $registryAdapter }
     if (!$mismatch) { throw 'Verification accepted a mismatched export.' }
     Restore-QualificationPrefs $key $snapshot $true
     Restore-QualificationPrefs $key $snapshot $false

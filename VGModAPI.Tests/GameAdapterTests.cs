@@ -30,6 +30,30 @@ public sealed class GameAdapterTests
     }
 
     [Fact]
+    public void ScopedPlayerAccessRequiresBoundIdentityOutsideDispatchAndBeforeObserverFault()
+    {
+        var request = _adapter.BeginLoad(File());
+        Assert.False(_adapter.TryGetCurrentReadyPlayer(request.Id, out _));
+        IEnumerator Root() { GamePlayer.current = new GamePlayer(); _adapter.PlayerReconstructed(); yield break; }
+        var routine = _adapter.ObserveLoad(Root()); _adapter.EndLoadRequest(request, null); Drain(routine);
+        Assert.False(_adapter.TryGetCurrentReadyPlayer(request.Id, out _));
+        using var subscription = _hub.Subscribe("mutation-fence", e =>
+        {
+            if (e.Kind == LifecycleEventKind.GameplayInitialized)
+                Assert.False(_adapter.TryGetCurrentReadyPlayer(request.Id, out _));
+        });
+        _adapter.GameplayCompleted(request.Id, new GameplayManager(true), null);
+        Assert.True(_adapter.TryGetCurrentReadyPlayer(request.Id, out var player));
+        Assert.Same(GamePlayer.current, player);
+        Assert.False(_adapter.TryGetCurrentReadyPlayer(Guid.NewGuid(), out _));
+        GamePlayer.current = new GamePlayer();
+        Assert.False(_adapter.TryGetCurrentReadyPlayer(request.Id, out _));
+        GamePlayer.current = (GamePlayer)player!;
+        _adapter.Guard(() => throw new InvalidOperationException("Observer fault before Poll"));
+        Assert.False(_adapter.TryGetCurrentReadyPlayer(request.Id, out _));
+    }
+
+    [Fact]
     public void LoadMethodReturnDoesNotImplyReadiness()
     {
         var request = _adapter.BeginLoad(File());

@@ -17,6 +17,16 @@ internal sealed class PersistenceService : ISaveDataService, IDisposable
     internal PersistenceService(LifecycleHub hub, GenerationStore store, Func<string, string> canonical, Func<string, string> hashFile)
         : this(hub, new PersistenceCoordinator(hub, store, canonical, hashFile)) { }
 
+    internal string CanonicalLoadPath(string path) => (_coordinator ?? throw new InvalidOperationException("Save storage unavailable.")).CanonicalLoadPath(path);
+
+    internal WorldGenerationReader CreateWorldReader() => (_coordinator ?? throw new InvalidOperationException("Save storage unavailable.")).CreateWorldReader();
+
+    internal bool TryGetStartingLoad(Guid session, out string? path, out string? hash)
+    {
+        path = null; hash = null;
+        return _coordinator != null && _coordinator.TryGetStartingLoad(session, out path, out hash);
+    }
+
     private PersistenceService(LifecycleHub hub, PersistenceCoordinator? coordinator)
     {
         _hub = hub;

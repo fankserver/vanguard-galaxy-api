@@ -15,7 +15,9 @@ namespace VGModAPI;
 
 [BepInPlugin(ModApi.PluginId, "Mod API", PluginBuildVersion.Value)]
 [BepInProcess("VanguardGalaxy.exe")]
+#if !VG_WORLD_QUALIFICATION
 [BepInDependency("vgmodapi.qualification.guard", BepInDependency.DependencyFlags.SoftDependency)]
+#endif
 public sealed partial class Plugin : BaseUnityPlugin
 {
     private LifecycleHub? _hub;
@@ -161,6 +163,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         }
         // Subscription order is contractual: coordinated owners restore before mission PlayerReady identity seeding.
         InitializePersistence();
+        InitializeWorldProtection();
         InitializeDungeons();
         InitializeDungeonPanel();
         InitializeMissions();
@@ -397,7 +400,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             _story = new StoryContentService(_hub.Services, _persistence, _hub, StoryHostAuthentication.Resolve, null, _hub.CheckThread,
                 _storyWorld, _missions?.Events,
                 (detail, available) => Logger.LogInfo(detail), _protection,
-                () => _quarantine?.Healthy ?? false);
+                () => _quarantine?.Healthy ?? false, (owner, target) => _worldReferences?.Knows(owner, target));
             // Only a module that exists can say what a UI abandon or retry of owned content means.
             if (_quarantine != null) _quarantine.Transactions = _story;
             _hub.SetCapability("owned-story", true, "Experimental owned story content enabled; native qualification pending.");
@@ -920,6 +923,8 @@ public sealed partial class Plugin : BaseUnityPlugin
         Logger.LogError(ex == null ? reason : reason + " " + ex);
     }
 
+    private void FixedUpdate() => _worldLifetimeHost?.MaintainActors();
+
     private void Update()
     {
         try { _dungeonPanelChoices?.Refresh(); _dungeonPanelView?.Tick(); }
@@ -973,6 +978,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         TeardownForgeUi();
         TeardownCraftingCommands();
         StopBars();
+        StopWorldProtection();
         DungeonRewardPatches.Crew = null; _dungeonSettlement?.Dispose(); _dungeonSettlement = null;
         DungeonRewardPatches.Adapter = null; _dungeonRewards?.Dispose(); _dungeonRewards = null;
         StopDungeons();

@@ -3,13 +3,16 @@ namespace Source.Galaxy
     public abstract class MapElement
     {
         public SystemMapData? system;
+        public UnityEngine.Vector2 position;
+        public int level;
+        public virtual Faction? faction { get; set; }
         private string? _name;
         public string guid { get; set; } = "native-id";
         public int NameReads { get; private set; }
         public string name { get { NameReads++; return _name ?? "generated"; } set { _name = value; } }
     }
-    public sealed class SystemMapData : MapElement { }
-    public partial class MapPointOfInterest : MapElement { }
+    public sealed class SystemMapData : MapElement { public System.Collections.Generic.List<MapPointOfInterest> pointsOfInterest = new(); }
+    public partial class MapPointOfInterest : MapElement { public ulong backgroundSeed, contentSeed; }
 }
 namespace Source.Player
 {
@@ -20,7 +23,7 @@ namespace Source.Player
         public double elapsedTime { get; set; }
         public Source.SpaceShip.SpaceShipData? currentSpaceShip { get; set; }
         public System.Collections.Generic.List<Source.Galaxy.MapPointOfInterest> waypoints = new();
-        public Source.Galaxy.GalaxyMapData? map;
+        public Source.Galaxy.GalaxyMapData? map { get; set; }
     }
 }
 namespace Source.SpaceShip.Auto
@@ -67,6 +70,7 @@ namespace Behaviour.Managers
     public sealed class TestPoiManager : BasePoiManager { }
     public sealed class TravelManager
     {
+        public bool loadingNextScene;
         public BasePoiManager? localPoiManager { get; set; }
         public Source.Galaxy.MapPointOfInterest? targetPoi { get; set; }
         public Source.Galaxy.MapPointOfInterest? localTarget { get; set; }
@@ -102,7 +106,7 @@ public sealed class SpacestationExteriorManager
 
 namespace Source.Galaxy
 {
-    public sealed class GalaxyMapData
+    public sealed partial class GalaxyMapData
     {
         public static GalaxyMapData? current { get; set; }
         private readonly System.Collections.Generic.Dictionary<string, SystemMapData> _systems = new();
@@ -126,7 +130,7 @@ namespace Source.Galaxy.POI
 }
 namespace Behaviour.Unit
 {
-    public sealed class SpaceShip
+    public sealed partial class SpaceShip
     {
         public Source.SpaceShip.SpaceShipData? spaceShipData { get; set; }
     }
