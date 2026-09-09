@@ -437,7 +437,7 @@ if ($Action -eq 'Prepare') {
         [IO.File]::WriteAllText((Join-Path $root 'forge-reads.enabled'), 'forge-reads-v1')
         if ($BlueprintPinProbe) {
             [IO.File]::AppendAllText((Join-Path $bep 'config\vgmodapi.cfg'), "CommandsEnabled = true`r`n[Hud]`r`nEnabled = true`r`n")
-            [IO.File]::WriteAllText((Join-Path $root 'blueprint-pin.enabled'), 'blueprint-pin-v8')
+            [IO.File]::WriteAllText((Join-Path $root 'blueprint-pin.enabled'), 'blueprint-pin-v9')
         }
         if ($ForgeUiProbe) { [IO.File]::WriteAllText((Join-Path $root 'forge-ui.enabled'), 'forge-ui-v3') }
         if ($ForgeCommandProbe) {
