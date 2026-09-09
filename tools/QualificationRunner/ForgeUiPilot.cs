@@ -43,6 +43,8 @@ public sealed partial class Plugin
             var button = ForgeProbeButton("Forge probe first");
             Require(ForgeProbeButton("Forge probe second") != button, "Contributors did not render distinct buttons.");
             foreach (var frame in ForgeClick(mouse, button.transform)) yield return frame;
+            WriteAtomic("forge-ui-callback-diagnostic.txt", new[] { "calls=" + calls.Count, "expected=" + firstRecipe.LocalId,
+                "observed=" + string.Join("|", calls.Select(call => call.SelectedRecipe.LocalId)), "current=" + ui.Current?.SelectedRecipe.LocalId });
             Require(calls.Count == 1 && calls[0].SelectedRecipe.Equals(firstRecipe), "Pointer action did not carry the exact selected recipe.");
             first.Update(new ForgeActionPresentation("Forge probe first", enabled: false));
             foreach (var frame in Wait(() => !button.interactable, "Disabled Forge action")) yield return frame;
@@ -139,16 +141,26 @@ public sealed partial class Plugin
             + " hits=" + string.Join("|", hits.Take(8).Select(hit => hit.gameObject.name + "@" + hit.gameObject.transform.parent?.name)));
         return point;
     }
-    private static IEnumerable<object?> ForgeClick(Mouse mouse, Transform target)
+    private IEnumerable<object?> ForgeClick(Mouse mouse, Transform target)
     {
+        var button = target.GetComponent<Button>();
+        var records = new List<string>();
+        string State(string phase) => phase + " selected=" + EventSystem.current.currentSelectedGameObject?.name
+            + " selectedTarget=" + (EventSystem.current.currentSelectedGameObject == target.gameObject)
+            + " liveRevision=" + (SpGet(ModApi.ForgeUi!, "_current") as ForgeSelectionSnapshot)?.Revision + " rowRevision=" + ((Func<long>)SpGet(button, "ReadRevision")!)()
+            + " pressed=" + SpGet(SpGet(button, "_press")!, "_pressed") + " invocation=" + SpGet(button, "InvocationRevision");
+        records.Add(State("before"));
         var point = ForgePointerPoint(target);
         InputSystem.QueueStateEvent(mouse, new MouseState { position = point });
         yield return null; yield return null;
         ForgePointerPoint(target, point);
         InputSystem.QueueStateEvent(mouse, new MouseState { position = point }.WithButton(MouseButton.Left));
         yield return null; yield return null;
+        records.Add(State("down"));
         InputSystem.QueueStateEvent(mouse, new MouseState { position = point });
         yield return null; yield return null;
+        records.Add(State("up"));
+        WriteAtomic("forge-ui-pointer-diagnostic.txt", records.ToArray());
     }
     private static Button ForgeProbeButton(string label)
     {
