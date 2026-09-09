@@ -31,7 +31,7 @@ public sealed class CargoRecoveryPanelTests
         var view = new DungeonPanelSnapshot(Guid.NewGuid(), 1, new(target, 1, BoardingEncounterKind.Ship, "Target", null, null, BoardingAvailability.OperationActive, operation), state);
         Func<DungeonPanelSnapshot, DungeonPanelAction?>? present = null; Action<DungeonPanelSnapshot>? activate = null;
         var panel = Fake<IDungeonPanelApi>((_, args) => { present = (Func<DungeonPanelSnapshot, DungeonPanelAction?>)args[2]!; activate = (Action<DungeonPanelSnapshot>)args[3]!; return new Lease(); });
-        var boarding = Fake<IBoardingEvents>((name, _) => name == "Subscribe" ? new Lease() : Array.Empty<BoardingOperationSnapshot>());
+        var boarding = Fake<IBoardingEvents>((name, _) => name switch { "Subscribe" => new Lease(), "GetOperations" => Array.Empty<BoardingOperationSnapshot>(), "GetOperation" => null, _ => throw new InvalidOperationException(name) });
         var settlement = Fake<IDungeonSettlement>((_, _) => new Lease());
         var disposed = false; var executed = false; var eligible = false;
         var controller = Fake<IBoardingController>((name, _) => { Assert.Equal("Dispose", name); disposed = true; return null; });
