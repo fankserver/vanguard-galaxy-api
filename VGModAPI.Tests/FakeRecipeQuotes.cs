@@ -11,9 +11,20 @@ namespace Source.Item
             public Behaviour.Item.InventoryItemType item = new();
             public Inventory? inventory;
             public int count { get; set; }
-            public bool favourite;
+            public bool favourite, canBuyback, isSoldByPlayer;
+            public Behaviour.Item.InventoryItemType? costItem;
+            public int costCount;
+            public int slot { get; set; }
+            public InventoryItem() { }
+            public InventoryItem(Behaviour.Item.InventoryItemType type, Inventory parent, int position, int amount, bool buyback)
+            { item = type; inventory = parent; slot = position; count = amount; canBuyback = buyback; }
         }
-        public IEnumerable<InventoryItem> items { get; set; } = Array.Empty<InventoryItem>();
+        private InventoryItem[] allItems = Array.Empty<InventoryItem>();
+        public IEnumerable<InventoryItem> items { get => allItems.Where(x => x != null); set => allItems = value.ToArray(); }
+        public float capacity => Capacity;
+        public float spaceUsed => items.Sum(x => x.count * x.item.m3);
+        public int Refreshes;
+        public void UpdateVisibleItems() => Refreshes++;
         public float Capacity = 1000;
         public Func<Behaviour.Item.InventoryItemType, int, InventoryItem>? AddHandler;
         public InventoryItem Add(Behaviour.Item.InventoryItemType item, int count, bool buyback = false, bool stack = false) => AddHandler!(item, count);
@@ -31,13 +42,19 @@ namespace Source.Player
         public int Reserved;
         public float Materials = 100;
         public bool CanAfford(float amount) => credits >= (long)amount;
-        public int RequiredItemCountForMissions(Behaviour.Item.InventoryItemType item) => Reserved;
+        public Action? RequirementCallback;
+        public int RequiredItemCountForMissions(Behaviour.Item.InventoryItemType item) { RequirementCallback?.Invoke(); return Reserved; }
         public float CountRefinedMaterial(Source.Item.RefinedMaterial material) => Materials;
     }
 }
 namespace Source.SpaceShip
 {
-    public sealed partial class SpaceShipData { public Source.Item.Inventory cargo = new(); }
+    public sealed partial class SpaceShipData
+    {
+        public Source.Item.Inventory cargo = new();
+        public string guid { get; set; } = "ship";
+        public float cargoCapacity => cargo.capacity;
+    }
 }
 namespace Source.Galaxy
 {
