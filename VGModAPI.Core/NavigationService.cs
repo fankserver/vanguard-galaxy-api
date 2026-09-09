@@ -12,7 +12,7 @@ internal sealed class NavigationMap
     internal NavigationMap(IReadOnlyDictionary<string, string[]> edges, NavigationStation[] stations, Func<bool> isCurrent)
     { Edges = edges; Stations = stations; IsCurrent = isCurrent; }
 }
-internal sealed class NavigationService : INavigationService
+internal sealed class NavigationService
 {
     private readonly LifecycleHub _hub;
     private readonly IServiceStatus _status;
@@ -24,6 +24,18 @@ internal sealed class NavigationService : INavigationService
     public Guid? SessionId { get { _hub.CheckThread(); return _hub.CurrentSession?.Id; } }
     internal NavigationService(LifecycleHub hub, Func<Guid, NavigationMap?> read, Func<Guid, string, Func<bool>, NavigationStatus> focus, Func<string, string, bool?> world)
     { _hub = hub; _status = hub.Services.Get("navigation"); _read = read; _focus = focus; _world = world; }
+    internal INavigation ForGame(Guid session) => new Navigation(this, session);
+    private sealed class Navigation : INavigation
+    {
+        private readonly NavigationService _owner;
+        private readonly Guid _session;
+        internal Navigation(NavigationService owner, Guid session) { _owner = owner; _session = session; }
+        public NavigationStationsResult GetStations(bool visitedOnly = true) => _owner.GetStations(_session, visitedOnly);
+        public JumpCountsResult GetJumpCounts(string fromSystemId) => _owner.GetJumpCounts(_session, fromSystemId);
+        public JumpCountResult GetJumpCount(string fromSystemId, string toSystemId) => _owner.GetJumpCount(_session, fromSystemId, toSystemId);
+        public NavigationStatus FocusPoi(string poiId) => _owner.FocusPoi(_session, poiId);
+        public NavigationStatus FocusWorldSite(WorldSiteReference reference) => _owner.FocusWorldSite(_session, reference);
+    }
     private bool Ready(Guid session) => session != Guid.Empty && SessionId == session &&
         (_hub.CurrentSession!.Phase == SessionPhase.PlayerReady || _hub.CurrentSession.Phase == SessionPhase.GameplayInitialized);
     public NavigationStationsResult GetStations(Guid expectedSessionId, bool visitedOnly = true)

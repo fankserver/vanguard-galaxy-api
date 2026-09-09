@@ -41,8 +41,8 @@ public sealed class ModServices
     public IOwnedRecipeService RecipeRegistration { get { CheckThread(); return _recipeRegistration; } }
     private readonly IOwnedItemService _items;
     public IOwnedItemService Items { get { CheckThread(); return _items; } }
-    private readonly INavigationService _navigation;
-    public INavigationService Navigation { get { CheckThread(); return _navigation; } }
+    private readonly IGameService _game;
+    public IGameService Game { get { CheckThread(); return _game; } }
     private readonly IDialogueService _dialogue;
     public IDialogueService Dialogue { get { CheckThread(); return _dialogue; } }
     public IWorldService World { get { CheckThread(); return _world; } }
@@ -85,7 +85,7 @@ public sealed class ModServices
 
     internal ModServices(ILifecycleService lifecycle, IModInformationService mods, ISaveDataService saveData,
         IMissionService missions, ITravelService travel, IStationService station, IRecipeService recipes, IRecipeQuoteService recipeQuotes,
-        ICraftingJobService craftingJobs, ICraftingCommandService craftingCommands, IHudService hud, IForgeUiService forgeUi, IBoardingRuleService boardingRules, IDungeonCombatService dungeonCombat, IDungeonRewardService dungeonRewards, IDungeonCommandService dungeonCommands, IDungeonTacticalService dungeonTactics, IDungeonOperationService dungeonOperations, IDungeonSettlementService dungeonSettlement, IDungeonPanelService dungeonPanel, IDungeonContentService dungeons, IStoryService story, IBarService bars, IWorldService world, IDialogueService dialogue, INavigationService navigation, IOwnedItemService items, IOwnedRecipeService recipeRegistration, IInventoryService inventories, IGameplayUiService gameplayUi)
+        ICraftingJobService craftingJobs, ICraftingCommandService craftingCommands, IHudService hud, IForgeUiService forgeUi, IBoardingRuleService boardingRules, IDungeonCombatService dungeonCombat, IDungeonRewardService dungeonRewards, IDungeonCommandService dungeonCommands, IDungeonTacticalService dungeonTactics, IDungeonOperationService dungeonOperations, IDungeonSettlementService dungeonSettlement, IDungeonPanelService dungeonPanel, IDungeonContentService dungeons, IStoryService story, IBarService bars, IWorldService world, IDialogueService dialogue, IGameService game, IOwnedItemService items, IOwnedRecipeService recipeRegistration, IInventoryService inventories, IGameplayUiService gameplayUi)
     {
         _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
         _mods = mods ?? throw new ArgumentNullException(nameof(mods));
@@ -113,7 +113,7 @@ public sealed class ModServices
         _bars = bars ?? throw new ArgumentNullException(nameof(bars));
         _world = world ?? throw new ArgumentNullException(nameof(world));
         _dialogue = dialogue ?? throw new ArgumentNullException(nameof(dialogue));
-        _navigation = navigation ?? throw new ArgumentNullException(nameof(navigation));
+        _game = game ?? throw new ArgumentNullException(nameof(game));
         _items = items ?? throw new ArgumentNullException(nameof(items));
         _recipeRegistration = recipeRegistration ?? throw new ArgumentNullException(nameof(recipeRegistration));
         _inventories = inventories ?? throw new ArgumentNullException(nameof(inventories));
