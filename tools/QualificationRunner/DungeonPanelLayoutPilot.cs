@@ -53,14 +53,18 @@ public sealed partial class Plugin
             foreach (var frame in DungeonCapture("dungeon-panel-scrolled")) yield return frame;
             anchor.localScale = scale * 1.25f;
             foreach (var frame in Wait(() => DungeonLayoutReady("compact closed", GameObject.Find("Dungeon mod actions toggle") != null && GameObject.Find("Mod API dungeon contributions") == null, anchor, records), "Scaled compact drawer closed")) yield return frame;
-            foreach (var frame in DungeonClick(mouse, GameObject.Find("Dungeon mod actions toggle").transform)) yield return frame;
+            var openToggle = GameObject.Find("Dungeon mod actions toggle");
+            Require(openToggle, "Compact drawer opening toggle unavailable.");
+            foreach (var frame in DungeonClick(mouse, openToggle!.transform)) yield return frame;
             foreach (var frame in Wait(() => DungeonLayoutReady("compact open", DungeonProbeButton("Dungeon scroll tail") != null, anchor, records), "Scaled compact drawer opened")) yield return frame;
             EventSystem.current.SetSelectedGameObject(null);
             EventSystem.current.SetSelectedGameObject(DungeonProbeButton("Dungeon scroll tail")!.gameObject);
             foreach (var frame in DungeonClick(mouse, DungeonProbeButton("Dungeon scroll tail")!.transform)) yield return frame;
             Require(calls == 2, "Scaled drawer tail click did not dispatch exactly once.");
             foreach (var frame in DungeonCapture("dungeon-panel-scaled")) yield return frame;
-            foreach (var frame in DungeonClick(mouse, GameObject.Find("Dungeon mod actions toggle").transform)) yield return frame;
+            var closeToggle = GameObject.Find("Dungeon mod actions toggle");
+            Require(closeToggle, "Compact drawer closing toggle unavailable.");
+            foreach (var frame in DungeonClick(mouse, closeToggle!.transform)) yield return frame;
             foreach (var frame in Wait(() => DungeonLayoutReady("drawer closed", GameObject.Find("Mod API dungeon contributions") == null, anchor, records), "Compact drawer closes")) yield return frame;
             anchor.localScale = scale;
             foreach (var frame in Wait(() => DungeonLayoutReady("scale restored", GameObject.Find("Dungeon mod actions toggle") == null && DungeonProbeButton("Dungeon scroll tail") != null, anchor, records), "Normal layout restored")) yield return frame;
@@ -68,6 +72,7 @@ public sealed partial class Plugin
             EventSystem.current.SetSelectedGameObject(DungeonProbeButton("Dungeon scroll tail")!.gameObject);
             foreach (var frame in DungeonClick(mouse, DungeonProbeButton("Dungeon scroll tail")!.transform)) yield return frame;
             Require(calls == 3, "Restored layout click did not dispatch exactly once.");
+            Require(anchor.localScale == scale, "Native dungeon panel scale was not restored.");
         }
         finally
         {
