@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.IO;
 using System.Reflection;
 using UnityEngine;
 using VGModAPI;
@@ -63,6 +64,9 @@ public sealed partial class Plugin
             Require(!persistables.Contains(data), "Save fixture already present."); persistables.Add(data);
             Record("active-before-save occurrence-count=" + provider.GetOccurrences().Count + " crew=" + CurrentCrew().Values.Sum());
             Save("qa-dungeon-active", LifecycleEventKind.SaveSucceeded);
+            var activeFile = Path.Combine(_saveRoot!, "qa-dungeon-active.save");
+            var activeMeta = Path.Combine(_saveRoot!, "qa-dungeon-active.meta");
+            var savedBody = File.ReadAllBytes(activeFile); var savedMeta = File.ReadAllBytes(activeMeta);
             var occurrence = provider.GetOccurrences().Single();
             bool SameOccurrence() => provider.GetOccurrences() is var occurrences && occurrences.Count == 1 && occurrences[0].Id == occurrence.Id && occurrences[0].DefinitionId.Equals(occurrence.DefinitionId) && occurrences[0].DefinitionVersion == occurrence.DefinitionVersion;
             bool Returned() => CurrentCrew().Count == before.Count && before.All(pair => CurrentCrew().TryGetValue(pair.Key, out var count) && count == pair.Value);
@@ -97,6 +101,8 @@ public sealed partial class Plugin
                 Record(slot + " returned crew=" + CurrentCrew().Values.Sum() + " outcome=" + settled.NativeOutcome);
                 target = restored.Handle;
             }
+            foreach (var frame in CheckDungeonSaveFailures(() => controller?.IsActive == true && Debited() && SameOccurrence() && boarding.GetOperation(operation!)?.Phase == BoardingPhase.Active)) yield return frame;
+            Require(File.ReadAllBytes(activeFile).SequenceEqual(savedBody) && File.ReadAllBytes(activeMeta).SequenceEqual(savedMeta), "Faulted writes altered the successful checkpoint.");
             Save("qa-dungeon-copy", LifecycleEventKind.SaveSucceeded);
             Require(Debited() && SameOccurrence(), "Save-as changed live occurrence or crew.");
             var activeHandle = operation;
@@ -108,9 +114,9 @@ public sealed partial class Plugin
             Record("unrelated-slot occurrences=0 targets=0 operations=0");
             controller?.Dispose(); controller = null; operation = null; settled = null;
             foreach (var frame in RestoreAndReturn("qa-dungeon-copy")) yield return frame;
-            Save("qa-dungeon-resolved", LifecycleEventKind.SaveSucceeded);
+            Save("qa-dungeon-active", LifecycleEventKind.SaveSucceeded);
             var retiredHandle = operation; var settledSession = boarding.SessionId; var settledDonor = CurrentDonor();
-            foreach (var frame in LoadReady("qa-dungeon-resolved")) yield return frame;
+            foreach (var frame in LoadReady("qa-dungeon-active")) yield return frame;
             foreach (var frame in Wait(() => NativeTravelReady() && boarding.GetTargets().Count == 1, "Resolved checkpoint native target")) yield return frame;
             foreach (var frame in Settle()) yield return frame;
             Require(controller?.IsActive != true && boarding.GetTarget(target) == null && boarding.GetOperation(retiredHandle!) == null, "Resolved reload retained old handles.");
@@ -119,8 +125,13 @@ public sealed partial class Plugin
             Require(!ReferenceEquals(settledDonor, CurrentDonor()) && (string?)SpGet(CurrentDonor(), "guid") == donorId && Returned(), "Resolved reload duplicated crew or changed recipient.");
             target = boarding.GetTargets().Single().Handle;
             Record("resolved-reload crew=" + CurrentCrew().Values.Sum() + " operations=0");
+            // Deliberately restore the earlier bytes at the same path while no operation is active.
+            // This is an explicit copied-save rollback, not a cross-file atomicity claim.
+            File.WriteAllBytes(activeFile, savedBody); File.WriteAllBytes(activeMeta, savedMeta);
+            Require(File.ReadAllBytes(activeFile).SequenceEqual(savedBody) && File.ReadAllBytes(activeMeta).SequenceEqual(savedMeta), "Rollback fixture bytes did not match the active checkpoint.");
+            Record("same-path rollback bytes verified");
             foreach (var frame in RestoreAndReturn("qa-dungeon-active")) yield return frame;
-            WriteAtomic("dungeon-save.txt", new[] { "PASS", "dungeon-save-v2", "save-as-slot-switch-resolved-reload-older-checkpoint-crew-return" });
+            WriteAtomic("dungeon-save.txt", new[] { "PASS", "dungeon-save-v3", "save-failures-save-as-slot-switch-resolved-reload-in-place-rollback" });
         }
         finally
         {
