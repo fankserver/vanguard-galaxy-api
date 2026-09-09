@@ -129,6 +129,14 @@ internal static class WorldLifetimePatches
             if (__state != null && __result != null) __result = new WorldManagerEnumerator(__result, __state);
         }
     }
+    internal static class ActorData
+    {
+        internal static void Prefix(object __instance, object __0)
+        {
+            if (!((Host as IWorldActorLifetimeHost)?.AllowActorData(__instance, __0) ?? true))
+                throw new System.IO.InvalidDataException("Owned actor data does not match its spawn origin.");
+        }
+    }
     internal static class ActorMutation
     {
         internal static void Prefix(object __instance)

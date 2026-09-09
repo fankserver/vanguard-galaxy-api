@@ -8,6 +8,7 @@ internal interface IWorldActorLifetimeHost
 {
     IDisposable BeginSpawn(object manager, object? data = null);
     bool AllowPersistable(object component);
+    bool AllowActorData(object actor, object data);
     void CaptureActor(object actor);
     bool AllowActor(object actor);
     Func<bool>? CaptureActivity(object actor);
@@ -50,6 +51,12 @@ internal sealed partial class WorldLifetimeHookHost : IWorldActorLifetimeHost
             travel != null && ReferenceEquals(local.GetValue(travel), manager);
         if (!Valid()) throw new InvalidDataException("World actor spawn lacks its current native manager.");
         return _actors.Enter(Valid, data);
+    }
+    public bool AllowActorData(object actor, object data)
+    {
+        _hub.CheckThread();
+        if (!_actors.Known(actor)) return true;
+        return _actors.MatchesData(actor, data) && AllowActor(actor) && _actors.MatchesData(actor, data);
     }
     public bool AllowPersistable(object component)
     {

@@ -62,6 +62,9 @@ public sealed class WorldActorOriginTests
                     host.CaptureActor(vanilla);
             }
             VGModAPI.Patches.WorldLifetimePatches.Host = host;
+            VGModAPI.Patches.WorldLifetimePatches.ActorData.Prefix(actor, persistedData);
+            Assert.Throws<System.IO.InvalidDataException>(() => VGModAPI.Patches.WorldLifetimePatches.ActorData.Prefix(actor, new object()));
+            VGModAPI.Patches.WorldLifetimePatches.ActorData.Prefix(vanilla, new object());
             Assert.True(host.AllowPersistable(updater));
             updater.data = new object(); Assert.False(host.AllowPersistable(updater));
             updater.data = persistedData;

@@ -99,7 +99,9 @@ public sealed partial class Plugin
                     _worldLoadHarmony.Patch(targets["worldActorAwake"], prefix: new HarmonyMethod(typeof(WorldLifetimePatches.ActorAwake).GetMethod("Prefix", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.First });
                     foreach (var key in new[] { "worldActorStart", "worldActorUpdate", "worldActorPhysics", "worldShipStart", "worldShipUpdate", "worldActorCollisionEnter", "worldActorCollisionStay" })
                         _worldLoadHarmony.Patch(targets[key], prefix: new HarmonyMethod(typeof(WorldLifetimePatches.ActorActivity).GetMethod("Prefix", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.First });
-                    foreach (var key in new[] { "worldActorSetData", "worldShipSetData", "worldActorModules", "worldActorDamage", "worldShipDamage" })
+                    foreach (var key in new[] { "worldActorSetData", "worldShipSetData" })
+                        _worldLoadHarmony.Patch(targets[key], prefix: new HarmonyMethod(typeof(WorldLifetimePatches.ActorData).GetMethod("Prefix", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.First });
+                    foreach (var key in new[] { "worldActorModules", "worldActorDamage", "worldShipDamage" })
                         _worldLoadHarmony.Patch(targets[key], prefix: new HarmonyMethod(typeof(WorldLifetimePatches.ActorMutation).GetMethod("Prefix", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.First });
                     foreach (var key in targets.Keys.Where(key => key.StartsWith("worldActorRoutine", StringComparison.Ordinal)))
                         _worldLoadHarmony.Patch(targets[key], prefix: new HarmonyMethod(typeof(WorldLifetimePatches.ActorContinuation).GetMethod("Prefix", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.First },
