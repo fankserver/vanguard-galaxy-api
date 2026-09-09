@@ -108,7 +108,7 @@ snapshots are transient and are never written to saves.
 ## Launchers and example
 
 Register window launchers with `ModApi.Services.Hud`, rather than assigning custom
-icons fixed screen coordinates. The shared strip handles ordering and placement across
+icons fixed screen coordinates. The shared corner layouts handle ordering and placement across
 mods. Clear session-specific presentation at teardown; HUD registrations and UI
 containers deliberately have different lifetimes.
 

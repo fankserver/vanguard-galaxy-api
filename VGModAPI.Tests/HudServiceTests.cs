@@ -100,12 +100,15 @@ public sealed class HudServiceTests
         _service.SetSurface(null, null); Assert.False(_service.Invoke(entry.Token, _surface, entry.Revision, HudInteractionKind.ClosePanel));
     }
     [Fact]
-    public void PanelLimitsRejectUpdatesWithoutReplacingExistingContent()
+    public void OtherProvidersCannotExhaustARegistrationOrPanelQuota()
     {
-        for (var i = 0; i < 4; i++) _service.Register("one", i.ToString(), _ => { }).Update(null, new("Panel", Array.Empty<HudRow>()));
-        using var last = _service.Register("one", "last", _ => { });
-        Assert.Throws<InvalidOperationException>(() => last.Update(null, new("Overflow", Array.Empty<HudRow>())));
-        Assert.Null(_service.Entries.Single(entry => entry.Local == "last").Panel);
+        for (var i = 0; i < 32; i++)
+            _service.Register("mod" + i, "panel", _ => { }).Update(null, new("Panel", Array.Empty<HudRow>()));
+        using var last = _service.Register("last", "panel", _ => { });
+        last.Update(null, new("Last panel", Array.Empty<HudRow>()));
+        Assert.Equal(33, _service.Entries.Count);
+        Assert.NotNull(_service.Entries.Single(entry => entry.Plugin == "last").Panel);
+        Assert.Throws<InvalidOperationException>(() => _service.Register("last", "panel", _ => { }));
         _service.Dispose(); Assert.Empty(_service.Entries); Assert.False(_service.Visible);
     }
     [Fact]
