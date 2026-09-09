@@ -18,6 +18,8 @@ internal sealed partial class RecipeCatalogNativeSource : IForgeUiSource
     internal Func<object, object, bool>? UiBelongsTo { get; set; }
     internal Func<object, bool>? UiAssetAlive { get; set; }
     internal object? ForgeViewObject => _forgeViewObject;
+    internal object? ForgeTabAnchor => _forgeViewHandle != null && UiStation(_forgeViewHandle.SessionId, out var interior) != null
+        ? Get(interior!, "tabParent") : null;
     public void ClearUi() { _forgeViewObject = null; _forgeViewHandle = null; _forgeViewStation = null; }
     private object? UiStation(Guid session, out object? interior)
     {
