@@ -38,7 +38,17 @@ public sealed partial class Plugin
             "Exactly one world phase must be selected.");
         var authors = RequireWorldAuthors();
         WriteAtomic("owned-world.txt", new[] { "INCOMPLETE" });
-        foreach (var frame in LoadReady("fixture-a")) yield return frame;
+        bool cold = arguments.Contains("--vgmodapi-world-cold");
+        string[]? createdGeneration = null;
+        if (cold)
+        {
+            var receipt = Path.Combine(_root!, "world-created-generation.txt");
+            Require(new FileInfo(receipt).Length <= 4096, "Oversized creation-generation receipt.");
+            createdGeneration = File.ReadAllLines(receipt);
+            Require(createdGeneration.Length == 7 && createdGeneration[0] == "PAIRED-WORLD-GENERATION", "Missing creation-generation receipt.");
+            Require(ReadWorldGeneration(createdGeneration[5], createdGeneration[6]).SequenceEqual(createdGeneration), "Cold input differs from committed creation output.");
+        }
+        foreach (var frame in LoadReady(cold ? "qa-owned-world" : "fixture-a")) yield return frame;
         foreach (var frame in Wait(NativeTravelReady, "world fixture native readiness")) yield return frame;
         var session = _api!.CurrentSession!.Id;
         var current = SpGet(CurrentPlayer, "currentPointOfInterest") ?? throw new InvalidOperationException("No fixture POI.");
@@ -47,7 +57,6 @@ public sealed partial class Plugin
         var firstId = Guid.Parse("681a3868-4420-4a76-bb83-e7155a036017");
         var secondId = Guid.Parse("335308ee-24dc-4c52-8c2d-3d46a0b523ac");
         var before = ((IEnumerable)SpGet(system, "pointsOfInterest")!).Cast<object>().ToArray();
-        bool cold = Environment.GetCommandLineArgs().Contains("--vgmodapi-world-cold");
         var first = cold ? (WorldSiteResult)SpCall(authors.A, "Find", session, firstId)
             : (WorldSiteResult)SpCall(authors.A, "Create", session, firstId, systemId, 100f, 100f);
         Require(first.Status == WorldStatus.Succeeded, "World author A creation refused: " + first.Status);
@@ -82,6 +91,9 @@ public sealed partial class Plugin
                 Require(!((IEnumerable)SpGet(poi, field)!).Cast<object>().Any(), "Unexpected owned native content: " + field);
         }
         if (!cold) Save("qa-owned-world", LifecycleEventKind.SaveSucceeded);
+        var committed = ReadWorldGeneration(first.PoiId!, second.PoiId!);
+        if (cold) Require(committed.SequenceEqual(createdGeneration!), "Cold load changed the saved generation association.");
+        WriteAtomic(cold ? "world-cold-generation.txt" : "world-created-generation.txt", committed);
         WriteAtomic("owned-world.txt", new[] { cold ? "COLD-LOOKUP-NATIVE-MEMBERSHIP" : "PUBLIC-CREATE-NATIVE-MEMBERSHIP-SAVE", first.PoiId!, second.PoiId!,
             "Phase evidence only; paired commit verification, ordered references and control matrix remain separate requirements." });
     }
