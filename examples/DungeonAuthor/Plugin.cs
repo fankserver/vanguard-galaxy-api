@@ -4,7 +4,7 @@ using VGModAPI;
 namespace DungeonAuthor;
 
 [BepInPlugin("vgmodapi.example.cargo", "Cargo recovery example", "0.1.0")]
-[BepInDependency(ModApi.PluginId, "0.1.42")]
+[BepInDependency(ModApi.PluginId, "0.2.0")]
 public sealed class Plugin : BaseUnityPlugin
 {
     private CargoAuthorSession? _session;

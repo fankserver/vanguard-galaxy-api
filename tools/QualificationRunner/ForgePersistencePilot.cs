@@ -16,8 +16,8 @@ public sealed partial class Plugin
     {
         var harmony = new Harmony(Id + ".crafting-persistence");
         var jobs = ModApi.Services.CraftingJobs;
-        var quotes = ModApi.Services.RecipeQuotes!;
-        var commands = ModApi.Services.CraftingCommands!;
+        var quotes = ModApi.Services.RecipeQuotes;
+        var commands = ModApi.Services.CraftingCommands;
         var facts = new List<CraftingJobEvent>();
         using var subscription = new CraftingJobProbeSubscription(jobs, facts.Add);
         try

@@ -4,7 +4,7 @@ using VGModAPI;
 namespace LifecycleObserver;
 
 [BepInPlugin(Id, "VGModAPI Lifecycle Observer Example", "0.1.0")]
-[BepInDependency(ModApi.PluginId)]
+[BepInDependency(ModApi.PluginId, "0.2.0")]
 [BepInProcess("VanguardGalaxy.exe")]
 public sealed class Plugin : BaseUnityPlugin
 {

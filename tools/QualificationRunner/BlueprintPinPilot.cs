@@ -20,7 +20,7 @@ public sealed partial class Plugin
         foreach (var frame in Wait(() => UnityEngine.Object.FindObjectsByType(loadingScreen, FindObjectsInactive.Exclude).Length == 0,
             "Native loading overlay destruction")) yield return frame;
         ForgeSelectionSnapshot? selection = null;
-        foreach (var recipe in ModApi.Services.Recipes!.Read().Recipes.Where(recipe => recipe.Process == RecipeProcess.Forge && recipe.ParentId != null))
+        foreach (var recipe in ModApi.Services.Recipes.Read().Recipes.Where(recipe => recipe.Process == RecipeProcess.Forge && recipe.ParentId != null))
         {
             if (ui.Open(recipe.Id) == ForgeNavigationStatus.Selected && ui.Current?.AvailableVariants.Count > 1)
             { selection = ui.Current; break; }

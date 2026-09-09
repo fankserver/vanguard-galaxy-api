@@ -11,7 +11,7 @@ public sealed partial class Plugin
     // Explicit delta-time driving exercises the real native completion loop, not wall-clock timing.
     private void CheckForgeDeliveries(RecipeStationHandle station)
     {
-        var commands = ModApi.Services.CraftingCommands!; var jobs = ModApi.Services.CraftingJobs!;
+        var commands = ModApi.Services.CraftingCommands; var jobs = ModApi.Services.CraftingJobs;
         var nativeStation = SpGet(CurrentPlayer, "currentPointOfInterest")!;
         var nativeForge = SpGet(nativeStation, "forge")!;
         var nativeJobs = (IList)SpGet(nativeForge, "jobs")!;
@@ -19,8 +19,8 @@ public sealed partial class Plugin
         foreach (var partial in new[] { true, false })
         {
             Require(nativeJobs.Count < Convert.ToInt32(SpGet(nativeForge, "maxJobs")), "Delivery fixture needs a free Forge slot.");
-            var recipe = ModApi.Services.Recipes!.Read().Recipes.FirstOrDefault(candidate => candidate.Process == RecipeProcess.Forge &&
-            ModApi.Services.RecipeQuotes!.Quote(station, candidate.Id, 2) is var quote && quote.Status == RecipeQuoteStatus.Available
+            var recipe = ModApi.Services.Recipes.Read().Recipes.FirstOrDefault(candidate => candidate.Process == RecipeProcess.Forge &&
+            ModApi.Services.RecipeQuotes.Quote(station, candidate.Id, 2) is var quote && quote.Status == RecipeQuoteStatus.Available
                 && quote.Blockers.All(blocker => blocker == RecipeBlocker.PricingUnavailable));
             Require(recipe != null, "Delivery fixture lacks a supported affordable recipe.");
             var beforeJobs = nativeJobs.Cast<object>().ToArray();

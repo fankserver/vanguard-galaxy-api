@@ -5,7 +5,7 @@ using VGModAPI;
 namespace OwnedBarAuthor;
 
 [BepInPlugin(Id, "Owned bar author example", "0.1.0")]
-[BepInDependency(ModApi.PluginId, "0.1.32")]
+[BepInDependency(ModApi.PluginId, "0.2.0")]
 public sealed class Plugin : BaseUnityPlugin
 {
 #if BAR_AUTHOR_B

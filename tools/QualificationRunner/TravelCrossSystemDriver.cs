@@ -259,7 +259,7 @@ public sealed partial class Plugin
             Require(!(bool)_travelActive.Invoke(arrivedOwner, null)!, "Native travel is still active after the final route boundary.");
             Require(!(bool)SpGet(arrivedOwner, "usingJumpgate")!, "The native jump routine is still running after the final route boundary.");
             Require(((ICollection)SpGet(Player, "waypoints")!).Count == 0, "Native waypoints remain after the final route boundary.");
-            Require(TravelStationReceipt.Same(ModApi.Services.Travel!.CurrentLocation, actualSystemId, actualPoiId),
+            Require(TravelStationReceipt.Same(ModApi.Services.Travel.CurrentLocation, actualSystemId, actualPoiId),
                 "Public CurrentLocation does not match the arrived cross-system location.");
             var crossFacts = slice.Where(fact => fact.Mode == mode).ToArray();
             var arrived = crossFacts.First(fact => fact.Kind == TravelTransitionKind.Arrived);
@@ -286,7 +286,7 @@ public sealed partial class Plugin
             foreach (var frame in Settle()) yield return frame;
             _session = _p._api!.CurrentSession!.Id;
             var session = _session;
-            foreach (var frame in _p.Wait(() => ModApi.Services.Travel?.SessionId == session
+            foreach (var frame in _p.Wait(() => ModApi.Services.Travel.SessionId == session
                 && ModApi.Services.Travel.CurrentLocation != null && _p.NativeTravelReady(), "travel service binding and native POI readiness")) yield return frame;
             var system = SpGet(Player, "currentSystem");
             var poi = SpGet(Player, "currentPointOfInterest");

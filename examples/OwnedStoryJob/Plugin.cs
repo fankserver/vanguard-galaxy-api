@@ -5,7 +5,7 @@ using VGModAPI;
 namespace OwnedStoryJob;
 
 [BepInPlugin("vg-story-job", "Owned generated job example", "0.1.0")]
-[BepInDependency(ModApi.PluginId, BepInDependency.DependencyFlags.HardDependency)]
+[BepInDependency(ModApi.PluginId, "0.2.0")]
 public sealed class Plugin : BaseUnityPlugin
 {
     public const string LocalId = "mission-x";

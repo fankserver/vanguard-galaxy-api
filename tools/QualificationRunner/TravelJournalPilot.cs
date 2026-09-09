@@ -101,7 +101,7 @@ public sealed partial class Plugin
             "The archived-journal comparison requires both qualified native travel phases and the wormhole fixture selection.");
         Require(ModApi.Services.Travel.Availability.IsAvailable, "Travel public service not exposed.");
         Require(ModApi.Services.Travel.Availability.IsAvailable, "native-travel capability not available.");
-        Require(!ModApi.Services.Travel!.IsDispatchingCallbacks, "Cannot subscribe during callback dispatch.");
+        Require(!ModApi.Services.Travel.IsDispatchingCallbacks, "Cannot subscribe during callback dispatch.");
         Require(TravelJournalReceipt.ReadinessSeconds == WaitDeadlineSeconds && TravelJournalReceipt.SettleSeconds == SettleSeconds,
             "Shared harness wait/settle deadlines no longer match the declared phase budget terms.");
         Require(TravelJournalReceipt.PhaseBudgetSeconds <= TravelJournalReceipt.LauncherReservationSeconds,
@@ -610,7 +610,7 @@ public sealed partial class Plugin
             Require(Time.realtimeSinceStartup < until, "Timed out waiting for public travel callback quiescence.");
             yield return null;
             if (_tjFacts.Count != observed) { observed = _tjFacts.Count; stable = 0; }
-            else if (ModApi.Services.Travel?.IsDispatchingCallbacks == true) stable = 0;
+            else if (ModApi.Services.Travel.IsDispatchingCallbacks == true) stable = 0;
             else stable++;
         }
     }

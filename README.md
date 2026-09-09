@@ -32,7 +32,7 @@ Reference `VGModAPI.Abstractions.dll` as compile-only and declare a BepInEx depe
 on the minimum API version your mod uses:
 
 ```csharp
-[BepInDependency(ModApi.PluginId)]
+[BepInDependency(ModApi.PluginId, "0.2.0")]
 ```
 
 Retain the typed lifecycle service and subscribe in `Awake`:

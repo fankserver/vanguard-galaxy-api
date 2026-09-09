@@ -10,6 +10,9 @@ public sealed partial class Plugin
     private void PublishServiceRoot()
     {
         var hub = _hub!;
+        // Fallbacks are created only during bootstrap, never after a module stops or a session starts.
+        if (_serviceRoot != null || hub.CurrentSession != null)
+            throw new InvalidOperationException("Services can only be published once before a session starts.");
         var lifecycle = hub;
         var mods = _modCatalog!;
         var missions = _missions?.Events ?? new MissionTransitions(hub);
@@ -36,8 +39,9 @@ public sealed partial class Plugin
         var root = new ModServices(lifecycle, mods, (_persistence ??= new PersistenceService(hub)), missions, travel, station,
             _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService, _boardingCombat, _dungeonRewards, _boardingCommands, _boardingTactics, _boardingService, _dungeonSettlement, _dungeonPanelService, _dungeons, _story, _bars);
         // Deferred cleanup preserves terminal lifecycle delivery when shutdown starts inside a callback.
-        foreach (var view in new IDisposable[] { mods, missions, travel, station, _persistence!, _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService, _boardingCombat, _dungeonRewards, _boardingCommands, _boardingTactics, _boardingService, _dungeonSettlement, _dungeonPanelService, _dungeons, _story, _bars })
-            hub.Services.AfterStopped(view.Dispose);
+        // Content owners release their registrations before the save-data coordinator stops.
+        foreach (var service in new IDisposable[] { mods, missions, travel, station, _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService, _boardingCombat, _dungeonRewards, _boardingCommands, _boardingTactics, _boardingService, _dungeonSettlement, _dungeonPanelService, _dungeons, _story, _bars, _persistence! })
+            hub.Services.AfterStopped(service.Dispose);
         ModApi.PublishServices(root);
         _serviceRoot = root;
     }

@@ -1,6 +1,6 @@
 # Boarding integration constraints and source coverage
 
-Optional boarding observation is implemented in API 0.1.25, disabled by default and not runtime-qualified. Enable `[Boarding] Enabled = true`, inspect the `boarding-observation` capability and use `ModApi.Services.Boarding`. `ModApi.Services.BoardingRules` exposes a stable `IBoardingRuleService` with independent typed availability. API 0.1.27 exposes `ModApi.Services.BoardingCommands` when `boarding-commands` is available. API 0.1.28 exposes `ModApi.Services.BoardingTactics` and `ModApi.Services.BoardingCombat` under the separate `boarding-tactics` and `boarding-combat` capabilities. This document distinguishes the observation contract from applicable constraints on those integrations; no native boarding scenario is attested by it.
+Boarding is optional, disabled by default and not runtime-qualified. Enable `[Boarding] Enabled = true` and use the stable `ModApi.Services.Boarding`, `BoardingRules`, `BoardingCommands`, `BoardingTactics` and `BoardingCombat` services. Each exposes independent typed availability; registration or a healthy binding is not permission to act on a stale session or operation. This document distinguishes observation from action constraints; it does not attest a native boarding scenario.
 
 ## Evidence boundary
 
@@ -127,7 +127,7 @@ BoardAlways owns its Enabled setting, threshold/guaranteed-disable policy, balan
 
 Patch-free means no direct game/Unity/Harmony compile references, reflection or native casts for covered boarding functionality. A wrapper moving the same patches into another consumer file does not qualify. A second author example must exercise custom encounter/tactical/UI/save behavior beyond the four BoardAlways patch areas.
 
-## Tactical actions and combat policies (API 0.1.28)
+## Tactical actions and combat policies
 
 Tactical execution requires the actual current `IBoardingController` instance, not merely its plugin ID or an imitation of the interface. `BoardingTacticalRequest` describes an action; `BoardingTacticalSnapshot` copies discovered rooms, grenade charges/cooldown and extraction availability. Adjacent unexplored rooms expose only their index, unknown status and door state so exploration remains possible without revealing their occupants. Snapshots resolve the exact requested operation generation, never its target's newer operation. Snapshots are not permission and action execution revalidates native state. Native direct movement retains capacity-limited partial movement; queued API count requests require the requested capacity.
 
@@ -156,7 +156,7 @@ These are request/effect vetoes, not outcome notifications. Vetoing a hazard eff
 
 Host tests, source inspection and metadata checks are not Unity acceptance. Native timing, coexistence, presentation and complete action-family scenarios remain unqualified until exercised on the exact source revision.
 
-## Boarding commands (API 0.1.27)
+## Boarding commands
 
 `ModApi.Services.BoardingCommands.AcquireControl(pluginId, target, out controller)` returns a typed result and, when admitted, an instance-scoped disposable controller. Acquire from a current target snapshot, not a saved handle. Event subscriptions do not grant command control. Only one mod controller can hold a target; manual native HUD cancellation and panel start, extraction, reinforcement and option actions revoke it. Native autonomous re-enabling is blocked while it is held. Disposal does not restore old autonomous settings over newer player choices.
 
@@ -166,7 +166,7 @@ Initial ship crew is debited at native pod creation. Walk-in crew is revalidated
 
 Commands refuse reentrancy, event/policy dispatch and native save-state serialization. Session/target replacement invalidates controllers. Admitted means the native request was entered, not arrival, extraction completion, successful rewards or settled crew. Observe lifecycle events for those separate facts. Host tests and installed binding checks do not prove the cancellation, return, UI or save paths in Unity; complete native acceptance remains pending.
 
-## Registered boarding policies (API 0.1.26)
+## Registered boarding policies
 
 Acquire one disposable `IBoardingRuleProvider` per plugin ID from `ModApi.Services.BoardingRules`. Each local registration ID is unique within that owning provider instance. Dispose a registration to remove it, or dispose the provider to remove all its rules. Registration and evaluation are main-thread-only. Check the service’s typed `Availability`; binding success is not native qualification. Providers may declare rules while unavailable, but evaluation preserves vanilla behavior without invoking them. Health loss during evaluation discards the composition; disposal preserves an existing failure diagnosis.
 

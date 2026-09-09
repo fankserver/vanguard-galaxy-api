@@ -5,7 +5,7 @@ using VGModAPI;
 namespace OwnedStoryCampaign;
 
 [BepInPlugin("vg-story-campaign", "Owned story campaign example", "0.1.0")]
-[BepInDependency("vgmodapi", BepInDependency.DependencyFlags.HardDependency)]
+[BepInDependency(ModApi.PluginId, "0.2.0")]
 public sealed class Plugin : BaseUnityPlugin
 {
     public const string LocalId = "mission-x";

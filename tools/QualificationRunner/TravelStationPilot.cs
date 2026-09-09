@@ -149,7 +149,7 @@ public sealed partial class Plugin
                 // Service binding and actual native readiness, not GameplayInitialized alone:
                 // the travel service must own this session and the live local manager must be the
                 // initialized manager of the player's actual current POI.
-                foreach (var frame in Wait(() => ModApi.Services.Travel?.SessionId == session
+                foreach (var frame in Wait(() => ModApi.Services.Travel.SessionId == session
                     && ModApi.Services.Travel.CurrentLocation != null && NativeTravelReady(), "travel service binding and native POI readiness")) yield return frame;
                 // Optional actual-consumer observation boundary. It drives nothing and is inert
                 // unless the consumer probe owns a live subscription.

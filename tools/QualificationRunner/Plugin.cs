@@ -160,7 +160,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             {
                 Require(File.ReadAllText(Path.Combine(_root!, "forge-commands.enabled")) == "forge-commands-v3", "Invalid Forge command marker.");
                 WriteAtomic("forge-commands.txt", new[] { "INCOMPLETE" });
-                var station = ModApi.Services.RecipeQuotes!.CurrentStation ?? throw new InvalidOperationException("Command fixture lost station.");
+                var station = ModApi.Services.RecipeQuotes.CurrentStation ?? throw new InvalidOperationException("Command fixture lost station.");
                 CheckCraftingSettingCommands(station);
                 CheckCraftingQueueAndCancel(station);
                 if (File.Exists(Path.Combine(_root!, "refinery.enabled")))

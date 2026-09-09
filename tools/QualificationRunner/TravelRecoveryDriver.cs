@@ -372,7 +372,7 @@ public sealed partial class Plugin
                 Require((bool)_localPoiReady.Invoke(arrivedOwner, null)!, "Native IsLocalPoiReady is false after the recovery.");
                 Require(!(bool)_travelActive.Invoke(arrivedOwner, null)!, "Native travel is still active after the cancel.");
                 Require(((ICollection)SpGet(Player, "waypoints")!).Count == 0, "Native waypoints remain after the cancel.");
-                Require(TravelStationReceipt.Same(ModApi.Services.Travel!.CurrentLocation, _systemId, targetId),
+                Require(TravelStationReceipt.Same(ModApi.Services.Travel.CurrentLocation, _systemId, targetId),
                     "Public CurrentLocation does not match the recovered POI.");
                 var stationFacts = StationSlice(stationOffset);
                 Require(stationFacts.All(fact => fact.Kind is StationTransitionKind.InteriorReady or StationTransitionKind.InteriorDestroyed),
@@ -476,7 +476,7 @@ public sealed partial class Plugin
             Require(!(bool)_travelActive.Invoke(arrivedOwner, null)!, "Native travel is still active after the final route boundary.");
             Require(!(bool)SpGet(arrivedOwner, "usingJumpgate")!, "The native jump routine is still running after the final route boundary.");
             Require(((ICollection)SpGet(Player, "waypoints")!).Count == 0, "Native waypoints remain after the final route boundary.");
-            Require(TravelStationReceipt.Same(ModApi.Services.Travel!.CurrentLocation, followSystemId, followId),
+            Require(TravelStationReceipt.Same(ModApi.Services.Travel.CurrentLocation, followSystemId, followId),
                 "Public CurrentLocation does not match the follow-on destination.");
             var stationFacts = StationSlice(stationOffset);
             Require(stationFacts.All(fact => fact.Kind is StationTransitionKind.InteriorReady or StationTransitionKind.InteriorDestroyed),
@@ -611,7 +611,7 @@ public sealed partial class Plugin
             foreach (var frame in Settle()) yield return frame;
             _session = _p._api!.CurrentSession!.Id;
             var session = _session;
-            foreach (var frame in _p.Wait(() => ModApi.Services.Travel?.SessionId == session
+            foreach (var frame in _p.Wait(() => ModApi.Services.Travel.SessionId == session
                 && ModApi.Services.Travel.CurrentLocation != null && _p.NativeTravelReady(), "travel service binding and native POI readiness")) yield return frame;
             var system = SpGet(Player, "currentSystem");
             var poi = SpGet(Player, "currentPointOfInterest");

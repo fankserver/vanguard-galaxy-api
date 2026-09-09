@@ -22,7 +22,7 @@ public sealed partial class Plugin
             while (jobs.Count < maximum)
             {
                 var count = jobs.Count;
-                var result = ModApi.Services.CraftingCommands!.Execute(CraftingCommandRequest.Queue(Id, Guid.NewGuid(), station,
+                var result = ModApi.Services.CraftingCommands.Execute(CraftingCommandRequest.Queue(Id, Guid.NewGuid(), station,
                     recipe, 1, CraftingProtectionPolicy.NativeConsumption));
                 admitted.AddRange(result.Jobs);
                 Require(result.Status == CraftingCommandStatus.Succeeded && result.Jobs.Count == 1 && jobs.Count == count + 1,
@@ -33,7 +33,7 @@ public sealed partial class Plugin
             var credits = (long)SpGet(CurrentPlayer, "credits")!;
             var facts = new List<CraftingJobEvent>();
             using var observer = new CraftingJobProbeSubscription(ModApi.Services.CraftingJobs, facts.Add);
-            var refused = ModApi.Services.CraftingCommands!.Execute(CraftingCommandRequest.Queue(Id, Guid.NewGuid(), station,
+            var refused = ModApi.Services.CraftingCommands.Execute(CraftingCommandRequest.Queue(Id, Guid.NewGuid(), station,
                 recipe, 1, CraftingProtectionPolicy.NativeConsumption));
             Require(refused.Status == CraftingCommandStatus.QueueFull, "Public queue did not refuse full Forge capacity.");
             Require(!(bool)SpCall(forge, "TryStartJob", nativeRecipe, 1)!, "Native guarded start did not refuse full Forge capacity.");
@@ -45,7 +45,7 @@ public sealed partial class Plugin
         finally
         {
             foreach (var handle in admitted)
-                Require(ModApi.Services.CraftingCommands!.Execute(CraftingCommandRequest.Cancel(Id, Guid.NewGuid(), handle)).Status == CraftingCommandStatus.Succeeded,
+                Require(ModApi.Services.CraftingCommands.Execute(CraftingCommandRequest.Cancel(Id, Guid.NewGuid(), handle)).Status == CraftingCommandStatus.Succeeded,
                     "Could not cancel a capacity setup job.");
         }
         Require(jobs.Cast<object>().SequenceEqual(prior), "Capacity setup did not restore the original job list.");

@@ -11,7 +11,7 @@ public sealed partial class Plugin
 {
     private void CheckRefineryFavouriteProtection(RecipeStationHandle station, RecipeId recipe, object item)
     {
-        Require(ModApi.Services.RecipeQuotes!.Quote(station, recipe, 1).RequirementsMet, "Favourite fixture requires affordable remaining ore.");
+        Require(ModApi.Services.RecipeQuotes.Quote(station, recipe, 1).RequirementsMet, "Favourite fixture requires affordable remaining ore.");
         var nativeStation = SpGet(CurrentPlayer, "currentPointOfInterest")!;
         var jobs = (IList)SpGet(SpGet(nativeStation, "refinery")!, "jobs")!;
         var priorJobs = jobs.Cast<object>().ToArray();
@@ -29,7 +29,7 @@ public sealed partial class Plugin
             foreach (var row in rows) AccessTools.Field(row.Row.GetType(), "favourite").SetValue(row.Row, true);
             foreach (var policy in new[] { CraftingProtectionPolicy.ProtectFavourites, CraftingProtectionPolicy.ProtectFavouritesAndMissionItems })
             {
-                var result = ModApi.Services.CraftingCommands!.Execute(CraftingCommandRequest.Queue(Id, Guid.NewGuid(), station, recipe, 1, policy));
+                var result = ModApi.Services.CraftingCommands.Execute(CraftingCommandRequest.Queue(Id, Guid.NewGuid(), station, recipe, 1, policy));
                 Require(result.Status == CraftingCommandStatus.ProtectedInputs, "Favourite-only ore was not refused by a protecting policy.");
             }
             var after = ForgeInventoryCounts(nativeStation);

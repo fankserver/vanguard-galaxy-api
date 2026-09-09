@@ -107,7 +107,7 @@ public sealed partial class Plugin
             "The consumer travel probe requires the opt-in wormhole fixture selection; without it the wormhole arrival can never be witnessed.");
         Require(ModApi.Services.Travel.Availability.IsAvailable, "Travel public service not exposed.");
         Require(ModApi.Services.Travel.Availability.IsAvailable, "native-travel capability not available.");
-        Require(!ModApi.Services.Travel!.IsDispatchingCallbacks, "Cannot subscribe during callback dispatch.");
+        Require(!ModApi.Services.Travel.IsDispatchingCallbacks, "Cannot subscribe during callback dispatch.");
         Require(AnimaTravelReceipt.ReadinessSeconds == WaitDeadlineSeconds && AnimaTravelReceipt.SettleSeconds == SettleSeconds,
             "Shared harness wait/settle deadlines no longer match the declared phase budget terms.");
         Require(AnimaTravelReceipt.PhaseBudgetSeconds <= AnimaTravelReceipt.LauncherReservationSeconds,
@@ -193,7 +193,7 @@ public sealed partial class Plugin
         Require(observer != null && (bool)SpGet(observer!, "IsRecording")!, "The consumer's visit observer is absent or not recording.");
         Require(ReferenceEquals(SpGet(AnimaType("VGAnima.Patches.SaveLoadPatch"), "VisitObserver"), observer),
             "The consumer's load-safety hook does not own the same live visit observer.");
-        Require(ModApi.Services.Travel!.SessionId == session, "The public travel service is not bound to the phase's session.");
+        Require(ModApi.Services.Travel.SessionId == session, "The public travel service is not bound to the phase's session.");
         var patches = ConsumerTravelPatches();
         Require(patches.Length == 0, "The consumer installed a direct native travel hook: " + string.Join(", ", patches));
         // The restored registry must be exactly what the loaded slot's own sidecar carries. The
@@ -263,7 +263,7 @@ public sealed partial class Plugin
         _atBaseline = AnimaVisited();
         _atFixtureBaseline = _atBaseline;
         Require((bool)SpGet(AnimaPlugin, "VisitHistoryRecording")!, "The consumer stopped recording before the cross-system case.");
-        Require(ModApi.Services.Travel!.SessionId == session, "The public travel service is not bound to the case's session.");
+        Require(ModApi.Services.Travel.SessionId == session, "The public travel service is not bound to the case's session.");
         // The freshly loaded slot's own restored history is the baseline; the case's delta is
         // measured against it and never against an earlier case's world.
         var restored = AnimaSidecarVisited("fixture-a", out _, out bool present);
@@ -418,7 +418,7 @@ public sealed partial class Plugin
         // The capability itself must remain available: this is a LOCAL consumer latch, not an API fault.
         Require(ModApi.Services.Travel.Availability.IsAvailable && ModApi.Services.Travel.Availability.IsAvailable,
             "The controlled consumer fault disabled the API travel capability.");
-        Require(!ModApi.Services.Travel!.IsDispatchingCallbacks, "The public travel surface is stuck dispatching after the consumer fault.");
+        Require(!ModApi.Services.Travel.IsDispatchingCallbacks, "The public travel surface is stuck dispatching after the consumer fault.");
         Require(anima.enabled && (bool)SpGet(anima, "_active")!, "The visit-only fault stopped the whole consumer.");
         var canWrite = SpGet(AnimaType("VGAnima.Patches.SaveWritePatch"), "CanWrite") as Delegate;
         Require(canWrite != null && (bool)canWrite.DynamicInvoke()!, "The consumer's save writes were disabled by a visit-only fault.");
@@ -662,7 +662,7 @@ public sealed partial class Plugin
             Require(Time.realtimeSinceStartup < until, "Timed out waiting for public travel callback quiescence.");
             yield return null;
             if (_atFacts.Count != observed) { observed = _atFacts.Count; stable = 0; }
-            else if (ModApi.Services.Travel?.IsDispatchingCallbacks == true) stable = 0;
+            else if (ModApi.Services.Travel.IsDispatchingCallbacks == true) stable = 0;
             else stable++;
         }
     }

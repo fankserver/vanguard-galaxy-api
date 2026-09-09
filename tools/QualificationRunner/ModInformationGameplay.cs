@@ -19,7 +19,7 @@ public sealed partial class Plugin
     private IEnumerable<object?> ModInformationGameplay(Action<string> record)
     {
         Require(JournalSelected && StockpileSelected, "Full information qualification needs both real consumers.");
-        ModApi.Services.Mods!.Refresh();
+        ModApi.Services.Mods.Refresh();
         foreach (var id in new[] { "vgmissionjournal", "vgstockpile" })
         {
             var loaded = Chainloader.PluginInfos[id];

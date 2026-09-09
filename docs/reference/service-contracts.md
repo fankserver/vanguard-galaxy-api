@@ -1,15 +1,21 @@
 # Typed service composition contracts
 
-`ModApi.Services` exposes the API-constructed foundational service root after the
+`ModApi.Services` exposes the API-constructed service root in API 0.2.0 after the
 API plugin's Awake. Access before bootstrap or after shutdown throws; retained
 service references report stopped state. Host tests do not establish Unity/Mono
 qualification.
 
 ## Access and state
 
-`ModServices` is sealed and API-constructed. Its lifecycle, mod inventory, save-data,
-mission, travel and station references are non-null and read-only. Consumer domain
-logic accepts only the interfaces it needs rather than constructing the root.
+`ModServices` is sealed and API-constructed. All service references are non-null,
+read-only and stable for the API lifetime, including disabled modules. It covers
+lifecycle, mod inventory, save data, missions, travel/stations, recipes/quotes,
+crafting, HUD/Forge UI, boarding, dungeons, story and bars. Consumer domain logic
+accepts only the interfaces it needs rather than constructing the root.
+
+The root returns the actual service engines, not compatibility wrappers. An
+unavailable content service does not register an empty replacement save owner.
+Use typed health and per-call results, not null checks, to decide whether to act.
 
 | Concern | Contract |
 |---|---|
@@ -47,7 +53,8 @@ All live service access and notification registration/removal is main-thread-onl
   on the main thread. This does not cancel already executing vanilla work or control
   a consumer's independent hooks or file writes.
 - Shutdown closes gates and invalidates context before final notifications, then
-  clears handlers. Retained status references report `ApiStopped`; handler removal
+  clears handlers. Retained status references report `ApiStopped` or preserve a
+  more specific existing refusal diagnosis; handler removal
   and owned-handle disposal remain safe and idempotent. No automatic hot reattachment.
 
 These are implementer requirements. The injected example tests do not constitute a

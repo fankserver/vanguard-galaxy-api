@@ -21,6 +21,39 @@ and the Mods menu initialize automatically. Existing `Persistence.Enabled`,
 Compatibility checks, initialization failures and service dependencies still determine
 availability; automatic initialization does not change qualification status.
 
+## API and consumer versions
+
+API **0.2.0** uses the typed `ModApi.Services` surface. Consumers must compile
+against that surface; 0.1.x nullable globals and interfaces are not provided.
+Pre-1.0 minor versions may break source and binary compatibility. There is no
+stable ABI promise or automatic adaptation of old consumers.
+
+| Consumer and installation | Expected result |
+|---|---|
+| Recompiled 0.2.0 consumer with API 0.2.0 | Supported contract shape; live behavior still needs candidate-specific qualification |
+| Required consumer with API absent or below its declared minimum | BepInEx refuses the missing/incompatible dependency |
+| Consumer compiled against removed 0.1.x members with API 0.2.0 | Unsupported; type/member resolution can fail even if its minimum-version attribute passes |
+| Optional consumer with API absent | Its loader boundary must avoid resolving API types; a soft-dependency attribute alone is insufficient |
+| Bound API with a disabled module or unsupported game assembly | Stable service reference with typed unavailable diagnostics; operations refuse |
+
+Declare a 0.2.0 minimum for required typed-service consumers. BepInEx remains the
+only loader; its minimum-version check does not establish binary compatibility
+with every newer API. Host contract tests check the current shape, null guards and
+injected consumer behavior, not a historical ABI snapshot or Unity loader support.
+
+The package and assembly version identify the API build. Save-payload schema
+versions, provider identities, native game-hash admission and individual service
+health are independent. An API upgrade does not authorize discarding saved data:
+existing integrity checks, supported schema migrations and refusal/preservation of
+unknown payloads remain required. Provider and local identifiers are durable keys
+validated by each content contract, not display names. Changing a provider/plugin
+ID does not automatically relocate its saved records; use a supported explicit
+migration or retain/refuse the old data rather than treating it as disposable.
+Distribute one installed API copy, not embedded
+runtime copies in each consumer. Contracts contain no Unity/game types; Core and
+native adapters are unsupported implementation details. Callbacks and provider
+namespaces are not a security sandbox: all mods execute in the same process.
+
 ## Available surface and limits
 
 | Surface | Current behavior | Qualification boundary |
