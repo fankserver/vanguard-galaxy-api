@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<coverage line-rate="0.8856" branch-rate="0.7131000000000001" version="1.9" timestamp="1788943095" lines-covered="12314" lines-valid="13904" branches-covered="9453" branches-valid="13255">
+<coverage line-rate="0.8856" branch-rate="0.7132" version="1.9" timestamp="1788943339" lines-covered="12320" lines-valid="13910" branches-covered="9457" branches-valid="13259">
   <sources>
     <source>/src/</source>
   </sources>
   <packages>
-    <package name="VGModAPI.Core" line-rate="0.8826" branch-rate="0.7198" complexity="12789">
+    <package name="VGModAPI.Core" line-rate="0.8826999999999999" branch-rate="0.7199" complexity="12793">
       <classes>
         <class name="VGModAPI.Runtime.BoardingCombatAdapter" filename="VGModAPI.Core/Integration/BoardingCombatAdapter.cs" line-rate="0.72" branch-rate="0.5408" complexity="101">
           <methods>
@@ -39272,6 +39272,44 @@
             </line>
             <line number="195" hits="4" branch="False" />
             <line number="196" hits="20" branch="False" />
+          </lines>
+        </class>
+        <class name="VGModAPI.Core.DungeonPodPrefabBinding" filename="VGModAPI.Core/DungeonPodPrefabBinding.cs" line-rate="1" branch-rate="1" complexity="4">
+          <methods>
+            <method name="Resolve" signature="(System.Type,System.Type)" line-rate="1" branch-rate="1" complexity="4">
+              <lines>
+                <line number="8" hits="3" branch="False" />
+                <line number="9" hits="3" branch="True" condition-coverage="100% (2/2)">
+                  <conditions>
+                    <condition number="15" type="jump" coverage="100%" />
+                  </conditions>
+                </line>
+                <line number="10" hits="3" branch="False" />
+                <line number="11" hits="3" branch="True" condition-coverage="100% (2/2)">
+                  <conditions>
+                    <condition number="50" type="jump" coverage="100%" />
+                  </conditions>
+                </line>
+                <line number="12" hits="1" branch="False" />
+                <line number="13" hits="1" branch="False" />
+              </lines>
+            </method>
+          </methods>
+          <lines>
+            <line number="8" hits="3" branch="False" />
+            <line number="9" hits="3" branch="True" condition-coverage="100% (2/2)">
+              <conditions>
+                <condition number="15" type="jump" coverage="100%" />
+              </conditions>
+            </line>
+            <line number="10" hits="3" branch="False" />
+            <line number="11" hits="3" branch="True" condition-coverage="100% (2/2)">
+              <conditions>
+                <condition number="50" type="jump" coverage="100%" />
+              </conditions>
+            </line>
+            <line number="12" hits="1" branch="False" />
+            <line number="13" hits="1" branch="False" />
           </lines>
         </class>
         <class name="VGModAPI.Core.DungeonPodRecoveryLedger" filename="VGModAPI.Core/DungeonPodRecoveryLedger.cs" line-rate="0.8887999999999999" branch-rate="0.6486" complexity="77">
