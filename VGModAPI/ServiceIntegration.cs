@@ -38,14 +38,18 @@ public sealed partial class Plugin
         _bars ??= new BarContentService(null, hub, StoryHostAuthentication.Resolve, _ => false, hub.CheckThread);
         _worldDefinitions ??= new WorldDefinitionRegistry((_, _) => null, hub.CheckThread);
         _worldContent ??= new WorldContentService(hub, _worldDefinitions, null!, () => false);
+        _ownedItems ??= CreateOwnedItems();
+        _navigationService ??= CreateNavigation();
         _dialogueService ??= new DialogueService(hub.Services.Get("dialogue"), hub.CheckThread, error => hub.ReportSubscriberFailure("dialogue", error));
         var root = new ModServices(lifecycle, mods, (_persistence ??= new PersistenceService(hub)), missions, travel, station,
-            _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService, _boardingCombat, _dungeonRewards, _boardingCommands, _boardingTactics, _boardingService, _dungeonSettlement, _dungeonPanelService, _dungeons, _story, _bars, _worldContent, _dialogueService);
+            _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService, _boardingCombat, _dungeonRewards, _boardingCommands, _boardingTactics, _boardingService, _dungeonSettlement, _dungeonPanelService, _dungeons, _story, _bars, _worldContent, _dialogueService, _navigationService, _ownedItems);
         // Deferred cleanup preserves terminal lifecycle delivery when shutdown starts inside a callback.
         // Content owners release their registrations before the save-data coordinator stops.
         foreach (var service in new IDisposable[] { mods, missions, travel, station, _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService, _boardingCombat, _dungeonRewards, _boardingCommands, _boardingTactics, _boardingService, _dungeonSettlement, _dungeonPanelService, _dungeons, _story, _bars })
             hub.Services.AfterStopped(service.Dispose);
         hub.Services.AfterStopped(StopDialogue);
+        hub.Services.AfterStopped(StopNavigation);
+        hub.Services.AfterStopped(StopOwnedItems);
         Core.Integration.WorldShutdownRegistration.Register(hub.Services, StopWorldProtection, _persistence!);
         ModApi.PublishServices(root);
         _serviceRoot = root;

@@ -159,6 +159,8 @@ public sealed partial class Plugin : BaseUnityPlugin
         InitializePersistence();
         InitializeWorldProtection();
         InitializeDialogue();
+        InitializeNavigation();
+        InitializeOwnedItems();
         InitializeDungeons();
         InitializeDungeonPanel();
         InitializeMissions();
@@ -973,6 +975,8 @@ public sealed partial class Plugin : BaseUnityPlugin
         TeardownForgeUi();
         TeardownCraftingCommands();
         StopBars();
+        StopOwnedItems();
+        StopNavigation();
         StopDialogue();
         StopWorldProtection();
         DungeonRewardPatches.Crew = null; _dungeonSettlement?.Dispose(); _dungeonSettlement = null;
