@@ -12,7 +12,8 @@ public sealed partial class Plugin
 {
     private bool DungeonConsumerReady(List<string> records)
     {
-        var ready = DungeonProbeButton("Attach cargo encounter") != null;
+        // Layout teardown removes its tail lease; wait for that row rebuild before retaining a click target.
+        var ready = DungeonProbeButton("Dungeon scroll tail") == null && DungeonProbeButton("Attach cargo encounter") != null;
         var root = GameObject.Find("Mod API dungeon contributions");
         var text = "ready=" + ready + " board=" + Chainloader.PluginInfos.ContainsKey("vg.boardalways")
             + " author=" + Chainloader.PluginInfos.ContainsKey("vgmodapi.example.cargo")
