@@ -1,4 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>netstandard2.1</TargetFramework></PropertyGroup>
-  <ItemGroup><InternalsVisibleTo Include="VGModAPI" /></ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="VGModAPI" />
+    <InternalsVisibleTo Include="VGModAPI.Core" />
+  </ItemGroup>
 </Project>

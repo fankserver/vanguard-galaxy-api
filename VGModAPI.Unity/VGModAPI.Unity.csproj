@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>netstandard2.1</TargetFramework></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../VGModAPI.Abstractions/VGModAPI.Abstractions.csproj" />
+    <Reference Include="UnityEngine.CoreModule"><HintPath>../VGModAPI/lib/UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+    <InternalsVisibleTo Include="VGModAPI" />
+  </ItemGroup>
+</Project>

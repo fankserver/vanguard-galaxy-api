@@ -8,7 +8,7 @@ namespace VGModAPI.Tests;
 
 internal static class PackageChecks
 {
-    internal static readonly string[] Assemblies = { "VGModAPI", "VGModAPI.Core", "VGModAPI.Abstractions" };
+    internal static readonly string[] Assemblies = { "VGModAPI", "VGModAPI.Core", "VGModAPI.Abstractions", "VGModAPI.Unity" };
     internal static void ValidatePluginVersion(string path)
     {
         using var assembly = AssemblyDefinition.ReadAssembly(path);
@@ -29,7 +29,8 @@ internal static class PackageChecks
         {
             "VGModAPI.Abstractions" => new[] { "netstandard" },
             "VGModAPI.Core" => new[] { "netstandard", "VGModAPI.Abstractions" },
-            "VGModAPI" => new[] { "netstandard", "VGModAPI.Abstractions", "VGModAPI.Core", "BepInEx", "0Harmony", "UnityEngine", "UnityEngine.CoreModule", "UnityEngine.UIModule", "UnityEngine.UI", "Unity.TextMeshPro", "Unity.InputSystem" },
+            "VGModAPI.Unity" => new[] { "netstandard", "VGModAPI.Abstractions", "UnityEngine.CoreModule" },
+            "VGModAPI" => new[] { "netstandard", "VGModAPI.Abstractions", "VGModAPI.Core", "VGModAPI.Unity", "BepInEx", "0Harmony", "UnityEngine", "UnityEngine.CoreModule", "UnityEngine.UIModule", "UnityEngine.UI", "Unity.TextMeshPro", "Unity.InputSystem" },
             _ => throw new InvalidOperationException("Unknown owned assembly: " + expectedName)
         };
         using var assembly = AssemblyDefinition.ReadAssembly(path);

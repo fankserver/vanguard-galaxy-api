@@ -48,6 +48,7 @@ package: build
 	cp VGModAPI/bin/$(CONFIGURATION)/netstandard2.1/VGModAPI.dll artifacts/VGModAPI/
 	cp VGModAPI/bin/$(CONFIGURATION)/netstandard2.1/VGModAPI.Core.dll artifacts/VGModAPI/
 	cp VGModAPI/bin/$(CONFIGURATION)/netstandard2.1/VGModAPI.Abstractions.dll artifacts/VGModAPI/
+	cp VGModAPI/bin/$(CONFIGURATION)/netstandard2.1/VGModAPI.Unity.dll artifacts/VGModAPI/
 	cp README.md LICENSE artifacts/VGModAPI/
 	python3 tools/local_update_metadata.py vgmodapi.vgmod.json artifacts/VGModAPI/vgmodapi.vgmod.json $(RELEASE_CHANNEL)
 	@mkdir -p artifacts/VGModAPI/docs

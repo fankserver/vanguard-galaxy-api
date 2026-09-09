@@ -55,7 +55,9 @@ changed to default-on. Keep compatibility and dependency safety gates.
 - Prefer typed events for lifecycle/state changes and snapshots for current state,
   rather than requiring consumers to poll for transitions. See the
   [service contracts](docs/reference/service-contracts.md) for delivery semantics.
-- Public contracts belong in Abstractions and must not expose vanilla/Unity types.
+- Public game contracts belong in Abstractions and must not expose vanilla/Unity
+  types. The optional `VGModAPI.Unity` assembly provides typed Unity UI integration
+  without exposing vanilla components; non-UI consumers do not depend on it.
   Core and adapter internals are not a supported consumer API.
 - Keep Harmony hooks in `VGModAPI/Patches`. Inspect original game semantics, not
   just signatures; never allow a new game hash without reinspection. Coroutine

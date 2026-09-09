@@ -37,6 +37,11 @@ public sealed class PackageValidationTests : IDisposable
     [InlineData("VGModAPI.Core", "Unity.TextMeshPro")]
     [InlineData("VGModAPI.Core", "Unity.InputSystem")]
     [InlineData("VGModAPI", "Assembly-CSharp")]
+    [InlineData("VGModAPI.Unity", "Assembly-CSharp")]
+    [InlineData("VGModAPI.Unity", "VGModAPI.Core")]
+    [InlineData("VGModAPI.Unity", "BepInEx")]
+    [InlineData("VGModAPI.Abstractions", "VGModAPI.Unity")]
+    [InlineData("VGModAPI.Core", "VGModAPI.Unity")]
     public void ForbiddenAssemblyReferencesAreRejected(string owner, string dependency)
     {
         using var assembly = AssemblyDefinition.ReadAssembly(typeof(ILifecycleService).Assembly.Location);
@@ -115,7 +120,7 @@ public sealed class BuiltPackageTests
         Assert.Contains(("Persistence", "Root"), bindings);
         foreach (var setting in new[] { ("Persistence", "Enabled"), ("Missions", "Enabled"),
             ("Missions", "IdentityContinuity"), ("Travel", "Enabled"), ("ModInformation", "MenuEnabled"),
-            ("Boarding", "Enabled"), ("Dungeons", "Enabled") })
+            ("Boarding", "Enabled"), ("Dungeons", "Enabled"), ("GameplayUi", "Enabled") })
             Assert.DoesNotContain(setting, bindings);
     }
 

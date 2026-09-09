@@ -23,7 +23,8 @@ public sealed class ServiceRootTests
         var station = new StationEvents(hub);
         var jobs = new CraftingJobService(hub, null, hub.ReportSubscriberFailure);
         var commands = new CraftingCommandService(hub, jobs, null, _ => { });
-        foreach (var disposable in new IDisposable[] { lifecycle, mods, missions, travel, station }) hub.Services.AfterStopped(disposable.Dispose);
+        var gameplayUi = new GameplayUiService(hub);
+        foreach (var disposable in new IDisposable[] { lifecycle, mods, missions, travel, station, gameplayUi }) hub.Services.AfterStopped(disposable.Dispose);
         return (ModServices)typeof(ModServices).GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance)[0].Invoke(
             new object[] { lifecycle, mods, new PersistenceService(hub), missions, travel, station,
                 new RecipeCatalogService(hub, null, _ => { }), new RecipeQuoteService(hub, null, _ => { }), jobs, commands, new HudService(hub, hub.ReportSubscriberFailure), new ForgeUiService(hub, null, hub.ReportSubscriberFailure), new BoardingRuleService(hub, hub.ReportSubscriberFailure), new BoardingCombatService(hub, hub.ReportSubscriberFailure), new DungeonRewardService(hub, hub.ReportSubscriberFailure), new BoardingCommandService(hub, null, null, () => false), new VGModAPI.Runtime.BoardingTacticalAdapter(hub, null!), new BoardingService(hub, hub.ReportSubscriberFailure), new DungeonSettlementService(hub, new BoardingService(hub, hub.ReportSubscriberFailure), hub.ReportSubscriberFailure), new DungeonPanelService(hub, null, hub.ReportSubscriberFailure), new DungeonContentService(hub, null, null, null, hub.ReportSubscriberFailure), new StoryContentService(hub.Services, null, null, (_, _) => null, checkThread: hub.CheckThread), new BarContentService(null, hub, (_, _) => null, _ => false, hub.CheckThread),
@@ -32,7 +33,7 @@ public sealed class ServiceRootTests
                 new NavigationService(hub, _ => null, (_, _, _) => NavigationStatus.Unavailable, (_, _) => null),
                 new OwnedItemService(hub, (_, _) => null),
                 new OwnedRecipeService(hub, (_, _) => null, _ => null, _ => { }, _ => { }),
-                new InventoryService(hub, () => null) });
+                new InventoryService(hub, () => null), gameplayUi });
     }
 
     [Fact]
@@ -52,12 +53,17 @@ public sealed class ServiceRootTests
             Assert.True(root.Mods.Availability.IsAvailable);
             Assert.False(root.SaveData.Availability.IsAvailable);
             Assert.False(root.Missions.Availability.IsAvailable);
+            Assert.Same(root.GameplayUi, ModApi.Services.GameplayUi);
+            Assert.False(root.GameplayUi.Availability.IsAvailable);
+            Assert.Null(root.GameplayUi.Current);
+            Assert.IsType<InvalidOperationException>(ServiceNotificationTests.OnWorker(() => _ = root.GameplayUi));
             Assert.IsType<InvalidOperationException>(ServiceNotificationTests.OnWorker(() => _ = ModApi.Services));
             Assert.IsType<InvalidOperationException>(ServiceNotificationTests.OnWorker(() => _ = root.Mods));
             Assert.IsType<InvalidOperationException>(Assert.Throws<TargetInvocationException>(() => Publish(other)).InnerException);
             Clear(root); hub.Dispose();
             Assert.Throws<InvalidOperationException>(() => _ = ModApi.Services);
             Assert.Equal(ServiceUnavailableReason.ApiStopped, root.Mods.Availability.Reason);
+            Assert.Equal(ServiceUnavailableReason.ApiStopped, root.GameplayUi.Availability.Reason);
             Publish(other);
             Clear(root);
             Assert.Same(other, ModApi.Services);
