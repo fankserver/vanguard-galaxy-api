@@ -51,7 +51,6 @@ internal sealed class HudService : IHudService, IDisposable
         _hub.CheckThread(); if (_disposed) throw new ObjectDisposedException(nameof(HudService));
         var identity = new RecipeId(pluginId, localId);
         if (callback == null) throw new ArgumentNullException(nameof(callback));
-        if (_entries.Count >= 16) throw new InvalidOperationException("HUD registration limit reached.");
         if (_entries.Any(entry => entry.Plugin == identity.ProviderId && entry.Local == identity.LocalId)) throw new InvalidOperationException("Duplicate provider HUD identity.");
         var result = new Entry(this, identity.ProviderId, identity.LocalId, callback, order); _entries.Add(result); return result;
     }
@@ -97,7 +96,6 @@ internal sealed class HudService : IHudService, IDisposable
         public void Update(HudButton? button, HudPanel? panel)
         {
             _owner._hub.CheckThread(); if (_disposed) throw new ObjectDisposedException(nameof(Entry));
-            if (panel != null && Panel == null && _owner._entries.Count(entry => entry.Panel != null) >= 4) throw new InvalidOperationException("HUD panel limit reached.");
             if (ReferenceEquals(button, Button) && ReferenceEquals(panel, Panel)) return;
             var revision = checked(Revision + 1); Button = button; Panel = panel; Revision = revision;
         }

@@ -96,6 +96,24 @@ public sealed class HudLauncherTests
     }
 
     [Fact]
+    public void CrowdedInstallKeepsEveryProviderInBoundedScrollableLanes()
+    {
+        using var hub = new LifecycleHub((_, _) => { });
+        using var service = new HudService(hub, (_, _) => { });
+        for (var i = 0; i < 80; i++)
+            service.Register("mod" + i.ToString("D2"), "launcher", _ => { })
+                .Update(new HudButton("Window", (HudCorner)(i % 4), HudIcon.Storage), null);
+        Assert.Equal(80, service.Entries.Count);
+        foreach (var corner in Enum.GetValues<HudCorner>())
+        {
+            var entries = service.Launchers(corner); Assert.Equal(20, entries.Count);
+            var layout = Layout(corner, entries.Select(entry => Width(entry.Button!)).ToArray());
+            Assert.True(layout.Overflows); Assert.InRange(layout.Width, 40, 400);
+            Assert.Equal(entries.Count, layout.Slots.Count);
+        }
+    }
+
+    [Fact]
     public void CornerAndVisualChangesInvalidateOldInputRevision()
     {
         using var hub = new LifecycleHub((_, _) => { });

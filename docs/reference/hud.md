@@ -25,7 +25,17 @@ Provider and local identifiers jointly identify a registration. Same-provider du
 
 Registrations and their latest models survive HUD hide/show, canvas replacement and session replacement until disposed. No save hooks are needed for this transient API-owned UI lifetime. Models remain provider-owned: clear or replace session-specific content on session change. They are not persisted by this API. Updating with null hides the corresponding button or panel.
 
-At most 16 registrations and four simultaneous panels are allowed across all providers and corners. Each panel contains at most 32 uniquely identified rows. Limit violations reject the change without discarding prior content. Numeric order followed by ordinal provider/local identity determines placement. Panels size to their content within the available HUD height. A registration with both a button and panel renders its action inside the panel footer; its corner does not move the panel. Button-only registrations use the shared corner layouts below. Panels remain in their lower HUD area and scroll horizontally when needed; long panels scroll vertically. Geometry uses native canvas units and reattaches/rebuilds when the current canvas or viewport changes.
+Registrations and panels have no shared count quota: another installed mod cannot exhaust a HUD allocation and prevent your mod from registering. Screen space is bounded by the scrollable layouts, not by rejecting later providers. Each panel contains at most 32 uniquely identified rows; invalid panel definitions are rejected without replacing prior content. Numeric order followed by ordinal provider/local identity determines placement. Panels size to their content within the available HUD height. A registration with both a button and panel renders its action inside the panel footer; its corner does not move the panel. Button-only registrations use the shared corner layouts below. Panels remain in their lower HUD area and scroll horizontally when needed; long panels scroll vertically. Geometry uses native canvas units and reattaches/rebuilds when the current canvas or viewport changes.
+
+`Register` throws `InvalidOperationException` for a duplicate provider/local identity,
+not because other mods filled the HUD. Invalid arguments, wrong-thread access and
+registration after service disposal remain programming errors. No partial entry is
+added on failure. Keep a registration for the mod's lifetime and update its presentation
+rather than repeatedly disposing and registering on transient context changes.
+
+A visible button should be disabled, with an explanatory tooltip, while its action is
+unavailable. Use `Update(null, null)` when there is no useful entry to display; do not
+leave an enabled button that silently does nothing.
 
 Input checks the registration token, model revision, current session and live surface. Pointer-down revisions are retained through release; keyboard submission uses the current revision. Disposed/replaced entries, hidden surfaces, disabled buttons, non-clickable rows and obsolete models cannot invoke a replacement action. Callbacks are individually isolated and recursive invocation is refused. Content updates need not destroy existing hovered rows when their identities/structure are unchanged.
 
