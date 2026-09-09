@@ -44,6 +44,8 @@ try {
     $p | Add-Member dungeonPanelProbe $true
     Reject { Assert-DungeonReadinessSelection $root $p }
     [IO.File]::WriteAllText((Join-Path $root 'dungeon-panel.enabled'), 'dungeon-panel-v1')
+    Reject { Assert-DungeonReadinessSelection $root $p } # obsolete marker
+    [IO.File]::WriteAllText((Join-Path $root 'dungeon-panel.enabled'), 'dungeon-panel-v2')
     Assert-DungeonReadinessSelection $root $p
     Reject { Assert-DungeonReadinessReceipt $root $p }
     [IO.File]::WriteAllLines((Join-Path $root 'dungeon-panel.txt'), @('PASS','dungeon-panel-v2','generated-location-pointer-disabled-revalidate-contributors-dispose-stale-reopen-destroy'))
@@ -51,6 +53,10 @@ try {
     $image = Join-Path $root 'dungeon-panel-actions.png'; $record = Join-Path $root 'dungeon-panel-actions.txt'
     [IO.File]::WriteAllBytes($image, [byte[]]@(1,2,3))
     [IO.File]::WriteAllText($record, 'sha256=' + (Get-FileHash $image -Algorithm SHA256).Hash.ToLowerInvariant())
+    Assert-DungeonReadinessReceipt $root $p
+    [IO.File]::WriteAllLines((Join-Path $root 'dungeon-panel.txt'), @('PASS','dungeon-panel-v1','generated-location-open-pointer-disabled-close-reopen-destroy'))
+    Reject { Assert-DungeonReadinessReceipt $root $p } # obsolete receipt, valid capture
+    [IO.File]::WriteAllLines((Join-Path $root 'dungeon-panel.txt'), @('PASS','dungeon-panel-v2','generated-location-pointer-disabled-revalidate-contributors-dispose-stale-reopen-destroy'))
     Assert-DungeonReadinessReceipt $root $p
     [IO.File]::WriteAllBytes($image, [byte[]]@(1,2,4))
     Reject { Assert-DungeonReadinessReceipt $root $p } # tampered image

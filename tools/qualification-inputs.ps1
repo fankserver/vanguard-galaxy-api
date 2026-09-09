@@ -447,7 +447,7 @@ function Assert-DungeonReadinessSelection([string]$Root, $Provenance) {
     $panelSelected = $panel -and $panel.Value
     $panelMarker = Join-Path $Root 'dungeon-panel.enabled'
     if ([bool]$panelSelected -ne (Test-Path -LiteralPath $panelMarker -PathType Leaf)) { throw 'Dungeon panel selection changed.' }
-    if ($panelSelected -and [IO.File]::ReadAllText($panelMarker) -cne 'dungeon-panel-v1') { throw 'Invalid dungeon panel marker.' }
+    if ($panelSelected -and [IO.File]::ReadAllText($panelMarker) -cne 'dungeon-panel-v2') { throw 'Invalid dungeon panel marker.' }
     $flag = $Provenance.PSObject.Properties['dungeonReadinessProbe']
     if ($panelSelected -and (!$flag -or !$flag.Value)) { throw 'Dungeon panel requires readiness.' }
     if ($flag -and $flag.Value -isnot [bool]) { throw 'Invalid dungeon readiness flag.' }
