@@ -144,7 +144,7 @@ internal sealed class ForgeUiRuntime : IDisposable
         text.transform.SetParent(parent, false); text.rectTransform.anchorMin = Vector2.zero; text.rectTransform.anchorMax = Vector2.one;
         text.rectTransform.offsetMin = new Vector2(4, 0); text.rectTransform.offsetMax = new Vector2(-4, 0);
         text.font = font; text.fontSize = 12; text.alignment = TextAlignmentOptions.Center;
-        text.richText = false; text.raycastTarget = false; text.overflowMode = TextOverflowModes.Ellipsis; return text;
+        text.richText = false; text.raycastTarget = false; text.overflowMode = TextOverflowModes.Truncate; return text;
     }
     private void ClearView()
     {

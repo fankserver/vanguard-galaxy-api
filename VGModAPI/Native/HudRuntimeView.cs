@@ -27,7 +27,7 @@ internal sealed partial class HudRuntime
             var root = (RectTransform)_root.transform; root.SetParent(_canvas!.transform, false); Stretch(root);
             var canvasHeight = ((RectTransform)_canvas.transform).rect.height;
             var panelHeight = Mathf.Clamp(canvasHeight - 390, 120, 360);
-            var buttons = entries.Count(entry => entry.Button != null);
+            var buttons = entries.Count(entry => entry.Button != null && entry.Panel == null);
             var panels = entries.Count(entry => entry.Panel != null);
             var buttonContent = Scroll(root, "Buttons", 340, 28, buttons * 124, false);
             var panelContent = Scroll(root, "Panels", buttons > 0 ? 372 : 340, panelHeight, panels * 308, false);
@@ -36,14 +36,21 @@ internal sealed partial class HudRuntime
             foreach (var entry in entries)
             {
                 var view = new View(); _views.Add(entry.Token, view);
-                if (entry.Button != null)
+                if (entry.Button != null && entry.Panel == null)
                 {
                     var rect = Box(buttonContent, "Button", buttonIndex++ * 124, 0, 120, 28, false);
                     view.Button = Button(rect, () => view.Revision, revision => Click(entry.Token, revision, HudInteractionKind.Button, null));
                     view.ButtonLabel = Label(rect, 12); view.ButtonHover = Hover(rect.gameObject);
                 }
                 if (entry.Panel == null) continue;
-                var panel = Box(panelContent, "Panel", panelIndex++ * 308, 0, 300, panelHeight, false);
+                var layout = new RecipeWidgetLayout(entry.Panel.Rows.Count, entry.Button != null, panelHeight);
+                var panel = Box(panelContent, "Panel", panelIndex++ * 308, 0, RecipeWidgetLayout.Width, layout.Height, false);
+                if (entry.Button != null)
+                {
+                    var footer = Box(panel, "Action", 6, 4, 288, 26, false);
+                    view.Button = Button(footer, () => view.Revision, revision => Click(entry.Token, revision, HudInteractionKind.Button, null));
+                    view.ButtonLabel = Label(footer, 12); view.ButtonHover = Hover(footer.gameObject);
+                }
                 panel.gameObject.AddComponent<Image>().color = new Color(.035f, .05f, .075f, .94f);
                 var header = Box(panel, "Header", 6, -4, 258, 30, true);
                 var headerHit = header.gameObject.AddComponent<Image>(); headerHit.color = Color.clear; headerHit.raycastTarget = true;
@@ -53,10 +60,10 @@ internal sealed partial class HudRuntime
                     var close = Box(panel, "Close", 272, -6, 22, 22, true);
                     Button(close, () => view.Revision, revision => Click(entry.Token, revision, HudInteractionKind.ClosePanel, null)); Label(close, 13).text = "×";
                 }
-                var rows = Scroll(panel, "Rows", 6, panelHeight - 42, 0, true, entry.Panel.Rows.Count * 30);
+                var rows = Scroll(panel, "Rows", entry.Button != null ? 36 : 6, layout.RowsHeight, 0, true, entry.Panel.Rows.Count * RecipeWidgetLayout.RowHeight);
                 foreach (var row in entry.Panel.Rows)
                 {
-                    var rect = Box(rows, "Row", 0, -view.Rows.Count * 30, 286, 28, true);
+                    var rect = Box(rows, "Row", 0, -view.Rows.Count * RecipeWidgetLayout.RowHeight, 286, RecipeWidgetLayout.RowHeight - 2, true);
                     var display = Display(rect); display.Button = Button(rect, () => view.Revision, revision => Click(entry.Token, revision, HudInteractionKind.Row, row.Id));
                     view.Rows.Add(row.Id, display);
                 }
@@ -137,7 +144,7 @@ internal sealed partial class HudRuntime
         var text = new GameObject("Text", typeof(RectTransform), typeof(TextMeshProUGUI)).GetComponent<TextMeshProUGUI>(); text.transform.SetParent(parent, false);
         Stretch(text.rectTransform); text.rectTransform.offsetMin = new Vector2(4, 0); text.rectTransform.offsetMax = new Vector2(-4, 0);
         text.font = _font; text.fontSize = size; text.richText = false; text.raycastTarget = false;
-        text.alignment = TextAlignmentOptions.MidlineLeft; text.overflowMode = TextOverflowModes.Ellipsis; return text;
+        text.alignment = TextAlignmentOptions.MidlineLeft; text.overflowMode = TextOverflowModes.Truncate; return text;
     }
     private static Button Button(RectTransform rect, Func<long> revision, Action<long> callback)
     {
