@@ -66,7 +66,8 @@ internal sealed class ServiceStatusRegistry : IDisposable
         ["save-data"] = new[] { "session-lifecycle", "save-outcomes" },
         ["mission-transitions"] = new[] { "session-lifecycle" },
         ["mission-continuity"] = new[] { "mission-transitions", "save-data" },
-        ["native-travel"] = new[] { "session-lifecycle" }
+        ["native-travel"] = new[] { "session-lifecycle" },
+        ["gameplay-ui"] = new[] { "session-lifecycle" }
     };
 
     internal ServiceStatusRegistry(Action checkThread, Action<string, Exception> report, Func<IDisposable> enterDispatch)

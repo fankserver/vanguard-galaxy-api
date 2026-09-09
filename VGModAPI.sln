@@ -17,6 +17,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LifecycleObserver", "exampl
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tools", "tools", "{07C2787E-EAC7-C090-1BA3-A61EC2A24D84}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VGModAPI.Unity", "VGModAPI.Unity\VGModAPI.Unity.csproj", "{4EC7747D-DF92-4C33-8759-BB71184E4540}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -87,6 +89,18 @@ Global
 		{FBD104C7-478E-44D3-BDB9-80E9DEBC2670}.Release|x64.Build.0 = Release|Any CPU
 		{FBD104C7-478E-44D3-BDB9-80E9DEBC2670}.Release|x86.ActiveCfg = Release|Any CPU
 		{FBD104C7-478E-44D3-BDB9-80E9DEBC2670}.Release|x86.Build.0 = Release|Any CPU
+		{4EC7747D-DF92-4C33-8759-BB71184E4540}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4EC7747D-DF92-4C33-8759-BB71184E4540}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4EC7747D-DF92-4C33-8759-BB71184E4540}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{4EC7747D-DF92-4C33-8759-BB71184E4540}.Debug|x64.Build.0 = Debug|Any CPU
+		{4EC7747D-DF92-4C33-8759-BB71184E4540}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{4EC7747D-DF92-4C33-8759-BB71184E4540}.Debug|x86.Build.0 = Debug|Any CPU
+		{4EC7747D-DF92-4C33-8759-BB71184E4540}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4EC7747D-DF92-4C33-8759-BB71184E4540}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4EC7747D-DF92-4C33-8759-BB71184E4540}.Release|x64.ActiveCfg = Release|Any CPU
+		{4EC7747D-DF92-4C33-8759-BB71184E4540}.Release|x64.Build.0 = Release|Any CPU
+		{4EC7747D-DF92-4C33-8759-BB71184E4540}.Release|x86.ActiveCfg = Release|Any CPU
+		{4EC7747D-DF92-4C33-8759-BB71184E4540}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

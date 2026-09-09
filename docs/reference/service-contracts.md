@@ -9,7 +9,7 @@ service references report stopped state. See [compatibility](compatibility.md) f
 `ModServices` is sealed and API-constructed. All service references are non-null,
 read-only and stable for the API lifetime, including disabled modules. It covers
 lifecycle, mod inventory, save data, missions, travel/stations, recipes/quotes,
-crafting, HUD/Forge UI, boarding, dungeons, story and bars. Consumer domain logic
+crafting, HUD/Forge UI, [gameplay UI lifetimes](gameplay-ui.md), boarding, dungeons, story and bars. Consumer domain logic
 accepts only the interfaces it needs rather than constructing the root.
 
 The root returns the actual service engines, not compatibility wrappers. An

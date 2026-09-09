@@ -5,7 +5,7 @@ from pathlib import Path, PureWindowsPath
 import zipfile
 
 REQUIRED_FILES = {
-    'VGModAPI.dll', 'VGModAPI.Core.dll', 'VGModAPI.Abstractions.dll',
+    'VGModAPI.dll', 'VGModAPI.Core.dll', 'VGModAPI.Abstractions.dll', 'VGModAPI.Unity.dll',
     'README.md', 'LICENSE', 'vgmodapi.vgmod.json',
 }
 

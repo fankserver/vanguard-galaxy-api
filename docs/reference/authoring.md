@@ -4,7 +4,7 @@ Compile against `VGModAPI.Abstractions`, mark the reference non-copy-local, and 
 
 ## Compiling examples
 
-`make build` compiles the API and every example project. Examples are not deployed or included in the API package. BepInEx/Unity references belong only in thin bootstrap projects; reusable logic uses public abstractions.
+`make build` compiles the API and every example project. Examples are not deployed or included in the API package. BepInEx references belong in thin bootstrap projects; reusable game logic uses public abstractions. Consumer-owned UI may reference Unity and the optional `VGModAPI.Unity` bridge.
 
 | Example | Demonstrated behavior |
 |---|---|
@@ -15,6 +15,7 @@ Compile against `VGModAPI.Abstractions`, mark the reference non-copy-local, and 
 | OwnedGoodsAuthor | Fixed TradeGoods and recipe-first owned dependencies |
 | OwnedBarAuthorA / OwnedBarAuthorB | Independent bar providers and owned roster definitions |
 | ForgeInspector / ForgeInspectorHost | Plain .NET inspection/HUD actions plus thin host integration |
+| GameplayWindow | Gameplay UI lifecycle, owned Unity container and a window created later from a shared HUD launcher |
 | AuthoredDungeon / DungeonAuthor | Authored dungeon content and host bootstrap |
 | UpdateParticipant | Optional update metadata integration |
 

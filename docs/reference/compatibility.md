@@ -39,7 +39,9 @@ adaptation of old consumers.
 Declare the required API minimum. BepInEx remains the only loader; its minimum
 check does not prove compatibility with every newer API. Distribute one API copy,
 not embedded runtime copies in each consumer. Public contracts contain no Unity or
-game types; Core and native adapters are unsupported implementation details.
+game types, except for supported Unity UI types in the optional `VGModAPI.Unity`
+bridge; Abstractions and Core remain Unity-free. Core and native adapters are
+unsupported implementation details.
 Callbacks and provider namespaces are not a security sandbox: mods share a process.
 
 ## Save and feature boundaries
@@ -60,7 +62,7 @@ See the domain contracts for supported operations and actual limitations:
 [lifecycle](lifecycle-contract.md), [save data](persistence-storage.md),
 [missions](mission-events.md), [travel](travel-events.md), [story](story-content.md),
 [bars](bar-rosters.md), [boarding](boarding-contract.md), [dungeons](dungeon-content.md),
-[crafting](recipes.md) and [mod information](mod-information.md).
+[crafting](recipes.md), [gameplay UI](gameplay-ui.md) and [mod information](mod-information.md).
 
 ## Correctness checks
 

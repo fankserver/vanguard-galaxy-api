@@ -23,6 +23,7 @@ public sealed partial class Plugin
         _craftingJobs ??= new CraftingJobService(hub, null, hub.ReportSubscriberFailure);
         _craftingCommands ??= new CraftingCommandService(hub, _craftingJobs, null, error => Logger.LogError(error));
         _hudService ??= new HudService(hub, hub.ReportSubscriberFailure);
+        _gameplayUi ??= new GameplayUiService(hub);
         _forgeUi ??= new ForgeUiService(hub, null, hub.ReportSubscriberFailure);
         _boardingRuleService ??= new BoardingRuleService(hub, hub.ReportSubscriberFailure);
         _boardingCombat ??= new BoardingCombatService(hub, hub.ReportSubscriberFailure);
@@ -44,11 +45,12 @@ public sealed partial class Plugin
         _navigationService ??= CreateNavigation();
         _dialogueService ??= new DialogueService(hub.Services.Get("dialogue"), hub.CheckThread, error => hub.ReportSubscriberFailure("dialogue", error));
         var root = new ModServices(lifecycle, mods, (_persistence ??= new PersistenceService(hub)), missions, travel, station,
-            _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService, _boardingCombat, _dungeonRewards, _boardingCommands, _boardingTactics, _boardingService, _dungeonSettlement, _dungeonPanelService, _dungeons, _story, _bars, _worldContent, _dialogueService, _navigationService, _ownedItems, _ownedRecipes, _inventoryService);
+            _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService, _boardingCombat, _dungeonRewards, _boardingCommands, _boardingTactics, _boardingService, _dungeonSettlement, _dungeonPanelService, _dungeons, _story, _bars, _worldContent, _dialogueService, _navigationService, _ownedItems, _ownedRecipes, _inventoryService, _gameplayUi);
         // Deferred cleanup preserves terminal lifecycle delivery when shutdown starts inside a callback.
         // Content owners release their registrations before the save-data coordinator stops.
         foreach (var service in new IDisposable[] { mods, missions, travel, station, _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService, _boardingCombat, _dungeonRewards, _boardingCommands, _boardingTactics, _boardingService, _dungeonSettlement, _dungeonPanelService, _dungeons, _story, _bars })
             hub.Services.AfterStopped(service.Dispose);
+        hub.Services.AfterStopped(_gameplayUi.Dispose);
         hub.Services.AfterStopped(StopDialogue);
         hub.Services.AfterStopped(StopNavigation);
         hub.Services.AfterStopped(StopInventories);

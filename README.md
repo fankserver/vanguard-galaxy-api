@@ -11,7 +11,7 @@ Unofficial community mod API for Vanguard Galaxy, using BepInEx 5 and HarmonyX.
 **Experimental.** See [compatibility](docs/reference/compatibility.md) for the supported game build, available services, and current limitations.
 
 VGModAPI provides lifecycle events, mod save data, and optional mission, travel,
-boarding, story, bar, recipe and mod-information services. It is an integration
+boarding, story, bar, recipe, gameplay UI and mod-information services. It is an integration
 layer, not a mod loader or a complete gameplay SDK.
 
 ## Install
@@ -19,8 +19,8 @@ layer, not a mod loader or a complete gameplay SDK.
 1. Install BepInEx 5, close the game, and back up saves before changing plugins.
 2. Verify the release ZIP against its accompanying SHA-256 file and extract its
    `VGModAPI/` folder into `<game>/BepInEx/plugins/`.
-3. Keep one copy of `VGModAPI.dll`, `VGModAPI.Core.dll`, and
-   `VGModAPI.Abstractions.dll`. Never replace the game's or BepInEx's assemblies.
+3. Keep the API DLLs together in that folder, without duplicate copies elsewhere.
+   Never replace the game's or BepInEx's assemblies.
 
 Start with disposable saves. An unsupported game hash disables game integration;
 do not override the compatibility gate. To uninstall, remove the API folder and
@@ -56,6 +56,8 @@ Inspect `SessionTracking.Availability` and `SaveOutcomes.Availability` before re
 must handle unavailable optional services. Do not bundle the API assemblies with
 your mod. API-covered features need no direct Harmony or vanilla assembly reference;
 your BepInEx plugin entry point still needs BepInEx/Unity compile references.
+For consumer-owned windows, also reference `VGModAPI.Unity.dll` and use the
+[gameplay UI host](docs/reference/gameplay-ui.md); non-UI consumers need no bridge reference.
 
 The [API reference](docs/reference/README.md) describes each service's contract and
 configuration. A compiled example is available in the source repository at

@@ -89,6 +89,15 @@ internal sealed class ServiceNotifications<T> : IDisposable
         if (!_dispatching) Dispose();
     }
 
+    /// <summary>Drain already queued notifications before dropping subscriptions.</summary>
+    internal void Complete()
+    {
+        _checkThread();
+        if (_disposed || _completing) return;
+        _completing = true;
+        if (!_dispatching) Dispose();
+    }
+
     public void Dispose()
     {
         _checkThread();

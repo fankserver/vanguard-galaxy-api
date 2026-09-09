@@ -2,6 +2,7 @@
   <PropertyGroup><TargetFramework>netstandard2.1</TargetFramework></PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../VGModAPI.Core/VGModAPI.Core.csproj" />
+    <ProjectReference Include="../VGModAPI.Unity/VGModAPI.Unity.csproj" />
     <Reference Include="BepInEx"><HintPath>lib/BepInEx.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="0Harmony"><HintPath>lib/0Harmony.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine"><HintPath>lib/UnityEngine.dll</HintPath><Private>false</Private></Reference>
