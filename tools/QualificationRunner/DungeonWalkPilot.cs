@@ -26,6 +26,8 @@ public sealed partial class Plugin
         var donor = SpGet(player, "currentSpaceShip")!;
         Dictionary<string, int> Roster() => (Dictionary<string, int>)SpGet(SpGet(donor, "crewData")!, "crew")!;
         var before = new Dictionary<string, int>(Roster());
+        Dictionary<string, int> Prisoners() => (Dictionary<string, int>)SpGet(SpGet(donor, "prisonerData")!, "prisoners")!;
+        var prisonersBefore = new Dictionary<string, int>(Prisoners());
         var candidate = before.OrderBy(pair => pair.Key, StringComparer.Ordinal).FirstOrDefault(pair => pair.Value >= 6 && (!reward || pair.Key == "Marine"));
         Require(candidate.Key != null, "Active walk fixture requires six existing crew of one type.");
         var manifest = new BoardingCrewManifest(new[] { new KeyValuePair<string, int>(candidate.Key!, 6) });
@@ -76,7 +78,12 @@ public sealed partial class Plugin
             Require(settled.NativeOutcome == (combat ? "FriendlyVictory" : "FriendlyExtracted") && !settled.CaptureApplied, "Retreat produced an unexpected outcome or capture.");
             Require(ReferenceEquals(player, SpGet(playerType, "current")) && ReferenceEquals(donor, SpGet(player, "currentSpaceShip")), "Walk donor identity changed.");
             var after = Roster();
-            Require(settled.Casualties.All(pair => before.ContainsKey(pair.Key)) && settled.PrisonersDelivered.Values.All(count => count == 0), "Unexpected casualty or prisoner identity.");
+            records.Add("casualties=" + string.Join(",", settled.Casualties.Select(pair => pair.Key + ":" + pair.Value)) + " prisoners-delivered=" + string.Join(",", settled.PrisonersDelivered.Select(pair => pair.Key + ":" + pair.Value)));
+            WriteAtomic("dungeon-walk-diagnostic.txt", records);
+            Require(settled.Casualties.All(pair => before.ContainsKey(pair.Key)), "Unexpected casualty identity.");
+            var prisonersAfter = Prisoners();
+            var prisonerKeys = prisonersBefore.Keys.Concat(prisonersAfter.Keys).Concat(settled.PrisonersDelivered.Keys).Distinct();
+            Require(prisonerKeys.All(key => (prisonersAfter.TryGetValue(key, out var actual) ? actual : 0) == (prisonersBefore.TryGetValue(key, out var prior) ? prior : 0) + (settled.PrisonersDelivered.TryGetValue(key, out var delivered) ? delivered : 0)), "Observed prisoner delivery did not reconcile with the same donor's brig.");
             Require(after.Keys.All(before.ContainsKey) && before.All(pair => (after.TryGetValue(pair.Key, out var count) ? count : 0) == pair.Value - (settled.Casualties.TryGetValue(pair.Key, out var lost) ? lost : 0)), "Returning crew did not reconcile with observed casualties.");
             records.Add("settlement=" + settled.NativeOutcome + " after=" + (after.TryGetValue(candidate.Key!, out var returnedCount) ? returnedCount : 0) + " casualties=" + settled.Casualties.Values.Sum());
             WriteAtomic("dungeon-walk-diagnostic.txt", records);
