@@ -118,8 +118,8 @@ namespace Behaviour.Item
         public float m3 { get; set; } = 1;
         public int itemLevel { get; set; } = 1;
         public Source.Item.Rarity rarity { get; set; }
-        public object? itemBuilder { get; set; }
-        public object? equipmentBuilder { get; set; }
+        public Behaviour.Item.Builder.ItemBuilder? itemBuilder { get; set; }
+        public Behaviour.Equipment.Builder.EquipmentBuilder? equipmentBuilder { get; set; }
         public Func<InventoryItemType, bool>? StackRule;
         public bool CanStackWith(InventoryItemType other) => StackRule?.Invoke(other) ?? ReferenceEquals(this, other);
         public bool CanGoInDataInventory() => false;

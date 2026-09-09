@@ -56,7 +56,7 @@ public sealed partial class Plugin
             + " deliveries=" + string.Join(";", f.Deliveries.Select(d => d.Resource + " requested=" + d.RequestedAmount + " verified=" + d.VerifiedAmount
                 + " status=" + d.Status + " level=" + d.ItemLevel + " rarity=" + d.Rarity + " detail=" + d.Detail)))).ToArray());
         Require(delivered.Length == 1 && delivered[0].DeliveryStatus == CraftingDeliveryStatus.Verified, "Generated delivery was not verified exactly once.");
-        Require(delivered[0].Deliveries.Any(d => d.Resource?.Kind == RecipeResourceKind.Item && d.ItemLevel == quote.OutputLevel
+        Require(delivered[0].Deliveries.Any(d => d.Resource?.Equals(selected.Outputs[0].Resource) == true && d.ItemLevel == quote.OutputLevel
             && d.Rarity == selected.Rarity && d.VerifiedAmount >= selected.Outputs[0].Amount), "Generated item level/rarity/quantity not observed in delivery.");
         var after = ForgeInventoryCounts(nativeStation);
         var reported = delivered.SelectMany(f => f.Deliveries).GroupBy(d => (d.Destination!.Value, d.Resource!.LocalId, d.ItemLevel.GetValueOrDefault(), d.Rarity ?? ""))
