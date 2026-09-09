@@ -37,7 +37,10 @@ internal sealed class DungeonInstallationEvents : IDisposable
         if (_disposed || !Current(session)) return;
         foreach (var installation in _installations.ToArray())
         {
-            if (installation.Disposed || installation.Handlers.Count == 0 || !matchesLocation(installation.PoiId)) continue;
+            if (installation.Disposed || installation.Handlers.Count == 0) continue;
+            try { if (!matchesLocation(installation.PoiId)) continue; }
+            catch (Exception error) { Report(installation.Owner, error); continue; }
+            if (_disposed || installation.Disposed || !Current(session)) continue;
             foreach (var handler in installation.Handlers.ToArray())
                 _pending.Add(new Delivery(session, installation, handler));
         }
@@ -53,6 +56,8 @@ internal sealed class DungeonInstallationEvents : IDisposable
             _saves.Remove(fact.OperationId.Value);
         if (fact.Kind is LifecycleEventKind.SessionInvalidated or LifecycleEventKind.SessionStartFailed)
             _pending.RemoveAll(value => value.Session == fact.Session?.Id);
+        // Saves can remain on the native stack while a nested callback replaces a session.
+        // Only their actual terminal events clear the barrier, never a session transition.
     }
 
     internal void Tick()
@@ -68,8 +73,16 @@ internal sealed class DungeonInstallationEvents : IDisposable
             {
                 if (!Current(item.Session) || item.Installation.Disposed || !item.Handler.Active)
                 { _pending.Remove(item); continue; }
-                if (!_hub.SessionTracking.Availability.IsAvailable || !_hub.SaveOutcomes.Availability.IsAvailable ||
-                    _hub.CurrentSession?.Phase != SessionPhase.GameplayInitialized || _saves.Count != 0) break;
+                if (!_hub.SessionTracking.Availability.IsAvailable || !_hub.SaveOutcomes.Availability.IsAvailable)
+                {
+                    if (!item.Reported)
+                    {
+                        item.Reported = true;
+                        Report(item.Installation.Owner, new InvalidOperationException("Installation reaction is waiting because session or save observation is unavailable."));
+                    }
+                    continue;
+                }
+                if (_hub.CurrentSession?.Phase != SessionPhase.GameplayInitialized || _saves.Count != 0) break;
                 if (waiting.Contains(item.Installation.Owner)) continue;
                 try
                 {

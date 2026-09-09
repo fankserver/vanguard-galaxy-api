@@ -138,6 +138,45 @@ public sealed class DungeonInstallationEventTests : IDisposable
     }
 
     [Fact]
+    public void FaultingIdentityLookupDoesNotSuppressAnotherInstallationsReaction()
+    {
+        var reports = new List<string>(); using var hub = Hub((owner, _) => reports.Add(owner));
+        using var bad = hub.Installations.Get("bad-owner", "bad-id", null);
+        using var good = hub.Installations.Get("good-owner", "station-a", null);
+        bad.ExtractionStarted += () => Assert.Fail("Failed identity"); var count = 0;
+        good.ExtractionStarted += () => count++;
+        var id = Ready(hub);
+        hub.Installations.ExtractionStarted(id, poi => poi == "bad-id" ? throw new InvalidOperationException("lookup") : true);
+        hub.Installations.Tick();
+        Assert.Equal(new[] { "bad-owner" }, reports); Assert.Equal(1, count);
+    }
+
+    [Fact]
+    public void SessionReplacementCannotClearAnUnfinishedNativeSaveBarrier()
+    {
+        using var hub = Hub(); using var provider = Provider(hub); var count = 0;
+        provider.GetInstallation("station-a").ExtractionStarted += () => count++;
+        Ready(hub); var originalSession = hub.CurrentSession; var operation = Guid.NewGuid();
+        hub.Publish(new LifecycleEvent(LifecycleEventKind.SaveStarted, originalSession, operation, "slot"));
+        var next = Ready(hub); Extract(hub, next);
+        hub.Installations.Tick(); Assert.Equal(0, count);
+        hub.Publish(new LifecycleEvent(LifecycleEventKind.SaveSkipped, originalSession, operation, "slot"));
+        hub.Installations.Tick(); Assert.Equal(1, count);
+    }
+
+    [Fact]
+    public void UnavailableObservationIsDiagnosedOnceAndDoesNotGrantPermission()
+    {
+        var reports = 0; using var hub = Hub((_, _) => reports++); using var provider = Provider(hub);
+        var count = 0; provider.GetInstallation("station-a").ExtractionStarted += () => count++;
+        var id = Ready(hub); Extract(hub, id);
+        hub.SetCapability("save-outcomes", false, "Fault");
+        hub.Installations.Tick(); hub.Installations.Tick();
+        Assert.Equal(1, reports); Assert.Equal(0, count);
+        hub.SetCapability("save-outcomes", true, "Recovered"); hub.Installations.Tick(); Assert.Equal(1, count);
+    }
+
+    [Fact]
     public void AccessIsThreadBoundAndApiShutdownClearsPendingReactions()
     {
         using var hub = Hub(); using var provider = Provider(hub); var station = provider.GetInstallation("station-a");

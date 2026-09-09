@@ -19,7 +19,8 @@ are session-local; occurrence GUIDs survive save/load.
 ## Installation reactions
 
 Require API **0.2.10** when compiling against the current dungeon provider contract.
-Subscribe to a particular installation once during plugin setup:
+The dungeon content service must be available; unsupported game bindings cannot
+provide installation events. Subscribe to a particular installation once during plugin setup:
 
 ```csharp
 // After registering additional custom save data, if the mod has any.
@@ -59,7 +60,9 @@ once when acquiring the provider, delivery waits for its live mutation gate.
 Without custom data, omit `saveData`; no dummy registration is needed.
 
 Pending reactions are retained while the same session's custom data is blocked,
-with a diagnostic for durable blocks; recovery allows delivery. Session end
+with a diagnostic for durable blocks; recovery allows delivery. Loss of session
+or save observation also pauses delivery and produces a diagnostic rather than
+guessing permission. Session end
 cancels old reactions without rebinding them to another save. Subscriptions
 remain available for future extractions. Removing a handler before delivery,
 disposing its provider, or stopping the API suppresses pending callbacks.
