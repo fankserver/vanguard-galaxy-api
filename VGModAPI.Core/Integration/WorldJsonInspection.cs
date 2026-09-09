@@ -179,9 +179,20 @@ internal sealed partial class WorldJsonInspection
                 foreach (var loot in Array(literalLoot))
                 {
                     visit();
-                    if (++lootCount > 128 || !(bool)_isString.GetValue(loot)!)
-                        throw new InvalidDataException("Owned literal loot requires bounded native item identifiers; generated item objects are not inspected.");
-                    var id = (string)_string.GetValue(loot)!;
+                    if (++lootCount > 128) throw new InvalidDataException("Owned literal loot exceeds its count bound.");
+                    string id;
+                    if ((bool)_isString.GetValue(loot)!) id = (string)_string.GetValue(loot)!;
+                    else
+                    {
+                        var generated = Object(loot);
+                        if (!(bool)_isNull.GetValue(Field(generated, "equipmentType"))!)
+                            throw new InvalidDataException("Equipment-builder loot is not yet inspected.");
+                        id = Text(generated, "itemTypeId");
+                        var level = Number(generated, "level", 0, 10000, true);
+                        if (!(bool)_isNull.GetValue(Field(generated, "loreKey"))!)
+                            throw new InvalidDataException("Literal item description mutation is not admitted.");
+                        if (level > 0) assets.ItemCloneRoot();
+                    }
                     if (string.IsNullOrEmpty(id) || Utf8.GetByteCount(id) > 128) throw new InvalidDataException("Invalid literal loot identity.");
                     assets.Item(id);
                 }

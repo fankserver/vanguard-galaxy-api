@@ -80,6 +80,23 @@ public sealed class WorldJsonInspectionTests
         poi["salvageDescriptors"] = new(new List<JsonValue> { new(descriptor) });
         var reader = new WorldJsonInspection(typeof(JsonObject).Assembly);
         Assert.Single(reader.Read(Root(poi)));
+        var leveled = new JsonObject { ["itemTypeId"] = new("NativeItem"), ["level"] = new(0) };
+        descriptor["literalLootItems"] = new(new List<JsonValue> { new(leveled) });
+        Assert.Single(reader.Read(Root(poi)));
+        leveled["loreKey"] = new("mutates shared template");
+        Assert.Throws<InvalidDataException>(() => reader.Read(Root(poi))); leveled.Remove("loreKey");
+        var singleton = typeof(Behaviour.Util.PersistentSingleton<Behaviour.GameManager>).GetField("instance", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
+        var previous = singleton.GetValue(null);
+        try
+        {
+            leveled["level"] = new(1); singleton.SetValue(null, null);
+            Assert.Throws<InvalidDataException>(() => reader.Read(Root(poi)));
+            var manager = new Behaviour.GameManager(); singleton.SetValue(null, manager);
+            var parsed = Assert.Single(reader.Read(Root(poi)));
+            manager.itemBuilderRoot = new UnityEngine.Transform();
+            Assert.Throws<InvalidDataException>(() => parsed.ValidateAssets());
+        }
+        finally { singleton.SetValue(null, previous); }
         descriptor["literalLootItems"] = new(new List<JsonValue> { new("UnknownItem") });
         Assert.Throws<InvalidDataException>(() => reader.Read(Root(poi)));
         descriptor["literalLootItems"] = new(new List<JsonValue> { new(new JsonObject { ["equipmentType"] = new("Native") }) });

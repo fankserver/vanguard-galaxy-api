@@ -9,6 +9,14 @@ namespace Behaviour.Util
         public static void SetInstance(T? value) => instance = value;
     }
 }
+namespace UnityEngine { public sealed class Transform : Object { } }
+namespace Behaviour
+{
+    public sealed class GameManager : Behaviour.Util.PersistentSingleton<GameManager>
+    {
+        public UnityEngine.Transform itemBuilderRoot { get; set; } = new();
+    }
+}
 namespace Behaviour.Bootstrap
 {
     public sealed class SceneLoader : Behaviour.Util.PersistentSingleton<SceneLoader>

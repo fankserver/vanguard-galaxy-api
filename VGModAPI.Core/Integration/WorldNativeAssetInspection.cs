@@ -11,8 +11,15 @@ internal sealed class WorldNativeAssetInspection
 {
     private readonly Assembly _assembly;
     private readonly Dictionary<(FieldInfo Field, string Id), (IDictionary Registry, object Value, bool Unity)> _references = new();
+    private readonly Dictionary<FieldInfo, (object Manager, FieldInfo RootField, object Root)> _cloneRoots = new();
     internal void Validate()
     {
+        foreach (var entry in _cloneRoots)
+        {
+            RequireAlive(entry.Value.Manager); RequireAlive(entry.Value.Root);
+            if (!ReferenceEquals(entry.Key.GetValue(null), entry.Value.Manager) || !ReferenceEquals(entry.Value.RootField.GetValue(entry.Value.Manager), entry.Value.Root))
+                throw new InvalidDataException("Native item clone root changed after inspection.");
+        }
         foreach (var entry in _references)
         {
             if (entry.Value.Unity) RequireAlive(entry.Value.Value);
@@ -31,6 +38,22 @@ internal sealed class WorldNativeAssetInspection
     }
     internal WorldNativeAssetInspection(Assembly assembly) => _assembly = assembly;
     internal void Ship(string id) => Require("Behaviour.Unit.SpaceShip", "allShips", id);
+    internal void ItemCloneRoot()
+    {
+        var managerType = _assembly.GetType("Behaviour.GameManager", false) ?? throw new InvalidDataException("Native item manager is unavailable.");
+        var singleton = _assembly.GetType("Behaviour.Util.PersistentSingleton`1", false)?.MakeGenericType(managerType);
+        var instance = singleton?.GetField("instance", BindingFlags.Static | BindingFlags.NonPublic);
+        var rootField = managerType.GetField("<itemBuilderRoot>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic);
+        var manager = instance?.GetValue(null); var root = manager == null ? null : rootField?.GetValue(manager);
+        if (instance == null || rootField == null || manager == null || root == null || rootField.FieldType.FullName != "UnityEngine.Transform")
+            throw new InvalidDataException("Native item clone root is unavailable.");
+        RequireAlive(manager); RequireAlive(root);
+        if (_cloneRoots.TryGetValue(instance, out var prior))
+        {
+            if (!ReferenceEquals(prior.Manager, manager) || !ReferenceEquals(prior.Root, root)) throw new InvalidDataException("Native clone root changed during inspection.");
+        }
+        else _cloneRoots.Add(instance, (manager, rootField, root));
+    }
     internal void Item(string id) => Require("Behaviour.Item.InventoryItemType", "allItems", id);
     internal void Equipment(string id) => Require("Behaviour.Equipment.Builder.EquipmentBuilder", "allBuilders", id);
     internal void Faction(string id) => Require("Source.Galaxy.Faction", "allFactions", id, false);
