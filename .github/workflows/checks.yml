@@ -55,3 +55,9 @@ jobs:
       - name: Story receipt rejection tests
         shell: powershell
         run: '& ./tools/tests/qualification-story.Tests.ps1'
+      - name: World path, authorization consistency and receipt rejection tests
+        shell: powershell
+        run: |
+          & ./tools/tests/qualification-world-paths.Tests.ps1
+          & ./tools/tests/qualification-world-inputs.Tests.ps1
+          & ./tools/tests/qualification-world-receipts.Tests.ps1
