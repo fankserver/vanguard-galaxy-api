@@ -21,6 +21,12 @@ public sealed partial class Plugin
         var manifest = new BoardingCrewManifest(new[] { new KeyValuePair<string, int>(candidate.Key!, 6) });
         var commands = ModApi.Services.BoardingCommands;
         IBoardingController? controller = null; BoardingHandle? operation = null;
+        var settlement = ModApi.Services.DungeonSettlement;
+        DungeonSettlementSnapshot? settledSnapshot = null;
+        void OnSettlement(DungeonSettlementSnapshot snapshot)
+        {
+            if (operation != null && snapshot.Operation.Equals(operation)) settledSnapshot = snapshot;
+        }
         var records = new List<string>(); string? last = null;
         bool ObserveActive()
         {
@@ -29,6 +35,7 @@ public sealed partial class Plugin
             if (state != last && records.Count < 24) { records.Add(state); last = state; WriteAtomic("dungeon-walk-diagnostic.txt", records); }
             return snapshot?.Phase == BoardingPhase.Active;
         }
+        settlement.Changed += OnSettlement;
         try
         {
             Require(commands.AcquireControl(Id, target, out controller).Admitted && controller != null, "Walk control refused.");
@@ -39,8 +46,8 @@ public sealed partial class Plugin
             var active = boarding.GetOperation(operation!)!;
             Require(!active.Autonomous && !active.AutoMove && active.Compartments.Any(room => room.Kind == "Airlock" && room.FriendlyCrew > 0), "Manual crew arrival was not observed in the airlock.");
             Require(controller.Retreat().Admitted, "Active retreat refused.");
-            foreach (var frame in Wait(() => ModApi.Services.DungeonSettlement.Get(operation!) is { CrewReturnSettled: true, CrewCountsObserved: true }, "Actual returning crew settlement")) yield return frame;
-            var settled = ModApi.Services.DungeonSettlement.Get(operation!)!;
+            foreach (var frame in Wait(() => settledSnapshot is { CrewReturnSettled: true, CrewCountsObserved: true }, "Actual returning crew settlement")) yield return frame;
+            var settled = settledSnapshot!;
             Require(settled.NativeOutcome == "FriendlyExtracted" && !settled.CaptureApplied, "Retreat produced an unexpected outcome or capture.");
             Require(ReferenceEquals(player, SpGet(playerType, "current")) && ReferenceEquals(donor, SpGet(player, "currentSpaceShip")), "Walk donor identity changed.");
             var after = Roster();
@@ -63,7 +70,11 @@ public sealed partial class Plugin
                     if (cleanup != null) WriteAtomic("dungeon-walk-cleanup.txt", new[] { cleanup.Status.ToString(), cleanup.Detail, "Failure-path command admission is not proof of settlement." });
                 }
             }
-            finally { controller?.Dispose(); }
+            finally
+            {
+                settlement.Changed -= OnSettlement;
+                controller?.Dispose();
+            }
         }
     }
 }
