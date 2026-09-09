@@ -24,6 +24,7 @@ internal sealed class ForgeUiRuntime : IDisposable
     private TMP_Text? _tooltipText;
     private ForgeViewHandle? _view;
     private readonly List<Row> _rows = new();
+    private readonly Vector3[] _tabCorners = new Vector3[4];
     internal ForgeUiRuntime(ForgeUiService service, RecipeCatalogNativeSource source, Action<Exception> report)
     { _service = service; _source = source; _report = report; }
     internal void Observe(Exception? nativeError = null)
@@ -69,6 +70,8 @@ internal sealed class ForgeUiRuntime : IDisposable
         var canvas = tabs != null ? tabs.GetComponentInParent<Canvas>()?.rootCanvas : null;
         if (icon == null || tabs == null || canvas == null || canvas.transform is not RectTransform anchor || font == null)
             throw new InvalidOperationException("Forge action anchor unavailable.");
+        // A temporarily small canvas hides presentation without destroying registrations or the capability.
+        if (!TryGetBand(tabs, anchor, actions.Count, out var band)) { ClearView(); return; }
         if (_root == null || _root.transform.parent != anchor || _view?.Equals(snapshot.View) != true || !_rows.Select(row => row.Token).SequenceEqual(actions.Select(action => action.Token)))
         {
             ClearView(); _view = snapshot.View;
@@ -111,7 +114,7 @@ internal sealed class ForgeUiRuntime : IDisposable
                 _rows.Add(row);
             }
         }
-        PlaceBand(tabs, anchor, (RectTransform)_root.transform, (RectTransform)_tooltip!.transform);
+        PlaceBand(band, (RectTransform)_root.transform, (RectTransform)_tooltip!.transform);
         for (var index = 0; index < _rows.Count; index++)
         {
             var row = _rows[index]; var presentation = actions[index].Presentation;
@@ -122,13 +125,16 @@ internal sealed class ForgeUiRuntime : IDisposable
             row.Label.rectTransform.offsetMin = new Vector2(showIcon ? 24 : 4, 0);
         }
     }
-    private static void PlaceBand(RectTransform tabs, RectTransform canvas, RectTransform strip, RectTransform tooltip)
+    private bool TryGetBand(RectTransform tabs, RectTransform canvas, int count, out ForgeActionBand band)
     {
-        var corners = new Vector3[4]; tabs.GetWorldCorners(corners);
-        var left = canvas.InverseTransformPoint(corners[1]); var right = canvas.InverseTransformPoint(corners[2]);
+        tabs.GetWorldCorners(_tabCorners);
+        var left = canvas.InverseTransformPoint(_tabCorners[1]); var right = canvas.InverseTransformPoint(_tabCorners[2]);
         var bounds = canvas.rect;
-        if (!ForgeActionBand.TryCreate(bounds.width, bounds.height, left.x - bounds.xMin, right.x - bounds.xMin,
-            Math.Max(left.y, right.y) - bounds.yMin, out var band)) throw new InvalidOperationException("Forge action band has no safe screen space.");
+        return ForgeActionBand.TryCreate(bounds.width, bounds.height, left.x - bounds.xMin, right.x - bounds.xMin,
+            Math.Max(left.y, right.y) - bounds.yMin, out band, count * (ForgeActionBand.CellWidth + 4) - 4);
+    }
+    private static void PlaceBand(ForgeActionBand band, RectTransform strip, RectTransform tooltip)
+    {
         strip.anchoredPosition = new Vector2(band.Left, band.Bottom); strip.sizeDelta = new Vector2(band.Width, ForgeActionBand.Height);
         tooltip.anchoredPosition = new Vector2(band.Left, band.TooltipBottom); tooltip.sizeDelta = new Vector2(band.Width, ForgeActionBand.TooltipHeight);
     }
