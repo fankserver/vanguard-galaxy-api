@@ -71,6 +71,20 @@ internal static class BoardingPatches
             if (__exception == null) Observer?.Guard(() => Observer.WorldLootApplied(__instance, __0)); return __exception;
         }
     }
+    internal static class Extraction
+    {
+        internal static void Prefix(object __instance, out object? __state)
+        {
+            object? state = null;
+            Observer?.Guard(() => state = Observer.BeforeExtraction(__instance));
+            __state = state;
+        }
+        internal static Exception? Finalizer(object? __state, Exception? __exception)
+        {
+            if (__exception == null) Observer?.Guard(() => Observer.AfterExtraction(__state));
+            return __exception;
+        }
+    }
     internal static class Capture
     {
         internal static Exception? Finalizer(object __instance, Exception? __exception)

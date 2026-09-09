@@ -87,6 +87,7 @@ internal static class BindingCatalog
         new("boardingResumeShip", BoardingManager, "ResumeOperation", false, BoardingOperation, Boardable, "System.Boolean"),
         new("boardingResumeLocation", BoardingManager, "ResumeOperation", false, BoardingOperation, "Behaviour.Unit.SpaceShip", BoardingLocation, "System.Boolean"),
         new("boardingTick", BoardingOperation, "Tick", false, "System.Void", "System.Single"),
+        new("boardingExtraction", "Source.Dungeon.DungeonSimulation", "RequestExtraction", false, "System.Void"),
         new("boardingCapture", Boardable, "FinalizeCapture", false, "System.Void"),
         new("boardingLoot", BoardingOperation, "TransferLootToCargo", false, "System.Void"),
         new("boardingPartialLoot", BoardingOperation, "TransferPartialLootToCargo", false, "System.Void"),

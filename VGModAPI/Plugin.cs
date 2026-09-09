@@ -231,6 +231,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         }
         try { _modMenu?.Poll(); }
         catch (Exception error) { DisableModMenu(error); }
+        _hub?.Installations.Tick();
     }
 
     private void InitializePersistence()
@@ -837,6 +838,7 @@ public sealed partial class Plugin : BaseUnityPlugin
                 "boardingShipReady" or "boardingLocationReady" => typeof(BoardingPatches.Target),
                 "boardingStartShip" or "boardingStartLocation" or "boardingResumeShip" or "boardingResumeLocation" or "boardingRestoreApproach" => typeof(BoardingPatches.Start),
                 "boardingCapture" => typeof(BoardingPatches.Capture),
+                "boardingExtraction" => typeof(BoardingPatches.Extraction),
                 "boardingLoot" or "boardingPartialLoot" or "boardingDataLoot" => typeof(BoardingPatches.Rewards),
                 "boardingInventoryDelivery" => typeof(BoardingPatches.Inventory),
                 "boardingCreditDelivery" => typeof(BoardingPatches.Credits),

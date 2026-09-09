@@ -159,6 +159,22 @@ public sealed class InstalledBindingTests
     }
 
     [Fact]
+    public void InstallationIdentityUsesCurrentGalaxyAndExistingPersistableMembership()
+    {
+        using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
+        var map = assembly.MainModule.GetType("Source.Galaxy.GalaxyMapData");
+        var current = Assert.Single(map.Properties, property => property.Name == "current");
+        Assert.True(current.GetMethod.IsPublic && current.GetMethod.IsStatic); Assert.Equal(map.FullName, current.PropertyType.FullName);
+        var find = Assert.Single(map.Methods, method => method.Name == "GetPointOfInterest" && method.Parameters.Count == 1 && method.Parameters[0].ParameterType.FullName == "System.String");
+        Assert.True(find.IsPublic && !find.IsStatic && find.HasBody);
+        Assert.Equal("Source.Galaxy.MapPointOfInterest", find.ReturnType.FullName);
+        var poi = assembly.MainModule.GetType(find.ReturnType.FullName);
+        var entries = Assert.Single(poi.Fields, field => field.Name == "persistables");
+        Assert.True(entries.IsFamily && !entries.IsStatic);
+        Assert.Equal("System.Collections.Generic.List`1<Source.Data.Persistable.PersistableData>", entries.FieldType.FullName);
+    }
+
+    [Fact]
     public void BoardingSnapshotMembersMatchInstalledAssembly()
     {
         using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
