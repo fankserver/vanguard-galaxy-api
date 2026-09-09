@@ -125,14 +125,11 @@ public sealed partial class Plugin : BaseUnityPlugin
             });
             InstallHud(assembly);
             InstallRecipes(assembly);
-            if (Config.Bind("Boarding", "Enabled", false, "Experimental boarding observation and rules on the inspected game build.").Value)
-            {
-                InstallBoarding(bindings);
-                InstallBoardingRules(bindings);
-                InstallBoardingCommands(bindings);
-                InstallBoardingTactics(bindings);
-                InstallDungeonRewards(bindings);
-            }
+            InstallBoarding(bindings);
+            InstallBoardingRules(bindings);
+            InstallBoardingCommands(bindings);
+            InstallBoardingTactics(bindings);
+            InstallDungeonRewards(bindings);
             // Load safety, not a feature: an owned mission restored from a save must not progress or
             // pay out while nobody vouches for it, and that is true whether or not the story module is
             // enabled. Bound before anything else story-related, and on by default.
@@ -585,8 +582,8 @@ public sealed partial class Plugin : BaseUnityPlugin
 
     private void InitializeDungeons()
     {
-        _hub!.SetCapability("dungeon-content", false, "Experimental authored content is disabled.");
-        if (_boarding == null || !Config.Bind("Dungeons", "Enabled", false, "Experimental authored dungeon content; requires boarding and API save data.").Value) return;
+        _hub!.SetCapability("dungeon-content", false, "Boarding observation is required.");
+        if (_boarding == null) return;
         try
         {
             if (_persistence == null) throw new NotSupportedException("API save data is required.");
