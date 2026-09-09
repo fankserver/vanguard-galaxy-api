@@ -47,14 +47,18 @@ public sealed class Inspector : IDisposable
         _recipe = selection.SelectedRecipe;
         var quote = _quotes.Quote(selection.Station, _recipe, selection.Batches);
         var catalog = _catalog.Read();
-        if (quote.Status == RecipeQuoteStatus.Available && quote.Inputs.Count <= 30)
+        if (quote.Status == RecipeQuoteStatus.Available && quote.Inputs.Count <= 30 && quote.Outputs.Count <= 30
+            && quote.Inputs.Count + quote.Outputs.Count + 1 <= 32)
         {
             var ingredients = quote.Inputs.Select((input, index) => HudRow.Ingredient("ingredient-" + index,
                 input.Resource.LocalId, input.Required, input.Available,
                 "Requirements snapshot; refresh with Inspect.",
                 input.Resource.Kind == RecipeResourceKind.Item ? new HudPresentation(input.Resource.ProviderId, input.Resource.LocalId, HudPresentationKind.Item)
                 : input.Resource.Kind == RecipeResourceKind.RefinedMaterial ? new HudPresentation(input.Resource.ProviderId, input.Resource.LocalId, HudPresentationKind.RefinedMaterial) : null));
-            _hud.Update(new("Show in Forge"), new HudRecipeView(selection.Presentation.DisplayName, ingredients).ToPanel());
+            var outputs = quote.Outputs.Select((output, index) => new HudRow("output-" + index,
+                Short(output.Resource?.LocalId ?? "Generated output"), "If yielded: " + Number(output.Amount),
+                "Chance per batch: " + Number(output.ProbabilityPerBatch) + "; preview only, not delivered"));
+            _hud.Update(new("Show in Forge"), new HudRecipeView(selection.Presentation.DisplayName, ingredients, results: outputs).ToPanel());
         }
         else Show(selection.Presentation.DisplayName, Describe(quote, catalog));
     }

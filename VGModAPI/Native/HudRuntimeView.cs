@@ -90,10 +90,11 @@ internal sealed partial class HudRuntime
                 var display = view.Rows[row.Id]; display.Button!.interactable = row.Clickable;
                 SafeBind(entry.Plugin, display, row.Label, row.Detail, row.Tooltip, row.Presentation);
                 display.Amount.gameObject.SetActive(row.IngredientAmounts != null);
-                display.Text.rectTransform.offsetMax = new Vector2(row.IngredientAmounts != null ? -84 : -4, 0);
+                display.Required.gameObject.SetActive(row.IngredientAmounts != null);
+                display.Text.rectTransform.offsetMax = new Vector2(row.IngredientAmounts != null ? -RecipeWidgetLayout.QuantitiesWidth : -4, 0);
                 if (row.IngredientAmounts is { } amounts)
                 {
-                    display.Text.text += " x" + amounts.RequiredText;
+                    display.Required.text = "x" + amounts.RequiredText;
                     display.Amount.text = "(" + amounts.AvailableText + ")";
                     display.Amount.color = amounts.Sufficient == true ? Color.green : amounts.Sufficient == false ? new Color(1, .25f, .25f) : Color.gray;
                 }
@@ -148,9 +149,14 @@ internal sealed partial class HudRuntime
         imageRect.pivot = new Vector2(0, .5f); imageRect.anchoredPosition = new Vector2(3, 0); imageRect.sizeDelta = new Vector2(24, 24);
         icon.preserveAspect = true; icon.raycastTarget = false;
         var amount = Label(rect, 12); amount.alignment = TextAlignmentOptions.MidlineRight;
-        amount.rectTransform.anchorMin = new Vector2(1, 0); amount.rectTransform.offsetMin = new Vector2(-82, 0);
+        amount.rectTransform.anchorMin = new Vector2(1, 0); amount.rectTransform.offsetMin = new Vector2(-RecipeWidgetLayout.QuantityWidth, 0);
         amount.gameObject.SetActive(false);
-        return new DisplayRow(Label(rect, 12), amount, icon, Hover(rect.gameObject));
+        var required = Label(rect, 12); required.alignment = TextAlignmentOptions.MidlineRight;
+        required.rectTransform.anchorMin = new Vector2(1, 0);
+        required.rectTransform.offsetMin = new Vector2(-RecipeWidgetLayout.QuantitiesWidth, 0);
+        required.rectTransform.offsetMax = new Vector2(-RecipeWidgetLayout.QuantityWidth, 0);
+        required.gameObject.SetActive(false);
+        return new DisplayRow(Label(rect, 12), required, amount, icon, Hover(rect.gameObject));
     }
     private static string GameText(string value) => value.Replace('\u00b7', '-').Replace("\u2026", "...");
     private TMP_Text Label(RectTransform parent, int size)
@@ -199,7 +205,7 @@ internal sealed partial class HudRuntime
     }
     private sealed class DisplayRow
     {
-        internal readonly TMP_Text Text; internal readonly TMP_Text Amount; internal readonly Image Icon; internal readonly ForgeActionHover Hover; internal Button? Button;
-        internal DisplayRow(TMP_Text text, TMP_Text amount, Image icon, ForgeActionHover hover) { Text = text; Amount = amount; Icon = icon; Hover = hover; }
+        internal readonly TMP_Text Text; internal readonly TMP_Text Required; internal readonly TMP_Text Amount; internal readonly Image Icon; internal readonly ForgeActionHover Hover; internal Button? Button;
+        internal DisplayRow(TMP_Text text, TMP_Text required, TMP_Text amount, Image icon, ForgeActionHover hover) { Text = text; Required = required; Amount = amount; Icon = icon; Hover = hover; }
     }
 }

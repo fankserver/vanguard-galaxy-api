@@ -18,10 +18,10 @@ public sealed class HudIngredientAmounts
         Required = required; Available = available;
     }
     public string RequiredText => Number(Required);
-    public string AvailableText => !Available.HasValue ? "?" : Available.Value >= 1000000
+    public string AvailableText => !Available.HasValue ? "?" : Available.Value >= 1000000000 ? Number(Available.Value) : Available.Value >= 1000000
         ? (Available.Value / 1000000).ToString("0.#", CultureInfo.InvariantCulture) + "M"
         : Available.Value >= 1000 ? (Available.Value / 1000).ToString("0.#", CultureInfo.InvariantCulture) + "K" : Number(Available.Value);
-    private static string Number(double value) => value.ToString(value > 0 && value < .001 ? "G3" : "0.###", CultureInfo.InvariantCulture);
+    private static string Number(double value) => value.ToString(value >= 1000000 || value > 0 && value < .001 ? "G3" : "0.###", CultureInfo.InvariantCulture);
 }
 
 /// <summary>A compact Forge-style presentation; consumers supply their own quantities and refresh policy.</summary>
@@ -30,15 +30,15 @@ public sealed class HudRecipeView
     public string Title { get; }
     public HudPresentation? Presentation { get; }
     public IReadOnlyList<HudRow> Ingredients { get; }
-    public HudRow? Result { get; }
+    public IReadOnlyList<HudRow> Results { get; }
     public bool Closable { get; }
     public HudRecipeView(string title, IEnumerable<HudRow> ingredients, HudPresentation? presentation = null,
-        HudRow? result = null, bool closable = true)
+        IEnumerable<HudRow>? results = null, bool closable = true)
     {
         Title = HudText.Check(title, 256);
         Ingredients = RecipeValues.Copy(ingredients, 30);
         if (Ingredients.Any(row => row.IngredientAmounts == null)) throw new ArgumentException("Recipe ingredients require structured quantities.", nameof(ingredients));
-        Presentation = presentation; Result = result; Closable = closable;
+        Presentation = presentation; Results = RecipeValues.Copy(results ?? Array.Empty<HudRow>(), 30); Closable = closable;
         // Validate identities before a caller installs the view.
         _ = ToPanel();
     }
@@ -46,10 +46,10 @@ public sealed class HudRecipeView
     public HudPanel ToPanel()
     {
         var rows = new List<HudRow>(Ingredients);
-        if (Result != null)
+        if (Results.Count != 0)
         {
             rows.Add(new HudRow("recipe-result-heading", "Result:"));
-            rows.Add(Result);
+            rows.AddRange(Results);
         }
         return new HudPanel(Title, rows, Presentation, Closable);
     }

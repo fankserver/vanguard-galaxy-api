@@ -6,6 +6,8 @@ namespace VGModAPI.Core;
 internal readonly struct RecipeWidgetLayout
 {
     internal const float Width = 300;
+    internal const float QuantityWidth = 72, QuantitiesWidth = QuantityWidth * 2;
+    internal const float IngredientNameWidth = Width - 40 - QuantitiesWidth;
     internal const float HeaderHeight = 32;
     internal const float RowHeight = 24;
     internal const float FooterHeight = 30;

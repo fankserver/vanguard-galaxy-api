@@ -23,7 +23,7 @@ public sealed class HudRecipeViewTests
     {
         var ingredient = HudRow.Ingredient("titanium", "Titanium Plate", 143, 48, clickable: true);
         var result = new HudRow("cannon", "Cannon x1");
-        var panel = new HudRecipeView("Cannon", new[] { ingredient }, result: result).ToPanel();
+        var panel = new HudRecipeView("Cannon", new[] { ingredient }, results: new[] { result }).ToPanel();
         Assert.Equal(3, panel.Rows.Count);
         Assert.Same(ingredient, panel.Rows[0]);
         Assert.Equal("Result:", panel.Rows[1].Label);
@@ -41,11 +41,22 @@ public sealed class HudRecipeViewTests
     }
 
     [Fact]
+    public void IngredientNameCannotConsumeQuantityColumns()
+    {
+        Assert.Equal(144f, RecipeWidgetLayout.QuantitiesWidth);
+        Assert.True(RecipeWidgetLayout.IngredientNameWidth > 0);
+        Assert.Equal("143", new HudIngredientAmounts(143, 48).RequiredText);
+        Assert.True(new HudIngredientAmounts(double.MaxValue, double.MaxValue).RequiredText.Length < 12);
+        Assert.True(new HudIngredientAmounts(double.MaxValue, double.MaxValue).AvailableText.Length < 12);
+    }
+
+    [Fact]
     public void ContextualActionReservesNativeResultHeading()
     {
         Assert.True(ForgeActionBand.TryCreateResult(1920, 1080, 680, 1140, 380, out var band));
         Assert.Equal(960f, band.Left);
         Assert.Equal(348f, band.Bottom);
         Assert.False(ForgeActionBand.TryCreateResult(1920, 1080, 680, 800, 380, out _));
+        Assert.False(ForgeActionBand.TryCreateResult(1920, 1080, 680, 1140, 1060, out _));
     }
 }
