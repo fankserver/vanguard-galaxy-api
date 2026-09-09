@@ -3,6 +3,7 @@
 . (Join-Path $PSScriptRoot 'qualification-world-evidence.ps1')
 . (Join-Path $PSScriptRoot 'qualification-world-supervision.ps1')
 . (Join-Path $PSScriptRoot 'qualification-world-receipts.ps1')
+. (Join-Path $PSScriptRoot 'qualification-world-cold.ps1')
 
 function Assert-NoWorldGameProcess {
     if (@(Get-Process -ErrorAction Stop | Where-Object { $_.ProcessName -ieq 'VanguardGalaxy' }).Count) { throw 'A game process already exists; refuse launch.' }
@@ -29,7 +30,11 @@ function Invoke-WorldQualificationPhase([string]$Root, [Guid]$RunId,
         if (Test-Path -LiteralPath $path) { throw 'Retain prior phase outputs before another run.' }
     }
     $null = Assert-WorldUnlinkedPath (Join-Path $Root 'world-created-generation.txt') $false
-    if ($Phase -eq 'cold') { $null = Assert-WorldGenerationReceipt $Root 'world-created-generation.txt' }
+    $creation = $null
+    if ($Phase -eq 'cold') {
+        $creation = Read-WorldCreationEvidence $Root $RunId $ReviewedHead $record.creationEvidenceSha256
+        $null = Assert-WorldGenerationReceipt $Root 'world-created-generation.txt'
+    }
     elseif (Test-Path -LiteralPath (Join-Path $Root 'world-created-generation.txt')) { throw 'Creation receipt already exists.' }
     $before = Get-WorldRunPreservation $record
     $prefs = Save-WorldPrefs $Root
@@ -64,6 +69,7 @@ function Invoke-WorldQualificationPhase([string]$Root, [Guid]$RunId,
         }
         if ($null -ne $prefsFailure -or $null -ne $preservationFailure -or $null -ne $evidenceFailure) { throw 'World preservation failed; retain private recovery evidence.' }
         Assert-WorldProcessOutcome $outcome
+        if ($Phase -eq 'cold') { Assert-WorldColdProcess $creation $outcome }
         $resultPath = Assert-WorldUnlinkedPath (Join-Path $Root 'result.txt')
         $result = Read-WorldReceipt $resultPath
         if ($result.Count -lt 1 -or $result[0] -cne 'PASS') { throw 'World runner did not report PASS.' }
