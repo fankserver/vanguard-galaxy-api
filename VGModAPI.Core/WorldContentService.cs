@@ -43,6 +43,22 @@ internal sealed class WorldContentService : IWorldApi, IDisposable
             }
             catch (ArgumentException) { return WorldStatus.InvalidDefinition; }
         }
+        public WorldSiteResult FindPersistentCombatSite(Guid expectedSessionId, WorldSiteReference reference)
+        {
+            _service._hub.CheckThread();
+            if (_disposed || _service._disposed) return new WorldSiteResult(WorldStatus.UnknownProvider);
+            if (reference == null || reference.ProviderId != ProviderId) return new WorldSiteResult(WorldStatus.NotRegistered);
+            if (!_service._canAuthor() || _disposed || _service._disposed) return new WorldSiteResult(WorldStatus.Unavailable);
+            if (expectedSessionId == Guid.Empty || _service._hub.CurrentSession?.Id != expectedSessionId) return new WorldSiteResult(WorldStatus.NotReady);
+            try
+            {
+                var record = _service._authoring.TryFind(_provider, expectedSessionId, reference.LocalId, reference.InstanceId,
+                    () => !_disposed && !_service._disposed && _service._canAuthor() && !_disposed && !_service._disposed);
+                return record == null ? new WorldSiteResult(WorldStatus.NotRegistered) :
+                    new WorldSiteResult(WorldStatus.Succeeded, new WorldSiteReference(record.Identity.Owner, record.Identity.LocalId, record.Identity.InstanceId));
+            }
+            catch (ArgumentException) { return new WorldSiteResult(WorldStatus.InvalidDefinition); }
+        }
         public WorldSiteResult CreatePersistentCombatSite(Guid expectedSessionId, string localId, Guid instanceId, string systemId, float x, float y)
         {
             _service._hub.CheckThread();

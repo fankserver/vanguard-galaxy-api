@@ -11,6 +11,15 @@ internal sealed class WorldAuthoringGate
     internal WorldAuthoringGate(WorldDefinitionRegistry definitions, WorldCreationCoordinator creation, Func<Guid, bool> persistenceReady)
     { _definitions = definitions; _creation = creation; _persistenceReady = persistenceReady; }
 
+    internal WorldSnapshotInstance? TryFind(WorldDefinitionRegistry.Provider provider, Guid session, string localId, Guid instanceId, Func<bool> availability)
+    {
+        if (!_definitions.TryResolve(provider, localId, out _)) return null;
+        long revision = _definitions.Revision;
+        if (!availability() || !_persistenceReady(session) || revision != _definitions.Revision || !_definitions.TryResolve(provider, localId, out var definition)) return null;
+        var identity = new WorldObjectIdentity(new ContentDeclaration(definition!.Owner, localId, PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), instanceId);
+        var record = _creation.Find(session, identity);
+        return record != null && _definitions.MatchesRetained(record.Definition) ? record : null;
+    }
     internal WorldSnapshotInstance? TryCreate(WorldDefinitionRegistry.Provider provider, Guid session, string localId,
         Guid instanceId, string systemId, float x, float y, Func<bool>? availability = null)
     {

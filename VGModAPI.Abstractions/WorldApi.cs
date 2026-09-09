@@ -52,6 +52,8 @@ public interface IWorldProvider : IDisposable
 {
     string ProviderId { get; }
     WorldStatus Register(WorldCombatSiteDefinition definition);
+    /// <summary>Resolves this provider's reference against the current observed session and native membership.</summary>
+    WorldSiteResult FindPersistentCombatSite(Guid expectedSessionId, WorldSiteReference reference);
     /// <summary>Creates a persistent site in an existing system. Supported state is saved automatically; no provider save hooks are required.</summary>
     WorldSiteResult CreatePersistentCombatSite(Guid expectedSessionId, string localId, Guid instanceId, string systemId, float x, float y);
 }

@@ -12,7 +12,7 @@ internal sealed class WorldNativeAttachment
     private readonly GameAdapter _game;
     private readonly WorldMapIndex _index;
     private readonly WorldDetachedCombatFactory _factory;
-    private readonly FieldInfo _map, _points;
+    private readonly FieldInfo _map, _points, _parent;
     internal WorldNativeAttachment(GameAdapter game)
     {
         _game = game;
@@ -20,8 +20,20 @@ internal sealed class WorldNativeAttachment
         _index = new WorldMapIndex(assembly); _factory = new WorldDetachedCombatFactory(assembly);
         _map = assembly.GetType("Source.Player.GamePlayer", true)!.GetField("map", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
             ?? throw new MissingFieldException("GamePlayer.map");
+        _parent = assembly.GetType("Source.Galaxy.MapElement", true)!.GetField("system", BindingFlags.Public | BindingFlags.Instance)
+            ?? throw new MissingFieldException("MapElement.system");
         _points = assembly.GetType("Source.Galaxy.SystemMapData", true)!.GetField("pointsOfInterest", BindingFlags.Public | BindingFlags.Instance)
             ?? throw new MissingFieldException("SystemMapData.pointsOfInterest");
+    }
+    internal bool Contains(Guid session, WorldSnapshotInstance record)
+    {
+        if (!_game.TryGetCurrentReadyPlayer(session, out var player)) return false;
+        var map = _map.GetValue(player) ?? throw new InvalidDataException("Current player has no map.");
+        var membership = _index.Read(map);
+        var system = membership.FindSystem(record.SystemId);
+        return system != null && ReferenceEquals(membership.FindPoint(record.Identity.NativeId), record.Native) &&
+            ReferenceEquals(_parent.GetValue(record.Native), system) && _game.TryGetCurrentReadyPlayer(session, out var current) &&
+            ReferenceEquals(current, player) && ReferenceEquals(_map.GetValue(current), map);
     }
     internal WorldSnapshotInstance? TryAppend(Guid session, WorldSavedDefinition definition, WorldObjectIdentity identity,
         string systemId, float x, float y, Func<bool> admission, Action<WorldSnapshotInstance>? prepare = null)

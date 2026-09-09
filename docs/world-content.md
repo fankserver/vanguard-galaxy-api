@@ -6,7 +6,7 @@ World protection is opt-in and experimental. `ModApi.World` exposes an experimen
 
 Acquire `IWorldProvider` directly from the loaded plugin assembly and register immutable `WorldCombatSiteDefinition` values before starting a session. Definitions identify local content, revision, display name, an existing faction ID and level. Same-owner duplicate declarations are rejected; registration does not create a POI. The authenticated lease owns its declarations and must be disposed on provider teardown.
 
-`CreatePersistentCombatSite` specifies an expected session, declaration ID, separate instance GUID, existing system ID and coordinates. Its implementation is behind the closed runtime-admission gate. A `WorldSiteReference` carries provider/local/instance identity only: it is not a native object, a lookup result or permission to mutate another owner's content. Native qualification, migration, lookup and dependent-reference delivery remain prerequisites to supporting this operation.
+`CreatePersistentCombatSite` specifies an expected session, declaration ID, separate instance GUID, existing system ID and coordinates. Its implementation is behind the closed runtime-admission gate. A `WorldSiteReference` carries provider/local/instance identity only: it is not a native object or permission to mutate another owner's content. `FindPersistentCombatSite` checks the authenticated provider, expected session and exact current native membership; a reference alone does not establish existence. Lookup is also behind the closed runtime-admission gate. Native qualification, migration and dependent-reference delivery remain prerequisites to supporting these operations.
 
 ## Shared primitive selection
 

@@ -95,6 +95,14 @@ public sealed class WorldRuntimeStateTests
                 var instance = Guid.NewGuid();
                 var created = provider.CreatePersistentCombatSite(request.Id, "PoiX", instance, "system", 20, 20);
                 Assert.True(created.Succeeded); Assert.Equal(instance, created.Reference!.InstanceId); Assert.Equal("author.a", created.Reference.ProviderId);
+                Assert.True(provider.FindPersistentCombatSite(request.Id, created.Reference).Succeeded);
+                Assert.Equal(WorldStatus.NotRegistered, provider.FindPersistentCombatSite(request.Id, new WorldSiteReference("other.owner", "PoiX", instance)).Status);
+                Assert.Equal(WorldStatus.NotReady, provider.FindPersistentCombatSite(Guid.NewGuid(), created.Reference).Status);
+                var createdNative = creation.Snapshot()[1].Native;
+                Assert.True(system.pointsOfInterest.Remove((MapPointOfInterest)createdNative));
+                Assert.Equal(WorldStatus.NotRegistered, provider.FindPersistentCombatSite(request.Id, created.Reference).Status);
+                system.pointsOfInterest.Add((MapPointOfInterest)createdNative);
+                Assert.True(provider.FindPersistentCombatSite(request.Id, created.Reference).Succeeded);
                 Assert.Equal(WorldStatus.Rejected, provider.CreatePersistentCombatSite(request.Id, "PoiX", instance, "system", 20, 20).Status);
                 Assert.Equal(WorldStatus.NotReady, provider.Register(new WorldCombatSiteDefinition("Late", 1, "Site", "player", 1)));
                 Assert.Equal(2, creation.Snapshot().Length);
