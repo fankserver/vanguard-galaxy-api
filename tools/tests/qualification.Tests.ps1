@@ -46,7 +46,7 @@ try {
     $pinProvenance.blueprintPinProbe = $true
     $pinProvenance.blueprintPinRevision = 'a' * 40
     $pinProvenance.blueprintPinSha256 = $pinHash.ToLowerInvariant()
-    [IO.File]::WriteAllText((Join-Path $pinRoot 'blueprint-pin.enabled'), 'blueprint-pin-v1')
+    [IO.File]::WriteAllText((Join-Path $pinRoot 'blueprint-pin.enabled'), 'blueprint-pin-v2')
     $pinConfig = Join-Path $pinRoot 'game\BepInEx\config\vgmodapi.cfg'
     $pinOriginalConfig = [IO.File]::ReadAllText($pinConfig)
     [IO.File]::WriteAllText($pinConfig, $pinOriginalConfig + "`n[Hud]`nEnabled = true`n")
