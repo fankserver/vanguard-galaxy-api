@@ -313,7 +313,7 @@ function Assert-BlueprintPinSelection([string]$Root, $Provenance) {
     $marker = Join-Path $Root 'blueprint-pin.enabled'
     if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Blueprint Pin selection changed.' }
     if (!$selected) { return }
-    if (!$Provenance.forgeReadProbe -or $Provenance.forgeUiProbe -or $Provenance.forgeCommandProbe -or $Provenance.refineryProbe -or $Provenance.forgeDeliveryProbe -or $Provenance.forgePersistenceProbe -or [IO.File]::ReadAllText($marker) -cne 'blueprint-pin-v5') { throw 'Invalid Blueprint Pin selection.' }
+    if (!$Provenance.forgeReadProbe -or $Provenance.forgeUiProbe -or $Provenance.forgeCommandProbe -or $Provenance.refineryProbe -or $Provenance.forgeDeliveryProbe -or $Provenance.forgePersistenceProbe -or [IO.File]::ReadAllText($marker) -cne 'blueprint-pin-v6') { throw 'Invalid Blueprint Pin selection.' }
     if ($Provenance.blueprintPinRevision -cnotmatch '^[0-9a-f]{40}$' -or $Provenance.blueprintPinSha256 -cnotmatch '^[0-9a-f]{64}$') { throw 'Invalid Blueprint Pin provenance.' }
     $config = [IO.File]::ReadAllText((Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg'))
     if ($config -cnotmatch '(?ms)^\[Hud\]\r?\n(?:(?!^\[).)*?^Enabled = true\r?$') { throw 'Blueprint Pin requires HUD integration.' }
@@ -328,7 +328,11 @@ function Assert-BlueprintPinReceipt([string]$Root, $Provenance) {
     $file = Join-Path $Root 'blueprint-pin.txt'
     if ((Get-Item -LiteralPath $file).Length -gt 512) { throw 'Oversized Blueprint Pin receipt.' }
     $lines = @(Get-Content -LiteralPath $file)
-    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'blueprint-pin-v5' -or $lines[2] -cne 'pin-batch-exact-variant-navigation-close-producer-routes-queue-partial-cancel-multiunit-reload-saveas-switch-inspector') { throw 'Incomplete Blueprint Pin receipt.' }
+    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'blueprint-pin-v6' -or $lines[2] -cne 'pin-batch-exact-variant-navigation-close-producer-routes-queue-partial-cancel-multiunit-reload-saveas-switch-inspector-isolation') { throw 'Incomplete Blueprint Pin receipt.' }
+    $isolation = Join-Path $Root 'forge-callback-isolation.txt'
+    if (!(Test-Path -LiteralPath $isolation -PathType Leaf) -or (Get-Item -LiteralPath $isolation).Length -gt 256 -or ((Get-Item -LiteralPath $isolation).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Missing or invalid Forge callback receipt.' }
+    $isolationLines = @(Get-Content -LiteralPath $isolation)
+    if ($isolationLines.Count -ne 3 -or $isolationLines[0] -cne 'PASS' -or $isolationLines[1] -cne 'throwing-listener-isolated' -or $isolationLines[2] -cne 'following-listener-delivered') { throw 'Incomplete Forge callback receipt.' }
     foreach ($stem in @('blueprint-pin-view','blueprint-pin-producers','blueprint-pin-partial','blueprint-pin-cancelled','forge-consumers')) {
     $image = Join-Path $Root ($stem + '.png'); $record = Join-Path $Root ($stem + '.txt')
     foreach ($path in @($image,$record)) {
