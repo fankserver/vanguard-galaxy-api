@@ -5,6 +5,43 @@ Use .NET SDK 10, GNU make, and Python 3.11+. Runtime libraries target
 game/BepInEx references; pure host tests do not. Commands and installation-path
 overrides are defined in the [Makefile](Makefile).
 
+## Design for modders
+
+This is a modding API, not a public interface to the adapter's internal machinery.
+The whole codebase must serve a clean, simple-to-understand authoring surface.
+A correct implementation is not sufficient if ordinary mod code is hard to write
+or requires understanding how the API coordinates the game internally.
+
+- Start with the modder's gameplay intent and a short, realistic consumer example.
+  Prefer recognizable domain objects, clear operations and object-scoped events:
+  create a dungeon, subscribe to its completion, advance the story. Build on the
+  existing domain model rather than adding competing abstractions or wrappers.
+- Make the ordinary path straightforward. Modders should express what they want
+  to happen, not orchestrate dispatch scopes, deferred queues, session tokens,
+  repeated mutation checks, pending flags or per-frame drains. Keep necessary
+  scheduling, session scoping, stale-work handling and callback isolation inside
+  the API. Establish ownership and dependencies once at the appropriate lifetime
+  rather than requiring them on every reaction.
+- Gameplay events intended for reactions must support normal follow-up gameplay
+  actions. Deliver them at a safe boundary instead of exposing a completion event
+  whose handler cannot act. Keep low-level observational hooks clearly separate;
+  their restrictions must not become the default domain-event authoring model.
+- Preserve save safety, ownership, compatibility checks and honest operation
+  results. Simplicity means the API manages these concerns, not that it removes
+  guards, guesses readiness, silently drops work or pretends an operation succeeded.
+  Surface failures and invalidation in terms relevant to the modder's operation.
+- API-owned content saves and restores automatically as described below. Custom
+  save-data registration is for additional mod data, not a prerequisite for using
+  ordinary API-owned gameplay features.
+- Low-level escape hatches need a concrete advanced use case. Do not make them the
+  primary solution to an ordinary gameplay need or compensate for a confusing
+  interface with more documentation, helper layers or consumer boilerplate.
+- Evaluate changes from the consumer side as well as for internal correctness.
+  Tests passing and a sound internal implementation do not establish that the
+  public API is suitable. When existing surfaces conflict with these principles,
+  improve the coherent feature being changed; do not expand the task into an
+  unrelated whole-repository rewrite or defer delivery into an analysis campaign.
+
 ## Delivery
 
 Finish working API features, not a testing or evidence program. Keep a short,
