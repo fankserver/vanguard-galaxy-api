@@ -85,6 +85,8 @@ internal sealed class WorldMapIndex
         {
             get { int count = 0; foreach (var id in _points.Keys) if (WorldObjectIdentity.IsReserved(id)) count++; return count; }
         }
+        internal IEnumerable<KeyValuePair<string, object>> Systems => _systems;
+        internal IEnumerable<KeyValuePair<string, object>> Points => _points;
         internal object? FindSystem(string id) => _systems.TryGetValue(id, out var system) ? system : null;
         internal object? FindPoint(string id) => _points.TryGetValue(id, out var poi) ? poi : null;
         internal bool SameMembership(Snapshot other)

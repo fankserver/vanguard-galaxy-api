@@ -34,6 +34,8 @@ public sealed class ModServices
     private readonly IStoryService _story;
     private readonly IBarService _bars;
     private readonly IWorldService _world;
+    private readonly INavigationService _navigation;
+    public INavigationService Navigation { get { CheckThread(); return _navigation; } }
     private readonly IDialogueService _dialogue;
     public IDialogueService Dialogue { get { CheckThread(); return _dialogue; } }
     public IWorldService World { get { CheckThread(); return _world; } }
@@ -75,7 +77,7 @@ public sealed class ModServices
 
     internal ModServices(ILifecycleService lifecycle, IModInformationService mods, ISaveDataService saveData,
         IMissionService missions, ITravelService travel, IStationService station, IRecipeService recipes, IRecipeQuoteService recipeQuotes,
-        ICraftingJobService craftingJobs, ICraftingCommandService craftingCommands, IHudService hud, IForgeUiService forgeUi, IBoardingRuleService boardingRules, IBoardingCombatService boardingCombat, IDungeonRewardService dungeonRewards, IBoardingCommandService boardingCommands, IBoardingTacticalService boardingTactics, IBoardingService boarding, IDungeonSettlementService dungeonSettlement, IDungeonPanelService dungeonPanel, IDungeonContentService dungeons, IStoryService story, IBarService bars, IWorldService world, IDialogueService dialogue)
+        ICraftingJobService craftingJobs, ICraftingCommandService craftingCommands, IHudService hud, IForgeUiService forgeUi, IBoardingRuleService boardingRules, IBoardingCombatService boardingCombat, IDungeonRewardService dungeonRewards, IBoardingCommandService boardingCommands, IBoardingTacticalService boardingTactics, IBoardingService boarding, IDungeonSettlementService dungeonSettlement, IDungeonPanelService dungeonPanel, IDungeonContentService dungeons, IStoryService story, IBarService bars, IWorldService world, IDialogueService dialogue, INavigationService navigation)
     {
         _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
         _mods = mods ?? throw new ArgumentNullException(nameof(mods));
@@ -102,6 +104,7 @@ public sealed class ModServices
         _bars = bars ?? throw new ArgumentNullException(nameof(bars));
         _world = world ?? throw new ArgumentNullException(nameof(world));
         _dialogue = dialogue ?? throw new ArgumentNullException(nameof(dialogue));
+        _navigation = navigation ?? throw new ArgumentNullException(nameof(navigation));
     }
 
     internal void CheckThread()
