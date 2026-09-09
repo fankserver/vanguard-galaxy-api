@@ -6,6 +6,7 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.LowLevel;
 using UnityEngine.UI;
+using UnityEngine.EventSystems;
 using TMPro;
 using VGModAPI;
 namespace VGModAPI.Qualification;
@@ -89,9 +90,22 @@ public sealed partial class Plugin
         var root = GameObject.Find("Mod API dungeon contributions");
         return root ? root!.GetComponentsInChildren<Button>().SingleOrDefault(button => button.GetComponentsInChildren<TMP_Text>().Any(text => text.text == label)) : null;
     }
+    private static bool DungeonPointerReady(Transform target)
+    {
+        if (!target || !target.gameObject.activeInHierarchy || !EventSystem.current) return false;
+        var canvas = target.GetComponentInParent<Canvas>()?.rootCanvas;
+        if (!canvas) return false;
+        var camera = canvas!.renderMode == RenderMode.ScreenSpaceOverlay ? null : canvas.worldCamera;
+        if (canvas.renderMode != RenderMode.ScreenSpaceOverlay && !camera) return false;
+        var rect = (RectTransform)target;
+        var point = RectTransformUtility.WorldToScreenPoint(camera, rect.TransformPoint(rect.rect.center));
+        var hits = new List<RaycastResult>();
+        EventSystem.current.RaycastAll(new PointerEventData(EventSystem.current) { position = point }, hits);
+        return hits.Count > 0 && (hits[0].gameObject.transform == target || hits[0].gameObject.transform.IsChildOf(target));
+    }
     private IEnumerable<object?> DungeonClick(Mouse mouse, Transform target)
     {
-        yield return null; yield return null;
+        foreach (var frame in Wait(() => DungeonPointerReady(target), "Dungeon pointer raycast readiness (including loading overlay)")) yield return frame;
         var point = ForgePointerPoint(target);
         InputSystem.QueueStateEvent(mouse, new MouseState { position = point });
         yield return null; yield return null;
