@@ -114,7 +114,8 @@ public sealed class BuiltPackageTests
         }
         Assert.Contains(("Persistence", "Root"), bindings);
         foreach (var setting in new[] { ("Persistence", "Enabled"), ("Missions", "Enabled"),
-            ("Missions", "IdentityContinuity"), ("Travel", "Enabled"), ("ModInformation", "MenuEnabled") })
+            ("Missions", "IdentityContinuity"), ("Travel", "Enabled"), ("ModInformation", "MenuEnabled"),
+            ("Boarding", "Enabled"), ("Dungeons", "Enabled") })
             Assert.DoesNotContain(setting, bindings);
     }
 
