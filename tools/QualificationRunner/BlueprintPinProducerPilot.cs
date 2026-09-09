@@ -28,6 +28,7 @@ public sealed partial class Plugin
             var navigation = ui.Open(recipe.Id);
             discovery.Add(recipe.Id.LocalId + " navigation=" + navigation);
             if (navigation != ForgeNavigationStatus.Selected) { yield return null; continue; }
+            SetPinFixtureBatchOne();
             var quote = quotes.Quote(station, recipe.Id, 1);
             discovery.Add("quote=" + quote.Status + " batches=" + ui.Current?.Batches + " inputs=" + quote.Inputs.Count + " " +
                 string.Join(";", quote.Inputs.Select(input => input.Resource.Kind + ":" + input.Resource.LocalId + " producers=" + catalog.FindProducers(input.Resource).Count)));
@@ -35,8 +36,9 @@ public sealed partial class Plugin
             for (var index = 0; index < quote.Inputs.Count; index++)
             {
                 var candidates = catalog.FindProducers(quote.Inputs[index].Resource);
-                if (multiple ? candidates.Count is < 2 or > 8 : candidates.Count != 1 || candidates[0].Process != RecipeProcess.Forge) continue;
+                if (multiple ? candidates.Count is < 2 or > 32 : candidates.Count != 1 || candidates[0].Process != RecipeProcess.Forge) continue;
                 if (!multiple && (candidates[0].Id.Equals(recipe.Id) || ui.Open(candidates[0].Id) != ForgeNavigationStatus.Selected || ui.Open(recipe.Id) != ForgeNavigationStatus.Selected)) continue;
+                SetPinFixtureBatchOne();
                 producers = candidates; ingredientIndex = index; inputCount = quote.Inputs.Count; break;
             }
             if (producers != null) break;
@@ -63,6 +65,15 @@ public sealed partial class Plugin
                 Require(rows[index].GetComponentInChildren<TMP_Text>().text.Contains(" · " + producers[index].Id.LocalId), "Exact producer identity missing.");
                 Require(rows[index].interactable == (producers[index].Process == RecipeProcess.Forge), "Unsupported refining route offered Forge navigation.");
             }
+            var last = rows[rows.Length - 1];
+            Require(producers[producers.Count - 1].Process == RecipeProcess.Refinery, "Chooser fixture needs a final refining route.");
+            var scroll = last.GetComponentInParent<ScrollRect>();
+            Require(scroll != null && scroll.vertical, "Producer chooser has no vertical scroll control.");
+            scroll!.verticalNormalizedPosition = 0;
+            foreach (var frame in Wait(() => !last.targetGraphic.canvasRenderer.cull, "Final producer row visible after scroll")) yield return frame;
+            var beforeDisabled = ui.Current!.SelectedRecipe;
+            foreach (var frame in ForgeClick(mouse, last.transform)) yield return frame;
+            Require(PinHudText("Choose producer") && ui.Current!.SelectedRecipe.Equals(beforeDisabled), "Disabled refining choice dispatched navigation.");
             foreach (var frame in CaptureForgeActions("blueprint-pin-producers")) yield return frame;
             // Back out of the chooser through the real close button; this must retain the pin.
             foreach (var frame in Wait(() => PinCloseButton() != null, "Producer chooser close")) yield return frame;
@@ -72,6 +83,16 @@ public sealed partial class Plugin
         foreach (var frame in Wait(() => PinCloseButton() != null, "Producer test panel close")) yield return frame;
         foreach (var frame in ForgeClick(mouse, PinCloseButton()!.transform)) yield return frame;
         foreach (var frame in Wait(() => GameObject.Find("Mod API shared HUD") == null, "Producer test pin cleared")) yield return frame;
+    }
+    private static void SetPinFixtureBatchOne()
+    {
+        if (ModApi.ForgeUi!.Current?.Batches == 1) return;
+        var native = SpGet(NativeType("Behaviour.UI.Forge.ForgeUI"), "current")!;
+        var slider = (Slider)SpGet(SpGet(native, "tabContents")!, "countSlider")!;
+        Require(slider.minValue <= 1 && slider.maxValue >= 1, "Native recipe cannot select one batch.");
+        // Use the actual control/event, not a fabricated public selection. Native defaults to max craftable.
+        slider.value = 1;
+        Require(ModApi.ForgeUi.Current?.Batches == 1, "Native batch control did not select one batch.");
     }
     private static Button[] PinRows()
     {
