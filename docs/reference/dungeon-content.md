@@ -41,7 +41,9 @@ Use a persistent POI identifier, not a display name. A known, stable authored ID
 allows setup before creation. A POI with an engine-generated ID cannot be
 subscribed to by a guessed name; the author must know its actual persistent ID.
 An absent POI, or one without the matching installation dungeon location, raises
-no events. Lookup checks existing persistable membership and never generates
+no events. If a handler never fires, first check that its ID exactly matches the
+POI's persistent identifier; a typo is indistinguishable from content not yet created.
+Lookup checks existing persistable membership and never generates
 content or assumes the player is standing at the target.
 
 `ExtractionStarted` means a successful native extraction request newly entered
@@ -61,6 +63,10 @@ with a diagnostic for durable blocks; recovery allows delivery. Session end
 cancels old reactions without rebinding them to another save. Subscriptions
 remain available for future extractions. Removing a handler before delivery,
 disposing its provider, or stopping the API suppresses pending callbacks.
+Dispose the dungeon provider before its custom save-data registration. Disposing
+the registration first closes delivery safely rather than invoking a handler
+against disposed data; pending work waits with a diagnostic until the provider
+is disposed or the session ends.
 
 Handlers present at observation run in registration order, with each exception
 isolated and logged. Newly added handlers do not receive old observations.

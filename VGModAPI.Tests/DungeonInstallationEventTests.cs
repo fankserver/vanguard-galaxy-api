@@ -70,6 +70,23 @@ public sealed class DungeonInstallationEventTests : IDisposable
     }
 
     [Fact]
+    public void DisposingCustomSaveDataBeforeProviderClosesDeliveryWithoutThrowing()
+    {
+        var diagnostics = 0;
+        using var hub = Hub((_, _) => diagnostics++);
+        using var storage = new PersistenceService(hub, new GenerationStore(_root), p => p, _ => new string('a', 64));
+        var registration = storage.Register(new PersistenceProvider("consumer", 1, () => new byte[] { 1 }, (_, _) => { }, b => b.Length == 1)).Registration!;
+        using var provider = Provider(hub, registration);
+        provider.GetInstallation("station-a").ExtractionStarted += () => Assert.Fail("Disposed save data");
+        var id = Ready(hub); Extract(hub, id);
+        registration.Dispose();
+        hub.Installations.Tick(); hub.Installations.Tick();
+        Assert.Equal(1, diagnostics);
+        provider.Dispose(); hub.Installations.Tick();
+        Assert.Equal(1, diagnostics);
+    }
+
+    [Fact]
     public void BlockedProviderRetainsReactionWithoutBlockingAnotherProvider()
     {
         using var hub = Hub(); var id = Ready(hub); var gate = new Registration(id); var order = new List<int>();
