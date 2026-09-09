@@ -1,12 +1,12 @@
 {
   "lines": {
-    "covered": 16949,
-    "valid": 18938,
-    "percent": 89.49730700179533
+    "covered": 17116,
+    "valid": 19135,
+    "percent": 89.44865429840607
   },
   "branches": {
-    "covered": 13404,
-    "valid": 18554,
-    "percent": 72.24318206316697
+    "covered": 13541,
+    "valid": 18708,
+    "percent": 72.38079965790037
   }
 }
