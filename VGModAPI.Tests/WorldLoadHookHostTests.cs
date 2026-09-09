@@ -54,6 +54,7 @@ public sealed class WorldLoadHookHostTests
     [InlineData(false, false, false, 3)]
     [InlineData(false, false, false, 4)]
     [InlineData(false, false, false, 5)]
+    [InlineData(false, false, false, 6)]
     public void PreparedLoadAndFactoryRemainAttemptScoped(bool repeatRecall, bool replaceAsset, bool replaceSession, int constructionFault)
     {
         string assetId = "host-" + Guid.NewGuid().ToString("N");
@@ -78,7 +79,7 @@ public sealed class WorldLoadHookHostTests
             var hub = new LifecycleHub((_, error) => throw new Exception("Unexpected observer failure", error));
             using var persistence = new PersistenceService(hub, store, Path.GetFullPath, p => GenerationStore.Hash(File.ReadAllBytes(p)));
             Guid session = Guid.Empty; bool advance = false; bool swapSession = false;
-            bool contextCurrent = true; int constructorCalls = 0;
+            bool contextCurrent = true; bool replaceDuringInspection = false; int constructorCalls = 0;
             WorldLoadHookHost? host = null;
             long Revision()
             {
@@ -101,7 +102,18 @@ public sealed class WorldLoadHookHostTests
                     if (constructionFault == 5) contextCurrent = false;
                     if (constructionFault == 3) Assert.Throws<InvalidDataException>(() => host!.BeginFactory(new JsonValue(poi)));
                     return native;
-                }, requireContext: () => { if (!contextCurrent) throw new InvalidDataException("Qualification context lost"); });
+                }, requireContext: () =>
+                {
+                    if (replaceDuringInspection)
+                    {
+                        replaceDuringInspection = false;
+                        session = hub.Begin(SessionOrigin.SaveLoad, path);
+                        root["Version"] = new(WorldSaveFormat.Marker); root[WorldSaveFormat.OriginalVersion] = new("0.8.2.3");
+                        Assert.True(host!.TryRecall(new Source.Util.SaveGameFile(path), out _));
+                        throw new InvalidDataException("Old inspector failed after replacement");
+                    }
+                    if (!contextCurrent) throw new InvalidDataException("Qualification context lost");
+                });
             session = hub.Begin(SessionOrigin.SaveLoad, path);
             Assert.True(host.TryRecall(new Source.Util.SaveGameFile(path), out var loaded)); Assert.Same(root, loaded);
             var prepared = host.PreparedFor(session);
@@ -113,9 +125,20 @@ public sealed class WorldLoadHookHostTests
             if (constructionFault >= 4)
             {
                 if (constructionFault == 4) contextCurrent = false;
+                var priorSession = session;
+                replaceDuringInspection = constructionFault == 6;
                 Assert.Throws<InvalidDataException>(() => host.ConstructFactory(factoryToken!));
-                Assert.Equal(constructionFault == 4 ? 0 : 1, constructorCalls);
-                Assert.Null(host.PreparedFor(session));
+                Assert.Equal(constructionFault == 5 ? 1 : 0, constructorCalls);
+                if (constructionFault == 6)
+                {
+                    Assert.NotEqual(priorSession, session);
+                    Assert.NotNull(host.PreparedFor(session));
+                    var replacementToken = host.BeginFactory(new JsonValue(poi));
+                    Assert.NotNull(replacementToken);
+                    Assert.Same(native, host.ConstructFactory(replacementToken!));
+                    host.CompleteFactory(replacementToken!, native);
+                }
+                else Assert.Null(host.PreparedFor(session));
                 Assert.Equal(bytes, File.ReadAllBytes(path));
                 return;
             }
