@@ -37,6 +37,24 @@ public sealed class InstalledWorldBindingTests
     }
 
     [Fact]
+    public void EmptyProfileEnclosingCallbacksMatchInspectedBehavior()
+    {
+        var path = Environment.GetEnvironmentVariable("VG_GAME_ASSEMBLY") ?? throw new InvalidOperationException("Run make check-bindings.");
+        using var game = AssemblyDefinition.ReadAssembly(path);
+        var module = game.MainModule;
+        var callbacks = module.GetTypes().Where(type => type.Methods.Any(method => method.Name == "OnGuardUnitsRegenerated")).Select(type => type.FullName).OrderBy(name => name).ToArray();
+        Assert.Equal(new[] { "Source.Simulation.World.System.FactionSkirmish", "Source.Simulation.World.SystemStoryteller" }, callbacks);
+        var eligibility = module.GetType("Source.MissionSystem.MissionTargetReplenisher").Methods.Single(method => method.Name == "IsEligibleMission").Body.Instructions;
+        Assert.Contains(eligibility, instruction => instruction.Operand is FieldReference field && field.Name == "storyId");
+        foreach (var name in new[] { "BountyMission", "PatrolMission", "IndustryMission" })
+            Assert.Contains(eligibility, instruction => instruction.Operand is TypeReference type && type.FullName == "Source.MissionSystem." + name);
+        var player = module.GetType("Source.Player.GamePlayer");
+        Assert.Equal("System.Collections.Generic.List`1<Source.MissionSystem.Mission>", player.Fields.Single(field => field.Name == "missions").FieldType.FullName);
+        Assert.Equal("System.String", module.GetType("Source.MissionSystem.Mission").Fields.Single(field => field.Name == "storyId").FieldType.FullName);
+        Assert.Equal("Source.Simulation.World.SystemStoryteller", module.GetType("Source.Galaxy.SystemMapData").Fields.Single(field => field.Name == "storyteller").FieldType.FullName);
+    }
+
+    [Fact]
     public void PoiMembershipChangesPrecedeManagerSpawnAndRequireTheirOwnFence()
     {
         var path = Environment.GetEnvironmentVariable("VG_GAME_ASSEMBLY")

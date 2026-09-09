@@ -37,7 +37,9 @@ public sealed partial class Plugin
             var assembly = Assembly.Load("Assembly-CSharp");
 #if VG_WORLD_QUALIFICATION
             const bool emptyProfile = true;
-            Action<object>? inspectProfile = new WorldEmptyCombatProfile(assembly).Require;
+            var emptyState = new WorldEmptyCombatProfile(assembly);
+            var emptyEnvironment = new WorldEmptyCombatEnvironment(assembly);
+            Action<object>? inspectProfile = poi => { emptyState.Require(poi); emptyEnvironment.Require(poi); };
 #else
             const bool emptyProfile = false;
             Action<object>? inspectProfile = null;

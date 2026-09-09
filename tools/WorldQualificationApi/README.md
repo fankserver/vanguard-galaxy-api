@@ -8,4 +8,8 @@ The authorization file `world-qualification.authorization` is bounded to 4096 UT
 
 The normal solution and `make package` do not build this project. The candidate does not currently open world admission. A package marker is not run authorization, a verified sandbox, or native qualification. `RuntimeQualified` remains false.
 
+The empty-site environment also excludes missions eligible for native target replenishment: ordinary missions require a non-null `storyId`; native bounty/patrol/industry missions are already excluded by vanilla. This preserves the intended story TravelTo probe without invoking objective replenishment. The native replenisher's shared timer still advances normally; timer bookkeeping is not a world-content mutation guarantee. Fixtures must satisfy this restriction rather than delete or alter existing missions.
+
+Parent-system guard regeneration permits only the inspected base no-op or `FactionSkirmish` callback. The latter iterates the POI's units, payload units and station parts, which this profile requires to be empty. Foreign overrides are refused. Deferred generation remains permitted, but both asteroid flags must be false to prevent native regeneration.
+
 Native execution requires an independently reviewed candidate, explicit authorization, an exclusive native lease, verified game/save/profile isolation and preservation, and bounded cleanup. A restricted first profile must reject executable world state before construction and publication, preserve ordinary identity/readiness/persistence checks, and exercise public creation plus automatic restoration. Passing that profile alone does not complete the broader world milestone.
