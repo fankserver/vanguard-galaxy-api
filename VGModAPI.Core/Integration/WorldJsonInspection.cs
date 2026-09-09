@@ -153,6 +153,18 @@ internal sealed partial class WorldJsonInspection
         CheckFaction(poi, "faction", assets);
         CheckFaction(poi, "oreOwnershipOverride", assets);
         OptionalArray(poi, "guardDescriptors", item => CheckDescriptor(item, assets));
+        OptionalArray(poi, "salvageDescriptors", item =>
+        {
+            var kind = Text(item, "type"); _nested.SalvageDescriptor(kind);
+            if (kind != "StandardSalvageDescriptor") throw new InvalidDataException("Unsupported salvage descriptor schema.");
+            assets.Ship(Text(item, "shipTemplate"));
+            Number(item, "level", 1, 10000, true);
+            Number(item, "itemCount", -1, 128, true);
+            Number(item, "itemRarity", 0.000001, 10000, false);
+            Number(item, "totalSalvageTypes", 0, 128, true);
+            Number(item, "scrapValueMultiplier", 0, 1000, false);
+            Number(item, "structuralAmountMultiplier", 0, 1000, false);
+        });
         int cargoCount = 0;
         OptionalArray(poi, "cargoDescriptors", item =>
         {

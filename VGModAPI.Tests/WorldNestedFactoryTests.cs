@@ -53,6 +53,9 @@ namespace Source.Data.Persistable
 }
 namespace Source.Galaxy
 {
+    public abstract class SalvageGenerationDescriptor { }
+    public sealed class StandardSalvageDescriptor : SalvageGenerationDescriptor
+    { public StandardSalvageDescriptor() => throw new Exception("Must not construct salvage descriptors during inspection"); }
     public abstract class UnitGenerationDescriptor { }
     public sealed class UnitPayloadDescriptor : UnitGenerationDescriptor { public UnitPayloadDescriptor() => throw new Exception("Must not generate during inspection"); }
     public sealed class FixedPayloadDescriptor : UnitGenerationDescriptor { public FixedPayloadDescriptor() => throw new Exception("Must not construct during inspection"); }

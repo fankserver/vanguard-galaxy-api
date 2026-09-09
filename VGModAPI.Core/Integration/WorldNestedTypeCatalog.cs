@@ -10,6 +10,7 @@ internal sealed class WorldNestedTypeCatalog
     private readonly Assembly _assembly;
     internal WorldNestedTypeCatalog(Assembly assembly) => _assembly = assembly;
     internal void Persistable(string name) => Require(name, "Source.Data.Persistable.", "Source.Data.Persistable.PersistableData", Type.EmptyTypes);
+    internal void SalvageDescriptor(string name) => Require(name, "Source.Galaxy.", "Source.Galaxy.SalvageGenerationDescriptor", Type.EmptyTypes);
     internal void Descriptor(string name) => Require(name, "Source.Galaxy.", "Source.Galaxy.UnitGenerationDescriptor", Type.EmptyTypes);
     internal void Storyteller(string name) => Require(name, "Source.Simulation.World.POI.", "Source.Simulation.World.PoiStoryteller",
         new[] { _assembly.GetType("Source.Galaxy.MapPointOfInterest", true)! });
