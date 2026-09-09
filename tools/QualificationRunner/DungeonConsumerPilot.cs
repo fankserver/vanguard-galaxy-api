@@ -42,8 +42,8 @@ public sealed partial class Plugin
             foreach (var frame in DungeonClick(mouse, DungeonProbeButton("Attach cargo encounter")!.transform)) yield return frame;
             // Post-exit verification requires exactly one Attached and one TargetInUse result in the consumer log.
             foreach (var frame in CheckDungeonCommandAdmission()) yield return frame;
-            foreach (var frame in CheckDungeonWalk()) yield return frame;
-            WriteAtomic("dungeon-consumers.txt", new[] { "INPUTS_SENT", "dungeon-consumers-v3", "attach-duplicate-commands-active-walk-retreat" });
+            foreach (var frame in CheckDungeonWalk(mouse)) yield return frame;
+            WriteAtomic("dungeon-consumers.txt", new[] { "INPUTS_SENT", "dungeon-consumers-v3", File.Exists(Path.Combine(_root!, "dungeon-combat.enabled")) ? "attach-duplicate-commands-active-combat" : "attach-duplicate-commands-active-walk-retreat" });
         }
         finally { if (EventSystem.current) EventSystem.current.SetSelectedGameObject(previous ? previous : null); }
     }

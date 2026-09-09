@@ -50,6 +50,21 @@ try {
     Remove-Item $walk; Reject { Assert-DungeonConsumerReceipt $root $p }
     [IO.File]::WriteAllLines($walk, @('INCOMPLETE')); Reject { Assert-DungeonConsumerReceipt $root $p }
     [IO.File]::WriteAllLines($walk, $walkLines); Assert-DungeonConsumerReceipt $root $p
+    $m.mode = 'Invalid'; $m | ConvertTo-Json -Depth 5 | Set-Content $sources
+    Reject { Read-DungeonConsumerManifest $sources }
+    $m.mode = 'Combat'; $m | ConvertTo-Json -Depth 5 | Set-Content $sources
+    $p.dungeonConsumerManifestHash = (Get-FileHash $sources -Algorithm SHA256).Hash.ToLowerInvariant()
+    Reject { Assert-DungeonConsumerSelection $root $p }
+    $combatMarker = Join-Path $root 'dungeon-combat.enabled'
+    [IO.File]::WriteAllText($combatMarker, 'dungeon-combat-v1')
+    Assert-DungeonConsumerSelection $root $p
+    Reject { Assert-DungeonConsumerReceipt $root $p }
+    [IO.File]::WriteAllLines((Join-Path $root 'dungeon-consumers.txt'), @('INPUTS_SENT','dungeon-consumers-v3','attach-duplicate-commands-active-combat'))
+    Reject { Assert-DungeonConsumerReceipt $root $p }
+    [IO.File]::WriteAllLines($walk, @('PASS','dungeon-combat-v1','manual-victory-choice-extraction','donor-crew-reconciled'))
+    Assert-DungeonConsumerReceipt $root $p
+    [IO.File]::WriteAllText($combatMarker, 'wrong'); Reject { Assert-DungeonConsumerSelection $root $p }
+    [IO.File]::WriteAllText($combatMarker, 'dungeon-combat-v1')
     [IO.File]::AppendAllText((Join-Path $root 'Player.log'), 'Cargo attach: Attached'); Reject { Assert-DungeonConsumerReceipt $root $p }
     'PASS dungeon consumer manifest, selection, configuration and result gates (synthetic only)'
 } finally { Remove-Item -LiteralPath $root -Recurse -Force }
