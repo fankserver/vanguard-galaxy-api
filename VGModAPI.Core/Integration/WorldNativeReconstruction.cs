@@ -31,7 +31,9 @@ internal sealed class WorldNativeReconstruction
         var map = _map.GetValue(player) ?? throw new InvalidDataException("No observed world map.");
         return () => _game.TryGetObservedPlayer(session, out var current) && ReferenceEquals(current, player) && ReferenceEquals(_map.GetValue(current), map);
     }
-    internal WorldSnapshotInstance[] Read(WorldPreparedLoad prepared, Func<bool> stillAdmitted, Func<WorldSnapshotInstance, bool> constructed, Func<WorldSavedDefinition, WorldSavedDefinition?>? effective = null)
+    internal WorldSnapshotInstance[] Read(WorldPreparedLoad prepared, Func<bool> stillAdmitted, Func<WorldSnapshotInstance, bool> constructed)
+        => Prepare(prepared, stillAdmitted, constructed).Instances;
+    internal WorldRestorationPlan Prepare(WorldPreparedLoad prepared, Func<bool> stillAdmitted, Func<WorldSnapshotInstance, bool> constructed, Func<WorldSavedDefinition, WorldSavedDefinition?>? effective = null)
     {
         if (prepared == null || stillAdmitted == null || constructed == null) throw new ArgumentNullException("Verified load and admission fence required.");
         if (!_game.TryGetObservedPlayer(prepared.Session, out var player)) throw new InvalidDataException("World reconstruction has no observed player.");
@@ -68,18 +70,18 @@ internal sealed class WorldNativeReconstruction
         if (!stillAdmitted() || !_game.TryGetObservedPlayer(prepared.Session, out var current) || !ReferenceEquals(player, current) ||
             !ReferenceEquals(_map.GetValue(current), map) || !before.SameMembership(_index.Read(map)))
             throw new InvalidDataException("World reconstruction scope changed.");
-        if (effective != null)
+        if (effective == null) return new WorldRestorationPlan(result);
+        int attempted = 0;
+        return new WorldRestorationPlan(result, () =>
         {
             for (int i = 0; i < result.Length; i++)
                 if ((string?)_name.GetValue(result[i].Native) != names[i]) throw new InvalidDataException("World name changed during migration approval.");
-            int applied = 0;
-            try { for (; applied < result.Length; applied++) _name.SetValue(result[applied].Native, replacements[applied]); }
-            catch
-            {
-                for (int i = applied - 1; i >= 0; i--) _name.SetValue(result[i].Native, names[i]);
-                throw;
-            }
-        }
-        return result;
+            for (int i = 0; i < result.Length; i++)
+            { attempted = i + 1; _name.SetValue(result[i].Native, replacements[i]); }
+        }, () =>
+        {
+            for (int i = attempted - 1; i >= 0; i--) _name.SetValue(result[i].Native, names[i]);
+            attempted = 0;
+        });
     }
 }

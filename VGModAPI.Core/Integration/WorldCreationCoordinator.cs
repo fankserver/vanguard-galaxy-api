@@ -27,12 +27,19 @@ internal sealed class WorldCreationCoordinator
     {
         _checkThread();
         if (reconstruct == null) throw new ArgumentNullException(nameof(reconstruct));
+        return TryRestorePrepared(session, () => new WorldRestorationPlan(reconstruct()));
+    }
+    internal bool TryRestorePrepared(Guid session, Func<WorldRestorationPlan> reconstruct)
+    {
+        _checkThread();
+        if (reconstruct == null) throw new ArgumentNullException(nameof(reconstruct));
         if (_creating || _restored || session == Guid.Empty || session != _session) return false;
         long revision = _revision, nextRevision = checked(_revision + 1);
         _creating = true;
         try
         {
-            var source = reconstruct() ?? throw new InvalidDataException("Missing reconstructed inventory.");
+            var plan = reconstruct() ?? throw new InvalidDataException("Missing reconstruction plan.");
+            var source = plan.Instances ?? throw new InvalidDataException("Missing reconstructed inventory.");
             if (source.Length > WorldSerializationAssociation.MaxObjects) throw new InvalidDataException("Reconstructed inventory exceeds bound.");
             var prepared = (WorldSnapshotInstance[])source.Clone();
             var ids = new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal);
@@ -45,9 +52,24 @@ internal sealed class WorldCreationCoordinator
             }
             var tracking = _lifetime?.PrepareTracking(session, System.Linq.Enumerable.Select(prepared, item => (item.Native, item.Identity)));
             if (session != _session || revision != _revision || (tracking != null && !tracking.Current)) return false;
-            tracking?.Commit();
-            _instances = prepared; _revision = nextRevision; _restored = true;
-            return true;
+            bool rollback = true; Exception? failure = null;
+            try
+            {
+                plan.Apply();
+                if (session != _session || revision != _revision || (tracking != null && !tracking.Current)) return false;
+                tracking?.Commit();
+                _instances = prepared; _revision = nextRevision; _restored = true;
+                rollback = false; return true;
+            }
+            catch (Exception error) { failure = error; throw; }
+            finally
+            {
+                if (rollback)
+                {
+                    try { plan.Rollback(); }
+                    catch (Exception cleanup) when (failure != null) { throw new AggregateException("World restoration and rollback failed.", failure, cleanup); }
+                }
+            }
         }
         finally { _creating = false; }
     }

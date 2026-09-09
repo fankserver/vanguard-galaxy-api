@@ -55,6 +55,26 @@ public sealed class WorldNativeReconstructionTests
                 return new[] { restored };
             }));
             Assert.Throws<InvalidDataException>(() => coordinator.Snapshot());
+            poi.name = "Site";
+            WorldRestorationPlan Migration() => reconstruction.Prepare(prepared, () => true, _ => true,
+                _ => new WorldSavedDefinition("author.a", new WorldCombatDefinition("PoiX", 2, "Migrated", "player", 1)));
+            var wrongLifetime = new WorldLifetimeGuard(); wrongLifetime.Start(Guid.NewGuid());
+            var blocked = new WorldCreationCoordinator(new WorldNativeAttachment(game), hub.CheckThread, wrongLifetime); blocked.Reset(request.Id);
+            Assert.Throws<InvalidDataException>(() => blocked.TryRestorePrepared(request.Id, Migration));
+            Assert.Equal("Site", poi.name);
+            coordinator.Reset(request.Id);
+            Assert.False(coordinator.TryRestorePrepared(request.Id, () =>
+            {
+                var plan = Migration(); coordinator.Reset(Guid.NewGuid()); return plan;
+            }));
+            Assert.Equal("Site", poi.name);
+            coordinator.Reset(request.Id);
+            Assert.False(coordinator.TryRestorePrepared(request.Id, () =>
+            {
+                var plan = Migration();
+                return new WorldRestorationPlan(plan.Instances, () => { plan.Apply(); coordinator.Reset(Guid.NewGuid()); }, plan.Rollback);
+            }));
+            Assert.Equal("Site", poi.name);
             Assert.Throws<InvalidDataException>(() => reconstruction.Read(prepared, () => false, _ => true));
             Assert.Throws<InvalidDataException>(() => reconstruction.Read(prepared, () => { GamePlayer.current = new GamePlayer { map = map }; return true; }, _ => true));
         }

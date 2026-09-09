@@ -1,0 +1,14 @@
+using System;
+
+namespace VGModAPI.Core.Integration;
+
+/// <summary>Prepared records and reversible native writes; publication is owned by the coordinator.</summary>
+internal sealed class WorldRestorationPlan
+{
+    internal WorldSnapshotInstance[] Instances { get; }
+    private readonly Action? _apply, _rollback;
+    internal WorldRestorationPlan(WorldSnapshotInstance[] instances, Action? apply = null, Action? rollback = null)
+    { Instances = instances; _apply = apply; _rollback = rollback; }
+    internal void Apply() => _apply?.Invoke();
+    internal void Rollback() => _rollback?.Invoke();
+}
