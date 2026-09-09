@@ -8,6 +8,20 @@ namespace VGModAPI.Tests;
 public sealed class WorldSaveFormatTests
 {
     private static WorldSaveFormat Format() => new(typeof(JsonObject).Assembly);
+    [Fact]
+    public void OwnedDiscriminatorRequiresExactAssociationAndPreservesOtherNodeFields()
+    {
+        var id = VGModAPI.Core.WorldObjectIdentity.ReservedPrefix + "test";
+        var node = new JsonObject { ["guid"] = new(id), ["type"] = new("Combat"), ["name"] = new("世界"), ["Version"] = new("untouched") };
+        var format = Format();
+        Assert.Throws<InvalidDataException>(() => format.StampOwnedPoi(node, id + "other"));
+        Assert.Equal("Combat", node["type"].AsString);
+        format.StampOwnedPoi(node, id);
+        Assert.Equal(WorldSaveFormat.OwnedCombatType, node["type"].AsString);
+        Assert.Equal(id, node["guid"].AsString); Assert.Equal("世界", node["name"].AsString);
+        Assert.Equal("untouched", node["Version"].AsString);
+        Assert.Throws<InvalidDataException>(() => format.StampOwnedPoi(node, id));
+    }
     [Theory]
     [InlineData("0.8.2.3")]
     [InlineData("0.9.0.0")]

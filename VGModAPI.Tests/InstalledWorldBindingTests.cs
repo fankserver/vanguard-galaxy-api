@@ -94,6 +94,13 @@ public sealed class InstalledWorldBindingTests
             ?? throw new InvalidOperationException("Run make check-bindings against the original installed assembly.");
         using var assembly = AssemblyDefinition.ReadAssembly(path);
         var module = assembly.MainModule;
+        Assert.Null(module.GetType("Source.Galaxy.POI." + WorldSaveFormat.OwnedCombatType));
+        var createCalls = module.GetType("Source.Galaxy.MapPointOfInterest").Methods.Single(method => method.Name == "Create")
+            .Body.Instructions.Where(instruction => instruction.Operand is MethodReference)
+            .Select(instruction => (MethodReference)instruction.Operand).ToArray();
+        int resolveType = Array.FindIndex(createCalls, method => method.DeclaringType.FullName == "System.Type" && method.Name == "GetType");
+        int constructorLookup = Array.FindIndex(createCalls, method => method.Name == "GetConstructor");
+        Assert.True(resolveType >= 0 && constructorLookup > resolveType);
         foreach (var binding in WorldNativeBindings.Methods)
         {
             var method = module.GetType(binding.Type).Methods.Single(candidate => candidate.Name == binding.Name &&

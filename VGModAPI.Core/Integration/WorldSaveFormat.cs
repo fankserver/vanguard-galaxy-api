@@ -9,6 +9,7 @@ namespace VGModAPI.Core.Integration;
 /// <summary>API-required native load barrier. It is not authorization or a save conversion/uninstall facility.</summary>
 internal sealed class WorldSaveFormat
 {
+    internal const string OwnedCombatType = "VGModAPIOwnedCombatV1";
     internal const string Marker = "99.99.99.99";
     internal const string OriginalVersion = "VGModAPIWorldOriginalVersion";
     private readonly Type _rootType;
@@ -17,6 +18,8 @@ internal sealed class WorldSaveFormat
     private readonly ConstructorInfo _string;
     internal WorldSaveFormat(Assembly assembly)
     {
+        if (assembly.GetType("Source.Galaxy.POI." + OwnedCombatType, false) != null)
+            throw new InvalidDataException("Owned POI discriminator collides with a native type.");
         _rootType = assembly.GetType("LightJson.JsonObject", true)!;
         var value = assembly.GetType("LightJson.JsonValue", true)!;
         _item = _rootType.GetProperty("Item", new[] { typeof(string) })!;
@@ -38,6 +41,15 @@ internal sealed class WorldSaveFormat
     private void Root(object root)
     { if (root == null || root.GetType() != _rootType) throw new InvalidDataException("Exact native JSON root required."); }
 
+    internal void StampOwnedPoi(object node, string expectedIdentity)
+    {
+        Root(node);
+        if (!WorldObjectIdentity.IsReserved(expectedIdentity) || Text(node, "guid") != expectedIdentity || Text(node, "type") != "Combat")
+            throw new InvalidDataException("Owned discriminator requires an exactly associated native Combat node.");
+        var before = OtherFields(node, true);
+        Set(node, "type", OwnedCombatType);
+        RequireSame(before, OtherFields(node, true));
+    }
     internal void Seal(object root, bool owned)
     {
         Root(root);
@@ -78,14 +90,14 @@ internal sealed class WorldSaveFormat
             foreach (char c in part) if (c < '0' || c > '9') throw new InvalidDataException("Invalid original game version digit.");
         }
     }
-    private static Dictionary<string, string> OtherFields(object root)
+    private static Dictionary<string, string> OtherFields(object root, bool node = false)
     {
         var result = new Dictionary<string, string>(StringComparer.Ordinal); long length = 0; int count = 0;
         foreach (var entry in (IEnumerable)root)
         {
             if (++count > 1024) throw new InvalidDataException("World root field limit exceeded.");
             var type = entry.GetType(); var key = (string)type.GetProperty("Key")!.GetValue(entry)!;
-            if (key == "Version" || key == OriginalVersion) continue;
+            if (node ? key == "type" : key == "Version" || key == OriginalVersion) continue;
             string text = type.GetProperty("Value")!.GetValue(entry)!.ToString() ?? throw new InvalidDataException("Missing root field text.");
             length += text.Length;
             if (length > WorldLoadBytes.MaxDecodedBytes) throw new InvalidDataException("World root content limit exceeded.");
