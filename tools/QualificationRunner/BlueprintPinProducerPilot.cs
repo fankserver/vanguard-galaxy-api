@@ -19,12 +19,12 @@ public sealed partial class Plugin
         var station = quotes.CurrentStation!;
         var jobs = ModApi.CraftingJobs!.Read(station);
         Require(jobs.Status == CraftingJobQueryStatus.Available, "Producer test needs an available job query.");
-        var discovery = new List<string>();
+        var discovery = new List<string> { "forgeRecipes=" + catalog.Recipes.Count(recipe => recipe.Process == RecipeProcess.Forge) };
         IReadOnlyList<RecipeSnapshot>? producers = null;
         var ingredientIndex = -1; var inputCount = 0;
         foreach (var recipe in catalog.Recipes.Where(recipe => recipe.Process == RecipeProcess.Forge))
         {
-            if (jobs.Jobs.Any(job => job.Recipe.Equals(recipe.Id))) continue;
+            if (jobs.Jobs.Any(job => job.Recipe.Equals(recipe.Id))) { discovery.Add(recipe.Id.LocalId + " skipped=job"); continue; }
             var navigation = ui.Open(recipe.Id);
             discovery.Add(recipe.Id.LocalId + " navigation=" + navigation);
             if (navigation != ForgeNavigationStatus.Selected) { yield return null; continue; }
