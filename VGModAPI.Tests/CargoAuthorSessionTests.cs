@@ -17,6 +17,7 @@ public sealed class CargoAuthorSessionTests
         internal readonly List<Action<BoardingEvent>> Boarding = new();
         internal readonly Dictionary<string, Action<DungeonPanelSnapshot>> Actions = new();
         internal readonly List<string> Logs = new();
+        internal readonly List<Action<DungeonSettlementSnapshot>> Settlements = new();
         internal int RegisterCalls, AttachCalls, ProviderDisposals, SettlementLeases;
         internal bool RejectDefinition, RejectAction;
         internal bool ContextualActions = true;
@@ -57,7 +58,7 @@ public sealed class CargoAuthorSessionTests
         });
         internal CargoAuthorSession Create(bool optional = true, bool required = true) => new("item", Life, Events, required ? Content : null,
             optional ? Panel : null, Fake<IBoardingCommandService>((_, _) => throw new InvalidOperationException()), Fake<IBoardingTacticalService>((_, _) => throw new InvalidOperationException()),
-            Fake<IDungeonSettlementService>((name, _) => { if (name == "add_Changed") SettlementLeases++; else { Assert.Equal("remove_Changed", name); SettlementLeases--; } return null; }), Logs.Add);
+            Fake<IDungeonSettlementService>((name, args) => { var handler = (Action<DungeonSettlementSnapshot>)args[0]!; if (name == "add_Changed") { SettlementLeases++; Settlements.Add(handler); } else { Assert.Equal("remove_Changed", name); SettlementLeases--; Settlements.Remove(handler); } return null; }), Logs.Add);
         internal BoardingEvent Event(BoardingHandle target, BoardingEventKind kind)
         {
             var operation = new BoardingHandle(Session, Guid.NewGuid());
@@ -83,6 +84,27 @@ public sealed class CargoAuthorSessionTests
         Assert.Equal("Attach cargo encounter", f.Presenters["attach-cargo"](idle)!.Label);
         f.Actions["attach-cargo"](idle); Assert.Equal(1, f.AttachCalls); Assert.Contains("Cargo attach: TargetInUse", f.Logs);
         author.Dispose(); Assert.Empty(f.Actions); Assert.Empty(f.Boarding); Assert.Empty(f.Lifecycle); Assert.Equal(1, f.ProviderDisposals);
+    }
+    [Fact]
+    public void RemovedHostKeepsSettlementObservationUntilLastReturningOperationRetires()
+    {
+        var f = new Fixture(); using var author = f.Create();
+        var target = new BoardingHandle(f.Session, Guid.NewGuid());
+        var first = f.Event(target, BoardingEventKind.OperationStarted);
+        var second = f.Event(target, BoardingEventKind.OperationStarted);
+        f.Seed = new[] { first.Operation!, second.Operation! };
+        f.Emit(first); f.Emit(second); f.Emit(f.Event(target, BoardingEventKind.Retired));
+        Assert.Equal(1, f.SettlementLeases);
+        f.Seed = new[] { second.Operation! };
+        f.Emit(new BoardingEvent(2, BoardingEventKind.OperationRetired, first.Target, first.Operation));
+        Assert.Equal(1, f.SettlementLeases);
+        var settlement = new DungeonSettlementSnapshot(second.Operation!.Handle, "FriendlyExtracted", false, true,
+            Array.Empty<KeyValuePair<string, int>>(), Array.Empty<KeyValuePair<string, int>>(), true);
+        foreach (var handler in f.Settlements.ToArray()) handler(settlement);
+        Assert.Contains(f.Logs, message => message.Contains("crew return settled=True"));
+        f.Seed = Array.Empty<BoardingOperationSnapshot>();
+        f.Emit(new BoardingEvent(3, BoardingEventKind.OperationRetired, second.Target, second.Operation));
+        Assert.Equal(0, f.SettlementLeases); Assert.Single(f.Actions);
     }
     [Fact]
     public void UnavailableRendererKeepsContentWithoutControls()

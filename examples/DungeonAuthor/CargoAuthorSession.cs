@@ -11,6 +11,7 @@ public sealed class CargoAuthorSession : IDisposable
     private const string Id = "vgmodapi.example.cargo";
     private readonly List<IDisposable> _leases = new();
     private readonly Dictionary<BoardingHandle, CargoRecoveryPanel> _panels = new();
+    private readonly HashSet<BoardingHandle> _retiredTargets = new();
     private CargoRecovery? _author;
     private bool _disposed;
     private ILifecycleService? _lifecycle;
@@ -52,9 +53,15 @@ public sealed class CargoAuthorSession : IDisposable
                 _boarding = boarding;
                 _boardingHandler = fact =>
                 {
-                    if (fact.Kind == BoardingEventKind.Retired)
+                    if (fact.Kind == BoardingEventKind.Retired) _retiredTargets.Add(fact.Target.Handle);
+                    if ((fact.Kind == BoardingEventKind.Retired || fact.Kind == BoardingEventKind.OperationRetired) && _retiredTargets.Contains(fact.Target.Handle))
                     {
-                        if (_panels.TryGetValue(fact.Target.Handle, out var stale)) { stale.Dispose(); _panels.Remove(fact.Target.Handle); }
+                        // A removed host can still have living return pods. Keep observing until its last operation retires.
+                        if (!boarding.GetOperations().Any(operation => operation.Target.Equals(fact.Target.Handle)))
+                        {
+                            if (_panels.TryGetValue(fact.Target.Handle, out var stale)) { stale.Dispose(); _panels.Remove(fact.Target.Handle); }
+                            _retiredTargets.Remove(fact.Target.Handle);
+                        }
                         return;
                     }
                     if (fact.Kind != BoardingEventKind.OperationRetired && fact.Operation != null) Track(fact.Operation);
@@ -79,7 +86,7 @@ public sealed class CargoAuthorSession : IDisposable
         catch { Dispose(); throw; }
     }
     private void ClearTargets()
-    { foreach (var panel in _panels.Values.ToArray()) panel.Dispose(); _panels.Clear(); }
+    { foreach (var panel in _panels.Values.ToArray()) panel.Dispose(); _panels.Clear(); _retiredTargets.Clear(); }
     public void Dispose()
     {
         if (_disposed) return; _disposed = true;
