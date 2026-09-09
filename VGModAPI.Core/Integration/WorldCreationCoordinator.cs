@@ -14,7 +14,8 @@ internal sealed class WorldCreationCoordinator
     private long _revision;
     private bool _creating;
     private bool _restored;
-    internal WorldCreationCoordinator(WorldNativeAttachment native, Action checkThread, WorldLifetimeGuard? lifetime = null) { _native = native; _checkThread = checkThread; _lifetime = lifetime; }
+    private readonly Action<object>? _profile;
+    internal WorldCreationCoordinator(WorldNativeAttachment native, Action checkThread, WorldLifetimeGuard? lifetime = null, Action<object>? profile = null) { _native = native; _checkThread = checkThread; _lifetime = lifetime; _profile = profile; }
     internal bool HasRestoredInventory(Guid session) { _checkThread(); return _restored && session != Guid.Empty && session == _session; }
     internal bool Restored(Guid session) { _checkThread(); return !_creating && HasRestoredInventory(session); }
     internal long Revision { get { _checkThread(); return _revision; } }
@@ -62,6 +63,7 @@ internal sealed class WorldCreationCoordinator
             try
             {
                 plan.Apply();
+                foreach (var record in prepared) _profile?.Invoke(record.Native);
                 if (session != _session || revision != _revision || (tracking != null && !tracking.Current)) return false;
                 tracking?.Commit();
                 _instances = prepared; _revision = nextRevision; _restored = true;
@@ -92,6 +94,7 @@ internal sealed class WorldCreationCoordinator
     {
         _checkThread();
         if (_creating || !_restored) throw new InvalidDataException("World instance state is not ready for snapshot capture.");
+        foreach (var record in _instances) _profile?.Invoke(record.Native);
         return (WorldSnapshotInstance[])_instances.Clone();
     }
     internal WorldSnapshotInstance? TryCreate(Guid session, WorldSavedDefinition definition, WorldObjectIdentity identity,

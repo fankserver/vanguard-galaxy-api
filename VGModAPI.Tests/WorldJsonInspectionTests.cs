@@ -24,6 +24,20 @@ public sealed class WorldJsonInspectionTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public void RestrictedScannerRejectsExecutableFieldsForLoadAndSnapshot(bool snapshot)
+    {
+        var poi = Poi(Identity().NativeId, snapshot ? "Combat" : WorldSaveFormat.OwnedCombatType);
+        var scanner = new WorldJsonInspection(typeof(JsonObject).Assembly, emptyProfile: true);
+        Assert.Single(scanner.Read(Root(poi), nativeSnapshot: snapshot));
+        poi["units"] = new(new List<JsonValue>());
+        Assert.Throws<InvalidDataException>(() => scanner.Read(Root(poi), nativeSnapshot: snapshot));
+        Assert.Single(new WorldJsonInspection(typeof(JsonObject).Assembly).Read(Root(poi), nativeSnapshot: snapshot));
+        Assert.True(poi.ContainsKey("units"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public void MatchesExactOwnedNodeToMetadataWithoutConstructingAnything(bool legacy)
     {
         var identity = Identity(); var poi = Poi(identity.NativeId);

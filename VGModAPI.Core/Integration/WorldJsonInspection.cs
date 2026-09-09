@@ -28,13 +28,15 @@ internal sealed partial class WorldJsonInspection
     private readonly WorldSaveFormat _format;
     private readonly WorldNestedTypeCatalog _nested;
     private readonly PropertyInfo _isNull;
+    private readonly bool _emptyProfile;
     internal void StampOwnedPoi(object node, string identity) => _format.StampOwnedPoi(node, identity);
     internal void SealSnapshot(object root, bool owned) => _format.Seal(root, owned);
     internal void UnsealVerified(object root, bool owned) => _format.UnsealVerified(root, owned);
     private static readonly UTF8Encoding Utf8 = new(false, true);
     private const int MaxVisited = 100000;
-    internal WorldJsonInspection(Assembly assembly)
+    internal WorldJsonInspection(Assembly assembly, bool emptyProfile = false)
     {
+        _emptyProfile = emptyProfile;
         _format = new WorldSaveFormat(assembly);
         _nested = new WorldNestedTypeCatalog(assembly);
         _objectType = assembly.GetType("LightJson.JsonObject", true)!;
@@ -115,6 +117,7 @@ internal sealed partial class WorldJsonInspection
                     if (result.Count >= WorldSerializationAssociation.MaxObjects || !ids.Add(id)) throw new InvalidDataException("Duplicate or excessive owned POIs.");
                     if (Text(poi, "type") != (nativeSnapshot ? "Combat" : WorldSaveFormat.OwnedCombatType) || Text(poi, "systemName") != systemId)
                         throw new InvalidDataException("Owned POI type or parent link is not supported.");
+                    if (_emptyProfile) RequireEmptyCombatJson(poi);
                     var assets = CheckNestedFactories(poi, Visit);
                     result.Add(new WorldParsedNode(poi, id, systemId, Digest(poi), assets.Validate));
                 }

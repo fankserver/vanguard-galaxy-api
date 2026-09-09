@@ -13,9 +13,10 @@ internal sealed class WorldNativeAttachment
     private readonly WorldMapIndex _index;
     private readonly WorldDetachedCombatFactory _factory;
     private readonly FieldInfo _map, _points, _parent;
-    internal WorldNativeAttachment(GameAdapter game)
+    private readonly Action<object>? _profile;
+    internal WorldNativeAttachment(GameAdapter game, Action<object>? profile = null)
     {
-        _game = game;
+        _game = game; _profile = profile;
         var assembly = game.Bindings.Assembly;
         _index = new WorldMapIndex(assembly); _factory = new WorldDetachedCombatFactory(assembly);
         _map = assembly.GetType("Source.Player.GamePlayer", true)!.GetField("map", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
@@ -25,6 +26,7 @@ internal sealed class WorldNativeAttachment
         _points = assembly.GetType("Source.Galaxy.SystemMapData", true)!.GetField("pointsOfInterest", BindingFlags.Public | BindingFlags.Instance)
             ?? throw new MissingFieldException("SystemMapData.pointsOfInterest");
     }
+    private bool CheckProfile(object poi) { _profile?.Invoke(poi); return true; }
     internal bool Contains(Guid session, WorldSnapshotInstance record, bool observed = false)
     {
         bool Player(out object? value) => observed ? _game.TryGetObservedPlayer(session, out value) : _game.TryGetCurrentReadyPlayer(session, out value);
@@ -32,7 +34,7 @@ internal sealed class WorldNativeAttachment
         var map = _map.GetValue(player) ?? throw new InvalidDataException("Current player has no map.");
         var membership = _index.Read(map);
         var system = membership.FindSystem(record.SystemId);
-        return system != null && ReferenceEquals(membership.FindPoint(record.Identity.NativeId), record.Native) &&
+        return system != null && CheckProfile(record.Native) && ReferenceEquals(membership.FindPoint(record.Identity.NativeId), record.Native) &&
             ReferenceEquals(_parent.GetValue(record.Native), system) && Player(out var current) &&
             ReferenceEquals(current, player) && ReferenceEquals(_map.GetValue(current), map);
     }
@@ -54,7 +56,7 @@ internal sealed class WorldNativeAttachment
         bool appended = WorldMembershipTransaction.TryAppend(members, expected, created, () =>
             admission() && _game.TryGetCurrentReadyPlayer(session, out var current) && ReferenceEquals(current, player) &&
             ReferenceEquals(_map.GetValue(current), map) && before.SameMembership(_index.Read(map)) &&
-            _factory.MatchesCreated(created, definition, identity, system, x, y));
+            CheckProfile(created) && _factory.MatchesCreated(created, definition, identity, system, x, y));
         return appended ? record : null;
     }
 }

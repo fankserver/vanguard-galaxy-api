@@ -35,19 +35,26 @@ public sealed partial class Plugin
         try
         {
             var assembly = Assembly.Load("Assembly-CSharp");
+#if VG_WORLD_QUALIFICATION
+            const bool emptyProfile = true;
+            Action<object>? inspectProfile = new WorldEmptyCombatProfile(assembly).Require;
+#else
+            const bool emptyProfile = false;
+            Action<object>? inspectProfile = null;
+#endif
             // Authenticated declarations do not qualify native loading. Keep admission closed
             // until the complete runtime profile has been independently qualified.
             _worldDefinitions = new WorldDefinitionRegistry(StoryHostAuthentication.Resolve, _hub.CheckThread);
             var definitions = _worldDefinitions;
             _worldLoadHost = new WorldLoadHookHost(assembly, _hub, _persistence, _persistence.CreateWorldReader(),
-                _persistence.CanonicalLoadPath, _ => false, () => definitions.Revision);
+                _persistence.CanonicalLoadPath, _ => false, () => definitions.Revision, emptyProfile: emptyProfile);
             var salvageConstructor = assembly.GetType("Source.Data.Persistable.SalvageData", true)!.GetConstructor(Type.EmptyTypes)
                 ?? throw new MissingMethodException("SalvageData..ctor()");
             var lifetime = new WorldLifetimeGuard();
-            var creation = new WorldCreationCoordinator(new WorldNativeAttachment(_adapter), _hub.CheckThread, lifetime);
+            var creation = new WorldCreationCoordinator(new WorldNativeAttachment(_adapter, inspectProfile), _hub.CheckThread, lifetime, inspectProfile);
             _worldLifetimeHost = new WorldLifetimeHookHost(assembly, _hub, lifetime, new WorldActorPhysics(assembly).Stop,
                 session => { creation.Refuse(session); _story?.RefreshWorldDependencies(); });
-            _worldSnapshotHost = new WorldSnapshotHookHost(_hub, new WorldSnapshotRecorder(new WorldJsonInspection(assembly)), creation.Snapshot, () => creation.Revision);
+            _worldSnapshotHost = new WorldSnapshotHookHost(_hub, new WorldSnapshotRecorder(new WorldJsonInspection(assembly, emptyProfile)), creation.Snapshot, () => creation.Revision);
             _worldPersistence = new WorldPersistenceBindings(_persistence, _hub, _worldLoadHost, _worldSnapshotHost, creation);
             _worldRuntime = new WorldRuntimeState(_adapter, _worldLoadHost, definitions, creation,
                 lifetime, _worldPersistence.StateReady, () => false);
