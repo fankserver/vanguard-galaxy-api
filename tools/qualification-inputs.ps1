@@ -314,6 +314,8 @@ function Assert-BlueprintPinSelection([string]$Root, $Provenance) {
     if (!$selected) { return }
     if (!$Provenance.forgeReadProbe -or $Provenance.forgeUiProbe -or $Provenance.forgeCommandProbe -or $Provenance.refineryProbe -or $Provenance.forgeDeliveryProbe -or $Provenance.forgePersistenceProbe -or [IO.File]::ReadAllText($marker) -cne 'blueprint-pin-v1') { throw 'Invalid Blueprint Pin selection.' }
     if ($Provenance.blueprintPinRevision -cnotmatch '^[0-9a-f]{40}$' -or $Provenance.blueprintPinSha256 -cnotmatch '^[0-9a-f]{64}$') { throw 'Invalid Blueprint Pin provenance.' }
+    $config = [IO.File]::ReadAllText((Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg'))
+    if ($config -cnotmatch '(?ms)^\[Hud\]\r?\n(?:(?!^\[).)*?^Enabled = true\r?$') { throw 'Blueprint Pin requires HUD integration.' }
     $binary = Join-Path $Root 'game\BepInEx\plugins\VGBlueprintPin.dll'
     if ((Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant() -cne $Provenance.blueprintPinSha256) { throw 'Blueprint Pin binary changed.' }
 }
@@ -476,7 +478,7 @@ function Assert-ModMenuProbeSelection([string]$Root, $Provenance) {
     if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Mod menu probe selection changed.' }
     if (!$selected) { return }
     if ($Provenance.scenario -ne 'Full' -or [IO.File]::ReadAllText($marker) -cne 'mod-menu-probe-v3') { throw 'Invalid mod menu probe selection.' }
-    $selections = @('storyProbe','menuInspection','travelJournal','travelJournalComparison','echo','echoTravelProbe','echoAbsentProbe','anima','animaTravelProbe','journalMissionEventsProbe','missionIdentityProbe','missionTransitionsProbe','contentReferenceProbe','stockpileCoordinated','journalCoordinated','persistenceProbe','vanillaLoadControl','stockpile','missionJournal','travelStation','travelCrossSystem','travelWormholeFixture','travelResilience','travelRecovery','travelFastLane')
+    $selections = @('blueprintPinProbe','storyProbe','menuInspection','travelJournal','travelJournalComparison','echo','echoTravelProbe','echoAbsentProbe','anima','animaTravelProbe','journalMissionEventsProbe','missionIdentityProbe','missionTransitionsProbe','contentReferenceProbe','stockpileCoordinated','journalCoordinated','persistenceProbe','vanillaLoadControl','stockpile','missionJournal','travelStation','travelCrossSystem','travelWormholeFixture','travelResilience','travelRecovery','travelFastLane')
     if ($null -ne $Provenance.assemblyOverlay) { throw 'Mod menu probe cannot use an assembly overlay.' }
     foreach ($name in $selections) {
         $item = $Provenance.PSObject.Properties[$name]
@@ -1418,6 +1420,7 @@ function Assert-QualificationInputs([string]$Root) {
     if ($anima) { $expected += @('VGAnima.dll') }
     if ($echo) { $expected += @('VGEcho.dll') }
     if ($travelJournal) { $expected += @('VGTravelJournal.dll') }
+    if ($provenance.PSObject.Properties['blueprintPinProbe'] -and $provenance.blueprintPinProbe) { $expected += @('VGBlueprintPin.dll') }
     $expected = @($expected | Select-Object -Unique)
     if (@($provenance.plugins.PSObject.Properties).Count -ne $expected.Count -or
         @($provenance.plugins.PSObject.Properties.Name | Where-Object { $_ -notin $expected }).Count -gt 0) { throw 'Scenario plugin allowlist mismatch.' }

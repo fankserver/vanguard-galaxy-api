@@ -57,12 +57,12 @@ public sealed partial class Plugin
     private static bool PinHudText(string text)
     {
         var root = GameObject.Find("Mod API shared HUD");
-        return root != null && root.GetComponentsInChildren<TMP_Text>().Any(label => label.text.Contains(text));
+        return root != null && root.GetComponentsInChildren<TMP_Text>().Any(label => label.text.StartsWith(text + "  ", StringComparison.Ordinal) || label.text == text);
     }
     private static Button? PinCloseButton()
     {
         var root = GameObject.Find("Mod API shared HUD");
         return root == null ? null : root.GetComponentsInChildren<Button>().SingleOrDefault(button => button.name == "Close"
-            && button.IsActive() && button.IsInteractable() && button.targetGraphic.depth >= 0);
+            && button.IsActive() && button.IsInteractable() && button.targetGraphic != null && button.targetGraphic.depth >= 0);
     }
 }

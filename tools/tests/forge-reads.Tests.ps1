@@ -103,6 +103,8 @@ try {
     $binary = Join-Path $binDir 'VGBlueprintPin.dll'; [IO.File]::WriteAllText($binary, 'synthetic binary')
     Reject { Assert-ForgeReadSelection $root $p }
     $p.blueprintPinSha256 = (Get-FileHash $binary -Algorithm SHA256).Hash.ToLowerInvariant()
+    Reject { Assert-ForgeReadSelection $root $p }
+    [IO.File]::AppendAllText((Join-Path $root 'game\BepInEx\config\vgmodapi.cfg'), "`n[Hud]`nEnabled = true`n")
     Assert-ForgeReadSelection $root $p
     Reject { Assert-BlueprintPinReceipt $root $p }
     [IO.File]::WriteAllLines((Join-Path $root 'blueprint-pin.txt'), @('PASS','blueprint-pin-v1','pin-batch-exact-variant-navigation-close'))
