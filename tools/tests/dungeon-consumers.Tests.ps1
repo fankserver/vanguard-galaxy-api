@@ -13,7 +13,7 @@ try {
     $sources = Join-Path $root 'dungeon-consumer-sources.json'; $m | ConvertTo-Json -Depth 5 | Set-Content $sources
     $p = [pscustomobject]@{scenario='Full';dungeonConsumersProbe=$true;dungeonPanelProbe=$true;dungeonReadinessProbe=$true;dungeonConsumerManifestHash=(Get-FileHash $sources -Algorithm SHA256).Hash.ToLowerInvariant()}
     Reject { Assert-DungeonConsumerSelection $root $p }
-    [IO.File]::WriteAllText((Join-Path $root 'dungeon-consumers.enabled'), 'dungeon-consumers-v1')
+    [IO.File]::WriteAllText((Join-Path $root 'dungeon-consumers.enabled'), 'dungeon-consumers-v2')
     [IO.File]::WriteAllText((Join-Path $config 'vg.boardalways.cfg'), "[General]`r`nEnabled = true`r`nDifficultyModifier = 2`r`nIntegrityDamageMultiplier = 1.5`r`n")
     [IO.File]::WriteAllText((Join-Path $config 'vgmodapi.example.cargo.cfg'), "[Content]`r`nRewardItemId = Titanium Plate`r`n")
     Assert-DungeonConsumerSelection $root $p
@@ -29,10 +29,19 @@ try {
     [IO.File]::WriteAllText((Join-Path $config 'vgmodapi.example.cargo.cfg'), "[Content]`r`nRewardItemId = Titanium Plate`r`n")
     Assert-DungeonConsumerSelection $root $p
     Reject { Assert-DungeonConsumerReceipt $root $p }
-    [IO.File]::WriteAllLines((Join-Path $root 'dungeon-consumers.txt'), @('INPUTS_SENT','dungeon-consumers-v1','attach-then-duplicate'))
+    [IO.File]::WriteAllLines((Join-Path $root 'dungeon-consumers.txt'), @('INPUTS_SENT','dungeon-consumers-v2','attach-then-duplicate-command-admission-cancel'))
     $log = @('Loading [Board Always 0.4.0]','Loading [Cargo recovery example 0.1.0]','Board Always v0.4.0 registered public boarding policies.','Cargo attach: Attached','Cargo attach: TargetInUse')
     [IO.File]::WriteAllLines((Join-Path $root 'Player.log'), $log[0..3]); Reject { Assert-DungeonConsumerReceipt $root $p }
-    [IO.File]::WriteAllLines((Join-Path $root 'Player.log'), $log); Assert-DungeonConsumerReceipt $root $p
+    [IO.File]::WriteAllLines((Join-Path $root 'Player.log'), $log); Reject { Assert-DungeonConsumerReceipt $root $p }
+    $commands = Join-Path $root 'dungeon-commands.txt'
+    [IO.File]::WriteAllLines($commands, @('PASS','dungeon-commands-v1','control-start-options-refusals-cancel-before-tick','crew-and-docking-preserved'))
+    Assert-DungeonConsumerReceipt $root $p
+    [IO.File]::AppendAllText($commands, 'unexpected'); Reject { Assert-DungeonConsumerReceipt $root $p }
+    [IO.File]::WriteAllLines($commands, @('PASS','dungeon-commands-v1','control-start-options-refusals-cancel-before-tick','crew-and-docking-preserved'))
+    [IO.File]::WriteAllText((Join-Path $root 'dungeon-consumers.enabled'), 'dungeon-consumers-v1'); Reject { Assert-DungeonConsumerSelection $root $p }
+    [IO.File]::WriteAllText((Join-Path $root 'dungeon-consumers.enabled'), 'dungeon-consumers-v2')
+    [IO.File]::WriteAllLines((Join-Path $root 'dungeon-consumers.txt'), @('INPUTS_SENT','dungeon-consumers-v1','attach-then-duplicate')); Reject { Assert-DungeonConsumerReceipt $root $p }
+    [IO.File]::WriteAllLines((Join-Path $root 'dungeon-consumers.txt'), @('INPUTS_SENT','dungeon-consumers-v2','attach-then-duplicate-command-admission-cancel'))
     [IO.File]::AppendAllText((Join-Path $root 'Player.log'), 'Cargo attach: Attached'); Reject { Assert-DungeonConsumerReceipt $root $p }
     'PASS dungeon consumer manifest, selection, configuration and result gates (synthetic only)'
 } finally { Remove-Item -LiteralPath $root -Recurse -Force }
