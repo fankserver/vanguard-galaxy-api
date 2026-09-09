@@ -28,6 +28,7 @@ internal sealed class QualificationRunContext
     private readonly FieldInfo _nativePointer;
     private readonly IntPtr _guardPointer;
     private readonly Dictionary<string, (object Instance, Assembly Assembly, IntPtr Pointer)> _providers = new(StringComparer.Ordinal);
+    private (object Instance, Assembly Assembly, IntPtr Pointer)? _runner;
     private bool _refused;
     private static readonly string[] Files = { "VGModAPI.dll", "VGModAPI.Core.dll", "VGModAPI.Abstractions.dll", "QualificationGuard.dll", "WorldAuthorA.dll", "WorldAuthorB.dll", "QualificationRunner.dll" };
 
@@ -76,6 +77,17 @@ internal sealed class QualificationRunContext
         _providers[authenticated.PluginId] = (instance, caller, pointer);
         return authenticated;
     }
+    internal bool ParticipantsReady()
+    {
+        if (!IsCurrent() || _providers.Count != 2) return false;
+        if (!Chainloader.PluginInfos.TryGetValue("vgmodapi.qualification", out var info) || ReferenceEquals(info.Instance, null)) return false;
+        var assembly = info.Instance.GetType().Assembly;
+        var pointer = (IntPtr)_nativePointer.GetValue(info.Instance)!;
+        if (pointer == IntPtr.Zero || !Same(assembly.Location, Path.Combine(_root, "game", "BepInEx", "plugins", "QualificationRunner.dll")))
+        { _refused = true; return false; }
+        _runner ??= (info.Instance, assembly, pointer);
+        return IsCurrent();
+    }
     internal bool IsCurrent()
     {
         if (_refused) return false;
@@ -96,6 +108,9 @@ internal sealed class QualificationRunContext
                 if (!Chainloader.PluginInfos.TryGetValue(entry.Key, out var info) || !ReferenceEquals(info.Instance, entry.Value.Instance) ||
                     !ReferenceEquals(info.Instance.GetType().Assembly, entry.Value.Assembly) || (IntPtr)_nativePointer.GetValue(entry.Value.Instance)! != entry.Value.Pointer)
                     throw new InvalidDataException("Authenticated world provider changed.");
+            if (_runner is { } runner && (!Chainloader.PluginInfos.TryGetValue("vgmodapi.qualification", out var runnerInfo) ||
+                !ReferenceEquals(runnerInfo.Instance, runner.Instance) || !ReferenceEquals(runnerInfo.Instance.GetType().Assembly, runner.Assembly) ||
+                (IntPtr)_nativePointer.GetValue(runner.Instance)! != runner.Pointer)) throw new InvalidDataException("Qualification runner changed.");
             if (Encoding.UTF8.GetString(ReadBounded(Path.Combine(_root, "qualification.marker"))).Trim() != "vgmodapi-disposable-sandbox-v1" ||
                 Encoding.UTF8.GetString(ReadBounded(Path.Combine(_root, "scenario.txt"))).Trim() != "Full" ||
                 DateTimeOffset.UtcNow >= _expires || !(bool)_armed.GetValue(_guard)! || _guardPointer == IntPtr.Zero || (IntPtr)_nativePointer.GetValue(_guard)! != _guardPointer ||
