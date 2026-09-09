@@ -150,6 +150,9 @@ public sealed partial class Plugin
         var records = new List<string>();
         string State(string phase)
         {
+            // Successful HUD callbacks can rebuild/dispose their own clicked view before this sample.
+            if (target == null || button == null)
+                return "click=" + (_forgePointerDiagnostics.Count / 3) + " " + phase + " targetDestroyed=true";
             var snapshot = SpGet(ModApi.ForgeUi!, "_current") as ForgeSelectionSnapshot;
             var module = EventSystem.current.currentInputModule;
             var selected = EventSystem.current.currentSelectedGameObject;
