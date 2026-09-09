@@ -99,6 +99,28 @@ public sealed class WorldLifetimeHookTests : IDisposable
     }
 
     [Fact]
+    public void AdmissionCallbacksCannotChangeGuidOrManagerTargetAndStillAdmitNativeWork()
+    {
+        var hub = new LifecycleHub((_, error) => throw error); var guard = new WorldLifetimeGuard();
+        using var host = new WorldLifetimeHookHost(typeof(Source.Galaxy.MapElement).Assembly, hub, guard);
+        var session = hub.Begin(SessionOrigin.NewGame, null);
+        var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
+        var owned = new Source.Galaxy.MapPointOfInterest { guid = identity.NativeId };
+        var vanilla = new Source.Galaxy.MapPointOfInterest { guid = "vanilla" };
+        guard.Track(session, owned, identity);
+        guard.Ready(session, () => { owned.guid = "stripped"; return true; });
+        Assert.False(host.AllowAmbient(owned));
+        owned.guid = identity.NativeId;
+        var manager = new Behaviour.Managers.TestPoiManager { poi = owned };
+        guard.Ready(session, () => { manager.poi = vanilla; return true; });
+        Assert.False(host.AllowManager(manager));
+        manager.poi = owned; guard.Ready(session);
+        var continuation = host.CaptureManager(manager);
+        guard.Ready(session, () => { manager.poi = vanilla; return true; });
+        Assert.False(continuation());
+    }
+
+    [Fact]
     public void ConcreteHostRefusesOwnedBodiesBeforeAndAfterTeardown()
     {
         var hub = new LifecycleHub((_, error) => throw new Exception("Unexpected fault", error));

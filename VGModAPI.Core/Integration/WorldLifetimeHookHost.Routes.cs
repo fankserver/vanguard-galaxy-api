@@ -27,7 +27,9 @@ internal sealed partial class WorldLifetimeHookHost : IWorldRouteCaptureHost
         var session = _hub.CurrentSession;
         var player = _player.GetValue(null);
         if (session == null || player == null) return null;
-        if (!ReferenceEquals(_travelInstance.GetValue(null), manager) || !AllowUse(target))
+        var previousRoute = Travel.CurrentRouteIdentity;
+        if (!AllowUse(target) || !ReferenceEquals(previousRoute, Travel.CurrentRouteIdentity) || !ReferenceEquals(_travelInstance.GetValue(null), manager) ||
+            !ReferenceEquals(_player.GetValue(null), player) || _hub.CurrentSession?.Id != session.Id || _disposed)
             throw new InvalidDataException("Travel request lacks current manager or world admission.");
         var route = Travel.Begin(session.Id, player, manager, target);
         return new RouteRequest(this, route, Travel.EnterRequest(route));
@@ -42,8 +44,7 @@ internal sealed partial class WorldLifetimeHookHost : IWorldRouteCaptureHost
         {
             if (!Travel.IsCurrent(request.Route)) return;
             if (!succeeded) { Travel.Cancel(request.Route); return; }
-            if (_disposed || _hub.CurrentSession?.Id != request.Route.Session || !ReferenceEquals(_player.GetValue(null), request.Route.Player) ||
-                !ReferenceEquals(_travelInstance.GetValue(null), request.Route.Manager) || !AllowUse(request.Route.Destination))
+            if (!AllowUse(request.Route.Destination) || !RouteStillCurrent(request.Route, request.Route.Manager))
             {
                 Travel.Cancel(request.Route);
                 throw new InvalidDataException("Travel request changed before completion.");

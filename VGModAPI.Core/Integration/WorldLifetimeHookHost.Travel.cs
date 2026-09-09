@@ -40,9 +40,17 @@ internal sealed partial class WorldLifetimeHookHost : IWorldTravelCaptureHost
     private void VerifyRouteNative(WorldTravelScopes.Route route, object manager)
     {
         _hub.CheckThread();
-        if (_disposed || !Travel.IsCurrent(route) || _hub.CurrentSession?.Id != route.Session || !ReferenceEquals(_player.GetValue(null), route.Player) ||
-            !ReferenceEquals(manager, route.Manager) || !ReferenceEquals(_travelInstance.GetValue(null), manager) || !AllowUse(route.Destination))
+        if (!AllowUse(route.Destination) || !RouteStillCurrent(route, manager))
             throw new InvalidDataException("Travel route no longer has its originating native context.");
+    }
+    private bool RouteStillCurrent(WorldTravelScopes.Route route, object manager) =>
+        !_disposed && Travel.IsCurrent(route) && _hub.CurrentSession?.Id == route.Session && ReferenceEquals(_player.GetValue(null), route.Player) &&
+        ReferenceEquals(manager, route.Manager) && ReferenceEquals(_travelInstance.GetValue(null), manager) && StillAllowed(route.Destination);
+    private void VerifyLegCurrent(WorldTravelScopes.Leg leg, object manager, bool localTarget = true)
+    {
+        if (!RouteStillCurrent(leg.Route, manager) || !StillAllowed(leg.Target) || (localTarget && !ReferenceEquals(_localTarget.GetValue(manager), leg.Target)))
+            throw new InvalidDataException("Travel native context changed during admission.");
+        Travel.RequireActive(leg, _hub.CurrentSession!.Id, _player.GetValue(null)!, manager);
     }
     public object? BeginWaypoint(object manager)
     {
@@ -54,7 +62,9 @@ internal sealed partial class WorldLifetimeHookHost : IWorldTravelCaptureHost
             throw new InvalidDataException("Active leg has not reached its waypoint.");
         var next = NextWaypoint(leg.Route);
         if (next == null) return null;
-        if (!AllowUse(next)) throw new InvalidDataException("Next world waypoint is quarantined.");
+        if (!AllowUse(next) || !RouteStillCurrent(leg.Route, manager) || !ReferenceEquals(next, NextWaypoint(leg.Route)) ||
+            (!leg.Completed && !ReferenceEquals(_playerPoi.GetValue(leg.Route.Player), leg.Target)))
+            throw new InvalidDataException("Next world waypoint changed or is quarantined.");
         var handoff = leg.Completed ? Travel.PrepareContinuation(leg, next) : Travel.PrepareHandoff(leg, next);
         return _waypoint = new WaypointRequest(this, handoff, _waypoint);
     }
@@ -82,8 +92,9 @@ internal sealed partial class WorldLifetimeHookHost : IWorldTravelCaptureHost
         }
         VerifyRouteNative(leg.Route, manager);
         Travel.RequireActive(leg, _hub.CurrentSession!.Id, _player.GetValue(null)!, manager);
-        if (!ReferenceEquals(target, leg.Target) || !AllowUse(leg.Target))
+        if (!AllowUse(leg.Target) || !ReferenceEquals(target, leg.Target))
             throw new InvalidDataException("World scene transition target changed or became unavailable.");
+        VerifyLegCurrent(leg, manager);
     }
     public IEnumerator WrapChild(object manager, IEnumerator inner)
     {
@@ -100,8 +111,8 @@ internal sealed partial class WorldLifetimeHookHost : IWorldTravelCaptureHost
         {
             VerifyRouteNative(leg.Route, manager);
             Travel.RequireActive(leg, _hub.CurrentSession!.Id, _player.GetValue(null)!, manager);
-            if (!ReferenceEquals(_localTarget.GetValue(manager), leg.Target) || !AllowUse(leg.Target))
-                throw new InvalidDataException("Travel preparation target changed or became unavailable.");
+            if (!AllowUse(leg.Target)) throw new InvalidDataException("Travel preparation target became unavailable.");
+            VerifyLegCurrent(leg, manager);
         });
     }
     public IEnumerator WrapLeg(object manager, object target, IEnumerator inner)
@@ -131,8 +142,8 @@ internal sealed partial class WorldLifetimeHookHost : IWorldTravelCaptureHost
         {
             VerifyRouteNative(leg.Route, manager);
             Travel.RequireActive(leg, _hub.CurrentSession!.Id, _player.GetValue(null)!, manager);
-            if (!AllowUse(target) || (!firstCheck && !ReferenceEquals(_localTarget.GetValue(manager), target)))
-                throw new InvalidDataException("Travel leg target changed or became unavailable.");
+            if (!AllowUse(target)) throw new InvalidDataException("Travel leg target became unavailable.");
+            VerifyLegCurrent(leg, manager, !firstCheck);
             firstCheck = false; // Native StartTravel assigns localTarget on its first advancement.
         });
     }

@@ -31,9 +31,10 @@ internal sealed partial class WorldLifetimeHookHost
         {
             VerifyRouteNative(leg.Route, manager);
             Travel.RequireActive(leg, _hub.CurrentSession!.Id, _player.GetValue(null)!, manager);
-            if (!ReferenceEquals(_localTarget.GetValue(manager), leg.Target) || !AllowUse(leg.Target) ||
+            if (!AllowUse(leg.Target) ||
                 !ReferenceEquals(instance.GetValue(null), loader) || (IntPtr)pointer.GetValue(loader)! == IntPtr.Zero)
                 throw new InvalidDataException("Scene unload lost its original target or live loader.");
+            VerifyLegCurrent(leg, manager);
         }, () =>
         {
             try { return (Task)(unload.Invoke(loader, new object[] { sceneName }) ?? throw new InvalidDataException("Scene unload returned no task.")); }

@@ -25,7 +25,10 @@ internal sealed partial class WorldLifetimeHookHost : IWorldPayloadLifetimeHost
     {
         _hub.CheckThread();
         var parent = PayloadParent(payload);
-        if (!AllowUse(poi) || !AllowUse(parent)) throw new InvalidDataException("Triggered payload attachment is quarantined.");
+        var poiId = Identity(poi); var parentId = Identity(parent);
+        if (!AllowUse(poi) || !AllowUse(parent) || !StillAllowed(poi) || !StillAllowed(parent) ||
+            Identity(poi) != poiId || Identity(parent) != parentId || !ReferenceEquals(parent, PayloadParent(payload)))
+            throw new InvalidDataException("Triggered payload attachment changed or is quarantined.");
         if ((!AllowRemoval(poi) || !AllowRemoval(parent)) && !ReferenceEquals(poi, parent))
             throw new InvalidDataException("Owned triggered payload cannot be attached to another POI.");
     }
@@ -33,10 +36,11 @@ internal sealed partial class WorldLifetimeHookHost : IWorldPayloadLifetimeHost
     {
         _hub.CheckThread();
         var poi = PayloadParent(payload);
-        if (!AllowUse(poi)) throw new InvalidDataException("Triggered world payload is quarantined.");
+        var player = _player.GetValue(null);
+        if (!AllowUse(poi) || !ReferenceEquals(poi, PayloadParent(payload)) || !ReferenceEquals(player, _player.GetValue(null)))
+            throw new InvalidDataException("Triggered world payload changed or is quarantined.");
         if (!AllowRemoval(poi))
         {
-            var player = _player.GetValue(null);
             if (player == null || !ReferenceEquals(_playerPoi.GetValue(player), poi))
                 throw new InvalidDataException("Owned triggered payload is not in the current player POI.");
         }

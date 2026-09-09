@@ -91,11 +91,16 @@ internal sealed class WorldLifetimeGuard
         if (WorldObjectIdentity.IsReserved(nativeId)) _reserved.GetValue(poi, _ => new object());
         return _known.TryGetValue(poi, out _) || _reserved.TryGetValue(poi, out _);
     }
+    internal bool CheckAmbient(Guid session, object poi, string nativeId)
+    {
+        if (!Owned(poi, nativeId)) return true;
+        return !_stopped && _ready && session == _session && _known.TryGetValue(poi, out var entry) &&
+            entry.Session == session && entry.NativeId == nativeId && _current.TryGetValue(nativeId, out var current) && ReferenceEquals(current, poi);
+    }
     internal bool AllowAmbient(Guid session, object poi, string nativeId)
     {
         if (!Owned(poi, nativeId)) return true;
-        if (_stopped || !_ready || session != _session || !_known.TryGetValue(poi, out var entry) ||
-            entry.Session != session || entry.NativeId != nativeId || !_current.TryGetValue(nativeId, out var current) || !ReferenceEquals(current, poi)) return false;
+        if (!CheckAmbient(session, poi, nativeId)) return false;
         var inventory = _current; var admission = _admission; var readiness = _readiness;
         if (_checkingAdmission) return false;
         bool admitted;

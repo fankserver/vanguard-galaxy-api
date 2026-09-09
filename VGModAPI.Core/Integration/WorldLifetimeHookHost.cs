@@ -57,14 +57,18 @@ internal sealed partial class WorldLifetimeHookHost : IWorldLifetimeHookHost, ID
     public bool AllowAmbient(object poi)
     {
         _hub.CheckThread();
-        return _guard.AllowAmbient(_hub.CurrentSession?.Id ?? Guid.Empty, poi, Identity(poi));
+        var session = _hub.CurrentSession?.Id ?? Guid.Empty; var identity = Identity(poi); var player = _player.GetValue(null);
+        return _guard.AllowAmbient(session, poi, identity) && session == (_hub.CurrentSession?.Id ?? Guid.Empty) && ReferenceEquals(player, _player.GetValue(null)) &&
+            Identity(poi) == identity && StillAllowed(poi);
     }
+    private bool StillAllowed(object poi) => _guard.CheckAmbient(_hub.CurrentSession?.Id ?? Guid.Empty, poi, Identity(poi));
     public bool AllowUse(object poi) => AllowAmbient(poi);
     public bool AllowManager(object manager)
     {
         _hub.CheckThread();
         var poi = _managerPoi.GetValue(manager);
-        return !_blockedManagers.TryGetValue(manager, out _) && (poi == null || AllowUse(poi));
+        return !_blockedManagers.TryGetValue(manager, out _) && (poi == null || AllowUse(poi)) &&
+            ReferenceEquals(poi, _managerPoi.GetValue(manager)) && !_blockedManagers.TryGetValue(manager, out _);
     }
     public bool AllowManagerAwake(object manager)
     {
@@ -74,8 +78,16 @@ internal sealed partial class WorldLifetimeHookHost : IWorldLifetimeHookHost, ID
         var travel = _travelInstance.GetValue(null);
         var current = player == null ? null : _playerPoi.GetValue(player);
         var target = travel == null ? null : _localTarget.GetValue(travel);
-        // Before poi assignment, conservatively require both possible native resolution candidates.
-        if ((current == null || AllowUse(current)) && (target == null || AllowUse(target))) return true;
+        var managerPoi = _managerPoi.GetValue(manager);
+        var currentId = current == null ? null : Identity(current); var targetId = target == null ? null : Identity(target);
+        // Recheck both candidates and all native pointers after the final admission callback.
+        if ((current == null || AllowUse(current)) && (target == null || AllowUse(target)) &&
+            ReferenceEquals(player, _player.GetValue(null)) && ReferenceEquals(travel, _travelInstance.GetValue(null)) &&
+            ReferenceEquals(managerPoi, _managerPoi.GetValue(manager)) &&
+            (player == null || ReferenceEquals(current, _playerPoi.GetValue(player))) &&
+            (travel == null || ReferenceEquals(target, _localTarget.GetValue(travel))) &&
+            (current == null || (Identity(current) == currentId && StillAllowed(current))) &&
+            (target == null || (Identity(target) == targetId && StillAllowed(target)))) return true;
         _blockedManagers.GetValue(manager, _ => new object());
         return false;
     }
@@ -89,7 +101,8 @@ internal sealed partial class WorldLifetimeHookHost : IWorldLifetimeHookHost, ID
         {
             _hub.CheckThread();
             return !_blockedManagers.TryGetValue(manager, out _) && session == (_hub.CurrentSession?.Id ?? Guid.Empty) && ReferenceEquals(poi, _managerPoi.GetValue(manager)) &&
-                (poi == null || AllowUse(poi));
+                (poi == null || AllowUse(poi)) && session == (_hub.CurrentSession?.Id ?? Guid.Empty) &&
+                ReferenceEquals(poi, _managerPoi.GetValue(manager)) && !_blockedManagers.TryGetValue(manager, out _);
         };
     }
     public bool AllowRemoval(object poi)

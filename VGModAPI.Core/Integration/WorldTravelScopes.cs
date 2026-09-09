@@ -123,6 +123,7 @@ internal sealed class WorldTravelScopes
         RequireLeg(_execution.Leg); return _execution.Leg;
     }
     internal Route? PendingRequest => _request != null && ReferenceEquals(_current, _request.Route) && _request.Route.Current == null ? _request.Route : null;
+    internal object? CurrentRouteIdentity => _current;
     internal Leg? CurrentLeg => _current?.Current;
     internal bool IsCurrent(Route route) => ReferenceEquals(_current, route);
     internal void Reset() => _current = null;
