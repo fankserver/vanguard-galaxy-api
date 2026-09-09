@@ -19,7 +19,7 @@ public sealed class Plugin : BaseUnityPlugin
     {
         if (_provider == null)
         {
-            var api = ModApi.Services.Story ?? throw new InvalidOperationException("Enable the optional story module.");
+            var api = ModApi.Services.Story;
             var acquired = api.AcquireProvider(this);
             _provider = acquired.Provider ?? throw new InvalidOperationException(acquired.Diagnostic);
         }
@@ -37,7 +37,7 @@ public sealed class Plugin : BaseUnityPlugin
     {
         if (_provider == null)
         {
-            var api = ModApi.Services.Story ?? throw new InvalidOperationException("Enable the optional story module.");
+            var api = ModApi.Services.Story;
             var acquired = api.AcquireProvider(this);
             _provider = acquired.Provider ?? throw new InvalidOperationException(acquired.Diagnostic);
         }

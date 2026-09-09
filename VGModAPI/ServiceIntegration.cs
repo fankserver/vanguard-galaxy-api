@@ -32,10 +32,11 @@ public sealed partial class Plugin
         _dungeonPanelService ??= new DungeonPanelService(hub, null, hub.ReportSubscriberFailure);
         _dungeons ??= new DungeonContentService(hub, null, null, null, hub.ReportSubscriberFailure);
         _story ??= new StoryContentService(hub.Services, null, hub, StoryHostAuthentication.Resolve, checkThread: hub.CheckThread);
+        _bars ??= new BarContentService(null, hub, StoryHostAuthentication.Resolve, _ => false, hub.CheckThread);
         var root = new ModServices(lifecycle, mods, (_persistence ??= new PersistenceService(hub)), missions, travel, station,
-            _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService, _boardingCombat, _dungeonRewards, _boardingCommands, _boardingTactics, _boardingService, _dungeonSettlement, _dungeonPanelService, _dungeons, _story);
+            _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService, _boardingCombat, _dungeonRewards, _boardingCommands, _boardingTactics, _boardingService, _dungeonSettlement, _dungeonPanelService, _dungeons, _story, _bars);
         // Deferred cleanup preserves terminal lifecycle delivery when shutdown starts inside a callback.
-        foreach (var view in new IDisposable[] { mods, missions, travel, station, _persistence!, _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService, _boardingCombat, _dungeonRewards, _boardingCommands, _boardingTactics, _boardingService, _dungeonSettlement, _dungeonPanelService, _dungeons, _story })
+        foreach (var view in new IDisposable[] { mods, missions, travel, station, _persistence!, _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService, _boardingCombat, _dungeonRewards, _boardingCommands, _boardingTactics, _boardingService, _dungeonSettlement, _dungeonPanelService, _dungeons, _story, _bars })
             hub.Services.AfterStopped(view.Dispose);
         ModApi.PublishServices(root);
         _serviceRoot = root;

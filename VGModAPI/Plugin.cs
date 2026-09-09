@@ -91,7 +91,6 @@ public sealed partial class Plugin : BaseUnityPlugin
         _hub.SetCapability("boarding-combat", false, "Disabled by configuration; experimental.");
         _hub.SetCapability("boarding-commands", false, "Disabled by configuration; experimental.");
         _hub.SetCapability("boarding-rules", false, "Disabled by configuration; experimental.");
-        ModApi.Bars = null;
         _hub.SetCapability("owned-bars", false, "Not initialized; experimental.");
         _modCatalog = new ModInformationCatalog(_hub, ModInformationSource.Snapshot);
         InitializeUpdates();
@@ -406,7 +405,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         }
         catch (Exception error)
         {
-                if (_quarantine != null) _quarantine.Transactions = null;
+            if (_quarantine != null) _quarantine.Transactions = null;
             _story?.Dispose(); _story = null;
             _storyWorld?.Dispose(); _storyWorld = null;
             _hub!.SetCapability("owned-story", false, "Story binding failed: " + error.Message);

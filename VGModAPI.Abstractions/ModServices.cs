@@ -32,6 +32,7 @@ public sealed class ModServices
     private readonly IDungeonPanelService _dungeonPanel;
     private readonly IDungeonContentService _dungeons;
     private readonly IStoryService _story;
+    private readonly IBarService _bars;
     public ILifecycleService Lifecycle { get { CheckThread(); return _lifecycle; } }
     public IModInformationService Mods { get { CheckThread(); return _mods; } }
     public ISaveDataService SaveData { get { CheckThread(); return _saveData; } }
@@ -66,9 +67,11 @@ public sealed class ModServices
 
     public IStoryService Story { get { CheckThread(); return _story; } }
 
+    public IBarService Bars { get { CheckThread(); return _bars; } }
+
     internal ModServices(ILifecycleService lifecycle, IModInformationService mods, ISaveDataService saveData,
         IMissionService missions, ITravelService travel, IStationService station, IRecipeService recipes, IRecipeQuoteService recipeQuotes,
-        ICraftingJobService craftingJobs, ICraftingCommandService craftingCommands, IHudService hud, IForgeUiService forgeUi, IBoardingRuleService boardingRules, IBoardingCombatService boardingCombat, IDungeonRewardService dungeonRewards, IBoardingCommandService boardingCommands, IBoardingTacticalService boardingTactics, IBoardingService boarding, IDungeonSettlementService dungeonSettlement, IDungeonPanelService dungeonPanel, IDungeonContentService dungeons, IStoryService story)
+        ICraftingJobService craftingJobs, ICraftingCommandService craftingCommands, IHudService hud, IForgeUiService forgeUi, IBoardingRuleService boardingRules, IBoardingCombatService boardingCombat, IDungeonRewardService dungeonRewards, IBoardingCommandService boardingCommands, IBoardingTacticalService boardingTactics, IBoardingService boarding, IDungeonSettlementService dungeonSettlement, IDungeonPanelService dungeonPanel, IDungeonContentService dungeons, IStoryService story, IBarService bars)
     {
         _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
         _mods = mods ?? throw new ArgumentNullException(nameof(mods));
@@ -92,6 +95,7 @@ public sealed class ModServices
         _dungeonPanel = dungeonPanel ?? throw new ArgumentNullException(nameof(dungeonPanel));
         _dungeons = dungeons ?? throw new ArgumentNullException(nameof(dungeons));
         _story = story ?? throw new ArgumentNullException(nameof(story));
+        _bars = bars ?? throw new ArgumentNullException(nameof(bars));
     }
 
     internal void CheckThread()

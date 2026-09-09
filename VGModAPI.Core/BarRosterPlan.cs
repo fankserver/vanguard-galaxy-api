@@ -31,7 +31,7 @@ internal sealed partial class BarContentService
     internal bool IsCurrent(BarRosterPlan plan)
     {
         _checkThread();
-        if (_disposed || !ReferenceEquals(plan.Revision, _revision) || !_persistence.CanMutate(plan.Session)) return false;
+        if (_disposed || _storage == null || !Availability.IsAvailable || !ReferenceEquals(plan.Revision, _revision) || !_persistence.CanMutate(plan.Session)) return false;
         var current = Plan(plan.Session, plan.Station, plan.MissionReady, plan.DependencyStamp);
         return current != null && ReferenceEquals(plan.Revision, current.Revision)
             && plan.Policy.KeepVanilla == current.Policy.KeepVanilla
@@ -47,7 +47,7 @@ internal sealed partial class BarContentService
     internal BarRosterPlan? Plan(Guid session, string station, Func<StoryContentId, Guid, bool>? missionReady = null, Func<object>? dependencyStamp = null)
     {
         _checkThread();
-        if (_disposed || !_persistence.Read(session, out var saved)) return null;
+        if (_disposed || _storage == null || !Availability.IsAvailable || !_persistence.Read(session, out var saved)) return null;
         var revision = _revision;
         var candidates = saved.Where(row => row.Station == station && _leases.TryGetValue(row.Id.Provider, out var lease)
             && lease.Definitions.TryGetValue(row.Id.LocalId, out var definition) && definition.Retention == BarPatronRetention.Persistent)
@@ -67,7 +67,7 @@ internal sealed partial class BarContentService
             bool exclusive = lease.Stations.TryGetValue(station, out var ownership) && ownership == BarRosterOwnership.Exclusive;
             bool allowed = !exclusive;
             if (exclusive) { try { allowed = _exclusivePermission(lease.PluginId); } catch { allowed = false; } }
-            if (_disposed || !ReferenceEquals(revision, _revision) || !_persistence.Read(session, out _)) return null;
+            if (_disposed || _storage == null || !Availability.IsAvailable || !ReferenceEquals(revision, _revision) || !_persistence.Read(session, out _)) return null;
             claims.Add(new BarRosterPolicy.Claim(lease.ProviderId, exclusive, allowed));
         }
         var policy = BarRosterPolicy.Resolve(claims);
@@ -84,7 +84,7 @@ internal sealed partial class BarContentService
             bool ready;
             try { ready = missionReady != null && missionReady(row.Mission.Value, row.Occurrence!.Value); }
             catch { ready = false; }
-            if (!ready || _disposed || !ReferenceEquals(revision, _revision) || !_persistence.Read(session, out _)) return null;
+            if (!ready || _disposed || _storage == null || !Availability.IsAvailable || !ReferenceEquals(revision, _revision) || !_persistence.Read(session, out _)) return null;
         }
         if (stamp != null)
         {
@@ -94,7 +94,7 @@ internal sealed partial class BarContentService
         {
             try { if (!ReferenceEquals(permissionStamp, _permissionStamp!())) return null; } catch { return null; }
         }
-        if (_disposed || !ReferenceEquals(revision, _revision) || !_persistence.Read(session, out _)) return null;
+        if (_disposed || _storage == null || !Availability.IsAvailable || !ReferenceEquals(revision, _revision) || !_persistence.Read(session, out _)) return null;
         return new BarRosterPlan(session, station, revision, policy, admitted, missionReady, dependencyStamp);
     }
 }

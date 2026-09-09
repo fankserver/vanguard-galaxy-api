@@ -69,6 +69,4 @@ public static class ModApi
         if (ReferenceEquals(_services, services)) _services = null;
     }
 
-    /// <summary>Optional experimental owned station-bar content. Null when unavailable.</summary>
-    public static IBarApi? Bars { get; internal set; }
 }
