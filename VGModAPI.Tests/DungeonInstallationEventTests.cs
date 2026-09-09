@@ -35,12 +35,12 @@ public sealed class DungeonInstallationEventTests : IDisposable
         Assert.Same(station, provider.GetInstallation("station-a"));
         station.ExtractionStarted += () => count++;
         var id = Ready(hub);
-        Extract(hub, id, "unrelated"); hub.Installations.Tick(); Assert.Equal(0, count);
-        Extract(hub, id); hub.Installations.Tick(); Assert.Equal(1, count);
+        Extract(hub, id, "unrelated"); hub.Gameplay.Tick(); Assert.Equal(0, count);
+        Extract(hub, id); hub.Gameplay.Tick(); Assert.Equal(1, count);
         Extract(hub, id);
-        var next = Ready(hub); hub.Installations.Tick(); Assert.Equal(1, count);
-        Extract(hub, id); hub.Installations.Tick(); Assert.Equal(1, count);
-        Extract(hub, next); hub.Installations.Tick(); Assert.Equal(2, count);
+        var next = Ready(hub); hub.Gameplay.Tick(); Assert.Equal(1, count);
+        Extract(hub, id); hub.Gameplay.Tick(); Assert.Equal(1, count);
+        Extract(hub, next); hub.Gameplay.Tick(); Assert.Equal(2, count);
     }
 
     [Fact]
@@ -57,16 +57,16 @@ public sealed class DungeonInstallationEventTests : IDisposable
         using (hub.EnterServiceDispatch())
         {
             Assert.False(registration.CanMutate);
-            Extract(hub, id); hub.Installations.Tick(); Assert.Equal(0, ran);
+            Extract(hub, id); hub.Gameplay.Tick(); Assert.Equal(0, ran);
         }
         var save = Guid.NewGuid(); var nested = Guid.NewGuid();
         hub.Publish(new LifecycleEvent(LifecycleEventKind.SaveStarted, hub.CurrentSession, save, "slot"));
         hub.Publish(new LifecycleEvent(LifecycleEventKind.SaveStarted, hub.CurrentSession, nested, "slot"));
-        hub.Installations.Tick(); Assert.Equal(0, ran);
+        hub.Gameplay.Tick(); Assert.Equal(0, ran);
         hub.Publish(new LifecycleEvent(LifecycleEventKind.SaveSkipped, hub.CurrentSession, nested, "slot"));
-        hub.Installations.Tick(); Assert.Equal(0, ran);
+        hub.Gameplay.Tick(); Assert.Equal(0, ran);
         hub.Publish(new LifecycleEvent(LifecycleEventKind.SaveSkipped, hub.CurrentSession, save, "slot"));
-        hub.Installations.Tick(); Assert.Equal(1, ran);
+        hub.Gameplay.Tick(); Assert.Equal(1, ran);
     }
 
     [Fact]
@@ -80,9 +80,9 @@ public sealed class DungeonInstallationEventTests : IDisposable
         provider.GetInstallation("station-a").ExtractionStarted += () => Assert.Fail("Disposed save data");
         var id = Ready(hub); Extract(hub, id);
         registration.Dispose();
-        hub.Installations.Tick(); hub.Installations.Tick();
+        hub.Gameplay.Tick(); hub.Gameplay.Tick();
         Assert.Equal(1, diagnostics);
-        provider.Dispose(); hub.Installations.Tick();
+        provider.Dispose(); hub.Gameplay.Tick();
         Assert.Equal(1, diagnostics);
     }
 
@@ -93,8 +93,8 @@ public sealed class DungeonInstallationEventTests : IDisposable
         using var one = hub.Installations.Get("one", "station-a", gate);
         using var two = hub.Installations.Get("two", "station-a", null);
         one.ExtractionStarted += () => order.Add(1); two.ExtractionStarted += () => order.Add(2);
-        Extract(hub, id); hub.Installations.Tick(); Assert.Equal(new[] { 2 }, order);
-        gate.Open = true; hub.Installations.Tick(); Assert.Equal(new[] { 2, 1 }, order);
+        Extract(hub, id); hub.Gameplay.Tick(); Assert.Equal(new[] { 2 }, order);
+        gate.Open = true; hub.Gameplay.Tick(); Assert.Equal(new[] { 2, 1 }, order);
     }
 
     [Fact]
@@ -106,12 +106,12 @@ public sealed class DungeonInstallationEventTests : IDisposable
         station.ExtractionStarted += () =>
         {
             order.Add(1);
-            if (!nested) { nested = true; Extract(hub, id); hub.Installations.Tick(); }
+            if (!nested) { nested = true; Extract(hub, id); hub.Gameplay.Tick(); }
             throw new Exception("consumer");
         };
         station.ExtractionStarted += () => order.Add(2);
-        Extract(hub, id); hub.Installations.Tick(); Assert.Equal(new[] { 1, 2 }, order); Assert.Equal(1, faults);
-        hub.Installations.Tick(); Assert.Equal(new[] { 1, 2, 1, 2 }, order); Assert.Equal(2, faults);
+        Extract(hub, id); hub.Gameplay.Tick(); Assert.Equal(new[] { 1, 2 }, order); Assert.Equal(1, faults);
+        hub.Gameplay.Tick(); Assert.Equal(new[] { 1, 2, 1, 2 }, order); Assert.Equal(2, faults);
     }
 
     [Fact]
@@ -122,8 +122,8 @@ public sealed class DungeonInstallationEventTests : IDisposable
         station.ExtractionStarted += handler; Extract(hub, id);
         station.ExtractionStarted -= handler;
         station.ExtractionStarted += handler;
-        hub.Installations.Tick(); Assert.Equal(0, count);
-        Extract(hub, id); provider.Dispose(); hub.Installations.Tick(); Assert.Equal(0, count);
+        hub.Gameplay.Tick(); Assert.Equal(0, count);
+        Extract(hub, id); provider.Dispose(); hub.Gameplay.Tick(); Assert.Equal(0, count);
         Assert.Throws<ObjectDisposedException>(() => station.ExtractionStarted += handler);
     }
 
@@ -134,7 +134,7 @@ public sealed class DungeonInstallationEventTests : IDisposable
         var id = Ready(hub); var count = 0;
         station.ExtractionStarted += () => Ready(hub);
         station.ExtractionStarted += () => count++;
-        Extract(hub, id); hub.Installations.Tick(); Assert.Equal(0, count);
+        Extract(hub, id); hub.Gameplay.Tick(); Assert.Equal(0, count);
     }
 
     [Fact]
@@ -147,7 +147,7 @@ public sealed class DungeonInstallationEventTests : IDisposable
         good.ExtractionStarted += () => count++;
         var id = Ready(hub);
         hub.Installations.ExtractionStarted(id, poi => poi == "bad-id" ? throw new InvalidOperationException("lookup") : true);
-        hub.Installations.Tick();
+        hub.Gameplay.Tick();
         Assert.Equal(new[] { "bad-owner" }, reports); Assert.Equal(1, count);
     }
 
@@ -159,9 +159,9 @@ public sealed class DungeonInstallationEventTests : IDisposable
         Ready(hub); var originalSession = hub.CurrentSession; var operation = Guid.NewGuid();
         hub.Publish(new LifecycleEvent(LifecycleEventKind.SaveStarted, originalSession, operation, "slot"));
         var next = Ready(hub); Extract(hub, next);
-        hub.Installations.Tick(); Assert.Equal(0, count);
+        hub.Gameplay.Tick(); Assert.Equal(0, count);
         hub.Publish(new LifecycleEvent(LifecycleEventKind.SaveSkipped, originalSession, operation, "slot"));
-        hub.Installations.Tick(); Assert.Equal(1, count);
+        hub.Gameplay.Tick(); Assert.Equal(1, count);
     }
 
     [Fact]
@@ -171,9 +171,9 @@ public sealed class DungeonInstallationEventTests : IDisposable
         var count = 0; provider.GetInstallation("station-a").ExtractionStarted += () => count++;
         var id = Ready(hub); Extract(hub, id);
         hub.SetCapability("save-outcomes", false, "Fault");
-        hub.Installations.Tick(); hub.Installations.Tick();
+        hub.Gameplay.Tick(); hub.Gameplay.Tick();
         Assert.Equal(1, reports); Assert.Equal(0, count);
-        hub.SetCapability("save-outcomes", true, "Recovered"); hub.Installations.Tick(); Assert.Equal(1, count);
+        hub.SetCapability("save-outcomes", true, "Recovered"); hub.Gameplay.Tick(); Assert.Equal(1, count);
     }
 
     [Fact]
@@ -182,7 +182,7 @@ public sealed class DungeonInstallationEventTests : IDisposable
         using var hub = Hub(); using var provider = Provider(hub); var station = provider.GetInstallation("station-a");
         station.ExtractionStarted += () => Assert.Fail("Stopped"); var id = Ready(hub); Extract(hub, id);
         Assert.IsType<InvalidOperationException>(ServiceNotificationTests.OnWorker(() => _ = station.PoiId));
-        hub.Dispose(); hub.Installations.Tick();
+        hub.Dispose(); hub.Gameplay.Tick();
     }
 
     private sealed class Registration : ISaveDataRegistration

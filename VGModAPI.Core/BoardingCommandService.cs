@@ -40,7 +40,7 @@ internal sealed class BoardingCommandService : IDungeonCommandService, IDisposab
     {
         _hub.CheckThread();
         if (_disposed || _events == null || _backend == null || !Availability.IsAvailable) return Result(BoardingCommandStatus.IntegrationUnavailable);
-        if (_busy || _serializationDepth > 0 || _hub.IsDispatchingCallbacks || _events.IsDispatchingCallbacks || _rulesEvaluating()) return Result(BoardingCommandStatus.Busy);
+        if (_busy || _serializationDepth > 0 || _hub.IsDispatchingCallbacks || (_events is ICallbackDispatch { IsDispatchingCallbacks: true }) || _rulesEvaluating()) return Result(BoardingCommandStatus.Busy);
         var session = _hub.CurrentSession;
         if (session == null || session.Phase is not (SessionPhase.PlayerReady or SessionPhase.GameplayInitialized)) return Result(BoardingCommandStatus.SessionUnavailable);
         if (target.SessionId != session.Id || _events.GetTarget(target) == null) return Result(BoardingCommandStatus.StaleHandle);

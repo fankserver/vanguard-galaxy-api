@@ -47,7 +47,6 @@ public sealed class DungeonRewardAdjustment
 
 public interface IDungeonSettlementService : IServiceStatus
 {
-    bool IsDispatchingCallbacks { get; }
     DungeonSettlementSnapshot? Get(BoardingHandle operation);
     event Action<DungeonSettlementSnapshot>? Changed;
 }

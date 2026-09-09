@@ -11,7 +11,7 @@ internal interface ICraftingJobSource
     void InvalidateJobs();
 }
 
-internal sealed class CraftingJobService : ICraftingJobService, IDisposable
+internal sealed class CraftingJobService : ICraftingJobService, ICallbackDispatch, IDisposable
 {
     private readonly LifecycleHub _hub;
     private readonly ICraftingJobSource? _source;

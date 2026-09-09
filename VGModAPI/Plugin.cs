@@ -251,9 +251,9 @@ public sealed partial class Plugin : BaseUnityPlugin
         }
         try { _modMenu?.Poll(); }
         catch (Exception error) { DisableModMenu(error); }
-        _hub?.Installations.Tick();
         _dungeonAegisRuntime?.Tick(UnityEngine.Time.unscaledTimeAsDouble);
-        _droneBayRuntime?.Tick(UnityEngine.Time.unscaledTimeAsDouble);
+_droneBayRuntime?.Tick(UnityEngine.Time.unscaledTimeAsDouble);
+        _hub?.Gameplay.Tick();
     }
 
     private void InitializePersistence()

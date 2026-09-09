@@ -11,8 +11,6 @@ public interface ILifecycleService
     IServiceStatus SessionTracking { get; }
     IServiceStatus SaveOutcomes { get; }
     SessionSnapshot? CurrentSession { get; }
-    /// <summary>True during notification delivery; false is not permission to mutate.</summary>
-    bool IsDispatchingCallbacks { get; }
     event Action<LifecycleEvent>? Changed;
 }
 
@@ -29,7 +27,6 @@ public interface ITravelService : IServiceStatus
 {
     Guid? SessionId { get; }
     TravelLocation? CurrentLocation { get; }
-    bool IsDispatchingCallbacks { get; }
     event Action<TravelTransition>? Transitioned;
 }
 
@@ -37,6 +34,5 @@ public interface ITravelService : IServiceStatus
 public interface IStationService : IServiceStatus
 {
     Guid? SessionId { get; }
-    bool IsDispatchingCallbacks { get; }
     event Action<StationTransition>? Transitioned;
 }

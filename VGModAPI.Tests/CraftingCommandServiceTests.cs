@@ -101,7 +101,7 @@ public sealed class CraftingCommandServiceTests : IDisposable
         { Calls++; Action?.Invoke(request); return new(request.RequestId, CraftingCommandStatus.Succeeded, "Test", true); }
         public CraftingSettingsSnapshot ReadSettings(Guid session, RecipeStationHandle? station) => new(session, true, null, true, false, false, "Read");
     }
-    private sealed class Jobs : FakeServiceStatus, ICraftingJobService
+    private sealed class Jobs : FakeServiceStatus, ICraftingJobService, ICallbackDispatch
     {
         public bool IsDispatchingCallbacks { get; set; }
         public CraftingJobListSnapshot Read(RecipeStationHandle station) => new(CraftingJobQueryStatus.Available, "Read", Array.Empty<CraftingJobSnapshot>());

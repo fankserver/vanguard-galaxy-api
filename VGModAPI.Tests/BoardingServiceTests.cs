@@ -23,7 +23,7 @@ public sealed class BoardingServiceTests
         IDungeonOperationService service = engine;
         var target = Target(Ready(hub)); var scopes = new List<bool>();
         Action<BoardingEvent> handlers = _ => throw new InvalidOperationException("Expected fault.");
-        handlers += _ => scopes.Add(hub.IsDispatchingCallbacks && service.IsDispatchingCallbacks);
+        handlers += _ => scopes.Add(hub.IsDispatchingCallbacks && ((BoardingService)service).IsDispatchingCallbacks);
         service.Changed += handlers;
         Assert.True(engine.Observe(BoardingEventKind.TargetAvailable, target));
         Assert.True(Assert.Single(scopes));
@@ -59,14 +59,14 @@ public sealed class BoardingServiceTests
         var target = Target(Ready(hub)); var seen = new List<long>(); IDisposable? victim = null;
         using var first = service.Subscribe("first", message =>
         {
-            Assert.True(service.IsDispatchingCallbacks); victim?.Dispose();
+            Assert.True(((BoardingService)service).IsDispatchingCallbacks); victim?.Dispose();
             if (message.Sequence == 1) service.Observe(BoardingEventKind.TargetChanged, Target(target.Handle.SessionId, target.Handle.Generation, 2));
         });
         victim = service.Subscribe("victim", _ => Assert.Fail("Disposed callback ran"));
         using var bad = service.Subscribe("bad", _ => throw new InvalidOperationException());
         using var last = service.Subscribe("last", message => seen.Add(message.Sequence));
         service.Observe(BoardingEventKind.TargetAvailable, target);
-        Assert.Equal(new long[] { 1, 2 }, seen); Assert.Equal(2, faults); Assert.False(service.IsDispatchingCallbacks);
+        Assert.Equal(new long[] { 1, 2 }, seen); Assert.Equal(2, faults); Assert.False(((BoardingService)service).IsDispatchingCallbacks);
     }
     [Fact]
     public void ReentrantSessionReplacementStopsOldEventDelivery()

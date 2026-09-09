@@ -32,7 +32,7 @@ public sealed class CraftingJobServiceTests : IDisposable
         ICraftingJobService service = _service;
         var scopes = new List<bool>();
         Action<CraftingJobEvent> handlers = _ => throw new InvalidOperationException("Expected fault.");
-        handlers += _ => scopes.Add(_hub.IsDispatchingCallbacks && service.IsDispatchingCallbacks && _service.CallbackContext != 0);
+        handlers += _ => scopes.Add(_hub.IsDispatchingCallbacks && ((CraftingJobService)service).IsDispatchingCallbacks && _service.CallbackContext != 0);
         service.Changed += handlers;
         Emit(Job());
         Assert.True(Assert.Single(scopes));

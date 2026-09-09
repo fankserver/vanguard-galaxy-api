@@ -145,7 +145,6 @@ public sealed class BoardingEvent
 public interface IDungeonOperationService : IServiceStatus
 {
     Guid? SessionId { get; }
-    bool IsDispatchingCallbacks { get; }
     IReadOnlyList<BoardingTargetSnapshot> GetTargets();
     IReadOnlyList<BoardingOperationSnapshot> GetOperations();
     BoardingTargetSnapshot? GetTarget(BoardingHandle handle);
