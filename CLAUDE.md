@@ -1,17 +1,19 @@
 # Agent instructions
 
-Read and follow [CONTRIBUTING.md](CONTRIBUTING.md) before making changes. It is the
-canonical source for contributor rules, design constraints and documentation policy.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes. It is the canonical
+source for delivery, review, implementation and documentation rules. Read the
+relevant [API contracts](docs/reference/README.md) for the behavior being changed.
 
-- Deliver working API functionality with focused correctness tests. No qualification,
-  preparation/research/analysis workstreams, acceptance matrices or probe-only PRs.
-  Follow the finite completion rule in CONTRIBUTING.md; do not invent new gates.
-- Implement directly in the assigned parent session. Assign the GitHub task to the
-  authenticated account; commit, push and open a PR for the coherent feature/fix.
-- Use the read-only asynchronous `reviewer` for that completed change. Retain its
-  context for substantive fix deltas; coordinate concurrent writers through intercom.
-- Run relevant Makefile checks and fix real failures. Do not add generic council,
-  coverage, native qualification or mandatory CI-wait gates. Never claim a failed
-  review or a failing test passed.
-- Squash-merge when authorized once the functional scope, relevant tests and source
-  review are complete. Deployment and release publication remain separate actions.
+## Memory boundaries
+
+- Keep project policies and durable technical facts in their canonical repository
+  files; link to existing guidance rather than copying it into persistent memory.
+- Project memory should normally contain only a pointer to these instructions.
+  Reserve other memory for genuinely durable preferences not already documented.
+- Do not store test counts, commit/PR histories, milestone status, temporary model
+  choices or one-off authorizations as standing project rules. Use the current
+  task, issue or PR for that context; do not publish private session records.
+- Remove redundant or superseded memories once their useful content is documented.
+  Preserve active task context until its owner has a durable handoff.
+- A remembered approval is not permission for a new action. Follow the current
+  request's scope; a draft requested for owner review must remain unmerged.

@@ -33,6 +33,13 @@ feature chunks. Tests verify those behaviors or reproduce actual defects.
 - Assign the task to your working account, use a branch and Conventional Commits,
   and open a PR for a coherent feature or fix, including its tests. Address
   substantive review findings before delivery. Squash-merge only when authorized.
+- For agent-assisted work, implement in the assigned parent session. Use the
+  read-only asynchronous `reviewer` for the completed change, retaining its context
+  for substantive fix deltas. Coordinate concurrent writers through intercom and
+  separate worktrees; do not edit another session's uncommitted work.
+- Relevant project checks and source review are the delivery checks. Do not add
+  generic council, coverage targets or mandatory CI-wait gates. Never report a
+  failing test or failed review as successful.
 - Read the [lifecycle contract](docs/reference/lifecycle-contract.md) and
   [compatibility limits](docs/reference/compatibility.md) before modifying hooks.
 - Run the relevant Makefile checks. Never run reference-bearing checks on untrusted
@@ -49,6 +56,12 @@ Completed API modules initialize automatically. Enable switches are temporary fo
 unfinished modules and must be removed when their milestone closes—not merely
 changed to default-on. Keep compatibility and dependency safety gates.
 
+- Use established game terminology for domain concepts and plain language in
+  user-facing text. Prefer "save data" or "save/load" over internal coordination
+  terminology; keep implementation vocabulary out of onboarding.
+- Prefer typed events for lifecycle/state changes and snapshots for current state,
+  rather than requiring consumers to poll for transitions. See the
+  [service contracts](docs/reference/service-contracts.md) for delivery semantics.
 - Public contracts belong in Abstractions and must not expose vanilla/Unity types.
   Core and adapter internals are not a supported consumer API.
 - Keep Harmony hooks in `VGModAPI/Patches`. Inspect original game semantics, not
