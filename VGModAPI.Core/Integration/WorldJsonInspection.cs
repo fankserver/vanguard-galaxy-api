@@ -153,6 +153,17 @@ internal sealed partial class WorldJsonInspection
         CheckFaction(poi, "faction", assets);
         CheckFaction(poi, "oreOwnershipOverride", assets);
         OptionalArray(poi, "guardDescriptors", item => CheckDescriptor(item, assets));
+        int cargoCount = 0;
+        OptionalArray(poi, "cargoDescriptors", item =>
+        {
+            int count = (int)Number(item, "count", 0, 128, true);
+            cargoCount += count;
+            if (cargoCount > 1024) throw new InvalidDataException("Owned cargo generation exceeds its total count bound.");
+            Number(item, "spawnChance", 0, 1, false);
+            Number(item, "startSlotId", 0, int.MaxValue - count, true);
+            var size = Object(Field(item, "poiSize"));
+            Number(size, "x", 0, 1000000, false); Number(size, "y", 0, 1000000, false);
+        });
         OptionalArray(poi, "payloads", item =>
         {
             Bodies(item);

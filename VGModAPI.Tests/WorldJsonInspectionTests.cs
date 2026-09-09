@@ -65,6 +65,24 @@ public sealed class WorldJsonInspectionTests
     }
 
     [Fact]
+    public void DeferredCargoGenerationChecksCountsGeometryAndSlotOverflow()
+    {
+        var poi = Poi(Identity().NativeId);
+        var descriptor = new JsonObject { ["count"] = new(128), ["spawnChance"] = new(0.5), ["startSlotId"] = new(0),
+            ["poiSize"] = new(new JsonObject { ["x"] = new(100), ["y"] = new(50) }) };
+        var descriptors = new List<JsonValue> { new(descriptor) }; poi["cargoDescriptors"] = new(descriptors);
+        var reader = new WorldJsonInspection(typeof(JsonObject).Assembly);
+        Assert.Single(reader.Read(Root(poi)));
+        descriptor["startSlotId"] = new(int.MaxValue);
+        Assert.Throws<InvalidDataException>(() => reader.Read(Root(poi)));
+        descriptor["startSlotId"] = new(0); descriptor["spawnChance"] = new(1.1);
+        Assert.Throws<InvalidDataException>(() => reader.Read(Root(poi)));
+        descriptor["spawnChance"] = new(0.5);
+        for (int i = 1; i < 9; i++) descriptors.Add(new(descriptor));
+        Assert.Throws<InvalidDataException>(() => reader.Read(Root(poi)));
+    }
+
+    [Fact]
     public void MetadataMustCoverExactlyTheParsedNodesAndMutableState()
     {
         var identity = Identity(); var poi = Poi(identity.NativeId);
