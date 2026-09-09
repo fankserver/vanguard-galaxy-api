@@ -34,7 +34,7 @@ function Install-DungeonConsumers([string]$Manifest, [string]$Root, [string]$Plu
     }
     if ($m.PSObject.Properties['mode'] -and $m.mode -cin @('Combat','Reward')) { [IO.File]::WriteAllText((Join-Path $Root 'dungeon-combat.enabled'), 'dungeon-combat-v1') }
     if ($m.PSObject.Properties['mode'] -and $m.mode -ceq 'Reward') { [IO.File]::WriteAllText((Join-Path $Root 'dungeon-reward.enabled'), 'dungeon-reward-v1') }
-    if ($m.PSObject.Properties['mode'] -and $m.mode -ceq 'SaveLoad') { [IO.File]::WriteAllText((Join-Path $Root 'dungeon-save.enabled'), 'dungeon-save-v2') }
+    if ($m.PSObject.Properties['mode'] -and $m.mode -ceq 'SaveLoad') { [IO.File]::WriteAllText((Join-Path $Root 'dungeon-save.enabled'), 'dungeon-save-v3') }
     Copy-Item -LiteralPath $Manifest -Destination (Join-Path $Root 'dungeon-consumer-sources.json')
     [IO.File]::WriteAllText((Join-Path $Root 'dungeon-consumers.enabled'), 'dungeon-consumers-v3')
 }
@@ -61,7 +61,7 @@ function Assert-DungeonConsumerSelection([string]$Root, $Provenance) {
     $m = Read-DungeonConsumerManifest $sources
     $save = $m.PSObject.Properties['mode'] -and $m.mode -ceq 'SaveLoad'
     $saveMarker = Join-Path $Root 'dungeon-save.enabled'
-    if ((Test-Path -LiteralPath $saveMarker) -ne [bool]$save -or ($save -and [IO.File]::ReadAllText($saveMarker) -cne 'dungeon-save-v2')) { throw 'Dungeon save selection mismatch.' }
+    if ((Test-Path -LiteralPath $saveMarker) -ne [bool]$save -or ($save -and [IO.File]::ReadAllText($saveMarker) -cne 'dungeon-save-v3')) { throw 'Dungeon save selection mismatch.' }
     $combat = $m.PSObject.Properties['mode'] -and $m.mode -cin @('Combat','Reward')
     $reward = $m.PSObject.Properties['mode'] -and $m.mode -ceq 'Reward'
     $rewardMarker = Join-Path $Root 'dungeon-reward.enabled'
@@ -92,7 +92,9 @@ function Assert-DungeonConsumerReceipt([string]$Root, $Provenance) {
     }
     if (Test-Path -LiteralPath (Join-Path $Root 'dungeon-save.enabled')) {
         $save = [IO.File]::ReadAllLines((Join-Path $Root 'dungeon-save.txt'))
-        if (($save -join "`n") -cne "PASS`ndungeon-save-v2`nsave-as-slot-switch-resolved-reload-older-checkpoint-crew-return") { throw 'Incomplete dungeon save receipt.' }
+        if (($save -join "`n") -cne "PASS`ndungeon-save-v3`nsave-failures-save-as-slot-switch-resolved-reload-in-place-rollback") { throw 'Incomplete dungeon save receipt.' }
+        $faults = [IO.File]::ReadAllLines((Join-Path $Root 'dungeon-save-faults.txt'))
+        if (($faults -join "`n") -cne "PASS`ndungeon-save-faults-v1`nskipped-and-failed-write-live-state-preserved") { throw 'Incomplete dungeon failed/skipped save receipt.' }
     }
     $commands = [IO.File]::ReadAllLines((Join-Path $Root 'dungeon-commands.txt'))
     if (($commands -join "`n") -cne "PASS`ndungeon-commands-v1`ncontrol-start-options-refusals-cancel-before-tick`ncrew-and-docking-preserved") { throw 'Incomplete dungeon command admission receipt.' }
