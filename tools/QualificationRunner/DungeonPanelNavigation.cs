@@ -34,7 +34,7 @@ public sealed partial class Plugin
     private static string DungeonActionDiagnostic(InputAction? action) => action == null ? "none" : action.name + ":" + action.enabled
         + " bindings=" + string.Join("|", action.bindings.Take(16).Select(binding => binding.effectivePath))
         + " controls=" + string.Join("|", action.controls.Take(16).Select(control => control.path));
-    private IEnumerable<object?> CheckDungeonPanelNavigation(IDungeonPanelApi panel)
+    private IEnumerable<object?> CheckDungeonPanelNavigation(IDungeonPanelService panel)
     {
         var oldKeyboard = Keyboard.current; var oldGamepad = Gamepad.current;
         var oldSelection = EventSystem.current.currentSelectedGameObject;
