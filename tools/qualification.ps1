@@ -512,6 +512,7 @@ if ($Action -eq 'Cleanup') {
 }
 if (!$StoryDefinitionColdPhase -and !$BarColdPhase) { Assert-QualificationUnused $root }
 $provenance = Assert-QualificationInputs $root
+if ($provenance.PSObject.Properties['dungeonPanelProbe'] -and $provenance.dungeonPanelProbe -and $TimeoutSeconds -lt 900) { throw 'Dungeon panel phase requires at least 900 seconds.' }
 if ($provenance.PSObject.Properties['modInformationProbe'] -and $provenance.modInformationProbe -and $TimeoutSeconds -lt 900) { throw 'Full information probe requires at least 900 seconds.' }
 if ($provenance.PSObject.Properties['storyAbsentProbe'] -and $provenance.storyAbsentProbe -and $TimeoutSeconds -lt 2100) { throw 'Absent-story probe requires base plus300seconds (2100 total).' }
 if ($provenance.PSObject.Properties['storyProbe'] -and $provenance.storyProbe -and $TimeoutSeconds -lt 5400) { throw 'Story probe requires 5400 seconds including objective reload/claim waits and execution margin.' }

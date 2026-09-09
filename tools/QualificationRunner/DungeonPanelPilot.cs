@@ -34,6 +34,7 @@ public sealed partial class Plugin
         var root = new GameObject("Qualification-only dungeon location");
         IDisposable? section = null; IDisposable? action = null; IDisposable? enabledAction = null;
         var oldMouse = Mouse.current; Mouse? mouse = null; var calls = 0;
+        UnityEngine.Object? nativePanel = null;
         try
         {
             var unitType = NativeType("Behaviour.Unit.DungeonLocationUnit");
@@ -49,6 +50,9 @@ public sealed partial class Plugin
             Require(panel.Open(target) == DungeonPanelOpenStatus.Opened, "Generated target did not open native panel.");
             foreach (var frame in Wait(() => panel.Current?.Target.Handle.Equals(target) == true, "Native dungeon panel snapshot")) yield return frame;
             var view = panel.Current!.ViewId;
+            var nativePanels = UnityEngine.Object.FindObjectsByType(NativeType("Behaviour.UI.Dungeon.DungeonPanel"), FindObjectsInactive.Exclude);
+            Require(nativePanels.Length == 1, "Native dungeon panel is ambiguous.");
+            nativePanel = nativePanels[0];
             mouse = InputSystem.AddDevice<Mouse>();
             foreach (var frame in Wait(() => GameObject.Find("Mod API dungeon contributions") != null || GameObject.Find("Dungeon mod actions toggle") != null, "Dungeon controls visible")) yield return frame;
             var toggle = GameObject.Find("Dungeon mod actions toggle");
@@ -58,9 +62,7 @@ public sealed partial class Plugin
             foreach (var frame in DungeonClick(mouse, DungeonProbeButton("Enabled dungeon probe")!.transform)) yield return frame;
             Require(calls == 1, "Enabled dungeon action did not dispatch exactly once.");
             Require(DungeonProbeButton("Disabled dungeon probe")?.interactable == false, "Disabled dungeon action became enabled.");
-            var nativePanels = UnityEngine.Object.FindObjectsByType(NativeType("Behaviour.UI.Dungeon.DungeonPanel"), FindObjectsInactive.Exclude);
-            Require(nativePanels.Length == 1, "Native dungeon panel is ambiguous.");
-            nativePanels[0].GetType().GetMethod("Close")!.Invoke(nativePanels[0], null);
+            nativePanel.GetType().GetMethod("Close")!.Invoke(nativePanel, null);
             foreach (var frame in Wait(() => panel.Current == null, "Native dungeon panel close")) yield return frame;
             Require(panel.Open(target) == DungeonPanelOpenStatus.Opened, "Dungeon panel did not reopen.");
             Require(panel.Current != null && panel.Current.ViewId != view, "Dungeon view identity survived close/reopen.");
@@ -72,10 +74,14 @@ public sealed partial class Plugin
         }
         finally
         {
-            enabledAction?.Dispose(); action?.Dispose(); section?.Dispose();
-            if (mouse != null) InputSystem.RemoveDevice(mouse);
-            if (oldMouse != null && oldMouse.added) oldMouse.MakeCurrent();
-            if (root) UnityEngine.Object.Destroy(root);
+            try { if (nativePanel) nativePanel!.GetType().GetMethod("Close")!.Invoke(nativePanel, null); }
+            finally
+            {
+                enabledAction?.Dispose(); action?.Dispose(); section?.Dispose();
+                if (mouse != null) InputSystem.RemoveDevice(mouse);
+                if (oldMouse != null && oldMouse.added) oldMouse.MakeCurrent();
+                if (root) UnityEngine.Object.Destroy(root);
+            }
         }
     }
     private static Button? DungeonProbeButton(string label)
