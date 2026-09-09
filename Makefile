@@ -60,6 +60,11 @@ check-archive:
 	VG_GAME_ASSEMBLY="$(MANAGED)/Assembly-CSharp.dll" \
 	VG_CONSUMER_DEPENDENCY_DIRS="$(CORE):$(MANAGED)" \
 	$(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter 'Category=InstalledArchive' -- RunConfiguration.TreatNoTestsAsError=true
+.PHONY: build-world-authors
+build-world-authors: link-libs
+	$(DOTNET) build tools/WorldAuthorA/WorldAuthorA.csproj -c $(CONFIGURATION)
+	$(DOTNET) build tools/WorldAuthorB/WorldAuthorB.csproj -c $(CONFIGURATION)
+
 .PHONY: package-world-qualification
 package-world-qualification: link-libs
 	$(DOTNET) build tools/WorldQualificationApi/WorldQualificationApi.csproj -c $(CONFIGURATION)
