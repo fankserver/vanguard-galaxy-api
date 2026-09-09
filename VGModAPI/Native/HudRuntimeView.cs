@@ -27,7 +27,7 @@ internal sealed partial class HudRuntime
             var root = (RectTransform)_root.transform; root.SetParent(_canvas!.transform, false); Stretch(root);
             var canvasHeight = ((RectTransform)_canvas.transform).rect.height;
             var panelHeight = Mathf.Clamp(canvasHeight - 390, 120, 360);
-            var buttons = entries.Count(entry => entry.Button != null);
+            var buttons = entries.Count(entry => entry.Button != null && entry.Panel == null);
             var panels = entries.Count(entry => entry.Panel != null);
             var buttonContent = Scroll(root, "Buttons", 340, 28, buttons * 124, false);
             var panelContent = Scroll(root, "Panels", buttons > 0 ? 372 : 340, panelHeight, panels * 308, false);
@@ -36,14 +36,21 @@ internal sealed partial class HudRuntime
             foreach (var entry in entries)
             {
                 var view = new View(); _views.Add(entry.Token, view);
-                if (entry.Button != null)
+                if (entry.Button != null && entry.Panel == null)
                 {
                     var rect = Box(buttonContent, "Button", buttonIndex++ * 124, 0, 120, 28, false);
                     view.Button = Button(rect, () => view.Revision, revision => Click(entry.Token, revision, HudInteractionKind.Button, null));
                     view.ButtonLabel = Label(rect, 12); view.ButtonHover = Hover(rect.gameObject);
                 }
                 if (entry.Panel == null) continue;
-                var panel = Box(panelContent, "Panel", panelIndex++ * 308, 0, 300, panelHeight, false);
+                var layout = new RecipeWidgetLayout(entry.Panel.Rows.Count, entry.Button != null, panelHeight);
+                var panel = Box(panelContent, "Panel", panelIndex++ * 308, 0, RecipeWidgetLayout.Width, layout.Height, false);
+                if (entry.Button != null)
+                {
+                    var footer = Box(panel, "Action", 6, 4, 288, 26, false);
+                    view.Button = Button(footer, () => view.Revision, revision => Click(entry.Token, revision, HudInteractionKind.Button, null));
+                    view.ButtonLabel = Label(footer, 12); view.ButtonHover = Hover(footer.gameObject);
+                }
                 panel.gameObject.AddComponent<Image>().color = new Color(.035f, .05f, .075f, .94f);
                 var header = Box(panel, "Header", 6, -4, 258, 30, true);
                 var headerHit = header.gameObject.AddComponent<Image>(); headerHit.color = Color.clear; headerHit.raycastTarget = true;
@@ -53,10 +60,10 @@ internal sealed partial class HudRuntime
                     var close = Box(panel, "Close", 272, -6, 22, 22, true);
                     Button(close, () => view.Revision, revision => Click(entry.Token, revision, HudInteractionKind.ClosePanel, null)); Label(close, 13).text = "×";
                 }
-                var rows = Scroll(panel, "Rows", 6, panelHeight - 42, 0, true, entry.Panel.Rows.Count * 30);
+                var rows = Scroll(panel, "Rows", entry.Button != null ? 36 : 6, layout.RowsHeight, 0, true, entry.Panel.Rows.Count * RecipeWidgetLayout.RowHeight);
                 foreach (var row in entry.Panel.Rows)
                 {
-                    var rect = Box(rows, "Row", 0, -view.Rows.Count * 30, 286, 28, true);
+                    var rect = Box(rows, "Row", 0, -view.Rows.Count * RecipeWidgetLayout.RowHeight, 286, RecipeWidgetLayout.RowHeight - 2, true);
                     var display = Display(rect); display.Button = Button(rect, () => view.Revision, revision => Click(entry.Token, revision, HudInteractionKind.Row, row.Id));
                     view.Rows.Add(row.Id, display);
                 }
@@ -73,7 +80,7 @@ internal sealed partial class HudRuntime
             view.Revision = entry.Revision;
             if (entry.Button != null)
             {
-                view.Button!.interactable = entry.Button.Enabled; view.ButtonLabel!.text = entry.Button.Label;
+                view.Button!.interactable = entry.Button.Enabled; view.ButtonLabel!.text = GameText(entry.Button.Label);
                 view.ButtonHover!.Tooltip = entry.Button.Tooltip;
             }
             if (entry.Panel == null) continue;
@@ -82,6 +89,15 @@ internal sealed partial class HudRuntime
             {
                 var display = view.Rows[row.Id]; display.Button!.interactable = row.Clickable;
                 SafeBind(entry.Plugin, display, row.Label, row.Detail, row.Tooltip, row.Presentation);
+                display.Amount.gameObject.SetActive(row.IngredientAmounts != null);
+                display.Required.gameObject.SetActive(row.IngredientAmounts != null);
+                display.Text.rectTransform.offsetMax = new Vector2(row.IngredientAmounts != null ? -RecipeWidgetLayout.QuantitiesWidth : -4, 0);
+                if (row.IngredientAmounts is { } amounts)
+                {
+                    display.Required.text = "x" + amounts.RequiredText;
+                    display.Amount.text = "(" + amounts.AvailableText + ")";
+                    display.Amount.color = amounts.Sufficient == true ? Color.green : amounts.Sufficient == false ? new Color(1, .25f, .25f) : Color.gray;
+                }
             }
         }
         if (_session() != session) ClearSurface();
@@ -91,7 +107,8 @@ internal sealed partial class HudRuntime
         try { Bind(row, label, detail, tooltip, presentation); }
         catch (Exception error)
         {
-            row.Text.text = (label.Length == 0 ? presentation?.LocalId + " (unavailable)" : label) + "  " + detail;
+            row.Text.text = GameText((label.Length == 0 ? presentation?.LocalId + " (unavailable)" : label) + "  " + detail);
+            row.Text.color = Color.white;
             row.Icon.sprite = null; row.Icon.gameObject.SetActive(false); row.Hover.Tooltip = tooltip;
             var native = row.Text.transform.parent.GetComponent(_assembly.GetType("Behaviour.UI.Tooltip.ItemTooltipSource", true)!) as UnityEngine.Behaviour;
             if (native != null) native.enabled = false;
@@ -101,7 +118,8 @@ internal sealed partial class HudRuntime
     private void Bind(DisplayRow row, string label, string detail, string tooltip, HudPresentation? presentation)
     {
         var resolved = presentation == null ? (Name: "", Icon: (object?)null, TooltipItem: (object?)null) : _presentation.Resolve(presentation);
-        row.Text.text = (label.Length == 0 ? resolved.Name : label) + (detail.Length == 0 ? "" : "  " + detail);
+        row.Text.text = GameText((label.Length == 0 ? resolved.Name : label) + (detail.Length == 0 ? "" : "  " + detail));
+        row.Text.color = _presentation.ItemColor(resolved.TooltipItem) is Color color ? color : Color.white;
         row.Icon.sprite = resolved.Icon as Sprite; row.Icon.gameObject.SetActive(row.Icon.sprite != null);
         row.Text.rectTransform.offsetMin = new Vector2(row.Icon.sprite != null ? 28 : 4, 0);
         var tooltipType = _assembly.GetType("Behaviour.UI.Tooltip.ItemTooltipSource", true)!;
@@ -121,7 +139,7 @@ internal sealed partial class HudRuntime
     private ForgeActionHover Hover(GameObject go)
     {
         var hover = go.AddComponent<ForgeActionHover>();
-        hover.Show = text => { if (_plainTooltip != null) { _plainTooltip.text = text; _plainTooltip.transform.parent.gameObject.SetActive(text.Length != 0); } };
+        hover.Show = text => { if (_plainTooltip != null) { _plainTooltip.text = GameText(text); _plainTooltip.transform.parent.gameObject.SetActive(text.Length != 0); } };
         return hover;
     }
     private DisplayRow Display(RectTransform rect)
@@ -130,14 +148,23 @@ internal sealed partial class HudRuntime
         var imageRect = (RectTransform)icon.transform; imageRect.SetParent(rect, false); imageRect.anchorMin = imageRect.anchorMax = new Vector2(0, .5f);
         imageRect.pivot = new Vector2(0, .5f); imageRect.anchoredPosition = new Vector2(3, 0); imageRect.sizeDelta = new Vector2(24, 24);
         icon.preserveAspect = true; icon.raycastTarget = false;
-        return new DisplayRow(Label(rect, 12), icon, Hover(rect.gameObject));
+        var amount = Label(rect, 12); amount.alignment = TextAlignmentOptions.MidlineRight;
+        amount.rectTransform.anchorMin = new Vector2(1, 0); amount.rectTransform.offsetMin = new Vector2(-RecipeWidgetLayout.QuantityWidth, 0);
+        amount.gameObject.SetActive(false);
+        var required = Label(rect, 12); required.alignment = TextAlignmentOptions.MidlineRight;
+        required.rectTransform.anchorMin = new Vector2(1, 0);
+        required.rectTransform.offsetMin = new Vector2(-RecipeWidgetLayout.QuantitiesWidth, 0);
+        required.rectTransform.offsetMax = new Vector2(-RecipeWidgetLayout.QuantityWidth, 0);
+        required.gameObject.SetActive(false);
+        return new DisplayRow(Label(rect, 12), required, amount, icon, Hover(rect.gameObject));
     }
+    private static string GameText(string value) => value.Replace('\u00b7', '-').Replace("\u2026", "...");
     private TMP_Text Label(RectTransform parent, int size)
     {
         var text = new GameObject("Text", typeof(RectTransform), typeof(TextMeshProUGUI)).GetComponent<TextMeshProUGUI>(); text.transform.SetParent(parent, false);
         Stretch(text.rectTransform); text.rectTransform.offsetMin = new Vector2(4, 0); text.rectTransform.offsetMax = new Vector2(-4, 0);
         text.font = _font; text.fontSize = size; text.richText = false; text.raycastTarget = false;
-        text.alignment = TextAlignmentOptions.MidlineLeft; text.overflowMode = TextOverflowModes.Ellipsis; return text;
+        text.alignment = TextAlignmentOptions.MidlineLeft; text.overflowMode = TextOverflowModes.Truncate; return text;
     }
     private static Button Button(RectTransform rect, Func<long> revision, Action<long> callback)
     {
@@ -178,7 +205,7 @@ internal sealed partial class HudRuntime
     }
     private sealed class DisplayRow
     {
-        internal readonly TMP_Text Text; internal readonly Image Icon; internal readonly ForgeActionHover Hover; internal Button? Button;
-        internal DisplayRow(TMP_Text text, Image icon, ForgeActionHover hover) { Text = text; Icon = icon; Hover = hover; }
+        internal readonly TMP_Text Text; internal readonly TMP_Text Required; internal readonly TMP_Text Amount; internal readonly Image Icon; internal readonly ForgeActionHover Hover; internal Button? Button;
+        internal DisplayRow(TMP_Text text, TMP_Text required, TMP_Text amount, Image icon, ForgeActionHover hover) { Text = text; Required = required; Amount = amount; Icon = icon; Hover = hover; }
     }
 }
