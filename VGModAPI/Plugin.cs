@@ -41,6 +41,7 @@ public sealed partial class Plugin : BaseUnityPlugin
     private BoardingRuleService? _boardingRuleService;
     private BoardingCommandService? _boardingCommands;
     private BoardingCombatService? _boardingCombat;
+    private BoardingTacticalAdapter? _boardingTactics;
     private DungeonSettlementService? _dungeonSettlement;
     private DungeonRewardService? _dungeonRewards;
     private DungeonContentService? _dungeons;
@@ -85,7 +86,6 @@ public sealed partial class Plugin : BaseUnityPlugin
         _hub.SetCapability("story-protection", false, "Not bound.");
         _hub.SetCapability("boarding-observation", false, "Disabled by configuration; experimental.");
         ModApi.Boarding = null;
-        ModApi.BoardingTactics = null;
         _hub.SetCapability("boarding-tactics", false, "Disabled by configuration; experimental.");
         _hub.SetCapability("boarding-combat", false, "Disabled by configuration; experimental.");
         _hub.SetCapability("boarding-commands", false, "Disabled by configuration; experimental.");
@@ -729,16 +729,15 @@ public sealed partial class Plugin : BaseUnityPlugin
         if (_boarding == null || ModApi.Boarding == null || _boardingCommands == null) return;
         try
         {
-            var tactics = new BoardingTacticalAdapter(_hub!, bindings, _boarding, ModApi.Boarding, _boardingCommands);
+            var tactics = _boardingTactics = new BoardingTacticalAdapter(_hub!, bindings, _boarding, ModApi.Boarding, _boardingCommands);
             BoardingTacticalPatches.Adapter = tactics;
             InstallGroup("boarding-tactics", bindings, BoardingTacticalBindings.Actions, BoardingTacticalBindings.Actions.ToDictionary(b => b.Key,
                 b => b.ReturnType == "System.Boolean" ? typeof(BoardingTacticalPatches.BoolAction) : typeof(BoardingTacticalPatches.VoidAction)));
             if (!_hub!.Capabilities.Any(c => c.Name == "boarding-tactics" && c.Available)) throw new NotSupportedException("Tactical hooks unavailable.");
-            ModApi.BoardingTactics = tactics;
         }
         catch (Exception error)
         {
-            BoardingTacticalPatches.Adapter = null; ModApi.BoardingTactics = null;
+            BoardingTacticalPatches.Adapter = null; _boardingTactics?.Dispose(); _boardingTactics = null;
             _hub!.SetCapability("boarding-tactics", false, error.GetType().Name); Logger.LogError(error);
         }
         try
@@ -984,7 +983,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         DungeonRewardPatches.Crew = null; _dungeonSettlement?.Dispose(); _dungeonSettlement = null; ModApi.DungeonSettlement = null;
         DungeonRewardPatches.Adapter = null; _dungeonRewards?.Dispose(); _dungeonRewards = null;
         StopDungeons();
-        BoardingTacticalPatches.Adapter = null; ModApi.BoardingTactics = null;
+        BoardingTacticalPatches.Adapter = null; _boardingTactics?.Dispose(); _boardingTactics = null;
         BoardingCombatPatches.Adapter = null; _boardingCombat?.Dispose(); _boardingCombat = null;
         BoardingCommandPatches.Adapter = null; BoardingCommandPatches.Service = null; _boardingCommands?.Dispose(); _boardingCommands = null;
         BoardingRulePatches.Adapter = null; _boardingRules?.Dispose(); _boardingRules = null; _boardingRuleService?.Dispose(); _boardingRuleService = null;

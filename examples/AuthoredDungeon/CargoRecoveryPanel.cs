@@ -10,7 +10,7 @@ public sealed class CargoRecoveryPanel : IDisposable
     private readonly List<IDisposable> _leases = new();
 
     public CargoRecoveryPanel(string pluginId, BoardingHandle target, IDungeonPanelApi panel,
-        IBoardingEvents boarding, IBoardingCommandService commands, IBoardingTactics tactics, IDungeonSettlement settlement,
+        IBoardingEvents boarding, IBoardingCommandService commands, IBoardingTacticalService tactics, IDungeonSettlement settlement,
         Action<BoardingCommandResult> commandResult, Action<DungeonSettlementSnapshot> observedSettlement)
     {
         if (panel == null) throw new ArgumentNullException(nameof(panel));

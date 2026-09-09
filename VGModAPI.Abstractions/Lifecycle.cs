@@ -70,7 +70,6 @@ public static class ModApi
     }
     /// <summary>Optional inspected-build boarding observations; consult boarding-observation capability.</summary>
     public static IBoardingEvents? Boarding { get; internal set; }
-    public static IBoardingTactics? BoardingTactics { get; internal set; }
     /// <summary>Optional experimental authored dungeon content with API-owned save data; requires API 0.1.30.</summary>
     public static IDungeonContent? Dungeons { get; internal set; }
     public static IDungeonPanelApi? DungeonPanel { get; internal set; }

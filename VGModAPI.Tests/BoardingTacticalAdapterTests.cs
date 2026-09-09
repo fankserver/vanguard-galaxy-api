@@ -16,10 +16,13 @@ public sealed class BoardingTacticalAdapterTests
         internal readonly Dictionary<string, object?> Unit = new() { ["friendly"] = true, ["alive"] = true, ["compartmentIndex"] = 0, ["directiveTarget"] = -1 };
         internal readonly Dictionary<string, object?> Sim;
         internal bool Candidate;
+        internal Action? OnRead;
+        internal int Reads;
         public object? Player { get; } = new Dictionary<string, object?> { ["credits"] = 100L };
         public object? Manager => null;
         internal Native() => Sim = new() { ["grenades"] = 1, ["buyoutCost"] = 10, ["buyoutPending"] = true, ["compartments"] = new ArrayList { Room, Neighbor }, ["friendlyUnits"] = new ArrayList { Unit } };
-        public object? Get(object? obj, string key) => obj is Dictionary<string, object?> dict && dict.TryGetValue(key, out var value) ? value : null;
+        public object? Get(object? obj, string key)
+        { Reads++; OnRead?.Invoke(); return obj is Dictionary<string, object?> dict && dict.TryGetValue(key, out var value) ? value : null; }
         public object? Call(string key, object? obj, params object[] args) => key switch
         {
             "tacticalCooldown" or "tacticalUnlockTime" => 0f,
@@ -45,9 +48,23 @@ public sealed class BoardingTacticalAdapterTests
         internal Fixture()
         {
             var session = Hub.Begin(SessionOrigin.SaveLoad, "save"); Hub.PlayerReady(session); Hub.GameplayInitialized(session);
+            Hub.SetCapability("boarding-tactics", true, "Test bindings.");
             Adapter = new BoardingTacticalAdapter(Hub, Native, null!, null!, null!);
         }
         public void Dispose() => Hub.Dispose();
+    }
+    [Fact]
+    public void MissingBindingsExposeUnavailableTypedService()
+    {
+        using var hub = new LifecycleHub((_, _) => { });
+        hub.SetCapability("boarding-tactics", false, "Disabled.", ServiceUnavailableReason.Disabled);
+        using var commands = new BoardingCommandService(hub, null, null, () => false);
+        using var adapter = new BoardingTacticalAdapter(hub, commands);
+        IBoardingTacticalService service = adapter;
+        Assert.Equal(ServiceUnavailableReason.Disabled, service.Availability.Reason);
+        Assert.Null(service.GetSnapshot(new(Guid.NewGuid(), Guid.NewGuid())));
+        Assert.Null(typeof(ModApi).GetProperty("BoardingTactics"));
+        Assert.Null(typeof(ModApi).Assembly.GetType("VGModAPI.IBoardingTactics"));
     }
     [Fact]
     public void NativeMovementCannotClearOrdersForInvalidRoomButCanExploreAdjacentRoom()
@@ -100,6 +117,13 @@ public sealed class BoardingTacticalAdapterTests
         Assert.Equal(2, adapter.GetSnapshot(oldHandle)!.GrenadeCharges);
         Assert.Equal(7, adapter.GetSnapshot(nextHandle)!.GrenadeCharges);
         Assert.Same(oldOp, observer.ResolveCommandOperation(oldHandle));
+        f.Native.OnRead = () => f.Hub.SetCapability("boarding-tactics", false, "Fault.", ServiceUnavailableReason.ObserverFault);
+        Assert.Null(adapter.GetSnapshot(oldHandle));
+        var reads = f.Native.Reads;
+        Assert.Null(adapter.GetSnapshot(oldHandle));
+        Assert.Equal(reads, f.Native.Reads);
+        adapter.Dispose();
+        Assert.Equal(ServiceUnavailableReason.ObserverFault, adapter.Availability.Reason);
     }
     [Fact]
     public void AutonomousDirectMovementRejectsForeignDuplicateAndInvalidOriginUnits()

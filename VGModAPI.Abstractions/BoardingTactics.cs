@@ -69,7 +69,7 @@ public sealed class BoardingCombatContext
     }
 }
 
-public interface IBoardingTactics
+public interface IBoardingTacticalService : IServiceStatus
 {
     BoardingTacticalSnapshot? GetSnapshot(BoardingHandle operation);
     BoardingCommandResult Execute(IBoardingController controller, BoardingTacticalRequest request);

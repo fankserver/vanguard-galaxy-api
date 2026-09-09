@@ -1,6 +1,6 @@
 # Boarding integration constraints and source coverage
 
-Optional boarding observation is implemented in API 0.1.25, disabled by default and not runtime-qualified. Enable `[Boarding] Enabled = true`, inspect the `boarding-observation` capability and use `ModApi.Boarding`. `ModApi.Services.BoardingRules` exposes a stable `IBoardingRuleService` with independent typed availability. API 0.1.27 exposes `ModApi.Services.BoardingCommands` when `boarding-commands` is available. API 0.1.28 exposes `ModApi.BoardingTactics` and `ModApi.Services.BoardingCombat` under the separate `boarding-tactics` and `boarding-combat` capabilities. Authored content and presentation registration are not available yet. This document distinguishes the observation contract from applicable constraints on those integrations; no native boarding scenario is attested by it.
+Optional boarding observation is implemented in API 0.1.25, disabled by default and not runtime-qualified. Enable `[Boarding] Enabled = true`, inspect the `boarding-observation` capability and use `ModApi.Boarding`. `ModApi.Services.BoardingRules` exposes a stable `IBoardingRuleService` with independent typed availability. API 0.1.27 exposes `ModApi.Services.BoardingCommands` when `boarding-commands` is available. API 0.1.28 exposes `ModApi.Services.BoardingTactics` and `ModApi.Services.BoardingCombat` under the separate `boarding-tactics` and `boarding-combat` capabilities. Authored content and presentation registration are not available yet. This document distinguishes the observation contract from applicable constraints on those integrations; no native boarding scenario is attested by it.
 
 ## Evidence boundary
 
@@ -185,3 +185,10 @@ Host and metadata checks cover policy composition and adapter boundaries. Full n
 native access. Health loss closes controller admission; loss during a native
 invocation reports `Uncertain` because effects may already have occurred. Never
 blindly retry an uncertain command. Admission is not a completed native outcome.
+
+`ModApi.Services.BoardingTactics` exposes a stable `IBoardingTacticalService`.
+Typed availability is independent of whether an operation has a tactical snapshot.
+Unavailable snapshots perform no native reads; successful reads revalidate their
+session and service health. Tactical mutations retain controller arbitration and
+all specialist, movement, resource and consent checks. Health loss after invocation
+reports `Uncertain`; native UI validation remains independent of consumer access.

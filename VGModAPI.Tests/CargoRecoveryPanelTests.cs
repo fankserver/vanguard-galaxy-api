@@ -38,7 +38,7 @@ public sealed class CargoRecoveryPanelTests
         var acquisition = new BoardingCommandResult(admitted ? BoardingCommandStatus.Admitted : BoardingCommandStatus.ControlConflict, "control");
         var commands = Fake<IBoardingCommandService>((_, args) => { args[2] = admitted ? controller : null; return acquisition; });
         var execution = new BoardingCommandResult(BoardingCommandStatus.Admitted, "request");
-        var tactics = Fake<IBoardingTactics>((name, args) =>
+        var tactics = Fake<IBoardingTacticalService>((name, args) =>
         {
             if (name == "GetSnapshot") return new BoardingTacticalSnapshot(operation, Array.Empty<BoardingCompartmentSnapshot>(), 0, 0, eligible, false);
             executed = true; Assert.Same(controller, args[0]); Assert.Equal(BoardingTacticalAction.RequestExtraction, ((BoardingTacticalRequest)args[1]!).Action);
@@ -71,7 +71,7 @@ public sealed class CargoRecoveryPanelTests
         { Assert.Equal("RegisterAction", method); if (failRegistration) throw new InvalidOperationException("registration refused"); return panelLease; });
         CargoRecoveryPanel Create() => new("cargo", target, panel, boarding,
             Fake<IBoardingCommandService>((_, _) => throw new InvalidOperationException("Unexpected command")),
-            Fake<IBoardingTactics>((_, _) => throw new InvalidOperationException("Unexpected tactic")),
+            Fake<IBoardingTacticalService>((_, _) => throw new InvalidOperationException("Unexpected tactic")),
             settlement, _ => throw new InvalidOperationException("Unexpected command receipt"), _ => observed++);
         if (failRegistration) Assert.Throws<InvalidOperationException>(() => Create());
         else
