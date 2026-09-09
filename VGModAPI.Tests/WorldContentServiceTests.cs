@@ -7,6 +7,30 @@ namespace VGModAPI.Tests;
 public sealed class WorldContentServiceTests
 {
     [Fact]
+    public void SequentialAuthenticationDoesNotDependOnReadinessAndContextLossClosesOperations()
+    {
+        var hub = new LifecycleHub((_, error) => throw error);
+        var a = new object(); var b = new object(); int authenticated = 0; bool current = true;
+        using var definitions = new WorldDefinitionRegistry((instance, caller) =>
+        {
+            if (!current || (instance != a && instance != b)) return null;
+            authenticated++;
+            return new StoryHostPlugin(instance == a ? "author.a" : "author.b", caller);
+        }, hub.CheckThread);
+        using var service = new WorldContentService(hub, definitions, null!, () => current && authenticated == 2);
+        using var first = service.AcquireProvider(a); Assert.NotNull(first);
+        var definition = new WorldCombatSiteDefinition("PoiX", 1, "Site", "player", 1);
+        Assert.Equal(WorldStatus.Succeeded, first!.Register(definition));
+        Assert.Equal(WorldStatus.Unavailable, first.CreatePersistentCombatSite(Guid.NewGuid(), "PoiX", Guid.NewGuid(), "system", 0, 0).Status);
+        using var second = service.AcquireProvider(b); Assert.NotNull(second);
+        Assert.Equal(WorldStatus.Succeeded, second!.Register(definition));
+        Assert.Equal(WorldStatus.NotReady, first.CreatePersistentCombatSite(Guid.NewGuid(), "PoiX", Guid.NewGuid(), "system", 0, 0).Status);
+        current = false;
+        Assert.Equal(WorldStatus.Unavailable, first.CreatePersistentCombatSite(Guid.NewGuid(), "PoiX", Guid.NewGuid(), "system", 0, 0).Status);
+        Assert.Equal(WorldStatus.Unavailable, second.FindPersistentCombatSite(Guid.NewGuid(), new WorldSiteReference("author.b", "PoiX", Guid.NewGuid())).Status);
+    }
+
+    [Fact]
     public void PublicFacadeAuthenticatesCallerAndKeepsClosedNativeGateClosed()
     {
         var hub = new LifecycleHub((_, error) => throw error);

@@ -30,15 +30,16 @@ internal sealed class WorldSnapshotHookHost : IDisposable
     private readonly WorldSnapshotRecorder _recorder;
     private readonly Func<IReadOnlyList<WorldSnapshotInstance>> _instances;
     private readonly Func<long> _revision;
+    private readonly Action? _requireContext;
     private readonly IDisposable _subscription;
     private readonly Stack<StoreScope> _stores = new();
     private long _epoch;
     private Guid _session;
     private bool _disposed;
     internal WorldSnapshotHookHost(LifecycleHub hub, WorldSnapshotRecorder recorder,
-        Func<IReadOnlyList<WorldSnapshotInstance>> instances, Func<long> revision)
+        Func<IReadOnlyList<WorldSnapshotInstance>> instances, Func<long> revision, Action? requireContext = null)
     {
-        _hub = hub; _recorder = recorder; _instances = instances; _revision = revision;
+        _hub = hub; _recorder = recorder; _instances = instances; _revision = revision; _requireContext = requireContext;
         _hub.CheckThread();
         if (_hub.CurrentSession != null) throw new InvalidOperationException("World snapshots must attach before a session.");
         _subscription = hub.Subscribe("vgmodapi.world-snapshots", e =>
@@ -52,6 +53,9 @@ internal sealed class WorldSnapshotHookHost : IDisposable
     private Guid Session()
     {
         _hub.CheckThread();
+        // Fixed qualification inspector only; not an extension callback. Store receipts remain
+        // immutable, but capture-time trust must not authorize use after context loss.
+        _requireContext?.Invoke();
         if (_disposed || _hub.CurrentSession is not { } session || session.Id != _session ||
             (session.Phase != SessionPhase.PlayerReady && session.Phase != SessionPhase.GameplayInitialized))
             throw new InvalidDataException("World snapshot requires a current player-ready session.");

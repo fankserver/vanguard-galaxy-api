@@ -68,6 +68,24 @@ public sealed class WorldSnapshotHookHostTests
         Assert.Throws<InvalidDataException>(() => host.BeginStore(root));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ContextLossAfterCaptureRefusesStoreAndOwnerPublication(bool storeStarted)
+    {
+        var hub = Hub(); bool current = true;
+        using var host = new WorldSnapshotHookHost(hub,
+            new WorldSnapshotRecorder(new WorldJsonInspection(typeof(JsonObject).Assembly)),
+            () => Array.Empty<WorldSnapshotInstance>(), () => 1,
+            () => { if (!current) throw new InvalidDataException("Context lost"); });
+        Ready(hub); var root = Root("captured-before-context-loss");
+        host.CompleteSnapshot(host.BeginSnapshot(), root);
+        using var scope = storeStarted ? host.BeginStore(root) : null;
+        current = false;
+        Assert.Throws<InvalidDataException>(() => host.BeginStore(root));
+        Assert.Throws<InvalidDataException>(() => host.CaptureOwner(WorldStateCodec.Owner));
+    }
+
     [Fact]
     public void UnassociatedStoresAndDisposedHostsRefuse()
     {
