@@ -57,15 +57,6 @@ public sealed class TravelTransition
     }
 }
 
-/// <summary>Main-thread-only observations. Registration does not replay; consumers own optional history.</summary>
-public interface ITravelEvents
-{
-    Guid? SessionId { get; }
-    TravelLocation? CurrentLocation { get; }
-    bool IsDispatchingCallbacks { get; }
-    IDisposable Subscribe(string owner, Action<TravelTransition> callback);
-}
-
 /// <summary>Station-lifetime facts are deliberately distinct from travel legs and from the
 /// physical dock state: an async dock/interior request is not readiness, and interior
 /// readiness (attributed nonthrowing Awake + Start) is not physical dock completion.</summary>
@@ -89,13 +80,4 @@ public sealed class StationTransition
         if (double.IsNaN(gameSeconds) || double.IsInfinity(gameSeconds) || gameSeconds < 0) throw new ArgumentOutOfRangeException(nameof(gameSeconds));
         SessionId = sessionId; Sequence = sequence; Kind = kind; Station = station; GameSeconds = gameSeconds;
     }
-}
-
-/// <summary>Main-thread-only station-lifetime observations. DockedPhysical reflects an observed
-/// physical dock state, not the onDocked request that fires before docking completes.</summary>
-public interface IStationEvents
-{
-    Guid? SessionId { get; }
-    bool IsDispatchingCallbacks { get; }
-    IDisposable Subscribe(string owner, Action<StationTransition> callback);
 }

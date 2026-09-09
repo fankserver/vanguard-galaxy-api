@@ -72,7 +72,7 @@ try {
     $configDir = Join-Path $root 'game\BepInEx\config'
     New-Item -ItemType Directory $configDir -Force | Out-Null
     $configPath = Join-Path $configDir 'vgmodapi.cfg'
-    $valid = "[Persistence]`nEnabled = true`nRoot = $(Join-Path $root 'state')`n[Story]`nEnabled = true`nProtection = true`n[Missions]`nEnabled = true`n"
+    $valid = "[Persistence]`nRoot = $(Join-Path $root 'state')`n[Story]`nEnabled = true`nProtection = true`n"
     $valid | Set-Content $configPath
     Assert-StoryConfiguration $root
     foreach ($badConfig in @($valid.Replace('true','false'), $valid.Replace('Root =','WrongRoot ='), ($valid + "[Story]`nEnabled = true`n"), ($valid + "[Persistence]`nRoot = wrong`n"))) {

@@ -8,12 +8,12 @@ internal sealed class BoardingCommandAdapter : IBoardingCommandBackend
 {
     private readonly IBoardingCommandNativeBindings _native;
     private readonly BoardingObserver _observer;
-    private readonly IBoardingEvents _events;
+    private readonly IBoardingService _events;
     private readonly Func<object, bool> _live;
     private readonly System.Runtime.CompilerServices.ConditionalWeakTable<object, BoardingHandle> _owned = new();
     private readonly Stack<DebitScope> _debits = new();
     internal Func<object, bool>? ReinforcementAllowed;
-    internal BoardingCommandAdapter(IBoardingCommandNativeBindings native, BoardingObserver observer, IBoardingEvents events, Func<object, bool> live)
+    internal BoardingCommandAdapter(IBoardingCommandNativeBindings native, BoardingObserver observer, IBoardingService events, Func<object, bool> live)
     { _native = native; _observer = observer; _events = events; _live = live; }
     internal bool AllowAutonomous(object operation, bool enabled, BoardingCommandService commands)
     {
@@ -32,6 +32,7 @@ internal sealed class BoardingCommandAdapter : IBoardingCommandBackend
         var handle = _observer.CommandHandleForLocation(_native.Get(panel, "panelLocation"));
         if (handle != null) commands.ManualTakeover(handle);
     }
+    internal Func<object, bool>? SimulationReady { get; set; }
     private bool Flag(object? obj, string key) => _native.Get(obj, key) is true;
     private Frame? Read(BoardingHandle target)
     {
@@ -43,6 +44,7 @@ internal sealed class BoardingCommandAdapter : IBoardingCommandBackend
         var operation = _native.Call("commandGetOperation", manager, location!);
         var saved = _native.Get(_native.Get(location, "dungeonData"), "savedSimulation");
         var simulation = _native.Get(operation, "simulation") ?? saved;
+        if (simulation != null && SimulationReady?.Invoke(simulation) == false) return null;
         var state = new BoardingCommandState
         {
             TargetAlive = component != null && _live(component),

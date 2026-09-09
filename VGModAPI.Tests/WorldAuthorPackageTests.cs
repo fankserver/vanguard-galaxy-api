@@ -28,7 +28,7 @@ public sealed class WorldAuthorPackageTests
         Assert.Equal(id, metadata.ConstructorArguments[0].Value);
         Assert.Equal(id, Assert.Single(plugin.Fields, field => field.Name == "Id").Constant);
         var awake = Assert.Single(plugin.Methods, method => method.Name == "Awake");
-        Assert.Contains(awake.Body.Instructions, instruction => instruction.Operand is MethodReference method && method.DeclaringType.FullName == "VGModAPI.IWorldApi" && method.Name == "AcquireProvider");
+        Assert.Contains(awake.Body.Instructions, instruction => instruction.Operand is MethodReference method && method.DeclaringType.FullName == "VGModAPI.IWorldService" && method.Name == "AcquireProvider");
         foreach (var pair in new[] { ("Create", "CreatePersistentCombatSite"), ("Find", "FindPersistentCombatSite") })
             Assert.Contains(Assert.Single(plugin.Methods, method => method.Name == pair.Item1).Body.Instructions,
                 instruction => instruction.Operand is MethodReference method && method.DeclaringType.FullName == "VGModAPI.IWorldProvider" && method.Name == pair.Item2);

@@ -20,7 +20,7 @@ public sealed partial class Plugin
     private IEnumerable<object?> CheckOwnedStories()
     {
         if (!File.Exists(Path.Combine(_root!, "story.enabled"))) yield break;
-        Require(ModApi.Story != null, "Story module unavailable.");
+        Require(ModApi.Services.Story.Availability.IsAvailable, "Story module unavailable.");
         foreach (var frame in Wait(NativeTravelReady, "initial story world ready")) yield return frame;
         Require(!Chainloader.PluginInfos.ContainsKey("vgmissionjournal"), "Story campaign must be demonstrated without MissionJournal.");
         var campaign = Chainloader.PluginInfos["vg-story-campaign"].Instance;

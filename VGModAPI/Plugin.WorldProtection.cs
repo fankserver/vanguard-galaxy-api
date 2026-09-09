@@ -155,7 +155,6 @@ public sealed partial class Plugin
             WorldSnapshotPatches.Host = _worldSnapshotHost;
             WorldLifetimePatches.Host = _worldLifetimeHost;
             WorldLoadPatches.Host = _worldLoadHost;
-            ModApi.World = _worldContent;
             _hub.SetCapability("world-save-protection", true, emptyProfile ? "Qualification-only restricted snapshot/save protection. Not runtime-qualified." : "Experimental scoped snapshot/save protection; declarations only, native authoring unavailable. Not runtime-qualified.");
             _hub.SetCapability("world-load-protection", true, emptyProfile ? "Qualification-only restricted owned-load admission. Not runtime-qualified." : "Experimental load guard only; owned world definitions are not admitted. Not runtime-qualified.");
 #if VG_WORLD_QUALIFICATION
@@ -183,7 +182,6 @@ public sealed partial class Plugin
     private void StopWorldProtection()
     {
         _worldReferences = null;
-        if (ReferenceEquals(ModApi.World, _worldContent)) ModApi.World = null;
         try { _worldContent?.Dispose(); }
         finally { StopWorldGuards(); }
     }

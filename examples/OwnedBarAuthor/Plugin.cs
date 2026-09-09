@@ -5,7 +5,7 @@ using VGModAPI;
 namespace OwnedBarAuthor;
 
 [BepInPlugin(Id, "Owned bar author example", "0.1.0")]
-[BepInDependency(ModApi.PluginId, "0.1.32")]
+[BepInDependency(ModApi.PluginId, "0.2.0")]
 public sealed class Plugin : BaseUnityPlugin
 {
 #if BAR_AUTHOR_B
@@ -21,7 +21,7 @@ public sealed class Plugin : BaseUnityPlugin
     public StoryRegistrationResult RegisterStory(string faction)
     {
         if (_story == null)
-            _story = (ModApi.Story ?? throw new InvalidOperationException("Enable owned stories."))
+            _story = (ModApi.Services.Story)
                 .AcquireProvider(this).Provider ?? throw new InvalidOperationException("Story authentication refused.");
         return _story.Register(new StoryMissionDefinition(LinkedStoryId, "Linked contact", "A retained contact and mission",
             new StoryFactionId(faction), new[] { new StoryStep("Speak to the contact",
@@ -43,7 +43,7 @@ public sealed class Plugin : BaseUnityPlugin
     private IBarProvider AcquireBar()
     {
         if (_provider == null)
-            _provider = (ModApi.Bars ?? throw new InvalidOperationException("Enable owned bars."))
+            _provider = (ModApi.Services.Bars)
                 .AcquireProvider(this).Provider ?? throw new InvalidOperationException("Author authentication refused.");
         return _provider;
     }

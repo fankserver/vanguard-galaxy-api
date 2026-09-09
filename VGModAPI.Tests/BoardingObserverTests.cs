@@ -37,6 +37,7 @@ public sealed class BoardingObserverTests
         internal readonly object DataInventory = new();
         internal Fixture()
         {
+            Hub.SetCapability("boarding-observation", true, "Test bindings.");
             Service = new BoardingService(Hub, (_, _) => { });
             Observer = new BoardingObserver(Hub, Service, (obj, name) => ((Dictionary<string, object?>)obj)[name], obj => !Dead.Contains(obj), _ => Faults++, obj => ReferenceEquals(obj, DataInventory));
             Service.Subscribe("test", Events.Add);
@@ -73,6 +74,25 @@ public sealed class BoardingObserverTests
         using var f = new Fixture(); f.Sim["victoryAchieved"] = true; f.Sim["outcome"] = "FriendlyVictory";
         f.Start(true); f.Signal();
         Assert.Single(f.Events); Assert.Equal(BoardingEventKind.OperationResumed, f.Events[0].Kind);
+    }
+    [Fact]
+    public void DeferredResumePublishesHandleBeforeCallbacksAndDoesNotReplayVictory()
+    {
+        using var f = new Fixture(); f.Sim["victoryAchieved"] = true;
+        var pod = Pod(state: "Docked"); ((ArrayList)f.Native["_activePods"]!).Add(pod);
+        BoardingHandle? observed = null;
+        using var subscription = f.Service.Subscribe("resume-consumer", message =>
+        {
+            if (message.Kind != BoardingEventKind.OperationResumed) return;
+            observed = Assert.Single(f.Service.GetOperations()).Handle;
+        });
+        f.Observer.RestoredOperationReady(f.Native);
+        Assert.NotNull(observed); Assert.Single(f.Service.GetOperations());
+        Assert.Equal(observed, f.Observer.CommandHandleForOperation(f.Native));
+        Assert.Same(f.Native, f.Observer.ResolveCommandOperation(observed!));
+        f.Observer.RestoredOperationReady(f.Native); f.Signal();
+        Assert.Single(f.Events); Assert.Equal(BoardingEventKind.OperationResumed, f.Events[0].Kind);
+        Assert.Equal(0, f.Faults);
     }
     [Fact]
     public void CompletionAndCrewReturnAreSeparate()

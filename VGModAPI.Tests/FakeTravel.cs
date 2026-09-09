@@ -43,7 +43,7 @@ namespace Source.Galaxy.POI
 }
 namespace Behaviour.UI.Spacestation
 {
-    public sealed class SpaceStationInterior
+    public sealed partial class SpaceStationInterior
     {
         public static SpaceStationInterior? instance;
         public Source.Galaxy.POI.SpaceStation? spacestation { get; set; }

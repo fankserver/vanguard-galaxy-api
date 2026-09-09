@@ -681,7 +681,7 @@ public sealed class StoryProviderResult
 ///
 /// All members, including queries and disposal, are Unity-main-thread-only.
 /// </summary>
-public interface IStoryApi
+public interface IStoryService : IServiceStatus
 {
     /// <summary>
     /// Acquires this plugin's provider lease. Pass the plugin instance itself (the object the host

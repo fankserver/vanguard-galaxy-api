@@ -158,10 +158,15 @@ function Assert-StoryIsolation($Selection) {
 function Assert-StoryConfiguration([string]$Root) {
     $path = Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg'
     $entries = Get-TravelJournalConfigEntries $path
-    foreach ($key in @('Persistence/Enabled','Story/Enabled','Story/Protection','Missions/Enabled')) {
+    foreach ($key in @('Story/Enabled','Story/Protection')) {
         if (!$entries.ContainsKey($key) -or $entries[$key] -ine 'true') { throw "Story configuration requires $key=true." }
     }
-    if (!$entries.ContainsKey('Persistence/Root') -or [IO.Path]::GetFullPath($entries['Persistence/Root']) -ine [IO.Path]::GetFullPath((Join-Path $Root 'state'))) { throw 'Story persistence root changed.' }
+    Assert-ApiPersistenceRoot $Root
+}
+
+function Assert-ApiPersistenceRoot([string]$Root) {
+    $entries = Get-TravelJournalConfigEntries (Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg')
+    if (!$entries.ContainsKey('Persistence/Root') -or [IO.Path]::GetFullPath($entries['Persistence/Root']) -ine [IO.Path]::GetFullPath((Join-Path $Root 'state'))) { throw 'API persistence root must remain inside the sandbox state directory.' }
 }
 
 function Get-TravelJournalConfigEntries([string]$Path) {
@@ -300,6 +305,218 @@ function Assert-ModInformationProbeReceipt([string]$Root, $Provenance) {
         if (@($facts | Where-Object { $_ -ceq ($fact + '=PASS') }).Count -ne 1) { throw "Missing or duplicate information probe fact: $fact" }
     }
 }
+function Assert-BlueprintPinSelection([string]$Root, $Provenance) {
+    $flag = $Provenance.PSObject.Properties['blueprintPinProbe']
+    if ($flag -and $flag.Value -isnot [bool]) { throw 'Invalid Blueprint Pin flag.' }
+    $selected = $flag -and $flag.Value
+    $marker = Join-Path $Root 'blueprint-pin.enabled'
+    if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Blueprint Pin selection changed.' }
+    if (!$selected) { return }
+    if (!$Provenance.forgeReadProbe -or $Provenance.forgeUiProbe -or $Provenance.forgeCommandProbe -or $Provenance.refineryProbe -or $Provenance.forgeDeliveryProbe -or $Provenance.forgePersistenceProbe -or [IO.File]::ReadAllText($marker) -cne 'blueprint-pin-v1') { throw 'Invalid Blueprint Pin selection.' }
+    if ($Provenance.blueprintPinRevision -cnotmatch '^[0-9a-f]{40}$' -or $Provenance.blueprintPinSha256 -cnotmatch '^[0-9a-f]{64}$') { throw 'Invalid Blueprint Pin provenance.' }
+    $config = [IO.File]::ReadAllText((Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg'))
+    if ($config -cnotmatch '(?ms)^\[Hud\]\r?\n(?:(?!^\[).)*?^Enabled = true\r?$') { throw 'Blueprint Pin requires HUD integration.' }
+    $binary = Join-Path $Root 'game\BepInEx\plugins\VGBlueprintPin.dll'
+    if ((Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant() -cne $Provenance.blueprintPinSha256) { throw 'Blueprint Pin binary changed.' }
+}
+function Assert-BlueprintPinReceipt([string]$Root, $Provenance) {
+    Assert-ForgeReadReceipt $Root $Provenance
+    Assert-BlueprintPinSelection $Root $Provenance
+    if (!$Provenance.PSObject.Properties['blueprintPinProbe'] -or !$Provenance.blueprintPinProbe) { return }
+    $file = Join-Path $Root 'blueprint-pin.txt'
+    if ((Get-Item -LiteralPath $file).Length -gt 512) { throw 'Oversized Blueprint Pin receipt.' }
+    $lines = @(Get-Content -LiteralPath $file)
+    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'blueprint-pin-v1' -or $lines[2] -cne 'pin-batch-exact-variant-navigation-close') { throw 'Incomplete Blueprint Pin receipt.' }
+    $image = Join-Path $Root 'blueprint-pin-view.png'; $record = Join-Path $Root 'blueprint-pin-view.txt'
+    foreach ($path in @($image,$record)) {
+        if (!(Test-Path -LiteralPath $path -PathType Leaf) -or (Get-Item -LiteralPath $path).Length -eq 0 -or ((Get-Item -LiteralPath $path).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Blueprint Pin image evidence missing, empty or linked.' }
+    }
+    if ((Get-Item -LiteralPath $image).Length -gt 20MB -or (Get-Item -LiteralPath $record).Length -gt 256) { throw 'Blueprint Pin image evidence oversized.' }
+    $hashLines = @(Get-Content -LiteralPath $record)
+    if ($hashLines.Count -ne 1 -or $hashLines[0] -cnotmatch '^sha256=[0-9a-f]{64}$' -or (Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashLines[0].Substring(7)) { throw 'Blueprint Pin screenshot changed.' }
+}
+function Assert-ForgeUiSelection([string]$Root, $Provenance) {
+    $flag = $Provenance.PSObject.Properties['forgeUiProbe']
+    if ($flag -and $flag.Value -isnot [bool]) { throw 'Invalid Forge UI flag.' }
+    $selected = $flag -and $flag.Value
+    $marker = Join-Path $Root 'forge-ui.enabled'
+    if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Forge UI selection changed.' }
+    if (!$selected) { return }
+    if (!$Provenance.forgeReadProbe -or $Provenance.forgeCommandProbe -or $Provenance.refineryProbe -or $Provenance.forgeDeliveryProbe -or $Provenance.forgePersistenceProbe -or [IO.File]::ReadAllText($marker) -cne 'forge-ui-v3') { throw 'Invalid Forge UI selection.' }
+}
+function Assert-ForgeUiReceipt([string]$Root, $Provenance) {
+    Assert-ForgeReadReceipt $Root $Provenance
+    Assert-ForgeUiSelection $Root $Provenance
+    if (!$Provenance.PSObject.Properties['forgeUiProbe'] -or !$Provenance.forgeUiProbe) { return }
+    $file = Join-Path $Root 'forge-ui.txt'
+    if ((Get-Item -LiteralPath $file).Length -gt 512) { throw 'Oversized Forge UI receipt.' }
+    $lines = @(Get-Content -LiteralPath $file)
+    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'forge-ui-v3' -or $lines[2] -cne 'variants-pointer-disabled-stale-reopen-dispose-nonoverlap-scale-recovery') { throw 'Incomplete Forge UI receipt.' }
+    foreach ($stem in @('forge-ui-actions','forge-ui-scaled')) {
+        $image = Join-Path $Root ($stem + '.png'); $record = Join-Path $Root ($stem + '.txt')
+        foreach ($path in @($image,$record)) {
+            if (!(Test-Path -LiteralPath $path -PathType Leaf) -or (Get-Item -LiteralPath $path).Length -eq 0 -or ((Get-Item -LiteralPath $path).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Forge UI image evidence missing, empty or linked.' }
+        }
+        if ((Get-Item -LiteralPath $image).Length -gt 20MB -or (Get-Item -LiteralPath $record).Length -gt 256) { throw 'Forge UI image evidence oversized.' }
+        $hashLines = @(Get-Content -LiteralPath $record)
+        if ($hashLines.Count -ne 1 -or $hashLines[0] -cnotmatch '^sha256=[0-9a-f]{64}$' -or (Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashLines[0].Substring(7)) { throw 'Forge UI screenshot changed.' }
+    }
+}
+function Assert-RefinerySelection([string]$Root, $Provenance) {
+    Assert-ForgeUiSelection $Root $Provenance
+    Assert-BlueprintPinSelection $Root $Provenance
+    $flag = $Provenance.PSObject.Properties['refineryProbe']
+    if ($flag -and $flag.Value -isnot [bool]) { throw 'Invalid refinery flag.' }
+    $selected = $flag -and $flag.Value
+    $marker = Join-Path $Root 'refinery.enabled'
+    if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Refinery selection changed.' }
+    if (!$selected) { return }
+    if (!$Provenance.forgeCommandProbe -or $Provenance.forgePersistenceProbe -or $Provenance.forgeDeliveryProbe -or [IO.File]::ReadAllText($marker) -cne 'refinery-v3') { throw 'Invalid refinery selection.' }
+}
+function Assert-RefineryReceipt([string]$Root, $Provenance) {
+    Assert-ForgeCommandReceipt $Root $Provenance
+    Assert-RefinerySelection $Root $Provenance
+    if (!$Provenance.PSObject.Properties['refineryProbe'] -or !$Provenance.refineryProbe) { return }
+    $file = Join-Path $Root 'refinery.txt'
+    if ((Get-Item -LiteralPath $file).Length -gt 512) { throw 'Oversized refinery receipt.' }
+    $lines = @(Get-Content -LiteralPath $file)
+    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'refinery-v3' -or $lines[2] -cne 'fractional-partial-multiple-refund-extraction-replay-favourites') { throw 'Incomplete refinery receipt.' }
+}
+function Assert-ForgeDeliverySelection([string]$Root, $Provenance) {
+    Assert-RefinerySelection $Root $Provenance
+    $flag = $Provenance.PSObject.Properties['forgeDeliveryProbe']
+    if ($flag -and $flag.Value -isnot [bool]) { throw 'Invalid crafting delivery flag.' }
+    $selected = $flag -and $flag.Value
+    $marker = Join-Path $Root 'forge-delivery.enabled'
+    if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Crafting delivery selection changed.' }
+    if (!$selected) { return }
+    if (!$Provenance.forgeCommandProbe -or $Provenance.forgePersistenceProbe -or [IO.File]::ReadAllText($marker) -cne 'forge-delivery-v1') { throw 'Invalid crafting delivery selection.' }
+}
+function Assert-ForgeDeliveryReceipt([string]$Root, $Provenance) {
+    Assert-ForgeCommandReceipt $Root $Provenance
+    Assert-ForgeDeliverySelection $Root $Provenance
+    if (!$Provenance.PSObject.Properties['forgeDeliveryProbe'] -or !$Provenance.forgeDeliveryProbe) { return }
+    $file = Join-Path $Root 'forge-delivery.txt'
+    if ((Get-Item -LiteralPath $file).Length -gt 512) { throw 'Oversized crafting delivery receipt.' }
+    $lines = @(Get-Content -LiteralPath $file)
+    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'forge-delivery-v1' -or $lines[2] -cne 'partial-cancel-multi-batch-inventory') { throw 'Incomplete crafting delivery receipt.' }
+}
+function Assert-ForgePersistenceSelection([string]$Root, $Provenance) {
+    Assert-ForgeDeliverySelection $Root $Provenance
+    $flag = $Provenance.PSObject.Properties['forgePersistenceProbe']
+    if ($flag -and $flag.Value -isnot [bool]) { throw 'Invalid crafting persistence flag.' }
+    $selected = $flag -and $flag.Value
+    $marker = Join-Path $Root 'forge-persistence.enabled'
+    if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Crafting persistence selection changed.' }
+    if (!$selected) { return }
+    if (!$Provenance.forgeCommandProbe -or [IO.File]::ReadAllText($marker) -cne 'forge-persistence-v1') { throw 'Invalid crafting persistence selection.' }
+}
+function Assert-ForgePersistenceReceipt([string]$Root, $Provenance) {
+    Assert-ForgeCommandReceipt $Root $Provenance
+    Assert-ForgePersistenceSelection $Root $Provenance
+    if (!$Provenance.PSObject.Properties['forgePersistenceProbe'] -or !$Provenance.forgePersistenceProbe) { return }
+    $file = Join-Path $Root 'forge-persistence.txt'
+    if ((Get-Item -LiteralPath $file).Length -gt 512) { throw 'Oversized crafting persistence receipt.' }
+    $lines = @(Get-Content -LiteralPath $file)
+    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'forge-persistence-v1' -or $lines[2] -cne 'paused-jobs-roundtrip-save-as-slot-switch') { throw 'Incomplete crafting persistence receipt.' }
+}
+function Assert-ForgeCommandSelection([string]$Root, $Provenance) {
+    Assert-ForgePersistenceSelection $Root $Provenance
+    $flag = $Provenance.PSObject.Properties['forgeCommandProbe']
+    if ($flag -and $flag.Value -isnot [bool]) { throw 'Invalid Forge command flag.' }
+    $selected = $flag -and $flag.Value
+    $marker = Join-Path $Root 'forge-commands.enabled'
+    if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Forge command selection changed.' }
+    if (!$selected) { return }
+    if (!$Provenance.forgeReadProbe -or [IO.File]::ReadAllText($marker) -cne 'forge-commands-v3') { throw 'Invalid Forge command selection.' }
+    $config = [IO.File]::ReadAllText((Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg'))
+    if ($config -cnotmatch '(?ms)^\[Recipes\]\r?\n(?:(?!^\[).)*?^CommandsEnabled = true\r?$') { throw 'Crafting commands not enabled.' }
+}
+function Assert-ForgeCommandReceipt([string]$Root, $Provenance) {
+    Assert-ForgeReadReceipt $Root $Provenance
+    Assert-ForgeCommandSelection $Root $Provenance
+    if (!$Provenance.PSObject.Properties['forgeCommandProbe'] -or !$Provenance.forgeCommandProbe) { return }
+    $file = Join-Path $Root 'forge-commands.txt'
+    if ((Get-Item -LiteralPath $file).Length -gt 512) { throw 'Oversized Forge command receipt.' }
+    $lines = @(Get-Content -LiteralPath $file)
+    if ($lines.Count -ne 4 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'forge-commands-v3' -or $lines[2] -cne 'settings-replay-restored' -or $lines[3] -cne 'forge-queue-cancel-replay-refusal-direct-start-capacity') { throw 'Incomplete Forge command receipt.' }
+}
+function Assert-DungeonReadinessSelection([string]$Root, $Provenance) {
+    $panel = $Provenance.PSObject.Properties['dungeonPanelProbe']
+    if ($panel -and $panel.Value -isnot [bool]) { throw 'Invalid dungeon panel flag.' }
+    $panelSelected = $panel -and $panel.Value
+    $panelMarker = Join-Path $Root 'dungeon-panel.enabled'
+    if ([bool]$panelSelected -ne (Test-Path -LiteralPath $panelMarker -PathType Leaf)) { throw 'Dungeon panel selection changed.' }
+    if ($panelSelected -and [IO.File]::ReadAllText($panelMarker) -cne 'dungeon-panel-v3') { throw 'Invalid dungeon panel marker.' }
+    $flag = $Provenance.PSObject.Properties['dungeonReadinessProbe']
+    if ($panelSelected -and (!$flag -or !$flag.Value)) { throw 'Dungeon panel requires readiness.' }
+    if ($flag -and $flag.Value -isnot [bool]) { throw 'Invalid dungeon readiness flag.' }
+    $selected = $flag -and $flag.Value
+    $marker = Join-Path $Root 'dungeon-readiness.enabled'
+    if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Dungeon readiness selection changed.' }
+    if (!$selected) { return }
+    if ($Provenance.scenario -ne 'Full' -or [IO.File]::ReadAllText($marker) -cne 'dungeon-readiness-v1') { throw 'Invalid dungeon readiness selection.' }
+    foreach ($entry in $Provenance.PSObject.Properties) {
+        if ($entry.Name -notin @('dungeonReadinessProbe','dungeonPanelProbe') -and $entry.Value -is [bool] -and $entry.Value) { throw 'Dungeon readiness cannot combine other probes or consumers.' }
+    }
+    if ($null -ne $Provenance.assemblyOverlay) { throw 'Dungeon readiness cannot use an assembly overlay.' }
+    $config = [IO.File]::ReadAllText((Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg'))
+    foreach ($section in @('Boarding','Dungeons')) {
+        if ($config -cnotmatch ('(?ms)^\[' + $section + '\]\r?\n(?:(?!^\[).)*?^Enabled = true\r?$')) { throw 'Dungeon integration configuration changed.' }
+    }
+}
+function Assert-DungeonReadinessReceipt([string]$Root, $Provenance) {
+    Assert-DungeonReadinessSelection $Root $Provenance
+    if (!$Provenance.PSObject.Properties['dungeonReadinessProbe'] -or !$Provenance.dungeonReadinessProbe) { return }
+    Assert-QualificationExitOutcome (Get-Content -LiteralPath (Join-Path $Root 'run-outcome.json') -Raw | ConvertFrom-Json) 'Dungeon readiness'
+    if ($Provenance.PSObject.Properties['dungeonPanelProbe'] -and $Provenance.dungeonPanelProbe) {
+        $image = Join-Path $Root 'dungeon-panel-actions.png'; $record = Join-Path $Root 'dungeon-panel-actions.txt'
+        foreach ($path in @($image,$record)) {
+            if (!(Test-Path -LiteralPath $path -PathType Leaf) -or (Get-Item -LiteralPath $path).Length -eq 0 -or ((Get-Item -LiteralPath $path).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Dungeon panel image evidence missing, empty or linked.' }
+        }
+        if ((Get-Item -LiteralPath $image).Length -gt 20MB -or (Get-Item -LiteralPath $record).Length -gt 256) { throw 'Dungeon panel image evidence oversized.' }
+        $hashLines = @(Get-Content -LiteralPath $record)
+        if ($hashLines.Count -ne 1 -or $hashLines[0] -cnotmatch '^sha256=[0-9a-f]{64}$' -or (Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashLines[0].Substring(7)) { throw 'Dungeon panel screenshot changed.' }
+        $panelFacts = Join-Path $Root 'dungeon-panel.txt'
+        if ((Get-Item -LiteralPath $panelFacts).Length -gt 1024) { throw 'Dungeon panel evidence too large.' }
+        $panelLines = @(Get-Content -LiteralPath $panelFacts)
+        if ($panelLines.Count -ne 3 -or $panelLines[0] -cne 'PASS' -or $panelLines[1] -cne 'dungeon-panel-v3' -or $panelLines[2] -cne 'generated-location-pointer-disabled-revalidate-contributors-dispose-stale-reopen-destroy-keyboard-controller') { throw 'Invalid dungeon panel receipt.' }
+    }
+    $receipt = Join-Path $Root 'dungeon-readiness.receipt'; $snapshot = Join-Path $Root 'dungeon-readiness.txt'
+    if ((Get-Item -LiteralPath $receipt).Length -gt 256 -or (Get-Item -LiteralPath $snapshot).Length -gt 4096) { throw 'Dungeon evidence too large.' }
+    $lines = @(Get-Content -LiteralPath $receipt); $facts = @(Get-Content -LiteralPath $snapshot)
+    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'dungeon-readiness-v1' -or $lines[2] -cnotmatch '^sha256=[0-9a-f]{64}$') { throw 'Invalid dungeon readiness receipt.' }
+    if ((Get-FileHash -LiteralPath $snapshot -Algorithm SHA256).Hash.ToLowerInvariant() -cne $lines[2].Substring(7)) { throw 'Dungeon readiness evidence changed.' }
+    if ($facts.Count -ne 4 -or $facts[0] -cne 'PASS' -or $facts[1] -cne 'dungeon-readiness-v1' -or $facts[2] -cnotmatch '^targets=[0-9]+$' -or $facts[3] -cne 'operations=0') { throw 'Invalid dungeon readiness facts.' }
+}
+function Assert-ForgeReadSelection([string]$Root, $Provenance) {
+    Assert-ForgeCommandSelection $Root $Provenance
+    $property = $Provenance.PSObject.Properties['forgeReadProbe']
+    if ($property -and $property.Value -isnot [bool]) { throw 'Invalid Forge read flag.' }
+    $selected = $property -and $property.Value
+    $marker = Join-Path $Root 'forge-reads.enabled'
+    if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Forge read selection changed.' }
+    if (!$selected) { return }
+    if ($Provenance.scenario -ne 'Full' -or [IO.File]::ReadAllText($marker) -cne 'forge-reads-v1') { throw 'Invalid Forge read selection.' }
+    foreach ($entry in $Provenance.PSObject.Properties) {
+        if ($entry.Name -notin @('forgeReadProbe','forgeCommandProbe','forgePersistenceProbe','forgeDeliveryProbe','refineryProbe','forgeUiProbe','blueprintPinProbe') -and $entry.Value -is [bool] -and $entry.Value) { throw 'Forge reads cannot combine other scenarios or consumers.' }
+    }
+    if ($null -ne $Provenance.assemblyOverlay) { throw 'Forge reads cannot use an assembly overlay.' }
+    $config = [IO.File]::ReadAllText((Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg'))
+    if ($config -cnotmatch '(?ms)^\[Recipes\]\r?\n(?:(?!^\[).)*?^Enabled = true\r?$') { throw 'Forge read recipe integration is not enabled.' }
+}
+function Assert-ForgeReadReceipt([string]$Root, $Provenance) {
+    Assert-ForgeReadSelection $Root $Provenance
+    if (!$Provenance.PSObject.Properties['forgeReadProbe'] -or !$Provenance.forgeReadProbe) { return }
+    Assert-QualificationExitOutcome (Get-Content -LiteralPath (Join-Path $Root 'run-outcome.json') -Raw | ConvertFrom-Json) 'Forge reads'
+    $receipt = Join-Path $Root 'forge-reads.receipt'; $snapshot = Join-Path $Root 'forge-reads.txt'
+    if ((Get-Item -LiteralPath $receipt).Length -gt 256 -or (Get-Item -LiteralPath $snapshot).Length -gt 4096) { throw 'Forge evidence too large.' }
+    $lines = @(Get-Content -LiteralPath $receipt)
+    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'forge-reads-v1' -or $lines[2] -cnotmatch '^sha256=[0-9a-f]{64}$') { throw 'Invalid Forge receipt.' }
+    if ((Get-FileHash -LiteralPath $snapshot -Algorithm SHA256).Hash.ToLowerInvariant() -cne $lines[2].Substring(7)) { throw 'Forge evidence changed.' }
+    $facts = @(Get-Content -LiteralPath $snapshot)
+    if ($facts.Count -ne 5 -or $facts[0] -cne 'PASS' -or $facts[1] -cne 'forge-reads-v1' -or $facts[2] -cnotmatch '^catalog=[1-9][0-9]*$' -or $facts[3] -cnotmatch '^quotes=[1-9][0-9]*$' -or $facts[4] -cnotmatch '^restored=[0-9]+$') { throw 'Invalid Forge facts.' }
+}
 function Assert-ModMenuProbeSelection([string]$Root, $Provenance) {
     Assert-ModInformationProbeSelection $Root $Provenance
     $property = $Provenance.PSObject.Properties['modMenuProbe']
@@ -309,7 +526,7 @@ function Assert-ModMenuProbeSelection([string]$Root, $Provenance) {
     if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Mod menu probe selection changed.' }
     if (!$selected) { return }
     if ($Provenance.scenario -ne 'Full' -or [IO.File]::ReadAllText($marker) -cne 'mod-menu-probe-v3') { throw 'Invalid mod menu probe selection.' }
-    $selections = @('storyProbe','menuInspection','travelJournal','travelJournalComparison','echo','echoTravelProbe','echoAbsentProbe','anima','animaTravelProbe','journalMissionEventsProbe','missionIdentityProbe','missionTransitionsProbe','contentReferenceProbe','stockpileCoordinated','journalCoordinated','persistenceProbe','vanillaLoadControl','stockpile','missionJournal','travelStation','travelCrossSystem','travelWormholeFixture','travelResilience','travelRecovery','travelFastLane')
+    $selections = @('blueprintPinProbe','storyProbe','menuInspection','travelJournal','travelJournalComparison','echo','echoTravelProbe','echoAbsentProbe','anima','animaTravelProbe','journalMissionEventsProbe','missionIdentityProbe','missionTransitionsProbe','contentReferenceProbe','stockpileCoordinated','journalCoordinated','persistenceProbe','vanillaLoadControl','stockpile','missionJournal','travelStation','travelCrossSystem','travelWormholeFixture','travelResilience','travelRecovery','travelFastLane')
     if ($null -ne $Provenance.assemblyOverlay) { throw 'Mod menu probe cannot use an assembly overlay.' }
     foreach ($name in $selections) {
         $item = $Provenance.PSObject.Properties[$name]
@@ -471,7 +688,7 @@ $TravelRecoveryAttemptOutcomes = @($TravelRecoveryAttemptSuccess) + $TravelRecov
 # finished; the reason stays readable, but the receipt is never a completed one.
 $TravelRecoveryAttemptPendingMarker = 'cleanup=pending'
 # The fifth separate optional phase reserves its own process time ON TOP of the in-system phase. It
-# closes the last reachable travel cell of #12: the native fast lane (travelMultiplier = 7), which
+# exercises the native fast lane (travelMultiplier = 7), which
 # the post-gate continuation phase cannot reach because its follow-on POI is deliberately not a gate.
 $TravelFastLanePhase = 'travel-fast-lane-v1'
 $TravelFastLaneRequiredCases = @('fast-lane-gate-chain','fast-lane-multiplier-observed')
@@ -923,7 +1140,10 @@ function Assert-QualificationInputs([string]$Root) {
     $provenance = Get-Content -LiteralPath (Join-Path $Root 'build-provenance.json') -Raw | ConvertFrom-Json
     if ($provenance.scenario -notin @('Full','MissingApi','UnavailableApi') -or
         (Get-Content -LiteralPath (Join-Path $Root 'scenario.txt') -Raw).Trim() -cne $provenance.scenario) { throw 'Prepared scenario changed.' }
+    Assert-DungeonReadinessSelection $Root $provenance
+    Assert-ForgeReadSelection $Root $provenance
     Assert-ModMenuProbeSelection $Root $provenance
+    if ($provenance.scenario -ne 'MissingApi') { Assert-ApiPersistenceRoot $Root }
     $menuProperty = $provenance.PSObject.Properties['menuInspection']
     if ($menuProperty -and $menuProperty.Value -isnot [bool]) { throw 'Menu inspection selection must be boolean.' }
     $menuInspection = $menuProperty -and $menuProperty.Value
@@ -935,16 +1155,12 @@ function Assert-QualificationInputs([string]$Root) {
     if ([bool]$missionProbe -ne (Test-Path -LiteralPath $missionMarker -PathType Leaf)) { throw 'Mission probe selection changed.' }
     if ($missionProbe) {
         if ($provenance.scenario -ne 'Full' -or (Get-Content -LiteralPath $missionMarker -Raw).Trim() -ne 'missions-v1') { throw 'Invalid mission probe selection.' }
-        $config = Get-Content -LiteralPath (Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg') -Raw
-        $sections = [regex]::Matches($config, '(?ms)^\[Missions\]\r?\n(?<body>.*?)(?=^\[|\z)')
-        if ($sections.Count -ne 1 -or [regex]::Matches($sections[0].Groups['body'].Value, '(?m)^Enabled\s*=').Count -ne 1 -or [regex]::Matches($sections[0].Groups['body'].Value, '(?m)^Enabled\s*=\s*true\s*$').Count -ne 1) { throw 'Mission probe config changed.' }
     }
     $identityProbe = $provenance.PSObject.Properties['missionIdentityProbe'] -and [bool]$provenance.missionIdentityProbe
     $identityMarker = Join-Path $Root 'mission-identity.enabled'
     if ([bool]$identityProbe -ne (Test-Path -LiteralPath $identityMarker -PathType Leaf)) { throw 'Mission identity selection changed.' }
     if ($identityProbe) {
         if (!$missionProbe -or !$provenance.persistenceProbe -or (Get-Content -LiteralPath $identityMarker -Raw).Trim() -ne 'identity-v1') { throw 'Invalid mission identity selection.' }
-        if ([regex]::Matches($sections[0].Groups['body'].Value, '(?m)^IdentityContinuity\s*=').Count -ne 1 -or [regex]::Matches($sections[0].Groups['body'].Value, '(?m)^IdentityContinuity\s*=\s*true\s*$').Count -ne 1) { throw 'Mission identity config changed.' }
     }
     $anima = $provenance.PSObject.Properties['anima'] -and [bool]$provenance.anima
     $animaMarker = Join-Path $Root 'anima-missions.enabled'
@@ -983,12 +1199,9 @@ function Assert-QualificationInputs([string]$Root) {
         if ($provenance.scenario -ne 'Full' -or (Get-Content -LiteralPath $travelMarker -Raw).Trim() -ne 'travel-v1') { throw 'Invalid travel/station selection.' }
         if (!$provenance.PSObject.Properties['travelStationBudgetSeconds'] -or
             [int]$provenance.travelStationBudgetSeconds -ne $TravelStationBudgetSeconds) { throw 'Travel/station budget reservation changed.' }
-        $tsConfig = Get-Content -LiteralPath (Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg') -Raw
-        $tsSections = [regex]::Matches($tsConfig, '(?ms)^\[Travel\]\s*\r?\n(?<body>.*?)(?=^\[|\z)')
-        if ($tsSections.Count -ne 1 -or [regex]::Matches($tsSections[0].Groups['body'].Value, '(?m)^Enabled\s*=').Count -ne 1 -or [regex]::Matches($tsSections[0].Groups['body'].Value, '(?m)^Enabled\s*=\s*true\s*$').Count -ne 1) { throw 'Travel/station config changed.' }
     }
     # The cross-system phase is an ADDITIONAL selection on top of the in-system phase; it reuses the
-    # same [Travel] capability configuration and reserves its own separate process budget.
+    # same native travel service and reserves its own separate process budget.
     $travelCrossSystem = $provenance.PSObject.Properties['travelCrossSystem'] -and [bool]$provenance.travelCrossSystem
     $crossMarker = Join-Path $Root 'travel-cross-system.enabled'
     if ([bool]$travelCrossSystem -ne (Test-Path -LiteralPath $crossMarker -PathType Leaf)) { throw 'Travel cross-system selection changed.' }
@@ -1109,7 +1322,7 @@ function Assert-QualificationInputs([string]$Root) {
             [int]$provenance.travelRecoveryBudgetSeconds -ne $TravelRecoveryBudgetSeconds) { throw 'Travel recovery/continuation budget reservation changed.' }
     }
     # The resilience phase is an ADDITIONAL selection on top of the in-system phase; it reuses the
-    # same [Travel] capability configuration and reserves its own separate process budget.
+    # same native travel service and reserves its own separate process budget.
     $travelResilience = $provenance.PSObject.Properties['travelResilience'] -and [bool]$provenance.travelResilience
     $resilienceMarker = Join-Path $Root 'travel-resilience.enabled'
     if ([bool]$travelResilience -ne (Test-Path -LiteralPath $resilienceMarker -PathType Leaf)) { throw 'Travel resilience selection changed.' }
@@ -1137,8 +1350,8 @@ function Assert-QualificationInputs([string]$Root) {
         }
         if ($provenance.scenario -ne 'Full' -or (Get-Content -LiteralPath (Join-Path $Root 'bars.enabled') -Raw) -cne 'owned-bars-v1') { throw 'Invalid bar phase.' }
         $entries = Get-TravelJournalConfigEntries (Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg')
-        foreach ($key in @('Persistence/Enabled','Bars/Enabled')) { if (!$entries.ContainsKey($key) -or $entries[$key] -ine 'true') { throw "Bar configuration requires $key=true." } }
-        if (!$entries.ContainsKey('Persistence/Root') -or [IO.Path]::GetFullPath($entries['Persistence/Root']) -ine [IO.Path]::GetFullPath((Join-Path $Root 'state'))) { throw 'Bar persistence root changed.' }
+        if (!$entries.ContainsKey('Bars/Enabled') -or $entries['Bars/Enabled'] -ine 'true') { throw 'Bar configuration requires Bars/Enabled=true.' }
+        Assert-ApiPersistenceRoot $Root
         if ($entries['Bars/ExclusiveProviders'] -cne 'vg-bar-author-a,vg-bar-author-b') { throw 'Bar permissions changed.' }
         Add-Type -Path (Join-Path $Root 'game\BepInEx\core\Mono.Cecil.dll')
         $pluginDir = Join-Path $Root 'game\BepInEx\plugins'
@@ -1175,19 +1388,6 @@ function Assert-QualificationInputs([string]$Root) {
     if ([bool]$probe -ne (Test-Path -LiteralPath $probeMarker -PathType Leaf)) { throw 'Persistence probe selection changed.' }
     if ($probe) {
         if ($provenance.scenario -ne 'Full' -or (Get-Content -LiteralPath $probeMarker -Raw).Trim() -ne 'probe-v1') { throw 'Invalid persistence probe marker.' }
-        $config = Get-Content -LiteralPath (Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg') -Raw
-        $sections = [regex]::Matches($config, '(?ms)^\[Persistence\]\r?\n(?<body>.*?)(?=^\[|\z)')
-        if ($sections.Count -ne 1) { throw 'Persistence probe section changed.' }
-        $config = $sections[0].Groups['body'].Value
-        $roots = [regex]::Matches($config, '(?m)^Root\s*=\s*([^\r\n]+)')
-        $settings = [regex]::Matches($config, '(?m)^Enabled\s*=')
-        $enabled = [regex]::Matches($config, '(?m)^Enabled\s*=\s*true\s*$')
-        if ($roots.Count -ne 1 -or $settings.Count -gt 1 -or $enabled.Count -ne $settings.Count -or [IO.Path]::GetFullPath($roots[0].Groups[1].Value.Trim()) -ine [IO.Path]::GetFullPath((Join-Path $Root 'state'))) { throw 'Persistence probe root/config changed.' }
-    }
-    if (!$probe -and !$story -and !$storyAbsent -and !$bars -and !$barConsumers) {
-        $config = Get-Content -LiteralPath (Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg') -Raw
-        $sections = [regex]::Matches($config, '(?ms)^\[Persistence\]\r?\n(?<body>.*?)(?=^\[|\z)')
-        if ($sections.Count -ne 1 -or [regex]::Matches($sections[0].Groups['body'].Value, '(?m)^Enabled\s*=').Count -ne 1 -or [regex]::Matches($sections[0].Groups['body'].Value, '(?m)^Enabled\s*=\s*false\s*$').Count -ne 1) { throw 'Legacy control must explicitly disable API-managed saves.' }
     }
     $journalCoordinated = $provenance.PSObject.Properties['journalCoordinated'] -and [bool]$provenance.journalCoordinated
     $journalMarker = Join-Path $Root 'journal-coordinated.enabled'
@@ -1269,6 +1469,7 @@ function Assert-QualificationInputs([string]$Root) {
     if ($anima) { $expected += @('VGAnima.dll') }
     if ($echo) { $expected += @('VGEcho.dll') }
     if ($travelJournal) { $expected += @('VGTravelJournal.dll') }
+    if ($provenance.PSObject.Properties['blueprintPinProbe'] -and $provenance.blueprintPinProbe) { $expected += @('VGBlueprintPin.dll') }
     $expected = @($expected | Select-Object -Unique)
     if (@($provenance.plugins.PSObject.Properties).Count -ne $expected.Count -or
         @($provenance.plugins.PSObject.Properties.Name | Where-Object { $_ -notin $expected }).Count -gt 0) { throw 'Scenario plugin allowlist mismatch.' }

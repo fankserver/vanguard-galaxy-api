@@ -124,7 +124,7 @@ public sealed class RecipeCatalogSnapshot
 }
 
 /// <summary>Main-thread observational access. Read again after station/session/catalog changes; snapshots are not reservations.</summary>
-public interface IRecipeCatalog
+public interface IRecipeService : IServiceStatus
 {
     RecipeCatalogSnapshot Read(bool includeUnavailable = false);
 }

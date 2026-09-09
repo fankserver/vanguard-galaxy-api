@@ -6,16 +6,20 @@ using VGModAPI.Core.Integration;
 namespace VGModAPI.Core;
 
 /// <summary>Authenticated Unity-free declaration/creation facade; runtime qualification remains a separate gate.</summary>
-internal sealed class WorldContentService : IWorldApi, IDisposable
+internal sealed class WorldContentService : IWorldService, IDisposable
 {
     private readonly LifecycleHub _hub;
     private readonly WorldDefinitionRegistry _definitions;
     private readonly WorldAuthoringGate _authoring;
     private readonly Func<bool> _canAuthor;
     private readonly Action? _providerReleased;
+    private readonly IServiceStatus _status;
+    public ServiceAvailability Availability => _status.Availability;
+    public event Action<ServiceAvailability>? AvailabilityChanged
+    { add => _status.AvailabilityChanged += value; remove => _status.AvailabilityChanged -= value; }
     private bool _disposed;
     internal WorldContentService(LifecycleHub hub, WorldDefinitionRegistry definitions, WorldAuthoringGate authoring, Func<bool> canAuthor, Action? providerReleased = null)
-    { _hub = hub; _definitions = definitions; _authoring = authoring; _canAuthor = canAuthor; _providerReleased = providerReleased; }
+    { _hub = hub; _status = hub.Services.Get("world-authoring"); _definitions = definitions; _authoring = authoring; _canAuthor = canAuthor; _providerReleased = providerReleased; }
     [MethodImpl(MethodImplOptions.NoInlining)]
     public IWorldProvider? AcquireProvider(object pluginInstance)
     {
@@ -88,5 +92,11 @@ internal sealed class WorldContentService : IWorldApi, IDisposable
             _service._providerReleased?.Invoke();
         }
     }
-    public void Dispose() { _hub.CheckThread(); _disposed = true; }
+    public void Dispose()
+    {
+        _hub.CheckThread(); if (_disposed) return; _disposed = true;
+        var health = _status.Availability;
+        _hub.SetCapability("world-authoring", false, health.IsAvailable ? "World service stopped." : health.Detail,
+            health.IsAvailable ? ServiceUnavailableReason.ApiStopped : health.Reason);
+    }
 }

@@ -50,9 +50,9 @@ public sealed partial class Plugin
         Require(session != Guid.Parse(donor[1]), "Cold phase reused producer session.");
         var station = SpGet(CurrentPlayer, "currentPointOfInterest")!;
         Require((string)SpGet(station, "guid")! == donor[2], "Cold station identity changed.");
-        var api = ModApi.Bars ?? throw new InvalidOperationException("Cold bar API unavailable.");
+        var api = ModApi.Services.Bars;
         BarRosterFinalized? latest = null;
-        using var subscription = api.Subscribe(Id, value => latest = value);
+        using var subscription = new BarProbeSubscription(api, value => latest = value);
         var bar = SpGet(station, "bar")!;
         if (!absent)
         {

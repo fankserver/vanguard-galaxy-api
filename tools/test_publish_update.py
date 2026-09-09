@@ -9,6 +9,7 @@ import zipfile
 from publish_update import publish, validate_feed, validate_archive, execute, GitHub
 from local_update_metadata import generate
 from package_update_example import package
+from release_archive import REQUIRED_FILES, create
 
 
 class Remote:
@@ -141,6 +142,24 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(len(list(output.iterdir())), 2)
         (output / 'VGModAPI.Abstractions.dll').write_bytes(b'not distributable here')
         with self.assertRaises(ValueError): package(dll, metadata, output)
+    def test_api_archive_uses_shared_layout_validation(self):
+        root = self.root / 'VGModAPI'
+        for name in REQUIRED_FILES | {'docs/reference/new-topic.md', 'docs/assets/logo.png'}:
+            path = root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(name.encode())
+        create(root, self.archive)
+        validate_archive(self.archive, root / 'VGModAPI.dll', 'vgmodapi')
+        (root / 'docs/reference/new-topic.md').write_text('changed after archiving')
+        with self.assertRaises(ValueError):
+            validate_archive(self.archive, root / 'VGModAPI.dll', 'vgmodapi')
+        create(root, self.archive)
+        private = root / 'docs/development/private.md'
+        private.parent.mkdir()
+        private.write_text('not for distribution')
+        with self.assertRaises(ValueError):
+            validate_archive(self.archive, root / 'VGModAPI.dll', 'vgmodapi')
+
     def test_archive_must_match_actual_package_and_forbid_contract_redistribution(self):
         root = self.root / 'Example'; root.mkdir()
         dll = root / 'Example.dll'; dll.write_bytes(b'owned synthetic assembly')

@@ -14,12 +14,30 @@ public sealed class BoardingCombatServiceTests
         internal int Faults;
         internal Fixture()
         {
+            Hub.SetCapability("boarding-combat", true, "Test bindings.");
             Rules = new BoardingCombatService(Hub, (_, _) => Faults++);
             Session = Hub.Begin(SessionOrigin.SaveLoad, "save"); Hub.PlayerReady(Session); Hub.GameplayInitialized(Session);
         }
         internal BoardingCombatContext Context(BoardingCombatPolicyKind kind, BoardingCombatSide side = BoardingCombatSide.Defenders)
             => new(new(Session, BoardingEncounterKind.Ship, 5), kind, side, 0, 10);
         public void Dispose() { Rules.Dispose(); Hub.Dispose(); }
+    }
+    [Fact]
+    public void TypedHealthLossDiscardsNumericAndVetoPolicies()
+    {
+        using var f = new Fixture(); IBoardingCombatService service = f.Rules;
+        using var provider = service.AcquireProvider("mod");
+        provider.RegisterMultiplier("power", BoardingRuleScope.Both, BoardingCombatPolicyKind.Power, _ =>
+        { f.Hub.SetCapability("boarding-combat", false, "Fault.", ServiceUnavailableReason.ObserverFault); return 3; });
+        Assert.Equal(10, f.Rules.Scale(f.Context(BoardingCombatPolicyKind.Power)));
+        var calls = 0;
+        provider.RegisterVeto("veto", BoardingRuleScope.Both, BoardingCombatPolicyKind.Surrender, _ => { calls++; return false; });
+        Assert.True(f.Rules.Allow(f.Context(BoardingCombatPolicyKind.Surrender)));
+        Assert.Equal(0, calls);
+        f.Rules.Dispose();
+        Assert.Equal(ServiceUnavailableReason.ObserverFault, service.Availability.Reason);
+        Assert.Null(typeof(ModApi).GetProperty("BoardingCombat"));
+        Assert.Null(typeof(ModApi).Assembly.GetType("VGModAPI.IBoardingCombatRules"));
     }
     [Fact]
     public void CompetingNumericPoliciesAreBoundedAndSideAware()

@@ -17,7 +17,7 @@ public sealed partial class Plugin
         WriteAtomic("owned-bars.txt", new[] { "INCOMPLETE" });
         foreach (var frame in LoadReady("fixture-a")) yield return frame;
         foreach (var frame in Wait(NativeTravelReady, "bar fixture native readiness")) yield return frame;
-        var api = ModApi.Bars ?? throw new InvalidOperationException("Owned bars unavailable.");
+        var api = ModApi.Services.Bars;
         var a = Chainloader.PluginInfos["vg-bar-author-a"].Instance;
         var b = Chainloader.PluginInfos["vg-bar-author-b"].Instance;
         Require(a.GetType().Assembly != b.GetType().Assembly, "Bar authors must be independent assemblies.");
@@ -26,7 +26,7 @@ public sealed partial class Plugin
         var stationId = (string)SpGet(station, "guid")!;
         var bar = SpGet(station, "bar")!;
         BarRosterFinalized? latest = null;
-        using var observer = api.Subscribe(Id, roster => latest = roster);
+        using var observer = new BarProbeSubscription(api, roster => latest = roster);
         void Refresh(int owned)
         {
             latest = null;

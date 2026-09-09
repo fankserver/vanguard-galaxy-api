@@ -7,10 +7,10 @@ internal sealed class MissionIdentityPersistence : IDisposable
 {
     internal const string Owner = "vgmodapi.mission-identities";
     internal readonly MissionSerializationTracker Snapshots = new();
-    private readonly IPersistenceRegistration _registration;
+    private readonly ISaveDataRegistration _registration;
     private Guid? _restoredFor;
     private MissionIdentityRecord[] _records = Array.Empty<MissionIdentityRecord>();
-    internal MissionIdentityPersistence(IPersistenceApi persistence, Func<bool> available, Action<string>? refused = null)
+    internal MissionIdentityPersistence(ISaveDataService persistence, Func<bool> available, Action<string>? refused = null)
     {
         _registration = persistence.Register(new PersistenceProvider(Owner, 1, () =>
             {
@@ -25,7 +25,7 @@ internal sealed class MissionIdentityPersistence : IDisposable
                     throw;
                 }
             },
-            (session, bytes) => { _records = bytes == null ? Array.Empty<MissionIdentityRecord>() : MissionIdentitySnapshot.Decode(bytes); _restoredFor = session.Id; }, Validate));
+            (session, bytes) => { _records = bytes == null ? Array.Empty<MissionIdentityRecord>() : MissionIdentitySnapshot.Decode(bytes); _restoredFor = session.Id; }, Validate)).Registration ?? throw new InvalidOperationException("Mission identity save provider registration refused.");
     }
     private static bool Validate(byte[] bytes)
     {

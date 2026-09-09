@@ -8,7 +8,7 @@ internal sealed partial class MissionAdapter
 {
     private MissionIdentityPersistence? _identity;
     private MissionJsonBindings? _json;
-    internal void EnableIdentity(IPersistenceApi persistence, MissionJsonBindings json)
+    internal void EnableIdentity(ISaveDataService persistence, MissionJsonBindings json)
     {
         _hub.CheckThread();
         if (_identity != null || _session.HasValue) throw new InvalidOperationException("Mission identity registration must precede sessions.");

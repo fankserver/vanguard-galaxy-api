@@ -44,7 +44,7 @@ public sealed class WorldSiteResult
     public WorldSiteResult(WorldStatus status, WorldSiteReference? reference = null, string? poiId = null) { Status = status; Reference = reference; PoiId = poiId; }
 }
 
-public interface IWorldApi
+public interface IWorldService : IServiceStatus
 {
     /// <summary>Main-thread-only; invoke directly from the loaded plugin's assembly. Null means unavailable or unauthenticated.</summary>
     IWorldProvider? AcquireProvider(object pluginInstance);

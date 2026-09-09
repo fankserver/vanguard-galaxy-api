@@ -42,12 +42,14 @@ internal sealed partial class MissionAdapter : IDisposable
     internal MissionAdapter(LifecycleHub hub, MissionBindings bindings, Action<Exception> report)
     {
         _hub = hub; _bindings = bindings; _report = report;
-        Events = new MissionTransitions((owner, error) => report(new InvalidOperationException("Mission subscriber '" + owner + "' failed.", error)));
+        Events = new MissionTransitions(hub, (owner, error) => report(new InvalidOperationException("Mission subscriber '" + owner + "' failed.", error)));
         _subscription = hub.Subscribe("vgmodapi.missions", e => Guard(() => ObserveLifecycle(e)));
+        hub.Services.WatchFault("mission-transitions", () => _faulted);
+        hub.Services.WatchFault("mission-continuity", () => _identity != null && _faulted);
     }
     internal void Guard(Action action)
     {
-        if (_faulted || _disposed) return;
+        if (_faulted || _disposed || _hub.Services.IsStopping) return;
         try { _hub.CheckThread(); action(); }
         catch (Exception error) { _faulted = true; try { _report(error); } catch { } }
     }
@@ -57,8 +59,8 @@ internal sealed partial class MissionAdapter : IDisposable
         if (_faulted && !_reconciled)
         {
             _reconciled = true; Clear(); _identity?.Reset();
-            if (_identity != null) _hub.SetCapability("mission-continuity", false, "Mission observer fault; restart required.");
-            _hub.SetCapability("mission-transitions", false, "Mission observer fault; restart required.");
+            if (_identity != null) _hub.SetCapability("mission-continuity", false, "Mission observer fault; restart required.", ServiceUnavailableReason.ObserverFault);
+            _hub.SetCapability("mission-transitions", false, "Mission observer fault; restart required.", ServiceUnavailableReason.ObserverFault);
         }
     }
     private void Clear() { _player = null; _session = null; _calls.Clear(); _sweeps.Clear(); Events.Reset(null); }

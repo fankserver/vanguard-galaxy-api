@@ -22,6 +22,18 @@ param(
     [switch]$AssemblyOverlay,
     [switch]$VanillaLoadControl,
     [switch]$MenuInspection,
+    [switch]$RefineryProbe,
+    [switch]$DungeonReadinessProbe,
+    [switch]$DungeonPanelProbe,
+    [switch]$ForgeUiProbe,
+    [switch]$BlueprintPinProbe,
+    [string]$BlueprintPinBin,
+    [string]$BlueprintPinRevision,
+    [string]$BlueprintPinSha256,
+    [switch]$ForgeDeliveryProbe,
+    [switch]$ForgePersistenceProbe,
+    [switch]$ForgeCommandProbe,
+    [switch]$ForgeReadProbe,
     [switch]$ModMenuProbe,
     [switch]$ModInformationProbe,
     [string]$TlsFixture,
@@ -122,6 +134,26 @@ if ($Action -eq 'Prepare') {
     if (($StoryProbe -or $StoryAbsentProbe) -and ($TravelStation -or $TravelCrossSystem -or $TravelWormholeFixture -or $TravelResilience -or $TravelRecoveryContinuation -or $TravelFastLane -or $MissionTransitionsProbe -or $MissionIdentityProbe -or $ContentReferenceProbe -or $JournalMissionEventsProbe -or $JournalCoordinated -or $StockpileCoordinated -or $VanillaLoadControl -or $AssemblyOverlay -or $EchoAbsentProbe -or $EchoTravelProbe -or $AnimaTravelProbe -or $TravelJournalComparison)) { throw 'Story probe cannot be combined with optional probes.' }
     if (!$StoryProbe -and ($StoryCampaignBin -or $StoryJobBin)) { throw 'Story author binaries require StoryProbe.' }
     if ($MenuInspection -and ($Scenario -ne 'MissingApi' -or $VanillaLoadControl -or $MissionJournalBin -or $StockpileBin -or $AnimaBin -or $EchoBin -or $TravelJournalBin)) { throw 'Menu inspection requires an API-absent menu-only run without consumers.' }
+    if ($BlueprintPinProbe) {
+        if (!$BlueprintPinBin -or $BlueprintPinRevision -cnotmatch '^[0-9a-f]{40}$' -or $BlueprintPinSha256 -cnotmatch '^[0-9a-f]{64}$' -or $ForgeUiProbe -or $ForgeCommandProbe -or $ForgeDeliveryProbe -or $ForgePersistenceProbe -or $RefineryProbe) { throw 'Blueprint Pin requires its pinned binary and an independent read-only phase.' }
+        $ForgeReadProbe = $true
+    } elseif ($BlueprintPinBin -or $BlueprintPinRevision -or $BlueprintPinSha256) { throw 'Blueprint Pin inputs require its probe.' }
+    if ($DungeonPanelProbe) { $DungeonReadinessProbe = $true }
+    if ($DungeonReadinessProbe) {
+        $other = @($PSBoundParameters.Keys | Where-Object { $PSBoundParameters[$_] -is [Management.Automation.SwitchParameter] -and $PSBoundParameters[$_].IsPresent -and $_ -notin @('DungeonReadinessProbe','DungeonPanelProbe','Diagnostics') })
+        if ($Scenario -ne 'Full' -or $other.Count -or $MissionJournalBin -or $StockpileBin -or $AnimaBin -or $EchoBin -or $TravelJournalBin -or $BarConsumerManifest) { throw 'Dungeon readiness requires Full without other probes or consumers.' }
+    }
+    if ($ForgeUiProbe -and ($ForgeCommandProbe -or $ForgeDeliveryProbe -or $ForgePersistenceProbe -or $RefineryProbe)) { throw 'Select Forge UI as an independent phase.' }
+    if ($ForgeUiProbe) { $ForgeReadProbe = $true }
+    if ($RefineryProbe -and ($ForgeDeliveryProbe -or $ForgePersistenceProbe)) { throw 'Select refinery as an independent phase.' }
+    if ($RefineryProbe) { $ForgeCommandProbe = $true }
+    if ($ForgeDeliveryProbe -and $ForgePersistenceProbe) { throw 'Select delivery or persistence as independent phases.' }
+    if ($ForgeDeliveryProbe -or $ForgePersistenceProbe) { $ForgeCommandProbe = $true }
+    if ($ForgeCommandProbe) { $ForgeReadProbe = $true }
+    if ($ForgeReadProbe) {
+        $otherSwitches = @($PSBoundParameters.Keys | Where-Object { $PSBoundParameters[$_] -is [Management.Automation.SwitchParameter] -and $PSBoundParameters[$_].IsPresent -and $_ -notin @('ForgeReadProbe','ForgeCommandProbe','ForgePersistenceProbe','ForgeDeliveryProbe','RefineryProbe','ForgeUiProbe','BlueprintPinProbe','Diagnostics') })
+        if ($Scenario -ne 'Full' -or $otherSwitches.Count -or $MissionJournalBin -or $StockpileBin -or $AnimaBin -or $EchoBin -or $TravelJournalBin -or $BarConsumerManifest) { throw 'Forge read probe requires Full without other probes or consumers.' }
+    }
     if ($ModInformationProbe -and !$ModMenuProbe) { throw 'Information probe requires ModMenuProbe.' }
     if ($ModInformationProbe) {
         if (!$MissionJournalBin -or !$StockpileBin) { throw 'Full information qualification requires both real consumers.' }
@@ -173,7 +205,7 @@ if ($Action -eq 'Prepare') {
     # Opt-in disposable sandbox test data. Without it the cross-system phase never creates native
     # content and a fixture world without a wormhole keeps reporting its honest mandatory NOT-RUN.
     if ($TravelWormholeFixture -and !$TravelCrossSystem) { throw 'Wormhole fixture creation requires the cross-system travel phase.' }
-    # The resilience phase reuses the same [Travel] capability configuration and reserves its own
+    # The resilience phase uses the same native travel service and reserves its own
     # process time; it is independent of the cross-system phase.
     if ($TravelResilience -and !$TravelStation) { throw 'Travel resilience phase requires the travel/station selection.' }
     # The recovery/continuation phase drives its own in-system routes and its own multi-waypoint gate
@@ -239,6 +271,21 @@ if ($Action -eq 'Prepare') {
             Copy-Item -LiteralPath (Join-Path $MissionJournalBin $name) -Destination $plugins
         }
         [IO.File]::WriteAllText((Join-Path $root 'missionjournal.enabled'), 'pilot-v1')
+    }
+    if ($BlueprintPinProbe) {
+        $candidate = Join-Path $BlueprintPinBin 'VGBlueprintPin.dll'
+        if ((Get-FileHash -LiteralPath $candidate -Algorithm SHA256).Hash.ToLowerInvariant() -cne $BlueprintPinSha256) { throw 'Blueprint Pin binary differs from requested hash.' }
+        Add-Type -Path (Join-Path $bep 'core\Mono.Cecil.dll')
+        $assembly = [Mono.Cecil.AssemblyDefinition]::ReadAssembly($candidate)
+        try {
+            if ($assembly.Name.Name -cne 'VGBlueprintPin' -or $assembly.Name.Version.ToString() -cne '0.2.0.0') { throw 'Only Blueprint Pin 0.2.0 is accepted.' }
+            $forbidden = @($assembly.MainModule.AssemblyReferences | Where-Object { $_.Name -notin @('netstandard','BepInEx','UnityEngine.CoreModule','VGModAPI.Abstractions') })
+            if ($forbidden.Count) { throw 'Blueprint Pin has unsupported dependencies.' }
+            $plugin = $assembly.MainModule.Types | Where-Object { $_.FullName -ceq 'VGBlueprintPin.Plugin' }
+            $dependency = @($plugin.CustomAttributes | Where-Object { $_.AttributeType.FullName -eq 'BepInEx.BepInDependency' -and $_.ConstructorArguments.Count -eq 2 -and $_.ConstructorArguments[0].Value -eq 'vgmodapi' -and $_.ConstructorArguments[1].Value -eq '0.1.38' })
+            if ($dependency.Count -ne 1) { throw 'Blueprint Pin must require its public API version.' }
+        } finally { $assembly.Dispose() }
+        Copy-Item -LiteralPath $candidate -Destination $plugins
     }
     if ($StockpileBin) {
         $candidate = Join-Path $StockpileBin 'VGStockpile.dll'
@@ -320,8 +367,10 @@ if ($Action -eq 'Prepare') {
         [IO.File]::WriteAllText((Join-Path $bep 'config\vganima.cfg'), "[General]`r`nEnabled = true`r`n[Llm]`r`nEnabled = false`r`nBaseUrl = `r`nApiKey = `r`n")
         [IO.File]::WriteAllText((Join-Path $root 'anima-missions.enabled'), 'anima-v1')
     }
-    # Unselected pilots explicitly use legacy mode; selected pilots exercise the new defaults.
+    # API save data is always active; every prepared run must keep its root inside the sandbox.
     New-Item -ItemType Directory -Path (Join-Path $bep 'config') -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $bep 'config\vgmodapi.cfg'), "[Persistence]`r`nRoot = $(Join-Path $root 'state')`r`n")
+    # Consumer save modes remain independent of API availability.
     if ($StockpileBin -and !$StockpileCoordinated) { [IO.File]::AppendAllText((Join-Path $bep 'config\vgstockpile.cfg'), "[Persistence]`r`nUseApiSaveData = false`r`n") }
     if ($MissionJournalBin -and !$JournalCoordinated) { [IO.File]::WriteAllText((Join-Path $bep 'config\vgmissionjournal.cfg'), "[Persistence]`r`nUseApiSaveData = false`r`n") }
     if ($StoryProbe -or $StoryAbsentProbe) {
@@ -338,17 +387,16 @@ if ($Action -eq 'Prepare') {
             finally { Close-ConsumerAssembly $reader }
             Copy-Item -LiteralPath $candidate -Destination $plugins
         } }
-        [IO.File]::WriteAllText((Join-Path $bep 'config\vgmodapi.cfg'), "[Persistence]`r`nEnabled = true`r`nRoot = $(Join-Path $root 'state')`r`n[Story]`r`nEnabled = true`r`nProtection = true`r`n[Missions]`r`nEnabled = true`r`n")
+        [IO.File]::AppendAllText((Join-Path $bep 'config\vgmodapi.cfg'), "[Story]`r`nEnabled = true`r`nProtection = true`r`n")
         if ($StoryProbe) { [IO.File]::WriteAllText((Join-Path $root 'story.enabled'), 'owned-story-v1') }
         if ($StoryAbsentProbe) { [IO.File]::WriteAllText((Join-Path $root 'story-absent.enabled'), 'owned-story-absent-v1') }
     }
     if ($BarProbe) { Initialize-BarProbe $root $BarAuthorABin $BarAuthorBBin }
     if ($BarLinkedStory) {
-        [IO.File]::AppendAllText((Join-Path $bep 'config\vgmodapi.cfg'), "[Missions]`r`nEnabled = true`r`nIdentityContinuity = true`r`n[Story]`r`nEnabled = true`r`nProtection = true`r`n")
+        [IO.File]::AppendAllText((Join-Path $bep 'config\vgmodapi.cfg'), "[Story]`r`nEnabled = true`r`nProtection = true`r`n")
         [IO.File]::WriteAllText((Join-Path $root 'bar-linked.enabled'), 'linked-bars-v1')
     }
     if ($BarConsumerManifest) { Initialize-BarConsumers $root $BarConsumerManifest }
-    if (!$PersistenceProbe -and !$StoryProbe -and !$StoryAbsentProbe -and !$BarProbe -and !$BarConsumerManifest) { [IO.File]::WriteAllText((Join-Path $bep 'config\vgmodapi.cfg'), "[Persistence]`r`nEnabled = false`r`n") }
     if ($StockpileCoordinated) {
         [IO.File]::AppendAllText((Join-Path $bep 'config\vgstockpile.cfg'), "[Persistence]`r`nImportLegacySidecars = true`r`n")
         [IO.File]::WriteAllText((Join-Path $root 'stockpile-coordinated.enabled'), 'stockpile-v1')
@@ -358,22 +406,37 @@ if ($Action -eq 'Prepare') {
         [IO.File]::WriteAllText((Join-Path $bep 'config\vgmissionjournal.cfg'), "[Persistence]`r`nImportLegacySidecars = true`r`n")
         [IO.File]::WriteAllText((Join-Path $root 'journal-coordinated.enabled'), 'journal-v1')
     }
-    if ($PersistenceProbe) {
-        New-Item -ItemType Directory -Path (Join-Path $bep 'config') -Force | Out-Null
-        [IO.File]::WriteAllText((Join-Path $bep 'config\vgmodapi.cfg'), "[Persistence]`r`nRoot = $(Join-Path $root 'state')`r`n")
-        [IO.File]::WriteAllText((Join-Path $root 'persistence-probe.enabled'), 'probe-v1')
-    }
+    if ($PersistenceProbe) { [IO.File]::WriteAllText((Join-Path $root 'persistence-probe.enabled'), 'probe-v1') }
     if ($VanillaLoadControl) { [IO.File]::WriteAllText((Join-Path $root 'vanilla-load.enabled'), 'control-v1') }
     [IO.File]::WriteAllText((Join-Path $root 'scenario.txt'), $Scenario)
     $hashes = @{}
     Get-ChildItem -LiteralPath $plugins -File | ForEach-Object { $hashes[$_.Name] = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
     if ($MissionTransitionsProbe) {
-        [IO.File]::AppendAllText((Join-Path $bep 'config\vgmodapi.cfg'), "`r`n[Missions]`r`nEnabled = true`r`n")
         [IO.File]::WriteAllText((Join-Path $root 'mission-transitions.enabled'), 'missions-v1')
     }
     if ($MissionIdentityProbe) {
-        [IO.File]::AppendAllText((Join-Path $bep 'config\vgmodapi.cfg'), "IdentityContinuity = true`r`n")
         [IO.File]::WriteAllText((Join-Path $root 'mission-identity.enabled'), 'identity-v1')
+    }
+    if ($ForgeReadProbe) {
+        [IO.File]::AppendAllText((Join-Path $bep 'config\vgmodapi.cfg'), "`r`n[Recipes]`r`nEnabled = true`r`n")
+        [IO.File]::WriteAllText((Join-Path $root 'forge-reads.enabled'), 'forge-reads-v1')
+        if ($BlueprintPinProbe) {
+            [IO.File]::AppendAllText((Join-Path $bep 'config\vgmodapi.cfg'), "`r`n[Hud]`r`nEnabled = true`r`n")
+            [IO.File]::WriteAllText((Join-Path $root 'blueprint-pin.enabled'), 'blueprint-pin-v1')
+        }
+        if ($ForgeUiProbe) { [IO.File]::WriteAllText((Join-Path $root 'forge-ui.enabled'), 'forge-ui-v3') }
+        if ($ForgeCommandProbe) {
+            [IO.File]::AppendAllText((Join-Path $bep 'config\vgmodapi.cfg'), "CommandsEnabled = true`r`n")
+            [IO.File]::WriteAllText((Join-Path $root 'forge-commands.enabled'), 'forge-commands-v3')
+            if ($RefineryProbe) { [IO.File]::WriteAllText((Join-Path $root 'refinery.enabled'), 'refinery-v3') }
+            if ($ForgeDeliveryProbe) { [IO.File]::WriteAllText((Join-Path $root 'forge-delivery.enabled'), 'forge-delivery-v1') }
+            if ($ForgePersistenceProbe) { [IO.File]::WriteAllText((Join-Path $root 'forge-persistence.enabled'), 'forge-persistence-v1') }
+        }
+    }
+    if ($DungeonReadinessProbe) {
+        [IO.File]::AppendAllText((Join-Path $bep 'config\vgmodapi.cfg'), "`r`n[Boarding]`r`nEnabled = true`r`n[Dungeons]`r`nEnabled = true`r`n")
+        [IO.File]::WriteAllText((Join-Path $root 'dungeon-readiness.enabled'), 'dungeon-readiness-v1')
+        if ($DungeonPanelProbe) { [IO.File]::WriteAllText((Join-Path $root 'dungeon-panel.enabled'), 'dungeon-panel-v3') }
     }
     if ($MenuInspection) { [IO.File]::WriteAllText((Join-Path $root 'menu-inspection.enabled'), 'menu-inspection-v1') }
     if ($ModMenuProbe) { [IO.File]::WriteAllText((Join-Path $root 'mod-menu-probe.enabled'), 'mod-menu-probe-v3') }
@@ -387,7 +450,6 @@ if ($Action -eq 'Prepare') {
         [IO.File]::WriteAllText((Join-Path $root 'journal-mission-events.enabled'), 'journal-events-v1')
     }
     if ($TravelStation) {
-        [IO.File]::AppendAllText((Join-Path $bep 'config\vgmodapi.cfg'), "`r`n[Travel]`r`nEnabled = true`r`n")
         [IO.File]::WriteAllText((Join-Path $root 'travel-station.enabled'), 'travel-v1')
     }
     if ($TravelCrossSystem) { [IO.File]::WriteAllText((Join-Path $root 'travel-cross-system.enabled'), 'cross-system-v1') }
@@ -399,7 +461,7 @@ if ($Action -eq 'Prepare') {
     if ($EchoTravelProbe) { [IO.File]::WriteAllText((Join-Path $root 'echo-travel.enabled'), 'echo-travel-v1') }
     if ($EchoAbsentProbe) { [IO.File]::WriteAllText((Join-Path $root 'echo-absent.enabled'), 'echo-absent-v1') }
     if ($TravelJournalComparison) { [IO.File]::WriteAllText((Join-Path $root 'travel-journal.enabled'), 'travel-journal-v1') }
-    @{ barConsumers=[bool]$BarConsumerManifest; barConsumerManifestHash=$(if ($BarConsumerManifest) { (Get-FileHash -LiteralPath (Join-Path $root 'bar-consumer-sources.json') -Algorithm SHA256).Hash }); barConsumerTools=$(if ($BarConsumerManifest) { Get-BarConsumerToolsInventory $root }); barLinkedStory=[bool]$BarLinkedStory; barColdSequence=[bool]$BarColdSequence; barProbe=[bool]$BarProbe; storyColdSequence=[bool]$StoryColdSequence; storyDonorRoot=$StoryDonorRoot; storyDonorHash=$(if ($StoryAbsentProbe) { (Get-FileHash -LiteralPath $SaveA -Algorithm SHA256).Hash } else { '' }); storyAbsentProbe=[bool]$StoryAbsentProbe; storyProbe=[bool]$StoryProbe; menuInspection=[bool]$MenuInspection; modMenuProbe=[bool]$ModMenuProbe; modInformationProbe=[bool]$ModInformationProbe; modInformationCertificateSha256=$(if ($ModInformationProbe) { (Get-FileHash -LiteralPath (Join-Path $root 'untrusted-test.pfx') -Algorithm SHA256).Hash.ToLowerInvariant() } else { '' }); travelJournal=[bool]$TravelJournalBin; travelJournalRevision=$TravelJournalRevision; travelJournalSha256=$TravelJournalSha256; travelJournalVersion=$travelJournalVersion; travelJournalComparison=[bool]$TravelJournalComparison; travelJournalBudgetSeconds=$(if ($TravelJournalComparison) { $TravelJournalBudgetSeconds } else { 0 }); echo=[bool]$EchoBin; echoRevision=$EchoRevision; echoVersion=$echoVersion; echoTravelProbe=[bool]$EchoTravelProbe; echoTravelBudgetSeconds=$(if ($EchoTravelProbe) { $EchoTravelBudgetSeconds } else { 0 }); echoAbsentProbe=[bool]$EchoAbsentProbe; anima=[bool]$AnimaBin; animaRevision=$AnimaRevision; animaVersion=$animaVersion; animaTravelProbe=[bool]$AnimaTravelProbe; animaTravelBudgetSeconds=$(if ($AnimaTravelProbe) { $AnimaTravelBudgetSeconds } else { 0 }); journalMissionEventsProbe=[bool]$JournalMissionEventsProbe; missionIdentityProbe=[bool]$MissionIdentityProbe; missionTransitionsProbe=[bool]$MissionTransitionsProbe; contentReferenceProbe=[bool]$ContentReferenceProbe; stockpileCoordinated=[bool]$StockpileCoordinated; journalCoordinated=[bool]$JournalCoordinated; persistenceProbe=[bool]$PersistenceProbe; vanillaLoadControl=[bool]$VanillaLoadControl; assemblyOverlay=$overlay; stockpile=[bool]$StockpileBin; missionJournal=[bool]$MissionJournalBin; travelStation=[bool]$TravelStation; travelStationBudgetSeconds=$(if ($TravelStation) { $TravelStationBudgetSeconds } else { 0 }); travelCrossSystem=[bool]$TravelCrossSystem; travelCrossSystemBudgetSeconds=$(if ($TravelCrossSystem) { $TravelCrossSystemBudgetSeconds } else { 0 }); travelWormholeFixture=[bool]$TravelWormholeFixture; travelResilience=[bool]$TravelResilience; travelResilienceBudgetSeconds=$(if ($TravelResilience) { $TravelResilienceBudgetSeconds } else { 0 }); travelRecovery=[bool]$TravelRecoveryContinuation; travelRecoveryBudgetSeconds=$(if ($TravelRecoveryContinuation) { $TravelRecoveryBudgetSeconds } else { 0 }); travelFastLane=[bool]$TravelFastLane; travelFastLaneBudgetSeconds=$(if ($TravelFastLane) { $TravelFastLaneBudgetSeconds } else { 0 }); scenario=$Scenario; revision=$BuildRevision; preparedUtc=[DateTime]::UtcNow.ToString('o'); plugins=$hashes } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'build-provenance.json')
+    @{ dungeonPanelProbe=[bool]$DungeonPanelProbe; dungeonReadinessProbe=[bool]$DungeonReadinessProbe; blueprintPinProbe=[bool]$BlueprintPinProbe; blueprintPinRevision=$BlueprintPinRevision; blueprintPinSha256=$BlueprintPinSha256; forgeUiProbe=[bool]$ForgeUiProbe; refineryProbe=[bool]$RefineryProbe; forgeDeliveryProbe=[bool]$ForgeDeliveryProbe; forgePersistenceProbe=[bool]$ForgePersistenceProbe; forgeCommandProbe=[bool]$ForgeCommandProbe; forgeReadProbe=[bool]$ForgeReadProbe; barConsumers=[bool]$BarConsumerManifest; barConsumerManifestHash=$(if ($BarConsumerManifest) { (Get-FileHash -LiteralPath (Join-Path $root 'bar-consumer-sources.json') -Algorithm SHA256).Hash }); barConsumerTools=$(if ($BarConsumerManifest) { Get-BarConsumerToolsInventory $root }); barLinkedStory=[bool]$BarLinkedStory; barColdSequence=[bool]$BarColdSequence; barProbe=[bool]$BarProbe; storyColdSequence=[bool]$StoryColdSequence; storyDonorRoot=$StoryDonorRoot; storyDonorHash=$(if ($StoryAbsentProbe) { (Get-FileHash -LiteralPath $SaveA -Algorithm SHA256).Hash } else { '' }); storyAbsentProbe=[bool]$StoryAbsentProbe; storyProbe=[bool]$StoryProbe; menuInspection=[bool]$MenuInspection; modMenuProbe=[bool]$ModMenuProbe; modInformationProbe=[bool]$ModInformationProbe; modInformationCertificateSha256=$(if ($ModInformationProbe) { (Get-FileHash -LiteralPath (Join-Path $root 'untrusted-test.pfx') -Algorithm SHA256).Hash.ToLowerInvariant() } else { '' }); travelJournal=[bool]$TravelJournalBin; travelJournalRevision=$TravelJournalRevision; travelJournalSha256=$TravelJournalSha256; travelJournalVersion=$travelJournalVersion; travelJournalComparison=[bool]$TravelJournalComparison; travelJournalBudgetSeconds=$(if ($TravelJournalComparison) { $TravelJournalBudgetSeconds } else { 0 }); echo=[bool]$EchoBin; echoRevision=$EchoRevision; echoVersion=$echoVersion; echoTravelProbe=[bool]$EchoTravelProbe; echoTravelBudgetSeconds=$(if ($EchoTravelProbe) { $EchoTravelBudgetSeconds } else { 0 }); echoAbsentProbe=[bool]$EchoAbsentProbe; anima=[bool]$AnimaBin; animaRevision=$AnimaRevision; animaVersion=$animaVersion; animaTravelProbe=[bool]$AnimaTravelProbe; animaTravelBudgetSeconds=$(if ($AnimaTravelProbe) { $AnimaTravelBudgetSeconds } else { 0 }); journalMissionEventsProbe=[bool]$JournalMissionEventsProbe; missionIdentityProbe=[bool]$MissionIdentityProbe; missionTransitionsProbe=[bool]$MissionTransitionsProbe; contentReferenceProbe=[bool]$ContentReferenceProbe; stockpileCoordinated=[bool]$StockpileCoordinated; journalCoordinated=[bool]$JournalCoordinated; persistenceProbe=[bool]$PersistenceProbe; vanillaLoadControl=[bool]$VanillaLoadControl; assemblyOverlay=$overlay; stockpile=[bool]$StockpileBin; missionJournal=[bool]$MissionJournalBin; travelStation=[bool]$TravelStation; travelStationBudgetSeconds=$(if ($TravelStation) { $TravelStationBudgetSeconds } else { 0 }); travelCrossSystem=[bool]$TravelCrossSystem; travelCrossSystemBudgetSeconds=$(if ($TravelCrossSystem) { $TravelCrossSystemBudgetSeconds } else { 0 }); travelWormholeFixture=[bool]$TravelWormholeFixture; travelResilience=[bool]$TravelResilience; travelResilienceBudgetSeconds=$(if ($TravelResilience) { $TravelResilienceBudgetSeconds } else { 0 }); travelRecovery=[bool]$TravelRecoveryContinuation; travelRecoveryBudgetSeconds=$(if ($TravelRecoveryContinuation) { $TravelRecoveryBudgetSeconds } else { 0 }); travelFastLane=[bool]$TravelFastLane; travelFastLaneBudgetSeconds=$(if ($TravelFastLane) { $TravelFastLaneBudgetSeconds } else { 0 }); scenario=$Scenario; revision=$BuildRevision; preparedUtc=[DateTime]::UtcNow.ToString('o'); plugins=$hashes } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'build-provenance.json')
     # Prevent Steam's restart path; the runner disables SteamManager before arming checks.
     [IO.File]::WriteAllText((Join-Path $game 'steam_appid.txt'), '3471800')
     $saves = Join-Path $root 'Saves'
@@ -450,6 +512,7 @@ if ($Action -eq 'Cleanup') {
 }
 if (!$StoryDefinitionColdPhase -and !$BarColdPhase) { Assert-QualificationUnused $root }
 $provenance = Assert-QualificationInputs $root
+if ($provenance.PSObject.Properties['dungeonPanelProbe'] -and $provenance.dungeonPanelProbe -and $TimeoutSeconds -lt 900) { throw 'Dungeon panel phase requires at least 900 seconds.' }
 if ($provenance.PSObject.Properties['modInformationProbe'] -and $provenance.modInformationProbe -and $TimeoutSeconds -lt 900) { throw 'Full information probe requires at least 900 seconds.' }
 if ($provenance.PSObject.Properties['storyAbsentProbe'] -and $provenance.storyAbsentProbe -and $TimeoutSeconds -lt 2100) { throw 'Absent-story probe requires base plus300seconds (2100 total).' }
 if ($provenance.PSObject.Properties['storyProbe'] -and $provenance.storyProbe -and $TimeoutSeconds -lt 5400) { throw 'Story probe requires 5400 seconds including objective reload/claim waits and execution margin.' }
@@ -570,6 +633,14 @@ if ($provenance.PSObject.Properties['barProbe'] -and $provenance.barProbe) {
     if ($BarColdPhase) { Assert-BarColdReceipt $root $BarColdPhase } elseif ($provenance.PSObject.Properties['barLinkedStory'] -and $provenance.barLinkedStory) { Assert-BarLinkedReceipt $root } else { Assert-BarReceipt $root }
 }
 Assert-VanillaControlReceipt $root $provenance
+Assert-DungeonReadinessReceipt $root $provenance
+Assert-ForgeReadReceipt $root $provenance
+Assert-ForgeCommandReceipt $root $provenance
+Assert-ForgePersistenceReceipt $root $provenance
+Assert-ForgeDeliveryReceipt $root $provenance
+Assert-RefineryReceipt $root $provenance
+Assert-ForgeUiReceipt $root $provenance
+Assert-BlueprintPinReceipt $root $provenance
 Assert-PersistenceProbeReceipt $root $provenance
 if ($provenance.PSObject.Properties['stockpileCoordinated'] -and $provenance.stockpileCoordinated) {
     $after = @(Get-ChildItem -LiteralPath (Join-Path $root 'Saves') -Filter '*.vgstockpile-transfers.json' -File)

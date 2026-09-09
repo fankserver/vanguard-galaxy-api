@@ -5,7 +5,7 @@ using VGModAPI;
 namespace VGModAPI.WorldQualificationAuthor;
 
 [BepInPlugin(Id, "World qualification author", "0.1.0")]
-[BepInDependency(ModApi.PluginId, "0.1.33")]
+[BepInDependency(ModApi.PluginId, "0.2.0")]
 public sealed class Plugin : BaseUnityPlugin
 {
 #if WORLD_AUTHOR_B
@@ -19,7 +19,7 @@ public sealed class Plugin : BaseUnityPlugin
     private void Awake()
     {
         // Authentication must originate in this assembly, before participant readiness.
-        _provider = ModApi.World?.AcquireProvider(this) ?? throw new InvalidOperationException("World provider authentication refused.");
+        _provider = ModApi.Services.World.AcquireProvider(this) ?? throw new InvalidOperationException("World provider authentication refused.");
         Registered = _provider.Register(new WorldCombatSiteDefinition("PoiX", 1, "Empty qualification site", "player", 1)) == WorldStatus.Succeeded;
         if (!Registered) { Release(); throw new InvalidOperationException("World declaration refused."); }
     }

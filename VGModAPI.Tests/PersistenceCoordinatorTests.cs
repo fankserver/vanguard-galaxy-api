@@ -31,7 +31,7 @@ public sealed class PersistenceCoordinatorTests : IDisposable
         var first = _hub.Begin(SessionOrigin.SaveLoad, "slot");
         Assert.True(coordinator.TryGetStartingLoad(first, out var path, out var hash));
         Assert.Equal("slot", path); Assert.Equal(H('a'), hash);
-        Assert.Equal(0, restores); Assert.False(coordinator.StateReady("owner"));
+        Assert.Equal(0, restores); Assert.NotEqual(SaveDataStateKind.Ready, coordinator.State("owner").Kind);
         _hashes["slot"] = H('b');
         Assert.True(coordinator.TryGetStartingLoad(first, out _, out hash));
         Assert.Equal(H('a'), hash); // Frozen observation, not a fresh read disguised as the original input.
@@ -140,7 +140,7 @@ public sealed class PersistenceCoordinatorTests : IDisposable
         var id = _hub.Begin(SessionOrigin.SaveLoad, "slot");
         _hashes["slot"] = H('b'); _hub.PlayerReady(id); _hub.GameplayInitialized(id);
         Assert.Equal(0, restores);
-        Assert.Equal("load-blocked", coordinator.Status("owner"));
+        Assert.Equal(SaveDataBlockReason.LoadRefused, coordinator.State("owner").Reason);
     }
 
     [Fact]
@@ -182,7 +182,7 @@ public sealed class PersistenceCoordinatorTests : IDisposable
         using var coordinator = Coordinator(store);
         coordinator.Register(Codec(), () => new byte[] { 1 }, _ => { });
         Start(); EndSave(BeginSave());
-        Assert.Equal("publication-blocked", coordinator.Status("owner"));
+        Assert.Equal(SaveDataBlockReason.PublicationFailed, coordinator.State("owner").Reason);
         Assert.False(coordinator.MutationAllowed("owner"));
         fail = false; EndSave(BeginSave());
         Assert.True(coordinator.MutationAllowed("owner"));
@@ -213,7 +213,7 @@ public sealed class PersistenceCoordinatorTests : IDisposable
         Assert.False(coordinator.MutationAllowed("owner"));
         Start(SessionOrigin.SaveLoad, "slot");
         Assert.Equal(1, restores);
-        Assert.Equal("load-blocked", coordinator.Status("owner"));
+        Assert.Equal(SaveDataBlockReason.LoadRefused, coordinator.State("owner").Reason);
     }
 
     [Fact]
@@ -228,7 +228,7 @@ public sealed class PersistenceCoordinatorTests : IDisposable
         Assert.Throws<InvalidDataException>(() => new GenerationStore(_root).Load("slot", H('b')));
         Start(SessionOrigin.SaveLoad, "slot");
         Assert.Equal(1, restores);
-        Assert.Equal("load-blocked", coordinator.Status("owner"));
+        Assert.Equal(SaveDataBlockReason.LoadRefused, coordinator.State("owner").Reason);
     }
 
     [Fact]
@@ -244,7 +244,7 @@ public sealed class PersistenceCoordinatorTests : IDisposable
         _hashes["fresh"] = H('c'); EndSave(BeginSave("fresh"), path: "fresh");
         Start(SessionOrigin.SaveLoad, "fresh");
         Assert.Equal(0, restores);
-        Assert.Equal("load-blocked", coordinator.Status("owner"));
+        Assert.Equal(SaveDataBlockReason.LoadRefused, coordinator.State("owner").Reason);
     }
 
     [Fact]
@@ -324,7 +324,8 @@ public sealed class PersistenceCoordinatorTests : IDisposable
             new Dictionary<int, Func<byte[], byte[]>> { [1] = b => new byte[] { 2 } });
         coordinator.Register(newer, () => { _hub.Begin(SessionOrigin.NewGame, null); return new byte[] { 2 }; }, _ => { });
         Start(SessionOrigin.SaveLoad, "slot");
-        Assert.Equal("migration-pending", coordinator.Status("owner"));
+        Assert.Equal(SaveDataStateKind.Ready, coordinator.State("owner").Kind);
+        Assert.Equal("migration-pending", coordinator.State("owner").Detail);
         Assert.Equal(new byte[] { 1 }, Codec().Decode(store.Load("slot", H('a'))!.Owners["owner"]).Payload);
         _hashes["slot"] = H('b'); var old = _hub.CurrentSession; var op = BeginSave();
         _hub.Publish(new LifecycleEvent(LifecycleEventKind.SaveSucceeded, old, op, "slot"));
@@ -342,7 +343,7 @@ public sealed class PersistenceCoordinatorTests : IDisposable
         using var coordinator = Coordinator(store);
         coordinator.Register(Codec(), () => new byte[] { 1 }, _ => { });
         Start(SessionOrigin.SaveLoad, "slot"); EndSave(BeginSave());
-        Assert.Equal("owner-union-limit", coordinator.Status("owner"));
+        Assert.Equal(SaveDataBlockReason.LimitExceeded, coordinator.State("owner").Reason);
     }
 
     [Fact]

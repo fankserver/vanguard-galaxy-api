@@ -7,6 +7,24 @@ namespace VGModAPI.Tests;
 public sealed class WorldContentServiceTests
 {
     [Fact]
+    public void TypedAvailabilityTracksShutdownWithoutReplacingTheService()
+    {
+        var hub = new LifecycleHub((_, error) => throw error);
+        hub.SetCapability("world-authoring", true, "Test bindings.");
+        using var definitions = new WorldDefinitionRegistry((_, _) => null, hub.CheckThread);
+        using var service = new WorldContentService(hub, definitions, null!, () => false);
+        IWorldService retained = service;
+        Assert.True(retained.Availability.IsAvailable);
+        int changes = 0;
+        retained.AvailabilityChanged += _ => changes++;
+        service.Dispose();
+        Assert.False(retained.Availability.IsAvailable);
+        Assert.Equal(ServiceUnavailableReason.ApiStopped, retained.Availability.Reason);
+        Assert.Equal(1, changes);
+        Assert.Null(retained.AcquireProvider(new object()));
+    }
+
+    [Fact]
     public void SequentialAuthenticationDoesNotDependOnReadinessAndContextLossClosesOperations()
     {
         var hub = new LifecycleHub((_, error) => throw error);

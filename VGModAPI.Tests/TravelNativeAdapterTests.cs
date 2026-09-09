@@ -55,7 +55,7 @@ public sealed class TravelNativeAdapterTests
             Travel.localPoiManager = OriginManager; Travel.localTarget = OriginPoi; Travel.targetPoi = OriginPoi;
             Travel.usingJumpgate = false;
             Behaviour.Util.Singleton<TravelManager>.SetTestInstance = Travel;
-            Adapter = new TravelNativeAdapter(new TravelNativeBindings(typeof(GamePlayer).Assembly),
+            Adapter = new TravelNativeAdapter(new LifecycleHub((_, _) => { }), new TravelNativeBindings(typeof(GamePlayer).Assembly),
                 (owner, ex) => Faults.Add(owner + ":" + ex.GetType().Name));
             Adapter.SetSession(Session);
             Adapter.Events.Subscribe("test", Transitions.Add);

@@ -77,7 +77,7 @@ public interface IBoardingRuleProvider : IDisposable
 }
 
 /// <summary>Main-thread-only short synchronous policies, not observers or a permission to call commands reentrantly.</summary>
-public interface IBoardingRules
+public interface IBoardingRuleService : IServiceStatus
 {
     bool IsEvaluating { get; }
     IBoardingRuleProvider AcquireProvider(string pluginId);

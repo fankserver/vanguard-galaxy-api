@@ -46,7 +46,7 @@ public sealed partial class Plugin
         var permissions = SpGet(apiPlugin, "_barPermissionConfig")!;
         var originalPermissions = SpGet(permissions, "BoxedValue");
         BarRosterFinalized? latest = null;
-        using var observer = ModApi.Bars!.Subscribe(Id, value => latest = value);
+        using var observer = new BarProbeSubscription(ModApi.Services.Bars, value => latest = value);
         var session = _api!.CurrentSession!.Id;
         var bar = SpGet(foundation!, "bar")!;
         var customProvider = (IBarProvider)SpGet(managed, "_provider")!;

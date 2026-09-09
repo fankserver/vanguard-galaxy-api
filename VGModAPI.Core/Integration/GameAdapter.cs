@@ -20,11 +20,21 @@ internal sealed class GameAdapter
     private bool _faultReconciled;
 
     internal GameAdapter(LifecycleHub hub, GameBindings bindings, Action<Exception> report)
-    { Hub = hub; Bindings = bindings; Saves = new SaveTracker(hub); _report = report; }
+    {
+        Hub = hub; Bindings = bindings; Saves = new SaveTracker(hub); _report = report;
+        hub.Services.WatchFault("session-lifecycle", () => _faulted);
+        hub.Services.WatchFault("save-outcomes", () => _faulted);
+    }
+
+    internal bool IsBoundPlayer(object? player)
+    {
+        Hub.CheckThread();
+        return !_faulted && player != null && ReferenceEquals(player, _boundPlayer) && ReferenceEquals(player, Bindings.CurrentPlayer);
+    }
 
     internal void Guard(Action action)
     {
-        if (_faulted) return;
+        if (_faulted || Hub.Services.IsStopping) return;
         try { Hub.CheckThread(); action(); }
         catch (Exception ex)
         {
@@ -37,12 +47,13 @@ internal sealed class GameAdapter
 
     internal void Poll()
     {
+        Hub.CheckThread();
         if (!_faulted) { Guard(Tick); return; }
         if (_faultReconciled) return;
         _faultReconciled = true;
-        Hub.SetCapability("session-lifecycle", false, "Observer fault; see BepInEx log. Restart required.");
-        Hub.SetCapability("save-outcomes", false, "Observer fault; see BepInEx log. Restart required.");
         Hub.Invalidate("Observer fault; lifecycle observation stopped.");
+        Hub.SetCapability("session-lifecycle", false, "Observer fault; see BepInEx log. Restart required.", ServiceUnavailableReason.ObserverFault);
+        Hub.SetCapability("save-outcomes", false, "Observer fault; see BepInEx log. Restart required.", ServiceUnavailableReason.ObserverFault);
     }
 
     internal LoadRequest BeginLoad(object file)

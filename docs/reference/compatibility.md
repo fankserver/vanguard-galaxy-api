@@ -1,0 +1,97 @@
+# Compatibility and qualification
+
+## Current status
+
+**Experimental, with bounded controlled native evidence; full in-game acceptance remains pending.** `RuntimeQualified` is false. Controlled probes exercise specific core, persistence, mission/travel, story and menu paths. They do not qualify every configuration, consumer or source revision. Rebuilding a candidate or passing host tests does not establish native coverage for that candidate.
+
+The adapter accepts only this inspected original `Assembly-CSharp.dll` SHA-256:
+
+```text
+a2aad60bc68c31baccd636587d3c5ba4e651eacda59b0af42cd4f17f864284fb
+```
+
+The controlled environment reports **game 0.8.2.3, Unity 6000.4.7f1, BepInEx 5.4.23.5**. The hash identifies the accepted assembly; version labels or a matching hash alone do not prove live compatibility.
+
+An uninspected hash leaves the API available for diagnostics but disables game integration. The local mod-information catalog does not require native binding. Do not simply update the hash: reinspect semantics, update mappings/tests and qualify the new build. Injected hash rejection or a changed PE overlay tests refusal, not compatibility with an alternate game implementation.
+
+Lifecycle, save data, mission events and identity continuity, travel/station events,
+and the Mods menu initialize automatically. Existing `Persistence.Enabled`,
+`Missions.Enabled`, `Missions.IdentityContinuity`, `Travel.Enabled`, and
+`ModInformation.MenuEnabled` entries are ignored. `Persistence.Root` remains effective.
+Compatibility checks, initialization failures and service dependencies still determine
+availability; automatic initialization does not change qualification status.
+
+## API and consumer versions
+
+API **0.2.0** uses the typed `ModApi.Services` surface. Consumers must compile
+against that surface; 0.1.x nullable globals and interfaces are not provided.
+Pre-1.0 minor versions may break source and binary compatibility. There is no
+stable ABI promise or automatic adaptation of old consumers.
+
+| Consumer and installation | Expected result |
+|---|---|
+| Recompiled 0.2.0 consumer with API 0.2.0 | Supported contract shape; live behavior still needs candidate-specific qualification |
+| Required consumer with API absent or below its declared minimum | BepInEx refuses the missing/incompatible dependency |
+| Consumer compiled against removed 0.1.x members with API 0.2.0 | Unsupported; type/member resolution can fail even if its minimum-version attribute passes |
+| Optional consumer with API absent | Its loader boundary must avoid resolving API types; a soft-dependency attribute alone is insufficient |
+| Bound API with a disabled module or unsupported game assembly | Stable service reference with typed unavailable diagnostics; operations refuse |
+
+Declare a 0.2.0 minimum for required typed-service consumers. BepInEx remains the
+only loader; its minimum-version check does not establish binary compatibility
+with every newer API. Host contract tests check the current shape, null guards and
+injected consumer behavior, not a historical ABI snapshot or Unity loader support.
+
+The package and assembly version identify the API build. Save-payload schema
+versions, provider identities, native game-hash admission and individual service
+health are independent. An API upgrade does not authorize discarding saved data:
+existing integrity checks, supported schema migrations and refusal/preservation of
+unknown payloads remain required. Provider and local identifiers are durable keys
+validated by each content contract, not display names. Changing a provider/plugin
+ID does not automatically relocate its saved records; use a supported explicit
+migration or retain/refuse the old data rather than treating it as disposable.
+Distribute one installed API copy, not embedded
+runtime copies in each consumer. Contracts contain no Unity/game types; Core and
+native adapters are unsupported implementation details. Callbacks and provider
+namespaces are not a security sandbox: all mods execute in the same process.
+
+## Available surface and limits
+
+| Surface | Current behavior | Qualification boundary |
+|---|---|---|
+| Core lifecycle/save outcomes | Session replacement, load/new-game attribution, player readiness, gameplay-manager initialization and logical save outcomes | Controlled load/save paths are exercised; no universal POI/UI readiness or arbitrary asynchronous callback guarantee |
+| Mod save data | Automatically initialized experimental storage of additional custom mod payloads | MissionJournal/Stockpile pilots exercise bounded roundtrip, refusal/retry, import and teardown paths; no cross-file atomicity or exhaustive crash-recovery claim |
+| Boarding observation | Optional default-off inspected target/operation snapshots and scoped events | Host and installed-binding tests only; no native boarding qualification, command or authored-content capability |
+| Recipes and jobs | Optional default-off definitions, quotes, job/transfer observations and scoped Forge UI actions; guarded commands require an additional opt-in | Host/reflection and installed-binding tests only; complete Unity crafting acceptance remains pending |
+| Mission observation | Automatically initialized transition and identity services | Only documented hooks and identity-continuity paths are supported; observation is not automatic content persistence |
+| Travel/station observation | Automatically bound native observers | Controlled routes and consumers are exercised; tutorial rewrite, latent inherited dispatch and recovery miss-cleanup limits remain explicit in the travel contract |
+| Owned story content | Optional, default-off experimental registration, catalog installation, occurrence reconstruction and automatic persistence of a closed subset | Bounded native story, new-game and absent-author paths are exercised; content/schema migration and objective integration remain partial, and host migration tests are not native migration qualification |
+| Story load protection | Default-on guard on the inspected build, independent of story-author registration | With the guard disabled or the game uninspected, the API cannot refuse unsafe owned-story loads; do not load those saves in that state |
+| Mod information | Process-local catalog and automatic native main-menu entry when binding succeeds | Bounded menu interactions are exercised; presentation acceptance, physical gamepad behavior and browser opening are not fully qualified. Supported author feeds are checked automatically |
+
+Story remains incomplete; the general scripted-objective API is not implemented. Supported payload-schema compatibility is separate from migration of arbitrary authored definitions or scripted objectives.
+
+## Controlled coverage
+
+This summary describes the scope of available controlled evidence, not a claim that the current checkout was run in Unity. Exact candidate identities, receipts and detailed execution reports belong outside this source tree. Verify their applicability before asserting a candidate is qualified.
+
+Core probes cover:
+
+- Docked, mining-space, native in-system-transit and controlled parked-empty-space loads; session replacement, return to menu and reload.
+- Tutorial creation through native wizard callbacks, with player readiness after synchronous configuration. This is not general pointer-driven new-game UI acceptance.
+- Valid-syntax newer-header rejection without readiness, corrupt-JSON failure and an equal empty-player current-header control. Public events do not themselves identify a version-rejection cause.
+- Pending-player replacement detection without claiming full arena startup.
+- Unity-driven stale adapter readiness/failure signals through a real observed iterator and unfinished disposal. Explicit synthetic adapter signals are not vanilla load events or arbitrary asynchronous engine callback coverage.
+- Manual and quit saving, autosave rotation, ephemeral-player skips, exhausted recursive retries and recovery after a transient write failure.
+- Individual throwing subscribers and disposal, plus bounded MissionJournal/Stockpile coexistence and missing/unavailable API refusal.
+
+Additional controlled probes cover documented mission/travel consumer paths, owned-story reconstruction and absent-author handling, and menu input/lifecycle interactions. Consult [mission](mission-events.md), [travel](travel-events.md), [story](story-content.md), [mod information](mod-information.md) and [runner instructions](https://github.com/fankserver/vanguard-galaxy-api/blob/main/docs/development/qualification-runner.md) for their supported cases and exclusions. A phase's evidence must not be extended to unrelated phases or consumers.
+
+## Verification layers
+
+- **Pure host tests** exercise state machines, coroutine observation, reflection adapters, storage rules and package tooling. Small doubles do not simulate Unity scheduling.
+- **Installed binding checks** inspect original game metadata through Mono.Cecil without executing game code. They establish declared shapes, not live Harmony behavior.
+- **Synthetic Windows checks** exercise sandbox file isolation, cleanup and typed preference snapshot/restore against synthetic data; they do not launch Unity.
+- **Controlled native probes** run narrowly specified scenarios with copied saves and isolated preferences. Their assertions and case prerequisites bound what they demonstrate.
+- **Full in-game acceptance** remains separate, including unexercised configurations, presentation, broader input behavior and remaining content integration.
+
+No fixed test count or historical PASS table substitutes for checking the candidate being delivered.

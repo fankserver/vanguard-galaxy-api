@@ -9,7 +9,7 @@ public sealed class CargoRecovery : IDisposable
 {
     private readonly IDungeonProvider _provider;
     private readonly IDisposable _definition;
-    public CargoRecovery(IDungeonContent content, string pluginId, string existingRewardItemId)
+    public CargoRecovery(IDungeonContentService content, string pluginId, string existingRewardItemId)
     {
         _provider = content.AcquireProvider(pluginId);
         try { _definition = _provider.Register("cargo-recovery", Definition(existingRewardItemId)); }

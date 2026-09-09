@@ -14,7 +14,7 @@ namespace VGModAPI.Qualification;
 /// Unity, BepInEx or reflection dependency, so the rules that decide PASS/FAIL are host regressions
 /// rather than prose.
 ///
-/// It closes the last open travel-matrix cell of #12 that any phase can reach: the native fast lane
+/// It exercises the native fast lane
 /// (<c>travelMultiplier = 7</c>). That branch is NOT reachable by the post-gate continuation phase,
 /// because the inspected <c>GamePlayer.DoFastLaneTravel()</c> is true only when the NEXT waypoint is
 /// a usable <c>JumpGate</c>, while that phase deliberately ends at a safe non-gate POI. This phase
@@ -410,7 +410,7 @@ internal static class TravelFastLaneReceipt
             + ", " + TravelCrossSystemReceipt.Phase + ", " + TravelResilienceReceipt.Phase
             + " or " + TravelRecoveryReceipt.Phase + ".");
         text.AppendLine("The fixture's own fastLaneTravelUnlocked value is only READ; no save, config or native flag is written.");
-        text.AppendLine("RuntimeQualified=false; #12 open pending owner in-game qualification.");
+        text.AppendLine("RuntimeQualified=false; full in-game qualification remains pending.");
         return text.ToString();
     }
 }

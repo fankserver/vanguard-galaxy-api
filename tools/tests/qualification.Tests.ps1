@@ -35,6 +35,34 @@ try {
     try { & $script -Action Prepare -SandboxRoot (Join-Path $work 'invalid-menu-full') -MenuInspection @options }
     catch { $rejected = $_.Exception.Message -like '*Menu inspection requires*' }
     Assert $rejected 'Menu inspection accepted a gameplay scenario.'
+    $pinRoot = Join-Path $work 'blueprint-pin-probe'; $sandboxes += $pinRoot
+    & $script -Action Prepare -SandboxRoot $pinRoot -ForgeReadProbe @options
+    $pinProvenancePath = Join-Path $pinRoot 'build-provenance.json'
+    $pinProvenance = Get-Content -LiteralPath $pinProvenancePath -Raw | ConvertFrom-Json
+    $pinBinary = Join-Path $pinRoot 'game\BepInEx\plugins\VGBlueprintPin.dll'
+    [IO.File]::WriteAllText($pinBinary, 'synthetic-not-executable')
+    $pinHash = (Get-FileHash -LiteralPath $pinBinary -Algorithm SHA256).Hash
+    $pinProvenance.plugins | Add-Member -NotePropertyName 'VGBlueprintPin.dll' -NotePropertyValue $pinHash
+    $pinProvenance.blueprintPinProbe = $true
+    $pinProvenance.blueprintPinRevision = 'a' * 40
+    $pinProvenance.blueprintPinSha256 = $pinHash.ToLowerInvariant()
+    [IO.File]::WriteAllText((Join-Path $pinRoot 'blueprint-pin.enabled'), 'blueprint-pin-v1')
+    $pinConfig = Join-Path $pinRoot 'game\BepInEx\config\vgmodapi.cfg'
+    $pinOriginalConfig = [IO.File]::ReadAllText($pinConfig)
+    [IO.File]::WriteAllText($pinConfig, $pinOriginalConfig + "`n[Hud]`nEnabled = true`n")
+    $pinProvenance | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $pinProvenancePath
+    $null = Assert-QualificationInputs $pinRoot
+    [IO.File]::WriteAllText($pinConfig, $pinOriginalConfig)
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $pinRoot } catch { $rejected = $true }
+    Assert $rejected 'Blueprint Pin accepted absent HUD configuration.'
+    [IO.File]::WriteAllText($pinConfig, $pinOriginalConfig + "`n[Hud]`nEnabled = true`n")
+    $pinProvenance.blueprintPinProbe = $false
+    Remove-Item (Join-Path $pinRoot 'blueprint-pin.enabled')
+    $pinProvenance | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $pinProvenancePath
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $pinRoot } catch { $rejected = $_.Exception.Message -like '*plugin allowlist mismatch*' }
+    Assert $rejected 'Unselected Blueprint Pin DLL accepted by plugin allowlist.'
     $menuProbeRoot = Join-Path $work 'mod-menu-probe'
     $sandboxes += $menuProbeRoot
     & $script -Action Prepare -SandboxRoot $menuProbeRoot -ModMenuProbe @options
@@ -134,11 +162,12 @@ try {
     $legacyConfigPath = Join-Path $sandbox 'game\BepInEx\config\vgmodapi.cfg'
     $legacyConfig = [IO.File]::ReadAllText($legacyConfigPath)
     $null = Assert-QualificationInputs $sandbox
-    foreach ($changed in @('[Persistence]', $legacyConfig.Replace('false','true'), ($legacyConfig + "Enabled = false`n"))) {
+    Assert ($legacyConfig -notmatch '(?m)^Enabled\s*=') 'Unselected probes must not write an API enable switch.'
+    foreach ($changed in @('[Persistence]', $legacyConfig.Replace('Root =','WrongRoot ='), ($legacyConfig + "Root = C:\foreign-root`n"), "[Persistence]`nRoot = C:\foreign-root`n")) {
         [IO.File]::WriteAllText($legacyConfigPath, $changed)
         $rejected = $false
         try { $null = Assert-QualificationInputs $sandbox } catch { $rejected = $true }
-        Assert $rejected 'Missing, enabled or duplicate legacy control setting accepted.'
+        Assert $rejected 'Missing, duplicate or foreign API persistence root accepted.'
     }
     [IO.File]::WriteAllText($legacyConfigPath, $legacyConfig)
     $overlayRoot = Join-Path $work 'overlay-sandbox'
@@ -191,13 +220,13 @@ try {
     $probeProvenance = Assert-QualificationInputs $probeRoot
     $apiConfigPath = Join-Path $probeRoot 'game\BepInEx\config\vgmodapi.cfg'
     $defaultApiConfig = [IO.File]::ReadAllText($apiConfigPath)
-    Assert ($defaultApiConfig -notmatch '(?m)^Enabled\s*=') 'Prepared probe does not exercise the enabled default.'
-    foreach ($setting in @("Enabled = false`n", "Enabled = true`nEnabled = false`n")) {
-        [IO.File]::WriteAllText($apiConfigPath, $defaultApiConfig + $setting)
-        $rejected = $false
-        try { $null = Assert-QualificationInputs $probeRoot } catch { $rejected = $true }
-        Assert $rejected 'Disabled or ambiguous persistence setting accepted.'
-    }
+    Assert ($defaultApiConfig -notmatch '(?m)^Enabled\s*=') 'Prepared probe must not write a removed persistence switch.'
+    [IO.File]::WriteAllText($apiConfigPath, $defaultApiConfig + "Enabled = false`n")
+    $null = Assert-QualificationInputs $probeRoot # A retired key cannot disable the API or weaken root isolation.
+    [IO.File]::WriteAllText($apiConfigPath, $defaultApiConfig + "Enabled = true`nEnabled = false`n")
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $probeRoot } catch { $rejected = $true }
+    Assert $rejected 'Ambiguous duplicate configuration accepted.'
     [IO.File]::WriteAllText($apiConfigPath, $defaultApiConfig)
     $rejected = $false
     try { Assert-PersistenceProbeReceipt $probeRoot $probeProvenance } catch { $rejected = $true }
@@ -269,15 +298,10 @@ try {
     $missionMarker = Join-Path $probeRoot 'mission-transitions.enabled'
     [IO.File]::WriteAllText($missionMarker, 'missions-v1')
     $apiConfig = Join-Path $probeRoot 'game\BepInEx\config\vgmodapi.cfg'
-    [IO.File]::AppendAllText($apiConfig, "`n[Missions]`nEnabled = true`n")
     $validApi = [IO.File]::ReadAllText($apiConfig)
     $null = Assert-QualificationInputs $probeRoot
-    foreach ($changed in @($validApi.Replace('[Missions]', '[Other]'), ($validApi + "Enabled = false`n"))) {
-        [IO.File]::WriteAllText($apiConfig, $changed)
-        $rejected = $false
-        try { $null = Assert-QualificationInputs $probeRoot } catch { $rejected = $true }
-        Assert $rejected 'Changed mission config accepted.'
-    }
+    [IO.File]::WriteAllText($apiConfig, $validApi + "`n[Missions]`nEnabled = false`n")
+    $null = Assert-QualificationInputs $probeRoot
     [IO.File]::WriteAllText($apiConfig, $validApi)
     [IO.File]::WriteAllText($missionMarker, 'tampered')
     $rejected = $false
@@ -298,18 +322,15 @@ try {
     $probeProvenance | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $probeRoot 'build-provenance.json')
     $identityMarker = Join-Path $probeRoot 'mission-identity.enabled'
     [IO.File]::WriteAllText($identityMarker, 'identity-v1')
-    [IO.File]::AppendAllText($apiConfig, "IdentityContinuity = true`n")
     $null = Assert-QualificationInputs $probeRoot
     [IO.File]::WriteAllText($identityMarker, 'tampered')
     $rejected = $false
     try { $null = Assert-QualificationInputs $probeRoot } catch { $rejected = $true }
     Assert $rejected 'Changed identity marker accepted.'
     [IO.File]::WriteAllText($identityMarker, 'identity-v1')
-    [IO.File]::WriteAllText($apiConfig, $validApi + "IdentityContinuity = false`n")
-    $rejected = $false
-    try { $null = Assert-QualificationInputs $probeRoot } catch { $rejected = $true }
-    Assert $rejected 'Changed identity config accepted.'
-    [IO.File]::WriteAllText($apiConfig, $validApi + "IdentityContinuity = true`n")
+    [IO.File]::WriteAllText($apiConfig, $validApi + "`n[Missions]`nIdentityContinuity = false`n")
+    $null = Assert-QualificationInputs $probeRoot
+    [IO.File]::WriteAllText($apiConfig, $validApi)
     $rejected = $false
     try { Assert-PersistenceProbeReceipt $probeRoot $probeProvenance } catch { $rejected = $true }
     Assert $rejected 'Missing identity receipt accepted.'
@@ -376,17 +397,9 @@ try {
     $travelProvenance = Assert-QualificationInputs $travelRoot
     $travelConfig = Join-Path $travelRoot 'game\BepInEx\config\vgmodapi.cfg'
     $validTravelConfig = [IO.File]::ReadAllText($travelConfig)
-    # The prepared config uses CRLF, so these mutations must too or they silently change nothing.
-    Assert ($validTravelConfig -match "(?m)^\[Travel\]\r?\nEnabled = true\s*$") 'Prepared travel config shape changed.'
-    foreach ($changed in @($validTravelConfig.Replace("[Travel]`r`nEnabled = true", "[Travel]`r`nEnabled = false"),
-        $validTravelConfig.Replace("[Travel]`r`nEnabled = true", "[Travel]`r`nEnabled = true`r`nEnabled = true"),
-        $validTravelConfig.Replace("[Travel]`r`nEnabled = true", ""))) {
-        Assert ($changed -ne $validTravelConfig) 'Travel config mutation did not change the prepared file.'
-        [IO.File]::WriteAllText($travelConfig, $changed)
-        $rejected = $false
-        try { $null = Assert-QualificationInputs $travelRoot } catch { $rejected = $true }
-        Assert $rejected 'Changed Travel enable configuration accepted.'
-    }
+    Assert ($validTravelConfig -notmatch '(?m)^\[Travel\]') 'Prepared travel probe must not write removed API switches.'
+    [IO.File]::WriteAllText($travelConfig, $validTravelConfig + "`n[Travel]`nEnabled = false`n")
+    $null = Assert-QualificationInputs $travelRoot
     [IO.File]::WriteAllText($travelConfig, $validTravelConfig)
     $travelMarker = Join-Path $travelRoot 'travel-station.enabled'
     [IO.File]::WriteAllText($travelMarker, 'changed')
@@ -2015,7 +2028,7 @@ try {
     Remove-Item -LiteralPath (Join-Path $journalRoot 'travel-journal-postquit-audit.txt')
     & $script -Action Cleanup -SandboxRoot $journalRoot
     Remove-Item -LiteralPath Function:Get-FileHash
-    [IO.File]::WriteAllText($apiConfig, "[Persistence]`nEnabled = true`nRoot = C:\foreign-root`n[Missions]`nEnabled = true`nIdentityContinuity = true`n")
+    [IO.File]::WriteAllText($apiConfig, "[Persistence]`nRoot = C:\foreign-root`n")
     $rejected = $false
     try { $null = Assert-QualificationInputs $probeRoot } catch { $rejected = $true }
     Assert $rejected 'Foreign persistence root accepted.'

@@ -66,6 +66,11 @@ public sealed class GameAdapterTests
         Assert.NotNull(_adapter.CaptureGameplay());
         _adapter.GameplayCompleted(request.Id, new GameplayManager(true), null);
         Assert.Equal(SessionPhase.GameplayInitialized, _hub.CurrentSession.Phase);
+        var bound = GamePlayer.current;
+        Assert.True(_adapter.IsBoundPlayer(bound));
+        GamePlayer.current = new GamePlayer();
+        Assert.False(_adapter.IsBoundPlayer(bound));
+        Assert.False(_adapter.IsBoundPlayer(GamePlayer.current)); // Refuse mutations before the next poll reconciles replacement.
     }
 
     [Fact]
@@ -290,6 +295,25 @@ public sealed class GameAdapterTests
         var id = _adapter.BeginNewPlayer(); GamePlayer.current = new GamePlayer(); _adapter.EndNewPlayer(id, null); _adapter.PlayerReconstructed();
         _adapter.GameplayCompleted(id, new GameplayManager(true), new Exception());
         Assert.Equal(SessionPhase.Failed, _hub.CurrentSession!.Phase);
+    }
+
+    [Fact]
+    public void FaultLatchClosesTypedAndLegacyHealthBeforeMainThreadNotification()
+    {
+        _hub.SetCapability("session-lifecycle", true, "Bound.");
+        _hub.SetCapability("save-outcomes", true, "Bound.");
+        _hub.SetCapability("save-data", true, "Bound.");
+        var status = _hub.Services.Get("session-lifecycle");
+        var phases = new List<SessionPhase?>();
+        status.AvailabilityChanged += _ => phases.Add(_hub.CurrentSession?.Phase);
+        _hub.Begin(SessionOrigin.NewGame, null);
+        Assert.Null(ServiceNotificationTests.OnWorker(() => _adapter.Guard(() => { })));
+        Assert.False(status.Availability.IsAvailable);
+        Assert.False(_hub.Services.Get("save-data").Availability.IsAvailable);
+        Assert.All(_hub.Capabilities, capability => Assert.False(capability.Available));
+        Assert.Empty(phases);
+        _adapter.Poll();
+        Assert.Equal(new SessionPhase?[] { SessionPhase.Invalidated }, phases);
     }
 
     [Fact]

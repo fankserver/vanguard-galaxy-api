@@ -60,7 +60,7 @@ public interface IDungeonProvider : IDisposable
 }
 
 /// <summary>Authoring attaches persistent dungeon occurrences to supported existing targets; world/POI creation is a separate service.</summary>
-public interface IDungeonContent
+public interface IDungeonContentService : IServiceStatus
 {
     IDungeonProvider AcquireProvider(string pluginId);
 }

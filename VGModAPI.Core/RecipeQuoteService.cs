@@ -9,33 +9,40 @@ internal interface IRecipeQuoteSource
     RecipeQuote Quote(RecipeStationHandle station, RecipeId recipe, int batches, RefineryInputPolicy policy, long revision);
 }
 
-internal sealed class RecipeQuoteService : IRecipeQuotes, IDisposable
+internal sealed class RecipeQuoteService : IRecipeQuoteService, IDisposable
 {
     private readonly LifecycleHub _hub;
-    private readonly IRecipeQuoteSource _source;
+    private readonly IRecipeQuoteSource? _source;
+    private readonly IServiceStatus _status;
     private readonly Action<Exception> _report;
     private readonly IDisposable _lifetime;
     private bool _disposed;
     private long _revision;
-    internal RecipeQuoteService(LifecycleHub hub, IRecipeQuoteSource source, Action<Exception> report)
+    internal RecipeQuoteService(LifecycleHub hub, IRecipeQuoteSource? source, Action<Exception> report)
     {
         _hub = hub; _source = source; _report = report;
+        _status = hub.Services.Get("recipe-quotes");
+        if (source == null && _status.Availability.IsAvailable)
+            hub.SetCapability("recipe-quotes", false, "Quote bindings unavailable.");
         _lifetime = hub.Subscribe("vgmodapi.recipe-quotes", message =>
         {
             if (message.Kind is LifecycleEventKind.SessionStarting or LifecycleEventKind.SessionInvalidated or LifecycleEventKind.SessionStartFailed)
-                _source.Invalidate();
+                _source?.Invalidate();
         });
     }
+    public ServiceAvailability Availability => _status.Availability;
+    public event Action<ServiceAvailability>? AvailabilityChanged
+    { add => _status.AvailabilityChanged += value; remove => _status.AvailabilityChanged -= value; }
     public RecipeStationHandle? CurrentStation
     {
         get
         {
             _hub.CheckThread(); var session = _hub.CurrentSession;
-            if (_disposed || session?.Phase != SessionPhase.GameplayInitialized) return null;
+            if (_disposed || _source == null || !Availability.IsAvailable || session?.Phase != SessionPhase.GameplayInitialized) return null;
             try
             {
                 var station = _source.CurrentStation(session.Id);
-                return _hub.CurrentSession?.Id == session.Id && _hub.CurrentSession.Phase == SessionPhase.GameplayInitialized ? station : null;
+                return Availability.IsAvailable && _hub.CurrentSession?.Id == session.Id && _hub.CurrentSession.Phase == SessionPhase.GameplayInitialized ? station : null;
             }
             catch (Exception exception) { Report(exception); return null; }
         }
@@ -46,7 +53,8 @@ internal sealed class RecipeQuoteService : IRecipeQuotes, IDisposable
         if (station == null) throw new ArgumentNullException(nameof(station));
         if (recipe == null) throw new ArgumentNullException(nameof(recipe));
         var session = _hub.CurrentSession;
-        if (_disposed) return Failure(RecipeQuoteStatus.IntegrationUnavailable, station, recipe, batches, "Recipe quotes disposed.");
+        if (_disposed || _source == null || !Availability.IsAvailable)
+            return Failure(RecipeQuoteStatus.IntegrationUnavailable, station, recipe, batches, Availability.Detail);
         if (session?.Phase != SessionPhase.GameplayInitialized) return Failure(RecipeQuoteStatus.SessionUnavailable, station, recipe, batches, "Gameplay session required.");
         if (station.SessionId != session.Id) return Failure(RecipeQuoteStatus.StaleHandle, station, recipe, batches, "Station belongs to another session.");
         if (batches < 1 || !Enum.IsDefined(typeof(RefineryInputPolicy), refineryPolicy)) return Failure(RecipeQuoteStatus.InvalidRequest, station, recipe, batches, "Positive batch count and supported policy required.");
@@ -55,6 +63,7 @@ internal sealed class RecipeQuoteService : IRecipeQuotes, IDisposable
         try
         {
             var quote = _source.Quote(station, recipe, batches, refineryPolicy, checked(++_revision));
+            if (!Availability.IsAvailable) return Failure(RecipeQuoteStatus.IntegrationUnavailable, station, recipe, batches, Availability.Detail);
             if (_hub.CurrentSession?.Id != session.Id || _hub.CurrentSession.Phase != SessionPhase.GameplayInitialized)
                 return Failure(RecipeQuoteStatus.StaleHandle, station, recipe, batches, "Session changed during quote.");
             return quote;
@@ -81,6 +90,7 @@ internal sealed class RecipeQuoteService : IRecipeQuotes, IDisposable
     {
         _hub.CheckThread(); if (_disposed) return;
         _disposed = true; _lifetime.Dispose();
-        try { _source.Invalidate(); } catch (Exception exception) { Report(exception); }
+        if (Availability.IsAvailable) _hub.SetCapability("recipe-quotes", false, "Recipe quotes stopped.", ServiceUnavailableReason.ApiStopped);
+        try { _source?.Invalidate(); } catch (Exception exception) { Report(exception); }
     }
 }

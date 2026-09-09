@@ -11,13 +11,16 @@ internal sealed partial class RecipeCatalogNativeSource
     private Guid _quoteSession;
     private readonly Dictionary<Guid, object> _quoteStations = new();
     internal void BindQuotes() => RecipeQuoteBindings.Validate(_assembly);
-    public void Invalidate() { _quoteStations.Clear(); _quoteSession = Guid.Empty; }
+    public void Invalidate() { _quoteStations.Clear(); _quoteSession = Guid.Empty; InvalidateJobs(); }
     public RecipeStationHandle? CurrentStation(Guid sessionId)
     {
-        if (_quoteSession != sessionId) { _quoteStations.Clear(); _quoteSession = sessionId; }
         var station = GetStatic("Source.Galaxy.POI.SpaceStation", "current");
-        if (station == null || Get(station, "forge") == null && Get(station, "refinery") == null) return null;
-        if (!StationStillPresent(station)) return null;
+        return station == null ? null : IssueStation(sessionId, station);
+    }
+    internal RecipeStationHandle? IssueStation(Guid sessionId, object station)
+    {
+        if (_quoteSession != sessionId) { Invalidate(); _quoteSession = sessionId; }
+        if (Get(station, "forge") == null && Get(station, "refinery") == null || !StationStillPresent(station)) return null;
         var key = _quoteStations.FirstOrDefault(pair => ReferenceEquals(pair.Value, station)).Key;
         if (key == Guid.Empty)
         {
@@ -161,14 +164,9 @@ internal sealed partial class RecipeCatalogNativeSource
     }
     private bool CanReadForgeCost(object recipe)
     {
-        if (Convert.ToInt32(Get(recipe, "customCost")) > 0 || Convert.ToInt32(Get(recipe, "dynamicCost")) >= 0) return true;
-        // Cold item.cost can scan recipe outputs and instantiate builder previews. Never prime it in a read.
-        foreach (var row in Enumerate(Call(recipe, "GetIngredientItems", 0)))
-        {
-            var item = Get(row, "Item1");
-            if (item == null || !HasCachedItemCost(item)) return false;
-        }
-        return true; // Material values are an inspected constant enum table; warm item costs do not build previews.
+        // Even warm ingredient costs do not make this getter observational: a cold
+        // recipe invokes UpdateDynamicCost and writes native recipe caches.
+        return Convert.ToInt32(Get(recipe, "customCost")) > 0 || Convert.ToInt32(Get(recipe, "dynamicCost")) >= 0;
     }
     private static bool HasCachedItemCost(object item)
     {

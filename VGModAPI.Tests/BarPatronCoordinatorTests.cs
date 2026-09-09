@@ -8,6 +8,14 @@ namespace VGModAPI.Tests;
 
 public sealed class BarPatronCoordinatorTests
 {
+    private static LifecycleHub Bound()
+    {
+        var hub = new LifecycleHub((_, error) => throw error);
+        hub.SetCapability("session-lifecycle", true, "Bound.");
+        hub.SetCapability("save-outcomes", true, "Bound.");
+        return hub;
+    }
+
     [Fact]
     public void RealCoordinatorRestoresPatronsAcrossColdServicesAndOlderSaveRollback()
     {
@@ -17,7 +25,7 @@ public sealed class BarPatronCoordinatorTests
         try
         {
             var store = new GenerationStore(root);
-            using (var hub = new LifecycleHub((_, error) => throw error))
+            using (var hub = Bound())
             using (var persistence = new PersistenceService(hub, store, path => path, _ => hash))
             using (var patrons = new BarPatronPersistence(persistence, hub, hub.CheckThread))
             {
@@ -27,7 +35,7 @@ public sealed class BarPatronCoordinatorTests
                 Save(hub);
                 Assert.NotNull(store.Load("slot", hash));
             }
-            using var laterHub = new LifecycleHub((_, error) => throw error);
+            using var laterHub = Bound();
             using var laterPersistence = new PersistenceService(laterHub, store, path => path, _ => hash);
             using var laterPatrons = new BarPatronPersistence(laterPersistence, laterHub, laterHub.CheckThread);
             var loaded = Load(laterHub);

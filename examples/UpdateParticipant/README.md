@@ -4,4 +4,4 @@ Build/package from the repository root with `make example-update-package CONFIGU
 
 The archive contains this plugin and its JSON metadata, not API/loader/game DLLs. Replace `example/mod` URLs before distribution. A declared dependency is enough for listing; networking is centralized in VGModAPI and optional.
 
-See [the author publication guide](../../docs/mod-update-publishing.md) for numeric versions, stable/prerelease URLs, release ordering, failure recovery and testing. Never edit a player's configuration to publish a release feed.
+See [the author publication guide](../../docs/reference/mod-update-publishing.md) for numeric versions, stable/prerelease URLs, release ordering, failure recovery and testing. Never edit a player's configuration to publish a release feed.

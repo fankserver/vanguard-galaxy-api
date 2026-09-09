@@ -89,11 +89,15 @@ public sealed partial class Plugin
         }
         finally { Screen.SetResolution(width, height, mode); }
         foreach (var frame in Wait(() => Screen.width == width && Screen.height == height, "original resolution restoration")) yield return frame;
+        var inventory = ModApi.Services.Mods;
         Object.Destroy(Chainloader.PluginInfos[ModApi.PluginId].Instance);
         yield return null; yield return null;
         Require(!Resources.FindObjectsOfTypeAll<RectTransform>().Any(item => item.gameObject.scene.IsValid() &&
             (item.name == "VGModAPI Mods" || item.name == "VGModAPI Mods panel")), "API shutdown retained owned menu objects.");
-        Require(ModApi.Mods == null && nativeFont != null && menu.activeInHierarchy && originalCanvas.isActiveAndEnabled && EventSystem.current == events,
+        var rootUnavailable = false;
+        try { _ = ModApi.Services; } catch (InvalidOperationException) { rootUnavailable = true; }
+        Require(rootUnavailable && inventory.Availability.Reason == ServiceUnavailableReason.ApiStopped &&
+            inventory.Inventory.Status == ModInventoryStatus.Stopped && nativeFont != null && menu.activeInHierarchy && originalCanvas.isActiveAndEnabled && EventSystem.current == events,
             "Shutdown damaged shared native UI or retained the catalog.");
         evidence.AppendLine("api-shutdown-owned-ui-cleanup=PASS shared-native-ui-preserved=PASS");
     }

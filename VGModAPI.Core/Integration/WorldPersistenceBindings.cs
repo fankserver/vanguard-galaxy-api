@@ -10,20 +10,20 @@ internal sealed class WorldPersistenceBindings : IDisposable
     private readonly LifecycleHub _hub;
     private readonly WorldLoadHookHost _loads;
     private readonly WorldCreationCoordinator _creation;
-    private readonly IPersistenceRegistration _state, _definitions;
+    private readonly ISaveDataRegistration _state, _definitions;
     private bool _disposed;
-    internal WorldPersistenceBindings(IPersistenceApi persistence, LifecycleHub hub, WorldLoadHookHost loads,
+    internal WorldPersistenceBindings(ISaveDataService persistence, LifecycleHub hub, WorldLoadHookHost loads,
         WorldSnapshotHookHost snapshots, WorldCreationCoordinator creation)
     {
         _hub = hub; _loads = loads; _creation = creation; _hub.CheckThread();
         _state = persistence.Register(new PersistenceProvider(WorldStateCodec.Owner, WorldStateCodec.SchemaVersion,
             () => snapshots.CaptureOwner(WorldStateCodec.Owner), (session, payload) => Restore(WorldStateCodec.Owner, session, payload),
-            payload => Validate(payload, false)));
+            payload => Validate(payload, false))).Registration ?? throw new InvalidOperationException("World state registration refused.");
         try
         {
             _definitions = persistence.Register(new PersistenceProvider(WorldDefinitionCodec.Owner, WorldDefinitionCodec.SchemaVersion,
                 () => snapshots.CaptureOwner(WorldDefinitionCodec.Owner), (session, payload) => Restore(WorldDefinitionCodec.Owner, session, payload),
-                payload => Validate(payload, true)));
+                payload => Validate(payload, true))).Registration ?? throw new InvalidOperationException("World definitions registration refused.");
         }
         catch { _state.Dispose(); throw; }
     }
@@ -50,15 +50,16 @@ internal sealed class WorldPersistenceBindings : IDisposable
     {
         _hub.CheckThread();
         return !_disposed && _hub.CurrentSession?.Id == session && _creation.HasRestoredInventory(session) &&
-            _state is IPersistenceReadiness state && state.StateReady && _definitions is IPersistenceReadiness definitions && definitions.StateReady;
+            Ready(_state, session) && Ready(_definitions, session);
     }
     internal bool CanMutate(Guid session)
     {
         _hub.CheckThread();
         return !_disposed && _hub.CurrentSession?.Id == session && _creation.HasRestoredInventory(session) &&
-            _state is IPersistenceReadiness state && state.StateReady && _definitions is IPersistenceReadiness definitions && definitions.StateReady &&
-            _state.MutationAllowed && _definitions.MutationAllowed;
+            Ready(_state, session) && Ready(_definitions, session) && _state.CanMutate && _definitions.CanMutate;
     }
+    private static bool Ready(ISaveDataRegistration registration, Guid session)
+        => registration.State.Kind == SaveDataStateKind.Ready && registration.State.SessionId == session;
     public void Dispose()
     {
         _hub.CheckThread(); if (_disposed) return;

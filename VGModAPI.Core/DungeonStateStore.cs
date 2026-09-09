@@ -9,7 +9,7 @@ internal sealed class DungeonStateStore : IDisposable
 {
     private const string Owner = "vgmodapi.dungeons";
     private readonly LifecycleHub _hub;
-    private readonly IPersistenceRegistration? _registration;
+    private readonly ISaveDataRegistration? _registration;
     private readonly IDisposable _lifetime;
     private Dictionary<Guid, DungeonOccurrence> _entries = new();
     private Guid? _restoredSession;
@@ -17,7 +17,7 @@ internal sealed class DungeonStateStore : IDisposable
     private int _serializationDepth;
     internal void BeginSerialization() { _hub.CheckThread(); _serializationDepth++; }
     internal void EndSerialization() { _hub.CheckThread(); if (_serializationDepth > 0) _serializationDepth--; }
-    internal DungeonStateStore(LifecycleHub hub, IPersistenceApi? persistence)
+    internal DungeonStateStore(LifecycleHub hub, ISaveDataService? persistence)
     {
         _hub = hub;
         _lifetime = hub.Subscribe(Owner, message =>
@@ -25,7 +25,12 @@ internal sealed class DungeonStateStore : IDisposable
             if (message.Kind is LifecycleEventKind.SessionStarting or LifecycleEventKind.SessionInvalidated or LifecycleEventKind.SessionStartFailed)
             { _entries.Clear(); _restoredSession = null; }
         });
-        _registration = persistence?.Register(new PersistenceProvider(Owner, 1, Capture, Restore, DungeonStateCodec.Validate));
+        try
+        {
+            _registration = persistence?.Register(new PersistenceProvider(Owner, 1, Capture, Restore, DungeonStateCodec.Validate)).Registration;
+            if (persistence != null && _registration == null) throw new InvalidOperationException("Dungeon save provider registration refused.");
+        }
+        catch { _lifetime.Dispose(); throw; }
     }
     internal bool StateReady
     {
@@ -33,10 +38,10 @@ internal sealed class DungeonStateStore : IDisposable
         {
             _hub.CheckThread();
             return !_disposed && _restoredSession.HasValue && _hub.CurrentSession?.Id == _restoredSession &&
-                _registration is IPersistenceReadiness readiness && readiness.StateReady;
+                _registration?.CanRead == true;
         }
     }
-    internal bool MutationAllowed => StateReady && _serializationDepth == 0 && _registration!.MutationAllowed && !_hub.IsDispatchingCallbacks;
+    internal bool MutationAllowed => StateReady && _serializationDepth == 0 && _registration!.CanMutate && !_hub.IsDispatchingCallbacks;
     internal IReadOnlyList<DungeonOccurrence> Entries
     { get { _hub.CheckThread(); return StateReady ? Array.AsReadOnly(_entries.Values.ToArray()) : Array.Empty<DungeonOccurrence>(); } }
     internal DungeonOccurrence? Get(Guid id)

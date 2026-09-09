@@ -18,28 +18,73 @@ internal sealed class DungeonContentBindings
     { ValidateAttachment = validateAttachment; Bind = bind; ValidateChoice = validateChoice; ApplyChoice = applyChoice; }
 }
 
-internal sealed class DungeonContentService : IDungeonContent, IDisposable
+internal sealed class DungeonContentService : IDungeonContentService, IDisposable
 {
     private readonly LifecycleHub _hub;
-    private readonly DungeonDefinitionRegistry _registry;
-    private readonly DungeonStateStore _state;
-    private readonly DungeonContentBindings _native;
+    private readonly DungeonDefinitionRegistry? _definitions;
+    private DungeonDefinitionRegistry _registry => _definitions ?? throw new InvalidOperationException("Dungeon definitions unavailable.");
+    private readonly IServiceStatus _status;
+    private readonly DungeonStateStore? _store;
+    private DungeonStateStore _state => _store ?? throw new InvalidOperationException("Dungeon save data unavailable.");
+    private readonly DungeonContentBindings? _bindings;
+    private DungeonContentBindings _native => _bindings ?? throw new InvalidOperationException("Dungeon bindings unavailable.");
     private readonly Action<string, Exception> _diagnose;
     private readonly Func<bool> _mutationBlocked;
     private readonly Dictionary<string, Provider> _providers = new(StringComparer.Ordinal);
-    private bool _disposed;
+    private bool _disposed, _closing;
     private int _callbacks;
-    internal DungeonContentService(LifecycleHub hub, DungeonDefinitionRegistry registry, DungeonStateStore state,
-        DungeonContentBindings native, Action<string, Exception> diagnose, Func<bool>? mutationBlocked = null)
-    { _hub = hub; _registry = registry; _state = state; _native = native; _diagnose = diagnose; _mutationBlocked = mutationBlocked ?? (() => false); }
+    internal DungeonContentService(LifecycleHub hub, DungeonDefinitionRegistry? registry, DungeonStateStore? state,
+        DungeonContentBindings? native, Action<string, Exception> diagnose, Func<bool>? mutationBlocked = null)
+    {
+        _hub = hub; _definitions = registry; _store = state; _bindings = native; _diagnose = diagnose; _mutationBlocked = mutationBlocked ?? (() => false);
+        _status = hub.Services.Get("dungeon-content");
+        if ((registry == null || state == null || native == null) && Availability.IsAvailable) hub.SetCapability("dungeon-content", false, "Dungeon bindings unavailable.");
+    }
+    public ServiceAvailability Availability => _status.Availability;
+    public event Action<ServiceAvailability>? AvailabilityChanged
+    { add => _status.AvailabilityChanged += value; remove => _status.AvailabilityChanged -= value; }
     public IDungeonProvider AcquireProvider(string pluginId)
     {
-        _hub.CheckThread(); if (_disposed || _callbacks != 0) throw new InvalidOperationException("Dungeon registration unavailable.");
+        _hub.CheckThread(); if (_disposed || _closing || _definitions == null || _callbacks != 0) throw new InvalidOperationException("Dungeon registration unavailable.");
         _ = new DungeonDefinitionId(pluginId, "provider");
         if (_providers.ContainsKey(pluginId)) throw new InvalidOperationException("Dungeon provider already acquired.");
         var provider = new Provider(this, pluginId); _providers.Add(pluginId, provider); return provider;
     }
-    private bool MutationBlocked => _callbacks != 0 || _mutationBlocked();
+    internal bool PanelBusy { get { _hub.CheckThread(); return MutationBlocked || !_state.MutationAllowed; } }
+    internal (object? Occurrence, object? Provider, object? Definition) PanelToken(Guid id)
+    {
+        _hub.CheckThread(); if (_disposed || _store == null || !Availability.IsAvailable) return (null, null, null);
+        var occurrence = _state.Get(id);
+        if (occurrence == null) return (null, null, null);
+        _providers.TryGetValue(occurrence.DefinitionId.ProviderId, out var provider);
+        _registry.TryGet(occurrence.DefinitionId, out var definition);
+        return (occurrence, provider, definition);
+    }
+    internal IReadOnlyList<(string EventId, string EventText, string ChoiceId, string ChoiceText)> PanelChoices(Guid id, string? eventId = null, string? choiceId = null)
+    {
+        _hub.CheckThread();
+        var result = new List<(string, string, string, string)>();
+        if (_disposed || MutationBlocked || !_state.MutationAllowed || _state.Get(id) is not { } occurrence ||
+            !_providers.TryGetValue(occurrence.DefinitionId.ProviderId, out var provider) || !Live(provider) ||
+            !_registry.TryGet(occurrence.DefinitionId, out var definition) || definition.Version != occurrence.Definition.Version) return result;
+        foreach (var item in occurrence.Definition.Events)
+        {
+            if (occurrence.Choices.ContainsKey(item.Id) || (eventId != null && item.Id != eventId)) continue;
+            foreach (var choice in item.Choices)
+                if ((choiceId == null || choice.Id == choiceId) && _native.ValidateChoice(occurrence, item, choice) == DungeonContentStatus.ChoiceApplied)
+                    result.Add((item.Id, item.Text, choice.Id, choice.Text));
+        }
+        return result.AsReadOnly();
+    }
+    internal DungeonContentResult ChooseFromPanel(Guid id, string eventId, string choiceId)
+    {
+        _hub.CheckThread();
+        if (MutationBlocked) return Result(DungeonContentStatus.Unavailable);
+        var occurrence = _state.Get(id);
+        return occurrence != null && _providers.TryGetValue(occurrence.DefinitionId.ProviderId, out var provider)
+            ? Choose(provider, id, eventId, choiceId) : Result(DungeonContentStatus.MissingDefinition);
+    }
+    private bool MutationBlocked => _disposed || _closing || !Availability.IsAvailable || _bindings == null || _store == null || _callbacks != 0 || _mutationBlocked();
     private bool Live(Provider provider) => !_disposed && _providers.TryGetValue(provider.Id, out var current) && ReferenceEquals(current, provider);
     private DungeonContentResult Result(DungeonContentStatus status, Guid? id = null) => new(status, status.ToString(), id);
     private DungeonContentResult Attach(Provider provider, string localId, BoardingHandle target)
@@ -48,6 +93,7 @@ internal sealed class DungeonContentService : IDungeonContent, IDisposable
         if (!_state.MutationAllowed) return Result(DungeonContentStatus.PersistenceUnavailable);
         if (!_registry.TryGet(new(provider.Id, localId), out var definition)) return Result(DungeonContentStatus.MissingDefinition);
         var status = _native.ValidateAttachment(target, definition); if (status != DungeonContentStatus.Attached) return Result(status);
+        if (!Live(provider) || MutationBlocked) return Result(DungeonContentStatus.Unavailable);
         var occurrence = new DungeonOccurrence(Guid.NewGuid(), new(provider.Id, localId), definition);
         if (!_state.Add(occurrence)) return Result(DungeonContentStatus.PersistenceUnavailable);
         _native.Bind(target, occurrence);
@@ -78,9 +124,10 @@ internal sealed class DungeonContentService : IDungeonContent, IDisposable
             }
             finally { _callbacks--; }
             if (!allowed) return Result(DungeonContentStatus.Vetoed);
-            if (!Live(provider) || !provider.Behaviors.TryGetValue(occurrence.DefinitionId.LocalId, out var after) || !ReferenceEquals(after, behavior) || !ReferenceEquals(_state.Get(id), occurrence)) return Result(DungeonContentStatus.Unavailable);
+            if (!Live(provider) || MutationBlocked || !provider.Behaviors.TryGetValue(occurrence.DefinitionId.LocalId, out var after) || !ReferenceEquals(after, behavior) || !ReferenceEquals(_state.Get(id), occurrence)) return Result(DungeonContentStatus.Unavailable);
             status = _native.ValidateChoice(occurrence, item, choice); if (status != DungeonContentStatus.ChoiceApplied) return Result(status);
         }
+        if (!Live(provider) || MutationBlocked) return Result(DungeonContentStatus.Unavailable);
         if (!_state.Choose(id, provider.Id, eventId, choiceId)) return Result(DungeonContentStatus.PersistenceUnavailable);
         // Selected before native effects: a throwing native operation is never retried implicitly.
         _native.ApplyChoice(occurrence, item, choice);
@@ -89,7 +136,8 @@ internal sealed class DungeonContentService : IDungeonContent, IDisposable
     private static DungeonOccurrenceSnapshot Snapshot(DungeonOccurrence occurrence) => new(occurrence.Id, occurrence.DefinitionId, occurrence.Definition.Version, occurrence.Choices);
     public void Dispose()
     {
-        _hub.CheckThread(); if (_disposed) return;
+        _hub.CheckThread(); if (_disposed || _closing) return; _closing = true;
+        if (Availability.IsAvailable) _hub.SetCapability("dungeon-content", false, "Dungeon content service stopped.", ServiceUnavailableReason.ApiStopped);
         foreach (var provider in _providers.Values.ToArray()) provider.Dispose(); _disposed = true;
     }
     private sealed class Behavior : IDisposable
@@ -115,7 +163,7 @@ internal sealed class DungeonContentService : IDungeonContent, IDisposable
         internal Provider(DungeonContentService owner, string id) { Owner = owner; Id = id; }
         public IDisposable Register(string localId, DungeonDefinition definition, Func<DungeonChoiceContext, bool>? allowChoice = null)
         {
-            Owner._hub.CheckThread(); if (!Owner.Live(this) || Owner._callbacks != 0) throw new InvalidOperationException("Dungeon provider unavailable.");
+            Owner._hub.CheckThread(); if (!Owner.Live(this) || Owner._closing || Owner._callbacks != 0) throw new InvalidOperationException("Dungeon provider unavailable.");
             DungeonDefinitionCodec.Encode(definition);
             var registration = Owner._registry.Register(new(Id, localId), definition);
             var behavior = new Behavior(this, localId, registration, allowChoice); Behaviors.Add(localId, behavior); return behavior;
@@ -124,7 +172,7 @@ internal sealed class DungeonContentService : IDungeonContent, IDisposable
         public DungeonContentResult Choose(Guid occurrenceId, string eventId, string choiceId) => Owner.Choose(this, occurrenceId, eventId, choiceId);
         public IReadOnlyList<DungeonOccurrenceSnapshot> GetOccurrences()
         {
-            Owner._hub.CheckThread(); return Owner.Live(this) ? Array.AsReadOnly(Owner._state.Entries.Where(e => e.DefinitionId.ProviderId == Id).Select(Snapshot).ToArray()) : Array.Empty<DungeonOccurrenceSnapshot>();
+            Owner._hub.CheckThread(); return Owner.Live(this) && Owner.Availability.IsAvailable && Owner._store != null ? Array.AsReadOnly(Owner._state.Entries.Where(e => e.DefinitionId.ProviderId == Id).Select(Snapshot).ToArray()) : Array.Empty<DungeonOccurrenceSnapshot>();
         }
         public void Dispose()
         {

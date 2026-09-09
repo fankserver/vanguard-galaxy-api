@@ -37,7 +37,7 @@ public sealed partial class Plugin
         int[]? vanillaSeats = null;
         string? vanillaJson = null;
         BarRosterFinalized? latest = null;
-        using var observation = ModApi.Bars!.Subscribe(Id, value => latest = value);
+        using var observation = new BarProbeSubscription(ModApi.Services.Bars, value => latest = value);
         void Refresh(int count, bool unavailable = false)
         {
             station = SpGet(CurrentPlayer, "currentPointOfInterest")!;

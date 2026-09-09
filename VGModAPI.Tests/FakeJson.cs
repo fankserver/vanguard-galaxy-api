@@ -31,6 +31,7 @@ public sealed class JsonValue
     public bool IsNumber => _value is int or double or float;
     public double AsNumber => System.Convert.ToDouble(_value, System.Globalization.CultureInfo.InvariantCulture);
     public string AsString => (string)_value!;
+    public static implicit operator JsonValue(string value) => new(value);
     public JsonObject AsJsonObject => (JsonObject)_value!;
     public List<JsonValue> AsJsonArray => (List<JsonValue>)_value!;
     public override string ToString() => _value?.ToString() ?? "null";

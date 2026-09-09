@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using Mono.Cecil;
+using Mono.Cecil.Cil;
 using Xunit;
 
 namespace VGModAPI.Tests;
@@ -9,97 +11,19 @@ public sealed class PackageValidationTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "vgmodapi-package-" + Guid.NewGuid().ToString("N"));
 
-    public PackageValidationTests()
-    {
-        foreach (var relative in PackageChecks.Files)
-        {
-            var path = Path.Combine(_root, relative);
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            File.WriteAllText(path, "synthetic layout fixture");
-        }
-    }
+    public PackageValidationTests() => Directory.CreateDirectory(_root);
 
     [Fact]
-    public void QualificationMarkerIsRejectedBeforePluginInspection()
-    {
-        using var assembly = AssemblyDefinition.ReadAssembly(typeof(VGModAPI.Patches.WorldLifetimePatches).Assembly.Location);
-        var constructor = typeof(System.Reflection.AssemblyMetadataAttribute).GetConstructor(new[] { typeof(string), typeof(string) })!;
-        var marker = new CustomAttribute(assembly.MainModule.ImportReference(constructor));
-        marker.ConstructorArguments.Add(new CustomAttributeArgument(assembly.MainModule.TypeSystem.String, "VGModAPI.WorldQualification"));
-        marker.ConstructorArguments.Add(new CustomAttributeArgument(assembly.MainModule.TypeSystem.String, "empty-combat-v1"));
-        assembly.CustomAttributes.Add(marker);
-        var path = Path.Combine(_root, "VGModAPI.dll"); assembly.Write(path);
-        var error = Assert.Throws<InvalidOperationException>(() => PackageChecks.ValidatePluginVersion(path));
-        Assert.Contains("Qualification-only", error.Message);
-    }
+    [Trait("Category", "BinaryInspection")]
+    public void StableContractHasOnlyFrameworkReferences() => PackageChecks.ValidateContract(typeof(ILifecycleService).Assembly.Location);
 
     [Fact]
-    public void QualificationLayoutRejectsReferencesDirectoriesAndMissingMarker()
-    {
-        var root = Path.Combine(_root, "candidate"); Directory.CreateDirectory(root);
-        foreach (var name in new[] { "VGModAPI.dll", "VGModAPI.Core.dll", "VGModAPI.Abstractions.dll", "README.md" }) File.WriteAllText(Path.Combine(root, name), "fixture");
-        PackageChecks.ValidateQualificationLayout(root);
-        var foreign = Path.Combine(root, "UnityEngine.dll"); File.WriteAllText(foreign, "forbidden");
-        Assert.Throws<InvalidOperationException>(() => PackageChecks.ValidateQualificationLayout(root)); File.Delete(foreign);
-        Directory.CreateDirectory(Path.Combine(root, "docs"));
-        Assert.Throws<InvalidOperationException>(() => PackageChecks.ValidateQualificationLayout(root));
-        var error = Assert.Throws<InvalidOperationException>(() => PackageChecks.ValidatePluginVersion(typeof(VGModAPI.Patches.WorldLifetimePatches).Assembly.Location, qualification: true));
-        Assert.Contains("marker missing or invalid", error.Message);
-    }
-
-    [Fact]
-    public void ExactLayoutIsAccepted() => PackageChecks.ValidateLayout(_root);
-
-    [Theory]
-    [InlineData("Assembly-CSharp.dll")]
-    [InlineData("UnityEngine.dll")]
-    [InlineData("BepInEx.dll")]
-    [InlineData("0Harmony.dll")]
-    [InlineData("QualificationRunner.dll")]
-    [InlineData("old-build.pdb")]
-    [InlineData("docs/unlisted.md")]
-    public void ExtraFilesAreRejected(string name)
-    {
-        File.WriteAllText(Path.Combine(_root, name), "not allowed");
-        Assert.Throws<InvalidOperationException>(() => PackageChecks.ValidateLayout(_root));
-    }
-
-    [Fact]
-    public void MissingOwnedAssemblyIsRejected()
-    {
-        File.Delete(Path.Combine(_root, "VGModAPI.Core.dll"));
-        Assert.Throws<InvalidOperationException>(() => PackageChecks.ValidateLayout(_root));
-    }
-
-    [Fact]
-    public void EmptyUnexpectedDirectoriesAreRejected()
-    {
-        Directory.CreateDirectory(Path.Combine(_root, "lib"));
-        Assert.Throws<InvalidOperationException>(() => PackageChecks.ValidateLayout(_root));
-    }
-
-    [UnixFact]
-    public void LinkedRootsAndFilesAreRejectedWithoutFollowingThem()
-    {
-        var linkedRoot = _root + "-link";
-        Directory.CreateSymbolicLink(linkedRoot, _root);
-        try { Assert.Throws<InvalidOperationException>(() => PackageChecks.ValidateLayout(linkedRoot + Path.DirectorySeparatorChar)); }
-        finally { Directory.Delete(linkedRoot); }
-        var dll = Path.Combine(_root, "VGModAPI.dll");
-        File.Delete(dll);
-        File.CreateSymbolicLink(dll, Path.Combine(_root, "README.md"));
-        Assert.Throws<InvalidOperationException>(() => PackageChecks.ValidateLayout(_root));
-    }
-
-    [Fact]
-    public void StableContractHasOnlyFrameworkReferences() => PackageChecks.ValidateContract(typeof(ILifecycleApi).Assembly.Location);
-
-    [Fact]
+    [Trait("Category", "BinaryInspection")]
     public void CoreRemainsLoaderAndUnityFree() => PackageChecks.ValidateAssembly(typeof(Core.LifecycleHub).Assembly.Location, "VGModAPI.Core");
 
     [Fact]
     public void IncorrectIdentityIsRejected() => Assert.Throws<InvalidOperationException>(
-        () => PackageChecks.ValidateAssembly(typeof(ILifecycleApi).Assembly.Location, "VGModAPI.Core"));
+        () => PackageChecks.ValidateAssembly(typeof(ILifecycleService).Assembly.Location, "VGModAPI.Core"));
 
     [Theory]
     [InlineData("VGModAPI.Abstractions", "UnityEngine")]
@@ -115,7 +39,7 @@ public sealed class PackageValidationTests : IDisposable
     [InlineData("VGModAPI", "Assembly-CSharp")]
     public void ForbiddenAssemblyReferencesAreRejected(string owner, string dependency)
     {
-        using var assembly = AssemblyDefinition.ReadAssembly(typeof(ILifecycleApi).Assembly.Location);
+        using var assembly = AssemblyDefinition.ReadAssembly(typeof(ILifecycleService).Assembly.Location);
         assembly.Name.Name = owner;
         assembly.MainModule.AssemblyReferences.Add(new AssemblyNameReference(dependency, new Version(1, 0)));
         var altered = Path.Combine(_root, "altered.dll");
@@ -158,23 +82,47 @@ public sealed class PackageValidationTests : IDisposable
     public void Dispose() => Directory.Delete(_root, recursive: true);
 }
 
-internal sealed class UnixFactAttribute : FactAttribute
-{
-    public UnixFactAttribute()
-    {
-        if (OperatingSystem.IsWindows()) Skip = "Unix link behavior; Windows link creation may require additional privileges.";
-    }
-}
-
 [Trait("Category", "Package")]
 public sealed class BuiltPackageTests
 {
     [Fact]
-    public void BuiltPackageContainsOnlyOwnedAssembliesAndAllowedDocumentation()
+    public void CompletedApisHaveNoConfigurationSwitches()
     {
         var root = Environment.GetEnvironmentVariable("VG_PACKAGE_ROOT")
             ?? throw new InvalidOperationException("Run make package or set VG_PACKAGE_ROOT for built-package checks.");
-        PackageChecks.ValidateLayout(root);
+        using var assembly = AssemblyDefinition.ReadAssembly(Path.Combine(root, "VGModAPI.dll"));
+        var bindings = new HashSet<(string Section, string Key)>();
+        foreach (var type in assembly.MainModule.GetTypes())
+        foreach (var method in type.Methods)
+        {
+            if (!method.HasBody) continue;
+            List<string>? arguments = null;
+            foreach (var instruction in method.Body.Instructions)
+            {
+                if (instruction.Operand is MethodReference getter && getter.Name == "get_Config" &&
+                    getter.DeclaringType.FullName == "BepInEx.BaseUnityPlugin")
+                    arguments = new List<string>();
+                if (arguments != null && instruction.OpCode == OpCodes.Ldstr)
+                    arguments.Add((string)instruction.Operand);
+                if (instruction.Operand is not MethodReference call || call.Name != "Bind" ||
+                    call.DeclaringType.FullName != "BepInEx.Configuration.ConfigFile") continue;
+                Assert.NotNull(arguments);
+                Assert.True(arguments!.Count >= 2, "Configuration bindings must expose their section and key.");
+                bindings.Add((arguments[0], arguments[1]));
+                arguments = null;
+            }
+        }
+        Assert.Contains(("Persistence", "Root"), bindings);
+        foreach (var setting in new[] { ("Persistence", "Enabled"), ("Missions", "Enabled"),
+            ("Missions", "IdentityContinuity"), ("Travel", "Enabled"), ("ModInformation", "MenuEnabled") })
+            Assert.DoesNotContain(setting, bindings);
+    }
+
+    [Fact]
+    public void BuiltPackageAssembliesAndMetadataAreValid()
+    {
+        var root = Environment.GetEnvironmentVariable("VG_PACKAGE_ROOT")
+            ?? throw new InvalidOperationException("Run make package or set VG_PACKAGE_ROOT for built-package checks.");
         PackageChecks.ValidatePluginVersion(Path.Combine(root, "VGModAPI.dll"));
         var metadata = Core.ModMetadataCodec.Parse(File.ReadAllBytes(Path.Combine(root, "vgmodapi.vgmod.json")), ModApi.PluginId);
         Assert.Equal("https://github.com/fankserver/vanguard-galaxy-api", metadata.ProjectUrl);

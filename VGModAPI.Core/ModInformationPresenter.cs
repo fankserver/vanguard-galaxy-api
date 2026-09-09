@@ -8,18 +8,20 @@ namespace VGModAPI.Core;
 
 internal sealed class ModInformationPresenter
 {
-    private readonly IModInformationCatalog _catalog;
-    internal ModInformationPresenter(IModInformationCatalog catalog) => _catalog = catalog;
+    private readonly IModInformationService _catalog;
+    internal ModInformationPresenter(IModInformationService catalog) => _catalog = catalog;
     internal IReadOnlyList<ModInformation> Rows { get; private set; } = Array.Empty<ModInformation>();
+    internal IReadOnlyList<ModInformation> Inventory => _catalog.Inventory.Entries;
     internal string? RefreshWarning { get; private set; }
     internal string? SelectedId { get; private set; }
     internal ModInformation? Selected => Rows.FirstOrDefault(row => row.PluginId == SelectedId);
 
     internal void Open()
     {
-        try { _catalog.Refresh(); RefreshWarning = null; }
-        catch (Exception) { RefreshWarning = "Couldn't refresh the mod list. Showing the previous list."; }
-        Rows = _catalog.Snapshot;
+        var inventory = _catalog.Refresh();
+        RefreshWarning = inventory.Status == ModInventoryStatus.RefreshFailed
+            ? "Couldn't refresh the mod list. Showing the previous list." : null;
+        Rows = inventory.Entries;
         if (Selected == null) SelectedId = Rows.FirstOrDefault()?.PluginId;
     }
 

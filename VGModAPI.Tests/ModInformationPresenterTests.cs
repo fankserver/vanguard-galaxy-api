@@ -8,12 +8,15 @@ namespace VGModAPI.Tests;
 
 public sealed class ModInformationPresenterTests
 {
-    private sealed class Catalog : IModInformationCatalog
+    private sealed class Catalog : FakeServiceStatus, IModInformationService
     {
         public IReadOnlyList<ModInformation> Snapshot { get; set; } = Array.Empty<ModInformation>();
+        public IServiceStatus Menu { get; } = new FakeServiceStatus();
+        public ModInventorySnapshot Inventory => new(Fail ? ModInventoryStatus.RefreshFailed : ModInventoryStatus.Current, Snapshot);
+        public event Action<ModInventorySnapshot>? InventoryChanged { add { } remove { } }
         internal bool Fail;
         internal int Refreshes;
-        public void Refresh() { ++Refreshes; if (Fail) throw new InvalidOperationException("Private path"); }
+        public ModInventorySnapshot Refresh() { ++Refreshes; return Inventory; }
     }
     private static ModInformation Row(string id, string? url = null) => new(id, "Mod " + id, new Version(1, 2),
         Array.Empty<ModDependencyInformation>(), url == null ? null : new ModAuthorMetadata(null, null, url, null, "stable"), ModMetadataStatus.Missing);

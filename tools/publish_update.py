@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 import stat
 import zipfile
-from release_archive import FILES
+from release_archive import validate_layout
 
 
 def validate_archive(archive, assembly, plugin):
@@ -16,7 +16,7 @@ def validate_archive(archive, assembly, plugin):
         raise ValueError('Archive needs a plain .zip asset name')
     root = assembly.parent
     prefix = root.name + '/'
-    allowed = FILES if plugin == 'vgmodapi' else {assembly.name, plugin + '.vgmod.json'}
+    allowed = validate_layout(root) if plugin == 'vgmodapi' else {assembly.name, plugin + '.vgmod.json'}
     with zipfile.ZipFile(archive) as bundle:
         entries = bundle.infolist()
         if len(entries) != len(allowed) or {e.filename for e in entries} != {prefix + name for name in allowed}:
