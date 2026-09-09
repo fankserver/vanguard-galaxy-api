@@ -98,7 +98,7 @@ try {
     $p | Add-Member blueprintPinRevision ('a' * 40)
     $p | Add-Member blueprintPinSha256 ('b' * 64)
     Reject { Assert-ForgeReadSelection $root $p }
-    [IO.File]::WriteAllText((Join-Path $root 'blueprint-pin.enabled'), 'blueprint-pin-v3')
+    [IO.File]::WriteAllText((Join-Path $root 'blueprint-pin.enabled'), 'blueprint-pin-v4')
     $binDir = Join-Path $root 'game\BepInEx\plugins'; New-Item -ItemType Directory -Path $binDir -Force | Out-Null
     $binary = Join-Path $binDir 'VGBlueprintPin.dll'; [IO.File]::WriteAllText($binary, 'synthetic binary')
     Reject { Assert-ForgeReadSelection $root $p }
@@ -107,7 +107,7 @@ try {
     [IO.File]::AppendAllText((Join-Path $root 'game\BepInEx\config\vgmodapi.cfg'), "`n[Hud]`nEnabled = true`n")
     Assert-ForgeReadSelection $root $p
     Reject { Assert-BlueprintPinReceipt $root $p }
-    [IO.File]::WriteAllLines((Join-Path $root 'blueprint-pin.txt'), @('PASS','blueprint-pin-v3','pin-batch-exact-variant-navigation-close-producer-routes-queue-partial-cancel-multiunit'))
+    [IO.File]::WriteAllLines((Join-Path $root 'blueprint-pin.txt'), @('PASS','blueprint-pin-v4','pin-batch-exact-variant-navigation-close-producer-routes-queue-partial-cancel-multiunit-reload-saveas-switch'))
     Reject { Assert-BlueprintPinReceipt $root $p }
     $pinImage = Join-Path $root 'blueprint-pin-view.png'; $pinRecord = Join-Path $root 'blueprint-pin-view.txt'
     Copy-Item $image $pinImage; Copy-Item $imageRecord $pinRecord
@@ -126,9 +126,9 @@ try {
     [IO.File]::WriteAllText($config, $validConfig.Replace('CommandsEnabled = true', 'CommandsEnabled = false'))
     Reject { Assert-BlueprintPinSelection $root $p }
     [IO.File]::WriteAllText($config, $validConfig)
-    [IO.File]::WriteAllText((Join-Path $root 'blueprint-pin.enabled'), 'blueprint-pin-v2')
-    Reject { Assert-BlueprintPinSelection $root $p }
     [IO.File]::WriteAllText((Join-Path $root 'blueprint-pin.enabled'), 'blueprint-pin-v3')
+    Reject { Assert-BlueprintPinSelection $root $p }
+    [IO.File]::WriteAllText((Join-Path $root 'blueprint-pin.enabled'), 'blueprint-pin-v4')
     [IO.File]::AppendAllText($pinImage, 'changed'); Reject { Assert-BlueprintPinReceipt $root $p }
     Copy-Item $image $pinImage -Force
     $producerImage = Join-Path $root 'blueprint-pin-producers.png'

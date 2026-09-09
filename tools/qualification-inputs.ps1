@@ -312,7 +312,7 @@ function Assert-BlueprintPinSelection([string]$Root, $Provenance) {
     $marker = Join-Path $Root 'blueprint-pin.enabled'
     if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Blueprint Pin selection changed.' }
     if (!$selected) { return }
-    if (!$Provenance.forgeReadProbe -or $Provenance.forgeUiProbe -or $Provenance.forgeCommandProbe -or $Provenance.refineryProbe -or $Provenance.forgeDeliveryProbe -or $Provenance.forgePersistenceProbe -or [IO.File]::ReadAllText($marker) -cne 'blueprint-pin-v3') { throw 'Invalid Blueprint Pin selection.' }
+    if (!$Provenance.forgeReadProbe -or $Provenance.forgeUiProbe -or $Provenance.forgeCommandProbe -or $Provenance.refineryProbe -or $Provenance.forgeDeliveryProbe -or $Provenance.forgePersistenceProbe -or [IO.File]::ReadAllText($marker) -cne 'blueprint-pin-v4') { throw 'Invalid Blueprint Pin selection.' }
     if ($Provenance.blueprintPinRevision -cnotmatch '^[0-9a-f]{40}$' -or $Provenance.blueprintPinSha256 -cnotmatch '^[0-9a-f]{64}$') { throw 'Invalid Blueprint Pin provenance.' }
     $config = [IO.File]::ReadAllText((Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg'))
     if ($config -cnotmatch '(?ms)^\[Hud\]\r?\n(?:(?!^\[).)*?^Enabled = true\r?$') { throw 'Blueprint Pin requires HUD integration.' }
@@ -327,7 +327,7 @@ function Assert-BlueprintPinReceipt([string]$Root, $Provenance) {
     $file = Join-Path $Root 'blueprint-pin.txt'
     if ((Get-Item -LiteralPath $file).Length -gt 512) { throw 'Oversized Blueprint Pin receipt.' }
     $lines = @(Get-Content -LiteralPath $file)
-    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'blueprint-pin-v3' -or $lines[2] -cne 'pin-batch-exact-variant-navigation-close-producer-routes-queue-partial-cancel-multiunit') { throw 'Incomplete Blueprint Pin receipt.' }
+    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'blueprint-pin-v4' -or $lines[2] -cne 'pin-batch-exact-variant-navigation-close-producer-routes-queue-partial-cancel-multiunit-reload-saveas-switch') { throw 'Incomplete Blueprint Pin receipt.' }
     foreach ($stem in @('blueprint-pin-view','blueprint-pin-producers','blueprint-pin-partial','blueprint-pin-cancelled')) {
     $image = Join-Path $Root ($stem + '.png'); $record = Join-Path $Root ($stem + '.txt')
     foreach ($path in @($image,$record)) {

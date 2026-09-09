@@ -49,8 +49,9 @@ public sealed partial class Plugin
             foreach (var frame in CheckPinProducers(mouse, false)) yield return frame;
             foreach (var frame in CheckPinProducers(mouse, true)) yield return frame;
             foreach (var frame in CheckPinJobs(mouse)) yield return frame;
-            WriteAtomic("blueprint-pin.txt", new[] { "PASS", "blueprint-pin-v3", "pin-batch-exact-variant-navigation-close-producer-routes-queue-partial-cancel-multiunit" });
-            Passed("Real Blueprint Pin pointer pinning, future-batch display, exact variant navigation, panel close, producer routes and controlled native multi-unit queue/partial/cancellation policy");
+            foreach (var frame in CheckPinReload(mouse)) yield return frame;
+            WriteAtomic("blueprint-pin.txt", new[] { "PASS", "blueprint-pin-v4", "pin-batch-exact-variant-navigation-close-producer-routes-queue-partial-cancel-multiunit-reload-saveas-switch" });
+            Passed("Real Blueprint Pin pointer pinning, future-batch display, exact variant navigation, panel close, producer routes and controlled native multi-unit queue/partial/cancellation policy and session-only save/reload/save-as/slot-switch pin lifetime");
         }
         finally { ProbeCleanup.Run(() => { if (mouse != null) InputSystem.RemoveDevice(mouse); }, () => oldMouse?.MakeCurrent()); }
     }
