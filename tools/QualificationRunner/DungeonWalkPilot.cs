@@ -46,6 +46,10 @@ public sealed partial class Plugin
             foreach (var frame in Wait(ObserveActive, "Actual installation crew arrival and active simulation")) yield return frame;
             var active = boarding.GetOperation(operation!)!;
             Require(!active.Autonomous && !active.AutoMove && active.Compartments.Any(room => room.Kind == "Airlock" && room.FriendlyCrew > 0), "Manual crew arrival was not observed in the airlock.");
+            var during = Roster();
+            Require(during.Keys.All(before.ContainsKey) && before.All(pair => (during.TryGetValue(pair.Key, out var count) ? count : 0) == pair.Value - (manifest.Crew.TryGetValue(pair.Key, out var sent) ? sent : 0)), "Active crew debit did not match the requested manifest exactly once.");
+            records.Add("active-debit=" + manifest.Count + " crew=" + candidate.Key + " before=" + before[candidate.Key!] + " active=" + (during.TryGetValue(candidate.Key!, out var activeCount) ? activeCount : 0));
+            WriteAtomic("dungeon-walk-diagnostic.txt", records);
             Require(controller.Retreat().Admitted, "Active retreat refused.");
             foreach (var frame in Wait(() => settledSnapshot is { CrewReturnSettled: true, CrewCountsObserved: true }, "Actual returning crew settlement")) yield return frame;
             var settled = settledSnapshot!;
@@ -54,6 +58,8 @@ public sealed partial class Plugin
             var after = Roster();
             Require(settled.Casualties.All(pair => before.ContainsKey(pair.Key)) && settled.PrisonersDelivered.Values.All(count => count == 0), "Unexpected casualty or prisoner identity.");
             Require(after.Keys.All(before.ContainsKey) && before.All(pair => (after.TryGetValue(pair.Key, out var count) ? count : 0) == pair.Value - (settled.Casualties.TryGetValue(pair.Key, out var lost) ? lost : 0)), "Returning crew did not reconcile with observed casualties.");
+            records.Add("settlement=" + settled.NativeOutcome + " after=" + (after.TryGetValue(candidate.Key!, out var returnedCount) ? returnedCount : 0) + " casualties=" + settled.Casualties.Values.Sum());
+            WriteAtomic("dungeon-walk-diagnostic.txt", records);
             foreach (var frame in Wait(() => boarding.GetTarget(target) is { Operation: null }, "Walk operation retirement")) yield return frame;
             WriteAtomic("dungeon-walk.txt", new[] { "PASS", "dungeon-walk-v1", "manual-arrival-retreat-settlement", "donor-crew-reconciled" });
         }
