@@ -83,15 +83,17 @@ try {
     $p.dungeonConsumerManifestHash = (Get-FileHash $sources -Algorithm SHA256).Hash.ToLowerInvariant()
     Reject { Assert-DungeonConsumerSelection $root $p }
     $saveMarker = Join-Path $root 'dungeon-save.enabled'
-    [IO.File]::WriteAllText($saveMarker, 'dungeon-save-v1'); Assert-DungeonConsumerSelection $root $p
+    [IO.File]::WriteAllText($saveMarker, 'dungeon-save-v2'); Assert-DungeonConsumerSelection $root $p
     [IO.File]::WriteAllLines((Join-Path $root 'dungeon-consumers.txt'), @('INPUTS_SENT','dungeon-consumers-v3','attach-duplicate-commands-active-walk-retreat'))
     [IO.File]::WriteAllLines($walk, $walkLines)
     Reject { Assert-DungeonConsumerReceipt $root $p }
     $saveReceipt = Join-Path $root 'dungeon-save.txt'
     [IO.File]::WriteAllLines($saveReceipt, @('INCOMPLETE')); Reject { Assert-DungeonConsumerReceipt $root $p }
-    [IO.File]::WriteAllLines($saveReceipt, @('PASS','dungeon-save-v1','active-save-reload-occurrence-control-crew-return')); Assert-DungeonConsumerReceipt $root $p
+    [IO.File]::WriteAllLines($saveReceipt, @('PASS','dungeon-save-v1','active-save-reload-occurrence-control-crew-return')); Reject { Assert-DungeonConsumerReceipt $root $p }
+    [IO.File]::WriteAllLines($saveReceipt, @('PASS','dungeon-save-v2','save-as-slot-switch-resolved-reload-older-checkpoint-crew-return')); Assert-DungeonConsumerReceipt $root $p
     [IO.File]::WriteAllText($saveMarker, 'wrong'); Reject { Assert-DungeonConsumerSelection $root $p }
-    [IO.File]::WriteAllText($saveMarker, 'dungeon-save-v1')
+    [IO.File]::WriteAllText($saveMarker, 'dungeon-save-v1'); Reject { Assert-DungeonConsumerSelection $root $p }
+    [IO.File]::WriteAllText($saveMarker, 'dungeon-save-v2')
     [IO.File]::AppendAllText((Join-Path $root 'Player.log'), 'Cargo attach: Attached'); Reject { Assert-DungeonConsumerReceipt $root $p }
     'PASS dungeon consumer manifest, selection, configuration and result gates (synthetic only)'
 } finally { Remove-Item -LiteralPath $root -Recurse -Force }
