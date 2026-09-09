@@ -44,14 +44,15 @@ public sealed class WorldRuntimeStateTests
             var game = new GameAdapter(hub, new GameBindings(typeof(GamePlayer).Assembly), _ => { });
             using var persistence = new PersistenceService(hub, store, Path.GetFullPath, p => GenerationStore.Hash(File.ReadAllBytes(p)));
             using var definitions = new WorldDefinitionRegistry((_, caller) => new StoryHostPlugin("author.a", caller), hub.CheckThread);
-            var provider = definitions.Acquire(new object(), typeof(GamePlayer).Assembly)!;
-            Assert.True(provider.Register(new WorldCombatDefinition("PoiX", 1, "Site", "player", 1)));
             using var loads = new WorldLoadHookHost(typeof(GamePlayer).Assembly, hub, persistence, persistence.CreateWorldReader(), Path.GetFullPath, definitions.MatchesRetained, () => definitions.Revision);
             var lifetime = new WorldLifetimeGuard();
             using var lifetimeHost = new WorldLifetimeHookHost(typeof(GamePlayer).Assembly, hub, lifetime);
             var creation = new WorldCreationCoordinator(new WorldNativeAttachment(game), hub.CheckThread, lifetime);
             using var snapshots = new WorldSnapshotHookHost(hub, new WorldSnapshotRecorder(new WorldJsonInspection(typeof(GamePlayer).Assembly)), creation.Snapshot, () => creation.Revision);
             using var bindings = new WorldPersistenceBindings(persistence, hub, loads, snapshots, creation);
+            using var world = new WorldContentService(hub, definitions, new WorldAuthoringGate(definitions, creation, bindings.CanMutate), () => true);
+            var provider = world.AcquireProvider(new object())!;
+            Assert.Equal(WorldStatus.Succeeded, provider.Register(new WorldCombatSiteDefinition("PoiX", 1, "Site", "player", 1)));
             Action? runtimeChange = null;
             using var runtime = new WorldRuntimeState(game, loads, definitions, creation, lifetime, bindings.StateReady, () => { runtimeChange?.Invoke(); return true; });
             bool dependentSawRestored = false;
@@ -91,8 +92,11 @@ public sealed class WorldRuntimeStateTests
             try
             {
                 if (!hadFaction) Faction.allFactions.Add("player", new Faction());
-                var author = new WorldAuthoringGate(definitions, creation, bindings.CanMutate);
-                Assert.NotNull(author.TryCreate(provider, request.Id, "PoiX", Guid.NewGuid(), "system", 20, 20));
+                var instance = Guid.NewGuid();
+                var created = provider.CreatePersistentCombatSite(request.Id, "PoiX", instance, "system", 20, 20);
+                Assert.True(created.Succeeded); Assert.Equal(instance, created.Reference!.InstanceId); Assert.Equal("author.a", created.Reference.ProviderId);
+                Assert.Equal(WorldStatus.Rejected, provider.CreatePersistentCombatSite(request.Id, "PoiX", instance, "system", 20, 20).Status);
+                Assert.Equal(WorldStatus.NotReady, provider.Register(new WorldCombatSiteDefinition("Late", 1, "Site", "player", 1)));
                 Assert.Equal(2, creation.Snapshot().Length);
             }
             finally { if (!hadFaction) Faction.allFactions.Remove("player"); else Faction.allFactions["player"] = oldFaction!; }

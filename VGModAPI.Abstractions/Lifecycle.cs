@@ -96,4 +96,5 @@ public static class ModApi
 
     /// <summary>Optional experimental owned station-bar content. Null when unavailable.</summary>
     public static IBarApi? Bars { get; internal set; }
+    public static IWorldApi? World { get; internal set; }
 }

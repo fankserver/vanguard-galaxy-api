@@ -1,6 +1,12 @@
 # Owned world content boundary
 
-World protection is opt-in and experimental. Its implementation is internal: there is no supported public world-authoring API, and owned-definition load admission is disabled. Host checks and binding inspection do not qualify persistent world creation in Unity.
+World protection is opt-in and experimental. `ModApi.World` exposes an experimental declaration facade only when protection installs successfully. Native creation returns `Unavailable`, and owned-definition load admission remains disabled. Host checks and binding inspection do not qualify persistent world creation in Unity.
+
+## Declaration facade
+
+Acquire `IWorldProvider` directly from the loaded plugin assembly and register immutable `WorldCombatSiteDefinition` values before starting a session. Definitions identify local content, revision, display name, an existing faction ID and level. Same-owner duplicate declarations are rejected; registration does not create a POI. The authenticated lease owns its declarations and must be disposed on provider teardown.
+
+`CreatePersistentCombatSite` specifies an expected session, declaration ID, separate instance GUID, existing system ID and coordinates. Its implementation is behind the closed runtime-admission gate. A `WorldSiteReference` carries provider/local/instance identity only: it is not a native object, a lookup result or permission to mutate another owner's content. Native qualification, migration, lookup and dependent-reference delivery remain prerequisites to supporting this operation.
 
 ## Shared primitive selection
 

@@ -18,10 +18,12 @@ public sealed partial class Plugin
     private WorldSnapshotHookHost? _worldSnapshotHost;
     private WorldRuntimeState? _worldRuntime;
     private WorldPersistenceBindings? _worldPersistence;
+    private WorldContentService? _worldContent;
 
     private void InitializeWorldProtection()
     {
-        _hub!.SetCapability("world-load-protection", false, "Disabled by configuration; experimental.");
+        _hub!.SetCapability("world-authoring", false, "Native world creation is not yet runtime-qualified.");
+        _hub.SetCapability("world-load-protection", false, "Disabled by configuration; experimental.");
         _hub.SetCapability("world-save-protection", false, "Disabled by configuration; experimental.");
         if (!Config.Bind("WorldProtection", "Enabled", false,
             "Experimental world load/save protection. Owned world authoring is not available; saved owned definitions are refused. Restart required after teardown.").Value) return;
@@ -45,6 +47,7 @@ public sealed partial class Plugin
             _worldPersistence = new WorldPersistenceBindings(_persistence, _hub, _worldLoadHost, _worldSnapshotHost, creation);
             _worldRuntime = new WorldRuntimeState(_adapter, _worldLoadHost, definitions, creation,
                 lifetime, _worldPersistence.StateReady, () => false);
+            _worldContent = new WorldContentService(_hub, definitions, new WorldAuthoringGate(definitions, creation, _worldPersistence.CanMutate), () => false);
             var selected = WorldNativeBindings.Methods.Where(m => m.Key == "worldPoiRead" || m.Key == "worldRecall" || m.Key == "worldCombatUpdate" || m.Key == "worldRemove" || m.Key == "worldSnapshot" || m.Key == "worldStore" || m.Key == "worldActiveUpdate" || m.Key == "worldCanTravel" || m.Key == "worldRoute" || m.Key == "worldBaseArrival" || m.Key == "worldCombatArrival" || m.Key == "worldSpawnPersistable" || m.Key == "worldSpawnUnit" || m.Key == "worldManagerStart" || m.Key == "worldManagerUpdate" || m.Key == "worldSecurityPatrol" || m.Key == "worldManagerInit" || m.Key == "worldInitializePoi" || m.Key == "worldInitializationComplete" || m.Key == "worldBaseAwake" || m.Key == "worldCombatAwake" || m.Key == "worldStoreLastX" || m.Key == "worldStorePosition" || m.Key == "worldIncomingReinforcements" || m.Key == "worldCreateSecurityPatrol" || m.Key == "worldStartTravel" || m.Key == "worldNextWaypoint" || m.Key == "worldTravelChild" || m.Key == "worldCheckLocalScene" || m.Key == "worldUnloadScene" || m.Key == "worldWaitUnload" || m.Key == "worldCancelTravel" || m.Key == "worldGenerate" || m.Key == "worldRegenerateGuards" || m.Key == "worldRegenerateCargo" || m.Key == "worldRegenerateSalvage" || m.Key == "worldRegenerateAsteroids" || m.Key == "worldRebuildStation" || m.Key == "worldJumpgateWave" || m.Key == "worldDeferGeneration" || m.Key == "worldPayloadUpdate" || m.Key == "worldPayloadTrigger" || m.Key == "worldPayloadSpawn" || m.Key == "worldPoiAddPersistable" || m.Key == "worldPoiRemovePersistable" || m.Key == "worldPoiAddUnit" || m.Key == "worldPoiRemoveUnit" || m.Key == "worldPoiAddPayload" || m.Key == "worldAddTriggered" || m.Key == "worldAddBudgetPayload" || m.Key == "worldAddFixedPayload").ToArray();
             var targets = new GameBindings(assembly).Resolve(selected);
             _worldLoadHarmony = new Harmony(ModApi.PluginId + ".world-load");
@@ -99,7 +102,8 @@ public sealed partial class Plugin
             WorldSnapshotPatches.Host = _worldSnapshotHost;
             WorldLifetimePatches.Host = _worldLifetimeHost;
             WorldLoadPatches.Host = _worldLoadHost;
-            _hub.SetCapability("world-save-protection", true, "Experimental scoped snapshot/save protection; no world authoring surface. Not runtime-qualified.");
+            ModApi.World = _worldContent;
+            _hub.SetCapability("world-save-protection", true, "Experimental scoped snapshot/save protection; declarations only, native authoring unavailable. Not runtime-qualified.");
             _hub.SetCapability("world-load-protection", true, "Experimental load guard only; owned world definitions are not admitted. Not runtime-qualified.");
         }
         catch (Exception error)
@@ -121,6 +125,13 @@ public sealed partial class Plugin
     }
 
     private void StopWorldProtection()
+    {
+        if (ReferenceEquals(ModApi.World, _worldContent)) ModApi.World = null;
+        try { _worldContent?.Dispose(); }
+        finally { StopWorldGuards(); }
+    }
+
+    private void StopWorldGuards()
     {
         try { _worldLoadHost?.Dispose(); }
         finally

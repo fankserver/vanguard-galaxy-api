@@ -12,14 +12,14 @@ internal sealed class WorldAuthoringGate
     { _definitions = definitions; _creation = creation; _persistenceReady = persistenceReady; }
 
     internal WorldSnapshotInstance? TryCreate(WorldDefinitionRegistry.Provider provider, Guid session, string localId,
-        Guid instanceId, string systemId, float x, float y)
+        Guid instanceId, string systemId, float x, float y, Func<bool>? availability = null)
     {
         if (!_definitions.TryResolve(provider, localId, out var saved)) return null;
         long revision = _definitions.Revision;
         var identity = new WorldObjectIdentity(new ContentDeclaration(saved!.Owner, localId,
             PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), instanceId);
         return _creation.TryCreate(session, saved, identity, systemId, x, y, () =>
-            _persistenceReady(session) && _definitions.Revision == revision &&
+            (availability?.Invoke() ?? true) && _persistenceReady(session) && _definitions.Revision == revision &&
             _definitions.TryResolve(provider, localId, out var current) &&
             ReferenceEquals(current!.Definition, saved.Definition));
     }
