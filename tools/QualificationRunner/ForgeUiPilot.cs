@@ -15,8 +15,10 @@ namespace VGModAPI.Qualification;
 
 public sealed partial class Plugin
 {
+    private readonly List<string> _forgePointerDiagnostics = new();
     private IEnumerable<object?> CheckForgeUiInput()
     {
+        _forgePointerDiagnostics.Clear();
         WriteAtomic("forge-ui.txt", new[] { "INCOMPLETE" });
         var ui = ModApi.ForgeUi ?? throw new InvalidOperationException("Forge UI service unavailable.");
         ForgeSelectionSnapshot? selection = null;
@@ -145,10 +147,20 @@ public sealed partial class Plugin
     {
         var button = target.GetComponent<Button>();
         var records = new List<string>();
-        string State(string phase) => phase + " selected=" + EventSystem.current.currentSelectedGameObject?.name
-            + " selectedTarget=" + (EventSystem.current.currentSelectedGameObject == target.gameObject)
-            + " liveRevision=" + (SpGet(ModApi.ForgeUi!, "_current") as ForgeSelectionSnapshot)?.Revision + " rowRevision=" + ((Func<long>)SpGet(button, "ReadRevision")!)()
-            + " pressed=" + SpGet(SpGet(button, "_press")!, "_pressed") + " invocation=" + SpGet(button, "InvocationRevision");
+        string State(string phase)
+        {
+            var snapshot = SpGet(ModApi.ForgeUi!, "_current") as ForgeSelectionSnapshot;
+            var module = EventSystem.current.currentInputModule;
+            return "click=" + (_forgePointerDiagnostics.Count / 3) + " " + phase + " selected=" + EventSystem.current.currentSelectedGameObject?.name
+                + " selectedTarget=" + (EventSystem.current.currentSelectedGameObject == target.gameObject)
+                + " liveRevision=" + snapshot?.Revision + " view=" + snapshot?.View.InstanceId + " batches=" + snapshot?.Batches
+                + " rowRevision=" + ((Func<long>)SpGet(button, "ReadRevision")!)()
+                + " pressed=" + SpGet(SpGet(button, "_press")!, "_pressed") + " invocation=" + SpGet(button, "InvocationRevision")
+                + " interactable=" + button.IsInteractable() + " active=" + button.IsActive()
+                + " mouse=" + mouse.position.ReadValue() + " mouseEnabled=" + mouse.enabled
+                + " module=" + module?.GetType().Name + " moduleEnabled=" + module?.enabled
+                + " focused=" + Application.isFocused + " timeScale=" + Time.timeScale;
+        }
         records.Add(State("before"));
         var point = ForgePointerPoint(target);
         InputSystem.QueueStateEvent(mouse, new MouseState { position = point });
@@ -160,7 +172,8 @@ public sealed partial class Plugin
         InputSystem.QueueStateEvent(mouse, new MouseState { position = point });
         yield return null; yield return null;
         records.Add(State("up"));
-        WriteAtomic("forge-ui-pointer-diagnostic.txt", records.ToArray());
+        _forgePointerDiagnostics.AddRange(records);
+        WriteAtomic("forge-ui-pointer-diagnostic.txt", _forgePointerDiagnostics.ToArray());
     }
     private static Button ForgeProbeButton(string label)
     {
