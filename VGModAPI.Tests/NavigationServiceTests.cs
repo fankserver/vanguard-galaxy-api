@@ -15,6 +15,9 @@ public sealed class NavigationServiceTests
         var session = hub.Begin(SessionOrigin.NewGame, null); hub.PlayerReady(session);
         var map = new NavigationMap(new Dictionary<string, string[]> { ["a"] = new[] { "b" }, ["b"] = Array.Empty<string>(), ["c"] = Array.Empty<string>() }, Array.Empty<NavigationStation>(), () => true);
         var api = new NavigationService(hub, _ => map, (_, _, _) => NavigationStatus.Succeeded, (_, _) => null);
+        var all = api.GetJumpCounts(session, "a");
+        Assert.Equal(NavigationStatus.Succeeded, all.Status); Assert.Equal(2, all.Hops.Count);
+        Assert.Equal(1, all.Hops["b"]); Assert.False(all.Hops.ContainsKey("c"));
         Assert.Equal(1, api.GetJumpCount(session, "a", "b").Hops);
         Assert.Equal(0, api.GetJumpCount(session, "a", "a").Hops);
         Assert.Equal(NavigationStatus.Disconnected, api.GetJumpCount(session, "b", "a").Status);
@@ -60,6 +63,25 @@ public sealed class NavigationServiceTests
         using var routine = new NavigationFocusRoutine(Native(), target, () => current, () => focused, () => focused = null, () => { });
         Assert.True(routine.MoveNext()); focused = other; current = false;
         Assert.False(routine.MoveNext()); Assert.Equal(1, advances); Assert.Same(other, focused);
+    }
+    [Fact]
+    public void SuspendedWaitIsPolledThroughTheCurrentnessGuard()
+    {
+        object target = new(); object? focused = null; bool valid = true; int polls = 0;
+        IEnumerator Wait() { while (true) { polls++; yield return null; } }
+        IEnumerator Native() { focused = target; yield return Wait(); throw new Exception("must not resume"); }
+        using var routine = new NavigationFocusRoutine(Native(), target, () => valid, () => focused, () => focused = null, () => { });
+        Assert.True(routine.MoveNext()); Assert.Null(routine.Current);
+        Assert.True(routine.MoveNext()); Assert.Equal(1, polls); Assert.Null(routine.Current);
+        valid = false; Assert.False(routine.MoveNext()); Assert.Equal(1, polls); Assert.Null(focused);
+    }
+    [Fact]
+    public void FirstAdvanceFailureClearsTheAssignedTarget()
+    {
+        object target = new(); object? focused = null;
+        IEnumerator Native() { focused = target; if (focused != null) throw new InvalidOperationException("tab failed"); yield return null; }
+        using var routine = new NavigationFocusRoutine(Native(), target, () => true, () => focused, () => focused = null, () => { });
+        Assert.Throws<InvalidOperationException>(() => routine.MoveNext()); Assert.Null(focused);
     }
     [Fact]
     public void CancellingOwnedFocusClearsOnlyItsTarget()

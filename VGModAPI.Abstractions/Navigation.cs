@@ -30,10 +30,20 @@ public sealed class JumpCountResult
     public JumpCountResult(NavigationStatus status, int? hops = null) { Status = status; Hops = hops; }
 }
 
+public sealed class JumpCountsResult
+{
+    public NavigationStatus Status { get; }
+    public IReadOnlyDictionary<string, int> Hops { get; }
+    public JumpCountsResult(NavigationStatus status, IDictionary<string, int> hops)
+    { Status = status; Hops = new System.Collections.ObjectModel.ReadOnlyDictionary<string, int>(new Dictionary<string, int>(hops, StringComparer.Ordinal)); }
+}
+
 public interface INavigationService : IServiceStatus
 {
     Guid? SessionId { get; }
     NavigationStationsResult GetStations(Guid expectedSessionId, bool visitedOnly = true);
+    /// <summary>One graph read for a distance list; only reachable system IDs are included.</summary>
+    JumpCountsResult GetJumpCounts(Guid expectedSessionId, string fromSystemId);
     JumpCountResult GetJumpCount(Guid expectedSessionId, string fromSystemId, string toSystemId);
     /// <summary>Requests the native map focus operation; success means scheduled, not completed travel or a traversable route.</summary>
     NavigationStatus FocusPoi(Guid expectedSessionId, string poiId);

@@ -40,6 +40,29 @@ internal sealed class NavigationService : INavigationService
         }
         catch (Exception error) { _hub.ReportSubscriberFailure("navigation", error); return Empty(NavigationStatus.Unavailable); }
     }
+    public JumpCountsResult GetJumpCounts(Guid expectedSessionId, string fromSystemId)
+    {
+        _hub.CheckThread();
+        JumpCountsResult Empty(NavigationStatus status) => new(status, new Dictionary<string, int>());
+        if (!Availability.IsAvailable) return Empty(NavigationStatus.Unavailable);
+        if (!Ready(expectedSessionId)) return Empty(NavigationStatus.NotReady);
+        try
+        {
+            var map = _read(expectedSessionId);
+            if (map == null) return Empty(NavigationStatus.NotReady);
+            if (string.IsNullOrWhiteSpace(fromSystemId) || !map.Edges.ContainsKey(fromSystemId)) return Empty(NavigationStatus.Missing);
+            var counts = new Dictionary<string, int>(StringComparer.Ordinal) { [fromSystemId] = 0 };
+            var queue = new Queue<string>(); queue.Enqueue(fromSystemId);
+            while (queue.Count > 0)
+            {
+                var node = queue.Dequeue();
+                foreach (var next in map.Edges[node])
+                    if (map.Edges.ContainsKey(next) && !counts.ContainsKey(next)) { counts.Add(next, counts[node] + 1); queue.Enqueue(next); }
+            }
+            return map.IsCurrent() && Ready(expectedSessionId) ? new JumpCountsResult(NavigationStatus.Succeeded, counts) : Empty(NavigationStatus.NotReady);
+        }
+        catch (Exception error) { _hub.ReportSubscriberFailure("navigation", error); return Empty(NavigationStatus.Unavailable); }
+    }
     public JumpCountResult GetJumpCount(Guid expectedSessionId, string fromSystemId, string toSystemId)
     {
         _hub.CheckThread();
