@@ -27,14 +27,18 @@ public sealed class CargoAuthorSession : IDisposable
         if (lifecycle == null || boarding == null || content == null || string.IsNullOrWhiteSpace(reward))
         { warn("Cargo example requires configured RewardItemId and available boarding/dungeon content."); return; }
         var retried = false;
-        void Initialize()
+        void Initialize(bool allowContentAttempt = true)
         {
-            if (_disposed || _author != null) return;
-            try { _author = new CargoRecovery(content, Id, reward); }
-            catch (ArgumentException error)
+            if (_disposed || _boardingHandler != null) return;
+            if (_author == null)
             {
-                warn($"Cargo definition unavailable for RewardItemId '{reward}': {error.Message}. Check native item/crew catalogs; one retry is allowed at gameplay readiness.");
-                return;
+                if (!allowContentAttempt) return;
+                try { _author = new CargoRecovery(content, Id, reward); }
+                catch (ArgumentException error)
+                {
+                    warn($"Cargo definition unavailable for RewardItemId '{reward}': {error.Message}. Check native item/crew catalogs; one retry is allowed at gameplay readiness.");
+                    return;
+                }
             }
             try
             {
@@ -77,8 +81,12 @@ public sealed class CargoAuthorSession : IDisposable
             _lifecycleHandler = fact =>
             {
                 if (fact.Kind == LifecycleEventKind.SessionInvalidated) ClearTargets();
-                if (fact.Kind == LifecycleEventKind.GameplayInitialized && !retried && _author == null)
-                { retried = true; Initialize(); }
+                if (fact.Kind == LifecycleEventKind.GameplayInitialized)
+                {
+                    // Content and optional presentation can become ready independently.
+                    var allowContentAttempt = !retried; retried = true;
+                    Initialize(allowContentAttempt);
+                }
             };
             lifecycle.Changed += _lifecycleHandler;
             Initialize();

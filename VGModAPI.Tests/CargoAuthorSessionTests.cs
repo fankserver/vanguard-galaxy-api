@@ -110,6 +110,19 @@ public sealed class CargoAuthorSessionTests
     public void UnavailableRendererKeepsContentWithoutControls()
     { var f = new Fixture { ContextualActions = false }; using var author = f.Create(); Assert.Equal(1, f.RegisterCalls); Assert.Empty(f.Actions); }
     [Fact]
+    public void OptionalPresentationCanBecomeReadyAfterContentWithoutReregisteringIt()
+    {
+        var f = new Fixture { ContextualActions = false }; using var author = f.Create();
+        Assert.Equal(1, f.RegisterCalls); Assert.Empty(f.Actions);
+        f.Emit(LifecycleEventKind.GameplayInitialized); Assert.Empty(f.Actions);
+        f.ContextualActions = true;
+        f.Seed = new[] { f.Event(new(f.Session, Guid.NewGuid()), BoardingEventKind.OperationStarted).Operation! };
+        f.Emit(LifecycleEventKind.GameplayInitialized);
+        Assert.Equal(1, f.RegisterCalls); Assert.Equal(2, f.Actions.Count); Assert.Equal(1, f.SettlementLeases);
+        f.Emit(LifecycleEventKind.GameplayInitialized);
+        Assert.Equal(1, f.RegisterCalls); Assert.Equal(2, f.Actions.Count); Assert.Equal(1, f.SettlementLeases);
+    }
+    [Fact]
     public void SeedsExistingOperationsAndDoesNotReregisterSuccessfulDefinition()
     {
         var f = new Fixture(); f.Seed = new[] { f.Event(new(f.Session, Guid.NewGuid()), BoardingEventKind.OperationStarted).Operation! };
