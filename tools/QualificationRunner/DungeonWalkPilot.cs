@@ -33,7 +33,8 @@ public sealed partial class Plugin
             var snapshot = operation == null ? null : boarding.GetOperation(operation);
             var state = "phase=" + snapshot?.Phase + " rooms=" + snapshot?.Compartments.Count + " crew=" + snapshot?.Compartments.Sum(room => room.FriendlyCrew);
             if (state != last && records.Count < 24) { records.Add(state); last = state; WriteAtomic("dungeon-walk-diagnostic.txt", records); }
-            return snapshot?.Phase == BoardingPhase.Active;
+            // Native AddCrew precedes the simulation tick that reveals occupied rooms.
+            return snapshot?.Phase == BoardingPhase.Active && snapshot.Compartments.Any(room => room.Kind == "Airlock" && room.FriendlyCrew > 0);
         }
         settlement.Changed += OnSettlement;
         try
