@@ -86,7 +86,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         _hub.SetCapability("boarding-observation", false, "Disabled by configuration; experimental.");
         ModApi.Boarding = null;
         ModApi.BoardingCommands = null;
-        ModApi.BoardingTactics = null; ModApi.BoardingCombat = null;
+        ModApi.BoardingTactics = null;
         _hub.SetCapability("boarding-tactics", false, "Disabled by configuration; experimental.");
         _hub.SetCapability("boarding-combat", false, "Disabled by configuration; experimental.");
         _hub.SetCapability("boarding-commands", false, "Disabled by configuration; experimental.");
@@ -715,13 +715,12 @@ public sealed partial class Plugin : BaseUnityPlugin
                 ["settlementMasteryScope"] = typeof(DungeonRewardPatches.MasteryScope), ["settlementMastery"] = typeof(DungeonRewardPatches.Mastery)
             });
             if (!_hub.Capabilities.Any(c => c.Name == "dungeon-rewards" && c.Available)) throw new NotSupportedException("Reward hooks unavailable.");
-            ModApi.DungeonRewards = _dungeonRewards;
             ModApi.DungeonSettlement = _dungeonSettlement;
         }
         catch (Exception error)
         {
             DungeonRewardPatches.Crew = null; _dungeonSettlement?.Dispose(); _dungeonSettlement = null; ModApi.DungeonSettlement = null;
-            DungeonRewardPatches.Adapter = null; _dungeonRewards?.Dispose(); _dungeonRewards = null; ModApi.DungeonRewards = null;
+            DungeonRewardPatches.Adapter = null; _dungeonRewards?.Dispose(); _dungeonRewards = null;
             _hub.SetCapability("dungeon-rewards", false, error.GetType().Name); Logger.LogError(error);
         }
     }
@@ -759,12 +758,11 @@ public sealed partial class Plugin : BaseUnityPlugin
                 _ => b.ReturnType == "System.Boolean" ? typeof(BoardingCombatPatches.BoolEffect) : typeof(BoardingCombatPatches.VoidEffect)
             }));
             if (!_hub!.Capabilities.Any(c => c.Name == "boarding-combat" && c.Available)) throw new NotSupportedException("Combat hooks unavailable.");
-            ModApi.BoardingCombat = _boardingCombat;
             if (BoardingCommandPatches.Adapter != null) BoardingCommandPatches.Adapter.ReinforcementAllowed = BoardingCombatPatches.Adapter.AllowPlayerReinforcement;
         }
         catch (Exception error)
         {
-            BoardingCombatPatches.Adapter = null; _boardingCombat?.Dispose(); _boardingCombat = null; ModApi.BoardingCombat = null;
+            BoardingCombatPatches.Adapter = null; _boardingCombat?.Dispose(); _boardingCombat = null;
             _hub!.SetCapability("boarding-combat", false, error.GetType().Name); Logger.LogError(error);
         }
     }
@@ -986,10 +984,10 @@ public sealed partial class Plugin : BaseUnityPlugin
         TeardownCraftingCommands();
         StopBars();
         DungeonRewardPatches.Crew = null; _dungeonSettlement?.Dispose(); _dungeonSettlement = null; ModApi.DungeonSettlement = null;
-        DungeonRewardPatches.Adapter = null; _dungeonRewards?.Dispose(); _dungeonRewards = null; ModApi.DungeonRewards = null;
+        DungeonRewardPatches.Adapter = null; _dungeonRewards?.Dispose(); _dungeonRewards = null;
         StopDungeons();
         BoardingTacticalPatches.Adapter = null; ModApi.BoardingTactics = null;
-        BoardingCombatPatches.Adapter = null; _boardingCombat?.Dispose(); _boardingCombat = null; ModApi.BoardingCombat = null;
+        BoardingCombatPatches.Adapter = null; _boardingCombat?.Dispose(); _boardingCombat = null;
         BoardingCommandPatches.Adapter = null; BoardingCommandPatches.Service = null; _boardingCommands?.Dispose(); _boardingCommands = null; ModApi.BoardingCommands = null;
         BoardingRulePatches.Adapter = null; _boardingRules?.Dispose(); _boardingRules = null; _boardingRuleService?.Dispose(); _boardingRuleService = null;
         BoardingPatches.Observer = null; _boarding?.Dispose(); _boarding = null; ModApi.Boarding = null;

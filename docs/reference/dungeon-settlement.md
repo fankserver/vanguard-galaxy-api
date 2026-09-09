@@ -1,6 +1,6 @@
 # Dungeon rewards and settlement
 
-`ModApi.DungeonRewards` and `ModApi.DungeonSettlement` are optional experimental
+`ModApi.Services.DungeonRewards` and `ModApi.DungeonSettlement` are optional experimental
 services available from API 0.1.33 under `dungeon-rewards`, requiring boarding observation. Query capability
 availability before accessing them. Native qualification remains pending: host and
 installed-assembly checks are not evidence of complete in-game acceptance.
@@ -67,3 +67,8 @@ mission-token exclusions, mission triggers and auto-claim, NPC state cleanup,
 hangar preparation and world departure. The API does not implement capture by
 assigning ownership. Defeat, retreat and explosion retain their native mission
 failure and crew handling; investigation/extraction remain separate outcomes.
+
+`ModApi.Services.DungeonRewards` exposes a stable `IDungeonRewardService`. Its typed
+`Availability` and `AvailabilityChanged` describe integration health separately from
+provider registration. Unavailable or interrupted reward evaluation preserves the
+native amount; registered policies cannot bypass mission-token capture exclusions.

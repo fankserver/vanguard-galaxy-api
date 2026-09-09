@@ -12,7 +12,7 @@ public interface IDungeonRewardProvider : IDisposable
     IDisposable Register(string localId, DungeonRewardKind kind, Func<DungeonRewardContext, DungeonRewardAdjustment> policy);
 }
 
-public interface IDungeonRewardRules
+public interface IDungeonRewardService : IServiceStatus
 {
     bool IsEvaluating { get; }
     IDungeonRewardProvider AcquireProvider(string pluginId);

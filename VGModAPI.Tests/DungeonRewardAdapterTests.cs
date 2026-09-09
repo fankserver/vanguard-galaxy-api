@@ -18,6 +18,7 @@ public sealed class DungeonRewardAdapterTests
         internal Fixture(bool mission)
         {
             var session = Hub.Begin(SessionOrigin.SaveLoad, "save"); Hub.PlayerReady(session);
+            Hub.SetCapability("dungeon-rewards", true, "Test bindings.");
             Rules = new(Hub, (_, _) => { }); _provider = Rules.AcquireProvider("test");
             _provider.Register("xp", DungeonRewardKind.MasteryExperience, _ => new(2));
             _provider.Register("loot", DungeonRewardKind.LootAmount, _ => new(2));

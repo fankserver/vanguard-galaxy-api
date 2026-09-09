@@ -83,7 +83,7 @@ public interface IBoardingCombatProvider : IDisposable
     IDisposable RegisterVeto(string localId, BoardingRuleScope scope, BoardingCombatPolicyKind kind,
         Func<BoardingCombatContext, bool> allow, int priority = 0);
 }
-public interface IBoardingCombatRules
+public interface IBoardingCombatService : IServiceStatus
 {
     bool IsEvaluating { get; }
     IBoardingCombatProvider AcquireProvider(string pluginId);

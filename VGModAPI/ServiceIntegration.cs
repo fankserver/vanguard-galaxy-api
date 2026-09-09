@@ -22,10 +22,12 @@ public sealed partial class Plugin
         _hudService ??= new HudService(hub, hub.ReportSubscriberFailure);
         _forgeUi ??= new ForgeUiService(hub, null, hub.ReportSubscriberFailure);
         _boardingRuleService ??= new BoardingRuleService(hub, hub.ReportSubscriberFailure);
+        _boardingCombat ??= new BoardingCombatService(hub, hub.ReportSubscriberFailure);
+        _dungeonRewards ??= new DungeonRewardService(hub, hub.ReportSubscriberFailure);
         var root = new ModServices(lifecycle, mods, (_persistence ??= new PersistenceService(hub)), missions, travel, station,
-            _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService);
+            _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService, _boardingCombat, _dungeonRewards);
         // Deferred cleanup preserves terminal lifecycle delivery when shutdown starts inside a callback.
-        foreach (var view in new IDisposable[] { mods, missions, travel, station, _persistence!, _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService })
+        foreach (var view in new IDisposable[] { mods, missions, travel, station, _persistence!, _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService, _boardingCombat, _dungeonRewards })
             hub.Services.AfterStopped(view.Dispose);
         ModApi.PublishServices(root);
         _serviceRoot = root;
