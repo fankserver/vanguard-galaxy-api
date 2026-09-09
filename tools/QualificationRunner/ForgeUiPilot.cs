@@ -67,6 +67,7 @@ public sealed partial class Plugin
             Require(calls.Count == 1, "Held pointer activated a replacement selection.");
             foreach (var frame in ForgeClick(mouse, ForgeProbeButton("Forge probe first").transform)) yield return frame;
             Require(calls.Count == 2 && calls[1].SelectedRecipe.Equals(otherRecipe), "Fresh pointer did not activate the alternate variant.");
+            foreach (var frame in CheckForgeUiScale(ui, mouse, calls)) yield return frame;
             var oldView = ui.Current!.View;
             var interior = SpGet(NativeType("Behaviour.UI.Spacestation.SpaceStationInterior"), "instance")!;
             SpCall(interior, "GoToLocation", Enum.Parse(NativeType("Source.Galaxy.POI.SpaceStationFacility"), "Refinery"), true);
@@ -76,10 +77,10 @@ public sealed partial class Plugin
             CheckForgeBand();
             Require(!ui.Current!.View.Equals(oldView), "Reopened Forge retained the old view handle.");
             foreach (var frame in ForgeClick(mouse, ForgeProbeButton("Forge probe second").transform)) yield return frame;
-            Require(calls.Count == 3 && calls[2].SelectedRecipe.Equals(firstRecipe), "Registration did not survive native view replacement.");
+            Require(calls.Count == 5 && calls[4].SelectedRecipe.Equals(firstRecipe), "Registration did not survive native view replacement.");
             first.Dispose(); second.Dispose();
             foreach (var frame in Wait(() => GameObject.Find("Mod API Forge actions") == null, "Disposed Forge actions")) yield return frame;
-            WriteAtomic("forge-ui.txt", new[] { "PASS", "forge-ui-v2", "variants-pointer-disabled-stale-reopen-dispose-nonoverlap" });
+            WriteAtomic("forge-ui.txt", new[] { "PASS", "forge-ui-v3", "variants-pointer-disabled-stale-reopen-dispose-nonoverlap-scale-recovery" });
             Passed("Native Forge variant navigation, pointer actions, disabled/stale input, view replacement and disposal");
         }
         finally
@@ -113,16 +114,16 @@ public sealed partial class Plugin
         var points = corners.Select(corner => RectTransformUtility.WorldToScreenPoint(camera, corner)).ToArray();
         return Rect.MinMaxRect(points.Min(point => point.x), points.Min(point => point.y), points.Max(point => point.x), points.Max(point => point.y));
     }
-    private IEnumerable<object?> CaptureForgeActions()
+    private IEnumerable<object?> CaptureForgeActions(string stem = "forge-ui-actions")
     {
         yield return null; yield return null;
         Require(GameObject.Find("Mod API Forge actions") != null, "Forge actions disappeared before capture.");
-        var path = Path.Combine(_root!, "forge-ui-actions.png");
+        var path = Path.Combine(_root!, stem + ".png");
         Require(!File.Exists(path), "Refusing to overwrite Forge screenshot evidence.");
         ScreenCapture.CaptureScreenshot(path);
         foreach (var frame in Wait(() => File.Exists(path) && new FileInfo(path).Length > 0, "Forge screenshot")) yield return frame;
         using var hash = SHA256.Create();
-        WriteAtomic("forge-ui-actions.txt", new[] { "sha256=" + BitConverter.ToString(hash.ComputeHash(File.ReadAllBytes(path))).Replace("-", "").ToLowerInvariant() });
+        WriteAtomic(stem + ".txt", new[] { "sha256=" + BitConverter.ToString(hash.ComputeHash(File.ReadAllBytes(path))).Replace("-", "").ToLowerInvariant() });
     }
     private static Vector2 ForgePointerPoint(Transform target, Vector2? fixedPoint = null)
     {
@@ -149,7 +150,10 @@ public sealed partial class Plugin
         var records = new List<string>();
         string State(string phase)
         {
-            var snapshot = SpGet(ModApi.Services.ForgeUi!, "_current") as ForgeSelectionSnapshot;
+            // Successful HUD callbacks can rebuild/dispose their own clicked view before this sample.
+            if (target == null || button == null)
+                return "click=" + (_forgePointerDiagnostics.Count / 3) + " " + phase + " targetDestroyed=true";
+            var snapshot = SpGet(ModApi.Services.ForgeUi, "_current") as ForgeSelectionSnapshot;
             var module = EventSystem.current.currentInputModule;
             var selected = EventSystem.current.currentSelectedGameObject;
             return "click=" + (_forgePointerDiagnostics.Count / 3) + " " + phase + " selected=" + (selected != null ? selected.name : "")

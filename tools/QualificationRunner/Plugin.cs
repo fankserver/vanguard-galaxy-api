@@ -136,13 +136,24 @@ public sealed partial class Plugin : BaseUnityPlugin
     {
         foreach (var frame in Wait(() => SceneManager.GetSceneByName("Main Menu").isLoaded, "main menu")) yield return frame;
         foreach (var frame in Settle()) yield return frame;
+        if (File.Exists(Path.Combine(_root!, "dungeon-readiness.enabled")))
+        {
+            Require(File.ReadAllText(Path.Combine(_root!, "dungeon-readiness.enabled")) == "dungeon-readiness-v1", "Invalid dungeon readiness marker.");
+            foreach (var frame in CheckDungeonReadiness()) yield return frame;
+            yield break;
+        }
         if (File.Exists(Path.Combine(_root!, "forge-reads.enabled")))
         {
             Require(File.ReadAllText(Path.Combine(_root!, "forge-reads.enabled")) == "forge-reads-v1", "Invalid Forge read marker.");
             foreach (var frame in CheckForgeReads()) yield return frame;
+            if (File.Exists(Path.Combine(_root!, "blueprint-pin.enabled")))
+            {
+                Require(File.ReadAllText(Path.Combine(_root!, "blueprint-pin.enabled")) == "blueprint-pin-v1", "Invalid Blueprint Pin marker.");
+                foreach (var frame in CheckBlueprintPin()) yield return frame;
+            }
             if (File.Exists(Path.Combine(_root!, "forge-ui.enabled")))
             {
-                Require(File.ReadAllText(Path.Combine(_root!, "forge-ui.enabled")) == "forge-ui-v2", "Invalid Forge UI marker.");
+                Require(File.ReadAllText(Path.Combine(_root!, "forge-ui.enabled")) == "forge-ui-v3", "Invalid Forge UI marker.");
                 foreach (var frame in CheckForgeUiInput()) yield return frame;
             }
             if (File.Exists(Path.Combine(_root!, "forge-commands.enabled")))

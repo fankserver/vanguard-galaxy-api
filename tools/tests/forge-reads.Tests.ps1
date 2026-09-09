@@ -70,22 +70,52 @@ try {
     Remove-Item (Join-Path $root 'refinery.enabled'), (Join-Path $root 'forge-commands.enabled')
     $p | Add-Member forgeUiProbe $true
     Reject { Assert-ForgeReadSelection $root $p }
-    [IO.File]::WriteAllText((Join-Path $root 'forge-ui.enabled'), 'forge-ui-v2')
+    [IO.File]::WriteAllText((Join-Path $root 'forge-ui.enabled'), 'forge-ui-v3')
     Assert-ForgeReadSelection $root $p
     Reject { Assert-ForgeUiReceipt $root $p }
-    [IO.File]::WriteAllLines((Join-Path $root 'forge-ui.txt'), @('PASS','forge-ui-v2','variants-pointer-disabled-stale-reopen-dispose-nonoverlap'))
+    [IO.File]::WriteAllLines((Join-Path $root 'forge-ui.txt'), @('PASS','forge-ui-v3','variants-pointer-disabled-stale-reopen-dispose-nonoverlap-scale-recovery'))
     Reject { Assert-ForgeUiReceipt $root $p }
     $image = Join-Path $root 'forge-ui-actions.png'; $imageRecord = Join-Path $root 'forge-ui-actions.txt'
     [IO.File]::WriteAllBytes($image, [byte[]]@(137,80,78,71,13,10,26,10))
     [IO.File]::WriteAllText($imageRecord, 'sha256=' + (Get-FileHash $image -Algorithm SHA256).Hash.ToLowerInvariant())
+    Reject { Assert-ForgeUiReceipt $root $p }
+    $scaled = Join-Path $root 'forge-ui-scaled.png'; $scaledRecord = Join-Path $root 'forge-ui-scaled.txt'
+    Copy-Item $image $scaled; Copy-Item $imageRecord $scaledRecord
     Assert-ForgeUiReceipt $root $p
     [IO.File]::AppendAllText($image, 'changed'); Reject { Assert-ForgeUiReceipt $root $p }
     Remove-Item $image; Reject { Assert-ForgeUiReceipt $root $p }
     [IO.File]::WriteAllBytes($image, [byte[]]@(137,80,78,71,13,10,26,10))
     Assert-ForgeUiReceipt $root $p
+    [IO.File]::AppendAllText($scaled, 'changed'); Reject { Assert-ForgeUiReceipt $root $p }
+    Copy-Item $image $scaled -Force
+    Assert-ForgeUiReceipt $root $p
     $p.forgeUiProbe = $false; Reject { Assert-ForgeUiSelection $root $p }; $p.forgeUiProbe = $true
     $p.forgeCommandProbe = $true; Reject { Assert-ForgeUiSelection $root $p }; $p.forgeCommandProbe = $false
     [IO.File]::WriteAllText((Join-Path $root 'forge-ui.txt'), 'INCOMPLETE')
     Reject { Assert-ForgeUiReceipt $root $p }
+    $p.forgeUiProbe = $false; Remove-Item (Join-Path $root 'forge-ui.enabled')
+    $p | Add-Member blueprintPinProbe $true
+    $p | Add-Member blueprintPinRevision ('a' * 40)
+    $p | Add-Member blueprintPinSha256 ('b' * 64)
+    Reject { Assert-ForgeReadSelection $root $p }
+    [IO.File]::WriteAllText((Join-Path $root 'blueprint-pin.enabled'), 'blueprint-pin-v1')
+    $binDir = Join-Path $root 'game\BepInEx\plugins'; New-Item -ItemType Directory -Path $binDir -Force | Out-Null
+    $binary = Join-Path $binDir 'VGBlueprintPin.dll'; [IO.File]::WriteAllText($binary, 'synthetic binary')
+    Reject { Assert-ForgeReadSelection $root $p }
+    $p.blueprintPinSha256 = (Get-FileHash $binary -Algorithm SHA256).Hash.ToLowerInvariant()
+    Reject { Assert-ForgeReadSelection $root $p }
+    [IO.File]::AppendAllText((Join-Path $root 'game\BepInEx\config\vgmodapi.cfg'), "`n[Hud]`nEnabled = true`n")
+    Assert-ForgeReadSelection $root $p
+    Reject { Assert-BlueprintPinReceipt $root $p }
+    [IO.File]::WriteAllLines((Join-Path $root 'blueprint-pin.txt'), @('PASS','blueprint-pin-v1','pin-batch-exact-variant-navigation-close'))
+    Reject { Assert-BlueprintPinReceipt $root $p }
+    $pinImage = Join-Path $root 'blueprint-pin-view.png'; $pinRecord = Join-Path $root 'blueprint-pin-view.txt'
+    Copy-Item $image $pinImage; Copy-Item $imageRecord $pinRecord
+    Assert-BlueprintPinReceipt $root $p
+    [IO.File]::AppendAllText($pinImage, 'changed'); Reject { Assert-BlueprintPinReceipt $root $p }
+    Copy-Item $image $pinImage -Force
+    $p.forgeCommandProbe = $true; Reject { Assert-BlueprintPinSelection $root $p }; $p.forgeCommandProbe = $false
+    $p.blueprintPinProbe = $false; Reject { Assert-BlueprintPinSelection $root $p }; $p.blueprintPinProbe = $true
+    [IO.File]::AppendAllText($binary, 'changed'); Reject { Assert-BlueprintPinSelection $root $p }
     'PASS Forge/refinery probe selection and receipt tests'
 } finally { Remove-Item -LiteralPath $root -Recurse -Force }
