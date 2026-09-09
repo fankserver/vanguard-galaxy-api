@@ -1,6 +1,6 @@
 # Boarding integration constraints and source coverage
 
-Optional boarding observation is implemented in API 0.1.25, disabled by default and not runtime-qualified. Enable `[Boarding] Enabled = true`, inspect the `boarding-observation` capability and use `ModApi.Boarding`. API 0.1.26 also exposes `ModApi.BoardingRules` with the independent `boarding-rules` capability. API 0.1.27 exposes `ModApi.BoardingCommands` when `boarding-commands` is available. API 0.1.28 exposes `ModApi.BoardingTactics` and `ModApi.BoardingCombat` under the separate `boarding-tactics` and `boarding-combat` capabilities. Authored content and presentation registration are not available yet. This document distinguishes the observation contract from applicable constraints on those integrations; no native boarding scenario is attested by it.
+Optional boarding observation is implemented in API 0.1.25, disabled by default and not runtime-qualified. Enable `[Boarding] Enabled = true`, inspect the `boarding-observation` capability and use `ModApi.Boarding`. `ModApi.Services.BoardingRules` exposes a stable `IBoardingRuleService` with independent typed availability. API 0.1.27 exposes `ModApi.BoardingCommands` when `boarding-commands` is available. API 0.1.28 exposes `ModApi.BoardingTactics` and `ModApi.BoardingCombat` under the separate `boarding-tactics` and `boarding-combat` capabilities. Authored content and presentation registration are not available yet. This document distinguishes the observation contract from applicable constraints on those integrations; no native boarding scenario is attested by it.
 
 ## Evidence boundary
 
@@ -144,7 +144,7 @@ Tactical execution requires the actual current `IBoardingController` instance, n
 | Surrender and defection | Veto combat/mass surrender, attacker morale collapse and combat/faction side switching | Discrete veto composition and session/reentrancy behavior |
 | Reinforcements | Veto defender scheduling or player requests before debit, not already-arriving manifests | Player roster conservation on veto; receiving simulation remains mandatory |
 | Hazards and venting | Veto native hazard firing, airlock vent attempts or random structural vent selection | Discrete family validation and exact native binding checks |
-| Structural damage | `IBoardingRules.RegisterIntegrity`, scuttle and explosion policies | Cause-aware exactly-once composition; authoritative host destruction remains unchanged |
+| Structural damage | `IBoardingRuleProvider.RegisterIntegrity`, scuttle and explosion policies | Cause-aware exactly-once composition; authoritative host destruction remains unchanged |
 
 `IBoardingCombatRules.AcquireProvider` creates a disposable provider instance independent of command control. RegisterMultiplier accepts Power, InitialHealth, Morale or CasualtyRate; RegisterVeto accepts Surrender, Defection, Reinforcement, Hazard or Venting. Callbacks receive copied encounter kind/level, side, optional room and boundary value. InitialHealth scales the native HP initialization multiplier; Morale scales the absolute change, retaining its sign and clamping resulting morale to [0,1]. Policies do not rewrite saved HP on load.
 
@@ -166,7 +166,7 @@ Commands refuse reentrancy, event/policy dispatch and native save-state serializ
 
 ## Registered boarding policies (API 0.1.26)
 
-Acquire one disposable `IBoardingRuleProvider` per plugin ID from `ModApi.BoardingRules`. Each local registration ID is unique within that owning provider instance. Dispose a registration to remove it, or dispose the provider to remove all its rules. Registration and evaluation are main-thread-only. Check `boarding-rules` availability; binding success is not native qualification.
+Acquire one disposable `IBoardingRuleProvider` per plugin ID from `ModApi.Services.BoardingRules`. Each local registration ID is unique within that owning provider instance. Dispose a registration to remove it, or dispose the provider to remove all its rules. Registration and evaluation are main-thread-only. Check the service’s typed `Availability`; binding success is not native qualification. Providers may declare rules while unavailable, but evaluation preserves vanilla behavior without invoking them. Health loss during evaluation discards the composition; disposal preserves an existing failure diagnosis.
 
 Callbacks receive immutable numeric contexts and must be pure, quick and deterministic. They must not call game commands. Reentrant evaluation uses vanilla defaults. Registration changes take effect on the next evaluation snapshot; disposed entries are skipped immediately. Session replacement during evaluation discards the result. Exceptions and invalid values discard that contribution and report the provider/local ID without suppressing vanilla exceptions.
 

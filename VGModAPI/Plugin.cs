@@ -38,6 +38,7 @@ public sealed partial class Plugin : BaseUnityPlugin
     private DungeonPanelView? _dungeonPanelView;
     private DungeonPanelChoices? _dungeonPanelChoices;
     private BoardingRuleAdapter? _boardingRules;
+    private BoardingRuleService? _boardingRuleService;
     private BoardingCommandService? _boardingCommands;
     private BoardingCombatService? _boardingCombat;
     private DungeonSettlementService? _dungeonSettlement;
@@ -84,7 +85,6 @@ public sealed partial class Plugin : BaseUnityPlugin
         _hub.SetCapability("story-protection", false, "Not bound.");
         _hub.SetCapability("boarding-observation", false, "Disabled by configuration; experimental.");
         ModApi.Boarding = null;
-        ModApi.BoardingRules = null;
         ModApi.BoardingCommands = null;
         ModApi.BoardingTactics = null; ModApi.BoardingCombat = null;
         _hub.SetCapability("boarding-tactics", false, "Disabled by configuration; experimental.");
@@ -664,7 +664,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             _dungeonRecovery.ObserveInitialOperation = operation => _boarding.RestoredOperationReady(operation);
             _dungeonRecovery.ContentOccurrence = _dungeonAdapter.Marker;
             _dungeons = new DungeonContentService(_hub, _dungeonAdapter.Catalogs(), _dungeonState, _dungeonAdapter.Bindings(), (owner, error) => Logger.LogError($"Dungeon provider '{owner}': {error}"),
-                () => _dungeonRecovery?.State.CanMutate != true || (_dungeonSettlement?.IsDispatchingCallbacks ?? false) || (_dungeonRewards?.IsEvaluating ?? false) || (_boardingCombat?.IsEvaluating ?? false) || (ModApi.BoardingRules?.IsEvaluating ?? false));
+                () => _dungeonRecovery?.State.CanMutate != true || (_dungeonSettlement?.IsDispatchingCallbacks ?? false) || (_dungeonRewards?.IsEvaluating ?? false) || (_boardingCombat?.IsEvaluating ?? false) || (_boardingRuleService?.IsEvaluating ?? false));
             DungeonContentPatches.Adapter = _dungeonAdapter; DungeonContentPatches.Json = new DungeonMarkerJson(bindings.Assembly);
             var patches = new Dictionary<string, Type>
             {
@@ -778,7 +778,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             var adapter = new BoardingCommandAdapter(new BoardingCommandNativeBindings(bindings), _boarding, ModApi.Boarding,
                 value => value is UnityEngine.Object native && native != null);
             adapter.SimulationReady = simulation => DungeonCrewResumePatches.Coordinator?.CanTick(simulation) ?? true;
-            _boardingCommands = new BoardingCommandService(_hub, ModApi.Boarding, adapter, () => (ModApi.BoardingRules?.IsEvaluating ?? false) || (_boardingCombat?.IsEvaluating ?? false) || (_dungeonRewards?.IsEvaluating ?? false) || (_dungeonSettlement?.IsDispatchingCallbacks ?? false));
+            _boardingCommands = new BoardingCommandService(_hub, ModApi.Boarding, adapter, () => (_boardingRuleService?.IsEvaluating ?? false) || (_boardingCombat?.IsEvaluating ?? false) || (_dungeonRewards?.IsEvaluating ?? false) || (_dungeonSettlement?.IsDispatchingCallbacks ?? false));
             BoardingCommandPatches.Adapter = adapter; BoardingCommandPatches.Service = _boardingCommands;
             InstallGroup("boarding-commands", bindings, BoardingCommandBindings.Hooks, BoardingCommandBindings.Hooks.ToDictionary(b => b.Key, b => b.Key switch
             {
@@ -820,7 +820,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             });
             InstallGroup("boarding-rules", bindings, BoardingRuleBindings.Hooks, patches);
             if (!_hub.Capabilities.Any(c => c.Name == "boarding-rules" && c.Available)) throw new NotSupportedException("Boarding rules unavailable.");
-            ModApi.BoardingRules = rules;
+            _boardingRuleService = rules;
         }
         catch (Exception error)
         {
@@ -991,7 +991,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         BoardingTacticalPatches.Adapter = null; ModApi.BoardingTactics = null;
         BoardingCombatPatches.Adapter = null; _boardingCombat?.Dispose(); _boardingCombat = null; ModApi.BoardingCombat = null;
         BoardingCommandPatches.Adapter = null; BoardingCommandPatches.Service = null; _boardingCommands?.Dispose(); _boardingCommands = null; ModApi.BoardingCommands = null;
-        BoardingRulePatches.Adapter = null; _boardingRules?.Dispose(); _boardingRules = null; ModApi.BoardingRules = null;
+        BoardingRulePatches.Adapter = null; _boardingRules?.Dispose(); _boardingRules = null; _boardingRuleService?.Dispose(); _boardingRuleService = null;
         BoardingPatches.Observer = null; _boarding?.Dispose(); _boarding = null; ModApi.Boarding = null;
         try { _updates?.Dispose(); } catch (Exception) { }
         try { _modMenu?.Dispose(); } catch (Exception error) { DisableModMenu(error); }

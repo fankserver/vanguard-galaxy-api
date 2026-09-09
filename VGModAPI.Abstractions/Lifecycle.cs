@@ -71,7 +71,6 @@ public static class ModApi
     /// <summary>Optional inspected-build boarding observations; consult boarding-observation capability.</summary>
     public static IBoardingEvents? Boarding { get; internal set; }
     /// <summary>Optional inspected-build boarding policies, independent of observation subscribers.</summary>
-    public static IBoardingRules? BoardingRules { get; internal set; }
     /// <summary>Optional inspected-build boarding commands; admitted commands are not completed outcomes.</summary>
     public static IBoardingCommands? BoardingCommands { get; internal set; }
     public static IBoardingTactics? BoardingTactics { get; internal set; }

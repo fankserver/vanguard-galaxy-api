@@ -5,15 +5,20 @@ using System.Linq;
 namespace VGModAPI.Core;
 
 /// <summary>Pure policy composition. Native mutation belongs exclusively to the adapter.</summary>
-internal sealed class BoardingRuleService : IBoardingRules, IDisposable
+internal sealed class BoardingRuleService : IBoardingRuleService, IDisposable
 {
     private readonly LifecycleHub _hub;
+    private readonly IServiceStatus _status;
     private readonly Action<string, Exception> _report;
     private readonly Dictionary<string, Provider> _providers = new(StringComparer.Ordinal);
     private readonly List<Registration> _registrations = new();
     private bool _evaluating, _disposed;
     public bool IsEvaluating { get { _hub.CheckThread(); return _evaluating; } }
-    internal BoardingRuleService(LifecycleHub hub, Action<string, Exception> report) { _hub = hub; _report = report; }
+    internal BoardingRuleService(LifecycleHub hub, Action<string, Exception> report)
+    { _hub = hub; _report = report; _status = hub.Services.Get("boarding-rules"); }
+    public ServiceAvailability Availability => _status.Availability;
+    public event Action<ServiceAvailability>? AvailabilityChanged
+    { add => _status.AvailabilityChanged += value; remove => _status.AvailabilityChanged -= value; }
     public IBoardingRuleProvider AcquireProvider(string pluginId)
     {
         _hub.CheckThread();
@@ -25,7 +30,7 @@ internal sealed class BoardingRuleService : IBoardingRules, IDisposable
     private bool Current(Guid session)
     {
         var current = _hub.CurrentSession;
-        return !_disposed && current?.Id == session && current.Phase is SessionPhase.PlayerReady or SessionPhase.GameplayInitialized;
+        return !_disposed && Availability.IsAvailable && current?.Id == session && current.Phase is SessionPhase.PlayerReady or SessionPhase.GameplayInitialized;
     }
     private bool Evaluate(Guid session, Kind kind, BoardingEncounterKind encounter, Action<Registration> invoke)
     {
@@ -127,6 +132,7 @@ internal sealed class BoardingRuleService : IBoardingRules, IDisposable
     public void Dispose()
     {
         _hub.CheckThread(); if (_disposed) return; _disposed = true;
+        if (Availability.IsAvailable) _hub.SetCapability("boarding-rules", false, "Boarding rule service stopped.", ServiceUnavailableReason.ApiStopped);
         foreach (var provider in _providers.Values.ToArray()) provider.Dispose();
     }
     private enum Kind { Disable, Chance, Encounter, Integrity, Scuttle, Explosion }
