@@ -47,7 +47,16 @@ public sealed class Inspector : IDisposable
         _recipe = selection.SelectedRecipe;
         var quote = _quotes.Quote(selection.Station, _recipe, selection.Batches);
         var catalog = _catalog.Read();
-        Show(selection.Presentation.DisplayName, Describe(quote, catalog));
+        if (quote.Status == RecipeQuoteStatus.Available && quote.Inputs.Count <= 30)
+        {
+            var ingredients = quote.Inputs.Select((input, index) => HudRow.Ingredient("ingredient-" + index,
+                input.Resource.LocalId, input.Required, input.Available,
+                "Requirements snapshot; refresh with Inspect.",
+                input.Resource.Kind == RecipeResourceKind.Item ? new HudPresentation(input.Resource.ProviderId, input.Resource.LocalId, HudPresentationKind.Item)
+                : input.Resource.Kind == RecipeResourceKind.RefinedMaterial ? new HudPresentation(input.Resource.ProviderId, input.Resource.LocalId, HudPresentationKind.RefinedMaterial) : null));
+            _hud.Update(new("Show in Forge"), new HudRecipeView(selection.Presentation.DisplayName, ingredients).ToPanel());
+        }
+        else Show(selection.Presentation.DisplayName, Describe(quote, catalog));
     }
     public static IReadOnlyList<HudRow> Describe(RecipeQuote quote, RecipeCatalogSnapshot catalog)
     {

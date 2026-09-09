@@ -66,7 +66,7 @@ internal sealed class ForgeUiRuntime : IDisposable
         var contents = RecipeCatalogNativeSource.Member(ui, "tabContents")!;
         var icon = RecipeCatalogNativeSource.Member(contents, "recipeIcon") as Image;
         var font = (RecipeCatalogNativeSource.Member(contents, "costText") as TMP_Text)?.font;
-        var tabs = _source.ForgeTabAnchor as RectTransform;
+        var tabs = RecipeCatalogNativeSource.Member(contents, "ingredientsDivider") as RectTransform;
         var canvas = tabs != null ? tabs.GetComponentInParent<Canvas>()?.rootCanvas : null;
         if (icon == null || tabs == null || canvas == null || canvas.transform is not RectTransform anchor || font == null)
             throw new InvalidOperationException("Forge action anchor unavailable.");
@@ -130,8 +130,8 @@ internal sealed class ForgeUiRuntime : IDisposable
         tabs.GetWorldCorners(_tabCorners);
         var left = canvas.InverseTransformPoint(_tabCorners[1]); var right = canvas.InverseTransformPoint(_tabCorners[2]);
         var bounds = canvas.rect;
-        return ForgeActionBand.TryCreate(bounds.width, bounds.height, left.x - bounds.xMin, right.x - bounds.xMin,
-            Math.Max(left.y, right.y) - bounds.yMin, out band, count * (ForgeActionBand.CellWidth + 4) - 4);
+        return ForgeActionBand.TryCreateResult(bounds.width, bounds.height, left.x - bounds.xMin, right.x - bounds.xMin,
+            Math.Min(left.y, right.y) - bounds.yMin, out band);
     }
     private static void PlaceBand(ForgeActionBand band, RectTransform strip, RectTransform tooltip)
     {

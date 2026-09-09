@@ -80,7 +80,7 @@ internal sealed partial class HudRuntime
             view.Revision = entry.Revision;
             if (entry.Button != null)
             {
-                view.Button!.interactable = entry.Button.Enabled; view.ButtonLabel!.text = entry.Button.Label;
+                view.Button!.interactable = entry.Button.Enabled; view.ButtonLabel!.text = GameText(entry.Button.Label);
                 view.ButtonHover!.Tooltip = entry.Button.Tooltip;
             }
             if (entry.Panel == null) continue;
@@ -89,6 +89,14 @@ internal sealed partial class HudRuntime
             {
                 var display = view.Rows[row.Id]; display.Button!.interactable = row.Clickable;
                 SafeBind(entry.Plugin, display, row.Label, row.Detail, row.Tooltip, row.Presentation);
+                display.Amount.gameObject.SetActive(row.IngredientAmounts != null);
+                display.Text.rectTransform.offsetMax = new Vector2(row.IngredientAmounts != null ? -84 : -4, 0);
+                if (row.IngredientAmounts is { } amounts)
+                {
+                    display.Text.text += " x" + amounts.RequiredText;
+                    display.Amount.text = "(" + amounts.AvailableText + ")";
+                    display.Amount.color = amounts.Sufficient == true ? Color.green : amounts.Sufficient == false ? new Color(1, .25f, .25f) : Color.gray;
+                }
             }
         }
         if (_session() != session) ClearSurface();
@@ -98,7 +106,8 @@ internal sealed partial class HudRuntime
         try { Bind(row, label, detail, tooltip, presentation); }
         catch (Exception error)
         {
-            row.Text.text = (label.Length == 0 ? presentation?.LocalId + " (unavailable)" : label) + "  " + detail;
+            row.Text.text = GameText((label.Length == 0 ? presentation?.LocalId + " (unavailable)" : label) + "  " + detail);
+            row.Text.color = Color.white;
             row.Icon.sprite = null; row.Icon.gameObject.SetActive(false); row.Hover.Tooltip = tooltip;
             var native = row.Text.transform.parent.GetComponent(_assembly.GetType("Behaviour.UI.Tooltip.ItemTooltipSource", true)!) as UnityEngine.Behaviour;
             if (native != null) native.enabled = false;
@@ -108,7 +117,8 @@ internal sealed partial class HudRuntime
     private void Bind(DisplayRow row, string label, string detail, string tooltip, HudPresentation? presentation)
     {
         var resolved = presentation == null ? (Name: "", Icon: (object?)null, TooltipItem: (object?)null) : _presentation.Resolve(presentation);
-        row.Text.text = (label.Length == 0 ? resolved.Name : label) + (detail.Length == 0 ? "" : "  " + detail);
+        row.Text.text = GameText((label.Length == 0 ? resolved.Name : label) + (detail.Length == 0 ? "" : "  " + detail));
+        row.Text.color = _presentation.ItemColor(resolved.TooltipItem) is Color color ? color : Color.white;
         row.Icon.sprite = resolved.Icon as Sprite; row.Icon.gameObject.SetActive(row.Icon.sprite != null);
         row.Text.rectTransform.offsetMin = new Vector2(row.Icon.sprite != null ? 28 : 4, 0);
         var tooltipType = _assembly.GetType("Behaviour.UI.Tooltip.ItemTooltipSource", true)!;
@@ -128,7 +138,7 @@ internal sealed partial class HudRuntime
     private ForgeActionHover Hover(GameObject go)
     {
         var hover = go.AddComponent<ForgeActionHover>();
-        hover.Show = text => { if (_plainTooltip != null) { _plainTooltip.text = text; _plainTooltip.transform.parent.gameObject.SetActive(text.Length != 0); } };
+        hover.Show = text => { if (_plainTooltip != null) { _plainTooltip.text = GameText(text); _plainTooltip.transform.parent.gameObject.SetActive(text.Length != 0); } };
         return hover;
     }
     private DisplayRow Display(RectTransform rect)
@@ -137,8 +147,12 @@ internal sealed partial class HudRuntime
         var imageRect = (RectTransform)icon.transform; imageRect.SetParent(rect, false); imageRect.anchorMin = imageRect.anchorMax = new Vector2(0, .5f);
         imageRect.pivot = new Vector2(0, .5f); imageRect.anchoredPosition = new Vector2(3, 0); imageRect.sizeDelta = new Vector2(24, 24);
         icon.preserveAspect = true; icon.raycastTarget = false;
-        return new DisplayRow(Label(rect, 12), icon, Hover(rect.gameObject));
+        var amount = Label(rect, 12); amount.alignment = TextAlignmentOptions.MidlineRight;
+        amount.rectTransform.anchorMin = new Vector2(1, 0); amount.rectTransform.offsetMin = new Vector2(-82, 0);
+        amount.gameObject.SetActive(false);
+        return new DisplayRow(Label(rect, 12), amount, icon, Hover(rect.gameObject));
     }
+    private static string GameText(string value) => value.Replace('\u00b7', '-').Replace("\u2026", "...");
     private TMP_Text Label(RectTransform parent, int size)
     {
         var text = new GameObject("Text", typeof(RectTransform), typeof(TextMeshProUGUI)).GetComponent<TextMeshProUGUI>(); text.transform.SetParent(parent, false);
@@ -185,7 +199,7 @@ internal sealed partial class HudRuntime
     }
     private sealed class DisplayRow
     {
-        internal readonly TMP_Text Text; internal readonly Image Icon; internal readonly ForgeActionHover Hover; internal Button? Button;
-        internal DisplayRow(TMP_Text text, Image icon, ForgeActionHover hover) { Text = text; Icon = icon; Hover = hover; }
+        internal readonly TMP_Text Text; internal readonly TMP_Text Amount; internal readonly Image Icon; internal readonly ForgeActionHover Hover; internal Button? Button;
+        internal DisplayRow(TMP_Text text, TMP_Text amount, Image icon, ForgeActionHover hover) { Text = text; Amount = amount; Icon = icon; Hover = hover; }
     }
 }

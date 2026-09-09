@@ -42,6 +42,8 @@ internal sealed class HudPresentationSource
         var name = (string)_methods["hudTranslate"].Invoke(null, new object[] { text, Array.Empty<object>() })!;
         return (name, RecipeCatalogNativeSource.Member(item, "icon"), recipes ? null : item);
     }
+    internal object? ItemColor(object? item) => item == null ? null : _methods["hudRarityColor"].Invoke(null,
+        new[] { RecipeCatalogNativeSource.Member(item, "rarity") });
     private static IEnumerable<object> Scan(object? values)
     {
         if (values is not IEnumerable sequence) throw new InvalidOperationException("Presentation registry unavailable.");

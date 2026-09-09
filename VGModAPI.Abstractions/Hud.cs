@@ -27,6 +27,12 @@ public sealed class HudRow
     public string Tooltip { get; }
     public HudPresentation? Presentation { get; }
     public bool Clickable { get; }
+    public HudIngredientAmounts? IngredientAmounts { get; private set; }
+    /// <summary>Reusable native-style ingredient row. Unknown availability is not displayed as zero.</summary>
+    public static HudRow Ingredient(string id, string label, double required, double? available,
+        string tooltip = "", HudPresentation? presentation = null, bool clickable = false)
+        => new HudRow(id, label, "", tooltip, presentation, clickable)
+        { IngredientAmounts = new HudIngredientAmounts(required, available) };
     public HudRow(string id, string label, string detail = "", string tooltip = "", HudPresentation? presentation = null, bool clickable = false)
     {
         Id = RecipeValues.Identity(id, nameof(id)); Label = HudText.Check(label, 256); Detail = HudText.Check(detail, 256); Tooltip = HudText.Check(tooltip, 1024);
