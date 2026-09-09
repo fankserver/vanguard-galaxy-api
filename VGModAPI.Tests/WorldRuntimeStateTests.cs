@@ -44,13 +44,15 @@ public sealed class WorldRuntimeStateTests
             var provider = definitions.Acquire(new object(), typeof(GamePlayer).Assembly)!;
             Assert.True(provider.Register(new WorldCombatDefinition("PoiX", 1, "Site", "player", 1)));
             using var loads = new WorldLoadHookHost(typeof(GamePlayer).Assembly, hub, persistence, persistence.CreateWorldReader(), Path.GetFullPath, definitions.MatchesRetained, () => definitions.Revision);
-            var creation = new WorldCreationCoordinator(new WorldNativeAttachment(game), hub.CheckThread);
+            var lifetime = new WorldLifetimeGuard();
+            using var lifetimeHost = new WorldLifetimeHookHost(typeof(GamePlayer).Assembly, hub, lifetime);
+            var creation = new WorldCreationCoordinator(new WorldNativeAttachment(game), hub.CheckThread, lifetime);
             using var snapshots = new WorldSnapshotHookHost(hub, new WorldSnapshotRecorder(new WorldJsonInspection(typeof(GamePlayer).Assembly)), creation.Snapshot, () => creation.Revision);
             using var bindings = new WorldPersistenceBindings(persistence, hub, loads, snapshots, creation);
-            using var runtime = new WorldRuntimeState(game, loads, definitions, creation);
+            using var runtime = new WorldRuntimeState(game, loads, definitions, creation, lifetime, bindings.StateReady, () => true);
             bool dependentSawRestored = false;
             using var dependent = hub.Subscribe("dependent-content", e =>
-            { if (e.Kind == LifecycleEventKind.PlayerReady) dependentSawRestored = creation.Restored(e.Session!.Id); });
+            { if (e.Kind == LifecycleEventKind.PlayerReady) dependentSawRestored = creation.Restored(e.Session!.Id) && lifetimeHost.AllowUse(Assert.Single(creation.Snapshot()).Native); });
             var map = new GalaxyMapData(); var sector = new SectorMapData { guid = "sector" }; var system = new SystemMapData { guid = "system" };
             map.TestSectors.Add(sector); sector.TestSystems.Add(system);
             var poi = new Source.Galaxy.POI.Combat { guid = identity.NativeId, system = system, level = 9 };
@@ -74,6 +76,7 @@ public sealed class WorldRuntimeStateTests
                 var operation = Guid.NewGuid();
                 hub.Publish(new LifecycleEvent(LifecycleEventKind.SaveStarted, hub.CurrentSession, operation, saveAs));
                 Assert.False(bindings.CanMutate(request.Id));
+                Assert.True(bindings.StateReady(request.Id)); Assert.True(lifetimeHost.AllowUse(poi));
                 File.WriteAllBytes(saveAs, bytes);
                 hub.Publish(new LifecycleEvent(LifecycleEventKind.SaveSucceeded, hub.CurrentSession, operation, saveAs));
             }
@@ -89,6 +92,7 @@ public sealed class WorldRuntimeStateTests
                 Assert.Equal(2, creation.Snapshot().Length);
             }
             finally { if (!hadFaction) Faction.allFactions.Remove("player"); else Faction.allFactions["player"] = oldFaction!; }
+            provider.Dispose(); Assert.False(lifetimeHost.AllowUse(poi));
             hub.Invalidate("leave"); Assert.False(creation.Restored(request.Id));
             Assert.False(bindings.CanMutate(request.Id));
             Assert.Throws<InvalidDataException>(() => creation.Snapshot());

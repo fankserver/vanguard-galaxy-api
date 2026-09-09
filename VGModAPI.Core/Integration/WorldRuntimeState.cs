@@ -13,10 +13,15 @@ internal sealed class WorldRuntimeState : IDisposable
     private readonly WorldCreationCoordinator _creation;
     private readonly WorldNativeReconstruction _reconstruction;
     private readonly IDisposable _subscription;
+    private readonly WorldLifetimeGuard? _lifetime;
+    private readonly Func<Guid, bool>? _persistenceReady;
+    private readonly Func<bool>? _allowOwnedRuntime;
     private Guid _session;
     private bool _disposed;
-    internal WorldRuntimeState(GameAdapter game, WorldLoadHookHost loads, WorldDefinitionRegistry definitions, WorldCreationCoordinator creation)
+    internal WorldRuntimeState(GameAdapter game, WorldLoadHookHost loads, WorldDefinitionRegistry definitions, WorldCreationCoordinator creation,
+        WorldLifetimeGuard? lifetime = null, Func<Guid, bool>? persistenceReady = null, Func<bool>? allowOwnedRuntime = null)
     {
+        _lifetime = lifetime; _persistenceReady = persistenceReady; _allowOwnedRuntime = allowOwnedRuntime;
         _game = game; _loads = loads; _definitions = definitions; _creation = creation;
         _game.Hub.CheckThread();
         if (_game.Hub.CurrentSession != null) throw new InvalidOperationException("World restoration must attach before a session.");
@@ -49,6 +54,15 @@ internal sealed class WorldRuntimeState : IDisposable
                     () => Current() && ReferenceEquals(_loads.PreparedFor(session), prepared) && Current(),
                     record => _loads.ConstructedBy(prepared, record))))
                     throw new InvalidDataException("World reconstruction could not be published.");
+            }
+            if (_lifetime != null && _persistenceReady != null && _allowOwnedRuntime != null)
+            {
+                var context = _reconstruction.CaptureContext(session);
+                bool Available() => Current() && _creation.HasRestoredInventory(session) && context() &&
+                    _persistenceReady(session) && _allowOwnedRuntime() && Current() && context();
+                // State readiness permits native initialization, not public mutations during callback dispatch.
+                // The separate runtime admission gate remains closed until supported behavior is qualified.
+                if (Available()) _lifetime.Ready(session, Available);
             }
         }
     }

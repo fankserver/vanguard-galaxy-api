@@ -22,6 +22,12 @@ internal sealed class WorldNativeReconstruction
             ?? throw new MissingFieldException("MapElement.system");
         _combat = assembly.GetType("Source.Galaxy.POI.Combat", true)!;
     }
+    internal Func<bool> CaptureContext(Guid session)
+    {
+        if (!_game.TryGetObservedPlayer(session, out var player)) throw new InvalidDataException("No observed world player.");
+        var map = _map.GetValue(player) ?? throw new InvalidDataException("No observed world map.");
+        return () => _game.TryGetObservedPlayer(session, out var current) && ReferenceEquals(current, player) && ReferenceEquals(_map.GetValue(current), map);
+    }
     internal WorldSnapshotInstance[] Read(WorldPreparedLoad prepared, Func<bool> stillAdmitted, Func<WorldSnapshotInstance, bool> constructed)
     {
         if (prepared == null || stillAdmitted == null || constructed == null) throw new ArgumentNullException("Verified load and admission fence required.");

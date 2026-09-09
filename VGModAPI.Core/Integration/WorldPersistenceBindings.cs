@@ -46,6 +46,12 @@ internal sealed class WorldPersistenceBindings : IDisposable
             (expected == null ? payload != null : payload == null || !expected.SequenceEqual(payload)))
             throw new InvalidDataException("World persistence differs from the admitted native generation.");
     }
+    internal bool StateReady(Guid session)
+    {
+        _hub.CheckThread();
+        return !_disposed && _hub.CurrentSession?.Id == session && _creation.HasRestoredInventory(session) &&
+            _state is IPersistenceReadiness state && state.StateReady && _definitions is IPersistenceReadiness definitions && definitions.StateReady;
+    }
     internal bool CanMutate(Guid session)
     {
         _hub.CheckThread();
