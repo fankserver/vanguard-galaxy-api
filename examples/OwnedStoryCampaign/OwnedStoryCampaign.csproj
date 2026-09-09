@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!-- Independent example author. It is never part of the shipped API package; the package
-       check refuses any unexpected file, and the launcher only installs it for the story probe. -->
+       check refuses any unexpected file. -->
   <PropertyGroup><TargetFramework>netstandard2.1</TargetFramework><IsPackable>false</IsPackable></PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../VGModAPI.Abstractions/VGModAPI.Abstractions.csproj" Private="false" />
