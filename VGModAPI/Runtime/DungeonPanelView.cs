@@ -49,7 +49,7 @@ internal sealed class DungeonPanelView : IDisposable
         }
         var canvas = anchor!.GetComponentInParent<Canvas>()?.rootCanvas.transform as RectTransform;
         if (!canvas) { Clear(); return; }
-        _root!.transform.SetSiblingIndex(anchor.GetSiblingIndex() + 1);
+        PlaceAfter(_root!.transform, anchor);
         var corners = new Vector3[4]; anchor.GetWorldCorners(corners);
         var lower = canvas!.InverseTransformPoint(corners[0]); var upper = canvas.InverseTransformPoint(corners[2]);
         var bounds = canvas.rect;
@@ -69,7 +69,7 @@ internal sealed class DungeonPanelView : IDisposable
                 _compactLabel.rectTransform.anchorMin = Vector2.zero; _compactLabel.rectTransform.anchorMax = Vector2.one; _compactLabel.rectTransform.offsetMin = new Vector2(4, 0); _compactLabel.rectTransform.offsetMax = new Vector2(-4, 0);
             }
             var toggle = (RectTransform)_compactToggle!.transform;
-            toggle.SetSiblingIndex(_root!.transform.GetSiblingIndex() + 1);
+            PlaceAfter(toggle, _root!.transform);
             toggle.position = canvas.TransformPoint(new Vector3(bounds.xMax - 168, bounds.yMax - 8, 0));
             var toggleSize = host.InverseTransformVector(canvas.TransformVector(new Vector3(160, 36, 0))); toggle.sizeDelta = new Vector2(Mathf.Abs(toggleSize.x), Mathf.Abs(toggleSize.y));
             _compactLabel!.text = _drawerOpen ? "Close mod actions" : "Mod actions";
@@ -108,6 +108,12 @@ internal sealed class DungeonPanelView : IDisposable
             entry.Text.text = rows[i].Section is { } section ? section.Title + "\n" + section.Text : rows[i].Action!.Label + (rows[i].Action!.Tooltip.Length == 0 ? "" : "\n" + rows[i].Action!.Tooltip);
             if (entry.Button != null) entry.Button.interactable = rows[i].Action!.Enabled;
         }
+    }
+    private static void PlaceAfter(Transform child, Transform anchor)
+    {
+        var current = child.GetSiblingIndex(); var anchorIndex = anchor.GetSiblingIndex();
+        if (current == anchorIndex + 1) return;
+        child.SetSiblingIndex(anchorIndex + (current < anchorIndex ? 0 : 1));
     }
     private void Clear() { if (_compactToggle) { _compactToggle!.SetActive(false); UnityEngine.Object.Destroy(_compactToggle); } _compactToggle = null; _compactLabel = null; _drawerOpen = false; if (_root) { _root!.SetActive(false); UnityEngine.Object.Destroy(_root); } _root = null; _content = null; _entries.Clear(); }
     public void Dispose() => Clear();

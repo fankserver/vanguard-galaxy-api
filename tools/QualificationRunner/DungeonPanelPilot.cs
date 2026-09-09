@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.IO;
+using System.Security.Cryptography;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.LowLevel;
@@ -63,6 +65,12 @@ public sealed partial class Plugin
             if (toggle && !GameObject.Find("Mod API dungeon contributions"))
                 foreach (var frame in DungeonClick(mouse, toggle!.transform)) yield return frame;
             foreach (var frame in Wait(() => DungeonProbeButton("Enabled dungeon probe")?.GetComponent<Image>().depth >= 0, "Dungeon action graphics")) yield return frame;
+            yield return new WaitForEndOfFrame();
+            var capture = Path.Combine(_root!, "dungeon-panel-actions.png");
+            Require(!File.Exists(capture), "Refusing to overwrite dungeon screenshot.");
+            ScreenCapture.CaptureScreenshot(capture);
+            foreach (var frame in Wait(() => File.Exists(capture) && new FileInfo(capture).Length > 0, "Dungeon screenshot")) yield return frame;
+            using (var hash = SHA256.Create()) WriteAtomic("dungeon-panel-actions.txt", new[] { "sha256=" + BitConverter.ToString(hash.ComputeHash(File.ReadAllBytes(capture))).Replace("-", "").ToLowerInvariant() });
             foreach (var frame in DungeonClick(mouse, DungeonProbeButton("Enabled dungeon probe")!.transform)) yield return frame;
             Require(calls == 1, "Enabled dungeon action did not dispatch exactly once.");
             Require(DungeonProbeButton("Disabled dungeon probe")?.interactable == false, "Disabled dungeon action became enabled.");
