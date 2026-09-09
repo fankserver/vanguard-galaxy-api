@@ -41,6 +41,8 @@ public sealed partial class Plugin
             var definitions = _worldDefinitions;
             _worldLoadHost = new WorldLoadHookHost(assembly, _hub, _persistence, _persistence.CreateWorldReader(),
                 _persistence.CanonicalLoadPath, _ => false, () => definitions.Revision);
+            var salvageConstructor = assembly.GetType("Source.Data.Persistable.SalvageData", true)!.GetConstructor(Type.EmptyTypes)
+                ?? throw new MissingMethodException("SalvageData..ctor()");
             var lifetime = new WorldLifetimeGuard();
             var creation = new WorldCreationCoordinator(new WorldNativeAttachment(_adapter), _hub.CheckThread, lifetime);
             _worldLifetimeHost = new WorldLifetimeHookHost(assembly, _hub, lifetime, new WorldActorPhysics(assembly).Stop,
@@ -112,9 +114,12 @@ public sealed partial class Plugin
                     foreach (var key in new[] { "worldGenerate", "worldSalvageReset", "worldSalvageAdd" })
                     _worldLoadHarmony.Patch(targets[key], prefix: new HarmonyMethod(typeof(WorldLifetimePatches.Generation).GetMethod("Prefix", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.First },
                         finalizer: new HarmonyMethod(typeof(WorldLifetimePatches.Generation).GetMethod("Finalizer", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.Last });
-                    foreach (var key in new[] { "worldRegenerateSalvage", "worldSalvageDescriptor" })
+                    foreach (var key in new[] { "worldRegenerateSalvage" })
                     _worldLoadHarmony.Patch(targets[key], prefix: new HarmonyMethod(typeof(WorldLifetimePatches.Generation).GetMethod("StaticPrefix", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.First },
                         finalizer: new HarmonyMethod(typeof(WorldLifetimePatches.Generation).GetMethod("Finalizer", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.Last });
+                    _worldLoadHarmony.Patch(targets["worldSalvageDescriptor"], prefix: new HarmonyMethod(typeof(WorldLifetimePatches.Generation).GetMethod("DescriptorPrefix", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.First },
+                        finalizer: new HarmonyMethod(typeof(WorldLifetimePatches.Generation).GetMethod("DescriptorFinalizer", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.Last });
+                    _worldLoadHarmony.Patch(salvageConstructor, prefix: new HarmonyMethod(typeof(WorldLifetimePatches.Generation).GetMethod("ConstructorPrefix", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.First });
                     _worldLoadHarmony.Patch(targets["worldSalvageSlot"], prefix: new HarmonyMethod(typeof(WorldLifetimePatches.Generation).GetMethod("SlotPrefix", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.First },
                         finalizer: new HarmonyMethod(typeof(WorldLifetimePatches.Generation).GetMethod("Finalizer", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.Last });
                     _worldLoadHarmony.Patch(targets["worldPoiAddPersistable"], prefix: new HarmonyMethod(typeof(WorldLifetimePatches.Generation).GetMethod("PublicationPrefix", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.First });

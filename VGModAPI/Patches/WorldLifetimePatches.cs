@@ -119,6 +119,7 @@ internal static class WorldLifetimePatches
             internal readonly IWorldGenerationHost? Host;
             internal readonly Capture? Parent;
             internal WorldGenerationAttempts.Scope? Scope;
+            internal WorldSalvageResults.Receipt? Result;
             internal bool Closed;
             internal Capture(IWorldGenerationHost? host, Capture? parent) { Host = host; Parent = parent; }
         }
@@ -135,8 +136,41 @@ internal static class WorldLifetimePatches
             __state = new Capture(Host as IWorldGenerationHost, _active); _active = __state;
             if (__state.Host != null) __state.Scope = __state.Host.BeginSalvageSlot(__instance, __0);
         }
-        internal static void PublicationPrefix()
+        internal static void DescriptorPrefix(object __instance, object __0, out Capture? __state)
         {
+            __state = new Capture(Host as IWorldGenerationHost, _active); _active = __state;
+            if (__state.Host == null) return;
+            __state.Result = __state.Host.BeginSalvageResult(__0, __instance);
+            __state.Scope = __state.Host.BeginGeneration(__0);
+        }
+        internal static void ConstructorPrefix(object __instance)
+        {
+            var frame = _active;
+            if (frame?.Result == null) return;
+            WorldLifetimeHookHost.SalvageResults.Reserve(frame.Result, __instance);
+            frame.Host!.ValidateGeneration();
+        }
+        internal static System.Exception? DescriptorFinalizer(Capture? __state, object __result, System.Exception? __exception)
+        {
+            var error = __exception;
+            try
+            {
+                if (__state?.Result != null)
+                {
+                    if (error != null) WorldLifetimeHookHost.SalvageResults.Reject(__state.Result);
+                    else
+                    {
+                        WorldLifetimeHookHost.SalvageResults.Complete(__state.Result, __result);
+                        __state.Host!.ValidateGeneration();
+                    }
+                }
+            }
+            catch (System.Exception failure) { error = failure; if (__state?.Result != null) WorldLifetimeHookHost.SalvageResults.Reject(__state.Result); }
+            return Finalizer(__state, error);
+        }
+        internal static void PublicationPrefix(object __instance, object __0)
+        {
+            WorldLifetimeHookHost.SalvageResults.RequirePublication(__instance, __0);
             if (_active != null) _active.Host?.ValidateGeneration();
             else (Host as IWorldGenerationHost)?.ValidateGeneration();
         }

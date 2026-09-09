@@ -10,6 +10,7 @@ internal interface IWorldGenerationHost
     WorldGenerationAttempts.Scope BeginGeneration(object poi, Func<bool>? stable = null);
     WorldGenerationAttempts.Scope BeginSalvageSlot(object poi, int slot);
     void ValidateGeneration();
+    WorldSalvageResults.Receipt? BeginSalvageResult(object poi, object descriptor);
     Exception? EndGeneration(WorldGenerationAttempts.Scope scope, Exception? error);
     void ConsumeBuilder();
 }
@@ -29,6 +30,16 @@ internal sealed partial class WorldLifetimeHookHost : IWorldGenerationHost
         if (descriptor == null) throw new InvalidDataException("Missing owned salvage descriptor.");
         return BeginGeneration(poi, () => ReferenceEquals(field.GetValue(poi), list) && list.Count == count && ReferenceEquals(list[slot], descriptor));
     }
+    public WorldSalvageResults.Receipt? BeginSalvageResult(object poi, object descriptor)
+    {
+        _hub.CheckThread();
+        if (AllowRemoval(poi)) return null;
+        var session = _session; var player = _player.GetValue(null); var identity = Identity(poi);
+        return SalvageResults.Begin(poi, descriptor, () => AllowUse(poi),
+            () => !_disposed && !_generation.Failed && session == _session && session == _hub.CurrentSession?.Id &&
+                ReferenceEquals(player, _player.GetValue(null)) && Identity(poi) == identity && StillAllowed(poi));
+    }
+    internal static WorldSalvageResults SalvageResults { get; } = new();
     public void ValidateGeneration()
     {
         _hub.CheckThread();
