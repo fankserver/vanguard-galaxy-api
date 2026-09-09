@@ -436,7 +436,7 @@ if ($Action -eq 'Prepare') {
     if ($DungeonReadinessProbe) {
         [IO.File]::AppendAllText((Join-Path $bep 'config\vgmodapi.cfg'), "`r`n[Boarding]`r`nEnabled = true`r`n[Dungeons]`r`nEnabled = true`r`n")
         [IO.File]::WriteAllText((Join-Path $root 'dungeon-readiness.enabled'), 'dungeon-readiness-v1')
-        if ($DungeonPanelProbe) { [IO.File]::WriteAllText((Join-Path $root 'dungeon-panel.enabled'), 'dungeon-panel-v3') }
+        if ($DungeonPanelProbe) { [IO.File]::WriteAllText((Join-Path $root 'dungeon-panel.enabled'), 'dungeon-panel-v4') }
     }
     if ($MenuInspection) { [IO.File]::WriteAllText((Join-Path $root 'menu-inspection.enabled'), 'menu-inspection-v1') }
     if ($ModMenuProbe) { [IO.File]::WriteAllText((Join-Path $root 'mod-menu-probe.enabled'), 'mod-menu-probe-v3') }

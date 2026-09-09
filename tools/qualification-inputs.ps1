@@ -447,7 +447,7 @@ function Assert-DungeonReadinessSelection([string]$Root, $Provenance) {
     $panelSelected = $panel -and $panel.Value
     $panelMarker = Join-Path $Root 'dungeon-panel.enabled'
     if ([bool]$panelSelected -ne (Test-Path -LiteralPath $panelMarker -PathType Leaf)) { throw 'Dungeon panel selection changed.' }
-    if ($panelSelected -and [IO.File]::ReadAllText($panelMarker) -cne 'dungeon-panel-v3') { throw 'Invalid dungeon panel marker.' }
+    if ($panelSelected -and [IO.File]::ReadAllText($panelMarker) -cne 'dungeon-panel-v4') { throw 'Invalid dungeon panel marker.' }
     $flag = $Provenance.PSObject.Properties['dungeonReadinessProbe']
     if ($panelSelected -and (!$flag -or !$flag.Value)) { throw 'Dungeon panel requires readiness.' }
     if ($flag -and $flag.Value -isnot [bool]) { throw 'Invalid dungeon readiness flag.' }
@@ -470,17 +470,19 @@ function Assert-DungeonReadinessReceipt([string]$Root, $Provenance) {
     if (!$Provenance.PSObject.Properties['dungeonReadinessProbe'] -or !$Provenance.dungeonReadinessProbe) { return }
     Assert-QualificationExitOutcome (Get-Content -LiteralPath (Join-Path $Root 'run-outcome.json') -Raw | ConvertFrom-Json) 'Dungeon readiness'
     if ($Provenance.PSObject.Properties['dungeonPanelProbe'] -and $Provenance.dungeonPanelProbe) {
-        $image = Join-Path $Root 'dungeon-panel-actions.png'; $record = Join-Path $Root 'dungeon-panel-actions.txt'
+        foreach ($stem in @('dungeon-panel-actions','dungeon-panel-scrolled','dungeon-panel-scaled')) {
+        $image = Join-Path $Root ($stem + '.png'); $record = Join-Path $Root ($stem + '.txt')
         foreach ($path in @($image,$record)) {
             if (!(Test-Path -LiteralPath $path -PathType Leaf) -or (Get-Item -LiteralPath $path).Length -eq 0 -or ((Get-Item -LiteralPath $path).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Dungeon panel image evidence missing, empty or linked.' }
         }
         if ((Get-Item -LiteralPath $image).Length -gt 20MB -or (Get-Item -LiteralPath $record).Length -gt 256) { throw 'Dungeon panel image evidence oversized.' }
         $hashLines = @(Get-Content -LiteralPath $record)
         if ($hashLines.Count -ne 1 -or $hashLines[0] -cnotmatch '^sha256=[0-9a-f]{64}$' -or (Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashLines[0].Substring(7)) { throw 'Dungeon panel screenshot changed.' }
+        }
         $panelFacts = Join-Path $Root 'dungeon-panel.txt'
         if ((Get-Item -LiteralPath $panelFacts).Length -gt 1024) { throw 'Dungeon panel evidence too large.' }
         $panelLines = @(Get-Content -LiteralPath $panelFacts)
-        if ($panelLines.Count -ne 3 -or $panelLines[0] -cne 'PASS' -or $panelLines[1] -cne 'dungeon-panel-v3' -or $panelLines[2] -cne 'generated-location-pointer-disabled-revalidate-contributors-dispose-stale-reopen-destroy-keyboard-controller') { throw 'Invalid dungeon panel receipt.' }
+        if ($panelLines.Count -ne 3 -or $panelLines[0] -cne 'PASS' -or $panelLines[1] -cne 'dungeon-panel-v4' -or $panelLines[2] -cne 'generated-location-pointer-disabled-revalidate-contributors-dispose-stale-reopen-destroy-keyboard-controller-scroll-scale') { throw 'Invalid dungeon panel receipt.' }
     }
     $receipt = Join-Path $Root 'dungeon-readiness.receipt'; $snapshot = Join-Path $Root 'dungeon-readiness.txt'
     if ((Get-Item -LiteralPath $receipt).Length -gt 256 -or (Get-Item -LiteralPath $snapshot).Length -gt 4096) { throw 'Dungeon evidence too large.' }
