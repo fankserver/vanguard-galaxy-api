@@ -278,11 +278,11 @@ if ($Action -eq 'Prepare') {
         Add-Type -Path (Join-Path $bep 'core\Mono.Cecil.dll')
         $assembly = [Mono.Cecil.AssemblyDefinition]::ReadAssembly($candidate)
         try {
-            if ($assembly.Name.Name -cne 'VGBlueprintPin' -or $assembly.Name.Version.ToString() -cne '0.2.0.0') { throw 'Only Blueprint Pin 0.2.0 is accepted.' }
+            if ($assembly.Name.Name -cne 'VGBlueprintPin' -or $assembly.Name.Version.ToString() -cne '0.3.0.0') { throw 'Only Blueprint Pin 0.3.0 is accepted.' }
             $forbidden = @($assembly.MainModule.AssemblyReferences | Where-Object { $_.Name -notin @('netstandard','BepInEx','UnityEngine.CoreModule','VGModAPI.Abstractions') })
             if ($forbidden.Count) { throw 'Blueprint Pin has unsupported dependencies.' }
             $plugin = $assembly.MainModule.Types | Where-Object { $_.FullName -ceq 'VGBlueprintPin.Plugin' }
-            $dependency = @($plugin.CustomAttributes | Where-Object { $_.AttributeType.FullName -eq 'BepInEx.BepInDependency' -and $_.ConstructorArguments.Count -eq 2 -and $_.ConstructorArguments[0].Value -eq 'vgmodapi' -and $_.ConstructorArguments[1].Value -eq '0.1.38' })
+            $dependency = @($plugin.CustomAttributes | Where-Object { $_.AttributeType.FullName -eq 'BepInEx.BepInDependency' -and $_.ConstructorArguments.Count -eq 2 -and $_.ConstructorArguments[0].Value -eq 'vgmodapi' -and $_.ConstructorArguments[1].Value -eq '0.2.0' })
             if ($dependency.Count -ne 1) { throw 'Blueprint Pin must require its public API version.' }
         } finally { $assembly.Dispose() }
         Copy-Item -LiteralPath $candidate -Destination $plugins
@@ -422,7 +422,7 @@ if ($Action -eq 'Prepare') {
         [IO.File]::WriteAllText((Join-Path $root 'forge-reads.enabled'), 'forge-reads-v1')
         if ($BlueprintPinProbe) {
             [IO.File]::AppendAllText((Join-Path $bep 'config\vgmodapi.cfg'), "`r`n[Hud]`r`nEnabled = true`r`n")
-            [IO.File]::WriteAllText((Join-Path $root 'blueprint-pin.enabled'), 'blueprint-pin-v1')
+            [IO.File]::WriteAllText((Join-Path $root 'blueprint-pin.enabled'), 'blueprint-pin-v2')
         }
         if ($ForgeUiProbe) { [IO.File]::WriteAllText((Join-Path $root 'forge-ui.enabled'), 'forge-ui-v3') }
         if ($ForgeCommandProbe) {

@@ -98,7 +98,7 @@ try {
     $p | Add-Member blueprintPinRevision ('a' * 40)
     $p | Add-Member blueprintPinSha256 ('b' * 64)
     Reject { Assert-ForgeReadSelection $root $p }
-    [IO.File]::WriteAllText((Join-Path $root 'blueprint-pin.enabled'), 'blueprint-pin-v1')
+    [IO.File]::WriteAllText((Join-Path $root 'blueprint-pin.enabled'), 'blueprint-pin-v2')
     $binDir = Join-Path $root 'game\BepInEx\plugins'; New-Item -ItemType Directory -Path $binDir -Force | Out-Null
     $binary = Join-Path $binDir 'VGBlueprintPin.dll'; [IO.File]::WriteAllText($binary, 'synthetic binary')
     Reject { Assert-ForgeReadSelection $root $p }
@@ -107,13 +107,19 @@ try {
     [IO.File]::AppendAllText((Join-Path $root 'game\BepInEx\config\vgmodapi.cfg'), "`n[Hud]`nEnabled = true`n")
     Assert-ForgeReadSelection $root $p
     Reject { Assert-BlueprintPinReceipt $root $p }
-    [IO.File]::WriteAllLines((Join-Path $root 'blueprint-pin.txt'), @('PASS','blueprint-pin-v1','pin-batch-exact-variant-navigation-close'))
+    [IO.File]::WriteAllLines((Join-Path $root 'blueprint-pin.txt'), @('PASS','blueprint-pin-v2','pin-batch-exact-variant-navigation-close-producer-routes'))
     Reject { Assert-BlueprintPinReceipt $root $p }
     $pinImage = Join-Path $root 'blueprint-pin-view.png'; $pinRecord = Join-Path $root 'blueprint-pin-view.txt'
     Copy-Item $image $pinImage; Copy-Item $imageRecord $pinRecord
+    Reject { Assert-BlueprintPinReceipt $root $p }
+    Copy-Item $image (Join-Path $root 'blueprint-pin-producers.png'); Copy-Item $imageRecord (Join-Path $root 'blueprint-pin-producers.txt')
     Assert-BlueprintPinReceipt $root $p
     [IO.File]::AppendAllText($pinImage, 'changed'); Reject { Assert-BlueprintPinReceipt $root $p }
     Copy-Item $image $pinImage -Force
+    $producerImage = Join-Path $root 'blueprint-pin-producers.png'
+    [IO.File]::AppendAllText($producerImage, 'changed'); Reject { Assert-BlueprintPinReceipt $root $p }
+    Copy-Item $image $producerImage -Force
+    Assert-BlueprintPinReceipt $root $p
     $p.forgeCommandProbe = $true; Reject { Assert-BlueprintPinSelection $root $p }; $p.forgeCommandProbe = $false
     $p.blueprintPinProbe = $false; Reject { Assert-BlueprintPinSelection $root $p }; $p.blueprintPinProbe = $true
     [IO.File]::AppendAllText($binary, 'changed'); Reject { Assert-BlueprintPinSelection $root $p }
