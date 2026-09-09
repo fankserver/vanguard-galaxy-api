@@ -18,6 +18,12 @@ internal sealed class WorldCreationCoordinator
     internal bool HasRestoredInventory(Guid session) { _checkThread(); return _restored && session != Guid.Empty && session == _session; }
     internal bool Restored(Guid session) { _checkThread(); return !_creating && HasRestoredInventory(session); }
     internal long Revision { get { _checkThread(); return _revision; } }
+    internal void Refuse(Guid session)
+    {
+        _checkThread();
+        if (_session != session) return;
+        _restored = false; _revision = checked(_revision + 1);
+    }
     internal void Reset(Guid session)
     {
         _checkThread();

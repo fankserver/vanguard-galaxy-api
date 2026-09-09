@@ -27,9 +27,9 @@ internal sealed partial class WorldLifetimeHookHost : IWorldLifetimeHookHost, ID
     private readonly IDisposable _subscription;
     private Guid _session;
     private bool _disposed;
-    internal WorldLifetimeHookHost(Assembly assembly, LifecycleHub hub, WorldLifetimeGuard? guard = null, Action<object>? quarantine = null)
+    internal WorldLifetimeHookHost(Assembly assembly, LifecycleHub hub, WorldLifetimeGuard? guard = null, Action<object>? quarantine = null, Action<Guid>? generationFailure = null)
     {
-        _quarantine = quarantine;
+        _quarantine = quarantine; _generationFailure = generationFailure;
         _guard = guard ?? new WorldLifetimeGuard();
         _hub = hub; _hub.CheckThread();
         if (_hub.CurrentSession != null) throw new InvalidOperationException("World lifetime guards must attach before a session.");
@@ -50,7 +50,7 @@ internal sealed partial class WorldLifetimeHookHost : IWorldLifetimeHookHost, ID
     private void OnLifecycle(LifecycleEvent e)
     {
         if (e.Kind == LifecycleEventKind.SessionStarting && e.Session?.Id == _hub.CurrentSession?.Id)
-        { _session = e.Session!.Id; _guard.Start(_session); Travel.Reset(); MaintainActors(); }
+        { _session = e.Session!.Id; _guard.Start(_session); Travel.Reset(); _generation.Reset(); MaintainActors(); }
         else if ((e.Kind == LifecycleEventKind.SessionInvalidated || e.Kind == LifecycleEventKind.SessionStartFailed) && e.Session?.Id == _session)
         { _guard.Invalidate(); Travel.InvalidateSession(_session); MaintainActors(); }
     }

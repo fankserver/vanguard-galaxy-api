@@ -112,6 +112,46 @@ internal static class WorldLifetimePatches
     {
         internal static bool Prefix(object __instance) => Host?.AllowManager(__instance) ?? true;
     }
+    internal static class Generation
+    {
+        internal sealed class Capture
+        {
+            internal readonly IWorldGenerationHost? Host;
+            internal readonly Capture? Parent;
+            internal WorldGenerationAttempts.Scope? Scope;
+            internal bool Closed;
+            internal Capture(IWorldGenerationHost? host, Capture? parent) { Host = host; Parent = parent; }
+        }
+        private static Capture? _active;
+        internal static void Prefix(object __instance, out Capture? __state) => StaticPrefix(__instance, out __state);
+        internal static void StaticPrefix(object __0, out Capture? __state)
+        {
+            __state = new Capture(Host as IWorldGenerationHost, _active);
+            _active = __state;
+            if (__state.Host != null) __state.Scope = __state.Host.BeginGeneration(__0);
+        }
+        internal static void BuilderPrefix()
+        {
+            if (_active != null) _active.Host?.ConsumeBuilder();
+            else (Host as IWorldGenerationHost)?.ConsumeBuilder();
+        }
+        internal static System.Exception? Finalizer(Capture? __state, System.Exception? __exception)
+        {
+            try { return __state?.Scope == null ? __exception : __state.Host!.EndGeneration(__state.Scope, __exception); }
+            finally
+            {
+                if (__state != null)
+                {
+                    __state.Closed = true;
+                    if (ReferenceEquals(_active, __state))
+                    {
+                        var parent = __state.Parent; while (parent != null && parent.Closed) parent = parent.Parent;
+                        _active = parent;
+                    }
+                }
+            }
+        }
+    }
     internal static class ActorAwake
     {
         internal static void Prefix(object __instance) => (Host as IWorldActorLifetimeHost)?.CaptureActor(__instance);

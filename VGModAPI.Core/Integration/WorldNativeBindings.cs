@@ -31,6 +31,7 @@ internal static class WorldNativeBindings
         new("worldActorCollisionStay", "Behaviour.Unit.AbstractUnit", "OnCollisionStay2D", false, "System.Void", "UnityEngine.Collision2D"),
         new("worldPersistableStart", "Behaviour.Util.PersistableUpdater", "Start", false, "System.Void"),
         new("worldPersistableUpdate", "Behaviour.Util.PersistableUpdater", "Update", false, "System.Void"),
+        new("worldBudgetBuilder", "Behaviour.Equipment.Builder.EquipmentBuilder", "CreateItemType", false, "Behaviour.Item.InventoryItemType", "Source.Item.Rarity", "System.Int32", "System.Boolean", "System.String", "System.Boolean", "System.Boolean"),
         new("worldActorAwake", "Behaviour.Unit.AbstractUnit", "Awake", false, "System.Void"),
         new("worldActorStart", "Behaviour.Unit.AbstractUnit", "Start", false, "System.Void"),
         new("worldActorUpdate", "Behaviour.Unit.AbstractUnit", "Update", false, "System.Void"),
