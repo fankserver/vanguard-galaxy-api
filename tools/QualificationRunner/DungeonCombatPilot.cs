@@ -54,7 +54,7 @@ public sealed partial class Plugin
         }
         throw new InvalidOperationException("Timed out resolving a stable dungeon choice before pointer press.");
     }
-    private IEnumerable<object?> CheckDungeonVictory(IBoardingController controller, BoardingHandle operation, Mouse mouse, DungeonCombatProbe policies)
+    private IEnumerable<object?> CheckDungeonVictory(IBoardingController controller, BoardingHandle operation, Mouse mouse, DungeonCombatProbe policies, bool reward)
     {
         var boarding = ModApi.Services.Boarding;
         var tactics = ModApi.Services.BoardingTactics;
@@ -69,15 +69,16 @@ public sealed partial class Plugin
         }
         foreach (var frame in Wait(Victory, "Native authored encounter victory")) yield return frame;
         Require(policies.HealthCalls > 0 && policies.PowerCalls > 0 && policies.WrongScope == 0, "Combat policy invocation/scope checks failed.");
-        foreach (var frame in Wait(() => DungeonProbeButton("Leave shipment") != null, "Author's live leave choice")) yield return frame;
-        foreach (var frame in DungeonClickCurrentChoice(mouse, "Leave shipment")) yield return frame;
-        foreach (var frame in Wait(() => DungeonProbeButton("Leave shipment") == null, "Consumed author choice removal")) yield return frame;
+        var choice = reward ? "Recover shipment" : "Leave shipment";
+        foreach (var frame in Wait(() => DungeonProbeButton(choice) != null, "Author's live shipment choice")) yield return frame;
+        foreach (var frame in DungeonClickCurrentChoice(mouse, choice)) yield return frame;
+        foreach (var frame in Wait(() => DungeonProbeButton(choice) == null, "Consumed author choice removal")) yield return frame;
         Require(boarding.GetOperation(operation)?.Outcome == "FriendlyVictory", "Choice disappearance was not during the same live victory.");
         foreach (var frame in Wait(() => tactics.GetSnapshot(operation)?.CanRequestExtraction == true, "Victory extraction readiness")) yield return frame;
         Require(tactics.Execute(controller, new BoardingTacticalRequest(BoardingTacticalAction.RequestExtraction)).Admitted, "Tactical extraction request refused.");
         foreach (var frame in Wait(() => tactics.GetSnapshot(operation)?.AwaitingExtraction == true, "Requested extraction observation")) yield return frame;
         Require(tactics.Execute(controller, new BoardingTacticalRequest(BoardingTacticalAction.ConfirmExtraction)).Admitted, "Tactical extraction confirmation refused.");
-        records.Add("health-calls=" + policies.HealthCalls + " power-calls=" + policies.PowerCalls + " excluded-scope=" + policies.WrongScope + " leave-choice-removed=true extraction-confirmed=true");
+        records.Add("health-calls=" + policies.HealthCalls + " power-calls=" + policies.PowerCalls + " excluded-scope=" + policies.WrongScope + " choice=" + choice + " choice-removed=true extraction-confirmed=true");
         WriteAtomic("dungeon-combat-diagnostic.txt", records);
     }
 }
