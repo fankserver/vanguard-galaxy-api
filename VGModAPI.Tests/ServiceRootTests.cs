@@ -62,7 +62,7 @@ public sealed class ServiceRootTests
     }
 
     [Fact]
-    public void MenuCleanupUsesRetainedInventoryAfterRootShutdown()
+    public void RetainedInventoryReportsStoppedAfterRootShutdown()
     {
         using var hub = new LifecycleHub((_, _) => { });
         using var catalog = new ModInformationCatalog(hub, () => Array.Empty<LoadedPluginInformation>());
@@ -75,15 +75,7 @@ public sealed class ServiceRootTests
             Clear(root);
             hub.Dispose();
             Assert.Throws<InvalidOperationException>(() => _ = ModApi.Services);
-            var cleanup = new List<string>();
-            ModInventoryStatus? refreshed = null;
-            Qualification.ProbeCleanup.Run(
-                () => cleanup.Add("metadata"),
-                () => { refreshed = inventory.Refresh().Status; cleanup.Add("inventory"); },
-                () => cleanup.Add("devices"),
-                () => cleanup.Add("focus"));
-            Assert.Equal(ModInventoryStatus.Stopped, refreshed);
-            Assert.Equal(new[] { "metadata", "inventory", "devices", "focus" }, cleanup);
+            Assert.Equal(ModInventoryStatus.Stopped, inventory.Refresh().Status);
         }
         finally { Clear(root); }
     }

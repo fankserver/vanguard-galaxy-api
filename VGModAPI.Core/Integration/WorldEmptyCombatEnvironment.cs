@@ -6,7 +6,7 @@ using System.Reflection;
 
 namespace VGModAPI.Core.Integration;
 
-/// <summary>Callback-free enclosing-state restrictions for empty-site qualification, not general mission support.</summary>
+/// <summary>Callback-free enclosing-state restrictions for supported empty sites, not general mission support.</summary>
 internal sealed class WorldEmptyCombatEnvironment
 {
     private const BindingFlags Flags = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
@@ -43,7 +43,7 @@ internal sealed class WorldEmptyCombatEnvironment
         if (missions == null || missions.GetType() != _missions.FieldType || missions.Count > 1024) throw new InvalidDataException("Uninspectable mission collection.");
         foreach (var mission in missions)
             if (mission == null || !MissionExcluded(mission, _storyId, _excluded))
-                throw new InvalidDataException("Eligible replenishment missions are outside the empty qualification profile.");
+                throw new InvalidDataException("Eligible replenishment missions are outside the supported empty Combat profile.");
     }
     internal static bool MissionExcluded(object mission, FieldInfo storyId, Type[] excluded)
         => storyId.GetValue(mission) != null || excluded.Any(type => type.IsInstanceOfType(mission));

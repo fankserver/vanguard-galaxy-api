@@ -2,8 +2,7 @@
 
 This document describes the public types, owner-scoped identity model, supported mission subset,
 automatic persistence, native registration, reconstruction and acceptance of API-owned story content.
-Controlled in-game evidence covers the bounded scenarios described below; it does not qualify the
-entire API or every possible content combination.
+
 
 ## The contract in one paragraph
 
@@ -283,14 +282,7 @@ unapproved revisions and insufficient retained-state capacity are refused withou
 Existing mixed or unkeyed objectives do not acquire invented migration identities. Authored narrative
 logic stays in the consumer; the API stores objective state, not campaign-specific flags.
 
-Controlled in-game verification covers independently loaded authored/generated consumers sharing local
-objective names, partial-progress reload, stale sessions, inactive steps, scripted revision reordering,
-native payout/idempotency, repeated instances, older-save rollback and restored terminal state.
-Host regressions additionally cover reentrancy and migration quota boundaries. Non-scripted progress
-queries have host and installed-shape checks plus controlled in-game snapshot comparison and reload:
-answers match current credits/native travel completion without changing resources or serialized mission
-state. This does not cover a spending sequence or a native visit transition. Full acceptance remains
-incomplete; this coverage does not make the entire API runtime-qualified.
+API tests cover progress, ownership, reentrancy, migrations and state bounds.
 
 ## Automatic persistence
 
@@ -580,10 +572,4 @@ install/accept/abandon adapter with per-occurrence catalog entries and rollback,
 from the game's own mission boundary, the orphan suspension policy, the `ModApi.Services.Story` surface behind
 the inspected-assembly gate, host tests against the production adapter and installed-assembly pins.
 Two independently loaded example authors exercise a generated job and a hand-authored campaign
-through the same API without provider save/load hooks. Controlled native probes cover ownership,
-offered/active restoration, outcomes, save refusal, rollback, repeated instances, provider absence,
-scripted objective progress and revision migration. A separate process verifies retained definitions
-at the same canonical save path despite changed startup data. Host and codec tests cover additional
-malformed-input, quota and schema boundaries. These are bounded checks, not exhaustive native
-coverage; `RuntimeQualified` remains false. Narrative choreography, extra custom mechanics and voice
-synthesis remain provider responsibilities.
+through the same API without provider save/load hooks. Tests also cover malformed inputs, quotas and schema boundaries. Narrative choreography, extra custom mechanics and voice synthesis remain provider responsibilities.

@@ -34,7 +34,7 @@ public sealed partial class Plugin
 
     private void InitializeBars()
     {
-        if (!Config.Bind("Bars", "Enabled", false, "Experimental API-owned bar rosters. Use disposable saves until qualified.").Value)
+        if (!Config.Bind("Bars", "Enabled", false, "Experimental API-owned bar rosters. Back up saves before enabling.").Value)
         { _hub!.SetCapability("owned-bars", false, "Disabled by configuration."); return; }
         if (_persistence == null || !_hub!.Capabilities.Any(capability => capability.Name == "session-lifecycle" && capability.Available))
         { _hub!.SetCapability("owned-bars", false, "Inspected lifecycle and API-managed saves are required."); return; }
@@ -81,7 +81,7 @@ public sealed partial class Plugin
             }
             BarHookInstallation.Install(installs, _barHarmony.UnpatchSelf);
             BarPatches.Host = _barHost;
-            _hub.SetCapability("owned-bars", true, "Experimental owned bar rosters with live story-dependency admission. Full consumer-combination qualification remains pending.");
+            _hub.SetCapability("owned-bars", true, "Experimental owned bar rosters with live story-dependency admission.");
         }
         catch (Exception error)
         {

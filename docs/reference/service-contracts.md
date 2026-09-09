@@ -2,8 +2,7 @@
 
 `ModApi.Services` exposes the API-constructed service root in API 0.2.0 after the
 API plugin's Awake. Access before bootstrap or after shutdown throws; retained
-service references report stopped state. Host tests do not establish Unity/Mono
-qualification.
+service references report stopped state. See [compatibility](compatibility.md) for supported bindings and limitations.
 
 ## Access and state
 
@@ -28,7 +27,7 @@ Use typed health and per-call results, not null checks, to decide whether to act
 | Action permission | Live domain checks/results; never an earlier availability notification |
 
 `ServiceUnavailableReason` is for program decisions. `Detail` is diagnostic text,
-not a value to parse. Availability says nothing about full runtime qualification.
+not a value to parse. Availability is not permission to act.
 Normal session replacement does not replace service references or repair a terminal
 observer fault. Session and operation handles retain their own validity boundaries.
 
@@ -57,8 +56,7 @@ All live service access and notification registration/removal is main-thread-onl
   more specific existing refusal diagnosis; handler removal
   and owned-handle disposal remain safe and idempotent. No automatic hot reattachment.
 
-These are implementer requirements. The injected example tests do not constitute a
-runtime notification-engine or native fault-reconciliation qualification.
+API tests exercise these notification and lifetime requirements.
 
 ## Additional custom save data
 

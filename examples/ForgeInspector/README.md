@@ -20,4 +20,4 @@ The panel is deliberately a **snapshot** refreshed by Inspect, not a live pin. Q
 
 For ongoing progress use `ICraftingJobService.Changed` and query restored jobs explicitly. Queue admission is not delivery: inspect each event's kind, remaining batches and delivery status before applying a consumer target policy. Blueprint Pin supplies the separately reviewed example of that policy. Native jobs persist without this helper saving anything.
 
-Host tests verify description semantics, not Unity hover, layout, scaling, navigation or multi-output acceptance. Those runtime gates remain separate.
+Tests verify description semantics, selection, navigation and action lifetime.

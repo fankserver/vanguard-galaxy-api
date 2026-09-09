@@ -5,6 +5,5 @@
     <InternalsVisibleTo Include="VGModAPI" />
     <InternalsVisibleTo Include="VGModAPI.Tests" />
     <InternalsVisibleTo Include="ReleaseMetadata" />
-    <InternalsVisibleTo Include="QualificationRunner" />
   </ItemGroup>
 </Project>

@@ -1,41 +1,41 @@
 # Boarding integration constraints and source coverage
 
-Boarding is optional, disabled by default and not runtime-qualified. Enable `[Boarding] Enabled = true` and use the stable `ModApi.Services.Boarding`, `BoardingRules`, `BoardingCommands`, `BoardingTactics` and `BoardingCombat` services. Each exposes independent typed availability; registration or a healthy binding is not permission to act on a stale session or operation. This document distinguishes observation from action constraints; it does not attest a native boarding scenario.
+Boarding initializes automatically when its compatibility and dependency guards pass. Use the stable `ModApi.Services.Boarding`, `BoardingRules`, `BoardingCommands`, `BoardingTactics` and `BoardingCombat` services. Each exposes independent typed availability; registration or a healthy binding is not permission to act on a stale session or operation. This document distinguishes observation from action constraints.
 
-## Evidence boundary
+## Supported bindings
 
-Member mappings apply to the original `Assembly-CSharp.dll` SHA-256 `a2aad60bc68c31baccd636587d3c5ba4e651eacda59b0af42cd4f17f864284fb`. They are semantic source evidence, not Unity qualification. Original source remains private; this document contains findings only. Unknown hashes cannot enable integration by matching names/signatures alone. Consult [compatibility](compatibility.md) and [lifecycle](lifecycle-contract.md) for threading, patch-group rollback and readiness constraints.
+Member mappings apply to the original `Assembly-CSharp.dll` SHA-256 `a2aad60bc68c31baccd636587d3c5ba4e651eacda59b0af42cd4f17f864284fb`. Original game source remains private. Unknown hashes cannot enable integration by matching names/signatures alone. Consult [compatibility](compatibility.md) and [lifecycle](lifecycle-contract.md) for threading, patch-group rollback and readiness constraints.
 
 **Boarding is an encounter lifecycle, not an always-boardable flag.** Ship disabling, crew transport, interior simulation, UI and settlement are separate boundaries. Ship boarding and walk-in installations share `DungeonSimulation`; shared rules require explicit `Ship`, `Installation` or `Both` scope. A station victory is not ship capture. API naming uses *boarding* for the service and *encounter* for shared interior state; public identifiers must not expose vanilla `DungeonType` or Unity objects.
 
-## Functional coverage matrix
+## Integration boundaries
 
-Each row identifies the applicable integration constraint and required native evidence. A mapped vanilla member does not establish implemented or in-game-qualified coverage.
+The table describes supported integration semantics, not a separate acceptance checklist.
 
-| Function | Inspected members / semantic boundary | Contract and delivery | Required native evidence |
-|---|---|---|---|
-| Structural eligibility | `SpaceShip.CanBecomeBoardable`; excludes player, no-board flag, carrier fighter, drone, IndustryStation, level >80 and predefined loot | Reasoned query; retain exclusions unless an independently inspected explicit override exists | Each exclusion, allowed target and lethal hit |
-| Disable policy | `AbstractUnit` damage path → `SpaceShip.HandleBoardingCheck` → `BecameBoardable`; conversion invokes death/removal and replaces the world object | Evaluate at original damage boundary, preserve damage context; not a bool setter | Threshold, EMP/RNG vanilla pass, zero hull and single conversion |
-| Target lifetime / re-engage | `BoardableUnit.Start`, click/recovery paths; restored simulation/pods, idle re-engagement, repaired departure | Target generation and availability, live panel action; no re-engagement during operation | Replacement, unload, recovery, stale target |
-| Start / reputation | `DungeonManager.StartOperation`; `DungeonPanel` builds options; the misleading `BoardableUnit.StartBoarding` is not the creator | Validated start with travel/crew/target checks; preserve faction consequences | Ship and installation entry, transponder exceptions, duplicate start |
-| Crew / pod transport | `DungeonOperation` construction/landing/reinforcement/return; manager reconstructs pods | Debit before transporting; native reinforcement transport alone does not debit | Launch/cancel/land/reinforce/return and loss |
-| Autonomous behavior | `AutoDungeonDirector.Tick`: retreat on no living friendlies or average morale <0.15; sustained locked-route blockage after grace period | Same validated policy boundaries; controller arbitration, no panel requirement | Manual/autonomous switching, no-specialist blockage, panel closed |
-| Enemy reinforcement | `BoardingReinforcementActions` approaches an existing boardable target, invokes supplied crew callback in range and resumes prior ship actions | Distinct defender arrival, not proof of boarding the player's ship | Target disappearance, hostile arrival, restored pods |
-| Definition setup | `DungeonDefinition.LoadAll/Get`; resource-loaded dictionary keyed by native enum; `ApplyDefinition`, `ApplyCombatMode` | Provider/local definition registry separate from native enum; validated attachment/selection | Two providers, registration reset, creation and reload |
-| Layout and occupants | `DungeonCompartmentLayout`, `InitBoardingLayout`, `PlaceDefenders`, `PlaceAttackers`; ship-size capacities and staging | Validated compartment graph/layout and existing crew catalog references | Invalid graph, airlock, capacity, saved layout |
-| Difficulty / estimates | `ApplyLevelScaling`, `EstimateFromData`, creation before defender placement | Creation-only power/HP tuning; UI estimate and live values agree | Easier/harder, first placement, resume without reapplication |
-| Combat / armor / ammo | `TickCompartmentCombat`, `ApplyCombatDamage`, `ApplyCasualties`, ammo/armor modifiers | Bounded synchronous policy proposals, immutable facts, no mutable simulation callback | Casualties, armor, ammo integrity, competing modifiers |
-| Morale / capture / defection | `TickCompartmentCombatMorale`, surrender/defection and panicked movement; `FactionBoardingProfile` | Per-encounter copied profile/configuration, not mutation of shared cached faction profiles | Surrender, no-surrender faction, defection, wounded/dead |
-| Exploration / specialists | Investigation, profession events, `DungeonFacilityEvents`, discovery/combat/interaction/lockdown event dispatch | Discovered information only by default; authored event definitions and typed actions | Discovery, specialist arrival, missed event, restore |
-| Movement / capacity | `IssueMovementOrder`, `ClearPlayerMovementOrders`, `MoveCrewTo`, directive routing | Validated compartment/unit handles and movement requests, phase/capacity/filter checks | Locked path, busy specialist, full room, stale directive |
-| Unlock / barricade | `TryUnlockCompartment`, `CanStartBarricade`, `ToggleBarricade` and timers | Typed eligibility/result, scoped action notifications | Missing specialist, contested room, lock timer and reload |
-| Grenades / hazards / venting | `CanThrowGrenade`, `ThrowGrenade`, hazard damage and airlock vent methods | Cooldown/resource/reachability checks; distinguish tactical player action from faction automatic behavior | Friendly damage, cooldown, inaccessible room, vent deaths |
-| Buyout / reinforcements | `AcceptBuyOut`, `DeclineBuyOut`, reinforcement schedule | Validate pending choice and costs, preserve inventory/crew accounting | Insufficient credits, repeated choice, delayed arrival |
-| Scuttle / collapse / destruction | `TryScuttle` → `FireScuttleOutcome`; ammo damage differs from reactor explosion; `DamageFacility`, `NotifyHostDestroyed` | Modify damage before application with a cause; separate scuttle permission from damage scaling | Ammo vs reactor, zero multiplier, host death, nested evaluation |
-| Retreat / extraction | `TriggerRetreat`, `RequestExtraction`, `ConfirmExtraction`, operation completion handlers | Distinct request, resolving and terminal states; do not promise immediate return | Voluntary retreat, forced retreat, investigating victory, extraction |
-| Capture / rewards / missions | `BoardableUnit` capture/outcome and `DungeonOperation` loot/crew settlement | Capture is native multi-step mutation; report actual delivery, mission-token exceptions and later crew return | Normal/token capture, partial loot, overflow, prisoners, mission effects |
-| Presentation | `DungeonPanel`, compartment/movement controls, boarding status/cancel HUD, results panel | Separate live panel capability; provider-scoped text/actions with activation-time validation | Keyboard/mouse, resizing, target death, close/reopen, two contributors |
-| Save / reconstruction | `DungeonLocationData`, `DungeonData`, `DungeonSimulation` serializers; pod data and player captured ships | Reuse native fields only where verified, supplement API-owned progress automatically | Every transport/encounter/settlement phase and save failure/rollback |
+| Function | Inspected members / semantic boundary | Contract and delivery |
+|---|---|---|
+| Structural eligibility | `SpaceShip.CanBecomeBoardable`; excludes player, no-board flag, carrier fighter, drone, IndustryStation, level >80 and predefined loot | Reasoned query; retain exclusions unless an independently inspected explicit override exists |
+| Disable policy | `AbstractUnit` damage path → `SpaceShip.HandleBoardingCheck` → `BecameBoardable`; conversion invokes death/removal and replaces the world object | Evaluate at original damage boundary, preserve damage context; not a bool setter |
+| Target lifetime / re-engage | `BoardableUnit.Start`, click/recovery paths; restored simulation/pods, idle re-engagement, repaired departure | Target generation and availability, live panel action; no re-engagement during operation |
+| Start / reputation | `DungeonManager.StartOperation`; `DungeonPanel` builds options; the misleading `BoardableUnit.StartBoarding` is not the creator | Validated start with travel/crew/target checks; preserve faction consequences |
+| Crew / pod transport | `DungeonOperation` construction/landing/reinforcement/return; manager reconstructs pods | Debit before transporting; native reinforcement transport alone does not debit |
+| Autonomous behavior | `AutoDungeonDirector.Tick`: retreat on no living friendlies or average morale <0.15; sustained locked-route blockage after grace period | Same validated policy boundaries; controller arbitration, no panel requirement |
+| Enemy reinforcement | `BoardingReinforcementActions` approaches an existing boardable target, invokes supplied crew callback in range and resumes prior ship actions | Distinct defender arrival, not proof of boarding the player's ship |
+| Definition setup | `DungeonDefinition.LoadAll/Get`; resource-loaded dictionary keyed by native enum; `ApplyDefinition`, `ApplyCombatMode` | Provider/local definition registry separate from native enum; validated attachment/selection |
+| Layout and occupants | `DungeonCompartmentLayout`, `InitBoardingLayout`, `PlaceDefenders`, `PlaceAttackers`; ship-size capacities and staging | Validated compartment graph/layout and existing crew catalog references |
+| Difficulty / estimates | `ApplyLevelScaling`, `EstimateFromData`, creation before defender placement | Creation-only power/HP tuning; UI estimate and live values agree |
+| Combat / armor / ammo | `TickCompartmentCombat`, `ApplyCombatDamage`, `ApplyCasualties`, ammo/armor modifiers | Bounded synchronous policy proposals, immutable facts, no mutable simulation callback |
+| Morale / capture / defection | `TickCompartmentCombatMorale`, surrender/defection and panicked movement; `FactionBoardingProfile` | Per-encounter copied profile/configuration, not mutation of shared cached faction profiles |
+| Exploration / specialists | Investigation, profession events, `DungeonFacilityEvents`, discovery/combat/interaction/lockdown event dispatch | Discovered information only by default; authored event definitions and typed actions |
+| Movement / capacity | `IssueMovementOrder`, `ClearPlayerMovementOrders`, `MoveCrewTo`, directive routing | Validated compartment/unit handles and movement requests, phase/capacity/filter checks |
+| Unlock / barricade | `TryUnlockCompartment`, `CanStartBarricade`, `ToggleBarricade` and timers | Typed eligibility/result, scoped action notifications |
+| Grenades / hazards / venting | `CanThrowGrenade`, `ThrowGrenade`, hazard damage and airlock vent methods | Cooldown/resource/reachability checks; distinguish tactical player action from faction automatic behavior |
+| Buyout / reinforcements | `AcceptBuyOut`, `DeclineBuyOut`, reinforcement schedule | Validate pending choice and costs, preserve inventory/crew accounting |
+| Scuttle / collapse / destruction | `TryScuttle` → `FireScuttleOutcome`; ammo damage differs from reactor explosion; `DamageFacility`, `NotifyHostDestroyed` | Modify damage before application with a cause; separate scuttle permission from damage scaling |
+| Retreat / extraction | `TriggerRetreat`, `RequestExtraction`, `ConfirmExtraction`, operation completion handlers | Distinct request, resolving and terminal states; do not promise immediate return |
+| Capture / rewards / missions | `BoardableUnit` capture/outcome and `DungeonOperation` loot/crew settlement | Capture is native multi-step mutation; report actual delivery, mission-token exceptions and later crew return |
+| Presentation | `DungeonPanel`, compartment/movement controls, boarding status/cancel HUD, results panel | Separate live panel capability; provider-scoped text/actions with activation-time validation |
+| Save / reconstruction | `DungeonLocationData`, `DungeonData`, `DungeonSimulation` serializers; pod data and player captured ships | Reuse native fields only where verified, supplement API-owned progress automatically |
 
 The matrix groups mechanics, not public methods one-for-one. An action family's helper algorithms need focused reinspection when an implementation intercepts them; the matrix is not a claim that every tactical branch has been exercised. Adding a raw reflection escape hatch does not satisfy any row.
 
@@ -72,7 +72,7 @@ The following naming and behavioral constraints apply to richer interfaces; name
 - `BoardingCommandResult`: accepted, unavailable, stale handle, wrong phase, invalid argument/target, insufficient resources, existing operation, busy/dispatching or conflict. Acceptance means admitted only. Partial native failure must not be reported as a completed outcome.
 - Provider/plugin ID plus local registration ID identifies definitions/rules/actions. Occurrences have separate save-bound identities. Namespacing prevents collisions, not hostile same-process access. A human's approval is not a property of a provider ID.
 
-Capabilities must separate observations, operations, rules, authored content and presentation. A failure in an optional presentation group does not make safe observation unavailable. Within a group, exact binding/installation is all-or-nothing. No capability is runtime-qualified by a successful bind.
+Capabilities must separate observations, operations, rules, authored content and presentation. A failure in an optional presentation group does not make safe observation unavailable. Within a group, exact binding/installation is all-or-nothing. Binding health is separate from current operation permission.
 
 ## Observation delivery
 
@@ -84,7 +84,7 @@ A destroyed/unloaded target generation is retired independently of continuing cr
 
 `RewardsDelivered` includes one `BoardingDelivery` route/quantity receipt, **not a complete-batch success claim**. Only nested successful inventory applications, actual positive credit balance changes, or registered world loot produce receipts inside boarding reward scopes. A transfer batch returning with no application emits none. World loot means a registered world drop, not cargo delivery. Data routed through the native data inventory has a distinct `DataInventory` receipt; other inventory applications retain the `Inventory` route. Special currency conversion returning no inventory entry has no inventory receipt; it must not be misreported as cargo. Buffered successful inner applications remain facts if a later batch step throws; the original exception is preserved.
 
-Observed snapshot changes receive monotonic session-local sequences. Foreign-thread/adapter faults stop observation and clear live state; subscriber faults alone do not stop it. Binding validates all snapshot members and hooks before enabling the optional group, including nested metadata type spelling. Host tests cover lifetime, reconstruction suppression, discovery, separate return settlement and reward-scope behavior; installed metadata checks cover shapes. Neither is Unity/Harmony qualification.
+Observed snapshot changes receive monotonic session-local sequences. Foreign-thread/adapter faults stop observation and clear live state; subscriber faults alone do not stop it. Binding validates all snapshot members and hooks before enabling the optional group, including nested metadata type spelling. Host tests cover lifetime, reconstruction suppression, discovery, separate return settlement and reward-scope behavior; installed metadata checks cover shapes.
 
 ## Callback and conflict contract
 
@@ -117,13 +117,13 @@ The current vanilla serializer is insufficient for the complete API save contrac
 - Grenade cooldown and reinforcement schedule/request flags **are** serialized through event-state fields. Unlock and lockdown timers are serialized. Do not duplicate or incorrectly classify those as absent.
 - Pending-extraction recovery is a separate direct crew-recovery path, not returning-pod reconstruction. It must not race with API recovery and duplicate survivors.
 
-These gaps remain automatic save/load and native qualification requirements, not exemptions. Returning manifests need stable occurrence/settlement identity; frame-derived pod names are not persistent uniqueness. Mutable transform data is copied by native update components, not a transactional save snapshot.
+These are automatic save/load constraints. Returning manifests need stable occurrence/settlement identity; frame-derived pod names are not persistent uniqueness. Mutable transform data is copied by native update components, not a transactional save snapshot.
 
 Native serialization is not an atomic transaction with API storage. Save-as, rollback, failed/skipped writes, absent providers, schema migrations and return-pod continuity require explicit recovery behavior. A session ID is not a campaign or occurrence key. `SaveStarted` is after vanilla snapshot construction and is not an authoring hook. See [contributor constraints](https://github.com/fankserver/vanguard-galaxy-api/blob/main/CONTRIBUTING.md#api-owned-content) and [save storage](persistence-storage.md).
 
 ## Consumer boundary
 
-BoardAlways owns its Enabled setting, threshold/guaranteed-disable policy, balance multipliers and chosen ship/installation scope. The API owns safe conversion, native side effects, once-only modifiers and checked command accounting. Its difficulty code currently omits Enabled and rejects values outside the easier-only interval; its scuttle restoration can scale ammo damage twice and cannot undo explosions. Those are migration corrections, not API compatibility requirements.
+BoardAlways owns its Enabled setting, threshold/guaranteed-disable policy, balance multipliers and chosen ship/installation scope. The API owns safe conversion, native side effects, once-only modifiers and checked command accounting.
 
 Patch-free means no direct game/Unity/Harmony compile references, reflection or native casts for covered boarding functionality. A wrapper moving the same patches into another consumer file does not qualify. A second author example must exercise custom encounter/tactical/UI/save behavior beyond the four BoardAlways patch areas.
 
@@ -154,7 +154,7 @@ Individual multipliers must be finite in [0,10]; combined multipliers above 100 
 
 These are request/effect vetoes, not outcome notifications. Vetoing a hazard effect can leave native event scheduling/progression intact; refusing reinforcement scheduling delays the request rather than deleting arriving crew. Power, health, morale and casualty changes influence subsequent native RNG outcomes; vetoes skip the intercepted native draw, while vanilla numeric defaults add no API random draw. Native UI and autonomous tactical helpers share checked boundaries with API requests. An explicit native UI grenade action retains native friendly-damage semantics; API callers must opt in.
 
-Host tests, source inspection and metadata checks are not Unity acceptance. Native timing, coexistence, presentation and complete action-family scenarios remain unqualified until exercised on the exact source revision.
+
 
 ## Boarding commands
 
@@ -164,11 +164,11 @@ The controller exposes Start, Resume, Reinforce, CancelApproach, Retreat, Reques
 
 Initial ship crew is debited at native pod creation. Walk-in crew is revalidated and debited at actual entry, not reserved during approach; an insufficient delayed roster cancels the operation without a partial debit. API-owned initial transfers and reinforcement use batch debit, with notification after the native transport boundary. A possibly dispatched native failure is never automatically refunded or retried. Exceptions propagate, including both transport and notification failures when both occur. Cancellation invokes the exact operation's native abandonment path, including pod recall, rather than selecting another operation belonging to the same ship. Native crew-return handling remains independent of panel visibility.
 
-Commands refuse reentrancy, event/policy dispatch and native save-state serialization. Session/target replacement invalidates controllers. Admitted means the native request was entered, not arrival, extraction completion, successful rewards or settled crew. Observe lifecycle events for those separate facts. Host tests and installed binding checks do not prove the cancellation, return, UI or save paths in Unity; complete native acceptance remains pending.
+Commands refuse reentrancy, event/policy dispatch and native save-state serialization. Session/target replacement invalidates controllers. Admitted means the native request was entered, not arrival, extraction completion, successful rewards or settled crew. Observe lifecycle events for those separate facts.
 
 ## Registered boarding policies
 
-Acquire one disposable `IBoardingRuleProvider` per plugin ID from `ModApi.Services.BoardingRules`. Each local registration ID is unique within that owning provider instance. Dispose a registration to remove it, or dispose the provider to remove all its rules. Registration and evaluation are main-thread-only. Check the service’s typed `Availability`; binding success is not native qualification. Providers may declare rules while unavailable, but evaluation preserves vanilla behavior without invoking them. Health loss during evaluation discards the composition; disposal preserves an existing failure diagnosis.
+Acquire one disposable `IBoardingRuleProvider` per plugin ID from `ModApi.Services.BoardingRules`. Each local registration ID is unique within that owning provider instance. Dispose a registration to remove it, or dispose the provider to remove all its rules. Registration and evaluation are main-thread-only. Check the service’s typed `Availability`; operation permission is checked separately. Providers may declare rules while unavailable, but evaluation preserves vanilla behavior without invoking them. Health loss during evaluation discards the composition; disposal preserves an existing failure diagnosis.
 
 Callbacks receive immutable numeric contexts and must be pure, quick and deterministic. They must not call game commands. Reentrant evaluation uses vanilla defaults. Registration changes take effect on the next evaluation snapshot; disposed entries are skipped immediately. Session replacement during evaluation discards the result. Exceptions and invalid values discard that contribution and report the provider/local ID without suppressing vanilla exceptions.
 
@@ -178,7 +178,7 @@ Callbacks receive immutable numeric contexts and must be pure, quick and determi
 - Integrity policies return an individual multiplier in [0,10]. Contributions compose in descending priority, then ordinal plugin/local ID order. Combined multipliers above 100 reject the offending contribution. Encounter power/health pairs are validated atomically. All numbers must be finite and nonnegative.
 - Ship and installation scopes are explicit. Scuttle denials prevent the native attempt before RNG and before armory destruction. Independent explosion denials prevent reactor explosion initiation without denying armory scuttle. Damage scaling alone does not prevent armory destruction or undo an initiated explosion/collapse. Cause scopes are per invocation and simulation, including nested combat/ammunition, hazards, grenades, scuttle and reactor explosion ticks. Authoritative host destruction bypasses all integrity reductions.
 
-Host and metadata checks cover policy composition and adapter boundaries. Full native coexistence, damage, explosion and save/resume acceptance remains pending.
+Tests cover policy composition and adapter boundaries.
 
 `ModApi.Services.BoardingCommands` is a stable `IBoardingCommandService` with typed
 `Availability` and `AvailabilityChanged`. Missing bindings refuse control without

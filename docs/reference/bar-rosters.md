@@ -1,6 +1,6 @@
 # Owned bar rosters
 
-Enable `[Bars] Enabled = true`; API-managed saves initialize automatically. Bars are opt-in; `ModApi.Services.Bars` is a stable `IBarService`; inspect typed `Availability` or observe `AvailabilityChanged`. The unavailable instance does not register a replacement save owner. `RuntimeQualified` remains false: bounded native core checks do not establish complete consumer-combination acceptance.
+Enable `[Bars] Enabled = true`; API-managed saves initialize automatically. Bars are opt-in; `ModApi.Services.Bars` is a stable `IBarService`; inspect typed `Availability` or observe `AvailabilityChanged`. The unavailable instance does not register a replacement save owner.
 
 ## Provider lifecycle
 
@@ -33,13 +33,3 @@ Supported persistent presentation and same-owner mission/occurrence references a
 A linked contact requires a current live story provider, registered definition, matching unresolved occurrence, valid story admission and healthy runtime. Tentative registration and in-flight story operations cannot admit it. Registration, admission and operation epochs invalidate stale plans, including changes that return to an apparently identical state. Missing dependencies fail closed; consumers must not replace readiness tokens with constants.
 
 Native bar JSON contains only vanilla patrons and native metadata. Persistent owned contacts are reconstructed from API state after restoration and registration, preventing native factories from being asked to deserialize custom CLR types.
-
-## Verification scope
-
-Controlled native checks cover independent owners sharing a local ID, repeated check-update calls, real bar UI openings, owned interaction dispatch, native JSON preservation, exclusive denial/conflicts, same-process reload and runtime provider removal/re-registration. A planned three-process sequence also checks saving while providers are unregistered and reconstructing from the fresh committed generation without Place calls; author assemblies remain installed in that absence phase.
-
-Controlled composition checks cover the real Foundation builder, Anima offer finalization, explicit denial/admission on permission changes, forced native refresh and TTS's finalized object membership. Speech is disabled; the temporarily selected Foundation context does not establish natural travel, campaign progression or Foundation UI acceptance. See [consumer scope](https://github.com/fankserver/vanguard-galaxy-api/blob/main/docs/development/bar-consumer-scope.md).
-
-A same-process linked-story check covers an active API mission and persistent contact, automatic reload, unavailable-provider refusal with exact vanilla restoration, registration before reload and save-as rollback without replacement placement. See [linked scope](https://github.com/fankserver/vanguard-galaxy-api/blob/main/docs/development/bar-linked-scope.md).
-
-Missing author binaries, consumer-authored dialogue, voice/cache execution, natural daily-time transitions and API-created world-reference reconstruction remain outside that bounded evidence. See [probe scope](https://github.com/fankserver/vanguard-galaxy-api/blob/main/docs/development/bar-probe-scope.md) and [independent authors](https://github.com/fankserver/vanguard-galaxy-api/blob/main/examples/OwnedBarAuthor/README.md).

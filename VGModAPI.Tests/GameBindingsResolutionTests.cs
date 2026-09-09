@@ -15,7 +15,7 @@ namespace VGModAPI.Tests;
 /// already matches the catalog, so they cannot see a runtime reflection mismatch: qa-77 failed at
 /// InstallTravel with MissingMethodException on TravelManager.CancelTravel while every metadata test
 /// passed. These tests exercise <see cref="GameBindings.Resolve"/> itself.
-/// This is host evidence about NAME MATCHING only; it is not native qualification.
+/// Tests structural name matching for runtime binding.
 /// </summary>
 public sealed class GameBindingsResolutionTests
 {

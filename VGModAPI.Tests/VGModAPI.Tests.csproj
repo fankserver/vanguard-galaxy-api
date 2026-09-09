@@ -1,26 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net10.0</TargetFramework><IsPackable>false</IsPackable><IsTestProject>true</IsTestProject></PropertyGroup>
   <ItemGroup>
-    <!-- The pilot's PASS/FAIL and fact-ordering rules are compiled here from their single source
-         so the shipped qualification logic itself is under host regression tests. -->
-    <Compile Include="../tools/QualificationRunner/StoryNativeCalls.cs" Link="StoryNativeCalls.cs" />
-    <Compile Include="../tools/QualificationRunner/StoryReceipt.cs" Link="StoryReceipt.cs" />
-    <Compile Include="../tools/QualificationRunner/ModMenuModalChecks.cs" Link="ModMenuModalChecks.cs" />
-    <Compile Include="../tools/QualificationRunner/ModUpdateChecks.cs" Link="ModUpdateChecks.cs" />
-    <Compile Include="../tools/QualificationRunner/ModUpdateWireChecks.cs" Link="ModUpdateWireChecks.cs" />
-    <Compile Include="../tools/QualificationRunner/ModUpdateWireFailures.cs" Link="ModUpdateWireFailures.cs" />
-    <Compile Include="../tools/QualificationRunner/ProbeHeartbeat.cs" Link="ProbeHeartbeat.cs" />
-    <Compile Include="../tools/QualificationRunner/ModMenuSessionChecks.cs" Link="ModMenuSessionChecks.cs" />
-    <Compile Include="../tools/QualificationRunner/ProbeCleanup.cs" Link="ProbeCleanup.cs" />
-    <Compile Include="../tools/QualificationRunner/TravelStationReceipt.cs" Link="TravelStationReceipt.cs" />
-    <Compile Include="../tools/QualificationRunner/TravelCrossSystemReceipt.cs" Link="TravelCrossSystemReceipt.cs" />
-    <Compile Include="../tools/QualificationRunner/TravelResilienceReceipt.cs" Link="TravelResilienceReceipt.cs" />
-    <Compile Include="../tools/QualificationRunner/TravelRecoveryReceipt.cs" Link="TravelRecoveryReceipt.cs" />
-    <Compile Include="../tools/QualificationRunner/TravelFastLaneReceipt.cs" Link="TravelFastLaneReceipt.cs" />
-    <Compile Include="../tools/QualificationRunner/AnimaTravelReceipt.cs" Link="AnimaTravelReceipt.cs" />
-    <Compile Include="../tools/QualificationRunner/EchoTravelReceipt.cs" Link="EchoTravelReceipt.cs" />
-    <Compile Include="../tools/QualificationRunner/TravelJournalReceipt.cs" Link="TravelJournalReceipt.cs" />
-    <Compile Include="../tools/QualificationRunner/TravelCrossSystemOwnership.cs" Link="TravelCrossSystemOwnership.cs" />
     <!-- The actual patch entry points, compiled into the test assembly so their prefix/finalizer flow
          is executed rather than described. The file carries no BepInEx or Unity dependency. -->
     <Compile Include="../VGModAPI/Patches/StoryProtectionPatches.cs" Link="StoryProtectionPatches.cs" />
@@ -35,7 +15,6 @@
     <Compile Include="../VGModAPI/Patches/DungeonDonorPatches.cs" Link="DungeonDonorPatches.cs" />
     <Compile Include="../VGModAPI/Patches/DungeonRefundPatches.cs" Link="DungeonRefundPatches.cs" />
     <Compile Include="../VGModAPI/Patches/DungeonPodReturnPatches.cs" Link="DungeonPodReturnPatches.cs" />
-    <None Include="../tools/fixtures/mod-updates/ui-available.json" Link="ui-available.json" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="../VGModAPI.Core/VGModAPI.Core.csproj" />
     <ProjectReference Include="../examples/ServiceConsumers/ServiceConsumers.csproj" />
     <ProjectReference Include="../tools/ReleaseMetadata/ReleaseMetadata.csproj" />
@@ -46,7 +25,6 @@
     <PackageReference Include="Mono.Cecil" Version="0.11.4" PrivateAssets="all" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="../tools/QualificationRunner/ForgeReadRegistry.cs" Link="Qualification/ForgeReadRegistry.cs" />
     <Compile Include="../examples/ForgeInspector/Inspector.cs" Link="Examples/Inspector.cs" />
     <Compile Include="../examples/DungeonAuthor/CargoAuthorSession.cs" Link="Examples/CargoAuthorSession.cs" />
     <Compile Include="../examples/AuthoredDungeon/CargoRecovery.cs" Link="Examples/CargoRecovery.cs" />

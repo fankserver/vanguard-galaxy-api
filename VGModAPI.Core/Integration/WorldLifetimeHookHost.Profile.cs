@@ -18,7 +18,7 @@ internal sealed partial class WorldLifetimeHookHost : IWorldProfileHost
     {
         _hub.CheckThread();
         if (_stateProfile == null || AllowRemoval(poi)) return;
-        var error = new InvalidDataException("Content mutation is outside the empty qualification profile.");
+        var error = new InvalidDataException("Content mutation is outside the supported empty Combat profile.");
         RefuseProfile(poi, error); throw error;
     }
     private void RefuseProfile(object poi, Exception original)

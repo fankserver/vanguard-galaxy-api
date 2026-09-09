@@ -1,6 +1,6 @@
 # Native integration constraints
 
-These source-derived constraints explain the API's boundaries. They are not a complete game/mod audit or proof of runtime compatibility. The accepted original assembly identity and current qualification limits are in [compatibility](../reference/compatibility.md).
+These source-derived constraints explain the API's boundaries. They are not a complete game/mod audit or proof of runtime compatibility. The accepted original assembly identity and supported behavior are in [compatibility](../reference/compatibility.md).
 
 Inspect the original `Assembly-CSharp.dll` from `VanguardGalaxy_Data/Managed` in the local game installation. Temporary decompilation is disposable, not a source dependency. Do not commit decompiled game source. Reinspect the relevant implementation when changing hooks or supporting a different game hash.
 
@@ -68,4 +68,4 @@ Vanilla saves can retain provider-specific world/type identifiers independently 
 
 ## Design boundary
 
-A shared API centralizes version-sensitive integration; it does not eliminate it. Reliability depends on source-grounded semantics, compatibility gating, individual failure isolation and scoped native qualification. Keep bespoke gameplay in feature mods and avoid claiming unsupported modules from the existence of supporting lifecycle or storage infrastructure.
+A shared API centralizes version-sensitive integration; it does not eliminate it. Reliability depends on source-grounded semantics, compatibility gating, individual failure isolation and direct API correctness tests. Keep bespoke gameplay in feature mods and avoid claiming unsupported modules from the existence of supporting lifecycle or storage infrastructure.

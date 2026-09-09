@@ -1,6 +1,6 @@
 # Shared HUD — experimental
 
-`ModApi.Services.Hud` exposes a stable `IHudService`. It initializes automatically. Its typed `Availability` requires inspected bindings; it does not imply a visible canvas or in-game qualification. `AvailabilityChanged` reports health changes independently of surface visibility. `Visible` additionally requires a tracked initialized player and the current active native HUD/cargo-indicator context.
+`ModApi.Services.Hud` exposes a stable `IHudService`. It initializes automatically. Its typed `Availability` requires inspected bindings; it does not imply a visible canvas. `AvailabilityChanged` reports health changes independently of surface visibility. `Visible` additionally requires a tracked initialized player and the current active native HUD/cargo-indicator context.
 
 The service provides bounded buttons and information panels, not a window/widget framework. Consumers own their content models, actions, additional preferences and any separate windows. The API owns transient registrations, placement, native presentation and reattachment to the existing HUD canvas. It does not create another general-purpose canvas.
 

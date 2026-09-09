@@ -53,7 +53,7 @@ internal sealed class WorldSnapshotHookHost : IDisposable
     private Guid Session()
     {
         _hub.CheckThread();
-        // Fixed qualification inspector only; not an extension callback. Store receipts remain
+        // Fixed state inspector only; not an extension callback. Store receipts remain
         // immutable, but capture-time trust must not authorize use after context loss.
         _requireContext?.Invoke();
         if (_disposed || _hub.CurrentSession is not { } session || session.Id != _session ||

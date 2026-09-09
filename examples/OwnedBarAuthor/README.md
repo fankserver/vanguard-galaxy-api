@@ -6,4 +6,4 @@ Enable API `[Bars] Enabled` in a disposable sandbox. Invoke `Register(stationGui
 
 The API persists supported presentation state. These authors have no save hooks or serializers. `Release` removes runtime behavior but preserves persistent rows for later registration. The interaction counter is process-local example behavior, not persisted narrative state.
 
-These are qualification inputs, not evidence that a native scenario passed. Do not install them into a production game.
+These examples demonstrate authenticated provider composition. Use disposable saves when trying them; do not install example content into an existing campaign without explicit intent and backups.

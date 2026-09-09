@@ -1,12 +1,14 @@
 # Developer documentation
 
-- [Contributing](../../CONTRIBUTING.md)
-- [Native integration findings](native-integration.md)
-- [Controlled Unity qualification](qualification-runner.md)
-  - Bar scopes: [API](bar-probe-scope.md), [consumers](bar-consumer-scope.md), [linked story](bar-linked-scope.md)
-  - [Absent story author](story-absence-scope.md)
+- [Contributing: feature delivery and correctness tests](../../CONTRIBUTING.md)
+- [Native integration constraints](native-integration.md)
 - [API reference](../reference/README.md)
+- [Build and test commands](../../Makefile)
 - [Release workflow](../../.github/workflows/release.yml) and [publisher](../../tools/publish_update.py)
+
+Implement the feature and its direct API tests together. There is no qualification,
+preparation or native-acceptance workstream. The current implementation and its
+functional limitations belong in the reference docs, not in probe reports.
 
 Release publication requires explicit authorization. Do not run standalone publishers
 concurrently or edit reserved discovery assets manually: GitHub provides no atomic

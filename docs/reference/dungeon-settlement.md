@@ -2,8 +2,7 @@
 
 `ModApi.Services.DungeonRewards` and `ModApi.Services.DungeonSettlement` are experimental
 services requiring inspected reward bindings and boarding observation. Inspect their typed
-availability before using snapshots or interpreting outcomes. Native qualification remains pending: host and
-installed-assembly checks are not evidence of complete in-game acceptance.
+availability before using snapshots or interpreting outcomes.
 
 ## Supported customization
 

@@ -57,7 +57,7 @@ class ArchiveTests(unittest.TestCase):
 
     def test_unexpected_files_refused(self):
         for name in ('Assembly-CSharp.dll', 'UnityEngine.dll', 'BepInEx.dll', '0Harmony.dll',
-                     'QualificationRunner.dll', 'old-build.pdb', 'unlisted.md',
+                     'UnshippedTool.dll', 'old-build.pdb', 'unlisted.md',
                      'docs/reference/Assembly-CSharp.dll', 'docs/reference/nested/UnityEngine.dll',
                      'docs/assets/BepInEx.dll', 'docs/assets/script.js', 'docs/development/guide.md'):
             with self.subTest(name=name):
