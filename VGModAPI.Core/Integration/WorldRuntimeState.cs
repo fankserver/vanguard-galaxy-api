@@ -61,7 +61,6 @@ internal sealed class WorldRuntimeState : IDisposable
                 bool Available() => Current() && context() && _allowOwnedRuntime() &&
                     _persistenceReady(session) && _creation.HasRestoredInventory(session) && Current() && context();
                 // State readiness permits native initialization, not public mutations during callback dispatch.
-                // Production admission remains closed; the isolated qualification candidate supplies restricted readiness.
                 if (Available()) _lifetime.Ready(session, Available);
             }
         }
