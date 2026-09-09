@@ -91,6 +91,7 @@ public sealed partial class Plugin
             foreach (var frame in Wait(() => DungeonProbeButton("Peer dungeon probe") == null, "Disposed contributor removal")) yield return frame;
             foreach (var frame in CheckDungeonPanelNavigation(panel)) yield return frame;
             foreach (var frame in CheckDungeonPanelLayout(nativePanel, panel, mouse)) yield return frame;
+            foreach (var frame in CheckDungeonConsumers(mouse)) yield return frame;
             nativePanel.GetType().GetMethod("Close")!.Invoke(nativePanel, null);
             foreach (var frame in Wait(() => panel.Current == null, "Native dungeon panel close")) yield return frame;
             cached.Invoke(); Require(calls == 1, "Closed panel callback dispatched.");
