@@ -66,14 +66,14 @@ public sealed partial class Plugin
                 Require(rows[index].interactable == (producers[index].Process == RecipeProcess.Forge), "Unsupported refining route offered Forge navigation.");
             }
             var last = rows[rows.Length - 1];
-            Require(producers[producers.Count - 1].Process == RecipeProcess.Refinery, "Chooser fixture needs a final refining route.");
+            Require(producers[producers.Count - 1].Process != RecipeProcess.Forge, "Chooser fixture needs a final non-Forge route.");
             var scroll = last.GetComponentInParent<ScrollRect>();
             Require(scroll != null && scroll.vertical, "Producer chooser has no vertical scroll control.");
             scroll!.verticalNormalizedPosition = 0;
             foreach (var frame in Wait(() => !last.targetGraphic.canvasRenderer.cull, "Final producer row visible after scroll")) yield return frame;
             var beforeDisabled = ui.Current!.SelectedRecipe;
             foreach (var frame in ForgeClick(mouse, last.transform)) yield return frame;
-            Require(PinHudText("Choose producer") && ui.Current!.SelectedRecipe.Equals(beforeDisabled), "Disabled refining choice dispatched navigation.");
+            Require(PinHudText("Choose producer") && ui.Current!.SelectedRecipe.Equals(beforeDisabled), "Disabled non-Forge choice dispatched navigation.");
             foreach (var frame in CaptureForgeActions("blueprint-pin-producers")) yield return frame;
             // Back out of the chooser through the real close button; this must retain the pin.
             foreach (var frame in Wait(() => PinCloseButton() != null, "Producer chooser close")) yield return frame;
