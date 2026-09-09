@@ -13,9 +13,11 @@ namespace VGModAPI.Qualification;
 
 public sealed partial class Plugin
 {
+    private string? _dungeonPointerDiagnostic;
     // A generated, scene-local installation exercises native panel lifetime without saving or starting combat.
     private IEnumerable<object?> CheckDungeonPanelLifetime()
     {
+        _dungeonPointerDiagnostic = null;
         WriteAtomic("dungeon-panel.txt", new[] { "INCOMPLETE" });
         var boarding = ModApi.Boarding ?? throw new InvalidOperationException("Boarding observation unavailable.");
         var panel = ModApi.DungeonPanel ?? throw new InvalidOperationException("Dungeon panel unavailable.");
@@ -90,8 +92,9 @@ public sealed partial class Plugin
         var root = GameObject.Find("Mod API dungeon contributions");
         return root ? root!.GetComponentsInChildren<Button>().SingleOrDefault(button => button.GetComponentsInChildren<TMP_Text>().Any(text => text.text == label)) : null;
     }
-    private static bool DungeonPointerReady(Transform target)
+    private bool DungeonPointerReady(Transform target)
     {
+        Canvas.ForceUpdateCanvases();
         if (!target || !target.gameObject.activeInHierarchy || !EventSystem.current) return false;
         var canvas = target.GetComponentInParent<Canvas>()?.rootCanvas;
         if (!canvas) return false;
@@ -101,7 +104,22 @@ public sealed partial class Plugin
         var point = RectTransformUtility.WorldToScreenPoint(camera, rect.TransformPoint(rect.rect.center));
         var hits = new List<RaycastResult>();
         EventSystem.current.RaycastAll(new PointerEventData(EventSystem.current) { position = point }, hits);
-        return hits.Count > 0 && (hits[0].gameObject.transform == target || hits[0].gameObject.transform.IsChildOf(target));
+        var ready = hits.Count > 0 && (hits[0].gameObject.transform == target || hits[0].gameObject.transform.IsChildOf(target));
+        if (!ready)
+        {
+            var image = target.GetComponent<Image>();
+            var lines = new[]
+            {
+                "target=" + target.name, "point=" + point, "rect=" + rect.rect, "scale=" + target.lossyScale,
+                "screen=" + Screen.width + "x" + Screen.height, "canvas=" + canvas.renderMode,
+                "depth=" + (image ? image!.depth.ToString() : "none"), "culled=" + (image && image!.canvasRenderer.cull),
+                "ancestors=" + string.Join("|", target.GetComponentsInParent<RectTransform>().Select(parent => parent.name + ":" + parent.rect)),
+                "hits=" + string.Join("|", hits.Take(8).Select(hit => hit.gameObject.name + "@" + hit.gameObject.transform.parent?.name))
+            };
+            var diagnostic = string.Join("\n", lines);
+            if (_dungeonPointerDiagnostic != diagnostic) { WriteAtomic("dungeon-pointer-diagnostic.txt", lines); _dungeonPointerDiagnostic = diagnostic; }
+        }
+        return ready;
     }
     private IEnumerable<object?> DungeonClick(Mouse mouse, Transform target)
     {
