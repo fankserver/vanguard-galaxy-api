@@ -20,7 +20,7 @@ public sealed class BoardingServiceTests
         using var hub = new LifecycleHub((_, _) => { });
         hub.SetCapability("boarding-observation", true, "Test bindings.");
         using var engine = new BoardingService(hub, (_, _) => { });
-        IBoardingService service = engine;
+        IDungeonOperationService service = engine;
         var target = Target(Ready(hub)); var scopes = new List<bool>();
         Action<BoardingEvent> handlers = _ => throw new InvalidOperationException("Expected fault.");
         handlers += _ => scopes.Add(hub.IsDispatchingCallbacks && service.IsDispatchingCallbacks);

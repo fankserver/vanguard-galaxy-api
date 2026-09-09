@@ -69,7 +69,7 @@ public sealed class BoardingCombatContext
     }
 }
 
-public interface IBoardingTacticalService : IServiceStatus
+public interface IDungeonTacticalService : IServiceStatus
 {
     BoardingTacticalSnapshot? GetSnapshot(BoardingHandle operation);
     BoardingCommandResult Execute(IBoardingController controller, BoardingTacticalRequest request);
@@ -83,7 +83,7 @@ public interface IBoardingCombatProvider : IDisposable
     IDisposable RegisterVeto(string localId, BoardingRuleScope scope, BoardingCombatPolicyKind kind,
         Func<BoardingCombatContext, bool> allow, int priority = 0);
 }
-public interface IBoardingCombatService : IServiceStatus
+public interface IDungeonCombatService : IServiceStatus
 {
     bool IsEvaluating { get; }
     IBoardingCombatProvider AcquireProvider(string pluginId);

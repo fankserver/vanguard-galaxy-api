@@ -8,13 +8,13 @@ namespace AuthoredDungeon;
 public sealed class CargoRecoveryPanel : IDisposable
 {
     private readonly List<IDisposable> _leases = new();
-    private IBoardingService? _boarding;
+    private IDungeonOperationService? _boarding;
     private Action<BoardingEvent>? _boardingHandler;
     private IDungeonSettlementService? _settlement;
     private Action<DungeonSettlementSnapshot>? _settlementHandler;
 
     public CargoRecoveryPanel(string pluginId, BoardingHandle target, IDungeonPanelService panel,
-        IBoardingService boarding, IBoardingCommandService commands, IBoardingTacticalService tactics, IDungeonSettlementService settlement,
+        IDungeonOperationService boarding, IDungeonCommandService commands, IDungeonTacticalService tactics, IDungeonSettlementService settlement,
         Action<BoardingCommandResult> commandResult, Action<DungeonSettlementSnapshot> observedSettlement)
     {
         if (panel == null) throw new ArgumentNullException(nameof(panel));

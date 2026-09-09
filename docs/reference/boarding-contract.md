@@ -61,7 +61,7 @@ Enemy donor selection consumes a reinforcement request before finding a donor, d
 
 ## Public shape and identity constraints
 
-The current observation surface is `IBoardingService`, `BoardingHandle`, `BoardingTargetSnapshot`, `BoardingOperationSnapshot`, `BoardingCompartmentSnapshot` and `BoardingEvent`. `BoardingHandle` is opaque runtime identity; separate query dictionaries distinguish targets from operations. Handler registration/removal is main-thread-only and does not replay; remove retained handlers with `Changed -= handler`. All snapshots copy their collections. Invalidated/retired handles cannot be queried or resurrected.
+The current observation surface is `IDungeonOperationService`, `BoardingHandle`, `BoardingTargetSnapshot`, `BoardingOperationSnapshot`, `BoardingCompartmentSnapshot` and `BoardingEvent`. `BoardingHandle` is opaque runtime identity; separate query dictionaries distinguish targets from operations. Handler registration/removal is main-thread-only and does not replay; remove retained handlers with `Changed -= handler`. All snapshots copy their collections. Invalidated/retired handles cannot be queried or resurrected.
 
 The following naming and behavioral constraints apply to richer interfaces; names not listed above are design terminology, not advertised available types:
 
@@ -148,7 +148,7 @@ Tactical execution requires the actual current `IBoardingController` instance, n
 
 `ModApi.Services.DungeonCombat` is a stable service with typed `Availability` and `AvailabilityChanged`. Unavailable evaluation preserves vanilla values without invoking providers; health loss discards the entire composition.
 
-`IBoardingCombatService.AcquireProvider` creates a disposable provider instance independent of command control. RegisterMultiplier accepts Power, InitialHealth, Morale or CasualtyRate; RegisterVeto accepts Surrender, Defection, Reinforcement, Hazard or Venting. Callbacks receive copied encounter kind/level, side, optional room and boundary value. InitialHealth scales the native HP initialization multiplier; Morale scales the absolute change, retaining its sign and clamping resulting morale to [0,1]. Policies do not rewrite saved HP on load.
+`IDungeonCombatService.AcquireProvider` creates a disposable provider instance independent of command control. RegisterMultiplier accepts Power, InitialHealth, Morale or CasualtyRate; RegisterVeto accepts Surrender, Defection, Reinforcement, Hazard or Venting. Callbacks receive copied encounter kind/level, side, optional room and boundary value. InitialHealth scales the native HP initialization multiplier; Morale scales the absolute change, retaining its sign and clamping resulting morale to [0,1]. Policies do not rewrite saved HP on load.
 
 Individual multipliers must be finite in [0,10]; combined multipliers above 100 or overflowing the boundary value reject the offending contribution with diagnostics. Contributions run by descending priority then ordinal provider/local ID. Vetoes aggregate as denials, and throwing callbacks do not prevent later contributions. Provider disposal removes only that instance's registrations. Nested evaluation preserves native defaults; session replacement discards results. Policy callbacks must not issue commands.
 

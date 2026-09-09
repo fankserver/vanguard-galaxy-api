@@ -25,7 +25,7 @@ public sealed class BoardingCombatServiceTests
     [Fact]
     public void TypedHealthLossDiscardsNumericAndVetoPolicies()
     {
-        using var f = new Fixture(); IBoardingCombatService service = f.Rules;
+        using var f = new Fixture(); IDungeonCombatService service = f.Rules;
         using var provider = service.AcquireProvider("mod");
         provider.RegisterMultiplier("power", BoardingRuleScope.Both, BoardingCombatPolicyKind.Power, _ =>
         { f.Hub.SetCapability("boarding-combat", false, "Fault.", ServiceUnavailableReason.ObserverFault); return 3; });

@@ -43,7 +43,7 @@ public sealed class BoardingCommandServiceTests
         using var hub = new LifecycleHub((_, _) => { });
         hub.SetCapability("boarding-commands", false, "Disabled.", ServiceUnavailableReason.Disabled);
         using var engine = new BoardingCommandService(hub, null, null, () => false);
-        IBoardingCommandService service = engine;
+        IDungeonCommandService service = engine;
         Assert.Equal(ServiceUnavailableReason.Disabled, service.Availability.Reason);
         Assert.Equal(BoardingCommandStatus.IntegrationUnavailable, service.AcquireControl("mod", new(Guid.NewGuid(), Guid.NewGuid()), out var controller).Status);
         Assert.Null(controller);

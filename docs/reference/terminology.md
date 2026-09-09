@@ -16,19 +16,8 @@ Use native/game terminology for the corresponding concept, without exporting nat
 | DungeonDefinition, DungeonPanel and settlement | Dungeons, DungeonPanel, DungeonRewards and DungeonSettlement; authored content, presentation and actual delivery are separate |
 | HUD and mod menu | Hud and Mods; plugin identity differs from display name and installed version |
 
-## Migration from published boarding names
+## Dungeon service names
 
-Starting with API 0.2.6, prefer these accessors:
+Dungeon operation, command, tactical and combat access uses one canonical set of accessors: `DungeonOperations` (`IDungeonOperationService`), `DungeonCommands` (`IDungeonCommandService`), `DungeonTactics` (`IDungeonTacticalService`) and `DungeonCombat` (`IDungeonCombatService`). `BoardingHandle`, `BoardingOperationSnapshot`, `BoardingCommandOptions` and related DTO names describe native dungeon operations/options for ship boarding and installations; they are shared data contracts, not a competing runtime model. No save, provider ID, configuration key, capability key or native enum value encodes a service accessor name.
 
-| Published accessor | Canonical accessor / interface |
-|---|---|
-| `ModApi.Services.Boarding` | `DungeonOperations` / `IDungeonOperationService` |
-| `ModApi.Services.BoardingCommands` | `DungeonCommands` / `IDungeonCommandService` |
-| `ModApi.Services.BoardingTactics` | `DungeonTactics` / `IDungeonTacticalService` |
-| `ModApi.Services.BoardingCombat` | `DungeonCombat` / `IDungeonCombatService` |
-
-The old accessors are deprecated, not removed. They return the **same instances**, with the same subscriptions, capability state, handles and ownership checks. Existing binaries retain their original method signatures. New interfaces inherit the published contracts; `BoardingHandle`, `BoardingOperationSnapshot`, `BoardingCommandOptions` and related DTO names remain valid compatibility types. They represent native dungeon operations/options, not competing runtime models. Do not duplicate DTO graphs or convert live handles merely to change spelling.
-
-Update accessor names and minimum dependency version when recompiling. Existing injected consumers accepting `IBoardingService` or the other published interfaces still accept the canonical service. No save, provider ID, configuration key, capability key or native enum value is renamed. This is a source-guided migration, not permission to reinterpret persisted data.
-
-`BoardingRules` is retained because it also governs becoming boardable and ship-integrity boundaries before a dungeon operation exists. Its shared simulation settings keep published types for compatibility. New APIs for shared interior mechanics should use DungeonSimulation/DungeonOperation vocabulary; retain *boarding* where the actual mechanic is ship boarding.
+`BoardingRules` keeps the *boarding* name because it governs becoming boardable and ship-integrity boundaries before a dungeon operation exists. New APIs for shared interior mechanics use DungeonSimulation/DungeonOperation vocabulary; retain *boarding* where the actual mechanic is ship boarding.

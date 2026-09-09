@@ -7,7 +7,7 @@ namespace VGModAPI.Runtime;
 internal sealed class DungeonPanelRuntime : IDungeonPanelSource, IDisposable
 {
     private readonly BoardingObserver _observer;
-    private readonly IBoardingService _boarding;
+    private readonly IDungeonOperationService _boarding;
     private readonly BoardingCommandNativeBindings _native;
     private readonly Type _panelType;
     private readonly Func<object?, bool> _ready;
@@ -20,7 +20,7 @@ internal sealed class DungeonPanelRuntime : IDungeonPanelSource, IDisposable
     internal TMPro.TMP_FontAsset? PanelFont => _panel ? (_native.Get(_panel, "panelLabel") as TMPro.TMP_Text)?.font : null;
     internal bool PresentationEnabled { get; set; }
     public DungeonPanelCapabilities Capabilities => new(!_disposed, !_disposed && PresentationEnabled, !_disposed && PresentationEnabled);
-    internal DungeonPanelRuntime(GameBindings game, BoardingObserver observer, IBoardingService boarding, Func<object?, bool> ready)
+    internal DungeonPanelRuntime(GameBindings game, BoardingObserver observer, IDungeonOperationService boarding, Func<object?, bool> ready)
     {
         _observer = observer; _boarding = boarding; _ready = ready;
         _panelType = game.Assembly.GetType(DungeonPanelBindings.Panel, true)!;

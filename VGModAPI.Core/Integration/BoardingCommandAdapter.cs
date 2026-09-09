@@ -8,12 +8,12 @@ internal sealed class BoardingCommandAdapter : IBoardingCommandBackend
 {
     private readonly IBoardingCommandNativeBindings _native;
     private readonly BoardingObserver _observer;
-    private readonly IBoardingService _events;
+    private readonly IDungeonOperationService _events;
     private readonly Func<object, bool> _live;
     private readonly System.Runtime.CompilerServices.ConditionalWeakTable<object, BoardingHandle> _owned = new();
     private readonly Stack<DebitScope> _debits = new();
     internal Func<object, bool>? ReinforcementAllowed;
-    internal BoardingCommandAdapter(IBoardingCommandNativeBindings native, BoardingObserver observer, IBoardingService events, Func<object, bool> live)
+    internal BoardingCommandAdapter(IBoardingCommandNativeBindings native, BoardingObserver observer, IDungeonOperationService events, Func<object, bool> live)
     { _native = native; _observer = observer; _events = events; _live = live; }
     internal bool AllowAutonomous(object operation, bool enabled, BoardingCommandService commands)
     {

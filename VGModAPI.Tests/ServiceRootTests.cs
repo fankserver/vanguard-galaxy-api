@@ -66,20 +66,12 @@ public sealed class ServiceRootTests
     }
 
     [Fact]
-    public void DungeonNamesRetainPublishedServiceIdentityAndThreadGuard()
+    public void DungeonServicesKeepThreadGuardAndReportStoppedAfterShutdown()
     {
         using var hub = new LifecycleHub((_, _) => { });
         using var catalog = new ModInformationCatalog(hub, () => Array.Empty<LoadedPluginInformation>());
         var root = Compose(hub, catalog);
-        foreach (var pair in new[] { ("Boarding", "DungeonOperations"), ("BoardingCommands", "DungeonCommands"),
-            ("BoardingTactics", "DungeonTactics"), ("BoardingCombat", "DungeonCombat") })
-        {
-            var old = typeof(ModServices).GetProperty(pair.Item1)!;
-            var current = typeof(ModServices).GetProperty(pair.Item2)!;
-            Assert.NotNull(old.GetCustomAttribute<ObsoleteAttribute>());
-            Assert.Same(old.GetValue(root), current.GetValue(root));
-            Assert.IsType<TargetInvocationException>(ServiceNotificationTests.OnWorker(() => current.GetValue(root)));
-        }
+        Assert.IsType<TargetInvocationException>(ServiceNotificationTests.OnWorker(() => typeof(ModServices).GetProperty("DungeonOperations")!.GetValue(root)));
         hub.Dispose();
         Assert.Equal(ServiceUnavailableReason.ApiStopped, root.DungeonOperations.Availability.Reason);
     }
