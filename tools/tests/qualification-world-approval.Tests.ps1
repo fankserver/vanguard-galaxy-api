@@ -14,6 +14,13 @@ try {
     Reject { Read-WorldApprovedRun $path $approved $root ([Guid]::NewGuid()) 'create' $head }
     Reject { Read-WorldApprovedRun $path $approved $root $run 'cold' $head }
     Reject { Read-WorldApprovedRun $path $approved $root $run 'create' ('f' * 40) }
+    $objectJson = $record | ConvertTo-Json -Depth 4
+    [IO.File]::WriteAllText($path, ('[' + $objectJson + ']'))
+    $arrayDigest = (Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant()
+    Reject { Read-WorldApprovedRun $path $arrayDigest $root $run 'create' $head }
+    [IO.File]::WriteAllText($path, (" `t`r`n" + $objectJson))
+    $whitespaceDigest = (Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant()
+    $null = Read-WorldApprovedRun $path $whitespaceDigest $root $run 'create' $head
     $record.extra = 'unexpected'; [IO.File]::WriteAllText($path, ($record | ConvertTo-Json -Depth 4))
     Reject { Read-WorldApprovedRun $path $approved $root $run 'create' $head }
     $changedHash = (Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant()

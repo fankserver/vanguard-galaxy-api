@@ -20,7 +20,11 @@ function Read-WorldApprovedRun([string]$Path, [string]$ExpectedDigest, [string]$
     try { $digest = [BitConverter]::ToString($sha.ComputeHash($bytes)).Replace('-', '').ToLowerInvariant() }
     finally { $sha.Dispose() }
     if ($digest -cne $ExpectedDigest) { throw 'World approval record differs from the approved digest.' }
-    $record = (New-Object Text.UTF8Encoding($false, $true)).GetString($bytes) | ConvertFrom-Json
+    $json = (New-Object Text.UTF8Encoding($false, $true)).GetString($bytes)
+    # PowerShell may enumerate a singleton array into its sole object during assignment.
+    # Check the JSON root token before conversion can erase the distinction.
+    if (!$json.TrimStart([char[]]@(' ', "`t", "`r", "`n")).StartsWith('{', [StringComparison]::Ordinal)) { throw 'Approved world record must be a JSON object.' }
+    $record = $json | ConvertFrom-Json
     $names = @('schema','root','gameDirectory','runId','phase','reviewedHead','authorizationSha256','gameInventory','saveInventory','stateInventory')
     if ($null -eq $record -or @($record.PSObject.Properties).Count -ne $names.Count -or
         @($record.PSObject.Properties | Where-Object { $_.Name -cnotin $names }).Count) { throw 'Unexpected world approval schema.' }
