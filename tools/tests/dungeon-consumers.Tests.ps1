@@ -17,6 +17,8 @@ try {
     [IO.File]::WriteAllText((Join-Path $config 'vg.boardalways.cfg'), "[General]`r`nEnabled = true`r`nDifficultyModifier = 2`r`nIntegrityDamageMultiplier = 1.5`r`n")
     [IO.File]::WriteAllText((Join-Path $config 'vgmodapi.example.cargo.cfg'), "[Content]`r`nRewardItemId = Titanium Plate`r`n")
     Assert-DungeonConsumerSelection $root $p
+    [IO.File]::WriteAllText((Join-Path $config 'vg.boardalways.cfg'), "[General]`r`n## BepInEx rewrite`r`nEnabled = true`r`nDifficultyModifier = 2.0`r`nIntegrityDamageMultiplier = 1.500`r`n")
+    Assert-DungeonConsumerSelection $root $p
     $p.dungeonConsumersProbe=$false; Reject { Assert-DungeonConsumerSelection $root $p }; $p.dungeonConsumersProbe=$true
     $p.dungeonPanelProbe=$false; Reject { Assert-DungeonConsumerSelection $root $p }; $p.dungeonPanelProbe=$true
     [IO.File]::AppendAllText($sources, ' '); Reject { Assert-DungeonConsumerSelection $root $p }

@@ -56,7 +56,7 @@ function Assert-DungeonConsumerSelection([string]$Root, $Provenance) {
         if (!(Test-Path -LiteralPath $path -PathType Leaf) -or ((Get-Item -LiteralPath $path).Attributes -band [IO.FileAttributes]::ReparsePoint) -or (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -cne $entry.sha256) { throw 'Prepared dungeon consumer changed.' }
     }
     $config = Join-Path $Root 'game/BepInEx/config'
-    if ((Get-DungeonConsumerConfig (Join-Path $config 'vg.boardalways.cfg') 'General' 'Enabled') -cne 'true' -or (Get-DungeonConsumerConfig (Join-Path $config 'vg.boardalways.cfg') 'General' 'DifficultyModifier') -cne '2' -or (Get-DungeonConsumerConfig (Join-Path $config 'vg.boardalways.cfg') 'General' 'IntegrityDamageMultiplier') -cne '1.5' -or (Get-DungeonConsumerConfig (Join-Path $config 'vgmodapi.example.cargo.cfg') 'Content' 'RewardItemId') -cne $m.rewardItemId) { throw 'Dungeon consumer configuration changed.' }
+    if ((Get-DungeonConsumerConfig (Join-Path $config 'vg.boardalways.cfg') 'General' 'Enabled') -cne 'true' -or [float]::Parse((Get-DungeonConsumerConfig (Join-Path $config 'vg.boardalways.cfg') 'General' 'DifficultyModifier'), [Globalization.CultureInfo]::InvariantCulture) -ne 2 -or [float]::Parse((Get-DungeonConsumerConfig (Join-Path $config 'vg.boardalways.cfg') 'General' 'IntegrityDamageMultiplier'), [Globalization.CultureInfo]::InvariantCulture) -ne 1.5 -or (Get-DungeonConsumerConfig (Join-Path $config 'vgmodapi.example.cargo.cfg') 'Content' 'RewardItemId') -cne $m.rewardItemId) { throw 'Dungeon consumer configuration changed.' }
 }
 function Assert-DungeonConsumerReceipt([string]$Root, $Provenance) {
     Assert-DungeonConsumerSelection $Root $Provenance
@@ -66,8 +66,8 @@ function Assert-DungeonConsumerReceipt([string]$Root, $Provenance) {
     $lines = @(Get-Content -LiteralPath $file)
     if ($lines.Count -ne 3 -or $lines[0] -cne 'INPUTS_SENT' -or $lines[1] -cne 'dungeon-consumers-v1' -or $lines[2] -cne 'attach-then-duplicate') { throw 'Incomplete dungeon consumer inputs.' }
     $log = [IO.File]::ReadAllText((Join-Path $Root 'Player.log'))
-    if ($log.IndexOf('Cargo attach: Attached', [StringComparison]::Ordinal) -gt $log.IndexOf('Cargo attach: TargetInUse', [StringComparison]::Ordinal)) { throw 'Consumer attachment results out of order.' }
     foreach ($message in @('Loading [Board Always 0.4.0]','Loading [Cargo recovery example 0.1.0]','Board Always v0.4.0 registered public boarding policies.','Cargo attach: Attached','Cargo attach: TargetInUse')) {
         if ([regex]::Matches($log, [regex]::Escape($message)).Count -ne 1) { throw ('Missing or duplicate consumer evidence: ' + $message) }
     }
+    if ($log.IndexOf('Cargo attach: Attached', [StringComparison]::Ordinal) -gt $log.IndexOf('Cargo attach: TargetInUse', [StringComparison]::Ordinal)) { throw 'Consumer attachment results out of order.' }
 }
