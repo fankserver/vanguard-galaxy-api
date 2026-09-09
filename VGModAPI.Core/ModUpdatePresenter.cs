@@ -48,8 +48,6 @@ internal sealed class ModUpdatePresenter
         if (!_service.Enabled) return result + " - update checking unavailable.";
         if (status.State is ModUpdateState.Failed or ModUpdateState.Invalid or ModUpdateState.RateLimited)
             result += status.RetryAt > now ? ". Will retry later." : ". Try again.";
-        if (status.CheckedAt.HasValue)
-            result += "\nLast checked: " + status.CheckedAt.Value.ToLocalTime().ToString("g");
         return result;
     }
     internal bool CanCheck(ModInformation mod) => _service.Enabled && ModUpdateHosts.Allowed(mod.Metadata?.UpdateUrl ?? "");
