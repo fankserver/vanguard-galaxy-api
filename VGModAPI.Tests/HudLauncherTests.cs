@@ -18,6 +18,15 @@ public sealed class HudLauncherTests
     }
 
     [Fact]
+    public void InvalidCanvasGeometryNamesTheInvalidDimension()
+    {
+        Assert.Equal("canvasWidth", Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new HudLauncherLayout(HudCorner.TopRight, new[] { 40f }, -1, 1080)).ParamName);
+        Assert.Equal("canvasHeight", Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new HudLauncherLayout(HudCorner.TopRight, new[] { 40f }, 1920, float.NaN)).ParamName);
+    }
+
+    [Fact]
     public void ProvidersShareOneCornerLayoutAndOneProviderCanUseDifferentCorners()
     {
         using var hub = new LifecycleHub((_, _) => { });

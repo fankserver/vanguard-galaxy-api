@@ -28,8 +28,8 @@ internal sealed class HudLauncherLayout
     internal HudLauncherLayout(HudCorner corner, IEnumerable<float> widths, float canvasWidth, float canvasHeight)
     {
         if (!Enum.IsDefined(typeof(HudCorner), corner)) throw new ArgumentOutOfRangeException(nameof(corner));
-        if (!Finite(canvasWidth) || !Finite(canvasHeight) || canvasWidth < 0 || canvasHeight < 0)
-            throw new ArgumentOutOfRangeException(nameof(canvasWidth));
+        if (!Finite(canvasWidth) || canvasWidth < 0) throw new ArgumentOutOfRangeException(nameof(canvasWidth));
+        if (!Finite(canvasHeight) || canvasHeight < 0) throw new ArgumentOutOfRangeException(nameof(canvasHeight));
         var sizes = widths?.ToArray() ?? throw new ArgumentNullException(nameof(widths));
         if (sizes.Any(width => !Finite(width) || width < IconWidth || width > TextWidth))
             throw new ArgumentOutOfRangeException(nameof(widths));
