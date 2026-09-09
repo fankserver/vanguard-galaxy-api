@@ -97,7 +97,7 @@ public sealed class BoardingTacticalAdapterTests
     [Fact]
     public void SnapshotResolvesRequestedOperationRatherThanTargetsNewestOperation()
     {
-        using var f = new Fixture(); using var events = new BoardingService(f.Hub, (_, _) => { });
+        using var f = new Fixture(); f.Hub.SetCapability("boarding-observation", true, "Test bindings."); using var events = new BoardingService(f.Hub, (_, _) => { });
         using var observer = new BoardingObserver(f.Hub, events, f.Native.Get, _ => true, error => throw error);
         var location = new Dictionary<string, object?> { ["availability"] = BoardingAvailability.Available, ["shipTemplate"] = "Scout", ["isShipBased"] = true };
         var unit = new Dictionary<string, object?> { ["data"] = location };

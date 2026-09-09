@@ -1,6 +1,6 @@
 # Boarding integration constraints and source coverage
 
-Optional boarding observation is implemented in API 0.1.25, disabled by default and not runtime-qualified. Enable `[Boarding] Enabled = true`, inspect the `boarding-observation` capability and use `ModApi.Boarding`. `ModApi.Services.BoardingRules` exposes a stable `IBoardingRuleService` with independent typed availability. API 0.1.27 exposes `ModApi.Services.BoardingCommands` when `boarding-commands` is available. API 0.1.28 exposes `ModApi.Services.BoardingTactics` and `ModApi.Services.BoardingCombat` under the separate `boarding-tactics` and `boarding-combat` capabilities. Authored content and presentation registration are not available yet. This document distinguishes the observation contract from applicable constraints on those integrations; no native boarding scenario is attested by it.
+Optional boarding observation is implemented in API 0.1.25, disabled by default and not runtime-qualified. Enable `[Boarding] Enabled = true`, inspect the `boarding-observation` capability and use `ModApi.Services.Boarding`. `ModApi.Services.BoardingRules` exposes a stable `IBoardingRuleService` with independent typed availability. API 0.1.27 exposes `ModApi.Services.BoardingCommands` when `boarding-commands` is available. API 0.1.28 exposes `ModApi.Services.BoardingTactics` and `ModApi.Services.BoardingCombat` under the separate `boarding-tactics` and `boarding-combat` capabilities. This document distinguishes the observation contract from applicable constraints on those integrations; no native boarding scenario is attested by it.
 
 ## Evidence boundary
 
@@ -61,7 +61,7 @@ Enemy donor selection consumes a reinforcement request before finding a donor, d
 
 ## Public shape and identity constraints
 
-The current observation surface is `IBoardingEvents`, `BoardingHandle`, `BoardingTargetSnapshot`, `BoardingOperationSnapshot`, `BoardingCompartmentSnapshot` and `BoardingEvent`. `BoardingHandle` is opaque runtime identity; separate query dictionaries distinguish targets from operations. Registration is main-thread-only, does not replay, and is disposed through the returned subscription. All snapshots copy their collections. Invalidated/retired handles cannot be queried or resurrected.
+The current observation surface is `IBoardingService`, `BoardingHandle`, `BoardingTargetSnapshot`, `BoardingOperationSnapshot`, `BoardingCompartmentSnapshot` and `BoardingEvent`. `BoardingHandle` is opaque runtime identity; separate query dictionaries distinguish targets from operations. Handler registration/removal is main-thread-only and does not replay; remove retained handlers with `Changed -= handler`. All snapshots copy their collections. Invalidated/retired handles cannot be queried or resurrected.
 
 The following naming and behavioral constraints apply to richer interfaces; names not listed above are design terminology, not advertised available types:
 
@@ -192,3 +192,10 @@ Unavailable snapshots perform no native reads; successful reads revalidate their
 session and service health. Tactical mutations retain controller arbitration and
 all specialist, movement, resource and consent checks. Health loss after invocation
 reports `Uncertain`; native UI validation remains independent of consumer access.
+
+`ModApi.Services.Boarding` is a stable `IBoardingService`. Subscribe using
+`Changed += handler` and remove the exact handler during teardown. Registration
+does not replay existing observations; query explicitly after subscribing.
+`Availability` and `AvailabilityChanged` describe binding health. Outside an
+available current session, `SessionId` and single-handle queries return null and
+list queries return empty; inspect availability before interpreting an empty list.

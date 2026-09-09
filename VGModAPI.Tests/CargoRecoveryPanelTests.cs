@@ -31,7 +31,7 @@ public sealed class CargoRecoveryPanelTests
         var view = new DungeonPanelSnapshot(Guid.NewGuid(), 1, new(target, 1, BoardingEncounterKind.Ship, "Target", null, null, BoardingAvailability.OperationActive, operation), state);
         Func<DungeonPanelSnapshot, DungeonPanelAction?>? present = null; Action<DungeonPanelSnapshot>? activate = null;
         var panel = Fake<IDungeonPanelApi>((_, args) => { Assert.Equal("cargo-extraction-" + target.Generation.ToString("N"), args[1]); present = (Func<DungeonPanelSnapshot, DungeonPanelAction?>)args[2]!; activate = (Action<DungeonPanelSnapshot>)args[3]!; return new Lease(); });
-        var boarding = Fake<IBoardingEvents>((name, _) => name switch { "Subscribe" => new Lease(), "GetOperations" => Array.Empty<BoardingOperationSnapshot>(), "GetOperation" => null, _ => throw new InvalidOperationException(name) });
+        var boarding = Fake<IBoardingService>((name, _) => name switch { "add_Changed" or "remove_Changed" => null, "GetOperations" => Array.Empty<BoardingOperationSnapshot>(), "GetOperation" => null, _ => throw new InvalidOperationException(name) });
         var settlement = Fake<IDungeonSettlement>((_, _) => new Lease());
         var disposed = false; var executed = false; var eligible = false;
         var controller = Fake<IBoardingController>((name, _) => { Assert.Equal("Dispose", name); disposed = true; return null; });
@@ -63,8 +63,9 @@ public sealed class CargoRecoveryPanelTests
             Array.Empty<KeyValuePair<string, int>>(), Array.Empty<BoardingCompartmentSnapshot>(), null);
         var observerLease = new Lease(); var settlementLease = new Lease(); var panelLease = new Lease();
         Action<DungeonSettlementSnapshot>? receive = null; var observed = 0;
-        var boarding = Fake<IBoardingEvents>((method, _) => method switch
-        { "Subscribe" => observerLease, "GetOperations" => new[] { state }, "GetOperation" => null, _ => throw new InvalidOperationException(method) });
+        object? DisposeObserver() { observerLease.Dispose(); return null; }
+        var boarding = Fake<IBoardingService>((method, _) => method switch
+        { "add_Changed" => null, "remove_Changed" => DisposeObserver(), "GetOperations" => new[] { state }, "GetOperation" => null, _ => throw new InvalidOperationException(method) });
         var settlement = Fake<IDungeonSettlement>((method, args) =>
         { Assert.Equal("Subscribe", method); receive = (Action<DungeonSettlementSnapshot>)args[1]!; return settlementLease; });
         var panel = Fake<IDungeonPanelApi>((method, _) =>

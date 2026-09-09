@@ -15,9 +15,33 @@ public sealed class BoardingServiceTests
     private static BoardingTargetSnapshot Target(Guid session, Guid? generation = null, long revision = 1) =>
         new(new BoardingHandle(session, generation ?? Guid.NewGuid()), revision, BoardingEncounterKind.Ship, "Ship", "Faction", "Ship", BoardingAvailability.Available, null);
     [Fact]
+    public void TypedHandlersAreScopedIsolatedRemovableAndHealthGated()
+    {
+        using var hub = new LifecycleHub((_, _) => { });
+        hub.SetCapability("boarding-observation", true, "Test bindings.");
+        using var engine = new BoardingService(hub, (_, _) => { });
+        IBoardingService service = engine;
+        var target = Target(Ready(hub)); var scopes = new List<bool>();
+        Action<BoardingEvent> handlers = _ => throw new InvalidOperationException("Expected fault.");
+        handlers += _ => scopes.Add(hub.IsDispatchingCallbacks && service.IsDispatchingCallbacks);
+        service.Changed += handlers;
+        Assert.True(engine.Observe(BoardingEventKind.TargetAvailable, target));
+        Assert.True(Assert.Single(scopes));
+        service.Changed -= handlers;
+        Assert.True(engine.Observe(BoardingEventKind.TargetChanged, Target(target.Handle.SessionId, target.Handle.Generation, 2)));
+        Assert.Single(scopes);
+        hub.SetCapability("boarding-observation", false, "Fault.", ServiceUnavailableReason.ObserverFault);
+        Assert.Null(service.SessionId); Assert.Empty(service.GetTargets()); Assert.Null(service.GetTarget(target.Handle));
+        Assert.False(engine.Observe(BoardingEventKind.TargetChanged, target));
+        engine.Dispose(); Assert.Equal(ServiceUnavailableReason.ObserverFault, service.Availability.Reason);
+        Assert.Throws<ObjectDisposedException>(() => service.Changed += handlers);
+        Assert.Null(typeof(ModApi).GetProperty("Boarding"));
+        Assert.Null(typeof(ModApi).Assembly.GetType("VGModAPI.IBoardingEvents"));
+    }
+    [Fact]
     public void QueryDoesNotReplayAndInvalidationRejectsOldHandles()
     {
-        using var hub = new LifecycleHub((_, _) => { }); using var service = new BoardingService(hub, (_, _) => { });
+        using var hub = new LifecycleHub((_, _) => { }); hub.SetCapability("boarding-observation", true, "Test bindings."); using var service = new BoardingService(hub, (_, _) => { });
         var target = Target(Ready(hub));
         Assert.True(service.Observe(BoardingEventKind.TargetAvailable, target));
         var calls = 0; using var subscription = service.Subscribe("mod", _ => calls++);
@@ -31,7 +55,7 @@ public sealed class BoardingServiceTests
     public void DispatchContainsFailuresAndSkipsDisposedCallbacks()
     {
         using var hub = new LifecycleHub((_, _) => { }); var faults = 0;
-        using var service = new BoardingService(hub, (_, _) => faults++);
+        hub.SetCapability("boarding-observation", true, "Test bindings."); using var service = new BoardingService(hub, (_, _) => faults++);
         var target = Target(Ready(hub)); var seen = new List<long>(); IDisposable? victim = null;
         using var first = service.Subscribe("first", message =>
         {
@@ -47,7 +71,7 @@ public sealed class BoardingServiceTests
     [Fact]
     public void ReentrantSessionReplacementStopsOldEventDelivery()
     {
-        using var hub = new LifecycleHub((_, _) => { }); using var service = new BoardingService(hub, (_, _) => { });
+        using var hub = new LifecycleHub((_, _) => { }); hub.SetCapability("boarding-observation", true, "Test bindings."); using var service = new BoardingService(hub, (_, _) => { });
         var target = Target(Ready(hub)); var seen = 0;
         using var first = service.Subscribe("replace", _ => Ready(hub));
         using var last = service.Subscribe("last", _ => seen++);
@@ -57,7 +81,7 @@ public sealed class BoardingServiceTests
     [Fact]
     public void RetirementRemovesQueriesButPreservesEventSnapshot()
     {
-        using var hub = new LifecycleHub((_, _) => { }); using var service = new BoardingService(hub, (_, _) => { });
+        using var hub = new LifecycleHub((_, _) => { }); hub.SetCapability("boarding-observation", true, "Test bindings."); using var service = new BoardingService(hub, (_, _) => { });
         var target = Target(Ready(hub)); service.Observe(BoardingEventKind.TargetAvailable, target);
         BoardingEvent? receipt = null; using var sub = service.Subscribe("observer", message => receipt = message);
         service.Observe(BoardingEventKind.Retired, target);
@@ -85,7 +109,7 @@ public sealed class BoardingServiceTests
     [Fact]
     public void ForeignThreadAccessIsRejected()
     {
-        using var hub = new LifecycleHub((_, _) => { }); using var service = new BoardingService(hub, (_, _) => { });
+        using var hub = new LifecycleHub((_, _) => { }); hub.SetCapability("boarding-observation", true, "Test bindings."); using var service = new BoardingService(hub, (_, _) => { });
         Exception? error = null;
         var thread = new Thread(() => error = Record.Exception(() => service.GetTargets()));
         thread.Start(); thread.Join();

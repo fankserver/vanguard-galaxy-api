@@ -67,6 +67,7 @@ public sealed class BoardingCommandAdapterTests
         internal readonly BoardingHandle Target;
         internal Fixture()
         {
+            Hub.SetCapability("boarding-observation", true, "Test bindings.");
             Events = new BoardingService(Hub, (_, _) => { });
             Observer = new BoardingObserver(Hub, Events, Native.Get, _ => true, error => throw error);
             var session = Hub.Begin(SessionOrigin.SaveLoad, "save"); Hub.PlayerReady(session); Hub.GameplayInitialized(session);

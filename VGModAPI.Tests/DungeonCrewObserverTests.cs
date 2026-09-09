@@ -12,7 +12,7 @@ public sealed class DungeonCrewObserverTests
     [Fact]
     public void PrisonerOverflowAndForeignRecipientsAreNotReportedAsBrigDelivery()
     {
-        using var hub = new LifecycleHub((_, _) => { }); using var boarding = new BoardingService(hub, (_, _) => { });
+        using var hub = new LifecycleHub((_, _) => { }); hub.SetCapability("boarding-observation", true, "Test bindings."); using var boarding = new BoardingService(hub, (_, _) => { });
         using var settlement = new DungeonSettlementService(hub, boarding, (_, _) => { });
         var session = hub.Begin(SessionOrigin.SaveLoad, "save"); hub.PlayerReady(session);
         var target = new BoardingTargetSnapshot(new(session, Guid.NewGuid()), 1, BoardingEncounterKind.Ship, "Ship", "Gold", "Ship", BoardingAvailability.Available, null);

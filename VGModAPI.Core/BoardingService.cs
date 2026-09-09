@@ -5,9 +5,11 @@ using System.Linq;
 namespace VGModAPI.Core;
 
 /// <summary>Observation registry; the adapter supplies copied facts, never native objects.</summary>
-internal sealed class BoardingService : IBoardingEvents, IDisposable
+internal sealed class BoardingService : IBoardingService, IDisposable
 {
     private readonly LifecycleHub _hub;
+    private readonly IServiceStatus _status;
+    private readonly ServiceSubscriptions<BoardingEvent> _handlers;
     private readonly IDisposable _lifecycle;
     private readonly Action<string, Exception> _report;
     private readonly Dictionary<BoardingHandle, BoardingTargetSnapshot> _targets = new();
@@ -22,16 +24,24 @@ internal sealed class BoardingService : IBoardingEvents, IDisposable
     internal BoardingService(LifecycleHub hub, Action<string, Exception> report)
     {
         _hub = hub; _report = report;
+        _status = hub.Services.Get("boarding-observation");
+        _handlers = new ServiceSubscriptions<BoardingEvent>(hub, Subscribe, fact => Availability.IsAvailable && SessionId == fact.Target.Handle.SessionId);
         _lifecycle = hub.Subscribe("vgmodapi.boarding", OnLifecycle);
         var session = hub.CurrentSession;
         if (session?.Phase is SessionPhase.PlayerReady or SessionPhase.GameplayInitialized) _session = session.Id;
     }
-    public Guid? SessionId { get { _hub.CheckThread(); return _session; } }
-    public bool IsDispatchingCallbacks { get { _hub.CheckThread(); return _dispatching; } }
-    public IReadOnlyList<BoardingTargetSnapshot> GetTargets() { _hub.CheckThread(); return Array.AsReadOnly(_targets.Values.ToArray()); }
-    public IReadOnlyList<BoardingOperationSnapshot> GetOperations() { _hub.CheckThread(); return Array.AsReadOnly(_operations.Values.ToArray()); }
-    public BoardingTargetSnapshot? GetTarget(BoardingHandle handle) { _hub.CheckThread(); return _targets.TryGetValue(handle, out var value) ? value : null; }
-    public BoardingOperationSnapshot? GetOperation(BoardingHandle handle) { _hub.CheckThread(); return _operations.TryGetValue(handle, out var value) ? value : null; }
+    public ServiceAvailability Availability => _status.Availability;
+    public event Action<ServiceAvailability>? AvailabilityChanged
+    { add => _status.AvailabilityChanged += value; remove => _status.AvailabilityChanged -= value; }
+    public event Action<BoardingEvent>? Changed { add => _handlers.Add(value); remove => _handlers.Remove(value); }
+    private bool ContextLive => !_disposed && Availability.IsAvailable && _session.HasValue &&
+        _hub.CurrentSession?.Id == _session && _hub.CurrentSession.Phase is SessionPhase.PlayerReady or SessionPhase.GameplayInitialized;
+    public Guid? SessionId { get { _hub.CheckThread(); return ContextLive ? _session : null; } }
+    public bool IsDispatchingCallbacks { get { _hub.CheckThread(); return _dispatching || _hub.IsDispatchingCallbacks; } }
+    public IReadOnlyList<BoardingTargetSnapshot> GetTargets() { _hub.CheckThread(); return ContextLive ? Array.AsReadOnly(_targets.Values.ToArray()) : Array.Empty<BoardingTargetSnapshot>(); }
+    public IReadOnlyList<BoardingOperationSnapshot> GetOperations() { _hub.CheckThread(); return ContextLive ? Array.AsReadOnly(_operations.Values.ToArray()) : Array.Empty<BoardingOperationSnapshot>(); }
+    public BoardingTargetSnapshot? GetTarget(BoardingHandle handle) { _hub.CheckThread(); return ContextLive && _targets.TryGetValue(handle, out var value) ? value : null; }
+    public BoardingOperationSnapshot? GetOperation(BoardingHandle handle) { _hub.CheckThread(); return ContextLive && _operations.TryGetValue(handle, out var value) ? value : null; }
     private void OnLifecycle(LifecycleEvent message)
     {
         if (message.Kind is LifecycleEventKind.SessionStarting or LifecycleEventKind.SessionInvalidated or LifecycleEventKind.SessionStartFailed)
@@ -46,7 +56,7 @@ internal sealed class BoardingService : IBoardingEvents, IDisposable
     internal bool Observe(BoardingEventKind kind, BoardingTargetSnapshot target, BoardingOperationSnapshot? operation = null, BoardingDelivery? delivery = null)
     {
         _hub.CheckThread();
-        if (_disposed || !_session.HasValue || target.Handle.SessionId != _session) return false;
+        if (!ContextLive || target.Handle.SessionId != _session) return false;
         var targetRetired = _retired.Contains(target.Handle);
         if (targetRetired && (operation == null || !_operations.ContainsKey(operation.Handle) || kind is BoardingEventKind.Retired or BoardingEventKind.TargetAvailable or BoardingEventKind.TargetChanged)) return false;
         if (operation != null && _retiredOperations.Contains(operation.Handle)) return false;
@@ -91,7 +101,7 @@ internal sealed class BoardingService : IBoardingEvents, IDisposable
         }
         finally { _dispatching = false; }
     }
-    public IDisposable Subscribe(string providerId, Action<BoardingEvent> callback)
+    internal IDisposable Subscribe(string providerId, Action<BoardingEvent> callback)
     {
         _hub.CheckThread();
         if (_disposed) throw new ObjectDisposedException(nameof(BoardingService));
@@ -102,7 +112,8 @@ internal sealed class BoardingService : IBoardingEvents, IDisposable
     public void Dispose()
     {
         _hub.CheckThread(); if (_disposed) return;
-        _disposed = true; Invalidate(); _lifecycle.Dispose();
+        _disposed = true; Invalidate(); _lifecycle.Dispose(); _handlers.Dispose();
+        if (Availability.IsAvailable) _hub.SetCapability("boarding-observation", false, "Boarding service stopped.", ServiceUnavailableReason.ApiStopped);
         foreach (var sub in _subscribers) sub.Active = false;
         _subscribers.Clear();
     }

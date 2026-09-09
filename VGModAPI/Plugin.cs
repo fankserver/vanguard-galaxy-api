@@ -39,6 +39,7 @@ public sealed partial class Plugin : BaseUnityPlugin
     private DungeonPanelChoices? _dungeonPanelChoices;
     private BoardingRuleAdapter? _boardingRules;
     private BoardingRuleService? _boardingRuleService;
+    private BoardingService? _boardingService;
     private BoardingCommandService? _boardingCommands;
     private BoardingCombatService? _boardingCombat;
     private BoardingTacticalAdapter? _boardingTactics;
@@ -85,7 +86,6 @@ public sealed partial class Plugin : BaseUnityPlugin
         _hub.SetCapability("owned-story", false, "Not initialized; experimental.");
         _hub.SetCapability("story-protection", false, "Not bound.");
         _hub.SetCapability("boarding-observation", false, "Disabled by configuration; experimental.");
-        ModApi.Boarding = null;
         _hub.SetCapability("boarding-tactics", false, "Disabled by configuration; experimental.");
         _hub.SetCapability("boarding-combat", false, "Disabled by configuration; experimental.");
         _hub.SetCapability("boarding-commands", false, "Disabled by configuration; experimental.");
@@ -557,11 +557,11 @@ public sealed partial class Plugin : BaseUnityPlugin
         _hub!.SetCapability("dungeon-panel-opening", false, "Boarding integration unavailable.");
         _hub.SetCapability("dungeon-panel-sections", false, "Panel renderer unavailable.");
         _hub.SetCapability("dungeon-panel-actions", false, "Panel renderer unavailable.");
-        if (_boarding == null || ModApi.Boarding == null) return;
+        if (_boarding == null || _boardingService == null) return;
         try
         {
             var bindings = new GameBindings(Assembly.Load("Assembly-CSharp"));
-            _dungeonPanel = new(bindings, _boarding, ModApi.Boarding, operation =>
+            _dungeonPanel = new(bindings, _boarding, _boardingService, operation =>
                 _dungeonRecovery == null || (_dungeonRecovery.State.CanMutate && (operation == null || _dungeonRecovery.OperationReady(operation))));
             _dungeonPanelService = new(_hub, _dungeonPanel, (owner, error) => Logger.LogError($"Dungeon panel contributor '{owner}': {error}"));
             DungeonPanelPatches.Runtime = _dungeonPanel; DungeonPanelPatches.Report = error => Logger.LogError(error);
@@ -702,7 +702,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         try
         {
             _dungeonRewards = new DungeonRewardService(_hub, (owner, error) => Logger.LogError($"Dungeon reward '{owner}': {error}"));
-            _dungeonSettlement = new DungeonSettlementService(_hub, ModApi.Boarding!, (owner, error) => Logger.LogError($"Dungeon settlement '{owner}': {error}"));
+            _dungeonSettlement = new DungeonSettlementService(_hub, _boardingService!, (owner, error) => Logger.LogError($"Dungeon settlement '{owner}': {error}"));
             DungeonRewardPatches.Crew = new DungeonCrewObserver(bindings, _boarding, _dungeonSettlement, error => Logger.LogError(error));
             DungeonRewardPatches.Adapter = new DungeonRewardAdapter(_hub, bindings, _boarding, _dungeonRewards);
             InstallGroup("dungeon-rewards", bindings, DungeonSettlementBindings.Hooks, new Dictionary<string, Type>
@@ -726,10 +726,10 @@ public sealed partial class Plugin : BaseUnityPlugin
 
     private void InstallBoardingTactics(GameBindings bindings)
     {
-        if (_boarding == null || ModApi.Boarding == null || _boardingCommands == null) return;
+        if (_boarding == null || _boardingService == null || _boardingCommands == null) return;
         try
         {
-            var tactics = _boardingTactics = new BoardingTacticalAdapter(_hub!, bindings, _boarding, ModApi.Boarding, _boardingCommands);
+            var tactics = _boardingTactics = new BoardingTacticalAdapter(_hub!, bindings, _boarding, _boardingService, _boardingCommands);
             BoardingTacticalPatches.Adapter = tactics;
             InstallGroup("boarding-tactics", bindings, BoardingTacticalBindings.Actions, BoardingTacticalBindings.Actions.ToDictionary(b => b.Key,
                 b => b.ReturnType == "System.Boolean" ? typeof(BoardingTacticalPatches.BoolAction) : typeof(BoardingTacticalPatches.VoidAction)));
@@ -768,13 +768,13 @@ public sealed partial class Plugin : BaseUnityPlugin
     private void InstallBoardingCommands(GameBindings bindings)
     {
         _hub!.SetCapability("boarding-commands", false, "Boarding observation required; experimental.");
-        if (_boarding == null || ModApi.Boarding == null) return;
+        if (_boarding == null || _boardingService == null) return;
         try
         {
-            var adapter = new BoardingCommandAdapter(new BoardingCommandNativeBindings(bindings), _boarding, ModApi.Boarding,
+            var adapter = new BoardingCommandAdapter(new BoardingCommandNativeBindings(bindings), _boarding, _boardingService,
                 value => value is UnityEngine.Object native && native != null);
             adapter.SimulationReady = simulation => DungeonCrewResumePatches.Coordinator?.CanTick(simulation) ?? true;
-            _boardingCommands = new BoardingCommandService(_hub, ModApi.Boarding, adapter, () => (_boardingRuleService?.IsEvaluating ?? false) || (_boardingCombat?.IsEvaluating ?? false) || (_dungeonRewards?.IsEvaluating ?? false) || (_dungeonSettlement?.IsDispatchingCallbacks ?? false));
+            _boardingCommands = new BoardingCommandService(_hub, _boardingService, adapter, () => (_boardingRuleService?.IsEvaluating ?? false) || (_boardingCombat?.IsEvaluating ?? false) || (_dungeonRewards?.IsEvaluating ?? false) || (_dungeonSettlement?.IsDispatchingCallbacks ?? false));
             BoardingCommandPatches.Adapter = adapter; BoardingCommandPatches.Service = _boardingCommands;
             InstallGroup("boarding-commands", bindings, BoardingCommandBindings.Hooks, BoardingCommandBindings.Hooks.ToDictionary(b => b.Key, b => b.Key switch
             {
@@ -846,7 +846,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             });
             InstallGroup("boarding-observation", bindings, BindingCatalog.Boarding, patches);
             if (!_hub.Capabilities.Any(c => c.Name == "boarding-observation" && c.Available)) throw new NotSupportedException("Boarding hooks unavailable.");
-            ModApi.Boarding = service;
+            _boardingService = service;
         }
         catch (Exception error)
         {
@@ -987,7 +987,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         BoardingCombatPatches.Adapter = null; _boardingCombat?.Dispose(); _boardingCombat = null;
         BoardingCommandPatches.Adapter = null; BoardingCommandPatches.Service = null; _boardingCommands?.Dispose(); _boardingCommands = null;
         BoardingRulePatches.Adapter = null; _boardingRules?.Dispose(); _boardingRules = null; _boardingRuleService?.Dispose(); _boardingRuleService = null;
-        BoardingPatches.Observer = null; _boarding?.Dispose(); _boarding = null; ModApi.Boarding = null;
+        BoardingPatches.Observer = null; _boarding?.Dispose(); _boarding = null; _boardingService = null;
         try { _updates?.Dispose(); } catch (Exception) { }
         try { _modMenu?.Dispose(); } catch (Exception error) { DisableModMenu(error); }
         _modMenu = null;

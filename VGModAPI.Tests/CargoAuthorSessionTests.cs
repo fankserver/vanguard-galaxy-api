@@ -30,11 +30,14 @@ public sealed class CargoAuthorSessionTests
             else { Assert.Equal("remove_Changed", name); Lifecycle.Remove(callback); }
             return null;
         });
-        internal IBoardingEvents Events => Fake<IBoardingEvents>((name, args) =>
+        internal IBoardingService Events => Fake<IBoardingService>((name, args) =>
         {
             if (name == "GetOperations") { Assert.NotEmpty(Boarding); return Seed; }
             if (name == "GetOperation") return null;
-            Assert.Equal("Subscribe", name); var callback = (Action<BoardingEvent>)args[1]!; Boarding.Add(callback); return new Lease(() => Boarding.Remove(callback));
+            var callback = (Action<BoardingEvent>)args[0]!;
+            if (name == "add_Changed") Boarding.Add(callback);
+            else { Assert.Equal("remove_Changed", name); Boarding.Remove(callback); }
+            return null;
         });
         internal IDungeonContent Content => Fake<IDungeonContent>((name, _) =>
         {

@@ -14,7 +14,7 @@ internal sealed class DungeonSettlementService : IDungeonSettlement, IDisposable
     private bool _disposed;
     private int _dispatchDepth;
     public bool IsDispatchingCallbacks { get { _hub.CheckThread(); return _dispatchDepth != 0; } }
-    internal DungeonSettlementService(LifecycleHub hub, IBoardingEvents boarding, Action<string, Exception> report)
+    internal DungeonSettlementService(LifecycleHub hub, BoardingService boarding, Action<string, Exception> report)
     {
         _hub = hub; _report = report;
         _boardingSubscription = boarding.Subscribe("vgmodapi.settlement", Observe);

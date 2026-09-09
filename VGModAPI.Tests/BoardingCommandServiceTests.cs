@@ -21,7 +21,7 @@ public sealed class BoardingCommandServiceTests
     public void HealthLossDuringNativeWorkReportsUncertainAndRevokesAdmission(bool duringPause)
     {
         using var hub = new LifecycleHub((_, _) => { });
-        using var events = new BoardingService(hub, (_, _) => { });
+        hub.SetCapability("boarding-observation", true, "Test bindings."); using var events = new BoardingService(hub, (_, _) => { });
         var session = hub.Begin(SessionOrigin.NewGame, null); hub.PlayerReady(session);
         var target = new BoardingHandle(session, Guid.NewGuid());
         events.Observe(BoardingEventKind.TargetAvailable, new(target, 1, BoardingEncounterKind.Ship, "ship", null, null, BoardingAvailability.Available, null));
@@ -54,7 +54,7 @@ public sealed class BoardingCommandServiceTests
     public void ExclusiveControlIsInstanceScopedAndManualTakeoverRevokesIt()
     {
         using var hub = new LifecycleHub((_, _) => { });
-        using var events = new BoardingService(hub, (_, _) => { });
+        hub.SetCapability("boarding-observation", true, "Test bindings."); using var events = new BoardingService(hub, (_, _) => { });
         var session = hub.Begin(SessionOrigin.SaveLoad, "save"); hub.PlayerReady(session); hub.GameplayInitialized(session);
         var target = new BoardingHandle(session, Guid.NewGuid());
         events.Observe(BoardingEventKind.TargetAvailable, new(target, 1, BoardingEncounterKind.Ship, "ship", null, null, BoardingAvailability.Available, null));
@@ -71,7 +71,7 @@ public sealed class BoardingCommandServiceTests
     public void NativeExceptionsPropagateAndBusyGuardIsReleased()
     {
         using var hub = new LifecycleHub((_, _) => { });
-        using var events = new BoardingService(hub, (_, _) => { });
+        hub.SetCapability("boarding-observation", true, "Test bindings."); using var events = new BoardingService(hub, (_, _) => { });
         var session = hub.Begin(SessionOrigin.SaveLoad, "save"); hub.PlayerReady(session); hub.GameplayInitialized(session);
         var target = new BoardingHandle(session, Guid.NewGuid());
         events.Observe(BoardingEventKind.TargetAvailable, new(target, 1, BoardingEncounterKind.Ship, "ship", null, null, BoardingAvailability.Available, null));
@@ -88,7 +88,7 @@ public sealed class BoardingCommandServiceTests
     public void SessionReplacementDuringArbitrationCannotGrantControl()
     {
         using var hub = new LifecycleHub((_, _) => { });
-        using var events = new BoardingService(hub, (_, _) => { });
+        hub.SetCapability("boarding-observation", true, "Test bindings."); using var events = new BoardingService(hub, (_, _) => { });
         var session = hub.Begin(SessionOrigin.SaveLoad, "save"); hub.PlayerReady(session); hub.GameplayInitialized(session);
         var target = new BoardingHandle(session, Guid.NewGuid());
         events.Observe(BoardingEventKind.TargetAvailable, new(target, 1, BoardingEncounterKind.Ship, "ship", null, null, BoardingAvailability.Available, null));

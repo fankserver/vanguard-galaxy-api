@@ -8,9 +8,11 @@ namespace AuthoredDungeon;
 public sealed class CargoRecoveryPanel : IDisposable
 {
     private readonly List<IDisposable> _leases = new();
+    private IBoardingService? _boarding;
+    private Action<BoardingEvent>? _boardingHandler;
 
     public CargoRecoveryPanel(string pluginId, BoardingHandle target, IDungeonPanelApi panel,
-        IBoardingEvents boarding, IBoardingCommandService commands, IBoardingTacticalService tactics, IDungeonSettlement settlement,
+        IBoardingService boarding, IBoardingCommandService commands, IBoardingTacticalService tactics, IDungeonSettlement settlement,
         Action<BoardingCommandResult> commandResult, Action<DungeonSettlementSnapshot> observedSettlement)
     {
         if (panel == null) throw new ArgumentNullException(nameof(panel));
@@ -25,10 +27,12 @@ public sealed class CargoRecoveryPanel : IDisposable
         try
         {
             // Observe independently of presentation: closing the panel must not lose returning-crew facts.
-            _leases.Add(boarding.Subscribe(pluginId, fact =>
+            _boarding = boarding;
+            _boardingHandler = fact =>
             {
                 if (fact.Target.Handle.Equals(target) && fact.Operation != null) operations.Add(fact.Operation.Handle);
-            }));
+            };
+            boarding.Changed += _boardingHandler;
             foreach (var operation in boarding.GetOperations())
                 if (operation.Target.Equals(target)) operations.Add(operation.Handle);
             _leases.Add(settlement.Subscribe(pluginId, snapshot =>
@@ -59,6 +63,8 @@ public sealed class CargoRecoveryPanel : IDisposable
 
     public void Dispose()
     {
+        if (_boarding != null) _boarding.Changed -= _boardingHandler;
+        _boarding = null; _boardingHandler = null;
         for (var i = _leases.Count - 1; i >= 0; i--) _leases[i].Dispose();
         _leases.Clear();
     }

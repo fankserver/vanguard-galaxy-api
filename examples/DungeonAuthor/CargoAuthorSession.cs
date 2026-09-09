@@ -14,8 +14,10 @@ public sealed class CargoAuthorSession : IDisposable
     private CargoRecovery? _author;
     private bool _disposed;
     private ILifecycleService? _lifecycle;
+    private IBoardingService? _boarding;
+    private Action<BoardingEvent>? _boardingHandler;
     private Action<LifecycleEvent>? _lifecycleHandler;
-    public CargoAuthorSession(string reward, ILifecycleService? lifecycle, IBoardingEvents? boarding, IDungeonContent? content,
+    public CargoAuthorSession(string reward, ILifecycleService? lifecycle, IBoardingService? boarding, IDungeonContent? content,
         IDungeonPanelApi? panel, IBoardingCommandService? commands, IBoardingTacticalService? tactics, IDungeonSettlement? settlement,
         Action<string> log, Action<string>? warn = null)
     {
@@ -47,7 +49,8 @@ public sealed class CargoAuthorSession : IDisposable
                         result => log("Cargo command: " + result.Status),
                         result => log($"Cargo settlement: {result.NativeOutcome}; crew return settled={result.CrewReturnSettled}; observed counts={result.CrewCountsObserved}")));
                 }
-                _leases.Add(boarding.Subscribe(Id, fact =>
+                _boarding = boarding;
+                _boardingHandler = fact =>
                 {
                     if (fact.Kind == BoardingEventKind.Retired)
                     {
@@ -55,7 +58,8 @@ public sealed class CargoAuthorSession : IDisposable
                         return;
                     }
                     if (fact.Kind != BoardingEventKind.OperationRetired && fact.Operation != null) Track(fact.Operation);
-                }));
+                };
+                boarding.Changed += _boardingHandler;
                 foreach (var operation in boarding.GetOperations()) Track(operation);
             }
             catch { Dispose(); throw; }
@@ -81,6 +85,8 @@ public sealed class CargoAuthorSession : IDisposable
         if (_disposed) return; _disposed = true;
         if (_lifecycle != null) _lifecycle.Changed -= _lifecycleHandler;
         _lifecycle = null; _lifecycleHandler = null;
+        if (_boarding != null) _boarding.Changed -= _boardingHandler;
+        _boarding = null; _boardingHandler = null;
         ClearTargets();
         for (var i = _leases.Count - 1; i >= 0; i--) _leases[i].Dispose();
         _leases.Clear(); _author?.Dispose(); _author = null;
