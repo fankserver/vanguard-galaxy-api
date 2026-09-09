@@ -20,6 +20,39 @@ public sealed class CargoRecoveryPanelTests
     { internal bool Disposed; public void Dispose() => Disposed = true; }
 
     [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void ActionChecksEligibilityReportsConflictAndReleasesAcquiredControl(bool admitted, bool failTactic)
+    {
+        var session = Guid.NewGuid(); var target = new BoardingHandle(session, Guid.NewGuid()); var operation = new BoardingHandle(session, Guid.NewGuid());
+        var state = new BoardingOperationSnapshot(operation, target, 1, (BoardingPhase)0, false, false, null, null, null,
+            Array.Empty<KeyValuePair<string, int>>(), Array.Empty<BoardingCompartmentSnapshot>(), null);
+        var view = new DungeonPanelSnapshot(Guid.NewGuid(), 1, new(target, 1, BoardingEncounterKind.Ship, "Target", null, null, BoardingAvailability.OperationActive, operation), state);
+        Func<DungeonPanelSnapshot, DungeonPanelAction?>? present = null; Action<DungeonPanelSnapshot>? activate = null;
+        var panel = Fake<IDungeonPanelApi>((_, args) => { present = (Func<DungeonPanelSnapshot, DungeonPanelAction?>)args[2]!; activate = (Action<DungeonPanelSnapshot>)args[3]!; return new Lease(); });
+        var boarding = Fake<IBoardingEvents>((name, _) => name == "Subscribe" ? new Lease() : Array.Empty<BoardingOperationSnapshot>());
+        var settlement = Fake<IDungeonSettlement>((_, _) => new Lease());
+        var disposed = false; var executed = false; var eligible = false;
+        var controller = Fake<IBoardingController>((name, _) => { Assert.Equal("Dispose", name); disposed = true; return null; });
+        var acquisition = new BoardingCommandResult(admitted ? BoardingCommandStatus.Admitted : BoardingCommandStatus.ControlConflict, "control");
+        var commands = Fake<IBoardingCommands>((_, args) => { args[2] = admitted ? controller : null; return acquisition; });
+        var execution = new BoardingCommandResult(BoardingCommandStatus.Admitted, "request");
+        var tactics = Fake<IBoardingTactics>((name, args) =>
+        {
+            if (name == "GetSnapshot") return new BoardingTacticalSnapshot(operation, Array.Empty<BoardingCompartmentSnapshot>(), 0, 0, eligible, false);
+            executed = true; Assert.Same(controller, args[0]); Assert.Equal(BoardingTacticalAction.RequestExtraction, ((BoardingTacticalRequest)args[1]!).Action);
+            if (failTactic) throw new InvalidOperationException("tactic failure"); return execution;
+        });
+        BoardingCommandResult? result = null;
+        using var example = new CargoRecoveryPanel("cargo", target, panel, boarding, commands, tactics, settlement, value => result = value, _ => { });
+        Assert.Null(present!(view)); eligible = true; Assert.NotNull(present(view));
+        if (admitted && failTactic) Assert.Throws<InvalidOperationException>(() => activate!(view));
+        else { activate!(view); Assert.Same(admitted ? execution : acquisition, result); }
+        Assert.Equal(admitted, executed); Assert.Equal(admitted, disposed);
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public void SettlementDoesNotDependOnPanelPresentationAndFailureReleasesSubscriptions(bool failRegistration)
@@ -31,7 +64,7 @@ public sealed class CargoRecoveryPanelTests
         var observerLease = new Lease(); var settlementLease = new Lease(); var panelLease = new Lease();
         Action<DungeonSettlementSnapshot>? receive = null; var observed = 0;
         var boarding = Fake<IBoardingEvents>((method, _) => method switch
-        { "Subscribe" => observerLease, "GetOperations" => new[] { state }, _ => throw new InvalidOperationException(method) });
+        { "Subscribe" => observerLease, "GetOperations" => new[] { state }, "GetOperation" => null, _ => throw new InvalidOperationException(method) });
         var settlement = Fake<IDungeonSettlement>((method, args) =>
         { Assert.Equal("Subscribe", method); receive = (Action<DungeonSettlementSnapshot>)args[1]!; return settlementLease; });
         var panel = Fake<IDungeonPanelApi>((method, _) =>

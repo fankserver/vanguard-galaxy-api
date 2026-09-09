@@ -13,6 +13,11 @@ public sealed class CargoRecoveryPanel : IDisposable
         IBoardingEvents boarding, IBoardingCommands commands, IBoardingTactics tactics, IDungeonSettlement settlement,
         Action<BoardingCommandResult> commandResult, Action<DungeonSettlementSnapshot> observedSettlement)
     {
+        if (panel == null) throw new ArgumentNullException(nameof(panel));
+        if (boarding == null) throw new ArgumentNullException(nameof(boarding));
+        if (commands == null) throw new ArgumentNullException(nameof(commands));
+        if (tactics == null) throw new ArgumentNullException(nameof(tactics));
+        if (settlement == null) throw new ArgumentNullException(nameof(settlement));
         if (target == null) throw new ArgumentNullException(nameof(target));
         if (commandResult == null) throw new ArgumentNullException(nameof(commandResult));
         if (observedSettlement == null) throw new ArgumentNullException(nameof(observedSettlement));
@@ -28,6 +33,8 @@ public sealed class CargoRecoveryPanel : IDisposable
                 if (operation.Target.Equals(target)) operations.Add(operation.Handle);
             _leases.Add(settlement.Subscribe(pluginId, snapshot =>
             {
+                // Settlement may publish before our boarding subscription sees the introducing event.
+                if (boarding.GetOperation(snapshot.Operation)?.Target.Equals(target) == true) operations.Add(snapshot.Operation);
                 if (operations.Contains(snapshot.Operation)) observedSettlement(snapshot);
             }));
             _leases.Add(panel.RegisterAction(pluginId, "cargo-extraction", view =>
