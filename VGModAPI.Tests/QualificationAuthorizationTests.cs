@@ -16,8 +16,8 @@ public sealed class QualificationAuthorizationTests
     public void AuthorizationBindsRunAndBoundedExpiry(int seconds, bool accepted)
     {
         var now = DateTimeOffset.FromUnixTimeSeconds(1800000000); string run = Guid.NewGuid().ToString("D");
-        var bytes = Encoding.UTF8.GetBytes("vgmodapi-world-empty-v1\n" + run + "\n" + now.AddSeconds(seconds).ToUnixTimeSeconds() + "\n" + string.Join("\n", Enumerable.Repeat(new string('a', 64), 7)));
-        if (accepted) Assert.Equal(7, QualificationAuthorization.Parse(bytes, run, now).Hashes.Length);
+        var bytes = Encoding.UTF8.GetBytes("vgmodapi-world-empty-v1\n" + run + "\n" + now.AddSeconds(seconds).ToUnixTimeSeconds() + "\n" + string.Join("\n", Enumerable.Repeat(new string('a', 64), 8)));
+        if (accepted) Assert.Equal(8, QualificationAuthorization.Parse(bytes, run, now).Hashes.Length);
         else Assert.Throws<InvalidDataException>(() => QualificationAuthorization.Parse(bytes, run, now));
         Assert.Throws<InvalidDataException>(() => QualificationAuthorization.Parse(bytes, Guid.NewGuid().ToString("D"), now));
         Assert.Throws<InvalidDataException>(() => QualificationAuthorization.Parse(new byte[4097], run, now));

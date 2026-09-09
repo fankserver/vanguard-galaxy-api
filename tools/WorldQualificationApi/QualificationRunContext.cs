@@ -1,5 +1,7 @@
 using System;
 using System.Globalization;
+using System.Collections.Generic;
+using VGModAPI.Core;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -23,8 +25,11 @@ internal sealed class QualificationRunContext
     private readonly object _guard;
     private readonly FieldInfo _armed, _savePath, _saveDirectory;
     private readonly string _gameAssembly;
+    private readonly FieldInfo _nativePointer;
+    private readonly IntPtr _guardPointer;
+    private readonly Dictionary<string, (object Instance, Assembly Assembly, IntPtr Pointer)> _providers = new(StringComparer.Ordinal);
     private bool _refused;
-    private static readonly string[] Files = { "VGModAPI.dll", "VGModAPI.Core.dll", "VGModAPI.Abstractions.dll", "QualificationGuard.dll", "WorldAuthorA.dll", "WorldAuthorB.dll" };
+    private static readonly string[] Files = { "VGModAPI.dll", "VGModAPI.Core.dll", "VGModAPI.Abstractions.dll", "QualificationGuard.dll", "WorldAuthorA.dll", "WorldAuthorB.dll", "QualificationRunner.dll" };
 
     internal QualificationRunContext(Assembly game)
     {
@@ -53,9 +58,24 @@ internal sealed class QualificationRunContext
         _saveDirectory = save.GetField("SavesDir", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)!;
         _guard = Chainloader.PluginInfos["vgmodapi.qualification.guard"].Instance;
         _armed = _guard.GetType().GetField("_armed", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        _nativePointer = typeof(UnityEngine.Object).GetField("m_CachedPtr", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        _guardPointer = (IntPtr)_nativePointer.GetValue(_guard)!;
         if (!IsCurrent()) throw new InvalidDataException("World qualification context is unavailable.");
     }
     internal bool Allows(string owner) => owner == "vgmodapi.qualification.world.a" || owner == "vgmodapi.qualification.world.b";
+    internal StoryHostPlugin? Authenticate(object instance, Assembly caller)
+    {
+        var authenticated = StoryHostAuthentication.Resolve(instance, caller);
+        if (authenticated == null || !Allows(authenticated.PluginId) || !IsCurrent()) return null;
+        string file = authenticated.PluginId == "vgmodapi.qualification.world.a" ? "WorldAuthorA.dll" : "WorldAuthorB.dll";
+        if (!Same(caller.Location, Path.Combine(_root, "game", "BepInEx", "plugins", file))) return null;
+        var pointer = (IntPtr)_nativePointer.GetValue(instance)!;
+        if (pointer == IntPtr.Zero) return null;
+        if (_providers.TryGetValue(authenticated.PluginId, out var previous) &&
+            (!ReferenceEquals(previous.Instance, instance) || !ReferenceEquals(previous.Assembly, caller) || previous.Pointer != pointer)) return null;
+        _providers[authenticated.PluginId] = (instance, caller, pointer);
+        return authenticated;
+    }
     internal bool IsCurrent()
     {
         if (_refused) return false;
@@ -64,9 +84,21 @@ internal sealed class QualificationRunContext
             RequireUnlinked(_root);
             string gameRoot = Path.Combine(_root, "game"), saves = Path.Combine(_root, "Saves"), plugins = Path.Combine(gameRoot, "BepInEx", "plugins");
             RequireUnlinked(gameRoot); RequireUnlinked(saves); RequireUnlinked(plugins);
+            var permitted = new HashSet<string>(Files, StringComparer.Ordinal);
+            foreach (var entry in Directory.EnumerateFileSystemEntries(plugins))
+                if (!permitted.Remove(Path.GetFileName(entry)) || (File.GetAttributes(entry) & (FileAttributes.Directory | FileAttributes.ReparsePoint)) != 0)
+                    throw new InvalidDataException("Unexpected plugin profile entry.");
+            if (permitted.Count != 0) throw new InvalidDataException("Incomplete plugin profile.");
+            foreach (var id in Chainloader.PluginInfos.Keys)
+                if (id != "vgmodapi" && id != "vgmodapi.qualification.guard" && id != "vgmodapi.qualification" && !Allows(id))
+                    throw new InvalidDataException("Unexpected loaded plugin.");
+            foreach (var entry in _providers)
+                if (!Chainloader.PluginInfos.TryGetValue(entry.Key, out var info) || !ReferenceEquals(info.Instance, entry.Value.Instance) ||
+                    !ReferenceEquals(info.Instance.GetType().Assembly, entry.Value.Assembly) || (IntPtr)_nativePointer.GetValue(entry.Value.Instance)! != entry.Value.Pointer)
+                    throw new InvalidDataException("Authenticated world provider changed.");
             if (Encoding.UTF8.GetString(ReadBounded(Path.Combine(_root, "qualification.marker"))).Trim() != "vgmodapi-disposable-sandbox-v1" ||
                 Encoding.UTF8.GetString(ReadBounded(Path.Combine(_root, "scenario.txt"))).Trim() != "Full" ||
-                DateTimeOffset.UtcNow >= _expires || !(bool)_armed.GetValue(_guard)! ||
+                DateTimeOffset.UtcNow >= _expires || !(bool)_armed.GetValue(_guard)! || _guardPointer == IntPtr.Zero || (IntPtr)_nativePointer.GetValue(_guard)! != _guardPointer ||
                 !ReferenceEquals(Chainloader.PluginInfos["vgmodapi.qualification.guard"].Instance, _guard) ||
                 !Same(Path.GetDirectoryName(UnityEngine.Application.dataPath)!, gameRoot) ||
                 !Same((string)_savePath.GetValue(null)!, saves) || !Same(((DirectoryInfo)_saveDirectory.GetValue(null)!).FullName, saves) ||
