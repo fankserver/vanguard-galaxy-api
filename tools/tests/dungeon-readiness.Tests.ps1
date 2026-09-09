@@ -39,6 +39,25 @@ try {
     [IO.File]::WriteAllLines($facts, @('PASS','dungeon-readiness-v1','targets=0','operations=0'))
     @{timedOut=$true;killed=$true;exitCode=0} | ConvertTo-Json | Set-Content (Join-Path $root 'run-outcome.json')
     Reject { Assert-DungeonReadinessReceipt $root $p }
-    $p.dungeonReadinessProbe=$false; Reject { Assert-DungeonReadinessSelection $root $p }
+    $p.dungeonReadinessProbe=$false; Reject { Assert-DungeonReadinessSelection $root $p }; $p.dungeonReadinessProbe=$true
+    @{timedOut=$false;killed=$false;exitCode=0} | ConvertTo-Json | Set-Content (Join-Path $root 'run-outcome.json')
+    $p | Add-Member dungeonPanelProbe $true
+    Reject { Assert-DungeonReadinessSelection $root $p }
+    [IO.File]::WriteAllText((Join-Path $root 'dungeon-panel.enabled'), 'dungeon-panel-v1')
+    Assert-DungeonReadinessSelection $root $p
+    Reject { Assert-DungeonReadinessReceipt $root $p }
+    [IO.File]::WriteAllLines((Join-Path $root 'dungeon-panel.txt'), @('PASS','dungeon-panel-v1','generated-location-open-pointer-disabled-close-reopen-destroy'))
+    Reject { Assert-DungeonReadinessReceipt $root $p } # missing image
+    $image = Join-Path $root 'dungeon-panel-actions.png'; $record = Join-Path $root 'dungeon-panel-actions.txt'
+    [IO.File]::WriteAllBytes($image, [byte[]]@(1,2,3))
+    [IO.File]::WriteAllText($record, 'sha256=' + (Get-FileHash $image -Algorithm SHA256).Hash.ToLowerInvariant())
+    Assert-DungeonReadinessReceipt $root $p
+    [IO.File]::WriteAllBytes($image, [byte[]]@(1,2,4))
+    Reject { Assert-DungeonReadinessReceipt $root $p } # tampered image
+    [IO.File]::WriteAllBytes($image, [byte[]]@(1,2,3))
+    Assert-DungeonReadinessReceipt $root $p
+    $p.dungeonReadinessProbe=$false; Reject { Assert-DungeonReadinessSelection $root $p }; $p.dungeonReadinessProbe=$true
+    [IO.File]::WriteAllText((Join-Path $root 'dungeon-panel.txt'), 'INCOMPLETE'); Reject { Assert-DungeonReadinessReceipt $root $p }
+    $p.dungeonPanelProbe=$false; Reject { Assert-DungeonReadinessSelection $root $p }
     'PASS dungeon readiness selection and bounded receipts (synthetic only)'
 } finally { Remove-Item -LiteralPath $root -Recurse -Force }
