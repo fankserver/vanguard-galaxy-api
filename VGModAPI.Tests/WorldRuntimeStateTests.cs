@@ -17,8 +17,10 @@ namespace VGModAPI.Tests;
 [Collection("game-double")]
 public sealed class WorldRuntimeStateTests
 {
-    [Fact]
-    public void VerifiedLoadFactoryAndPlayerReadyPublishBeforeDependentSubscribers()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void VerifiedLoadFactoryAndPlayerReadyPublishBeforeDependentSubscribers(bool disposePersistence)
     {
         string dir = Path.Combine(Path.GetTempPath(), "vg-world-runtime-" + Guid.NewGuid().ToString("N"));
         string text = "world-runtime-" + Guid.NewGuid().ToString("N");
@@ -49,7 +51,8 @@ public sealed class WorldRuntimeStateTests
             var creation = new WorldCreationCoordinator(new WorldNativeAttachment(game), hub.CheckThread, lifetime);
             using var snapshots = new WorldSnapshotHookHost(hub, new WorldSnapshotRecorder(new WorldJsonInspection(typeof(GamePlayer).Assembly)), creation.Snapshot, () => creation.Revision);
             using var bindings = new WorldPersistenceBindings(persistence, hub, loads, snapshots, creation);
-            using var runtime = new WorldRuntimeState(game, loads, definitions, creation, lifetime, bindings.StateReady, () => true);
+            Action? runtimeChange = null;
+            using var runtime = new WorldRuntimeState(game, loads, definitions, creation, lifetime, bindings.StateReady, () => { runtimeChange?.Invoke(); return true; });
             bool dependentSawRestored = false;
             using var dependent = hub.Subscribe("dependent-content", e =>
             { if (e.Kind == LifecycleEventKind.PlayerReady) dependentSawRestored = creation.Restored(e.Session!.Id) && lifetimeHost.AllowUse(Assert.Single(creation.Snapshot()).Native); });
@@ -92,6 +95,10 @@ public sealed class WorldRuntimeStateTests
                 Assert.Equal(2, creation.Snapshot().Length);
             }
             finally { if (!hadFaction) Faction.allFactions.Remove("player"); else Faction.allFactions["player"] = oldFaction!; }
+            Assert.True(lifetimeHost.AllowUse(poi));
+            runtimeChange = () => { if (disposePersistence) bindings.Dispose(); else creation.Reset(request.Id); };
+            Assert.False(lifetimeHost.AllowUse(poi));
+            runtimeChange = null;
             provider.Dispose(); Assert.False(lifetimeHost.AllowUse(poi));
             hub.Invalidate("leave"); Assert.False(creation.Restored(request.Id));
             Assert.False(bindings.CanMutate(request.Id));

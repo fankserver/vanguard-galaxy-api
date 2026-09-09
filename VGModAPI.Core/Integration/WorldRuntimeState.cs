@@ -58,8 +58,8 @@ internal sealed class WorldRuntimeState : IDisposable
             if (_lifetime != null && _persistenceReady != null && _allowOwnedRuntime != null)
             {
                 var context = _reconstruction.CaptureContext(session);
-                bool Available() => Current() && _creation.HasRestoredInventory(session) && context() &&
-                    _persistenceReady(session) && _allowOwnedRuntime() && Current() && context();
+                bool Available() => Current() && context() && _allowOwnedRuntime() &&
+                    _persistenceReady(session) && _creation.HasRestoredInventory(session) && Current() && context();
                 // State readiness permits native initialization, not public mutations during callback dispatch.
                 // The separate runtime admission gate remains closed until supported behavior is qualified.
                 if (Available()) _lifetime.Ready(session, Available);
