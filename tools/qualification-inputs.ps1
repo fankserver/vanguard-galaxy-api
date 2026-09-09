@@ -305,7 +305,33 @@ function Assert-ModInformationProbeReceipt([string]$Root, $Provenance) {
         if (@($facts | Where-Object { $_ -ceq ($fact + '=PASS') }).Count -ne 1) { throw "Missing or duplicate information probe fact: $fact" }
     }
 }
+function Assert-ForgeUiSelection([string]$Root, $Provenance) {
+    $flag = $Provenance.PSObject.Properties['forgeUiProbe']
+    if ($flag -and $flag.Value -isnot [bool]) { throw 'Invalid Forge UI flag.' }
+    $selected = $flag -and $flag.Value
+    $marker = Join-Path $Root 'forge-ui.enabled'
+    if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Forge UI selection changed.' }
+    if (!$selected) { return }
+    if (!$Provenance.forgeReadProbe -or $Provenance.forgeCommandProbe -or $Provenance.refineryProbe -or $Provenance.forgeDeliveryProbe -or $Provenance.forgePersistenceProbe -or [IO.File]::ReadAllText($marker) -cne 'forge-ui-v2') { throw 'Invalid Forge UI selection.' }
+}
+function Assert-ForgeUiReceipt([string]$Root, $Provenance) {
+    Assert-ForgeReadReceipt $Root $Provenance
+    Assert-ForgeUiSelection $Root $Provenance
+    if (!$Provenance.PSObject.Properties['forgeUiProbe'] -or !$Provenance.forgeUiProbe) { return }
+    $file = Join-Path $Root 'forge-ui.txt'
+    if ((Get-Item -LiteralPath $file).Length -gt 512) { throw 'Oversized Forge UI receipt.' }
+    $lines = @(Get-Content -LiteralPath $file)
+    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'forge-ui-v2' -or $lines[2] -cne 'variants-pointer-disabled-stale-reopen-dispose-nonoverlap') { throw 'Incomplete Forge UI receipt.' }
+    $image = Join-Path $Root 'forge-ui-actions.png'; $record = Join-Path $Root 'forge-ui-actions.txt'
+    foreach ($path in @($image,$record)) {
+        if (!(Test-Path -LiteralPath $path -PathType Leaf) -or (Get-Item -LiteralPath $path).Length -eq 0 -or ((Get-Item -LiteralPath $path).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Forge UI image evidence missing, empty or linked.' }
+    }
+    if ((Get-Item -LiteralPath $image).Length -gt 20MB -or (Get-Item -LiteralPath $record).Length -gt 256) { throw 'Forge UI image evidence oversized.' }
+    $hashLines = @(Get-Content -LiteralPath $record)
+    if ($hashLines.Count -ne 1 -or $hashLines[0] -cnotmatch '^sha256=[0-9a-f]{64}$' -or (Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashLines[0].Substring(7)) { throw 'Forge UI screenshot changed.' }
+}
 function Assert-RefinerySelection([string]$Root, $Provenance) {
+    Assert-ForgeUiSelection $Root $Provenance
     $flag = $Provenance.PSObject.Properties['refineryProbe']
     if ($flag -and $flag.Value -isnot [bool]) { throw 'Invalid refinery flag.' }
     $selected = $flag -and $flag.Value
@@ -392,7 +418,7 @@ function Assert-ForgeReadSelection([string]$Root, $Provenance) {
     if (!$selected) { return }
     if ($Provenance.scenario -ne 'Full' -or [IO.File]::ReadAllText($marker) -cne 'forge-reads-v1') { throw 'Invalid Forge read selection.' }
     foreach ($entry in $Provenance.PSObject.Properties) {
-        if ($entry.Name -notin @('forgeReadProbe','forgeCommandProbe','forgePersistenceProbe','forgeDeliveryProbe','refineryProbe') -and $entry.Value -is [bool] -and $entry.Value) { throw 'Forge reads cannot combine other scenarios or consumers.' }
+        if ($entry.Name -notin @('forgeReadProbe','forgeCommandProbe','forgePersistenceProbe','forgeDeliveryProbe','refineryProbe','forgeUiProbe') -and $entry.Value -is [bool] -and $entry.Value) { throw 'Forge reads cannot combine other scenarios or consumers.' }
     }
     if ($null -ne $Provenance.assemblyOverlay) { throw 'Forge reads cannot use an assembly overlay.' }
     $config = [IO.File]::ReadAllText((Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg'))
