@@ -21,7 +21,7 @@ public sealed class Plugin : BaseUnityPlugin
     public StoryRegistrationResult RegisterStory(string faction)
     {
         if (_story == null)
-            _story = (ModApi.Story ?? throw new InvalidOperationException("Enable owned stories."))
+            _story = (ModApi.Services.Story ?? throw new InvalidOperationException("Enable owned stories."))
                 .AcquireProvider(this).Provider ?? throw new InvalidOperationException("Story authentication refused.");
         return _story.Register(new StoryMissionDefinition(LinkedStoryId, "Linked contact", "A retained contact and mission",
             new StoryFactionId(faction), new[] { new StoryStep("Speak to the contact",

@@ -68,12 +68,6 @@ public static class ModApi
         services?.CheckThread();
         if (ReferenceEquals(_services, services)) _services = null;
     }
-    /// <summary>
-    /// Optional owned-story surface (since 0.1.12); non-null only when the story group is bound and
-    /// enabled, which requires the inspected assembly, API-managed saves and the native story
-    /// catalog. Acquire a provider lease from your plugin's own Awake, before any session begins.
-    /// </summary>
-    public static IStoryApi? Story { get; internal set; }
 
     /// <summary>Optional experimental owned station-bar content. Null when unavailable.</summary>
     public static IBarApi? Bars { get; internal set; }

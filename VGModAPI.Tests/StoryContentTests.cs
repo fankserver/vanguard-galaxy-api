@@ -43,6 +43,35 @@ internal static class StoryProviderCallExtensions
 
 public sealed class StoryContentTests
 {
+    [Fact]
+    public void TypedUnavailableStoryDoesNotAuthenticateOrRegisterSaveData()
+    {
+        using var hub = new LifecycleHub((_, _) => { });
+        hub.SetCapability("owned-story", false, "Disabled.", ServiceUnavailableReason.Disabled);
+        var authentications = 0;
+        using var engine = new StoryContentService(hub.Services, null, hub, (_, _) => { authentications++; return null; }, checkThread: hub.CheckThread);
+        IStoryService service = engine;
+        Assert.Equal(StoryProviderStatus.Unavailable, service.AcquireProvider(new object()).Status);
+        Assert.Equal(0, authentications);
+        Assert.Equal(ServiceUnavailableReason.Disabled, service.Availability.Reason);
+        engine.Dispose(); Assert.Equal(ServiceUnavailableReason.Disabled, service.Availability.Reason);
+        Assert.Null(typeof(ModApi).GetProperty("Story"));
+        Assert.Null(typeof(ModApi).Assembly.GetType("VGModAPI.IStoryApi"));
+    }
+    [Fact]
+    public void TypedStoryHealthReadsProtectionFaultWithoutPumpingCallbacks()
+    {
+        using var hub = new LifecycleHub((_, _) => { });
+        hub.SetCapability("owned-story", true, "Bound.");
+        var protection = true;
+        using var service = new StoryContentService(hub.Services, null, hub, (_, _) => null, checkThread: hub.CheckThread, protectionHealthy: () => protection);
+        var changes = 0; service.AvailabilityChanged += _ => changes++;
+        protection = false;
+        Assert.Equal(ServiceUnavailableReason.ObserverFault, service.Availability.Reason);
+        Assert.Equal(0, changes);
+        hub.Services.Refresh(); Assert.Equal(1, changes);
+    }
+
     private const string AnimaPlugin = "com.fank.anima";
     private const string OtherPlugin = "com.other.custommission";
 
@@ -371,21 +400,21 @@ public sealed class StoryContentTests
     }
 
     /// <summary>Emits a real method in a separate dynamic assembly so the captured caller is genuinely foreign.</summary>
-    private static Func<IStoryApi, object, StoryProviderResult> ForeignAssemblyCaller()
+    private static Func<IStoryService, object, StoryProviderResult> ForeignAssemblyCaller()
     {
         var assembly = AssemblyBuilder.DefineDynamicAssembly(
             new AssemblyName("VGModAPI.Tests.ForeignCaller"), AssemblyBuilderAccess.RunAndCollect);
         var type = assembly.DefineDynamicModule("main").DefineType("Caller", TypeAttributes.Public);
         var method = type.DefineMethod("Call", MethodAttributes.Public | MethodAttributes.Static,
-            typeof(StoryProviderResult), new[] { typeof(IStoryApi), typeof(object) });
+            typeof(StoryProviderResult), new[] { typeof(IStoryService), typeof(object) });
         method.SetImplementationFlags(MethodImplAttributes.NoInlining);
         var il = method.GetILGenerator();
         il.Emit(OpCodes.Ldarg_0);
         il.Emit(OpCodes.Ldarg_1);
-        il.Emit(OpCodes.Callvirt, typeof(IStoryApi).GetMethod(nameof(IStoryApi.AcquireProvider))!);
+        il.Emit(OpCodes.Callvirt, typeof(IStoryService).GetMethod(nameof(IStoryService.AcquireProvider))!);
         il.Emit(OpCodes.Ret);
-        return (Func<IStoryApi, object, StoryProviderResult>)type.CreateType()!
-            .GetMethod("Call")!.CreateDelegate(typeof(Func<IStoryApi, object, StoryProviderResult>));
+        return (Func<IStoryService, object, StoryProviderResult>)type.CreateType()!
+            .GetMethod("Call")!.CreateDelegate(typeof(Func<IStoryService, object, StoryProviderResult>));
     }
 
     [Fact]
@@ -664,7 +693,8 @@ public sealed class StoryContentTests
                 capture: () => new byte[] { 1 }, restore: (_, _) => { }, validate: bytes => bytes.Length == 1)).Registration!;
             Assert.Equal(SaveDataStateKind.Inactive, control.State.Kind);
             var host = new FakeHost();
-            using var service = new StoryContentService(persistence, hub, host.Authenticate, null, hub.CheckThread);
+            hub.SetCapability("owned-story", true, "Test bindings.");
+            using var service = new StoryContentService(hub.Services, persistence, hub, host.Authenticate, null, hub.CheckThread);
             var session = hub.Begin(SessionOrigin.NewGame, null);
             hub.PlayerReady(session);
             hub.GameplayInitialized(session);
@@ -706,7 +736,8 @@ public sealed class StoryContentTests
             hub.SetCapability("session-lifecycle", true, "Bound."); hub.SetCapability("save-outcomes", true, "Bound.");
             using var persistence = new PersistenceService(hub, new GenerationStore(root), path => path, _ => new string('a', 64));
             var host = new FakeHost();
-            using var service = new StoryContentService(persistence, hub, host.Authenticate, null, hub.CheckThread);
+            hub.SetCapability("owned-story", true, "Test bindings.");
+            using var service = new StoryContentService(hub.Services, persistence, hub, host.Authenticate, null, hub.CheckThread);
             var session = hub.Begin(SessionOrigin.NewGame, null);
             hub.PlayerReady(session);
 
@@ -820,7 +851,7 @@ public sealed class StoryContentTests
 
             var host = new FakeHost();
             var failure = Assert.Throws<InvalidOperationException>(
-                () => new StoryContentService(persistence, hub, host.Authenticate, null, hub.CheckThread));
+                () => new StoryContentService(hub.Services, persistence, hub, host.Authenticate, null, hub.CheckThread));
             Assert.Contains("before a session begins", failure.Message);
             // No story owner exists, and the other registered owner is neither paused nor faulted.
             Assert.True(control.CanMutate);
@@ -2251,7 +2282,8 @@ public sealed class StoryContentTests
             hub.SetCapability("session-lifecycle", true, "Bound."); hub.SetCapability("save-outcomes", true, "Bound.");
             using var persistence = new PersistenceService(hub, store, path => path, _ => hash);
             var host = new FakeHost();
-            using var service = new StoryContentService(persistence, hub, host.Authenticate, null, hub.CheckThread);
+            hub.SetCapability("owned-story", true, "Test bindings.");
+            using var service = new StoryContentService(hub.Services, persistence, hub, host.Authenticate, null, hub.CheckThread);
             var plugin = new object();
             host.Register(plugin, AnimaPlugin);
             Assert.True(service.AcquireProvider(plugin).Provider!.Register(Definition(retention: StoryRetention.Campaign)).Succeeded);
@@ -2294,7 +2326,8 @@ public sealed class StoryContentTests
             hub.SetCapability("session-lifecycle", true, "Bound."); hub.SetCapability("save-outcomes", true, "Bound.");
             using var persistence = new PersistenceService(hub, store, path => path, _ => hash);
             var host = new FakeHost();
-            using var service = new StoryContentService(persistence, hub, host.Authenticate, null, hub.CheckThread);
+            hub.SetCapability("owned-story", true, "Test bindings.");
+            using var service = new StoryContentService(hub.Services, persistence, hub, host.Authenticate, null, hub.CheckThread);
             var plugin = new object();
             host.Register(plugin, AnimaPlugin);
             var provider = service.AcquireProvider(plugin).Provider!;
@@ -3354,10 +3387,14 @@ public sealed class StoryContentTests
             Protection.WithdrawAll("the guard could not decide: " + reason);
         }
         internal readonly StoryProtection Protection = new();
+        private readonly LifecycleHub _healthHub = new((_, _) => { });
         internal StoryContentService Service(FakeHost host, Action? checkThread = null)
-            => new(Persistence, Lifecycle, host.Authenticate, null, checkThread, World, Missions,
+        {
+            _healthHub.SetCapability("owned-story", true, "Test bindings.");
+            return new(_healthHub.Services, Persistence, Lifecycle, host.Authenticate, null, checkThread, World, Missions,
                 (detail, available) => Reports.Add((available ? "available: " : "unavailable: ") + detail), Protection,
                 () => ProtectionHealthy);
+        }
 
         /// <summary>The identifier one occurrence is installed under, exactly as the module derives it.</summary>
         internal static string Native(IStoryProvider provider, string localId, Guid occurrenceId)

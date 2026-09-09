@@ -91,7 +91,6 @@ public sealed partial class Plugin : BaseUnityPlugin
         _hub.SetCapability("boarding-combat", false, "Disabled by configuration; experimental.");
         _hub.SetCapability("boarding-commands", false, "Disabled by configuration; experimental.");
         _hub.SetCapability("boarding-rules", false, "Disabled by configuration; experimental.");
-        ModApi.Story = null;
         ModApi.Bars = null;
         _hub.SetCapability("owned-bars", false, "Not initialized; experimental.");
         _modCatalog = new ModInformationCatalog(_hub, ModInformationSource.Snapshot);
@@ -397,19 +396,17 @@ public sealed partial class Plugin : BaseUnityPlugin
                 error => Logger.LogError("Story world fault: " + error));
             // Outcomes are observed through the same mission boundary consumers see; without it the
             // module can still install and offer, but completions cannot be recorded at all.
-            _story = new StoryContentService(_persistence, _hub, StoryHostAuthentication.Resolve, null, _hub.CheckThread,
+            _story = new StoryContentService(_hub.Services, _persistence, _hub, StoryHostAuthentication.Resolve, null, _hub.CheckThread,
                 _storyWorld, _missions?.Events,
-                (detail, available) => _hub!.SetCapability("owned-story", available, detail), _protection,
+                (detail, available) => Logger.LogInfo(detail), _protection,
                 () => _quarantine?.Healthy ?? false);
-            ModApi.Story = _story;
             // Only a module that exists can say what a UI abandon or retry of owned content means.
             if (_quarantine != null) _quarantine.Transactions = _story;
             _hub.SetCapability("owned-story", true, "Experimental owned story content enabled; native qualification pending.");
         }
         catch (Exception error)
         {
-            ModApi.Story = null;
-            if (_quarantine != null) _quarantine.Transactions = null;
+                if (_quarantine != null) _quarantine.Transactions = null;
             _story?.Dispose(); _story = null;
             _storyWorld?.Dispose(); _storyWorld = null;
             _hub!.SetCapability("owned-story", false, "Story binding failed: " + error.Message);
@@ -999,7 +996,6 @@ public sealed partial class Plugin : BaseUnityPlugin
         // The story module owns catalog entries AND a persistence owner, so it is torn down before
         // the coordinator: uninstalling its content cannot race an owner that is already gone, and
         // disposing the coordinator first would pause coordinated saves for every other owner.
-        ModApi.Story = null;
         try { _story?.Dispose(); } catch (Exception error) { Logger.LogError("Story shutdown failed: " + error); }
         // The guards outlive the module on purpose: content it installed may still be held.
         if (_quarantine != null) _quarantine.Transactions = null;
