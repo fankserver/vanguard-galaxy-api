@@ -1,5 +1,5 @@
 $ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot '..\qualification-world-resources.ps1')
+. (Join-Path $PSScriptRoot '..\qualification-world-inventory.ps1')
 $parent = [IO.Path]::Combine([Environment]::GetFolderPath('LocalApplicationData'), 'Temp')
 $root = Join-Path $parent ('VGModAPI-qa-' + (Get-Random -Minimum 1000000000 -Maximum 2000000000))
 $source = Join-Path $parent ('world-resource-fixture-' + [Guid]::NewGuid().ToString('N'))
@@ -13,6 +13,23 @@ try {
     Reject { Assert-WorldResourceTargets $root $source }
     foreach ($name in @('VanguardGalaxy_Data', 'MonoBleedingEdge')) { $null = New-Item -ItemType Junction -Path (Join-Path $game $name) -Target (Join-Path $source $name) }
     Assert-WorldResourceTargets $root $source
+    $file = Join-Path $game 'input.dll'; [IO.File]::WriteAllText($file, 'synthetic input')
+    $empty = Join-Path $game 'empty'; $null = New-Item -ItemType Directory $empty
+    $inventory = Get-WorldLaunchInventory $root $source
+    Assert-WorldLaunchInventory $root $source $inventory
+    [IO.File]::WriteAllText($file, 'changed')
+    Reject { Assert-WorldLaunchInventory $root $source $inventory }
+    [IO.File]::WriteAllText($file, 'synthetic input')
+    [IO.Directory]::Delete($empty, $false)
+    Reject { Assert-WorldLaunchInventory $root $source $inventory }
+    $null = New-Item -ItemType Directory $empty
+    $extra = Join-Path $game 'extra'; $null = New-Item -ItemType Directory $extra
+    Reject { Assert-WorldLaunchInventory $root $source $inventory }
+    [IO.Directory]::Delete($extra, $false)
+    $null = New-Item -ItemType Junction -Path $extra -Target $source
+    try { Reject { Get-WorldLaunchInventory $root $source } }
+    finally { [IO.Directory]::Delete($extra, $false) }
+    Assert-WorldLaunchInventory $root $source $inventory
     Reject { Assert-WorldResourceTargets $root $game }
     $data = Join-Path $game 'VanguardGalaxy_Data'
     [IO.Directory]::Delete($data, $false)
