@@ -8,6 +8,7 @@ function Read-DungeonConsumerManifest([string]$Path) {
         $entries = @($m.binaries | Where-Object { $_.name -ceq $name })
         if ($entries.Count -ne 1 -or $entries[0].sha256 -isnot [string] -or $entries[0].revision -isnot [string] -or $entries[0].path -isnot [string] -or $entries[0].sha256 -cnotmatch '^[0-9a-f]{64}$' -or $entries[0].revision -cnotmatch '^[0-9a-f]{40}$' -or ![IO.Path]::IsPathRooted($entries[0].path)) { throw 'Invalid dungeon consumer binary identity.' }
     }
+    if ($m.PSObject.Properties['mode'] -and ($m.mode -isnot [string] -or $m.mode -cnotin @('Retreat','Combat'))) { throw 'Invalid dungeon consumer mode.' }
     return $m
 }
 function Install-DungeonConsumers([string]$Manifest, [string]$Root, [string]$Plugins, [string]$Cecil) {
@@ -30,6 +31,7 @@ function Install-DungeonConsumers([string]$Manifest, [string]$Root, [string]$Plu
         } finally { $assembly.Dispose() }
         Copy-Item -LiteralPath $entry.path -Destination (Join-Path $Plugins $entry.name)
     }
+    if ($m.PSObject.Properties['mode'] -and $m.mode -ceq 'Combat') { [IO.File]::WriteAllText((Join-Path $Root 'dungeon-combat.enabled'), 'dungeon-combat-v1') }
     Copy-Item -LiteralPath $Manifest -Destination (Join-Path $Root 'dungeon-consumer-sources.json')
     [IO.File]::WriteAllText((Join-Path $Root 'dungeon-consumers.enabled'), 'dungeon-consumers-v3')
 }
@@ -47,10 +49,16 @@ function Assert-DungeonConsumerSelection([string]$Root, $Provenance) {
     $selected = $flag -and $flag.Value
     $marker = Join-Path $Root 'dungeon-consumers.enabled'; $sources = Join-Path $Root 'dungeon-consumer-sources.json'
     if ((Test-Path -LiteralPath $marker) -ne [bool]$selected -or (Test-Path -LiteralPath $sources) -ne [bool]$selected) { throw 'Dungeon consumer selection mismatch.' }
-    if (!$selected) { return }
+    if (!$selected) {
+        if (Test-Path -LiteralPath (Join-Path $Root 'dungeon-combat.enabled')) { throw 'Unselected dungeon combat marker.' }
+        return
+    }
     if (!$Provenance.dungeonPanelProbe -or !$Provenance.dungeonReadinessProbe -or $Provenance.scenario -cne 'Full' -or [IO.File]::ReadAllText($marker) -cne 'dungeon-consumers-v3') { throw 'Dungeon consumers require the isolated full panel phase.' }
     if ($Provenance.dungeonConsumerManifestHash -cnotmatch '^[0-9a-f]{64}$' -or (Get-FileHash -LiteralPath $sources -Algorithm SHA256).Hash.ToLowerInvariant() -cne $Provenance.dungeonConsumerManifestHash) { throw 'Dungeon consumer manifest changed.' }
     $m = Read-DungeonConsumerManifest $sources
+    $combat = $m.PSObject.Properties['mode'] -and $m.mode -ceq 'Combat'
+    $combatMarker = Join-Path $Root 'dungeon-combat.enabled'
+    if ((Test-Path -LiteralPath $combatMarker) -ne [bool]$combat -or ($combat -and [IO.File]::ReadAllText($combatMarker) -cne 'dungeon-combat-v1')) { throw 'Dungeon combat selection mismatch.' }
     foreach ($entry in $m.binaries) {
         $path = Join-Path $Root ('game/BepInEx/plugins/' + $entry.name)
         if (!(Test-Path -LiteralPath $path -PathType Leaf) -or ((Get-Item -LiteralPath $path).Attributes -band [IO.FileAttributes]::ReparsePoint) -or (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -cne $entry.sha256) { throw 'Prepared dungeon consumer changed.' }
@@ -64,9 +72,11 @@ function Assert-DungeonConsumerReceipt([string]$Root, $Provenance) {
     $file = Join-Path $Root 'dungeon-consumers.txt'
     if ((Get-Item -LiteralPath $file).Length -gt 256) { throw 'Oversized dungeon consumer input receipt.' }
     $lines = @(Get-Content -LiteralPath $file)
-    if ($lines.Count -ne 3 -or $lines[0] -cne 'INPUTS_SENT' -or $lines[1] -cne 'dungeon-consumers-v3' -or $lines[2] -cne 'attach-duplicate-commands-active-walk-retreat') { throw 'Incomplete dungeon consumer inputs.' }
+    $phase = if (Test-Path -LiteralPath (Join-Path $Root 'dungeon-combat.enabled')) { 'attach-duplicate-commands-active-combat' } else { 'attach-duplicate-commands-active-walk-retreat' }
+    if ($lines.Count -ne 3 -or $lines[0] -cne 'INPUTS_SENT' -or $lines[1] -cne 'dungeon-consumers-v3' -or $lines[2] -cne $phase) { throw 'Incomplete dungeon consumer inputs.' }
     $walk = [IO.File]::ReadAllLines((Join-Path $Root 'dungeon-walk.txt'))
-    if (($walk -join "`n") -cne "PASS`ndungeon-walk-v1`nmanual-arrival-retreat-settlement`ndonor-crew-reconciled") { throw 'Incomplete active dungeon walk receipt.' }
+    $expected = if (Test-Path -LiteralPath (Join-Path $Root 'dungeon-combat.enabled')) { "PASS`ndungeon-combat-v1`nmanual-victory-choice-extraction`ndonor-crew-reconciled" } else { "PASS`ndungeon-walk-v1`nmanual-arrival-retreat-settlement`ndonor-crew-reconciled" }
+    if (($walk -join "`n") -cne $expected) { throw 'Incomplete active dungeon walk receipt.' }
     $commands = [IO.File]::ReadAllLines((Join-Path $Root 'dungeon-commands.txt'))
     if (($commands -join "`n") -cne "PASS`ndungeon-commands-v1`ncontrol-start-options-refusals-cancel-before-tick`ncrew-and-docking-preserved") { throw 'Incomplete dungeon command admission receipt.' }
     $log = [IO.File]::ReadAllText((Join-Path $Root 'Player.log'))

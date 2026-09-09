@@ -1,14 +1,20 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.IO;
+using UnityEngine.InputSystem;
 using VGModAPI;
 namespace VGModAPI.Qualification;
 
 public sealed partial class Plugin
 {
-    private IEnumerable<object?> CheckDungeonWalk()
+    private IEnumerable<object?> CheckDungeonWalk(Mouse mouse)
     {
         WriteAtomic("dungeon-walk.txt", new[] { "INCOMPLETE" });
+        var combatMarker = Path.Combine(_root!, "dungeon-combat.enabled");
+        var combat = File.Exists(combatMarker);
+        Require(!combat || File.ReadAllText(combatMarker) == "dungeon-combat-v1", "Invalid combat mode marker.");
+        using var policies = combat ? new DungeonCombatProbe() : null;
         var boarding = ModApi.Services.Boarding;
         var target = ModApi.Services.DungeonPanel.Current!.Target.Handle;
         var playerType = NativeType("Source.Player.GamePlayer");
@@ -50,10 +56,14 @@ public sealed partial class Plugin
             Require(during.Keys.All(before.ContainsKey) && before.All(pair => (during.TryGetValue(pair.Key, out var count) ? count : 0) == pair.Value - (manifest.Crew.TryGetValue(pair.Key, out var sent) ? sent : 0)), "Active crew debit did not match the requested manifest exactly once.");
             records.Add("active-debit=" + manifest.Count + " crew=" + candidate.Key + " before=" + before[candidate.Key!] + " active=" + (during.TryGetValue(candidate.Key!, out var activeCount) ? activeCount : 0));
             WriteAtomic("dungeon-walk-diagnostic.txt", records);
-            Require(controller.Retreat().Admitted, "Active retreat refused.");
+            if (combat)
+            {
+                foreach (var frame in CheckDungeonVictory(controller, operation!, mouse, policies!)) yield return frame;
+            }
+            else Require(controller.Retreat().Admitted, "Active retreat refused.");
             foreach (var frame in Wait(() => settledSnapshot is { CrewReturnSettled: true, CrewCountsObserved: true }, "Actual returning crew settlement")) yield return frame;
             var settled = settledSnapshot!;
-            Require(settled.NativeOutcome == "FriendlyExtracted" && !settled.CaptureApplied, "Retreat produced an unexpected outcome or capture.");
+            Require(settled.NativeOutcome == (combat ? "FriendlyVictory" : "FriendlyExtracted") && !settled.CaptureApplied, "Retreat produced an unexpected outcome or capture.");
             Require(ReferenceEquals(player, SpGet(playerType, "current")) && ReferenceEquals(donor, SpGet(player, "currentSpaceShip")), "Walk donor identity changed.");
             var after = Roster();
             Require(settled.Casualties.All(pair => before.ContainsKey(pair.Key)) && settled.PrisonersDelivered.Values.All(count => count == 0), "Unexpected casualty or prisoner identity.");
@@ -61,7 +71,7 @@ public sealed partial class Plugin
             records.Add("settlement=" + settled.NativeOutcome + " after=" + (after.TryGetValue(candidate.Key!, out var returnedCount) ? returnedCount : 0) + " casualties=" + settled.Casualties.Values.Sum());
             WriteAtomic("dungeon-walk-diagnostic.txt", records);
             foreach (var frame in Wait(() => boarding.GetTarget(target) is { Operation: null }, "Walk operation retirement")) yield return frame;
-            WriteAtomic("dungeon-walk.txt", new[] { "PASS", "dungeon-walk-v1", "manual-arrival-retreat-settlement", "donor-crew-reconciled" });
+            WriteAtomic("dungeon-walk.txt", new[] { "PASS", combat ? "dungeon-combat-v1" : "dungeon-walk-v1", combat ? "manual-victory-choice-extraction" : "manual-arrival-retreat-settlement", "donor-crew-reconciled" });
         }
         finally
         {
