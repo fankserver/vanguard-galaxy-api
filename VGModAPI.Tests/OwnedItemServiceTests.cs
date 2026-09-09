@@ -31,6 +31,27 @@ public sealed class OwnedItemServiceTests
         Assert.Equal(OwnedItemStatus.Rejected, provider!.Register(Item())); Assert.Null(service.Find("author.a", "item"));
     }
     [Fact]
+    public void LeveledOrLoreWrappersRefuseBeforeAnyReconstruction()
+    {
+        var id = new OwnedItemIdentity("author.a", Item()).NativeId;
+        var wrapper = new JsonObject { ["itemTypeId"] = id, ["level"] = new JsonValue(4), ["loreKey"] = "Changed" };
+        var reader = new WorldJsonInspection(typeof(JsonObject).Assembly); int created = 0;
+        var root = new JsonObject { ["plain"] = id, ["wrapped"] = new JsonValue(wrapper) };
+        Assert.Throws<System.IO.InvalidDataException>(() => reader.HasOwnedItems(root, _ => created++));
+        Assert.Equal(0, created);
+        Assert.Throws<System.IO.InvalidDataException>(() => reader.RequirePlainItemValue(new JsonValue(wrapper)));
+        reader.RequirePlainItemValue(new JsonValue(id));
+    }
+    [Fact]
+    public void BadQueuedDefinitionDoesNotBlockUnrelatedCatalogDeclarations()
+    {
+        var bad = new OwnedItemIdentity("author.bad", Item()); var good = new OwnedItemIdentity("author.good", Item());
+        var loaded = new List<string>(); int reported = 0;
+        OwnedItemDeclarationPublication.Publish(new[] { bad, good }, id =>
+        { if (id == bad.NativeId) throw new InvalidOperationException("Missing icon"); loaded.Add(id); }, (_, _) => reported++);
+        Assert.Equal(new[] { good.NativeId }, loaded); Assert.Equal(1, reported);
+    }
+    [Fact]
     public void ItemOnlySaveRequiresBarrierAndRestorationBeforeUnsealing()
     {
         string id = new OwnedItemIdentity("author.a", Item()).NativeId;

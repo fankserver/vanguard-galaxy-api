@@ -32,12 +32,17 @@ public sealed partial class Plugin
             var type = Assembly.Load("Assembly-CSharp").GetType("Behaviour.Item.InventoryItemType", true)!;
             _ownedItemHarmony = new Harmony(ModApi.PluginId + ".owned-items");
             Patches.OwnedItemPatches.Resolve = RestoreOwnedItem;
+            var inspector = new Core.Integration.WorldJsonInspection(type.Assembly);
+            Patches.OwnedItemPatches.ValidateValue = inspector.RequirePlainItemValue;
             Patches.OwnedItemPatches.Rebuild = () =>
             {
                 if (_ownedItemsStopped) return;
                 _ownedItemCatalog.Reinsert();
-                foreach (var identity in _ownedItems.Definitions) _ownedItemCatalog.Ensure(identity.NativeId);
+                OwnedItemDeclarationPublication.Publish(_ownedItems.Definitions, id => _ownedItemCatalog.Ensure(id), _hub.ReportSubscriberFailure);
             };
+            foreach (var method in type.GetMethods(BindingFlags.Static | BindingFlags.Public))
+                if (method.Name == "FromJson") _ownedItemHarmony.Patch(method,
+                    prefix: new HarmonyMethod(typeof(Patches.OwnedItemPatches), nameof(Patches.OwnedItemPatches.FromJson)));
             foreach (var name in new[] { "Get", "TryGet" })
                 _ownedItemHarmony.Patch(type.GetMethod(name, BindingFlags.Static | BindingFlags.Public),
                     prefix: new HarmonyMethod(typeof(Patches.OwnedItemPatches), nameof(Patches.OwnedItemPatches.Lookup)));
