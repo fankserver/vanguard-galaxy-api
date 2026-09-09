@@ -15,7 +15,8 @@ internal sealed class WorldCreationCoordinator
     private bool _creating;
     private bool _restored;
     internal WorldCreationCoordinator(WorldNativeAttachment native, Action checkThread, WorldLifetimeGuard? lifetime = null) { _native = native; _checkThread = checkThread; _lifetime = lifetime; }
-    internal bool Restored(Guid session) { _checkThread(); return !_creating && _restored && session == _session; }
+    internal bool HasRestoredInventory(Guid session) { _checkThread(); return _restored && session != Guid.Empty && session == _session; }
+    internal bool Restored(Guid session) { _checkThread(); return !_creating && HasRestoredInventory(session); }
     internal long Revision { get { _checkThread(); return _revision; } }
     internal void Reset(Guid session)
     {

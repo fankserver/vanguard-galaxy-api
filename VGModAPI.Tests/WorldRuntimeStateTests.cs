@@ -80,6 +80,15 @@ public sealed class WorldRuntimeStateTests
             var saved = new WorldGenerationReader(store).Read(saveAs, bytes);
             Assert.Equal(identity.NativeId, Assert.Single(saved.Rows).Identity.NativeId);
             Assert.Equal("Site", saved.DefinitionFor(Assert.Single(saved.Rows)).Definition.Name);
+            bool hadFaction = Faction.allFactions.TryGetValue("player", out var oldFaction);
+            try
+            {
+                if (!hadFaction) Faction.allFactions.Add("player", new Faction());
+                var author = new WorldAuthoringGate(definitions, creation, bindings.CanMutate);
+                Assert.NotNull(author.TryCreate(provider, request.Id, "PoiX", Guid.NewGuid(), "system", 20, 20));
+                Assert.Equal(2, creation.Snapshot().Length);
+            }
+            finally { if (!hadFaction) Faction.allFactions.Remove("player"); else Faction.allFactions["player"] = oldFaction!; }
             hub.Invalidate("leave"); Assert.False(creation.Restored(request.Id));
             Assert.False(bindings.CanMutate(request.Id));
             Assert.Throws<InvalidDataException>(() => creation.Snapshot());

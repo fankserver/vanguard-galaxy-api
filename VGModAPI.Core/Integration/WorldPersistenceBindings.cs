@@ -49,7 +49,7 @@ internal sealed class WorldPersistenceBindings : IDisposable
     internal bool CanMutate(Guid session)
     {
         _hub.CheckThread();
-        return !_disposed && _hub.CurrentSession?.Id == session && _creation.Restored(session) &&
+        return !_disposed && _hub.CurrentSession?.Id == session && _creation.HasRestoredInventory(session) &&
             _state is IPersistenceReadiness state && state.StateReady && _definitions is IPersistenceReadiness definitions && definitions.StateReady &&
             _state.MutationAllowed && _definitions.MutationAllowed;
     }
