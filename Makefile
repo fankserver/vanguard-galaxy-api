@@ -15,6 +15,10 @@ link-libs:
 	@set -eu; for name in UnityEngine UnityEngine.CoreModule UnityEngine.UIModule UnityEngine.UI Unity.TextMeshPro Unity.InputSystem; do test -f "$(MANAGED)/$$name.dll"; ln -sfn "$(MANAGED)/$$name.dll" "VGModAPI/lib/$$name.dll"; done
 build: link-libs
 	$(DOTNET) build VGModAPI.sln -c $(CONFIGURATION)
+	$(MAKE) build-examples
+.PHONY: build-examples
+build-examples: link-libs
+	@set -eu; for project in $(sort $(wildcard examples/*/*.csproj)); do $(DOTNET) build "$$project" -c $(CONFIGURATION); done
 .PHONY: build-dungeon-example build-dungeon-author
 build-dungeon-example:
 	$(DOTNET) build examples/AuthoredDungeon/AuthoredDungeon.csproj -c $(CONFIGURATION)
