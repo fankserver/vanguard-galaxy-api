@@ -37,6 +37,10 @@ Spawned units and persistable roots retain their originating manager/session; la
 
 These paths remain unqualified in Unity. Independently spawned equipment/projectiles, other persistable subtype behavior and physics scheduling still require coverage; disabling root physics is not a complete scene quarantine or safe-uninstall guarantee.
 
+## Serialized native discriminator
+
+Fresh owned Combat snapshots replace the native `Combat` type with `VGModAPIOwnedCombatV1` only after exact inventory association. Per-node digests and owner payloads are rebuilt after stamping, and the version barrier is retained. Verified loading keeps that discriminator unchanged and uses the JSON-bearing, single-use owned reader rather than native string-based type dispatch. Older owned `Combat`-shaped inputs and discriminator/identity mismatches are refused untouched. This strengthens the intended API-absence barrier, but actual absent/disabled native behavior still requires qualification; it is not a safe-uninstall claim.
+
 ## Persistence and activation constraints
 
 Supported persistent creation must automatically preserve existence, owner/local identity, instance identity, supported properties, links and lifecycle state. Providers must not implement save hooks or rebuild timing for those fields. Temporary lifetime must be explicit; it must not replace persistence merely to avoid reconstruction.

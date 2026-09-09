@@ -28,7 +28,12 @@ public sealed class WorldSnapshotRecorderTests
         var (instance, root, poi) = Fixture(); var recorder = Recorder(); var instances = new[] { instance };
         var token = recorder.Begin(1, instances);
         poi.Text = "actual-serialized-state";
+        poi.Render = () => poi.Text + "|" + poi["type"].AsString;
+        root.Render = () => root.Text + "|" + poi.ToString();
+        var unstampedDigest = WorldJsonInspection.Digest(poi);
         Assert.True(recorder.Complete(token, 1, instances, root));
+        Assert.Equal(WorldSaveFormat.OwnedCombatType, poi["type"].AsString);
+        Assert.NotEqual(unstampedDigest, WorldJsonInspection.Digest(poi));
         Assert.Equal(WorldSaveFormat.Marker, root["Version"].AsString);
         Assert.Equal("0.8.2.3", root[WorldSaveFormat.OriginalVersion].AsString);
         var payload = recorder.ForStore(root);

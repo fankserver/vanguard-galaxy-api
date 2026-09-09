@@ -11,7 +11,7 @@ namespace VGModAPI.Tests;
 public sealed class WorldJsonInspectionTests
 {
     private static WorldObjectIdentity Identity() => new(new ContentDeclaration("author.one", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
-    private static JsonObject Poi(string id, string type = "Combat", string parent = "system-a") => new()
+    private static JsonObject Poi(string id, string type = WorldSaveFormat.OwnedCombatType, string parent = "system-a") => new()
     { Text = "serialized-poi", ["guid"] = new(id), ["type"] = new(type), ["systemName"] = new(parent) };
     private static JsonObject Root(JsonObject poi, bool legacy = false)
     {
@@ -41,6 +41,11 @@ public sealed class WorldJsonInspectionTests
     {
         var scanner = new WorldJsonInspection(typeof(JsonObject).Assembly); var identity = Identity();
         Assert.Throws<InvalidDataException>(() => scanner.Read(Root(Poi(identity.NativeId, "CustomType"))));
+        var oldShape = Poi(identity.NativeId, "Combat");
+        Assert.Throws<InvalidDataException>(() => scanner.Read(Root(oldShape)));
+        Assert.Equal("Combat", oldShape["type"].AsString);
+        Assert.Single(scanner.Read(Root(oldShape), nativeSnapshot: true));
+        Assert.Throws<InvalidDataException>(() => scanner.Read(Root(Poi("vanilla-id"))));
         Assert.Throws<InvalidDataException>(() => scanner.Read(Root(Poi(identity.NativeId, parent: "other-system"))));
     }
 

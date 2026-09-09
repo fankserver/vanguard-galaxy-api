@@ -57,7 +57,7 @@ public sealed class WorldLoadPreparationTests
         try
         {
             var identity = new WorldObjectIdentity(new ContentDeclaration("author.one", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
-            var poi = new JsonObject { Text = "poi", ["guid"] = new(identity.NativeId), ["type"] = new("Combat"), ["systemName"] = new("system-a"),
+            var poi = new JsonObject { Text = "poi", ["guid"] = new(identity.NativeId), ["type"] = new(WorldSaveFormat.OwnedCombatType), ["systemName"] = new("system-a"),
                 ["guardDescriptors"] = new(new List<JsonValue> { new(new JsonObject { ["type"] = new("FixedPayloadDescriptor"), ["fixedUnit"] = new(assetId), ["unitCount"] = new(1) }) }) };
             var system = new JsonObject { ["guid"] = new("system-a"), ["pointsOfInterest"] = new(new List<JsonValue> { new(poi) }) };
             var map = new JsonObject { ["systems"] = new(new List<JsonValue> { new(system) }) };

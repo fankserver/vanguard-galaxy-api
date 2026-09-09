@@ -6,12 +6,13 @@ public sealed class JsonObject : IEnumerable<KeyValuePair<string, JsonValue>>
 {
     private readonly Dictionary<string, JsonValue> _fields = new();
     public string Text = "{}";
+    public System.Func<string>? Render;
     public JsonValue this[string key] { get => _fields.TryGetValue(key, out var value) ? value : new JsonValue(null); set => _fields[key] = value; }
     public bool ContainsKey(string key) => _fields.ContainsKey(key);
     public bool Remove(string key) => _fields.Remove(key);
     public IEnumerator<KeyValuePair<string, JsonValue>> GetEnumerator() => _fields.GetEnumerator();
     System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
-    public override string ToString() => Text;
+    public override string ToString() => Render?.Invoke() ?? Text;
 }
 public sealed class JsonValue
 {

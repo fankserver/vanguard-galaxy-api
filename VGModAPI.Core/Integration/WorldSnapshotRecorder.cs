@@ -77,7 +77,7 @@ internal sealed class WorldSnapshotRecorder
         var observed = Copy(current);
         if (observed.Length != capture.Instances.Length) return false;
         for (int i = 0; i < observed.Length; i++) if (!ReferenceEquals(observed[i], capture.Instances[i])) return false;
-        var nodes = _json.Read(root);
+        var nodes = _json.Read(root, nativeSnapshot: true);
         if (nodes.Length != observed.Length) return false;
         var byId = new Dictionary<string, WorldParsedNode>(StringComparer.Ordinal);
         foreach (var node in nodes) byId.Add(node.NativeId, node);
@@ -89,11 +89,17 @@ internal sealed class WorldSnapshotRecorder
             rows[i] = new WorldSavedObject(instance.Identity, node.SystemId, node.Digest, instance.Definition.Definition.Revision);
             objects[i] = instance.Native;
         }
-        var state = WorldStateCodec.Encode(rows);
         var beforeValidation = WorldJsonInspection.Digest(root);
         validateBeforePublish?.Invoke();
         if (operation != _operation || beforeValidation != WorldJsonInspection.Digest(root)) return false;
         foreach (var node in nodes) node.ValidateAssets();
+        foreach (var node in nodes) _json.StampOwnedPoi(node.Json, node.NativeId);
+        for (int i = 0; i < observed.Length; i++)
+        {
+            var instance = observed[i]; var node = byId[instance.Identity.NativeId];
+            rows[i] = new WorldSavedObject(instance.Identity, node.SystemId, WorldJsonInspection.Digest(node.Json), instance.Definition.Definition.Revision);
+        }
+        var state = WorldStateCodec.Encode(rows);
         _json.SealSnapshot(root, rows.Length != 0);
         var digest = WorldJsonInspection.Digest(root);
         foreach (var node in nodes) node.ValidateAssets();

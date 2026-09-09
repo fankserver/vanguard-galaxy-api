@@ -29,7 +29,7 @@ public sealed class WorldRuntimeStateTests
         try
         {
             var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
-            var poiJson = new JsonObject { Text = "native-poi", ["guid"] = new(identity.NativeId), ["type"] = new("Combat"), ["systemName"] = new("system") };
+            var poiJson = new JsonObject { Text = "native-poi", ["guid"] = new(identity.NativeId), ["type"] = new(WorldSaveFormat.OwnedCombatType), ["systemName"] = new("system") };
             var systemJson = new JsonObject { ["guid"] = new("system"), ["pointsOfInterest"] = new(new List<JsonValue> { new(poiJson) }) };
             var root = new JsonObject { Text = text, ["Version"] = new(WorldSaveFormat.Marker), [WorldSaveFormat.OriginalVersion] = new("0.8.2.3"), ["Player"] = new(new JsonObject { ["map"] = new(new JsonObject { ["systems"] = new(new List<JsonValue> { new(systemJson) }) }) }) };
             JsonValue.ParseFixtures[text] = root;
@@ -81,7 +81,11 @@ public sealed class WorldRuntimeStateTests
             Assert.False(references.Knows("other.owner", identity.NativeId));
             game.GameplayCompleted(request.Id, new GameplayManager(true), null);
             Assert.True(bindings.CanMutate(request.Id));
+            var nativePoiJson = new JsonObject { Text = "native-poi", ["guid"] = new(identity.NativeId), ["type"] = new("Combat"), ["systemName"] = new("system") };
+            var nativeSystemJson = new JsonObject { ["guid"] = new("system"), ["pointsOfInterest"] = new(new List<JsonValue> { new(nativePoiJson) }) };
+            root = new JsonObject { Text = text, ["Version"] = new("0.8.2.3"), ["Player"] = new(new JsonObject { ["map"] = new(new JsonObject { ["systems"] = new(new List<JsonValue> { new(nativeSystemJson) }) }) }) };
             snapshots.CompleteSnapshot(snapshots.BeginSnapshot(), root);
+            Assert.Equal(WorldSaveFormat.OwnedCombatType, nativePoiJson["type"].AsString);
             string saveAs = Path.Combine(dir, "save-as.save");
             using (snapshots.BeginStore(root))
             {

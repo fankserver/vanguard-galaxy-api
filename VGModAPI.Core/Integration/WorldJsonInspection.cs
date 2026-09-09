@@ -28,6 +28,7 @@ internal sealed partial class WorldJsonInspection
     private readonly WorldSaveFormat _format;
     private readonly WorldNestedTypeCatalog _nested;
     private readonly PropertyInfo _isNull;
+    internal void StampOwnedPoi(object node, string identity) => _format.StampOwnedPoi(node, identity);
     internal void SealSnapshot(object root, bool owned) => _format.Seal(root, owned);
     internal void UnsealVerified(object root, bool owned) => _format.UnsealVerified(root, owned);
     private static readonly UTF8Encoding Utf8 = new(false, true);
@@ -80,7 +81,7 @@ internal sealed partial class WorldJsonInspection
         return frozen;
     }
 
-    internal WorldParsedNode[] Read(object root)
+    internal WorldParsedNode[] Read(object root, bool nativeSnapshot = false)
     {
         if (!_objectType.IsInstanceOfType(root)) throw new InvalidDataException("Expected native save JSON root.");
         var map = Object(Field(Object(Field(root, "Player")), "map"));
@@ -104,9 +105,15 @@ internal sealed partial class WorldJsonInspection
                 foreach (var entry in Array(Field(system, "pointsOfInterest")))
                 {
                     Visit(); var poi = Object(entry); string id = Text(poi, "guid");
-                    if (!WorldObjectIdentity.IsReserved(id)) continue;
+                    if (!WorldObjectIdentity.IsReserved(id))
+                    {
+                        var discriminator = Field(poi, "type");
+                        if ((bool)_isString.GetValue(discriminator)! && (string?)_string.GetValue(discriminator) == WorldSaveFormat.OwnedCombatType)
+                            throw new InvalidDataException("Owned discriminator lacks owned identity.");
+                        continue;
+                    }
                     if (result.Count >= WorldSerializationAssociation.MaxObjects || !ids.Add(id)) throw new InvalidDataException("Duplicate or excessive owned POIs.");
-                    if (Text(poi, "type") != "Combat" || Text(poi, "systemName") != systemId)
+                    if (Text(poi, "type") != (nativeSnapshot ? "Combat" : WorldSaveFormat.OwnedCombatType) || Text(poi, "systemName") != systemId)
                         throw new InvalidDataException("Owned POI type or parent link is not supported.");
                     var assets = CheckNestedFactories(poi, Visit);
                     result.Add(new WorldParsedNode(poi, id, systemId, Digest(poi), assets.Validate));
