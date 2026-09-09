@@ -109,12 +109,15 @@ public sealed partial class Plugin
                             postfix: new HarmonyMethod(typeof(WorldLifetimePatches.ActorContinuation).GetMethod("Postfix", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.Last });
                     foreach (var key in new[] { "worldPersistableStart", "worldPersistableUpdate" })
                         _worldLoadHarmony.Patch(targets[key], prefix: new HarmonyMethod(typeof(WorldLifetimePatches.PersistableActivity).GetMethod("Prefix", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.First });
-                    foreach (var key in new[] { "worldGenerate", "worldSalvageReset", "worldSalvageAdd", "worldSalvageSlot" })
+                    foreach (var key in new[] { "worldGenerate", "worldSalvageReset", "worldSalvageAdd" })
                     _worldLoadHarmony.Patch(targets[key], prefix: new HarmonyMethod(typeof(WorldLifetimePatches.Generation).GetMethod("Prefix", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.First },
                         finalizer: new HarmonyMethod(typeof(WorldLifetimePatches.Generation).GetMethod("Finalizer", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.Last });
                     foreach (var key in new[] { "worldRegenerateSalvage", "worldSalvageDescriptor" })
                     _worldLoadHarmony.Patch(targets[key], prefix: new HarmonyMethod(typeof(WorldLifetimePatches.Generation).GetMethod("StaticPrefix", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.First },
                         finalizer: new HarmonyMethod(typeof(WorldLifetimePatches.Generation).GetMethod("Finalizer", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.Last });
+                    _worldLoadHarmony.Patch(targets["worldSalvageSlot"], prefix: new HarmonyMethod(typeof(WorldLifetimePatches.Generation).GetMethod("SlotPrefix", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.First },
+                        finalizer: new HarmonyMethod(typeof(WorldLifetimePatches.Generation).GetMethod("Finalizer", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.Last });
+                    _worldLoadHarmony.Patch(targets["worldPoiAddPersistable"], prefix: new HarmonyMethod(typeof(WorldLifetimePatches.Generation).GetMethod("PublicationPrefix", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.First });
                     _worldLoadHarmony.Patch(targets["worldBudgetBuilder"], prefix: new HarmonyMethod(typeof(WorldLifetimePatches.Generation).GetMethod("BuilderPrefix", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.First });
                     // Establish the owner capture scope before the lifecycle Store prefix emits SaveStarted.
                     _worldLoadHarmony.Patch(targets["worldStore"],

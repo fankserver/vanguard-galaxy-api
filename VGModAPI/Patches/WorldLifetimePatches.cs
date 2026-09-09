@@ -130,6 +130,16 @@ internal static class WorldLifetimePatches
             _active = __state;
             if (__state.Host != null) __state.Scope = __state.Host.BeginGeneration(__0);
         }
+        internal static void SlotPrefix(object __instance, int __0, out Capture? __state)
+        {
+            __state = new Capture(Host as IWorldGenerationHost, _active); _active = __state;
+            if (__state.Host != null) __state.Scope = __state.Host.BeginSalvageSlot(__instance, __0);
+        }
+        internal static void PublicationPrefix()
+        {
+            if (_active != null) _active.Host?.ValidateGeneration();
+            else (Host as IWorldGenerationHost)?.ValidateGeneration();
+        }
         internal static void BuilderPrefix()
         {
             if (_active != null) _active.Host?.ConsumeBuilder();

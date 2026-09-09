@@ -83,6 +83,11 @@ internal sealed class WorldGenerationAttempts
         catch { Reject(epoch); throw; }
         finally { if (ReferenceEquals(epoch, _epoch)) _checking = false; }
     }
+    internal void ValidateCurrent()
+    {
+        var scope = _current;
+        if (scope?._budget != null) Require(scope);
+    }
     internal void Consume()
     {
         var scope = _current;
