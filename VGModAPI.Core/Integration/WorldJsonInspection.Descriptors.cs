@@ -34,6 +34,17 @@ internal sealed partial class WorldJsonInspection
         }
         else throw new InvalidDataException("Unsupported unit generation descriptor schema.");
     }
+    private bool Boolean(object parent, string key)
+    {
+        var value = Field(parent, key); var type = value.GetType();
+        if (!(bool)Property(type, "IsBoolean").GetValue(value)!) throw new InvalidDataException("Expected native boolean field: " + key);
+        return (bool)Property(type, "AsBoolean").GetValue(value)!;
+    }
+    private void Vector(object parent, string key)
+    {
+        var vector = Object(Field(parent, key));
+        Number(vector, "x", -1000000, 1000000, false); Number(vector, "y", -1000000, 1000000, false);
+    }
     private void OptionalEnum(object parent, string key, string typeName)
     {
         if (!(bool)_isNull.GetValue(Field(parent, key))!) _nested.EnumName(typeName, Text(parent, key));

@@ -70,10 +70,24 @@ public sealed class WorldJsonInspectionTests
         var poi = Poi(Identity().NativeId);
         var descriptor = new JsonObject { ["type"] = new("StandardSalvageDescriptor"), ["shipTemplate"] = new("NativeShip"),
             ["level"] = new(1), ["itemCount"] = new(-1), ["itemRarity"] = new(1), ["totalSalvageTypes"] = new(2),
-            ["scrapValueMultiplier"] = new(1), ["structuralAmountMultiplier"] = new(1) };
+            ["scrapValueMultiplier"] = new(1), ["structuralAmountMultiplier"] = new(1),
+            ["positionOffset"] = new(new JsonObject { ["x"] = new(0), ["y"] = new(0) }),
+            ["velocity"] = new(new JsonObject { ["x"] = new(0), ["y"] = new(0) }),
+            ["angle"] = new(0), ["angularVelocity"] = new(0), ["initialBattleDamage"] = new(0), ["showOutline"] = new(true), ["hasHazard"] = new(false) };
+        descriptor["initialBattleDamagePoints"] = new(new List<JsonValue> { new(new JsonObject { ["size"] = new(1), ["core"] = new(false),
+            ["position"] = new(new JsonObject { ["x"] = new(0), ["y"] = new(0) }) }) });
         poi["salvageDescriptors"] = new(new List<JsonValue> { new(descriptor) });
         var reader = new WorldJsonInspection(typeof(JsonObject).Assembly);
         Assert.Single(reader.Read(Root(poi)));
+        descriptor["hasHazard"] = new(true); descriptor["hazardName"] = new("Uninspected");
+        Assert.Throws<InvalidDataException>(() => reader.Read(Root(poi)));
+        descriptor["hasHazard"] = new(false);
+        descriptor["initialBattleDamagePoints"] = new(new List<JsonValue> { new(new JsonObject { ["size"] = new(129) }) });
+        Assert.Throws<InvalidDataException>(() => reader.Read(Root(poi)));
+        descriptor.Remove("initialBattleDamagePoints");
+        descriptor["velocity"].AsJsonObject["x"] = new(double.NaN);
+        Assert.Throws<InvalidDataException>(() => reader.Read(Root(poi)));
+        descriptor["velocity"].AsJsonObject["x"] = new(0);
         descriptor["itemCount"] = new(129);
         Assert.Throws<InvalidDataException>(() => reader.Read(Root(poi)));
         descriptor["itemCount"] = new(1); descriptor["type"] = new("UnknownDescriptor");

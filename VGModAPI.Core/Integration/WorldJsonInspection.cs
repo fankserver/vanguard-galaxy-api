@@ -164,6 +164,22 @@ internal sealed partial class WorldJsonInspection
             Number(item, "totalSalvageTypes", 0, 128, true);
             Number(item, "scrapValueMultiplier", 0, 1000, false);
             Number(item, "structuralAmountMultiplier", 0, 1000, false);
+            Vector(item, "positionOffset"); Vector(item, "velocity");
+            Number(item, "angle", -1000000, 1000000, false); Number(item, "angularVelocity", -1000000, 1000000, false);
+            Number(item, "initialBattleDamage", 0, 128, true); Boolean(item, "showOutline");
+            if (Boolean(item, "hasHazard"))
+            {
+                _nested.EnumName("Behaviour.Hazard.HazardName", Text(item, "hazardName"));
+                _nested.EnumName("Source.Combat.DamageType", Text(item, "hazardDamageType"));
+            }
+            int breakPoints = 0, breakArea = 0;
+            OptionalArray(item, "initialBattleDamagePoints", point =>
+            {
+                int size = (int)Number(point, "size", 0, 128, true);
+                breakArea += size * size;
+                if (++breakPoints > 128 || breakArea > 65536) throw new InvalidDataException("Owned salvage damage exceeds its geometry bound.");
+                Vector(point, "position"); Boolean(point, "core");
+            });
         });
         int cargoCount = 0;
         OptionalArray(poi, "cargoDescriptors", item =>
