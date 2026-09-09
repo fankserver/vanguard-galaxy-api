@@ -19,7 +19,7 @@ internal sealed class DungeonReturnPodFactory
         _native = native; _carriers = new(assembly); _travel = new(assembly);
         _data = assembly.GetType(DungeonPodResumeBindings.Data, true)!;
         _phase = assembly.GetType("Source.Data.Persistable.BoardingPodState", true)!;
-        _prefab = assembly.GetType(BindingCatalog.BoardingManager, true)!.GetField("boardingPodPrefab") ?? throw new MissingFieldException("Pod prefab unavailable.");
+        _prefab = DungeonPodPrefabBinding.Resolve(assembly.GetType(BindingCatalog.BoardingManager, true)!, assembly.GetType(DungeonPodResumeBindings.Pod, true)!);
         if (_prefab.FieldType.FullName != DungeonPodResumeBindings.Pod || _data.GetConstructor(Type.EmptyTypes) == null) throw new InvalidOperationException("Unexpected pod construction schema.");
     }
     internal (GameObject Object, object Pod, object Data, object Operation) Build(DungeonPodResumeState saved, object recipient, string dungeonType, bool autonomous, object? existingData = null)

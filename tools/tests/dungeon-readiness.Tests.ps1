@@ -29,6 +29,12 @@ try {
     [IO.File]::WriteAllLines($receipt, @('PASS','dungeon-readiness-v1',"sha256=$hash",'extra'))
     Reject { Assert-DungeonReadinessReceipt $root $p }
     [IO.File]::WriteAllLines($receipt, @('PASS','dungeon-readiness-v1',"sha256=$hash"))
+    [IO.File]::WriteAllLines($facts, @('PASS','dungeon-readiness-v1','targets=0','operations=1'))
+    $nonemptyHash=(Get-FileHash $facts -Algorithm SHA256).Hash.ToLowerInvariant()
+    [IO.File]::WriteAllLines($receipt, @('PASS','dungeon-readiness-v1',"sha256=$nonemptyHash"))
+    Reject { Assert-DungeonReadinessReceipt $root $p }
+    [IO.File]::WriteAllLines($facts, @('PASS','dungeon-readiness-v1','targets=0','operations=0'))
+    [IO.File]::WriteAllLines($receipt, @('PASS','dungeon-readiness-v1',"sha256=$hash"))
     [IO.File]::AppendAllText($facts, 'changed'); Reject { Assert-DungeonReadinessReceipt $root $p }
     [IO.File]::WriteAllLines($facts, @('PASS','dungeon-readiness-v1','targets=0','operations=0'))
     @{timedOut=$true;killed=$true;exitCode=0} | ConvertTo-Json | Set-Content (Join-Path $root 'run-outcome.json')
