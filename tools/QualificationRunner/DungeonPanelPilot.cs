@@ -119,7 +119,7 @@ public sealed partial class Plugin
     private static Button? DungeonProbeButton(string label)
     {
         var root = GameObject.Find("Mod API dungeon contributions");
-        return root ? root!.GetComponentsInChildren<Button>().SingleOrDefault(button => button.GetComponentsInChildren<TMP_Text>().Any(text => text.text == label)) : null;
+        return root ? root!.GetComponentsInChildren<Button>().SingleOrDefault(button => button.GetComponentsInChildren<TMP_Text>().Any(text => text.text == label || text.text.StartsWith(label + "\n", StringComparison.Ordinal))) : null;
     }
     private bool DungeonPointerReady(Transform target)
     {
