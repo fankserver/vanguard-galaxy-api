@@ -17,8 +17,11 @@ public sealed class HudIngredientAmounts
         if (available.HasValue && (double.IsNaN(available.Value) || double.IsInfinity(available.Value) || available.Value < 0)) throw new ArgumentOutOfRangeException(nameof(available));
         Required = required; Available = available;
     }
-    public string RequiredText => Required.ToString("0.###", CultureInfo.InvariantCulture);
-    public string AvailableText => Available.HasValue ? Available.Value.ToString("0.###", CultureInfo.InvariantCulture) : "?";
+    public string RequiredText => Number(Required);
+    public string AvailableText => !Available.HasValue ? "?" : Available.Value >= 1000000
+        ? (Available.Value / 1000000).ToString("0.#", CultureInfo.InvariantCulture) + "M"
+        : Available.Value >= 1000 ? (Available.Value / 1000).ToString("0.#", CultureInfo.InvariantCulture) + "K" : Number(Available.Value);
+    private static string Number(double value) => value.ToString(value > 0 && value < .001 ? "G3" : "0.###", CultureInfo.InvariantCulture);
 }
 
 /// <summary>A compact Forge-style presentation; consumers supply their own quantities and refresh policy.</summary>

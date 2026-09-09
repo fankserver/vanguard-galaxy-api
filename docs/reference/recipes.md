@@ -107,7 +107,7 @@ A request ID is scoped to its plugin and runtime session. Repeating the same imm
 ```csharp
 var ui = ModApi.Services.ForgeUi;
 if (!ui.Availability.IsAvailable) return;
-var action = ui.RegisterAction(pluginId, "pin", new ForgeActionPresentation("Pin", "Pin this selection"),
+var action = ui.RegisterAction(pluginId, "pin", new ForgeActionPresentation("Pin blueprint", "Pin this selection"),
     selection => Pin(selection.SelectedRecipe, selection.Batches));
 Action<ForgeSelectionChange> handler = change => RefreshSelection(change.Current);
 ui.Changed += handler;
@@ -115,7 +115,7 @@ ui.Changed += handler;
 // Dispose both registrations when the consumer stops. Pin remains consumer behavior.
 ```
 
-Registrations survive window close/reopen and session replacement without save callbacks. View handles and rendered revisions do not: stale clicks cannot act on a replacement selection. Subscriptions report previous/current immutable snapshots; null current means closure or unavailable context. Registration does not replay an initial event; read `Current` after subscribing. Reentrant observations may coalesce before the next refresh. Subscriber failures are isolated. Registration changes are reflected on the next UI update. Dispose/update are main-thread operations; same-provider duplicate local IDs are rejected, while different providers may reuse a local ID. Up to 16 actions and 128 subscriptions coexist. Action order is numeric order, then ordinal provider/local identity; the bounded horizontal strip sits above the native facility tabs, outside recipe content, fits its action content and scrolls rather than assigning consumers overlapping offsets. A temporarily undersized canvas hides the strip until space returns without discarding registrations.
+Registrations survive window close/reopen and session replacement without save callbacks. View handles and rendered revisions do not: stale clicks cannot act on a replacement selection. Subscriptions report previous/current immutable snapshots; null current means closure or unavailable context. Registration does not replay an initial event; read `Current` after subscribing. Reentrant observations may coalesce before the next refresh. Subscriber failures are isolated. Registration changes are reflected on the next UI update. Dispose/update are main-thread operations; same-provider duplicate local IDs are rejected, while different providers may reuse a local ID. Up to 16 actions and 128 subscriptions coexist. Action order is numeric order, then ordinal provider/local identity; the bounded horizontal action area sits beside the native Result heading inside the recipe context and scrolls for multiple contributions rather than assigning consumers overlapping offsets. A temporarily undersized canvas hides the strip until space returns without discarding registrations.
 
 `Open(recipeId)` deliberately performs native navigation and can build native UI previews. It requires the actual station interior, an initialized Forge location and an exact available recipe identity. It passes the real complete available parent/variant group, never a manufactured singleton unlock list. Inspect its explicit not-at-station, missing-recipe, busy and uncertain outcomes. Selection notifications cannot recursively navigate or issue crafting mutations. Explicit registered action clicks may issue commands.
 
