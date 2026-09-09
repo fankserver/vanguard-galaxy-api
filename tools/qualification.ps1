@@ -25,6 +25,10 @@ param(
     [switch]$RefineryProbe,
     [switch]$DungeonReadinessProbe,
     [switch]$ForgeUiProbe,
+    [switch]$BlueprintPinProbe,
+    [string]$BlueprintPinBin,
+    [string]$BlueprintPinRevision,
+    [string]$BlueprintPinSha256,
     [switch]$ForgeDeliveryProbe,
     [switch]$ForgePersistenceProbe,
     [switch]$ForgeCommandProbe,
@@ -129,6 +133,10 @@ if ($Action -eq 'Prepare') {
     if (($StoryProbe -or $StoryAbsentProbe) -and ($TravelStation -or $TravelCrossSystem -or $TravelWormholeFixture -or $TravelResilience -or $TravelRecoveryContinuation -or $TravelFastLane -or $MissionTransitionsProbe -or $MissionIdentityProbe -or $ContentReferenceProbe -or $JournalMissionEventsProbe -or $JournalCoordinated -or $StockpileCoordinated -or $VanillaLoadControl -or $AssemblyOverlay -or $EchoAbsentProbe -or $EchoTravelProbe -or $AnimaTravelProbe -or $TravelJournalComparison)) { throw 'Story probe cannot be combined with optional probes.' }
     if (!$StoryProbe -and ($StoryCampaignBin -or $StoryJobBin)) { throw 'Story author binaries require StoryProbe.' }
     if ($MenuInspection -and ($Scenario -ne 'MissingApi' -or $VanillaLoadControl -or $MissionJournalBin -or $StockpileBin -or $AnimaBin -or $EchoBin -or $TravelJournalBin)) { throw 'Menu inspection requires an API-absent menu-only run without consumers.' }
+    if ($BlueprintPinProbe) {
+        if (!$BlueprintPinBin -or $BlueprintPinRevision -cnotmatch '^[0-9a-f]{40}$' -or $BlueprintPinSha256 -cnotmatch '^[0-9a-f]{64}$' -or $ForgeUiProbe -or $ForgeCommandProbe -or $ForgeDeliveryProbe -or $ForgePersistenceProbe -or $RefineryProbe) { throw 'Blueprint Pin requires its pinned binary and an independent read-only phase.' }
+        $ForgeReadProbe = $true
+    } elseif ($BlueprintPinBin -or $BlueprintPinRevision -or $BlueprintPinSha256) { throw 'Blueprint Pin inputs require its probe.' }
     if ($DungeonReadinessProbe) {
         $other = @($PSBoundParameters.Keys | Where-Object { $PSBoundParameters[$_] -is [Management.Automation.SwitchParameter] -and $PSBoundParameters[$_].IsPresent -and $_ -notin @('DungeonReadinessProbe','Diagnostics') })
         if ($Scenario -ne 'Full' -or $other.Count -or $MissionJournalBin -or $StockpileBin -or $AnimaBin -or $EchoBin -or $TravelJournalBin -or $BarConsumerManifest) { throw 'Dungeon readiness requires Full without other probes or consumers.' }
@@ -141,7 +149,7 @@ if ($Action -eq 'Prepare') {
     if ($ForgeDeliveryProbe -or $ForgePersistenceProbe) { $ForgeCommandProbe = $true }
     if ($ForgeCommandProbe) { $ForgeReadProbe = $true }
     if ($ForgeReadProbe) {
-        $otherSwitches = @($PSBoundParameters.Keys | Where-Object { $PSBoundParameters[$_] -is [Management.Automation.SwitchParameter] -and $PSBoundParameters[$_].IsPresent -and $_ -notin @('ForgeReadProbe','ForgeCommandProbe','ForgePersistenceProbe','ForgeDeliveryProbe','RefineryProbe','ForgeUiProbe','Diagnostics') })
+        $otherSwitches = @($PSBoundParameters.Keys | Where-Object { $PSBoundParameters[$_] -is [Management.Automation.SwitchParameter] -and $PSBoundParameters[$_].IsPresent -and $_ -notin @('ForgeReadProbe','ForgeCommandProbe','ForgePersistenceProbe','ForgeDeliveryProbe','RefineryProbe','ForgeUiProbe','BlueprintPinProbe','Diagnostics') })
         if ($Scenario -ne 'Full' -or $otherSwitches.Count -or $MissionJournalBin -or $StockpileBin -or $AnimaBin -or $EchoBin -or $TravelJournalBin -or $BarConsumerManifest) { throw 'Forge read probe requires Full without other probes or consumers.' }
     }
     if ($ModInformationProbe -and !$ModMenuProbe) { throw 'Information probe requires ModMenuProbe.' }
@@ -261,6 +269,21 @@ if ($Action -eq 'Prepare') {
             Copy-Item -LiteralPath (Join-Path $MissionJournalBin $name) -Destination $plugins
         }
         [IO.File]::WriteAllText((Join-Path $root 'missionjournal.enabled'), 'pilot-v1')
+    }
+    if ($BlueprintPinProbe) {
+        $candidate = Join-Path $BlueprintPinBin 'VGBlueprintPin.dll'
+        if ((Get-FileHash -LiteralPath $candidate -Algorithm SHA256).Hash.ToLowerInvariant() -cne $BlueprintPinSha256) { throw 'Blueprint Pin binary differs from requested hash.' }
+        Add-Type -Path (Join-Path $bep 'core\Mono.Cecil.dll')
+        $assembly = [Mono.Cecil.AssemblyDefinition]::ReadAssembly($candidate)
+        try {
+            if ($assembly.Name.Name -cne 'VGBlueprintPin' -or $assembly.Name.Version.ToString() -cne '0.2.0.0') { throw 'Only Blueprint Pin 0.2.0 is accepted.' }
+            $forbidden = @($assembly.MainModule.AssemblyReferences | Where-Object { $_.Name -notin @('netstandard','BepInEx','UnityEngine.CoreModule','VGModAPI.Abstractions') })
+            if ($forbidden.Count) { throw 'Blueprint Pin has unsupported dependencies.' }
+            $plugin = $assembly.MainModule.Types | Where-Object { $_.FullName -ceq 'VGBlueprintPin.Plugin' }
+            $dependency = @($plugin.CustomAttributes | Where-Object { $_.AttributeType.FullName -eq 'BepInEx.BepInDependency' -and $_.ConstructorArguments.Count -eq 2 -and $_.ConstructorArguments[0].Value -eq 'vgmodapi' -and $_.ConstructorArguments[1].Value -eq '0.1.38' })
+            if ($dependency.Count -ne 1) { throw 'Blueprint Pin must require its public API version.' }
+        } finally { $assembly.Dispose() }
+        Copy-Item -LiteralPath $candidate -Destination $plugins
     }
     if ($StockpileBin) {
         $candidate = Join-Path $StockpileBin 'VGStockpile.dll'
@@ -395,6 +418,10 @@ if ($Action -eq 'Prepare') {
     if ($ForgeReadProbe) {
         [IO.File]::AppendAllText((Join-Path $bep 'config\vgmodapi.cfg'), "`r`n[Recipes]`r`nEnabled = true`r`n")
         [IO.File]::WriteAllText((Join-Path $root 'forge-reads.enabled'), 'forge-reads-v1')
+        if ($BlueprintPinProbe) {
+            [IO.File]::AppendAllText((Join-Path $bep 'config\vgmodapi.cfg'), "`r`n[Hud]`r`nEnabled = true`r`n")
+            [IO.File]::WriteAllText((Join-Path $root 'blueprint-pin.enabled'), 'blueprint-pin-v1')
+        }
         if ($ForgeUiProbe) { [IO.File]::WriteAllText((Join-Path $root 'forge-ui.enabled'), 'forge-ui-v3') }
         if ($ForgeCommandProbe) {
             [IO.File]::AppendAllText((Join-Path $bep 'config\vgmodapi.cfg'), "CommandsEnabled = true`r`n")
@@ -431,7 +458,7 @@ if ($Action -eq 'Prepare') {
     if ($EchoTravelProbe) { [IO.File]::WriteAllText((Join-Path $root 'echo-travel.enabled'), 'echo-travel-v1') }
     if ($EchoAbsentProbe) { [IO.File]::WriteAllText((Join-Path $root 'echo-absent.enabled'), 'echo-absent-v1') }
     if ($TravelJournalComparison) { [IO.File]::WriteAllText((Join-Path $root 'travel-journal.enabled'), 'travel-journal-v1') }
-    @{ dungeonReadinessProbe=[bool]$DungeonReadinessProbe; forgeUiProbe=[bool]$ForgeUiProbe; refineryProbe=[bool]$RefineryProbe; forgeDeliveryProbe=[bool]$ForgeDeliveryProbe; forgePersistenceProbe=[bool]$ForgePersistenceProbe; forgeCommandProbe=[bool]$ForgeCommandProbe; forgeReadProbe=[bool]$ForgeReadProbe; barConsumers=[bool]$BarConsumerManifest; barConsumerManifestHash=$(if ($BarConsumerManifest) { (Get-FileHash -LiteralPath (Join-Path $root 'bar-consumer-sources.json') -Algorithm SHA256).Hash }); barConsumerTools=$(if ($BarConsumerManifest) { Get-BarConsumerToolsInventory $root }); barLinkedStory=[bool]$BarLinkedStory; barColdSequence=[bool]$BarColdSequence; barProbe=[bool]$BarProbe; storyColdSequence=[bool]$StoryColdSequence; storyDonorRoot=$StoryDonorRoot; storyDonorHash=$(if ($StoryAbsentProbe) { (Get-FileHash -LiteralPath $SaveA -Algorithm SHA256).Hash } else { '' }); storyAbsentProbe=[bool]$StoryAbsentProbe; storyProbe=[bool]$StoryProbe; menuInspection=[bool]$MenuInspection; modMenuProbe=[bool]$ModMenuProbe; modInformationProbe=[bool]$ModInformationProbe; modInformationCertificateSha256=$(if ($ModInformationProbe) { (Get-FileHash -LiteralPath (Join-Path $root 'untrusted-test.pfx') -Algorithm SHA256).Hash.ToLowerInvariant() } else { '' }); travelJournal=[bool]$TravelJournalBin; travelJournalRevision=$TravelJournalRevision; travelJournalSha256=$TravelJournalSha256; travelJournalVersion=$travelJournalVersion; travelJournalComparison=[bool]$TravelJournalComparison; travelJournalBudgetSeconds=$(if ($TravelJournalComparison) { $TravelJournalBudgetSeconds } else { 0 }); echo=[bool]$EchoBin; echoRevision=$EchoRevision; echoVersion=$echoVersion; echoTravelProbe=[bool]$EchoTravelProbe; echoTravelBudgetSeconds=$(if ($EchoTravelProbe) { $EchoTravelBudgetSeconds } else { 0 }); echoAbsentProbe=[bool]$EchoAbsentProbe; anima=[bool]$AnimaBin; animaRevision=$AnimaRevision; animaVersion=$animaVersion; animaTravelProbe=[bool]$AnimaTravelProbe; animaTravelBudgetSeconds=$(if ($AnimaTravelProbe) { $AnimaTravelBudgetSeconds } else { 0 }); journalMissionEventsProbe=[bool]$JournalMissionEventsProbe; missionIdentityProbe=[bool]$MissionIdentityProbe; missionTransitionsProbe=[bool]$MissionTransitionsProbe; contentReferenceProbe=[bool]$ContentReferenceProbe; stockpileCoordinated=[bool]$StockpileCoordinated; journalCoordinated=[bool]$JournalCoordinated; persistenceProbe=[bool]$PersistenceProbe; vanillaLoadControl=[bool]$VanillaLoadControl; assemblyOverlay=$overlay; stockpile=[bool]$StockpileBin; missionJournal=[bool]$MissionJournalBin; travelStation=[bool]$TravelStation; travelStationBudgetSeconds=$(if ($TravelStation) { $TravelStationBudgetSeconds } else { 0 }); travelCrossSystem=[bool]$TravelCrossSystem; travelCrossSystemBudgetSeconds=$(if ($TravelCrossSystem) { $TravelCrossSystemBudgetSeconds } else { 0 }); travelWormholeFixture=[bool]$TravelWormholeFixture; travelResilience=[bool]$TravelResilience; travelResilienceBudgetSeconds=$(if ($TravelResilience) { $TravelResilienceBudgetSeconds } else { 0 }); travelRecovery=[bool]$TravelRecoveryContinuation; travelRecoveryBudgetSeconds=$(if ($TravelRecoveryContinuation) { $TravelRecoveryBudgetSeconds } else { 0 }); travelFastLane=[bool]$TravelFastLane; travelFastLaneBudgetSeconds=$(if ($TravelFastLane) { $TravelFastLaneBudgetSeconds } else { 0 }); scenario=$Scenario; revision=$BuildRevision; preparedUtc=[DateTime]::UtcNow.ToString('o'); plugins=$hashes } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'build-provenance.json')
+    @{ dungeonReadinessProbe=[bool]$DungeonReadinessProbe; blueprintPinProbe=[bool]$BlueprintPinProbe; blueprintPinRevision=$BlueprintPinRevision; blueprintPinSha256=$BlueprintPinSha256; forgeUiProbe=[bool]$ForgeUiProbe; refineryProbe=[bool]$RefineryProbe; forgeDeliveryProbe=[bool]$ForgeDeliveryProbe; forgePersistenceProbe=[bool]$ForgePersistenceProbe; forgeCommandProbe=[bool]$ForgeCommandProbe; forgeReadProbe=[bool]$ForgeReadProbe; barConsumers=[bool]$BarConsumerManifest; barConsumerManifestHash=$(if ($BarConsumerManifest) { (Get-FileHash -LiteralPath (Join-Path $root 'bar-consumer-sources.json') -Algorithm SHA256).Hash }); barConsumerTools=$(if ($BarConsumerManifest) { Get-BarConsumerToolsInventory $root }); barLinkedStory=[bool]$BarLinkedStory; barColdSequence=[bool]$BarColdSequence; barProbe=[bool]$BarProbe; storyColdSequence=[bool]$StoryColdSequence; storyDonorRoot=$StoryDonorRoot; storyDonorHash=$(if ($StoryAbsentProbe) { (Get-FileHash -LiteralPath $SaveA -Algorithm SHA256).Hash } else { '' }); storyAbsentProbe=[bool]$StoryAbsentProbe; storyProbe=[bool]$StoryProbe; menuInspection=[bool]$MenuInspection; modMenuProbe=[bool]$ModMenuProbe; modInformationProbe=[bool]$ModInformationProbe; modInformationCertificateSha256=$(if ($ModInformationProbe) { (Get-FileHash -LiteralPath (Join-Path $root 'untrusted-test.pfx') -Algorithm SHA256).Hash.ToLowerInvariant() } else { '' }); travelJournal=[bool]$TravelJournalBin; travelJournalRevision=$TravelJournalRevision; travelJournalSha256=$TravelJournalSha256; travelJournalVersion=$travelJournalVersion; travelJournalComparison=[bool]$TravelJournalComparison; travelJournalBudgetSeconds=$(if ($TravelJournalComparison) { $TravelJournalBudgetSeconds } else { 0 }); echo=[bool]$EchoBin; echoRevision=$EchoRevision; echoVersion=$echoVersion; echoTravelProbe=[bool]$EchoTravelProbe; echoTravelBudgetSeconds=$(if ($EchoTravelProbe) { $EchoTravelBudgetSeconds } else { 0 }); echoAbsentProbe=[bool]$EchoAbsentProbe; anima=[bool]$AnimaBin; animaRevision=$AnimaRevision; animaVersion=$animaVersion; animaTravelProbe=[bool]$AnimaTravelProbe; animaTravelBudgetSeconds=$(if ($AnimaTravelProbe) { $AnimaTravelBudgetSeconds } else { 0 }); journalMissionEventsProbe=[bool]$JournalMissionEventsProbe; missionIdentityProbe=[bool]$MissionIdentityProbe; missionTransitionsProbe=[bool]$MissionTransitionsProbe; contentReferenceProbe=[bool]$ContentReferenceProbe; stockpileCoordinated=[bool]$StockpileCoordinated; journalCoordinated=[bool]$JournalCoordinated; persistenceProbe=[bool]$PersistenceProbe; vanillaLoadControl=[bool]$VanillaLoadControl; assemblyOverlay=$overlay; stockpile=[bool]$StockpileBin; missionJournal=[bool]$MissionJournalBin; travelStation=[bool]$TravelStation; travelStationBudgetSeconds=$(if ($TravelStation) { $TravelStationBudgetSeconds } else { 0 }); travelCrossSystem=[bool]$TravelCrossSystem; travelCrossSystemBudgetSeconds=$(if ($TravelCrossSystem) { $TravelCrossSystemBudgetSeconds } else { 0 }); travelWormholeFixture=[bool]$TravelWormholeFixture; travelResilience=[bool]$TravelResilience; travelResilienceBudgetSeconds=$(if ($TravelResilience) { $TravelResilienceBudgetSeconds } else { 0 }); travelRecovery=[bool]$TravelRecoveryContinuation; travelRecoveryBudgetSeconds=$(if ($TravelRecoveryContinuation) { $TravelRecoveryBudgetSeconds } else { 0 }); travelFastLane=[bool]$TravelFastLane; travelFastLaneBudgetSeconds=$(if ($TravelFastLane) { $TravelFastLaneBudgetSeconds } else { 0 }); scenario=$Scenario; revision=$BuildRevision; preparedUtc=[DateTime]::UtcNow.ToString('o'); plugins=$hashes } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'build-provenance.json')
     # Prevent Steam's restart path; the runner disables SteamManager before arming checks.
     [IO.File]::WriteAllText((Join-Path $game 'steam_appid.txt'), '3471800')
     $saves = Join-Path $root 'Saves'
@@ -609,6 +636,7 @@ Assert-ForgePersistenceReceipt $root $provenance
 Assert-ForgeDeliveryReceipt $root $provenance
 Assert-RefineryReceipt $root $provenance
 Assert-ForgeUiReceipt $root $provenance
+Assert-BlueprintPinReceipt $root $provenance
 Assert-PersistenceProbeReceipt $root $provenance
 if ($provenance.PSObject.Properties['stockpileCoordinated'] -and $provenance.stockpileCoordinated) {
     $after = @(Get-ChildItem -LiteralPath (Join-Path $root 'Saves') -Filter '*.vgstockpile-transfers.json' -File)

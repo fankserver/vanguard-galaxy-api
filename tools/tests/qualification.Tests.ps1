@@ -35,6 +35,34 @@ try {
     try { & $script -Action Prepare -SandboxRoot (Join-Path $work 'invalid-menu-full') -MenuInspection @options }
     catch { $rejected = $_.Exception.Message -like '*Menu inspection requires*' }
     Assert $rejected 'Menu inspection accepted a gameplay scenario.'
+    $pinRoot = Join-Path $work 'blueprint-pin-probe'; $sandboxes += $pinRoot
+    & $script -Action Prepare -SandboxRoot $pinRoot -ForgeReadProbe @options
+    $pinProvenancePath = Join-Path $pinRoot 'build-provenance.json'
+    $pinProvenance = Get-Content -LiteralPath $pinProvenancePath -Raw | ConvertFrom-Json
+    $pinBinary = Join-Path $pinRoot 'game\BepInEx\plugins\VGBlueprintPin.dll'
+    [IO.File]::WriteAllText($pinBinary, 'synthetic-not-executable')
+    $pinHash = (Get-FileHash -LiteralPath $pinBinary -Algorithm SHA256).Hash
+    $pinProvenance.plugins | Add-Member -NotePropertyName 'VGBlueprintPin.dll' -NotePropertyValue $pinHash
+    $pinProvenance.blueprintPinProbe = $true
+    $pinProvenance.blueprintPinRevision = 'a' * 40
+    $pinProvenance.blueprintPinSha256 = $pinHash.ToLowerInvariant()
+    [IO.File]::WriteAllText((Join-Path $pinRoot 'blueprint-pin.enabled'), 'blueprint-pin-v1')
+    $pinConfig = Join-Path $pinRoot 'game\BepInEx\config\vgmodapi.cfg'
+    $pinOriginalConfig = [IO.File]::ReadAllText($pinConfig)
+    [IO.File]::WriteAllText($pinConfig, $pinOriginalConfig + "`n[Hud]`nEnabled = true`n")
+    $pinProvenance | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $pinProvenancePath
+    $null = Assert-QualificationInputs $pinRoot
+    [IO.File]::WriteAllText($pinConfig, $pinOriginalConfig)
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $pinRoot } catch { $rejected = $true }
+    Assert $rejected 'Blueprint Pin accepted absent HUD configuration.'
+    [IO.File]::WriteAllText($pinConfig, $pinOriginalConfig + "`n[Hud]`nEnabled = true`n")
+    $pinProvenance.blueprintPinProbe = $false
+    Remove-Item (Join-Path $pinRoot 'blueprint-pin.enabled')
+    $pinProvenance | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $pinProvenancePath
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $pinRoot } catch { $rejected = $_.Exception.Message -like '*plugin allowlist mismatch*' }
+    Assert $rejected 'Unselected Blueprint Pin DLL accepted by plugin allowlist.'
     $menuProbeRoot = Join-Path $work 'mod-menu-probe'
     $sandboxes += $menuProbeRoot
     & $script -Action Prepare -SandboxRoot $menuProbeRoot -ModMenuProbe @options

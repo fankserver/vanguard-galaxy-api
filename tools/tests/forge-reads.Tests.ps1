@@ -93,5 +93,29 @@ try {
     $p.forgeCommandProbe = $true; Reject { Assert-ForgeUiSelection $root $p }; $p.forgeCommandProbe = $false
     [IO.File]::WriteAllText((Join-Path $root 'forge-ui.txt'), 'INCOMPLETE')
     Reject { Assert-ForgeUiReceipt $root $p }
+    $p.forgeUiProbe = $false; Remove-Item (Join-Path $root 'forge-ui.enabled')
+    $p | Add-Member blueprintPinProbe $true
+    $p | Add-Member blueprintPinRevision ('a' * 40)
+    $p | Add-Member blueprintPinSha256 ('b' * 64)
+    Reject { Assert-ForgeReadSelection $root $p }
+    [IO.File]::WriteAllText((Join-Path $root 'blueprint-pin.enabled'), 'blueprint-pin-v1')
+    $binDir = Join-Path $root 'game\BepInEx\plugins'; New-Item -ItemType Directory -Path $binDir -Force | Out-Null
+    $binary = Join-Path $binDir 'VGBlueprintPin.dll'; [IO.File]::WriteAllText($binary, 'synthetic binary')
+    Reject { Assert-ForgeReadSelection $root $p }
+    $p.blueprintPinSha256 = (Get-FileHash $binary -Algorithm SHA256).Hash.ToLowerInvariant()
+    Reject { Assert-ForgeReadSelection $root $p }
+    [IO.File]::AppendAllText((Join-Path $root 'game\BepInEx\config\vgmodapi.cfg'), "`n[Hud]`nEnabled = true`n")
+    Assert-ForgeReadSelection $root $p
+    Reject { Assert-BlueprintPinReceipt $root $p }
+    [IO.File]::WriteAllLines((Join-Path $root 'blueprint-pin.txt'), @('PASS','blueprint-pin-v1','pin-batch-exact-variant-navigation-close'))
+    Reject { Assert-BlueprintPinReceipt $root $p }
+    $pinImage = Join-Path $root 'blueprint-pin-view.png'; $pinRecord = Join-Path $root 'blueprint-pin-view.txt'
+    Copy-Item $image $pinImage; Copy-Item $imageRecord $pinRecord
+    Assert-BlueprintPinReceipt $root $p
+    [IO.File]::AppendAllText($pinImage, 'changed'); Reject { Assert-BlueprintPinReceipt $root $p }
+    Copy-Item $image $pinImage -Force
+    $p.forgeCommandProbe = $true; Reject { Assert-BlueprintPinSelection $root $p }; $p.forgeCommandProbe = $false
+    $p.blueprintPinProbe = $false; Reject { Assert-BlueprintPinSelection $root $p }; $p.blueprintPinProbe = $true
+    [IO.File]::AppendAllText($binary, 'changed'); Reject { Assert-BlueprintPinSelection $root $p }
     'PASS Forge/refinery probe selection and receipt tests'
 } finally { Remove-Item -LiteralPath $root -Recurse -Force }
