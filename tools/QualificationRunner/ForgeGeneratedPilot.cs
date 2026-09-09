@@ -49,6 +49,12 @@ public sealed partial class Plugin
         Require("forge/" + (string)SpGet(SpGet(job, "recipe")!, "identifier")! == selected.Id.LocalId, "Queued native recipe differs from generated fixture.");
         SpCall(job, "ProgressJob", duration);
         var delivered = facts.Where(f => f.Kind == CraftingJobEventKind.BatchObserved && f.Job.Handle.Equals(queued.Jobs[0])).ToArray();
+        WriteAtomic("forge-generated-delivery-diagnostic.txt", new[] {
+            "recipe=" + selected.Id + " level=" + quote.OutputLevel + " duration=" + duration + " remaining=" + SpGet(job, "remainingAmount"),
+            "facts=" + facts.Count + " ownedBatches=" + delivered.Length
+        }.Concat(facts.Select(f => f.Kind + " status=" + f.DeliveryStatus + " remaining=" + f.Job.RemainingBatches
+            + " deliveries=" + string.Join(";", f.Deliveries.Select(d => d.Resource + " requested=" + d.RequestedAmount + " verified=" + d.VerifiedAmount
+                + " status=" + d.Status + " level=" + d.ItemLevel + " rarity=" + d.Rarity + " detail=" + d.Detail)))).ToArray());
         Require(delivered.Length == 1 && delivered[0].DeliveryStatus == CraftingDeliveryStatus.Verified, "Generated delivery was not verified exactly once.");
         Require(delivered[0].Deliveries.Any(d => d.Resource?.Kind == RecipeResourceKind.Item && d.ItemLevel == quote.OutputLevel
             && d.Rarity == selected.Rarity && d.VerifiedAmount >= selected.Outputs[0].Amount), "Generated item level/rarity/quantity not observed in delivery.");
