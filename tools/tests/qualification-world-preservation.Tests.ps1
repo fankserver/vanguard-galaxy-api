@@ -1,7 +1,8 @@
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '..\qualification-world-preservation.ps1')
 function Reject([scriptblock]$Action) { $failed = $false; try { & $Action } catch { $failed = $true }; if (!$failed) { throw 'Preservation drift accepted.' } }
-$root = Join-Path $env:TEMP ('world-preservation-' + [Guid]::NewGuid().ToString('N'))
+# Windows CI may expose TEMP through an 8.3 alias; compare canonical paths, like the helper.
+$root = [IO.Path]::GetFullPath((Join-Path $env:TEMP ('world-preservation-' + [Guid]::NewGuid().ToString('N'))))
 $created = $false; $sandboxCreated = $false
 $sandbox = Join-Path ([IO.Path]::Combine([Environment]::GetFolderPath('LocalApplicationData'), 'Temp')) ('VGModAPI-qa-' + (Get-Random -Minimum 1000000000 -Maximum 2000000000))
 try {
