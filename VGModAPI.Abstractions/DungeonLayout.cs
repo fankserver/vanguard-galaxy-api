@@ -32,7 +32,7 @@ public sealed class DungeonCompartmentDefinition
         var crew = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var pair in defenders ?? Array.Empty<KeyValuePair<string, int>>())
         {
-            DungeonLayoutIds.Check(pair.Key);
+            DungeonNativeIds.Check(pair.Key);
             if (pair.Value < 1 || pair.Value > 100) throw new ArgumentOutOfRangeException(nameof(defenders));
             crew.Add(pair.Key, pair.Value);
         }
@@ -66,6 +66,16 @@ public sealed class DungeonLayout
         }
         if (seen.Count != rooms.Length) throw new ArgumentException("Every compartment must connect to the airlock.");
         Compartments = Array.AsReadOnly(rooms);
+    }
+}
+
+/// <summary>Native catalog keys are not authored identifiers; preserve spaces and punctuation verbatim.</summary>
+internal static class DungeonNativeIds
+{
+    internal static void Check(string id)
+    {
+        if (string.IsNullOrWhiteSpace(id) || id.Length > 128 || id.Any(char.IsControl))
+            throw new ArgumentException("Native identifiers require 1–128 non-control characters.", nameof(id));
     }
 }
 

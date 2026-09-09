@@ -1,6 +1,7 @@
 # Prepared-input helpers; safe to exercise with synthetic files.
 . (Join-Path $PSScriptRoot 'qualification-bar-consumers.ps1')
 . (Join-Path $PSScriptRoot 'qualification-bars.ps1')
+. (Join-Path $PSScriptRoot 'qualification-dungeon-consumers.ps1')
 # Accepted Anima pilot shapes, each pinned to the exact hard API dependency that version declares.
 # The consumer travel probe additionally requires the 0.4.0 shape, which is the first one that
 # observes system visits through the public travel surface.
@@ -312,10 +313,11 @@ function Assert-BlueprintPinSelection([string]$Root, $Provenance) {
     $marker = Join-Path $Root 'blueprint-pin.enabled'
     if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Blueprint Pin selection changed.' }
     if (!$selected) { return }
-    if (!$Provenance.forgeReadProbe -or $Provenance.forgeUiProbe -or $Provenance.forgeCommandProbe -or $Provenance.refineryProbe -or $Provenance.forgeDeliveryProbe -or $Provenance.forgePersistenceProbe -or [IO.File]::ReadAllText($marker) -cne 'blueprint-pin-v1') { throw 'Invalid Blueprint Pin selection.' }
+    if (!$Provenance.forgeReadProbe -or $Provenance.forgeUiProbe -or $Provenance.forgeCommandProbe -or $Provenance.refineryProbe -or $Provenance.forgeDeliveryProbe -or $Provenance.forgePersistenceProbe -or [IO.File]::ReadAllText($marker) -cne 'blueprint-pin-v5') { throw 'Invalid Blueprint Pin selection.' }
     if ($Provenance.blueprintPinRevision -cnotmatch '^[0-9a-f]{40}$' -or $Provenance.blueprintPinSha256 -cnotmatch '^[0-9a-f]{64}$') { throw 'Invalid Blueprint Pin provenance.' }
     $config = [IO.File]::ReadAllText((Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg'))
     if ($config -cnotmatch '(?ms)^\[Hud\]\r?\n(?:(?!^\[).)*?^Enabled = true\r?$') { throw 'Blueprint Pin requires HUD integration.' }
+    if ($config -cnotmatch '(?ms)^\[Recipes\]\r?\n(?:(?!^\[).)*?^CommandsEnabled = true\r?$') { throw 'Blueprint Pin job probe requires crafting commands.' }
     $binary = Join-Path $Root 'game\BepInEx\plugins\VGBlueprintPin.dll'
     if ((Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant() -cne $Provenance.blueprintPinSha256) { throw 'Blueprint Pin binary changed.' }
 }
@@ -326,14 +328,16 @@ function Assert-BlueprintPinReceipt([string]$Root, $Provenance) {
     $file = Join-Path $Root 'blueprint-pin.txt'
     if ((Get-Item -LiteralPath $file).Length -gt 512) { throw 'Oversized Blueprint Pin receipt.' }
     $lines = @(Get-Content -LiteralPath $file)
-    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'blueprint-pin-v1' -or $lines[2] -cne 'pin-batch-exact-variant-navigation-close') { throw 'Incomplete Blueprint Pin receipt.' }
-    $image = Join-Path $Root 'blueprint-pin-view.png'; $record = Join-Path $Root 'blueprint-pin-view.txt'
+    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'blueprint-pin-v5' -or $lines[2] -cne 'pin-batch-exact-variant-navigation-close-producer-routes-queue-partial-cancel-multiunit-reload-saveas-switch-inspector') { throw 'Incomplete Blueprint Pin receipt.' }
+    foreach ($stem in @('blueprint-pin-view','blueprint-pin-producers','blueprint-pin-partial','blueprint-pin-cancelled','forge-consumers')) {
+    $image = Join-Path $Root ($stem + '.png'); $record = Join-Path $Root ($stem + '.txt')
     foreach ($path in @($image,$record)) {
         if (!(Test-Path -LiteralPath $path -PathType Leaf) -or (Get-Item -LiteralPath $path).Length -eq 0 -or ((Get-Item -LiteralPath $path).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Blueprint Pin image evidence missing, empty or linked.' }
     }
     if ((Get-Item -LiteralPath $image).Length -gt 20MB -or (Get-Item -LiteralPath $record).Length -gt 256) { throw 'Blueprint Pin image evidence oversized.' }
     $hashLines = @(Get-Content -LiteralPath $record)
     if ($hashLines.Count -ne 1 -or $hashLines[0] -cnotmatch '^sha256=[0-9a-f]{64}$' -or (Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashLines[0].Substring(7)) { throw 'Blueprint Pin screenshot changed.' }
+    }
 }
 function Assert-ForgeUiSelection([string]$Root, $Provenance) {
     $flag = $Provenance.PSObject.Properties['forgeUiProbe']
@@ -442,12 +446,13 @@ function Assert-ForgeCommandReceipt([string]$Root, $Provenance) {
     if ($lines.Count -ne 4 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'forge-commands-v3' -or $lines[2] -cne 'settings-replay-restored' -or $lines[3] -cne 'forge-queue-cancel-replay-refusal-direct-start-capacity') { throw 'Incomplete Forge command receipt.' }
 }
 function Assert-DungeonReadinessSelection([string]$Root, $Provenance) {
+    Assert-DungeonConsumerSelection $Root $Provenance
     $panel = $Provenance.PSObject.Properties['dungeonPanelProbe']
     if ($panel -and $panel.Value -isnot [bool]) { throw 'Invalid dungeon panel flag.' }
     $panelSelected = $panel -and $panel.Value
     $panelMarker = Join-Path $Root 'dungeon-panel.enabled'
     if ([bool]$panelSelected -ne (Test-Path -LiteralPath $panelMarker -PathType Leaf)) { throw 'Dungeon panel selection changed.' }
-    if ($panelSelected -and [IO.File]::ReadAllText($panelMarker) -cne 'dungeon-panel-v3') { throw 'Invalid dungeon panel marker.' }
+    if ($panelSelected -and [IO.File]::ReadAllText($panelMarker) -cne 'dungeon-panel-v4') { throw 'Invalid dungeon panel marker.' }
     $flag = $Provenance.PSObject.Properties['dungeonReadinessProbe']
     if ($panelSelected -and (!$flag -or !$flag.Value)) { throw 'Dungeon panel requires readiness.' }
     if ($flag -and $flag.Value -isnot [bool]) { throw 'Invalid dungeon readiness flag.' }
@@ -457,7 +462,7 @@ function Assert-DungeonReadinessSelection([string]$Root, $Provenance) {
     if (!$selected) { return }
     if ($Provenance.scenario -ne 'Full' -or [IO.File]::ReadAllText($marker) -cne 'dungeon-readiness-v1') { throw 'Invalid dungeon readiness selection.' }
     foreach ($entry in $Provenance.PSObject.Properties) {
-        if ($entry.Name -notin @('dungeonReadinessProbe','dungeonPanelProbe') -and $entry.Value -is [bool] -and $entry.Value) { throw 'Dungeon readiness cannot combine other probes or consumers.' }
+        if ($entry.Name -notin @('dungeonReadinessProbe','dungeonPanelProbe','dungeonConsumersProbe') -and $entry.Value -is [bool] -and $entry.Value) { throw 'Dungeon readiness cannot combine other probes or consumers.' }
     }
     if ($null -ne $Provenance.assemblyOverlay) { throw 'Dungeon readiness cannot use an assembly overlay.' }
     $config = [IO.File]::ReadAllText((Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg'))
@@ -470,17 +475,19 @@ function Assert-DungeonReadinessReceipt([string]$Root, $Provenance) {
     if (!$Provenance.PSObject.Properties['dungeonReadinessProbe'] -or !$Provenance.dungeonReadinessProbe) { return }
     Assert-QualificationExitOutcome (Get-Content -LiteralPath (Join-Path $Root 'run-outcome.json') -Raw | ConvertFrom-Json) 'Dungeon readiness'
     if ($Provenance.PSObject.Properties['dungeonPanelProbe'] -and $Provenance.dungeonPanelProbe) {
-        $image = Join-Path $Root 'dungeon-panel-actions.png'; $record = Join-Path $Root 'dungeon-panel-actions.txt'
+        foreach ($stem in @('dungeon-panel-actions','dungeon-panel-scrolled','dungeon-panel-scaled')) {
+        $image = Join-Path $Root ($stem + '.png'); $record = Join-Path $Root ($stem + '.txt')
         foreach ($path in @($image,$record)) {
             if (!(Test-Path -LiteralPath $path -PathType Leaf) -or (Get-Item -LiteralPath $path).Length -eq 0 -or ((Get-Item -LiteralPath $path).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Dungeon panel image evidence missing, empty or linked.' }
         }
         if ((Get-Item -LiteralPath $image).Length -gt 20MB -or (Get-Item -LiteralPath $record).Length -gt 256) { throw 'Dungeon panel image evidence oversized.' }
         $hashLines = @(Get-Content -LiteralPath $record)
         if ($hashLines.Count -ne 1 -or $hashLines[0] -cnotmatch '^sha256=[0-9a-f]{64}$' -or (Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashLines[0].Substring(7)) { throw 'Dungeon panel screenshot changed.' }
+        }
         $panelFacts = Join-Path $Root 'dungeon-panel.txt'
         if ((Get-Item -LiteralPath $panelFacts).Length -gt 1024) { throw 'Dungeon panel evidence too large.' }
         $panelLines = @(Get-Content -LiteralPath $panelFacts)
-        if ($panelLines.Count -ne 3 -or $panelLines[0] -cne 'PASS' -or $panelLines[1] -cne 'dungeon-panel-v3' -or $panelLines[2] -cne 'generated-location-pointer-disabled-revalidate-contributors-dispose-stale-reopen-destroy-keyboard-controller') { throw 'Invalid dungeon panel receipt.' }
+        if ($panelLines.Count -ne 3 -or $panelLines[0] -cne 'PASS' -or $panelLines[1] -cne 'dungeon-panel-v4' -or $panelLines[2] -cne 'generated-location-pointer-disabled-revalidate-contributors-dispose-stale-reopen-destroy-keyboard-controller-scroll-scale') { throw 'Invalid dungeon panel receipt.' }
     }
     $receipt = Join-Path $Root 'dungeon-readiness.receipt'; $snapshot = Join-Path $Root 'dungeon-readiness.txt'
     if ((Get-Item -LiteralPath $receipt).Length -gt 256 -or (Get-Item -LiteralPath $snapshot).Length -gt 4096) { throw 'Dungeon evidence too large.' }
@@ -1464,12 +1471,13 @@ function Assert-QualificationInputs([string]$Root) {
     if ($barConsumers) { $expected += @('VGAnima.dll','VGTTS.dll','VanguardGalaxy.CustomMission.dll','Newtonsoft.Json.dll') }
     if ($provenance.scenario -ne 'MissingApi') { $expected += @('VGModAPI.dll','VGModAPI.Core.dll','VGModAPI.Abstractions.dll','vgmodapi.vgmod.json') }
     if ($provenance.scenario -eq 'Full') { $expected += @('QualificationRunner.dll','LifecycleObserver.dll') }
+    if ($provenance.PSObject.Properties['dungeonConsumersProbe'] -and $provenance.dungeonConsumersProbe) { $expected += $DungeonConsumerNames }
     if ($provenance.missionJournal) { $expected += @('VGMissionJournal.dll','Newtonsoft.Json.dll') }
     if ($stockpile) { $expected += @('VGStockpile.dll','Newtonsoft.Json.dll') }
     if ($anima) { $expected += @('VGAnima.dll') }
     if ($echo) { $expected += @('VGEcho.dll') }
     if ($travelJournal) { $expected += @('VGTravelJournal.dll') }
-    if ($provenance.PSObject.Properties['blueprintPinProbe'] -and $provenance.blueprintPinProbe) { $expected += @('VGBlueprintPin.dll') }
+    if ($provenance.PSObject.Properties['blueprintPinProbe'] -and $provenance.blueprintPinProbe) { $expected += @('VGBlueprintPin.dll','ForgeInspector.dll','ForgeInspectorHost.dll') }
     $expected = @($expected | Select-Object -Unique)
     if (@($provenance.plugins.PSObject.Properties).Count -ne $expected.Count -or
         @($provenance.plugins.PSObject.Properties.Name | Where-Object { $_ -notin $expected }).Count -gt 0) { throw 'Scenario plugin allowlist mismatch.' }

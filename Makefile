@@ -20,9 +20,11 @@ build-dungeon-example:
 	$(DOTNET) build examples/AuthoredDungeon/AuthoredDungeon.csproj -c $(CONFIGURATION)
 build-dungeon-author: link-libs
 	$(DOTNET) build examples/DungeonAuthor/DungeonAuthor.csproj -c $(CONFIGURATION)
-.PHONY: build-forge-example
+.PHONY: build-forge-example build-forge-host
 build-forge-example:
 	$(DOTNET) build examples/ForgeInspector/ForgeInspector.csproj -c $(CONFIGURATION)
+build-forge-host: link-libs
+	$(DOTNET) build examples/ForgeInspectorHost/ForgeInspectorHost.csproj -c $(CONFIGURATION)
 .PHONY: build-bar-authors
 build-bar-authors: link-libs
 	$(DOTNET) build examples/OwnedBarAuthorA/OwnedBarAuthorA.csproj -c $(CONFIGURATION)

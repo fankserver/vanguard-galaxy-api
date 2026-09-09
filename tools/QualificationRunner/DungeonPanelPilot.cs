@@ -90,6 +90,8 @@ public sealed partial class Plugin
             Require(peerCalls == 1, "Disposed contributor callback dispatched.");
             foreach (var frame in Wait(() => DungeonProbeButton("Peer dungeon probe") == null, "Disposed contributor removal")) yield return frame;
             foreach (var frame in CheckDungeonPanelNavigation(panel)) yield return frame;
+            foreach (var frame in CheckDungeonPanelLayout(nativePanel, panel, mouse)) yield return frame;
+            foreach (var frame in CheckDungeonConsumers(mouse)) yield return frame;
             nativePanel.GetType().GetMethod("Close")!.Invoke(nativePanel, null);
             foreach (var frame in Wait(() => panel.Current == null, "Native dungeon panel close")) yield return frame;
             cached.Invoke(); Require(calls == 1, "Closed panel callback dispatched.");
@@ -99,7 +101,7 @@ public sealed partial class Plugin
             UnityEngine.Object.Destroy(root);
             foreach (var frame in Wait(() => panel.Current == null, "Destroyed dungeon target invalidates panel snapshot")) yield return frame;
             Require(panel.Open(target) == DungeonPanelOpenStatus.StaleTarget, "Destroyed target remained openable.");
-            WriteAtomic("dungeon-panel.txt", new[] { "PASS", "dungeon-panel-v3", "generated-location-pointer-disabled-revalidate-contributors-dispose-stale-reopen-destroy-keyboard-controller" });
+            WriteAtomic("dungeon-panel.txt", new[] { "PASS", "dungeon-panel-v4", "generated-location-pointer-disabled-revalidate-contributors-dispose-stale-reopen-destroy-keyboard-controller-scroll-scale" });
             Passed("Generated dungeon panel pointer and lifetime subset");
         }
         finally
@@ -117,7 +119,7 @@ public sealed partial class Plugin
     private static Button? DungeonProbeButton(string label)
     {
         var root = GameObject.Find("Mod API dungeon contributions");
-        return root ? root!.GetComponentsInChildren<Button>().SingleOrDefault(button => button.GetComponentsInChildren<TMP_Text>().Any(text => text.text == label)) : null;
+        return root ? root!.GetComponentsInChildren<Button>().SingleOrDefault(button => button.GetComponentsInChildren<TMP_Text>().Any(text => text.text == label || text.text.StartsWith(label + "\n", StringComparison.Ordinal))) : null;
     }
     private bool DungeonPointerReady(Transform target)
     {

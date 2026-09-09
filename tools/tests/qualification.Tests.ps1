@@ -43,13 +43,19 @@ try {
     [IO.File]::WriteAllText($pinBinary, 'synthetic-not-executable')
     $pinHash = (Get-FileHash -LiteralPath $pinBinary -Algorithm SHA256).Hash
     $pinProvenance.plugins | Add-Member -NotePropertyName 'VGBlueprintPin.dll' -NotePropertyValue $pinHash
+    foreach ($name in @('ForgeInspector.dll','ForgeInspectorHost.dll')) {
+        $extra = Join-Path $pinRoot ('game\BepInEx\plugins\' + $name)
+        [IO.File]::WriteAllText($extra, 'synthetic-inspector-not-executable')
+        $pinProvenance.plugins | Add-Member -NotePropertyName $name -NotePropertyValue (Get-FileHash $extra -Algorithm SHA256).Hash
+    }
     $pinProvenance.blueprintPinProbe = $true
     $pinProvenance.blueprintPinRevision = 'a' * 40
     $pinProvenance.blueprintPinSha256 = $pinHash.ToLowerInvariant()
-    [IO.File]::WriteAllText((Join-Path $pinRoot 'blueprint-pin.enabled'), 'blueprint-pin-v1')
+    [IO.File]::WriteAllText((Join-Path $pinRoot 'blueprint-pin.enabled'), 'blueprint-pin-v5')
     $pinConfig = Join-Path $pinRoot 'game\BepInEx\config\vgmodapi.cfg'
     $pinOriginalConfig = [IO.File]::ReadAllText($pinConfig)
-    [IO.File]::WriteAllText($pinConfig, $pinOriginalConfig + "`n[Hud]`nEnabled = true`n")
+    $pinFullConfig = $pinOriginalConfig + "CommandsEnabled = true`n[Hud]`nEnabled = true`n"
+    [IO.File]::WriteAllText($pinConfig, $pinFullConfig)
     $pinProvenance | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $pinProvenancePath
     $null = Assert-QualificationInputs $pinRoot
     [IO.File]::WriteAllText($pinConfig, $pinOriginalConfig)
@@ -57,6 +63,10 @@ try {
     try { $null = Assert-QualificationInputs $pinRoot } catch { $rejected = $true }
     Assert $rejected 'Blueprint Pin accepted absent HUD configuration.'
     [IO.File]::WriteAllText($pinConfig, $pinOriginalConfig + "`n[Hud]`nEnabled = true`n")
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $pinRoot } catch { $rejected = $true }
+    Assert $rejected 'Blueprint Pin accepted absent crafting command configuration.'
+    [IO.File]::WriteAllText($pinConfig, $pinFullConfig)
     $pinProvenance.blueprintPinProbe = $false
     Remove-Item (Join-Path $pinRoot 'blueprint-pin.enabled')
     $pinProvenance | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $pinProvenancePath

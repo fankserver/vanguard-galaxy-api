@@ -147,7 +147,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             foreach (var frame in CheckDungeonReadiness()) yield return frame;
             if (File.Exists(Path.Combine(_root!, "dungeon-panel.enabled")))
             {
-                Require(File.ReadAllText(Path.Combine(_root!, "dungeon-panel.enabled")) == "dungeon-panel-v3", "Invalid dungeon panel marker.");
+                Require(File.ReadAllText(Path.Combine(_root!, "dungeon-panel.enabled")) == "dungeon-panel-v4", "Invalid dungeon panel marker.");
                 foreach (var frame in CheckDungeonPanelLifetime()) yield return frame;
             }
             yield break;
@@ -158,7 +158,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             foreach (var frame in CheckForgeReads()) yield return frame;
             if (File.Exists(Path.Combine(_root!, "blueprint-pin.enabled")))
             {
-                Require(File.ReadAllText(Path.Combine(_root!, "blueprint-pin.enabled")) == "blueprint-pin-v1", "Invalid Blueprint Pin marker.");
+                Require(File.ReadAllText(Path.Combine(_root!, "blueprint-pin.enabled")) == "blueprint-pin-v5", "Invalid Blueprint Pin marker.");
                 foreach (var frame in CheckBlueprintPin()) yield return frame;
             }
             if (File.Exists(Path.Combine(_root!, "forge-ui.enabled")))

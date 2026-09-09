@@ -46,8 +46,13 @@ public sealed partial class Plugin
             foreach (var frame in Wait(() => PinCloseButton() != null, "Blueprint Pin panel close")) yield return frame;
             foreach (var frame in ForgeClick(mouse, PinCloseButton()!.transform)) yield return frame;
             foreach (var frame in Wait(() => GameObject.Find("Mod API shared HUD") == null && PinButton("Mod API Forge actions", "Pin") != null, "Closed pin and restored action")) yield return frame;
-            WriteAtomic("blueprint-pin.txt", new[] { "PASS", "blueprint-pin-v1", "pin-batch-exact-variant-navigation-close" });
-            Passed("Real Blueprint Pin pointer pinning, future-batch display, exact variant navigation and panel close");
+            foreach (var frame in CheckPinProducers(mouse, false)) yield return frame;
+            foreach (var frame in CheckPinProducers(mouse, true)) yield return frame;
+            foreach (var frame in CheckPinJobs(mouse)) yield return frame;
+            foreach (var frame in CheckPinReload(mouse)) yield return frame;
+            foreach (var frame in CheckForgeConsumers(mouse)) yield return frame;
+            WriteAtomic("blueprint-pin.txt", new[] { "PASS", "blueprint-pin-v5", "pin-batch-exact-variant-navigation-close-producer-routes-queue-partial-cancel-multiunit-reload-saveas-switch-inspector" });
+            Passed("Real Blueprint Pin pointer pinning, future-batch display, exact variant navigation, panel close, producer routes and controlled native multi-unit queue/partial/cancellation policy and session-only save/reload/save-as/slot-switch pin lifetime with an independent Inspector consumer");
         }
         finally { ProbeCleanup.Run(() => { if (mouse != null) InputSystem.RemoveDevice(mouse); }, () => oldMouse?.MakeCurrent()); }
     }
@@ -63,6 +68,7 @@ public sealed partial class Plugin
         var root = GameObject.Find("Mod API shared HUD");
         return root != null && root.GetComponentsInChildren<TMP_Text>().Any(label => label.text.StartsWith(text + "  ", StringComparison.Ordinal) || label.text == text);
     }
+    // Only used while Inspector is dormant or after its panel closes; exactly one panel is expected.
     private static Button? PinCloseButton()
     {
         var root = GameObject.Find("Mod API shared HUD");
