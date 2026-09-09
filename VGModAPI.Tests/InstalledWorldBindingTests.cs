@@ -49,6 +49,13 @@ public sealed class InstalledWorldBindingTests
         foreach (var name in new[] { "BountyMission", "PatrolMission", "IndustryMission" })
             Assert.Contains(eligibility, instruction => instruction.Operand is TypeReference type && type.FullName == "Source.MissionSystem." + name);
         var player = module.GetType("Source.Player.GamePlayer");
+        var getter = player.Methods.Single(method => method.Name == "get_allMissions");
+        var iteratorAttribute = Assert.Single(getter.CustomAttributes, attribute => attribute.AttributeType.FullName == "System.Runtime.CompilerServices.IteratorStateMachineAttribute");
+        var iterator = ((TypeReference)iteratorAttribute.ConstructorArguments[0].Value).Resolve();
+        var fields = iterator.Methods.Single(method => method.Name == "MoveNext").Body.Instructions
+            .Where(instruction => instruction.Operand is FieldReference field && field.DeclaringType.FullName == player.FullName)
+            .Select(instruction => ((FieldReference)instruction.Operand).Name).Distinct().OrderBy(name => name, StringComparer.Ordinal).ToArray();
+        Assert.Equal(new[] { "currentBounty", "currentIndustry", "currentPatrol", "missions" }, fields);
         Assert.Equal("System.Collections.Generic.List`1<Source.MissionSystem.Mission>", player.Fields.Single(field => field.Name == "missions").FieldType.FullName);
         Assert.Equal("System.String", module.GetType("Source.MissionSystem.Mission").Fields.Single(field => field.Name == "storyId").FieldType.FullName);
         Assert.Equal("Source.Simulation.World.SystemStoryteller", module.GetType("Source.Galaxy.SystemMapData").Fields.Single(field => field.Name == "storyteller").FieldType.FullName);
