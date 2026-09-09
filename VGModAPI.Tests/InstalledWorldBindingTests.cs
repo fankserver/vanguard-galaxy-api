@@ -11,6 +11,28 @@ namespace VGModAPI.Tests;
 public sealed class InstalledWorldBindingTests
 {
     [Fact]
+    public void EmptyCombatProfileUsesDeclaredNativeFieldsAndConstructors()
+    {
+        var path = Environment.GetEnvironmentVariable("VG_GAME_ASSEMBLY")
+            ?? throw new InvalidOperationException("Run make check-bindings against the original installed assembly.");
+        using var game = AssemblyDefinition.ReadAssembly(path);
+        var poi = game.MainModule.GetType("Source.Galaxy.MapPointOfInterest");
+        Assert.Equal(poi.FullName, game.MainModule.GetType("Source.Galaxy.POI.Combat").BaseType.FullName);
+        foreach (var name in new[] { "persistables", "units", "payloads", "guardDescriptors", "cargoDescriptors", "salvageDescriptors", "_pendingStationBuildings" })
+            Assert.StartsWith("System.Collections.Generic.List`1<", poi.Fields.Single(field => field.Name == name && !field.IsStatic).FieldType.FullName);
+        foreach (var name in new[] { "unitOverlay", "persistableOverlay", "salvageOverlay" })
+            Assert.StartsWith("System.Collections.Generic.Dictionary`2<", poi.Fields.Single(field => field.Name == name && !field.IsStatic).FieldType.FullName);
+        foreach (var name in new[] { "deadUnitIdentities", "deadPersistableIdentities", "deadSalvageIdentities" })
+            Assert.Equal("System.Collections.Generic.HashSet`1<System.String>", poi.Fields.Single(field => field.Name == name && !field.IsStatic).FieldType.FullName);
+        foreach (var name in new[] { "hazardFieldData", "oreOwnershipOverride", "oreOwnershipOverrideItem", "storyteller", "linkedJumpgatePassGuid", "<customFieldData>k__BackingField" })
+            Assert.False(poi.Fields.Single(field => field.Name == name && !field.IsStatic).FieldType.IsValueType);
+        foreach (var name in new[] { "nextPayloadSequenceId", "nextCargoSlotId" })
+            Assert.Equal("System.Int32", poi.Fields.Single(field => field.Name == name && !field.IsStatic).FieldType.FullName);
+        Assert.Equal("System.Boolean", poi.Fields.Single(field => field.Name == "<hasAsteroids>k__BackingField" && !field.IsStatic).FieldType.FullName);
+        Assert.Single(game.MainModule.GetType("Source.Data.Persistable.SalvageData").Methods, method => method.IsConstructor && method.IsPublic && !method.IsStatic && method.Parameters.Count == 0);
+    }
+
+    [Fact]
     public void PoiMembershipChangesPrecedeManagerSpawnAndRequireTheirOwnFence()
     {
         var path = Environment.GetEnvironmentVariable("VG_GAME_ASSEMBLY")
