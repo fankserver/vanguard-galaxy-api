@@ -43,10 +43,15 @@ try {
     [IO.File]::WriteAllText($pinBinary, 'synthetic-not-executable')
     $pinHash = (Get-FileHash -LiteralPath $pinBinary -Algorithm SHA256).Hash
     $pinProvenance.plugins | Add-Member -NotePropertyName 'VGBlueprintPin.dll' -NotePropertyValue $pinHash
+    foreach ($name in @('ForgeInspector.dll','ForgeInspectorHost.dll')) {
+        $extra = Join-Path $pinRoot ('game\BepInEx\plugins\' + $name)
+        [IO.File]::WriteAllText($extra, 'synthetic-inspector-not-executable')
+        $pinProvenance.plugins | Add-Member -NotePropertyName $name -NotePropertyValue (Get-FileHash $extra -Algorithm SHA256).Hash
+    }
     $pinProvenance.blueprintPinProbe = $true
     $pinProvenance.blueprintPinRevision = 'a' * 40
     $pinProvenance.blueprintPinSha256 = $pinHash.ToLowerInvariant()
-    [IO.File]::WriteAllText((Join-Path $pinRoot 'blueprint-pin.enabled'), 'blueprint-pin-v4')
+    [IO.File]::WriteAllText((Join-Path $pinRoot 'blueprint-pin.enabled'), 'blueprint-pin-v5')
     $pinConfig = Join-Path $pinRoot 'game\BepInEx\config\vgmodapi.cfg'
     $pinOriginalConfig = [IO.File]::ReadAllText($pinConfig)
     $pinFullConfig = $pinOriginalConfig + "CommandsEnabled = true`n[Hud]`nEnabled = true`n"

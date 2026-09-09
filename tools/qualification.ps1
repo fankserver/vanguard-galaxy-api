@@ -289,6 +289,18 @@ if ($Action -eq 'Prepare') {
             if ($dependency.Count -ne 1) { throw 'Blueprint Pin must require its public API version.' }
         } finally { $assembly.Dispose() }
         Copy-Item -LiteralPath $candidate -Destination $plugins
+        $inspectorBin = Join-Path $BuildRoot 'examples\ForgeInspectorHost\bin\Release\netstandard2.1'
+        foreach ($name in @('ForgeInspector','ForgeInspectorHost')) {
+            $path = Join-Path $inspectorBin ($name + '.dll')
+            $assembly = [Mono.Cecil.AssemblyDefinition]::ReadAssembly($path)
+            try {
+                if ($assembly.Name.Name -cne $name) { throw 'Incorrect Forge Inspector assembly identity.' }
+                $allowed = @('netstandard','VGModAPI.Abstractions')
+                if ($name -ceq 'ForgeInspectorHost') { $allowed += @('BepInEx','UnityEngine.CoreModule','ForgeInspector') }
+                if (@($assembly.MainModule.AssemblyReferences | Where-Object { $_.Name -notin $allowed }).Count) { throw 'Forge Inspector has unsupported dependencies.' }
+            } finally { $assembly.Dispose() }
+            Copy-Item -LiteralPath $path -Destination $plugins
+        }
     }
     if ($StockpileBin) {
         $candidate = Join-Path $StockpileBin 'VGStockpile.dll'
@@ -425,7 +437,7 @@ if ($Action -eq 'Prepare') {
         [IO.File]::WriteAllText((Join-Path $root 'forge-reads.enabled'), 'forge-reads-v1')
         if ($BlueprintPinProbe) {
             [IO.File]::AppendAllText((Join-Path $bep 'config\vgmodapi.cfg'), "CommandsEnabled = true`r`n[Hud]`r`nEnabled = true`r`n")
-            [IO.File]::WriteAllText((Join-Path $root 'blueprint-pin.enabled'), 'blueprint-pin-v4')
+            [IO.File]::WriteAllText((Join-Path $root 'blueprint-pin.enabled'), 'blueprint-pin-v5')
         }
         if ($ForgeUiProbe) { [IO.File]::WriteAllText((Join-Path $root 'forge-ui.enabled'), 'forge-ui-v3') }
         if ($ForgeCommandProbe) {
