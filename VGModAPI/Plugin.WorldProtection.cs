@@ -56,7 +56,7 @@ public sealed partial class Plugin
             _worldDefinitions = new WorldDefinitionRegistry(authenticate, _hub.CheckThread);
             var definitions = _worldDefinitions;
             _worldLoadHost = new WorldLoadHookHost(assembly, _hub, _persistence, _persistence.CreateWorldReader(),
-                _persistence.CanonicalLoadPath, saved => admission() && definitions.MatchesRetained(saved) && admission(), () => definitions.Revision, emptyProfile: emptyProfile);
+                _persistence.CanonicalLoadPath, saved => admission() && definitions.MatchesRetained(saved) && admission(), () => definitions.Revision, emptyProfile: emptyProfile, requireContext: requireContext);
             var salvageConstructor = assembly.GetType("Source.Data.Persistable.SalvageData", true)!.GetConstructor(Type.EmptyTypes)
                 ?? throw new MissingMethodException("SalvageData..ctor()");
             var lifetime = new WorldLifetimeGuard();

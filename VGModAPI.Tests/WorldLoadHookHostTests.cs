@@ -52,6 +52,8 @@ public sealed class WorldLoadHookHostTests
     [InlineData(false, false, false, 1)]
     [InlineData(false, false, false, 2)]
     [InlineData(false, false, false, 3)]
+    [InlineData(false, false, false, 4)]
+    [InlineData(false, false, false, 5)]
     public void PreparedLoadAndFactoryRemainAttemptScoped(bool repeatRecall, bool replaceAsset, bool replaceSession, int constructionFault)
     {
         string assetId = "host-" + Guid.NewGuid().ToString("N");
@@ -76,6 +78,7 @@ public sealed class WorldLoadHookHostTests
             var hub = new LifecycleHub((_, error) => throw new Exception("Unexpected observer failure", error));
             using var persistence = new PersistenceService(hub, store, Path.GetFullPath, p => GenerationStore.Hash(File.ReadAllBytes(p)));
             Guid session = Guid.Empty; bool advance = false; bool swapSession = false;
+            bool contextCurrent = true; int constructorCalls = 0;
             WorldLoadHookHost? host = null;
             long Revision()
             {
@@ -90,13 +93,15 @@ public sealed class WorldLoadHookHostTests
                 return 1;
             }
             var native = new Source.Galaxy.POI.Combat { guid = identity.NativeId };
-            using var ownedHost = host = new WorldLoadHookHost(typeof(JsonObject).Assembly, hub, persistence, persistence.CreateWorldReader(), Path.GetFullPath, _ => true, Revision,
+            using var ownedHost = host = new WorldLoadHookHost(typeof(JsonObject).Assembly, hub, persistence, persistence.CreateWorldReader(), Path.GetFullPath, _ => contextCurrent, Revision,
                 (_, require) =>
                 {
+                    constructorCalls++;
                     require();
+                    if (constructionFault == 5) contextCurrent = false;
                     if (constructionFault == 3) Assert.Throws<InvalidDataException>(() => host!.BeginFactory(new JsonValue(poi)));
                     return native;
-                });
+                }, requireContext: () => { if (!contextCurrent) throw new InvalidDataException("Qualification context lost"); });
             session = hub.Begin(SessionOrigin.SaveLoad, path);
             Assert.True(host.TryRecall(new Source.Util.SaveGameFile(path), out var loaded)); Assert.Same(root, loaded);
             var prepared = host.PreparedFor(session);
@@ -105,6 +110,15 @@ public sealed class WorldLoadHookHostTests
             Assert.Null(host.PreparedFor(Guid.NewGuid()));
             var factoryToken = host.BeginFactory(new JsonValue(poi));
             Assert.NotNull(factoryToken);
+            if (constructionFault >= 4)
+            {
+                if (constructionFault == 4) contextCurrent = false;
+                Assert.Throws<InvalidDataException>(() => host.ConstructFactory(factoryToken!));
+                Assert.Equal(constructionFault == 4 ? 0 : 1, constructorCalls);
+                Assert.Null(host.PreparedFor(session));
+                Assert.Equal(bytes, File.ReadAllBytes(path));
+                return;
+            }
             if (constructionFault == 3)
             {
                 Assert.Throws<InvalidDataException>(() => host.ConstructFactory(factoryToken!));

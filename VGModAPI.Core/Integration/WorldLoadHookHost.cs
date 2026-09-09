@@ -26,9 +26,11 @@ internal sealed partial class WorldLoadHookHost : IWorldLoadHookHost, IDisposabl
     private bool _disposed;
     private Guid _sessionId;
 
+    private readonly Action? _requireContext;
     internal WorldLoadHookHost(Assembly assembly, LifecycleHub hub, PersistenceService persistence, WorldGenerationReader generations,
-        Func<string, string> canonical, Func<WorldSavedDefinition, bool> definitionAvailable, Func<long> providerRevision, Func<object, Action, object>? ownedReader = null, bool emptyProfile = false)
+        Func<string, string> canonical, Func<WorldSavedDefinition, bool> definitionAvailable, Func<long> providerRevision, Func<object, Action, object>? ownedReader = null, bool emptyProfile = false, Action? requireContext = null)
     {
+        _requireContext = requireContext;
         _hub = hub; _hub.CheckThread();
         if (_hub.CurrentSession != null) throw new InvalidOperationException("World load guard must attach before a session.");
         _persistence = persistence; _canonical = canonical; _definitionAvailable = definitionAvailable; _providerRevision = providerRevision;
@@ -52,7 +54,9 @@ internal sealed partial class WorldLoadHookHost : IWorldLoadHookHost, IDisposabl
         long revision = _providerRevision();
         if (!IsCurrent()) return null;
         // Staged loading can yield after construction; readiness must retain the original assets.
-        try { prepared.ValidateAssets(); }
+        // Fixed context inspector, not an extension callback: initial definition admission
+        // cannot authorize a later constructor after qualification participants are lost.
+        try { _requireContext?.Invoke(); prepared.ValidateAssets(); _requireContext?.Invoke(); }
         catch
         {
             if (!IsCurrent()) return null;
