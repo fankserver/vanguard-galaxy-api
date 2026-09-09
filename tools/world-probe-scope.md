@@ -1,6 +1,6 @@
 # Restricted world probe phases
 
-The world runner requires `world.enabled`, two registered independent authors and exactly one of `--vgmodapi-world-only` or `--vgmodapi-world-cold`. These flags do not authorize a native run. The isolated candidate additionally requires its verified authorization context. A reviewed exclusive launcher and preservation verification remain prerequisites.
+The world runner requires `world.enabled`, two registered independent authors and exactly one of `--vgmodapi-world-only` or `--vgmodapi-world-cold`. These flags do not authorize a native run. The isolated candidate additionally requires its verified authorization context. Reviewed [qualification tooling](../docs/development/world-qualification.md), an externally held exclusive lease and preservation verification remain prerequisites.
 
 Creation loads `fixture-a`, uses public author wrappers to create and find two empty sites, checks selected-system membership/order and global owned-ID uniqueness, and invokes ordinary save to `qa-owned-world`. It reads committed metadata through the integrity decoder and independently hashes the native file. Both inventory rows and their retained declarations must match. This read-only private decoder access is not the creation path.
 

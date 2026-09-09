@@ -1,5 +1,7 @@
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '..\qualification-world-prepare.ps1')
+. (Join-Path $PSScriptRoot '..\qualification-world-cleanup.ps1')
+function Assert-NoWorldGameProcess { } # Cleanup only the synthetic fixture; do not inspect live processes.
 $source = Join-Path $env:TEMP ('world-prepare-source-' + [Guid]::NewGuid().ToString('N'))
 $root = Join-Path ([IO.Path]::Combine([Environment]::GetFolderPath('LocalApplicationData'), 'Temp')) ('VGModAPI-qa-' + (Get-Random -Minimum 1000000000 -Maximum 2000000000))
 $sourceCreated=$false; $attempted=$false
@@ -22,7 +24,10 @@ try {
     if ($prepared -cne $root -or [IO.File]::ReadAllText((Join-Path $root 'Saves\fixture-a.save')) -cne 'fixture A') { throw 'Wrong prepared fixture.' }
     $failed=$false; try { New-WorldQualificationSandbox $root $game $plugins $a $b $authorization $run } catch { $failed=$true }
     if (!$failed) { throw 'Existing sandbox overwritten.' }
-    Write-Output 'World preparation tests passed using non-executable synthetic files only.'
+    Disconnect-WorldQualificationResources $root $game -ExclusiveLeaseConfirmed
+    if (Test-Path (Join-Path $root 'game\VanguardGalaxy_Data')) { throw 'Resource junction survived cleanup.' }
+    if (!(Test-Path (Join-Path $game 'VanguardGalaxy_Data\Managed\Assembly-CSharp.dll')) -or !(Test-Path (Join-Path $root 'Saves\fixture-a.save'))) { throw 'Cleanup removed source or evidence.' }
+    Write-Output 'World preparation/cleanup tests passed using non-executable synthetic files only.'
 } finally {
     if ($attempted -and (Test-Path $root)) {
         foreach ($name in @('VanguardGalaxy_Data','MonoBleedingEdge','D3D12')) {
