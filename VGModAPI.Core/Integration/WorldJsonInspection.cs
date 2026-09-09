@@ -257,6 +257,14 @@ internal sealed partial class WorldJsonInspection
         return GenerationStore.Hash(Utf8.GetBytes(text));
     }
 
+    /// <summary>Digest for the whole native save root, bounded by the native load limit rather than the per-POI cap.</summary>
+    internal static string DigestRoot(object json)
+    {
+        var text = json.ToString() ?? throw new InvalidDataException("Missing native JSON text.");
+        if (text.Length > WorldLoadBytes.MaxNativeBytes) throw new InvalidDataException("Native save serialization exceeds its inspection limit.");
+        return GenerationStore.Hash(Utf8.GetBytes(text));
+    }
+
     internal static WorldConstructionNode[] Bind(WorldSavedObject[] rows, WorldParsedNode[] nodes)
     {
         if (rows == null || nodes == null || rows.Length != nodes.Length || rows.Length > WorldSerializationAssociation.MaxObjects)
