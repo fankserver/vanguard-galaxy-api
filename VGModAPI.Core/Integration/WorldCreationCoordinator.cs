@@ -14,6 +14,7 @@ internal sealed class WorldCreationCoordinator
     private long _revision;
     private bool _creating;
     private bool _restored;
+    // Fixed callback-free inspection only, not a provider extension callback.
     private readonly Action<object>? _profile;
     internal WorldCreationCoordinator(WorldNativeAttachment native, Action checkThread, WorldLifetimeGuard? lifetime = null, Action<object>? profile = null) { _native = native; _checkThread = checkThread; _lifetime = lifetime; _profile = profile; }
     internal bool HasRestoredInventory(Guid session) { _checkThread(); return _restored && session != Guid.Empty && session == _session; }

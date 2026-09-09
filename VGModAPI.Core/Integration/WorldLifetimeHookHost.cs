@@ -27,9 +27,9 @@ internal sealed partial class WorldLifetimeHookHost : IWorldLifetimeHookHost, ID
     private readonly IDisposable _subscription;
     private Guid _session;
     private bool _disposed;
-    internal WorldLifetimeHookHost(Assembly assembly, LifecycleHub hub, WorldLifetimeGuard? guard = null, Action<object>? quarantine = null, Action<Guid>? generationFailure = null)
+    internal WorldLifetimeHookHost(Assembly assembly, LifecycleHub hub, WorldLifetimeGuard? guard = null, Action<object>? quarantine = null, Action<Guid>? generationFailure = null, Action<object>? stateProfile = null)
     {
-        _quarantine = quarantine; _generationFailure = generationFailure;
+        _quarantine = quarantine; _generationFailure = generationFailure; _stateProfile = stateProfile;
         _guard = guard ?? new WorldLifetimeGuard();
         _hub = hub; _hub.CheckThread();
         if (_hub.CurrentSession != null) throw new InvalidOperationException("World lifetime guards must attach before a session.");
@@ -59,7 +59,7 @@ internal sealed partial class WorldLifetimeHookHost : IWorldLifetimeHookHost, ID
     {
         _hub.CheckThread();
         var session = _hub.CurrentSession?.Id ?? Guid.Empty; var identity = Identity(poi); var player = _player.GetValue(null);
-        return _guard.AllowAmbient(session, poi, identity) && session == (_hub.CurrentSession?.Id ?? Guid.Empty) && ReferenceEquals(player, _player.GetValue(null)) &&
+        return _guard.AllowAmbient(session, poi, identity) && CheckStateProfile(poi) && session == (_hub.CurrentSession?.Id ?? Guid.Empty) && ReferenceEquals(player, _player.GetValue(null)) &&
             Identity(poi) == identity && StillAllowed(poi);
     }
     private bool StillAllowed(object poi) => _guard.CheckAmbient(_hub.CurrentSession?.Id ?? Guid.Empty, poi, Identity(poi));

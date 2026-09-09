@@ -112,6 +112,11 @@ internal static class WorldLifetimePatches
     {
         internal static bool Prefix(object __instance) => Host?.AllowManager(__instance) ?? true;
     }
+    internal static class ProfileMutation
+    {
+        internal static void Prefix(object __instance) => (Host as IWorldProfileHost)?.RequireContentMutation(__instance);
+        internal static void StaticPrefix(object __0) => (Host as IWorldProfileHost)?.RequireContentMutation(__0);
+    }
     internal static class Generation
     {
         internal sealed class Capture

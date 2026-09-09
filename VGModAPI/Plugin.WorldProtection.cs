@@ -53,7 +53,7 @@ public sealed partial class Plugin
             var lifetime = new WorldLifetimeGuard();
             var creation = new WorldCreationCoordinator(new WorldNativeAttachment(_adapter, inspectProfile), _hub.CheckThread, lifetime, inspectProfile);
             _worldLifetimeHost = new WorldLifetimeHookHost(assembly, _hub, lifetime, new WorldActorPhysics(assembly).Stop,
-                session => { creation.Refuse(session); _story?.RefreshWorldDependencies(); });
+                session => { creation.Refuse(session); _story?.RefreshWorldDependencies(); }, inspectProfile);
             _worldSnapshotHost = new WorldSnapshotHookHost(_hub, new WorldSnapshotRecorder(new WorldJsonInspection(assembly, emptyProfile)), creation.Snapshot, () => creation.Revision);
             _worldPersistence = new WorldPersistenceBindings(_persistence, _hub, _worldLoadHost, _worldSnapshotHost, creation);
             _worldRuntime = new WorldRuntimeState(_adapter, _worldLoadHost, definitions, creation,
@@ -118,6 +118,9 @@ public sealed partial class Plugin
                             postfix: new HarmonyMethod(typeof(WorldLifetimePatches.ActorContinuation).GetMethod("Postfix", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.Last });
                     foreach (var key in new[] { "worldPersistableStart", "worldPersistableUpdate" })
                         _worldLoadHarmony.Patch(targets[key], prefix: new HarmonyMethod(typeof(WorldLifetimePatches.PersistableActivity).GetMethod("Prefix", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.First });
+                    foreach (var key in new[] { "worldPoiAddPersistable", "worldPoiAddUnit", "worldPoiAddPayload", "worldAddTriggered", "worldAddBudgetPayload", "worldAddFixedPayload", "worldSalvageAdd" })
+                        _worldLoadHarmony.Patch(targets[key], prefix: new HarmonyMethod(typeof(WorldLifetimePatches.ProfileMutation).GetMethod("Prefix", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.First });
+                    _worldLoadHarmony.Patch(targets["worldSalvageDescriptor"], prefix: new HarmonyMethod(typeof(WorldLifetimePatches.ProfileMutation).GetMethod("StaticPrefix", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.First });
                     foreach (var key in new[] { "worldGenerate", "worldSalvageReset", "worldSalvageAdd" })
                     _worldLoadHarmony.Patch(targets[key], prefix: new HarmonyMethod(typeof(WorldLifetimePatches.Generation).GetMethod("Prefix", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.First },
                         finalizer: new HarmonyMethod(typeof(WorldLifetimePatches.Generation).GetMethod("Finalizer", BindingFlags.NonPublic | BindingFlags.Static)) { priority = Priority.Last });

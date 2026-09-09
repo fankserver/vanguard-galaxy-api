@@ -13,6 +13,7 @@ internal sealed class WorldNativeAttachment
     private readonly WorldMapIndex _index;
     private readonly WorldDetachedCombatFactory _factory;
     private readonly FieldInfo _map, _points, _parent;
+    // Fixed callback-free inspection only; no callbacks or mutation may follow the final admission fence.
     private readonly Action<object>? _profile;
     internal WorldNativeAttachment(GameAdapter game, Action<object>? profile = null)
     {
