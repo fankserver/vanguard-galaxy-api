@@ -54,19 +54,9 @@ try {
     [IO.File]::WriteAllText((Join-Path $pinRoot 'blueprint-pin.enabled'), 'blueprint-pin-v11')
     $pinConfig = Join-Path $pinRoot 'game\BepInEx\config\vgmodapi.cfg'
     $pinOriginalConfig = [IO.File]::ReadAllText($pinConfig)
-    $pinFullConfig = $pinOriginalConfig + "CommandsEnabled = true`n[Hud]`nEnabled = true`n"
-    [IO.File]::WriteAllText($pinConfig, $pinFullConfig)
     $pinProvenance | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $pinProvenancePath
     $null = Assert-QualificationInputs $pinRoot
-    [IO.File]::WriteAllText($pinConfig, $pinOriginalConfig)
-    $rejected = $false
-    try { $null = Assert-QualificationInputs $pinRoot } catch { $rejected = $true }
-    Assert $rejected 'Blueprint Pin accepted absent HUD configuration.'
-    [IO.File]::WriteAllText($pinConfig, $pinOriginalConfig + "`n[Hud]`nEnabled = true`n")
-    $rejected = $false
-    try { $null = Assert-QualificationInputs $pinRoot } catch { $rejected = $true }
-    Assert $rejected 'Blueprint Pin accepted absent crafting command configuration.'
-    [IO.File]::WriteAllText($pinConfig, $pinFullConfig)
+    Assert ($pinOriginalConfig -notmatch '\[Recipes\]|\[Hud\]') 'Sandbox still writes retired feature switches.'
     $pinProvenance.blueprintPinProbe = $false
     Remove-Item (Join-Path $pinRoot 'blueprint-pin.enabled')
     $pinProvenance | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $pinProvenancePath
