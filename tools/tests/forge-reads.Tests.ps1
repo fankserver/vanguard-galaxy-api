@@ -70,18 +70,24 @@ try {
     Remove-Item (Join-Path $root 'refinery.enabled'), (Join-Path $root 'forge-commands.enabled')
     $p | Add-Member forgeUiProbe $true
     Reject { Assert-ForgeReadSelection $root $p }
-    [IO.File]::WriteAllText((Join-Path $root 'forge-ui.enabled'), 'forge-ui-v2')
+    [IO.File]::WriteAllText((Join-Path $root 'forge-ui.enabled'), 'forge-ui-v3')
     Assert-ForgeReadSelection $root $p
     Reject { Assert-ForgeUiReceipt $root $p }
-    [IO.File]::WriteAllLines((Join-Path $root 'forge-ui.txt'), @('PASS','forge-ui-v2','variants-pointer-disabled-stale-reopen-dispose-nonoverlap'))
+    [IO.File]::WriteAllLines((Join-Path $root 'forge-ui.txt'), @('PASS','forge-ui-v3','variants-pointer-disabled-stale-reopen-dispose-nonoverlap-scale-recovery'))
     Reject { Assert-ForgeUiReceipt $root $p }
     $image = Join-Path $root 'forge-ui-actions.png'; $imageRecord = Join-Path $root 'forge-ui-actions.txt'
     [IO.File]::WriteAllBytes($image, [byte[]]@(137,80,78,71,13,10,26,10))
     [IO.File]::WriteAllText($imageRecord, 'sha256=' + (Get-FileHash $image -Algorithm SHA256).Hash.ToLowerInvariant())
+    Reject { Assert-ForgeUiReceipt $root $p }
+    $scaled = Join-Path $root 'forge-ui-scaled.png'; $scaledRecord = Join-Path $root 'forge-ui-scaled.txt'
+    Copy-Item $image $scaled; Copy-Item $imageRecord $scaledRecord
     Assert-ForgeUiReceipt $root $p
     [IO.File]::AppendAllText($image, 'changed'); Reject { Assert-ForgeUiReceipt $root $p }
     Remove-Item $image; Reject { Assert-ForgeUiReceipt $root $p }
     [IO.File]::WriteAllBytes($image, [byte[]]@(137,80,78,71,13,10,26,10))
+    Assert-ForgeUiReceipt $root $p
+    [IO.File]::AppendAllText($scaled, 'changed'); Reject { Assert-ForgeUiReceipt $root $p }
+    Copy-Item $image $scaled -Force
     Assert-ForgeUiReceipt $root $p
     $p.forgeUiProbe = $false; Reject { Assert-ForgeUiSelection $root $p }; $p.forgeUiProbe = $true
     $p.forgeCommandProbe = $true; Reject { Assert-ForgeUiSelection $root $p }; $p.forgeCommandProbe = $false

@@ -312,7 +312,7 @@ function Assert-ForgeUiSelection([string]$Root, $Provenance) {
     $marker = Join-Path $Root 'forge-ui.enabled'
     if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Forge UI selection changed.' }
     if (!$selected) { return }
-    if (!$Provenance.forgeReadProbe -or $Provenance.forgeCommandProbe -or $Provenance.refineryProbe -or $Provenance.forgeDeliveryProbe -or $Provenance.forgePersistenceProbe -or [IO.File]::ReadAllText($marker) -cne 'forge-ui-v2') { throw 'Invalid Forge UI selection.' }
+    if (!$Provenance.forgeReadProbe -or $Provenance.forgeCommandProbe -or $Provenance.refineryProbe -or $Provenance.forgeDeliveryProbe -or $Provenance.forgePersistenceProbe -or [IO.File]::ReadAllText($marker) -cne 'forge-ui-v3') { throw 'Invalid Forge UI selection.' }
 }
 function Assert-ForgeUiReceipt([string]$Root, $Provenance) {
     Assert-ForgeReadReceipt $Root $Provenance
@@ -321,14 +321,16 @@ function Assert-ForgeUiReceipt([string]$Root, $Provenance) {
     $file = Join-Path $Root 'forge-ui.txt'
     if ((Get-Item -LiteralPath $file).Length -gt 512) { throw 'Oversized Forge UI receipt.' }
     $lines = @(Get-Content -LiteralPath $file)
-    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'forge-ui-v2' -or $lines[2] -cne 'variants-pointer-disabled-stale-reopen-dispose-nonoverlap') { throw 'Incomplete Forge UI receipt.' }
-    $image = Join-Path $Root 'forge-ui-actions.png'; $record = Join-Path $Root 'forge-ui-actions.txt'
+    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'forge-ui-v3' -or $lines[2] -cne 'variants-pointer-disabled-stale-reopen-dispose-nonoverlap-scale-recovery') { throw 'Incomplete Forge UI receipt.' }
+    foreach ($stem in @('forge-ui-actions','forge-ui-scaled')) {
+    $image = Join-Path $Root ($stem + '.png'); $record = Join-Path $Root ($stem + '.txt')
     foreach ($path in @($image,$record)) {
         if (!(Test-Path -LiteralPath $path -PathType Leaf) -or (Get-Item -LiteralPath $path).Length -eq 0 -or ((Get-Item -LiteralPath $path).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Forge UI image evidence missing, empty or linked.' }
     }
     if ((Get-Item -LiteralPath $image).Length -gt 20MB -or (Get-Item -LiteralPath $record).Length -gt 256) { throw 'Forge UI image evidence oversized.' }
     $hashLines = @(Get-Content -LiteralPath $record)
     if ($hashLines.Count -ne 1 -or $hashLines[0] -cnotmatch '^sha256=[0-9a-f]{64}$' -or (Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashLines[0].Substring(7)) { throw 'Forge UI screenshot changed.' }
+    }
 }
 function Assert-RefinerySelection([string]$Root, $Provenance) {
     Assert-ForgeUiSelection $Root $Provenance
