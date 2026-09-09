@@ -18,17 +18,23 @@ public sealed partial class Plugin
         RecipeSnapshot? selected = null;
         RecipeQuote? quote = null;
         var discovery = new List<string>();
+        List<RecipeQuote>? preparation = null;
         foreach (var recipe in ModApi.Services.Recipes.Read().Recipes.Where(r => r.Outputs.Count == 1 && r.Outputs[0].Resource.Kind == RecipeResourceKind.EquipmentTemplate))
         {
             quote = quotes.Quote(station, recipe.Id, 1);
-            discovery.Add(recipe.Id + " status=" + quote.Status + " blockers=" + string.Join(",", quote.Blockers));
-            if (quote.Status == RecipeQuoteStatus.Available && quote.OutputLevel > 0 && quote.Blockers.All(blocker => blocker == RecipeBlocker.PricingUnavailable))
-            { selected = recipe; break; }
+            discovery.Add(recipe.Id + " status=" + quote.Status + " blockers=" + string.Join(",", quote.Blockers)
+                + " missing=" + string.Join(";", quote.Inputs.Select(i => i.Resource.LocalId + ":" + i.Missing)));
+            preparation = GeneratedIngredientPlan(station, quote);
+            if (quote.OutputLevel > 0 && preparation != null)
+            { selected = recipe; discovery.Add("prepare=" + string.Join(";", preparation.Select(p => p.Recipe + "x" + p.Batches))); break; }
             yield return null;
         }
         WriteAtomic("forge-generated-discovery.txt", discovery.ToArray());
         Require(selected != null, "Fixture needs an affordable generated-equipment recipe.");
         Require(nativeJobs.Count < Convert.ToInt32(SpGet(forge, "maxJobs")), "Generated fixture needs a free Forge slot.");
+        PrepareGeneratedIngredients(station, forge, nativeJobs, preparation!);
+        quote = quotes.Quote(station, selected!.Id, 1);
+        Require(quote.Status == RecipeQuoteStatus.Available && quote.Blockers.All(b => b == RecipeBlocker.PricingUnavailable), "Prepared equipment remains unavailable.");
         var oldJobs = nativeJobs.Cast<object>().ToArray();
         var commands = ModApi.Services.CraftingCommands;
         var facts = new List<CraftingJobEvent>();
