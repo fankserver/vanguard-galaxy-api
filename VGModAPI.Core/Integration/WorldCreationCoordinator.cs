@@ -52,12 +52,12 @@ internal sealed class WorldCreationCoordinator
         finally { _creating = false; }
     }
 
-    internal WorldSnapshotInstance? Find(Guid session, WorldObjectIdentity identity)
+    internal WorldSnapshotInstance? Find(Guid session, WorldObjectIdentity identity, bool observed = false)
     {
         _checkThread();
         if (_creating || !HasRestoredInventory(session)) return null;
         foreach (var record in _instances)
-            if (record.Identity.NativeId == identity.NativeId) return _native.Contains(session, record) ? record : null;
+            if (record.Identity.NativeId == identity.NativeId) return _native.Contains(session, record, observed) ? record : null;
         return null;
     }
     internal WorldSnapshotInstance[] Snapshot()

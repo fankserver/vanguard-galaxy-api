@@ -55,9 +55,10 @@ public sealed class WorldRuntimeStateTests
             Assert.Equal(WorldStatus.Succeeded, provider.Register(new WorldCombatSiteDefinition("PoiX", 1, "Site", "player", 1)));
             Action? runtimeChange = null;
             using var runtime = new WorldRuntimeState(game, loads, definitions, creation, lifetime, bindings.StateReady, () => { runtimeChange?.Invoke(); return true; });
+            var references = new WorldReferenceResolver(hub, creation, definitions, bindings, lifetimeHost);
             bool dependentSawRestored = false;
             using var dependent = hub.Subscribe("dependent-content", e =>
-            { if (e.Kind == LifecycleEventKind.PlayerReady) dependentSawRestored = creation.Restored(e.Session!.Id) && lifetimeHost.AllowUse(Assert.Single(creation.Snapshot()).Native); });
+            { if (e.Kind == LifecycleEventKind.PlayerReady) dependentSawRestored = creation.Restored(e.Session!.Id) && lifetimeHost.AllowUse(Assert.Single(creation.Snapshot()).Native) && references.Knows("author.a", identity.NativeId) == true; });
             var map = new GalaxyMapData(); var sector = new SectorMapData { guid = "sector" }; var system = new SystemMapData { guid = "system" };
             map.TestSectors.Add(sector); sector.TestSystems.Add(system);
             var poi = new Source.Galaxy.POI.Combat { guid = identity.NativeId, system = system, level = 9 };
@@ -72,6 +73,7 @@ public sealed class WorldRuntimeStateTests
             var routine = game.ObserveLoad(Load()); game.EndLoadRequest(request, null); while (routine.MoveNext()) { }
             Assert.True(dependentSawRestored); Assert.Same(poi, Assert.Single(creation.Snapshot()).Native); Assert.Equal(9, poi.level);
             Assert.False(bindings.CanMutate(request.Id));
+            Assert.False(references.Knows("other.owner", identity.NativeId));
             game.GameplayCompleted(request.Id, new GameplayManager(true), null);
             Assert.True(bindings.CanMutate(request.Id));
             snapshots.CompleteSnapshot(snapshots.BeginSnapshot(), root);
@@ -117,7 +119,7 @@ public sealed class WorldRuntimeStateTests
             };
             Assert.False(lifetimeHost.AllowUse(poi));
             runtimeChange = null;
-            Assert.False(lifetimeHost.AllowUse(poi));
+            Assert.False(lifetimeHost.AllowUse(poi)); Assert.Null(references.Knows("author.a", identity.NativeId));
             hub.Invalidate("leave"); Assert.False(creation.Restored(request.Id));
             Assert.False(bindings.CanMutate(request.Id));
             Assert.Throws<InvalidDataException>(() => creation.Snapshot());

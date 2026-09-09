@@ -19,6 +19,7 @@ public sealed partial class Plugin
     private WorldRuntimeState? _worldRuntime;
     private WorldPersistenceBindings? _worldPersistence;
     private WorldContentService? _worldContent;
+    private WorldReferenceResolver? _worldReferences;
 
     private void InitializeWorldProtection()
     {
@@ -47,6 +48,7 @@ public sealed partial class Plugin
             _worldPersistence = new WorldPersistenceBindings(_persistence, _hub, _worldLoadHost, _worldSnapshotHost, creation);
             _worldRuntime = new WorldRuntimeState(_adapter, _worldLoadHost, definitions, creation,
                 lifetime, _worldPersistence.StateReady, () => false);
+            _worldReferences = new WorldReferenceResolver(_hub, creation, definitions, _worldPersistence, _worldLifetimeHost);
             _worldContent = new WorldContentService(_hub, definitions, new WorldAuthoringGate(definitions, creation, _worldPersistence.CanMutate), () => false);
             var selected = WorldNativeBindings.Methods.Where(m => m.Key == "worldPoiRead" || m.Key == "worldRecall" || m.Key == "worldCombatUpdate" || m.Key == "worldRemove" || m.Key == "worldSnapshot" || m.Key == "worldStore" || m.Key == "worldActiveUpdate" || m.Key == "worldCanTravel" || m.Key == "worldRoute" || m.Key == "worldBaseArrival" || m.Key == "worldCombatArrival" || m.Key == "worldSpawnPersistable" || m.Key == "worldSpawnUnit" || m.Key == "worldManagerStart" || m.Key == "worldManagerUpdate" || m.Key == "worldSecurityPatrol" || m.Key == "worldManagerInit" || m.Key == "worldInitializePoi" || m.Key == "worldInitializationComplete" || m.Key == "worldBaseAwake" || m.Key == "worldCombatAwake" || m.Key == "worldStoreLastX" || m.Key == "worldStorePosition" || m.Key == "worldIncomingReinforcements" || m.Key == "worldCreateSecurityPatrol" || m.Key == "worldStartTravel" || m.Key == "worldNextWaypoint" || m.Key == "worldTravelChild" || m.Key == "worldCheckLocalScene" || m.Key == "worldUnloadScene" || m.Key == "worldWaitUnload" || m.Key == "worldCancelTravel" || m.Key == "worldGenerate" || m.Key == "worldRegenerateGuards" || m.Key == "worldRegenerateCargo" || m.Key == "worldRegenerateSalvage" || m.Key == "worldRegenerateAsteroids" || m.Key == "worldRebuildStation" || m.Key == "worldJumpgateWave" || m.Key == "worldDeferGeneration" || m.Key == "worldPayloadUpdate" || m.Key == "worldPayloadTrigger" || m.Key == "worldPayloadSpawn" || m.Key == "worldPoiAddPersistable" || m.Key == "worldPoiRemovePersistable" || m.Key == "worldPoiAddUnit" || m.Key == "worldPoiRemoveUnit" || m.Key == "worldPoiAddPayload" || m.Key == "worldAddTriggered" || m.Key == "worldAddBudgetPayload" || m.Key == "worldAddFixedPayload").ToArray();
             var targets = new GameBindings(assembly).Resolve(selected);
@@ -126,6 +128,7 @@ public sealed partial class Plugin
 
     private void StopWorldProtection()
     {
+        _worldReferences = null;
         if (ReferenceEquals(ModApi.World, _worldContent)) ModApi.World = null;
         try { _worldContent?.Dispose(); }
         finally { StopWorldGuards(); }

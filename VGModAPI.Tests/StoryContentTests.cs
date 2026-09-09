@@ -64,6 +64,26 @@ public sealed class StoryContentTests
         => definition.ChoiceKeys.ToDictionary(key => key, _ => new string('v', StoryMissionDefinition.MaxChoiceValueBytes), StringComparer.Ordinal);
 
     [Fact]
+    public void OwnedTravelTargetsRequireSameOwnerWorldDependencyAdmission()
+    {
+        var host = new FakeHost(); var world = new FakeWorld(); bool? ready = null;
+        var identity = new WorldObjectIdentity(new ContentDeclaration(AnimaPlugin, "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
+        string? seenOwner = null, seenTarget = null;
+        using var service = world.Service(host, worldReferences: (owner, target) =>
+        { seenOwner = owner; seenTarget = target; return ready; });
+        world.StartAndRestore(); var plugin = new object(); host.Register(plugin, AnimaPlugin);
+        var provider = service.AcquireProvider(plugin).Provider!;
+        var definition = new StoryMissionDefinition("world-trip", "Visit", "Visit the site", Faction,
+            new[] { new StoryStep("Travel", new[] { StoryObjective.TravelTo(identity.NativeId) }) },
+            new[] { new StoryReward(StoryRewardKind.Credits, 1) });
+        var registered = provider.Register(definition); Assert.True(registered.Succeeded, registered.Diagnostic);
+        Assert.False(provider.Offer(definition.LocalId).Accepted);
+        ready = false; Assert.False(provider.Offer(definition.LocalId).Accepted);
+        ready = true; var offered = provider.Offer(definition.LocalId); Assert.True(offered.Accepted, offered.Detail);
+        Assert.Equal(AnimaPlugin, seenOwner); Assert.Equal(identity.NativeId, seenTarget);
+    }
+
+    [Fact]
     public void BarDependenciesRequireLiveDefinitionExactOccurrenceAndCurrentAdmissions()
     {
         var host = new FakeHost(); var world = new FakeWorld();
@@ -3354,10 +3374,10 @@ public sealed class StoryContentTests
             Protection.WithdrawAll("the guard could not decide: " + reason);
         }
         internal readonly StoryProtection Protection = new();
-        internal StoryContentService Service(FakeHost host, Action? checkThread = null)
+        internal StoryContentService Service(FakeHost host, Action? checkThread = null, Func<string, string, bool?>? worldReferences = null)
             => new(Persistence, Lifecycle, host.Authenticate, null, checkThread, World, Missions,
                 (detail, available) => Reports.Add((available ? "available: " : "unavailable: ") + detail), Protection,
-                () => ProtectionHealthy);
+                () => ProtectionHealthy, worldReferences);
 
         /// <summary>The identifier one occurrence is installed under, exactly as the module derives it.</summary>
         internal static string Native(IStoryProvider provider, string localId, Guid occurrenceId)

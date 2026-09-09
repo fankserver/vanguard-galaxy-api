@@ -397,7 +397,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             _story = new StoryContentService(_persistence, _hub, StoryHostAuthentication.Resolve, null, _hub.CheckThread,
                 _storyWorld, _missions?.Events,
                 (detail, available) => _hub!.SetCapability("owned-story", available, detail), _protection,
-                () => _quarantine?.Healthy ?? false);
+                () => _quarantine?.Healthy ?? false, (owner, target) => _worldReferences?.Knows(owner, target));
             ModApi.Story = _story;
             // Only a module that exists can say what a UI abandon or retry of owned content means.
             if (_quarantine != null) _quarantine.Transactions = _story;

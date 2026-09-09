@@ -154,6 +154,7 @@ internal sealed partial class StoryContentService : IStoryApi, IStoryUiTransacti
     /// a caller must never be able to claim an acceptance the world never made.
     /// </summary>
     private readonly IStoryWorld? _world;
+    private readonly Func<string, string, bool?>? _worldReferences;
     private readonly List<string> _reconciliation = new();
     /// <summary>The catalog identifier each occurrence is installed under, so ownership survives a lease.</summary>
     private readonly Dictionary<Guid, string> _occurrenceIdentifiers = new();
@@ -203,13 +204,13 @@ internal sealed partial class StoryContentService : IStoryApi, IStoryUiTransacti
     internal StoryContentService(IPersistenceApi? persistence, ILifecycleApi? lifecycle, StoryHostAuthenticator authenticate,
         Func<Guid>? newOccurrence = null, Action? checkThread = null, IStoryWorld? world = null,
         IMissionEvents? missions = null, Action<string, bool>? report = null, StoryProtection? protection = null,
-        Func<bool>? protectionHealthy = null)
+        Func<bool>? protectionHealthy = null, Func<string, string, bool?>? worldReferences = null)
     {
         checkThread?.Invoke();
         if (lifecycle?.CurrentSession != null)
             throw new InvalidOperationException("The story module must be constructed before a session begins.");
         _authenticate = authenticate ?? throw new ArgumentNullException(nameof(authenticate));
-        _world = world;
+        _world = world; _worldReferences = worldReferences;
         _report = report;
         _protection = protection;
         _protectionHealthy = protectionHealthy;
@@ -312,7 +313,7 @@ internal sealed partial class StoryContentService : IStoryApi, IStoryUiTransacti
                 _reconciliation.Add(identifier + ": objective layout differs from the retained occurrence and requires migration.");
                 continue;
             }
-            var missing = MissingTargets(definition, out var unknownWorld);
+            var missing = MissingTargets(entry.Id.Provider, definition, out var unknownWorld);
             if (unknownWorld || missing != null)
             {
                 // Not vouched for, so the guards quarantine it: it stays exactly as the save has it,
@@ -846,7 +847,7 @@ internal sealed partial class StoryContentService : IStoryApi, IStoryUiTransacti
             return new StoryTransitionResult(status, Guid.Empty, refusal);
         // A travel objective aimed at a place this world does not have could never be completed, so it
         // is checked here, where a world exists, rather than at registration where one may not.
-        var targets = MissingTargets(definition!, out var unknownWorld);
+        var targets = MissingTargets(id.Provider, definition!, out var unknownWorld);
         if (unknownWorld)
             return new StoryTransitionResult(StoryTransitionStatus.Unavailable, Guid.Empty,
                 "The world could not be asked about this definition's travel targets.");
@@ -885,15 +886,18 @@ internal sealed partial class StoryContentService : IStoryApi, IStoryUiTransacti
     /// every one of them exists. A mission aimed at a place the world lost could never be completed,
     /// so it is neither offered, accepted, nor run after a reload.
     /// </summary>
-    private string? MissingTargets(StoryMissionDefinition definition, out bool worldUnknown)
+    private string? MissingTargets(string owner, StoryMissionDefinition definition, out bool worldUnknown)
     {
         worldUnknown = false;
-        if (_world == null) return null;
         foreach (var target in definition.Steps.SelectMany(step => step.Objectives)
             .Where(objective => objective.Kind == StoryObjectiveKind.TravelToPoi)
             .Select(objective => objective.TargetPoiId!).Distinct(StringComparer.Ordinal))
         {
-            var known = _world.KnowsPointOfInterest(target);
+            bool owned = WorldObjectIdentity.IsReserved(target);
+            if (_world == null && !owned) continue;
+            bool? known;
+            try { known = owned ? (_bindings.HostOwner(owner) is { } hostOwner ? _worldReferences?.Invoke(hostOwner, target) : null) : _world!.KnowsPointOfInterest(target); }
+            catch { known = null; }
             if (known == null) { worldUnknown = true; return null; }
             if (known == false) return target;
         }
@@ -1000,7 +1004,7 @@ internal sealed partial class StoryContentService : IStoryApi, IStoryUiTransacti
             if (!entry.ObjectiveLayout.SamePositions(new StoryObjectiveLayout(definition)))
                 return new StoryTransitionResult(StoryTransitionStatus.Unavailable, occurrenceId,
                     "The retained objective layout requires migration before activation.");
-            var missing = MissingTargets(definition, out var unknownWorld);
+            var missing = MissingTargets(entry.Id.Provider, definition, out var unknownWorld);
             if (unknownWorld)
                 return new StoryTransitionResult(StoryTransitionStatus.Unavailable, occurrenceId,
                     "The world could not be asked about this mission's travel targets.");

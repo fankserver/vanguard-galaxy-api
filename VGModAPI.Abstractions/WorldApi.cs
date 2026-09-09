@@ -38,8 +38,10 @@ public sealed class WorldSiteResult
 {
     public WorldStatus Status { get; }
     public WorldSiteReference? Reference { get; }
+    /// <summary>POI identity accepted by story travel objectives; not an authorization token.</summary>
+    public string? PoiId { get; }
     public bool Succeeded => Status == WorldStatus.Succeeded;
-    public WorldSiteResult(WorldStatus status, WorldSiteReference? reference = null) { Status = status; Reference = reference; }
+    public WorldSiteResult(WorldStatus status, WorldSiteReference? reference = null, string? poiId = null) { Status = status; Reference = reference; PoiId = poiId; }
 }
 
 public interface IWorldApi

@@ -25,14 +25,15 @@ internal sealed class WorldNativeAttachment
         _points = assembly.GetType("Source.Galaxy.SystemMapData", true)!.GetField("pointsOfInterest", BindingFlags.Public | BindingFlags.Instance)
             ?? throw new MissingFieldException("SystemMapData.pointsOfInterest");
     }
-    internal bool Contains(Guid session, WorldSnapshotInstance record)
+    internal bool Contains(Guid session, WorldSnapshotInstance record, bool observed = false)
     {
-        if (!_game.TryGetCurrentReadyPlayer(session, out var player)) return false;
+        bool Player(out object? value) => observed ? _game.TryGetObservedPlayer(session, out value) : _game.TryGetCurrentReadyPlayer(session, out value);
+        if (!Player(out var player)) return false;
         var map = _map.GetValue(player) ?? throw new InvalidDataException("Current player has no map.");
         var membership = _index.Read(map);
         var system = membership.FindSystem(record.SystemId);
         return system != null && ReferenceEquals(membership.FindPoint(record.Identity.NativeId), record.Native) &&
-            ReferenceEquals(_parent.GetValue(record.Native), system) && _game.TryGetCurrentReadyPlayer(session, out var current) &&
+            ReferenceEquals(_parent.GetValue(record.Native), system) && Player(out var current) &&
             ReferenceEquals(current, player) && ReferenceEquals(_map.GetValue(current), map);
     }
     internal WorldSnapshotInstance? TryAppend(Guid session, WorldSavedDefinition definition, WorldObjectIdentity identity,

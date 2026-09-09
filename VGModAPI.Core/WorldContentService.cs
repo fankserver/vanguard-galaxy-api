@@ -55,7 +55,7 @@ internal sealed class WorldContentService : IWorldApi, IDisposable
                 var record = _service._authoring.TryFind(_provider, expectedSessionId, reference.LocalId, reference.InstanceId,
                     () => !_disposed && !_service._disposed && _service._canAuthor() && !_disposed && !_service._disposed);
                 return record == null ? new WorldSiteResult(WorldStatus.NotRegistered) :
-                    new WorldSiteResult(WorldStatus.Succeeded, new WorldSiteReference(record.Identity.Owner, record.Identity.LocalId, record.Identity.InstanceId));
+                    new WorldSiteResult(WorldStatus.Succeeded, new WorldSiteReference(record.Identity.Owner, record.Identity.LocalId, record.Identity.InstanceId), record.Identity.NativeId);
             }
             catch (ArgumentException) { return new WorldSiteResult(WorldStatus.InvalidDefinition); }
         }
@@ -69,9 +69,10 @@ internal sealed class WorldContentService : IWorldApi, IDisposable
                 return new WorldSiteResult(WorldStatus.NotReady);
             if (localId == null || !_service._definitions.TryResolve(_provider, localId, out _)) return new WorldSiteResult(WorldStatus.NotRegistered);
             // Allocate the public result before the native commit; no fallible projection follows creation.
-            var success = new WorldSiteResult(WorldStatus.Succeeded, new WorldSiteReference(ProviderId, localId, instanceId));
             try
             {
+                var identity = new WorldObjectIdentity(new ContentDeclaration(ProviderId, localId, PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), instanceId);
+                var success = new WorldSiteResult(WorldStatus.Succeeded, new WorldSiteReference(ProviderId, localId, instanceId), identity.NativeId);
                 return _service._authoring.TryCreate(_provider, expectedSessionId, localId, instanceId, systemId, x, y,
                     () => !_disposed && !_service._disposed && _service._canAuthor() && !_disposed && !_service._disposed) == null
                     ? new WorldSiteResult(WorldStatus.Rejected) : success;
