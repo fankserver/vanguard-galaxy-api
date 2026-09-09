@@ -4,6 +4,9 @@ Requires API **0.2.8** or later. `ModApi.Services.GameplayUi` is a stable,
 Unity-free `IGameplayUiService`. It reports the lifetime of the gameplay UI layer,
 not its visibility or universal world readiness. Integration initializes automatically
 and refuses uninspected game builds; `Availability` describes binding health.
+Session tracking is a required dependency: if it becomes unavailable, the host and
+its containers are revoked. A running native UI alone is not sufficient to attach,
+so consumers replacing a native-only readiness patch also take on this dependency.
 
 ## Readiness and teardown
 
@@ -66,7 +69,10 @@ if (container!.IsValid)
 
 A container is an empty, full-stretch `RectTransform` under the existing native root
 canvas. It inherits canvas scaling and rendering; it has no graphic, raycast target,
-layout group or independent canvas. Its children are entirely consumer-defined.
+layout group or independent canvas. These constraints apply to the API-owned root,
+not its consumer-defined children. Children may add their own canvases,
+`GraphicRaycaster` components and `overrideSorting`, including for modal dialogs;
+they remain subject to the container's lifetime and cleanup rules.
 Do not reparent, resize, destroy or mark the API-owned root persistent. Parent and
 manage your content beneath it, including on-demand dialogs. The container does not
 provide widgets, modal behavior, focus management, cross-mod window positioning or
