@@ -53,7 +53,16 @@ public sealed class WorldActorOriginTests
             Assert.True(host.AllowActor(actor)); Assert.True(host.AllowActor(destroyed));
             typeof(UnityEngine.Object).GetField("m_CachedPtr", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(destroyed, IntPtr.Zero);
             Assert.False(host.AllowActor(destroyed));
+            int tail = 0;
+            System.Collections.IEnumerator Routine() { yield return null; tail++; }
+            System.Collections.IEnumerator routine = Routine();
+            VGModAPI.Patches.WorldLifetimePatches.ActorContinuation.Prefix(actor, out var continuation);
+            VGModAPI.Patches.WorldLifetimePatches.Host = null;
+            VGModAPI.Patches.WorldLifetimePatches.ActorContinuation.Postfix(ref routine, continuation);
+            Assert.True(routine.MoveNext());
+            VGModAPI.Patches.WorldLifetimePatches.Host = host;
             manager.poi = new Source.Galaxy.MapPointOfInterest { guid = "rebound" };
+            Assert.Throws<System.IO.InvalidDataException>(() => routine.MoveNext()); Assert.Equal(0, tail);
             Assert.False(host.AllowActor(actor)); Assert.True(host.AllowActor(vanilla));
             Assert.Throws<System.IO.InvalidDataException>(() => VGModAPI.Patches.WorldLifetimePatches.ActorMutation.Prefix(actor));
             VGModAPI.Patches.WorldLifetimePatches.ActorMutation.Prefix(vanilla);

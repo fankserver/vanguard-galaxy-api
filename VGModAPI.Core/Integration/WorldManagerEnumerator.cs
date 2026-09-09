@@ -13,11 +13,11 @@ internal sealed class WorldManagerEnumerator : IEnumerator, IDisposable
     public object? Current { get; private set; }
     internal WorldManagerEnumerator(IEnumerator inner, object manager, IWorldLifetimeHookHost host)
         : this(inner, host.CaptureManager(manager)) { }
-    private WorldManagerEnumerator(IEnumerator inner, Func<bool> admitted)
+    internal WorldManagerEnumerator(IEnumerator inner, Func<bool> admitted)
     { _inner = inner; _admitted = admitted; }
     private void Require()
     {
-        if (!_admitted()) throw new InvalidDataException("Quarantined world manager cannot resume initialization.");
+        if (!_admitted()) throw new InvalidDataException("Quarantined world continuation cannot resume.");
     }
     public bool MoveNext()
     {

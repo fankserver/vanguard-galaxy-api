@@ -116,6 +116,15 @@ internal static class WorldLifetimePatches
     {
         internal static void Prefix(object __instance) => (Host as IWorldActorLifetimeHost)?.CaptureActor(__instance);
     }
+    internal static class ActorContinuation
+    {
+        internal static void Prefix(object __instance, out System.Func<bool>? __state)
+            => __state = (Host as IWorldActorLifetimeHost)?.CaptureActivity(__instance);
+        internal static void Postfix(ref System.Collections.IEnumerator __result, System.Func<bool>? __state)
+        {
+            if (__state != null && __result != null) __result = new WorldManagerEnumerator(__result, __state);
+        }
+    }
     internal static class ActorMutation
     {
         internal static void Prefix(object __instance)

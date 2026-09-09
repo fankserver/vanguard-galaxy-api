@@ -9,6 +9,7 @@ internal interface IWorldActorLifetimeHost
     IDisposable BeginSpawn(object manager);
     void CaptureActor(object actor);
     bool AllowActor(object actor);
+    Func<bool>? CaptureActivity(object actor);
 }
 
 internal sealed partial class WorldLifetimeHookHost : IWorldActorLifetimeHost
@@ -34,6 +35,11 @@ internal sealed partial class WorldLifetimeHookHost : IWorldActorLifetimeHost
     {
         _hub.CheckThread(); _actors.Capture(actor);
         if (!AllowActor(actor)) throw new InvalidDataException("World actor awakening is quarantined.");
+    }
+    public Func<bool>? CaptureActivity(object actor)
+    {
+        _hub.CheckThread();
+        return _actors.Known(actor) ? () => AllowActor(actor) : null;
     }
     public bool AllowActor(object actor)
     {
