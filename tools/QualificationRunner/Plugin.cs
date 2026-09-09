@@ -147,7 +147,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             }
             if (File.Exists(Path.Combine(_root!, "dungeon-save.enabled")))
             {
-                Require(File.ReadAllText(Path.Combine(_root!, "dungeon-save.enabled")) == "dungeon-save-v3", "Invalid dungeon save marker.");
+                Require(File.ReadAllText(Path.Combine(_root!, "dungeon-save.enabled")) == "dungeon-save-v4", "Invalid dungeon save marker.");
                 foreach (var frame in CheckDungeonSaveLoad()) yield return frame;
             }
             yield break;
