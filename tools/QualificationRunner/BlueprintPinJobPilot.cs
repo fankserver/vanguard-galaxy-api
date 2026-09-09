@@ -51,7 +51,8 @@ public sealed partial class Plugin
                 if (navigation != ForgeNavigationStatus.Selected) { discovery.Add("reject=navigation:" + navigation); continue; }
                 var nativeUi = SpGet(NativeType("Behaviour.UI.Forge.ForgeUI"), "current")!;
                 var slider = (UnityEngine.UI.Slider)SpGet(SpGet(nativeUi, "tabContents")!, "countSlider")!;
-                if (slider == null || slider.minValue > 2 || slider.maxValue < 2) { discovery.Add("reject=sliderRange"); continue; }
+                // Leave one craftable batch after the two deliveries so the final Pin action stays enabled.
+                if (slider == null || slider.minValue > 2 || slider.maxValue < 3) { discovery.Add("reject=sliderRange"); continue; }
                 slider.value = 2;
                 if (services.ForgeUi.Current?.Batches != 2) { discovery.Add("reject=sliderSelection"); continue; }
                 discovery.Add("selected=true");
