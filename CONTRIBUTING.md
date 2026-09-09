@@ -49,6 +49,12 @@ Completed API modules initialize automatically. Enable switches are temporary fo
 unfinished modules and must be removed when their milestone closes—not merely
 changed to default-on. Keep compatibility and dependency safety gates.
 
+- Use established game terminology for domain concepts and plain language in
+  user-facing text. Prefer "save data" or "save/load" over internal coordination
+  terminology; keep implementation vocabulary out of onboarding.
+- Prefer typed events for lifecycle/state changes and snapshots for current state,
+  rather than requiring consumers to poll for transitions. See the
+  [service contracts](docs/reference/service-contracts.md) for delivery semantics.
 - Public contracts belong in Abstractions and must not expose vanilla/Unity types.
   Core and adapter internals are not a supported consumer API.
 - Keep Harmony hooks in `VGModAPI/Patches`. Inspect original game semantics, not
