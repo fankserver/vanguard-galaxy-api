@@ -12,6 +12,7 @@ internal sealed class LifecycleHub : ILifecycleService, IDisposable
     private readonly List<Subscription> _subscriptions = new();
     private readonly Queue<LifecycleEvent> _pending = new();
     internal ServiceStatusRegistry Services { get; }
+    internal DungeonInstallationEvents Installations { get; }
     private readonly ServiceSubscriptions<LifecycleEvent> _events;
     private readonly IServiceStatus _sessionTracking, _saveOutcomes;
     private int _serviceDispatchDepth;
@@ -29,6 +30,7 @@ internal sealed class LifecycleHub : ILifecycleService, IDisposable
         _events = new ServiceSubscriptions<LifecycleEvent>(this, Subscribe,
             fact => fact.Kind == LifecycleEventKind.SessionInvalidated ||
                 (fact.Kind >= LifecycleEventKind.SaveStarted ? SaveOutcomes : SessionTracking).Availability.IsAvailable);
+        Installations = new DungeonInstallationEvents(this);
     }
     public IServiceStatus SessionTracking { get { CheckThread(); return _sessionTracking; } }
     public IServiceStatus SaveOutcomes { get { CheckThread(); return _saveOutcomes; } }

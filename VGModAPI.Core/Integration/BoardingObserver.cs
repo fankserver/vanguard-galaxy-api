@@ -16,6 +16,7 @@ internal sealed class BoardingObserver : IDisposable
     private readonly Func<object, bool> _isLive;
     private readonly Func<object, string, object?> _read;
     private readonly Func<object, bool> _isDataInventory;
+    private readonly Func<string, object, bool> _installationContains;
     private readonly Dictionary<object, Target> _targets = new();
     private readonly Dictionary<object, Operation> _operations = new();
     private readonly System.Runtime.CompilerServices.ConditionalWeakTable<object, object> _retiredOperations = new();
@@ -23,9 +24,9 @@ internal sealed class BoardingObserver : IDisposable
     private bool _stopped;
     private readonly Stack<RewardScope> _rewards = new();
     internal BoardingObserver(LifecycleHub hub, BoardingService service, Assembly assembly, Func<object, bool> isLive, Action<Exception> fault)
-        : this(hub, service, Bind(assembly), isLive, fault, BindDataInventory(assembly)) { }
-    internal BoardingObserver(LifecycleHub hub, BoardingService service, Func<object, string, object?> read, Func<object, bool> isLive, Action<Exception> fault, Func<object, bool>? isDataInventory = null)
-    { _hub = hub; _service = service; _fault = fault; _isLive = isLive; _read = read; _isDataInventory = isDataInventory ?? (_ => false); }
+        : this(hub, service, Bind(assembly), isLive, fault, BindDataInventory(assembly), new InstallationIdentityBindings(assembly).Contains) { }
+    internal BoardingObserver(LifecycleHub hub, BoardingService service, Func<object, string, object?> read, Func<object, bool> isLive, Action<Exception> fault, Func<object, bool>? isDataInventory = null, Func<string, object, bool>? installationContains = null)
+    { _hub = hub; _service = service; _fault = fault; _isLive = isLive; _read = read; _isDataInventory = isDataInventory ?? (_ => false); _installationContains = installationContains ?? ((_, _) => false); }
     private static Func<object, bool> BindDataInventory(Assembly assembly)
     {
         var inventory = assembly.GetType("Source.Item.Inventory", true)!;
@@ -190,6 +191,26 @@ internal sealed class BoardingObserver : IDisposable
     private void Delivered(BoardingDelivery delivery)
     {
         if (_rewards.Count > 0) _rewards.Peek().Deliveries.Add(delivery);
+    }
+    internal object? BeforeExtraction(object simulation)
+    {
+        var operation = _operations.Values.FirstOrDefault(value => ReferenceEquals(Read(value.Native, "simulation"), simulation));
+        if (operation == null || Read<bool>(operation.Target.Data, "isShipBased") || Read<bool>(simulation, "awaitingPlayerExtraction")) return null;
+        return new ExtractionRequest(operation, simulation);
+    }
+    internal void AfterExtraction(object? state)
+    {
+        if (state is not ExtractionRequest request || request.Operation.Handle.SessionId != _session ||
+            !_operations.TryGetValue(request.Operation.Native, out var current) || !ReferenceEquals(current, request.Operation) ||
+            !ReferenceEquals(Read(current.Native, "simulation"), request.Simulation) ||
+            !Read<bool>(request.Simulation, "awaitingPlayerExtraction")) return;
+        _hub.Installations.ExtractionStarted(current.Handle.SessionId, poiId => _installationContains(poiId, current.Target.Data));
+    }
+    private sealed class ExtractionRequest
+    {
+        internal readonly Operation Operation;
+        internal readonly object Simulation;
+        internal ExtractionRequest(Operation operation, object simulation) { Operation = operation; Simulation = simulation; }
     }
     internal void Captured(object native)
     {

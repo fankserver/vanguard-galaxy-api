@@ -16,6 +16,73 @@ simulation. This does not create a new world object or POI: world creation belon
 to the world/POI service, not a second dungeon-owned world registry. Target handles
 are session-local; occurrence GUIDs survive save/load.
 
+## Installation reactions
+
+Require API **0.2.10** when compiling against the current dungeon provider contract.
+The dungeon content service must be available; unsupported game bindings cannot
+provide installation events. Subscribe to a particular installation once during plugin setup:
+
+```csharp
+// After registering additional custom save data, if the mod has any.
+var dungeons = ModApi.Services.Dungeons.AcquireProvider(PluginId, saveData: registration);
+dungeons.GetInstallation("MyCampaignStationA").ExtractionStarted += AdvanceStationABeat;
+dungeons.GetInstallation("MyCampaignStationB").ExtractionStarted += AdvanceStationBBeat;
+// Dispose dungeons when the plugin stops.
+```
+
+`GetInstallation` returns the same non-null object for the same POI ID within a
+provider. The installation need not exist yet. Subscriptions remain across
+save/load, so subscribe before accepting a mission that will create the station;
+no per-session rebinding or update loop is needed. This observes native POIs,
+including ones created by another mod, and does not require an API-owned world
+site or an attached custom dungeon definition. It neither creates content nor
+claims ownership. Different providers may subscribe to the same installation.
+
+Use a persistent POI identifier, not a display name. A known, stable authored ID
+allows setup before creation. A POI with an engine-generated ID cannot be
+subscribed to by a guessed name; the author must know its actual persistent ID.
+An absent POI, or one without the matching installation dungeon location, raises
+no events. If a handler never fires, first check that its ID exactly matches the
+POI's persistent identifier; a typo is indistinguishable from content not yet created.
+Lookup checks existing persistable membership and never generates
+content or assumes the player is standing at the target.
+
+`ExtractionStarted` means a successful native extraction request newly entered
+its pending-extraction state. It is not victory, completed extraction or returned
+crew. Repeated no-op requests, throwing requests and restoring an already pending
+extraction do not replay it. Ship extraction does not raise installation events.
+
+Handlers run at a later API gameplay boundary, outside observational callback
+and save operations, and may directly advance story state or issue gameplay
+commands. Commands still report their own readiness and results; this is not a
+promise that every world/UI operation succeeds. If custom save data is supplied
+once when acquiring the provider, delivery waits for its live mutation gate.
+Without custom data, omit `saveData`; no dummy registration is needed.
+
+Pending reactions are retained while the same session's custom data is blocked,
+with a diagnostic for durable blocks; recovery allows delivery. Loss of session
+or save observation also pauses delivery and produces a diagnostic rather than
+guessing permission. Session end
+cancels old reactions without rebinding them to another save. Subscriptions
+remain available for future extractions. Removing a handler before delivery,
+disposing its provider, or stopping the API suppresses pending callbacks.
+Dispose the dungeon provider before its custom save-data registration. Disposing
+the registration first closes delivery safely rather than invoking a handler
+against disposed data; pending work waits with a diagnostic until the provider
+is disposed or the session ends.
+
+Handlers present at observation run in registration order, with each exception
+isolated and logged. Newly added handlers do not receive old observations.
+Reactions raised from another reaction wait for a later boundary rather than
+recursing; one provider waiting for save data does not hold up another provider.
+Handlers should be short and nonblocking. A throwing handler is not retried or
+rolled back. The API does not promise to recover unsaved reactions after process
+termination or to preserve arbitrary mod code as saved continuations.
+
+The global `DungeonOperations.Changed` stream remains a low-level observational
+interface. Use installation events for ordinary installation-specific reactions,
+not a global handler that filters names or schedules its own later actions.
+
 ## Definitions and bounds
 
 - Authored provider/local, compartment, event and choice IDs: 1–128 letters, digits, underscores, hyphens or dots; case-sensitive.

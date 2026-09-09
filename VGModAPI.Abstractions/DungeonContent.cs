@@ -53,6 +53,8 @@ public sealed class DungeonChoiceContext
 
 public interface IDungeonProvider : IDisposable
 {
+    /// <summary>Get a stable installation view, including before its native POI exists. Does not create or own the POI.</summary>
+    IDungeonInstallation GetInstallation(string poiId);
     IDisposable Register(string localId, DungeonDefinition definition, Func<DungeonChoiceContext, bool>? allowChoice = null);
     DungeonContentResult Attach(string localId, BoardingHandle target);
     DungeonContentResult Choose(Guid occurrenceId, string eventId, string choiceId);
@@ -62,5 +64,7 @@ public interface IDungeonProvider : IDisposable
 /// <summary>Authoring attaches persistent dungeon occurrences to supported existing targets; world/POI creation is a separate service.</summary>
 public interface IDungeonContentService : IServiceStatus
 {
-    IDungeonProvider AcquireProvider(string pluginId);
+    /// <summary>Acquire once during plugin setup. Optional custom save data is a provider-lifetime
+    /// dependency: actionable installation events wait until its mutation gate opens.</summary>
+    IDungeonProvider AcquireProvider(string pluginId, ISaveDataRegistration? saveData = null);
 }

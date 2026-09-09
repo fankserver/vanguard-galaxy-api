@@ -37,9 +37,12 @@ public sealed class BoardingObserverTests
         internal readonly object DataInventory = new();
         internal Fixture()
         {
+            Hub.SetCapability("session-lifecycle", true, "Test bindings.");
+            Hub.SetCapability("save-outcomes", true, "Test bindings.");
             Hub.SetCapability("boarding-observation", true, "Test bindings.");
             Service = new BoardingService(Hub, (_, _) => { });
-            Observer = new BoardingObserver(Hub, Service, (obj, name) => ((Dictionary<string, object?>)obj)[name], obj => !Dead.Contains(obj), _ => Faults++, obj => ReferenceEquals(obj, DataInventory));
+            Observer = new BoardingObserver(Hub, Service, (obj, name) => ((Dictionary<string, object?>)obj)[name], obj => !Dead.Contains(obj), _ => Faults++, obj => ReferenceEquals(obj, DataInventory),
+                (id, location) => id == "station-a" && ReferenceEquals(location, Location));
             Service.Subscribe("test", Events.Add);
             var session = Hub.Begin(SessionOrigin.SaveLoad, "save"); Hub.PlayerReady(session); Hub.GameplayInitialized(session);
             Location = new() { ["availability"] = BoardingAvailability.Available, ["shipTemplate"] = "Scout", ["shipData"] = new object(), ["faction"] = null, ["isShipBased"] = true, ["dungeonType"] = "Ship" };
@@ -61,6 +64,41 @@ public sealed class BoardingObserverTests
         internal void Signal(string method = "Tick", object? returnedPod = null) => Observer.Guard(() => Observer.OperationSignal(Native, method, returnedPod));
         public void Dispose() { Observer.Dispose(); Hub.Dispose(); }
     }
+    [Fact]
+    public void InstallationExtractionUsesExactLocationAndOnlyAcceptedRequestNotResumeOrNoOp()
+    {
+        using var f = new Fixture(); f.Location["isShipBased"] = false;
+        using var station = f.Hub.Installations.Get("consumer", "station-a", null);
+        using var other = f.Hub.Installations.Get("consumer", "other-station", null);
+        var count = 0;
+        station.ExtractionStarted += () => count++;
+        other.ExtractionStarted += () => Assert.Fail("Wrong station");
+        f.Sim["awaitingPlayerExtraction"] = true;
+        f.Start(true); f.Hub.Installations.Tick(); Assert.Equal(0, count);
+        var noOp = f.Observer.BeforeExtraction(f.Sim);
+        f.Observer.AfterExtraction(noOp); f.Hub.Installations.Tick(); Assert.Equal(0, count);
+        f.Sim["awaitingPlayerExtraction"] = false;
+        var rejected = f.Observer.BeforeExtraction(f.Sim);
+        f.Observer.AfterExtraction(rejected); f.Hub.Installations.Tick(); Assert.Equal(0, count);
+        var accepted = f.Observer.BeforeExtraction(f.Sim);
+        f.Sim["awaitingPlayerExtraction"] = true;
+        f.Observer.AfterExtraction(accepted); Assert.Equal(0, count);
+        f.Hub.Installations.Tick(); Assert.Equal(1, count);
+        f.Hub.Begin(SessionOrigin.NewGame, null);
+        f.Observer.AfterExtraction(accepted); f.Hub.Installations.Tick(); Assert.Equal(1, count);
+    }
+
+    [Fact]
+    public void ShipExtractionDoesNotRaiseInstallationEvents()
+    {
+        using var f = new Fixture(); f.Start();
+        using var station = f.Hub.Installations.Get("consumer", "station-a", null);
+        station.ExtractionStarted += () => Assert.Fail("Ship is not an installation");
+        var state = f.Observer.BeforeExtraction(f.Sim);
+        Assert.Null(state); f.Sim["awaitingPlayerExtraction"] = true;
+        f.Observer.AfterExtraction(state); f.Hub.Installations.Tick();
+    }
+
     [Fact]
     public void DuplicateStartAndUnchangedTicksDoNotReplay()
     {

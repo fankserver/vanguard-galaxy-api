@@ -43,12 +43,12 @@ internal sealed class DungeonContentService : IDungeonContentService, IDisposabl
     public ServiceAvailability Availability => _status.Availability;
     public event Action<ServiceAvailability>? AvailabilityChanged
     { add => _status.AvailabilityChanged += value; remove => _status.AvailabilityChanged -= value; }
-    public IDungeonProvider AcquireProvider(string pluginId)
+    public IDungeonProvider AcquireProvider(string pluginId, ISaveDataRegistration? saveData = null)
     {
         _hub.CheckThread(); if (_disposed || _closing || _definitions == null || _callbacks != 0) throw new InvalidOperationException("Dungeon registration unavailable.");
         _ = new DungeonDefinitionId(pluginId, "provider");
         if (_providers.ContainsKey(pluginId)) throw new InvalidOperationException("Dungeon provider already acquired.");
-        var provider = new Provider(this, pluginId); _providers.Add(pluginId, provider); return provider;
+        var provider = new Provider(this, pluginId, saveData); _providers.Add(pluginId, provider); return provider;
     }
     internal bool PanelBusy { get { _hub.CheckThread(); return MutationBlocked || !_state.MutationAllowed; } }
     internal (object? Occurrence, object? Provider, object? Definition) PanelToken(Guid id)
@@ -160,7 +160,22 @@ internal sealed class DungeonContentService : IDungeonContentService, IDisposabl
         internal readonly DungeonContentService Owner;
         internal readonly string Id;
         internal readonly Dictionary<string, Behavior> Behaviors = new(StringComparer.Ordinal);
-        internal Provider(DungeonContentService owner, string id) { Owner = owner; Id = id; }
+        private readonly ISaveDataRegistration? _saveData;
+        private readonly Dictionary<string, DungeonInstallationEvents.Installation> _installations = new(StringComparer.Ordinal);
+        internal Provider(DungeonContentService owner, string id, ISaveDataRegistration? saveData)
+        { Owner = owner; Id = id; _saveData = saveData; }
+        public IDungeonInstallation GetInstallation(string poiId)
+        {
+            Owner._hub.CheckThread();
+            if (!Owner.Live(this) || Owner._closing) throw new ObjectDisposedException(nameof(IDungeonProvider));
+            if (string.IsNullOrWhiteSpace(poiId)) throw new ArgumentException("A persistent POI identity is required.", nameof(poiId));
+            if (!_installations.TryGetValue(poiId, out var installation))
+            {
+                installation = Owner._hub.Installations.Get(Id, poiId, _saveData);
+                _installations.Add(poiId, installation);
+            }
+            return installation;
+        }
         public IDisposable Register(string localId, DungeonDefinition definition, Func<DungeonChoiceContext, bool>? allowChoice = null)
         {
             Owner._hub.CheckThread(); if (!Owner.Live(this) || Owner._closing || Owner._callbacks != 0) throw new InvalidOperationException("Dungeon provider unavailable.");
@@ -177,6 +192,8 @@ internal sealed class DungeonContentService : IDungeonContentService, IDisposabl
         public void Dispose()
         {
             Owner._hub.CheckThread(); if (!Owner.Live(this)) return;
+            foreach (var installation in _installations.Values) installation.Dispose();
+            _installations.Clear();
             foreach (var behavior in Behaviors.Values.ToArray()) behavior.Dispose(); Owner._providers.Remove(Id);
         }
     }
