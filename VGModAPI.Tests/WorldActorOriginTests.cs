@@ -50,6 +50,7 @@ public sealed class WorldActorOriginTests
             }
             VGModAPI.Patches.WorldLifetimePatches.Host = host;
             VGModAPI.Patches.WorldLifetimePatches.ActorMutation.Prefix(actor);
+            Assert.True(VGModAPI.Patches.WorldLifetimePatches.ActorActivity.Prefix(actor));
             Assert.True(host.AllowActor(actor)); Assert.True(host.AllowActor(destroyed));
             typeof(UnityEngine.Object).GetField("m_CachedPtr", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(destroyed, IntPtr.Zero);
             Assert.False(host.AllowActor(destroyed));
@@ -66,6 +67,8 @@ public sealed class WorldActorOriginTests
             Assert.False(host.AllowActor(actor)); Assert.True(host.AllowActor(vanilla));
             Assert.Throws<System.IO.InvalidDataException>(() => VGModAPI.Patches.WorldLifetimePatches.ActorMutation.Prefix(actor));
             VGModAPI.Patches.WorldLifetimePatches.ActorMutation.Prefix(vanilla);
+            Assert.False(VGModAPI.Patches.WorldLifetimePatches.ActorActivity.Prefix(actor));
+            Assert.True(VGModAPI.Patches.WorldLifetimePatches.ActorActivity.Prefix(vanilla));
             manager.poi = poi;
             typeof(UnityEngine.Object).GetField("m_CachedPtr", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(actor, IntPtr.Zero);
             Assert.False(host.AllowActor(actor));
