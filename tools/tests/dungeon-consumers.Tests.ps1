@@ -65,6 +65,19 @@ try {
     Assert-DungeonConsumerReceipt $root $p
     [IO.File]::WriteAllText($combatMarker, 'wrong'); Reject { Assert-DungeonConsumerSelection $root $p }
     [IO.File]::WriteAllText($combatMarker, 'dungeon-combat-v1')
+    $m.mode = 'Reward'; $m.rewardItemId = 'Wrong item'; $m | ConvertTo-Json -Depth 5 | Set-Content $sources
+    Reject { Read-DungeonConsumerManifest $sources }
+    $m.rewardItemId = 'Titanium Plate'; $m | ConvertTo-Json -Depth 5 | Set-Content $sources
+    $p.dungeonConsumerManifestHash = (Get-FileHash $sources -Algorithm SHA256).Hash.ToLowerInvariant()
+    Reject { Assert-DungeonConsumerSelection $root $p }
+    $rewardMarker = Join-Path $root 'dungeon-reward.enabled'
+    [IO.File]::WriteAllText($rewardMarker, 'dungeon-reward-v1'); Assert-DungeonConsumerSelection $root $p
+    Reject { Assert-DungeonConsumerReceipt $root $p }
+    $rewardReceipt = Join-Path $root 'dungeon-reward.txt'
+    [IO.File]::WriteAllLines($rewardReceipt, @('INCOMPLETE')); Reject { Assert-DungeonConsumerReceipt $root $p }
+    [IO.File]::WriteAllLines($rewardReceipt, @('PASS','dungeon-reward-v1','authored-two-multiplied-four-cargo-delivered')); Assert-DungeonConsumerReceipt $root $p
+    [IO.File]::WriteAllText($rewardMarker, 'wrong'); Reject { Assert-DungeonConsumerSelection $root $p }
+    [IO.File]::WriteAllText($rewardMarker, 'dungeon-reward-v1')
     [IO.File]::AppendAllText((Join-Path $root 'Player.log'), 'Cargo attach: Attached'); Reject { Assert-DungeonConsumerReceipt $root $p }
     'PASS dungeon consumer manifest, selection, configuration and result gates (synthetic only)'
 } finally { Remove-Item -LiteralPath $root -Recurse -Force }

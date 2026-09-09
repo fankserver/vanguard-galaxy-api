@@ -14,6 +14,10 @@ public sealed partial class Plugin
         var combatMarker = Path.Combine(_root!, "dungeon-combat.enabled");
         var combat = File.Exists(combatMarker);
         Require(!combat || File.ReadAllText(combatMarker) == "dungeon-combat-v1", "Invalid combat mode marker.");
+        var reward = File.Exists(Path.Combine(_root!, "dungeon-reward.enabled"));
+        Require(!reward || (combat && File.ReadAllText(Path.Combine(_root!, "dungeon-reward.enabled")) == "dungeon-reward-v1"), "Invalid reward mode marker.");
+        if (reward) SeedRewardCrew();
+        using var rewards = reward ? new DungeonRewardProbe() : null;
         using var policies = combat ? new DungeonCombatProbe() : null;
         var boarding = ModApi.Services.Boarding;
         var target = ModApi.Services.DungeonPanel.Current!.Target.Handle;
@@ -22,13 +26,20 @@ public sealed partial class Plugin
         var donor = SpGet(player, "currentSpaceShip")!;
         Dictionary<string, int> Roster() => (Dictionary<string, int>)SpGet(SpGet(donor, "crewData")!, "crew")!;
         var before = new Dictionary<string, int>(Roster());
-        var candidate = before.OrderBy(pair => pair.Key, StringComparer.Ordinal).FirstOrDefault(pair => pair.Value >= 6);
+        Dictionary<string, int> Prisoners() => (Dictionary<string, int>)SpGet(SpGet(donor, "prisonerData")!, "prisoners")!;
+        var prisonersBefore = new Dictionary<string, int>(Prisoners());
+        var candidate = before.OrderBy(pair => pair.Key, StringComparer.Ordinal).FirstOrDefault(pair => pair.Value >= 6 && (!reward || pair.Key == "Marine"));
         Require(candidate.Key != null, "Active walk fixture requires six existing crew of one type.");
         var manifest = new BoardingCrewManifest(new[] { new KeyValuePair<string, int>(candidate.Key!, 6) });
         var commands = ModApi.Services.BoardingCommands;
         IBoardingController? controller = null; BoardingHandle? operation = null;
         var settlement = ModApi.Services.DungeonSettlement;
         DungeonSettlementSnapshot? settledSnapshot = null;
+        var inventoryDelivered = 0;
+        void OnDelivery(BoardingEvent message)
+        {
+            if (reward && operation != null && message.Operation?.Handle.Equals(operation) == true && message.Delivery?.Route == BoardingDeliveryRoute.Inventory) inventoryDelivered += message.Delivery.Quantity;
+        }
         void OnSettlement(DungeonSettlementSnapshot snapshot)
         {
             if (operation != null && snapshot.Operation.Equals(operation)) settledSnapshot = snapshot;
@@ -43,6 +54,7 @@ public sealed partial class Plugin
             return snapshot?.Phase == BoardingPhase.Active && snapshot.Compartments.Any(room => room.Kind == "Airlock" && room.FriendlyCrew > 0);
         }
         settlement.Changed += OnSettlement;
+        boarding.Changed += OnDelivery;
         try
         {
             Require(commands.AcquireControl(Id, target, out controller).Admitted && controller != null, "Walk control refused.");
@@ -58,7 +70,7 @@ public sealed partial class Plugin
             WriteAtomic("dungeon-walk-diagnostic.txt", records);
             if (combat)
             {
-                foreach (var frame in CheckDungeonVictory(controller, operation!, mouse, policies!)) yield return frame;
+                foreach (var frame in CheckDungeonVictory(controller, operation!, mouse, policies!, reward)) yield return frame;
             }
             else Require(controller.Retreat().Admitted, "Active retreat refused.");
             foreach (var frame in Wait(() => settledSnapshot is { CrewReturnSettled: true, CrewCountsObserved: true }, "Actual returning crew settlement")) yield return frame;
@@ -66,11 +78,23 @@ public sealed partial class Plugin
             Require(settled.NativeOutcome == (combat ? "FriendlyVictory" : "FriendlyExtracted") && !settled.CaptureApplied, "Retreat produced an unexpected outcome or capture.");
             Require(ReferenceEquals(player, SpGet(playerType, "current")) && ReferenceEquals(donor, SpGet(player, "currentSpaceShip")), "Walk donor identity changed.");
             var after = Roster();
-            Require(settled.Casualties.All(pair => before.ContainsKey(pair.Key)) && settled.PrisonersDelivered.Values.All(count => count == 0), "Unexpected casualty or prisoner identity.");
+            records.Add("casualties=" + string.Join(",", settled.Casualties.Select(pair => pair.Key + ":" + pair.Value)) + " prisoners-delivered=" + string.Join(",", settled.PrisonersDelivered.Select(pair => pair.Key + ":" + pair.Value)));
+            WriteAtomic("dungeon-walk-diagnostic.txt", records);
+            Require(settled.Casualties.All(pair => before.ContainsKey(pair.Key)), "Unexpected casualty identity.");
+            var prisonersAfter = Prisoners();
+            var prisonerKeys = prisonersBefore.Keys.Concat(prisonersAfter.Keys).Concat(settled.PrisonersDelivered.Keys).Distinct();
+            Require(prisonerKeys.All(key => (prisonersAfter.TryGetValue(key, out var actual) ? actual : 0) == (prisonersBefore.TryGetValue(key, out var prior) ? prior : 0) + (settled.PrisonersDelivered.TryGetValue(key, out var delivered) ? delivered : 0)), "Observed prisoner delivery did not reconcile with the same donor's brig.");
             Require(after.Keys.All(before.ContainsKey) && before.All(pair => (after.TryGetValue(pair.Key, out var count) ? count : 0) == pair.Value - (settled.Casualties.TryGetValue(pair.Key, out var lost) ? lost : 0)), "Returning crew did not reconcile with observed casualties.");
             records.Add("settlement=" + settled.NativeOutcome + " after=" + (after.TryGetValue(candidate.Key!, out var returnedCount) ? returnedCount : 0) + " casualties=" + settled.Casualties.Values.Sum());
             WriteAtomic("dungeon-walk-diagnostic.txt", records);
             foreach (var frame in Wait(() => boarding.GetTarget(target) is { Operation: null }, "Walk operation retirement")) yield return frame;
+            if (reward)
+            {
+                var delivered = rewards!.Verify();
+                Require(inventoryDelivered == 4, "Inventory delivery events did not reconcile with actual cargo.");
+                WriteAtomic("dungeon-reward.txt", new[] { "PASS", "dungeon-reward-v1", "authored-two-multiplied-four-cargo-delivered" });
+                WriteAtomic("dungeon-reward-diagnostic.txt", new[] { "before=" + delivered.Before + " after=" + delivered.After + " inventory-events=" + inventoryDelivered + " loot-policy-calls=" + rewards.LootCalls });
+            }
             WriteAtomic("dungeon-walk.txt", new[] { "PASS", combat ? "dungeon-combat-v1" : "dungeon-walk-v1", combat ? "manual-victory-choice-extraction" : "manual-arrival-retreat-settlement", "donor-crew-reconciled" });
         }
         finally
@@ -89,6 +113,7 @@ public sealed partial class Plugin
             }
             finally
             {
+                boarding.Changed -= OnDelivery;
                 settlement.Changed -= OnSettlement;
                 controller?.Dispose();
             }
