@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.LowLevel;
 using VGModAPI;
 namespace VGModAPI.Qualification;
 
@@ -28,6 +30,30 @@ public sealed partial class Plugin
         }
         public void Dispose() { foreach (var lease in _leases) lease.Dispose(); _leases.Clear(); _provider.Dispose(); }
     }
+    private IEnumerable<object?> DungeonClickCurrentChoice(Mouse mouse, string label)
+    {
+        var deadline = Time.realtimeSinceStartup + 90;
+        while (Time.realtimeSinceStartup < deadline)
+        {
+            var button = DungeonProbeButton(label);
+            if (!button || !DungeonPointerReady(button!.transform)) { yield return null; continue; }
+            var point = ForgePointerPoint(button!.transform);
+            InputSystem.QueueStateEvent(mouse, new MouseState { position = point });
+            yield return null; yield return null;
+            // A presenter may rebuild rows while the pointer moves. No press has been sent yet.
+            if (!button || DungeonProbeButton(label) != button) continue;
+            ForgePointerPoint(button!.transform, point);
+            try
+            {
+                InputSystem.QueueStateEvent(mouse, new MouseState { position = point }.WithButton(MouseButton.Left));
+                yield return null; yield return null;
+            }
+            finally { InputSystem.QueueStateEvent(mouse, new MouseState { position = point }); }
+            yield return null; yield return null;
+            yield break; // Never retry after a press: downstream assertions must prove its outcome.
+        }
+        throw new InvalidOperationException("Timed out resolving a stable dungeon choice before pointer press.");
+    }
     private IEnumerable<object?> CheckDungeonVictory(IBoardingController controller, BoardingHandle operation, Mouse mouse, DungeonCombatProbe policies)
     {
         var boarding = ModApi.Services.Boarding;
@@ -44,7 +70,7 @@ public sealed partial class Plugin
         foreach (var frame in Wait(Victory, "Native authored encounter victory")) yield return frame;
         Require(policies.HealthCalls > 0 && policies.PowerCalls > 0 && policies.WrongScope == 0, "Combat policy invocation/scope checks failed.");
         foreach (var frame in Wait(() => DungeonProbeButton("Leave shipment") != null, "Author's live leave choice")) yield return frame;
-        foreach (var frame in DungeonClick(mouse, DungeonProbeButton("Leave shipment")!.transform)) yield return frame;
+        foreach (var frame in DungeonClickCurrentChoice(mouse, "Leave shipment")) yield return frame;
         foreach (var frame in Wait(() => DungeonProbeButton("Leave shipment") == null, "Consumed author choice removal")) yield return frame;
         Require(boarding.GetOperation(operation)?.Outcome == "FriendlyVictory", "Choice disappearance was not during the same live victory.");
         foreach (var frame in Wait(() => tactics.GetSnapshot(operation)?.CanRequestExtraction == true, "Victory extraction readiness")) yield return frame;
