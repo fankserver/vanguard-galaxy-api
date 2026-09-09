@@ -16,12 +16,14 @@ public sealed partial class Plugin
         var services = ModApi.Services; var boarding = services.Boarding;
         foreach (var frame in Wait(NativeTravelReady, "Save fixture world readiness")) yield return frame;
         Require(boarding.GetTargets().Count == 0 && boarding.GetOperations().Count == 0, "Save fixture requires no prior dungeon targets or operations.");
-        using var provider = services.Dungeons.AcquireProvider(Id + ".save");
-        using var definition = provider.Register("saved-installation", new DungeonDefinition(1, "Saved installation", new DungeonLayout(new[]
+        using var initialProvider = services.Dungeons.AcquireProvider(Id + ".save");
+        var provider = initialProvider; int originalCalls = 0;
+        var savedDefinition = new DungeonDefinition(1, "Saved installation", new DungeonLayout(new[]
         {
             new DungeonCompartmentDefinition("entry", CompartmentType.Airlock, new[] { "hold" }),
             new DungeonCompartmentDefinition("hold", CompartmentType.CargoHold, new[] { "entry" })
-        }), allowHazards: false, allowScheduledReinforcements: false));
+        }), events: new[] { new DungeonEventDefinition("verify", "entry", "Verify restored behavior", new[] { new DungeonChoiceDefinition("ack", "Acknowledge") }) }, allowHazards: false, allowScheduledReinforcements: false);
+        using var definition = provider.Register("saved-installation", savedDefinition, _ => { originalCalls++; return true; });
         var dataType = NativeType("Source.Data.Persistable.DungeonLocationData");
         var kind = dataType.GetField("dungeonType")!;
         var get = NativeType("Behaviour.Dungeon.DungeonDefinition").GetMethod("Get", BindingFlags.Public | BindingFlags.Static, null, new[] { kind.FieldType }, null)!;
@@ -70,7 +72,7 @@ public sealed partial class Plugin
             var occurrence = provider.GetOccurrences().Single();
             bool SameOccurrence() => provider.GetOccurrences() is var occurrences && occurrences.Count == 1 && occurrences[0].Id == occurrence.Id && occurrences[0].DefinitionId.Equals(occurrence.DefinitionId) && occurrences[0].DefinitionVersion == occurrence.DefinitionVersion;
             bool Returned() => CurrentCrew().Count == before.Count && before.All(pair => CurrentCrew().TryGetValue(pair.Key, out var count) && count == pair.Value);
-            IEnumerable<object?> RestoreAndReturn(string slot)
+            IEnumerable<object?> RestoreAndReturn(string slot, bool restoreProvider = false)
             {
                 var oldOperation = operation; var priorDonor = CurrentDonor(); var priorSession = boarding.SessionId;
                 operation = null; settled = null;
@@ -81,17 +83,26 @@ public sealed partial class Plugin
                 bool Reconstructed()
                 {
                     var targets = boarding.GetTargets();
-                    Record(slot + " reloaded targets=" + targets.Count + " operations=" + boarding.GetOperations().Count + " occurrences=" + provider.GetOccurrences().Count + " crew=" + CurrentCrew().Values.Sum());
+                    Record(slot + " reloaded targets=" + targets.Count + " operations=" + boarding.GetOperations().Count + " crew=" + CurrentCrew().Values.Sum());
                     return targets.Count == 1 && targets[0].Operation != null;
                 }
                 foreach (var frame in Wait(Reconstructed, "Native reconstructed operation")) yield return frame;
                 var restored = boarding.GetTargets().Single(); operation = restored.Operation;
-                Require(restored.Handle.SessionId != priorSession && SameOccurrence(), "Occurrence or session identity did not roundtrip.");
+                Require(restored.Handle.SessionId != priorSession, "Session identity did not roundtrip.");
                 var restoredDonor = CurrentDonor();
                 Require(!ReferenceEquals(priorDonor, restoredDonor) && (string?)SpGet(restoredDonor, "guid") == donorId, "Reload did not reconstruct the same donor identity.");
                 Require(Debited(), "Reload duplicated or lost assigned crew.");
                 Require(services.BoardingCommands.AcquireControl(Id, restored.Handle, out controller).Admitted, "Restored control refused.");
-                foreach (var frame in Wait(() => boarding.GetOperation(operation!)?.Phase == BoardingPhase.Active, "Restored active phase")) yield return frame;
+                foreach (var frame in Wait(() => boarding.GetOperation(operation!) is { Phase: BoardingPhase.Active } state && state.Compartments.Any(room => room.FriendlyCrew > 0), "Restored active phase")) yield return frame;
+                // Keep registration absent until native reconstruction and occupied active-room observation complete.
+                if (restoreProvider) provider = services.Dungeons.AcquireProvider(Id + ".save");
+                Require(SameOccurrence(), "Retained occurrence or definition identity changed.");
+                if (restoreProvider)
+                {
+                    CheckDungeonProviderReacquisition(provider, occurrence, savedDefinition);
+                    Require(originalCalls == 0, "Disposed provider behavior was invoked.");
+                    Record("provider absent through active reconstruction; matching behavior restored once");
+                }
                 Require(controller!.Retreat().Admitted, "Restored retreat refused.");
                 foreach (var frame in Wait(() => settled is { CrewReturnSettled: true, CrewCountsObserved: true }, "Restored crew return settlement")) yield return frame;
                 Require(settled!.NativeOutcome == "FriendlyExtracted" && settled.Casualties.Values.All(count => count == 0), "Unexpected restored outcome or casualties.");
@@ -131,11 +142,14 @@ public sealed partial class Plugin
             Require(File.ReadAllBytes(activeFile).SequenceEqual(savedBody) && File.ReadAllBytes(activeMeta).SequenceEqual(savedMeta), "Rollback fixture bytes did not match the active checkpoint.");
             Record("same-path rollback bytes verified");
             foreach (var frame in RestoreAndReturn("qa-dungeon-active")) yield return frame;
-            WriteAtomic("dungeon-save.txt", new[] { "PASS", "dungeon-save-v3", "save-failures-save-as-slot-switch-resolved-reload-in-place-rollback" });
+            definition.Dispose(); provider.Dispose();
+            foreach (var frame in RestoreAndReturn("qa-dungeon-active", restoreProvider: true)) yield return frame;
+            WriteAtomic("dungeon-save.txt", new[] { "PASS", "dungeon-save-v4", "save-failures-transitions-rollback-provider-recovery" });
         }
         finally
         {
             services.DungeonSettlement.Changed -= OnSettlement;
+            provider.Dispose();
             try { if (controller?.IsActive == true) { controller.Retreat(); controller.CancelApproach(); } }
             finally { controller?.Dispose(); if (root) UnityEngine.Object.Destroy(root); }
         }
