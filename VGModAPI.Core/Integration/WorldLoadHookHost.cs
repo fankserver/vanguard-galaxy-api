@@ -28,7 +28,7 @@ internal sealed partial class WorldLoadHookHost : IWorldLoadHookHost, IDisposabl
 
     private readonly Action? _requireContext;
     internal WorldLoadHookHost(Assembly assembly, LifecycleHub hub, PersistenceService persistence, WorldGenerationReader generations,
-        Func<string, string> canonical, Func<WorldSavedDefinition, bool> definitionAvailable, Func<long> providerRevision, Func<object, Action, object>? ownedReader = null, bool emptyProfile = false, Action? requireContext = null, Action<string>? restoreItem = null)
+        Func<string, string> canonical, Func<WorldSavedDefinition, bool> definitionAvailable, Func<long> providerRevision, Func<object, Action, object>? ownedReader = null, bool emptyProfile = false, Action? requireContext = null, Action<string>? restoreItem = null, Action<string>? restoreRecipe = null)
     {
         _requireContext = requireContext;
         _hub = hub; _hub.CheckThread();
@@ -37,7 +37,7 @@ internal sealed partial class WorldLoadHookHost : IWorldLoadHookHost, IDisposabl
         _file = assembly.GetType(BindingCatalog.File, true)!.GetField("File") ?? throw new MissingFieldException("SaveGameFile.File");
         if (_file.FieldType != typeof(FileInfo) || _file.IsStatic) throw new MissingFieldException("SaveGameFile.File must be instance FileInfo.");
         _ownedReader = ownedReader ?? ((json, require) => new WorldOwnedPoiReader(assembly).Read(json, require));
-        _json = new WorldJsonInspection(assembly, emptyProfile, restoreItem); _gate = new WorldConstructionGate();
+        _json = new WorldJsonInspection(assembly, emptyProfile, restoreItem, restoreRecipe); _gate = new WorldConstructionGate();
         _preparation = new WorldLoadPreparation(generations, _json, _gate);
         _subscription = _hub.Subscribe(WorldStateCodec.Owner, OnLifecycle);
     }

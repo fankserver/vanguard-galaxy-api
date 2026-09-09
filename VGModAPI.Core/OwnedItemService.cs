@@ -12,6 +12,7 @@ internal sealed class OwnedItemService : IOwnedItemService, IDisposable
     private readonly IServiceStatus _status;
     private readonly Dictionary<string, Provider> _providers = new(StringComparer.Ordinal);
     private readonly Dictionary<(string Owner, string Local), OwnedItemIdentity> _definitions = new();
+    internal event Action? DefinitionsChanged;
     private bool _disposed, _publishing;
     private readonly Action<OwnedItemIdentity>? _publish;
     internal IEnumerable<OwnedItemIdentity> Definitions => new List<OwnedItemIdentity>(_definitions.Values);
@@ -55,7 +56,9 @@ internal sealed class OwnedItemService : IOwnedItemService, IDisposable
                 finally { _service._publishing = false; }
                 if (_service._disposed || !_service._providers.TryGetValue(ProviderId, out active) || !ReferenceEquals(this, active))
                     return OwnedItemStatus.Rejected;
-                _service._definitions.Add(key, identity); return OwnedItemStatus.Succeeded;
+                _service._definitions.Add(key, identity);
+                try { _service.DefinitionsChanged?.Invoke(); } catch (Exception error) { _service._hub.ReportSubscriberFailure(ProviderId, error); }
+                return OwnedItemStatus.Succeeded;
             }
             catch (ArgumentException) { return OwnedItemStatus.InvalidDefinition; }
             catch (Exception error) { _service._hub.ReportSubscriberFailure(ProviderId, error); return OwnedItemStatus.Unavailable; }

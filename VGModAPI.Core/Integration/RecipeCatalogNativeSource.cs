@@ -130,8 +130,13 @@ internal sealed partial class RecipeCatalogNativeSource : IRecipeCatalogSource, 
     private static string Text(object instance, string member)
     {
         var text = Get(instance, member) as string ?? throw new InvalidOperationException("Missing string: " + member);
-        if (member == "identifier" && (string.IsNullOrWhiteSpace(text) || text.Length > 500 || text.Any(char.IsControl)))
-            throw new InvalidOperationException("Missing or invalid native identity.");
+        if (member == "identifier")
+        {
+            if (OwnedRecipeIdentity.IsReserved(text)) _ = OwnedRecipeIdentity.Read(text);
+            else if (OwnedItemIdentity.IsReserved(text)) _ = OwnedItemIdentity.Read(text);
+            else if (string.IsNullOrWhiteSpace(text) || text.Length > 500 || text.Any(char.IsControl))
+                throw new InvalidOperationException("Missing or invalid native identity.");
+        }
         return text;
     }
     private static MemberInfo RequireMember(Type type, string name) => (MemberInfo?)type.GetField(name, Flags) ?? type.GetProperty(name, Flags) ?? throw new MissingMemberException(type.FullName, name);

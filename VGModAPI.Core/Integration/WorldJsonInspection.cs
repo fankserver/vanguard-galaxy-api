@@ -31,15 +31,18 @@ internal sealed partial class WorldJsonInspection
     private readonly bool _emptyProfile;
     internal void StampOwnedPoi(object node, string identity) => _format.StampOwnedPoi(node, identity);
     private readonly Action<string>? _restoreItem;
+    private readonly Action<string>? _restoreRecipe;
+    private void RequireRecipe(string id)
+    { if (_restoreRecipe == null) throw new InvalidDataException("Owned recipe support unavailable."); _restoreRecipe(id); }
     private void RequireItem(string id)
     { if (_restoreItem == null) throw new InvalidDataException("Owned item support unavailable."); _restoreItem(id); }
-    internal void SealSnapshot(object root, bool owned) => _format.Seal(root, HasOwnedItems(root, RequireItem) || owned);
-    internal void UnsealVerified(object root, bool owned) => _format.UnsealVerified(root, HasOwnedItems(root, RequireItem) || owned);
+    internal void SealSnapshot(object root, bool owned) => _format.Seal(root, HasOwnedItems(root, RequireItem, RequireRecipe) || owned);
+    internal void UnsealVerified(object root, bool owned) => _format.UnsealVerified(root, HasOwnedItems(root, RequireItem, RequireRecipe) || owned);
     private static readonly UTF8Encoding Utf8 = new(false, true);
     private const int MaxVisited = 100000;
-    internal WorldJsonInspection(Assembly assembly, bool emptyProfile = false, Action<string>? restoreItem = null)
+    internal WorldJsonInspection(Assembly assembly, bool emptyProfile = false, Action<string>? restoreItem = null, Action<string>? restoreRecipe = null)
     {
-        _restoreItem = restoreItem;
+        _restoreItem = restoreItem; _restoreRecipe = restoreRecipe;
         _emptyProfile = emptyProfile;
         _format = new WorldSaveFormat(assembly);
         _nested = new WorldNestedTypeCatalog(assembly);

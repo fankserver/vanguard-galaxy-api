@@ -133,7 +133,9 @@ internal static class RecipeValues
 {
     internal static string Identity(string value, string parameter)
     {
-        if (string.IsNullOrWhiteSpace(value) || value.Length > 512) throw new ArgumentException("A bounded identity is required.", parameter);
+        int limit = value != null && value.StartsWith("forge/vgmodapi.recipe.v1.", StringComparison.Ordinal) ? 65542
+            : value != null && value.StartsWith("vgmodapi.item.v1.", StringComparison.Ordinal) ? 12288 : 512;
+        if (string.IsNullOrWhiteSpace(value) || value.Length > limit) throw new ArgumentException("A bounded identity is required.", parameter);
         foreach (var character in value) if (char.IsControl(character)) throw new ArgumentException("Control characters are not valid identities.", parameter);
         return value;
     }

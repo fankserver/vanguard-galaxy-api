@@ -12,6 +12,7 @@ internal sealed class OwnedItemNativeCatalog : IDisposable
 {
     private readonly Dictionary<string, Component> _built = new(StringComparer.Ordinal);
     private readonly Type _itemType;
+    private readonly Core.Integration.PlainRecipeItemShape _recipeShape;
     private readonly FieldInfo _catalog;
     private readonly PropertyInfo _icon;
     private readonly MethodInfo _initialize;
@@ -21,6 +22,7 @@ internal sealed class OwnedItemNativeCatalog : IDisposable
     internal OwnedItemNativeCatalog()
     {
         _itemType = Assembly.Load("Assembly-CSharp").GetType("Behaviour.Item.InventoryItemType", true)!;
+        _recipeShape = new Core.Integration.PlainRecipeItemShape(_itemType);
         _catalog = _itemType.GetField("allItems", BindingFlags.Static | BindingFlags.NonPublic)!;
         _icon = _itemType.GetProperty("icon")!; _initialize = _itemType.GetMethod("InitializeItem")!;
         foreach (var name in new[] { "identifier", "itemCategory", "storageOverride", "displayName", "description", "icon", "m3", "baseCost", "rarity", "canJettison", "canSell" })
@@ -65,6 +67,13 @@ internal sealed class OwnedItemNativeCatalog : IDisposable
         }
         catch { if (child != null) UnityEngine.Object.Destroy(child); throw; }
         finally { _busy = false; }
+    }
+    internal Component ResolvePlain(string id)
+    {
+        var item = OwnedItemIdentity.IsReserved(id) ? Ensure(id) : Catalog[id] as Component;
+        if (item == null) throw new InvalidOperationException("Recipe item dependency unavailable.");
+        _recipeShape.Require(item);
+        return item;
     }
     private void Publish(string id, Component item)
     {
