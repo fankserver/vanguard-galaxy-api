@@ -9,9 +9,33 @@ namespace VGModAPI.Qualification;
 
 public sealed partial class Plugin
 {
+    private List<(object System, object Poi)> WorldNativeMembers()
+    {
+        int visited = 0;
+        IEnumerable<object> Members(object owner, string field)
+        {
+            var list = SpGet(owner, field) as IList ?? throw new InvalidOperationException("Missing native membership: " + field);
+            Require(list.Count <= 10000, "Excessive native membership collection.");
+            for (int index = 0; index < list.Count; index++)
+            {
+                Require(++visited <= 100000, "Excessive native map traversal.");
+                yield return list[index] ?? throw new InvalidOperationException("Null native member.");
+            }
+        }
+        var result = new List<(object System, object Poi)>();
+        var map = SpGet(CurrentPlayer, "map") ?? throw new InvalidOperationException("Missing native map.");
+        foreach (var sector in Members(map, "sectors"))
+            foreach (var system in Members(sector, "systems"))
+                foreach (var poi in Members(system, "pointsOfInterest")) result.Add((system, poi));
+        return result;
+    }
+
     private IEnumerable<object?> CheckOwnedWorld()
     {
         Require(File.Exists(Path.Combine(_root!, "world.enabled")), "World phase is not armed.");
+        var arguments = Environment.GetCommandLineArgs();
+        Require(arguments.Count(argument => argument == "--vgmodapi-world-only" || argument == "--vgmodapi-world-cold") == 1,
+            "Exactly one world phase must be selected.");
         var authors = RequireWorldAuthors();
         WriteAtomic("owned-world.txt", new[] { "INCOMPLETE" });
         foreach (var frame in LoadReady("fixture-a")) yield return frame;
@@ -43,11 +67,15 @@ public sealed partial class Plugin
             for (int index = 0; index < before.Length; index++)
                 Require(ReferenceEquals(before[index], after[index]), "Creation changed pre-existing native membership/order.");
         }
+        var global = WorldNativeMembers();
         foreach (var id in new[] { first.PoiId!, second.PoiId! })
         {
             var matches = after.Where(poi => (string)SpGet(poi, "guid")! == id).ToArray();
             Require(matches.Length == 1, "Owned identity does not have exactly one native system member.");
             var poi = matches[0];
+            var everywhere = global.Where(member => (string)SpGet(member.Poi, "guid")! == id).ToArray();
+            Require(everywhere.Length == 1 && ReferenceEquals(everywhere[0].Poi, poi) && ReferenceEquals(everywhere[0].System, system),
+                "Owned native identity is duplicated or misplaced in the galaxy.");
             Require(poi.GetType() == NativeType("Source.Galaxy.POI.Combat") && ReferenceEquals(SpGet(poi, "system"), system),
                 "Owned native type/parent mismatch.");
             foreach (var field in new[] { "units", "persistables", "payloads" })
