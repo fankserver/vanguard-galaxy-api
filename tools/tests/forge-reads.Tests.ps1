@@ -9,13 +9,13 @@ try {
     Reject { Assert-ForgeReadSelection $root $p }
     [IO.File]::WriteAllText((Join-Path $root 'forge-reads.enabled'), 'forge-reads-v1')
     $config = Join-Path $root 'game/BepInEx/config/vgmodapi.cfg'
-    [IO.File]::WriteAllText($config, "[Recipes]`r`n# generated comment`r`nEnabled = true`r`n")
+    [IO.File]::WriteAllText($config, '')
     Assert-ForgeReadSelection $root $p
     $p.modMenuProbe = $true; Reject { Assert-ForgeReadSelection $root $p }; $p.modMenuProbe = $false
     $p.forgeReadProbe = 'true'; Reject { Assert-ForgeReadSelection $root $p }; $p.forgeReadProbe = $true
     [IO.File]::WriteAllText($config, "[Recipes]`r`nEnabled = false`r`n[Other]`r`nEnabled = true`r`n")
-    Reject { Assert-ForgeReadSelection $root $p }
-    [IO.File]::WriteAllText($config, "[Recipes]`r`nEnabled = true`r`n")
+    Assert-ForgeReadSelection $root $p # Obsolete switches do not disable automatic modules.
+    [IO.File]::WriteAllText($config, '')
     Reject { Assert-ForgeReadReceipt $root $p }
     @{timedOut=$false;killed=$false;exitCode=0} | ConvertTo-Json | Set-Content (Join-Path $root 'run-outcome.json')
     $facts = Join-Path $root 'forge-reads.txt'; $receipt = Join-Path $root 'forge-reads.receipt'
@@ -28,8 +28,6 @@ try {
     $p | Add-Member forgeCommandProbe $true
     Reject { Assert-ForgeReadSelection $root $p }
     [IO.File]::WriteAllText((Join-Path $root 'forge-commands.enabled'), 'forge-commands-v3')
-    Reject { Assert-ForgeReadSelection $root $p }
-    [IO.File]::AppendAllText($config, "CommandsEnabled = true`r`n")
     Assert-ForgeReadSelection $root $p
     Reject { Assert-ForgeCommandReceipt $root $p }
     [IO.File]::WriteAllLines((Join-Path $root 'forge-commands.txt'), @('PASS','forge-commands-v3','settings-replay-restored','forge-queue-cancel-replay-refusal-direct-start-capacity'))
@@ -103,8 +101,6 @@ try {
     $binary = Join-Path $binDir 'VGBlueprintPin.dll'; [IO.File]::WriteAllText($binary, 'synthetic binary')
     Reject { Assert-ForgeReadSelection $root $p }
     $p.blueprintPinSha256 = (Get-FileHash $binary -Algorithm SHA256).Hash.ToLowerInvariant()
-    Reject { Assert-ForgeReadSelection $root $p }
-    [IO.File]::AppendAllText((Join-Path $root 'game\BepInEx\config\vgmodapi.cfg'), "`n[Hud]`nEnabled = true`n")
     Assert-ForgeReadSelection $root $p
     Reject { Assert-BlueprintPinReceipt $root $p }
     [IO.File]::WriteAllLines((Join-Path $root 'blueprint-pin.txt'), @('PASS','blueprint-pin-v11','pin-batch-exact-variant-navigation-close-producer-routes-queue-partial-cancel-multiunit-reload-saveas-switch-inspector-isolation-context-generated-routing-bonus-fullcargo'))
@@ -158,10 +154,7 @@ try {
         [IO.File]::AppendAllText($extra, 'changed'); Reject { Assert-BlueprintPinReceipt $root $p }
         Copy-Item $image $extra -Force
     }
-    $validConfig = [IO.File]::ReadAllText($config)
-    [IO.File]::WriteAllText($config, $validConfig.Replace('CommandsEnabled = true', 'CommandsEnabled = false'))
-    Reject { Assert-BlueprintPinSelection $root $p }
-    [IO.File]::WriteAllText($config, $validConfig)
+    Assert-BlueprintPinSelection $root $p
     [IO.File]::WriteAllText((Join-Path $root 'blueprint-pin.enabled'), 'blueprint-pin-v10')
     Reject { Assert-BlueprintPinSelection $root $p }
     [IO.File]::WriteAllText((Join-Path $root 'blueprint-pin.enabled'), 'blueprint-pin-v11')

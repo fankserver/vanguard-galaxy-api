@@ -123,9 +123,8 @@ public sealed partial class Plugin : BaseUnityPlugin
                 ["store"] = typeof(SavePatches.Store), ["writeFile"] = typeof(SavePatches.WriteFile),
                 ["writeMetadata"] = typeof(SavePatches.WriteMetadata), ["storeFailure"] = typeof(SavePatches.StoreFailure)
             });
-            if (Config.Bind("Hud", "Enabled", false, "Experimental shared HUD buttons and information panels.").Value) InstallHud(assembly);
-            if (Config.Bind("Recipes", "Enabled", false, "Experimental recipe catalog, advisory quotes and Forge/refinery job observations.").Value)
-                InstallRecipes(assembly);
+            InstallHud(assembly);
+            InstallRecipes(assembly);
             if (Config.Bind("Boarding", "Enabled", false, "Experimental boarding observation and rules on the inspected game build.").Value)
             {
                 InstallBoarding(bindings);
@@ -517,7 +516,6 @@ public sealed partial class Plugin : BaseUnityPlugin
     {
         try
         {
-            if (!Config.Bind("Recipes", "CommandsEnabled", false, "Experimental crafting mutations; requires recipe/job observation and disposable-save qualification.").Value) return;
             var methods = CraftingCommandBindings.Validate(assembly);
             _craftingCommandSource = source;
             source.CommandSession = () => _hub?.CurrentSession?.Phase == SessionPhase.GameplayInitialized && _adapter?.IsBoundPlayer(source.NativePlayer) == true ? _hub.CurrentSession.Id : null;

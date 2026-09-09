@@ -1,6 +1,6 @@
 # Forge and refinery services — experimental
 
-`ModApi.Services.Recipes` exposes immutable Forge/refining definitions for the current station. Enable `[Recipes] Enabled = true`; the stable service reports unavailable when disabled, uninspected or unable to bind. Calls are main-thread-only and require a tracked `GameplayInitialized` session plus an accessible station with supported crafting facilities. Refining does not require that the station also has a Forge. This is not universal UI/world readiness or native qualification.
+`ModApi.Services.Recipes` exposes immutable Forge/refining definitions for the current station. Recipe services initialize automatically; the stable service reports unavailable when uninspected or unable to bind. Calls are main-thread-only and require a tracked `GameplayInitialized` session plus an accessible station with supported crafting facilities. Refining does not require that the station also has a Forge. This is not universal UI/world readiness or native qualification.
 
 ## Querying
 
@@ -33,7 +33,7 @@ This service is observational. It does not register custom content, queue/cancel
 
 ## Contextual requirements
 
-The same `[Recipes] Enabled` setting enables `ModApi.Services.RecipeQuotes` when its additional inspected bindings succeed. `IRecipeService` and `IRecipeQuoteService` each expose typed `Availability` and `AvailabilityChanged`; quote failure does not disable an otherwise usable catalog. The typed runtime requires native qualification.
+`ModApi.Services.RecipeQuotes` initializes automatically when its additional inspected bindings succeed. `IRecipeService` and `IRecipeQuoteService` each expose typed `Availability` and `AvailabilityChanged`; quote failure does not disable an otherwise usable catalog. The typed runtime requires native qualification.
 
 ```csharp
 var quotes = ModApi.Services.RecipeQuotes;
@@ -59,7 +59,7 @@ Output amounts are base or conditional estimates for the requested batches. `Pro
 
 ## Job observations and save/load
 
-`ModApi.Services.CraftingJobs` exposes `ICraftingJobService`; its typed availability requires `[Recipes] Enabled=true` and bound job observers. The service reference remains present when unavailable. Access and handler removal are main-thread-only. Obtain a station handle from `ModApi.Services.RecipeQuotes.CurrentStation`, or from a job event, then call `Read(station)`. Only an `Available` result is a successful queue snapshot; missing definitions, malformed rows and inaccessible/stale stations are not successful empty queues.
+`ModApi.Services.CraftingJobs` exposes `ICraftingJobService`; its typed availability requires bound job observers. The service reference remains present when unavailable. Access and handler removal are main-thread-only. Obtain a station handle from `ModApi.Services.RecipeQuotes.CurrentStation`, or from a job event, then call `Read(station)`. Only an `Available` result is a successful queue snapshot; missing definitions, malformed rows and inaccessible/stale stations are not successful empty queues.
 
 `CraftingJobHandle` identifies one native job instance at one issued station in one session. It is not a persistent save identifier. Snapshots copy process/recipe identity, initial/remaining batches, captured Forge level, bounded display progress and per-batch duration. Unknown timing remains null. No native object is exposed.
 
@@ -78,7 +78,7 @@ Native Forge/refinery jobs already own their supported save data. The API reuses
 
 ## Guarded commands
 
-`ModApi.Services.CraftingCommands` exposes `ICraftingCommandService` and reports unavailable by default: set `[Recipes] CommandsEnabled=true` as well as `Enabled=true`. The `crafting-commands` capability requires the inspected job/transfer observers and serialization guards. Accessing a service or reading settings changes no setting. All calls are main-thread-only; mutations require the tracked, initialized player instance and refuse save, reconstruction, callback, already-running native crafting operations and reentrant contexts.
+`ModApi.Services.CraftingCommands` exposes `ICraftingCommandService` and initializes automatically with the recipe services. The `crafting-commands` capability requires the inspected job/transfer observers and serialization guards. Accessing a service or reading settings changes no setting. All calls are main-thread-only; mutations require the tracked, initialized player instance and refuse save, reconstruction, callback, already-running native crafting operations and reentrant contexts.
 
 ```csharp
 var request = CraftingCommandRequest.Queue(

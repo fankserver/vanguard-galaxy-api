@@ -315,9 +315,6 @@ function Assert-BlueprintPinSelection([string]$Root, $Provenance) {
     if (!$selected) { return }
     if (!$Provenance.forgeReadProbe -or $Provenance.forgeUiProbe -or $Provenance.forgeCommandProbe -or $Provenance.refineryProbe -or $Provenance.forgeDeliveryProbe -or $Provenance.forgePersistenceProbe -or [IO.File]::ReadAllText($marker) -cne 'blueprint-pin-v11') { throw 'Invalid Blueprint Pin selection.' }
     if ($Provenance.blueprintPinRevision -cnotmatch '^[0-9a-f]{40}$' -or $Provenance.blueprintPinSha256 -cnotmatch '^[0-9a-f]{64}$') { throw 'Invalid Blueprint Pin provenance.' }
-    $config = [IO.File]::ReadAllText((Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg'))
-    if ($config -cnotmatch '(?ms)^\[Hud\]\r?\n(?:(?!^\[).)*?^Enabled = true\r?$') { throw 'Blueprint Pin requires HUD integration.' }
-    if ($config -cnotmatch '(?ms)^\[Recipes\]\r?\n(?:(?!^\[).)*?^CommandsEnabled = true\r?$') { throw 'Blueprint Pin job probe requires crafting commands.' }
     $binary = Join-Path $Root 'game\BepInEx\plugins\VGBlueprintPin.dll'
     if ((Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant() -cne $Provenance.blueprintPinSha256) { throw 'Blueprint Pin binary changed.' }
 }
@@ -457,8 +454,6 @@ function Assert-ForgeCommandSelection([string]$Root, $Provenance) {
     if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Forge command selection changed.' }
     if (!$selected) { return }
     if (!$Provenance.forgeReadProbe -or [IO.File]::ReadAllText($marker) -cne 'forge-commands-v3') { throw 'Invalid Forge command selection.' }
-    $config = [IO.File]::ReadAllText((Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg'))
-    if ($config -cnotmatch '(?ms)^\[Recipes\]\r?\n(?:(?!^\[).)*?^CommandsEnabled = true\r?$') { throw 'Crafting commands not enabled.' }
 }
 function Assert-ForgeCommandReceipt([string]$Root, $Provenance) {
     Assert-ForgeReadReceipt $Root $Provenance
@@ -533,8 +528,6 @@ function Assert-ForgeReadSelection([string]$Root, $Provenance) {
         if ($entry.Name -notin @('forgeReadProbe','forgeCommandProbe','forgePersistenceProbe','forgeDeliveryProbe','refineryProbe','forgeUiProbe','blueprintPinProbe') -and $entry.Value -is [bool] -and $entry.Value) { throw 'Forge reads cannot combine other scenarios or consumers.' }
     }
     if ($null -ne $Provenance.assemblyOverlay) { throw 'Forge reads cannot use an assembly overlay.' }
-    $config = [IO.File]::ReadAllText((Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg'))
-    if ($config -cnotmatch '(?ms)^\[Recipes\]\r?\n(?:(?!^\[).)*?^Enabled = true\r?$') { throw 'Forge read recipe integration is not enabled.' }
 }
 function Assert-ForgeReadReceipt([string]$Root, $Provenance) {
     Assert-ForgeReadSelection $Root $Provenance
