@@ -29,8 +29,10 @@ public sealed class WorldActorOriginTests
         Assert.True(origins.Known(changedScopeActor)); Assert.False(origins.Allow(changedScopeActor));
     }
 
-    [Fact]
-    public void ActorsRetainSpawnManagerAndNestedVanillaSpawnDoesNotInheritOwnership()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ActorsRetainSpawnManagerAndNestedVanillaSpawnDoesNotInheritOwnership(bool failShutdown)
     {
         var oldHost = VGModAPI.Patches.WorldLifetimePatches.Host;
         var oldPlayer = Source.Player.GamePlayer.current;
@@ -40,7 +42,9 @@ public sealed class WorldActorOriginTests
         {
             var hub = new LifecycleHub((_, error) => throw error); var guard = new WorldLifetimeGuard();
             var stopped = new System.Collections.Generic.List<object>();
-            using var host = new WorldLifetimeHookHost(typeof(Source.Galaxy.MapElement).Assembly, hub, guard, stopped.Add);
+            object? failingRoot = null; var shutdownFailure = new InvalidOperationException("shutdown failed");
+            using var host = new WorldLifetimeHookHost(typeof(Source.Galaxy.MapElement).Assembly, hub, guard, root =>
+            { stopped.Add(root); if (ReferenceEquals(root, failingRoot)) throw shutdownFailure; });
             var session = hub.Begin(SessionOrigin.NewGame, null);
             var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
             var poi = new Source.Galaxy.MapPointOfInterest { guid = identity.NativeId };
@@ -86,9 +90,20 @@ public sealed class WorldActorOriginTests
             Assert.False(VGModAPI.Patches.WorldLifetimePatches.ActorActivity.Prefix(actor));
             Assert.True(VGModAPI.Patches.WorldLifetimePatches.ActorActivity.Prefix(vanilla));
             manager.poi = poi;
-            typeof(UnityEngine.Object).GetField("m_CachedPtr", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(actor, IntPtr.Zero);
-            Assert.False(host.AllowActor(actor));
-            host.Dispose(); Assert.False(host.AllowActor(actor)); Assert.True(host.AllowActor(vanilla));
+            if (failShutdown)
+            {
+                failingRoot = actor; stopped.Clear();
+                var maintenance = Assert.Throws<AggregateException>(() => host.MaintainActors());
+                Assert.Same(shutdownFailure, Assert.Single(maintenance.InnerExceptions));
+                Assert.Contains(updater.gameObject, stopped);
+                stopped.Clear();
+                var teardown = Assert.Throws<AggregateException>(() => host.Dispose());
+                Assert.Same(shutdownFailure, Assert.Single(teardown.InnerExceptions));
+                Assert.Contains(updater.gameObject, stopped);
+                failingRoot = null;
+            }
+            else host.Dispose();
+            Assert.False(host.AllowActor(actor)); Assert.True(host.AllowActor(vanilla));
         }
         finally { VGModAPI.Patches.WorldLifetimePatches.Host = oldHost; Source.Player.GamePlayer.current = oldPlayer; singleton.SetValue(null, oldTravel); }
     }

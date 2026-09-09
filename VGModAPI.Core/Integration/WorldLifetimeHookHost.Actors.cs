@@ -20,7 +20,13 @@ internal sealed partial class WorldLifetimeHookHost : IWorldActorLifetimeHost
     internal void MaintainActors()
     {
         _hub.CheckThread();
-        foreach (var actor in _actors.Snapshot()) AllowActor(actor);
+        System.Collections.Generic.List<Exception>? failures = null;
+        foreach (var actor in _actors.Snapshot())
+        {
+            try { AllowActor(actor); }
+            catch (Exception error) { (failures ??= new System.Collections.Generic.List<Exception>()).Add(error); }
+        }
+        if (failures != null) throw new AggregateException("Owned actor maintenance failed for one or more roots.", failures);
     }
     private void StopPhysics(object actor)
     {
