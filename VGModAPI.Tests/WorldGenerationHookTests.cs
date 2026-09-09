@@ -27,7 +27,13 @@ public sealed class WorldGenerationHookTests
         Assert.True(creation.TryRestore(session, () => Array.Empty<WorldSnapshotInstance>()));
         var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
         var poi = new SlotPoi { guid = identity.NativeId };
-        guard.Track(session, poi, identity); guard.Ready(session);
+        bool mutateDuringAncestor = false; int approvals = 0;
+        guard.Track(session, poi, identity);
+        guard.Ready(session, () =>
+        {
+            if (mutateDuringAncestor && ++approvals == 2) poi.salvageDescriptors[0] = new object();
+            return true;
+        });
         WorldLifetimePatches.Generation.Capture? capture = null, descriptor = null;
         try
         {
@@ -39,8 +45,9 @@ public sealed class WorldGenerationHookTests
                 WorldLifetimePatches.Host = host;
                 WorldLifetimePatches.Generation.SlotPrefix(poi, 0, out descriptor);
                 WorldLifetimePatches.Host = null;
-                poi.salvageDescriptors[0] = new object();
+                mutateDuringAncestor = true;
                 Assert.Throws<InvalidDataException>(() => WorldLifetimePatches.Generation.PublicationPrefix());
+                Assert.Equal(2, approvals);
             }
             else
             {

@@ -12,11 +12,11 @@ internal sealed class WorldGenerationAttempts
         private readonly WorldGenerationAttempts _owner;
         internal readonly object _epoch;
         internal readonly Scope? _parent;
-        internal readonly Func<bool>? _valid;
+        internal readonly Func<bool>? _valid, _stable;
         internal readonly Budget? _budget;
         internal bool _closed;
-        internal Scope(WorldGenerationAttempts owner, object epoch, Scope? parent, Func<bool>? valid, Budget? budget)
-        { _owner = owner; _epoch = epoch; _parent = parent; _valid = valid; _budget = budget; }
+        internal Scope(WorldGenerationAttempts owner, object epoch, Scope? parent, Func<bool>? valid, Func<bool>? stable, Budget? budget)
+        { _owner = owner; _epoch = epoch; _parent = parent; _valid = valid; _stable = stable; _budget = budget; }
         internal Exception? Finish(Exception? error)
         {
             try
@@ -51,7 +51,7 @@ internal sealed class WorldGenerationAttempts
     { if (limit < 1) throw new ArgumentOutOfRangeException(nameof(limit)); _limit = limit; }
     internal void Reset() { _epoch = new(); _failed = false; _checking = false; }
     private void Reject(object epoch) { if (ReferenceEquals(epoch, _epoch)) _failed = true; }
-    internal Scope Begin(Func<bool>? valid)
+    internal Scope Begin(Func<bool>? valid, Func<bool>? stable = null)
     {
         Budget? budget = null;
         if (valid != null)
@@ -61,7 +61,7 @@ internal sealed class WorldGenerationAttempts
                 if (parent._budget != null) { budget = parent._budget; break; }
             budget ??= new Budget(_limit);
         }
-        var scope = new Scope(this, _epoch, _current, valid, budget); _current = scope;
+        var scope = new Scope(this, _epoch, _current, valid, stable, budget); _current = scope;
         try { if (valid != null) Require(scope); return scope; }
         catch (Exception error) { scope.Finish(error); throw; }
     }
@@ -78,6 +78,13 @@ internal sealed class WorldGenerationAttempts
                 if (!frame._closed && frame._valid != null && !frame._valid()) throw new InvalidDataException("Owned generation origin is unavailable.");
                 if (!ReferenceEquals(epoch, _epoch) || !ReferenceEquals(scope, _current) || _failed)
                     throw new InvalidDataException("Owned generation changed during admission.");
+            }
+            // Stability predicates must be callback-free: no later admission callback may undo their observations.
+            for (var frame = scope; frame != null && ReferenceEquals(frame._epoch, epoch); frame = frame._parent)
+            {
+                if (!frame._closed && frame._stable != null && !frame._stable()) throw new InvalidDataException("Owned generation identity changed during admission.");
+                if (!ReferenceEquals(epoch, _epoch) || !ReferenceEquals(scope, _current) || _failed)
+                    throw new InvalidDataException("Owned generation changed during final validation.");
             }
         }
         catch { Reject(epoch); throw; }

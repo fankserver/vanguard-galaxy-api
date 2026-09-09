@@ -39,11 +39,12 @@ internal sealed partial class WorldLifetimeHookHost : IWorldGenerationHost
     {
         _hub.CheckThread();
         if (AllowRemoval(poi)) return _generation.Begin(null);
-        var session = _hub.CurrentSession?.Id; var identity = Identity(poi);
+        var session = _hub.CurrentSession?.Id; var identity = Identity(poi); var player = _player.GetValue(null);
         try
         {
-            return _generation.Begin(() => !_disposed && session == _hub.CurrentSession?.Id && session == _session &&
-                Identity(poi) == identity && AllowUse(poi) && (stable?.Invoke() ?? true) && session == _hub.CurrentSession?.Id && Identity(poi) == identity);
+            return _generation.Begin(() => !_disposed && session == _hub.CurrentSession?.Id && session == _session && AllowUse(poi),
+                () => !_disposed && session == _hub.CurrentSession?.Id && session == _session &&
+                    ReferenceEquals(player, _player.GetValue(null)) && Identity(poi) == identity && StillAllowed(poi) && (stable?.Invoke() ?? true));
         }
         catch (Exception error) { RefuseFailedGeneration(error); throw; }
     }
