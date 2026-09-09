@@ -22,6 +22,11 @@ public sealed class WorldQualificationPackageTests
             ?? throw new InvalidOperationException("Run the qualification package make target with local BepInEx references."));
         using var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(plugin, new Mono.Cecil.ReaderParameters { AssemblyResolver = resolver });
         Assert.NotNull(assembly.MainModule.GetType("VGModAPI.QualificationRunContext"));
+        var initialization = assembly.MainModule.GetType("VGModAPI.Plugin").Methods;
+        var world = Assert.Single(initialization, method => method.Name == "InitializeWorldProtection");
+        foreach (var name in new[] { ".ctor", "Authenticate", "ParticipantsReady" })
+            Assert.Contains(world.Body.Instructions, instruction => instruction.Operand is Mono.Cecil.MethodReference method &&
+                method.DeclaringType.FullName == "VGModAPI.QualificationRunContext" && method.Name == name);
         var dependency = Assert.Single(assembly.MainModule.GetType("VGModAPI.Plugin").CustomAttributes,
             attribute => attribute.AttributeType.FullName == "BepInEx.BepInDependency" &&
                 attribute.ConstructorArguments.Count == 2 && Equals(attribute.ConstructorArguments[0].Value, "vgmodapi.qualification.guard"));

@@ -37,31 +37,38 @@ public sealed partial class Plugin
             var assembly = Assembly.Load("Assembly-CSharp");
 #if VG_WORLD_QUALIFICATION
             const bool emptyProfile = true;
+            var qualification = new QualificationRunContext(assembly);
+            StoryHostAuthenticator authenticate = qualification.Authenticate;
+            Func<bool> admission = qualification.ParticipantsReady;
+            Action requireContext = () => { if (!admission()) throw new System.IO.InvalidDataException("Qualification context is unavailable."); };
             var emptyState = new WorldEmptyCombatProfile(assembly);
             var emptyEnvironment = new WorldEmptyCombatEnvironment(assembly);
-            Action<object>? inspectProfile = poi => { emptyState.Require(poi); emptyEnvironment.Require(poi); };
+            Action<object>? inspectProfile = poi => { requireContext(); emptyState.Require(poi); emptyEnvironment.Require(poi); };
 #else
             const bool emptyProfile = false;
+            StoryHostAuthenticator authenticate = StoryHostAuthentication.Resolve;
+            Func<bool> admission = () => false;
+            Action requireContext = () => { };
             Action<object>? inspectProfile = null;
 #endif
-            // Authenticated declarations do not qualify native loading. Keep admission closed
-            // until the complete runtime profile has been independently qualified.
-            _worldDefinitions = new WorldDefinitionRegistry(StoryHostAuthentication.Resolve, _hub.CheckThread);
+            // Only the separately built candidate can admit its restricted, authorized sandbox profile.
+            // Normal production gates remain closed; neither branch claims runtime qualification.
+            _worldDefinitions = new WorldDefinitionRegistry(authenticate, _hub.CheckThread);
             var definitions = _worldDefinitions;
             _worldLoadHost = new WorldLoadHookHost(assembly, _hub, _persistence, _persistence.CreateWorldReader(),
-                _persistence.CanonicalLoadPath, _ => false, () => definitions.Revision, emptyProfile: emptyProfile);
+                _persistence.CanonicalLoadPath, saved => admission() && definitions.MatchesRetained(saved) && admission(), () => definitions.Revision, emptyProfile: emptyProfile);
             var salvageConstructor = assembly.GetType("Source.Data.Persistable.SalvageData", true)!.GetConstructor(Type.EmptyTypes)
                 ?? throw new MissingMethodException("SalvageData..ctor()");
             var lifetime = new WorldLifetimeGuard();
             var creation = new WorldCreationCoordinator(new WorldNativeAttachment(_adapter, inspectProfile), _hub.CheckThread, lifetime, inspectProfile);
             _worldLifetimeHost = new WorldLifetimeHookHost(assembly, _hub, lifetime, new WorldActorPhysics(assembly).Stop,
                 session => { creation.Refuse(session); _story?.RefreshWorldDependencies(); }, inspectProfile);
-            _worldSnapshotHost = new WorldSnapshotHookHost(_hub, new WorldSnapshotRecorder(new WorldJsonInspection(assembly, emptyProfile)), creation.Snapshot, () => creation.Revision);
+            _worldSnapshotHost = new WorldSnapshotHookHost(_hub, new WorldSnapshotRecorder(new WorldJsonInspection(assembly, emptyProfile)), creation.Snapshot, () => { requireContext(); return creation.Revision; });
             _worldPersistence = new WorldPersistenceBindings(_persistence, _hub, _worldLoadHost, _worldSnapshotHost, creation);
             _worldRuntime = new WorldRuntimeState(_adapter, _worldLoadHost, definitions, creation,
-                lifetime, _worldPersistence.StateReady, () => false);
+                lifetime, _worldPersistence.StateReady, admission);
             _worldReferences = new WorldReferenceResolver(_hub, creation, definitions, _worldPersistence, _worldLifetimeHost);
-            _worldContent = new WorldContentService(_hub, definitions, new WorldAuthoringGate(definitions, creation, _worldPersistence.CanMutate), () => false, () => { try { _story?.RefreshWorldDependencies(); } finally { _worldLifetimeHost?.MaintainActors(); } });
+            _worldContent = new WorldContentService(_hub, definitions, new WorldAuthoringGate(definitions, creation, _worldPersistence.CanMutate), admission, () => { try { _story?.RefreshWorldDependencies(); } finally { _worldLifetimeHost?.MaintainActors(); } });
             var selected = WorldNativeBindings.Methods.Where(m => m.Key == "worldPoiRead" || m.Key == "worldRecall" || m.Key == "worldCombatUpdate" || m.Key == "worldRemove" || m.Key == "worldSnapshot" || m.Key == "worldStore" || m.Key == "worldActiveUpdate" || m.Key == "worldCanTravel" || m.Key == "worldRoute" || m.Key == "worldBaseArrival" || m.Key == "worldCombatArrival" || m.Key == "worldSpawnPersistable" || m.Key == "worldSpawnUnit" || m.Key == "worldManagerStart" || m.Key == "worldManagerUpdate" || m.Key == "worldSecurityPatrol" || m.Key == "worldManagerInit" || m.Key == "worldInitializePoi" || m.Key == "worldInitializationComplete" || m.Key == "worldBaseAwake" || m.Key == "worldCombatAwake" || m.Key == "worldStoreLastX" || m.Key == "worldStorePosition" || m.Key == "worldIncomingReinforcements" || m.Key == "worldCreateSecurityPatrol" || m.Key == "worldStartTravel" || m.Key == "worldNextWaypoint" || m.Key == "worldTravelChild" || m.Key == "worldCheckLocalScene" || m.Key == "worldUnloadScene" || m.Key == "worldWaitUnload" || m.Key == "worldCancelTravel" || m.Key == "worldGenerate" || m.Key == "worldRegenerateGuards" || m.Key == "worldRegenerateCargo" || m.Key == "worldRegenerateSalvage" || m.Key == "worldRegenerateAsteroids" || m.Key == "worldRebuildStation" || m.Key == "worldJumpgateWave" || m.Key == "worldDeferGeneration" || m.Key == "worldPayloadUpdate" || m.Key == "worldPayloadTrigger" || m.Key == "worldPayloadSpawn" || m.Key == "worldPoiAddPersistable" || m.Key == "worldPoiRemovePersistable" || m.Key == "worldPoiAddUnit" || m.Key == "worldPoiRemoveUnit" || m.Key == "worldPoiAddPayload" || m.Key == "worldAddTriggered" || m.Key == "worldAddBudgetPayload" || m.Key == "worldAddFixedPayload" || m.Key == "worldActorAwake" || m.Key == "worldActorStart" || m.Key == "worldActorUpdate" || m.Key == "worldActorPhysics" || m.Key == "worldShipStart" || m.Key == "worldShipUpdate" || m.Key == "worldActorSetData" || m.Key == "worldShipSetData" || m.Key == "worldActorModules" || m.Key == "worldActorDamage" || m.Key == "worldShipDamage" || m.Key == "worldActorCollisionEnter" || m.Key == "worldActorCollisionStay" || m.Key == "worldPersistableStart" || m.Key == "worldPersistableUpdate" || m.Key == "worldBudgetBuilder" || m.Key == "worldSalvageReset" || m.Key == "worldSalvageAdd" || m.Key == "worldSalvageSlot" || m.Key == "worldSalvageDescriptor" || m.Key.StartsWith("worldEmpty", StringComparison.Ordinal) || m.Key.StartsWith("worldActorRoutine", StringComparison.Ordinal)).ToArray();
             var targets = new GameBindings(assembly).Resolve(selected);
             _worldLoadHarmony = new Harmony(ModApi.PluginId + ".world-load");
@@ -149,8 +156,11 @@ public sealed partial class Plugin
             WorldLifetimePatches.Host = _worldLifetimeHost;
             WorldLoadPatches.Host = _worldLoadHost;
             ModApi.World = _worldContent;
-            _hub.SetCapability("world-save-protection", true, "Experimental scoped snapshot/save protection; declarations only, native authoring unavailable. Not runtime-qualified.");
-            _hub.SetCapability("world-load-protection", true, "Experimental load guard only; owned world definitions are not admitted. Not runtime-qualified.");
+            _hub.SetCapability("world-save-protection", true, emptyProfile ? "Qualification-only restricted snapshot/save protection. Not runtime-qualified." : "Experimental scoped snapshot/save protection; declarations only, native authoring unavailable. Not runtime-qualified.");
+            _hub.SetCapability("world-load-protection", true, emptyProfile ? "Qualification-only restricted owned-load admission. Not runtime-qualified." : "Experimental load guard only; owned world definitions are not admitted. Not runtime-qualified.");
+#if VG_WORLD_QUALIFICATION
+            _hub.SetCapability("world-authoring", true, "Qualification-only candidate; participant/session/profile readiness is required. Not runtime-qualified.");
+#endif
         }
         catch (Exception error)
         {
