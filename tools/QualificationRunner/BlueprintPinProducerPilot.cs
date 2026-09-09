@@ -96,6 +96,7 @@ public sealed partial class Plugin
         slider.value = 1;
         return ModApi.Services.ForgeUi.Current?.Batches == 1;
     }
+    // Producer checks run before Inspect is invoked, so the pin is the sole panel.
     private static Button[] PinRows()
     {
         var root = GameObject.Find("Mod API shared HUD");

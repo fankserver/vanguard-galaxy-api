@@ -36,7 +36,7 @@ public sealed partial class Plugin
         foreach (var frame in Wait(() => inspector.Find("Close").GetComponent<Image>().depth >= 0
             && !inspector.Find("Close").GetComponent<Image>().canvasRenderer.cull, "Inspector close after horizontal scroll")) yield return frame;
         foreach (var frame in CaptureForgeActions("forge-consumers")) yield return frame;
-        foreach (var frame in ForgeClick(mouse, inspector.Find("Close"))) yield return frame;
+        foreach (var frame in ForgeClick(mouse, ConsumerPanel("Snapshot, not a reservation")!.Find("Close"))) yield return frame;
         foreach (var frame in Wait(() => ConsumerPanel("Snapshot, not a reservation") == null && PinHudText("1 batches remaining"), "Inspector close preserves independent pin")) yield return frame;
         foreach (var frame in Wait(() => PinCloseButton() != null, "Remaining pin close control")) yield return frame;
         foreach (var frame in ForgeClick(mouse, PinCloseButton()!.transform)) yield return frame;
