@@ -20,6 +20,20 @@ public sealed class PackageValidationTests : IDisposable
     }
 
     [Fact]
+    public void QualificationMarkerRejectsOtherwiseNormalPluginPackage()
+    {
+        using var assembly = AssemblyDefinition.ReadAssembly(typeof(VGModAPI.Patches.WorldLifetimePatches).Assembly.Location);
+        var constructor = typeof(System.Reflection.AssemblyMetadataAttribute).GetConstructor(new[] { typeof(string), typeof(string) })!;
+        var marker = new CustomAttribute(assembly.MainModule.ImportReference(constructor));
+        marker.ConstructorArguments.Add(new CustomAttributeArgument(assembly.MainModule.TypeSystem.String, "VGModAPI.WorldQualification"));
+        marker.ConstructorArguments.Add(new CustomAttributeArgument(assembly.MainModule.TypeSystem.String, "empty-combat-v1"));
+        assembly.CustomAttributes.Add(marker);
+        var path = Path.Combine(_root, "VGModAPI.dll"); assembly.Write(path);
+        var error = Assert.Throws<InvalidOperationException>(() => PackageChecks.ValidatePluginVersion(path));
+        Assert.Contains("Qualification-only", error.Message);
+    }
+
+    [Fact]
     public void ExactLayoutIsAccepted() => PackageChecks.ValidateLayout(_root);
 
     [Theory]

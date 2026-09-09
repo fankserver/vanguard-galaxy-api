@@ -60,6 +60,16 @@ check-archive:
 	VG_GAME_ASSEMBLY="$(MANAGED)/Assembly-CSharp.dll" \
 	VG_CONSUMER_DEPENDENCY_DIRS="$(CORE):$(MANAGED)" \
 	$(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter 'Category=InstalledArchive' -- RunConfiguration.TreatNoTestsAsError=true
+.PHONY: package-world-qualification
+package-world-qualification: link-libs
+	$(DOTNET) build tools/WorldQualificationApi/WorldQualificationApi.csproj -c $(CONFIGURATION)
+	@rm -rf artifacts/WorldQualificationApi
+	@mkdir -p artifacts/WorldQualificationApi
+	cp tools/WorldQualificationApi/bin/$(CONFIGURATION)/netstandard2.1/VGModAPI.dll artifacts/WorldQualificationApi/
+	cp tools/WorldQualificationApi/bin/$(CONFIGURATION)/netstandard2.1/VGModAPI.Core.dll artifacts/WorldQualificationApi/
+	cp tools/WorldQualificationApi/bin/$(CONFIGURATION)/netstandard2.1/VGModAPI.Abstractions.dll artifacts/WorldQualificationApi/
+	cp tools/WorldQualificationApi/README.md artifacts/WorldQualificationApi/
+
 package: build
 	@rm -rf artifacts/VGModAPI
 	@mkdir -p artifacts/VGModAPI

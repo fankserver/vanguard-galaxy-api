@@ -50,6 +50,9 @@ internal static class PackageChecks
     internal static void ValidatePluginVersion(string path)
     {
         using var assembly = AssemblyDefinition.ReadAssembly(path);
+        if (assembly.CustomAttributes.Any(attribute => attribute.AttributeType.FullName == "System.Reflection.AssemblyMetadataAttribute" &&
+            attribute.ConstructorArguments.Count >= 1 && Equals(attribute.ConstructorArguments[0].Value, "VGModAPI.WorldQualification")))
+            throw new InvalidOperationException("Qualification-only API cannot enter a normal package.");
         var plugin = assembly.MainModule.GetType("VGModAPI.Plugin") ?? throw new InvalidOperationException("Plugin type missing.");
         var attributes = plugin.CustomAttributes.Where(a => a.AttributeType.FullName == "BepInEx.BepInPlugin").ToArray();
         if (attributes.Length != 1 || attributes[0].ConstructorArguments.Count != 3 ||
