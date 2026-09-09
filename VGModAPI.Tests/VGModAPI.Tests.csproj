@@ -45,5 +45,6 @@
     <Compile Include="../tools/QualificationRunner/ForgeReadRegistry.cs" Link="Qualification/ForgeReadRegistry.cs" />
     <Compile Include="../examples/ForgeInspector/Inspector.cs" Link="Examples/Inspector.cs" />
     <Compile Include="../examples/AuthoredDungeon/CargoRecovery.cs" Link="Examples/CargoRecovery.cs" />
+    <Compile Include="../examples/AuthoredDungeon/CargoRecoveryPanel.cs" Link="Examples/CargoRecoveryPanel.cs" />
   </ItemGroup>
 </Project>
