@@ -24,7 +24,7 @@ public sealed class DungeonLootDefinition
     public int Amount { get; }
     public DungeonLootDefinition(string itemId, int amount)
     {
-        DungeonLayoutIds.Check(itemId); if (amount < 1 || amount > 10000) throw new ArgumentOutOfRangeException(nameof(amount));
+        DungeonNativeIds.Check(itemId); if (amount < 1 || amount > 10000) throw new ArgumentOutOfRangeException(nameof(amount));
         ItemId = itemId; Amount = amount;
     }
 }
@@ -38,7 +38,7 @@ public sealed class DungeonChoiceDefinition
     public DungeonChoiceDefinition(string id, string text, string? requiredCrewId = null, IEnumerable<DungeonLootDefinition>? loot = null)
     {
         DungeonLayoutIds.Check(id); DungeonDefinitionText.Check(text, 1000);
-        if (requiredCrewId != null) DungeonLayoutIds.Check(requiredCrewId);
+        if (requiredCrewId != null) DungeonNativeIds.Check(requiredCrewId);
         var rewards = (loot ?? Array.Empty<DungeonLootDefinition>()).ToArray();
         if (rewards.Length > 16 || rewards.Any(r => r == null)) throw new ArgumentException("At most sixteen valid loot entries per choice.");
         Id = id; Text = text; RequiredCrewId = requiredCrewId; Loot = Array.AsReadOnly(rewards);
@@ -76,7 +76,7 @@ public sealed class DungeonDefinition
         bool allowHazards = true, bool allowScheduledReinforcements = true)
     {
         if (version < 1) throw new ArgumentOutOfRangeException(nameof(version));
-        DungeonDefinitionText.Check(name, 256); if (factionId != null) DungeonLayoutIds.Check(factionId);
+        DungeonDefinitionText.Check(name, 256); if (factionId != null) DungeonNativeIds.Check(factionId);
         Layout = layout ?? throw new ArgumentNullException(nameof(layout));
         var copy = (events ?? Array.Empty<DungeonEventDefinition>()).ToArray();
         if (copy.Length > 128 || copy.Any(e => e == null) || copy.Select(e => e.Id).Distinct(StringComparer.Ordinal).Count() != copy.Length)

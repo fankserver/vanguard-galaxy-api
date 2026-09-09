@@ -1,6 +1,7 @@
 # Prepared-input helpers; safe to exercise with synthetic files.
 . (Join-Path $PSScriptRoot 'qualification-bar-consumers.ps1')
 . (Join-Path $PSScriptRoot 'qualification-bars.ps1')
+. (Join-Path $PSScriptRoot 'qualification-dungeon-consumers.ps1')
 # Accepted Anima pilot shapes, each pinned to the exact hard API dependency that version declares.
 # The consumer travel probe additionally requires the 0.4.0 shape, which is the first one that
 # observes system visits through the public travel surface.
@@ -445,6 +446,7 @@ function Assert-ForgeCommandReceipt([string]$Root, $Provenance) {
     if ($lines.Count -ne 4 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'forge-commands-v3' -or $lines[2] -cne 'settings-replay-restored' -or $lines[3] -cne 'forge-queue-cancel-replay-refusal-direct-start-capacity') { throw 'Incomplete Forge command receipt.' }
 }
 function Assert-DungeonReadinessSelection([string]$Root, $Provenance) {
+    Assert-DungeonConsumerSelection $Root $Provenance
     $panel = $Provenance.PSObject.Properties['dungeonPanelProbe']
     if ($panel -and $panel.Value -isnot [bool]) { throw 'Invalid dungeon panel flag.' }
     $panelSelected = $panel -and $panel.Value
@@ -460,7 +462,7 @@ function Assert-DungeonReadinessSelection([string]$Root, $Provenance) {
     if (!$selected) { return }
     if ($Provenance.scenario -ne 'Full' -or [IO.File]::ReadAllText($marker) -cne 'dungeon-readiness-v1') { throw 'Invalid dungeon readiness selection.' }
     foreach ($entry in $Provenance.PSObject.Properties) {
-        if ($entry.Name -notin @('dungeonReadinessProbe','dungeonPanelProbe') -and $entry.Value -is [bool] -and $entry.Value) { throw 'Dungeon readiness cannot combine other probes or consumers.' }
+        if ($entry.Name -notin @('dungeonReadinessProbe','dungeonPanelProbe','dungeonConsumersProbe') -and $entry.Value -is [bool] -and $entry.Value) { throw 'Dungeon readiness cannot combine other probes or consumers.' }
     }
     if ($null -ne $Provenance.assemblyOverlay) { throw 'Dungeon readiness cannot use an assembly overlay.' }
     $config = [IO.File]::ReadAllText((Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg'))
@@ -1469,6 +1471,7 @@ function Assert-QualificationInputs([string]$Root) {
     if ($barConsumers) { $expected += @('VGAnima.dll','VGTTS.dll','VanguardGalaxy.CustomMission.dll','Newtonsoft.Json.dll') }
     if ($provenance.scenario -ne 'MissingApi') { $expected += @('VGModAPI.dll','VGModAPI.Core.dll','VGModAPI.Abstractions.dll','vgmodapi.vgmod.json') }
     if ($provenance.scenario -eq 'Full') { $expected += @('QualificationRunner.dll','LifecycleObserver.dll') }
+    if ($provenance.PSObject.Properties['dungeonConsumersProbe'] -and $provenance.dungeonConsumersProbe) { $expected += $DungeonConsumerNames }
     if ($provenance.missionJournal) { $expected += @('VGMissionJournal.dll','Newtonsoft.Json.dll') }
     if ($stockpile) { $expected += @('VGStockpile.dll','Newtonsoft.Json.dll') }
     if ($anima) { $expected += @('VGAnima.dll') }

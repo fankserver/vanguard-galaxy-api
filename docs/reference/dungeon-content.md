@@ -19,7 +19,8 @@ are session-local; occurrence GUIDs survive save/load.
 
 ## Definitions and bounds
 
-- IDs: 1–128 letters, digits, underscores, hyphens or dots; case-sensitive.
+- Authored provider/local, compartment, event and choice IDs: 1–128 letters, digits, underscores, hyphens or dots; case-sensitive.
+- Native item, crew and faction catalog keys: 1–128 characters, nonblank and without control characters. Spaces and punctuation are preserved verbatim (for example, `Titanium Plate`); registration still requires an exact native catalog match. Saved encoding and bounds are unchanged.
 - Name: at most 256 characters; positive definition version.
 - Layout: 2–64 connected compartments, symmetric adjacency, at most eight
   neighbors per room, exactly one unlocked airlock. Native placement puts the
