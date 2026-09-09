@@ -33,13 +33,6 @@ feature chunks. Tests verify those behaviors or reproduce actual defects.
 - Assign the task to your working account, use a branch and Conventional Commits,
   and open a PR for a coherent feature or fix, including its tests. Address
   substantive review findings before delivery. Squash-merge only when authorized.
-- For agent-assisted work, implement in the assigned parent session. Use the
-  read-only asynchronous `reviewer` for the completed change, retaining its context
-  for substantive fix deltas. Coordinate concurrent writers through intercom and
-  separate worktrees; do not edit another session's uncommitted work.
-- Relevant project checks and source review are the delivery checks. Do not add
-  generic council, coverage targets or mandatory CI-wait gates. Never report a
-  failing test or failed review as successful.
 - Read the [lifecycle contract](docs/reference/lifecycle-contract.md) and
   [compatibility limits](docs/reference/compatibility.md) before modifying hooks.
 - Run the relevant Makefile checks. Never run reference-bearing checks on untrusted

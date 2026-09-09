@@ -4,6 +4,16 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes. It is the canonic
 source for delivery, review, implementation and documentation rules. Read the
 relevant [API contracts](docs/reference/README.md) for the behavior being changed.
 
+## Execution
+
+- Implement in the assigned parent session. Use the read-only asynchronous
+  `reviewer` for the completed change and retain its context for substantive fixes.
+- Coordinate concurrent writers through intercom and separate worktrees. Do not
+  edit another session's uncommitted work.
+- Follow the contribution guide's delivery checks. Do not add generic council,
+  coverage targets or mandatory CI-wait gates. Never report a failing test or
+  failed review as successful.
+
 ## Memory boundaries
 
 - Keep project policies and durable technical facts in their canonical repository
