@@ -36,7 +36,7 @@ public sealed class CargoRecoveryPanelTests
         var disposed = false; var executed = false; var eligible = false;
         var controller = Fake<IBoardingController>((name, _) => { Assert.Equal("Dispose", name); disposed = true; return null; });
         var acquisition = new BoardingCommandResult(admitted ? BoardingCommandStatus.Admitted : BoardingCommandStatus.ControlConflict, "control");
-        var commands = Fake<IBoardingCommands>((_, args) => { args[2] = admitted ? controller : null; return acquisition; });
+        var commands = Fake<IBoardingCommandService>((_, args) => { args[2] = admitted ? controller : null; return acquisition; });
         var execution = new BoardingCommandResult(BoardingCommandStatus.Admitted, "request");
         var tactics = Fake<IBoardingTactics>((name, args) =>
         {
@@ -70,7 +70,7 @@ public sealed class CargoRecoveryPanelTests
         var panel = Fake<IDungeonPanelApi>((method, _) =>
         { Assert.Equal("RegisterAction", method); if (failRegistration) throw new InvalidOperationException("registration refused"); return panelLease; });
         CargoRecoveryPanel Create() => new("cargo", target, panel, boarding,
-            Fake<IBoardingCommands>((_, _) => throw new InvalidOperationException("Unexpected command")),
+            Fake<IBoardingCommandService>((_, _) => throw new InvalidOperationException("Unexpected command")),
             Fake<IBoardingTactics>((_, _) => throw new InvalidOperationException("Unexpected tactic")),
             settlement, _ => throw new InvalidOperationException("Unexpected command receipt"), _ => observed++);
         if (failRegistration) Assert.Throws<InvalidOperationException>(() => Create());

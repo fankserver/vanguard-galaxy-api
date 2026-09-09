@@ -16,7 +16,7 @@ public sealed class CargoAuthorSession : IDisposable
     private ILifecycleService? _lifecycle;
     private Action<LifecycleEvent>? _lifecycleHandler;
     public CargoAuthorSession(string reward, ILifecycleService? lifecycle, IBoardingEvents? boarding, IDungeonContent? content,
-        IDungeonPanelApi? panel, IBoardingCommands? commands, IBoardingTactics? tactics, IDungeonSettlement? settlement,
+        IDungeonPanelApi? panel, IBoardingCommandService? commands, IBoardingTactics? tactics, IDungeonSettlement? settlement,
         Action<string> log, Action<string>? warn = null)
     {
         if (log == null) throw new ArgumentNullException(nameof(log));

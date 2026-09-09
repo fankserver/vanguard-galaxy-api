@@ -25,6 +25,7 @@ public sealed class ModServices
     private readonly IBoardingRuleService _boardingRules;
     private readonly IBoardingCombatService _boardingCombat;
     private readonly IDungeonRewardService _dungeonRewards;
+    private readonly IBoardingCommandService _boardingCommands;
     public ILifecycleService Lifecycle { get { CheckThread(); return _lifecycle; } }
     public IModInformationService Mods { get { CheckThread(); return _mods; } }
     public ISaveDataService SaveData { get { CheckThread(); return _saveData; } }
@@ -45,9 +46,11 @@ public sealed class ModServices
     public IBoardingCombatService BoardingCombat { get { CheckThread(); return _boardingCombat; } }
     public IDungeonRewardService DungeonRewards { get { CheckThread(); return _dungeonRewards; } }
 
+    public IBoardingCommandService BoardingCommands { get { CheckThread(); return _boardingCommands; } }
+
     internal ModServices(ILifecycleService lifecycle, IModInformationService mods, ISaveDataService saveData,
         IMissionService missions, ITravelService travel, IStationService station, IRecipeService recipes, IRecipeQuoteService recipeQuotes,
-        ICraftingJobService craftingJobs, ICraftingCommandService craftingCommands, IHudService hud, IForgeUiService forgeUi, IBoardingRuleService boardingRules, IBoardingCombatService boardingCombat, IDungeonRewardService dungeonRewards)
+        ICraftingJobService craftingJobs, ICraftingCommandService craftingCommands, IHudService hud, IForgeUiService forgeUi, IBoardingRuleService boardingRules, IBoardingCombatService boardingCombat, IDungeonRewardService dungeonRewards, IBoardingCommandService boardingCommands)
     {
         _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
         _mods = mods ?? throw new ArgumentNullException(nameof(mods));
@@ -64,6 +67,7 @@ public sealed class ModServices
         _boardingRules = boardingRules ?? throw new ArgumentNullException(nameof(boardingRules));
         _boardingCombat = boardingCombat ?? throw new ArgumentNullException(nameof(boardingCombat));
         _dungeonRewards = dungeonRewards ?? throw new ArgumentNullException(nameof(dungeonRewards));
+        _boardingCommands = boardingCommands ?? throw new ArgumentNullException(nameof(boardingCommands));
     }
 
     internal void CheckThread()

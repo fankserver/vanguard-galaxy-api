@@ -85,7 +85,6 @@ public sealed partial class Plugin : BaseUnityPlugin
         _hub.SetCapability("story-protection", false, "Not bound.");
         _hub.SetCapability("boarding-observation", false, "Disabled by configuration; experimental.");
         ModApi.Boarding = null;
-        ModApi.BoardingCommands = null;
         ModApi.BoardingTactics = null;
         _hub.SetCapability("boarding-tactics", false, "Disabled by configuration; experimental.");
         _hub.SetCapability("boarding-combat", false, "Disabled by configuration; experimental.");
@@ -788,12 +787,11 @@ public sealed partial class Plugin : BaseUnityPlugin
                 _ => typeof(BoardingCommandPatches.Manual)
             }));
             if (!_hub.Capabilities.Any(c => c.Name == "boarding-commands" && c.Available)) throw new NotSupportedException("Boarding command hooks unavailable.");
-            ModApi.BoardingCommands = _boardingCommands;
         }
         catch (Exception error)
         {
             BoardingCommandPatches.Adapter = null; BoardingCommandPatches.Service = null;
-            _boardingCommands?.Dispose(); _boardingCommands = null; ModApi.BoardingCommands = null;
+            _boardingCommands?.Dispose(); _boardingCommands = null;
             _hub.SetCapability("boarding-commands", false, error.GetType().Name); Logger.LogError(error);
         }
     }
@@ -988,7 +986,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         StopDungeons();
         BoardingTacticalPatches.Adapter = null; ModApi.BoardingTactics = null;
         BoardingCombatPatches.Adapter = null; _boardingCombat?.Dispose(); _boardingCombat = null;
-        BoardingCommandPatches.Adapter = null; BoardingCommandPatches.Service = null; _boardingCommands?.Dispose(); _boardingCommands = null; ModApi.BoardingCommands = null;
+        BoardingCommandPatches.Adapter = null; BoardingCommandPatches.Service = null; _boardingCommands?.Dispose(); _boardingCommands = null;
         BoardingRulePatches.Adapter = null; _boardingRules?.Dispose(); _boardingRules = null; _boardingRuleService?.Dispose(); _boardingRuleService = null;
         BoardingPatches.Observer = null; _boarding?.Dispose(); _boarding = null; ModApi.Boarding = null;
         try { _updates?.Dispose(); } catch (Exception) { }

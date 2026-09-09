@@ -102,7 +102,7 @@ public sealed class BoardingCommandAdapterTests
     public void HudCancellationRevokesControllerButApiCancellationDoesNot()
     {
         using var f = new Fixture();
-        using var commands = new BoardingCommandService(f.Hub, f.Events, f.Adapter, () => false);
+        f.Hub.SetCapability("boarding-commands", true, "Test bindings."); using var commands = new BoardingCommandService(f.Hub, f.Events, f.Adapter, () => false);
         Assert.True(commands.AcquireControl("mod", f.Target, out var controller).Admitted);
         Assert.True(controller!.Start(new BoardingCrewManifest(new Dictionary<string, int> { ["Marine"] = 2 }), new()).Admitted);
         Assert.True(controller.CancelApproach().Admitted); Assert.True(controller.IsActive);

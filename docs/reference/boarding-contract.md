@@ -1,6 +1,6 @@
 # Boarding integration constraints and source coverage
 
-Optional boarding observation is implemented in API 0.1.25, disabled by default and not runtime-qualified. Enable `[Boarding] Enabled = true`, inspect the `boarding-observation` capability and use `ModApi.Boarding`. `ModApi.Services.BoardingRules` exposes a stable `IBoardingRuleService` with independent typed availability. API 0.1.27 exposes `ModApi.BoardingCommands` when `boarding-commands` is available. API 0.1.28 exposes `ModApi.BoardingTactics` and `ModApi.Services.BoardingCombat` under the separate `boarding-tactics` and `boarding-combat` capabilities. Authored content and presentation registration are not available yet. This document distinguishes the observation contract from applicable constraints on those integrations; no native boarding scenario is attested by it.
+Optional boarding observation is implemented in API 0.1.25, disabled by default and not runtime-qualified. Enable `[Boarding] Enabled = true`, inspect the `boarding-observation` capability and use `ModApi.Boarding`. `ModApi.Services.BoardingRules` exposes a stable `IBoardingRuleService` with independent typed availability. API 0.1.27 exposes `ModApi.Services.BoardingCommands` when `boarding-commands` is available. API 0.1.28 exposes `ModApi.BoardingTactics` and `ModApi.Services.BoardingCombat` under the separate `boarding-tactics` and `boarding-combat` capabilities. Authored content and presentation registration are not available yet. This document distinguishes the observation contract from applicable constraints on those integrations; no native boarding scenario is attested by it.
 
 ## Evidence boundary
 
@@ -158,7 +158,7 @@ Host tests, source inspection and metadata checks are not Unity acceptance. Nati
 
 ## Boarding commands (API 0.1.27)
 
-`ModApi.BoardingCommands.AcquireControl(pluginId, target, out controller)` returns a typed result and, when admitted, an instance-scoped disposable controller. Acquire from a current target snapshot, not a saved handle. Event subscriptions do not grant command control. Only one mod controller can hold a target; manual native HUD cancellation and panel start, extraction, reinforcement and option actions revoke it. Native autonomous re-enabling is blocked while it is held. Disposal does not restore old autonomous settings over newer player choices.
+`ModApi.Services.BoardingCommands.AcquireControl(pluginId, target, out controller)` returns a typed result and, when admitted, an instance-scoped disposable controller. Acquire from a current target snapshot, not a saved handle. Event subscriptions do not grant command control. Only one mod controller can hold a target; manual native HUD cancellation and panel start, extraction, reinforcement and option actions revoke it. Native autonomous re-enabling is blocked while it is held. Disposal does not restore old autonomous settings over newer player choices.
 
 The controller exposes Start, Resume, Reinforce, CancelApproach, Retreat, RequestExtraction, ConfirmExtraction and SetOptions. Crew manifests are copied, nonempty, positive-count maps of native crew identifiers. Options expose ammunition, stealth, auto-move and automatic buyout. Automatic buyout can spend credits later according to native rules; no upfront credit charge is invented. Starting with friendly-faction consequences requires explicit consent, then uses native reputation/aggro bookkeeping. Availability, crew, capacity, travel, phase and target/ship identity are revalidated at execution. Installation entry restrictions do not apply to ship targets. Reinforcement requires an existing receiving simulation; approach or prelanding without one is rejected before crew debit.
 
@@ -179,3 +179,9 @@ Callbacks receive immutable numeric contexts and must be pure, quick and determi
 - Ship and installation scopes are explicit. Scuttle denials prevent the native attempt before RNG and before armory destruction. Independent explosion denials prevent reactor explosion initiation without denying armory scuttle. Damage scaling alone does not prevent armory destruction or undo an initiated explosion/collapse. Cause scopes are per invocation and simulation, including nested combat/ammunition, hazards, grenades, scuttle and reactor explosion ticks. Authoritative host destruction bypasses all integrity reductions.
 
 Host and metadata checks cover policy composition and adapter boundaries. Full native coexistence, damage, explosion and save/resume acceptance remains pending.
+
+`ModApi.Services.BoardingCommands` is a stable `IBoardingCommandService` with typed
+`Availability` and `AvailabilityChanged`. Missing bindings refuse control without
+native access. Health loss closes controller admission; loss during a native
+invocation reports `Uncertain` because effects may already have occurred. Never
+blindly retry an uncertain command. Admission is not a completed native outcome.
