@@ -16,6 +16,7 @@ internal static class ForgeUiBindings
         (Contents, "unlockedRecipes", Recipes, false, false), (Contents, "recipeIcon", "UnityEngine.UI.Image", false, true),
         (Contents, "countSlider", "UnityEngine.UI.Slider", false, true), (Contents, "costText", "TMPro.TMP_Text", false, true),
         (Interior, "spacestation", "Source.Galaxy.POI.SpaceStation", false, false),
+        (Interior, "tabParent", "UnityEngine.RectTransform", false, true),
         (Interior, "currentTab", "Source.Galaxy.POI.SpaceStationFacility", false, false),
         (Interior, "tabActions", "System.Collections.Generic.Dictionary`2<Source.Galaxy.POI.SpaceStationFacility,System.Action>", false, true)
     };

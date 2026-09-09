@@ -37,7 +37,8 @@ public sealed partial class Plugin
         try
         {
             mouse = InputSystem.AddDevice<Mouse>();
-            foreach (var frame in Wait(() => GameObject.Find("Mod API Forge actions") != null, "Forge action rendering")) yield return frame;
+            foreach (var frame in Wait(ForgeGraphicsReady, "Forge action rendering")) yield return frame;
+            CheckForgeBand();
             foreach (var frame in CaptureForgeActions()) yield return frame;
             var button = ForgeProbeButton("Forge probe first");
             Require(ForgeProbeButton("Forge probe second") != button, "Contributors did not render distinct buttons.");
@@ -67,19 +68,46 @@ public sealed partial class Plugin
             SpCall(interior, "GoToLocation", Enum.Parse(NativeType("Source.Galaxy.POI.SpaceStationFacility"), "Refinery"), true);
             foreach (var frame in Wait(() => ui.Current == null && GameObject.Find("Mod API Forge actions") == null, "Forge view teardown")) yield return frame;
             Require(ui.Open(firstRecipe) == ForgeNavigationStatus.Selected, "Forge reopening failed.");
-            foreach (var frame in Wait(() => GameObject.Find("Mod API Forge actions") != null, "Forge action recreation")) yield return frame;
+            foreach (var frame in Wait(ForgeGraphicsReady, "Forge action recreation")) yield return frame;
+            CheckForgeBand();
             Require(!ui.Current!.View.Equals(oldView), "Reopened Forge retained the old view handle.");
             foreach (var frame in ForgeClick(mouse, ForgeProbeButton("Forge probe second").transform)) yield return frame;
             Require(calls.Count == 3 && calls[2].SelectedRecipe.Equals(firstRecipe), "Registration did not survive native view replacement.");
             first.Dispose(); second.Dispose();
             foreach (var frame in Wait(() => GameObject.Find("Mod API Forge actions") == null, "Disposed Forge actions")) yield return frame;
-            WriteAtomic("forge-ui.txt", new[] { "PASS", "forge-ui-v1", "variants-pointer-disabled-stale-reopen-dispose" });
+            WriteAtomic("forge-ui.txt", new[] { "PASS", "forge-ui-v2", "variants-pointer-disabled-stale-reopen-dispose-nonoverlap" });
             Passed("Native Forge variant navigation, pointer actions, disabled/stale input, view replacement and disposal");
         }
         finally
         {
             ProbeCleanup.Run(() => { if (mouse != null) InputSystem.RemoveDevice(mouse); }, () => oldMouse?.MakeCurrent());
         }
+    }
+    private static bool ForgeGraphicsReady()
+    {
+        var root = GameObject.Find("Mod API Forge actions");
+        return root != null && root.GetComponent<Image>().depth >= 0
+            && root.GetComponentsInChildren<Button>().Length == 2
+            && root.GetComponentsInChildren<Button>().All(button => button.targetGraphic.depth >= 0);
+    }
+    private static void CheckForgeBand()
+    {
+        Canvas.ForceUpdateCanvases();
+        var root = GameObject.Find("Mod API Forge actions");
+        var ui = SpGet(NativeType("Behaviour.UI.Forge.ForgeUI"), "current")!;
+        var details = ((Image)SpGet(SpGet(ui, "tabContents")!, "recipeIcon")!).transform.parent;
+        var tabs = (RectTransform)SpGet(SpGet(NativeType("Behaviour.UI.Spacestation.SpaceStationInterior"), "instance")!, "tabParent")!;
+        var stripBounds = ForgeScreenBounds((RectTransform)root.transform);
+        Require(!stripBounds.Overlaps(ForgeScreenBounds((RectTransform)details)) && !stripBounds.Overlaps(ForgeScreenBounds(tabs)),
+            "Forge action strip overlaps native recipe content or facility tabs.");
+    }
+    private static Rect ForgeScreenBounds(RectTransform rect)
+    {
+        var canvas = rect.GetComponentInParent<Canvas>().rootCanvas;
+        var camera = canvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : canvas.worldCamera;
+        var corners = new Vector3[4]; rect.GetWorldCorners(corners);
+        var points = corners.Select(corner => RectTransformUtility.WorldToScreenPoint(camera, corner)).ToArray();
+        return Rect.MinMaxRect(points.Min(point => point.x), points.Min(point => point.y), points.Max(point => point.x), points.Max(point => point.y));
     }
     private IEnumerable<object?> CaptureForgeActions()
     {
@@ -106,6 +134,8 @@ public sealed partial class Plugin
         events!.RaycastAll(new PointerEventData(events) { position = point }, hits);
         Require(hits.Count > 0 && (hits[0].gameObject.transform == target || hits[0].gameObject.transform.IsChildOf(target)),
             "Forge pointer point does not hit its intended button: point=" + point + " rect=" + rect.rect + " canvas=" + canvas.renderMode
+            + " count=" + hits.Count + " targetHit=" + hits.Any(hit => hit.gameObject.transform.IsChildOf(target))
+            + " screen=" + Screen.width + "x" + Screen.height + " depth=" + target.GetComponent<Image>().depth + " culled=" + target.GetComponent<Image>().canvasRenderer.cull
             + " hits=" + string.Join("|", hits.Take(8).Select(hit => hit.gameObject.name + "@" + hit.gameObject.transform.parent?.name)));
         return point;
     }

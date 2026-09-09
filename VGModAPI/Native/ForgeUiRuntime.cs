@@ -65,23 +65,30 @@ internal sealed class ForgeUiRuntime : IDisposable
         var contents = RecipeCatalogNativeSource.Member(ui, "tabContents")!;
         var icon = RecipeCatalogNativeSource.Member(contents, "recipeIcon") as Image;
         var font = (RecipeCatalogNativeSource.Member(contents, "costText") as TMP_Text)?.font;
-        if (icon == null || icon.transform.parent is not RectTransform anchor || font == null) throw new InvalidOperationException("Forge action anchor unavailable.");
-        if (_root == null || _view?.Equals(snapshot.View) != true || !_rows.Select(row => row.Token).SequenceEqual(actions.Select(action => action.Token)))
+        var tabs = _source.ForgeTabAnchor as RectTransform;
+        var canvas = tabs != null ? tabs.GetComponentInParent<Canvas>()?.rootCanvas : null;
+        if (icon == null || tabs == null || canvas == null || canvas.transform is not RectTransform anchor || font == null)
+            throw new InvalidOperationException("Forge action anchor unavailable.");
+        if (_root == null || _root.transform.parent != anchor || _view?.Equals(snapshot.View) != true || !_rows.Select(row => row.Token).SequenceEqual(actions.Select(action => action.Token)))
         {
             ClearView(); _view = snapshot.View;
             _root = new GameObject("Mod API Forge actions", typeof(RectTransform), typeof(Image), typeof(ScrollRect), typeof(RectMask2D));
             var root = (RectTransform)_root.transform; root.SetParent(anchor, false);
-            root.anchorMin = new Vector2(0, 0); root.anchorMax = new Vector2(1, 0); root.pivot = new Vector2(.5f, 0);
-            root.offsetMin = new Vector2(8, 114); root.offsetMax = new Vector2(-8, 138);
+            // Canvas-owned, outside recipe content and tab masks; ClearView owns removal on native view teardown.
+            root.anchorMin = root.anchorMax = root.pivot = Vector2.zero;
+            var stationBranch = tabs.transform;
+            while (stationBranch.parent != anchor && stationBranch.parent != null) stationBranch = stationBranch.parent;
+            root.SetSiblingIndex(stationBranch.GetSiblingIndex() + 1);
             _root.GetComponent<Image>().color = new Color(.03f, .04f, .06f, .9f);
             _content = new GameObject("Actions", typeof(RectTransform)).GetComponent<RectTransform>(); _content.SetParent(root, false);
             _content.anchorMin = new Vector2(0, 0); _content.anchorMax = new Vector2(0, 1); _content.pivot = new Vector2(0, .5f);
-            _content.sizeDelta = new Vector2(actions.Count * 124 - 4, 0);
+            _content.sizeDelta = new Vector2(actions.Count * (ForgeActionBand.CellWidth + 4) - 4, 0);
             var scroll = _root.GetComponent<ScrollRect>(); scroll.viewport = root; scroll.content = _content;
             scroll.horizontal = true; scroll.vertical = false; scroll.movementType = ScrollRect.MovementType.Clamped; scroll.scrollSensitivity = 24;
             _tooltip = new GameObject("Forge action tooltip", typeof(RectTransform), typeof(Image));
             var tipRect = (RectTransform)_tooltip.transform; tipRect.SetParent(anchor, false);
-            tipRect.anchorMin = new Vector2(0, 0); tipRect.anchorMax = new Vector2(1, 0); tipRect.offsetMin = new Vector2(8, 140); tipRect.offsetMax = new Vector2(-8, 192);
+            tipRect.anchorMin = tipRect.anchorMax = tipRect.pivot = Vector2.zero;
+            tipRect.SetSiblingIndex(root.GetSiblingIndex() + 1);
             var tipImage = _tooltip.GetComponent<Image>(); tipImage.color = new Color(.02f, .03f, .05f, .98f); tipImage.raycastTarget = false;
             _tooltipText = Text(tipRect, font); _tooltipText.fontSize = 12; _tooltipText.alignment = TextAlignmentOptions.MidlineLeft;
             _tooltip.SetActive(false);
@@ -90,7 +97,7 @@ internal sealed class ForgeUiRuntime : IDisposable
                 var action = actions[index];
                 var go = new GameObject("Action", typeof(RectTransform), typeof(Image), typeof(RevisionButton), typeof(ForgeActionHover));
                 var rect = (RectTransform)go.transform; rect.SetParent(_content, false); rect.anchorMin = new Vector2(0, 0); rect.anchorMax = new Vector2(0, 1);
-                rect.pivot = new Vector2(0, .5f); rect.sizeDelta = new Vector2(120, 0); rect.anchoredPosition = new Vector2(index * 124, 0);
+                rect.pivot = new Vector2(0, .5f); rect.sizeDelta = new Vector2(ForgeActionBand.CellWidth, 0); rect.anchoredPosition = new Vector2(index * (ForgeActionBand.CellWidth + 4), 0);
                 var image = go.GetComponent<Image>(); image.color = new Color(.1f, .17f, .22f, 1);
                 var button = go.GetComponent<RevisionButton>(); button.targetGraphic = image;
                 var row = new Row(action.Token, button, Text(rect, font), go.GetComponent<ForgeActionHover>());
@@ -104,6 +111,7 @@ internal sealed class ForgeUiRuntime : IDisposable
                 _rows.Add(row);
             }
         }
+        PlaceBand(tabs, anchor, (RectTransform)_root.transform, (RectTransform)_tooltip!.transform);
         for (var index = 0; index < _rows.Count; index++)
         {
             var row = _rows[index]; var presentation = actions[index].Presentation;
@@ -113,6 +121,16 @@ internal sealed class ForgeUiRuntime : IDisposable
             row.Icon!.sprite = showIcon ? icon.sprite : null; row.Icon.gameObject.SetActive(showIcon);
             row.Label.rectTransform.offsetMin = new Vector2(showIcon ? 24 : 4, 0);
         }
+    }
+    private static void PlaceBand(RectTransform tabs, RectTransform canvas, RectTransform strip, RectTransform tooltip)
+    {
+        var corners = new Vector3[4]; tabs.GetWorldCorners(corners);
+        var left = canvas.InverseTransformPoint(corners[1]); var right = canvas.InverseTransformPoint(corners[2]);
+        var bounds = canvas.rect;
+        if (!ForgeActionBand.TryCreate(bounds.width, bounds.height, left.x - bounds.xMin, right.x - bounds.xMin,
+            Math.Max(left.y, right.y) - bounds.yMin, out var band)) throw new InvalidOperationException("Forge action band has no safe screen space.");
+        strip.anchoredPosition = new Vector2(band.Left, band.Bottom); strip.sizeDelta = new Vector2(band.Width, ForgeActionBand.Height);
+        tooltip.anchoredPosition = new Vector2(band.Left, band.TooltipBottom); tooltip.sizeDelta = new Vector2(band.Width, ForgeActionBand.TooltipHeight);
     }
     private static TMP_Text Text(RectTransform parent, TMP_FontAsset font)
     {

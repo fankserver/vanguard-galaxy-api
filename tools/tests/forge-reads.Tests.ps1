@@ -70,10 +70,10 @@ try {
     Remove-Item (Join-Path $root 'refinery.enabled'), (Join-Path $root 'forge-commands.enabled')
     $p | Add-Member forgeUiProbe $true
     Reject { Assert-ForgeReadSelection $root $p }
-    [IO.File]::WriteAllText((Join-Path $root 'forge-ui.enabled'), 'forge-ui-v1')
+    [IO.File]::WriteAllText((Join-Path $root 'forge-ui.enabled'), 'forge-ui-v2')
     Assert-ForgeReadSelection $root $p
     Reject { Assert-ForgeUiReceipt $root $p }
-    [IO.File]::WriteAllLines((Join-Path $root 'forge-ui.txt'), @('PASS','forge-ui-v1','variants-pointer-disabled-stale-reopen-dispose'))
+    [IO.File]::WriteAllLines((Join-Path $root 'forge-ui.txt'), @('PASS','forge-ui-v2','variants-pointer-disabled-stale-reopen-dispose-nonoverlap'))
     Reject { Assert-ForgeUiReceipt $root $p }
     $image = Join-Path $root 'forge-ui-actions.png'; $imageRecord = Join-Path $root 'forge-ui-actions.txt'
     [IO.File]::WriteAllBytes($image, [byte[]]@(137,80,78,71,13,10,26,10))

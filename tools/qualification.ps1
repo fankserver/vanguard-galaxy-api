@@ -390,7 +390,7 @@ if ($Action -eq 'Prepare') {
     if ($ForgeReadProbe) {
         [IO.File]::AppendAllText((Join-Path $bep 'config\vgmodapi.cfg'), "`r`n[Recipes]`r`nEnabled = true`r`n")
         [IO.File]::WriteAllText((Join-Path $root 'forge-reads.enabled'), 'forge-reads-v1')
-        if ($ForgeUiProbe) { [IO.File]::WriteAllText((Join-Path $root 'forge-ui.enabled'), 'forge-ui-v1') }
+        if ($ForgeUiProbe) { [IO.File]::WriteAllText((Join-Path $root 'forge-ui.enabled'), 'forge-ui-v2') }
         if ($ForgeCommandProbe) {
             [IO.File]::AppendAllText((Join-Path $bep 'config\vgmodapi.cfg'), "CommandsEnabled = true`r`n")
             [IO.File]::WriteAllText((Join-Path $root 'forge-commands.enabled'), 'forge-commands-v3')

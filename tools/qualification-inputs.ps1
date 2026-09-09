@@ -312,7 +312,7 @@ function Assert-ForgeUiSelection([string]$Root, $Provenance) {
     $marker = Join-Path $Root 'forge-ui.enabled'
     if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Forge UI selection changed.' }
     if (!$selected) { return }
-    if (!$Provenance.forgeReadProbe -or $Provenance.forgeCommandProbe -or $Provenance.refineryProbe -or $Provenance.forgeDeliveryProbe -or $Provenance.forgePersistenceProbe -or [IO.File]::ReadAllText($marker) -cne 'forge-ui-v1') { throw 'Invalid Forge UI selection.' }
+    if (!$Provenance.forgeReadProbe -or $Provenance.forgeCommandProbe -or $Provenance.refineryProbe -or $Provenance.forgeDeliveryProbe -or $Provenance.forgePersistenceProbe -or [IO.File]::ReadAllText($marker) -cne 'forge-ui-v2') { throw 'Invalid Forge UI selection.' }
 }
 function Assert-ForgeUiReceipt([string]$Root, $Provenance) {
     Assert-ForgeReadReceipt $Root $Provenance
@@ -321,7 +321,7 @@ function Assert-ForgeUiReceipt([string]$Root, $Provenance) {
     $file = Join-Path $Root 'forge-ui.txt'
     if ((Get-Item -LiteralPath $file).Length -gt 512) { throw 'Oversized Forge UI receipt.' }
     $lines = @(Get-Content -LiteralPath $file)
-    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'forge-ui-v1' -or $lines[2] -cne 'variants-pointer-disabled-stale-reopen-dispose') { throw 'Incomplete Forge UI receipt.' }
+    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'forge-ui-v2' -or $lines[2] -cne 'variants-pointer-disabled-stale-reopen-dispose-nonoverlap') { throw 'Incomplete Forge UI receipt.' }
     $image = Join-Path $Root 'forge-ui-actions.png'; $record = Join-Path $Root 'forge-ui-actions.txt'
     foreach ($path in @($image,$record)) {
         if (!(Test-Path -LiteralPath $path -PathType Leaf) -or (Get-Item -LiteralPath $path).Length -eq 0 -or ((Get-Item -LiteralPath $path).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Forge UI image evidence missing, empty or linked.' }

@@ -142,7 +142,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             foreach (var frame in CheckForgeReads()) yield return frame;
             if (File.Exists(Path.Combine(_root!, "forge-ui.enabled")))
             {
-                Require(File.ReadAllText(Path.Combine(_root!, "forge-ui.enabled")) == "forge-ui-v1", "Invalid Forge UI marker.");
+                Require(File.ReadAllText(Path.Combine(_root!, "forge-ui.enabled")) == "forge-ui-v2", "Invalid Forge UI marker.");
                 foreach (var frame in CheckForgeUiInput()) yield return frame;
             }
             if (File.Exists(Path.Combine(_root!, "forge-commands.enabled")))
