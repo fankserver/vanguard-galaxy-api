@@ -44,6 +44,8 @@ internal sealed class HudService : IHudService, IDisposable
     internal Guid? Surface => _surface;
     internal IReadOnlyList<Entry> Entries
     { get { _hub.CheckThread(); return _entries.OrderBy(entry => entry.Order).ThenBy(entry => entry.Plugin, StringComparer.Ordinal).ThenBy(entry => entry.Local, StringComparer.Ordinal).ToArray(); } }
+    internal IReadOnlyList<Entry> Launchers(HudCorner corner) => Entries
+        .Where(entry => entry.Panel == null && entry.Button?.Corner == corner).ToArray();
     public IHudRegistration Register(string pluginId, string localId, Action<HudInteraction> callback, int order = 0)
     {
         _hub.CheckThread(); if (_disposed) throw new ObjectDisposedException(nameof(HudService));

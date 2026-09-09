@@ -16,6 +16,7 @@ internal sealed partial class HudRuntime : IDisposable
     private readonly HudPresentationSource _presentation;
     private readonly Func<Guid?> _session;
     private readonly Action<Exception> _report;
+    private readonly HudIconResolver<Sprite> _icons;
     private Component? _indicator;
     private Canvas? _canvas;
     private GameObject? _root;
@@ -23,7 +24,23 @@ internal sealed partial class HudRuntime : IDisposable
     private bool _disposed;
     private TMP_FontAsset? _font;
     internal HudRuntime(HudService service, Assembly assembly, IReadOnlyDictionary<string, MethodInfo> methods, Func<Guid?> session, Action<Exception> report)
-    { _service = service; _assembly = assembly; _methods = methods; _presentation = new(assembly, methods); _session = session; _report = report; service.SurfaceLive = SurfaceLive; }
+    {
+        _service = service; _assembly = assembly; _methods = methods; _presentation = new(assembly, methods);
+        _session = session; _report = report; service.SurfaceLive = SurfaceLive;
+        _icons = new(FindLauncherIcon, sprite => sprite != null, report);
+    }
+    private static Sprite? FindLauncherIcon(HudIcon icon)
+    {
+        Sprite? match = null;
+        foreach (var sprite in Resources.FindObjectsOfTypeAll<Sprite>())
+        {
+            if (sprite == null || !HudIconSprites.Matches(icon, sprite.name, sprite.rect.x, sprite.rect.y)) continue;
+            // Duplicate names/atlas cells must not select a glyph by registry iteration order.
+            if (match != null && match != sprite) return null;
+            match = sprite;
+        }
+        return match;
+    }
     internal void Tick()
     {
         if (_disposed) return;
@@ -64,7 +81,7 @@ internal sealed partial class HudRuntime : IDisposable
     }
     private void ClearSurface()
     {
-        ClearContent(); _indicator = null; _canvas = null; _font = null; _service.SetSurface(null, null);
+        ClearContent(); _icons.Clear(); _indicator = null; _canvas = null; _font = null; _service.SetSurface(null, null);
     }
     private void ClearContent()
     {

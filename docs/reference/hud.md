@@ -25,9 +25,69 @@ Provider and local identifiers jointly identify a registration. Same-provider du
 
 Registrations and their latest models survive HUD hide/show, canvas replacement and session replacement until disposed. No save hooks are needed for this transient API-owned UI lifetime. Models remain provider-owned: clear or replace session-specific content on session change. They are not persisted by this API. Updating with null hides the corresponding button or panel.
 
-At most 16 registrations and four simultaneous panels are allowed. Each panel contains at most 32 uniquely identified rows. Limit violations reject the change without discarding prior content. Numeric order followed by ordinal provider/local identity determines placement. Panels size to their content within the available HUD height. A registration with both a button and panel renders its action inside the panel footer; button-only registrations remain in the shared strip. Shared lower-right surfaces scroll horizontally when needed; long panels scroll vertically. Consumers do not choose mutually coordinated offsets. Geometry uses native canvas units and reattaches/rebuilds when the current canvas or viewport changes.
+At most 16 registrations and four simultaneous panels are allowed across all providers and corners. Each panel contains at most 32 uniquely identified rows. Limit violations reject the change without discarding prior content. Numeric order followed by ordinal provider/local identity determines placement. Panels size to their content within the available HUD height. A registration with both a button and panel renders its action inside the panel footer; its corner does not move the panel. Button-only registrations use the shared corner layouts below. Panels remain in their lower HUD area and scroll horizontally when needed; long panels scroll vertically. Geometry uses native canvas units and reattaches/rebuilds when the current canvas or viewport changes.
 
 Input checks the registration token, model revision, current session and live surface. Pointer-down revisions are retained through release; keyboard submission uses the current revision. Disposed/replaced entries, hidden surfaces, disabled buttons, non-clickable rows and obsolete models cannot invoke a replacement action. Callbacks are individually isolated and recursive invocation is refused. Content updates need not destroy existing hovered rows when their identities/structure are unchanged.
+
+## Launcher corners and visual identity
+
+Corner selection and semantic icons require API **0.2.9** or later. The existing
+`HudButton(label, tooltip, enabled)` constructor remains supported and produces a
+text-only bottom-right launcher. The explicit overload selects a corner and an
+optional icon:
+
+```csharp
+var stockpile = hud.Register(pluginId, "stockpile", _ => ToggleStockpile(), order: 0);
+stockpile.Update(new HudButton("Stockpile", HudCorner.TopRight, HudIcon.Storage,
+    tooltip: "Station stockpile"), null);
+var refinery = hud.Register(pluginId, "refinery", _ => ToggleRefinery(), order: 1);
+refinery.Update(new HudButton("Refinery", HudCorner.TopRight, HudIcon.Refinery,
+    tooltip: "Refinery jobs"), null);
+var status = hud.Register(pluginId, "status", _ => ToggleStatus());
+status.Update(new HudButton("Status", HudCorner.BottomLeft), null);
+```
+
+**Each corner is one API-managed layout across all mods**, not a separate area per
+mod. Every standalone button independently selects `TopLeft`, `TopRight`, `BottomLeft`
+or `BottomRight`. If mod X adds one top-right icon and mod Y adds top-right and
+bottom-right icons, the two top-right icons occupy distinct slots in the same row;
+Y's bottom-right icon occupies the bottom-right row. No coordinate agreement is needed.
+
+- Within each corner, sort by registration `order`, then ordinal provider ID, then
+  local ID. Registration timing does not determine the order. Ordering starts at the
+  selected corner and grows inward; removing a button frees its slot.
+- The API owns sizes and gaps. Icons use compact square slots; text-only buttons use
+  wider slots. Loading/fallback does not change an icon's slot or shift its neighbors.
+- Opposing corners have disjoint, bounded viewports. Crowded rows show a scrollbar
+  and scroll horizontally with the scrollbar, wheel or drag instead of wrapping over other rows. All registered buttons remain
+  in the row; overflow does not discard later providers.
+- Game-specific edge insets leave room for native HUD controls; a corner identifies a
+  HUD region, not a promise to touch the literal screen edge. Very small viewports that
+  cannot hold a row suppress that row rather than overlap it with another corner.
+- Changing a button's corner moves that launcher, not its consumer-owned window.
+  Panel actions stay in their footer and always retain their label.
+
+The collision guarantee covers API-managed launchers. Consumer windows and arbitrary
+UI placed independently by other mods are not positioned or arbitrated by this service.
+
+`HudIcon.Storage` and `HudIcon.Refinery` identify game concepts, not asset names.
+The adapter resolves their vanilla sprites; consumers do not scan assets or provide
+atlas coordinates. A label is still required as the fallback and becomes the tooltip
+when no custom tooltip is supplied. Unknown enum values are rejected.
+
+While unresolved, the launcher preserves its slot but shows no sprite or label for
+up to two seconds. It never enables a spriteless image, preventing a white-box flash.
+After that it shows the label in the same slot. Missing or failed resolutions keep
+retrying at most once per second per visual while the HUD renders; a late sprite
+replaces the fallback without a model update or layout rebuild. Successful results
+are shared across launchers and rechecked for destruction. Native surface replacement
+clears the cache. Resolution failures do not disable other launchers or the HUD.
+
+For a panel-footer action, an optional resolved icon appears alongside the label;
+loading never hides that footer label. Its `Corner` is ignored while its panel exists.
+
+The [GameplayWindow example](https://github.com/fankserver/vanguard-galaxy-api/tree/main/examples/GameplayWindow)
+uses a top-right storage launcher and a separately owned window container.
 
 ## Presentation is separate from recipe data
 

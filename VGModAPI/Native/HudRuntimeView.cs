@@ -19,6 +19,7 @@ internal sealed partial class HudRuntime
         if (entries.Length == 0) { ClearContent(); return; }
         var session = _session();
         var structure = ((RectTransform)_canvas!.transform).rect.size.ToString() + string.Join(";",  entries.Select(entry => entry.Token.ToString("N") + (entry.Button != null ? "b" : "") +
+            entry.Button?.Corner + ":" + entry.Button?.Icon +
             (entry.Panel == null ? "" : "p" + entry.Panel.Closable + string.Join("", entry.Panel.Rows.Select(row => row.Id.Length + ":" + row.Id)))));
         if (_root == null || structure != _structure)
         {
@@ -26,22 +27,16 @@ internal sealed partial class HudRuntime
             _root = new GameObject("Mod API shared HUD", typeof(RectTransform));
             var root = (RectTransform)_root.transform; root.SetParent(_canvas!.transform, false); Stretch(root);
             var canvasHeight = ((RectTransform)_canvas.transform).rect.height;
-            var panelHeight = Mathf.Clamp(canvasHeight - 390, 120, 360);
-            var buttons = entries.Count(entry => entry.Button != null && entry.Panel == null);
+            var bottomLaunchers = BuildLaunchers(root);
+            var panelBottom = bottomLaunchers ? 392 : 340;
+            var panelHeight = Mathf.Clamp(canvasHeight - panelBottom - 64, 0, 360);
             var panels = entries.Count(entry => entry.Panel != null);
-            var buttonContent = Scroll(root, "Buttons", 340, 28, buttons * 124, false);
-            var panelContent = Scroll(root, "Panels", buttons > 0 ? 372 : 340, panelHeight, panels * 308, false);
-            buttonContent.parent.gameObject.SetActive(buttons != 0); panelContent.parent.gameObject.SetActive(panels != 0);
-            var buttonIndex = 0; var panelIndex = 0;
+            var panelContent = Scroll(root, "Panels", panelBottom, panelHeight, panels * 308, false);
+            panelContent.parent.gameObject.SetActive(panels != 0 && panelHeight >= 70);
+            var panelIndex = 0;
             foreach (var entry in entries)
             {
-                var view = new View(); _views.Add(entry.Token, view);
-                if (entry.Button != null && entry.Panel == null)
-                {
-                    var rect = Box(buttonContent, "Button", buttonIndex++ * 124, 0, 120, 28, false);
-                    view.Button = Button(rect, () => view.Revision, revision => Click(entry.Token, revision, HudInteractionKind.Button, null));
-                    view.ButtonLabel = Label(rect, 12); view.ButtonHover = Hover(rect.gameObject);
-                }
+                if (!_views.TryGetValue(entry.Token, out var view)) _views.Add(entry.Token, view = new View());
                 if (entry.Panel == null) continue;
                 var layout = new RecipeWidgetLayout(entry.Panel.Rows.Count, entry.Button != null, panelHeight);
                 var panel = Box(panelContent, "Panel", panelIndex++ * 308, 0, RecipeWidgetLayout.Width, layout.Height, false);
@@ -50,6 +45,7 @@ internal sealed partial class HudRuntime
                     var footer = Box(panel, "Action", 6, 4, 288, 26, false);
                     view.Button = Button(footer, () => view.Revision, revision => Click(entry.Token, revision, HudInteractionKind.Button, null));
                     view.ButtonLabel = Label(footer, 12); view.ButtonHover = Hover(footer.gameObject);
+                    view.ButtonIcon = LauncherIcon(footer, false);
                 }
                 panel.gameObject.AddComponent<Image>().color = new Color(.035f, .05f, .075f, .94f);
                 var header = Box(panel, "Header", 6, -4, 258, 30, true);
@@ -76,13 +72,9 @@ internal sealed partial class HudRuntime
         foreach (var entry in entries)
         {
             var view = _views[entry.Token];
+            if (entry.Button != null && view.Button != null) BindButton(view, entry.Button);
             if (view.Revision == entry.Revision) continue;
             view.Revision = entry.Revision;
-            if (entry.Button != null)
-            {
-                view.Button!.interactable = entry.Button.Enabled; view.ButtonLabel!.text = GameText(entry.Button.Label);
-                view.ButtonHover!.Tooltip = entry.Button.Tooltip;
-            }
             if (entry.Panel == null) continue;
             SafeBind(entry.Plugin, view.Header!, entry.Panel.Title, "", "", entry.Panel.Presentation);
             foreach (var row in entry.Panel.Rows)
@@ -139,7 +131,23 @@ internal sealed partial class HudRuntime
     private ForgeActionHover Hover(GameObject go)
     {
         var hover = go.AddComponent<ForgeActionHover>();
-        hover.Show = text => { if (_plainTooltip != null) { _plainTooltip.text = GameText(text); _plainTooltip.transform.parent.gameObject.SetActive(text.Length != 0); } };
+        hover.Show = text =>
+        {
+            if (_plainTooltip == null || _root == null) return;
+            _plainTooltip.text = GameText(text);
+            var tip = (RectTransform)_plainTooltip.transform.parent;
+            tip.gameObject.SetActive(text.Length != 0);
+            if (text.Length == 0) return;
+            var area = ((RectTransform)_root.transform).rect;
+            var bounds = RectTransformUtility.CalculateRelativeRectTransformBounds(_root.transform, go.transform);
+            tip.anchorMin = tip.anchorMax = new Vector2(.5f, .5f); tip.pivot = Vector2.zero;
+            tip.sizeDelta = new Vector2(Mathf.Min(400, Mathf.Max(0, area.width - 12)), Mathf.Min(84, Mathf.Max(0, area.height - 12)));
+            var y = bounds.min.y - tip.rect.height - 6;
+            if (y < area.yMin + 6) y = bounds.max.y + 6;
+            tip.anchoredPosition = new Vector2(
+                Mathf.Clamp(bounds.min.x, area.xMin + 6, area.xMax - tip.rect.width - 6),
+                Mathf.Clamp(y, area.yMin + 6, area.yMax - tip.rect.height - 6));
+        };
         return hover;
     }
     private DisplayRow Display(RectTransform rect)
@@ -200,6 +208,8 @@ internal sealed partial class HudRuntime
     private sealed class View
     {
         internal long Revision = -1;
+        internal bool IsLauncher;
+        internal Image? ButtonIcon;
         internal Button? Button; internal TMP_Text? ButtonLabel; internal ForgeActionHover? ButtonHover; internal DisplayRow? Header;
         internal readonly Dictionary<string, DisplayRow> Rows = new(StringComparer.Ordinal);
     }

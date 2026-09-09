@@ -53,13 +53,25 @@ public sealed class HudPanel
         foreach (var row in Rows) if (!ids.Add(row.Id)) throw new ArgumentException("Duplicate HUD row identity.");
     }
 }
+/// <summary>Each corner is one shared launcher layout across all providers.</summary>
+public enum HudCorner { TopLeft, TopRight, BottomLeft, BottomRight }
+/// <summary>Semantic game visuals; native sprite names and atlas coordinates are adapter details.</summary>
+public enum HudIcon { Storage, Refinery }
 public sealed class HudButton
 {
     public string Label { get; }
     public string Tooltip { get; }
     public bool Enabled { get; }
+    public HudCorner Corner { get; }
+    public HudIcon? Icon { get; }
     public HudButton(string label, string tooltip = "", bool enabled = true)
+        : this(label, HudCorner.BottomRight, null, tooltip, enabled) { }
+    /// <summary>Corner controls standalone launchers only; panel actions remain in their panel footer.</summary>
+    public HudButton(string label, HudCorner corner, HudIcon? icon = null, string tooltip = "", bool enabled = true)
     {
+        if (!Enum.IsDefined(typeof(HudCorner), corner)) throw new ArgumentOutOfRangeException(nameof(corner));
+        if (icon.HasValue && !Enum.IsDefined(typeof(HudIcon), icon.Value)) throw new ArgumentOutOfRangeException(nameof(icon));
+        Corner = corner; Icon = icon;
         Label = HudText.Check(label, 64); Tooltip = HudText.Check(tooltip, 1024); Enabled = enabled;
         if (string.IsNullOrWhiteSpace(Label)) throw new ArgumentException("Button label required.");
     }

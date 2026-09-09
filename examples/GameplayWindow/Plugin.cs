@@ -9,7 +9,7 @@ using VGModAPI.Unity;
 namespace GameplayWindow;
 
 [BepInPlugin(Id, "Gameplay window example", "1.0.0")]
-[BepInDependency(ModApi.PluginId, "0.2.8")]
+[BepInDependency(ModApi.PluginId, "0.2.9")]
 public sealed class Plugin : BaseUnityPlugin
 {
     private const string Id = "vgmodapi.example.gameplay-window";
@@ -43,7 +43,8 @@ public sealed class Plugin : BaseUnityPlugin
             return; // No retries, guessed timeout, singleton lookup or Harmony patch.
         }
         Detach(); _container = container;
-        _launcher?.Update(new HudButton("Example window", "Toggle a consumer-owned window"), null);
+        _launcher?.Update(new HudButton("Example window", HudCorner.TopRight, HudIcon.Storage,
+            tooltip: "Toggle a consumer-owned window"), null);
     }
 
     private void ToggleWindow()
