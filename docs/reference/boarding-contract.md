@@ -65,7 +65,7 @@ The current observation surface is `IBoardingService`, `BoardingHandle`, `Boardi
 
 The following naming and behavioral constraints apply to richer interfaces; names not listed above are design terminology, not advertised available types:
 
-- `IBoardingApi`: queries/subscriptions plus optional command/rule/content/presentation interfaces. Each independently bound integration reports availability and an actionable reason. A live service or `GameplayInitialized` does not imply target, panel or command availability.
+- The boarding service group provides queries/events plus optional command/rule/content/presentation services. Each independently bound integration reports availability and an actionable reason. A live service or `GameplayInitialized` does not imply target, panel or command availability.
 - `BoardingTargetHandle`: session ID and opaque generation; `BoardingOperationHandle`: session ID and opaque operation generation. Compartment and crew handles additionally belong to an operation. Constructors must not let arbitrary identifiers confer mutation authority.
 - Immutable `BoardingTargetSnapshot` and `BoardingOperationSnapshot`: revision, encounter kind, phase, explicit availability reasons, copied crew/pod counts, discovered compartments, options, integrity and separately reported outcome/settlement. Collections are defensively copied. Unknown facts are unknown, not fabricated zeroes or success.
 - Distinct operation phases: approach, awaiting landing, active encounter, extracting, resolved, returning crew, settled, retired. A target may exist without an operation. Phase transitions need native evidence; a closed panel changes no encounter phase.

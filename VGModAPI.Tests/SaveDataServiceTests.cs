@@ -27,6 +27,23 @@ public sealed class SaveDataServiceTests : IDisposable
     }
 
     [Fact]
+    public void DisposalFreezesDependencyFailureEvenIfTheProducerRecovers()
+    {
+        using var hub = Bound();
+        using var source = Source(hub);
+        var registration = source.Register(Provider()).Registration!;
+        hub.SetCapability("save-outcomes", false, "Observer failed.", ServiceUnavailableReason.ObserverFault);
+        var failure = source.Availability;
+        Assert.Equal(ServiceUnavailableReason.DependencyUnavailable, failure.Reason);
+        source.Dispose();
+        Assert.Equal(failure, source.Availability);
+        hub.SetCapability("save-outcomes", true, "Recovered.");
+        Assert.Equal(failure, source.Availability);
+        Assert.False(registration.CanRead);
+        Assert.False(registration.CanMutate);
+    }
+
+    [Fact]
     public void ProviderLifetimeSeparatesRestorationReadabilityAndTransientMutationGates()
     {
         using var hub = Bound();

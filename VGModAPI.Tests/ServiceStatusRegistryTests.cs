@@ -8,6 +8,22 @@ namespace VGModAPI.Tests;
 
 public sealed class ServiceStatusRegistryTests
 {
+    [Fact]
+    public void ProductionDependencyGraphIsAcyclic()
+    {
+        using var hub = Bound();
+        var field = typeof(ServiceStatusRegistry).GetField("_dependencies", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        var graph = (Dictionary<string, string[]>)field.GetValue(hub.Services)!;
+        void Visit(string name, HashSet<string> path)
+        {
+            Assert.True(path.Add(name), "Cyclic service dependency at " + name);
+            if (graph.TryGetValue(name, out var dependencies))
+                foreach (var dependency in dependencies) Visit(dependency, path);
+            path.Remove(name);
+        }
+        foreach (var name in graph.Keys) Visit(name, new HashSet<string>(StringComparer.Ordinal));
+    }
+
     private static LifecycleHub Bound()
     {
         var hub = new LifecycleHub((_, _) => { });

@@ -99,7 +99,9 @@ internal sealed class PersistenceService : ISaveDataService, IDisposable
         _hub.CheckThread();
         if (_disposed) return;
         _disposed = true;
-        _hub.SetCapability("save-data", false, "Save data service stopped.", ServiceUnavailableReason.ApiStopped);
+        var health = Availability;
+        _hub.SetCapability("save-data", false, health.IsAvailable ? "Save data service stopped." : health.Detail,
+            health.IsAvailable ? ServiceUnavailableReason.ApiStopped : health.Reason);
         _coordinator?.Dispose();
         PublishStates();
         if (!_notifying) FinishDispose();
