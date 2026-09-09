@@ -112,8 +112,35 @@ internal static class WorldLifetimePatches
     {
         internal static bool Prefix(object __instance) => Host?.AllowManager(__instance) ?? true;
     }
+    internal static class ActorAwake
+    {
+        internal static void Prefix(object __instance) => (Host as IWorldActorLifetimeHost)?.CaptureActor(__instance);
+    }
+    internal static class ActorActivity
+    {
+        internal static bool Prefix(object __instance) => (Host as IWorldActorLifetimeHost)?.AllowActor(__instance) ?? true;
+    }
     internal static class Spawn
     {
+        internal sealed class Capture
+        {
+            internal readonly IWorldActorLifetimeHost Host;
+            internal readonly System.IDisposable Scope;
+            internal Capture(IWorldActorLifetimeHost host, System.IDisposable scope) { Host = host; Scope = scope; }
+        }
+        internal static void CapturePrefix(object __instance, out Capture? __state)
+        {
+            __state = null; Prefix(__instance);
+            if (Host is IWorldActorLifetimeHost host) __state = new Capture(host, host.BeginSpawn(__instance));
+        }
+        internal static void Postfix(object? __result, Capture? __state)
+        { if (__result != null) __state?.Host.CaptureActor(__result); }
+        internal static System.Exception? Finalizer(Capture? __state, System.Exception? __exception)
+        {
+            try { __state?.Scope.Dispose(); }
+            catch (System.Exception error) { return __exception ?? error; }
+            return __exception;
+        }
         internal static void Prefix(object __instance)
         {
             if (!(Host?.AllowManager(__instance) ?? true))

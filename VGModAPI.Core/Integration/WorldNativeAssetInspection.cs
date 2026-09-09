@@ -21,7 +21,7 @@ internal sealed class WorldNativeAssetInspection
                 throw new InvalidDataException("Native asset registry changed after inspection.");
         }
     }
-    private static void RequireAlive(object value)
+    internal static void RequireAlive(object value)
     {
         var type = value.GetType();
         while (type != null && type.FullName != "UnityEngine.Object") type = type.BaseType;
