@@ -13,11 +13,11 @@ public sealed partial class Plugin
 {
     private IEnumerable<object?> CheckPinProducers(Mouse mouse, bool multiple)
     {
-        var ui = ModApi.ForgeUi!;
-        var catalog = ModApi.Recipes!.Read();
-        var quotes = ModApi.RecipeQuotes!;
+        var ui = ModApi.Services.ForgeUi;
+        var catalog = ModApi.Services.Recipes.Read();
+        var quotes = ModApi.Services.RecipeQuotes;
         var station = quotes.CurrentStation!;
-        var jobs = ModApi.CraftingJobs!.Read(station);
+        var jobs = ModApi.Services.CraftingJobs.Read(station);
         Require(jobs.Status == CraftingJobQueryStatus.Available, "Producer test needs an available job query.");
         var discovery = new List<string> { "forgeRecipes=" + catalog.Recipes.Count(recipe => recipe.Process == RecipeProcess.Forge) };
         IReadOnlyList<RecipeSnapshot>? producers = null;
@@ -88,13 +88,13 @@ public sealed partial class Plugin
     }
     private static bool TrySetPinFixtureBatchOne()
     {
-        if (ModApi.ForgeUi!.Current?.Batches == 1) return true;
+        if (ModApi.Services.ForgeUi.Current?.Batches == 1) return true;
         var native = SpGet(NativeType("Behaviour.UI.Forge.ForgeUI"), "current")!;
         var slider = (Slider)SpGet(SpGet(native, "tabContents")!, "countSlider")!;
         if (slider.minValue > 1 || slider.maxValue < 1) return false;
         // Use the actual control/event, not a fabricated public selection. Native defaults to max craftable.
         slider.value = 1;
-        return ModApi.ForgeUi.Current?.Batches == 1;
+        return ModApi.Services.ForgeUi.Current?.Batches == 1;
     }
     private static Button[] PinRows()
     {
