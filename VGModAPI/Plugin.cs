@@ -73,8 +73,6 @@ public sealed partial class Plugin : BaseUnityPlugin
         _hub.SetCapability("native-travel", false, "Not bound; experimental.");
         _hub.SetCapability("recipe-catalog", false, "Disabled or not bound; experimental.");
         _hub.SetCapability("recipe-quotes", false, "Disabled or not bound; experimental.");
-        ModApi.CraftingJobs = null;
-        ModApi.CraftingCommands = null;
         ModApi.ForgeUi = null;
         ModApi.Hud = null;
         _hub.SetCapability("hud", false, "Disabled or not bound; experimental.");
@@ -505,7 +503,7 @@ public sealed partial class Plugin : BaseUnityPlugin
                 var name = spec.ReturnType == "System.Void" ? "VoidFinalizer" : spec.ReturnType == "System.Boolean" ? "BoolFinalizer" : "ObjectFinalizer";
                 _craftingJobHarmony.Patch(methods[spec.Key], prefix: prefix, finalizer: new HarmonyMethod(typeof(CraftingJobPatches).GetMethod(name, flags)));
             }
-            _craftingJobs.SetAvailable(true); ModApi.CraftingJobs = _craftingJobs;
+            _craftingJobs.SetAvailable(true);
             InstallCraftingCommands(assembly, source);
         }
         catch (Exception error) { TeardownCraftingJobs(); Logger.LogError(error); }
@@ -515,7 +513,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         TeardownCraftingCommands();
         CraftingJobPatches.Observer = null;
         _craftingJobObserver?.Dispose(); _craftingJobObserver = null;
-        _craftingJobs?.Dispose(); _craftingJobs = null; ModApi.CraftingJobs = null;
+        _craftingJobs?.Dispose(); _craftingJobs = null;
         CraftingJobPatches.Keys = new Dictionary<MethodBase, string>();
         try { _craftingJobHarmony?.UnpatchSelf(); } catch (Exception error) { Logger.LogError(error); }
         _craftingJobHarmony = null;
@@ -539,7 +537,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             foreach (var spec in CraftingCommandBindings.Serialization)
                 _craftingCommandHarmony.Patch(methods[spec.Key], prefix: new HarmonyMethod(typeof(CraftingCommandPatches).GetMethod("Prefix", flags)),
                     finalizer: new HarmonyMethod(typeof(CraftingCommandPatches).GetMethod("Finalizer", flags)));
-            _craftingCommands.SetAvailable(true); ModApi.CraftingCommands = _craftingCommands;
+            _craftingCommands.SetAvailable(true);
             _hub!.SetCapability("crafting-commands", true, "Experimental guarded commands; not runtime-qualified.");
         }
         catch (Exception error) { TeardownCraftingCommands(); Logger.LogError(error); }
@@ -547,7 +545,7 @@ public sealed partial class Plugin : BaseUnityPlugin
     private void TeardownCraftingCommands()
     {
         CraftingCommandPatches.Service = null;
-        _craftingCommands?.Dispose(); _craftingCommands = null; ModApi.CraftingCommands = null;
+        _craftingCommands?.Dispose(); _craftingCommands = null;
         if (_craftingCommandSource != null)
         {
             _craftingCommandSource.CommandSession = null; _craftingCommandSource.CommandObserver = null;

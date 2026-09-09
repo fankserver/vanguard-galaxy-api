@@ -17,7 +17,7 @@ public sealed partial class Plugin
         foreach (var frame in Wait(NativeTravelReady, "Forge fixture readiness")) yield return frame;
         var catalog = ModApi.Services.Recipes;
         var quotes = ModApi.Services.RecipeQuotes;
-        var jobs = ModApi.CraftingJobs ?? throw new InvalidOperationException("Crafting jobs unavailable.");
+        var jobs = ModApi.Services.CraftingJobs;
         var station = quotes.CurrentStation ?? throw new InvalidOperationException("Fixture must be at a station.");
         var nativeStation = SpGet(CurrentPlayer, "currentPointOfInterest")!;
         Require(NativeType("Source.Galaxy.POI.SpaceStation").IsInstanceOfType(nativeStation), "Fixture is not a native station.");

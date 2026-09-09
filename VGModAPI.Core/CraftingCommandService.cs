@@ -10,27 +10,31 @@ internal interface ICraftingCommandBackend
     CraftingSettingsSnapshot ReadSettings(Guid sessionId, RecipeStationHandle? station);
 }
 
-internal sealed class CraftingCommandService : ICraftingCommands, IDisposable
+internal sealed class CraftingCommandService : ICraftingCommandService, IDisposable
 {
     private readonly LifecycleHub _hub;
-    private readonly ICraftingJobs _jobs;
-    private readonly ICraftingCommandBackend _backend;
+    private readonly ICraftingJobService _jobs;
+    private readonly ICraftingCommandBackend? _backend;
+    private readonly IServiceStatus _status;
     private readonly Action<Exception> _report;
     private readonly IDisposable _lifetime;
     private readonly Dictionary<(string Plugin, Guid Request), Entry> _requests = new();
-    private bool _available, _busy, _disposed, _faultReported;
+    private bool _busy, _disposed, _faultReported;
     private Exception? _fault;
     internal void RecordFault(Exception error) => Interlocked.CompareExchange(ref _fault, error, null);
     internal Exception? PumpFault()
     {
         _hub.CheckThread();
         if (_fault == null || _disposed || _faultReported) return null;
-        _faultReported = true; _available = false; return _fault;
+        _faultReported = true; return _fault;
     }
     private int _serializationDepth, _saveDepth;
-    internal CraftingCommandService(LifecycleHub hub, ICraftingJobs jobs, ICraftingCommandBackend backend, Action<Exception> report)
+    internal CraftingCommandService(LifecycleHub hub, ICraftingJobService jobs, ICraftingCommandBackend? backend, Action<Exception> report)
     {
         _hub = hub; _jobs = jobs; _backend = backend; _report = report;
+        _status = hub.Services.Get("crafting-commands");
+        hub.Services.WatchFault("crafting-commands", () => Volatile.Read(ref _fault) != null);
+        if (backend == null && Availability.IsAvailable) hub.SetCapability("crafting-commands", false, "Command bindings unavailable.");
         _lifetime = hub.Subscribe("vgmodapi.crafting-commands", message =>
         {
             if (message.Kind is LifecycleEventKind.SessionStarting or LifecycleEventKind.SessionInvalidated or LifecycleEventKind.SessionStartFailed)
@@ -40,13 +44,21 @@ internal sealed class CraftingCommandService : ICraftingCommands, IDisposable
             { if (_saveDepth > 0) _saveDepth--; }
         });
     }
-    internal void SetAvailable(bool value) { _hub.CheckThread(); _available = value && !_disposed; }
+    public ServiceAvailability Availability => _status.Availability;
+    public event Action<ServiceAvailability>? AvailabilityChanged
+    { add => _status.AvailabilityChanged += value; remove => _status.AvailabilityChanged -= value; }
+    internal void SetAvailable(bool value)
+    {
+        _hub.CheckThread(); if (_disposed) return;
+        _hub.SetCapability("crafting-commands", value && _backend != null,
+            value ? "Guarded commands bound." : "Crafting commands unavailable.");
+    }
     internal void BeginSerialization() { _hub.CheckThread(); _serializationDepth++; }
     internal void EndSerialization() { _hub.CheckThread(); if (_serializationDepth > 0) _serializationDepth--; }
     public CraftingCommandResult Execute(CraftingCommandRequest request)
     {
         _hub.CheckThread(); if (request == null) throw new ArgumentNullException(nameof(request));
-        if (_disposed || !_available || _fault != null) return Result(request, CraftingCommandStatus.IntegrationUnavailable, "Crafting commands unavailable.");
+        if (_disposed || _backend == null || !Availability.IsAvailable) return Result(request, CraftingCommandStatus.IntegrationUnavailable, "Crafting commands unavailable.");
         var session = _hub.CurrentSession;
         if (session == null || session.Phase != SessionPhase.GameplayInitialized) return Result(request, CraftingCommandStatus.SessionUnavailable, "Gameplay session required.");
         if (request.SessionId != session.Id) return Result(request, CraftingCommandStatus.StaleHandle, "Request belongs to another session.");
@@ -65,7 +77,7 @@ internal sealed class CraftingCommandService : ICraftingCommands, IDisposable
         try
         {
             var outcome = _backend.Execute(request);
-            if (_disposed || _hub.CurrentSession?.Id != request.SessionId || outcome.RequestId != request.RequestId)
+            if (_disposed || !Availability.IsAvailable || _hub.CurrentSession?.Id != request.SessionId || outcome.RequestId != request.RequestId)
                 outcome = Result(request, CraftingCommandStatus.Uncertain, "Session or result attribution changed during execution; do not retry blindly.", true);
             entry.Result = outcome; return outcome;
         }
@@ -81,12 +93,12 @@ internal sealed class CraftingCommandService : ICraftingCommands, IDisposable
     {
         _hub.CheckThread();
         if (sessionId == Guid.Empty) throw new ArgumentException("Session identity required.", nameof(sessionId));
-        if (_disposed || !_available || _fault != null || _hub.CurrentSession?.Id != sessionId || _hub.CurrentSession.Phase != SessionPhase.GameplayInitialized ||
+        if (_disposed || _backend == null || !Availability.IsAvailable || _hub.CurrentSession?.Id != sessionId || _hub.CurrentSession.Phase != SessionPhase.GameplayInitialized ||
             station != null && station.SessionId != sessionId) return new(sessionId, false, null, null, null, null, "Settings context unavailable.");
         try
         {
             var result = _backend.ReadSettings(sessionId, station);
-            return !_disposed && _hub.CurrentSession?.Id == sessionId && result.SessionId == sessionId ? result :
+            return !_disposed && Availability.IsAvailable && _hub.CurrentSession?.Id == sessionId && result.SessionId == sessionId ? result :
                 new(sessionId, false, null, null, null, null, "Settings context changed during read.");
         }
         catch (Exception error) { try { _report(error); } catch { } return new(sessionId, false, null, null, null, null, "Settings read failed."); }
@@ -99,7 +111,8 @@ internal sealed class CraftingCommandService : ICraftingCommands, IDisposable
     public void Dispose()
     {
         _hub.CheckThread(); if (_disposed) return;
-        _disposed = true; _available = false; _lifetime.Dispose(); _requests.Clear();
+        _disposed = true; _lifetime.Dispose(); _requests.Clear();
+        if (Availability.IsAvailable) _hub.SetCapability("crafting-commands", false, "Command service stopped.", ServiceUnavailableReason.ApiStopped);
     }
     private sealed class Entry
     {

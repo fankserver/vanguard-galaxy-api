@@ -27,6 +27,36 @@ public sealed class CraftingJobServiceTests : IDisposable
     private void Emit(CraftingJobSnapshot job, CraftingJobEventKind kind = CraftingJobEventKind.Queued) =>
         _service.Observe(kind, job, Array.Empty<CraftingDeliverySnapshot>(), CraftingDeliveryStatus.NotApplicable, "Observed");
     [Fact]
+    public void TypedHandlersAreIsolatedScopedAndRemovable()
+    {
+        ICraftingJobService service = _service;
+        var scopes = new List<bool>();
+        Action<CraftingJobEvent> handlers = _ => throw new InvalidOperationException("Expected fault.");
+        handlers += _ => scopes.Add(_hub.IsDispatchingCallbacks && service.IsDispatchingCallbacks && _service.CallbackContext != 0);
+        service.Changed += handlers;
+        Emit(Job());
+        Assert.True(Assert.Single(scopes));
+        Assert.Equal(1, _faults);
+        Assert.False(_hub.IsDispatchingCallbacks);
+        service.Changed -= handlers;
+        Emit(Job());
+        Assert.Single(scopes);
+        Assert.Null(typeof(ModApi).Assembly.GetType("VGModAPI.ICraftingJobs"));
+        Assert.Null(typeof(ModApi).GetProperty("CraftingJobs"));
+    }
+    [Fact]
+    public void TypedHandlersReceiveInvalidationWhenObservationCloses()
+    {
+        ICraftingJobService service = _service;
+        var facts = new List<CraftingJobEventKind>();
+        service.Changed += fact => facts.Add(fact.Kind);
+        Emit(Job());
+        _service.SetAvailable(false);
+        Assert.Equal(new[] { CraftingJobEventKind.Queued, CraftingJobEventKind.Invalidated }, facts);
+        Assert.False(service.Availability.IsAvailable);
+        Assert.Equal(CraftingJobQueryStatus.IntegrationUnavailable, service.Read(_station).Status);
+    }
+    [Fact]
     public void RestoredPartialJobsAreQueryableWithoutQueueReplay()
     {
         var job = Job(3); _source.Rows.Add(job);

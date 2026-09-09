@@ -18,6 +18,8 @@ public sealed class ModServices
     private readonly IStationService _station;
     private readonly IRecipeService _recipes;
     private readonly IRecipeQuoteService _recipeQuotes;
+    private readonly ICraftingJobService _craftingJobs;
+    private readonly ICraftingCommandService _craftingCommands;
     public ILifecycleService Lifecycle { get { CheckThread(); return _lifecycle; } }
     public IModInformationService Mods { get { CheckThread(); return _mods; } }
     public ISaveDataService SaveData { get { CheckThread(); return _saveData; } }
@@ -26,9 +28,12 @@ public sealed class ModServices
     public IStationService Station { get { CheckThread(); return _station; } }
     public IRecipeService Recipes { get { CheckThread(); return _recipes; } }
     public IRecipeQuoteService RecipeQuotes { get { CheckThread(); return _recipeQuotes; } }
+    public ICraftingJobService CraftingJobs { get { CheckThread(); return _craftingJobs; } }
+    public ICraftingCommandService CraftingCommands { get { CheckThread(); return _craftingCommands; } }
 
     internal ModServices(ILifecycleService lifecycle, IModInformationService mods, ISaveDataService saveData,
-        IMissionService missions, ITravelService travel, IStationService station, IRecipeService recipes, IRecipeQuoteService recipeQuotes)
+        IMissionService missions, ITravelService travel, IStationService station, IRecipeService recipes, IRecipeQuoteService recipeQuotes,
+        ICraftingJobService craftingJobs, ICraftingCommandService craftingCommands)
     {
         _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
         _mods = mods ?? throw new ArgumentNullException(nameof(mods));
@@ -38,6 +43,8 @@ public sealed class ModServices
         _station = station ?? throw new ArgumentNullException(nameof(station));
         _recipes = recipes ?? throw new ArgumentNullException(nameof(recipes));
         _recipeQuotes = recipeQuotes ?? throw new ArgumentNullException(nameof(recipeQuotes));
+        _craftingJobs = craftingJobs ?? throw new ArgumentNullException(nameof(craftingJobs));
+        _craftingCommands = craftingCommands ?? throw new ArgumentNullException(nameof(craftingCommands));
     }
 
     internal void CheckThread()

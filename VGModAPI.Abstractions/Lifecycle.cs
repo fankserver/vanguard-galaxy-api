@@ -68,8 +68,6 @@ public static class ModApi
         services?.CheckThread();
         if (ReferenceEquals(_services, services)) _services = null;
     }
-    public static ICraftingJobs? CraftingJobs { get; internal set; }
-    public static ICraftingCommands? CraftingCommands { get; internal set; }
     public static IForgeUi? ForgeUi { get; internal set; }
     public static IModHud? Hud { get; internal set; }
     /// <summary>Optional inspected-build boarding observations; consult boarding-observation capability.</summary>

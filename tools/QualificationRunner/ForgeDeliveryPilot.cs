@@ -11,11 +11,11 @@ public sealed partial class Plugin
     // Explicit delta-time driving exercises the real native completion loop, not wall-clock timing.
     private void CheckForgeDeliveries(RecipeStationHandle station)
     {
-        var commands = ModApi.CraftingCommands!; var jobs = ModApi.CraftingJobs!;
+        var commands = ModApi.Services.CraftingCommands!; var jobs = ModApi.Services.CraftingJobs!;
         var nativeStation = SpGet(CurrentPlayer, "currentPointOfInterest")!;
         var nativeForge = SpGet(nativeStation, "forge")!;
         var nativeJobs = (IList)SpGet(nativeForge, "jobs")!;
-        var facts = new List<CraftingJobEvent>(); using var observer = jobs.Subscribe(Id, facts.Add);
+        var facts = new List<CraftingJobEvent>(); using var observer = new CraftingJobProbeSubscription(jobs, facts.Add);
         foreach (var partial in new[] { true, false })
         {
             Require(nativeJobs.Count < Convert.ToInt32(SpGet(nativeForge, "maxJobs")), "Delivery fixture needs a free Forge slot.");

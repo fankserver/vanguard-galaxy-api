@@ -21,10 +21,12 @@ public sealed class ServiceRootTests
         var missions = new MissionTransitions(hub);
         var travel = new TravelEvents(hub);
         var station = new StationEvents(hub);
+        var jobs = new CraftingJobService(hub, null, hub.ReportSubscriberFailure);
+        var commands = new CraftingCommandService(hub, jobs, null, _ => { });
         foreach (var disposable in new IDisposable[] { lifecycle, mods, missions, travel, station }) hub.Services.AfterStopped(disposable.Dispose);
         return (ModServices)typeof(ModServices).GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance)[0].Invoke(
             new object[] { lifecycle, mods, new PersistenceService(hub), missions, travel, station,
-                new RecipeCatalogService(hub, null, _ => { }), new RecipeQuoteService(hub, null, _ => { }) });
+                new RecipeCatalogService(hub, null, _ => { }), new RecipeQuoteService(hub, null, _ => { }), jobs, commands });
     }
 
     [Fact]

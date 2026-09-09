@@ -15,11 +15,11 @@ public sealed partial class Plugin
     private IEnumerable<object?> CheckCraftingPersistence()
     {
         var harmony = new Harmony(Id + ".crafting-persistence");
-        var jobs = ModApi.CraftingJobs ?? throw new InvalidOperationException("Crafting jobs unavailable.");
+        var jobs = ModApi.Services.CraftingJobs;
         var quotes = ModApi.Services.RecipeQuotes!;
-        var commands = ModApi.CraftingCommands!;
+        var commands = ModApi.Services.CraftingCommands!;
         var facts = new List<CraftingJobEvent>();
-        using var subscription = jobs.Subscribe(Id, facts.Add);
+        using var subscription = new CraftingJobProbeSubscription(jobs, facts.Add);
         try
         {
             foreach (var type in new[] { "Source.Mining.Forge", "Source.Mining.Refinery" })

@@ -57,13 +57,13 @@ Output amounts are base or conditional estimates for the requested batches. `Pro
 
 `QuoteMaterialExtraction(station, refinedMaterialId, count)` estimates credits and canisters without extracting anything. Extraction is immediate, not queued: queue and duration fields are null. Native extraction forces output into cargo; this preview does not authorize bypassing capacity or access checks in a separately supported command. Counts that cannot be represented exactly by native float material arithmetic are refused rather than quoting a different debit from the actual canister count.
 
-## Job observations and save/load (API 0.1.34)
+## Job observations and save/load
 
-With `[Recipes] Enabled=true`, `ModApi.CraftingJobs` exposes optional `ICraftingJobs` observations when the `crafting-jobs` capability is available. Access and subscription disposal are main-thread-only. Obtain a station handle from `ModApi.Services.RecipeQuotes.CurrentStation`, or from a job event, then call `Read(station)`. Only an `Available` result is a successful queue snapshot; missing definitions, malformed rows and inaccessible/stale stations are not successful empty queues.
+`ModApi.Services.CraftingJobs` exposes `ICraftingJobService`; its typed availability requires `[Recipes] Enabled=true` and bound job observers. The service reference remains present when unavailable. Access and handler removal are main-thread-only. Obtain a station handle from `ModApi.Services.RecipeQuotes.CurrentStation`, or from a job event, then call `Read(station)`. Only an `Available` result is a successful queue snapshot; missing definitions, malformed rows and inaccessible/stale stations are not successful empty queues.
 
 `CraftingJobHandle` identifies one native job instance at one issued station in one session. It is not a persistent save identifier. Snapshots copy process/recipe identity, initial/remaining batches, captured Forge level, bounded display progress and per-batch duration. Unknown timing remains null. No native object is exposed.
 
-Subscribe with `Subscribe(pluginId, callback)` and retain/dispose the subscription. Sequence numbers increase during the service lifetime. Callbacks are individually isolated and reentrant notifications are queued. `IsDispatchingCallbacks` permits command integrations to reject reentrant requests. Facts are distinct:
+Subscribe with `Changed += handler` and remove with `Changed -= handler` during teardown. Sequence numbers increase during the service lifetime. Callbacks are individually isolated and reentrant notifications are queued. `IsDispatchingCallbacks` permits command integrations to reject reentrant requests. Facts are distinct:
 
 - `Queued`: an actual new queue entry was observed through native `StartJob`, including normal `TryStartJob` callers. This is not a payment or ingredient-consumption receipt. Failed admission without a new job emits no queue fact.
 - `BatchObserved`: one native batch call ended. Multiple batches in a tick remain separate. Inspect `DeliveryStatus` and each transfer: remaining count decreases before output delivery and cannot establish successful arrival.
@@ -78,13 +78,13 @@ Native Forge/refinery jobs already own their supported save data. The API reuses
 
 ## Guarded commands (API 0.1.35)
 
-`ModApi.CraftingCommands` is separately default-off: set `[Recipes] CommandsEnabled=true` as well as `Enabled=true`. The `crafting-commands` capability requires the inspected job/transfer observers and serialization guards. Accessing a service or reading settings changes no setting. All calls are main-thread-only; mutations require the tracked, initialized player instance and refuse save, reconstruction, callback, already-running native crafting operations and reentrant contexts.
+`ModApi.Services.CraftingCommands` exposes `ICraftingCommandService` and reports unavailable by default: set `[Recipes] CommandsEnabled=true` as well as `Enabled=true`. The `crafting-commands` capability requires the inspected job/transfer observers and serialization guards. Accessing a service or reading settings changes no setting. All calls are main-thread-only; mutations require the tracked, initialized player instance and refuse save, reconstruction, callback, already-running native crafting operations and reentrant contexts.
 
 ```csharp
 var request = CraftingCommandRequest.Queue(
     pluginId, Guid.NewGuid(), station, selectedRecipe.Id, batches: 2,
     CraftingProtectionPolicy.ProtectFavouritesAndMissionItems);
-var result = ModApi.CraftingCommands?.Execute(request);
+var result = ModApi.Services.CraftingCommands.Execute(request);
 // Keep this request/result. An uncertain outcome must be reconciled, not blindly retried.
 ```
 

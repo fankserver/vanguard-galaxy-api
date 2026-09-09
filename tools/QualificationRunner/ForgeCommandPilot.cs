@@ -10,7 +10,7 @@ public sealed partial class Plugin
 {
     private void CheckCraftingSettingCommands(RecipeStationHandle station)
     {
-        var commands = ModApi.CraftingCommands ?? throw new InvalidOperationException("Crafting commands unavailable.");
+        var commands = ModApi.Services.CraftingCommands;
         var before = commands.ReadSettings(station.SessionId, station);
         Require(before.Available && before.StationAutoRefine.HasValue && before.PlayerCargoDelivery.HasValue
             && before.EffectiveAutoSell.HasValue && before.StoredAutoSellPreference == before.EffectiveAutoSell,
@@ -48,8 +48,8 @@ public sealed partial class Plugin
 
     private void CheckCraftingQueueAndCancel(RecipeStationHandle station)
     {
-        var commands = ModApi.CraftingCommands!;
-        var observations = ModApi.CraftingJobs!;
+        var commands = ModApi.Services.CraftingCommands!;
+        var observations = ModApi.Services.CraftingJobs!;
         var nativeStation = SpGet(CurrentPlayer, "currentPointOfInterest")!;
         var nativeForge = SpGet(nativeStation, "forge")!;
         var nativeJobs = (IList)SpGet(nativeForge, "jobs")!;
@@ -70,7 +70,7 @@ public sealed partial class Plugin
         Require(candidate != null, "Fixture needs inputs and credits for a two-batch Forge recipe.");
         var priorJobs = nativeJobs.Cast<object>().ToArray();
         var count = nativeJobs.Count; var credits = (long)SpGet(CurrentPlayer, "credits")!;
-        var facts = new List<CraftingJobEvent>(); using var observer = observations.Subscribe(Id, facts.Add);
+        var facts = new List<CraftingJobEvent>(); using var observer = new CraftingJobProbeSubscription(observations, facts.Add);
         var request = CraftingCommandRequest.Queue(Id, Guid.NewGuid(), station, candidate!.Id, 2, CraftingProtectionPolicy.NativeConsumption);
         var result = commands.Execute(request);
         Require(result.Status == CraftingCommandStatus.Succeeded && result.Jobs.Count == 1, "Two-batch queue command failed.");

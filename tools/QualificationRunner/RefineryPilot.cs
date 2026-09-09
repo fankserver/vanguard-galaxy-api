@@ -10,7 +10,7 @@ public sealed partial class Plugin
 {
     private void CheckRefineryDelivery(RecipeStationHandle station)
     {
-        var commands = ModApi.CraftingCommands!; var observations = ModApi.CraftingJobs!;
+        var commands = ModApi.Services.CraftingCommands!; var observations = ModApi.Services.CraftingJobs!;
         var nativeStation = SpGet(CurrentPlayer, "currentPointOfInterest")!;
         var refinery = SpGet(nativeStation, "refinery")!;
         var nativeJobs = (IList)SpGet(refinery, "jobs")!;
@@ -28,7 +28,7 @@ public sealed partial class Plugin
         var queued = commands.Execute(CraftingCommandRequest.Queue(Id, Guid.NewGuid(), station, recipe!.Id, 2, CraftingProtectionPolicy.NativeConsumption));
         Require(queued.Status == CraftingCommandStatus.Succeeded && queued.Jobs.Count == 1, "Refinery queue failed.");
         var nativeJob = nativeJobs.Cast<object>().Single(job => !oldJobs.Any(old => ReferenceEquals(old, job)));
-        var facts = new List<CraftingJobEvent>(); using var observer = observations.Subscribe(Id, facts.Add);
+        var facts = new List<CraftingJobEvent>(); using var observer = new CraftingJobProbeSubscription(observations, facts.Add);
         var before = ForgeInventoryCounts(nativeStation);
         var nativeOre = SpGet(nativeJob, "ore")!;
         var bonusAllowed = !(bool)SpGet(nativeOre, "ignoreExtraRewards")!
@@ -70,7 +70,7 @@ public sealed partial class Plugin
     private void CheckMaterialExtraction(RecipeStationHandle station)
     {
         var nativeStation = SpGet(CurrentPlayer, "currentPointOfInterest")!;
-        var commands = ModApi.CraftingCommands!;
+        var commands = ModApi.Services.CraftingCommands!;
         RecipeResourceId? selected = null;
         foreach (var material in Enum.GetValues(NativeType("Source.Item.RefinedMaterial")))
         {

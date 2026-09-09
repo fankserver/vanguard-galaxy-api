@@ -18,7 +18,7 @@ public sealed partial class Plugin
             && quote.Blockers.All(blocker => blocker == RecipeBlocker.PricingUnavailable));
         Require(recipe != null, "Fixture needs two further affordable fractional ore batches.");
         var oldJobs = jobs.Cast<object>().ToArray();
-        var queued = ModApi.CraftingCommands!.Execute(CraftingCommandRequest.Queue(Id, Guid.NewGuid(), station,
+        var queued = ModApi.Services.CraftingCommands!.Execute(CraftingCommandRequest.Queue(Id, Guid.NewGuid(), station,
             recipe!.Id, 2, CraftingProtectionPolicy.NativeConsumption));
         Require(queued.Status == CraftingCommandStatus.Succeeded && queued.Jobs.Count == 1, "Multiple-batch refinery queue failed.");
         var job = jobs.Cast<object>().Single(candidate => !oldJobs.Any(old => ReferenceEquals(old, candidate)));
@@ -45,7 +45,7 @@ public sealed partial class Plugin
             outcomes = next;
         }
         var facts = new List<CraftingJobEvent>();
-        using var observer = ModApi.CraftingJobs!.Subscribe(Id, facts.Add);
+        using var observer = new CraftingJobProbeSubscription(ModApi.Services.CraftingJobs, facts.Add);
         SpCall(job, "ProgressJob", Convert.ToSingle(SpGet(job, "refineTime")) * 2f);
         var batches = facts.Where(fact => fact.Kind == CraftingJobEventKind.BatchObserved && fact.Job.Handle.Equals(queued.Jobs[0])).ToArray();
         Require(batches.Length == 2 && batches.All(batch => batch.DeliveryStatus == CraftingDeliveryStatus.Verified)
