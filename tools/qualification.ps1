@@ -135,7 +135,7 @@ if ($Action -eq 'Prepare') {
     if (!$StoryProbe -and ($StoryCampaignBin -or $StoryJobBin)) { throw 'Story author binaries require StoryProbe.' }
     if ($MenuInspection -and ($Scenario -ne 'MissingApi' -or $VanillaLoadControl -or $MissionJournalBin -or $StockpileBin -or $AnimaBin -or $EchoBin -or $TravelJournalBin)) { throw 'Menu inspection requires an API-absent menu-only run without consumers.' }
     if ($BlueprintPinProbe) {
-        if (!$BlueprintPinBin -or $BlueprintPinRevision -cnotmatch '^[0-9a-f]{40}$' -or $BlueprintPinSha256 -cnotmatch '^[0-9a-f]{64}$' -or $ForgeUiProbe -or $ForgeCommandProbe -or $ForgeDeliveryProbe -or $ForgePersistenceProbe -or $RefineryProbe) { throw 'Blueprint Pin requires its pinned binary and an independent read-only phase.' }
+        if (!$BlueprintPinBin -or $BlueprintPinRevision -cnotmatch '^[0-9a-f]{40}$' -or $BlueprintPinSha256 -cnotmatch '^[0-9a-f]{64}$' -or $ForgeUiProbe -or $ForgeCommandProbe -or $ForgeDeliveryProbe -or $ForgePersistenceProbe -or $RefineryProbe) { throw 'Blueprint Pin requires its pinned binary and an independent controlled crafting phase.' }
         $ForgeReadProbe = $true
     } elseif ($BlueprintPinBin -or $BlueprintPinRevision -or $BlueprintPinSha256) { throw 'Blueprint Pin inputs require its probe.' }
     if ($DungeonPanelProbe) { $DungeonReadinessProbe = $true }
@@ -421,8 +421,8 @@ if ($Action -eq 'Prepare') {
         [IO.File]::AppendAllText((Join-Path $bep 'config\vgmodapi.cfg'), "`r`n[Recipes]`r`nEnabled = true`r`n")
         [IO.File]::WriteAllText((Join-Path $root 'forge-reads.enabled'), 'forge-reads-v1')
         if ($BlueprintPinProbe) {
-            [IO.File]::AppendAllText((Join-Path $bep 'config\vgmodapi.cfg'), "`r`n[Hud]`r`nEnabled = true`r`n")
-            [IO.File]::WriteAllText((Join-Path $root 'blueprint-pin.enabled'), 'blueprint-pin-v2')
+            [IO.File]::AppendAllText((Join-Path $bep 'config\vgmodapi.cfg'), "CommandsEnabled = true`r`n[Hud]`r`nEnabled = true`r`n")
+            [IO.File]::WriteAllText((Join-Path $root 'blueprint-pin.enabled'), 'blueprint-pin-v3')
         }
         if ($ForgeUiProbe) { [IO.File]::WriteAllText((Join-Path $root 'forge-ui.enabled'), 'forge-ui-v3') }
         if ($ForgeCommandProbe) {

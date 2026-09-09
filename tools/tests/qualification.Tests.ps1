@@ -46,10 +46,11 @@ try {
     $pinProvenance.blueprintPinProbe = $true
     $pinProvenance.blueprintPinRevision = 'a' * 40
     $pinProvenance.blueprintPinSha256 = $pinHash.ToLowerInvariant()
-    [IO.File]::WriteAllText((Join-Path $pinRoot 'blueprint-pin.enabled'), 'blueprint-pin-v2')
+    [IO.File]::WriteAllText((Join-Path $pinRoot 'blueprint-pin.enabled'), 'blueprint-pin-v3')
     $pinConfig = Join-Path $pinRoot 'game\BepInEx\config\vgmodapi.cfg'
     $pinOriginalConfig = [IO.File]::ReadAllText($pinConfig)
-    [IO.File]::WriteAllText($pinConfig, $pinOriginalConfig + "`n[Hud]`nEnabled = true`n")
+    $pinFullConfig = $pinOriginalConfig + "CommandsEnabled = true`n[Hud]`nEnabled = true`n"
+    [IO.File]::WriteAllText($pinConfig, $pinFullConfig)
     $pinProvenance | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $pinProvenancePath
     $null = Assert-QualificationInputs $pinRoot
     [IO.File]::WriteAllText($pinConfig, $pinOriginalConfig)
@@ -57,6 +58,10 @@ try {
     try { $null = Assert-QualificationInputs $pinRoot } catch { $rejected = $true }
     Assert $rejected 'Blueprint Pin accepted absent HUD configuration.'
     [IO.File]::WriteAllText($pinConfig, $pinOriginalConfig + "`n[Hud]`nEnabled = true`n")
+    $rejected = $false
+    try { $null = Assert-QualificationInputs $pinRoot } catch { $rejected = $true }
+    Assert $rejected 'Blueprint Pin accepted absent crafting command configuration.'
+    [IO.File]::WriteAllText($pinConfig, $pinFullConfig)
     $pinProvenance.blueprintPinProbe = $false
     Remove-Item (Join-Path $pinRoot 'blueprint-pin.enabled')
     $pinProvenance | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $pinProvenancePath
