@@ -62,6 +62,7 @@ internal sealed class ServiceStatusRegistry : IDisposable
     }
     private readonly Dictionary<string, string[]> _dependencies = new(StringComparer.Ordinal)
     {
+        ["dungeon-settlement"] = new[] { "dungeon-rewards", "boarding-observation" },
         ["save-data"] = new[] { "session-lifecycle", "save-outcomes" },
         ["mission-transitions"] = new[] { "session-lifecycle" },
         ["mission-continuity"] = new[] { "mission-transitions", "save-data" },

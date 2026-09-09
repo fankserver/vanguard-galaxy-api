@@ -4,9 +4,11 @@ using System.Linq;
 
 namespace VGModAPI.Core;
 
-internal sealed class DungeonSettlementService : IDungeonSettlement, IDisposable
+internal sealed class DungeonSettlementService : IDungeonSettlementService, IDisposable
 {
     private readonly LifecycleHub _hub;
+    private readonly IServiceStatus _status;
+    private readonly ServiceSubscriptions<DungeonSettlementSnapshot> _handlers;
     private readonly IDisposable _boardingSubscription, _lifetime;
     private readonly Dictionary<BoardingHandle, DungeonSettlementSnapshot> _states = new();
     private readonly List<Subscription> _subscribers = new();
@@ -17,15 +19,22 @@ internal sealed class DungeonSettlementService : IDungeonSettlement, IDisposable
     internal DungeonSettlementService(LifecycleHub hub, BoardingService boarding, Action<string, Exception> report)
     {
         _hub = hub; _report = report;
+        _status = hub.Services.Get("dungeon-settlement");
+        _handlers = new ServiceSubscriptions<DungeonSettlementSnapshot>(hub, Subscribe, snapshot =>
+            Availability.IsAvailable && snapshot.Operation.SessionId == _hub.CurrentSession?.Id);
         _boardingSubscription = boarding.Subscribe("vgmodapi.settlement", Observe);
         _lifetime = hub.Subscribe("vgmodapi.settlement", message =>
         {
             if (message.Kind is LifecycleEventKind.SessionStarting or LifecycleEventKind.SessionInvalidated or LifecycleEventKind.SessionStartFailed) _states.Clear();
         });
     }
+    public ServiceAvailability Availability => _status.Availability;
+    public event Action<ServiceAvailability>? AvailabilityChanged
+    { add => _status.AvailabilityChanged += value; remove => _status.AvailabilityChanged -= value; }
+    public event Action<DungeonSettlementSnapshot>? Changed { add => _handlers.Add(value); remove => _handlers.Remove(value); }
     public DungeonSettlementSnapshot? Get(BoardingHandle operation)
-    { _hub.CheckThread(); return !_disposed && operation.SessionId == _hub.CurrentSession?.Id && _states.TryGetValue(operation, out var state) ? state : null; }
-    public IDisposable Subscribe(string pluginId, Action<DungeonSettlementSnapshot> callback)
+    { _hub.CheckThread(); return !_disposed && Availability.IsAvailable && operation.SessionId == _hub.CurrentSession?.Id && _states.TryGetValue(operation, out var state) ? state : null; }
+    internal IDisposable Subscribe(string pluginId, Action<DungeonSettlementSnapshot> callback)
     {
         _hub.CheckThread(); if (_disposed) throw new ObjectDisposedException(nameof(DungeonSettlementService));
         if (string.IsNullOrWhiteSpace(pluginId)) throw new ArgumentException("Plugin ID required.");
@@ -33,7 +42,7 @@ internal sealed class DungeonSettlementService : IDungeonSettlement, IDisposable
     }
     private void Observe(BoardingEvent message)
     {
-        if (_disposed || message.Operation == null || message.Operation.Handle.SessionId != _hub.CurrentSession?.Id) return;
+        if (_disposed || !Availability.IsAvailable || message.Operation == null || message.Operation.Handle.SessionId != _hub.CurrentSession?.Id) return;
         var handle = message.Operation.Handle;
         if (message.Kind == BoardingEventKind.OperationRetired) { _states.Remove(handle); return; }
         var previous = Get(handle);
@@ -69,7 +78,10 @@ internal sealed class DungeonSettlementService : IDungeonSettlement, IDisposable
     public void Dispose()
     {
         _hub.CheckThread(); if (_disposed) return; _disposed = true;
-        _boardingSubscription.Dispose(); _lifetime.Dispose(); _states.Clear();
+        _boardingSubscription.Dispose(); _lifetime.Dispose(); _states.Clear(); _handlers.Dispose();
+        var health = Availability;
+        _hub.SetCapability("dungeon-settlement", false, health.IsAvailable ? "Settlement service stopped." : health.Detail,
+            health.IsAvailable ? ServiceUnavailableReason.ApiStopped : health.Reason);
         foreach (var subscriber in _subscribers.ToArray()) subscriber.Dispose();
     }
     private sealed class Subscription : IDisposable

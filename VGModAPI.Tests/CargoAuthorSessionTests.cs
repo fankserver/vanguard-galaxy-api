@@ -57,7 +57,7 @@ public sealed class CargoAuthorSessionTests
         });
         internal CargoAuthorSession Create(bool optional = true, bool required = true) => new("item", Life, Events, required ? Content : null,
             optional ? Panel : null, Fake<IBoardingCommandService>((_, _) => throw new InvalidOperationException()), Fake<IBoardingTacticalService>((_, _) => throw new InvalidOperationException()),
-            Fake<IDungeonSettlement>((name, _) => { Assert.Equal("Subscribe", name); SettlementLeases++; return new Lease(() => SettlementLeases--); }), Logs.Add);
+            Fake<IDungeonSettlementService>((name, _) => { if (name == "add_Changed") SettlementLeases++; else { Assert.Equal("remove_Changed", name); SettlementLeases--; } return null; }), Logs.Add);
         internal BoardingEvent Event(BoardingHandle target, BoardingEventKind kind)
         {
             var operation = new BoardingHandle(Session, Guid.NewGuid());

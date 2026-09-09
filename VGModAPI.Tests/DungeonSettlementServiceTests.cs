@@ -8,15 +8,42 @@ namespace VGModAPI.Tests;
 public sealed class DungeonSettlementServiceTests
 {
     [Fact]
+    public void DisposedSettlementCannotReviveWhenDependenciesRecover()
+    {
+        using var hub = new LifecycleHub((_, _) => { });
+        hub.SetCapability("boarding-observation", true, "Bound.");
+        hub.SetCapability("dungeon-settlement", true, "Bound.");
+        hub.SetCapability("dungeon-rewards", false, "Disabled.", ServiceUnavailableReason.Disabled);
+        using var boarding = new BoardingService(hub, (_, _) => { });
+        using var engine = new DungeonSettlementService(hub, boarding, (_, _) => { });
+        IDungeonSettlementService service = engine;
+        var reason = service.Availability.Reason;
+        Assert.False(service.Availability.IsAvailable);
+        engine.Dispose();
+        hub.SetCapability("dungeon-rewards", true, "Recovered.");
+        Assert.False(service.Availability.IsAvailable);
+        Assert.Equal(reason, service.Availability.Reason);
+        Assert.Null(typeof(ModApi).GetProperty("DungeonSettlement"));
+        Assert.Null(typeof(ModApi).Assembly.GetType("VGModAPI.IDungeonSettlement"));
+    }
+    [Fact]
     public void VictoryCaptureAndDelayedReturnRemainSeparateObservedFacts()
     {
         using var hub = new LifecycleHub((_, _) => { }); hub.SetCapability("boarding-observation", true, "Test bindings."); using var boarding = new BoardingService(hub, (_, _) => { });
+        hub.SetCapability("dungeon-settlement", true, "Test bindings."); hub.SetCapability("dungeon-rewards", true, "Test bindings.");
         using var settlement = new DungeonSettlementService(hub, boarding, (_, _) => { });
         var session = hub.Begin(SessionOrigin.SaveLoad, "slot"); hub.PlayerReady(session);
         var target = new BoardingTargetSnapshot(new(session, Guid.NewGuid()), 1, BoardingEncounterKind.Ship, "Ship", "Gold", "Ship", BoardingAvailability.Available, null);
         var operation = new BoardingOperationSnapshot(new(session, Guid.NewGuid()), target.Handle, 1, BoardingPhase.Resolved, false, false, 10, 10, "FriendlyVictory",
             new Dictionary<string, int>(), Array.Empty<BoardingCompartmentSnapshot>(), 1);
+        var scopes = new List<bool>();
+        IDungeonSettlementService service = settlement;
+        Action<DungeonSettlementSnapshot> handlers = _ => throw new InvalidOperationException("Expected failure.");
+        handlers += _ => scopes.Add(hub.IsDispatchingCallbacks);
+        service.Changed += handlers;
         boarding.Observe(BoardingEventKind.SimulationResolved, target, operation);
+        Assert.True(Assert.Single(scopes));
+        service.Changed -= handlers;
         var resolved = settlement.Get(operation.Handle)!;
         Assert.False(resolved.CaptureApplied); Assert.False(resolved.CrewReturnSettled); Assert.False(resolved.CrewCountsObserved);
         boarding.Observe(BoardingEventKind.CaptureApplied, target, operation);
@@ -27,6 +54,7 @@ public sealed class DungeonSettlementServiceTests
         boarding.Observe(BoardingEventKind.CrewReturnSettled, target, operation);
         Assert.True(settlement.Get(operation.Handle)!.CrewReturnSettled); Assert.True(settlement.Get(operation.Handle)!.CrewCountsObserved);
         Assert.False(resolved.CrewReturnSettled);
+        Assert.Single(scopes);
         hub.Invalidate("unload"); Assert.Null(settlement.Get(operation.Handle));
     }
 }

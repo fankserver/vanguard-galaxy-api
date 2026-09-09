@@ -14,7 +14,7 @@ public sealed class Plugin : BaseUnityPlugin
         try
         {
             _session = new CargoAuthorSession(reward, ModApi.Services.Lifecycle, ModApi.Services.Boarding, ModApi.Dungeons,
-                ModApi.DungeonPanel, ModApi.Services.BoardingCommands, ModApi.Services.BoardingTactics, ModApi.DungeonSettlement,
+                ModApi.DungeonPanel, ModApi.Services.BoardingCommands, ModApi.Services.BoardingTactics, ModApi.Services.DungeonSettlement,
                 message => Logger.LogInfo(message), message => Logger.LogWarning(message));
         }
         catch (Exception error) { Logger.LogError(error); }

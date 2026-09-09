@@ -45,11 +45,11 @@ public sealed class DungeonRewardAdjustment
     }
 }
 
-public interface IDungeonSettlement
+public interface IDungeonSettlementService : IServiceStatus
 {
     bool IsDispatchingCallbacks { get; }
     DungeonSettlementSnapshot? Get(BoardingHandle operation);
-    IDisposable Subscribe(string pluginId, Action<DungeonSettlementSnapshot> callback);
+    event Action<DungeonSettlementSnapshot>? Changed;
 }
 
 /// <summary>Copied outcome facts. Resolved combat and eventual crew return are separate facts.</summary>

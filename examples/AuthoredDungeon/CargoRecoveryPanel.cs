@@ -10,9 +10,11 @@ public sealed class CargoRecoveryPanel : IDisposable
     private readonly List<IDisposable> _leases = new();
     private IBoardingService? _boarding;
     private Action<BoardingEvent>? _boardingHandler;
+    private IDungeonSettlementService? _settlement;
+    private Action<DungeonSettlementSnapshot>? _settlementHandler;
 
     public CargoRecoveryPanel(string pluginId, BoardingHandle target, IDungeonPanelApi panel,
-        IBoardingService boarding, IBoardingCommandService commands, IBoardingTacticalService tactics, IDungeonSettlement settlement,
+        IBoardingService boarding, IBoardingCommandService commands, IBoardingTacticalService tactics, IDungeonSettlementService settlement,
         Action<BoardingCommandResult> commandResult, Action<DungeonSettlementSnapshot> observedSettlement)
     {
         if (panel == null) throw new ArgumentNullException(nameof(panel));
@@ -35,12 +37,14 @@ public sealed class CargoRecoveryPanel : IDisposable
             boarding.Changed += _boardingHandler;
             foreach (var operation in boarding.GetOperations())
                 if (operation.Target.Equals(target)) operations.Add(operation.Handle);
-            _leases.Add(settlement.Subscribe(pluginId, snapshot =>
+            _settlement = settlement;
+            _settlementHandler = snapshot =>
             {
                 // Settlement may publish before our boarding subscription sees the introducing event.
                 if (boarding.GetOperation(snapshot.Operation)?.Target.Equals(target) == true) operations.Add(snapshot.Operation);
                 if (operations.Contains(snapshot.Operation)) observedSettlement(snapshot);
-            }));
+            };
+            settlement.Changed += _settlementHandler;
             _leases.Add(panel.RegisterAction(pluginId, "cargo-extraction-" + target.Generation.ToString("N"), view =>
             {
                 if (!view.Target.Handle.Equals(target) || view.Operation == null) return null;
@@ -63,6 +67,8 @@ public sealed class CargoRecoveryPanel : IDisposable
 
     public void Dispose()
     {
+        if (_settlement != null) _settlement.Changed -= _settlementHandler;
+        _settlement = null; _settlementHandler = null;
         if (_boarding != null) _boarding.Changed -= _boardingHandler;
         _boarding = null; _boardingHandler = null;
         for (var i = _leases.Count - 1; i >= 0; i--) _leases[i].Dispose();

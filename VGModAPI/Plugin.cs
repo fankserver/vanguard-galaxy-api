@@ -85,6 +85,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         _hub.SetCapability("mission-transitions", false, "Not bound.");
         _hub.SetCapability("owned-story", false, "Not initialized; experimental.");
         _hub.SetCapability("story-protection", false, "Not bound.");
+        _hub.SetCapability("dungeon-settlement", false, "Disabled or not bound.");
         _hub.SetCapability("boarding-observation", false, "Disabled by configuration; experimental.");
         _hub.SetCapability("boarding-tactics", false, "Disabled by configuration; experimental.");
         _hub.SetCapability("boarding-combat", false, "Disabled by configuration; experimental.");
@@ -714,11 +715,11 @@ public sealed partial class Plugin : BaseUnityPlugin
                 ["settlementMasteryScope"] = typeof(DungeonRewardPatches.MasteryScope), ["settlementMastery"] = typeof(DungeonRewardPatches.Mastery)
             });
             if (!_hub.Capabilities.Any(c => c.Name == "dungeon-rewards" && c.Available)) throw new NotSupportedException("Reward hooks unavailable.");
-            ModApi.DungeonSettlement = _dungeonSettlement;
+            _hub.SetCapability("dungeon-settlement", true, "Settlement observations bound.");
         }
         catch (Exception error)
         {
-            DungeonRewardPatches.Crew = null; _dungeonSettlement?.Dispose(); _dungeonSettlement = null; ModApi.DungeonSettlement = null;
+            DungeonRewardPatches.Crew = null; _dungeonSettlement?.Dispose(); _dungeonSettlement = null;
             DungeonRewardPatches.Adapter = null; _dungeonRewards?.Dispose(); _dungeonRewards = null;
             _hub.SetCapability("dungeon-rewards", false, error.GetType().Name); Logger.LogError(error);
         }
@@ -851,7 +852,8 @@ public sealed partial class Plugin : BaseUnityPlugin
         catch (Exception error)
         {
             BoardingPatches.Observer = null; _boarding?.Dispose(); _boarding = null; service?.Dispose();
-            _hub.SetCapability("boarding-observation", false, "Boarding unavailable: " + error.GetType().Name);
+            _hub.SetCapability("dungeon-settlement", false, "Disabled or not bound.");
+        _hub.SetCapability("boarding-observation", false, "Boarding unavailable: " + error.GetType().Name);
             Logger.LogError(error);
         }
     }
@@ -980,7 +982,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         TeardownForgeUi();
         TeardownCraftingCommands();
         StopBars();
-        DungeonRewardPatches.Crew = null; _dungeonSettlement?.Dispose(); _dungeonSettlement = null; ModApi.DungeonSettlement = null;
+        DungeonRewardPatches.Crew = null; _dungeonSettlement?.Dispose(); _dungeonSettlement = null;
         DungeonRewardPatches.Adapter = null; _dungeonRewards?.Dispose(); _dungeonRewards = null;
         StopDungeons();
         BoardingTacticalPatches.Adapter = null; _boardingTactics?.Dispose(); _boardingTactics = null;
