@@ -28,10 +28,12 @@ function Assert-WorldConfiguration([string]$Root) {
     $null = Assert-WorldUnlinkedPath (Join-Path $rootPath 'state')
     $doorstop = Read-WorldIni (Join-Path $rootPath 'game\doorstop_config.ini')
     $required = @{
-        'General/enabled'='true'; 'General/target_assembly'='BepInEx\core\BepInEx.Preloader.dll';
+        'General/enabled'='true'; 'General/target_assembly'='BepInEx\core\BepInEx.Preloader.dll'; 'General/redirect_output_log'='false';
         'General/boot_config_override'=''; 'General/ignore_disable_switch'='false';
         'UnityMono/dll_search_path_override'=''; 'UnityMono/debug_enabled'='false'; 'UnityMono/debug_suspend'='false'
     }
+    # An exact key set also excludes differently cased aliases, independent of Doorstop's lookup rules.
+    if ($doorstop.Count -ne $required.Count -or @($doorstop.Keys | Where-Object { $_ -cnotin @($required.Keys) }).Count) { throw 'Unexpected Doorstop configuration keys.' }
     foreach ($entry in $required.GetEnumerator()) {
         if (!$doorstop.ContainsKey($entry.Key) -or $doorstop[$entry.Key] -cne $entry.Value) { throw 'Doorstop configuration escapes the inspected launch profile.' }
     }

@@ -19,7 +19,7 @@ try {
     $configText = "[WorldProtection]`nEnabled = true`n[Persistence]`nRoot = $(Join-Path $root 'state')`n"
     [IO.File]::WriteAllText($config, $configText)
     $doorstop = Join-Path $root 'game\doorstop_config.ini'
-    $doorstopText = "[General]`nenabled=true`ntarget_assembly=BepInEx\core\BepInEx.Preloader.dll`nboot_config_override=`nignore_disable_switch=false`n[UnityMono]`ndll_search_path_override=`ndebug_enabled=false`ndebug_suspend=false`n"
+    $doorstopText = "[General]`nenabled=true`ntarget_assembly=BepInEx\core\BepInEx.Preloader.dll`nredirect_output_log=false`nboot_config_override=`nignore_disable_switch=false`n[UnityMono]`ndll_search_path_override=`ndebug_enabled=false`ndebug_suspend=false`n"
     [IO.File]::WriteAllText($doorstop, $doorstopText)
     Assert-WorldConfiguration $root
     [IO.File]::WriteAllText($config, $configText.Replace('[Persistence]', '[persistence]'))
@@ -30,6 +30,10 @@ try {
     Reject { Assert-WorldConfiguration $root }
     [IO.File]::WriteAllText($config, $configText)
     [IO.File]::WriteAllText($doorstop, $doorstopText.Replace('target_assembly=BepInEx\core\BepInEx.Preloader.dll', 'target_assembly=C:\outside.dll'))
+    Reject { Assert-WorldConfiguration $root }
+    [IO.File]::WriteAllText($doorstop, ($doorstopText + "[General]`nTARGET_ASSEMBLY=C:\outside.dll`n"))
+    Reject { Assert-WorldConfiguration $root }
+    [IO.File]::WriteAllText($doorstop, ($doorstopText + "[GENERAL]`ntarget_assembly=C:\outside.dll`n"))
     Reject { Assert-WorldConfiguration $root }
     [IO.File]::WriteAllText($doorstop, $doorstopText)
     Assert-WorldConfiguration $root
