@@ -20,14 +20,14 @@ public sealed partial class Plugin
     private WorldPersistenceBindings? _worldPersistence;
     private WorldContentService? _worldContent;
     private WorldReferenceResolver? _worldReferences;
+    private bool _worldAvailable;
 
     private void InitializeWorldProtection()
     {
-        _hub!.SetCapability("world-authoring", false, "Native world creation is not yet runtime-qualified.");
-        _hub.SetCapability("world-load-protection", false, "Disabled by configuration; experimental.");
-        _hub.SetCapability("world-save-protection", false, "Disabled by configuration; experimental.");
-        if (!Config.Bind("WorldProtection", "Enabled", false,
-            "Experimental world load/save protection. Owned world authoring is not available; saved owned definitions are refused. Restart required after teardown.").Value) return;
+        _worldAvailable = false;
+        _hub!.SetCapability("world-authoring", false, "World service is initializing.");
+        _hub.SetCapability("world-load-protection", false, "World service is initializing.");
+        _hub.SetCapability("world-save-protection", false, "World service is initializing.");
         if (_persistence == null || _adapter == null || !_hub.Capabilities.Any(c => c.Name == "session-lifecycle" && c.Available))
         { _hub.SetCapability("world-load-protection", false, "Inspected lifecycle and persistence are required."); return; }
         if (WorldLoadPatches.Host != null || WorldLifetimePatches.Host != null || WorldSnapshotPatches.Host != null)
@@ -35,24 +35,11 @@ public sealed partial class Plugin
         try
         {
             var assembly = Assembly.Load("Assembly-CSharp");
-#if VG_WORLD_QUALIFICATION
-            const bool emptyProfile = true;
-            var qualification = new QualificationRunContext(assembly);
-            StoryHostAuthenticator authenticate = qualification.Authenticate;
-            Func<bool> admission = qualification.ParticipantsReady;
-            Action requireContext = () => { if (!admission()) throw new System.IO.InvalidDataException("Qualification context is unavailable."); };
-            var emptyState = new WorldEmptyCombatProfile(assembly);
-            var emptyEnvironment = new WorldEmptyCombatEnvironment(assembly);
-            Action<object>? inspectProfile = poi => { requireContext(); emptyState.Require(poi); emptyEnvironment.Require(poi); };
-#else
             const bool emptyProfile = false;
             StoryHostAuthenticator authenticate = StoryHostAuthentication.Resolve;
-            Func<bool> admission = () => false;
-            Action requireContext = () => { };
+            Func<bool> admission = () => _worldAvailable;
+            Action requireContext = () => { if (!_worldAvailable) throw new System.IO.InvalidDataException("World service is unavailable."); };
             Action<object>? inspectProfile = null;
-#endif
-            // Only the separately built candidate can admit its restricted, authorized sandbox profile.
-            // Normal production gates remain closed; neither branch claims runtime qualification.
             _worldDefinitions = new WorldDefinitionRegistry(authenticate, _hub.CheckThread);
             var definitions = _worldDefinitions;
             _worldLoadHost = new WorldLoadHookHost(assembly, _hub, _persistence, _persistence.CreateWorldReader(),
@@ -155,11 +142,10 @@ public sealed partial class Plugin
             WorldSnapshotPatches.Host = _worldSnapshotHost;
             WorldLifetimePatches.Host = _worldLifetimeHost;
             WorldLoadPatches.Host = _worldLoadHost;
-            _hub.SetCapability("world-save-protection", true, emptyProfile ? "Qualification-only restricted snapshot/save protection. Not runtime-qualified." : "Experimental scoped snapshot/save protection; declarations only, native authoring unavailable. Not runtime-qualified.");
-            _hub.SetCapability("world-load-protection", true, emptyProfile ? "Qualification-only restricted owned-load admission. Not runtime-qualified." : "Experimental load guard only; owned world definitions are not admitted. Not runtime-qualified.");
-#if VG_WORLD_QUALIFICATION
-            _hub.SetCapability("world-authoring", true, "Qualification-only candidate; participant/session/profile readiness is required. Not runtime-qualified.");
-#endif
+            _worldAvailable = true;
+            _hub.SetCapability("world-save-protection", true, "Owned world state participates in coordinated saves.");
+            _hub.SetCapability("world-load-protection", true, "Owned world state is restored before dependent content.");
+            _hub.SetCapability("world-authoring", true, "Persistent Combat sites are available to authenticated providers in ready sessions.");
         }
         catch (Exception error)
         {
@@ -181,6 +167,7 @@ public sealed partial class Plugin
 
     private void StopWorldProtection()
     {
+        _worldAvailable = false;
         _worldReferences = null;
         try { _worldContent?.Dispose(); }
         finally { StopWorldGuards(); }

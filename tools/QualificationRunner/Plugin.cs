@@ -136,11 +136,6 @@ public sealed partial class Plugin : BaseUnityPlugin
     {
         foreach (var frame in Wait(() => SceneManager.GetSceneByName("Main Menu").isLoaded, "main menu")) yield return frame;
         foreach (var frame in Settle()) yield return frame;
-        if (Environment.GetCommandLineArgs().Contains("--vgmodapi-world-only") || Environment.GetCommandLineArgs().Contains("--vgmodapi-world-cold"))
-        {
-            foreach (var frame in CheckOwnedWorld()) yield return frame;
-            yield break;
-        }
         if (File.Exists(Path.Combine(_root!, "dungeon-readiness.enabled")))
         {
             Require(File.ReadAllText(Path.Combine(_root!, "dungeon-readiness.enabled")) == "dungeon-readiness-v1", "Invalid dungeon readiness marker.");

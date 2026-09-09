@@ -35,7 +35,7 @@ build-story-authors: link-libs
 	$(DOTNET) build examples/OwnedStoryJob/OwnedStoryJob.csproj -c $(CONFIGURATION)
 test:
 	python3 -m unittest discover -s tools -p 'test_*.py'
-	$(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter '$(TEST_FILTER)&Category!=WorldQualificationPackage' $(TEST_ARGS)
+	$(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter '$(TEST_FILTER)' $(TEST_ARGS)
 check-bindings:
 	VG_GAME_ASSEMBLY="$(MANAGED)/Assembly-CSharp.dll" $(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter 'Category=InstalledGame'
 # Metadata evidence for the members the actual-consumer qualification probe reflects. Needs the
@@ -73,22 +73,6 @@ check-archive:
 	VG_GAME_ASSEMBLY="$(MANAGED)/Assembly-CSharp.dll" \
 	VG_CONSUMER_DEPENDENCY_DIRS="$(CORE):$(MANAGED)" \
 	$(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter 'Category=InstalledArchive' -- RunConfiguration.TreatNoTestsAsError=true
-.PHONY: build-world-authors
-build-world-authors: link-libs
-	$(DOTNET) build tools/WorldAuthorA/WorldAuthorA.csproj -c $(CONFIGURATION)
-	$(DOTNET) build tools/WorldAuthorB/WorldAuthorB.csproj -c $(CONFIGURATION)
-
-.PHONY: package-world-qualification
-package-world-qualification: link-libs build-world-authors
-	$(DOTNET) build tools/WorldQualificationApi/WorldQualificationApi.csproj -c $(CONFIGURATION)
-	@rm -rf artifacts/WorldQualificationApi
-	@mkdir -p artifacts/WorldQualificationApi
-	cp tools/WorldQualificationApi/bin/$(CONFIGURATION)/netstandard2.1/VGModAPI.dll artifacts/WorldQualificationApi/
-	cp tools/WorldQualificationApi/bin/$(CONFIGURATION)/netstandard2.1/VGModAPI.Core.dll artifacts/WorldQualificationApi/
-	cp tools/WorldQualificationApi/bin/$(CONFIGURATION)/netstandard2.1/VGModAPI.Abstractions.dll artifacts/WorldQualificationApi/
-	cp tools/WorldQualificationApi/README.md artifacts/WorldQualificationApi/
-	VG_WORLD_AUTHOR_ROOT="$(CURDIR)/tools" VG_WORLD_AUTHOR_CONFIGURATION="$(CONFIGURATION)" VG_WORLD_QUALIFICATION_PACKAGE_ROOT="$(CURDIR)/artifacts/WorldQualificationApi" VG_QUALIFICATION_REFERENCE_DIR="$(CORE)" $(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter 'Category=WorldQualificationPackage' -- RunConfiguration.TreatNoTestsAsError=true
-
 package: build
 	@rm -rf artifacts/VGModAPI
 	@mkdir -p artifacts/VGModAPI

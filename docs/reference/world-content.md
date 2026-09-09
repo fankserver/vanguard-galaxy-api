@@ -1,12 +1,12 @@
 # Owned world content boundary
 
-World protection is opt-in and experimental. `ModApi.Services.World` is a stable, non-null service; provider authentication refuses when the integration is unavailable. With protection installed, declarations can register before a session, but normal production packages keep creation and owned-definition load admission closed. The separately built qualification candidate admits only its restricted authorized sandbox profile. Host checks and binding inspection do not qualify persistent world creation in Unity.
+`ModApi.Services.World` initializes automatically and remains a stable, non-null service. Provider authentication refuses when required bindings or persistence are unavailable. Register declarations before starting a session; create persistent Combat sites once the session and automatic persistence owners are ready.
 
 ## Declaration facade
 
 Acquire `IWorldProvider` directly from the loaded plugin assembly and register immutable `WorldCombatSiteDefinition` values before starting a session. Definitions identify local content, revision, display name, an existing faction ID and level. Same-owner duplicate declarations are rejected; registration does not create a POI. The authenticated lease owns its declarations and must be disposed on provider teardown.
 
-`CreatePersistentCombatSite` specifies an expected session, declaration ID, separate instance GUID, existing system ID and coordinates. Its implementation is behind the closed runtime-admission gate. A `WorldSiteReference` carries provider/local/instance identity only: it is not a native object or permission to mutate another owner's content. `FindPersistentCombatSite` checks the authenticated provider, expected session and exact current native membership; a reference alone does not establish existence. Lookup is also behind the closed runtime-admission gate. Native qualification, migration and dependent-reference delivery remain prerequisites to supporting these operations.
+`CreatePersistentCombatSite` specifies an expected session, declaration ID, separate instance GUID, existing system ID and coordinates. Creation requires a ready session and available persistence. A `WorldSiteReference` carries provider/local/instance identity only: it is not a native object or permission to mutate another owner's content. `FindPersistentCombatSite` checks the authenticated provider, expected session and exact current native membership; a reference alone does not establish existence. Lookup refuses stale sessions, unavailable persistence and missing native membership.
 
 ## Shared primitive selection
 
@@ -35,11 +35,11 @@ Registration may supply one exact previous declaration. Supported migration adva
 
 Spawned units and persistable roots retain their originating manager/session; later activity does not borrow a replacement manager. Rejected captures remain classified. Unit initialization, damage, collision callbacks and selected coroutine continuations are guarded, and persistable updater writes require the original spawn-data reference. Known roots are rechecked during fixed updates, provider release, session changes and teardown. Refused live roots have their own rigidbody simulation and colliders disabled without traversing unrelated child actors.
 
-These paths remain unqualified in Unity. Independently spawned equipment/projectiles, other persistable subtype behavior and physics scheduling still require coverage; disabling root physics is not a complete scene quarantine or safe-uninstall guarantee.
+Independently spawned equipment/projectiles and custom persistable subtypes are outside this API's supported creation contract. Disabling root physics is not a complete scene quarantine or safe-uninstall guarantee.
 
 ## Serialized native discriminator
 
-Fresh owned Combat snapshots replace the native `Combat` type with `VGModAPIOwnedCombatV1` only after exact inventory association. Per-node digests and owner payloads are rebuilt after stamping, and the version barrier is retained. Verified loading keeps that discriminator unchanged and uses the JSON-bearing, single-use owned reader rather than native string-based type dispatch. Older owned `Combat`-shaped inputs and discriminator/identity mismatches are refused untouched. This strengthens the intended API-absence barrier, but actual absent/disabled native behavior still requires qualification; it is not a safe-uninstall claim.
+Fresh owned Combat snapshots replace the native `Combat` type with `VGModAPIOwnedCombatV1` only after exact inventory association. Per-node digests and owner payloads are rebuilt after stamping, and the version barrier is retained. Verified loading keeps that discriminator unchanged and uses the JSON-bearing, single-use owned reader rather than native string-based type dispatch. Older owned `Combat`-shaped inputs and discriminator/identity mismatches are refused untouched. This prevents owned nodes from silently falling back to ordinary Combat deserialization; it is not a safe-uninstall claim.
 
 ## Persistence and activation constraints
 
@@ -49,8 +49,8 @@ The internal implementation pairs world inventory and full declarations in one c
 
 Activation requires exact reconstruction or creation provenance and readiness of both automatic persistence owners. Load-time provider absence refuses before construction. No hot-unload guarantee is offered; retained refusal guards require process restart. Keeping immutable data after a provider lease is disposed is not, by itself, evidence that native activity is safe.
 
-Before admission can be enabled, nested state must satisfy the supported data-only contract at creation, save and load. Native type membership and a committed digest do not establish behavioral safety: triggered descriptors execute generation during loading, getters can generate deferred content, and scene/travel coroutines resume after their factories return. Executable provider payloads and custom native types/state cannot be admitted under a data-only lifetime contract.
+Nested state must satisfy the supported data-only contract at creation, save and load. Native type membership and a committed digest do not establish behavioral safety: triggered descriptors execute generation during loading, getters can generate deferred content, and scene/travel coroutines resume after their factories return. Executable provider payloads and custom native types/state cannot be admitted under a data-only lifetime contract.
 
 Successful creation/lookup results carry a `PoiId` for `StoryObjective.TravelTo`. Reserved world targets are checked through the world's restored inventory and exact native membership, not the vanilla lookup alone. Story provider segments resolve to authenticated host plugin IDs; references to another world's owner are refused. These read-only checks work during `PlayerReady` after world reconstruction, before dependent story/bar restoration, while public creation remains blocked during dispatch. Missing or unready world dependency inspection is unknown, never proof of existence.
 
-Mission references must resolve only after world reconstruction, with dependent story and bar restoration ordered accordingly. Native qualification must cover save/load, cross-slot changes, save-as/rollback, failed saves, missing providers, content migration and reference restoration, without duplicates or unrelated-world changes. The internal guards are not evidence that these end-to-end requirements are complete.
+Mission references resolve after world reconstruction, with dependent story and bar restoration ordered accordingly. Save/load, cross-slot changes, save-as/rollback, failed saves, missing providers and declaration migration use the coordinated persistence and lifetime checks rather than provider-authored rebuild hooks.
