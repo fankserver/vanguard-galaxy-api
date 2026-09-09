@@ -470,6 +470,13 @@ function Assert-DungeonReadinessReceipt([string]$Root, $Provenance) {
     if (!$Provenance.PSObject.Properties['dungeonReadinessProbe'] -or !$Provenance.dungeonReadinessProbe) { return }
     Assert-QualificationExitOutcome (Get-Content -LiteralPath (Join-Path $Root 'run-outcome.json') -Raw | ConvertFrom-Json) 'Dungeon readiness'
     if ($Provenance.PSObject.Properties['dungeonPanelProbe'] -and $Provenance.dungeonPanelProbe) {
+        $image = Join-Path $Root 'dungeon-panel-actions.png'; $record = Join-Path $Root 'dungeon-panel-actions.txt'
+        foreach ($path in @($image,$record)) {
+            if (!(Test-Path -LiteralPath $path -PathType Leaf) -or (Get-Item -LiteralPath $path).Length -eq 0 -or ((Get-Item -LiteralPath $path).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Dungeon panel image evidence missing, empty or linked.' }
+        }
+        if ((Get-Item -LiteralPath $image).Length -gt 20MB -or (Get-Item -LiteralPath $record).Length -gt 256) { throw 'Dungeon panel image evidence oversized.' }
+        $hashLines = @(Get-Content -LiteralPath $record)
+        if ($hashLines.Count -ne 1 -or $hashLines[0] -cnotmatch '^sha256=[0-9a-f]{64}$' -or (Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashLines[0].Substring(7)) { throw 'Dungeon panel screenshot changed.' }
         $panelFacts = Join-Path $Root 'dungeon-panel.txt'
         if ((Get-Item -LiteralPath $panelFacts).Length -gt 1024) { throw 'Dungeon panel evidence too large.' }
         $panelLines = @(Get-Content -LiteralPath $panelFacts)
