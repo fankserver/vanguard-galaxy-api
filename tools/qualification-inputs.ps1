@@ -442,7 +442,14 @@ function Assert-ForgeCommandReceipt([string]$Root, $Provenance) {
     if ($lines.Count -ne 4 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'forge-commands-v3' -or $lines[2] -cne 'settings-replay-restored' -or $lines[3] -cne 'forge-queue-cancel-replay-refusal-direct-start-capacity') { throw 'Incomplete Forge command receipt.' }
 }
 function Assert-DungeonReadinessSelection([string]$Root, $Provenance) {
+    $panel = $Provenance.PSObject.Properties['dungeonPanelProbe']
+    if ($panel -and $panel.Value -isnot [bool]) { throw 'Invalid dungeon panel flag.' }
+    $panelSelected = $panel -and $panel.Value
+    $panelMarker = Join-Path $Root 'dungeon-panel.enabled'
+    if ([bool]$panelSelected -ne (Test-Path -LiteralPath $panelMarker -PathType Leaf)) { throw 'Dungeon panel selection changed.' }
+    if ($panelSelected -and [IO.File]::ReadAllText($panelMarker) -cne 'dungeon-panel-v1') { throw 'Invalid dungeon panel marker.' }
     $flag = $Provenance.PSObject.Properties['dungeonReadinessProbe']
+    if ($panelSelected -and (!$flag -or !$flag.Value)) { throw 'Dungeon panel requires readiness.' }
     if ($flag -and $flag.Value -isnot [bool]) { throw 'Invalid dungeon readiness flag.' }
     $selected = $flag -and $flag.Value
     $marker = Join-Path $Root 'dungeon-readiness.enabled'
@@ -450,7 +457,7 @@ function Assert-DungeonReadinessSelection([string]$Root, $Provenance) {
     if (!$selected) { return }
     if ($Provenance.scenario -ne 'Full' -or [IO.File]::ReadAllText($marker) -cne 'dungeon-readiness-v1') { throw 'Invalid dungeon readiness selection.' }
     foreach ($entry in $Provenance.PSObject.Properties) {
-        if ($entry.Name -ne 'dungeonReadinessProbe' -and $entry.Value -is [bool] -and $entry.Value) { throw 'Dungeon readiness cannot combine other probes or consumers.' }
+        if ($entry.Name -notin @('dungeonReadinessProbe','dungeonPanelProbe') -and $entry.Value -is [bool] -and $entry.Value) { throw 'Dungeon readiness cannot combine other probes or consumers.' }
     }
     if ($null -ne $Provenance.assemblyOverlay) { throw 'Dungeon readiness cannot use an assembly overlay.' }
     $config = [IO.File]::ReadAllText((Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg'))
@@ -462,6 +469,12 @@ function Assert-DungeonReadinessReceipt([string]$Root, $Provenance) {
     Assert-DungeonReadinessSelection $Root $Provenance
     if (!$Provenance.PSObject.Properties['dungeonReadinessProbe'] -or !$Provenance.dungeonReadinessProbe) { return }
     Assert-QualificationExitOutcome (Get-Content -LiteralPath (Join-Path $Root 'run-outcome.json') -Raw | ConvertFrom-Json) 'Dungeon readiness'
+    if ($Provenance.PSObject.Properties['dungeonPanelProbe'] -and $Provenance.dungeonPanelProbe) {
+        $panelFacts = Join-Path $Root 'dungeon-panel.txt'
+        if ((Get-Item -LiteralPath $panelFacts).Length -gt 1024) { throw 'Dungeon panel evidence too large.' }
+        $panelLines = @(Get-Content -LiteralPath $panelFacts)
+        if ($panelLines.Count -ne 3 -or $panelLines[0] -cne 'PASS' -or $panelLines[1] -cne 'dungeon-panel-v1' -or $panelLines[2] -cne 'generated-location-open-pointer-disabled-close-reopen-destroy') { throw 'Invalid dungeon panel receipt.' }
+    }
     $receipt = Join-Path $Root 'dungeon-readiness.receipt'; $snapshot = Join-Path $Root 'dungeon-readiness.txt'
     if ((Get-Item -LiteralPath $receipt).Length -gt 256 -or (Get-Item -LiteralPath $snapshot).Length -gt 4096) { throw 'Dungeon evidence too large.' }
     $lines = @(Get-Content -LiteralPath $receipt); $facts = @(Get-Content -LiteralPath $snapshot)
