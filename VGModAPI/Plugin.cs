@@ -678,7 +678,6 @@ public sealed partial class Plugin : BaseUnityPlugin
             };
             InstallGroup("dungeon-content", bindings, DungeonNativeSchema.Methods.Where(b => patches.ContainsKey(b.Key)).ToArray(), patches);
             if (!_hub.Capabilities.Any(c => c.Name == "dungeon-content" && c.Available)) throw new NotSupportedException("Dungeon hooks unavailable.");
-            ModApi.Dungeons = _dungeons;
         }
         catch (Exception error)
         {
@@ -691,7 +690,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         DungeonRecoveryMarkerPatches.Runtime = null; DungeonPodReturnPatches.Observer = null; DungeonPodReturnPatches.Report = null;
         _dungeonRecovery?.Dispose(); _dungeonRecovery = null;
         DungeonCrewResumePatches.Coordinator?.Clear(); DungeonCrewResumePatches.Coordinator = null;
-        DungeonContentPatches.Adapter = null; DungeonContentPatches.Json = null; ModApi.Dungeons = null;
+        DungeonContentPatches.Adapter = null; DungeonContentPatches.Json = null;
         _dungeons?.Dispose(); _dungeons = null; _dungeonAdapter?.Dispose(); _dungeonAdapter = null; _dungeonState?.Dispose(); _dungeonState = null;
     }
 

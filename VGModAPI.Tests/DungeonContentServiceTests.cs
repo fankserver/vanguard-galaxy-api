@@ -30,6 +30,7 @@ public sealed class DungeonContentServiceTests
             State = new(Hub, Persistence);
             var session = Hub.Begin(SessionOrigin.SaveLoad, "save"); Hub.PlayerReady(session);
             Persistence.Provider.Restore(Hub.CurrentSession!, null);
+            Hub.SetCapability("dungeon-content", true, "Test bindings.");
             Service = new(Hub, new(_ => true, _ => true, _ => true), State,
                 new((_, _) => DungeonContentStatus.Attached, (_, _) => { }, (_, _, _) => { ChoiceChecks++; return DungeonContentStatus.ChoiceApplied; },
                     (_, _, _) => { Applied++; if (ThrowNative) throw new InvalidOperationException("native failure"); }), (_, _) => Diagnosed++);
@@ -42,6 +43,29 @@ public sealed class DungeonContentServiceTests
         new DungeonCompartmentDefinition("entry", CompartmentType.Airlock, new[] { "room" }),
         new DungeonCompartmentDefinition("room", CompartmentType.Corridor, new[] { "entry" })
     }), events: new[] { new DungeonEventDefinition("event", "room", "Choose", new[] { new DungeonChoiceDefinition("choice", "Choose") }) });
+    [Fact]
+    public void HealthLossInAuthorCallbackDoesNotCommitChoiceOrNativeEffects()
+    {
+        using var f = new Fixture(); IDungeonContentService service = f.Service;
+        using var provider = service.AcquireProvider("owner");
+        using var registration = provider.Register("content", Definition(), _ =>
+        { f.Hub.SetCapability("dungeon-content", false, "Fault.", ServiceUnavailableReason.ObserverFault); return true; });
+        var id = provider.Attach("content", f.Target).OccurrenceId!.Value;
+        Assert.Equal(DungeonContentStatus.Unavailable, provider.Choose(id, "event", "choice").Status);
+        Assert.Empty(f.State.Get(id)!.Choices); Assert.Equal(0, f.Applied);
+        f.Service.Dispose(); Assert.Equal(ServiceUnavailableReason.ObserverFault, service.Availability.Reason);
+        Assert.Null(typeof(ModApi).GetProperty("Dungeons"));
+        Assert.Null(typeof(ModApi).Assembly.GetType("VGModAPI.IDungeonContent"));
+    }
+    [Fact]
+    public void MissingCatalogRetainsUnavailableDiagnosisAndRefusesDeclarations()
+    {
+        using var hub = new LifecycleHub((_, _) => { });
+        hub.SetCapability("dungeon-content", false, "Disabled.", ServiceUnavailableReason.Disabled);
+        using var service = new DungeonContentService(hub, null, null, null, (_, _) => { });
+        Assert.Equal(ServiceUnavailableReason.Disabled, service.Availability.Reason);
+        Assert.Throws<InvalidOperationException>(() => service.AcquireProvider("mod"));
+    }
     private sealed class PanelSource : IDungeonPanelSource
     {
         internal DungeonPanelSnapshot? Snapshot;

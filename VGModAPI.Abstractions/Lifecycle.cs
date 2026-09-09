@@ -68,8 +68,6 @@ public static class ModApi
         services?.CheckThread();
         if (ReferenceEquals(_services, services)) _services = null;
     }
-    /// <summary>Optional experimental authored dungeon content with API-owned save data; requires API 0.1.30.</summary>
-    public static IDungeonContent? Dungeons { get; internal set; }
     /// <summary>
     /// Optional owned-story surface (since 0.1.12); non-null only when the story group is bound and
     /// enabled, which requires the inspected assembly, API-managed saves and the native story

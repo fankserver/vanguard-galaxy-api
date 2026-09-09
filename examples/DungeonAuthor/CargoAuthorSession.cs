@@ -17,7 +17,7 @@ public sealed class CargoAuthorSession : IDisposable
     private IBoardingService? _boarding;
     private Action<BoardingEvent>? _boardingHandler;
     private Action<LifecycleEvent>? _lifecycleHandler;
-    public CargoAuthorSession(string reward, ILifecycleService? lifecycle, IBoardingService? boarding, IDungeonContent? content,
+    public CargoAuthorSession(string reward, ILifecycleService? lifecycle, IBoardingService? boarding, IDungeonContentService? content,
         IDungeonPanelService? panel, IBoardingCommandService? commands, IBoardingTacticalService? tactics, IDungeonSettlementService? settlement,
         Action<string> log, Action<string>? warn = null)
     {

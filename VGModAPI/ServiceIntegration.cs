@@ -30,10 +30,11 @@ public sealed partial class Plugin
             () => _boardingRuleService.IsEvaluating || _boardingCombat.IsEvaluating || _dungeonRewards.IsEvaluating);
         _boardingTactics ??= new Runtime.BoardingTacticalAdapter(hub, _boardingCommands);
         _dungeonPanelService ??= new DungeonPanelService(hub, null, hub.ReportSubscriberFailure);
+        _dungeons ??= new DungeonContentService(hub, null, null, null, hub.ReportSubscriberFailure);
         var root = new ModServices(lifecycle, mods, (_persistence ??= new PersistenceService(hub)), missions, travel, station,
-            _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService, _boardingCombat, _dungeonRewards, _boardingCommands, _boardingTactics, _boardingService, _dungeonSettlement, _dungeonPanelService);
+            _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService, _boardingCombat, _dungeonRewards, _boardingCommands, _boardingTactics, _boardingService, _dungeonSettlement, _dungeonPanelService, _dungeons);
         // Deferred cleanup preserves terminal lifecycle delivery when shutdown starts inside a callback.
-        foreach (var view in new IDisposable[] { mods, missions, travel, station, _persistence!, _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService, _boardingCombat, _dungeonRewards, _boardingCommands, _boardingTactics, _boardingService, _dungeonSettlement, _dungeonPanelService })
+        foreach (var view in new IDisposable[] { mods, missions, travel, station, _persistence!, _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService, _boardingCombat, _dungeonRewards, _boardingCommands, _boardingTactics, _boardingService, _dungeonSettlement, _dungeonPanelService, _dungeons })
             hub.Services.AfterStopped(view.Dispose);
         ModApi.PublishServices(root);
         _serviceRoot = root;

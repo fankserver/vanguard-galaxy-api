@@ -39,7 +39,7 @@ public sealed class CargoAuthorSessionTests
             else { Assert.Equal("remove_Changed", name); Boarding.Remove(callback); }
             return null;
         });
-        internal IDungeonContent Content => Fake<IDungeonContent>((name, _) =>
+        internal IDungeonContentService Content => Fake<IDungeonContentService>((name, _) =>
         {
             Assert.Equal("AcquireProvider", name);
             return Fake<IDungeonProvider>((method, args) =>
