@@ -98,7 +98,7 @@ try {
     $p | Add-Member blueprintPinRevision ('a' * 40)
     $p | Add-Member blueprintPinSha256 ('b' * 64)
     Reject { Assert-ForgeReadSelection $root $p }
-    [IO.File]::WriteAllText((Join-Path $root 'blueprint-pin.enabled'), 'blueprint-pin-v8')
+    [IO.File]::WriteAllText((Join-Path $root 'blueprint-pin.enabled'), 'blueprint-pin-v9')
     $binDir = Join-Path $root 'game\BepInEx\plugins'; New-Item -ItemType Directory -Path $binDir -Force | Out-Null
     $binary = Join-Path $binDir 'VGBlueprintPin.dll'; [IO.File]::WriteAllText($binary, 'synthetic binary')
     Reject { Assert-ForgeReadSelection $root $p }
@@ -107,8 +107,10 @@ try {
     [IO.File]::AppendAllText((Join-Path $root 'game\BepInEx\config\vgmodapi.cfg'), "`n[Hud]`nEnabled = true`n")
     Assert-ForgeReadSelection $root $p
     Reject { Assert-BlueprintPinReceipt $root $p }
-    [IO.File]::WriteAllLines((Join-Path $root 'blueprint-pin.txt'), @('PASS','blueprint-pin-v8','pin-batch-exact-variant-navigation-close-producer-routes-queue-partial-cancel-multiunit-reload-saveas-switch-inspector-isolation-context-generated'))
+    [IO.File]::WriteAllLines((Join-Path $root 'blueprint-pin.txt'), @('PASS','blueprint-pin-v9','pin-batch-exact-variant-navigation-close-producer-routes-queue-partial-cancel-multiunit-reload-saveas-switch-inspector-isolation-context-generated-routing'))
     Reject { Assert-BlueprintPinReceipt $root $p }
+    $routing = Join-Path $root 'forge-routing.txt'
+    [IO.File]::WriteAllLines($routing, @('PASS','armory-and-cargo-delivered','preference-restored'))
     $generated = Join-Path $root 'forge-generated.txt'
     [IO.File]::WriteAllLines($generated, @('PASS','generated-equipment-delivered','level-and-inventory-reconciled'))
     $context = Join-Path $root 'forge-missing-context.txt'
@@ -123,6 +125,10 @@ try {
         Copy-Item $image (Join-Path $root ($stem + '.png')); Copy-Item $imageRecord (Join-Path $root ($stem + '.txt'))
     }
     Assert-BlueprintPinReceipt $root $p
+    Remove-Item $routing; Reject { Assert-BlueprintPinReceipt $root $p }
+    [IO.File]::WriteAllText($routing, 'INCOMPLETE'); Reject { Assert-BlueprintPinReceipt $root $p }
+    [IO.File]::WriteAllText($routing, ('x' * 257)); Reject { Assert-BlueprintPinReceipt $root $p }
+    [IO.File]::WriteAllLines($routing, @('PASS','armory-and-cargo-delivered','preference-restored'))
     Remove-Item $generated; Reject { Assert-BlueprintPinReceipt $root $p }
     [IO.File]::WriteAllText($generated, 'INCOMPLETE'); Reject { Assert-BlueprintPinReceipt $root $p }
     [IO.File]::WriteAllText($generated, ('x' * 257)); Reject { Assert-BlueprintPinReceipt $root $p }
@@ -144,9 +150,9 @@ try {
     [IO.File]::WriteAllText($config, $validConfig.Replace('CommandsEnabled = true', 'CommandsEnabled = false'))
     Reject { Assert-BlueprintPinSelection $root $p }
     [IO.File]::WriteAllText($config, $validConfig)
-    [IO.File]::WriteAllText((Join-Path $root 'blueprint-pin.enabled'), 'blueprint-pin-v7')
-    Reject { Assert-BlueprintPinSelection $root $p }
     [IO.File]::WriteAllText((Join-Path $root 'blueprint-pin.enabled'), 'blueprint-pin-v8')
+    Reject { Assert-BlueprintPinSelection $root $p }
+    [IO.File]::WriteAllText((Join-Path $root 'blueprint-pin.enabled'), 'blueprint-pin-v9')
     [IO.File]::AppendAllText($pinImage, 'changed'); Reject { Assert-BlueprintPinReceipt $root $p }
     Copy-Item $image $pinImage -Force
     $producerImage = Join-Path $root 'blueprint-pin-producers.png'
