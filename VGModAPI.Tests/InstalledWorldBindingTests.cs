@@ -28,6 +28,28 @@ public sealed class InstalledWorldBindingTests
     }
 
     [Fact]
+    public void RootPhysicsShutdownUsesInstalledComponentAndBooleanSetterShapes()
+    {
+        var path = Environment.GetEnvironmentVariable("VG_GAME_ASSEMBLY")
+            ?? throw new InvalidOperationException("Run make check-bindings against the original installed assembly.");
+        var directory = Path.GetDirectoryName(path)!;
+        using var physics = AssemblyDefinition.ReadAssembly(Path.Combine(directory, "UnityEngine.Physics2DModule.dll"));
+        using var core = AssemblyDefinition.ReadAssembly(Path.Combine(directory, "UnityEngine.CoreModule.dll"));
+        var simulated = physics.MainModule.GetType("UnityEngine.Rigidbody2D").Properties.Single(property => property.Name == "simulated");
+        Assert.Equal("System.Boolean", simulated.PropertyType.FullName);
+        Assert.True(simulated.SetMethod.IsPublic); Assert.False(simulated.SetMethod.IsStatic);
+        Assert.Equal("UnityEngine.Behaviour", physics.MainModule.GetType("UnityEngine.Collider2D").BaseType.FullName);
+        var enabled = core.MainModule.GetType("UnityEngine.Behaviour").Properties.Single(property => property.Name == "enabled");
+        Assert.Equal("System.Boolean", enabled.PropertyType.FullName);
+        Assert.True(enabled.SetMethod.IsPublic); Assert.False(enabled.SetMethod.IsStatic);
+        foreach (var name in new[] { "UnityEngine.Component", "UnityEngine.GameObject" })
+        {
+            var query = core.MainModule.GetType(name).Methods.Single(method => method.Name == "GetComponents" && method.GenericParameters.Count == 1 && method.Parameters.Count == 0);
+            Assert.True(query.IsPublic); Assert.False(query.IsStatic); Assert.IsType<ArrayType>(query.ReturnType);
+        }
+    }
+
+    [Fact]
     public void UnityWaitUntilPollsThroughTheNestedEnumeratorBoundary()
     {
         var path = Environment.GetEnvironmentVariable("VG_GAME_ASSEMBLY")
