@@ -2,7 +2,7 @@
 # This function is not an authorization boundary; do not call it without the exclusive native lease.
 function Invoke-WorldProcessLifetime([Diagnostics.ProcessStartInfo]$Info, [ValidateRange(1,3600)][int]$TimeoutSeconds, $Process) {
     if ($null -eq $Process -or $null -eq $Info -or $Info.UseShellExecute) { throw 'Owned process and shell-disabled description required.' }
-    $outcome = @{ started=$false; pid=$null; timedOut=$false; killed=$false; exitCode=$null; failure=$null; cleanupFailure=$null; cleanupPending=$false }
+    $outcome = @{ started=$false; pid=$null; startedUtc=$null; timedOut=$false; killed=$false; exitCode=$null; failure=$null; cleanupFailure=$null; cleanupPending=$false }
     $startAttempted = $false
     try {
         $Process.StartInfo = $Info
@@ -11,6 +11,7 @@ function Invoke-WorldProcessLifetime([Diagnostics.ProcessStartInfo]$Info, [Valid
         $outcome.started = $true
         $outcome.pid = $Process.get_Id()
         $null = $Process.get_Handle() # Retain the native process handle before waiting.
+        $outcome.startedUtc = $Process.get_StartTime().ToUniversalTime().ToString('O', [Globalization.CultureInfo]::InvariantCulture)
         if (!$Process.WaitForExit($TimeoutSeconds * 1000)) { $outcome.timedOut = $true }
     } catch { $outcome.failure = $_.Exception.ToString() }
     finally {
@@ -50,7 +51,7 @@ function Invoke-WorldProcessLifetime([Diagnostics.ProcessStartInfo]$Info, [Valid
 }
 
 function Assert-WorldProcessOutcome($Outcome) {
-    if ($null -eq $Outcome -or !$Outcome.started -or $null -eq $Outcome.pid -or $Outcome.pid -le 0 -or
+    if ($null -eq $Outcome -or !$Outcome.started -or $null -eq $Outcome.pid -or $Outcome.pid -le 0 -or [string]::IsNullOrEmpty($Outcome.startedUtc) -or
         $Outcome.timedOut -or $Outcome.killed -or $Outcome.cleanupPending -or
         $null -ne $Outcome.failure -or $null -ne $Outcome.cleanupFailure -or $null -eq $Outcome.exitCode) {
         throw 'World process did not complete cleanly; retain failure evidence and any pending ownership.'

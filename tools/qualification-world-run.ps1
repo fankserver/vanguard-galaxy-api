@@ -24,7 +24,7 @@ function Invoke-WorldQualificationPhase([string]$Root, [Guid]$RunId,
     }
     if (@(Get-ChildItem -LiteralPath (Join-Path $Root 'temp') -Force -ErrorAction Stop).Count) { throw 'World temporary directory must be empty before launch.' }
     if (Test-Path -LiteralPath (Join-Path $Root 'assembly-overlay.hash')) { throw 'World phase does not admit an assembly overlay.' }
-    foreach ($name in @('world-launch-before.json','world-launch-after.json','world-process-outcome.json','world-prefs-receipt.json','result.txt','owned-world.txt','world-cold-generation.txt','events.tsv','isolation-armed.txt')) {
+    foreach ($name in @('world-launch-before.json','world-launch-after.json','world-process-outcome.json','world-prefs-receipt.json','world-phase-accepted.json','result.txt','owned-world.txt','world-cold-generation.txt','events.tsv','isolation-armed.txt')) {
         $path = Assert-WorldUnlinkedPath (Join-Path $Root $name) $false
         if (Test-Path -LiteralPath $path) { throw 'Retain prior phase outputs before another run.' }
     }
@@ -69,6 +69,12 @@ function Invoke-WorldQualificationPhase([string]$Root, [Guid]$RunId,
         if ($result.Count -lt 1 -or $result[0] -cne 'PASS') { throw 'World runner did not report PASS.' }
         Assert-WorldReceiptPaths $Root $Phase
         Assert-WorldPhaseReceipt $Root $Phase
+        $generation = if ($Phase -eq 'create') { 'world-created-generation.txt' } else { 'world-cold-generation.txt' }
+        $null = Write-WorldPrivateEvidence $Root 'world-phase-accepted.json' @{
+            schema='world-empty-phase-v1'; root=[IO.Path]::GetFullPath($Root); runId=$RunId.ToString('D'); phase=$Phase;
+            reviewedHead=$ReviewedHead; approvalSha256=$ApprovalDigest; pid=$outcome.pid; startedUtc=$outcome.startedUtc;
+            generationReceiptSha256=(Get-FileHash -LiteralPath (Join-Path $Root $generation) -Algorithm SHA256).Hash.ToLowerInvariant()
+        }
         return $outcome
     } catch {
         # Preserve the actual object for the supervising caller, never search/kill by PID or name.

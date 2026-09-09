@@ -10,6 +10,7 @@ public sealed class WorldFakeProcess {
     public int Calls;
     public int Id { get { if (Mode == "inspection") throw new Exception("association inspection failed"); if (!Associated) throw new InvalidOperationException("not associated"); return 42; } }
     public IntPtr Handle { get { if (Mode == "handle") throw new Exception("handle failed"); return new IntPtr(1); } }
+    public DateTime StartTime { get { return new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc); } }
     public bool HasExited { get { return Exited; } }
     public int ExitCode { get { return 0; } }
     public bool Start() { if (Mode == "start" || Mode == "inspection") throw new Exception("start failed"); if (Mode == "false") return false; Associated = true; if (Mode == "partial-start") throw new Exception("start failed after association"); return true; }
@@ -36,7 +37,7 @@ foreach ($mode in @('exit','timeout','start','false','handle','wait','unkillable
         if ($mode -in @('handle','wait','partial-start') -and (!$outcome.failure -or !$outcome.killed)) { throw 'Failure cleanup lost evidence.' }
     }
 }
-$clean = @{ started=$true; pid=42; timedOut=$false; killed=$false; cleanupPending=$false; failure=$null; cleanupFailure=$null; exitCode=-1 }
+$clean = @{ started=$true; pid=42; startedUtc='2026-01-01T00:00:00.0000000Z'; timedOut=$false; killed=$false; cleanupPending=$false; failure=$null; cleanupFailure=$null; exitCode=-1 }
 Assert-WorldProcessOutcome $clean
 foreach ($code in @(1, 255, -1073741819)) {
     $clean.exitCode = $code; $accepted = $true

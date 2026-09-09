@@ -18,7 +18,10 @@ function Get-WorldRunPreservation($Record) {
 function Save-WorldPrefs($Root) { return @{ path=(Join-Path $Root 'synthetic-backup'); existed=$false; sha256=$null } }
 function Restore-WorldPrefs($Root, $Receipt, $Outcome) { $script:restores++ }
 function Assert-WorldReceiptPaths($Root, $Phase) { }
-function Assert-WorldPhaseReceipt($Root, $Phase) { if ($script:mode -eq 'receipt') { throw 'Synthetic receipt rejection.' } }
+function Assert-WorldPhaseReceipt($Root, $Phase) {
+    if ($script:mode -eq 'receipt') { throw 'Synthetic receipt rejection.' }
+    [IO.File]::WriteAllText((Join-Path $Root 'world-created-generation.txt'), 'synthetic accepted generation')
+}
 function Invoke-WorldProcessLifetime($Info, $Timeout, $Process) {
     if ($script:preflights -ne 2 -or !(Test-Path (Join-Path $Info.WorkingDirectory 'world-launch-before.json')) -or
         !(Test-Path (Join-Path $Info.WorkingDirectory 'world-prefs-receipt.json'))) { throw 'Launch preceded durable recovery inputs.' }
@@ -28,7 +31,7 @@ function Invoke-WorldProcessLifetime($Info, $Timeout, $Process) {
         [IO.File]::WriteAllText((Join-Path $Info.WorkingDirectory 'result.txt'), ($verdict + "`nSynthetic runner verdict"))
     }
     $Process.Dispose() # This is an unstarted object; no OS child exists in this test.
-    return @{ started=$true; pid=42; timedOut=($script:mode -eq 'timeout'); killed=($script:mode -eq 'timeout');
+    return @{ started=$true; pid=42; startedUtc='2026-01-01T00:00:00.0000000Z'; timedOut=($script:mode -eq 'timeout'); killed=($script:mode -eq 'timeout');
         exitCode=0; cleanupPending=($script:mode -eq 'pending'); failure=$null; cleanupFailure=$null }
 }
 foreach ($case in @('clean','timeout','pending','preservation','receipt','missing-result','failed-result')) {
@@ -44,6 +47,7 @@ foreach ($case in @('clean','timeout','pending','preservation','receipt','missin
         $failed=$false
         try { $null = Invoke-WorldQualificationPhase $root $run 'create' ('a'*40) 'fixture' ('b'*64) -ExclusiveLeaseConfirmed } catch { $failed=$true }
         if ($failed -ne ($case -ne 'clean') -or $script:starts -ne 1) { throw "Wrong composed result for $case." }
+        if ((Test-Path (Join-Path $root 'world-phase-accepted.json')) -ne ($case -eq 'clean')) { throw 'Acceptance receipt emitted for failure or missing for success.' }
         if (!(Test-Path (Join-Path $root 'world-process-outcome.json'))) { throw 'Process outcome evidence missing.' }
         if ($case -eq 'pending') {
             if ($script:restores -ne 0 -or (Test-Path (Join-Path $root 'world-launch-after.json'))) { throw 'Pending child reached restoration.' }
