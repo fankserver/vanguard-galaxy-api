@@ -43,13 +43,16 @@ function Assert-QualificationExitOutcome($Outcome, [string]$Context) {
     $code = [int]$Outcome.exitCode
     if ($code -ne 0 -and $code -ne $GameSelfTerminationExitCode) { throw "$Context exited with code $code." }
 }
+function Invoke-QualificationRegistry([string[]]$Arguments) {
+    & (Join-Path ([Environment]::GetFolderPath('System')) 'reg.exe') @Arguments | Out-Null
+    return $LASTEXITCODE
+}
 function Save-QualificationPrefs([string]$Key, [string]$Snapshot) {
     if (!$Key.StartsWith('HKCU\Software\')) { throw 'Only per-user software keys are supported.' }
     $path = 'Registry::HKEY_CURRENT_USER\' + $Key.Substring(5)
     $exists = Test-Path -LiteralPath $path
     if ($exists) {
-        & reg.exe export $Key $Snapshot /y | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw 'Cannot snapshot PlayerPrefs; refusing to launch.' }
+        if ((Invoke-QualificationRegistry @('export', $Key, $Snapshot, '/y')) -ne 0) { throw 'Cannot snapshot PlayerPrefs; refusing to launch.' }
     }
     return $exists
 }
@@ -59,11 +62,9 @@ function Restore-QualificationPrefs([string]$Key, [string]$Snapshot, [bool]$Exis
     if ($Existed -and !(Test-Path -LiteralPath $Snapshot -PathType Leaf)) { throw 'Missing PlayerPrefs snapshot; refusing to delete the current key.' }
     if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse }
     if ($Existed) {
-        & reg.exe import $Snapshot | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw 'PlayerPrefs restore failed; retain the private snapshot for recovery.' }
+        if ((Invoke-QualificationRegistry @('import', $Snapshot)) -ne 0) { throw 'PlayerPrefs restore failed; retain the private snapshot for recovery.' }
         $verification = $Snapshot + '.verified.reg'
-        & reg.exe export $Key $verification /y | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw 'Cannot verify restored PlayerPrefs.' }
+        if ((Invoke-QualificationRegistry @('export', $Key, $verification, '/y')) -ne 0) { throw 'Cannot verify restored PlayerPrefs.' }
         if ((Get-FileHash -LiteralPath $Snapshot).Hash -ne (Get-FileHash -LiteralPath $verification).Hash) { throw 'Restored PlayerPrefs differ from the snapshot.' }
     }
     elseif (Test-Path -LiteralPath $path) { throw 'PlayerPrefs key created by the run was not removed.' }
