@@ -31,7 +31,7 @@ function Install-DungeonConsumers([string]$Manifest, [string]$Root, [string]$Plu
         Copy-Item -LiteralPath $entry.path -Destination (Join-Path $Plugins $entry.name)
     }
     Copy-Item -LiteralPath $Manifest -Destination (Join-Path $Root 'dungeon-consumer-sources.json')
-    [IO.File]::WriteAllText((Join-Path $Root 'dungeon-consumers.enabled'), 'dungeon-consumers-v1')
+    [IO.File]::WriteAllText((Join-Path $Root 'dungeon-consumers.enabled'), 'dungeon-consumers-v2')
 }
 function Get-DungeonConsumerConfig([string]$Path, [string]$Section, [string]$Key) {
     $text = [IO.File]::ReadAllText($Path)
@@ -48,7 +48,7 @@ function Assert-DungeonConsumerSelection([string]$Root, $Provenance) {
     $marker = Join-Path $Root 'dungeon-consumers.enabled'; $sources = Join-Path $Root 'dungeon-consumer-sources.json'
     if ((Test-Path -LiteralPath $marker) -ne [bool]$selected -or (Test-Path -LiteralPath $sources) -ne [bool]$selected) { throw 'Dungeon consumer selection mismatch.' }
     if (!$selected) { return }
-    if (!$Provenance.dungeonPanelProbe -or !$Provenance.dungeonReadinessProbe -or $Provenance.scenario -cne 'Full' -or [IO.File]::ReadAllText($marker) -cne 'dungeon-consumers-v1') { throw 'Dungeon consumers require the isolated full panel phase.' }
+    if (!$Provenance.dungeonPanelProbe -or !$Provenance.dungeonReadinessProbe -or $Provenance.scenario -cne 'Full' -or [IO.File]::ReadAllText($marker) -cne 'dungeon-consumers-v2') { throw 'Dungeon consumers require the isolated full panel phase.' }
     if ($Provenance.dungeonConsumerManifestHash -cnotmatch '^[0-9a-f]{64}$' -or (Get-FileHash -LiteralPath $sources -Algorithm SHA256).Hash.ToLowerInvariant() -cne $Provenance.dungeonConsumerManifestHash) { throw 'Dungeon consumer manifest changed.' }
     $m = Read-DungeonConsumerManifest $sources
     foreach ($entry in $m.binaries) {
@@ -64,7 +64,9 @@ function Assert-DungeonConsumerReceipt([string]$Root, $Provenance) {
     $file = Join-Path $Root 'dungeon-consumers.txt'
     if ((Get-Item -LiteralPath $file).Length -gt 256) { throw 'Oversized dungeon consumer input receipt.' }
     $lines = @(Get-Content -LiteralPath $file)
-    if ($lines.Count -ne 3 -or $lines[0] -cne 'INPUTS_SENT' -or $lines[1] -cne 'dungeon-consumers-v1' -or $lines[2] -cne 'attach-then-duplicate') { throw 'Incomplete dungeon consumer inputs.' }
+    if ($lines.Count -ne 3 -or $lines[0] -cne 'INPUTS_SENT' -or $lines[1] -cne 'dungeon-consumers-v2' -or $lines[2] -cne 'attach-then-duplicate-command-admission-cancel') { throw 'Incomplete dungeon consumer inputs.' }
+    $commands = [IO.File]::ReadAllLines((Join-Path $Root 'dungeon-commands.txt'))
+    if (($commands -join "`n") -cne "PASS`ndungeon-commands-v1`ncontrol-start-options-refusals-cancel-before-tick`ncrew-and-docking-preserved") { throw 'Incomplete dungeon command admission receipt.' }
     $log = [IO.File]::ReadAllText((Join-Path $Root 'Player.log'))
     foreach ($message in @('Loading [Board Always 0.4.0]','Loading [Cargo recovery example 0.1.0]','Board Always v0.4.0 registered public boarding policies.','Cargo attach: Attached','Cargo attach: TargetInUse')) {
         if ([regex]::Matches($log, [regex]::Escape($message)).Count -ne 1) { throw ('Missing or duplicate consumer evidence: ' + $message) }
