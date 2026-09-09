@@ -51,7 +51,7 @@ try {
     [IO.File]::WriteAllText((Join-Path $root 'game\VanguardGalaxy.exe'), 'non-executable fixture')
     $description = Get-WorldProcessDescription (New-WorldProcessStartInfo $root $run 'create')
     $head = 'a' * 40; $approval = Join-Path $root 'approved.json'
-    $record = @{ preservationRoots=@('C:\fixture\plugins','C:\fixture\config','C:\fixture\saves'); process=$description; schema='world-empty-run-v1'; root=$root; gameDirectory=$source; runId=$run.ToString('D'); phase='create'; reviewedHead=$head; authorizationSha256=$observed.authorizationSha256;
+    $record = @{ timeoutSeconds=600; preservationRoots=@('C:\fixture\plugins','C:\fixture\config','C:\fixture\saves'); process=$description; schema='world-empty-run-v1'; root=$root; gameDirectory=$source; runId=$run.ToString('D'); phase='create'; reviewedHead=$head; authorizationSha256=$observed.authorizationSha256;
         gameInventory=(Get-WorldLaunchInventory $root $source); saveInventory=(Get-WorldDataInventory (Join-Path $root 'Saves')); stateInventory=(Get-WorldDataInventory (Join-Path $root 'state')) }
     [IO.File]::WriteAllText($approval, ($record | ConvertTo-Json -Depth 5))
     $approvalHash = (Get-FileHash $approval -Algorithm SHA256).Hash.ToLowerInvariant()

@@ -25,7 +25,7 @@ function Read-WorldApprovedRun([string]$Path, [string]$ExpectedDigest, [string]$
     # Check the JSON root token before conversion can erase the distinction.
     if (!$json.TrimStart([char[]]@(' ', "`t", "`r", "`n")).StartsWith('{', [StringComparison]::Ordinal)) { throw 'Approved world record must be a JSON object.' }
     $record = $json | ConvertFrom-Json
-    $names = @('schema','root','gameDirectory','runId','phase','reviewedHead','authorizationSha256','gameInventory','saveInventory','stateInventory','process','preservationRoots')
+    $names = @('schema','root','gameDirectory','runId','phase','reviewedHead','authorizationSha256','gameInventory','saveInventory','stateInventory','process','preservationRoots','timeoutSeconds')
     if ($null -eq $record -or @($record.PSObject.Properties).Count -ne $names.Count -or
         @($record.PSObject.Properties | Where-Object { $_.Name -cnotin $names }).Count) { throw 'Unexpected world approval schema.' }
     foreach ($name in @('schema','root','gameDirectory','runId','phase','reviewedHead','authorizationSha256')) {
@@ -55,5 +55,6 @@ function Read-WorldApprovedRun([string]$Path, [string]$ExpectedDigest, [string]$
     foreach ($rootPath in $record.preservationRoots) {
         if ($rootPath -isnot [string] -or ![IO.Path]::IsPathRooted($rootPath)) { throw 'Invalid approved preservation path.' }
     }
+    if (($record.timeoutSeconds -isnot [int] -and $record.timeoutSeconds -isnot [long]) -or $record.timeoutSeconds -lt 1 -or $record.timeoutSeconds -gt 3600) { throw 'Invalid approved process deadline.' }
     return $record
 }

@@ -7,7 +7,7 @@ try {
     $path = Join-Path $root 'record.json'; $run = [Guid]::NewGuid(); $head = 'a' * 40
     $environment = @{}; for ($index = 0; $index -lt 10; $index++) { $environment['key' + $index] = 'fixture' }
     $process = @{ fileName='fixture.exe'; workingDirectory=$root; arguments='fixture'; environment=$environment }
-    $record = @{ preservationRoots=@('C:\fixture\plugins','C:\fixture\config','C:\fixture\saves'); process=$process; schema='world-empty-run-v1'; root=$root; gameDirectory=$env:TEMP; runId=$run.ToString('D'); phase='create'; reviewedHead=$head; authorizationSha256=('b' * 64); gameInventory=@{ 'input.dll'=('F:' + ('c' * 64)) }; saveInventory=@{ 'fixture-a.save'=('F:' + ('d' * 64)) }; stateInventory=@{} }
+    $record = @{ timeoutSeconds=600; preservationRoots=@('C:\fixture\plugins','C:\fixture\config','C:\fixture\saves'); process=$process; schema='world-empty-run-v1'; root=$root; gameDirectory=$env:TEMP; runId=$run.ToString('D'); phase='create'; reviewedHead=$head; authorizationSha256=('b' * 64); gameInventory=@{ 'input.dll'=('F:' + ('c' * 64)) }; saveInventory=@{ 'fixture-a.save'=('F:' + ('d' * 64)) }; stateInventory=@{} }
     [IO.File]::WriteAllText($path, ($record | ConvertTo-Json -Depth 4))
     $approved = (Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant()
     $null = Read-WorldApprovedRun $path $approved $root $run 'create' $head
