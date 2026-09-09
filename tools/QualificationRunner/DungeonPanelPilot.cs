@@ -14,10 +14,11 @@ namespace VGModAPI.Qualification;
 public sealed partial class Plugin
 {
     private string? _dungeonPointerDiagnostic;
+    private readonly List<string> _dungeonPointerRecords = new();
     // A generated, scene-local installation exercises native panel lifetime without saving or starting combat.
     private IEnumerable<object?> CheckDungeonPanelLifetime()
     {
-        _dungeonPointerDiagnostic = null;
+        _dungeonPointerDiagnostic = null; _dungeonPointerRecords.Clear();
         WriteAtomic("dungeon-panel.txt", new[] { "INCOMPLETE" });
         var boarding = ModApi.Boarding ?? throw new InvalidOperationException("Boarding observation unavailable.");
         var panel = ModApi.DungeonPanel ?? throw new InvalidOperationException("Dungeon panel unavailable.");
@@ -105,19 +106,29 @@ public sealed partial class Plugin
         var hits = new List<RaycastResult>();
         EventSystem.current.RaycastAll(new PointerEventData(EventSystem.current) { position = point }, hits);
         var ready = hits.Count > 0 && (hits[0].gameObject.transform == target || hits[0].gameObject.transform.IsChildOf(target));
-        if (!ready)
+        if (_dungeonPointerRecords.Count < 12)
         {
             var image = target.GetComponent<Image>();
             var lines = new[]
             {
+                "ready=" + ready, "hitCount=" + hits.Count,
+                "raycastTarget=" + (image && image!.raycastTarget),
+                "groups=" + string.Join("|", target.GetComponentsInParent<CanvasGroup>(true).Take(12).Select(group => group.name + ":blocks=" + group.blocksRaycasts + ",interactable=" + group.interactable + ",alpha=" + group.alpha)),
+                "raycaster=" + (canvas.GetComponent<GraphicRaycaster>() is { } raycaster ? raycaster.enabled.ToString() : "none") + " canvasEnabled=" + canvas.enabled,
+                "contains=" + RectTransformUtility.RectangleContainsScreenPoint(rect, point, camera),
                 "target=" + target.name, "point=" + point, "rect=" + rect.rect, "scale=" + target.lossyScale,
                 "screen=" + Screen.width + "x" + Screen.height, "canvas=" + canvas.renderMode,
                 "depth=" + (image ? image!.depth.ToString() : "none"), "culled=" + (image && image!.canvasRenderer.cull),
-                "ancestors=" + string.Join("|", target.GetComponentsInParent<RectTransform>().Select(parent => parent.name + ":" + parent.rect)),
+                "ancestors=" + string.Join("|", target.GetComponentsInParent<RectTransform>().Take(12).Select(parent => parent.name + ":" + parent.rect)),
                 "hits=" + string.Join("|", hits.Take(8).Select(hit => hit.gameObject.name + "@" + hit.gameObject.transform.parent?.name))
             };
             var diagnostic = string.Join("\n", lines);
-            if (_dungeonPointerDiagnostic != diagnostic) { WriteAtomic("dungeon-pointer-diagnostic.txt", lines); _dungeonPointerDiagnostic = diagnostic; }
+            if (_dungeonPointerDiagnostic != diagnostic)
+            {
+                _dungeonPointerRecords.Add("frame=" + Time.frameCount + " time=" + Time.realtimeSinceStartup + "\n" + diagnostic);
+                WriteAtomic("dungeon-pointer-diagnostic.txt", _dungeonPointerRecords);
+                _dungeonPointerDiagnostic = diagnostic;
+            }
         }
         return ready;
     }
