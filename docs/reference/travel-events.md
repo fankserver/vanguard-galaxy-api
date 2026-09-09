@@ -2,7 +2,7 @@
 
 The travel group initializes automatically. `ModApi.Services.Travel` and `ModApi.Services.Station` are stable, non-null services after API bootstrap. Inspect their `Availability`; unavailable observation is not an empty successful route history. Subscribe with `Transitioned += handler` and remove the handler during consumer teardown. No events replay. `TravelNativeAdapter` interprets native facts and `TravelPatches` installs inspected hooks.
 
-Bounded controlled native evidence exists for the paths below; it is not full in-game acceptance or proof that the current checkout ran in Unity. `RuntimeQualified` remains **false**. Exact candidate identities and receipts stay outside the repository. See [compatibility](compatibility.md) and [runner instructions](https://github.com/fankserver/vanguard-galaxy-api/blob/main/docs/development/qualification-runner.md).
+Availability reports binding health; current session, leg and station state remain separate. See [compatibility](compatibility.md).
 
 ## Leg identity and transport boundaries
 
@@ -54,38 +54,19 @@ All access is main-thread-only. Delegates and diagnostics are individually isola
 
 Caught nested failures cannot manufacture success. Before publication the adapter verifies live Unity objects, readiness, session/player/leg identity and observed native outcomes. Other mods bypassing these boundaries are outside the inspected semantics.
 
-## Coverage and exclusions
+## Supported boundaries
 
-The typed runtime requires native qualification. Each named phase below must be exercised against the delivered revision; host and installed-metadata checks do not establish those runtime outcomes. The [runner](https://github.com/fankserver/vanguard-galaxy-api/blob/main/docs/development/qualification-runner.md) defines mandatory cases, selections, budgets, fixtures and refusal rules.
+Direct field mutation, console teleport, `GamePatch.ResetDemoPosition`, world
+builders and `GamePlayer.LoadGalaxySection` do not provide an owned travel request
+boundary. Reconstruction is placement, not travel. `TransitionTutorialToSandbox`
+is a supported destination rewrite within the jump path.
 
-| Path | Qualification scope | Limit |
-|---|---|---|
-| Same-system routes, local arrivals and initial placement | Controlled `travel-in-system-station-v1` | Nested scope/stale evidence rules also have host tests; placement is not travel |
-| Jumpgates and wormholes | Controlled `travel-cross-system-v1` | Arrival is sampled inside the owned jump iterator. Missing wormholes require explicit disposable native-fixture creation or the required case fails |
-| Empty-origin re-route, restore/relink and both re-init docking sizes, stale coroutine replay | Controlled `travel-resilience-v1` | Genuine HUD docking is the positive control for restore silence; fixture requirements cannot be skipped into a pass |
-| Post-gate continuation | Controlled `travel-recovery-continuation-v1` | `[gate, follow-on]` produces three distinct legs and one final completion; it does not exercise fast lane |
-| Positive recovered placement | Controlled `travel-recovery-continuation-v1` | Live cancellation window depends on native scheduling; recovery miss-cleanup fallbacks remain host-tested only |
-| Fast-lane gate chain | Controlled `travel-fast-lane-v1` | Requires `[gate, gate, destination]`, five distinct legs, one completion and observed multiplier 7 on the gate-to-gate leg, with 1 on surrounding controls. Unlock state is read, never written |
-| Physical docking/undocking versus interior readiness | Controlled in-system/resilience cases | No ordering guarantee between physical docking and interior readiness; this is not exhaustive station-path qualification |
-| Dwell boundaries | Controlled `travel-journal-comparison-v1` | Public dwell is checked against its same-session anchor, not against the archive's differently timed dwell |
-| Tutorial exit rewrite | Source and host only | Supported raw-request/actual-arrival semantics; no native tutorial-exit phase |
-| Inherited base arrival implementation | Source and host only; latent on inspected build | All six concrete POI managers declare overrides: SpacestationExterior, JumpGate, Wormhole, SpaceScene, Mining and Combat |
-| Direct field mutation, teleport and cheat paths | Excluded | No owned request/transport/arrival boundary exists for attribution |
+Recovery requires destination POI assignment and `initializedAndReady` while
+`TravelActive()` remains true and arrival has not run. Readiness appearing after a
+route silently ended is not a live interrupted route. A missing local manager may
+satisfy the native wait predicate; the API does not invent arrival or repair
+`isWarping` by writing game fields.
 
-The inspected direct location writers outside transport include console teleport, `GamePatch.ResetDemoPosition`, world builders/tutorial setup and `GamePlayer.LoadGalaxySection`. Reconstruction is reported as placement, not travel. `TransitionTutorialToSandbox` is the supported rewrite within the jump path, not a blanket exclusion of tutorial arrival.
-
-### Recovery evidence limits
-
-The positive recovery window requires destination POI assignment and `initializedAndReady` while `TravelActive()` is still true and no arrival has run. The inspected travel wait predicate treats a missing local manager as satisfied; readiness appearing after a route silently ended cannot substitute for a live interrupted route.
-
-The probe has bounded attempts for fixture/scheduling variability. A missed attempt must close its own abandoned leg with the player's cancel and settle the resulting placement before another attempt starts. That cleanup is not positive coverage. Unproven closure or unsettled placement ends the required case as NOT-RUN. The miss-cleanup paths remain host-tested, not natively exercised.
-
-A timeout with a still-running route fails rather than retries. Ordinary cancel does not reset `isWarping`; residual state must be recorded, not repaired by direct field writes. A failed phase cannot provide a world for subsequent phases. An unobserved required window is a failure, never coverage.
-
-### Actual consumers
-
-Anima's system-visit recorder and Echo's final-route arrival snap have bounded controlled integration evidence. Their probes reuse the native route phases and validate consumer behavior separately; they do not add travel-path coverage. Echo's API-absent control checks loading and observed timing-hook execution without the API, not every automation feature. ETA-sync is separate.
-
-TravelJournal is archived and is not a migration or integration target. Its pinned binary is used only for an explicitly selected sandbox comparison; it is not edited, rebuilt, reactivated for normal use or bridged. The comparison reads its own saved sidecars without invoking its public API/store. Its log is not ground truth: prefix timing, wormhole gaps and lazy-name side effects differ from the API's contract.
-
-Travel observation needs no content serializer. Optional journal history belongs to its provider; these probes do not qualify automatic story/objective or world-content persistence. Full in-game acceptance remains pending.
+Anima's visit history and Echo's arrival behavior are consumer responsibilities.
+TravelJournal remains archived and is not an integration target. Observation needs
+no content serializer; additional journal history belongs to its provider.

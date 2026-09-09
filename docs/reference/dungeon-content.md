@@ -1,9 +1,8 @@
 # Authored dungeon content
 
 `ModApi.Services.Dungeons` is a stable service for optional experimental content.
-Inspect its typed `Availability` and per-call results before use. It requires boarding observation, API save data and
-`Dungeons.Enabled`; it is disabled by default. Host tests and binding checks do
-not establish in-game qualification.
+Inspect its typed `Availability` and per-call results before use. It initializes automatically when boarding observation, API save data and game
+bindings are available.
 
 A provider registers immutable `DungeonDefinition` values under its plugin ID
 and a local ID. Another provider may reuse the local ID. Dispose registrations

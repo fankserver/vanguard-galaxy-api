@@ -20,13 +20,13 @@ internal sealed partial class WorldJsonInspection
         foreach (var entry in (IEnumerable)poi)
         {
             var key = (string)entry.GetType().GetProperty("Key")!.GetValue(entry)!;
-            if (!EmptyCombatFields.Contains(key)) throw new InvalidDataException("World field is outside the empty qualification profile: " + key);
+            if (!EmptyCombatFields.Contains(key)) throw new InvalidDataException("World field is outside the supported empty Combat profile: " + key);
         }
         foreach (string key in new[] { "hidden", "asteroidsInitialized", "hasAsteroids" })
         {
             if ((bool)_isNull.GetValue(Field(poi, key))!) continue;
             bool value = Boolean(poi, key);
-            if ((key == "hasAsteroids" || key == "asteroidsInitialized") && value) throw new InvalidDataException("Asteroids are outside the empty qualification profile.");
+            if ((key == "hasAsteroids" || key == "asteroidsInitialized") && value) throw new InvalidDataException("Asteroids are outside the supported empty Combat profile.");
         }
     }
 }

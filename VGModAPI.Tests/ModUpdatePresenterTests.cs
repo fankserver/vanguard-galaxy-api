@@ -30,6 +30,32 @@ public sealed class ModUpdatePresenterTests
         Assert.DoesNotContain("Automatic", text);
     }
     [Fact]
+    public async Task CachedUpdateOffersItsReleaseWithoutNetworkAccess()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "vg-update-presenter-" + Guid.NewGuid().ToString("N"));
+        const string release = "https://github.com/a/b/releases";
+        var mod = Mod();
+        try
+        {
+            var feed = ModUpdateFeed.Parse(System.Text.Encoding.UTF8.GetBytes(
+                "{\"schemaVersion\":1,\"pluginId\":\"a\",\"version\":\"2.0.0\",\"channel\":\"stable\",\"releaseUrl\":\"" + release + "\"}"), "a", "stable");
+            var cache = new ModUpdateCache(root);
+            cache.Write(mod, feed, DateTimeOffset.UtcNow);
+            using var service = new ModUpdateService(new Offline(), cache);
+            service.Sync(new[] { mod });
+            for (var attempt = 0; attempt < 500 && service.Status(mod).State != ModUpdateState.Available; attempt++)
+            { service.Pump(); await Task.Delay(10); }
+            Assert.Equal(ModUpdateState.Available, service.Status(mod).State);
+            var presenter = new ModUpdatePresenter(service);
+            string? opened = null;
+            Assert.True(presenter.OpenRelease(mod, destination => opened = destination));
+            Assert.Equal(release, opened);
+            Assert.Contains("Update available", presenter.Text(mod, DateTimeOffset.UtcNow));
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    [Fact]
     public void DisabledAndUnsupportedFeedsCannotCheckOrOpenRelease()
     {
         using var service = Service(); var presenter = new ModUpdatePresenter(service);

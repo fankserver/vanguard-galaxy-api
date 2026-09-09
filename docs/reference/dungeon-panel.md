@@ -1,6 +1,6 @@
 # Dungeon panel integration
 
-`ModApi.Services.DungeonPanel` is a stable `IDungeonPanelService` exposing Unity-free panel opening, status sections and contextual actions. Check typed `Availability` and subscribe to `AvailabilityChanged` for integration health; `Capabilities` independently describes available presentation features. Neither establishes in-game qualification. Unavailable reads return null without accessing the native panel. Navigation that loses its context after invocation returns `Uncertain`; do not retry blindly.
+`ModApi.Services.DungeonPanel` is a stable `IDungeonPanelService` exposing Unity-free panel opening, status sections and contextual actions. Check typed `Availability` and subscribe to `AvailabilityChanged` for integration health; `Capabilities` independently describes available presentation features. Neither grants permission to act on stale context. Unavailable reads return null without accessing the native panel. Navigation that loses its context after invocation returns `Uncertain`; do not retry blindly.
 
 `Open(target)` resolves the current observed target generation and requires a live target. Opening a native location panel can resume native operations; when experimental dungeon recovery is installed, it must be writable and ready before this API opens the panel. When that recovery integration is disabled, native resume behavior applies. Ambiguous panel instances, unavailable targets and busy contexts are refused rather than substituted.
 
@@ -18,7 +18,7 @@ status.Dispose();
 
 Action presenters are reevaluated on activation. A changed view, target generation, snapshot revision, disposed lease or disabled/hidden action refuses dispatch. Gameplay commands must independently validate their current conditions; an enabled button is never authorization. Contributor exceptions are isolated and reported. Calls and lease disposal require the main thread; nested activation/navigation is refused.
 
-Sections accept titles up to 128 characters and text up to 4096. Actions accept labels up to 128 and tooltip text up to 1024. Rendering disables rich-text parsing, wraps text and uses a scrollable region beside, above or below the native panel without covering its controls. Native panel scale and position are respected; keyboard/controller selection scrolls into view. If no unobstructed region fits, a “Mod actions” button opens an explicitly requested overlay drawer with a close button. This compact mode does not resize or change native window preferences. Viewports too small for a 160×120 drawer plus its toggle remain unsupported; input and scaling still require native acceptance.
+Sections accept titles up to 128 characters and text up to 4096. Actions accept labels up to 128 and tooltip text up to 1024. Rendering disables rich-text parsing, wraps text and uses a scrollable region beside, above or below the native panel without covering its controls. Native panel scale and position are respected; keyboard/controller selection scrolls into view. If no unobstructed region fits, a “Mod actions” button opens an explicitly requested overlay drawer with a close button. This compact mode does not resize or change native window preferences. Viewports too small for a 160×120 drawer plus its toggle remain unsupported.
 
 ## Authored choices and estimates
 
@@ -28,4 +28,4 @@ The native panel retains its own estimates. Its inspected estimate boundary is a
 
 ## Verification boundary
 
-Host tests cover stale views, session changes, registration disposal, callback reentrancy/failure, multiple contributors, long text, authored-choice routing and geometric placement. Installed-binding checks verify panel members and the native estimate boundary. These checks are not Unity acceptance of input, scrolling, scaling, destroyed targets or full restoration. Controlled native qualification remains required; no deployment follows merely from enabling the API.
+Tests cover stale views, session changes, registration disposal, callback reentrancy/failure, multiple contributors, long text, authored-choice routing and geometric placement. Installed-binding checks verify panel members and the native estimate boundary.

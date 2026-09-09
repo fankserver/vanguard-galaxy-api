@@ -13,7 +13,7 @@ public enum ServiceUnavailableReason
     ApiStopped
 }
 
-/// <summary>Immutable service health, not session readiness, action permission or qualification.</summary>
+/// <summary>Immutable service health, not session readiness or action permission.</summary>
 public sealed class ServiceAvailability : IEquatable<ServiceAvailability>
 {
     public static ServiceAvailability Available { get; } = new(ServiceUnavailableReason.None);

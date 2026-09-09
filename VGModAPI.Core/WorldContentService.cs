@@ -5,7 +5,7 @@ using VGModAPI.Core.Integration;
 
 namespace VGModAPI.Core;
 
-/// <summary>Authenticated Unity-free declaration/creation facade; runtime qualification remains a separate gate.</summary>
+/// <summary>Authenticated Unity-free declaration/creation facade; operations enforce live binding, session and save-data readiness.</summary>
 internal sealed class WorldContentService : IWorldService, IDisposable
 {
     private readonly LifecycleHub _hub;

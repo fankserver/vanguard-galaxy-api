@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-// Reflection-shape doubles, not a replacement for the native serializer qualification.
+// Reflection-shape doubles for the serializer adapters.
 namespace LightJson;
 public sealed class JsonObject : IEnumerable<KeyValuePair<string, JsonValue>>
 {

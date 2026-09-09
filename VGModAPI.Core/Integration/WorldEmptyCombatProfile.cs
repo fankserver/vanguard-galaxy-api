@@ -5,7 +5,7 @@ using System.Reflection;
 
 namespace VGModAPI.Core.Integration;
 
-/// <summary>Restricted native state inspection for the empty-Combat qualification profile; not runtime qualification.</summary>
+/// <summary>Restricted native state inspection for the supported empty-Combat state.</summary>
 internal sealed class WorldEmptyCombatProfile
 {
     private const BindingFlags Fields = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
@@ -43,10 +43,10 @@ internal sealed class WorldEmptyCombatProfile
             var collection = field.GetValue(value);
             if (collection == null && field.Name == "_pendingStationBuildings") continue;
             if (collection == null || collection.GetType() != field.FieldType || (int)field.FieldType.GetProperty("Count")!.GetValue(collection)! != 0)
-                throw new InvalidDataException("Executable world content is outside the empty qualification profile.");
+                throw new InvalidDataException("Executable world content is outside the supported empty Combat profile.");
         }
-        foreach (var field in _null) if (field.GetValue(value) != null) throw new InvalidDataException("World attachment is outside the empty qualification profile.");
-        foreach (var field in _zero) if ((int)field.GetValue(value)! != 0) throw new InvalidDataException("World generation state is outside the empty qualification profile.");
-        if ((bool)_asteroids.GetValue(value)! || (bool)_initialized.GetValue(value)!) throw new InvalidDataException("Asteroids are outside the empty qualification profile.");
+        foreach (var field in _null) if (field.GetValue(value) != null) throw new InvalidDataException("World attachment is outside the supported empty Combat profile.");
+        foreach (var field in _zero) if ((int)field.GetValue(value)! != 0) throw new InvalidDataException("World generation state is outside the supported empty Combat profile.");
+        if ((bool)_asteroids.GetValue(value)! || (bool)_initialized.GetValue(value)!) throw new InvalidDataException("Asteroids are outside the supported empty Combat profile.");
     }
 }

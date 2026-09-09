@@ -137,11 +137,10 @@ public sealed class LifecycleHubTests
     }
 
     [Fact]
-    public void CapabilitiesAreSnapshotCopiesAndNeverRuntimeQualified()
+    public void CapabilitiesAreSnapshotCopies()
     {
         using var hub = Hub(); hub.SetCapability("session", true, "bound");
         var before = hub.Capabilities; hub.SetCapability("session", false, "fault");
         Assert.True(before[0].Available); Assert.False(hub.Capabilities[0].Available);
-        Assert.False(before[0].RuntimeQualified);
     }
 }

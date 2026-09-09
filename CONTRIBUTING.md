@@ -5,19 +5,41 @@ Use .NET SDK 10, GNU make, and Python 3.11+. Runtime libraries target
 game/BepInEx references; pure host tests do not. Commands and installation-path
 overrides are defined in the [Makefile](Makefile).
 
+## Delivery
+
+Finish working API features, not a testing or evidence program. Keep a short,
+finite list of missing behavior for the assigned milestone and implement coherent
+feature chunks. Tests verify those behaviors or reproduce actual defects.
+
+- No qualification campaigns, native acceptance matrices, preparation/research/
+  analysis workstreams, probe/receipt infrastructure or one-scenario test PRs.
+- Read existing code or game bindings only as needed to implement the behavior;
+  do not turn that inspection into a separate deliverable or prerequisite project.
+- Add focused API correctness tests with the feature. Retain save-data integrity,
+  ownership, callback isolation and unsupported-build refusal tests. Do not build
+  tests of qualification machinery or expand an exhaustive scenario matrix.
+- Run the relevant checks for the completed chunk; repeat affected checks after
+  fixes. Review the coherent change once and resume for substantive defect fixes,
+  rather than restarting a full review for every small edit.
+- When the required functionality and its relevant tests pass, complete the task
+  or milestone. Do not invent another evidence gate. Record actual missing
+  behavior as follow-up work; optional extra coverage is not a blocker.
+- Test results describe the tested behavior, not universal correctness. Removing
+  qualification work does not permit weakening runtime safety or losing saves.
+
 ## Changes and review
 
 - Work in this independent repository; changes to sibling mods require separate authorization.
 - Assign the task to your working account, use a branch and Conventional Commits,
-  and open a PR for each delivery chunk. Address substantive review findings before
-  delivery. Squash-merge only when authorized.
+  and open a PR for a coherent feature or fix, including its tests. Address
+  substantive review findings before delivery. Squash-merge only when authorized.
 - Read the [lifecycle contract](docs/reference/lifecycle-contract.md) and
   [compatibility limits](docs/reference/compatibility.md) before modifying hooks.
 - Run the relevant Makefile checks. Never run reference-bearing checks on untrusted
   PR code or upload game references or raw profiles to public CI.
-- Deployment, release publication and native testing require explicit maintainer
-  authorization and disposable/copied saves. Host tests and bounded native probes
-  do not establish full in-game acceptance; keep untested scope explicit.
+- Deployment, release publication and manual game/save experiments require
+  separate maintainer authorization. Do not modify real saves during development.
+  They are not part of the default feature-delivery or merge process.
 - Never commit or package game, Unity, BepInEx or Harmony reference DLLs, decompiled
   source, raw profiles or private receipts. Local references stay in ignored `VGModAPI/lib`.
 

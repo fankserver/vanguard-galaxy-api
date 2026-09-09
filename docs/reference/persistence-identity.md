@@ -35,4 +35,4 @@ Retaining generations costs disk space. There is no automatic pruning: explicit 
 
 ## Evidence boundary
 
-Pure identity-policy fixtures cover cross-slot isolation, exact rollback selection, explicit import, absence versus invalid metadata and refusal of ambiguous identical-byte progression. They are not filesystem crash tests or native storage qualification; see the separate schema and storage verification boundaries. External CustomMission progression and archived TravelJournal are not migration targets.
+Pure identity-policy fixtures cover cross-slot isolation, exact rollback selection, explicit import, absence versus invalid metadata and refusal of ambiguous identical-byte progression. They do not simulate real power cuts; see the schema and storage limits. External CustomMission progression and archived TravelJournal are not migration targets.

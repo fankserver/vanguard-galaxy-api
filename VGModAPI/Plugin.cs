@@ -15,9 +15,6 @@ namespace VGModAPI;
 
 [BepInPlugin(ModApi.PluginId, "Mod API", PluginBuildVersion.Value)]
 [BepInProcess("VanguardGalaxy.exe")]
-#if !VG_WORLD_QUALIFICATION
-[BepInDependency("vgmodapi.qualification.guard", BepInDependency.DependencyFlags.SoftDependency)]
-#endif
 public sealed partial class Plugin : BaseUnityPlugin
 {
     private LifecycleHub? _hub;
@@ -168,7 +165,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         InitializeBars();
         InitializeModMenu();
         PublishServiceRoot();
-        Logger.LogInfo("VGModAPI " + Info.Metadata.Version + ": experimental, NOT runtime-qualified. Query capabilities; startup does not prove compatibility.");
+        Logger.LogInfo("VGModAPI " + Info.Metadata.Version + ": experimental. Check typed service availability and operation results.");
     }
 
     private void InitializeUpdates()
@@ -190,7 +187,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             var assembly = _inspectedGameAssembly
                 ?? throw new NotSupportedException("No inspected game assembly; local catalog remains available.");
             _modMenu = new ModMenuModule(assembly, _modCatalog!, DisableModMenu, _updatePresenter);
-            _hub.SetCapability("mod-information-menu", true, "Inspected native menu binding; UI qualification pending.");
+            _hub.SetCapability("mod-information-menu", true, "Bound to inspected native menu.");
         }
         catch (Exception error) { DisableModMenu(error); }
     }
@@ -338,7 +335,7 @@ public sealed partial class Plugin : BaseUnityPlugin
                         return;
                     }
                     _pendingProtectionRecovery = false;
-                    _hub!.SetCapability("story-protection", true, "Bound to inspected assembly; in-game qualification pending.");
+                    _hub!.SetCapability("story-protection", true, "Bound to inspected assembly.");
                     return;
                 }
                 if (e.Kind is not (LifecycleEventKind.SessionStarting or LifecycleEventKind.SessionInvalidated
@@ -374,7 +371,7 @@ public sealed partial class Plugin : BaseUnityPlugin
 
     private void InitializeStory()
     {
-        if (!Config.Bind("Story", "Enabled", false, "Experimental API-owned story content installed into the game's catalog; use disposable saves until qualified.").Value)
+        if (!Config.Bind("Story", "Enabled", false, "Experimental API-owned story content installed into the game's catalog; back up saves before enabling.").Value)
         { _hub!.SetCapability("owned-story", false, "Disabled by configuration."); return; }
         if (_persistence == null) { _hub!.SetCapability("owned-story", false, "API-managed saves unavailable."); return; }
         if (!_hub!.Capabilities.Any(c => c.Name == "session-lifecycle" && c.Available))
@@ -400,7 +397,7 @@ public sealed partial class Plugin : BaseUnityPlugin
                 () => _quarantine?.Healthy ?? false, (owner, target) => _worldReferences?.Knows(owner, target));
             // Only a module that exists can say what a UI abandon or retry of owned content means.
             if (_quarantine != null) _quarantine.Transactions = _story;
-            _hub.SetCapability("owned-story", true, "Experimental owned story content enabled; native qualification pending.");
+            _hub.SetCapability("owned-story", true, "Experimental owned story content enabled.");
         }
         catch (Exception error)
         {
@@ -437,7 +434,7 @@ public sealed partial class Plugin : BaseUnityPlugin
                 touched.Add(target);
                 _harmony!.Patch(target, prefix: Hook("Prefix"), postfix: Hook("Postfix"), finalizer: Hook("Finalizer"));
             }
-            _hub!.SetCapability(name, true, "Bound to inspected assembly; in-game qualification pending.");
+            _hub!.SetCapability(name, true, "Bound to inspected assembly.");
             return true;
         }
         catch (Exception ex)
@@ -459,12 +456,12 @@ public sealed partial class Plugin : BaseUnityPlugin
                 (prefab, type) => prefab is UnityEngine.GameObject gameObject && gameObject != null ? gameObject.GetComponent(type) : null,
                 text => (string)translate.Invoke(null, new object[] { text, Array.Empty<object>() })!);
             _recipes = new RecipeCatalogService(_hub!, source, error => Logger.LogError(error));
-            _hub!.SetCapability("recipe-catalog", true, "Experimental read-only definitions; not runtime-qualified.");
+            _hub!.SetCapability("recipe-catalog", true, "Experimental read-only definitions.");
             try
             {
                 source.BindQuotes();
                 _recipeQuotes = new RecipeQuoteService(_hub, source, error => Logger.LogError(error));
-                _hub.SetCapability("recipe-quotes", true, "Experimental advisory requirements; not runtime-qualified.");
+                _hub.SetCapability("recipe-quotes", true, "Experimental advisory requirements.");
             }
             catch (Exception quoteError)
             {
@@ -530,7 +527,7 @@ public sealed partial class Plugin : BaseUnityPlugin
                 _craftingCommandHarmony.Patch(methods[spec.Key], prefix: new HarmonyMethod(typeof(CraftingCommandPatches).GetMethod("Prefix", flags)),
                     finalizer: new HarmonyMethod(typeof(CraftingCommandPatches).GetMethod("Finalizer", flags)));
             _craftingCommands.SetAvailable(true);
-            _hub!.SetCapability("crafting-commands", true, "Experimental guarded commands; not runtime-qualified.");
+            _hub!.SetCapability("crafting-commands", true, "Experimental guarded commands.");
         }
         catch (Exception error) { TeardownCraftingCommands(); Logger.LogError(error); }
     }
@@ -570,8 +567,8 @@ public sealed partial class Plugin : BaseUnityPlugin
                 _dungeonPanelChoices = new(_dungeonPanelService, _dungeons, target =>
                     _boarding.TryResolveCommandTarget(target, out var location, out _, out _) && location != null ? _dungeonAdapter.Marker(location) : null);
             _dungeonPanelView = new(_dungeonPanel, _dungeonPanelService); _dungeonPanel.PresentationEnabled = true;
-            _hub.SetCapability("dungeon-panel-sections", true, "Native panel status renderer installed; not runtime-qualified.");
-            _hub.SetCapability("dungeon-panel-actions", true, "Native panel action renderer installed; not runtime-qualified.");
+            _hub.SetCapability("dungeon-panel-sections", true, "Native panel status renderer installed.");
+            _hub.SetCapability("dungeon-panel-actions", true, "Native panel action renderer installed.");
         }
         catch (Exception error) { StopDungeonPanel(); _hub.SetCapability("dungeon-panel-opening", false, error.Message); Logger.LogError(error); }
     }
@@ -899,7 +896,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             }
             _travel = adapter;
             _hub.Services.WatchFault("native-travel", () => adapter.IsFaulted);
-            _hub!.SetCapability("native-travel", true, "Bound to inspected assembly; in-game qualification pending.");
+            _hub!.SetCapability("native-travel", true, "Bound to inspected assembly.");
         }
         catch (Exception ex)
         {

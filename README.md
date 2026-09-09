@@ -8,7 +8,7 @@
 
 Unofficial community mod API for Vanguard Galaxy, using BepInEx 5 and HarmonyX.
 
-**Experimental; not fully runtime-qualified.** See [compatibility](docs/reference/compatibility.md) for the supported game build, available services, and in-game testing limits.
+**Experimental.** See [compatibility](docs/reference/compatibility.md) for the supported game build, available services, and current limitations.
 
 VGModAPI provides lifecycle events, mod save data, and optional mission, travel,
 boarding, story, bar, recipe and mod-information services. It is an integration

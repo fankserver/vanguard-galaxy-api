@@ -3,11 +3,15 @@
 Read and follow [CONTRIBUTING.md](CONTRIBUTING.md) before making changes. It is the
 canonical source for contributor rules, design constraints and documentation policy.
 
+- Deliver working API functionality with focused correctness tests. No qualification,
+  preparation/research/analysis workstreams, acceptance matrices or probe-only PRs.
+  Follow the finite completion rule in CONTRIBUTING.md; do not invent new gates.
 - Implement directly in the assigned parent session. Assign the GitHub task to the
-  authenticated working account, commit and push completed chunks, and open a PR.
-- Review through the read-only `reviewer` subagent, launched asynchronously.
-  Establish an exact-head baseline and resume the same reviewer for deltas;
-  coordinate through intercom/supervisor messaging.
-- Address substantive findings and never claim a failed review completed. Use the
-  project Makefile checks; generic Gemini/council/CI-coverage gates are not required.
-- Squash-merge only when authorized, without closing untested runtime scope.
+  authenticated account; commit, push and open a PR for the coherent feature/fix.
+- Use the read-only asynchronous `reviewer` for that completed change. Retain its
+  context for substantive fix deltas; coordinate concurrent writers through intercom.
+- Run relevant Makefile checks and fix real failures. Do not add generic council,
+  coverage, native qualification or mandatory CI-wait gates. Never claim a failed
+  review or a failing test passed.
+- Squash-merge when authorized once the functional scope, relevant tests and source
+  review are complete. Deployment and release publication remain separate actions.

@@ -52,7 +52,7 @@ internal sealed class CraftingJobService : ICraftingJobService, IDisposable
     {
         _hub.CheckThread(); if (_disposed) return;
         available &= _source != null;
-        _hub.SetCapability("crafting-jobs", available, available ? "Experimental native job observation; not runtime-qualified." : "Crafting job observation unavailable.");
+        _hub.SetCapability("crafting-jobs", available, available ? "Experimental native job observation." : "Crafting job observation unavailable.");
         if (!available && !_disposed) Invalidate("Observation unavailable.");
     }
     public CraftingJobListSnapshot Read(RecipeStationHandle station)

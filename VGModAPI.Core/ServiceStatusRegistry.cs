@@ -13,7 +13,7 @@ internal sealed class ServiceStatusRegistry : IDisposable
         internal readonly ServiceAvailability Health;
         internal Source(string name, bool available, string detail, ServiceUnavailableReason reason)
         {
-            Legacy = new CapabilityStatus(name, available, false, detail);
+            Legacy = new CapabilityStatus(name, available, detail);
             Health = available ? ServiceAvailability.Available : new ServiceAvailability(reason, detail);
         }
     }
@@ -88,7 +88,7 @@ internal sealed class ServiceStatusRegistry : IDisposable
             return Array.AsReadOnly(_sources.OrderBy(pair => pair.Key, StringComparer.Ordinal).Select(pair =>
             {
                 var health = Read(pair.Key);
-                return health.IsAvailable ? pair.Value.Legacy : new CapabilityStatus(pair.Key, false, false, health.Detail);
+                return health.IsAvailable ? pair.Value.Legacy : new CapabilityStatus(pair.Key, false, health.Detail);
             }).ToArray());
         }
     }

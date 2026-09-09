@@ -3,16 +3,16 @@ GAME_DIR ?= /mnt/c/Program Files (x86)/Steam/steamapps/common/Vanguard Galaxy
 CONFIGURATION ?= Debug
 TEST_EXCLUDE_CATEGORY ?=
 TEST_ARGS ?=
-TEST_FILTER = Category!=InstalledGame&Category!=InstalledConsumer&Category!=InstalledArchive&Category!=Package$(if $(TEST_EXCLUDE_CATEGORY),&Category!=$(TEST_EXCLUDE_CATEGORY))
+TEST_FILTER = Category!=InstalledGame&Category!=Package$(if $(TEST_EXCLUDE_CATEGORY),&Category!=$(TEST_EXCLUDE_CATEGORY))
 RELEASE_VERSION := $(shell python3 -c 'import xml.etree.ElementTree as E; print(E.parse("Directory.Build.props").findtext("PropertyGroup/Version"))')
 MANAGED = $(GAME_DIR)/VanguardGalaxy_Data/Managed
 CORE = $(GAME_DIR)/BepInEx/core
 
-.PHONY: link-libs build test check-bindings check-consumer check-archive package check-package check-local provenance clean release-archive
+.PHONY: link-libs build test check-bindings package check-package check-local clean release-archive
 link-libs:
 	@mkdir -p VGModAPI/lib
 	@set -eu; for name in BepInEx 0Harmony; do test -f "$(CORE)/$$name.dll"; ln -sfn "$(CORE)/$$name.dll" "VGModAPI/lib/$$name.dll"; done
-	@set -eu; for name in UnityEngine UnityEngine.CoreModule UnityEngine.UIModule UnityEngine.ScreenCaptureModule UnityEngine.UI Unity.TextMeshPro Unity.InputSystem; do test -f "$(MANAGED)/$$name.dll"; ln -sfn "$(MANAGED)/$$name.dll" "VGModAPI/lib/$$name.dll"; done
+	@set -eu; for name in UnityEngine UnityEngine.CoreModule UnityEngine.UIModule UnityEngine.UI Unity.TextMeshPro Unity.InputSystem; do test -f "$(MANAGED)/$$name.dll"; ln -sfn "$(MANAGED)/$$name.dll" "VGModAPI/lib/$$name.dll"; done
 build: link-libs
 	$(DOTNET) build VGModAPI.sln -c $(CONFIGURATION)
 .PHONY: build-dungeon-example build-dungeon-author
@@ -38,41 +38,6 @@ test:
 	$(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter '$(TEST_FILTER)' $(TEST_ARGS)
 check-bindings:
 	VG_GAME_ASSEMBLY="$(MANAGED)/Assembly-CSharp.dll" $(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter 'Category=InstalledGame'
-# Metadata evidence for the members the actual-consumer qualification probe reflects. Needs the
-# owner-built consumer binary; it is never part of the default test run or of check-local.
-# Cecil reads the candidate only, but decoding its custom-attribute ENUM arguments
-# (BepInDependency flags, Newtonsoft NullValueHandling) requires resolving those two compile-only
-# dependencies, so the resolver gets an explicit bounded search path: the installed BepInEx core,
-# the installed Managed references and the local package copy of Newtonsoft. Override
-# ANIMA_DEPENDENCY_DIRS (path-separator separated) when they live elsewhere; nothing is copied.
-NUGET_PACKAGES_DIR ?= $(HOME)/.nuget/packages
-NEWTONSOFT_DIR ?= $(lastword $(sort $(wildcard $(NUGET_PACKAGES_DIR)/newtonsoft.json/*/lib/netstandard2.0)))
-check-consumer:
-	@test -n "$(ANIMA_ASSEMBLY)$(ECHO_ASSEMBLY)" || (echo 'Set ANIMA_ASSEMBLY=/path/to/VGAnima.dll and/or ECHO_ASSEMBLY=/path/to/VGEcho.dll'; exit 1)
-	VG_ANIMA_ASSEMBLY="$(ANIMA_ASSEMBLY)" VG_ECHO_ASSEMBLY="$(ECHO_ASSEMBLY)" \
-	VG_CONSUMER_DEPENDENCY_DIRS="$(CORE):$(MANAGED):$(NEWTONSOFT_DIR):$(ANIMA_DEPENDENCY_DIRS):$(ECHO_DEPENDENCY_DIRS)" \
-	$(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter '$(CONSUMER_FILTER)' -- RunConfiguration.TreatNoTestsAsError=true
-# Select only supplied consumers; the explicit override remains useful for focused checks.
-ifneq ($(strip $(ANIMA_ASSEMBLY)),)
-ifneq ($(strip $(ECHO_ASSEMBLY)),)
-CONSUMER_FILTER ?= Category=InstalledConsumer
-else
-CONSUMER_FILTER ?= Category=InstalledConsumer&FullyQualifiedName~InstalledAnimaTravelConsumerTests
-endif
-else
-CONSUMER_FILTER ?= Category=InstalledConsumer&FullyQualifiedName~InstalledEchoTravelConsumerTests
-endif
-# READ-ONLY attestation of the pinned archived TravelJournal prebuilt. It never builds, edits,
-# reactivates, migrates or bridges the archive: it reads the accepted binary (and its sibling PDB,
-# which is never deployed) and confirms the launcher's pins describe it.
-TRAVELJOURNAL_PDB ?= $(patsubst %.dll,%.pdb,$(TRAVELJOURNAL_ASSEMBLY))
-check-archive:
-	@test -n "$(TRAVELJOURNAL_ASSEMBLY)" || (echo 'Set TRAVELJOURNAL_ASSEMBLY=/path/to/VGTravelJournal.dll (and optionally TRAVELJOURNAL_PDB)'; exit 1)
-	VG_TRAVELJOURNAL_ASSEMBLY="$(TRAVELJOURNAL_ASSEMBLY)" VG_TRAVELJOURNAL_PDB="$(TRAVELJOURNAL_PDB)" \
-	VG_TRAVELJOURNAL_REPO="$(TRAVELJOURNAL_REPO)" \
-	VG_GAME_ASSEMBLY="$(MANAGED)/Assembly-CSharp.dll" \
-	VG_CONSUMER_DEPENDENCY_DIRS="$(CORE):$(MANAGED)" \
-	$(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter 'Category=InstalledArchive' -- RunConfiguration.TreatNoTestsAsError=true
 package: build
 	@rm -rf artifacts/VGModAPI
 	@mkdir -p artifacts/VGModAPI
@@ -99,8 +64,5 @@ check-local:
 	$(MAKE) test
 	$(MAKE) package
 	$(MAKE) check-bindings
-	$(MAKE) provenance
-provenance:
-	@python3 tools/reference-provenance.py --game-dir "$(GAME_DIR)" --dotnet "$(DOTNET)" --configuration "$(CONFIGURATION)"
 clean:
 	$(DOTNET) clean VGModAPI.sln

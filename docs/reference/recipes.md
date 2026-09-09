@@ -1,6 +1,6 @@
 # Forge and refinery services — experimental
 
-`ModApi.Services.Recipes` exposes immutable Forge/refining definitions for the current station. Recipe services initialize automatically; the stable service reports unavailable when uninspected or unable to bind. Calls are main-thread-only and require a tracked `GameplayInitialized` session plus an accessible station with supported crafting facilities. Refining does not require that the station also has a Forge. This is not universal UI/world readiness or native qualification.
+`ModApi.Services.Recipes` exposes immutable Forge/refining definitions for the current station. Recipe services initialize automatically; the stable service reports unavailable when uninspected or unable to bind. Calls are main-thread-only and require a tracked `GameplayInitialized` session plus an accessible station with supported crafting facilities. Refining does not require that the station also has a Forge. This is not universal UI/world readiness.
 
 ## Querying
 
@@ -33,7 +33,7 @@ This service is observational. It does not register custom content, queue/cancel
 
 ## Contextual requirements
 
-`ModApi.Services.RecipeQuotes` initializes automatically when its additional inspected bindings succeed. `IRecipeService` and `IRecipeQuoteService` each expose typed `Availability` and `AvailabilityChanged`; quote failure does not disable an otherwise usable catalog. The typed runtime requires native qualification.
+`ModApi.Services.RecipeQuotes` initializes automatically when its additional inspected bindings succeed. `IRecipeService` and `IRecipeQuoteService` each expose typed `Availability` and `AvailabilityChanged`; quote failure does not disable an otherwise usable catalog.
 
 ```csharp
 var quotes = ModApi.Services.RecipeQuotes;
@@ -121,6 +121,6 @@ Registrations survive window close/reopen and session replacement without save c
 
 Presentation is separate from recipe economics: snapshots expose localized display text and whether the selected UI already has an icon. `UseSelectionIcon` reuses that existing sprite only inside the registered Forge action; no Unity object, generated-item preview or asset reference is exported. Action labels/tooltips are bounded consumer text rendered without rich-text interpretation. Native item tooltips remain owned by the native recipe icon. This is not general HUD attachment, visibility or asset export; use the separate [shared HUD presentation service](hud.md) rather than another Forge-owned canvas framework.
 
-Installed member checks and host lifetime/navigation tests do not establish native layout, scaling, input or coexistence acceptance. Full Unity Forge UI qualification remains pending.
+Tests cover recipe semantics, scoped actions, lifetime and navigation.
 
 Host tests exercise duplicate names, multiple producers, template identity, multi-output/fractional quantities, station-specific availability, registry rereads, unresolved outputs, conflicting IDs, session invalidation and failure isolation. Installed-metadata tests verify the declared native member shapes. These do not execute Unity; full in-game recipe/Forge/refining acceptance remains pending.

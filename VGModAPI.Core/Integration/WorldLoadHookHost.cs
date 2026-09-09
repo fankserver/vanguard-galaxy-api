@@ -55,7 +55,7 @@ internal sealed partial class WorldLoadHookHost : IWorldLoadHookHost, IDisposabl
         if (!IsCurrent()) return null;
         // Staged loading can yield after construction; readiness must retain the original assets.
         // Fixed context inspector, not an extension callback: initial definition admission
-        // cannot authorize a later constructor after qualification participants are lost.
+        // cannot authorize a later constructor after required participants are lost.
         try { _requireContext?.Invoke(); prepared.ValidateAssets(); _requireContext?.Invoke(); }
         catch
         {

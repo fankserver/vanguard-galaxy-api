@@ -35,10 +35,9 @@ public sealed class CapabilityStatus
 {
     public string Name { get; }
     public bool Available { get; }
-    public bool RuntimeQualified { get; }
     public string Detail { get; }
-    public CapabilityStatus(string name, bool available, bool runtimeQualified, string detail)
-    { Name = name; Available = available; RuntimeQualified = runtimeQualified; Detail = detail; }
+    public CapabilityStatus(string name, bool available, string detail)
+    { Name = name; Available = available; Detail = detail; }
 }
 
 /// <summary>Available after the API plugin's Awake; declare a hard BepInEx dependency on vgmodapi.</summary>

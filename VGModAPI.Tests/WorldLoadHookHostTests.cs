@@ -112,7 +112,7 @@ public sealed class WorldLoadHookHostTests
                         Assert.True(host!.TryRecall(new Source.Util.SaveGameFile(path), out _));
                         throw new InvalidDataException("Old inspector failed after replacement");
                     }
-                    if (!contextCurrent) throw new InvalidDataException("Qualification context lost");
+                    if (!contextCurrent) throw new InvalidDataException("Required context lost");
                 });
             session = hub.Begin(SessionOrigin.SaveLoad, path);
             Assert.True(host.TryRecall(new Source.Util.SaveGameFile(path), out var loaded)); Assert.Same(root, loaded);
