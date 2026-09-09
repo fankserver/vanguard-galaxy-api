@@ -145,6 +145,11 @@ public sealed partial class Plugin : BaseUnityPlugin
                 Require(File.ReadAllText(Path.Combine(_root!, "dungeon-panel.enabled")) == "dungeon-panel-v4", "Invalid dungeon panel marker.");
                 foreach (var frame in CheckDungeonPanelLifetime()) yield return frame;
             }
+            if (File.Exists(Path.Combine(_root!, "dungeon-save.enabled")))
+            {
+                Require(File.ReadAllText(Path.Combine(_root!, "dungeon-save.enabled")) == "dungeon-save-v1", "Invalid dungeon save marker.");
+                foreach (var frame in CheckDungeonSaveLoad()) yield return frame;
+            }
             yield break;
         }
         if (File.Exists(Path.Combine(_root!, "forge-reads.enabled")))
