@@ -42,8 +42,9 @@ public sealed partial class Plugin
             _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService, _boardingCombat, _dungeonRewards, _boardingCommands, _boardingTactics, _boardingService, _dungeonSettlement, _dungeonPanelService, _dungeons, _story, _bars, _worldContent);
         // Deferred cleanup preserves terminal lifecycle delivery when shutdown starts inside a callback.
         // Content owners release their registrations before the save-data coordinator stops.
-        foreach (var service in new IDisposable[] { mods, missions, travel, station, _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService, _boardingCombat, _dungeonRewards, _boardingCommands, _boardingTactics, _boardingService, _dungeonSettlement, _dungeonPanelService, _dungeons, _story, _bars, _worldContent, _worldDefinitions, _persistence! })
+        foreach (var service in new IDisposable[] { mods, missions, travel, station, _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService, _boardingCombat, _dungeonRewards, _boardingCommands, _boardingTactics, _boardingService, _dungeonSettlement, _dungeonPanelService, _dungeons, _story, _bars })
             hub.Services.AfterStopped(service.Dispose);
+        Core.Integration.WorldShutdownRegistration.Register(hub.Services, StopWorldProtection, _persistence!);
         ModApi.PublishServices(root);
         _serviceRoot = root;
     }
