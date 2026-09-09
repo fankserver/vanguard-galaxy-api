@@ -305,6 +305,34 @@ function Assert-ModInformationProbeReceipt([string]$Root, $Provenance) {
         if (@($facts | Where-Object { $_ -ceq ($fact + '=PASS') }).Count -ne 1) { throw "Missing or duplicate information probe fact: $fact" }
     }
 }
+function Assert-BlueprintPinSelection([string]$Root, $Provenance) {
+    $flag = $Provenance.PSObject.Properties['blueprintPinProbe']
+    if ($flag -and $flag.Value -isnot [bool]) { throw 'Invalid Blueprint Pin flag.' }
+    $selected = $flag -and $flag.Value
+    $marker = Join-Path $Root 'blueprint-pin.enabled'
+    if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Blueprint Pin selection changed.' }
+    if (!$selected) { return }
+    if (!$Provenance.forgeReadProbe -or $Provenance.forgeUiProbe -or $Provenance.forgeCommandProbe -or $Provenance.refineryProbe -or $Provenance.forgeDeliveryProbe -or $Provenance.forgePersistenceProbe -or [IO.File]::ReadAllText($marker) -cne 'blueprint-pin-v1') { throw 'Invalid Blueprint Pin selection.' }
+    if ($Provenance.blueprintPinRevision -cnotmatch '^[0-9a-f]{40}$' -or $Provenance.blueprintPinSha256 -cnotmatch '^[0-9a-f]{64}$') { throw 'Invalid Blueprint Pin provenance.' }
+    $binary = Join-Path $Root 'game\BepInEx\plugins\VGBlueprintPin.dll'
+    if ((Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant() -cne $Provenance.blueprintPinSha256) { throw 'Blueprint Pin binary changed.' }
+}
+function Assert-BlueprintPinReceipt([string]$Root, $Provenance) {
+    Assert-ForgeReadReceipt $Root $Provenance
+    Assert-BlueprintPinSelection $Root $Provenance
+    if (!$Provenance.PSObject.Properties['blueprintPinProbe'] -or !$Provenance.blueprintPinProbe) { return }
+    $file = Join-Path $Root 'blueprint-pin.txt'
+    if ((Get-Item -LiteralPath $file).Length -gt 512) { throw 'Oversized Blueprint Pin receipt.' }
+    $lines = @(Get-Content -LiteralPath $file)
+    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'blueprint-pin-v1' -or $lines[2] -cne 'pin-batch-exact-variant-navigation-close') { throw 'Incomplete Blueprint Pin receipt.' }
+    $image = Join-Path $Root 'blueprint-pin-view.png'; $record = Join-Path $Root 'blueprint-pin-view.txt'
+    foreach ($path in @($image,$record)) {
+        if (!(Test-Path -LiteralPath $path -PathType Leaf) -or (Get-Item -LiteralPath $path).Length -eq 0 -or ((Get-Item -LiteralPath $path).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Blueprint Pin image evidence missing, empty or linked.' }
+    }
+    if ((Get-Item -LiteralPath $image).Length -gt 20MB -or (Get-Item -LiteralPath $record).Length -gt 256) { throw 'Blueprint Pin image evidence oversized.' }
+    $hashLines = @(Get-Content -LiteralPath $record)
+    if ($hashLines.Count -ne 1 -or $hashLines[0] -cnotmatch '^sha256=[0-9a-f]{64}$' -or (Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashLines[0].Substring(7)) { throw 'Blueprint Pin screenshot changed.' }
+}
 function Assert-ForgeUiSelection([string]$Root, $Provenance) {
     $flag = $Provenance.PSObject.Properties['forgeUiProbe']
     if ($flag -and $flag.Value -isnot [bool]) { throw 'Invalid Forge UI flag.' }
@@ -334,6 +362,7 @@ function Assert-ForgeUiReceipt([string]$Root, $Provenance) {
 }
 function Assert-RefinerySelection([string]$Root, $Provenance) {
     Assert-ForgeUiSelection $Root $Provenance
+    Assert-BlueprintPinSelection $Root $Provenance
     $flag = $Provenance.PSObject.Properties['refineryProbe']
     if ($flag -and $flag.Value -isnot [bool]) { throw 'Invalid refinery flag.' }
     $selected = $flag -and $flag.Value
@@ -420,7 +449,7 @@ function Assert-ForgeReadSelection([string]$Root, $Provenance) {
     if (!$selected) { return }
     if ($Provenance.scenario -ne 'Full' -or [IO.File]::ReadAllText($marker) -cne 'forge-reads-v1') { throw 'Invalid Forge read selection.' }
     foreach ($entry in $Provenance.PSObject.Properties) {
-        if ($entry.Name -notin @('forgeReadProbe','forgeCommandProbe','forgePersistenceProbe','forgeDeliveryProbe','refineryProbe','forgeUiProbe') -and $entry.Value -is [bool] -and $entry.Value) { throw 'Forge reads cannot combine other scenarios or consumers.' }
+        if ($entry.Name -notin @('forgeReadProbe','forgeCommandProbe','forgePersistenceProbe','forgeDeliveryProbe','refineryProbe','forgeUiProbe','blueprintPinProbe') -and $entry.Value -is [bool] -and $entry.Value) { throw 'Forge reads cannot combine other scenarios or consumers.' }
     }
     if ($null -ne $Provenance.assemblyOverlay) { throw 'Forge reads cannot use an assembly overlay.' }
     $config = [IO.File]::ReadAllText((Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg'))
