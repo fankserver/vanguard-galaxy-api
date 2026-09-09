@@ -10,7 +10,8 @@ internal sealed class WorldActorOrigins
     private sealed class Origin
     {
         internal readonly Func<bool> Valid;
-        internal Origin(Func<bool> valid) => Valid = valid;
+        internal readonly object? Data;
+        internal Origin(Func<bool> valid, object? data) { Valid = valid; Data = data; }
     }
     private sealed class Scope : IDisposable
     {
@@ -35,9 +36,9 @@ internal sealed class WorldActorOrigins
         internal Actor(Origin origin) => Origin = origin;
     }
     private readonly ConditionalWeakTable<object, Actor> _actors = new();
-    internal IDisposable Enter(Func<bool>? valid)
+    internal IDisposable Enter(Func<bool>? valid, object? data = null)
     {
-        var scope = new Scope(this, valid == null ? null : new Origin(valid), _scope); _scope = scope; return scope;
+        var scope = new Scope(this, valid == null ? null : new Origin(valid, data), _scope); _scope = scope; return scope;
     }
     internal void Capture(object actor)
     {
@@ -59,6 +60,14 @@ internal sealed class WorldActorOrigins
         catch { entry.Admitted = false; entry.Rejected = true; throw; }
         finally { entry.Validating = false; }
     }
+    internal bool Attach(object component, object source)
+    {
+        if (!_actors.TryGetValue(source, out var origin)) return !_actors.TryGetValue(component, out _);
+        if (_actors.TryGetValue(component, out var prior)) return ReferenceEquals(prior, origin);
+        _actors.Add(component, origin); return true;
+    }
+    internal bool MatchesData(object actor, object? data) => _actors.TryGetValue(actor, out var entry) &&
+        entry.Origin.Data != null && ReferenceEquals(entry.Origin.Data, data);
     internal bool Known(object actor) => _actors.TryGetValue(actor, out _);
     internal bool Allow(object actor)
     {

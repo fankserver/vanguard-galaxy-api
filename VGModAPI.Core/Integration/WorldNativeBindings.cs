@@ -29,6 +29,8 @@ internal static class WorldNativeBindings
         new("worldActorRoutineDockFighters", "Behaviour.Unit.SpaceShip", "WaitForAllFightersToDock", false, "System.Collections.IEnumerator"),
         new("worldActorCollisionEnter", "Behaviour.Unit.AbstractUnit", "OnCollisionEnter2D", false, "System.Void", "UnityEngine.Collision2D"),
         new("worldActorCollisionStay", "Behaviour.Unit.AbstractUnit", "OnCollisionStay2D", false, "System.Void", "UnityEngine.Collision2D"),
+        new("worldPersistableStart", "Behaviour.Util.PersistableUpdater", "Start", false, "System.Void"),
+        new("worldPersistableUpdate", "Behaviour.Util.PersistableUpdater", "Update", false, "System.Void"),
         new("worldActorAwake", "Behaviour.Unit.AbstractUnit", "Awake", false, "System.Void"),
         new("worldActorStart", "Behaviour.Unit.AbstractUnit", "Start", false, "System.Void"),
         new("worldActorUpdate", "Behaviour.Unit.AbstractUnit", "Update", false, "System.Void"),

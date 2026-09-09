@@ -6,7 +6,8 @@ namespace VGModAPI.Core.Integration;
 
 internal interface IWorldActorLifetimeHost
 {
-    IDisposable BeginSpawn(object manager);
+    IDisposable BeginSpawn(object manager, object? data = null);
+    bool AllowPersistable(object component);
     void CaptureActor(object actor);
     bool AllowActor(object actor);
     Func<bool>? CaptureActivity(object actor);
@@ -15,7 +16,7 @@ internal interface IWorldActorLifetimeHost
 internal sealed partial class WorldLifetimeHookHost : IWorldActorLifetimeHost
 {
     private readonly WorldActorOrigins _actors = new();
-    public IDisposable BeginSpawn(object manager)
+    public IDisposable BeginSpawn(object manager, object? data = null)
     {
         _hub.CheckThread();
         if (!AllowManager(manager)) throw new InvalidDataException("World actor spawn is quarantined.");
@@ -29,7 +30,23 @@ internal sealed partial class WorldLifetimeHookHost : IWorldActorLifetimeHost
             ReferenceEquals(player, _player.GetValue(null)) && ReferenceEquals(travel, _travelInstance.GetValue(null)) &&
             travel != null && ReferenceEquals(local.GetValue(travel), manager);
         if (!Valid()) throw new InvalidDataException("World actor spawn lacks its current native manager.");
-        return _actors.Enter(Valid);
+        return _actors.Enter(Valid, data);
+    }
+    public bool AllowPersistable(object component)
+    {
+        _hub.CheckThread();
+        var type = component.GetType();
+        var gameObject = type.GetProperty("gameObject", BindingFlags.Instance | BindingFlags.Public)
+            ?? throw new MissingMemberException("PersistableUpdater.gameObject");
+        var source = gameObject.GetValue(component);
+        if (source == null) return !_actors.Known(component);
+        if (!_actors.Attach(component, source)) return false;
+        if (!_actors.Known(component)) return true;
+        var data = type.GetField("data", BindingFlags.Instance | BindingFlags.Public)
+            ?? throw new MissingFieldException("PersistableUpdater.data");
+        if (!_actors.MatchesData(component, data.GetValue(component))) return false;
+        if (!AllowActor(source) || !AllowActor(component)) return false;
+        return ReferenceEquals(source, gameObject.GetValue(component)) && _actors.MatchesData(component, data.GetValue(component));
     }
     public void CaptureActor(object actor)
     {

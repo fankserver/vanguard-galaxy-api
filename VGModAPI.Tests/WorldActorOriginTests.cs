@@ -8,6 +8,12 @@ namespace VGModAPI.Tests;
 
 public sealed class WorldActorOriginTests
 {
+    private sealed class Persistable : UnityEngine.Object
+    {
+        public UnityEngine.Object gameObject { get; set; } = new();
+        public object? data;
+    }
+
     [Fact]
     public void FailedCaptureRemainsOwnedAndDeniedAfterScopeEnds()
     {
@@ -42,13 +48,19 @@ public sealed class WorldActorOriginTests
             singleton.SetValue(null, travel); Source.Player.GamePlayer.current = new Source.Player.GamePlayer { currentPointOfInterest = poi };
             guard.Track(session, poi, identity); guard.Ready(session);
             var actor = new UnityEngine.Object(); var vanilla = new UnityEngine.Object(); var destroyed = new UnityEngine.Object();
-            using (host.BeginSpawn(manager))
+            var persistedData = new object();
+            var updater = new Persistable { data = persistedData };
+            using (host.BeginSpawn(manager, persistedData))
             {
-                host.CaptureActor(actor); host.CaptureActor(destroyed);
+                host.CaptureActor(actor); host.CaptureActor(destroyed); host.CaptureActor(updater.gameObject);
                 using (host.BeginSpawn(new Behaviour.Managers.TestPoiManager { poi = new Source.Galaxy.MapPointOfInterest { guid = "vanilla" } }))
                     host.CaptureActor(vanilla);
             }
             VGModAPI.Patches.WorldLifetimePatches.Host = host;
+            Assert.True(host.AllowPersistable(updater));
+            updater.data = new object(); Assert.False(host.AllowPersistable(updater));
+            updater.data = persistedData;
+            Assert.True(host.AllowPersistable(new Persistable()));
             VGModAPI.Patches.WorldLifetimePatches.ActorMutation.Prefix(actor);
             Assert.True(VGModAPI.Patches.WorldLifetimePatches.ActorActivity.Prefix(actor));
             Assert.True(host.AllowActor(actor)); Assert.True(host.AllowActor(destroyed));
@@ -65,6 +77,7 @@ public sealed class WorldActorOriginTests
             manager.poi = new Source.Galaxy.MapPointOfInterest { guid = "rebound" };
             Assert.Throws<System.IO.InvalidDataException>(() => routine.MoveNext()); Assert.Equal(0, tail);
             Assert.False(host.AllowActor(actor)); Assert.True(host.AllowActor(vanilla));
+            Assert.False(host.AllowPersistable(updater));
             Assert.Throws<System.IO.InvalidDataException>(() => VGModAPI.Patches.WorldLifetimePatches.ActorMutation.Prefix(actor));
             VGModAPI.Patches.WorldLifetimePatches.ActorMutation.Prefix(vanilla);
             Assert.False(VGModAPI.Patches.WorldLifetimePatches.ActorActivity.Prefix(actor));

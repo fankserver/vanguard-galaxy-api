@@ -116,6 +116,10 @@ internal static class WorldLifetimePatches
     {
         internal static void Prefix(object __instance) => (Host as IWorldActorLifetimeHost)?.CaptureActor(__instance);
     }
+    internal static class PersistableActivity
+    {
+        internal static bool Prefix(object __instance) => (Host as IWorldActorLifetimeHost)?.AllowPersistable(__instance) ?? true;
+    }
     internal static class ActorContinuation
     {
         internal static void Prefix(object __instance, out System.Func<bool>? __state)
@@ -145,10 +149,10 @@ internal static class WorldLifetimePatches
             internal readonly System.IDisposable Scope;
             internal Capture(IWorldActorLifetimeHost host, System.IDisposable scope) { Host = host; Scope = scope; }
         }
-        internal static void CapturePrefix(object __instance, out Capture? __state)
+        internal static void CapturePrefix(object __instance, object __0, out Capture? __state)
         {
             __state = null; Prefix(__instance);
-            if (Host is IWorldActorLifetimeHost host) __state = new Capture(host, host.BeginSpawn(__instance));
+            if (Host is IWorldActorLifetimeHost host) __state = new Capture(host, host.BeginSpawn(__instance, __0));
         }
         internal static void Postfix(object? __result, Capture? __state)
         { if (__result != null) __state?.Host.CaptureActor(__result); }
