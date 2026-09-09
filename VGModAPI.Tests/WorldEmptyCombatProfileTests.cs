@@ -22,6 +22,8 @@ public sealed class WorldEmptyCombatProfileTests
         Assert.Throws<InvalidDataException>(() => profile.RequireEmptyCombatJson(node)); Assert.Same(value, node[key]);
         node.Remove(key); node["hasAsteroids"] = new LightJson.JsonValue(true);
         Assert.Throws<InvalidDataException>(() => profile.RequireEmptyCombatJson(node));
+        node["hasAsteroids"] = new LightJson.JsonValue(false); node["asteroidsInitialized"] = new LightJson.JsonValue(true);
+        Assert.Throws<InvalidDataException>(() => profile.RequireEmptyCombatJson(node));
     }
     private class Poi
     {
@@ -31,6 +33,7 @@ public sealed class WorldEmptyCombatProfileTests
         public List<object>? _pendingStationBuildings = null;
         public object? hazardFieldData = null, oreOwnershipOverride = null, oreOwnershipOverrideItem = null, storyteller = null, linkedJumpgatePassGuid = null;
         public int nextPayloadSequenceId = 0, nextCargoSlotId = 0;
+        public bool asteroidsInitialized = false;
         public bool hasAsteroids { get; set; }
         public object? customFieldData { get; set; }
     }
@@ -55,6 +58,7 @@ public sealed class WorldEmptyCombatProfileTests
         poi.units.Add(new object()); Assert.Throws<InvalidDataException>(() => profile.Require(poi)); poi.units.Clear();
         poi.customFieldData = new object(); Assert.Throws<InvalidDataException>(() => profile.Require(poi)); poi.customFieldData = null;
         poi.hasAsteroids = true; Assert.Throws<InvalidDataException>(() => profile.Require(poi)); poi.hasAsteroids = false;
+        poi.asteroidsInitialized = true; Assert.Throws<InvalidDataException>(() => profile.Require(poi)); poi.asteroidsInitialized = false;
         poi.nextCargoSlotId = 1; Assert.Throws<InvalidDataException>(() => profile.Require(poi)); poi.nextCargoSlotId = 0;
         poi.persistables = null!; Assert.Throws<InvalidDataException>(() => profile.Require(poi));
         Assert.Throws<InvalidDataException>(() => profile.Require(new Poi()));

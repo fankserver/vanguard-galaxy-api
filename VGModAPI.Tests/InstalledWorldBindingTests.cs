@@ -28,7 +28,11 @@ public sealed class InstalledWorldBindingTests
             Assert.False(poi.Fields.Single(field => field.Name == name && !field.IsStatic).FieldType.IsValueType);
         foreach (var name in new[] { "nextPayloadSequenceId", "nextCargoSlotId" })
             Assert.Equal("System.Int32", poi.Fields.Single(field => field.Name == name && !field.IsStatic).FieldType.FullName);
-        Assert.Equal("System.Boolean", poi.Fields.Single(field => field.Name == "<hasAsteroids>k__BackingField" && !field.IsStatic).FieldType.FullName);
+        foreach (var name in new[] { "<hasAsteroids>k__BackingField", "asteroidsInitialized" })
+            Assert.Equal("System.Boolean", poi.Fields.Single(field => field.Name == name && !field.IsStatic).FieldType.FullName);
+        var regeneration = poi.Methods.Single(method => method.Name == "RegenerateAsteroidField").Body.Instructions;
+        Assert.Contains(regeneration, instruction => instruction.Operand is FieldReference field && field.Name == "asteroidsInitialized");
+        Assert.Contains(regeneration, instruction => instruction.Operand is MethodReference method && method.Name == "CreateNewAsteroids");
         Assert.Single(game.MainModule.GetType("Source.Data.Persistable.SalvageData").Methods, method => method.IsConstructor && method.IsPublic && !method.IsStatic && method.Parameters.Count == 0);
     }
 
@@ -125,8 +129,10 @@ public sealed class InstalledWorldBindingTests
         Assert.True(resolveType >= 0 && constructorLookup > resolveType);
         foreach (var binding in WorldNativeBindings.Methods)
         {
-            var method = module.GetType(binding.Type).Methods.Single(candidate => candidate.Name == binding.Name &&
-                candidate.Parameters.Select(parameter => parameter.ParameterType.FullName).SequenceEqual(binding.Parameters));
+            var matches = module.GetType(binding.Type).Methods.Where(candidate => candidate.Name == binding.Name &&
+                candidate.Parameters.Select(parameter => parameter.ParameterType.FullName).SequenceEqual(binding.Parameters)).ToArray();
+            Assert.True(matches.Length == 1, "Missing or ambiguous native binding: " + binding.Key);
+            var method = matches[0];
             Assert.Equal(binding.Static, method.IsStatic);
             Assert.Equal(binding.ReturnType, method.ReturnType.FullName);
         }

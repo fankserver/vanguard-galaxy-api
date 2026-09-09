@@ -11,7 +11,7 @@ internal sealed class WorldEmptyCombatProfile
     private const BindingFlags Fields = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
     private readonly Type _combat;
     private readonly List<FieldInfo> _empty = new(), _null = new(), _zero = new();
-    private readonly FieldInfo _asteroids;
+    private readonly FieldInfo _asteroids, _initialized;
     internal WorldEmptyCombatProfile(Assembly assembly) : this(assembly.GetType("Source.Galaxy.POI.Combat", true)!, assembly.GetType("Source.Galaxy.MapPointOfInterest", true)!) { }
     internal WorldEmptyCombatProfile(Type combat, Type poi)
     {
@@ -32,7 +32,8 @@ internal sealed class WorldEmptyCombatProfile
             _zero.Add(field);
         }
         _asteroids = Field("<hasAsteroids>k__BackingField");
-        if (_asteroids.FieldType != typeof(bool)) throw new InvalidDataException("Unexpected asteroid flag shape.");
+        _initialized = Field("asteroidsInitialized");
+        if (_asteroids.FieldType != typeof(bool) || _initialized.FieldType != typeof(bool)) throw new InvalidDataException("Unexpected asteroid flag shape.");
     }
     internal void Require(object value)
     {
@@ -46,6 +47,6 @@ internal sealed class WorldEmptyCombatProfile
         }
         foreach (var field in _null) if (field.GetValue(value) != null) throw new InvalidDataException("World attachment is outside the empty qualification profile.");
         foreach (var field in _zero) if ((int)field.GetValue(value)! != 0) throw new InvalidDataException("World generation state is outside the empty qualification profile.");
-        if ((bool)_asteroids.GetValue(value)!) throw new InvalidDataException("Asteroids are outside the empty qualification profile.");
+        if ((bool)_asteroids.GetValue(value)! || (bool)_initialized.GetValue(value)!) throw new InvalidDataException("Asteroids are outside the empty qualification profile.");
     }
 }

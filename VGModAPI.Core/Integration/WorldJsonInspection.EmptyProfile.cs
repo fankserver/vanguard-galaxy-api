@@ -26,7 +26,7 @@ internal sealed partial class WorldJsonInspection
         {
             if ((bool)_isNull.GetValue(Field(poi, key))!) continue;
             bool value = Boolean(poi, key);
-            if (key == "hasAsteroids" && value) throw new InvalidDataException("Asteroids are outside the empty qualification profile.");
+            if ((key == "hasAsteroids" || key == "asteroidsInitialized") && value) throw new InvalidDataException("Asteroids are outside the empty qualification profile.");
         }
     }
 }

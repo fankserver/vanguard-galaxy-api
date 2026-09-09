@@ -3,6 +3,8 @@ namespace VGModAPI.Core.Integration;
 /// <summary>Inspected serialization/construction boundaries. Declaring bindings does not install a world capability.</summary>
 internal static class WorldNativeBindings
 {
+    private const string Poi = "Source.Galaxy.MapPointOfInterest", Batch = "System.Collections.Generic.List`1<Source.Data.AbstractUnitData>", Faction = "Source.Galaxy.Faction";
+    private const string Gameplay = "System.Nullable`1<Source.Util.GameplayType>", Rank = "System.Nullable`1<Behaviour.Unit.UnitRank>", Vector = "System.Nullable`1<UnityEngine.Vector2>";
     internal static readonly MethodBinding[] Methods =
     {
         new("worldRecall", BindingCatalog.File, "Recall", false, "LightJson.JsonObject"),
@@ -31,6 +33,22 @@ internal static class WorldNativeBindings
         new("worldActorCollisionStay", "Behaviour.Unit.AbstractUnit", "OnCollisionStay2D", false, "System.Void", "UnityEngine.Collision2D"),
         new("worldPersistableStart", "Behaviour.Util.PersistableUpdater", "Start", false, "System.Void"),
         new("worldPersistableUpdate", "Behaviour.Util.PersistableUpdater", "Update", false, "System.Void"),
+        new("worldEmptyPirateTurrets", Poi, "AddPirateTurrets", false, Batch, "System.Int32", "SeededRandom", Faction, "System.Boolean"),
+        new("worldEmptyGuards", Poi, "AddGuards", false, Batch, Batch, "SeededRandom", "System.Boolean"),
+        new("worldEmptyBudgetGuards", Poi, "AddGuardsFromUnitPayload", false, Batch, "System.Single", Gameplay, Faction, "System.Int32", "System.Int32", "System.Int32", "System.Int32", Rank, Vector, Vector, "System.String", "System.Boolean"),
+        new("worldEmptyFixedGuards", Poi, "AddGuardsFromFixedPayload", false, Batch, "System.String", "System.Int32", Faction, Gameplay, "Behaviour.Unit.UnitRank", "System.Nullable`1<System.Int32>", "System.String"),
+        new("worldEmptyGuardBatch", Poi, "AddGuardBatch", false, Batch, Batch, "System.Int32", "SeededRandom", "System.Boolean"),
+        new("worldEmptyFixedPayload", Poi, "CreateFixedPayload", false, Batch, "System.String", "System.Int32", Faction, Gameplay, "Behaviour.Unit.UnitRank", "System.Nullable`1<System.Int32>", "SeededRandom", "System.Boolean"),
+        new("worldEmptyBudgetPayload", Poi, "CreateUnitPayload", false, Batch, "System.Single", Gameplay, Faction, "System.Int32", "System.Int32", "System.Int32", "System.Int32", Rank, "SeededRandom"),
+        new("worldEmptyTurretPayload", Poi, "CreateTurretPayload", false, Batch, "System.Int32", Faction, "SeededRandom"),
+        new("worldEmptyHazard", Poi, "CreateHazardData", false, "Source.Hazard.HazardData"),
+        new("worldEmptyTypedHazard", Poi, "CreateHazardData", false, "Source.Hazard.HazardData", "Behaviour.Hazard.HazardName", "Source.Combat.DamageType"),
+        new("worldEmptyCargo", Poi, "AddCargoContainers", false, "System.Void", "UnityEngine.Vector2", "System.Int32", "System.Single"),
+        new("worldEmptyAsteroidData", Poi, "SetAsteroidFieldData", false, "System.Void", "Source.Mining.AsteroidFieldData", "System.Int32"),
+        new("worldEmptyInitializeAsteroids", Poi, "InitializeAsteroids", false, "System.Void", "System.Boolean", "System.Boolean"),
+        new("worldEmptyGeneratePersistables", Poi, "GeneratePoiPersistables", false, "System.Void", Faction, "System.Boolean"),
+        new("worldEmptyDungeon", Poi, "BuildDungeonLocationData", false, "Source.Data.Persistable.DungeonLocationData", "Source.Dungeon.DungeonType", Faction, "SeededRandom", "System.Boolean"),
+        new("worldEmptyDungeonPresence", Poi, "InitializeDungeonPresence", false, "System.Void", "Source.Data.Persistable.DungeonLocationData", "SeededRandom"),
         new("worldSalvageReset", "Source.Galaxy.MapPointOfInterest", "ResetStaleSalvageContent", false, "System.Void"),
         new("worldSalvageAdd", "Source.Galaxy.MapPointOfInterest", "AddSalvageFromDescriptor", false, "UnityEngine.GameObject", "Source.Galaxy.SalvageGenerationDescriptor"),
         new("worldSalvageSlot", "Source.Galaxy.MapPointOfInterest", "GenerateSalvageSlot", false, "UnityEngine.GameObject", "System.Int32"),
