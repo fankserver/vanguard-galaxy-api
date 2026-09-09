@@ -4,10 +4,10 @@ function Assert-WorldUnlinkedPath([string]$Path, [bool]$MustExist = $true) {
     if ($MustExist -and !(Test-Path -LiteralPath $full)) { throw 'Required world path is missing.' }
     $current = $full
     while ($current) {
-        if (Test-Path -LiteralPath $current) {
-            $entry = Get-Item -LiteralPath $current -Force -ErrorAction Stop
-            if ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Linked world path or ancestor refused.' }
-        }
+        $entry = $null
+        try { $entry = Get-Item -LiteralPath $current -Force -ErrorAction Stop }
+        catch [System.Management.Automation.ItemNotFoundException] { }
+        if ($null -ne $entry -and ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Linked world path or ancestor refused.' }
         $current = [IO.Path]::GetDirectoryName($current)
     }
     return $full
@@ -20,7 +20,11 @@ function Assert-WorldSandboxRoot([string]$Root, [bool]$MustExist = $true) {
     $number = 0
     if ([IO.Path]::GetDirectoryName($full) -ine $parent -or $name -cnotmatch '^VGModAPI-qa-[0-9]+$' -or
         ![int]::TryParse($name.Substring(12), [ref]$number) -or $number -le 0) { throw 'World sandbox must be a direct numbered local Temp directory.' }
-    return Assert-WorldUnlinkedPath $full $MustExist
+    $null = Assert-WorldUnlinkedPath $full $MustExist
+    if (Test-Path -LiteralPath $full) {
+        if (!(Get-Item -LiteralPath $full -Force -ErrorAction Stop).PSIsContainer) { throw 'World sandbox root must be a directory.' }
+    }
+    return $full
 }
 
 function Assert-WorldReceiptPaths([string]$Root, [ValidateSet('create','cold')][string]$Phase) {
