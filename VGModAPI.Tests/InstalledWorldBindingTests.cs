@@ -28,6 +28,22 @@ public sealed class InstalledWorldBindingTests
     }
 
     [Fact]
+    public void UnityWaitUntilPollsThroughTheNestedEnumeratorBoundary()
+    {
+        var path = Environment.GetEnvironmentVariable("VG_GAME_ASSEMBLY")
+            ?? throw new InvalidOperationException("Run make check-bindings against the original installed assembly.");
+        using var unity = AssemblyDefinition.ReadAssembly(Path.Combine(Path.GetDirectoryName(path)!, "UnityEngine.CoreModule.dll"));
+        var wait = unity.MainModule.GetType("UnityEngine.WaitUntil");
+        Assert.Equal("UnityEngine.CustomYieldInstruction", wait.BaseType.FullName);
+        var custom = unity.MainModule.GetType("UnityEngine.CustomYieldInstruction");
+        Assert.Contains(custom.Interfaces, entry => entry.InterfaceType.FullName == "System.Collections.IEnumerator");
+        var move = custom.Methods.Single(method => method.Name == "MoveNext");
+        Assert.Contains(move.Body.Instructions, instruction => instruction.Operand is MethodReference method && method.Name == "get_keepWaiting");
+        var poll = wait.Methods.Single(method => method.Name == "get_keepWaiting");
+        Assert.Contains(poll.Body.Instructions, instruction => instruction.Operand is MethodReference method && method.Name == "Invoke");
+    }
+
+    [Fact]
     public void NativeAssetRegistriesAndUnityLifetimeMatchInspection()
     {
         var path = Environment.GetEnvironmentVariable("VG_GAME_ASSEMBLY")

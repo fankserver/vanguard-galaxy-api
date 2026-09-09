@@ -73,6 +73,22 @@ public sealed class WorldManagerEnumeratorTests
     }
 
     [Fact]
+    public void YieldPredicateCannotPollAfterOriginRevocation()
+    {
+        bool ready = true;
+        var predicate = new Probe();
+        var parent = new Probe { Current = predicate };
+        using var wrapper = new WorldManagerEnumerator(parent, () => ready);
+        Assert.True(wrapper.MoveNext());
+        var polling = Assert.IsType<WorldManagerEnumerator>(wrapper.Current);
+        Assert.True(polling.MoveNext()); Assert.Equal(1, predicate.Moves);
+        ready = false;
+        Assert.Throws<InvalidDataException>(() => polling.MoveNext());
+        Assert.Equal(1, predicate.Moves);
+        Assert.False(polling.MoveNext());
+    }
+
+    [Fact]
     public void NativeIteratorExceptionIsPreserved()
     {
         var hub = new LifecycleHub((_, error) => throw error);
