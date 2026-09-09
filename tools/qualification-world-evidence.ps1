@@ -3,7 +3,7 @@
 # Private run artifacts only. Never overwrite prior evidence, even after a failed write.
 # The caller must persist recovery inputs successfully before launching anything.
 function Write-WorldPrivateEvidence([string]$Root,
-    [ValidateSet('world-launch-before.json','world-launch-after.json','world-process-outcome.json','world-prefs-receipt.json','world-phase-accepted.json')][string]$Name,
+    [ValidateSet('world-launch-before.json','world-launch-after.json','world-process-outcome.json','world-prefs-receipt.json','world-phase-accepted.json','world-creation-archive.json')][string]$Name,
     $Value) {
     $rootPath = Assert-WorldSandboxRoot $Root
     $path = Assert-WorldUnlinkedPath (Join-Path $rootPath $Name) $false
