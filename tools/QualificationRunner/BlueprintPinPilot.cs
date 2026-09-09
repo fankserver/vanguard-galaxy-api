@@ -15,6 +15,10 @@ public sealed partial class Plugin
     {
         WriteAtomic("blueprint-pin.txt", new[] { "INCOMPLETE" });
         var ui = ModApi.ForgeUi ?? throw new InvalidOperationException("Forge UI unavailable for Blueprint Pin.");
+        // Native FadeOut disables only the background raycast; its label remains until destruction.
+        var loadingScreen = NativeType("Behaviour.UI.Main_Menu.LoadingScreen");
+        foreach (var frame in Wait(() => UnityEngine.Object.FindObjectsByType(loadingScreen, FindObjectsInactive.Exclude).Length == 0,
+            "Native loading overlay destruction")) yield return frame;
         ForgeSelectionSnapshot? selection = null;
         foreach (var recipe in ModApi.Recipes!.Read().Recipes.Where(recipe => recipe.Process == RecipeProcess.Forge && recipe.ParentId != null))
         {
