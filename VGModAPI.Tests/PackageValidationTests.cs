@@ -34,6 +34,19 @@ public sealed class PackageValidationTests : IDisposable
     }
 
     [Fact]
+    public void QualificationLayoutRejectsReferencesDirectoriesAndMissingMarker()
+    {
+        var root = Path.Combine(_root, "candidate"); Directory.CreateDirectory(root);
+        foreach (var name in new[] { "VGModAPI.dll", "VGModAPI.Core.dll", "VGModAPI.Abstractions.dll", "README.md" }) File.WriteAllText(Path.Combine(root, name), "fixture");
+        PackageChecks.ValidateQualificationLayout(root);
+        var foreign = Path.Combine(root, "UnityEngine.dll"); File.WriteAllText(foreign, "forbidden");
+        Assert.Throws<InvalidOperationException>(() => PackageChecks.ValidateQualificationLayout(root)); File.Delete(foreign);
+        Directory.CreateDirectory(Path.Combine(root, "docs"));
+        Assert.Throws<InvalidOperationException>(() => PackageChecks.ValidateQualificationLayout(root));
+        Assert.Throws<InvalidOperationException>(() => PackageChecks.ValidatePluginVersion(typeof(VGModAPI.Patches.WorldLifetimePatches).Assembly.Location, qualification: true));
+    }
+
+    [Fact]
     public void ExactLayoutIsAccepted() => PackageChecks.ValidateLayout(_root);
 
     [Theory]

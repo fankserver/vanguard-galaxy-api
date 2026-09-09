@@ -22,7 +22,7 @@ build-story-authors: link-libs
 	$(DOTNET) build examples/OwnedStoryJob/OwnedStoryJob.csproj -c $(CONFIGURATION)
 test:
 	python3 -m unittest discover -s tools -p 'test_*.py'
-	$(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter 'Category!=InstalledGame&Category!=InstalledConsumer&Category!=InstalledArchive&Category!=Package'
+	$(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter 'Category!=InstalledGame&Category!=InstalledConsumer&Category!=InstalledArchive&Category!=Package&Category!=WorldQualificationPackage'
 check-bindings:
 	VG_GAME_ASSEMBLY="$(MANAGED)/Assembly-CSharp.dll" $(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter 'Category=InstalledGame'
 # Metadata evidence for the members the actual-consumer qualification probe reflects. Needs the
@@ -69,6 +69,7 @@ package-world-qualification: link-libs
 	cp tools/WorldQualificationApi/bin/$(CONFIGURATION)/netstandard2.1/VGModAPI.Core.dll artifacts/WorldQualificationApi/
 	cp tools/WorldQualificationApi/bin/$(CONFIGURATION)/netstandard2.1/VGModAPI.Abstractions.dll artifacts/WorldQualificationApi/
 	cp tools/WorldQualificationApi/README.md artifacts/WorldQualificationApi/
+	VG_WORLD_QUALIFICATION_PACKAGE_ROOT="$(CURDIR)/artifacts/WorldQualificationApi" $(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter 'Category=WorldQualificationPackage' -- RunConfiguration.TreatNoTestsAsError=true
 
 package: build
 	@rm -rf artifacts/VGModAPI

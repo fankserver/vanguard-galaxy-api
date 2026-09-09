@@ -47,12 +47,26 @@ internal static class PackageChecks
         }
     }
 
-    internal static void ValidatePluginVersion(string path)
+    internal static void ValidateQualificationLayout(string root)
+    {
+        var expected = new HashSet<string>(Assemblies.Select(name => name + ".dll").Append("README.md"), StringComparer.Ordinal);
+        if ((File.GetAttributes(root) & FileAttributes.ReparsePoint) != 0) throw new InvalidOperationException("Linked qualification package root.");
+        foreach (var entry in Directory.EnumerateFileSystemEntries(root))
+        {
+            if ((File.GetAttributes(entry) & (FileAttributes.ReparsePoint | FileAttributes.Directory)) != 0 || !expected.Remove(Path.GetFileName(entry)))
+                throw new InvalidOperationException("Unexpected qualification package entry.");
+        }
+        if (expected.Count != 0) throw new InvalidOperationException("Incomplete qualification package.");
+    }
+
+    internal static void ValidatePluginVersion(string path, bool qualification = false)
     {
         using var assembly = AssemblyDefinition.ReadAssembly(path);
-        if (assembly.CustomAttributes.Any(attribute => attribute.AttributeType.FullName == "System.Reflection.AssemblyMetadataAttribute" &&
-            attribute.ConstructorArguments.Count >= 1 && Equals(attribute.ConstructorArguments[0].Value, "VGModAPI.WorldQualification")))
-            throw new InvalidOperationException("Qualification-only API cannot enter a normal package.");
+        var markers = assembly.CustomAttributes.Where(attribute => attribute.AttributeType.FullName == "System.Reflection.AssemblyMetadataAttribute" &&
+            attribute.ConstructorArguments.Count >= 1 && Equals(attribute.ConstructorArguments[0].Value, "VGModAPI.WorldQualification")).ToArray();
+        if (!qualification && markers.Length != 0) throw new InvalidOperationException("Qualification-only API cannot enter a normal package.");
+        if (qualification && (markers.Length != 1 || markers[0].ConstructorArguments.Count != 2 || !Equals(markers[0].ConstructorArguments[1].Value, "empty-combat-v1")))
+            throw new InvalidOperationException("Qualification package marker missing or invalid.");
         var plugin = assembly.MainModule.GetType("VGModAPI.Plugin") ?? throw new InvalidOperationException("Plugin type missing.");
         var attributes = plugin.CustomAttributes.Where(a => a.AttributeType.FullName == "BepInEx.BepInPlugin").ToArray();
         if (attributes.Length != 1 || attributes[0].ConstructorArguments.Count != 3 ||
