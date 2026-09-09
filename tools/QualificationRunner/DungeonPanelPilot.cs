@@ -38,8 +38,8 @@ public sealed partial class Plugin
         dataType.GetField("level")!.SetValue(data, 1);
         dataType.GetField("faction")!.SetValue(data, SpGet(NativeType("Source.Galaxy.Faction"), "player"));
         var root = new GameObject("Qualification-only dungeon location");
-        IDisposable? section = null; IDisposable? action = null; IDisposable? enabledAction = null;
-        var oldMouse = Mouse.current; Mouse? mouse = null; var calls = 0;
+        IDisposable? section = null; IDisposable? action = null; IDisposable? enabledAction = null; IDisposable? peerAction = null;
+        var oldMouse = Mouse.current; Mouse? mouse = null; var calls = 0; var disabledCalls = 0; var peerCalls = 0; var allowed = true;
         UnityEngine.Object? nativePanel = null;
         try
         {
@@ -51,8 +51,9 @@ public sealed partial class Plugin
             Require(targets.Length == 1, "Generated dungeon target is ambiguous.");
             var target = targets[0].Handle;
             section = panel.RegisterSection(Id, "dungeon-status", _ => new DungeonPanelSection("Dungeon qualification", new string('W', 2048)));
-            action = panel.RegisterAction(Id, "dungeon-disabled", _ => new DungeonPanelAction("Disabled dungeon probe", enabled: false), _ => throw new InvalidOperationException("Disabled action dispatched."), -99);
-            enabledAction = panel.RegisterAction(Id, "dungeon-enabled", _ => new DungeonPanelAction("Enabled dungeon probe"), _ => calls++, -100);
+            action = panel.RegisterAction(Id, "dungeon-disabled", _ => new DungeonPanelAction("Disabled dungeon probe", enabled: false), _ => disabledCalls++, -99);
+            enabledAction = panel.RegisterAction(Id, "dungeon-enabled", _ => new DungeonPanelAction("Enabled dungeon probe", enabled: allowed), _ => calls++, -100);
+            peerAction = panel.RegisterAction("vgmodapi.qualification.peer", "peer-action", _ => new DungeonPanelAction("Peer dungeon probe"), _ => peerCalls++, -98);
             Require(panel.Open(target) == DungeonPanelOpenStatus.Opened, "Generated target did not open native panel.");
             foreach (var frame in Wait(() => panel.Current?.Target.Handle.Equals(target) == true, "Native dungeon panel snapshot")) yield return frame;
             var view = panel.Current!.ViewId;
@@ -65,6 +66,7 @@ public sealed partial class Plugin
             if (toggle && !GameObject.Find("Mod API dungeon contributions"))
                 foreach (var frame in DungeonClick(mouse, toggle!.transform)) yield return frame;
             foreach (var frame in Wait(() => DungeonProbeButton("Enabled dungeon probe")?.GetComponent<Image>().depth >= 0, "Dungeon action graphics")) yield return frame;
+            foreach (var frame in Wait(() => DungeonPointerReady(DungeonProbeButton("Enabled dungeon probe")!.transform), "Dungeon pointer readiness before capture")) yield return frame;
             yield return new WaitForEndOfFrame();
             var capture = Path.Combine(_root!, "dungeon-panel-actions.png");
             Require(!File.Exists(capture), "Refusing to overwrite dungeon screenshot.");
@@ -74,14 +76,28 @@ public sealed partial class Plugin
             foreach (var frame in DungeonClick(mouse, DungeonProbeButton("Enabled dungeon probe")!.transform)) yield return frame;
             Require(calls == 1, "Enabled dungeon action did not dispatch exactly once.");
             Require(DungeonProbeButton("Disabled dungeon probe")?.interactable == false, "Disabled dungeon action became enabled.");
+            foreach (var frame in DungeonClick(mouse, DungeonProbeButton("Disabled dungeon probe")!.transform)) yield return frame;
+            Require(disabledCalls == 0 && calls == 1, "Disabled pointer click dispatched an action.");
+            var cached = DungeonProbeButton("Enabled dungeon probe")!.onClick;
+            allowed = false; cached.Invoke();
+            Require(calls == 1, "Cached enabled state bypassed activation revalidation.");
+            allowed = true;
+            foreach (var frame in DungeonClick(mouse, DungeonProbeButton("Peer dungeon probe")!.transform)) yield return frame;
+            Require(peerCalls == 1 && calls == 1, "Contributors shared dispatch state.");
+            var retired = DungeonProbeButton("Peer dungeon probe")!.onClick;
+            peerAction.Dispose(); peerAction = null; retired.Invoke();
+            Require(peerCalls == 1, "Disposed contributor callback dispatched.");
+            foreach (var frame in Wait(() => DungeonProbeButton("Peer dungeon probe") == null, "Disposed contributor removal")) yield return frame;
             nativePanel.GetType().GetMethod("Close")!.Invoke(nativePanel, null);
             foreach (var frame in Wait(() => panel.Current == null, "Native dungeon panel close")) yield return frame;
+            cached.Invoke(); Require(calls == 1, "Closed panel callback dispatched.");
             Require(panel.Open(target) == DungeonPanelOpenStatus.Opened, "Dungeon panel did not reopen.");
             Require(panel.Current != null && panel.Current.ViewId != view, "Dungeon view identity survived close/reopen.");
+            cached.Invoke(); Require(calls == 1, "Previous view callback dispatched after reopen.");
             UnityEngine.Object.Destroy(root);
             foreach (var frame in Wait(() => panel.Current == null, "Destroyed dungeon target invalidates panel snapshot")) yield return frame;
             Require(panel.Open(target) == DungeonPanelOpenStatus.StaleTarget, "Destroyed target remained openable.");
-            WriteAtomic("dungeon-panel.txt", new[] { "PASS", "dungeon-panel-v1", "generated-location-open-pointer-disabled-close-reopen-destroy" });
+            WriteAtomic("dungeon-panel.txt", new[] { "PASS", "dungeon-panel-v2", "generated-location-pointer-disabled-revalidate-contributors-dispose-stale-reopen-destroy" });
             Passed("Generated dungeon panel pointer and lifetime subset");
         }
         finally
@@ -89,7 +105,7 @@ public sealed partial class Plugin
             try { if (nativePanel) nativePanel!.GetType().GetMethod("Close")!.Invoke(nativePanel, null); }
             finally
             {
-                enabledAction?.Dispose(); action?.Dispose(); section?.Dispose();
+                peerAction?.Dispose(); enabledAction?.Dispose(); action?.Dispose(); section?.Dispose();
                 if (mouse != null) InputSystem.RemoveDevice(mouse);
                 if (oldMouse != null && oldMouse.added) oldMouse.MakeCurrent();
                 if (root) UnityEngine.Object.Destroy(root);
