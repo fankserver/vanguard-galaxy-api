@@ -41,7 +41,8 @@ Input checks the registration token, model revision, current session and live su
 
 ## Launcher corners and visual identity
 
-Corner selection and semantic icons require API **0.2.9** or later. The existing
+Corner selection and semantic icons are available in current source; their first
+published release is pending. The existing
 `HudButton(label, tooltip, enabled)` constructor remains supported and produces a
 text-only bottom-right launcher. The explicit overload selects a corner and an
 optional icon:

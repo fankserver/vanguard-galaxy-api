@@ -70,6 +70,8 @@ feature chunks. Tests verify those behaviors or reproduce actual defects.
 - Assign the task to your working account, use a branch and Conventional Commits,
   and open a PR for a coherent feature or fix, including its tests. Address
   substantive review findings before delivery. Squash-merge only when authorized.
+- Do not bump versions per feature. Version changes belong to owner-selected release
+  bundles; merging a feature does not publish a release.
 - Read the [lifecycle contract](docs/reference/lifecycle-contract.md) and
   [compatibility limits](docs/reference/compatibility.md) before modifying hooks.
 - Run the relevant Makefile checks. Never run reference-bearing checks on untrusted

@@ -9,7 +9,7 @@ using VGModAPI.Unity;
 namespace GameplayWindow;
 
 [BepInPlugin(Id, "Gameplay window example", "1.0.0")]
-[BepInDependency(ModApi.PluginId, "0.2.9")]
+[BepInDependency(ModApi.PluginId, "0.2.10")]
 public sealed class Plugin : BaseUnityPlugin
 {
     private const string Id = "vgmodapi.example.gameplay-window";
