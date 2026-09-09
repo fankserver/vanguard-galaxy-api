@@ -151,14 +151,15 @@ public sealed partial class Plugin
         {
             var snapshot = SpGet(ModApi.ForgeUi!, "_current") as ForgeSelectionSnapshot;
             var module = EventSystem.current.currentInputModule;
-            return "click=" + (_forgePointerDiagnostics.Count / 3) + " " + phase + " selected=" + EventSystem.current.currentSelectedGameObject?.name
+            var selected = EventSystem.current.currentSelectedGameObject;
+            return "click=" + (_forgePointerDiagnostics.Count / 3) + " " + phase + " selected=" + (selected != null ? selected.name : "")
                 + " selectedTarget=" + (EventSystem.current.currentSelectedGameObject == target.gameObject)
                 + " liveRevision=" + snapshot?.Revision + " view=" + snapshot?.View.InstanceId + " batches=" + snapshot?.Batches
                 + " rowRevision=" + ((Func<long>)SpGet(button, "ReadRevision")!)()
                 + " pressed=" + SpGet(SpGet(button, "_press")!, "_pressed") + " invocation=" + SpGet(button, "InvocationRevision")
                 + " interactable=" + button.IsInteractable() + " active=" + button.IsActive()
                 + " mouse=" + mouse.position.ReadValue() + " mouseEnabled=" + mouse.enabled
-                + " module=" + module?.GetType().Name + " moduleEnabled=" + module?.enabled
+                + " module=" + (module != null ? module.GetType().Name : "") + " moduleEnabled=" + (module != null && module.enabled)
                 + " focused=" + Application.isFocused + " timeScale=" + Time.timeScale;
         }
         records.Add(State("before"));
