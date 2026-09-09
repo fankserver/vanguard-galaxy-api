@@ -22,18 +22,23 @@ public sealed class WorldGenerationHookTests
         var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
         var poi = new Source.Galaxy.MapPointOfInterest { guid = identity.NativeId };
         guard.Track(session, poi, identity); guard.Ready(session);
-        WorldLifetimePatches.Generation.Capture? capture = null;
+        WorldLifetimePatches.Generation.Capture? capture = null, descriptor = null;
         try
         {
             WorldLifetimePatches.Host = host;
             WorldLifetimePatches.Generation.Prefix(poi, out capture);
             WorldLifetimePatches.Host = null;
-            for (int i = 0; i < 1024; i++) WorldLifetimePatches.Generation.BuilderPrefix();
+            for (int i = 0; i < 512; i++) WorldLifetimePatches.Generation.BuilderPrefix();
+            WorldLifetimePatches.Host = host;
+            WorldLifetimePatches.Generation.StaticPrefix(poi, out descriptor);
+            WorldLifetimePatches.Host = null;
+            for (int i = 0; i < 512; i++) WorldLifetimePatches.Generation.BuilderPrefix();
             Assert.Throws<InvalidDataException>(() => WorldLifetimePatches.Generation.BuilderPrefix());
             Assert.Throws<InvalidDataException>(() => creation.Snapshot());
             Assert.False(host.AllowUse(poi));
+            Assert.IsType<InvalidDataException>(WorldLifetimePatches.Generation.Finalizer(descriptor, null));
             Assert.IsType<InvalidDataException>(WorldLifetimePatches.Generation.Finalizer(capture, null));
         }
-        finally { WorldLifetimePatches.Generation.Finalizer(capture, null); WorldLifetimePatches.Host = previous; }
+        finally { WorldLifetimePatches.Generation.Finalizer(descriptor, null); WorldLifetimePatches.Generation.Finalizer(capture, null); WorldLifetimePatches.Host = previous; }
     }
 }
