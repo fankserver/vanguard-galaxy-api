@@ -31,7 +31,7 @@ public sealed class CargoAuthorSessionTests
             else { Assert.Equal("remove_Changed", name); Lifecycle.Remove(callback); }
             return null;
         });
-        internal IBoardingService Events => Fake<IBoardingService>((name, args) =>
+        internal IDungeonOperationService Events => Fake<IDungeonOperationService>((name, args) =>
         {
             if (name == "GetOperations") { Assert.NotEmpty(Boarding); return Seed; }
             if (name == "GetOperation") return null;
@@ -57,7 +57,7 @@ public sealed class CargoAuthorSessionTests
             return new Lease(() => { Actions.Remove(key); Presenters.Remove(key); });
         });
         internal CargoAuthorSession Create(bool optional = true, bool required = true) => new("item", Life, Events, required ? Content : null,
-            optional ? Panel : null, Fake<IBoardingCommandService>((_, _) => throw new InvalidOperationException()), Fake<IBoardingTacticalService>((_, _) => throw new InvalidOperationException()),
+            optional ? Panel : null, Fake<IDungeonCommandService>((_, _) => throw new InvalidOperationException()), Fake<IDungeonTacticalService>((_, _) => throw new InvalidOperationException()),
             Fake<IDungeonSettlementService>((name, args) => { var handler = (Action<DungeonSettlementSnapshot>)args[0]!; if (name == "add_Changed") { SettlementLeases++; Settlements.Add(handler); } else { Assert.Equal("remove_Changed", name); SettlementLeases--; Settlements.Remove(handler); } return null; }), Logs.Add);
         internal BoardingEvent Event(BoardingHandle target, BoardingEventKind kind)
         {

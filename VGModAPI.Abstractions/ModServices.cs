@@ -23,11 +23,11 @@ public sealed class ModServices
     private readonly IHudService _hud;
     private readonly IForgeUiService _forgeUi;
     private readonly IBoardingRuleService _boardingRules;
-    private readonly IBoardingCombatService _boardingCombat;
+    private readonly IDungeonCombatService _dungeonCombat;
     private readonly IDungeonRewardService _dungeonRewards;
-    private readonly IBoardingCommandService _boardingCommands;
-    private readonly IBoardingTacticalService _boardingTactics;
-    private readonly IBoardingService _boarding;
+    private readonly IDungeonCommandService _dungeonCommands;
+    private readonly IDungeonTacticalService _dungeonTactics;
+    private readonly IDungeonOperationService _dungeonOperations;
     private readonly IDungeonSettlementService _dungeonSettlement;
     private readonly IDungeonPanelService _dungeonPanel;
     private readonly IDungeonContentService _dungeons;
@@ -62,22 +62,14 @@ public sealed class ModServices
 
     public IBoardingRuleService BoardingRules { get { CheckThread(); return _boardingRules; } }
 
-    public IDungeonCombatService DungeonCombat { get { CheckThread(); return (IDungeonCombatService)_boardingCombat; } }
-    [Obsolete("Use DungeonCombat. This compatibility property returns the same service.")]
-    public IBoardingCombatService BoardingCombat { get { CheckThread(); return _boardingCombat; } }
+    public IDungeonCombatService DungeonCombat { get { CheckThread(); return _dungeonCombat; } }
     public IDungeonRewardService DungeonRewards { get { CheckThread(); return _dungeonRewards; } }
 
-    public IDungeonCommandService DungeonCommands { get { CheckThread(); return (IDungeonCommandService)_boardingCommands; } }
-    [Obsolete("Use DungeonCommands. This compatibility property returns the same service.")]
-    public IBoardingCommandService BoardingCommands { get { CheckThread(); return _boardingCommands; } }
+    public IDungeonCommandService DungeonCommands { get { CheckThread(); return _dungeonCommands; } }
 
-    public IDungeonTacticalService DungeonTactics { get { CheckThread(); return (IDungeonTacticalService)_boardingTactics; } }
-    [Obsolete("Use DungeonTactics. This compatibility property returns the same service.")]
-    public IBoardingTacticalService BoardingTactics { get { CheckThread(); return _boardingTactics; } }
+    public IDungeonTacticalService DungeonTactics { get { CheckThread(); return _dungeonTactics; } }
 
-    public IDungeonOperationService DungeonOperations { get { CheckThread(); return (IDungeonOperationService)_boarding; } }
-    [Obsolete("Use DungeonOperations. This compatibility property returns the same service.")]
-    public IBoardingService Boarding { get { CheckThread(); return _boarding; } }
+    public IDungeonOperationService DungeonOperations { get { CheckThread(); return _dungeonOperations; } }
 
     public IDungeonSettlementService DungeonSettlement { get { CheckThread(); return _dungeonSettlement; } }
 
@@ -91,7 +83,7 @@ public sealed class ModServices
 
     internal ModServices(ILifecycleService lifecycle, IModInformationService mods, ISaveDataService saveData,
         IMissionService missions, ITravelService travel, IStationService station, IRecipeService recipes, IRecipeQuoteService recipeQuotes,
-        ICraftingJobService craftingJobs, ICraftingCommandService craftingCommands, IHudService hud, IForgeUiService forgeUi, IBoardingRuleService boardingRules, IBoardingCombatService boardingCombat, IDungeonRewardService dungeonRewards, IBoardingCommandService boardingCommands, IBoardingTacticalService boardingTactics, IBoardingService boarding, IDungeonSettlementService dungeonSettlement, IDungeonPanelService dungeonPanel, IDungeonContentService dungeons, IStoryService story, IBarService bars, IWorldService world, IDialogueService dialogue, INavigationService navigation, IOwnedItemService items, IOwnedRecipeService recipeRegistration, IInventoryService inventories)
+        ICraftingJobService craftingJobs, ICraftingCommandService craftingCommands, IHudService hud, IForgeUiService forgeUi, IBoardingRuleService boardingRules, IDungeonCombatService dungeonCombat, IDungeonRewardService dungeonRewards, IDungeonCommandService dungeonCommands, IDungeonTacticalService dungeonTactics, IDungeonOperationService dungeonOperations, IDungeonSettlementService dungeonSettlement, IDungeonPanelService dungeonPanel, IDungeonContentService dungeons, IStoryService story, IBarService bars, IWorldService world, IDialogueService dialogue, INavigationService navigation, IOwnedItemService items, IOwnedRecipeService recipeRegistration, IInventoryService inventories)
     {
         _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
         _mods = mods ?? throw new ArgumentNullException(nameof(mods));
@@ -106,11 +98,11 @@ public sealed class ModServices
         _hud = hud ?? throw new ArgumentNullException(nameof(hud));
         _forgeUi = forgeUi ?? throw new ArgumentNullException(nameof(forgeUi));
         _boardingRules = boardingRules ?? throw new ArgumentNullException(nameof(boardingRules));
-        _boardingCombat = boardingCombat ?? throw new ArgumentNullException(nameof(boardingCombat));
+        _dungeonCombat = dungeonCombat ?? throw new ArgumentNullException(nameof(dungeonCombat));
         _dungeonRewards = dungeonRewards ?? throw new ArgumentNullException(nameof(dungeonRewards));
-        _boardingCommands = boardingCommands ?? throw new ArgumentNullException(nameof(boardingCommands));
-        _boardingTactics = boardingTactics ?? throw new ArgumentNullException(nameof(boardingTactics));
-        _boarding = boarding ?? throw new ArgumentNullException(nameof(boarding));
+        _dungeonCommands = dungeonCommands ?? throw new ArgumentNullException(nameof(dungeonCommands));
+        _dungeonTactics = dungeonTactics ?? throw new ArgumentNullException(nameof(dungeonTactics));
+        _dungeonOperations = dungeonOperations ?? throw new ArgumentNullException(nameof(dungeonOperations));
         _dungeonSettlement = dungeonSettlement ?? throw new ArgumentNullException(nameof(dungeonSettlement));
         _dungeonPanel = dungeonPanel ?? throw new ArgumentNullException(nameof(dungeonPanel));
         _dungeons = dungeons ?? throw new ArgumentNullException(nameof(dungeons));

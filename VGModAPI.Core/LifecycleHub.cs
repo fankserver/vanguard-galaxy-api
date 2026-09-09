@@ -37,7 +37,7 @@ internal sealed class LifecycleHub : ILifecycleService, IDisposable
     public event Action<LifecycleEvent>? Changed { add => _events.Add(value); remove => _events.Remove(value); }
     public bool IsDispatchingCallbacks { get { CheckThread(); return _dispatching || _serviceDispatchDepth != 0; } }
     public SessionSnapshot? CurrentSession { get { CheckThread(); return _session; } }
-    public IReadOnlyList<CapabilityStatus> Capabilities => Services.Legacy;
+    public IReadOnlyList<CapabilityStatus> Capabilities => Services.Untyped;
 
     internal void SetCapability(string name, bool available, string detail,
         ServiceUnavailableReason reason = ServiceUnavailableReason.BindingFailed)

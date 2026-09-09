@@ -6,7 +6,7 @@ Boarding initializes automatically when its compatibility and dependency guards 
 
 Member mappings apply to the original `Assembly-CSharp.dll` SHA-256 `a2aad60bc68c31baccd636587d3c5ba4e651eacda59b0af42cd4f17f864284fb`. Original game source remains private. Unknown hashes cannot enable integration by matching names/signatures alone. Consult [compatibility](compatibility.md) and [lifecycle](lifecycle-contract.md) for threading, patch-group rollback and readiness constraints.
 
-**Boarding is an encounter lifecycle, not an always-boardable flag.** Ship disabling, crew transport, interior simulation, UI and settlement are separate boundaries. Ship boarding and walk-in installations share `DungeonSimulation`; shared rules require explicit `Ship`, `Installation` or `Both` scope. A station victory is not ship capture. Canonical service names use *dungeon* for shared operations/simulation. Ship boarding remains a distinct entry mechanism. Published `Boarding*` snapshot/handle contracts remain compatible; *encounter* in those legacy types denotes a dungeon simulation, not a new game domain. See [terminology and migration](terminology.md). Public contracts do not expose native `DungeonType` or Unity objects.
+**Boarding is an encounter lifecycle, not an always-boardable flag.** Ship disabling, crew transport, interior simulation, UI and settlement are separate boundaries. Ship boarding and walk-in installations share `DungeonSimulation`; shared rules require explicit `Ship`, `Installation` or `Both` scope. A station victory is not ship capture. Canonical service names use *dungeon* for shared operations/simulation. Ship boarding remains a distinct entry mechanism. `Boarding*` snapshot/handle types describe ship-boarding data within dungeon operations; *encounter* in those types denotes a dungeon simulation, not a new game domain. See [terminology](terminology.md). Public contracts do not expose native `DungeonType` or Unity objects.
 
 ## Integration boundaries
 
@@ -61,7 +61,7 @@ Enemy donor selection consumes a reinforcement request before finding a donor, d
 
 ## Public shape and identity constraints
 
-The current observation surface is `IBoardingService`, `BoardingHandle`, `BoardingTargetSnapshot`, `BoardingOperationSnapshot`, `BoardingCompartmentSnapshot` and `BoardingEvent`. `BoardingHandle` is opaque runtime identity; separate query dictionaries distinguish targets from operations. Handler registration/removal is main-thread-only and does not replay; remove retained handlers with `Changed -= handler`. All snapshots copy their collections. Invalidated/retired handles cannot be queried or resurrected.
+The current observation surface is `IDungeonOperationService`, `BoardingHandle`, `BoardingTargetSnapshot`, `BoardingOperationSnapshot`, `BoardingCompartmentSnapshot` and `BoardingEvent`. `BoardingHandle` is opaque runtime identity; separate query dictionaries distinguish targets from operations. Handler registration/removal is main-thread-only and does not replay; remove retained handlers with `Changed -= handler`. All snapshots copy their collections. Invalidated/retired handles cannot be queried or resurrected.
 
 The following naming and behavioral constraints apply to richer interfaces; names not listed above are design terminology, not advertised available types:
 
@@ -148,7 +148,7 @@ Tactical execution requires the actual current `IBoardingController` instance, n
 
 `ModApi.Services.DungeonCombat` is a stable service with typed `Availability` and `AvailabilityChanged`. Unavailable evaluation preserves vanilla values without invoking providers; health loss discards the entire composition.
 
-`IBoardingCombatService.AcquireProvider` creates a disposable provider instance independent of command control. RegisterMultiplier accepts Power, InitialHealth, Morale or CasualtyRate; RegisterVeto accepts Surrender, Defection, Reinforcement, Hazard or Venting. Callbacks receive copied encounter kind/level, side, optional room and boundary value. InitialHealth scales the native HP initialization multiplier; Morale scales the absolute change, retaining its sign and clamping resulting morale to [0,1]. Policies do not rewrite saved HP on load.
+`IDungeonCombatService.AcquireProvider` creates a disposable provider instance independent of command control. RegisterMultiplier accepts Power, InitialHealth, Morale or CasualtyRate; RegisterVeto accepts Surrender, Defection, Reinforcement, Hazard or Venting. Callbacks receive copied encounter kind/level, side, optional room and boundary value. InitialHealth scales the native HP initialization multiplier; Morale scales the absolute change, retaining its sign and clamping resulting morale to [0,1]. Policies do not rewrite saved HP on load.
 
 Individual multipliers must be finite in [0,10]; combined multipliers above 100 or overflowing the boundary value reject the offending contribution with diagnostics. Contributions run by descending priority then ordinal provider/local ID. Vetoes aggregate as denials, and throwing callbacks do not prevent later contributions. Provider disposal removes only that instance's registrations. Nested evaluation preserves native defaults; session replacement discards results. Policy callbacks must not issue commands.
 

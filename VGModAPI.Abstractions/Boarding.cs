@@ -142,7 +142,7 @@ public sealed class BoardingEvent
 }
 
 /// <summary>Main-thread-only observations. Changed does not replay. Snapshots remain immutable after invalidation.</summary>
-public interface IBoardingService : IServiceStatus
+public interface IDungeonOperationService : IServiceStatus
 {
     Guid? SessionId { get; }
     bool IsDispatchingCallbacks { get; }
