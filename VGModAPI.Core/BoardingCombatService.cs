@@ -4,7 +4,7 @@ using System.Linq;
 
 namespace VGModAPI.Core;
 
-internal sealed class BoardingCombatService : IBoardingCombatService, IDisposable
+internal sealed class BoardingCombatService : IDungeonCombatService, IDisposable
 {
     private readonly LifecycleHub _hub;
     private readonly IServiceStatus _status;

@@ -1,12 +1,12 @@
 # Boarding integration constraints and source coverage
 
-Boarding initializes automatically when its compatibility and dependency guards pass. Use the stable `ModApi.Services.Boarding`, `BoardingRules`, `BoardingCommands`, `BoardingTactics` and `BoardingCombat` services. Each exposes independent typed availability; registration or a healthy binding is not permission to act on a stale session or operation. This document distinguishes observation from action constraints.
+Boarding initializes automatically when its compatibility and dependency guards pass. Use the stable `ModApi.Services.DungeonOperations`, `BoardingRules`, `DungeonCommands`, `DungeonTactics` and `DungeonCombat` services. Each exposes independent typed availability; registration or a healthy binding is not permission to act on a stale session or operation. This document distinguishes observation from action constraints.
 
 ## Supported bindings
 
 Member mappings apply to the original `Assembly-CSharp.dll` SHA-256 `a2aad60bc68c31baccd636587d3c5ba4e651eacda59b0af42cd4f17f864284fb`. Original game source remains private. Unknown hashes cannot enable integration by matching names/signatures alone. Consult [compatibility](compatibility.md) and [lifecycle](lifecycle-contract.md) for threading, patch-group rollback and readiness constraints.
 
-**Boarding is an encounter lifecycle, not an always-boardable flag.** Ship disabling, crew transport, interior simulation, UI and settlement are separate boundaries. Ship boarding and walk-in installations share `DungeonSimulation`; shared rules require explicit `Ship`, `Installation` or `Both` scope. A station victory is not ship capture. API naming uses *boarding* for the service and *encounter* for shared interior state; public identifiers must not expose vanilla `DungeonType` or Unity objects.
+**Boarding is an encounter lifecycle, not an always-boardable flag.** Ship disabling, crew transport, interior simulation, UI and settlement are separate boundaries. Ship boarding and walk-in installations share `DungeonSimulation`; shared rules require explicit `Ship`, `Installation` or `Both` scope. A station victory is not ship capture. Canonical service names use *dungeon* for shared operations/simulation. Ship boarding remains a distinct entry mechanism. Published `Boarding*` snapshot/handle contracts remain compatible; *encounter* in those legacy types denotes a dungeon simulation, not a new game domain. See [terminology and migration](terminology.md). Public contracts do not expose native `DungeonType` or Unity objects.
 
 ## Integration boundaries
 
@@ -146,7 +146,7 @@ Tactical execution requires the actual current `IBoardingController` instance, n
 | Hazards and venting | Veto native hazard firing, airlock vent attempts or random structural vent selection | Discrete family validation and exact native binding checks |
 | Structural damage | `IBoardingRuleProvider.RegisterIntegrity`, scuttle and explosion policies | Cause-aware exactly-once composition; authoritative host destruction remains unchanged |
 
-`ModApi.Services.BoardingCombat` is a stable service with typed `Availability` and `AvailabilityChanged`. Unavailable evaluation preserves vanilla values without invoking providers; health loss discards the entire composition.
+`ModApi.Services.DungeonCombat` is a stable service with typed `Availability` and `AvailabilityChanged`. Unavailable evaluation preserves vanilla values without invoking providers; health loss discards the entire composition.
 
 `IBoardingCombatService.AcquireProvider` creates a disposable provider instance independent of command control. RegisterMultiplier accepts Power, InitialHealth, Morale or CasualtyRate; RegisterVeto accepts Surrender, Defection, Reinforcement, Hazard or Venting. Callbacks receive copied encounter kind/level, side, optional room and boundary value. InitialHealth scales the native HP initialization multiplier; Morale scales the absolute change, retaining its sign and clamping resulting morale to [0,1]. Policies do not rewrite saved HP on load.
 
@@ -158,7 +158,7 @@ These are request/effect vetoes, not outcome notifications. Vetoing a hazard eff
 
 ## Boarding commands
 
-`ModApi.Services.BoardingCommands.AcquireControl(pluginId, target, out controller)` returns a typed result and, when admitted, an instance-scoped disposable controller. Acquire from a current target snapshot, not a saved handle. Event subscriptions do not grant command control. Only one mod controller can hold a target; manual native HUD cancellation and panel start, extraction, reinforcement and option actions revoke it. Native autonomous re-enabling is blocked while it is held. Disposal does not restore old autonomous settings over newer player choices.
+`ModApi.Services.DungeonCommands.AcquireControl(pluginId, target, out controller)` returns a typed result and, when admitted, an instance-scoped disposable controller. Acquire from a current target snapshot, not a saved handle. Event subscriptions do not grant command control. Only one mod controller can hold a target; manual native HUD cancellation and panel start, extraction, reinforcement and option actions revoke it. Native autonomous re-enabling is blocked while it is held. Disposal does not restore old autonomous settings over newer player choices.
 
 The controller exposes Start, Resume, Reinforce, CancelApproach, Retreat, RequestExtraction, ConfirmExtraction and SetOptions. Crew manifests are copied, nonempty, positive-count maps of native crew identifiers. Options expose ammunition, stealth, auto-move and automatic buyout. Automatic buyout can spend credits later according to native rules; no upfront credit charge is invented. Starting with friendly-faction consequences requires explicit consent, then uses native reputation/aggro bookkeeping. Availability, crew, capacity, travel, phase and target/ship identity are revalidated at execution. Installation entry restrictions do not apply to ship targets. Reinforcement requires an existing receiving simulation; approach or prelanding without one is rejected before crew debit.
 
@@ -180,20 +180,20 @@ Callbacks receive immutable numeric contexts and must be pure, quick and determi
 
 Tests cover policy composition and adapter boundaries.
 
-`ModApi.Services.BoardingCommands` is a stable `IBoardingCommandService` with typed
+`ModApi.Services.DungeonCommands` is a stable `IDungeonCommandService` with typed
 `Availability` and `AvailabilityChanged`. Missing bindings refuse control without
 native access. Health loss closes controller admission; loss during a native
 invocation reports `Uncertain` because effects may already have occurred. Never
 blindly retry an uncertain command. Admission is not a completed native outcome.
 
-`ModApi.Services.BoardingTactics` exposes a stable `IBoardingTacticalService`.
+`ModApi.Services.DungeonTactics` exposes a stable `IDungeonTacticalService`.
 Typed availability is independent of whether an operation has a tactical snapshot.
 Unavailable snapshots perform no native reads; successful reads revalidate their
 session and service health. Tactical mutations retain controller arbitration and
 all specialist, movement, resource and consent checks. Health loss after invocation
 reports `Uncertain`; native UI validation remains independent of consumer access.
 
-`ModApi.Services.Boarding` is a stable `IBoardingService`. Subscribe using
+`ModApi.Services.DungeonOperations` is a stable `IDungeonOperationService`. Subscribe using
 `Changed += handler` and remove the exact handler during teardown. Registration
 does not replay existing observations; query explicitly after subscribing.
 `Availability` and `AvailabilityChanged` describe binding health. Outside an

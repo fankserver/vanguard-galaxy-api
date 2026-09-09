@@ -2,6 +2,7 @@
 
 - [Compatibility and supported behavior](compatibility.md)
 - [Author examples and integration boundaries](authoring.md)
+- [Game terminology and compatible name migration](terminology.md)
 - [Lifecycle events](lifecycle-contract.md)
 - [Typed services and injected consumers](service-contracts.md)
 - Mod save data: [identity](persistence-identity.md), [schema](persistence-schema.md), [storage and recovery](persistence-storage.md)
