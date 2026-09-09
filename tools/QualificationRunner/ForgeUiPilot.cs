@@ -20,9 +20,9 @@ public sealed partial class Plugin
     {
         _forgePointerDiagnostics.Clear();
         WriteAtomic("forge-ui.txt", new[] { "INCOMPLETE" });
-        var ui = ModApi.ForgeUi ?? throw new InvalidOperationException("Forge UI service unavailable.");
+        var ui = ModApi.Services.ForgeUi;
         ForgeSelectionSnapshot? selection = null;
-        foreach (var recipe in ModApi.Recipes!.Read().Recipes.Where(recipe => recipe.Process == RecipeProcess.Forge && recipe.ParentId != null))
+        foreach (var recipe in ModApi.Services.Recipes.Read().Recipes.Where(recipe => recipe.Process == RecipeProcess.Forge && recipe.ParentId != null))
         {
             if (ui.Open(recipe.Id) == ForgeNavigationStatus.Selected && ui.Current?.AvailableVariants.Count > 1)
             { selection = ui.Current; break; }
@@ -153,7 +153,7 @@ public sealed partial class Plugin
             // Successful HUD callbacks can rebuild/dispose their own clicked view before this sample.
             if (target == null || button == null)
                 return "click=" + (_forgePointerDiagnostics.Count / 3) + " " + phase + " targetDestroyed=true";
-            var snapshot = SpGet(ModApi.ForgeUi!, "_current") as ForgeSelectionSnapshot;
+            var snapshot = SpGet(ModApi.Services.ForgeUi, "_current") as ForgeSelectionSnapshot;
             var module = EventSystem.current.currentInputModule;
             var selected = EventSystem.current.currentSelectedGameObject;
             return "click=" + (_forgePointerDiagnostics.Count / 3) + " " + phase + " selected=" + (selected != null ? selected.name : "")

@@ -16,11 +16,45 @@ public sealed class BoardingRuleServiceTests
         internal readonly List<string> Diagnostics = new();
         internal Fixture()
         {
+            Hub.SetCapability("boarding-rules", true, "Test bindings.");
             Rules = new BoardingRuleService(Hub, (owner, error) => { Faults++; Diagnostics.Add(owner + ": " + error.Message); });
             Session = Hub.Begin(SessionOrigin.SaveLoad, "save"); Hub.PlayerReady(Session); Hub.GameplayInitialized(Session);
         }
         internal BoardingEncounterContext Context(BoardingEncounterKind kind = BoardingEncounterKind.Ship) => new(Session, kind, 10);
         public void Dispose() { Rules.Dispose(); Hub.Dispose(); }
+    }
+    [Fact]
+    public void TypedHealthLossDiscardsCompositionAndSkipsLaterRules()
+    {
+        using var f = new Fixture();
+        IBoardingRuleService service = f.Rules;
+        using var provider = service.AcquireProvider("mod");
+        var later = 0;
+        provider.RegisterEncounter("first", BoardingRuleScope.Both, _ =>
+        {
+            f.Hub.SetCapability("boarding-rules", false, "Observer failed.", ServiceUnavailableReason.ObserverFault);
+            return new(2, 3);
+        }, 10);
+        provider.RegisterEncounter("later", BoardingRuleScope.Both, _ => { later++; return new(4, 5); });
+        Assert.Equal((1f, 1f), f.Rules.Encounter(f.Context()));
+        Assert.Equal(0, later);
+        Assert.Equal(ServiceUnavailableReason.ObserverFault, service.Availability.Reason);
+        f.Rules.Dispose();
+        Assert.Equal(ServiceUnavailableReason.ObserverFault, service.Availability.Reason);
+    }
+    [Fact]
+    public void UnavailableServiceAllowsDeclarationsButNeverEvaluatesThem()
+    {
+        using var f = new Fixture();
+        f.Hub.SetCapability("boarding-rules", false, "Disabled.", ServiceUnavailableReason.Disabled);
+        IBoardingRuleService service = f.Rules;
+        using var provider = service.AcquireProvider("mod");
+        var calls = 0;
+        provider.RegisterEncounter("rule", BoardingRuleScope.Both, _ => { calls++; return new(2, 3); });
+        Assert.Equal((1f, 1f), f.Rules.Encounter(f.Context()));
+        Assert.Equal(0, calls);
+        Assert.Null(typeof(ModApi).GetProperty("BoardingRules"));
+        Assert.Null(typeof(ModApi).Assembly.GetType("VGModAPI.IBoardingRules"));
     }
     [Fact]
     public void DisableThresholdAndDenialsPreserveVanillaDefault()

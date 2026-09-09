@@ -20,7 +20,7 @@ public sealed partial class Plugin
         var station = SpGet(AccessTools.TypeByName("Source.Galaxy.POI.SpaceStation"), "current");
         Require(station != null, "Guild probe requires a current station.");
         var missionBase = AccessTools.TypeByName("Source.MissionSystem.Mission");
-        var api = ModApi.Missions!;
+        var api = ModApi.Services.Missions;
         var access = (IVersionSensitiveMissionAccess)api;
         foreach (var kind in new[] { "Bounty", "Patrol", "Industry" })
         {
@@ -38,7 +38,7 @@ public sealed partial class Plugin
             var counter = AccessTools.Field(boardData.GetType(), char.ToLowerInvariant(kind[0]) + kind.Substring(1) + "Counter");
             var oldCounter = counter.GetValue(boardData);
             var observed = new List<MissionTransitionKind>(); int removedOld = 0;
-            using var subscription = api.Subscribe("qualification.guild", e =>
+            using var subscription = new MissionProbeSubscription(api, e =>
             {
                 if (e.Mission.DefinitionId == id) observed.Add(e.Kind);
                 if (old != null && e.Kind == MissionTransitionKind.Removed && access.TryGetNative(e.Mission, out var native) && ReferenceEquals(native, old)) removedOld++;

@@ -111,7 +111,7 @@ public sealed class CraftingSettingsSnapshot
     }
 }
 
-public interface ICraftingCommands
+public interface ICraftingCommandService : IServiceStatus
 {
     CraftingCommandResult Execute(CraftingCommandRequest request);
     CraftingSettingsSnapshot ReadSettings(Guid sessionId, RecipeStationHandle? station = null);

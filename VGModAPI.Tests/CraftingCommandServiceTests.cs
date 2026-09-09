@@ -20,6 +20,28 @@ public sealed class CraftingCommandServiceTests : IDisposable
     private CraftingCommandRequest Request(Guid? id = null, int count = 1) => CraftingCommandRequest.Queue("test", id ?? Guid.NewGuid(), _station,
         new("vanilla", "forge/test"), count, CraftingProtectionPolicy.ProtectFavouritesAndMissionItems);
     [Fact]
+    public void FaultDuringExecutionClosesHealthAndReportsUncertainEffects()
+    {
+        _backend.Action = _ => _service.RecordFault(new InvalidOperationException("Native fault."));
+        var result = _service.Execute(Request());
+        Assert.Equal(CraftingCommandStatus.Uncertain, result.Status);
+        Assert.True(result.MutationMayHaveRun);
+        Assert.Equal(ServiceUnavailableReason.ObserverFault, _service.Availability.Reason);
+        Assert.Equal(CraftingCommandStatus.IntegrationUnavailable, _service.Execute(Request()).Status);
+        Assert.Equal(1, _backend.Calls);
+    }
+    [Fact]
+    public void MissingCommandBackendIsAnUnavailableTypedService()
+    {
+        using var hub = new LifecycleHub((_, _) => { });
+        hub.SetCapability("crafting-commands", false, "Commands disabled.", ServiceUnavailableReason.Disabled);
+        using var service = new CraftingCommandService(hub, _jobs, null, _ => { });
+        Assert.Equal(ServiceUnavailableReason.Disabled, service.Availability.Reason);
+        Assert.Equal(CraftingCommandStatus.IntegrationUnavailable, service.Execute(Request()).Status);
+        Assert.Null(typeof(ModApi).Assembly.GetType("VGModAPI.ICraftingCommands"));
+        Assert.Null(typeof(ModApi).GetProperty("CraftingCommands"));
+    }
+    [Fact]
     public void DuplicateIntentReturnsReceiptWithoutExecutingAgain()
     {
         var request = Request(); var first = _service.Execute(request); var second = _service.Execute(request);
@@ -79,10 +101,10 @@ public sealed class CraftingCommandServiceTests : IDisposable
         { Calls++; Action?.Invoke(request); return new(request.RequestId, CraftingCommandStatus.Succeeded, "Test", true); }
         public CraftingSettingsSnapshot ReadSettings(Guid session, RecipeStationHandle? station) => new(session, true, null, true, false, false, "Read");
     }
-    private sealed class Jobs : ICraftingJobs
+    private sealed class Jobs : FakeServiceStatus, ICraftingJobService
     {
         public bool IsDispatchingCallbacks { get; set; }
         public CraftingJobListSnapshot Read(RecipeStationHandle station) => new(CraftingJobQueryStatus.Available, "Read", Array.Empty<CraftingJobSnapshot>());
-        public IDisposable Subscribe(string pluginId, Action<CraftingJobEvent> callback) => throw new NotSupportedException();
+        public event Action<CraftingJobEvent>? Changed { add { } remove { } }
     }
 }

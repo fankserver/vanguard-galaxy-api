@@ -16,6 +16,44 @@ public sealed class HudServiceTests
         _service = new(_hub, (_, _) => { }); _service.SetAvailable(true); _service.SetSurface(_surface, _session);
     }
     [Fact]
+    public void TypedHealthIsIndependentOfSurfaceVisibility()
+    {
+        IHudService service = _service;
+        _service.SetSurface(null, null);
+        Assert.True(service.Availability.IsAvailable);
+        Assert.False(service.Visible);
+        var notifications = 0;
+        Action<ServiceAvailability> handler = _ => notifications++;
+        service.AvailabilityChanged += handler;
+        _service.SetAvailable(false);
+        Assert.False(service.Availability.IsAvailable);
+        Assert.Equal(1, notifications);
+        service.AvailabilityChanged -= handler;
+        _service.SetAvailable(true);
+        Assert.Equal(1, notifications);
+        Assert.False(service.Visible);
+        Assert.Null(typeof(ModApi).Assembly.GetType("VGModAPI.IModHud"));
+        Assert.Null(typeof(ModApi).GetProperty("Hud"));
+    }
+    [Fact]
+    public void DisposalClosesInputBeforeNotifyingAndIsReentrantSafe()
+    {
+        IHudService service = _service;
+        var calls = 0;
+        var visibleDuringStop = true;
+        using var registration = service.Register("one", "button", _ => calls++);
+        registration.Update(new("One"), null);
+        var entry = _service.Entries.Single();
+        service.AvailabilityChanged += _ => { visibleDuringStop = service.Visible; _service.Dispose(); };
+        _service.Dispose();
+        Assert.False(visibleDuringStop);
+        Assert.Equal(ServiceUnavailableReason.ApiStopped, service.Availability.Reason);
+        Assert.Empty(_service.Entries);
+        Assert.False(_service.Invoke(entry.Token, _surface, entry.Revision, HudInteractionKind.Button));
+        Assert.Equal(0, calls);
+        Assert.Throws<ObjectDisposedException>(() => service.Register("two", "button", _ => { }));
+    }
+    [Fact]
     public void NamespacesOrderingAndDisposalPreventCrossRegistrationClicks()
     {
         var calls = 0; var first = _service.Register("one", "button", _ => calls++);

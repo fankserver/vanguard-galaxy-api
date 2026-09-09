@@ -5,7 +5,7 @@ using VGModAPI;
 namespace OwnedStoryCampaign;
 
 [BepInPlugin("vg-story-campaign", "Owned story campaign example", "0.1.0")]
-[BepInDependency("vgmodapi", BepInDependency.DependencyFlags.HardDependency)]
+[BepInDependency(ModApi.PluginId, "0.2.0")]
 public sealed class Plugin : BaseUnityPlugin
 {
     public const string LocalId = "mission-x";
@@ -18,7 +18,7 @@ public sealed class Plugin : BaseUnityPlugin
     {
         if (_provider == null)
         {
-            var api = ModApi.Story ?? throw new InvalidOperationException("Enable the optional story module.");
+            var api = ModApi.Services.Story;
             var acquired = api.AcquireProvider(this);
             _provider = acquired.Provider ?? throw new InvalidOperationException(acquired.Diagnostic);
         }
@@ -40,7 +40,7 @@ public sealed class Plugin : BaseUnityPlugin
     {
         if (_provider == null)
         {
-            var api = ModApi.Story ?? throw new InvalidOperationException("Enable the optional story module.");
+            var api = ModApi.Services.Story;
             var acquired = api.AcquireProvider(this);
             _provider = acquired.Provider ?? throw new InvalidOperationException(acquired.Diagnostic);
         }

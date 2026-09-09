@@ -25,7 +25,7 @@ namespace VGModAPI.Core;
 /// This type is pure with respect to the game: it decides what must be installed and what must be
 /// remembered. Driving vanilla registration/reconstruction is separate work.
 /// </summary>
-internal sealed partial class StoryContentService : IStoryApi, IStoryUiTransaction, IDisposable
+internal sealed partial class StoryContentService : IStoryService, IStoryUiTransaction, IDisposable
 {
     private enum Readiness { None, Pending, Restored, Blocked }
 
@@ -141,13 +141,7 @@ internal sealed partial class StoryContentService : IStoryApi, IStoryUiTransacti
     private readonly StoryHostAuthenticator _authenticate;
     private readonly Action? _checkThread;
     private readonly Func<SessionSnapshot?> _currentSession;
-    /// <summary>
-    /// The module's own registration handle. Readiness is an OPTIONAL capability
-    /// (<see cref="IPersistenceReadiness"/>) on that handle: the runtime implementation provides it,
-    /// and a handle that does not is treated as "readiness unknown", which makes every answer
-    /// unavailable rather than assuming restored state exists.
-    /// </summary>
-    private readonly IPersistenceRegistration? _persistence;
+    private readonly ISaveDataRegistration? _persistence;
     /// <summary>
     /// The native world this module installs into and drives. Without it the module owns definitions
     /// and state but nothing exists in the game, so accepting content is refused rather than recorded:
@@ -171,7 +165,7 @@ internal sealed partial class StoryContentService : IStoryApi, IStoryUiTransacti
     /// their record is untouched; they are simply not admitted, which quarantines them natively.
     /// </summary>
     private readonly HashSet<Guid> _unrunnable = new();
-    private readonly IDisposable? _missionObserver;
+    private readonly IMissionService? _missionObserver;
     private readonly Action<string, bool>? _report;
     /// <summary>
     /// The native quarantine's authority. It only ever advances or pays out an owned mission this
@@ -187,7 +181,12 @@ internal sealed partial class StoryContentService : IStoryApi, IStoryUiTransacti
     private bool _operationInFlight;
     private string? _suspended;
     private string? _fault;
-    private readonly IDisposable? _lifecycle;
+    private readonly ILifecycleService? _lifecycle;
+    private readonly ServiceStatusRegistry _statuses;
+    private readonly IServiceStatus _status;
+    public ServiceAvailability Availability => _status.Availability;
+    public event Action<ServiceAvailability>? AvailabilityChanged
+    { add => _status.AvailabilityChanged += value; remove => _status.AvailabilityChanged -= value; }
     private Readiness _readiness = Readiness.None;
     private Guid _restoredSession;
     private string _readinessDetail = "no session has started since this module was created";
@@ -200,12 +199,14 @@ internal sealed partial class StoryContentService : IStoryApi, IStoryUiTransacti
     /// paused coordinator behind.
     /// </summary>
     /// <exception cref="InvalidOperationException">A session is already running.</exception>
-    internal StoryContentService(IPersistenceApi? persistence, ILifecycleApi? lifecycle, StoryHostAuthenticator authenticate,
+    internal StoryContentService(ServiceStatusRegistry statuses, ISaveDataService? persistence, ILifecycleService? lifecycle, StoryHostAuthenticator authenticate,
         Func<Guid>? newOccurrence = null, Action? checkThread = null, IStoryWorld? world = null,
-        IMissionEvents? missions = null, Action<string, bool>? report = null, StoryProtection? protection = null,
+        IMissionService? missions = null, Action<string, bool>? report = null, StoryProtection? protection = null,
         Func<bool>? protectionHealthy = null)
     {
         checkThread?.Invoke();
+        _statuses = statuses ?? throw new ArgumentNullException(nameof(statuses));
+        _status = statuses.Get("owned-story");
         if (lifecycle?.CurrentSession != null)
             throw new InvalidOperationException("The story module must be constructed before a session begins.");
         _authenticate = authenticate ?? throw new ArgumentNullException(nameof(authenticate));
@@ -213,6 +214,7 @@ internal sealed partial class StoryContentService : IStoryApi, IStoryUiTransacti
         _report = report;
         _protection = protection;
         _protectionHealthy = protectionHealthy;
+        statuses.WatchFault("owned-story", () => _protectionHealthy?.Invoke() == false);
         _newOccurrence = newOccurrence ?? Guid.NewGuid;
         _checkThread = checkThread;
         _currentSession = () => lifecycle?.CurrentSession;
@@ -225,13 +227,16 @@ internal sealed partial class StoryContentService : IStoryApi, IStoryUiTransacti
             // Schema 1 rows are read as what they meant: no declaration staged for a future outcome
             // and no observed failure. The bytes are handed through unchanged; the decoder does the
             // reading, so nothing is rewritten to fit a newer shape.
-            migrations: new Dictionary<int, Func<byte[], byte[]>> { [StoryStateCodec.FirstSchemaVersion] = payload => payload, [2] = payload => payload, [3] = payload => payload }));
+            migrations: new Dictionary<int, Func<byte[], byte[]>> { [StoryStateCodec.FirstSchemaVersion] = payload => payload, [2] = payload => payload, [3] = payload => payload })).Registration;
+        if (persistence != null && _persistence == null) throw new InvalidOperationException("Story save provider registration refused.");
         // Availability is bound to the lifecycle independently of restore: a failed or invalidated
         // session never calls restore, and its queries must not answer from the previous save.
-        _lifecycle = lifecycle?.Subscribe("vgmodapi.story-content", OnLifecycle);
+        _lifecycle = lifecycle;
+        if (_lifecycle != null) _lifecycle.Changed += OnLifecycle;
         // Outcomes are OBSERVED, not declared: the game completing or failing an owned mission is what
         // records a completion, so this module watches the same mission boundary every consumer sees.
-        _missionObserver = missions?.Subscribe("vgmodapi.story-content", OnMissionTransition);
+        _missionObserver = missions;
+        if (_missionObserver != null) _missionObserver.Transitioned += OnMissionTransition;
     }
 
     private void CheckThread() => _checkThread?.Invoke();
@@ -631,10 +636,11 @@ internal sealed partial class StoryContentService : IStoryApi, IStoryUiTransacti
     private string? Unavailable()
     {
         if (_disposed) return "the story module is disposed";
+        if (!Availability.IsAvailable) return Availability.Detail;
         if (_protectionHealthy?.Invoke() == false)
             return "the native story protection cannot currently decide about owned content";
-        if (_persistence is not IPersistenceReadiness readiness) return "story persistence does not report readiness";
-        if (!readiness.StateReady) return "story persistence is " + PersistenceStatus;
+        if (_persistence == null) return "story persistence is unavailable";
+        if (!_persistence.CanRead) return "story persistence is " + PersistenceStatus;
         if (_readiness != Readiness.Restored) return _readinessDetail;
         var session = _currentSession();
         if (session == null || session.Id != _restoredSession) return "the restored session is no longer current";
@@ -642,7 +648,7 @@ internal sealed partial class StoryContentService : IStoryApi, IStoryUiTransacti
         return null;
     }
 
-    internal string PersistenceStatus => _disposed ? "inactive" : _persistence?.Status ?? "unavailable";
+    internal string PersistenceStatus => _disposed ? "inactive" : _persistence?.State.Kind.ToString() ?? "unavailable";
     internal StoryLedger Ledger => _ledger;
     internal StoryDefinitionRegistry Registry => _registry;
     internal string ReadinessDetail => _readinessDetail;
@@ -664,7 +670,7 @@ internal sealed partial class StoryContentService : IStoryApi, IStoryUiTransacti
     {
         CheckThread();
         if (pluginInstance == null) throw new ArgumentNullException(nameof(pluginInstance));
-        if (_disposed) return new StoryProviderResult(StoryProviderStatus.Unavailable, null, "The story module is disposed.");
+        if (_disposed || !Availability.IsAvailable) return new StoryProviderResult(StoryProviderStatus.Unavailable, null, _disposed ? "The story module is disposed." : Availability.Detail);
         StoryHostPlugin? plugin;
         try { plugin = _authenticate(pluginInstance, callingAssembly); }
         catch { plugin = null; }
@@ -1319,7 +1325,7 @@ internal sealed partial class StoryContentService : IStoryApi, IStoryUiTransacti
             refusal = "Story state is unavailable: " + unavailable + "; refusing to accept unsaved persistent content.";
             return false;
         }
-        if (_persistence is not { MutationAllowed: true })
+        if (_persistence is not { CanMutate: true })
         {
             status = StoryTransitionStatus.Busy;
             refusal = "Story state is readable but mutations are paused while lifecycle callbacks dispatch or a save is in flight; "
@@ -1411,8 +1417,10 @@ internal sealed partial class StoryContentService : IStoryApi, IStoryUiTransacti
         CheckThread();
         if (_disposed) return;
         _disposed = true;
+        var health = Availability;
+        _statuses.Set("owned-story", false, health.IsAvailable ? "Story service stopped." : health.Detail, health.IsAvailable ? ServiceUnavailableReason.ApiStopped : health.Reason);
         // Only the module's own shutdown unregisters the persistence owner.
-        _lifecycle?.Dispose();
+        if (_lifecycle != null) _lifecycle.Changed -= OnLifecycle;
         _persistence?.Dispose();
         _leasesBySegment.Clear();
         _bindings.Clear();
@@ -1420,7 +1428,7 @@ internal sealed partial class StoryContentService : IStoryApi, IStoryUiTransacti
         foreach (var identifier in _occurrenceIdentifiers.Values.ToArray()) _world?.Uninstall(identifier);
         _occurrenceIdentifiers.Clear();
         _deferredUninstall.Clear();
-        _missionObserver?.Dispose();
+        if (_missionObserver != null) _missionObserver.Transitioned -= OnMissionTransition;
         _protection?.WithdrawAll("the story module is disposed");
         _registry.Clear();
         _registry.ResetWorldReservations();

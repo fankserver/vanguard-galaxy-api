@@ -23,15 +23,23 @@ public sealed class CargoAuthorSessionTests
         internal BoardingOperationSnapshot[] Seed = Array.Empty<BoardingOperationSnapshot>();
         internal readonly Dictionary<string, Func<DungeonPanelSnapshot, DungeonPanelAction?>> Presenters = new();
         internal readonly Guid Session = Guid.NewGuid();
-        internal ILifecycleApi Life => Fake<ILifecycleApi>((name, args) =>
-        { Assert.Equal("Subscribe", name); var callback = (Action<LifecycleEvent>)args[1]!; Lifecycle.Add(callback); return new Lease(() => Lifecycle.Remove(callback)); });
-        internal IBoardingEvents Events => Fake<IBoardingEvents>((name, args) =>
+        internal ILifecycleService Life => Fake<ILifecycleService>((name, args) =>
+        {
+            var callback = (Action<LifecycleEvent>)args[0]!;
+            if (name == "add_Changed") Lifecycle.Add(callback);
+            else { Assert.Equal("remove_Changed", name); Lifecycle.Remove(callback); }
+            return null;
+        });
+        internal IBoardingService Events => Fake<IBoardingService>((name, args) =>
         {
             if (name == "GetOperations") { Assert.NotEmpty(Boarding); return Seed; }
             if (name == "GetOperation") return null;
-            Assert.Equal("Subscribe", name); var callback = (Action<BoardingEvent>)args[1]!; Boarding.Add(callback); return new Lease(() => Boarding.Remove(callback));
+            var callback = (Action<BoardingEvent>)args[0]!;
+            if (name == "add_Changed") Boarding.Add(callback);
+            else { Assert.Equal("remove_Changed", name); Boarding.Remove(callback); }
+            return null;
         });
-        internal IDungeonContent Content => Fake<IDungeonContent>((name, _) =>
+        internal IDungeonContentService Content => Fake<IDungeonContentService>((name, _) =>
         {
             Assert.Equal("AcquireProvider", name);
             return Fake<IDungeonProvider>((method, args) =>
@@ -41,15 +49,15 @@ public sealed class CargoAuthorSessionTests
                 Assert.Equal("Dispose", method); ProviderDisposals++; return null;
             });
         });
-        internal IDungeonPanelApi Panel => Fake<IDungeonPanelApi>((name, args) =>
+        internal IDungeonPanelService Panel => Fake<IDungeonPanelService>((name, args) =>
         {
             if (name == "get_Capabilities") return new DungeonPanelCapabilities(true, true, ContextualActions);
             Assert.Equal("RegisterAction", name); if (RejectAction) throw new InvalidOperationException("Rejected action"); var key = (string)args[1]!; Assert.False(Actions.ContainsKey(key)); Actions.Add(key, (Action<DungeonPanelSnapshot>)args[3]!); Presenters.Add(key, (Func<DungeonPanelSnapshot, DungeonPanelAction?>)args[2]!);
             return new Lease(() => { Actions.Remove(key); Presenters.Remove(key); });
         });
         internal CargoAuthorSession Create(bool optional = true, bool required = true) => new("item", Life, Events, required ? Content : null,
-            optional ? Panel : null, Fake<IBoardingCommands>((_, _) => throw new InvalidOperationException()), Fake<IBoardingTactics>((_, _) => throw new InvalidOperationException()),
-            Fake<IDungeonSettlement>((name, _) => { Assert.Equal("Subscribe", name); SettlementLeases++; return new Lease(() => SettlementLeases--); }), Logs.Add);
+            optional ? Panel : null, Fake<IBoardingCommandService>((_, _) => throw new InvalidOperationException()), Fake<IBoardingTacticalService>((_, _) => throw new InvalidOperationException()),
+            Fake<IDungeonSettlementService>((name, _) => { if (name == "add_Changed") SettlementLeases++; else { Assert.Equal("remove_Changed", name); SettlementLeases--; } return null; }), Logs.Add);
         internal BoardingEvent Event(BoardingHandle target, BoardingEventKind kind)
         {
             var operation = new BoardingHandle(Session, Guid.NewGuid());

@@ -4,13 +4,17 @@ using System.Linq;
 
 namespace VGModAPI.Core;
 
-internal sealed class DungeonRewardService : IDungeonRewardRules, IDisposable
+internal sealed class DungeonRewardService : IDungeonRewardService, IDisposable
 {
     private readonly LifecycleHub _hub;
+    private readonly IServiceStatus _status;
     private readonly Action<string, Exception> _report;
     private readonly Dictionary<string, Provider> _providers = new(StringComparer.Ordinal);
     private bool _disposed, _evaluating;
-    internal DungeonRewardService(LifecycleHub hub, Action<string, Exception> report) { _hub = hub; _report = report; }
+    internal DungeonRewardService(LifecycleHub hub, Action<string, Exception> report) { _hub = hub; _report = report; _status = hub.Services.Get("dungeon-rewards"); }
+    public ServiceAvailability Availability => _status.Availability;
+    public event Action<ServiceAvailability>? AvailabilityChanged
+    { add => _status.AvailabilityChanged += value; remove => _status.AvailabilityChanged -= value; }
     public bool IsEvaluating { get { _hub.CheckThread(); return _evaluating; } }
     public IDungeonRewardProvider AcquireProvider(string pluginId)
     {
@@ -19,7 +23,7 @@ internal sealed class DungeonRewardService : IDungeonRewardRules, IDisposable
         if (_providers.ContainsKey(pluginId)) throw new InvalidOperationException("Reward provider already acquired.");
         var provider = new Provider(this, pluginId); _providers.Add(pluginId, provider); return provider;
     }
-    private bool Current(DungeonRewardContext context) => !_disposed && _hub.CurrentSession?.Id == context.Operation.SessionId &&
+    private bool Current(DungeonRewardContext context) => !_disposed && Availability.IsAvailable && _hub.CurrentSession?.Id == context.Operation.SessionId &&
         _hub.CurrentSession.Phase is SessionPhase.PlayerReady or SessionPhase.GameplayInitialized;
     internal double Apply(DungeonRewardContext context)
     {
@@ -50,8 +54,9 @@ internal sealed class DungeonRewardService : IDungeonRewardRules, IDisposable
     }
     public void Dispose()
     {
-        _hub.CheckThread(); if (_disposed) return;
-        foreach (var provider in _providers.Values.ToArray()) provider.Dispose(); _disposed = true;
+        _hub.CheckThread(); if (_disposed) return; _disposed = true;
+        if (Availability.IsAvailable) _hub.SetCapability("dungeon-rewards", false, "Reward service stopped.", ServiceUnavailableReason.ApiStopped);
+        foreach (var provider in _providers.Values.ToArray()) provider.Dispose();
     }
     private sealed class Provider : IDungeonRewardProvider
     {

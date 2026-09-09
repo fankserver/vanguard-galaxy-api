@@ -11,10 +11,12 @@ internal interface ICraftingJobSource
     void InvalidateJobs();
 }
 
-internal sealed class CraftingJobService : ICraftingJobs, IDisposable
+internal sealed class CraftingJobService : ICraftingJobService, IDisposable
 {
     private readonly LifecycleHub _hub;
-    private readonly ICraftingJobSource _source;
+    private readonly ICraftingJobSource? _source;
+    private readonly IServiceStatus _status;
+    private readonly ServiceSubscriptions<CraftingJobEvent> _events;
     private readonly Action<string, Exception> _report;
     private readonly IDisposable _lifetime;
     private readonly Dictionary<CraftingJobHandle, CraftingJobSnapshot> _known = new();
@@ -23,39 +25,48 @@ internal sealed class CraftingJobService : ICraftingJobs, IDisposable
     private readonly Queue<(long Epoch, CraftingJobEvent Fact)> _pending = new();
     private long _epoch, _sequence, _callbackSequence;
     internal long CallbackContext { get; private set; }
-    private bool _available, _disposed, _dispatching;
-    internal CraftingJobService(LifecycleHub hub, ICraftingJobSource source, Action<string, Exception> report)
+    private bool _disposed, _dispatching;
+    internal CraftingJobService(LifecycleHub hub, ICraftingJobSource? source, Action<string, Exception> report)
     {
         _hub = hub; _source = source; _report = report;
+        _status = hub.Services.Get("crafting-jobs");
+        if (source == null && Availability.IsAvailable) hub.SetCapability("crafting-jobs", false, "Job bindings unavailable.");
+        _events = new ServiceSubscriptions<CraftingJobEvent>(hub, Subscribe,
+            fact => fact.Kind == CraftingJobEventKind.Invalidated || ActiveSession == fact.Job.Handle.Station.SessionId);
         _lifetime = hub.Subscribe("vgmodapi.crafting-jobs", message =>
         {
             if (message.Kind is LifecycleEventKind.SessionStarting or LifecycleEventKind.SessionInvalidated or LifecycleEventKind.SessionStartFailed)
                 Invalidate("Session changed.");
         });
     }
+    public ServiceAvailability Availability => _status.Availability;
+    public event Action<ServiceAvailability>? AvailabilityChanged
+    { add => _status.AvailabilityChanged += value; remove => _status.AvailabilityChanged -= value; }
+    public event Action<CraftingJobEvent>? Changed { add => _events.Add(value); remove => _events.Remove(value); }
     internal Guid? ActiveSession
     {
-        get { _hub.CheckThread(); return !_disposed && _available && _hub.CurrentSession?.Phase == SessionPhase.GameplayInitialized ? _hub.CurrentSession.Id : null; }
+        get { _hub.CheckThread(); return !_disposed && _source != null && Availability.IsAvailable && _hub.CurrentSession?.Phase == SessionPhase.GameplayInitialized ? _hub.CurrentSession.Id : null; }
     }
-    public bool IsDispatchingCallbacks { get { _hub.CheckThread(); return _dispatching; } }
+    public bool IsDispatchingCallbacks { get { _hub.CheckThread(); return _dispatching || _hub.IsDispatchingCallbacks; } }
     internal void SetAvailable(bool available)
     {
         _hub.CheckThread(); if (_disposed) return;
-        _available = available;
+        available &= _source != null;
         _hub.SetCapability("crafting-jobs", available, available ? "Experimental native job observation; not runtime-qualified." : "Crafting job observation unavailable.");
-        if (!available) Invalidate("Observation unavailable.");
+        if (!available && !_disposed) Invalidate("Observation unavailable.");
     }
     public CraftingJobListSnapshot Read(RecipeStationHandle station)
     {
         _hub.CheckThread();
         if (station == null) throw new ArgumentNullException(nameof(station));
-        if (_disposed || !_available) return Failure(CraftingJobQueryStatus.IntegrationUnavailable, "Crafting job observation unavailable.");
+        if (_disposed || _source == null || !Availability.IsAvailable) return Failure(CraftingJobQueryStatus.IntegrationUnavailable, "Crafting job observation unavailable.");
         var session = ActiveSession;
         if (!session.HasValue) return Failure(CraftingJobQueryStatus.SessionUnavailable, "Gameplay session required.");
         if (session != station.SessionId) return Failure(CraftingJobQueryStatus.StaleHandle, "Station belongs to another session.");
         try
         {
             var result = _source.ReadJobs(station);
+            if (!Availability.IsAvailable) return Failure(CraftingJobQueryStatus.IntegrationUnavailable, Availability.Detail);
             if (ActiveSession != session) return Failure(CraftingJobQueryStatus.SessionUnavailable, "Session changed during query.");
             if (result.Status != CraftingJobQueryStatus.Available) return result;
             if (result.Jobs.Any(job => !job.Handle.Station.Equals(station))) throw new InvalidOperationException("Native job attributed to a different station.");
@@ -66,12 +77,13 @@ internal sealed class CraftingJobService : ICraftingJobs, IDisposable
             foreach (var job in missing)
                 Observe(CraftingJobEventKind.Invalidated, WithState(job, CraftingJobState.Invalidated), Array.Empty<CraftingDeliverySnapshot>(),
                     CraftingDeliveryStatus.NotApplicable, "Job disappeared outside an observed terminal operation; outcome unknown.");
+            if (!Availability.IsAvailable) return Failure(CraftingJobQueryStatus.IntegrationUnavailable, Availability.Detail);
             return ActiveSession == session ? result : Failure(CraftingJobQueryStatus.SessionUnavailable, "Session changed during query callbacks.");
         }
         catch (RecipeCatalogLimitException) { return Failure(CraftingJobQueryStatus.LimitExceeded, "Job query exceeds supported bounds."); }
         catch (Exception error) { Report("vgmodapi.crafting-jobs", error); return Failure(CraftingJobQueryStatus.NativeFailure, "Job query failed; no partial catalog returned."); }
     }
-    public IDisposable Subscribe(string pluginId, Action<CraftingJobEvent> callback)
+    internal IDisposable Subscribe(string pluginId, Action<CraftingJobEvent> callback)
     {
         _hub.CheckThread(); if (_disposed) throw new ObjectDisposedException(nameof(CraftingJobService));
         if (string.IsNullOrWhiteSpace(pluginId) || pluginId.Length > 512) throw new ArgumentException("Bounded plugin identity required.", nameof(pluginId));
@@ -84,7 +96,7 @@ internal sealed class CraftingJobService : ICraftingJobs, IDisposable
         if (kind == CraftingJobEventKind.Queued && !_queued.Add(job.Handle)) return;
         if (kind is CraftingJobEventKind.Finished or CraftingJobEventKind.Cancelled or CraftingJobEventKind.Invalidated || job.State != CraftingJobState.Active)
         {
-            _known.Remove(job.Handle); _queued.Remove(job.Handle); _source.ForgetJob(job.Handle);
+            _known.Remove(job.Handle); _queued.Remove(job.Handle); _source?.ForgetJob(job.Handle);
         }
         else Remember(job);
         Enqueue(kind, job, deliveries, status, detail); Dispatch();
@@ -99,7 +111,7 @@ internal sealed class CraftingJobService : ICraftingJobs, IDisposable
         _hub.CheckThread(); _epoch++;
         var retained = _pending.Where(item => item.Fact.Kind == CraftingJobEventKind.Invalidated).ToArray();
         _pending.Clear(); foreach (var item in retained) _pending.Enqueue(item);
-        var jobs = _known.Values.ToArray(); _known.Clear(); _queued.Clear(); _source.InvalidateJobs();
+        var jobs = _known.Values.ToArray(); _known.Clear(); _queued.Clear(); _source?.InvalidateJobs();
         foreach (var job in jobs) Enqueue(CraftingJobEventKind.Invalidated, WithState(job, CraftingJobState.Invalidated),
             Array.Empty<CraftingDeliverySnapshot>(), CraftingDeliveryStatus.NotApplicable, detail);
         Dispatch();
@@ -139,9 +151,11 @@ internal sealed class CraftingJobService : ICraftingJobs, IDisposable
     public void Dispose()
     {
         _hub.CheckThread(); if (_disposed) return;
-        _disposed = true; _available = false; _lifetime.Dispose(); _pending.Clear(); _known.Clear(); _queued.Clear();
+        _disposed = true; _lifetime.Dispose(); _pending.Clear(); _known.Clear(); _queued.Clear(); _events.Dispose();
         foreach (var subscription in _subscriptions) subscription.Active = false;
-        _subscriptions.Clear(); _source.InvalidateJobs();
+        _subscriptions.Clear();
+        if (Availability.IsAvailable) _hub.SetCapability("crafting-jobs", false, "Job service stopped.", ServiceUnavailableReason.ApiStopped);
+        _source?.InvalidateJobs();
     }
     private sealed class Subscription : IDisposable
     {

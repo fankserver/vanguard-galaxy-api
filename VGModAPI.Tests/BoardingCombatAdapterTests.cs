@@ -12,7 +12,7 @@ public sealed class BoardingCombatAdapterTests
     [Fact]
     public void UnitScalingIsScopedAndDoesNotLeakBetweenSimulations()
     {
-        using var hub = new LifecycleHub((_, _) => { }); using var rules = new BoardingCombatService(hub, (_, _) => { });
+        using var hub = new LifecycleHub((_, _) => { }); hub.SetCapability("boarding-combat", true, "Test bindings."); using var rules = new BoardingCombatService(hub, (_, _) => { });
         var session = hub.Begin(SessionOrigin.SaveLoad, "save"); hub.PlayerReady(session); hub.GameplayInitialized(session);
         var adapter = new BoardingCombatAdapter(hub, rules, (obj, key) => ((Dictionary<string, object?>)obj)[key], (obj, key, value) => ((Dictionary<string, object?>)obj)[key] = value);
         using var mod = rules.AcquireProvider("mod"); mod.RegisterMultiplier("power", BoardingRuleScope.Ships, BoardingCombatPolicyKind.Power, _ => 2);
@@ -32,7 +32,7 @@ public sealed class BoardingCombatAdapterTests
     [InlineData(.4f, .46f, 2f, .52f)]
     public void MoraleIsAdjustedBeforePanicAndRecoveryThresholdEvaluation(float before, float nativeAfter, float multiplier, float expected)
     {
-        using var hub = new LifecycleHub((_, _) => { }); using var rules = new BoardingCombatService(hub, (_, _) => { });
+        using var hub = new LifecycleHub((_, _) => { }); hub.SetCapability("boarding-combat", true, "Test bindings."); using var rules = new BoardingCombatService(hub, (_, _) => { });
         var session = hub.Begin(SessionOrigin.SaveLoad, "save"); hub.PlayerReady(session); hub.GameplayInitialized(session);
         var adapter = new BoardingCombatAdapter(hub, rules, (obj, key) => ((Dictionary<string, object?>)obj)[key], (obj, key, value) => ((Dictionary<string, object?>)obj)[key] = value);
         var unit = new Dictionary<string, object?> { ["combatFriendly"] = true, ["combatMorale"] = before };
@@ -47,7 +47,7 @@ public sealed class BoardingCombatAdapterTests
     [Fact]
     public void MoraleScalingPrecedesSurrenderEvaluationAndIsNotAppliedTwice()
     {
-        using var hub = new LifecycleHub((_, _) => { }); using var rules = new BoardingCombatService(hub, (_, _) => { });
+        using var hub = new LifecycleHub((_, _) => { }); hub.SetCapability("boarding-combat", true, "Test bindings."); using var rules = new BoardingCombatService(hub, (_, _) => { });
         var session = hub.Begin(SessionOrigin.SaveLoad, "save"); hub.PlayerReady(session); hub.GameplayInitialized(session);
         var adapter = new BoardingCombatAdapter(hub, rules, (obj, key) => ((Dictionary<string, object?>)obj)[key], (obj, key, value) => ((Dictionary<string, object?>)obj)[key] = value);
         var unit = new Dictionary<string, object?> { ["combatFriendly"] = false, ["combatMorale"] = .8f };

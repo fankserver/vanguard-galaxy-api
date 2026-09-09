@@ -102,11 +102,11 @@ internal sealed class TravelNativeAdapter : IDisposable
     private Exception? _faultDetail;
     private bool _disposed;
 
-    internal TravelNativeAdapter(TravelNativeBindings bindings, Action<string, Exception> report)
+    internal TravelNativeAdapter(LifecycleHub lifecycle, TravelNativeBindings bindings, Action<string, Exception> report)
     {
         _bindings = bindings; _report = report;
-        Events = new TravelEvents(report);
-        Station = new StationEvents(report);
+        Events = new TravelEvents(lifecycle, report);
+        Station = new StationEvents(lifecycle, report);
     }
 
     private struct LegMeta

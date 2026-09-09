@@ -10,7 +10,7 @@ public sealed class DungeonRewardScopesTests
     public void NestedLootEntriesDoNotBorrowOuterIdentityAndUnwindOnFailure()
     {
         using var hub = new LifecycleHub((_, _) => { }); var session = hub.Begin(SessionOrigin.SaveLoad, "save"); hub.PlayerReady(session);
-        using var rules = new DungeonRewardService(hub, (_, _) => { }); using var provider = rules.AcquireProvider("mod");
+        hub.SetCapability("dungeon-rewards", true, "Test bindings."); using var rules = new DungeonRewardService(hub, (_, _) => { }); using var provider = rules.AcquireProvider("mod");
         using var registration = provider.Register("loot", DungeonRewardKind.LootAmount, _ => new(2));
         var scopes = new DungeonRewardScopes(rules); var operation = new BoardingHandle(hub.CurrentSession!.Id, Guid.NewGuid());
         var outer = new object(); var inner = new object();

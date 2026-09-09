@@ -30,7 +30,7 @@ public sealed partial class Plugin
             _forgeUiHarmony = new Harmony(ModApi.PluginId + ".forge-ui");
             var finalizer = new HarmonyMethod(typeof(ForgeUiPatches).GetMethod("Finalizer", BindingFlags.Static | BindingFlags.NonPublic));
             foreach (var spec in ForgeUiBindings.Methods) _forgeUiHarmony.Patch(methods[spec.Key], finalizer: finalizer);
-            _forgeUi.SetAvailable(true); ModApi.ForgeUi = _forgeUi;
+            _forgeUi.SetAvailable(true);
         }
         catch (Exception error) { TeardownForgeUi(); Logger.LogError(error); }
     }
@@ -38,7 +38,7 @@ public sealed partial class Plugin
     {
         ForgeUiPatches.Runtime = null;
         _forgeUiRuntime?.Dispose(); _forgeUiRuntime = null;
-        _forgeUi?.Dispose(); _forgeUi = null; ModApi.ForgeUi = null;
+        _forgeUi?.Dispose(); _forgeUi = null;
         if (_forgeUiSource != null)
         {
             _forgeUiSource.ClearUi(); _forgeUiSource.UiSession = null; _forgeUiSource.UiDispatching = null; _forgeUiSource.UiActive = null;

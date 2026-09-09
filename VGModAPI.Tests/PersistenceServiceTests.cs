@@ -14,19 +14,27 @@ public sealed class PersistenceServiceTests : IDisposable
     private static PersistenceProvider Provider(Action<SessionSnapshot, byte[]?>? restore = null, Func<byte[]>? capture = null)
         => new("test.owner", 1, capture ?? (() => new byte[] { 1 }), restore ?? ((_, _) => { }), bytes => bytes.Length == 1);
 
+    private static LifecycleHub Bound()
+    {
+        var hub = new LifecycleHub((_, _) => { });
+        hub.SetCapability("session-lifecycle", true, "Bound.");
+        hub.SetCapability("save-outcomes", true, "Bound.");
+        return hub;
+    }
+
     [Fact]
     public void PublicRegistrationReflectsReadinessAndDisposal()
     {
-        var hub = new LifecycleHub((_, _) => { });
+        var hub = Bound();
         using var service = new PersistenceService(hub, new GenerationStore(_root), s => s, _ => new string('a', 64));
         SessionSnapshot? restored = null;
-        var registration = service.Register(Provider((session, bytes) => { restored = session; Assert.Null(bytes); }));
-        Assert.False(registration.MutationAllowed);
+        var registration = service.Register(Provider((session, bytes) => { restored = session; Assert.Null(bytes); })).Registration!;
+        Assert.False(registration.CanMutate);
         var id = hub.Begin(SessionOrigin.NewGame, null); hub.PlayerReady(id);
-        Assert.Equal(id, restored!.Id); Assert.False(registration.MutationAllowed);
-        hub.GameplayInitialized(id); Assert.True(registration.MutationAllowed);
-        registration.Dispose(); Assert.False(registration.MutationAllowed); Assert.Equal("inactive", registration.Status);
-        Assert.Throws<InvalidOperationException>(() => service.Register(Provider()));
+        Assert.Equal(id, restored!.Id); Assert.False(registration.CanMutate);
+        hub.GameplayInitialized(id); Assert.True(registration.CanMutate);
+        registration.Dispose(); Assert.False(registration.CanMutate); Assert.Equal(SaveDataStateKind.Disposed, registration.State.Kind);
+        Assert.Equal(SaveDataRegistrationStatus.SessionAlreadyStarted, service.Register(Provider()).Status);
     }
 
     [Fact]
@@ -34,10 +42,11 @@ public sealed class PersistenceServiceTests : IDisposable
     {
         int errors = 0;
         var hub = new LifecycleHub((_, _) => errors++);
+        hub.SetCapability("session-lifecycle", true, "Bound."); hub.SetCapability("save-outcomes", true, "Bound.");
         var store = new GenerationStore(_root);
         using var service = new PersistenceService(hub, store, s => s, _ => new string('a', 64));
-        IPersistenceRegistration? registration = null;
-        registration = service.Register(Provider(capture: () => { registration!.Dispose(); return new byte[] { 1 }; }));
+        ISaveDataRegistration? registration = null;
+        registration = service.Register(Provider(capture: () => { registration!.Dispose(); return new byte[] { 1 }; })).Registration!;
         var id = hub.Begin(SessionOrigin.NewGame, null); hub.PlayerReady(id); hub.GameplayInitialized(id);
         var op = Guid.NewGuid();
         hub.Publish(new LifecycleEvent(LifecycleEventKind.SaveStarted, hub.CurrentSession, op, "slot"));
@@ -49,18 +58,18 @@ public sealed class PersistenceServiceTests : IDisposable
     [Fact]
     public void RegistrationIsThreadBoundAndOldDisposedHandleCannotRemoveReplacement()
     {
-        var hub = new LifecycleHub((_, _) => { });
+        var hub = Bound();
         using var service = new PersistenceService(hub, new GenerationStore(_root), s => s, _ => new string('a', 64));
-        var old = service.Register(Provider()); old.Dispose();
-        var current = service.Register(Provider()); old.Dispose();
+        var old = service.Register(Provider()).Registration!; old.Dispose();
+        var current = service.Register(Provider()).Registration!; old.Dispose();
         Exception? error = null;
-        var thread = new Thread(() => error = Record.Exception(() => { _ = current.MutationAllowed; }));
+        var thread = new Thread(() => error = Record.Exception(() => { _ = current.CanMutate; }));
         thread.Start(); thread.Join();
         Assert.IsType<InvalidOperationException>(error);
         var id = hub.Begin(SessionOrigin.NewGame, null); hub.PlayerReady(id); hub.GameplayInitialized(id);
-        Assert.True(current.MutationAllowed);
-        service.Dispose(); Assert.False(current.MutationAllowed);
-        Assert.Throws<ObjectDisposedException>(() => service.Register(Provider()));
+        Assert.True(current.CanMutate);
+        service.Dispose(); Assert.False(current.CanMutate);
+        Assert.Equal(SaveDataRegistrationStatus.Unavailable, service.Register(Provider()).Status);
     }
 
     [Fact]

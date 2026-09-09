@@ -77,6 +77,7 @@ public sealed class RecipeCatalogNativeSourceTests : IDisposable
         if (parent) recipe.parentRecipe = Recipe(identity);
         Forge.current = new Forge { recipes = new[] { recipe } };
         using var hub = new VGModAPI.Core.LifecycleHub((_, _) => { });
+        hub.SetCapability("recipe-catalog", true, "Bound.");
         var id = hub.Begin(SessionOrigin.NewGame, null); hub.PlayerReady(id); hub.GameplayInitialized(id);
         using var service = new VGModAPI.Core.RecipeCatalogService(hub, Source(), _ => { });
         var result = service.Read();
@@ -93,6 +94,7 @@ public sealed class RecipeCatalogNativeSourceTests : IDisposable
             for (var i = 0; i < 256; i++) recipe.results.Add(recipe.results[0]);
         Forge.current = new Forge { recipes = new[] { recipe } };
         using var hub = new VGModAPI.Core.LifecycleHub((_, _) => { });
+        hub.SetCapability("recipe-catalog", true, "Bound.");
         var id = hub.Begin(SessionOrigin.NewGame, null); hub.PlayerReady(id); hub.GameplayInitialized(id);
         using var service = new VGModAPI.Core.RecipeCatalogService(hub, Source(), _ => { });
         var result = service.Read();

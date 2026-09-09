@@ -32,7 +32,7 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
     internal bool OperationReady(object operation) => !_captureFaults.TryGetValue(operation, out _) && DungeonOperationMutationGate.Allows(operation, _native, SimulationReady);
     private System.Runtime.CompilerServices.ConditionalWeakTable<object, Exception> _captureFaults = new();
     private System.Runtime.CompilerServices.ConditionalWeakTable<object, object> _podOwners = new();
-    internal DungeonRecoveryRuntime(LifecycleHub hub, IPersistenceApi persistence, GameBindings game, Action<Exception> report)
+    internal DungeonRecoveryRuntime(LifecycleHub hub, ISaveDataService persistence, GameBindings game, Action<Exception> report)
     {
         _report = report;
         _podJson = new(game.Assembly, "vgmodapiDungeonPod"); _operationJson = new(game.Assembly, "vgmodapiDungeonOperation");

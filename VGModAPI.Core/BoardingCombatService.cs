@@ -4,14 +4,18 @@ using System.Linq;
 
 namespace VGModAPI.Core;
 
-internal sealed class BoardingCombatService : IBoardingCombatRules, IDisposable
+internal sealed class BoardingCombatService : IBoardingCombatService, IDisposable
 {
     private readonly LifecycleHub _hub;
+    private readonly IServiceStatus _status;
     private readonly Action<string, Exception> _report;
     private readonly Dictionary<string, Provider> _providers = new(StringComparer.Ordinal);
     private readonly List<Registration> _entries = new();
     private bool _evaluating, _disposed;
-    internal BoardingCombatService(LifecycleHub hub, Action<string, Exception> report) { _hub = hub; _report = report; }
+    internal BoardingCombatService(LifecycleHub hub, Action<string, Exception> report) { _hub = hub; _report = report; _status = hub.Services.Get("boarding-combat"); }
+    public ServiceAvailability Availability => _status.Availability;
+    public event Action<ServiceAvailability>? AvailabilityChanged
+    { add => _status.AvailabilityChanged += value; remove => _status.AvailabilityChanged -= value; }
     public bool IsEvaluating { get { _hub.CheckThread(); return _evaluating; } }
     public IBoardingCombatProvider AcquireProvider(string pluginId)
     {
@@ -24,7 +28,7 @@ internal sealed class BoardingCombatService : IBoardingCombatRules, IDisposable
     private bool Current(Guid session)
     {
         var current = _hub.CurrentSession;
-        return !_disposed && current?.Id == session && current.Phase is SessionPhase.PlayerReady or SessionPhase.GameplayInitialized;
+        return !_disposed && Availability.IsAvailable && current?.Id == session && current.Phase is SessionPhase.PlayerReady or SessionPhase.GameplayInitialized;
     }
     private bool Evaluate(BoardingCombatContext context, bool veto, Action<Registration> apply)
     {
@@ -69,6 +73,7 @@ internal sealed class BoardingCombatService : IBoardingCombatRules, IDisposable
     public void Dispose()
     {
         _hub.CheckThread(); if (_disposed) return; _disposed = true;
+        if (Availability.IsAvailable) _hub.SetCapability("boarding-combat", false, "Combat service stopped.", ServiceUnavailableReason.ApiStopped);
         foreach (var provider in _providers.Values.ToArray()) provider.Dispose();
     }
     private sealed class Provider : IBoardingCombatProvider

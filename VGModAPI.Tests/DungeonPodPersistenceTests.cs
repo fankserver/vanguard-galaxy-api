@@ -11,14 +11,16 @@ public sealed class DungeonPodPersistenceTests
     {
         Assert.True(pods.TrackOperation(new(id, Guid.NewGuid(), null, "ship-guid", "HostileShip", "Extraction", "Victory", "", DungeonTerminalProgress.NotStarted, false)));
     }
-    internal sealed class Persistence : IPersistenceApi, IPersistenceRegistration, IPersistenceReadiness
+    internal sealed class Persistence : TestSaveDataService
     {
         internal PersistenceProvider Provider = null!;
         public bool MutationAllowed { get; set; } = true;
         public bool StateReady { get; set; } = true;
         public string Status => "test";
-        public IPersistenceRegistration Register(PersistenceProvider provider) { Provider = provider; return this; }
-        public void Dispose() { }
+        public override SaveDataRegistrationResult Register(PersistenceProvider provider) { Provider = provider; return new(SaveDataRegistrationStatus.Registered, this); }
+        public override bool CanRead => StateReady;
+        public override bool CanMutate => StateReady && MutationAllowed;
+        public override void Dispose() { }
     }
     [Fact]
     public void DonorAbortRetiresOnlyMatchingReservationAndCannotCrossRestoreGenerations()

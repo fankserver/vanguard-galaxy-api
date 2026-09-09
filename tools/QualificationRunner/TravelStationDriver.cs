@@ -108,7 +108,7 @@ public sealed partial class Plugin
             var placementWindow = Slice(freshIndex);
             var failure = TravelStationReceipt.CheckInitialPlacement(placementWindow, _session, _systemId, poiId);
             Require(failure == null, failure!);
-            Require(TravelStationReceipt.Same(ModApi.Travel!.CurrentLocation, _systemId, poiId),
+            Require(TravelStationReceipt.Same(ModApi.Services.Travel.CurrentLocation, _systemId, poiId),
                 "Public CurrentLocation does not match the actual native location after the load.");
             _startPoi = poi;
             _startPoiId = poiId ?? "";
@@ -222,7 +222,7 @@ public sealed partial class Plugin
             Require(ReferenceEquals(SpGet(Player, "currentPointOfInterest"), origin), "Native current POI changed during an early cancel.");
             Require(!(bool)_travelActive.Invoke(_travel, null)!, "Native travel is still active after CancelTravel.");
             Require(((ICollection)SpGet(Player, "waypoints")!).Count == 0, "Native waypoints survived CancelTravel.");
-            Require(TravelStationReceipt.Same(ModApi.Travel!.CurrentLocation, _systemId, originId), "Public CurrentLocation left the unchanged origin.");
+            Require(TravelStationReceipt.Same(ModApi.Services.Travel.CurrentLocation, _systemId, originId), "Public CurrentLocation left the unchanged origin.");
             Require(StationSlice(stationOffset).Count == 0, "Early cancel emitted station facts.");
             Pass(TravelStationReceipt.Location(_systemId, originId), slice[0].OperationId,
                 TravelStationReceipt.Evidence(slice, null),
@@ -340,7 +340,7 @@ public sealed partial class Plugin
             Require((bool)_localPoiReady.Invoke(_travel, null)!, "Native IsLocalPoiReady is false after arrival.");
             Require(!(bool)_travelActive.Invoke(_travel, null)!, "Native travel is still active after the final route boundary.");
             Require(((ICollection)SpGet(Player, "waypoints")!).Count == 0, "Native waypoints remain after the final route boundary.");
-            Require(TravelStationReceipt.Same(ModApi.Travel!.CurrentLocation, _systemId, hopIds[hops.Length - 1]),
+            Require(TravelStationReceipt.Same(ModApi.Services.Travel.CurrentLocation, _systemId, hopIds[hops.Length - 1]),
                 "Public CurrentLocation does not match the arrived final hop.");
             Pass(TravelStationReceipt.Location(_systemId, hopIds[hops.Length - 1]), slice[slice.Count - 1].OperationId,
                 TravelStationReceipt.Evidence(slice, null),

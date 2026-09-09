@@ -9,7 +9,7 @@ namespace VGModAPI.Qualification;
 
 public sealed partial class Plugin
 {
-    private IEnumerable<object?> CheckForgeUiScale(IForgeUi ui, Mouse mouse, List<ForgeSelectionSnapshot> calls)
+    private IEnumerable<object?> CheckForgeUiScale(IForgeUiService ui, Mouse mouse, List<ForgeSelectionSnapshot> calls)
     {
         var root = GameObject.Find("Mod API Forge actions");
         var canvas = root.GetComponentInParent<Canvas>().rootCanvas;

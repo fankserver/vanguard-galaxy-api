@@ -1,10 +1,10 @@
 # Owned bar rosters
 
-Requires API 0.1.32. Enable `[Bars] Enabled = true`; API-managed saves initialize automatically. Bars are opt-in; check `ModApi.Bars` and the `owned-bars` capability rather than assuming availability. `RuntimeQualified` remains false: bounded native core checks do not establish complete consumer-combination acceptance.
+Enable `[Bars] Enabled = true`; API-managed saves initialize automatically. Bars are opt-in; `ModApi.Services.Bars` is a stable `IBarService`; inspect typed `Availability` or observe `AvailabilityChanged`. The unavailable instance does not register a replacement save owner. `RuntimeQualified` remains false: bounded native core checks do not establish complete consumer-combination acceptance.
 
 ## Provider lifecycle
 
-Acquire a provider from the loaded BepInEx plugin instance in `Start` with `ModApi.Bars.AcquireProvider(this)`. Chainloader publishes its authenticated instance only after `Awake` returns; acquiring during `Awake` is refused. Consumers can latch managed mode in `Awake` to prevent a native fallback before acquisition. The API authenticates its stable owner identity. Register a `BarPatronDefinition` containing a local ID, native station GUID, display name, description and seed, with an optional interaction callback. Different providers may reuse local IDs.
+Acquire a provider from the loaded BepInEx plugin instance in `Start` with `ModApi.Services.Bars.AcquireProvider(this)`. Chainloader publishes its authenticated instance only after `Awake` returns; acquiring during `Awake` is refused. Consumers can latch managed mode in `Awake` to prevent a native fallback before acquisition. The API authenticates its stable owner identity. Register a `BarPatronDefinition` containing a local ID, native station GUID, display name, description and seed, with an optional interaction callback. Different providers may reuse local IDs.
 
 `Place(currentSession.Id, localId)` stores the contribution. A successful placement is **not a visibility guarantee**: station policy, native capacity, readiness and dependencies determine admission at refresh. Always pass the current session identity; a saved occurrence ID does not make a stale session valid.
 
@@ -20,7 +20,7 @@ Policies are runtime registrations. They do not silently follow a provider that 
 
 ## Refresh, observation and interaction
 
-The API owns the sequence: native refresh, contribution admission/application, then finalized observation. `Subscribe(owner, callback)` returns a disposable subscription with no replay. Its immutable snapshot identifies the session, station, seats, seeds, native kinds, owned IDs and denied providers. A cache observer must use this final membership, not an intermediate native initialization list. Subscriber failures are isolated and diagnosed.
+The API owns the sequence: native refresh, contribution admission/application, then finalized observation. `RosterFinalized += handler` registers without replay; remove the exact handler with `RosterFinalized -= handler` during teardown. Its immutable snapshot identifies the session, station, seats, seeds, native kinds, owned IDs and denied providers. A cache observer must use this final membership, not an intermediate native initialization list. Subscriber failures are isolated and diagnosed.
 
 Interactions are dispatched to the current owner's callback only while the contact, session, policy and dependencies remain valid. Narrative dialogue, mission authoring and voice synthesis remain consumer responsibilities. The shared service does not persist callbacks, audio, UI objects or native handles.
 

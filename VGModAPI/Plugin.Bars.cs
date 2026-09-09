@@ -34,7 +34,6 @@ public sealed partial class Plugin
 
     private void InitializeBars()
     {
-        ModApi.Bars = null;
         if (!Config.Bind("Bars", "Enabled", false, "Experimental API-owned bar rosters. Use disposable saves until qualified.").Value)
         { _hub!.SetCapability("owned-bars", false, "Disabled by configuration."); return; }
         if (_persistence == null || !_hub!.Capabilities.Any(capability => capability.Name == "session-lifecycle" && capability.Available))
@@ -59,7 +58,7 @@ public sealed partial class Plugin
                     (id, occurrence) => story?.IsBarMissionReady(session.Id, id, occurrence) == true,
                     () => story?.BarDependencyStamp() ?? noStory) : null,
                 bars.CanSerializeCurrent, bars.CanMutateCurrent, _hub.CheckThread,
-                error => { ModApi.Bars = null; _hub.SetCapability("owned-bars", false, "Bar adapter fault; content guards remain active."); Logger.LogError(error); });
+                error => { _hub.SetCapability("owned-bars", false, "Bar adapter fault; content guards remain active."); Logger.LogError(error); });
             var targets = new GameBindings(assembly).Resolve(BindingCatalog.Bars);
             var patches = new Dictionary<string, Type>
             {
@@ -82,7 +81,6 @@ public sealed partial class Plugin
             }
             BarHookInstallation.Install(installs, _barHarmony.UnpatchSelf);
             BarPatches.Host = _barHost;
-            ModApi.Bars = bars;
             _hub.SetCapability("owned-bars", true, "Experimental owned bar rosters with live story-dependency admission. Full consumer-combination qualification remains pending.");
         }
         catch (Exception error)
@@ -96,7 +94,6 @@ public sealed partial class Plugin
 
     private void StopBars()
     {
-        ModApi.Bars = null;
         if (_barPermissionConfig != null) _barPermissionConfig.SettingChanged -= UpdateBarPermissions;
         try
         {

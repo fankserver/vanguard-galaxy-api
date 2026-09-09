@@ -41,64 +41,32 @@ public sealed class CapabilityStatus
     { Name = name; Available = available; RuntimeQualified = runtimeQualified; Detail = detail; }
 }
 
-/// <summary>All members and subscription disposal are Unity-main-thread-only. Registration does not replay events.</summary>
-public interface ILifecycleApi
-{
-    SessionSnapshot? CurrentSession { get; }
-    IReadOnlyList<CapabilityStatus> Capabilities { get; }
-    IDisposable Subscribe(string owner, Action<LifecycleEvent> callback);
-}
-
-/// <summary>Optional since 0.1.1. Main-thread-only; false is not a readiness or mutation guarantee.</summary>
-public interface ILifecycleDispatchState
-{
-    /// <summary>True throughout callback delivery, including queued reentrant events and error reporting.</summary>
-    bool IsDispatchingCallbacks { get; }
-}
-
 /// <summary>Available after the API plugin's Awake; declare a hard BepInEx dependency on vgmodapi.</summary>
 public static class ModApi
 {
     public const string PluginId = "vgmodapi";
-    public static ILifecycleApi? Current { get; internal set; }
-    /// <summary>Process-scoped loader inventory, independent of game-hook availability. Refresh on the main thread.</summary>
-    public static IModInformationCatalog? Mods { get; internal set; }
-    /// <summary>Initialized automatically; null when lifecycle bindings or storage initialization are unavailable.</summary>
-    public static IPersistenceApi? Persistence { get; internal set; }
-    /// <summary>Automatically bound mission observer. Check mission-continuity separately for persistent instance identity.</summary>
-    public static IMissionEvents? Missions { get; internal set; }
-    /// <summary>Native travel observer; non-null when automatic binding succeeds.</summary>
-    public static ITravelEvents? Travel { get; internal set; }
-    /// <summary>Optional experimental recipe definitions for the current station; null when disabled/unavailable.</summary>
-    public static IRecipeCatalog? Recipes { get; internal set; }
-    /// <summary>Optional main-thread station requirements and output estimates; advisory, not reservations.</summary>
-    public static IRecipeQuotes? RecipeQuotes { get; internal set; }
-    public static ICraftingJobs? CraftingJobs { get; internal set; }
-    public static ICraftingCommands? CraftingCommands { get; internal set; }
-    public static IForgeUi? ForgeUi { get; internal set; }
-    public static IModHud? Hud { get; internal set; }
-    /// <summary>Optional inspected-build boarding observations; consult boarding-observation capability.</summary>
-    public static IBoardingEvents? Boarding { get; internal set; }
-    /// <summary>Optional inspected-build boarding policies, independent of observation subscribers.</summary>
-    public static IBoardingRules? BoardingRules { get; internal set; }
-    /// <summary>Optional inspected-build boarding commands; admitted commands are not completed outcomes.</summary>
-    public static IBoardingCommands? BoardingCommands { get; internal set; }
-    public static IBoardingTactics? BoardingTactics { get; internal set; }
-    public static IBoardingCombatRules? BoardingCombat { get; internal set; }
-    /// <summary>Optional experimental authored dungeon content with API-owned save data; requires API 0.1.30.</summary>
-    public static IDungeonContent? Dungeons { get; internal set; }
-    public static IDungeonPanelApi? DungeonPanel { get; internal set; }
-    public static IDungeonRewardRules? DungeonRewards { get; internal set; }
-    public static IDungeonSettlement? DungeonSettlement { get; internal set; }
-    /// <summary>Station-lifetime observer; non-null when automatic travel binding succeeds.</summary>
-    public static IStationEvents? Station { get; internal set; }
-    /// <summary>
-    /// Optional owned-story surface (since 0.1.12); non-null only when the story group is bound and
-    /// enabled, which requires the inspected assembly, API-managed saves and the native story
-    /// catalog. Acquire a provider lease from your plugin's own Awake, before any session begins.
-    /// </summary>
-    public static IStoryApi? Story { get; internal set; }
+    private static ModServices? _services;
+    /// <summary>Stable foundational services after API Awake. Access before bootstrap or after shutdown throws.</summary>
+    public static ModServices Services
+    {
+        get
+        {
+            var services = _services ?? throw new InvalidOperationException("VGModAPI services require completed API startup and a live plugin lifetime.");
+            services.CheckThread();
+            return services;
+        }
+    }
+    internal static void PublishServices(ModServices services)
+    {
+        if (services == null) throw new ArgumentNullException(nameof(services));
+        services.CheckThread();
+        if (_services != null) throw new InvalidOperationException("VGModAPI services are already published.");
+        _services = services;
+    }
+    internal static void ClearServices(ModServices? services)
+    {
+        services?.CheckThread();
+        if (ReferenceEquals(_services, services)) _services = null;
+    }
 
-    /// <summary>Optional experimental owned station-bar content. Null when unavailable.</summary>
-    public static IBarApi? Bars { get; internal set; }
 }

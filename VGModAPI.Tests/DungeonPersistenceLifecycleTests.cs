@@ -19,6 +19,8 @@ public sealed class DungeonPersistenceLifecycleTests
         private readonly DungeonRecoveryCheckpoint _checkpoint;
         internal Fixture()
         {
+            Hub.SetCapability("session-lifecycle", true, "Bound.");
+            Hub.SetCapability("save-outcomes", true, "Bound.");
             Store = new(_root); Persistence = new(Hub, Store, value => value, value => Hashes[value]); State = new(Hub, Persistence);
             Start(SessionOrigin.NewGame);
             DungeonPodPersistenceTests.TrackOperation(State, Operation);

@@ -5,26 +5,45 @@ using VGModAPI.Core;
 
 namespace VGModAPI.Runtime;
 
-internal sealed class BoardingTacticalAdapter : IBoardingTactics
+internal sealed class BoardingTacticalAdapter : IBoardingTacticalService, IDisposable
 {
     private readonly LifecycleHub _hub;
-    private readonly IBoardingTacticalNativeBindings _native;
-    private readonly BoardingObserver _observer;
-    private readonly IBoardingEvents _events;
-    private readonly BoardingCommandService _commands;
-    internal BoardingTacticalAdapter(LifecycleHub hub, GameBindings game, BoardingObserver observer, IBoardingEvents events, BoardingCommandService commands)
+    private readonly IBoardingTacticalNativeBindings? _bindings;
+    private IBoardingTacticalNativeBindings _native => _bindings ?? throw new InvalidOperationException("Tactical bindings unavailable.");
+    private readonly IServiceStatus _status;
+    private bool _disposed;
+    private readonly BoardingObserver? _observer;
+    private readonly IBoardingService? _events;
+    private readonly BoardingCommandService? _commands;
+    internal BoardingTacticalAdapter(LifecycleHub hub, GameBindings game, BoardingObserver observer, IBoardingService events, BoardingCommandService commands)
         : this(hub, new BoardingCommandNativeBindings(game, BoardingTacticalBindings.Actions.Concat(BoardingTacticalBindings.Queries).ToArray(), BoardingTacticalBindings.Members), observer, events, commands) { }
-    internal BoardingTacticalAdapter(LifecycleHub hub, IBoardingTacticalNativeBindings native, BoardingObserver observer, IBoardingEvents events, BoardingCommandService commands)
-    { _hub = hub; _native = native; _observer = observer; _events = events; _commands = commands; }
+    internal BoardingTacticalAdapter(LifecycleHub hub, IBoardingTacticalNativeBindings? native, BoardingObserver? observer, IBoardingService? events, BoardingCommandService? commands)
+    {
+        _hub = hub; _bindings = native; _observer = observer; _events = events; _commands = commands;
+        _status = hub.Services.Get("boarding-tactics");
+        if (native == null && Availability.IsAvailable) hub.SetCapability("boarding-tactics", false, "Tactical bindings unavailable.");
+    }
+    internal BoardingTacticalAdapter(LifecycleHub hub, BoardingCommandService commands)
+        : this(hub, (IBoardingTacticalNativeBindings?)null, null, null, commands) { }
+    public ServiceAvailability Availability => _status.Availability;
+    public event Action<ServiceAvailability>? AvailabilityChanged
+    { add => _status.AvailabilityChanged += value; remove => _status.AvailabilityChanged -= value; }
+    public void Dispose()
+    {
+        _hub.CheckThread(); if (_disposed) return; _disposed = true;
+        if (Availability.IsAvailable) _hub.SetCapability("boarding-tactics", false, "Tactical service stopped.", ServiceUnavailableReason.ApiStopped);
+    }
     private bool Flag(object? obj, string key) => _native.Get(obj, key) is true;
     private object? Simulation(BoardingHandle target)
     {
-        if (!_observer.TryResolveCommandTarget(target, out _, out _, out var operation)) return null;
+        if (_observer == null || !_observer.TryResolveCommandTarget(target, out _, out _, out var operation)) return null;
         return _native.Get(operation, "simulation");
     }
     public BoardingTacticalSnapshot? GetSnapshot(BoardingHandle operation)
     {
         _hub.CheckThread();
+        if (operation == null) throw new ArgumentNullException(nameof(operation));
+        if (_disposed || !Availability.IsAvailable || _bindings == null || _events == null || _observer == null) return null;
         var observed = _events.GetOperation(operation); if (observed == null) return null;
         var nativeOperation = _observer.ResolveCommandOperation(operation);
         var simulation = _native.Get(nativeOperation, "simulation"); if (simulation == null) return null;
@@ -36,20 +55,25 @@ internal sealed class BoardingTacticalAdapter : IBoardingTactics
             var state = Read(simulation, new BoardingTacticalRequest(BoardingTacticalAction.Move, index), out _);
             if (state.Discovered) visible.Add(new BoardingCompartmentSnapshot(index, "Unknown", "Unknown", state.Locked, state.Destroyed, 0, 0));
         }
-        return new(operation, visible.OrderBy(room => room.Index), (int)_native.Get(simulation, "grenades")!,
+        var snapshot = new BoardingTacticalSnapshot(operation, visible.OrderBy(room => room.Index), (int)_native.Get(simulation, "grenades")!,
             (float)_native.Call("tacticalCooldown", simulation)!, Flag(simulation, "canExtract"), Flag(simulation, "awaitingPlayerExtraction"));
+        return !_disposed && Availability.IsAvailable && _hub.CurrentSession?.Id == operation.SessionId ? snapshot : null;
     }
     public BoardingCommandResult Execute(IBoardingController controller, BoardingTacticalRequest request)
     {
+        _hub.CheckThread();
         if (controller == null) throw new ArgumentNullException(nameof(controller));
         if (request == null) throw new ArgumentNullException(nameof(request));
-        return _commands.ExecuteControlled(controller, target =>
+        if (_disposed || !Availability.IsAvailable || _bindings == null || _commands == null || _observer == null) return BoardingCommandService.Result(BoardingCommandStatus.IntegrationUnavailable);
+        var outcome = _commands.ExecuteControlled(controller, target =>
         {
             var simulation = Simulation(target);
             if (simulation == null) return BoardingCommandService.Result(BoardingCommandStatus.WrongPhase);
             var state = Read(simulation, request, out var specialist);
             var status = BoardingTacticalValidation.Validate(state, request);
             if (status != BoardingCommandStatus.Admitted) return BoardingCommandService.Result(status);
+            if (_disposed || !Availability.IsAvailable) return BoardingCommandService.Result(BoardingCommandStatus.IntegrationUnavailable);
+            if (_hub.CurrentSession?.Id != target.SessionId) return BoardingCommandService.Result(BoardingCommandStatus.StaleHandle);
             var room = request.Compartment ?? -1; object? result = null;
             switch (request.Action)
             {
@@ -68,6 +92,8 @@ internal sealed class BoardingTacticalAdapter : IBoardingTactics
             }
             return BoardingCommandService.Result(result is false ? BoardingCommandStatus.WrongPhase : BoardingCommandStatus.Admitted);
         });
+        return !_disposed && Availability.IsAvailable ? outcome :
+            new BoardingCommandResult(BoardingCommandStatus.Uncertain, "Tactical context changed; effects may have occurred. Do not retry blindly.");
     }
     internal bool ValidateNative(object simulation, string method, object[] arguments)
     {

@@ -100,7 +100,7 @@ public sealed class SaveTrackerTests
         var dispatchStates = new List<bool>();
         _hub.Subscribe("reentrant", e =>
         {
-            dispatchStates.Add(((ILifecycleDispatchState)_hub).IsDispatchingCallbacks);
+            dispatchStates.Add(((ILifecycleService)_hub).IsDispatchingCallbacks);
             if (e.Kind != LifecycleEventKind.SaveStarted || nested) return;
             nested = true; var call = Enter(path: "b.save"); Write(call); _tracker.Exit(call, null);
             dispatchStates.Add(_hub.IsDispatchingCallbacks);

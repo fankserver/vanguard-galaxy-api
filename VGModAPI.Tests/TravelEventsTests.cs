@@ -16,7 +16,7 @@ public sealed class TravelEventsTests
     {
         TravelEvents? hub = null;
         var loggerGuard = false; var consumerGuard = false;
-        using var events = hub = new TravelEvents((_, _) => { loggerGuard = hub!.IsDispatchingCallbacks; throw new Exception("logger"); });
+        using var events = hub = new TravelEvents(new LifecycleHub((_, _) => { loggerGuard = hub!.IsDispatchingCallbacks; throw new Exception("logger"); }));
         var session = Guid.NewGuid(); events.SetSession(session); var seen = 0;
         using var broken = events.Subscribe("broken", _ => throw new Exception("consumer"));
         using var healthy = events.Subscribe("healthy", _ => { consumerGuard = events.IsDispatchingCallbacks; seen++; });
@@ -27,7 +27,7 @@ public sealed class TravelEventsTests
     [Fact]
     public void ReentrantDeliveryIsQueuedAndNewSubscribersStartWithNextEvent()
     {
-        using var hub = new TravelEvents((_, error) => throw error); var session = Guid.NewGuid(); hub.SetSession(session);
+        using var hub = new TravelEvents(new LifecycleHub((_, error) => throw error)); var session = Guid.NewGuid(); hub.SetSession(session);
         var order = new List<string>(); IDisposable? late = null;
         using var first = hub.Subscribe("first", e =>
         {
@@ -42,7 +42,7 @@ public sealed class TravelEventsTests
     [Fact]
     public void ReentrantSessionReplacementDropsQueuedAndRemainingOldDelivery()
     {
-        using var hub = new TravelEvents((_, _) => { }); var old = Guid.NewGuid(); var next = Guid.NewGuid(); hub.SetSession(old);
+        using var hub = new TravelEvents(new LifecycleHub((_, _) => { })); var old = Guid.NewGuid(); var next = Guid.NewGuid(); hub.SetSession(old);
         var delivered = new List<Guid>();
         using var first = hub.Subscribe("first", e =>
         {
@@ -56,7 +56,7 @@ public sealed class TravelEventsTests
     [Fact]
     public void DisposalBeforeTurnAndDuringCallbackSuppressesFurtherDelivery()
     {
-        using var hub = new TravelEvents((_, _) => { }); var session = Guid.NewGuid(); hub.SetSession(session);
+        using var hub = new TravelEvents(new LifecycleHub((_, _) => { })); var session = Guid.NewGuid(); hub.SetSession(session);
         IDisposable? later = null; var called = false; var disposalGuard = false;
         using var first = hub.Subscribe("first", _ => { later!.Dispose(); hub.Dispose(); disposalGuard = hub.IsDispatchingCallbacks; });
         later = hub.Subscribe("later", _ => called = true);
@@ -68,7 +68,7 @@ public sealed class TravelEventsTests
     [Fact]
     public void QueryDoesNotReplayAndDepartureClearsVerifiedLocation()
     {
-        using var hub = new TravelEvents((_, _) => { }); var session = Guid.NewGuid(); hub.SetSession(session);
+        using var hub = new TravelEvents(new LifecycleHub((_, _) => { })); var session = Guid.NewGuid(); hub.SetSession(session);
         Arrival(hub, session); var called = 0;
         using var late = hub.Subscribe("late", _ => called++); Assert.Equal(0, called); Assert.Same(Location, hub.CurrentLocation);
         hub.Emit(session, Guid.NewGuid(), TravelTransitionKind.Departed, TravelMode.InSystem, Location, Location, null, 2, 1);
@@ -78,7 +78,7 @@ public sealed class TravelEventsTests
     [Fact]
     public void ForeignThreadCannotReadOrMutateService()
     {
-        using var hub = new TravelEvents((_, _) => { });
+        using var hub = new TravelEvents(new LifecycleHub((_, _) => { }));
         Exception? failure = null;
         var thread = new Thread(() =>
         {

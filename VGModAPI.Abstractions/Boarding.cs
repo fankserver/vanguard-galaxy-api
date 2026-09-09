@@ -141,8 +141,8 @@ public sealed class BoardingEvent
     }
 }
 
-/// <summary>Main-thread-only observations. Subscribe does not replay. Snapshots remain immutable after invalidation.</summary>
-public interface IBoardingEvents
+/// <summary>Main-thread-only observations. Changed does not replay. Snapshots remain immutable after invalidation.</summary>
+public interface IBoardingService : IServiceStatus
 {
     Guid? SessionId { get; }
     bool IsDispatchingCallbacks { get; }
@@ -150,5 +150,5 @@ public interface IBoardingEvents
     IReadOnlyList<BoardingOperationSnapshot> GetOperations();
     BoardingTargetSnapshot? GetTarget(BoardingHandle handle);
     BoardingOperationSnapshot? GetOperation(BoardingHandle handle);
-    IDisposable Subscribe(string providerId, Action<BoardingEvent> callback);
+    event Action<BoardingEvent>? Changed;
 }

@@ -353,13 +353,13 @@ function Assert-ForgeUiReceipt([string]$Root, $Provenance) {
     $lines = @(Get-Content -LiteralPath $file)
     if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'forge-ui-v3' -or $lines[2] -cne 'variants-pointer-disabled-stale-reopen-dispose-nonoverlap-scale-recovery') { throw 'Incomplete Forge UI receipt.' }
     foreach ($stem in @('forge-ui-actions','forge-ui-scaled')) {
-    $image = Join-Path $Root ($stem + '.png'); $record = Join-Path $Root ($stem + '.txt')
-    foreach ($path in @($image,$record)) {
-        if (!(Test-Path -LiteralPath $path -PathType Leaf) -or (Get-Item -LiteralPath $path).Length -eq 0 -or ((Get-Item -LiteralPath $path).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Forge UI image evidence missing, empty or linked.' }
-    }
-    if ((Get-Item -LiteralPath $image).Length -gt 20MB -or (Get-Item -LiteralPath $record).Length -gt 256) { throw 'Forge UI image evidence oversized.' }
-    $hashLines = @(Get-Content -LiteralPath $record)
-    if ($hashLines.Count -ne 1 -or $hashLines[0] -cnotmatch '^sha256=[0-9a-f]{64}$' -or (Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashLines[0].Substring(7)) { throw 'Forge UI screenshot changed.' }
+        $image = Join-Path $Root ($stem + '.png'); $record = Join-Path $Root ($stem + '.txt')
+        foreach ($path in @($image,$record)) {
+            if (!(Test-Path -LiteralPath $path -PathType Leaf) -or (Get-Item -LiteralPath $path).Length -eq 0 -or ((Get-Item -LiteralPath $path).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Forge UI image evidence missing, empty or linked.' }
+        }
+        if ((Get-Item -LiteralPath $image).Length -gt 20MB -or (Get-Item -LiteralPath $record).Length -gt 256) { throw 'Forge UI image evidence oversized.' }
+        $hashLines = @(Get-Content -LiteralPath $record)
+        if ($hashLines.Count -ne 1 -or $hashLines[0] -cnotmatch '^sha256=[0-9a-f]{64}$' -or (Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashLines[0].Substring(7)) { throw 'Forge UI screenshot changed.' }
     }
 }
 function Assert-RefinerySelection([string]$Root, $Provenance) {

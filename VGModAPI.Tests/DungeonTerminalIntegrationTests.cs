@@ -60,7 +60,7 @@ public sealed class DungeonTerminalIntegrationTests
     public void ActualPatchEntryPointsPreserveCaptureAndMissionCallbacks(bool mission, bool victory, bool policyThrows)
     {
         using var hub = new LifecycleHub((_, _) => { }); var session = hub.Begin(SessionOrigin.SaveLoad, "save"); hub.PlayerReady(session);
-        using var rules = new DungeonRewardService(hub, (_, _) => { }); using var provider = rules.AcquireProvider("mod");
+        hub.SetCapability("dungeon-rewards", true, "Test bindings."); using var rules = new DungeonRewardService(hub, (_, _) => { }); using var provider = rules.AcquireProvider("mod");
         var policyCalls = 0;
         using var registration = provider.Register("xp", DungeonRewardKind.MasteryExperience, _ =>
         { policyCalls++; if (policyThrows) throw new InvalidOperationException("provider"); return new(2); });

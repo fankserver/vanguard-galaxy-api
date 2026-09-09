@@ -7,7 +7,7 @@ entire API or every possible content combination.
 
 ## The contract in one paragraph
 
-A consumer first acquires its own provider lease with `IStoryApi.AcquireProvider(pluginInstance)`,
+A consumer first acquires its own provider lease with `IStoryService.AcquireProvider(pluginInstance)`,
 called DIRECTLY from that plugin's own assembly; the implementation captures the calling assembly at
 that boundary, the host resolves the instance to the plugin it loaded, and the API derives the
 provider segment from that authenticated identity. The lease registers immutable `StoryMissionDefinition`s under their own
@@ -346,10 +346,12 @@ content still needs its provider.
 
 ## The native slice: installing into the game, and what the game decides
 
-Since 0.1.12 the module is actually wired to the game, behind `Story/Enabled` (default off), the
-inspected-assembly gate every other adapter uses, API-managed saves, and observed mission
-transitions. `ModApi.Story` is non-null only when all of those are available; a binding failure
-leaves it null and the `owned-story` capability unavailable rather than half-installed. Observed
+The module requires `Story/Enabled` (default off), inspected bindings, API-managed saves,
+native protection and observed mission transitions. `ModApi.Services.Story` is a stable
+`IStoryService`; inspect `Availability` or observe `AvailabilityChanged` for binding/protection
+health. An unavailable instance does not register a replacement save provider. Session
+restore, suspension and provider mutation readiness remain separate; their diagnostics do not
+change the installed binding fact. Observed
 transitions are required, not optional: without them a completion could never be recorded, and the
 only alternative would be letting a caller declare one.
 
@@ -575,7 +577,7 @@ Delivered here: public contracts, authenticated provider leases, session-scoped 
 session-scoped mutations, unresolved-occurrence discovery, identity policy, registry, occurrence
 ledger with its retention policy, bounded codec, automatic persistence registration, the native
 install/accept/abandon adapter with per-occurrence catalog entries and rollback, observed outcomes
-from the game's own mission boundary, the orphan suspension policy, the `ModApi.Story` surface behind
+from the game's own mission boundary, the orphan suspension policy, the `ModApi.Services.Story` surface behind
 the inspected-assembly gate, host tests against the production adapter and installed-assembly pins.
 Two independently loaded example authors exercise a generated job and a hand-authored campaign
 through the same API without provider save/load hooks. Controlled native probes cover ownership,

@@ -37,6 +37,7 @@ public sealed class BoardingObserverTests
         internal readonly object DataInventory = new();
         internal Fixture()
         {
+            Hub.SetCapability("boarding-observation", true, "Test bindings.");
             Service = new BoardingService(Hub, (_, _) => { });
             Observer = new BoardingObserver(Hub, Service, (obj, name) => ((Dictionary<string, object?>)obj)[name], obj => !Dead.Contains(obj), _ => Faults++, obj => ReferenceEquals(obj, DataInventory));
             Service.Subscribe("test", Events.Add);

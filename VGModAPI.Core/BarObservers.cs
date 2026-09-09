@@ -18,7 +18,7 @@ internal sealed partial class BarContentService
     private readonly List<Observer> _observers = new();
     private bool _publishing;
 
-    public IDisposable Subscribe(string owner, Action<BarRosterFinalized> callback)
+    internal IDisposable Subscribe(string owner, Action<BarRosterFinalized> callback)
     {
         _checkThread();
         if (_disposed) throw new ObjectDisposedException(nameof(BarContentService));

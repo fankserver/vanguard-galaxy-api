@@ -19,11 +19,11 @@ public sealed partial class Plugin
     private IEnumerable<object?> ModInformationGameplay(Action<string> record)
     {
         Require(JournalSelected && StockpileSelected, "Full information qualification needs both real consumers.");
-        ModApi.Mods!.Refresh();
+        ModApi.Services.Mods.Refresh();
         foreach (var id in new[] { "vgmissionjournal", "vgstockpile" })
         {
             var loaded = Chainloader.PluginInfos[id];
-            var row = ModApi.Mods.Snapshot.Single(item => item.PluginId == id);
+            var row = ModApi.Services.Mods.Inventory.Entries.Single(item => item.PluginId == id);
             Require(row.Name == loaded.Metadata.Name && row.InstalledVersion == loaded.Metadata.Version,
                 "Inventory disagrees with real loader metadata.");
             Require(row.MetadataStatus == ModMetadataStatus.Missing && row.Metadata == null, "Expected metadata-free real consumer.");
@@ -41,12 +41,12 @@ public sealed partial class Plugin
             using (var stream = new FileStream(metadata, FileMode.CreateNew, FileAccess.Write)) { created = true; }
             foreach (var invalid in new[] { "not JSON", "{\"schemaVersion\":1,\"pluginId\":\"not-the-driver\"}" })
             {
-                File.WriteAllText(metadata, invalid); ModApi.Mods.Refresh();
-                var row = ModApi.Mods.Snapshot.Single(item => item.PluginId == Id);
+                File.WriteAllText(metadata, invalid); ModApi.Services.Mods.Refresh();
+                var row = ModApi.Services.Mods.Inventory.Entries.Single(item => item.PluginId == Id);
                 Require(row.MetadataStatus == ModMetadataStatus.Invalid && row.Metadata == null &&
                     row.Name == Chainloader.PluginInfos[Id].Metadata.Name && row.InstalledVersion == Chainloader.PluginInfos[Id].Metadata.Version,
                     "Bad metadata changed authoritative loader identity.");
-                Require(ModApi.Mods.Snapshot.Any(item => item.PluginId == "vgmissionjournal") && ModApi.Mods.Snapshot.Any(item => item.PluginId == "vgstockpile"),
+                Require(ModApi.Services.Mods.Inventory.Entries.Any(item => item.PluginId == "vgmissionjournal") && ModApi.Services.Mods.Inventory.Entries.Any(item => item.PluginId == "vgstockpile"),
                     "Bad metadata hid other consumers.");
                 var events = EventSystem.current;
                 events.SetSelectedGameObject(GameObject.Find("VGModAPI Mods"));
@@ -68,7 +68,7 @@ public sealed partial class Plugin
         {
             if (keyboard != null) InputSystem.RemoveDevice(keyboard);
             oldKeyboard?.MakeCurrent();
-            if (created) File.Delete(metadata); ModApi.Mods.Refresh();
+            if (created) File.Delete(metadata); ModApi.Services.Mods.Refresh();
         }
         record("inventory-malformed-wrong-guid-isolated");
         foreach (var name in new[] { "fixture-a", "fixture-b" })

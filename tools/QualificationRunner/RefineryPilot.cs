@@ -10,7 +10,7 @@ public sealed partial class Plugin
 {
     private void CheckRefineryDelivery(RecipeStationHandle station)
     {
-        var commands = ModApi.CraftingCommands!; var observations = ModApi.CraftingJobs!;
+        var commands = ModApi.Services.CraftingCommands; var observations = ModApi.Services.CraftingJobs;
         var nativeStation = SpGet(CurrentPlayer, "currentPointOfInterest")!;
         var refinery = SpGet(nativeStation, "refinery")!;
         var nativeJobs = (IList)SpGet(refinery, "jobs")!;
@@ -19,16 +19,16 @@ public sealed partial class Plugin
             var existing = observations.Read(station).Jobs.First(job => job.Process == RecipeProcess.Refining);
             Require(commands.Execute(CraftingCommandRequest.Cancel(Id, Guid.NewGuid(), existing.Handle)).Status == CraftingCommandStatus.Succeeded, "Could not free copied refinery slot.");
         }
-        var recipe = ModApi.Recipes!.Read().Recipes.FirstOrDefault(candidate => candidate.Process == RecipeProcess.Refining
+        var recipe = ModApi.Services.Recipes.Read().Recipes.FirstOrDefault(candidate => candidate.Process == RecipeProcess.Refining
             && candidate.Outputs.Any(output => output.Amount != Math.Truncate(output.Amount))
-            && ModApi.RecipeQuotes!.Quote(station, candidate.Id, 2) is var quote && quote.Status == RecipeQuoteStatus.Available
+            && ModApi.Services.RecipeQuotes.Quote(station, candidate.Id, 2) is var quote && quote.Status == RecipeQuoteStatus.Available
             && quote.Blockers.All(blocker => blocker == RecipeBlocker.PricingUnavailable));
         Require(recipe != null, "Fixture needs affordable fractional-yield ore and a free refinery slot.");
         var oldJobs = nativeJobs.Cast<object>().ToArray();
         var queued = commands.Execute(CraftingCommandRequest.Queue(Id, Guid.NewGuid(), station, recipe!.Id, 2, CraftingProtectionPolicy.NativeConsumption));
         Require(queued.Status == CraftingCommandStatus.Succeeded && queued.Jobs.Count == 1, "Refinery queue failed.");
         var nativeJob = nativeJobs.Cast<object>().Single(job => !oldJobs.Any(old => ReferenceEquals(old, job)));
-        var facts = new List<CraftingJobEvent>(); using var observer = observations.Subscribe(Id, facts.Add);
+        var facts = new List<CraftingJobEvent>(); using var observer = new CraftingJobProbeSubscription(observations, facts.Add);
         var before = ForgeInventoryCounts(nativeStation);
         var nativeOre = SpGet(nativeJob, "ore")!;
         var bonusAllowed = !(bool)SpGet(nativeOre, "ignoreExtraRewards")!
@@ -70,12 +70,12 @@ public sealed partial class Plugin
     private void CheckMaterialExtraction(RecipeStationHandle station)
     {
         var nativeStation = SpGet(CurrentPlayer, "currentPointOfInterest")!;
-        var commands = ModApi.CraftingCommands!;
+        var commands = ModApi.Services.CraftingCommands;
         RecipeResourceId? selected = null;
         foreach (var material in Enum.GetValues(NativeType("Source.Item.RefinedMaterial")))
         {
             var id = new RecipeResourceId("vanilla", material.ToString()!, RecipeResourceKind.RefinedMaterial);
-            if (ModApi.RecipeQuotes!.QuoteMaterialExtraction(station, id, 1).RequirementsMet) { selected = id; break; }
+            if (ModApi.Services.RecipeQuotes.QuoteMaterialExtraction(station, id, 1).RequirementsMet) { selected = id; break; }
         }
         Require(selected != null, "Fixture lacks extractable material, credits or cargo space.");
         var before = ForgeInventoryCounts(nativeStation); var credits = (long)SpGet(CurrentPlayer, "credits")!;
