@@ -16,6 +16,19 @@ internal interface IWorldActorLifetimeHost
 internal sealed partial class WorldLifetimeHookHost : IWorldActorLifetimeHost
 {
     private readonly WorldActorOrigins _actors = new();
+    private readonly Action<object>? _quarantine;
+    internal void MaintainActors()
+    {
+        _hub.CheckThread();
+        foreach (var actor in _actors.Snapshot()) AllowActor(actor);
+    }
+    private void StopPhysics(object actor)
+    {
+        if (_quarantine == null) return;
+        try { WorldNativeAssetInspection.RequireAlive(actor); }
+        catch (InvalidDataException) { return; }
+        _quarantine(actor);
+    }
     public IDisposable BeginSpawn(object manager, object? data = null)
     {
         _hub.CheckThread();
@@ -50,7 +63,9 @@ internal sealed partial class WorldLifetimeHookHost : IWorldActorLifetimeHost
     }
     public void CaptureActor(object actor)
     {
-        _hub.CheckThread(); _actors.Capture(actor);
+        _hub.CheckThread();
+        try { _actors.Capture(actor); }
+        catch { if (_actors.Known(actor)) StopPhysics(actor); throw; }
         if (!AllowActor(actor)) throw new InvalidDataException("World actor awakening is quarantined.");
     }
     public Func<bool>? CaptureActivity(object actor)
@@ -62,12 +77,13 @@ internal sealed partial class WorldLifetimeHookHost : IWorldActorLifetimeHost
     {
         _hub.CheckThread();
         if (!_actors.Known(actor)) return true;
-        try
-        {
-            WorldNativeAssetInspection.RequireAlive(actor);
-            if (!_actors.Allow(actor)) return false;
-            WorldNativeAssetInspection.RequireAlive(actor); return true;
-        }
+        try { WorldNativeAssetInspection.RequireAlive(actor); }
+        catch (InvalidDataException) { return false; }
+        bool allowed;
+        try { allowed = _actors.Allow(actor); }
+        catch { StopPhysics(actor); throw; }
+        if (!allowed) { StopPhysics(actor); return false; }
+        try { WorldNativeAssetInspection.RequireAlive(actor); return true; }
         catch (InvalidDataException) { return false; }
     }
 }

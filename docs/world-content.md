@@ -31,6 +31,12 @@ No public spawn operation is exposed. `UnitPayloadDescriptor` is refused by worl
 
 Registration may supply one exact previous declaration. Supported migration advances the revision and may rename the site; local identity, faction and level must be unchanged. Matching only a previous revision number is insufficient: the complete retained declaration must match. During verified reconstruction, the API updates a native name only if it still equals the old declared default, preserving customized names and mutable instance level/state. The next automatic save records the current declaration/revision. Instance and mission-target identities do not change. Undeclared or incompatible older definitions remain refused; this is not arbitrary provider serialization or a general migration callback.
 
+## Owned actor lifetime guards
+
+Spawned units and persistable roots retain their originating manager/session; later activity does not borrow a replacement manager. Rejected captures remain classified. Unit initialization, damage, collision callbacks and selected coroutine continuations are guarded, and persistable updater writes require the original spawn-data reference. Known roots are rechecked during fixed updates, provider release, session changes and teardown. Refused live roots have their own rigidbody simulation and colliders disabled without traversing unrelated child actors.
+
+These paths remain unqualified in Unity. Independently spawned equipment/projectiles, other persistable subtype behavior and physics scheduling still require coverage; disabling root physics is not a complete scene quarantine or safe-uninstall guarantee.
+
 ## Persistence and activation constraints
 
 Supported persistent creation must automatically preserve existence, owner/local identity, instance identity, supported properties, links and lifecycle state. Providers must not implement save hooks or rebuild timing for those fields. Temporary lifetime must be explicit; it must not replace persistence merely to avoid reconstruction.

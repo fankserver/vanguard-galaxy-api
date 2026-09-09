@@ -755,6 +755,8 @@ public sealed partial class Plugin : BaseUnityPlugin
         Logger.LogError(ex == null ? reason : reason + " " + ex);
     }
 
+    private void FixedUpdate() => _worldLifetimeHost?.MaintainActors();
+
     private void Update()
     {
         _boarding?.Poll();

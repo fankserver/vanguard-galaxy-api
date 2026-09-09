@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 
 namespace VGModAPI.Core.Integration;
@@ -36,6 +37,13 @@ internal sealed class WorldActorOrigins
         internal Actor(Origin origin) => Origin = origin;
     }
     private readonly ConditionalWeakTable<object, Actor> _actors = new();
+    private readonly List<WeakReference<object>> _tracked = new();
+    internal object[] Snapshot()
+    {
+        var result = new List<object>();
+        foreach (var weak in _tracked) if (weak.TryGetTarget(out var actor)) result.Add(actor);
+        return result.ToArray();
+    }
     internal IDisposable Enter(Func<bool>? valid, object? data = null)
     {
         var scope = new Scope(this, valid == null ? null : new Origin(valid, data), _scope); _scope = scope; return scope;
@@ -48,7 +56,13 @@ internal sealed class WorldActorOrigins
         {
             if (!ReferenceEquals(entry.Origin, origin)) throw new InvalidDataException("Actor already belongs to a different spawn origin.");
         }
-        else { entry = new Actor(origin); _actors.Add(actor, entry); }
+        else
+        {
+            entry = new Actor(origin); _actors.Add(actor, entry);
+            if (_tracked.Count >= 10000) _tracked.RemoveAll(weak => !weak.TryGetTarget(out _));
+            if (_tracked.Count >= 10000) { entry.Rejected = true; throw new InvalidDataException("Owned actor tracking limit reached."); }
+            _tracked.Add(new WeakReference<object>(actor));
+        }
         try
         {
             if (entry.Rejected || entry.Validating) throw new InvalidDataException("Actor capture is rejected or reentrant.");

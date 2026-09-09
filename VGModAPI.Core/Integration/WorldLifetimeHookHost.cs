@@ -27,8 +27,9 @@ internal sealed partial class WorldLifetimeHookHost : IWorldLifetimeHookHost, ID
     private readonly IDisposable _subscription;
     private Guid _session;
     private bool _disposed;
-    internal WorldLifetimeHookHost(Assembly assembly, LifecycleHub hub, WorldLifetimeGuard? guard = null)
+    internal WorldLifetimeHookHost(Assembly assembly, LifecycleHub hub, WorldLifetimeGuard? guard = null, Action<object>? quarantine = null)
     {
+        _quarantine = quarantine;
         _guard = guard ?? new WorldLifetimeGuard();
         _hub = hub; _hub.CheckThread();
         if (_hub.CurrentSession != null) throw new InvalidOperationException("World lifetime guards must attach before a session.");
@@ -49,9 +50,9 @@ internal sealed partial class WorldLifetimeHookHost : IWorldLifetimeHookHost, ID
     private void OnLifecycle(LifecycleEvent e)
     {
         if (e.Kind == LifecycleEventKind.SessionStarting && e.Session?.Id == _hub.CurrentSession?.Id)
-        { _session = e.Session!.Id; _guard.Start(_session); Travel.Reset(); }
+        { _session = e.Session!.Id; _guard.Start(_session); Travel.Reset(); MaintainActors(); }
         else if ((e.Kind == LifecycleEventKind.SessionInvalidated || e.Kind == LifecycleEventKind.SessionStartFailed) && e.Session?.Id == _session)
-        { _guard.Invalidate(); Travel.InvalidateSession(_session); }
+        { _guard.Invalidate(); Travel.InvalidateSession(_session); MaintainActors(); }
     }
     private string Identity(object poi) => _guid.GetValue(poi) as string ?? throw new InvalidDataException("Missing native POI identity.");
     public bool AllowAmbient(object poi)
@@ -112,6 +113,6 @@ internal sealed partial class WorldLifetimeHookHost : IWorldLifetimeHookHost, ID
     public void Dispose()
     {
         _hub.CheckThread(); if (_disposed) return;
-        _disposed = true; _guard.Stop(); Travel.Stop(); _subscription.Dispose();
+        _disposed = true; _guard.Stop(); Travel.Stop(); _subscription.Dispose(); MaintainActors();
     }
 }

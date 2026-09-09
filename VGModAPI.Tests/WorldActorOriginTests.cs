@@ -39,7 +39,8 @@ public sealed class WorldActorOriginTests
         try
         {
             var hub = new LifecycleHub((_, error) => throw error); var guard = new WorldLifetimeGuard();
-            using var host = new WorldLifetimeHookHost(typeof(Source.Galaxy.MapElement).Assembly, hub, guard);
+            var stopped = new System.Collections.Generic.List<object>();
+            using var host = new WorldLifetimeHookHost(typeof(Source.Galaxy.MapElement).Assembly, hub, guard, stopped.Add);
             var session = hub.Begin(SessionOrigin.NewGame, null);
             var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
             var poi = new Source.Galaxy.MapPointOfInterest { guid = identity.NativeId };
@@ -78,6 +79,8 @@ public sealed class WorldActorOriginTests
             Assert.Throws<System.IO.InvalidDataException>(() => routine.MoveNext()); Assert.Equal(0, tail);
             Assert.False(host.AllowActor(actor)); Assert.True(host.AllowActor(vanilla));
             Assert.False(host.AllowPersistable(updater));
+            host.MaintainActors();
+            Assert.Contains(actor, stopped); Assert.Contains(updater.gameObject, stopped); Assert.DoesNotContain(vanilla, stopped);
             Assert.Throws<System.IO.InvalidDataException>(() => VGModAPI.Patches.WorldLifetimePatches.ActorMutation.Prefix(actor));
             VGModAPI.Patches.WorldLifetimePatches.ActorMutation.Prefix(vanilla);
             Assert.False(VGModAPI.Patches.WorldLifetimePatches.ActorActivity.Prefix(actor));
