@@ -48,3 +48,13 @@ function Invoke-WorldProcessLifetime([Diagnostics.ProcessStartInfo]$Info, [Valid
     }
     return $outcome
 }
+
+function Assert-WorldProcessOutcome($Outcome) {
+    if ($null -eq $Outcome -or !$Outcome.started -or $null -eq $Outcome.pid -or $Outcome.pid -le 0 -or
+        $Outcome.timedOut -or $Outcome.killed -or $Outcome.cleanupPending -or
+        $null -ne $Outcome.failure -or $null -ne $Outcome.cleanupFailure -or $null -eq $Outcome.exitCode) {
+        throw 'World process did not complete cleanly; retain failure evidence and any pending ownership.'
+    }
+    # Inspected game shutdown may self-terminate with -1; receipts must independently prove success.
+    if ($Outcome.exitCode -ne 0 -and $Outcome.exitCode -ne -1) { throw 'Unexpected world process exit code.' }
+}

@@ -22,6 +22,9 @@ $info = New-Object Diagnostics.ProcessStartInfo; $info.UseShellExecute = $false
 foreach ($mode in @('exit','timeout','start','false','handle','wait','unkillable','partial-start','inspection')) {
     $process = New-Object WorldFakeProcess; $process.Mode = $mode
     $outcome = Invoke-WorldProcessLifetime $info 1 $process
+    $accepted = $true
+    try { Assert-WorldProcessOutcome $outcome } catch { $accepted = $false }
+    if ($accepted -ne ($mode -eq 'exit')) { throw 'Process outcome gate accepted failure or rejected clean exit.' }
     if ($mode -in @('start','false')) {
         if ($outcome.started -or $outcome.killed -or !$outcome.failure -or !$process.Disposed) { throw 'Incorrect failed-start cleanup.' }
     } elseif ($mode -in @('unkillable','inspection')) {
@@ -32,5 +35,12 @@ foreach ($mode in @('exit','timeout','start','false','handle','wait','unkillable
         if ($mode -eq 'timeout' -and (!$outcome.timedOut -or !$outcome.killed)) { throw 'Timeout not retained.' }
         if ($mode -in @('handle','wait','partial-start') -and (!$outcome.failure -or !$outcome.killed)) { throw 'Failure cleanup lost evidence.' }
     }
+}
+$clean = @{ started=$true; pid=42; timedOut=$false; killed=$false; cleanupPending=$false; failure=$null; cleanupFailure=$null; exitCode=-1 }
+Assert-WorldProcessOutcome $clean
+foreach ($code in @(1, 255, -1073741819)) {
+    $clean.exitCode = $code; $accepted = $true
+    try { Assert-WorldProcessOutcome $clean } catch { $accepted = $false }
+    if ($accepted) { throw 'Unexpected exit code accepted.' }
 }
 Write-Output 'World supervision state tests passed with fake processes; no child started.'
