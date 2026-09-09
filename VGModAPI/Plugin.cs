@@ -73,7 +73,6 @@ public sealed partial class Plugin : BaseUnityPlugin
         _hub.SetCapability("native-travel", false, "Not bound; experimental.");
         _hub.SetCapability("recipe-catalog", false, "Disabled or not bound; experimental.");
         _hub.SetCapability("recipe-quotes", false, "Disabled or not bound; experimental.");
-        ModApi.ForgeUi = null;
         _hub.SetCapability("hud", false, "Disabled or not bound; experimental.");
         _hub.SetCapability("forge-ui", false, "Disabled or not bound; experimental.");
         _hub.SetCapability("crafting-commands", false, "Disabled or not bound; experimental.");

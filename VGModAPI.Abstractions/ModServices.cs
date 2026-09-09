@@ -21,6 +21,7 @@ public sealed class ModServices
     private readonly ICraftingJobService _craftingJobs;
     private readonly ICraftingCommandService _craftingCommands;
     private readonly IHudService _hud;
+    private readonly IForgeUiService _forgeUi;
     public ILifecycleService Lifecycle { get { CheckThread(); return _lifecycle; } }
     public IModInformationService Mods { get { CheckThread(); return _mods; } }
     public ISaveDataService SaveData { get { CheckThread(); return _saveData; } }
@@ -34,9 +35,11 @@ public sealed class ModServices
 
     public IHudService Hud { get { CheckThread(); return _hud; } }
 
+    public IForgeUiService ForgeUi { get { CheckThread(); return _forgeUi; } }
+
     internal ModServices(ILifecycleService lifecycle, IModInformationService mods, ISaveDataService saveData,
         IMissionService missions, ITravelService travel, IStationService station, IRecipeService recipes, IRecipeQuoteService recipeQuotes,
-        ICraftingJobService craftingJobs, ICraftingCommandService craftingCommands, IHudService hud)
+        ICraftingJobService craftingJobs, ICraftingCommandService craftingCommands, IHudService hud, IForgeUiService forgeUi)
     {
         _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
         _mods = mods ?? throw new ArgumentNullException(nameof(mods));
@@ -49,6 +52,7 @@ public sealed class ModServices
         _craftingJobs = craftingJobs ?? throw new ArgumentNullException(nameof(craftingJobs));
         _craftingCommands = craftingCommands ?? throw new ArgumentNullException(nameof(craftingCommands));
         _hud = hud ?? throw new ArgumentNullException(nameof(hud));
+        _forgeUi = forgeUi ?? throw new ArgumentNullException(nameof(forgeUi));
     }
 
     internal void CheckThread()

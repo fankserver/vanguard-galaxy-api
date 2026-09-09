@@ -102,14 +102,16 @@ A request ID is scoped to its plugin and runtime session. Repeating the same imm
 
 ## Scoped Forge UI (API 0.1.36)
 
-With recipe integration enabled, `ModApi.ForgeUi` is separately bound and reported by the `forge-ui` capability. It exposes an observed selection, not a global recipe choice or universal UI readiness. `Current` is null outside a live, matching station Forge screen. A snapshot includes its transient view handle, station, real parent/variant group, selected recipe, displayed rounded batch count and revision. Zero batches are retained, not silently changed to one. Queries do not open screens, construct previews or repair incomplete native selection groups.
+`ModApi.Services.ForgeUi` is a stable `IForgeUiService`; its typed `Availability` requires recipe integration and separate Forge UI bindings. It exposes an observed selection, not a global recipe choice or universal UI readiness. `Current` is null outside a live, matching station Forge screen. A snapshot includes its transient view handle, station, real parent/variant group, selected recipe, displayed rounded batch count and revision. Zero batches are retained, not silently changed to one. Queries do not open screens, construct previews or repair incomplete native selection groups.
 
 ```csharp
-var ui = ModApi.ForgeUi;
-if (ui == null) return;
+var ui = ModApi.Services.ForgeUi;
+if (!ui.Availability.IsAvailable) return;
 var action = ui.RegisterAction(pluginId, "pin", new ForgeActionPresentation("Pin", "Pin this selection"),
     selection => Pin(selection.SelectedRecipe, selection.Batches));
-var changes = ui.Subscribe(pluginId, change => RefreshSelection(change.Current));
+Action<ForgeSelectionChange> handler = change => RefreshSelection(change.Current);
+ui.Changed += handler;
+// During teardown: ui.Changed -= handler;
 // Dispose both registrations when the consumer stops. Pin remains consumer behavior.
 ```
 

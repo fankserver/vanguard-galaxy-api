@@ -81,10 +81,10 @@ public interface IForgeActionRegistration : IDisposable
 public enum ForgeNavigationStatus { Selected, Unavailable, NotAtStation, RecipeUnavailable, Busy, Uncertain }
 
 /// <summary>Main-thread Forge selection/actions. Registrations survive window/session replacement until disposed.</summary>
-public interface IForgeUi
+public interface IForgeUiService : IServiceStatus
 {
     ForgeSelectionSnapshot? Current { get; }
-    IDisposable Subscribe(string pluginId, Action<ForgeSelectionChange> callback);
+    event Action<ForgeSelectionChange>? Changed;
     IForgeActionRegistration RegisterAction(string pluginId, string localId, ForgeActionPresentation presentation,
         Action<ForgeSelectionSnapshot> callback, int order = 0);
     ForgeNavigationStatus Open(RecipeId recipe);

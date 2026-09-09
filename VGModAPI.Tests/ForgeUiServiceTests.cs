@@ -22,6 +22,49 @@ public sealed class ForgeUiServiceTests
     private ForgeSelectionSnapshot Frame(int count = 2, ForgeViewHandle? view = null) => new(view ?? new(_session, Guid.NewGuid()),
         new(_session, _session, "Station"), _parent, _variant, new[] { _parent, _variant }, count, 0, new("Variant", true));
     [Fact]
+    public void TypedSelectionHandlersAreScopedIsolatedAndRemovable()
+    {
+        IForgeUiService service = _service;
+        var observed = new List<bool>();
+        var navigation = new List<ForgeNavigationStatus>();
+        Action<ForgeSelectionChange> handler = _ => throw new InvalidOperationException("Expected subscriber failure.");
+        handler += _ => { observed.Add(_hub.IsDispatchingCallbacks); navigation.Add(service.Open(_variant)); };
+        service.Changed += handler;
+        _source.Value = Frame(); _service.Refresh();
+        Assert.True(Assert.Single(observed));
+        Assert.Equal(ForgeNavigationStatus.Busy, Assert.Single(navigation));
+        service.Changed -= handler;
+        _source.Value = Frame(); _service.Refresh();
+        Assert.Single(observed);
+        Assert.Null(typeof(ModApi).GetProperty("ForgeUi"));
+        Assert.Null(typeof(ModApi).Assembly.GetType("VGModAPI.IForgeUi"));
+    }
+    [Fact]
+    public void DisposalNotifiesClosureAndClosesNavigationBeforeHealthCallbacks()
+    {
+        IForgeUiService service = _service;
+        _source.Value = Frame(); Assert.NotNull(service.Current);
+        var changes = new List<ForgeSelectionChange>();
+        var navigation = new List<ForgeNavigationStatus>();
+        service.Changed += changes.Add;
+        service.AvailabilityChanged += _ => { navigation.Add(service.Open(_variant)); _service.Dispose(); };
+        _service.Dispose();
+        Assert.Null(Assert.Single(changes).Current);
+        Assert.Equal(ForgeNavigationStatus.Unavailable, Assert.Single(navigation));
+        Assert.Equal(ServiceUnavailableReason.ApiStopped, service.Availability.Reason);
+        Assert.Null(service.Current);
+    }
+    [Fact]
+    public void MissingSourcePreservesUnavailableDiagnosis()
+    {
+        using var hub = new LifecycleHub((_, _) => { });
+        hub.SetCapability("forge-ui", false, "Disabled by configuration.", ServiceUnavailableReason.Disabled);
+        using var service = new ForgeUiService(hub, null, (_, _) => { });
+        Assert.Equal(ServiceUnavailableReason.Disabled, service.Availability.Reason);
+        Assert.Null(service.Current);
+        Assert.Equal(ForgeNavigationStatus.Unavailable, service.Open(_variant));
+    }
+    [Fact]
     public void OpenCloseReopenKeepsRegistrationsButInvalidatesOldClicks()
     {
         var calls = 0; using var registration = _service.RegisterAction("a", "pin", new("Pin"), _ => calls++);

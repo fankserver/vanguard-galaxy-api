@@ -20,7 +20,7 @@ public sealed partial class Plugin
     {
         _forgePointerDiagnostics.Clear();
         WriteAtomic("forge-ui.txt", new[] { "INCOMPLETE" });
-        var ui = ModApi.ForgeUi ?? throw new InvalidOperationException("Forge UI service unavailable.");
+        var ui = ModApi.Services.ForgeUi;
         ForgeSelectionSnapshot? selection = null;
         foreach (var recipe in ModApi.Services.Recipes.Read().Recipes.Where(recipe => recipe.Process == RecipeProcess.Forge && recipe.ParentId != null))
         {
@@ -149,7 +149,7 @@ public sealed partial class Plugin
         var records = new List<string>();
         string State(string phase)
         {
-            var snapshot = SpGet(ModApi.ForgeUi!, "_current") as ForgeSelectionSnapshot;
+            var snapshot = SpGet(ModApi.Services.ForgeUi!, "_current") as ForgeSelectionSnapshot;
             var module = EventSystem.current.currentInputModule;
             var selected = EventSystem.current.currentSelectedGameObject;
             return "click=" + (_forgePointerDiagnostics.Count / 3) + " " + phase + " selected=" + (selected != null ? selected.name : "")
