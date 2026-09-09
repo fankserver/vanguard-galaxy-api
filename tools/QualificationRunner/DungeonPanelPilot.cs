@@ -22,8 +22,9 @@ public sealed partial class Plugin
     {
         _dungeonPointerDiagnostic = null; _dungeonPointerRecords.Clear();
         WriteAtomic("dungeon-panel.txt", new[] { "INCOMPLETE" });
-        var boarding = ModApi.Boarding ?? throw new InvalidOperationException("Boarding observation unavailable.");
-        var panel = ModApi.DungeonPanel ?? throw new InvalidOperationException("Dungeon panel unavailable.");
+        var boarding = ModApi.Services.Boarding;
+        var panel = ModApi.Services.DungeonPanel;
+        Require(boarding.Availability.IsAvailable && panel.Availability.IsAvailable, "Dungeon panel services unavailable.");
         var previous = boarding.GetTargets().Select(target => target.Handle).ToHashSet();
         var dataType = NativeType("Source.Data.Persistable.DungeonLocationData");
         var definitionType = NativeType("Behaviour.Dungeon.DungeonDefinition");

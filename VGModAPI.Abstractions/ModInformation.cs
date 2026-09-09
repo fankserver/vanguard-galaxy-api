@@ -49,10 +49,3 @@ public sealed class ModAuthorMetadata
     public string? UpdateUrl { get; }
     public string Channel { get; }
 }
-
-/// <summary>Process-scoped, main-thread-only inventory of declared API consumers.</summary>
-public interface IModInformationCatalog
-{
-    IReadOnlyList<ModInformation> Snapshot { get; }
-    void Refresh();
-}

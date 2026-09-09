@@ -22,10 +22,10 @@ public sealed partial class Plugin : BaseUnityPlugin
     private const string Id = "vgmodapi.qualification";
     private static string? _saveRoot;
     private string? _root;
-    private ILifecycleApi? _api;
+    private ILifecycleService? _api;
     private readonly List<LifecycleEvent> _events = new();
     private readonly List<string> _passed = new();
-    private IDisposable? _subscription;
+    private Action<LifecycleEvent>? _subscription;
     private Type _save = null!;
     private Type _player = null!;
     private Type _manager = null!;
@@ -59,8 +59,8 @@ public sealed partial class Plugin : BaseUnityPlugin
             Require(SamePath(Path.GetDirectoryName(Application.dataPath)!, Path.Combine(_root, "game")), "Refusing to run outside the sandbox executable directory.");
             _saveRoot = Path.Combine(_root, "Saves");
             Directory.CreateDirectory(_saveRoot);
-            _api = ModApi.Current ?? throw new InvalidOperationException("API unavailable.");
-            Require(_api.Capabilities.Where(c => c.Name == "session-lifecycle" || c.Name == "save-outcomes").Count(c => c.Available) == 2, "API hooks did not bind; no qualification possible.");
+            _api = ModApi.Services.Lifecycle;
+            Require(_api.SessionTracking.Availability.IsAvailable && _api.SaveOutcomes.Availability.IsAvailable, "API hooks did not bind; no qualification possible.");
             _save = AccessTools.TypeByName("Source.Util.SaveGame");
             _player = AccessTools.TypeByName("Source.Player.GamePlayer");
             _manager = AccessTools.TypeByName("Behaviour.GameManager");
@@ -89,13 +89,13 @@ public sealed partial class Plugin : BaseUnityPlugin
                 prefix: new HarmonyMethod(typeof(Plugin), nameof(NewGameConfigurationEntering)),
                 finalizer: new HarmonyMethod(typeof(Plugin), nameof(NewGameConfigurationExited)));
             File.WriteAllText(Path.Combine(_root, "events.tsv"), "sequence\tkind\tsession\tphase\toperation\tdestination\tdetail\n");
-            _subscription = _api.Subscribe(Id, e =>
+            _api.Changed += _subscription = e =>
             {
-                _dispatchStateValid &= _api is ILifecycleDispatchState state && state.IsDispatchingCallbacks;
+                _dispatchStateValid &= _api.IsDispatchingCallbacks;
                 _events.Add(e);
                 if (_configuringNewGame && e.Kind == LifecycleEventKind.PlayerReady) _prematureNewGameReadiness = true;
                 File.AppendAllText(Path.Combine(_root, "events.tsv"), string.Join("\t", _events.Count, e.Kind, e.Session?.Id, e.Session?.Phase, e.OperationId, e.Destination == null ? "" : Path.GetFileName(e.Destination), (e.Detail ?? "").Replace("\t", " ").Replace("\r", " ").Replace("\n", " ")) + "\n");
-            });
+            };
             if (Array.IndexOf(args, "--vgmodapi-qualification-diagnostics") >= 0)
             {
                 _diagnostics = this;
@@ -165,7 +165,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             {
                 Require(File.ReadAllText(Path.Combine(_root!, "forge-commands.enabled")) == "forge-commands-v3", "Invalid Forge command marker.");
                 WriteAtomic("forge-commands.txt", new[] { "INCOMPLETE" });
-                var station = ModApi.RecipeQuotes!.CurrentStation ?? throw new InvalidOperationException("Command fixture lost station.");
+                var station = ModApi.Services.RecipeQuotes.CurrentStation ?? throw new InvalidOperationException("Command fixture lost station.");
                 CheckCraftingSettingCommands(station);
                 CheckCraftingQueueAndCancel(station);
                 if (File.Exists(Path.Combine(_root!, "refinery.enabled")))
@@ -287,13 +287,15 @@ public sealed partial class Plugin : BaseUnityPlugin
         Passed("autosave-rotation");
 
         int healthy = 0, disposed = 0;
-        using (var broken = _api!.Subscribe(Id + ".expected-fault", _ => throw new InvalidOperationException("Expected qualification subscriber fault")))
-        using (var good = _api.Subscribe(Id + ".healthy", _ => healthy++))
-        {
-            var removed = _api.Subscribe(Id + ".disposed", _ => disposed++);
-            removed.Dispose();
-            Save("qa-subscribers", LifecycleEventKind.SaveSucceeded);
-        }
+        Action<LifecycleEvent> broken = _ => throw new InvalidOperationException("Expected qualification subscriber fault");
+        Action<LifecycleEvent> good = _ => healthy++;
+        Action<LifecycleEvent> removed = _ => disposed++;
+        _api!.Changed += broken;
+        _api.Changed += good;
+        _api.Changed += removed;
+        _api.Changed -= removed;
+        try { Save("qa-subscribers", LifecycleEventKind.SaveSucceeded); }
+        finally { _api.Changed -= broken; _api.Changed -= good; }
         Require(healthy == 2 && disposed == 0, "Subscriber isolation/disposal failed.");
         Passed("subscriber-isolation-and-disposal");
 
@@ -377,7 +379,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         foreach (var frame in CheckJournalTeardown()) yield return frame;
         foreach (var frame in RemainingLifecyclePilot()) yield return frame;
         foreach (var frame in PersistencePilot()) yield return frame;
-        Require(_dispatchStateValid && _events.Count > 0 && _api is ILifecycleDispatchState state && !state.IsDispatchingCallbacks,
+        Require(_dispatchStateValid && _events.Count > 0 && _api != null && !_api.IsDispatchingCallbacks,
             "Callback dispatch state did not match native delivery boundaries.");
         Passed("callback-dispatch-state");
     }
@@ -609,5 +611,5 @@ public sealed partial class Plugin : BaseUnityPlugin
         var file = (FileInfo)AccessTools.Field(__instance.GetType(), "File").GetValue(__instance)!;
         Require(_saveRoot != null && SamePath(file.DirectoryName!, _saveRoot), "Refusing to load a non-sandbox save.");
     }
-    private void OnDestroy() { _updateProbeStop?.Cancel(); _subscription?.Dispose(); }
+    private void OnDestroy() { _updateProbeStop?.Cancel(); if (_api != null) _api.Changed -= _subscription; }
 }

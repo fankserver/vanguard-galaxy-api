@@ -4,38 +4,43 @@ using System.Linq;
 
 namespace VGModAPI.Core;
 
-internal sealed class HudService : IModHud, IDisposable
+internal sealed class HudService : IHudService, IDisposable
 {
     private readonly LifecycleHub _hub;
+    private readonly IServiceStatus _status;
     private readonly Action<string, Exception> _report;
     private readonly IDisposable _lifetime;
     private readonly List<Entry> _entries = new();
     private Guid? _surface, _session;
-    private bool _available, _disposed, _invoking;
+    private bool _disposed, _invoking;
     internal Func<bool>? SurfaceLive { get; set; }
     internal HudService(LifecycleHub hub, Action<string, Exception> report)
     {
         _hub = hub; _report = report;
+        _status = hub.Services.Get("hud");
         _lifetime = hub.Subscribe("vgmodapi.hud", message =>
         {
             if (message.Kind is LifecycleEventKind.SessionStarting or LifecycleEventKind.SessionInvalidated or LifecycleEventKind.SessionStartFailed)
                 SetSurface(null, null);
         });
     }
+    public ServiceAvailability Availability => _status.Availability;
+    public event Action<ServiceAvailability>? AvailabilityChanged
+    { add => _status.AvailabilityChanged += value; remove => _status.AvailabilityChanged -= value; }
     internal void SetAvailable(bool value)
     {
-        _hub.CheckThread(); _available = value && !_disposed;
-        _hub.SetCapability("hud", _available, _available ? "Experimental shared HUD presentation." : "Shared HUD unavailable.");
-        if (!_available) SetSurface(null, null);
+        _hub.CheckThread(); if (_disposed) return;
+        _hub.SetCapability("hud", value, value ? "Experimental shared HUD presentation." : "Shared HUD unavailable.");
+        if (!value) SetSurface(null, null);
     }
     internal void SetSurface(Guid? surface, Guid? session)
     {
         _hub.CheckThread();
-        if (!_available || surface == Guid.Empty || session == Guid.Empty || session != _hub.CurrentSession?.Id || _hub.CurrentSession?.Phase != SessionPhase.GameplayInitialized)
+        if (_disposed || !Availability.IsAvailable || surface == Guid.Empty || session == Guid.Empty || session != _hub.CurrentSession?.Id || _hub.CurrentSession?.Phase != SessionPhase.GameplayInitialized)
         { _surface = null; _session = null; return; }
         _surface = surface; _session = surface == null ? null : session;
     }
-    public bool Visible { get { _hub.CheckThread(); return !_disposed && _available && _surface != null && _session == _hub.CurrentSession?.Id && _hub.CurrentSession?.Phase == SessionPhase.GameplayInitialized && (SurfaceLive?.Invoke() ?? true); } }
+    public bool Visible { get { _hub.CheckThread(); return !_disposed && Availability.IsAvailable && _surface != null && _session == _hub.CurrentSession?.Id && _hub.CurrentSession?.Phase == SessionPhase.GameplayInitialized && (SurfaceLive?.Invoke() ?? true); } }
     internal Guid? Surface => _surface;
     internal IReadOnlyList<Entry> Entries
     { get { _hub.CheckThread(); return _entries.OrderBy(entry => entry.Order).ThenBy(entry => entry.Plugin, StringComparer.Ordinal).ThenBy(entry => entry.Local, StringComparer.Ordinal).ToArray(); } }
@@ -70,7 +75,8 @@ internal sealed class HudService : IModHud, IDisposable
     public void Dispose()
     {
         _hub.CheckThread(); if (_disposed) return;
-        SetAvailable(false); _disposed = true; SurfaceLive = null; _lifetime.Dispose();
+        _disposed = true; _surface = null; _session = null; SurfaceLive = null; _lifetime.Dispose();
+        if (Availability.IsAvailable) _hub.SetCapability("hud", false, "HUD service stopped.", ServiceUnavailableReason.ApiStopped);
         foreach (var entry in _entries.ToArray()) entry.Dispose();
     }
     internal sealed class Entry : IHudRegistration

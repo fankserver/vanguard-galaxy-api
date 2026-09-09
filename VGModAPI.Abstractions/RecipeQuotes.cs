@@ -139,7 +139,7 @@ public sealed class RecipeQuote
 }
 
 /// <summary>Read-only, main-thread station requirements. Requery immediately before any separately supported action.</summary>
-public interface IRecipeQuotes
+public interface IRecipeQuoteService : IServiceStatus
 {
     RecipeStationHandle? CurrentStation { get; }
     RecipeQuote Quote(RecipeStationHandle station, RecipeId recipe, int batches = 1, RefineryInputPolicy refineryPolicy = RefineryInputPolicy.Manual);

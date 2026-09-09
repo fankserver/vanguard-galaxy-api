@@ -14,7 +14,7 @@ namespace VGModAPI.Qualification;
 // matrix cells as their own optional NOT-RUN rows, so nothing here turns an earlier NOT-RUN into
 // a coverage claim.
 //
-// Like the other phases it ASSERTS only through the public ITravelEvents / IStationEvents
+// Like the other phases it ASSERTS only through the public ITravelService / IStationService
 // surfaces and DRIVES only actual vanilla entry points and Unity coroutines: it never invokes
 // adapter callbacks, never assigns a location, never fabricates an arrival or a dock, and never
 // writes a native docking state field to simulate one. Its three required cases are the three
@@ -155,10 +155,10 @@ public sealed partial class Plugin
     private IEnumerable<object?> RunTravelResilience()
     {
         Require(TravelStationSelected, "The resilience phase requires the travel/station selection that enables the native travel capability.");
-        var travel = ModApi.Travel;
-        var station = ModApi.Station;
-        Require(travel != null && station != null, "Travel/Station public services not exposed.");
-        Require(_api!.Capabilities.Any(capability => capability.Name == "native-travel" && capability.Available), "native-travel capability not available.");
+        var travel = ModApi.Services.Travel;
+        var station = ModApi.Services.Station;
+        Require(travel.Availability.IsAvailable && station.Availability.IsAvailable, "Travel/Station services unavailable.");
+        Require(ModApi.Services.Travel.Availability.IsAvailable, "native-travel capability not available.");
         Require(!travel!.IsDispatchingCallbacks && !station!.IsDispatchingCallbacks, "Cannot subscribe during callback dispatch.");
         // The published phase budget is summed from the declared deadlines, and the two shared
         // harness waits are part of that sum: refuse to run if they no longer agree.
@@ -168,7 +168,7 @@ public sealed partial class Plugin
             "Declared phase budget exceeds the launcher reservation.");
         var transitions = new List<TravelTransition>();
         var stationFacts = new List<StationTransition>();
-        using (travel.Subscribe("qualification.travel.resilience", fact =>
+        using (new TravelProbeSubscription(travel, fact =>
         {
             transitions.Add(fact);
             _rsEvents.Add(TravelStationReceipt.TravelEventRow(_rsCase, fact));
@@ -181,7 +181,7 @@ public sealed partial class Plugin
                     "<snapshot failed: " + error.GetType().Name + ">", false);
             }
         }))
-        using (station!.Subscribe("qualification.station.resilience", fact =>
+        using (new StationProbeSubscription(station, fact =>
         {
             stationFacts.Add(fact);
             _rsEvents.Add(TravelStationReceipt.StationEventRow(_rsCase, fact));

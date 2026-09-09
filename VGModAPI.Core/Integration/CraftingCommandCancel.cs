@@ -7,7 +7,7 @@ namespace VGModAPI.Runtime;
 
 internal sealed partial class RecipeCatalogNativeSource
 {
-    internal ICraftingJobs? CommandJobEvents { get; set; }
+    internal CraftingJobService? CommandJobEvents { get; set; }
     private CraftingCommandResult CancelNative(CraftingCommandRequest request, object player, object station)
     {
         if (CommandJobEvents == null || !_jobObjects.TryGetValue(request.Job!, out var job))

@@ -11,33 +11,44 @@ internal interface IForgeUiSource
     void ClearUi();
 }
 
-internal sealed class ForgeUiService : IForgeUi, IDisposable
+internal sealed class ForgeUiService : IForgeUiService, IDisposable
 {
     private readonly LifecycleHub _hub;
-    private readonly IForgeUiSource _source;
+    private readonly IForgeUiSource? _source;
+    private readonly IServiceStatus _status;
+    private readonly ServiceSubscriptions<ForgeSelectionChange> _handlers;
     private readonly Action<string, Exception> _report;
     private readonly IDisposable _lifetime;
     private readonly List<Subscription> _subscribers = new();
     private readonly List<Registration> _actions = new();
     private readonly Queue<ForgeSelectionChange> _events = new();
     private ForgeSelectionSnapshot? _current;
-    private bool _available, _disposed, _refreshing, _dispatching, _navigating;
+    private bool _closing, _disposed, _refreshing, _dispatching, _navigating;
     private long _revision;
     internal bool IsDispatchingCallbacks => _dispatching;
-    internal ForgeUiService(LifecycleHub hub, IForgeUiSource source, Action<string, Exception> report)
+    internal ForgeUiService(LifecycleHub hub, IForgeUiSource? source, Action<string, Exception> report)
     {
         _hub = hub; _source = source; _report = report;
+        _status = hub.Services.Get("forge-ui");
+        if (source == null && Availability.IsAvailable) hub.SetCapability("forge-ui", false, "Forge UI bindings unavailable.");
+        _handlers = new ServiceSubscriptions<ForgeSelectionChange>(hub, Subscribe,
+            change => change.Current == null || Availability.IsAvailable && ReferenceEquals(change.Current, _current));
         _lifetime = hub.Subscribe("vgmodapi.forge-ui", message =>
         {
             if (message.Kind is LifecycleEventKind.SessionStarting or LifecycleEventKind.SessionInvalidated or LifecycleEventKind.SessionStartFailed)
-            { _source.ClearUi(); Change(null); }
+            { _source?.ClearUi(); Change(null); }
         });
     }
+    public ServiceAvailability Availability => _status.Availability;
+    public event Action<ServiceAvailability>? AvailabilityChanged
+    { add => _status.AvailabilityChanged += value; remove => _status.AvailabilityChanged -= value; }
+    public event Action<ForgeSelectionChange>? Changed { add => _handlers.Add(value); remove => _handlers.Remove(value); }
     internal void SetAvailable(bool available)
     {
-        _hub.CheckThread(); _available = available && !_disposed;
-        _hub.SetCapability("forge-ui", _available, _available ? "Experimental scoped Forge UI." : "Forge UI unavailable.");
-        if (!_available) { _source.ClearUi(); Change(null); }
+        _hub.CheckThread(); if (_disposed || _closing) return;
+        available &= _source != null;
+        _hub.SetCapability("forge-ui", available, available ? "Experimental scoped Forge UI." : "Forge UI unavailable.");
+        if (!available && !_disposed) { _source?.ClearUi(); Change(null); }
     }
     public ForgeSelectionSnapshot? Current { get { Refresh(); return _current; } }
     internal void Refresh()
@@ -47,9 +58,9 @@ internal sealed class ForgeUiService : IForgeUi, IDisposable
         try
         {
             var session = _hub.CurrentSession;
-            if (!_available || session?.Phase != SessionPhase.GameplayInitialized) { _source.ClearUi(); Change(null); return; }
+            if (_closing || _source == null || !Availability.IsAvailable || session?.Phase != SessionPhase.GameplayInitialized) { _source?.ClearUi(); Change(null); return; }
             var value = _source.ReadUi(session.Id);
-            if (_hub.CurrentSession?.Id != session.Id || _hub.CurrentSession.Phase != SessionPhase.GameplayInitialized) { Change(null); return; }
+            if (_disposed || !Availability.IsAvailable || _hub.CurrentSession?.Id != session.Id || _hub.CurrentSession.Phase != SessionPhase.GameplayInitialized) { Change(null); return; }
             if (value != null && value.View.SessionId != session.Id) throw new InvalidOperationException("Foreign UI session.");
             if (Same(_current, value)) return;
             Change(value == null ? null : new ForgeSelectionSnapshot(value.View, value.Station, value.ParentRecipe, value.SelectedRecipe,
@@ -84,7 +95,7 @@ internal sealed class ForgeUiService : IForgeUi, IDisposable
         }
         finally { _dispatching = false; }
     }
-    public IDisposable Subscribe(string pluginId, Action<ForgeSelectionChange> callback)
+    internal IDisposable Subscribe(string pluginId, Action<ForgeSelectionChange> callback)
     {
         _hub.CheckThread(); ThrowDisposed(); pluginId = Identity(pluginId);
         if (callback == null) throw new ArgumentNullException(nameof(callback));
@@ -107,7 +118,7 @@ internal sealed class ForgeUiService : IForgeUi, IDisposable
     internal bool Invoke(Guid registration, ForgeViewHandle view, long revision)
     {
         _hub.CheckThread(); Refresh();
-        if (_disposed || _dispatching || _navigating || _current == null || !_current.View.Equals(view) || _current.Revision != revision) return false;
+        if (_disposed || _closing || !Availability.IsAvailable || _dispatching || _navigating || _current == null || !_current.View.Equals(view) || _current.Revision != revision) return false;
         var action = _actions.SingleOrDefault(item => item.Token == registration);
         if (action == null || !action.Presentation.Enabled) return false;
         try { action.Callback(_current); return true; } catch (Exception error) { Report(action.Plugin, error); return false; }
@@ -115,7 +126,7 @@ internal sealed class ForgeUiService : IForgeUi, IDisposable
     public ForgeNavigationStatus Open(RecipeId recipe)
     {
         _hub.CheckThread(); if (recipe == null) throw new ArgumentNullException(nameof(recipe));
-        if (!_available || _disposed) return ForgeNavigationStatus.Unavailable;
+        if (_source == null || !Availability.IsAvailable || _disposed || _closing) return ForgeNavigationStatus.Unavailable;
         if (_dispatching || _navigating || _hub.IsDispatchingCallbacks) return ForgeNavigationStatus.Busy;
         var session = _hub.CurrentSession;
         if (session?.Phase != SessionPhase.GameplayInitialized) return ForgeNavigationStatus.NotAtStation;
@@ -123,7 +134,7 @@ internal sealed class ForgeUiService : IForgeUi, IDisposable
         try
         {
             var result = _source.OpenUi(session.Id, recipe); Refresh();
-            if (_hub.CurrentSession?.Id != session.Id) return ForgeNavigationStatus.Uncertain;
+            if (_disposed || !Availability.IsAvailable || _hub.CurrentSession?.Id != session.Id) return ForgeNavigationStatus.Uncertain;
             return result == ForgeNavigationStatus.Selected && (_current == null || !_current.SelectedRecipe.Equals(recipe)) ? ForgeNavigationStatus.Uncertain : result;
         }
         catch (Exception error) { Report("vgmodapi.forge-ui", error); return ForgeNavigationStatus.Uncertain; }
@@ -134,12 +145,14 @@ internal sealed class ForgeUiService : IForgeUi, IDisposable
         if (string.IsNullOrWhiteSpace(value) || value.Length > 512 || value.Any(char.IsControl)) throw new ArgumentException("A bounded identity without control characters is required.");
         return value;
     }
-    private void ThrowDisposed() { if (_disposed) throw new ObjectDisposedException(nameof(ForgeUiService)); }
+    private void ThrowDisposed() { if (_disposed || _closing) throw new ObjectDisposedException(nameof(ForgeUiService)); }
     private void Report(string plugin, Exception error) { try { _report(plugin, error); } catch { } }
     public void Dispose()
     {
-        _hub.CheckThread(); if (_disposed) return;
-        SetAvailable(false); _disposed = true; _lifetime.Dispose();
+        _hub.CheckThread(); if (_disposed || _closing) return;
+        _closing = true;
+        if (Availability.IsAvailable) _hub.SetCapability("forge-ui", false, "Forge UI service stopped.", ServiceUnavailableReason.ApiStopped);
+        _source?.ClearUi(); Change(null); _disposed = true; _lifetime.Dispose(); _handlers.Dispose();
         foreach (var action in _actions.ToArray()) action.Dispose();
         foreach (var subscriber in _subscribers.ToArray()) subscriber.Dispose();
         _events.Clear();

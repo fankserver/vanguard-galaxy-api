@@ -7,21 +7,20 @@ namespace VGModAPI.Core;
 internal sealed class BarPatronPersistence : IDisposable
 {
     private readonly BarPatronLedger _ledger = new();
-    private readonly ILifecycleApi _lifecycle;
-    private readonly IPersistenceRegistration _registration;
-    private readonly IDisposable _subscription;
+    private readonly ILifecycleService _lifecycle;
+    private readonly ISaveDataRegistration _registration;
     private readonly Action _checkThread;
     private Guid? _restored;
     private bool _disposed;
 
-    internal BarPatronPersistence(IPersistenceApi persistence, ILifecycleApi lifecycle, Action checkThread)
+    internal BarPatronPersistence(ISaveDataService persistence, ILifecycleService lifecycle, Action checkThread)
     {
         _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
         _checkThread = checkThread ?? throw new ArgumentNullException(nameof(checkThread));
         _checkThread();
         _registration = (persistence ?? throw new ArgumentNullException(nameof(persistence))).Register(new PersistenceProvider(
-            BarPatronCodec.Owner, BarPatronCodec.SchemaVersion, Capture, Restore, BarPatronCodec.Validate));
-        try { _subscription = lifecycle.Subscribe(BarPatronCodec.Owner, OnLifecycle); }
+            BarPatronCodec.Owner, BarPatronCodec.SchemaVersion, Capture, Restore, BarPatronCodec.Validate)).Registration ?? throw new InvalidOperationException("Patron save provider registration refused.");
+        try { lifecycle.Changed += OnLifecycle; }
         catch { _registration.Dispose(); throw; }
     }
 
@@ -37,23 +36,23 @@ internal sealed class BarPatronPersistence : IDisposable
     internal bool CanMutate(Guid session)
     {
         _checkThread();
-        return Ready(session) && _registration.MutationAllowed;
+        return Ready(session) && _registration.CanMutate;
     }
 
     // Only the owning service passes authenticated provider identities after checking its leases.
     internal bool Put(Guid session, string authenticatedProvider, BarPatronState state)
     {
         _checkThread();
-        return Ready(session) && _registration.MutationAllowed && _ledger.TryPut(authenticatedProvider, state);
+        return Ready(session) && _registration.CanMutate && _ledger.TryPut(authenticatedProvider, state);
     }
     internal bool Remove(Guid session, string authenticatedProvider, BarPatronId id)
     {
         _checkThread();
-        return Ready(session) && _registration.MutationAllowed && _ledger.TryRemove(authenticatedProvider, id);
+        return Ready(session) && _registration.CanMutate && _ledger.TryRemove(authenticatedProvider, id);
     }
     private bool Ready(Guid session) => !_disposed && _restored == session && _lifecycle.CurrentSession?.Id == session
         && _lifecycle.CurrentSession.Phase == SessionPhase.GameplayInitialized
-        && _registration is IPersistenceReadiness readiness && readiness.StateReady;
+        && _registration?.CanRead == true;
 
     private byte[] Capture()
     {
@@ -87,7 +86,7 @@ internal sealed class BarPatronPersistence : IDisposable
         _disposed = true;
         _restored = null;
         _ledger.Reset();
-        _subscription.Dispose();
+        _lifecycle.Changed -= OnLifecycle;
         _registration.Dispose();
     }
 }

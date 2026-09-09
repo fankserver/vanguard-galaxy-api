@@ -10,14 +10,15 @@ namespace ForgeInspector;
 public sealed class Inspector : IDisposable
 {
     private readonly List<IDisposable> _owned = new();
-    private readonly IForgeUi _forge;
-    private readonly IRecipeCatalog _catalog;
-    private readonly IRecipeQuotes _quotes;
+    private readonly IForgeUiService _forge;
+    private readonly IRecipeService _catalog;
+    private readonly IRecipeQuoteService _quotes;
     private readonly IHudRegistration _hud;
+    private readonly ILifecycleService _lifecycle;
     private RecipeId? _recipe;
-    public Inspector(string pluginId, ILifecycleApi lifecycle, IForgeUi forge, IRecipeCatalog catalog, IRecipeQuotes quotes, IModHud hud)
+    public Inspector(string pluginId, ILifecycleService lifecycle, IForgeUiService forge, IRecipeService catalog, IRecipeQuoteService quotes, IHudService hud)
     {
-        _forge = forge; _catalog = catalog; _quotes = quotes;
+        _forge = forge; _catalog = catalog; _quotes = quotes; _lifecycle = lifecycle;
         try
         {
             _hud = hud.Register(pluginId, "inspector", interaction =>
@@ -32,13 +33,14 @@ public sealed class Inspector : IDisposable
             });
             _owned.Add(_hud);
             _owned.Add(forge.RegisterAction(pluginId, "inspect", new("Inspect", "Copy the selected variant's requirements and output previews"), Capture));
-            _owned.Add(lifecycle.Subscribe(pluginId, fact =>
-            {
-                if (fact.Kind is LifecycleEventKind.SessionStarting or LifecycleEventKind.SessionInvalidated or LifecycleEventKind.SessionStartFailed)
-                { _recipe = null; _hud.Update(null, null); }
-            }));
+            lifecycle.Changed += OnLifecycle;
         }
         catch { Dispose(); throw; }
+    }
+    private void OnLifecycle(LifecycleEvent fact)
+    {
+        if (fact.Kind is LifecycleEventKind.SessionStarting or LifecycleEventKind.SessionInvalidated or LifecycleEventKind.SessionStartFailed)
+        { _recipe = null; _hud.Update(null, null); }
     }
     private void Capture(ForgeSelectionSnapshot selection)
     {
@@ -71,6 +73,7 @@ public sealed class Inspector : IDisposable
     private static string Short(string value) => value.Length <= 256 ? value : value.Substring(0, 253) + "...";
     public void Dispose()
     {
+        _lifecycle.Changed -= OnLifecycle;
         _recipe = null;
         for (var index = _owned.Count - 1; index >= 0; index--) _owned[index].Dispose();
         _owned.Clear();

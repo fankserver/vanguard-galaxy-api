@@ -9,7 +9,8 @@ public sealed class DungeonPanelServiceTests
         internal DungeonPanelSnapshot? Snapshot;
         internal Func<BoardingHandle, DungeonPanelOpenStatus>? OpenCallback;
         public DungeonPanelCapabilities Capabilities { get; set; } = new(true, true, true);
-        public DungeonPanelSnapshot? Read() => Snapshot;
+        internal int Reads;
+        public DungeonPanelSnapshot? Read() { Reads++; return Snapshot; }
         public DungeonPanelOpenStatus Open(BoardingHandle target) => OpenCallback?.Invoke(target) ?? (Snapshot?.Target.Handle.Equals(target) == true ? DungeonPanelOpenStatus.Opened : DungeonPanelOpenStatus.StaleTarget);
     }
     private sealed class Fixture : IDisposable
@@ -20,9 +21,34 @@ public sealed class DungeonPanelServiceTests
         {
             var session = Hub.Begin(SessionOrigin.NewGame, null); Hub.PlayerReady(session); Hub.GameplayInitialized(session);
             var target = new BoardingTargetSnapshot(new(session, Guid.NewGuid()), 1, BoardingEncounterKind.Installation, "Site", null, null, BoardingAvailability.Available, null);
+            Hub.SetCapability("dungeon-panel-opening", true, "Test bindings.");
             Source.Snapshot = new(Guid.NewGuid(), 1, target, null); Service = new(Hub, Source, (_, _) => Faults++);
         }
         public void Dispose() { Service.Dispose(); Hub.Dispose(); }
+    }
+    [Fact]
+    public void HealthLossDuringNavigationIsUncertainAndStopsFurtherReads()
+    {
+        using var f = new Fixture(); IDungeonPanelService service = f.Service;
+        f.Source.OpenCallback = _ =>
+        { f.Hub.SetCapability("dungeon-panel-opening", false, "Fault.", ServiceUnavailableReason.ObserverFault); return DungeonPanelOpenStatus.Opened; };
+        Assert.Equal(DungeonPanelOpenStatus.Uncertain, service.Open(f.Source.Snapshot!.Target.Handle));
+        var reads = f.Source.Reads;
+        Assert.Null(service.Current); Assert.Equal(reads, f.Source.Reads);
+        Assert.False(service.Capabilities.Opening);
+        f.Service.Dispose(); Assert.Equal(ServiceUnavailableReason.ObserverFault, service.Availability.Reason);
+        Assert.Null(typeof(ModApi).GetProperty("DungeonPanel"));
+        Assert.Null(typeof(ModApi).Assembly.GetType("VGModAPI.IDungeonPanelApi"));
+    }
+    [Fact]
+    public void MissingSourceRetainsSpecificUnavailableDiagnosis()
+    {
+        using var hub = new LifecycleHub((_, _) => { });
+        hub.SetCapability("dungeon-panel-opening", false, "Disabled.", ServiceUnavailableReason.Disabled);
+        using var service = new DungeonPanelService(hub, null, (_, _) => { });
+        Assert.Equal(ServiceUnavailableReason.Disabled, service.Availability.Reason);
+        Assert.Null(service.Current); Assert.False(service.Capabilities.ContextualActions);
+        Assert.Equal(DungeonPanelOpenStatus.Unavailable, service.Open(new(Guid.NewGuid(), Guid.NewGuid())));
     }
     [Fact]
     public void NativeNavigationCannotReenterOrActivateControlsAndReleasesGateOnFailure()

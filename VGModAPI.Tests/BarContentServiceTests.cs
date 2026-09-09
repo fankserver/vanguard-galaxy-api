@@ -8,10 +8,49 @@ namespace VGModAPI.Tests;
 public sealed class BarContentServiceTests
 {
     [Fact]
+    public void UnavailableBarServiceDoesNotAuthenticateOrInstallAnEmptySaveOwner()
+    {
+        using var hub = new LifecycleHub((_, _) => { });
+        hub.SetCapability("owned-bars", false, "Disabled.", ServiceUnavailableReason.Disabled);
+        var calls = 0;
+        using var engine = new BarContentService(null, hub, (_, _) => { calls++; return null; }, _ => false, hub.CheckThread);
+        IBarService service = engine;
+        Assert.Equal(BarStatus.Unavailable, service.AcquireProvider(new object()).Status);
+        Assert.Equal(0, calls);
+        Assert.Equal(ServiceUnavailableReason.Disabled, service.Availability.Reason);
+        engine.Dispose(); Assert.Equal(ServiceUnavailableReason.Disabled, service.Availability.Reason);
+        Assert.Null(typeof(ModApi).GetProperty("Bars"));
+        Assert.Null(typeof(ModApi).Assembly.GetType("VGModAPI.IBarApi"));
+    }
+    [Fact]
+    public void TypedRosterHandlersAreScopedIsolatedRemovableAndHealthGated()
+    {
+        using var hub = new LifecycleHub((_, _) => { });
+        hub.SetCapability("owned-bars", true, "Bound.");
+        var storage = new Storage();
+        using var engine = new BarContentService(storage, hub, (_, _) => null, _ => false, hub.CheckThread);
+        IBarService service = engine;
+        var session = Ready(hub, storage);
+        var scopes = new System.Collections.Generic.List<bool>();
+        Action<BarRosterFinalized> handlers = _ => throw new InvalidOperationException("Expected subscriber fault.");
+        handlers += _ => scopes.Add(hub.IsDispatchingCallbacks);
+        service.RosterFinalized += handlers;
+        var snapshot = new BarRosterFinalized(session, "station", Array.Empty<BarRosterMember>(), new System.Collections.Generic.Dictionary<string, string>());
+        engine.Publish(snapshot, () => true); Assert.True(Assert.Single(scopes));
+        service.RosterFinalized -= handlers;
+        engine.Publish(snapshot, () => true); Assert.Single(scopes);
+        service.RosterFinalized += handlers;
+        hub.SetCapability("owned-bars", false, "Fault.", ServiceUnavailableReason.ObserverFault);
+        engine.Publish(snapshot, () => true); Assert.Single(scopes);
+        engine.Dispose(); Assert.Equal(ServiceUnavailableReason.ObserverFault, service.Availability.Reason);
+    }
+
+    [Fact]
     public void InteractionsArePlanBoundNonReentrantAndRevokedWithTheLease()
     {
         using var hub = new LifecycleHub((_, error) => throw error);
         var storage = new Storage();
+        hub.SetCapability("owned-bars", true, "Test bindings.");
         using var service = new BarContentService(storage, hub,
             (_, _) => new StoryHostPlugin("author", typeof(BarContentServiceTests).Assembly), _ => false, hub.CheckThread);
         var author = service.AcquireProvider("author").Provider!;
@@ -39,6 +78,7 @@ public sealed class BarContentServiceTests
     {
         using var hub = new LifecycleHub((_, error) => throw error);
         var storage = new Storage();
+        hub.SetCapability("owned-bars", true, "Test bindings.");
         using var service = new BarContentService(storage, hub,
             (_, _) => new StoryHostPlugin("author", typeof(BarContentServiceTests).Assembly), _ => false, hub.CheckThread);
         var author = service.AcquireProvider("author").Provider!;
@@ -65,6 +105,7 @@ public sealed class BarContentServiceTests
         station.bar.availablePatrons.Add(contact);
         ClickPlayer.current = new ClickPlayer { currentPointOfInterest = station };
         bool invalidate = false;
+        hub.SetCapability("owned-bars", true, "Test bindings.");
         using var service = new BarContentService(storage, hub,
             (_, _) => new StoryHostPlugin("author", typeof(BarContentServiceTests).Assembly),
             _ => { if (invalidate) station.bar.availablePatrons.Clear(); return true; }, hub.CheckThread, () => FixedPermissionStamp);
@@ -99,6 +140,7 @@ public sealed class BarContentServiceTests
         VGModAPI.Core.Integration.BarRuntimeHost? host = null;
         bool armed = false;
         void FaultAt(int stage) { if (armed && faultStage == stage) host!.Fault(new InvalidOperationException("injected host fault")); }
+        hub.SetCapability("owned-bars", true, "Test bindings.");
         using var service = new BarContentService(storage, hub,
             (_, _) => new StoryHostPlugin("author", typeof(BarContentServiceTests).Assembly),
             _ => { FaultAt(3); return true; }, hub.CheckThread, () => FixedPermissionStamp);
@@ -179,6 +221,7 @@ public sealed class BarContentServiceTests
         using var hub = new LifecycleHub((_, error) => throw error);
         var storage = new Storage();
         var reported = new System.Collections.Generic.List<string>();
+        hub.SetCapability("owned-bars", true, "Test bindings.");
         using var service = new BarContentService(storage, hub,
             (_, _) => new StoryHostPlugin("author", typeof(BarContentServiceTests).Assembly), _ => false, hub.CheckThread,
             reportObserver: (owner, error) => { reported.Add(owner); throw new Exception("logger failure"); });
@@ -210,6 +253,7 @@ public sealed class BarContentServiceTests
     {
         using var hub = new LifecycleHub((_, error) => throw error);
         var storage = new Storage();
+        hub.SetCapability("owned-bars", true, "Test bindings.");
         using var service = new BarContentService(storage, hub,
             (_, _) => new StoryHostPlugin("author", typeof(BarContentServiceTests).Assembly), _ => false, hub.CheckThread);
         var author = service.AcquireProvider("author").Provider!;
@@ -231,14 +275,16 @@ public sealed class BarContentServiceTests
     }
 
     private static readonly object FixedPermissionStamp = new();
-    private sealed class Storage : IPersistenceApi, IPersistenceRegistration, IPersistenceReadiness
+    private sealed class Storage : TestSaveDataService
     {
         internal PersistenceProvider Provider = null!;
         public bool MutationAllowed { get; set; } = true;
         public bool StateReady { get; set; } = true;
         public string Status => "test";
-        public IPersistenceRegistration Register(PersistenceProvider provider) { Provider = provider; return this; }
-        public void Dispose() { MutationAllowed = false; StateReady = false; }
+        public override bool CanRead => StateReady;
+        public override bool CanMutate => StateReady && MutationAllowed;
+        public override SaveDataRegistrationResult Register(PersistenceProvider provider) { Provider = provider; return new(SaveDataRegistrationStatus.Registered, this); }
+        public override void Dispose() { MutationAllowed = false; StateReady = false; }
     }
     private sealed class World : IBarRosterWorld
     {
@@ -261,6 +307,7 @@ public sealed class BarContentServiceTests
         var expected = (BarRosterApplyStatus)expectedStatus;
         using var hub = new LifecycleHub((_, error) => throw error);
         var storage = new Storage();
+        hub.SetCapability("owned-bars", true, "Test bindings.");
         using var service = new BarContentService(storage, hub,
             (_, _) => new StoryHostPlugin("author", typeof(BarContentServiceTests).Assembly), _ => false, hub.CheckThread);
         var author = service.AcquireProvider("author").Provider!;
@@ -278,6 +325,8 @@ public sealed class BarContentServiceTests
         new("contact", "station", "Name", "Description", "seed", retention);
     private static Guid Ready(LifecycleHub hub, Storage storage, byte[]? bytes = null)
     {
+        hub.SetCapability("session-lifecycle", true, "Bound.");
+        hub.SetCapability("save-outcomes", true, "Bound.");
         var session = hub.Begin(SessionOrigin.SaveLoad, "slot");
         hub.PlayerReady(session); storage.Provider.Restore(hub.CurrentSession!, bytes); hub.GameplayInitialized(session);
         return session;
@@ -288,6 +337,7 @@ public sealed class BarContentServiceTests
     {
         using var hub = new LifecycleHub((_, error) => throw error);
         var storage = new Storage();
+        hub.SetCapability("owned-bars", true, "Test bindings.");
         using var service = new BarContentService(storage, hub,
             (plugin, _) => plugin is string id ? new StoryHostPlugin(id, typeof(BarContentServiceTests).Assembly) : null,
             _ => false, hub.CheckThread);
@@ -315,6 +365,7 @@ public sealed class BarContentServiceTests
     {
         using var hub = new LifecycleHub((_, error) => throw error);
         var storage = new Storage();
+        hub.SetCapability("owned-bars", true, "Test bindings.");
         using var service = new BarContentService(storage, hub,
             (plugin, _) => new StoryHostPlugin((string)plugin, typeof(BarContentServiceTests).Assembly), _ => true, hub.CheckThread, () => FixedPermissionStamp);
         var a = service.AcquireProvider("a").Provider!;
@@ -347,6 +398,7 @@ public sealed class BarContentServiceTests
     {
         using var hub = new LifecycleHub((_, error) => throw error);
         var storage = new Storage();
+        hub.SetCapability("owned-bars", true, "Test bindings.");
         using var service = new BarContentService(storage, hub,
             (_, _) => new StoryHostPlugin("author", typeof(BarContentServiceTests).Assembly), _ => true, hub.CheckThread);
         var provider = service.AcquireProvider("author").Provider!;
@@ -373,6 +425,7 @@ public sealed class BarContentServiceTests
         using var hub = new LifecycleHub((_, error) => throw error);
         var storage = new Storage();
         Action? duringPermission = null;
+        hub.SetCapability("owned-bars", true, "Test bindings.");
         using var service = new BarContentService(storage, hub,
             (_, _) => new StoryHostPlugin("author", typeof(BarContentServiceTests).Assembly),
             _ => { duringPermission?.Invoke(); return true; }, hub.CheckThread, () => FixedPermissionStamp);
@@ -392,6 +445,7 @@ public sealed class BarContentServiceTests
     {
         using var hub = new LifecycleHub((_, error) => throw error);
         var storage = new Storage();
+        hub.SetCapability("owned-bars", true, "Test bindings.");
         using var service = new BarContentService(storage, hub,
             (_, _) => new StoryHostPlugin("author", typeof(BarContentServiceTests).Assembly), _ => false, hub.CheckThread);
         var author = service.AcquireProvider("author").Provider!;
@@ -418,6 +472,7 @@ public sealed class BarContentServiceTests
         using var hub = new LifecycleHub((_, error) => throw error);
         var storage = new Storage();
         bool allowed = true;
+        hub.SetCapability("owned-bars", true, "Test bindings.");
         using var service = new BarContentService(storage, hub,
             (plugin, _) => new StoryHostPlugin((string)plugin, typeof(BarContentServiceTests).Assembly),
             _ => allowed ? true : throws ? throw new InvalidOperationException("permission unavailable") : false, hub.CheckThread, () => FixedPermissionStamp);
@@ -447,6 +502,7 @@ public sealed class BarContentServiceTests
         object permissionEpoch = new();
         object missionEpoch = new();
         bool attack = false, grantA = true;
+        hub.SetCapability("owned-bars", true, "Test bindings.");
         using var service = new BarContentService(storage, hub,
             (plugin, _) => new StoryHostPlugin((string)plugin, typeof(BarContentServiceTests).Assembly),
             id =>
@@ -480,6 +536,7 @@ public sealed class BarContentServiceTests
     {
         using var hub = new LifecycleHub((_, error) => throw error);
         var storage = new Storage();
+        hub.SetCapability("owned-bars", true, "Test bindings.");
         using var service = new BarContentService(storage, hub,
             (plugin, _) => new StoryHostPlugin((string)plugin, (string)plugin == "foreign" ? typeof(string).Assembly : typeof(BarContentServiceTests).Assembly),
             id => id == "campaign", hub.CheckThread);
@@ -496,6 +553,7 @@ public sealed class BarContentServiceTests
     {
         using var hub = new LifecycleHub((_, error) => throw error);
         var storage = new Storage();
+        hub.SetCapability("owned-bars", true, "Test bindings.");
         using var service = new BarContentService(storage, hub,
             (_, _) => new StoryHostPlugin("author", typeof(BarContentServiceTests).Assembly), _ => false, hub.CheckThread);
         var author = service.AcquireProvider("author").Provider!;

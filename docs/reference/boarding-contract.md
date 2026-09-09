@@ -1,6 +1,6 @@
 # Boarding integration constraints and source coverage
 
-Optional boarding observation is implemented in API 0.1.25, disabled by default and not runtime-qualified. Enable `[Boarding] Enabled = true`, inspect the `boarding-observation` capability and use `ModApi.Boarding`. API 0.1.26 also exposes `ModApi.BoardingRules` with the independent `boarding-rules` capability. API 0.1.27 exposes `ModApi.BoardingCommands` when `boarding-commands` is available. API 0.1.28 exposes `ModApi.BoardingTactics` and `ModApi.BoardingCombat` under the separate `boarding-tactics` and `boarding-combat` capabilities. Authored content and presentation registration are not available yet. This document distinguishes the observation contract from applicable constraints on those integrations; no native boarding scenario is attested by it.
+Boarding is optional, disabled by default and not runtime-qualified. Enable `[Boarding] Enabled = true` and use the stable `ModApi.Services.Boarding`, `BoardingRules`, `BoardingCommands`, `BoardingTactics` and `BoardingCombat` services. Each exposes independent typed availability; registration or a healthy binding is not permission to act on a stale session or operation. This document distinguishes observation from action constraints; it does not attest a native boarding scenario.
 
 ## Evidence boundary
 
@@ -61,11 +61,11 @@ Enemy donor selection consumes a reinforcement request before finding a donor, d
 
 ## Public shape and identity constraints
 
-The current observation surface is `IBoardingEvents`, `BoardingHandle`, `BoardingTargetSnapshot`, `BoardingOperationSnapshot`, `BoardingCompartmentSnapshot` and `BoardingEvent`. `BoardingHandle` is opaque runtime identity; separate query dictionaries distinguish targets from operations. Registration is main-thread-only, does not replay, and is disposed through the returned subscription. All snapshots copy their collections. Invalidated/retired handles cannot be queried or resurrected.
+The current observation surface is `IBoardingService`, `BoardingHandle`, `BoardingTargetSnapshot`, `BoardingOperationSnapshot`, `BoardingCompartmentSnapshot` and `BoardingEvent`. `BoardingHandle` is opaque runtime identity; separate query dictionaries distinguish targets from operations. Handler registration/removal is main-thread-only and does not replay; remove retained handlers with `Changed -= handler`. All snapshots copy their collections. Invalidated/retired handles cannot be queried or resurrected.
 
 The following naming and behavioral constraints apply to richer interfaces; names not listed above are design terminology, not advertised available types:
 
-- `IBoardingApi`: queries/subscriptions plus optional command/rule/content/presentation interfaces. Each independently bound integration reports availability and an actionable reason. A live service or `GameplayInitialized` does not imply target, panel or command availability.
+- The boarding service group provides queries/events plus optional command/rule/content/presentation services. Each independently bound integration reports availability and an actionable reason. A live service or `GameplayInitialized` does not imply target, panel or command availability.
 - `BoardingTargetHandle`: session ID and opaque generation; `BoardingOperationHandle`: session ID and opaque operation generation. Compartment and crew handles additionally belong to an operation. Constructors must not let arbitrary identifiers confer mutation authority.
 - Immutable `BoardingTargetSnapshot` and `BoardingOperationSnapshot`: revision, encounter kind, phase, explicit availability reasons, copied crew/pod counts, discovered compartments, options, integrity and separately reported outcome/settlement. Collections are defensively copied. Unknown facts are unknown, not fabricated zeroes or success.
 - Distinct operation phases: approach, awaiting landing, active encounter, extracting, resolved, returning crew, settled, retired. A target may exist without an operation. Phase transitions need native evidence; a closed panel changes no encounter phase.
@@ -127,7 +127,7 @@ BoardAlways owns its Enabled setting, threshold/guaranteed-disable policy, balan
 
 Patch-free means no direct game/Unity/Harmony compile references, reflection or native casts for covered boarding functionality. A wrapper moving the same patches into another consumer file does not qualify. A second author example must exercise custom encounter/tactical/UI/save behavior beyond the four BoardAlways patch areas.
 
-## Tactical actions and combat policies (API 0.1.28)
+## Tactical actions and combat policies
 
 Tactical execution requires the actual current `IBoardingController` instance, not merely its plugin ID or an imitation of the interface. `BoardingTacticalRequest` describes an action; `BoardingTacticalSnapshot` copies discovered rooms, grenade charges/cooldown and extraction availability. Adjacent unexplored rooms expose only their index, unknown status and door state so exploration remains possible without revealing their occupants. Snapshots resolve the exact requested operation generation, never its target's newer operation. Snapshots are not permission and action execution revalidates native state. Native direct movement retains capacity-limited partial movement; queued API count requests require the requested capacity.
 
@@ -144,9 +144,11 @@ Tactical execution requires the actual current `IBoardingController` instance, n
 | Surrender and defection | Veto combat/mass surrender, attacker morale collapse and combat/faction side switching | Discrete veto composition and session/reentrancy behavior |
 | Reinforcements | Veto defender scheduling or player requests before debit, not already-arriving manifests | Player roster conservation on veto; receiving simulation remains mandatory |
 | Hazards and venting | Veto native hazard firing, airlock vent attempts or random structural vent selection | Discrete family validation and exact native binding checks |
-| Structural damage | `IBoardingRules.RegisterIntegrity`, scuttle and explosion policies | Cause-aware exactly-once composition; authoritative host destruction remains unchanged |
+| Structural damage | `IBoardingRuleProvider.RegisterIntegrity`, scuttle and explosion policies | Cause-aware exactly-once composition; authoritative host destruction remains unchanged |
 
-`IBoardingCombatRules.AcquireProvider` creates a disposable provider instance independent of command control. RegisterMultiplier accepts Power, InitialHealth, Morale or CasualtyRate; RegisterVeto accepts Surrender, Defection, Reinforcement, Hazard or Venting. Callbacks receive copied encounter kind/level, side, optional room and boundary value. InitialHealth scales the native HP initialization multiplier; Morale scales the absolute change, retaining its sign and clamping resulting morale to [0,1]. Policies do not rewrite saved HP on load.
+`ModApi.Services.BoardingCombat` is a stable service with typed `Availability` and `AvailabilityChanged`. Unavailable evaluation preserves vanilla values without invoking providers; health loss discards the entire composition.
+
+`IBoardingCombatService.AcquireProvider` creates a disposable provider instance independent of command control. RegisterMultiplier accepts Power, InitialHealth, Morale or CasualtyRate; RegisterVeto accepts Surrender, Defection, Reinforcement, Hazard or Venting. Callbacks receive copied encounter kind/level, side, optional room and boundary value. InitialHealth scales the native HP initialization multiplier; Morale scales the absolute change, retaining its sign and clamping resulting morale to [0,1]. Policies do not rewrite saved HP on load.
 
 Individual multipliers must be finite in [0,10]; combined multipliers above 100 or overflowing the boundary value reject the offending contribution with diagnostics. Contributions run by descending priority then ordinal provider/local ID. Vetoes aggregate as denials, and throwing callbacks do not prevent later contributions. Provider disposal removes only that instance's registrations. Nested evaluation preserves native defaults; session replacement discards results. Policy callbacks must not issue commands.
 
@@ -154,9 +156,9 @@ These are request/effect vetoes, not outcome notifications. Vetoing a hazard eff
 
 Host tests, source inspection and metadata checks are not Unity acceptance. Native timing, coexistence, presentation and complete action-family scenarios remain unqualified until exercised on the exact source revision.
 
-## Boarding commands (API 0.1.27)
+## Boarding commands
 
-`ModApi.BoardingCommands.AcquireControl(pluginId, target, out controller)` returns a typed result and, when admitted, an instance-scoped disposable controller. Acquire from a current target snapshot, not a saved handle. Event subscriptions do not grant command control. Only one mod controller can hold a target; manual native HUD cancellation and panel start, extraction, reinforcement and option actions revoke it. Native autonomous re-enabling is blocked while it is held. Disposal does not restore old autonomous settings over newer player choices.
+`ModApi.Services.BoardingCommands.AcquireControl(pluginId, target, out controller)` returns a typed result and, when admitted, an instance-scoped disposable controller. Acquire from a current target snapshot, not a saved handle. Event subscriptions do not grant command control. Only one mod controller can hold a target; manual native HUD cancellation and panel start, extraction, reinforcement and option actions revoke it. Native autonomous re-enabling is blocked while it is held. Disposal does not restore old autonomous settings over newer player choices.
 
 The controller exposes Start, Resume, Reinforce, CancelApproach, Retreat, RequestExtraction, ConfirmExtraction and SetOptions. Crew manifests are copied, nonempty, positive-count maps of native crew identifiers. Options expose ammunition, stealth, auto-move and automatic buyout. Automatic buyout can spend credits later according to native rules; no upfront credit charge is invented. Starting with friendly-faction consequences requires explicit consent, then uses native reputation/aggro bookkeeping. Availability, crew, capacity, travel, phase and target/ship identity are revalidated at execution. Installation entry restrictions do not apply to ship targets. Reinforcement requires an existing receiving simulation; approach or prelanding without one is rejected before crew debit.
 
@@ -164,9 +166,9 @@ Initial ship crew is debited at native pod creation. Walk-in crew is revalidated
 
 Commands refuse reentrancy, event/policy dispatch and native save-state serialization. Session/target replacement invalidates controllers. Admitted means the native request was entered, not arrival, extraction completion, successful rewards or settled crew. Observe lifecycle events for those separate facts. Host tests and installed binding checks do not prove the cancellation, return, UI or save paths in Unity; complete native acceptance remains pending.
 
-## Registered boarding policies (API 0.1.26)
+## Registered boarding policies
 
-Acquire one disposable `IBoardingRuleProvider` per plugin ID from `ModApi.BoardingRules`. Each local registration ID is unique within that owning provider instance. Dispose a registration to remove it, or dispose the provider to remove all its rules. Registration and evaluation are main-thread-only. Check `boarding-rules` availability; binding success is not native qualification.
+Acquire one disposable `IBoardingRuleProvider` per plugin ID from `ModApi.Services.BoardingRules`. Each local registration ID is unique within that owning provider instance. Dispose a registration to remove it, or dispose the provider to remove all its rules. Registration and evaluation are main-thread-only. Check the service’s typed `Availability`; binding success is not native qualification. Providers may declare rules while unavailable, but evaluation preserves vanilla behavior without invoking them. Health loss during evaluation discards the composition; disposal preserves an existing failure diagnosis.
 
 Callbacks receive immutable numeric contexts and must be pure, quick and deterministic. They must not call game commands. Reentrant evaluation uses vanilla defaults. Registration changes take effect on the next evaluation snapshot; disposed entries are skipped immediately. Session replacement during evaluation discards the result. Exceptions and invalid values discard that contribution and report the provider/local ID without suppressing vanilla exceptions.
 
@@ -177,3 +179,23 @@ Callbacks receive immutable numeric contexts and must be pure, quick and determi
 - Ship and installation scopes are explicit. Scuttle denials prevent the native attempt before RNG and before armory destruction. Independent explosion denials prevent reactor explosion initiation without denying armory scuttle. Damage scaling alone does not prevent armory destruction or undo an initiated explosion/collapse. Cause scopes are per invocation and simulation, including nested combat/ammunition, hazards, grenades, scuttle and reactor explosion ticks. Authoritative host destruction bypasses all integrity reductions.
 
 Host and metadata checks cover policy composition and adapter boundaries. Full native coexistence, damage, explosion and save/resume acceptance remains pending.
+
+`ModApi.Services.BoardingCommands` is a stable `IBoardingCommandService` with typed
+`Availability` and `AvailabilityChanged`. Missing bindings refuse control without
+native access. Health loss closes controller admission; loss during a native
+invocation reports `Uncertain` because effects may already have occurred. Never
+blindly retry an uncertain command. Admission is not a completed native outcome.
+
+`ModApi.Services.BoardingTactics` exposes a stable `IBoardingTacticalService`.
+Typed availability is independent of whether an operation has a tactical snapshot.
+Unavailable snapshots perform no native reads; successful reads revalidate their
+session and service health. Tactical mutations retain controller arbitration and
+all specialist, movement, resource and consent checks. Health loss after invocation
+reports `Uncertain`; native UI validation remains independent of consumer access.
+
+`ModApi.Services.Boarding` is a stable `IBoardingService`. Subscribe using
+`Changed += handler` and remove the exact handler during teardown. Registration
+does not replay existing observations; query explicitly after subscribing.
+`Availability` and `AvailabilityChanged` describe binding health. Outside an
+available current session, `SessionId` and single-handle queries return null and
+list queries return empty; inspect availability before interpreting an empty list.

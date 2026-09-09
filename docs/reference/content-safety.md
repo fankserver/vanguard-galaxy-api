@@ -1,6 +1,6 @@
 # Persistent content ownership and removal
 
-`ContentSafety` (Abstractions, API 0.1.3) is a pure admission/recovery planner. It does not install content, intercept vanilla loads, rewrite saves or execute migrations. Callers must supply verified provider version/enabled state and compatible API/handler availability. Its actions select an explicit restoration procedure, not a guarantee that that procedure succeeds. Preserve original bytes on any failure.
+`ContentSafety` (Abstractions) is a pure admission/recovery planner. It does not install content, intercept vanilla loads, rewrite saves or execute migrations. Callers must supply verified provider version/enabled state and compatible API/handler availability. Its actions select an explicit restoration procedure, not a guarantee that that procedure succeeds. Preserve original bytes on any failure.
 
 ## Ownership and admission
 

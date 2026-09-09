@@ -9,7 +9,7 @@ internal sealed class DungeonPodPersistence : IDisposable
     private readonly LifecycleHub _hub;
     private readonly DungeonPodRecoveryLedger _ledger = new();
     private readonly DungeonOperationRecoveryLedger _operations = new();
-    private readonly IPersistenceRegistration? _registration;
+    private readonly ISaveDataRegistration? _registration;
     private readonly IDisposable _lifetime;
     private Guid? _restoredSession;
     private bool _disposed;
@@ -41,13 +41,13 @@ internal sealed class DungeonPodPersistence : IDisposable
     internal void RejectTransferSnapshot() { _hub.CheckThread(); _effects.Fail(); }
     internal DungeonMutationFence.Lease? BeginTransfer()
     {
-        if (IsCheckpointing || _returnDepth != 0 || !Ready || !_registration!.MutationAllowed || _hub.IsDispatchingCallbacks || _effects.Uncertain) return null;
+        if (IsCheckpointing || _returnDepth != 0 || !Ready || !_registration!.CanMutate || _hub.IsDispatchingCallbacks || _effects.Uncertain) return null;
         return _effects.Enter();
     }
     internal object RestoreToken { get; private set; } = new();
     private readonly HashSet<Guid> _restoredPods = new();
     internal bool WasRestored(Guid id) => Ready && _restoredPods.Contains(id);
-    internal DungeonPodPersistence(LifecycleHub hub, IPersistenceApi? persistence)
+    internal DungeonPodPersistence(LifecycleHub hub, ISaveDataService? persistence)
     {
         _hub = hub;
         _lifetime = hub.Subscribe("vgmodapi.dungeon-pods", message =>
@@ -55,17 +55,22 @@ internal sealed class DungeonPodPersistence : IDisposable
             if (message.Kind is LifecycleEventKind.SessionStarting or LifecycleEventKind.SessionInvalidated or LifecycleEventKind.SessionStartFailed)
             { _restoredSession = null; _ledger.Restore(null); _operations.Restore(null); _restoredPods.Clear(); RestoreToken = new(); _effects.Reset(); }
         });
-        _registration = persistence?.Register(new PersistenceProvider("vgmodapi.dungeon-recovery", 1, Capture, Restore, DungeonRecoveryCodec.Validate));
+        try
+        {
+            _registration = persistence?.Register(new PersistenceProvider("vgmodapi.dungeon-recovery", 1, Capture, Restore, DungeonRecoveryCodec.Validate)).Registration;
+            if (persistence != null && _registration == null) throw new InvalidOperationException("Dungeon recovery provider registration refused.");
+        }
+        catch { _lifetime.Dispose(); throw; }
     }
     internal bool Ready
     {
         get
         {
             _hub.CheckThread(); return !_disposed && _restoredSession.HasValue && _restoredSession == _hub.CurrentSession?.Id &&
-                _registration is IPersistenceReadiness readiness && readiness.StateReady;
+                _registration?.CanRead == true;
         }
     }
-    internal bool CanMutate => !IsCheckpointing && !_effects.Busy && !_effects.Uncertain && _returnDepth == 0 && Ready && _registration!.MutationAllowed && !_hub.IsDispatchingCallbacks;
+    internal bool CanMutate => !IsCheckpointing && !_effects.Busy && !_effects.Uncertain && _returnDepth == 0 && Ready && _registration!.CanMutate && !_hub.IsDispatchingCallbacks;
     internal IReadOnlyList<DungeonPodResumeState> Snapshot => Ready ? _ledger.Snapshot : Array.Empty<DungeonPodResumeState>();
     internal DungeonPodResumeState? Get(Guid id) => Ready ? _ledger.Get(id) : null;
     internal DungeonOperationResumeState? Operation(Guid id) => Ready ? _operations.Get(id) : null;
@@ -125,14 +130,14 @@ internal sealed class DungeonPodPersistence : IDisposable
         internal bool Complete(DungeonPodDeliveryReceipt receipt)
         {
             _owner._hub.CheckThread();
-            if (_disposed || !_owner.Ready || !ReferenceEquals(_token, _owner.RestoreToken) || !ReferenceEquals(_owner._operations.Get(_attempted.Id), _attempted) || !_owner._registration!.MutationAllowed || !receipt.AccountsFor(_attempted.WalkReturn!.Crew)) return false;
+            if (_disposed || !_owner.Ready || !ReferenceEquals(_token, _owner.RestoreToken) || !ReferenceEquals(_owner._operations.Get(_attempted.Id), _attempted) || !_owner._registration!.CanMutate || !receipt.AccountsFor(_attempted.WalkReturn!.Crew)) return false;
             _owner._operations.Track(_attempted.WithWalkReturn(_attempted.WalkReturn!.Complete(receipt))); return true;
         }
         public void Dispose() { _owner._hub.CheckThread(); if (_disposed) return; _disposed = true; _owner._returnDepth--; }
     }
     internal RefundAttempt? BeginDockedRefunds(Guid operationId, IReadOnlyList<Guid> ids)
     {
-        if (!Ready || !_registration!.MutationAllowed || _hub.IsDispatchingCallbacks || IsCheckpointing || _effects.Uncertain ||
+        if (!Ready || !_registration!.CanMutate || _hub.IsDispatchingCallbacks || IsCheckpointing || _effects.Uncertain ||
             (!CanMutate && !(_returnDepth == 1 && _terminalOperation == operationId && ReferenceEquals(_terminalToken, RestoreToken)) && !(_returnDepth == 0 && _cancellationOperation == operationId && ReferenceEquals(_cancellationToken, RestoreToken))) || _operations.Get(operationId) is not { } operation) return null;
         var attempts = _ledger.BeginDockedRefunds(ids, operationId, operation.AttackerShipId); if (attempts == null) return null;
         _returnDepth++; return new(this, RestoreToken, attempts);
@@ -144,7 +149,7 @@ internal sealed class DungeonPodPersistence : IDisposable
         internal bool Complete(DungeonPodDeliveryReceipt receipt)
         {
             _owner._hub.CheckThread();
-            if (_disposed || !_owner.Ready || !ReferenceEquals(_token, _owner.RestoreToken) || !_owner._registration!.MutationAllowed) return false;
+            if (_disposed || !_owner.Ready || !ReferenceEquals(_token, _owner.RestoreToken) || !_owner._registration!.CanMutate) return false;
             var crew = new Dictionary<string, int>(StringComparer.Ordinal);
             foreach (var attempt in _attempts)
             {
@@ -198,7 +203,7 @@ internal sealed class DungeonPodPersistence : IDisposable
         {
             _owner._hub.CheckThread();
             if (_disposed || !_owner.Ready || _owner._restoredSession != _session || !ReferenceEquals(_owner._ledger.Get(_attempted.Id), _attempted) ||
-                !_owner._registration!.MutationAllowed || !receipt.AccountsFor(_attempted.ReturnCrew)) return false;
+                !_owner._registration!.CanMutate || !receipt.AccountsFor(_attempted.ReturnCrew)) return false;
             _owner._ledger.Delivered(_attempted.Id); return true;
         }
         public void Dispose()

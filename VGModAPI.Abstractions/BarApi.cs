@@ -26,11 +26,11 @@ public sealed class BarProviderResult
 }
 
 /// <summary>Main-thread-only ownership. Acquire directly from the loaded plugin's assembly.</summary>
-public interface IBarApi
+public interface IBarService : IServiceStatus
 {
     BarProviderResult AcquireProvider(object pluginInstance);
-    /// <summary>Main-thread-only finalized-roster observation. No replay; dispose on consumer teardown.</summary>
-    IDisposable Subscribe(string owner, Action<BarRosterFinalized> callback);
+    /// <summary>Main-thread-only finalized-roster observation. No replay; remove the handler on consumer teardown.</summary>
+    event Action<BarRosterFinalized>? RosterFinalized;
 }
 
 /// <summary>Definitions and policies are registrations; persistent placement is a session mutation.</summary>

@@ -27,6 +27,7 @@ public sealed class RecipeQuoteTests : IDisposable
     private static readonly RecipeId Id = new("vanilla", "forge/recipe");
     public RecipeQuoteTests()
     {
+        _hub.SetCapability("recipe-quotes", true, "Bound.");
         var session = _hub.Begin(SessionOrigin.NewGame, null); _hub.PlayerReady(session); _hub.GameplayInitialized(session);
         GamePlayer.current = _player; _player.currentPointOfInterest = _station;
         Source.Galaxy.GalaxyMapData.current = new(); Source.Galaxy.GalaxyMapData.current.AddPoi(_station);

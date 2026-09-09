@@ -30,10 +30,10 @@ public sealed partial class Plugin
             var missionType = mission.GetType();
             var slot = AccessTools.Field(CurrentPlayer.GetType(), "current" + kind);
             var poi = SpGet(((IList)SpGet(mission, "steps")!)[0]!, "dynamicPointOfInterest")!;
-            var access = (IVersionSensitiveMissionAccess)ModApi.Missions!;
+            var access = (IVersionSensitiveMissionAccess)ModApi.Services.Missions;
             var owned = new HashSet<object> { mission };
             var observed = new List<MissionTransition>();
-            using var subscription = ModApi.Missions!.Subscribe("qualification.waves", e =>
+            using var subscription = new MissionProbeSubscription(ModApi.Services.Missions, e =>
             {
                 if (!access.TryGetNative(e.Mission, out var native) || native == null) return;
                 if (e.Kind == MissionTransitionKind.Accepted && missionType.IsInstanceOfType(native) && ReferenceEquals(slot.GetValue(CurrentPlayer), native)) owned.Add(native);

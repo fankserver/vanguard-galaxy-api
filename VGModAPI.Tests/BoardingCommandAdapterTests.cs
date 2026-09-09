@@ -67,6 +67,7 @@ public sealed class BoardingCommandAdapterTests
         internal readonly BoardingHandle Target;
         internal Fixture()
         {
+            Hub.SetCapability("boarding-observation", true, "Test bindings.");
             Events = new BoardingService(Hub, (_, _) => { });
             Observer = new BoardingObserver(Hub, Events, Native.Get, _ => true, error => throw error);
             var session = Hub.Begin(SessionOrigin.SaveLoad, "save"); Hub.PlayerReady(session); Hub.GameplayInitialized(session);
@@ -102,7 +103,7 @@ public sealed class BoardingCommandAdapterTests
     public void HudCancellationRevokesControllerButApiCancellationDoesNot()
     {
         using var f = new Fixture();
-        using var commands = new BoardingCommandService(f.Hub, f.Events, f.Adapter, () => false);
+        f.Hub.SetCapability("boarding-commands", true, "Test bindings."); using var commands = new BoardingCommandService(f.Hub, f.Events, f.Adapter, () => false);
         Assert.True(commands.AcquireControl("mod", f.Target, out var controller).Admitted);
         Assert.True(controller!.Start(new BoardingCrewManifest(new Dictionary<string, int> { ["Marine"] = 2 }), new()).Admitted);
         Assert.True(controller.CancelApproach().Admitted); Assert.True(controller.IsActive);

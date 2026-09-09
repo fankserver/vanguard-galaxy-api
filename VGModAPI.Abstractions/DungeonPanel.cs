@@ -2,7 +2,7 @@ using System;
 
 namespace VGModAPI;
 
-public enum DungeonPanelOpenStatus { Opened, Unavailable, StaleTarget, Busy }
+public enum DungeonPanelOpenStatus { Opened, Unavailable, StaleTarget, Busy, Uncertain }
 
 /// <summary>Independent adapter availability; an enabled control is never command authorization.</summary>
 public sealed class DungeonPanelCapabilities
@@ -58,7 +58,7 @@ public sealed class DungeonPanelAction
 /// <summary>Main-thread panel presentation. Null presentation hides a contribution for the current phase.
 /// Registrations are disposed by the contributor; view callbacks and activation identities expire on close or session change.
 /// Presenters are reevaluated on activation; gameplay commands must still perform their own validation.</summary>
-public interface IDungeonPanelApi
+public interface IDungeonPanelService : IServiceStatus
 {
     DungeonPanelCapabilities Capabilities { get; }
     DungeonPanelSnapshot? Current { get; }

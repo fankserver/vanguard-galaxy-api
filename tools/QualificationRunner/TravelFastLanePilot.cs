@@ -17,7 +17,7 @@ namespace VGModAPI.Qualification;
 // TWO gates into a third system instead, so the intermediate system's next waypoint is another gate
 // and the native charge branch (TheGate.ChargeFastLaneTravelToNextGate, travelMultiplier = 7f) runs.
 //
-// Like the other phases it ASSERTS only through the public ITravelEvents surface and DRIVES only
+// Like the other phases it ASSERTS only through the public ITravelService surface and DRIVES only
 // actual vanilla entry points and Unity coroutines: it never invokes adapter callbacks, never
 // assigns a location or a waypoint, never fabricates an arrival and never disables a production
 // hook. It also never WRITES the fixture's fast-lane unlock flag or any other native/save state:
@@ -146,9 +146,9 @@ public sealed partial class Plugin
     private IEnumerable<object?> RunTravelFastLane()
     {
         Require(TravelStationSelected, "The fast-lane phase requires the travel/station selection that enables the native travel capability.");
-        var travel = ModApi.Travel;
+        var travel = ModApi.Services.Travel;
         Require(travel != null, "Travel public service not exposed.");
-        Require(_api!.Capabilities.Any(capability => capability.Name == "native-travel" && capability.Available), "native-travel capability not available.");
+        Require(ModApi.Services.Travel.Availability.IsAvailable, "native-travel capability not available.");
         Require(!travel!.IsDispatchingCallbacks, "Cannot subscribe during callback dispatch.");
         Require(TravelFastLaneReceipt.ReadinessSeconds == WaitDeadlineSeconds && TravelFastLaneReceipt.SettleSeconds == SettleSeconds,
             "Shared harness wait/settle deadlines no longer match the declared phase budget terms.");
@@ -156,7 +156,7 @@ public sealed partial class Plugin
             "Declared phase budget exceeds the launcher reservation.");
         var transitions = new List<TravelTransition>();
         var stationFacts = new List<StationTransition>();
-        using (travel.Subscribe("qualification.travel.fast-lane", fact =>
+        using (new TravelProbeSubscription(travel, fact =>
         {
             transitions.Add(fact);
             _flEvents.Add(TravelStationReceipt.TravelEventRow(_flCase, fact));
@@ -170,7 +170,7 @@ public sealed partial class Plugin
                     "<snapshot failed: " + error.GetType().Name + ">", false);
             }
         }))
-        using (ModApi.Station!.Subscribe("qualification.station.fast-lane", fact =>
+        using (new StationProbeSubscription(ModApi.Services.Station, fact =>
         {
             stationFacts.Add(fact);
             _flEvents.Add(TravelStationReceipt.StationEventRow(_flCase, fact));

@@ -15,7 +15,7 @@ public sealed class PackageValidationTests : IDisposable
 
     [Fact]
     [Trait("Category", "BinaryInspection")]
-    public void StableContractHasOnlyFrameworkReferences() => PackageChecks.ValidateContract(typeof(ILifecycleApi).Assembly.Location);
+    public void StableContractHasOnlyFrameworkReferences() => PackageChecks.ValidateContract(typeof(ILifecycleService).Assembly.Location);
 
     [Fact]
     [Trait("Category", "BinaryInspection")]
@@ -23,7 +23,7 @@ public sealed class PackageValidationTests : IDisposable
 
     [Fact]
     public void IncorrectIdentityIsRejected() => Assert.Throws<InvalidOperationException>(
-        () => PackageChecks.ValidateAssembly(typeof(ILifecycleApi).Assembly.Location, "VGModAPI.Core"));
+        () => PackageChecks.ValidateAssembly(typeof(ILifecycleService).Assembly.Location, "VGModAPI.Core"));
 
     [Theory]
     [InlineData("VGModAPI.Abstractions", "UnityEngine")]
@@ -39,7 +39,7 @@ public sealed class PackageValidationTests : IDisposable
     [InlineData("VGModAPI", "Assembly-CSharp")]
     public void ForbiddenAssemblyReferencesAreRejected(string owner, string dependency)
     {
-        using var assembly = AssemblyDefinition.ReadAssembly(typeof(ILifecycleApi).Assembly.Location);
+        using var assembly = AssemblyDefinition.ReadAssembly(typeof(ILifecycleService).Assembly.Location);
         assembly.Name.Name = owner;
         assembly.MainModule.AssemblyReferences.Add(new AssemblyNameReference(dependency, new Version(1, 0)));
         var altered = Path.Combine(_root, "altered.dll");

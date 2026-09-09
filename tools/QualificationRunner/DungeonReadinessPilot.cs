@@ -13,12 +13,13 @@ public sealed partial class Plugin
         WriteAtomic("dungeon-readiness.txt", new[] { "INCOMPLETE" });
         foreach (var frame in LoadReady("fixture-a")) yield return frame;
         foreach (var frame in Wait(NativeTravelReady, "Dungeon fixture readiness")) yield return frame;
-        foreach (var capability in new[] { "boarding-observation", "boarding-rules", "boarding-commands", "boarding-tactics", "boarding-combat", "dungeon-content", "dungeon-rewards", "dungeon-panel-opening", "dungeon-panel-actions", "dungeon-panel-sections" })
-            Require(_api!.Capabilities.Any(value => value.Name == capability && value.Available), "Unavailable dungeon capability: " + capability);
-        var boarding = ModApi.Boarding ?? throw new InvalidOperationException("Boarding observation unavailable.");
-        Require(ModApi.BoardingRules != null && ModApi.BoardingCommands != null && ModApi.BoardingTactics != null && ModApi.BoardingCombat != null,
+        var boarding = ModApi.Services.Boarding;
+        Require(boarding.Availability.IsAvailable, boarding.Availability.Detail);
+        var panel = ModApi.Services.DungeonPanel.Capabilities;
+        Require(panel.Opening && panel.ContextualActions && panel.StatusSections, "Dungeon panel features unavailable.");
+        Require(ModApi.Services.BoardingRules.Availability.IsAvailable && ModApi.Services.BoardingCommands.Availability.IsAvailable && ModApi.Services.BoardingTactics.Availability.IsAvailable && ModApi.Services.BoardingCombat.Availability.IsAvailable,
             "Boarding service publication incomplete.");
-        Require(ModApi.Dungeons != null && ModApi.DungeonRewards != null && ModApi.DungeonSettlement != null && ModApi.DungeonPanel != null, "Dungeon service publication incomplete.");
+        Require(ModApi.Services.Dungeons.Availability.IsAvailable && ModApi.Services.DungeonRewards.Availability.IsAvailable && ModApi.Services.DungeonSettlement.Availability.IsAvailable && ModApi.Services.DungeonPanel.Availability.IsAvailable, "Dungeon service publication incomplete.");
         var session = _api!.CurrentSession!.Id;
         Require(boarding.SessionId == session, "Boarding session differs from lifecycle.");
         var targets = boarding.GetTargets(); var operations = boarding.GetOperations();

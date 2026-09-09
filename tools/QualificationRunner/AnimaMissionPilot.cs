@@ -29,7 +29,7 @@ public sealed partial class Plugin
         var ids = new HashSet<string>(StringComparer.Ordinal);
         var events = new List<MissionTransition>();
         var trace = new List<string>();
-        using var subscription = ModApi.Missions!.Subscribe("qualification.anima", e =>
+        using var subscription = new MissionProbeSubscription(ModApi.Services.Missions, e =>
         {
             if (e.Mission.DefinitionId == null || !ids.Contains(e.Mission.DefinitionId)) return;
             events.Add(e); trace.Add(e.Sequence + "\t" + e.Kind + "\t" + e.Mission.InstanceId + "\t" + e.Mission.DefinitionId);
@@ -105,7 +105,7 @@ public sealed partial class Plugin
 
             var held = Create(); Add(held.Mission); State(held.Id, "accepted");
             var savedEntry = SpJson(SpCall(registry, "Get", held.Id));
-            var session = ModApi.Current!.CurrentSession!.Id;
+            var session = ModApi.Services.Lifecycle.CurrentSession!.Id;
             Save("qa-anima-held", LifecycleEventKind.SaveSucceeded);
             Require(File.Exists(Sidecar("qa-anima-held")), "Anima sidecar missing.");
             foreach (var name in new[] { "qa-anima-held", "qa-anima-held" })

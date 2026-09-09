@@ -9,7 +9,7 @@ public enum BoardingCommandStatus
     Admitted, IntegrationUnavailable, SessionUnavailable, StaleHandle, Busy, ControlConflict,
     WrongPhase, Travelling, TargetUnavailable, InsufficientCrew, CapacityExceeded,
     InvalidCrew, InvalidOptions, FactionConsentRequired, OperationExists, NativeFailure,
-    InvalidAction, NotDiscovered, MissingSpecialist, InsufficientResources, FriendlyDamageConsentRequired
+    InvalidAction, NotDiscovered, MissingSpecialist, InsufficientResources, FriendlyDamageConsentRequired, Uncertain
 }
 
 public enum BoardingAmmunition { Standard, Hollow, ArmourPiercing }
@@ -82,7 +82,7 @@ public interface IBoardingController : IDisposable
 }
 
 /// <summary>Main-thread command entry. Control is runtime-instance scoped and invalidated by target/session replacement.</summary>
-public interface IBoardingCommands
+public interface IBoardingCommandService : IServiceStatus
 {
     BoardingCommandResult AcquireControl(string pluginId, BoardingHandle target, out IBoardingController? controller);
 }

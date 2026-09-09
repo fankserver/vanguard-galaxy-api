@@ -8,7 +8,7 @@ For the currently inspected assembly, SaveCurrentState wraps Version and seriali
 
 ## Owner envelope
 
-OwnerSchemaCodec uses only netstandard binary IO, UTF-8/ASCII and SHA-256; no JSON library is introduced or shipped. Providers own their payload formats and runtime dependencies. A provider using Newtonsoft must arrange one compatible runtime copy; the game is not assumed to supply it. System.Text.Json is not used because its Unity/Mono compatibility is not established. The codec is internal; consumers register through the public `PersistenceProvider` and `IPersistenceApi` contracts.
+OwnerSchemaCodec uses only netstandard binary IO, UTF-8/ASCII and SHA-256; no JSON library is introduced or shipped. Providers own their payload formats and runtime dependencies. A provider using Newtonsoft must arrange one compatible runtime copy; the game is not assumed to supply it. System.Text.Json is not used because its Unity/Mono compatibility is not established. The codec is internal; consumers register through the public `PersistenceProvider` and `ISaveDataService` contracts.
 
 Envelope v1: ASCII magic VGOS, one-byte envelope version, one-byte owner length, owner ASCII, little-endian Int32 provider-schema version, Int32 payload length, payload, then SHA-256 of all preceding bytes. SHA-256 detects corruption, not malicious authorship. Owner IDs are 1–64 lowercase ASCII letters/digits/dots/hyphens, beginning with a letter. They are namespaces, never filesystem paths. A coordinator must refuse duplicate registrations.
 

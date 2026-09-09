@@ -14,7 +14,7 @@ public sealed class MissionTransitionsTests
     [Fact]
     public void ReturnWithoutTransitionAndRewardIneligibilityEmitNothing()
     {
-        using var hub = new MissionTransitions((_, _) => { }); hub.Reset(Guid.NewGuid());
+        using var hub = new MissionTransitions(new LifecycleHub((_, _) => { })); hub.Reset(Guid.NewGuid());
         var events = new List<MissionTransition>(); using var sub = hub.Subscribe("test", events.Add);
         using (var observation = hub.Begin())
         {
@@ -28,7 +28,7 @@ public sealed class MissionTransitionsTests
     [Fact]
     public void NestedCompletionArchiveAndRemovalAreOrderedAndDeduplicated()
     {
-        using var hub = new MissionTransitions((_, _) => { }); hub.Reset(Guid.NewGuid());
+        using var hub = new MissionTransitions(new LifecycleHub((_, _) => { })); hub.Reset(Guid.NewGuid());
         var events = new List<MissionTransition>(); using var sub = hub.Subscribe("test", events.Add); var token = new object();
         using (var accept = hub.Begin()) Record(hub, accept, token, MissionTransitionKind.Accepted, new(false, true));
         using (var completion = hub.Begin())
@@ -49,7 +49,7 @@ public sealed class MissionTransitionsTests
     [Fact]
     public void FailurePrecedesReplacementAndReusedObjectsStartNewOccurrences()
     {
-        using var hub = new MissionTransitions((_, _) => { }); hub.Reset(Guid.NewGuid());
+        using var hub = new MissionTransitions(new LifecycleHub((_, _) => { })); hub.Reset(Guid.NewGuid());
         var events = new List<MissionTransition>(); using var sub = hub.Subscribe("test", events.Add); var token = new object();
         using (var restored = hub.Begin()) Record(hub, restored, token, MissionTransitionKind.Restored, new(false, true));
         using (var failure = hub.Begin())
@@ -67,7 +67,7 @@ public sealed class MissionTransitionsTests
     [Fact]
     public void NestedFailureDuringAcceptanceKeepsIdentityAndLogicalAcceptanceKnowledge()
     {
-        using var hub = new MissionTransitions((_, _) => { }); hub.Reset(Guid.NewGuid());
+        using var hub = new MissionTransitions(new LifecycleHub((_, _) => { })); hub.Reset(Guid.NewGuid());
         var events = new List<MissionTransition>(); using var sub = hub.Subscribe("test", events.Add); var token = new object();
         using (var accept = hub.Begin())
         {
@@ -84,7 +84,7 @@ public sealed class MissionTransitionsTests
     [Fact]
     public void ReplacementDiscardsPendingAndSubscribersCannotBreakDispatch()
     {
-        int errors = 0; using var hub = new MissionTransitions((_, _) => errors++); hub.Reset(Guid.NewGuid());
+        int errors = 0; using var hub = new MissionTransitions(new LifecycleHub((_, _) => errors++)); hub.Reset(Guid.NewGuid());
         var events = new List<MissionTransition>(); using var bad = hub.Subscribe("bad", _ => throw new Exception("subscriber"));
         using var good = hub.Subscribe("good", events.Add);
         using (var stale = hub.Begin()) { Record(hub, stale, new object(), MissionTransitionKind.Accepted, new(false, true)); hub.Reset(Guid.NewGuid()); }
@@ -96,7 +96,7 @@ public sealed class MissionTransitionsTests
     [Fact]
     public void ReentrantResetAndDisposalStopOldBatchAndOffThreadUseFails()
     {
-        using var hub = new MissionTransitions((_, _) => { }); hub.Reset(Guid.NewGuid());
+        using var hub = new MissionTransitions(new LifecycleHub((_, _) => { })); hub.Reset(Guid.NewGuid());
         int delivered = 0;
         using var first = hub.Subscribe("replace", _ => { delivered++; hub.Reset(Guid.NewGuid()); });
         using var second = hub.Subscribe("late", _ => delivered++);
@@ -116,7 +116,7 @@ public sealed class MissionTransitionsTests
     [Fact]
     public void RepeatedDefinitionsAndLoadEpochsNeverShareLiveIdentity()
     {
-        using var hub = new MissionTransitions((_, _) => { }); hub.Reset(Guid.NewGuid());
+        using var hub = new MissionTransitions(new LifecycleHub((_, _) => { })); hub.Reset(Guid.NewGuid());
         var events = new List<MissionTransition>(); using var sub = hub.Subscribe("test", events.Add); var token = new object();
         using (var scope = hub.Begin())
         {
@@ -132,7 +132,7 @@ public sealed class MissionTransitionsTests
     [Fact]
     public void OuterFinalizerUnwindsDanglingInnerAndLaterEventsStillDeliver()
     {
-        using var hub = new MissionTransitions((_, _) => { }); hub.Reset(Guid.NewGuid());
+        using var hub = new MissionTransitions(new LifecycleHub((_, _) => { })); hub.Reset(Guid.NewGuid());
         var events = new List<MissionTransition>(); using var sub = hub.Subscribe("test", events.Add);
         var outer = hub.Begin(); var inner = hub.Begin();
         Record(hub, inner, new object(), MissionTransitionKind.Accepted, new(false, true));
@@ -144,7 +144,7 @@ public sealed class MissionTransitionsTests
     [Fact]
     public void WitnessedReacceptanceAfterUnobservedClearCreatesNewIdentityButRestoredCannotFollowAcceptance()
     {
-        using var hub = new MissionTransitions((_, _) => { }); hub.Reset(Guid.NewGuid());
+        using var hub = new MissionTransitions(new LifecycleHub((_, _) => { })); hub.Reset(Guid.NewGuid());
         var events = new List<MissionTransition>(); using var sub = hub.Subscribe("test", events.Add); var token = new object();
         using (var first = hub.Begin()) Record(hub, first, token, MissionTransitionKind.Restored, new(false, true));
         using (var next = hub.Begin())

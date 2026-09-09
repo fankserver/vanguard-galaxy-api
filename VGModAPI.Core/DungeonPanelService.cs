@@ -11,23 +11,30 @@ internal interface IDungeonPanelSource
     DungeonPanelOpenStatus Open(BoardingHandle target);
 }
 
-internal sealed class DungeonPanelService : IDungeonPanelApi, IDisposable
+internal sealed class DungeonPanelService : IDungeonPanelService, IDisposable
 {
     private readonly LifecycleHub _hub;
-    private readonly IDungeonPanelSource _source;
+    private readonly IDungeonPanelSource? _source;
+    private readonly IServiceStatus _status;
     private readonly Action<string, Exception> _report;
     private readonly List<Registration> _registrations = new();
     private bool _disposed, _dispatching, _navigating;
-    internal DungeonPanelService(LifecycleHub hub, IDungeonPanelSource source, Action<string, Exception> report)
-    { _hub = hub; _source = source; _report = report; }
-    public DungeonPanelCapabilities Capabilities { get { _hub.CheckThread(); return _disposed ? new(false, false, false) : _source.Capabilities; } }
+    internal DungeonPanelService(LifecycleHub hub, IDungeonPanelSource? source, Action<string, Exception> report)
+    {
+        _hub = hub; _source = source; _report = report; _status = hub.Services.Get("dungeon-panel-opening");
+        if (source == null && Availability.IsAvailable) hub.SetCapability("dungeon-panel-opening", false, "Panel bindings unavailable.");
+    }
+    public ServiceAvailability Availability => _status.Availability;
+    public event Action<ServiceAvailability>? AvailabilityChanged
+    { add => _status.AvailabilityChanged += value; remove => _status.AvailabilityChanged -= value; }
+    public DungeonPanelCapabilities Capabilities { get { _hub.CheckThread(); return _disposed || !Availability.IsAvailable || _source == null ? new(false, false, false) : _source.Capabilities; } }
     public DungeonPanelSnapshot? Current
     {
         get
         {
-            _hub.CheckThread(); if (_disposed) return null;
+            _hub.CheckThread(); if (_disposed || !Availability.IsAvailable || _source == null || _hub.CurrentSession?.Phase != SessionPhase.GameplayInitialized) return null;
             var snapshot = _source.Read(); var session = _hub.CurrentSession;
-            return session?.Phase == SessionPhase.GameplayInitialized && snapshot?.Target.Handle.SessionId == session.Id ? snapshot : null;
+            return !_disposed && Availability.IsAvailable && session?.Phase == SessionPhase.GameplayInitialized && snapshot?.Target.Handle.SessionId == session.Id ? snapshot : null;
         }
     }
     public DungeonPanelOpenStatus Open(BoardingHandle target)
@@ -37,7 +44,11 @@ internal sealed class DungeonPanelService : IDungeonPanelApi, IDisposable
         if (_dispatching || _navigating || _hub.IsDispatchingCallbacks) return DungeonPanelOpenStatus.Busy;
         if (_hub.CurrentSession?.Id != target.SessionId || _hub.CurrentSession.Phase != SessionPhase.GameplayInitialized) return DungeonPanelOpenStatus.StaleTarget;
         _navigating = true;
-        try { return _source.Open(target); }
+        try
+        {
+            var result = _source!.Open(target);
+            return !_disposed && Availability.IsAvailable && _hub.CurrentSession?.Id == target.SessionId ? result : DungeonPanelOpenStatus.Uncertain;
+        }
         finally { _navigating = false; }
     }
     public IDisposable RegisterSection(string pluginId, string localId, Func<DungeonPanelSnapshot, DungeonPanelSection?> present, int order = 0)
@@ -88,7 +99,11 @@ internal sealed class DungeonPanelService : IDungeonPanelApi, IDisposable
     }
     private static bool Matches(DungeonPanelSnapshot expected, DungeonPanelSnapshot? current) => current != null && expected.ViewId == current.ViewId && expected.Revision == current.Revision && expected.Target.Handle.Equals(current.Target.Handle) && expected.Target.Revision == current.Target.Revision && expected.Operation?.Revision == current.Operation?.Revision && Equals(expected.Operation?.Handle, current.Operation?.Handle);
     private void Report(string plugin, Exception error) { try { _report(plugin, error); } catch { } }
-    public void Dispose() { _hub.CheckThread(); _disposed = true; _registrations.Clear(); }
+    public void Dispose()
+    {
+        _hub.CheckThread(); if (_disposed) return; _disposed = true; _registrations.Clear();
+        if (Availability.IsAvailable) _hub.SetCapability("dungeon-panel-opening", false, "Panel service stopped.", ServiceUnavailableReason.ApiStopped);
+    }
     internal sealed class Row
     {
         internal readonly Guid Registration; internal readonly DungeonPanelSnapshot Snapshot; internal readonly DungeonPanelSection? Section; internal readonly DungeonPanelAction? Action;
