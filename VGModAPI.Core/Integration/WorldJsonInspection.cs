@@ -30,12 +30,16 @@ internal sealed partial class WorldJsonInspection
     private readonly PropertyInfo _isNull;
     private readonly bool _emptyProfile;
     internal void StampOwnedPoi(object node, string identity) => _format.StampOwnedPoi(node, identity);
-    internal void SealSnapshot(object root, bool owned) => _format.Seal(root, owned);
-    internal void UnsealVerified(object root, bool owned) => _format.UnsealVerified(root, owned);
+    private readonly Action<string>? _restoreItem;
+    private void RequireItem(string id)
+    { if (_restoreItem == null) throw new InvalidDataException("Owned item support unavailable."); _restoreItem(id); }
+    internal void SealSnapshot(object root, bool owned) => _format.Seal(root, HasOwnedItems(root, RequireItem) || owned);
+    internal void UnsealVerified(object root, bool owned) => _format.UnsealVerified(root, HasOwnedItems(root, RequireItem) || owned);
     private static readonly UTF8Encoding Utf8 = new(false, true);
     private const int MaxVisited = 100000;
-    internal WorldJsonInspection(Assembly assembly, bool emptyProfile = false)
+    internal WorldJsonInspection(Assembly assembly, bool emptyProfile = false, Action<string>? restoreItem = null)
     {
+        _restoreItem = restoreItem;
         _emptyProfile = emptyProfile;
         _format = new WorldSaveFormat(assembly);
         _nested = new WorldNestedTypeCatalog(assembly);

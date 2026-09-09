@@ -160,6 +160,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         InitializeWorldProtection();
         InitializeDialogue();
         InitializeNavigation();
+        InitializeOwnedItems();
         InitializeDungeons();
         InitializeDungeonPanel();
         InitializeMissions();
@@ -974,6 +975,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         TeardownForgeUi();
         TeardownCraftingCommands();
         StopBars();
+        StopOwnedItems();
         StopNavigation();
         StopDialogue();
         StopWorldProtection();
