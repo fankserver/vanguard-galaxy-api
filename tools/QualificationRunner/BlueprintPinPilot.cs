@@ -48,8 +48,9 @@ public sealed partial class Plugin
             foreach (var frame in Wait(() => GameObject.Find("Mod API shared HUD") == null && PinButton("Mod API Forge actions", "Pin") != null, "Closed pin and restored action")) yield return frame;
             foreach (var frame in CheckPinProducers(mouse, false)) yield return frame;
             foreach (var frame in CheckPinProducers(mouse, true)) yield return frame;
-            WriteAtomic("blueprint-pin.txt", new[] { "PASS", "blueprint-pin-v2", "pin-batch-exact-variant-navigation-close-producer-routes" });
-            Passed("Real Blueprint Pin pointer pinning, future-batch display, exact variant navigation, panel close, single producer navigation and alternative route choices");
+            foreach (var frame in CheckPinJobs(mouse)) yield return frame;
+            WriteAtomic("blueprint-pin.txt", new[] { "PASS", "blueprint-pin-v3", "pin-batch-exact-variant-navigation-close-producer-routes-queue-partial-cancel-multiunit" });
+            Passed("Real Blueprint Pin pointer pinning, future-batch display, exact variant navigation, panel close, producer routes and controlled native multi-unit queue/partial/cancellation policy");
         }
         finally { ProbeCleanup.Run(() => { if (mouse != null) InputSystem.RemoveDevice(mouse); }, () => oldMouse?.MakeCurrent()); }
     }
