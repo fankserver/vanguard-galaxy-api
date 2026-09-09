@@ -12,13 +12,14 @@ internal sealed class WorldContentService : IWorldApi, IDisposable
     private readonly WorldDefinitionRegistry _definitions;
     private readonly WorldAuthoringGate _authoring;
     private readonly Func<bool> _canAuthor;
+    private readonly Action? _providerReleased;
     private bool _disposed;
-    internal WorldContentService(LifecycleHub hub, WorldDefinitionRegistry definitions, WorldAuthoringGate authoring, Func<bool> canAuthor)
-    { _hub = hub; _definitions = definitions; _authoring = authoring; _canAuthor = canAuthor; }
+    internal WorldContentService(LifecycleHub hub, WorldDefinitionRegistry definitions, WorldAuthoringGate authoring, Func<bool> canAuthor, Action? providerReleased = null)
+    { _hub = hub; _definitions = definitions; _authoring = authoring; _canAuthor = canAuthor; _providerReleased = providerReleased; }
     [MethodImpl(MethodImplOptions.NoInlining)]
     public IWorldProvider? AcquireProvider(object pluginInstance)
     {
-        _hub.CheckThread(); if (_disposed) return null;
+        _hub.CheckThread(); if (_disposed || _hub.CurrentSession != null) return null;
         var provider = _definitions.Acquire(pluginInstance, Assembly.GetCallingAssembly());
         return provider == null || _disposed ? null : new Provider(this, provider);
     }
@@ -83,6 +84,7 @@ internal sealed class WorldContentService : IWorldApi, IDisposable
         {
             _service._hub.CheckThread(); if (_disposed) return;
             _provider.Dispose(); _disposed = true;
+            _service._providerReleased?.Invoke();
         }
     }
     public void Dispose() { _hub.CheckThread(); _disposed = true; }

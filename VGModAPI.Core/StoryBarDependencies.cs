@@ -10,6 +10,26 @@ internal sealed partial class StoryContentService
     private object _barDependencyEpoch = new object();
     private object?[]? _barDependencySnapshot;
 
+    internal void RefreshWorldDependencies()
+    {
+        CheckThread();
+        var session = _currentSession()?.Id;
+        if (_disposed || session == null || session != _restoredSession) return;
+        var registry = _registry.Epoch;
+        foreach (var entry in _ledger.Entries.ToArray())
+        {
+            if (entry.State == StoryOccurrenceState.Retired) continue;
+            var definition = entry.RetainedDefinition;
+            if (definition == null && !_registry.TryGet(entry.Id, out definition)) continue;
+            if (!definition.Steps.SelectMany(step => step.Objectives).Any(objective => WorldObjectIdentity.IsReserved(objective.TargetPoiId))) continue;
+            var missing = MissingTargets(entry.Id.Provider, definition, out var unknown);
+            if (_disposed || _currentSession()?.Id != session || _restoredSession != session || !ReferenceEquals(registry, _registry.Epoch)) return;
+            if (!_ledger.TryGet(entry.OccurrenceId, out var current) || !ReferenceEquals(entry, current)) return;
+            if (unknown || missing != null) _unrunnable.Add(entry.OccurrenceId);
+        }
+        PublishAdmissions();
+    }
+
     internal object BarDependencyStamp()
     {
         CheckThread();

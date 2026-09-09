@@ -16,7 +16,8 @@ public sealed class WorldContentServiceTests
             Assert.Same(plugin, instance); Assert.Same(typeof(WorldContentServiceTests).Assembly, caller);
             return new StoryHostPlugin("author.a", caller);
         }, hub.CheckThread);
-        using var service = new WorldContentService(hub, definitions, null!, () => false);
+        int released = 0;
+        using var service = new WorldContentService(hub, definitions, null!, () => false, () => released++);
         var provider = service.AcquireProvider(plugin); Assert.NotNull(provider);
         var definition = new WorldCombatSiteDefinition("PoiX", 1, "Unicode 星", "player", 1);
         Assert.Equal(WorldStatus.Succeeded, provider!.Register(definition));
@@ -26,6 +27,7 @@ public sealed class WorldContentServiceTests
         Assert.Equal(WorldStatus.Unavailable, provider.CreatePersistentCombatSite(Guid.NewGuid(), "PoiX", Guid.NewGuid(), "system", 0, 0).Status);
         service.Dispose();
         Assert.Equal(WorldStatus.UnknownProvider, provider.Register(definition));
-        Assert.Null(service.AcquireProvider(plugin)); provider.Dispose();
+        Assert.Null(service.AcquireProvider(plugin)); provider.Dispose(); provider.Dispose();
+        Assert.Equal(1, released);
     }
 }

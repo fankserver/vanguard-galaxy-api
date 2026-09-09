@@ -81,6 +81,11 @@ public sealed class StoryContentTests
         ready = false; Assert.False(provider.Offer(definition.LocalId).Accepted);
         ready = true; var offered = provider.Offer(definition.LocalId); Assert.True(offered.Accepted, offered.Detail);
         Assert.Equal(AnimaPlugin, seenOwner); Assert.Equal(identity.NativeId, seenTarget);
+        Assert.True(provider.Register(Definition()).Succeeded);
+        var ordinary = provider.Offer("salvage-run"); Assert.True(ordinary.Accepted);
+        ready = false; service.RefreshWorldDependencies();
+        Assert.True(world.Protection.IsQuarantined(FakeWorld.Native(provider, definition.LocalId, offered.OccurrenceId)));
+        Assert.False(world.Protection.IsQuarantined(FakeWorld.Native(provider, "salvage-run", ordinary.OccurrenceId)));
     }
 
     [Fact]
