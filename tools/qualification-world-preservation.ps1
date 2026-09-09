@@ -36,6 +36,14 @@ function Assert-WorldPreservationRoots([string[]]$Actual, [string[]]$Expected, [
     }
 }
 
+# Record must be the output of Read-WorldApprovedRun with an independently approved digest.
+# Derive again for each observation so configuration drift cannot silently change protection scope.
+function Get-WorldRunPreservation($Record) {
+    $required = @(Get-WorldProductionRoots $Record.gameDirectory)
+    Assert-WorldPreservationRoots $required $Record.preservationRoots $Record.root
+    return Get-WorldPreservationSnapshot $required
+}
+
 # Read-only before/after observations, not backups or permission to run. Call under the
 # exclusive lease; persist private evidence separately. Never silently restore changed files.
 function Get-WorldPreservationSnapshot([string[]]$Directories) {

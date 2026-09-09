@@ -25,7 +25,7 @@ function Read-WorldApprovedRun([string]$Path, [string]$ExpectedDigest, [string]$
     # Check the JSON root token before conversion can erase the distinction.
     if (!$json.TrimStart([char[]]@(' ', "`t", "`r", "`n")).StartsWith('{', [StringComparison]::Ordinal)) { throw 'Approved world record must be a JSON object.' }
     $record = $json | ConvertFrom-Json
-    $names = @('schema','root','gameDirectory','runId','phase','reviewedHead','authorizationSha256','gameInventory','saveInventory','stateInventory','process')
+    $names = @('schema','root','gameDirectory','runId','phase','reviewedHead','authorizationSha256','gameInventory','saveInventory','stateInventory','process','preservationRoots')
     if ($null -eq $record -or @($record.PSObject.Properties).Count -ne $names.Count -or
         @($record.PSObject.Properties | Where-Object { $_.Name -cnotin $names }).Count) { throw 'Unexpected world approval schema.' }
     foreach ($name in @('schema','root','gameDirectory','runId','phase','reviewedHead','authorizationSha256')) {
@@ -51,5 +51,9 @@ function Read-WorldApprovedRun([string]$Path, [string]$ExpectedDigest, [string]$
     }
     if ($record.process.environment -isnot [System.Management.Automation.PSCustomObject] -or @($record.process.environment.PSObject.Properties).Count -ne 10) { throw 'Invalid approved process environment.' }
     foreach ($entry in $record.process.environment.PSObject.Properties) { if ($entry.Value -isnot [string]) { throw 'Invalid approved environment value.' } }
+    if ($record.preservationRoots -isnot [array] -or $record.preservationRoots.Count -lt 3 -or $record.preservationRoots.Count -gt 8) { throw 'Invalid approved preservation roots.' }
+    foreach ($rootPath in $record.preservationRoots) {
+        if ($rootPath -isnot [string] -or ![IO.Path]::IsPathRooted($rootPath)) { throw 'Invalid approved preservation path.' }
+    }
     return $record
 }

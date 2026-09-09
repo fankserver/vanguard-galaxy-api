@@ -41,6 +41,19 @@ try {
     Remove-Item $absent
     Reject { Get-WorldPreservationSnapshot @($files, $files.ToUpperInvariant()) }
     Assert-WorldPreservation $before (Get-WorldPreservationSnapshot $roots)
+    # Observe only the selected path list here, never the real profile save directory.
+    $originalSnapshot = (Get-Command Get-WorldPreservationSnapshot).ScriptBlock
+    $script:observations = 0
+    function Get-WorldPreservationSnapshot([string[]]$Directories) { $script:observations++; return ,$Directories }
+    try {
+        [IO.File]::WriteAllText($settings, "[Persistence]`nRoot=$external`n")
+        $record = [pscustomobject]@{ root=$sandbox; gameDirectory=$game; preservationRoots=@(Get-WorldProductionRoots $game) }
+        $selected = @(Get-WorldRunPreservation $record)
+        if ($script:observations -ne 1) { throw 'Composed observation missing.' }
+        [IO.File]::WriteAllText($settings, "[Persistence]`nRoot=$(Join-Path $root 'different-state')`n")
+        Reject { Get-WorldRunPreservation $record }
+        if ($script:observations -ne 1) { throw 'Unapproved root reached snapshot reader.' }
+    } finally { Set-Item Function:Get-WorldPreservationSnapshot $originalSnapshot }
     Write-Output 'World preservation tests passed on synthetic directories; no production files read or restored.'
 } finally {
     if ($created) { Remove-Item -LiteralPath $root -Recurse -Force }
