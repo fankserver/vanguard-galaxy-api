@@ -69,4 +69,5 @@ jobs:
           & ./tools/tests/qualification-world-evidence.Tests.ps1
           & ./tools/tests/qualification-world-run.Tests.ps1
           & ./tools/tests/qualification-world-cold.Tests.ps1
+          & ./tools/tests/qualification-world-prepare.Tests.ps1
           & ./tools/tests/qualification-world-receipts.Tests.ps1
