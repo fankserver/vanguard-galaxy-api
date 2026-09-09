@@ -1,5 +1,41 @@
 . (Join-Path $PSScriptRoot 'qualification-world-preflight.ps1')
 
+# Derive required directories from the approved source installation and current OS profile.
+# An external production persistence root is included; nested state is already covered by config.
+function Get-WorldProductionRoots([string]$GameDirectory) {
+    $game = (Assert-WorldUnlinkedPath $GameDirectory).TrimEnd('\')
+    $config = Join-Path $game 'BepInEx\config'
+    $roots = New-Object 'System.Collections.Generic.List[string]'
+    $roots.Add((Join-Path $game 'BepInEx\plugins'))
+    $roots.Add($config)
+    $profile = [Environment]::GetFolderPath('UserProfile')
+    if ([string]::IsNullOrEmpty($profile)) { throw 'Current OS profile unavailable.' }
+    $roots.Add((Join-Path $profile 'AppData\LocalLow\Bat Roost Games\VanguardGalaxy\Saves'))
+    $file = Assert-WorldUnlinkedPath (Join-Path $config 'vgmodapi.cfg') $false
+    if (Test-Path -LiteralPath $file) {
+        $entries = Read-WorldIni $file
+        if ($entries.ContainsKey('Persistence/Root')) {
+            $state = $entries['Persistence/Root']
+            if (![IO.Path]::IsPathRooted($state)) { throw 'Production persistence root is not absolute.' }
+            $state = (Assert-WorldUnlinkedPath $state $false).TrimEnd('\')
+            if ($state -ine $config -and !$state.StartsWith($config + '\', [StringComparison]::OrdinalIgnoreCase)) { $roots.Add($state) }
+        }
+    }
+    return $roots.ToArray()
+}
+
+function Assert-WorldPreservationRoots([string[]]$Actual, [string[]]$Expected, [string]$Sandbox) {
+    $set = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($path in $Actual) { if (!$set.Add($path)) { throw 'Duplicate production preservation root.' } }
+    if ($set.Count -lt 3 -or $set.Count -ne $Expected.Count) { throw 'Approved preservation root set differs.' }
+    $sandboxPath = (Assert-WorldSandboxRoot $Sandbox).TrimEnd('\')
+    foreach ($path in $Expected) {
+        if (!$set.Remove($path)) { throw 'Approved preservation root missing or duplicated.' }
+        if ($path -ieq $sandboxPath -or $path.StartsWith($sandboxPath + '\', [StringComparison]::OrdinalIgnoreCase) -or
+            $sandboxPath.StartsWith($path.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Production preservation root overlaps sandbox.' }
+    }
+}
+
 # Read-only before/after observations, not backups or permission to run. Call under the
 # exclusive lease; persist private evidence separately. Never silently restore changed files.
 function Get-WorldPreservationSnapshot([string[]]$Directories) {
