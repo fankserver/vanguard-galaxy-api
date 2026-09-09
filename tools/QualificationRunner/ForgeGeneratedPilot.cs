@@ -22,6 +22,7 @@ public sealed partial class Plugin
                     "Routing preference change refused.");
                 foreach (var frame in CheckGeneratedForgeRoute(cargo ? RecipeInventoryKind.ShipCargo : RecipeInventoryKind.PlayerArmory)) yield return frame;
             }
+            foreach (var frame in CheckGeneratedForgeRoute(RecipeInventoryKind.ShipCargo, bonus: true)) yield return frame;
         }
         finally
         {
@@ -31,9 +32,11 @@ public sealed partial class Plugin
         Require(commands.ReadSettings(session).PlayerCargoDelivery == original, "Routing preference was not restored.");
         WriteAtomic("forge-generated.txt", new[] { "PASS", "generated-equipment-delivered", "level-and-inventory-reconciled" });
         WriteAtomic("forge-routing.txt", new[] { "PASS", "armory-and-cargo-delivered", "preference-restored" });
+        WriteAtomic("forge-bonus.txt", new[] { "PASS", "one-batch-two-generated-deliveries", "skill-fixture-restored" });
     }
-    private IEnumerable<object?> CheckGeneratedForgeRoute(RecipeInventoryKind destination)
+    private IEnumerable<object?> CheckGeneratedForgeRoute(RecipeInventoryKind destination, bool bonus = false)
     {
+        var suffix = destination + (bonus ? "-bonus" : "");
         var quotes = ModApi.Services.RecipeQuotes;
         var station = quotes.CurrentStation!;
         var nativeStation = SpGet(CurrentPlayer, "currentPointOfInterest")!;
@@ -53,7 +56,7 @@ public sealed partial class Plugin
             { selected = recipe; discovery.Add("prepare=" + string.Join(";", preparation.Select(p => p.Recipe + "x" + p.Batches))); break; }
             yield return null;
         }
-        WriteAtomic("forge-generated-discovery-" + destination + ".txt", discovery.ToArray());
+        WriteAtomic("forge-generated-discovery-" + suffix + ".txt", discovery.ToArray());
         Require(selected != null, "Fixture needs an affordable generated-equipment recipe.");
         Require(nativeJobs.Count < Convert.ToInt32(SpGet(forge, "maxJobs")), "Generated fixture needs a free Forge slot.");
         PrepareGeneratedIngredients(station, forge, nativeJobs, preparation!);
@@ -71,9 +74,9 @@ public sealed partial class Plugin
         var duration = Convert.ToSingle(SpGet(job, "craftingTime"));
         Require(duration > 0 && !float.IsNaN(duration) && !float.IsInfinity(duration), "Generated job duration invalid.");
         Require("forge/" + (string)SpGet(SpGet(job, "recipe")!, "identifier")! == selected.Id.LocalId, "Queued native recipe differs from generated fixture.");
-        SpCall(job, "ProgressJob", duration);
+        if (bonus) CompleteGuaranteedForgeBonus(job, duration); else SpCall(job, "ProgressJob", duration);
         var delivered = facts.Where(f => f.Kind == CraftingJobEventKind.BatchObserved && f.Job.Handle.Equals(queued.Jobs[0])).ToArray();
-        WriteAtomic("forge-generated-delivery-" + destination + ".txt", new[] {
+        WriteAtomic("forge-generated-delivery-" + suffix + ".txt", new[] {
             "recipe=" + selected.Id + " level=" + quote.OutputLevel + " duration=" + duration + " remaining=" + SpGet(job, "remainingAmount"),
             "facts=" + facts.Count + " ownedBatches=" + delivered.Length
         }.Concat(facts.Select(f => f.Kind + " status=" + f.DeliveryStatus + " remaining=" + f.Job.RemainingBatches
@@ -83,6 +86,8 @@ public sealed partial class Plugin
         Require(delivered[0].Deliveries.Any(d => d.Resource?.Equals(selected.Outputs[0].Resource) == true && d.ItemLevel == quote.OutputLevel
             && d.Rarity == selected.Rarity && d.VerifiedAmount >= selected.Outputs[0].Amount), "Generated item level/rarity/quantity not observed in delivery.");
         Require(delivered[0].Deliveries.All(d => d.Destination == destination), "Generated output used an unexpected inventory route.");
+        if (bonus) Require(delivered[0].Deliveries.Count == 2 && delivered[0].Deliveries.All(d => d.Resource?.Equals(selected.Outputs[0].Resource) == true
+            && d.VerifiedAmount == selected.Outputs[0].Amount), "Guaranteed bonus must deliver two generated results in one batch.");
         var after = ForgeInventoryCounts(nativeStation);
         var reported = delivered.SelectMany(f => f.Deliveries).GroupBy(d => (d.Destination!.Value, d.Resource!.LocalId, d.ItemLevel.GetValueOrDefault(), d.Rarity ?? ""))
             .ToDictionary(g => g.Key, g => g.Sum(d => d.VerifiedAmount!.Value));

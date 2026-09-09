@@ -54,7 +54,7 @@ public sealed partial class Plugin
             foreach (var frame in CheckForgeConsumers(mouse)) yield return frame;
             foreach (var frame in CheckGeneratedForgeDelivery()) yield return frame;
             foreach (var frame in CheckForgeMissingContext()) yield return frame;
-            WriteAtomic("blueprint-pin.txt", new[] { "PASS", "blueprint-pin-v9", "pin-batch-exact-variant-navigation-close-producer-routes-queue-partial-cancel-multiunit-reload-saveas-switch-inspector-isolation-context-generated-routing" });
+            WriteAtomic("blueprint-pin.txt", new[] { "PASS", "blueprint-pin-v10", "pin-batch-exact-variant-navigation-close-producer-routes-queue-partial-cancel-multiunit-reload-saveas-switch-inspector-isolation-context-generated-routing-bonus" });
             Passed("Real Blueprint Pin pointer pinning, future-batch display, exact variant navigation, panel close, producer routes and controlled native multi-unit queue/partial/cancellation policy and session-only save/reload/save-as/slot-switch pin lifetime with an independent Inspector consumer after an isolated Forge listener failure");
         }
         finally { ProbeCleanup.Run(() => { if (mouse != null) InputSystem.RemoveDevice(mouse); }, () => oldMouse?.MakeCurrent()); }
