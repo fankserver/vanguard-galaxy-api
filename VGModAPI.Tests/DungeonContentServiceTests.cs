@@ -58,6 +58,7 @@ public sealed class DungeonContentServiceTests
             events: new[] { new DungeonEventDefinition("event", "room", new string('e', 4000), new[] { new DungeonChoiceDefinition("choice", new string('c', 1000)) }) }));
         var target = f.Target; var id = provider.Attach("content", target).OccurrenceId!.Value;
         var source = new PanelSource { Snapshot = new(Guid.NewGuid(), 1, new(target, 1, BoardingEncounterKind.Installation, "Site", null, null, BoardingAvailability.Available, null), null) };
+        f.Hub.SetCapability("dungeon-panel-opening", true, "Test bindings.");
         using var panel = new DungeonPanelService(f.Hub, source, (_, error) => throw error);
         using var bridge = new DungeonPanelChoices(panel, f.Service, _ => id); bridge.Refresh();
         var rows = panel.Render(); Assert.Equal(2, rows.Count); Assert.Equal(4000, rows[0].Section!.Text.Length); Assert.Equal(1000, rows[1].Action!.Tooltip.Length);
@@ -72,6 +73,7 @@ public sealed class DungeonContentServiceTests
         using var provider = f.Service.AcquireProvider("owner"); using var registration = provider.Register("content", Definition());
         var target = f.Target; var id = provider.Attach("content", target).OccurrenceId!.Value;
         var source = new PanelSource { Snapshot = new(Guid.NewGuid(), 1, new(target, 1, BoardingEncounterKind.Installation, "Site", null, null, BoardingAvailability.Available, null), null) };
+        f.Hub.SetCapability("dungeon-panel-opening", true, "Test bindings.");
         using var panel = new DungeonPanelService(f.Hub, source, (_, error) => throw error);
         using var bridge = new DungeonPanelChoices(panel, f.Service, _ => id);
         bridge.Refresh(); var checks = f.ChoiceChecks; bridge.Refresh(); Assert.Equal(checks, f.ChoiceChecks);

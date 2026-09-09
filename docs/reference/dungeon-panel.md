@@ -1,6 +1,6 @@
 # Dungeon panel integration
 
-`ModApi.DungeonPanel` exposes Unity-free panel opening, status sections and contextual actions when boarding observation is installed. Check its independent `Capabilities` and the lifecycle capabilities `dungeon-panel-opening`, `dungeon-panel-sections` and `dungeon-panel-actions`. Availability describes installed integration, not in-game qualification.
+`ModApi.Services.DungeonPanel` is a stable `IDungeonPanelService` exposing Unity-free panel opening, status sections and contextual actions. Check typed `Availability` and subscribe to `AvailabilityChanged` for integration health; `Capabilities` independently describes available presentation features. Neither establishes in-game qualification. Unavailable reads return null without accessing the native panel. Navigation that loses its context after invocation returns `Uncertain`; do not retry blindly.
 
 `Open(target)` resolves the current observed target generation and requires a live target. Opening a native location panel can resume native operations; when experimental dungeon recovery is installed, it must be writable and ready before this API opens the panel. When that recovery integration is disabled, native resume behavior applies. Ambiguous panel instances, unavailable targets and busy contexts are refused rather than substituted.
 

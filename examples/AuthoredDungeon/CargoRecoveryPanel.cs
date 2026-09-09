@@ -13,7 +13,7 @@ public sealed class CargoRecoveryPanel : IDisposable
     private IDungeonSettlementService? _settlement;
     private Action<DungeonSettlementSnapshot>? _settlementHandler;
 
-    public CargoRecoveryPanel(string pluginId, BoardingHandle target, IDungeonPanelApi panel,
+    public CargoRecoveryPanel(string pluginId, BoardingHandle target, IDungeonPanelService panel,
         IBoardingService boarding, IBoardingCommandService commands, IBoardingTacticalService tactics, IDungeonSettlementService settlement,
         Action<BoardingCommandResult> commandResult, Action<DungeonSettlementSnapshot> observedSettlement)
     {

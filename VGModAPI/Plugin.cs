@@ -572,7 +572,6 @@ public sealed partial class Plugin : BaseUnityPlugin
                 ["panelClosed"] = typeof(DungeonPanelPatches.Closed), ["panelDisabled"] = typeof(DungeonPanelPatches.Closed)
             });
             if (!_hub.Capabilities.Any(capability => capability.Name == "dungeon-panel-opening" && capability.Available)) throw new NotSupportedException("Panel observation hooks unavailable.");
-            ModApi.DungeonPanel = _dungeonPanelService;
             if (_dungeons != null && _dungeonAdapter != null)
                 _dungeonPanelChoices = new(_dungeonPanelService, _dungeons, target =>
                     _boarding.TryResolveCommandTarget(target, out var location, out _, out _) && location != null ? _dungeonAdapter.Marker(location) : null);
@@ -584,7 +583,7 @@ public sealed partial class Plugin : BaseUnityPlugin
     }
     private void StopDungeonPanel()
     {
-        DungeonPanelPatches.Runtime = null; DungeonPanelPatches.Report = null; ModApi.DungeonPanel = null;
+        DungeonPanelPatches.Runtime = null; DungeonPanelPatches.Report = null;
         _dungeonPanelChoices?.Dispose(); _dungeonPanelChoices = null;
         _dungeonPanelView?.Dispose(); _dungeonPanelView = null;
         _dungeonPanelService?.Dispose(); _dungeonPanelService = null; _dungeonPanel?.Dispose(); _dungeonPanel = null;
@@ -852,8 +851,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         catch (Exception error)
         {
             BoardingPatches.Observer = null; _boarding?.Dispose(); _boarding = null; service?.Dispose();
-            _hub.SetCapability("dungeon-settlement", false, "Disabled or not bound.");
-        _hub.SetCapability("boarding-observation", false, "Boarding unavailable: " + error.GetType().Name);
+            _hub.SetCapability("boarding-observation", false, "Boarding unavailable: " + error.GetType().Name);
             Logger.LogError(error);
         }
     }

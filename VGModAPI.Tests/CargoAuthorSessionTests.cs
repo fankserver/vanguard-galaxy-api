@@ -49,7 +49,7 @@ public sealed class CargoAuthorSessionTests
                 Assert.Equal("Dispose", method); ProviderDisposals++; return null;
             });
         });
-        internal IDungeonPanelApi Panel => Fake<IDungeonPanelApi>((name, args) =>
+        internal IDungeonPanelService Panel => Fake<IDungeonPanelService>((name, args) =>
         {
             if (name == "get_Capabilities") return new DungeonPanelCapabilities(true, true, ContextualActions);
             Assert.Equal("RegisterAction", name); if (RejectAction) throw new InvalidOperationException("Rejected action"); var key = (string)args[1]!; Assert.False(Actions.ContainsKey(key)); Actions.Add(key, (Action<DungeonPanelSnapshot>)args[3]!); Presenters.Add(key, (Func<DungeonPanelSnapshot, DungeonPanelAction?>)args[2]!);
