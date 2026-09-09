@@ -23,6 +23,7 @@ public sealed partial class Plugin
                 foreach (var frame in CheckGeneratedForgeRoute(cargo ? RecipeInventoryKind.ShipCargo : RecipeInventoryKind.PlayerArmory)) yield return frame;
             }
             foreach (var frame in CheckGeneratedForgeRoute(RecipeInventoryKind.ShipCargo, bonus: true)) yield return frame;
+            foreach (var frame in CheckGeneratedForgeRoute(RecipeInventoryKind.PlayerArmory, fullCargo: true)) yield return frame;
         }
         finally
         {
@@ -33,10 +34,11 @@ public sealed partial class Plugin
         WriteAtomic("forge-generated.txt", new[] { "PASS", "generated-equipment-delivered", "level-and-inventory-reconciled" });
         WriteAtomic("forge-routing.txt", new[] { "PASS", "armory-and-cargo-delivered", "preference-restored" });
         WriteAtomic("forge-bonus.txt", new[] { "PASS", "one-batch-two-generated-deliveries", "skill-fixture-restored" });
+        WriteAtomic("forge-cargo-full.txt", new[] { "PASS", "full-cargo-armory-fallback", "capacity-restored" });
     }
-    private IEnumerable<object?> CheckGeneratedForgeRoute(RecipeInventoryKind destination, bool bonus = false)
+    private IEnumerable<object?> CheckGeneratedForgeRoute(RecipeInventoryKind destination, bool bonus = false, bool fullCargo = false)
     {
-        var suffix = destination + (bonus ? "-bonus" : "");
+        var suffix = destination + (bonus ? "-bonus" : "") + (fullCargo ? "-full-cargo" : "");
         var quotes = ModApi.Services.RecipeQuotes;
         var station = quotes.CurrentStation!;
         var nativeStation = SpGet(CurrentPlayer, "currentPointOfInterest")!;
@@ -74,7 +76,9 @@ public sealed partial class Plugin
         var duration = Convert.ToSingle(SpGet(job, "craftingTime"));
         Require(duration > 0 && !float.IsNaN(duration) && !float.IsInfinity(duration), "Generated job duration invalid.");
         Require("forge/" + (string)SpGet(SpGet(job, "recipe")!, "identifier")! == selected.Id.LocalId, "Queued native recipe differs from generated fixture.");
-        if (bonus) CompleteGuaranteedForgeBonus(job, duration); else SpCall(job, "ProgressJob", duration);
+        if (bonus) CompleteGuaranteedForgeBonus(job, duration);
+        else if (fullCargo) CompleteForgeWithFullCargo(job, duration);
+        else SpCall(job, "ProgressJob", duration);
         var delivered = facts.Where(f => f.Kind == CraftingJobEventKind.BatchObserved && f.Job.Handle.Equals(queued.Jobs[0])).ToArray();
         WriteAtomic("forge-generated-delivery-" + suffix + ".txt", new[] {
             "recipe=" + selected.Id + " level=" + quote.OutputLevel + " duration=" + duration + " remaining=" + SpGet(job, "remainingAmount"),

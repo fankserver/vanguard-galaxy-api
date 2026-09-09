@@ -313,7 +313,7 @@ function Assert-BlueprintPinSelection([string]$Root, $Provenance) {
     $marker = Join-Path $Root 'blueprint-pin.enabled'
     if ([bool]$selected -ne (Test-Path -LiteralPath $marker -PathType Leaf)) { throw 'Blueprint Pin selection changed.' }
     if (!$selected) { return }
-    if (!$Provenance.forgeReadProbe -or $Provenance.forgeUiProbe -or $Provenance.forgeCommandProbe -or $Provenance.refineryProbe -or $Provenance.forgeDeliveryProbe -or $Provenance.forgePersistenceProbe -or [IO.File]::ReadAllText($marker) -cne 'blueprint-pin-v10') { throw 'Invalid Blueprint Pin selection.' }
+    if (!$Provenance.forgeReadProbe -or $Provenance.forgeUiProbe -or $Provenance.forgeCommandProbe -or $Provenance.refineryProbe -or $Provenance.forgeDeliveryProbe -or $Provenance.forgePersistenceProbe -or [IO.File]::ReadAllText($marker) -cne 'blueprint-pin-v11') { throw 'Invalid Blueprint Pin selection.' }
     if ($Provenance.blueprintPinRevision -cnotmatch '^[0-9a-f]{40}$' -or $Provenance.blueprintPinSha256 -cnotmatch '^[0-9a-f]{64}$') { throw 'Invalid Blueprint Pin provenance.' }
     $config = [IO.File]::ReadAllText((Join-Path $Root 'game\BepInEx\config\vgmodapi.cfg'))
     if ($config -cnotmatch '(?ms)^\[Hud\]\r?\n(?:(?!^\[).)*?^Enabled = true\r?$') { throw 'Blueprint Pin requires HUD integration.' }
@@ -328,7 +328,11 @@ function Assert-BlueprintPinReceipt([string]$Root, $Provenance) {
     $file = Join-Path $Root 'blueprint-pin.txt'
     if ((Get-Item -LiteralPath $file).Length -gt 512) { throw 'Oversized Blueprint Pin receipt.' }
     $lines = @(Get-Content -LiteralPath $file)
-    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'blueprint-pin-v10' -or $lines[2] -cne 'pin-batch-exact-variant-navigation-close-producer-routes-queue-partial-cancel-multiunit-reload-saveas-switch-inspector-isolation-context-generated-routing-bonus') { throw 'Incomplete Blueprint Pin receipt.' }
+    if ($lines.Count -ne 3 -or $lines[0] -cne 'PASS' -or $lines[1] -cne 'blueprint-pin-v11' -or $lines[2] -cne 'pin-batch-exact-variant-navigation-close-producer-routes-queue-partial-cancel-multiunit-reload-saveas-switch-inspector-isolation-context-generated-routing-bonus-fullcargo') { throw 'Incomplete Blueprint Pin receipt.' }
+    $cargo = Join-Path $Root 'forge-cargo-full.txt'
+    if (!(Test-Path -LiteralPath $cargo -PathType Leaf) -or (Get-Item -LiteralPath $cargo).Length -gt 256 -or ((Get-Item -LiteralPath $cargo).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Missing or invalid Forge full-cargo receipt.' }
+    $cargoLines = @(Get-Content -LiteralPath $cargo)
+    if ($cargoLines.Count -ne 3 -or $cargoLines[0] -cne 'PASS' -or $cargoLines[1] -cne 'full-cargo-armory-fallback' -or $cargoLines[2] -cne 'capacity-restored') { throw 'Incomplete Forge full-cargo receipt.' }
     $bonus = Join-Path $Root 'forge-bonus.txt'
     if (!(Test-Path -LiteralPath $bonus -PathType Leaf) -or (Get-Item -LiteralPath $bonus).Length -gt 256 -or ((Get-Item -LiteralPath $bonus).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Missing or invalid Forge bonus receipt.' }
     $bonusLines = @(Get-Content -LiteralPath $bonus)
