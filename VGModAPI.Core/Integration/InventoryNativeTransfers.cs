@@ -36,6 +36,22 @@ internal sealed partial class InventoryNativeBackend
         bool Can(string method) => (bool)item.GetType().GetMethod(method, Type.EmptyTypes)!.Invoke(item, null)!;
         if (Can("CanGoInDataInventory") || (to.Reference.Kind == InventoryKind.PlayerArmory && !Can("CanGoInArmory")) ||
             (to.Reference.Kind == InventoryKind.StationMaterials && !Can("CanGoInMaterials"))) return Refuse(InventoryTransferStatus.Unsupported);
+        // Mission requirement evaluation can call extension objectives. Revalidate after all
+        // callback-capable admission, before reading stock or preparing either replacement array.
+        if (!_current(source.SessionId) || !ReferenceEquals(Get(_player, "current"), player) ||
+            !ReferenceEquals(Find(player, source.Reference)?.Inventory, from.Inventory) || !ReferenceEquals(Find(player, destination.Reference)?.Inventory, to.Inventory))
+            return Refuse(InventoryTransferStatus.Stale);
+        if (!ReferenceEquals(_all.GetValue(from.Inventory), beforeFrom) || !ReferenceEquals(_all.GetValue(to.Inventory), beforeTo) ||
+            !ReferenceEquals(beforeFrom.GetValue(index), selected)) return Refuse(InventoryTransferStatus.Changed);
+        if (!Supported(selected)) return Refuse(InventoryTransferStatus.Unsupported);
+        if (Flag(selected, "favourite") && !options.IncludeFavourite) return Refuse(InventoryTransferStatus.Protected);
+        if (source.Reference.Kind != InventoryKind.StationMaterials || destination.Reference.Kind != InventoryKind.StationMaterials)
+        {
+            var ship = Get(player, "currentSpaceShip"); var station = Get(_station, "current");
+            if (ship == null || station == null || Get(ship, "dockingState")?.ToString() != "Docked" ||
+                (from.Reference.Kind == InventoryKind.StationMaterials && !ReferenceEquals(from.Location, station)) ||
+                (to.Reference.Kind == InventoryKind.StationMaterials && !ReferenceEquals(to.Location, station))) return Refuse(InventoryTransferStatus.AccessDenied);
+        }
         int stock = (int)Get(selected, "count")!;
         double volume = Number(item, "m3"), capacity = Capacity(to), used = Number(to.Inventory, "spaceUsed");
         if (double.IsNaN(volume) || double.IsInfinity(volume) || volume < 0 || double.IsNaN(capacity) || double.IsInfinity(capacity) ||
@@ -53,9 +69,6 @@ internal sealed partial class InventoryNativeBackend
         var afterTo = Array.CreateInstance(_stack, Math.Max(beforeTo.Length, target + 1)); Array.Copy(beforeTo, afterTo, beforeTo.Length);
         afterFrom.SetValue(stock == amount ? null : Copy(selected, from.Inventory, index, stock - amount), index);
         afterTo.SetValue(Copy(selected, to.Inventory, target, amount), target);
-        if (!_current(source.SessionId) || !ReferenceEquals(Get(_player, "current"), player) ||
-            !ReferenceEquals(Find(player, source.Reference)?.Inventory, from.Inventory) || !ReferenceEquals(Find(player, destination.Reference)?.Inventory, to.Inventory))
-            return Refuse(InventoryTransferStatus.Stale);
         var commit = new InventoryPairCommit(() => _all.GetValue(from.Inventory)!, value => _all.SetValue(from.Inventory, value),
             () => _all.GetValue(to.Inventory)!, value => _all.SetValue(to.Inventory, value), beforeFrom, beforeTo, afterFrom, afterTo);
         return new(InventoryTransferStatus.Succeeded, amount, commit, () =>

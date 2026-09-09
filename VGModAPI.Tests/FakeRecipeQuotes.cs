@@ -42,7 +42,8 @@ namespace Source.Player
         public int Reserved;
         public float Materials = 100;
         public bool CanAfford(float amount) => credits >= (long)amount;
-        public int RequiredItemCountForMissions(Behaviour.Item.InventoryItemType item) => Reserved;
+        public Action? RequirementCallback;
+        public int RequiredItemCountForMissions(Behaviour.Item.InventoryItemType item) { RequirementCallback?.Invoke(); return Reserved; }
         public float CountRefinedMaterial(Source.Item.RefinedMaterial material) => Materials;
     }
 }

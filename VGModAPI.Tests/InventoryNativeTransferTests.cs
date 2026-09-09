@@ -68,6 +68,17 @@ public sealed class InventoryNativeTransferTests
             Assert.Equal(InventoryCommitStatus.Committed, withdrawal.Commit!.Commit());
             Assert.Same(equipment, ship.cargo.items.Single(x => x.item.identifier == "unique-module").item);
             Assert.Equal(23, equipment.itemLevel);
+            foreach (bool remove in new[] { true, false })
+            {
+                ship.cargo.items = new[] { new Source.Item.Inventory.InventoryItem(equipment, ship.cargo, 0, 1, false) };
+                var selected = backend.Resolve(session, cargo.Reference)!.Stacks.Single();
+                var array = (Array)typeof(Source.Item.Inventory).GetField("allItems", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(ship.cargo)!;
+                var replacement = remove ? null : new Source.Item.Inventory.InventoryItem(item, ship.cargo, 0, 4, false);
+                GamePlayer.current.RequirementCallback = () => array.SetValue(replacement, 0);
+                Assert.Equal(InventoryTransferStatus.Changed, backend.Prepare(cargo, armory, selected.StackId, 1, new()).Status);
+                Assert.Same(replacement, array.GetValue(0)); Assert.Empty(GamePlayer.current.globalInventory.items);
+                GamePlayer.current.RequirementCallback = null;
+            }
         }
         finally { GamePlayer.current = previous; SpaceStation.TestCurrent = previousStation; }
     }
