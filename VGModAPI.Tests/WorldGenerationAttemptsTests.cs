@@ -37,6 +37,24 @@ public sealed class WorldGenerationAttemptsTests
         var failure = new InvalidOperationException("native"); Assert.Same(failure, old.Finish(failure));
         Assert.False(attempts.Failed); attempts.Consume(); Assert.Null(current.Finish(null));
     }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ResetRetainsOldExecutionUntilItUnwinds(bool replacementWork)
+    {
+        var attempts = new WorldGenerationAttempts(1); var old = attempts.Begin(() => true);
+        attempts.Reset();
+        if (replacementWork)
+        {
+            var replacement = attempts.Begin(() => true);
+            attempts.Consume(); Assert.Null(replacement.Finish(null));
+        }
+        Assert.Throws<InvalidDataException>(() => attempts.Consume());
+        Assert.False(attempts.Failed);
+        Assert.IsType<InvalidDataException>(old.Finish(null));
+        var next = attempts.Begin(() => true); attempts.Consume(); Assert.Null(next.Finish(null));
+    }
+
     [Fact]
     public void CallbackReplacementDoesNotPoisonNewEpoch()
     {

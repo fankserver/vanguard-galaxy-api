@@ -49,7 +49,7 @@ internal sealed class WorldGenerationAttempts
     internal bool Failed => _failed;
     internal WorldGenerationAttempts(int limit)
     { if (limit < 1) throw new ArgumentOutOfRangeException(nameof(limit)); _limit = limit; }
-    internal void Reset() { _epoch = new(); _current = null; _failed = false; _checking = false; }
+    internal void Reset() { _epoch = new(); _failed = false; _checking = false; }
     private void Reject(object epoch) { if (ReferenceEquals(epoch, _epoch)) _failed = true; }
     internal Scope Begin(Func<bool>? valid)
     {
@@ -57,7 +57,7 @@ internal sealed class WorldGenerationAttempts
         if (valid != null)
         {
             if (_failed || _checking) { _failed = true; throw new InvalidDataException("Owned generation is rejected or reentrant."); }
-            for (var parent = _current; parent != null; parent = parent._parent)
+            for (var parent = _current; parent != null && ReferenceEquals(parent._epoch, _epoch); parent = parent._parent)
                 if (parent._budget != null) { budget = parent._budget; break; }
             budget ??= new Budget(_limit);
         }
@@ -73,7 +73,7 @@ internal sealed class WorldGenerationAttempts
             if (!ReferenceEquals(epoch, _epoch) || !ReferenceEquals(scope, _current) || scope._closed || _failed || _checking)
                 throw new InvalidDataException("Stale or rejected owned generation attempt.");
             _checking = true;
-            for (var frame = scope; frame != null; frame = frame._parent)
+            for (var frame = scope; frame != null && ReferenceEquals(frame._epoch, epoch); frame = frame._parent)
             {
                 if (!frame._closed && frame._valid != null && !frame._valid()) throw new InvalidDataException("Owned generation origin is unavailable.");
                 if (!ReferenceEquals(epoch, _epoch) || !ReferenceEquals(scope, _current) || _failed)
