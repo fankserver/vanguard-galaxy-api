@@ -52,6 +52,34 @@ public sealed class CraftingJobObserverTests : IDisposable
         _station.materialStorage.items = _station.materialStorage.items.Append(row).ToArray();
         _observer.End(frame, row, null); return row;
     }
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    public void GeneratedDeliveryUsesTemplateAndRequiresExactStoredObject(bool equipment, bool replaced)
+    {
+        _item.identifier = "";
+        if (equipment) _item.equipmentBuilder = new() { identifier = "generated-template" };
+        else _item.itemBuilder = new() { identifier = "generated-template" };
+        _item.gameObject.Components.Remove(typeof(InventoryItemType));
+        if (equipment) _item.gameObject.Components[typeof(Behaviour.Equipment.Builder.EquipmentBuilder)] = _item.equipmentBuilder!;
+        else _item.gameObject.Components[typeof(Behaviour.Item.Builder.ItemBuilder)] = _item.itemBuilder!;
+        var job = Queue();
+        var batch = _observer.Begin("jobBatchForge", job, Array.Empty<object>()); job.remainingAmount--;
+        var route = _observer.Begin("jobRouteForge", job, new object[] { _item, 1 });
+        var transfer = _observer.Begin("jobInventoryAdd", _station.materialStorage, new object[] { _item, 1, false, false });
+        var row = new Inventory.InventoryItem { inventory = _station.materialStorage, count = 1,
+            item = replaced ? new InventoryItemType { identifier = "", itemLevel = _item.itemLevel, rarity = _item.rarity,
+                equipmentBuilder = _item.equipmentBuilder, itemBuilder = _item.itemBuilder } : _item };
+        _station.materialStorage.items = new[] { row };
+        _observer.End(transfer, row, null); _observer.End(route, null, null); _observer.End(batch, null, null);
+        Assert.Null(_observer.PumpFault());
+        var fact = _events.Last(); var delivery = Assert.Single(fact.Deliveries);
+        Assert.Equal(new RecipeResourceId("vanilla", "generated-template", equipment ? RecipeResourceKind.EquipmentTemplate : RecipeResourceKind.ItemTemplate), delivery.Resource);
+        Assert.Equal(replaced ? CraftingDeliveryStatus.Unresolved : CraftingDeliveryStatus.Verified, fact.DeliveryStatus);
+        Assert.Equal(replaced ? (double?)null : 1d, delivery.VerifiedAmount);
+    }
     [Fact]
     public void DirectQueueAndFailedAdmissionAreDistinct()
     {

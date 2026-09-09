@@ -23,6 +23,8 @@ internal static class CraftingJobBindings
         (ForgeJob, "jobProgress", "System.Single", false, false), (RefineryJob, "jobProgress", "System.Single", false, false),
         ("Behaviour.Item.InventoryItemPart", "item", Item, false, false),
         (Inventory + "/InventoryItem", "inventory", Inventory, false, true),
+        (Item, "equipmentBuilder", "Behaviour.Equipment.Builder.EquipmentBuilder", false, false),
+        (Item, "itemBuilder", "Behaviour.Item.Builder.ItemBuilder", false, false),
         (Item, "itemLevel", "System.Int32", false, false), (Item, "rarity", "Source.Item.Rarity", false, false)
     };
     // Install leaf transfers before callers: patching a caller can JIT it, and

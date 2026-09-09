@@ -104,7 +104,8 @@ public sealed partial class Plugin
             foreach (var row in ((IEnumerable)SpGet(inventory.Value, "items")!).Cast<object>())
             {
                 var item = SpGet(row, "item")!;
-                var key = (inventory.Key, (string)SpGet(item, "identifier")!, Convert.ToInt32(SpGet(item, "itemLevel")), SpGet(item, "rarity")!.ToString()!);
+                var identity = SpGet(item, "equipmentBuilder") ?? SpGet(item, "itemBuilder") ?? item;
+                var key = (inventory.Key, (string)SpGet(identity, "identifier")!, Convert.ToInt32(SpGet(item, "itemLevel")), SpGet(item, "rarity")!.ToString()!);
                 result.TryGetValue(key, out var amount); result[key] = checked(amount + Convert.ToInt64(SpGet(row, "count")));
             }
         foreach (var material in Enum.GetValues(NativeType("Source.Item.RefinedMaterial")))

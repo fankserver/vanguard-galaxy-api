@@ -8,6 +8,17 @@ namespace VGModAPI.Runtime;
 
 internal sealed partial class CraftingJobObserver
 {
+    private static bool IsGeneratedItem(object item) => Value(item, "equipmentBuilder") != null || Value(item, "itemBuilder") != null;
+    private static RecipeResourceId? TransferItemResource(object item)
+    {
+        var builder = Value(item, "equipmentBuilder");
+        var kind = RecipeResourceKind.EquipmentTemplate;
+        if (builder == null) { builder = Value(item, "itemBuilder"); kind = RecipeResourceKind.ItemTemplate; }
+        if (builder == null) kind = RecipeResourceKind.Item;
+        var identifier = Value(builder ?? item, "identifier") as string;
+        return !string.IsNullOrWhiteSpace(identifier) && identifier!.Length <= 500 && !identifier.Any(char.IsControl)
+            ? new RecipeResourceId("vanilla", identifier, kind) : null;
+    }
     private Scope? BeginTransfer(string key, object instance, object[] args, Guid session)
     {
         var owner = _scopes.LastOrDefault(scope => scope.Transfer == null);
@@ -61,7 +72,8 @@ internal sealed partial class CraftingJobObserver
                 // Nonstandard stack effects are not equivalent to a count receipt.
                 var storedItem = Value(result!, "item");
                 verified &= own >= 0 && own == state.Requested && storedItem != null &&
-                    Equals(Value(storedItem, "identifier"), Value(state.Resource, "identifier")) &&
+                    (IsGeneratedItem(state.Resource) ? ReferenceEquals(storedItem, state.Resource) :
+                        Equals(Value(storedItem, "identifier"), Value(state.Resource, "identifier"))) &&
                     Equals(Value(storedItem, "itemLevel"), Value(state.Resource, "itemLevel")) &&
                     Equals(Value(storedItem, "rarity"), Value(state.Resource, "rarity"));
             }
@@ -87,9 +99,7 @@ internal sealed partial class CraftingJobObserver
         }
         else
         {
-            var identifier = Value(state.Resource, "identifier") as string;
-            if (!string.IsNullOrWhiteSpace(identifier) && identifier!.Length <= 500 && !identifier.Any(char.IsControl))
-                resource = new RecipeResourceId("vanilla", identifier, RecipeResourceKind.Item);
+            resource = TransferItemResource(state.Resource);
             level = Convert.ToInt32(Value(state.Resource, "itemLevel")); rarity = Value(state.Resource, "rarity")?.ToString();
         }
         verified &= resource != null;
