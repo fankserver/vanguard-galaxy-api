@@ -1,0 +1,82 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using AuthoredDungeon;
+using VGModAPI;
+namespace DungeonAuthor;
+
+/// <summary>Main-thread consumer wiring, independent of the BepInEx loader.</summary>
+public sealed class CargoAuthorSession : IDisposable
+{
+    private const string Id = "vgmodapi.example.cargo";
+    private readonly List<IDisposable> _leases = new();
+    private readonly Dictionary<BoardingHandle, CargoRecoveryPanel> _panels = new();
+    private CargoRecovery? _author;
+    private bool _disposed;
+    public CargoAuthorSession(string reward, ILifecycleApi? lifecycle, IBoardingEvents? boarding, IDungeonContent? content,
+        IDungeonPanelApi? panel, IBoardingCommands? commands, IBoardingTactics? tactics, IDungeonSettlement? settlement,
+        Action<string> log, Action<string>? warn = null)
+    {
+        if (log == null) throw new ArgumentNullException(nameof(log));
+        warn ??= log;
+        if (lifecycle == null || boarding == null || content == null || string.IsNullOrWhiteSpace(reward))
+        { warn("Cargo example requires configured RewardItemId and available boarding/dungeon content."); return; }
+        var retried = false;
+        void Initialize()
+        {
+            if (_disposed || _author != null) return;
+            try { _author = new CargoRecovery(content, Id, reward); }
+            catch (ArgumentException error)
+            {
+                warn($"Cargo definition unavailable for RewardItemId '{reward}': {error.Message}. Check native item/crew catalogs; one retry is allowed at gameplay readiness.");
+                return;
+            }
+            try
+            {
+                if (panel == null || !panel.Capabilities.ContextualActions || commands == null || tactics == null || settlement == null)
+                { warn("Content registered; optional contextual control/settlement services unavailable."); return; }
+                _leases.Add(panel.RegisterAction(Id, "attach-cargo", view => view.Operation == null
+                    ? new DungeonPanelAction("Attach cargo encounter", "Explicitly attach cargo content to this observed target. Existing attachments are never replaced.") : null,
+                    view => log("Cargo attach: " + _author.Attach(view.Target.Handle).Status)));
+                void Track(BoardingOperationSnapshot operation)
+                {
+                    if (_panels.ContainsKey(operation.Target)) return;
+                    _panels.Add(operation.Target, new CargoRecoveryPanel(Id, operation.Target, panel, boarding, commands, tactics, settlement,
+                        result => log("Cargo command: " + result.Status),
+                        result => log($"Cargo settlement: {result.NativeOutcome}; crew return settled={result.CrewReturnSettled}; observed counts={result.CrewCountsObserved}")));
+                }
+                _leases.Add(boarding.Subscribe(Id, fact =>
+                {
+                    if (fact.Kind == BoardingEventKind.Retired)
+                    {
+                        if (_panels.TryGetValue(fact.Target.Handle, out var stale)) { stale.Dispose(); _panels.Remove(fact.Target.Handle); }
+                        return;
+                    }
+                    if (fact.Kind != BoardingEventKind.OperationRetired && fact.Operation != null) Track(fact.Operation);
+                }));
+                foreach (var operation in boarding.GetOperations()) Track(operation);
+            }
+            catch { Dispose(); throw; }
+        }
+        try
+        {
+            _leases.Add(lifecycle.Subscribe(Id, fact =>
+            {
+                if (fact.Kind == LifecycleEventKind.SessionInvalidated) ClearTargets();
+                if (fact.Kind == LifecycleEventKind.GameplayInitialized && !retried && _author == null)
+                { retried = true; Initialize(); }
+            }));
+            Initialize();
+        }
+        catch { Dispose(); throw; }
+    }
+    private void ClearTargets()
+    { foreach (var panel in _panels.Values.ToArray()) panel.Dispose(); _panels.Clear(); }
+    public void Dispose()
+    {
+        if (_disposed) return; _disposed = true;
+        ClearTargets();
+        for (var i = _leases.Count - 1; i >= 0; i--) _leases[i].Dispose();
+        _leases.Clear(); _author?.Dispose(); _author = null;
+    }
+}

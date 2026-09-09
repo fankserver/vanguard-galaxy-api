@@ -37,7 +37,7 @@ public sealed class CargoRecoveryPanel : IDisposable
                 if (boarding.GetOperation(snapshot.Operation)?.Target.Equals(target) == true) operations.Add(snapshot.Operation);
                 if (operations.Contains(snapshot.Operation)) observedSettlement(snapshot);
             }));
-            _leases.Add(panel.RegisterAction(pluginId, "cargo-extraction", view =>
+            _leases.Add(panel.RegisterAction(pluginId, "cargo-extraction-" + target.Generation.ToString("N"), view =>
             {
                 if (!view.Target.Handle.Equals(target) || view.Operation == null) return null;
                 var state = tactics.GetSnapshot(view.Operation.Handle);
