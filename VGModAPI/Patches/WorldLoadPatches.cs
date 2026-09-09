@@ -37,6 +37,12 @@ internal static class WorldLoadPatches
             }
             else host?.RequireFactory(val);
         }
+        internal static bool ConstructPrefix(object val, ref object __result, out Capture? __state)
+        {
+            Prefix(val, out __state);
+            if (__state?.Host is not IWorldOwnedFactoryHost owned) return true;
+            __result = owned.ConstructFactory(__state.Token); return false;
+        }
         internal static Exception? Finalizer(Capture? __state, object __result, Exception? __exception)
         {
             if (__exception == null && __state != null) __state.Host.CompleteFactory(__state.Token, __result);

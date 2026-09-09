@@ -27,13 +27,14 @@ internal sealed partial class WorldLoadHookHost : IWorldLoadHookHost, IDisposabl
     private Guid _sessionId;
 
     internal WorldLoadHookHost(Assembly assembly, LifecycleHub hub, PersistenceService persistence, WorldGenerationReader generations,
-        Func<string, string> canonical, Func<WorldSavedDefinition, bool> definitionAvailable, Func<long> providerRevision)
+        Func<string, string> canonical, Func<WorldSavedDefinition, bool> definitionAvailable, Func<long> providerRevision, Func<object, Action, object>? ownedReader = null)
     {
         _hub = hub; _hub.CheckThread();
         if (_hub.CurrentSession != null) throw new InvalidOperationException("World load guard must attach before a session.");
         _persistence = persistence; _canonical = canonical; _definitionAvailable = definitionAvailable; _providerRevision = providerRevision;
         _file = assembly.GetType(BindingCatalog.File, true)!.GetField("File") ?? throw new MissingFieldException("SaveGameFile.File");
         if (_file.FieldType != typeof(FileInfo) || _file.IsStatic) throw new MissingFieldException("SaveGameFile.File must be instance FileInfo.");
+        _ownedReader = ownedReader ?? ((json, require) => new WorldOwnedPoiReader(assembly).Read(json, require));
         _json = new WorldJsonInspection(assembly); _gate = new WorldConstructionGate();
         _preparation = new WorldLoadPreparation(generations, _json, _gate);
         _subscription = _hub.Subscribe(WorldStateCodec.Owner, OnLifecycle);

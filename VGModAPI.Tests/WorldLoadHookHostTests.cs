@@ -45,11 +45,14 @@ public sealed class WorldLoadHookHostTests
     }
 
     [Theory]
-    [InlineData(false, false, false)]
-    [InlineData(true, false, false)]
-    [InlineData(false, true, false)]
-    [InlineData(false, true, true)]
-    public void PreparedLoadAndFactoryRemainAttemptScoped(bool repeatRecall, bool replaceAsset, bool replaceSession)
+    [InlineData(false, false, false, 0)]
+    [InlineData(true, false, false, 0)]
+    [InlineData(false, true, false, 0)]
+    [InlineData(false, true, true, 0)]
+    [InlineData(false, false, false, 1)]
+    [InlineData(false, false, false, 2)]
+    [InlineData(false, false, false, 3)]
+    public void PreparedLoadAndFactoryRemainAttemptScoped(bool repeatRecall, bool replaceAsset, bool replaceSession, int constructionFault)
     {
         string assetId = "host-" + Guid.NewGuid().ToString("N");
         var asset = new Behaviour.Unit.SpaceShip();
@@ -86,7 +89,14 @@ public sealed class WorldLoadHookHostTests
                 if (advance) hub.PlayerReady(session);
                 return 1;
             }
-            using var ownedHost = host = new WorldLoadHookHost(typeof(JsonObject).Assembly, hub, persistence, persistence.CreateWorldReader(), Path.GetFullPath, _ => true, Revision);
+            var native = new Source.Galaxy.POI.Combat { guid = identity.NativeId };
+            using var ownedHost = host = new WorldLoadHookHost(typeof(JsonObject).Assembly, hub, persistence, persistence.CreateWorldReader(), Path.GetFullPath, _ => true, Revision,
+                (_, require) =>
+                {
+                    require();
+                    if (constructionFault == 3) Assert.Throws<InvalidDataException>(() => host!.BeginFactory(new JsonValue(poi)));
+                    return native;
+                });
             session = hub.Begin(SessionOrigin.SaveLoad, path);
             Assert.True(host.TryRecall(new Source.Util.SaveGameFile(path), out var loaded)); Assert.Same(root, loaded);
             var prepared = host.PreparedFor(session);
@@ -95,7 +105,18 @@ public sealed class WorldLoadHookHostTests
             Assert.Null(host.PreparedFor(Guid.NewGuid()));
             var factoryToken = host.BeginFactory(new JsonValue(poi));
             Assert.NotNull(factoryToken);
-            var native = new Source.Galaxy.POI.Combat { guid = identity.NativeId };
+            if (constructionFault == 3)
+            {
+                Assert.Throws<InvalidDataException>(() => host.ConstructFactory(factoryToken!));
+                Assert.Null(host.PreparedFor(session)); return;
+            }
+            Assert.Same(native, host.ConstructFactory(factoryToken!));
+            if (constructionFault != 0)
+            {
+                if (constructionFault == 1) Assert.Throws<InvalidDataException>(() => host.CompleteFactory(factoryToken!, new Source.Galaxy.POI.Combat { guid = identity.NativeId }));
+                else Assert.Throws<InvalidDataException>(() => host.ConstructFactory(factoryToken!));
+                Assert.Null(host.PreparedFor(session)); return;
+            }
             host.CompleteFactory(factoryToken!, native);
             var definition = prepared.Generation.DefinitionFor(Assert.Single(prepared.Generation.Rows));
             Assert.True(host.ConstructedBy(prepared, new WorldSnapshotInstance(native, identity, "system-a", definition)));

@@ -57,7 +57,7 @@ public sealed partial class Plugin
                 () =>
                 {
                     _worldLoadHarmony.Patch(targets["worldPoiRead"],
-                        prefix: new HarmonyMethod(typeof(WorldLoadPatches.Factory).GetMethod("Prefix", BindingFlags.NonPublic | BindingFlags.Static)),
+                        prefix: new HarmonyMethod(typeof(WorldLoadPatches.Factory).GetMethod("ConstructPrefix", BindingFlags.NonPublic | BindingFlags.Static)),
                         finalizer: new HarmonyMethod(typeof(WorldLoadPatches.Factory).GetMethod("Finalizer", BindingFlags.NonPublic | BindingFlags.Static)));
                     _worldLoadHarmony.Patch(targets["worldCombatUpdate"], prefix: new HarmonyMethod(typeof(WorldLifetimePatches.Ambient).GetMethod("Prefix", BindingFlags.NonPublic | BindingFlags.Static)));
                     _worldLoadHarmony.Patch(targets["worldRemove"], prefix: new HarmonyMethod(typeof(WorldLifetimePatches.Remove).GetMethod("Prefix", BindingFlags.NonPublic | BindingFlags.Static)));

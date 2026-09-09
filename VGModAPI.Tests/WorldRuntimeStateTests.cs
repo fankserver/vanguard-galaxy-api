@@ -44,7 +44,9 @@ public sealed class WorldRuntimeStateTests
             var game = new GameAdapter(hub, new GameBindings(typeof(GamePlayer).Assembly), _ => { });
             using var persistence = new PersistenceService(hub, store, Path.GetFullPath, p => GenerationStore.Hash(File.ReadAllBytes(p)));
             using var definitions = new WorldDefinitionRegistry((_, caller) => new StoryHostPlugin("author.a", caller), hub.CheckThread);
-            using var loads = new WorldLoadHookHost(typeof(GamePlayer).Assembly, hub, persistence, persistence.CreateWorldReader(), Path.GetFullPath, definitions.MatchesRetained, () => definitions.Revision);
+            object? nativeForRead = null;
+            using var loads = new WorldLoadHookHost(typeof(GamePlayer).Assembly, hub, persistence, persistence.CreateWorldReader(), Path.GetFullPath, definitions.MatchesRetained, () => definitions.Revision,
+                (_, require) => { require(); return nativeForRead ?? throw new InvalidOperationException(); });
             var lifetime = new WorldLifetimeGuard();
             using var lifetimeHost = new WorldLifetimeHookHost(typeof(GamePlayer).Assembly, hub, lifetime);
             var creation = new WorldCreationCoordinator(new WorldNativeAttachment(game), hub.CheckThread, lifetime);
@@ -67,7 +69,8 @@ public sealed class WorldRuntimeStateTests
             IEnumerator Load()
             {
                 Assert.True(loads.TryRecall(file, out _));
-                var token = loads.BeginFactory(new JsonValue(poiJson)); loads.CompleteFactory(token!, poi);
+                nativeForRead = poi;
+                var token = loads.BeginFactory(new JsonValue(poiJson)); loads.CompleteFactory(token!, loads.ConstructFactory(token!));
                 system.pointsOfInterest.Add(poi);
                 GamePlayer.current = new GamePlayer { map = map }; game.PlayerReconstructed(); yield break;
             }
