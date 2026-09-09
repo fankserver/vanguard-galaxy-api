@@ -31,7 +31,8 @@ public sealed class ServiceRootTests
                 new DialogueService(hub.Services.Get("dialogue"), hub.CheckThread, _ => { }),
                 new NavigationService(hub, _ => null, (_, _, _) => NavigationStatus.Unavailable, (_, _) => null),
                 new OwnedItemService(hub, (_, _) => null),
-                new OwnedRecipeService(hub, (_, _) => null, _ => null, _ => { }, _ => { }) });
+                new OwnedRecipeService(hub, (_, _) => null, _ => null, _ => { }, _ => { }),
+                new InventoryService(hub, () => null) });
     }
 
     [Fact]

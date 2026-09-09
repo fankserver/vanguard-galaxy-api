@@ -34,6 +34,8 @@ public sealed class ModServices
     private readonly IStoryService _story;
     private readonly IBarService _bars;
     private readonly IWorldService _world;
+    private readonly IInventoryService _inventories;
+    public IInventoryService Inventories { get { CheckThread(); return _inventories; } }
     private readonly IOwnedRecipeService _recipeRegistration;
     public IOwnedRecipeService RecipeRegistration { get { CheckThread(); return _recipeRegistration; } }
     private readonly IOwnedItemService _items;
@@ -81,7 +83,7 @@ public sealed class ModServices
 
     internal ModServices(ILifecycleService lifecycle, IModInformationService mods, ISaveDataService saveData,
         IMissionService missions, ITravelService travel, IStationService station, IRecipeService recipes, IRecipeQuoteService recipeQuotes,
-        ICraftingJobService craftingJobs, ICraftingCommandService craftingCommands, IHudService hud, IForgeUiService forgeUi, IBoardingRuleService boardingRules, IBoardingCombatService boardingCombat, IDungeonRewardService dungeonRewards, IBoardingCommandService boardingCommands, IBoardingTacticalService boardingTactics, IBoardingService boarding, IDungeonSettlementService dungeonSettlement, IDungeonPanelService dungeonPanel, IDungeonContentService dungeons, IStoryService story, IBarService bars, IWorldService world, IDialogueService dialogue, INavigationService navigation, IOwnedItemService items, IOwnedRecipeService recipeRegistration)
+        ICraftingJobService craftingJobs, ICraftingCommandService craftingCommands, IHudService hud, IForgeUiService forgeUi, IBoardingRuleService boardingRules, IBoardingCombatService boardingCombat, IDungeonRewardService dungeonRewards, IBoardingCommandService boardingCommands, IBoardingTacticalService boardingTactics, IBoardingService boarding, IDungeonSettlementService dungeonSettlement, IDungeonPanelService dungeonPanel, IDungeonContentService dungeons, IStoryService story, IBarService bars, IWorldService world, IDialogueService dialogue, INavigationService navigation, IOwnedItemService items, IOwnedRecipeService recipeRegistration, IInventoryService inventories)
     {
         _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
         _mods = mods ?? throw new ArgumentNullException(nameof(mods));
@@ -111,6 +113,7 @@ public sealed class ModServices
         _navigation = navigation ?? throw new ArgumentNullException(nameof(navigation));
         _items = items ?? throw new ArgumentNullException(nameof(items));
         _recipeRegistration = recipeRegistration ?? throw new ArgumentNullException(nameof(recipeRegistration));
+        _inventories = inventories ?? throw new ArgumentNullException(nameof(inventories));
     }
 
     internal void CheckThread()

@@ -160,6 +160,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         InitializeWorldProtection();
         InitializeDialogue();
         InitializeNavigation();
+        InitializeInventories();
         InitializeOwnedItems();
         InitializeOwnedRecipes();
         InitializeDungeons();
@@ -979,6 +980,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         StopOwnedRecipes();
         StopOwnedItems();
         StopNavigation();
+        StopInventories();
         StopDialogue();
         StopWorldProtection();
         DungeonRewardPatches.Crew = null; _dungeonSettlement?.Dispose(); _dungeonSettlement = null;
