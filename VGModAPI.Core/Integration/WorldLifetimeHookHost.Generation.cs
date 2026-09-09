@@ -28,7 +28,9 @@ internal sealed partial class WorldLifetimeHookHost : IWorldGenerationHost
         if (list == null || list.GetType() != field.FieldType || slot < 0 || slot >= list.Count || list.Count > 1024) throw new InvalidDataException("Invalid owned salvage slot.");
         int count = list.Count; var descriptor = list[slot];
         if (descriptor == null) throw new InvalidDataException("Missing owned salvage descriptor.");
-        return BeginGeneration(poi, () => ReferenceEquals(field.GetValue(poi), list) && list.Count == count && ReferenceEquals(list[slot], descriptor));
+        var scope = BeginGeneration(poi, () => ReferenceEquals(field.GetValue(poi), list) && list.Count == count && ReferenceEquals(list[slot], descriptor));
+        scope.SelectedDescriptor = descriptor;
+        return scope;
     }
     public WorldSalvageResults.Receipt? BeginSalvageResult(object poi, object descriptor)
     {

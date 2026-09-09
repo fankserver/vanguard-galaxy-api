@@ -10,28 +10,36 @@ namespace VGModAPI.Tests;
 public sealed class WorldGenerationHookTests
 {
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void DescriptorCompletionRequiresItsReservedConstructorObject(bool substitute)
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void DescriptorCompletionRequiresItsReservedConstructorObject(int substitution)
     {
         var previous = WorldLifetimePatches.Host;
         var hub = new LifecycleHub((_, error) => throw error); var guard = new WorldLifetimeGuard();
         using var host = new WorldLifetimeHookHost(typeof(Source.Galaxy.MapElement).Assembly, hub, guard);
         var session = hub.Begin(SessionOrigin.NewGame, null);
         var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
-        var poi = new Source.Galaxy.MapPointOfInterest { guid = identity.NativeId };
+        var poi = new SlotPoi { guid = identity.NativeId };
         guard.Track(session, poi, identity); guard.Ready(session);
-        WorldLifetimePatches.Generation.Capture? capture = null;
+        WorldLifetimePatches.Generation.Capture? capture = null, slot = null;
         var result = new object();
         try
         {
             WorldLifetimePatches.Host = host;
-            WorldLifetimePatches.Generation.DescriptorPrefix(new object(), poi, out capture);
+            WorldLifetimePatches.Generation.SlotPrefix(poi, 0, out slot);
+            WorldLifetimePatches.Generation.DescriptorPrefix(poi.salvageDescriptors[0], poi, out capture);
             WorldLifetimePatches.Generation.ConstructorPrefix(result);
-            var error = WorldLifetimePatches.Generation.DescriptorFinalizer(capture, substitute ? new object() : result, null);
-            if (substitute)
+            var error = WorldLifetimePatches.Generation.DescriptorFinalizer(capture, substitution == 1 ? new object() : result, null);
+            if (substitution == 1)
             {
                 Assert.IsType<InvalidDataException>(error);
+                Assert.Throws<InvalidDataException>(() => WorldLifetimePatches.Generation.PublicationPrefix(poi, result));
+            }
+            else if (substitution == 2)
+            {
+                Assert.Null(error);
+                Assert.Throws<InvalidDataException>(() => WorldLifetimePatches.Generation.PublicationPrefix(poi, new object()));
                 Assert.Throws<InvalidDataException>(() => WorldLifetimePatches.Generation.PublicationPrefix(poi, result));
             }
             else
@@ -42,7 +50,7 @@ public sealed class WorldGenerationHookTests
                 Assert.Throws<InvalidDataException>(() => WorldLifetimePatches.Generation.PublicationPrefix(poi, result));
             }
         }
-        finally { WorldLifetimePatches.Generation.Finalizer(capture, null); WorldLifetimePatches.Host = previous; }
+        finally { WorldLifetimePatches.Generation.Finalizer(capture, null); WorldLifetimePatches.Generation.Finalizer(slot, null); WorldLifetimePatches.Host = previous; }
     }
     private sealed class SlotPoi : Source.Galaxy.MapPointOfInterest
     {

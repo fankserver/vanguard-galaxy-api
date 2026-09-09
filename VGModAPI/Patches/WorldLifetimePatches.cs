@@ -120,28 +120,34 @@ internal static class WorldLifetimePatches
             internal readonly Capture? Parent;
             internal WorldGenerationAttempts.Scope? Scope;
             internal WorldSalvageResults.Receipt? Result;
-            internal bool Closed;
+            internal bool Closed, Slot;
+            internal object? Poi, SlotResult;
+            internal Capture? OriginSlot;
             internal Capture(IWorldGenerationHost? host, Capture? parent) { Host = host; Parent = parent; }
         }
         private static Capture? _active;
         internal static void Prefix(object __instance, out Capture? __state) => StaticPrefix(__instance, out __state);
         internal static void StaticPrefix(object __0, out Capture? __state)
         {
-            __state = new Capture(Host as IWorldGenerationHost, _active);
+            __state = new Capture(Host as IWorldGenerationHost, _active) { Poi = __0 };
             _active = __state;
             if (__state.Host != null) __state.Scope = __state.Host.BeginGeneration(__0);
         }
         internal static void SlotPrefix(object __instance, int __0, out Capture? __state)
         {
-            __state = new Capture(Host as IWorldGenerationHost, _active); _active = __state;
+            __state = new Capture(Host as IWorldGenerationHost, _active) { Poi = __instance, Slot = true }; _active = __state;
             if (__state.Host != null) __state.Scope = __state.Host.BeginSalvageSlot(__instance, __0);
         }
         internal static void DescriptorPrefix(object __instance, object __0, out Capture? __state)
         {
-            __state = new Capture(Host as IWorldGenerationHost, _active); _active = __state;
-            if (__state.Host == null) return;
-            __state.Result = __state.Host.BeginSalvageResult(__0, __instance);
-            __state.Scope = __state.Host.BeginGeneration(__0);
+            var frame = __state = new Capture(Host as IWorldGenerationHost, _active) { Poi = __0 }; _active = frame;
+            if (frame.Host == null) return;
+            frame.Result = frame.Host.BeginSalvageResult(__0, __instance);
+            var slot = frame.Result == null ? null : FindSlot(frame.Parent, __0);
+            frame.OriginSlot = slot;
+            frame.Scope = frame.Host.BeginGeneration(__0, () => slot == null || (!slot.Closed &&
+                ReferenceEquals(slot.Scope?.SelectedDescriptor, __instance) &&
+                (slot.SlotResult == null || ReferenceEquals(slot.SlotResult, frame.Result?.Candidate))));
         }
         internal static void ConstructorPrefix(object __instance)
         {
@@ -162,17 +168,34 @@ internal static class WorldLifetimePatches
                     {
                         WorldLifetimeHookHost.SalvageResults.Complete(__state.Result, __result);
                         __state.Host!.ValidateGeneration();
+                        if (__state.OriginSlot != null) __state.OriginSlot.SlotResult = __result;
                     }
                 }
             }
             catch (System.Exception failure) { error = failure; if (__state?.Result != null) WorldLifetimeHookHost.SalvageResults.Reject(__state.Result); }
             return Finalizer(__state, error);
         }
+        private static Capture? FindSlot(Capture? frame, object poi)
+        {
+            for (; frame != null; frame = frame.Parent)
+            {
+                if (!ReferenceEquals(frame.Poi, poi)) return null;
+                if (frame.Slot) return frame;
+            }
+            return null;
+        }
         internal static void PublicationPrefix(object __instance, object __0)
         {
+            var frame = _active; var slot = FindSlot(frame, __instance);
             WorldLifetimeHookHost.SalvageResults.RequirePublication(__instance, __0);
-            if (_active != null) _active.Host?.ValidateGeneration();
+            if (frame != null) frame.Host?.ValidateGeneration();
             else (Host as IWorldGenerationHost)?.ValidateGeneration();
+            if (slot?.Scope?.SelectedDescriptor != null && (slot.Closed || !ReferenceEquals(slot.SlotResult, __0)))
+            {
+                slot.Scope.Reject();
+                frame?.Host?.ValidateGeneration();
+                throw new System.IO.InvalidDataException("Salvage slot result was substituted before publication.");
+            }
         }
         internal static void BuilderPrefix()
         {

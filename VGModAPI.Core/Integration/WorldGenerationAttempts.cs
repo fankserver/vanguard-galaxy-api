@@ -15,8 +15,10 @@ internal sealed class WorldGenerationAttempts
         internal readonly Func<bool>? _valid, _stable;
         internal readonly Budget? _budget;
         internal bool _closed;
+        internal object? SelectedDescriptor;
         internal Scope(WorldGenerationAttempts owner, object epoch, Scope? parent, Func<bool>? valid, Func<bool>? stable, Budget? budget)
         { _owner = owner; _epoch = epoch; _parent = parent; _valid = valid; _stable = stable; _budget = budget; }
+        internal void Reject() => _owner.Reject(_epoch);
         internal Exception? Finish(Exception? error)
         {
             try
