@@ -18,9 +18,10 @@ namespace VGModAPI.Tests;
 public sealed class WorldRuntimeStateTests
 {
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void VerifiedLoadFactoryAndPlayerReadyPublishBeforeDependentSubscribers(bool disposePersistence)
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void VerifiedLoadFactoryAndPlayerReadyPublishBeforeDependentSubscribers(int readinessLoss)
     {
         string dir = Path.Combine(Path.GetTempPath(), "vg-world-runtime-" + Guid.NewGuid().ToString("N"));
         string text = "world-runtime-" + Guid.NewGuid().ToString("N");
@@ -96,10 +97,15 @@ public sealed class WorldRuntimeStateTests
             }
             finally { if (!hadFaction) Faction.allFactions.Remove("player"); else Faction.allFactions["player"] = oldFaction!; }
             Assert.True(lifetimeHost.AllowUse(poi));
-            runtimeChange = () => { if (disposePersistence) bindings.Dispose(); else creation.Reset(request.Id); };
+            runtimeChange = () =>
+            {
+                if (readinessLoss == 0) creation.Reset(request.Id);
+                else if (readinessLoss == 1) bindings.Dispose();
+                else provider.Dispose();
+            };
             Assert.False(lifetimeHost.AllowUse(poi));
             runtimeChange = null;
-            provider.Dispose(); Assert.False(lifetimeHost.AllowUse(poi));
+            Assert.False(lifetimeHost.AllowUse(poi));
             hub.Invalidate("leave"); Assert.False(creation.Restored(request.Id));
             Assert.False(bindings.CanMutate(request.Id));
             Assert.Throws<InvalidDataException>(() => creation.Snapshot());
