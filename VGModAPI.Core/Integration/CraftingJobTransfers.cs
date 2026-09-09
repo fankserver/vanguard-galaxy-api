@@ -16,6 +16,12 @@ internal sealed partial class CraftingJobObserver
         if (builder == null) { builder = Value(item, "itemBuilder"); kind = RecipeResourceKind.ItemTemplate; }
         if (builder == null) kind = RecipeResourceKind.Item;
         var identifier = Value(builder ?? item, "identifier") as string;
+        if (identifier != null && OwnedItemIdentity.IsReserved(identifier))
+        {
+            if (builder != null) return null;
+            try { _ = OwnedItemIdentity.Read(identifier); return new RecipeResourceId("vanilla", identifier, RecipeResourceKind.Item); }
+            catch { return null; }
+        }
         return !string.IsNullOrWhiteSpace(identifier) && identifier!.Length <= 500 && !identifier.Any(char.IsControl)
             ? new RecipeResourceId("vanilla", identifier, kind) : null;
     }

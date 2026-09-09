@@ -30,7 +30,8 @@ public sealed class ServiceRootTests
                 new WorldContentService(hub, new WorldDefinitionRegistry((_, _) => null, hub.CheckThread), null!, () => false),
                 new DialogueService(hub.Services.Get("dialogue"), hub.CheckThread, _ => { }),
                 new NavigationService(hub, _ => null, (_, _, _) => NavigationStatus.Unavailable, (_, _) => null),
-                new OwnedItemService(hub, (_, _) => null) });
+                new OwnedItemService(hub, (_, _) => null),
+                new OwnedRecipeService(hub, (_, _) => null, _ => null, _ => { }, _ => { }) });
     }
 
     [Fact]

@@ -43,14 +43,14 @@ public sealed partial class Plugin
             _worldDefinitions = new WorldDefinitionRegistry(authenticate, _hub.CheckThread);
             var definitions = _worldDefinitions;
             _worldLoadHost = new WorldLoadHookHost(assembly, _hub, _persistence, _persistence.CreateWorldReader(),
-                _persistence.CanonicalLoadPath, saved => admission() && definitions.MatchesRetained(saved) && admission(), () => definitions.Revision, emptyProfile: emptyProfile, requireContext: requireContext, restoreItem: RestoreOwnedItem);
+                _persistence.CanonicalLoadPath, saved => admission() && definitions.MatchesRetained(saved) && admission(), () => definitions.Revision, emptyProfile: emptyProfile, requireContext: requireContext, restoreItem: RestoreOwnedItem, restoreRecipe: RestoreOwnedRecipe);
             var salvageConstructor = assembly.GetType("Source.Data.Persistable.SalvageData", true)!.GetConstructor(Type.EmptyTypes)
                 ?? throw new MissingMethodException("SalvageData..ctor()");
             var lifetime = new WorldLifetimeGuard();
             var creation = new WorldCreationCoordinator(new WorldNativeAttachment(_adapter, inspectProfile), _hub.CheckThread, lifetime, inspectProfile);
             _worldLifetimeHost = new WorldLifetimeHookHost(assembly, _hub, lifetime, new WorldActorPhysics(assembly).Stop,
                 session => { creation.Refuse(session); _story?.RefreshWorldDependencies(); }, inspectProfile);
-            _worldSnapshotHost = new WorldSnapshotHookHost(_hub, new WorldSnapshotRecorder(new WorldJsonInspection(assembly, emptyProfile, RestoreOwnedItem)), creation.Snapshot, () => { requireContext(); return creation.Revision; }, requireContext);
+            _worldSnapshotHost = new WorldSnapshotHookHost(_hub, new WorldSnapshotRecorder(new WorldJsonInspection(assembly, emptyProfile, RestoreOwnedItem, RestoreOwnedRecipe)), creation.Snapshot, () => { requireContext(); return creation.Revision; }, requireContext);
             _worldPersistence = new WorldPersistenceBindings(_persistence, _hub, _worldLoadHost, _worldSnapshotHost, creation);
             _worldRuntime = new WorldRuntimeState(_adapter, _worldLoadHost, definitions, creation,
                 lifetime, _worldPersistence.StateReady, admission);

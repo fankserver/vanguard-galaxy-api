@@ -39,6 +39,7 @@ public sealed partial class Plugin
                 if (_ownedItemsStopped) return;
                 _ownedItemCatalog.Reinsert();
                 OwnedItemDeclarationPublication.Publish(_ownedItems.Definitions, id => _ownedItemCatalog.Ensure(id), _hub.ReportSubscriberFailure);
+                RefreshOwnedRecipes();
             };
             foreach (var method in type.GetMethods(BindingFlags.Static | BindingFlags.Public))
                 if (method.Name == "FromJson") _ownedItemHarmony.Patch(method,

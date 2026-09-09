@@ -66,6 +66,15 @@ internal sealed class OwnedItemNativeCatalog : IDisposable
         catch { if (child != null) UnityEngine.Object.Destroy(child); throw; }
         finally { _busy = false; }
     }
+    internal Component ResolvePlain(string id)
+    {
+        var item = OwnedItemIdentity.IsReserved(id) ? Ensure(id) : Catalog[id] as Component;
+        if (item == null) throw new InvalidOperationException("Recipe item dependency unavailable.");
+        string category = _fields["itemCategory"].GetValue(item)!.ToString()!;
+        if (category != "TradeGoods" && category != "RefinedProduct" && category != "Ore" && category != "Salvage" && category != "Junk" && category != "Crystal")
+            throw new InvalidOperationException("Recipe item shape is not supported plain goods.");
+        return item;
+    }
     private void Publish(string id, Component item)
     {
         if (Catalog.Contains(id) && !ReferenceEquals(Catalog[id], item))
