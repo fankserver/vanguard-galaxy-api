@@ -28,7 +28,8 @@ public sealed partial class Plugin
             var navigation = ui.Open(recipe.Id);
             discovery.Add(recipe.Id.LocalId + " navigation=" + navigation);
             if (navigation != ForgeNavigationStatus.Selected) { yield return null; continue; }
-            SetPinFixtureBatchOne();
+            discovery.Add("defaultBatches=" + ui.Current?.Batches);
+            if (!TrySetPinFixtureBatchOne()) { discovery.Add("batchOne=unavailable"); yield return null; continue; }
             var quote = quotes.Quote(station, recipe.Id, 1);
             discovery.Add("quote=" + quote.Status + " batches=" + ui.Current?.Batches + " inputs=" + quote.Inputs.Count + " " +
                 string.Join(";", quote.Inputs.Select(input => input.Resource.Kind + ":" + input.Resource.LocalId + " producers=" + catalog.FindProducers(input.Resource).Count)));
@@ -37,8 +38,9 @@ public sealed partial class Plugin
             {
                 var candidates = catalog.FindProducers(quote.Inputs[index].Resource);
                 if (multiple ? candidates.Count is < 2 or > 32 : candidates.Count != 1 || candidates[0].Process != RecipeProcess.Forge) continue;
+                if (multiple && candidates[candidates.Count - 1].Process == RecipeProcess.Forge) continue;
                 if (!multiple && (candidates[0].Id.Equals(recipe.Id) || ui.Open(candidates[0].Id) != ForgeNavigationStatus.Selected || ui.Open(recipe.Id) != ForgeNavigationStatus.Selected)) continue;
-                SetPinFixtureBatchOne();
+                Require(TrySetPinFixtureBatchOne(), "Selected producer fixture lost one-batch control.");
                 producers = candidates; ingredientIndex = index; inputCount = quote.Inputs.Count; break;
             }
             if (producers != null) break;
@@ -84,15 +86,15 @@ public sealed partial class Plugin
         foreach (var frame in ForgeClick(mouse, PinCloseButton()!.transform)) yield return frame;
         foreach (var frame in Wait(() => GameObject.Find("Mod API shared HUD") == null, "Producer test pin cleared")) yield return frame;
     }
-    private static void SetPinFixtureBatchOne()
+    private static bool TrySetPinFixtureBatchOne()
     {
-        if (ModApi.ForgeUi!.Current?.Batches == 1) return;
+        if (ModApi.ForgeUi!.Current?.Batches == 1) return true;
         var native = SpGet(NativeType("Behaviour.UI.Forge.ForgeUI"), "current")!;
         var slider = (Slider)SpGet(SpGet(native, "tabContents")!, "countSlider")!;
-        Require(slider.minValue <= 1 && slider.maxValue >= 1, "Native recipe cannot select one batch.");
+        if (slider.minValue > 1 || slider.maxValue < 1) return false;
         // Use the actual control/event, not a fabricated public selection. Native defaults to max craftable.
         slider.value = 1;
-        Require(ModApi.ForgeUi.Current?.Batches == 1, "Native batch control did not select one batch.");
+        return ModApi.ForgeUi.Current?.Batches == 1;
     }
     private static Button[] PinRows()
     {
