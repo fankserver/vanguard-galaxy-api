@@ -10,6 +10,7 @@ internal sealed class GameplayEvent<T> : IDisposable
     private readonly List<Handler> _handlers = new();
     private bool _disposed;
     internal GameplayEvent(Action checkThread) { _checkThread = checkThread; }
+    internal bool HasSubscribers { get { _checkThread(); return _handlers.Count > 0; } }
     internal void Add(Action<T>? callback)
     {
         _checkThread();

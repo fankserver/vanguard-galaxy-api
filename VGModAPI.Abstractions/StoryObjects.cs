@@ -68,6 +68,8 @@ public interface IStoryObjective
     IStoryMission Mission { get; }
     string Key { get; }
     StoryObjectiveQuery Snapshot { get; }
+    /// <summary>Observed progress changes, including native trigger-driven progression. Fires as a safe gameplay reaction.</summary>
+    event Action<IStoryObjective>? Changed;
     /// <summary>Set absolute scripted progress. Native objective types remain game-owned.</summary>
     StoryActionResult SetProgress(int progress);
 }

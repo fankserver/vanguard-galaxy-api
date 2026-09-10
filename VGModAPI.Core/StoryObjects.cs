@@ -16,6 +16,16 @@ internal sealed partial class StoryContentService
         return _gameObjects;
     }
     private void PublishMissionChanges() => _gameObjects?.Refresh();
+    private bool _objectiveActivity;
+    /// <summary>Native trigger dispatch observed; tolerant because it is called from a patch boundary.</summary>
+    internal void NotifyObjectiveActivity() => _objectiveActivity = true;
+    internal void Tick()
+    {
+        CheckThread();
+        if (!_objectiveActivity) return;
+        _objectiveActivity = false;
+        _gameObjects?.RefreshObjectives();
+    }
 
     internal sealed partial class Registration
     {
@@ -102,6 +112,11 @@ internal sealed partial class StoryContentService
             var unavailable = !Game.IsActive ? "This game has ended." : !owned.IsLive ? "The definition is no longer registered." : Service.Unavailable();
             if (unavailable != null) return new(false, Array.Empty<IStoryMission>(), unavailable);
             return new(true, Array.AsReadOnly(_missions.Values.Concat(_offering).Where(mission => ReferenceEquals(mission.Authored, owned)).Cast<IStoryMission>().ToArray()));
+        }
+        internal void RefreshObjectives()
+        {
+            if (Executing || !Game.IsActive) return;
+            foreach (var mission in _missions.Values.ToArray()) mission.RefreshObjectives();
         }
         internal void Refresh()
         {
@@ -224,6 +239,10 @@ internal sealed partial class StoryContentService
             }
             return Schedule(() => action(copy));
         }
+        internal void RefreshObjectives()
+        {
+            foreach (var objective in _objectives.Values.ToArray()) objective.RefreshIfObserved();
+        }
         public IStoryObjective GetObjective(string key)
         {
             _scope.Service.CheckThread();
@@ -235,7 +254,25 @@ internal sealed partial class StoryContentService
         {
             private readonly Mission _mission;
             private readonly string _key;
-            internal Objective(Mission mission, string key) { _mission = mission; _key = key; }
+            private readonly GameplayEvent<IStoryObjective> _changed;
+            private (StoryKnowledge, int?, int?, int?, StoryOutcome?)? _published;
+            internal Objective(Mission mission, string key)
+            {
+                _mission = mission; _key = key; _changed = new(mission._scope.Service.CheckThread);
+                var baseline = Snapshot; // Changes are observed relative to the object's creation.
+                _published = (baseline.Knowledge, baseline.Progress, baseline.Required, baseline.ContentRevision, baseline.Outcome);
+            }
+            public event Action<IStoryObjective>? Changed { add => _changed.Add(value); remove => _changed.Remove(value); }
+            internal void RefreshIfObserved()
+            {
+                if (!_changed.HasSubscribers) return;
+                var snapshot = Snapshot;
+                var key = (snapshot.Knowledge, snapshot.Progress, snapshot.Required, snapshot.ContentRevision, snapshot.Outcome);
+                if (_published == key) return;
+                _published = key;
+                _changed.Publish(_mission._scope.Hub, _mission._scope.Session, _mission.Authored.Id.Provider, this,
+                    () => _mission.Game.IsActive && _mission.Authored.IsLive, _mission._scope.Service._persistence, _mission.Authored.Owner.SaveData);
+            }
             public IStoryMission Mission => _mission;
             public string Key { get { _mission._scope.Service.CheckThread(); return _key; } }
             public StoryObjectiveQuery Snapshot => !_mission.Game.IsActive || _mission.Occurrence == Guid.Empty

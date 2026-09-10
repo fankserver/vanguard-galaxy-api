@@ -232,6 +232,36 @@ public sealed partial class StoryContentTests
                 Assert.NotEqual(typeof(Guid), parameter.ParameterType);
     }
 
+    [Fact]
+    public void NativeTriggerProgressIsObservedAsAnObjectiveChangedReaction()
+    {
+        using var f = new StoryObjectsFixture();
+        using var definition = f.Provider.Register(new StoryMissionDefinition("observed", "Observe", "Observe", Faction,
+            new[] { new StoryStep("Credits", new[] { StoryObjective.CollectCredits(100).WithKey("balance") }) })).Definition!;
+        f.Start();
+        var mission = f.Game.Story.Offer(definition);
+        mission.Activate(); f.Tick(); f.Tick();
+        Assert.Equal(StoryMissionState.Active, mission.State);
+        var observed = new List<int?>();
+        var objective = mission.GetObjective("balance");
+        objective.Changed += changed => observed.Add(changed.Snapshot.Progress);
+        // No native activity: no events, no polling.
+        f.Engine.Tick(); f.Tick();
+        Assert.Empty(observed);
+        f.World.ObservedObjectiveProgress = 20;
+        f.Engine.NotifyObjectiveActivity();
+        f.Engine.Tick(); f.Tick();
+        Assert.Equal(new int?[] { 20 }, observed);
+        // Repeated activity without a progress change publishes nothing.
+        f.Engine.NotifyObjectiveActivity();
+        f.Engine.Tick(); f.Tick();
+        Assert.Equal(new int?[] { 20 }, observed);
+        f.World.ObservedObjectiveProgress = 45;
+        f.Engine.NotifyObjectiveActivity();
+        f.Engine.Tick(); f.Tick();
+        Assert.Equal(new int?[] { 20, 45 }, observed);
+    }
+
     private sealed class StoryObjectsFixture : IDisposable
     {
         internal readonly List<Exception> Errors = new();

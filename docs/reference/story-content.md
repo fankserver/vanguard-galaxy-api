@@ -150,6 +150,13 @@ Progress is monotonic within an attempt; repeating a value does not increment it
 unknown keys, changed native objects and writes to game-owned objective types are refused. Native
 retry resets progress for the same occurrence. Setting progress does not directly grant rewards.
 
+`objective.Changed += changed => ...` observes progress changes as a safe gameplay reaction,
+including native trigger-driven progression of game-owned objective kinds — no consumer polling
+or frame driver. Changes are observed relative to when the objective object was obtained; the
+event delivers the live objective, so `changed.Snapshot`, `changed.Mission` and actions are
+directly available. Delivery follows the same rules as mission events: only while the game is
+active and the definition registered.
+
 `Snapshot` distinguishes unavailable progress from zero. For keyed native objectives, credits are
 current nonnegative balance capped at the requirement, and travel is native completion, not dwell
 time. Offered or retired native objectives have no live progress answer. The API re-resolves the
