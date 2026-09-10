@@ -15,17 +15,21 @@ internal sealed class WorldContentService : IWorldService, IDisposable
     private readonly Action? _providerReleased;
     private readonly IServiceStatus _status;
     private readonly AmbientTrafficService _ambient;
-    private readonly bool _ownsAmbient;
+    private readonly UnitProtectionService _protection;
+    private readonly bool _ownsAmbient, _ownsProtection;
     public IAmbientTrafficService AmbientTraffic { get { _hub.CheckThread(); return _ambient; } }
+    public IUnitProtectionService UnitProtection { get { _hub.CheckThread(); return _protection; } }
     public ServiceAvailability Availability => _status.Availability;
     public event Action<ServiceAvailability>? AvailabilityChanged
     { add => _status.AvailabilityChanged += value; remove => _status.AvailabilityChanged -= value; }
     private bool _disposed;
-    internal WorldContentService(LifecycleHub hub, WorldDefinitionRegistry definitions, WorldAuthoringGate authoring, Func<bool> canAuthor, Action? providerReleased = null, AmbientTrafficService? ambient = null)
+    internal WorldContentService(LifecycleHub hub, WorldDefinitionRegistry definitions, WorldAuthoringGate authoring, Func<bool> canAuthor, Action? providerReleased = null, AmbientTrafficService? ambient = null, UnitProtectionService? protection = null)
     {
         _hub = hub; _status = hub.Services.Get("world-authoring"); _definitions = definitions; _authoring = authoring; _canAuthor = canAuthor; _providerReleased = providerReleased;
         _ownsAmbient = ambient == null;
         _ambient = ambient ?? new AmbientTrafficService(hub);
+        _ownsProtection = protection == null;
+        _protection = protection ?? new UnitProtectionService(hub);
     }
     [MethodImpl(MethodImplOptions.NoInlining)]
     public IWorldProvider? AcquireProvider(object pluginInstance)
@@ -103,6 +107,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
     {
         _hub.CheckThread(); if (_disposed) return; _disposed = true;
         if (_ownsAmbient) _ambient.Dispose();
+        if (_ownsProtection) _protection.Dispose();
         var health = _status.Availability;
         _hub.SetCapability("world-authoring", false, health.IsAvailable ? "World service stopped." : health.Detail,
             health.IsAvailable ? ServiceUnavailableReason.ApiStopped : health.Reason);

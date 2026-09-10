@@ -25,7 +25,11 @@ namespace Source.Util { public enum GameplayType { Combat, Trade } }
 namespace Behaviour.Unit
 {
     public enum UnitRank { Rookie }
-    public abstract class AbstractUnit : UnityEngine.Object { }
+    public abstract class AbstractUnit : Behaviour.Weapons.TargetableUnit
+    {
+        public Source.Data.AbstractUnitData unitData { get; private set; } = new();
+        public void SetTestData(Source.Data.AbstractUnitData value) => unitData = value;
+    }
     public sealed partial class SpaceShip : AbstractUnit
     {
         public static Dictionary<string, SpaceShip> allShips = new() { ["NativeShip"] = new SpaceShip() };
