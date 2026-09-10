@@ -16,6 +16,7 @@ namespace VGModAPI.Tests;
 public sealed class DungeonAegisTests : IDisposable
 {
     private readonly List<Exception> _reports = new();
+    private readonly List<string> _notices = new();
     private readonly LifecycleHub _hub = new((_, _) => { });
     private readonly DungeonAegisService _service;
     private readonly DungeonAegisRuntime _runtime;
@@ -30,7 +31,7 @@ public sealed class DungeonAegisTests : IDisposable
         _hub.SetCapability("session-lifecycle", true, "Test binding.");
         _service = new DungeonAegisService(_hub); _service.SetAvailable(true);
         _runtime = new DungeonAegisRuntime(typeof(DungeonLocationData).Assembly, _hub, _service,
-            () => _liveParts.Cast<object>().ToArray(), _reports.Add);
+            () => _liveParts.Cast<object>().ToArray(), _notices.Add, _reports.Add);
         _session = _hub.Begin(SessionOrigin.SaveLoad, "save"); _hub.PlayerReady(_session);
         _station.AddTestPersistable(_location);
         GalaxyMapData.current = new GalaxyMapData();
@@ -73,14 +74,15 @@ public sealed class DungeonAegisTests : IDisposable
         Assert.Equal(-1f, _location.dungeonData.facilityIntegrity);
         Assert.Null(_location.dungeonData.simulation); // Broken interior regenerates on next entry.
         Assert.Null(_location.stationData); // Dockingless station data regenerates natively.
-        Assert.Single(_reports); Assert.Contains("arc5-station-a", _reports[0].Message);
+        Assert.Empty(_reports); // An intended repair is informational, not an error.
+        Assert.Single(_notices); Assert.Contains("arc5-station-a", _notices[0]);
         // A legitimately cleared interior is a player outcome and is never reset.
         _location.dungeonData.simulation = new DungeonSimulation { isComplete = true, victoryAchieved = true };
         _location.dungeonData.dockingDestroyed = true;
         Advance();
         Assert.True(_location.dungeonData.dockingDestroyed);
         Assert.NotNull(_location.dungeonData.simulation);
-        Assert.Single(_reports);
+        Assert.Single(_notices); Assert.Empty(_reports);
     }
 
     [Fact]

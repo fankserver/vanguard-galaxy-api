@@ -18,6 +18,7 @@ public sealed partial class Plugin
             var partType = assembly.GetType("Behaviour.Unit.CombatStationPart", true)!;
             _dungeonAegisRuntime = new DungeonAegisRuntime(assembly, _hub!, _hub!.Installations.Aegis,
                 () => UnityEngine.Object.FindObjectsByType(partType),
+                notice => Logger.LogInfo(notice),
                 error => Logger.LogError(error));
             _hub.Installations.Aegis.SetAvailable(true);
         }

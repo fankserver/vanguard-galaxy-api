@@ -18,6 +18,7 @@ internal sealed class DungeonAegisRuntime
     private readonly DungeonAegisService _service;
     private readonly Func<object[]> _liveParts;
     private readonly Action<Exception> _report;
+    private readonly Action<string> _notice;
     private readonly LifecycleHub _hub;
     private readonly PropertyInfo _mapCurrent, _allPois, _guid, _poiCurrent, _stationParts, _partPrefab, _partType, _managerInstance;
     private readonly MethodInfo _persistables;
@@ -36,9 +37,9 @@ internal sealed class DungeonAegisRuntime
         internal bool HardenedFromOff, Repaired, PartsPassDone;
     }
 
-    internal DungeonAegisRuntime(Assembly assembly, LifecycleHub hub, DungeonAegisService service, Func<object[]> livePartScanner, Action<Exception> report)
+    internal DungeonAegisRuntime(Assembly assembly, LifecycleHub hub, DungeonAegisService service, Func<object[]> livePartScanner, Action<string> notice, Action<Exception> report)
     {
-        _service = service; _hub = hub; _liveParts = livePartScanner; _report = report;
+        _service = service; _hub = hub; _liveParts = livePartScanner; _notice = notice; _report = report;
         var map = assembly.GetType("Source.Galaxy.GalaxyMapData", true)!;
         _mapCurrent = Property(map, "current"); _allPois = Property(map, "allPointsOfInterest");
         var element = assembly.GetType("Source.Galaxy.MapElement", true)!;
@@ -145,7 +146,8 @@ internal sealed class DungeonAegisRuntime
         if (!state.Repaired)
         {
             state.Repaired = true;
-            try { _report(new InvalidOperationException("Restored enterability of declared installation '" + poiId + "' after ambient degradation.")); } catch { }
+            // An intended repair is information, not an error.
+            try { _notice("Restored enterability of declared installation '" + poiId + "' after ambient degradation."); } catch { }
         }
     }
 

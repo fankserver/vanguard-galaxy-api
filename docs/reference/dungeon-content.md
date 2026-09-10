@@ -104,7 +104,14 @@ against the current galaxy, wherever the player is:
   game honors for physical parts — including docking pads and tunnels — and for
   interior structure clamping. Already-live parts are covered when the declaration
   binds. Disposal restores a flag this session observed off; hardening that was
-  already on, native (a stronghold) or foreign, is never cleared.
+  already on, native (a stronghold) or foreign, is never cleared. The flag is the
+  game's own single persisted bool, which bounds what disposal can promise: after a
+  save written while the declaration held, a later session observes the flag already
+  on and leaves it on — dispose within the session that hardened, ideally before
+  saving, when returning the target to vanilla matters. A flag another mod turns on
+  after this session hardened is likewise indistinguishable and is restored off, and
+  a declaration disposed in the same instant the game shuts down may leave the flag
+  on in the save — always the safe, still-protected direction.
 - **Recovery** restores a target that was already unusable — destroyed docking,
   floored facility integrity, or a collapsed/retreating non-victory interior — to
   enterable, discarding only the broken interior so it regenerates on next entry,
