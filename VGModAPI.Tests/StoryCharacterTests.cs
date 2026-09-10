@@ -21,7 +21,7 @@ public sealed class StoryCharacterTests : IDisposable
         _runtime = new StoryCharacterRuntime(typeof(Character).Assembly, _service, _errors.Add);
         Characters.captain = new Character("Reyna");
         Characters.shipAi = new Character("ECHO");
-        Characters.TestRegistry = name => name == "Voss" ? new Character("Voss") { portretSprite = VossPortrait } : null;
+        Characters.TestVossPortrait = VossPortrait;
     }
     private static readonly UnityEngine.Sprite VossPortrait = new();
 
@@ -37,7 +37,8 @@ public sealed class StoryCharacterTests : IDisposable
     public void IntroducedCharacterResolvesConsistentlyWithOwnedIdentityContentAndPortrait()
     {
         var step = 1;
-        using var ricko = _service.Introduce("mod.a", new StoryCharacterDefinition("ricko", "Ricko", "Luminate Ship Mechanic", portraitOf: "Voss"),
+        // Portraits resolve through the registry's factory names, not display names.
+        using var ricko = _service.Introduce("mod.a", new StoryCharacterDefinition("ricko", "Ricko", "Luminate Ship Mechanic", portraitOf: "QuestgiverHullBlueprints"),
             () => step switch
             {
                 1 => new CharacterConversation(new[]
@@ -47,7 +48,7 @@ public sealed class StoryCharacterTests : IDisposable
             }, missionHighlights: new[] { "CustomAct3Quest" });
         Assert.Equal("vgmodapi.character.v1.mod.a.ricko", ricko.LookupName);
         Assert.Null(_runtime.ResolveOwned("Ricko")); // Only the owned lookup name resolves.
-        Assert.Null(_runtime.ResolveOwned("Voss"));
+        Assert.Null(_runtime.ResolveOwned("QuestgiverHullBlueprints"));
         var built = Assert.IsType<Character>(_runtime.ResolveOwned(ricko.LookupName));
         Assert.Equal("Ricko", built.name); Assert.Equal("Luminate Ship Mechanic", built.description);
         Assert.Same(VossPortrait, built.portretSprite);
@@ -156,9 +157,24 @@ public sealed class StoryCharacterTests : IDisposable
         Characters.captain = null; Characters.shipAi = null;
         using var npc = _service.Introduce("mod.a", new StoryCharacterDefinition("npc", "N", "D"),
             () => new CharacterConversation(new[]
-            { CharacterLine.Captain("..."), CharacterLine.ShipAi("..."), CharacterLine.By("Missing Person", "?") }));
+            {
+                CharacterLine.Captain("..."), CharacterLine.ShipAi("..."),
+                CharacterLine.By("QuestgiverHullBlueprints", "!"),
+                // A display name is not a registry name; it degrades to a plain named speaker.
+                CharacterLine.By("Voss", "?"),
+            }));
         var spoken = Spoken(Talk(_runtime.ResolveOwned(npc.LookupName)!)!);
-        Assert.Equal(new[] { "Captain: ...", "ECHO: ...", "Missing Person: ?" }, spoken);
+        Assert.Equal(new[] { "Captain: ...", "ECHO: ...", "Voss: !", "Voss: ?" }, spoken);
+        Assert.Empty(_errors);
+    }
+
+    [Fact]
+    public void UnknownPortraitRegistryNameFailsOpenToNoPortrait()
+    {
+        using var npc = _service.Introduce("mod.a", new StoryCharacterDefinition("npc", "N", "D", portraitOf: "Voss"),
+            () => null);
+        var built = Assert.IsType<Character>(_runtime.ResolveOwned(npc.LookupName));
+        Assert.Null(built.portretSprite);
         Assert.Empty(_errors);
     }
 
@@ -186,7 +202,7 @@ public sealed class StoryCharacterTests : IDisposable
 
     public void Dispose()
     {
-        Characters.captain = null; Characters.shipAi = null; Characters.TestRegistry = null;
+        Characters.captain = null; Characters.shipAi = null; Characters.TestVossPortrait = null;
         _service.Dispose(); _hub.Dispose();
     }
 }

@@ -31,7 +31,8 @@ var characters = ModApi.Services.Dialogue.Characters;
 // A character the game does not have. Place ricko.LookupName wherever the game
 // expects a character name, such as a station's persisted character list.
 _ricko = characters.Introduce(pluginId,
-    new StoryCharacterDefinition("ricko", "Ricko", "Luminate Ship Mechanic", portraitOf: "Voss"),
+    new StoryCharacterDefinition("ricko", "Ricko", "Luminate Ship Mechanic",
+        portraitOf: "QuestgiverHullBlueprints"), // registry name; displayed in game as Voss
     conversation: () => CurrentStep switch
     {
         DeliveryPending => new CharacterConversation(new[]
@@ -58,12 +59,16 @@ _arle = characters.Extend(pluginId, "LuminateCommander",
   a registration frees its identity for re-declaration.
 - **Extend** attaches to the registry name of a game-owned character (for example
   `LuminateCommander`, whose display name is Arle). Extensions are consulted in
-  registration order before the character's own dialogue; the first conversation wins
-  and null falls back to vanilla. Multiple owners may extend one character; one owner's
+  registration order before the character's own default dialogue; the first
+  conversation wins and null falls back to vanilla. Pending native trigger dialogues
+  keep their vanilla priority over default dialogue, exactly as they do today. Multiple owners may extend one character; one owner's
   fault or disposal never silences another owner or the character itself.
 - Lines speak as the character (`Self`), the player's captain, the ship AI, or any
-  named character — including other introduced ones via their lookup names. Portraits
-  are reused from a named game character; there is no asset-path surface. `Completed`
+  named character — including other introduced ones via their lookup names. Named
+  references use **registry names** (the factory names the game's registry resolves,
+  like `LuminateCommander`), not display names like Arle. Portraits are reused from a
+  named game character the same way; an unknown registry name leaves the portrait
+  unset and there is no asset-path surface. `Completed`
   runs once when the conversation finishes and is the place to advance mission state.
 - `missionHighlights` lists native mission identities for the game's own offer marker;
   whether the marker shows still follows the game's mission state.

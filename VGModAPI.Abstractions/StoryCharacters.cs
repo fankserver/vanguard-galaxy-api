@@ -22,7 +22,8 @@ public sealed class CharacterLine
     public static CharacterLine Captain(string text) => new(CharacterSpeakers.Captain, text);
     /// <summary>Spoken by the ship AI.</summary>
     public static CharacterLine ShipAi(string text) => new(CharacterSpeakers.ShipAi, text);
-    /// <summary>Spoken by another character: a game character name or an introduced character's lookup name.</summary>
+    /// <summary>Spoken by another character: a game registry name (the registry resolves factory
+    /// names such as "LuminateCommander", not display names) or an introduced character's lookup name.</summary>
     public static CharacterLine By(string characterName, string text)
         => new(CharacterText.Check(characterName, 512, nameof(characterName)), text);
 }
@@ -65,7 +66,9 @@ public sealed class StoryCharacterDefinition
     public string LocalId { get; }
     public string Name { get; }
     public string Description { get; }
-    /// <summary>Optional game character whose portrait this character reuses, such as "Voss".</summary>
+    /// <summary>Optional registry name of a game character whose portrait this character reuses,
+    /// such as "QuestgiverHullBlueprints" (the character displayed as Voss). The registry resolves
+    /// factory names, not display names; an unknown name simply leaves the portrait unset.</summary>
     public string? PortraitOf { get; }
     public StoryCharacterDefinition(string localId, string name, string description, string? portraitOf = null)
     {

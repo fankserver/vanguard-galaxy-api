@@ -27,7 +27,9 @@ namespace Source.Dialogues
     {
         public static Character? captain;
         public static Character? shipAi;
-        public static Func<string, Character?>? TestRegistry;
-        public static Character? GetCharacter(string name) => TestRegistry?.Invoke(name);
+        // Method-name-keyed like the native reflective registry: factory names resolve, display names do not.
+        public static Character? GetCharacter(string name) => name == nameof(QuestgiverHullBlueprints) ? QuestgiverHullBlueprints() : null;
+        public static Character QuestgiverHullBlueprints() => new("Voss") { portretSprite = TestVossPortrait };
+        public static UnityEngine.Sprite? TestVossPortrait;
     }
 }
