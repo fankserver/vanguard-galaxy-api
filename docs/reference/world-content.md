@@ -244,9 +244,35 @@ reference.SetEntranceOpen(open: true);   // opens both paired gates
 reference.SetEntranceOpen(open: false);  // closes both
 ```
 
-Opening unpairs and unhides **both** the entrance gate and the pocket-side peer together;
+Opening unlocks and unhides **both** the entrance gate and the pocket-side peer together;
 closing does the reverse. The declared state is a reconciled invariant: on load and on
 later ticks the API re-applies it, so a drifted save converges back to the declared state.
+
+### Dissolving a pocket
+
+A mod can permanently remove an owned pocket after its gameplay has finished:
+
+```csharp
+var result = reference.Dissolve();
+if (result.Succeeded)
+{
+    // This object is terminal. The same key can now create a fresh pocket.
+    var replacement = provider.CreateAuthoredSystem("my-pocket", "act3-pocket", "anchorsystem-guid");
+}
+```
+
+Dissolving removes the pocket system, both paired gates and authored sites contained in the
+pocket from the live map and from API-owned save data. Existing site objects transition to
+`Dissolved`; the dissolved system object also reports `Dissolved` and no longer exposes native
+identities. A later creation with the same occurrence key returns a new object with fresh native
+identity.
+
+The action is refused while the player's current system, current location or a waypoint is
+inside the pocket. Relocation or rescue behavior belongs to the consumer mod: move the player
+out, clear the route, then call `Dissolve` again. Dissolution is also refused while the pocket
+contains persistent Combat-site occurrences, because that older content surface has no removal
+operation. These refusals leave the pocket and its save data unchanged. Expiry scheduling is
+consumer logic; the API supplies the safe dissolution operation rather than a timer.
 
 ### Reconstruction and failures
 
@@ -287,8 +313,8 @@ also fires for its own transitions. After that point you can still read each occ
 live `State` or re-obtain it.
 
 Creation is gameplay-intent only; expected-session identity is an internal invariant.
-`RegisterAuthoredSystem` is pre-session; `CreateAuthoredSystem`, `SetEntranceOpen` and the
-re-obtain methods require a ready session.
+`RegisterAuthoredSystem` is pre-session; `CreateAuthoredSystem`, `SetEntranceOpen`, `Dissolve`
+and the re-obtain methods require a ready session.
 
 ## Authored wormhole pairs
 

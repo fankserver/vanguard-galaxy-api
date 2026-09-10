@@ -13,6 +13,7 @@ internal static class AuthoredSystemBindings
     internal const string Element = "Source.Galaxy.MapElement";
     internal const string Poi = "Source.Galaxy.MapPointOfInterest";
     internal const string JumpGate = "Source.Galaxy.POI.JumpGate";
+    internal const string Player = "Source.Player.GamePlayer";
     internal static readonly (string Type, string Member, string Shape, bool Static, bool Field)[] Members =
     {
         (System, "pocketSystem", "System.Boolean", false, true),
@@ -23,7 +24,11 @@ internal static class AuthoredSystemBindings
         (JumpGate, "targetSystemGuid", "System.String", false, true),
         (JumpGate, "targetPoiGuid", "System.String", false, true),
         (Element, "guid", "System.String", false, false),
-        (Element, "system", System, false, true)
+        (Element, "system", System, false, true),
+        (Sector, "systems", "System.Collections.Generic.List`1<" + System + ">", false, true),
+        (Player, "currentSystem", System, false, true),
+        (Player, "currentPointOfInterest", Poi, false, true),
+        (Player, "waypoints", "System.Collections.Generic.List`1<" + Poi + ">", false, true)
     };
     internal static readonly MethodBinding[] Methods =
     {
@@ -31,7 +36,8 @@ internal static class AuthoredSystemBindings
         new("authoredEntrance", System, "GetEntranceJumpgate", false, JumpGate),
         new("gateTarget", JumpGate, "GetTargetPOI", false, Poi),
         new("gateUnlock", JumpGate, "UnlockJumpgate", false, "System.Void"),
-        new("gateLock", JumpGate, "LockGate", false, "System.Void")
+        new("gateLock", JumpGate, "LockGate", false, "System.Void"),
+        new("systemRemovePoi", System, "RemovePointOfInterest", false, "System.Void", Poi)
     };
     internal static Dictionary<string, MethodInfo> Validate(Assembly assembly)
     {

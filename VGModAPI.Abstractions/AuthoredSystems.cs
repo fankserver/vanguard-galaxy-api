@@ -58,7 +58,12 @@ public sealed class AuthoredSystemResult
     }
 }
 
-public enum AuthoredSystemReconstructionStatus { Reconstructed, Pending, Failed }
+public enum AuthoredSystemReconstructionStatus
+{
+    Reconstructed, Pending, Failed,
+    /// <summary>The occurrence was dissolved by its owner; terminal for this object. The same occurrence key may author a fresh pocket later.</summary>
+    Dissolved
+}
 
 public enum AuthoredSystemFailureReason
 {
@@ -143,6 +148,15 @@ public interface IAuthoredSystem
     /// paired gates together. Returns a retained result; the phase/dispatch gates are enforced here.
     /// </summary>
     AuthoredActionResult SetEntranceOpen(bool open);
+    /// <summary>
+    /// Dissolves the owned pocket: removes the pocket system, both paired gates and this API's
+    /// authored sites inside it from the live map and from save data. Refused while the player's
+    /// current system, current location or any waypoint is inside the pocket — relocating the player
+    /// first is the consumer's responsibility — and while the pocket still contains combat sites.
+    /// On success this object is terminal (<see cref="AuthoredSystemReconstructionStatus.Dissolved"/>);
+    /// creating the same occurrence key again authors a fresh pocket with fresh native identity.
+    /// </summary>
+    AuthoredActionResult Dissolve();
 }
 
 /// <summary>

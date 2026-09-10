@@ -149,6 +149,20 @@ internal sealed class AuthoredSiteCoordinator : IDisposable
         return !_disposed && (_committed.ContainsKey((owner, localId, occurrenceKey)) || _failed.Contains((owner, localId, occurrenceKey)));
     }
 
+    /// <summary>
+    /// Drops every retained site row inside a dissolved pocket system (any owner — the native POIs are
+    /// removed with the system either way) so save data records them as intentionally absent rather
+    /// than reporting them as reconstruction failures. Returns the dropped occurrence identities.
+    /// </summary>
+    internal (string Owner, string LocalId, string OccurrenceKey)[] DropOccurrencesInSystem(string systemId)
+    {
+        _hub.CheckThread();
+        if (_disposed || string.IsNullOrEmpty(systemId)) return Array.Empty<(string, string, string)>();
+        var dropped = _committed.Where(pair => pair.Value.SystemId == systemId).Select(pair => pair.Key).ToArray();
+        foreach (var key in dropped) { _committed.Remove(key); _failed.Remove(key); }
+        return dropped;
+    }
+
     internal (WorldStatus Status, AuthoredSiteOccurrence? Row) Create(AuthoredSiteRegistry.Provider provider,
         Guid expectedSession, string localId, string occurrenceKey, string systemId, float x, float y)
     {

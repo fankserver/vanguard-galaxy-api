@@ -17,8 +17,9 @@ internal sealed class WorldNativeAuthored : IAuthoredSystemNative
     private readonly Type _jumpGateType;
     private readonly PropertyInfo _map;
     private readonly FieldInfo _sector, _parent, _hidden, _jumpgateOpen;
+    private readonly FieldInfo _sectorSystems, _playerCurrentSystem, _playerCurrentPoi, _playerWaypoints;
     private readonly PropertyInfo _guid;
-    private readonly MethodInfo _create, _entrance, _target, _unlock, _lock;
+    private readonly MethodInfo _create, _entrance, _target, _unlock, _lock, _removePoi;
     private readonly int _level;
     private readonly Action<Exception> _report;
     private bool _inPass;
@@ -34,6 +35,11 @@ internal sealed class WorldNativeAuthored : IAuthoredSystemNative
             ?? throw new MissingMemberException("GamePlayer.map");
         _sector = Field(assembly.GetType(AuthoredSystemBindings.System, true)!, "sector");
         _parent = Field(assembly.GetType(AuthoredSystemBindings.Element, true)!, "system");
+        _sectorSystems = Field(assembly.GetType(AuthoredSystemBindings.Sector, true)!, "systems");
+        var playerType = assembly.GetType(AuthoredSystemBindings.Player, true)!;
+        _playerCurrentSystem = Field(playerType, "currentSystem");
+        _playerCurrentPoi = Field(playerType, "currentPointOfInterest");
+        _playerWaypoints = Field(playerType, "waypoints");
         _hidden = Field(assembly.GetType(AuthoredSystemBindings.Poi, true)!, "hidden");
         _jumpgateOpen = Field(_jumpGateType, "jumpgateOpen");
         _guid = assembly.GetType(AuthoredSystemBindings.Element, true)!.GetProperty("guid", BindingFlags.Public | BindingFlags.Instance)
@@ -41,6 +47,7 @@ internal sealed class WorldNativeAuthored : IAuthoredSystemNative
         var resolved = AuthoredSystemBindings.Validate(assembly);
         _create = resolved["authoredCreate"]; _entrance = resolved["authoredEntrance"];
         _target = resolved["gateTarget"]; _unlock = resolved["gateUnlock"]; _lock = resolved["gateLock"];
+        _removePoi = resolved["systemRemovePoi"];
     }
     private static FieldInfo Field(Type type, string name) => type.GetField(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
         ?? throw new MissingFieldException(type.FullName, name);
@@ -152,6 +159,78 @@ internal sealed class WorldNativeAuthored : IAuthoredSystemNative
         catch (Exception e) { ReportInvoke(e); return null; }
     }
     private bool _system_IsInstance(object value) => value.GetType().FullName == AuthoredSystemBindings.System;
+
+    /// <summary>
+    /// Verifies a dissolution changed membership by EXACTLY the removed pocket system, the anchor-side
+    /// entrance gate and the POIs parented to the pocket — and removed nothing else and added nothing.
+    /// </summary>
+    internal static bool VerifyDissolveDelta(WorldMapIndex.Snapshot before, WorldMapIndex.Snapshot after,
+        object removedSystem, object removedEntrance, Func<object, object?> parentOf)
+    {
+        var beforeSystems = new System.Collections.Generic.HashSet<object>();
+        foreach (var pair in before.Systems) beforeSystems.Add(pair.Value);
+        var afterSystems = new System.Collections.Generic.HashSet<object>();
+        foreach (var pair in after.Systems) afterSystems.Add(pair.Value);
+        if (afterSystems.Count != beforeSystems.Count - 1 || Has(afterSystems, removedSystem)) return false;
+        foreach (var value in afterSystems) if (!Has(beforeSystems, value)) return false; // a system was added
+        var afterPoints = new System.Collections.Generic.HashSet<object>();
+        foreach (var pair in after.Points) afterPoints.Add(pair.Value);
+        var beforePoints = new System.Collections.Generic.HashSet<object>();
+        int expectedRemoved = 0;
+        foreach (var pair in before.Points)
+        {
+            beforePoints.Add(pair.Value);
+            bool shouldGo = ReferenceEquals(pair.Value, removedEntrance) || ReferenceEquals(parentOf(pair.Value), removedSystem);
+            if (shouldGo) expectedRemoved++;
+            if (shouldGo == Has(afterPoints, pair.Value)) return false; // survived a removal or vanished unexpectedly
+        }
+        if (afterPoints.Count != beforePoints.Count - expectedRemoved) return false;
+        foreach (var value in afterPoints) if (!Has(beforePoints, value)) return false; // a POI was added
+        return true;
+    }
+
+    public PocketDissolveOutcome DissolvePocket(Guid session, string systemId, string entranceGateId, string pocketGateId)
+    {
+        var map = Map(false, session, out var player);
+        if (map == null || player == null) return PocketDissolveOutcome.Failed;
+        WorldMapIndex.Snapshot before;
+        try { before = _index.Read(map); }
+        catch (Exception e) { _report(e); return PocketDissolveOutcome.Failed; }
+        var system = before.FindSystem(systemId);
+        var entrance = before.FindPoint(entranceGateId);
+        var peer = before.FindPoint(pocketGateId);
+        if (system == null || entrance == null || peer == null
+            || !_jumpGateType.IsInstanceOfType(entrance) || !_jumpGateType.IsInstanceOfType(peer)) return PocketDissolveOutcome.Missing;
+        try
+        {
+            var anchor = _parent.GetValue(entrance);
+            if (anchor == null || ReferenceEquals(anchor, system) || !ReferenceEquals(_parent.GetValue(peer), system))
+                return PocketDissolveOutcome.Missing;
+            // Refuse while the player is inside the pocket or routed into it; relocation is the consumer's move.
+            if (ReferenceEquals(_playerCurrentSystem.GetValue(player), system)) return PocketDissolveOutcome.PlayerInside;
+            var currentPoi = _playerCurrentPoi.GetValue(player);
+            if (currentPoi != null && ReferenceEquals(_parent.GetValue(currentPoi), system)) return PocketDissolveOutcome.PlayerInside;
+            if (_playerWaypoints.GetValue(player) is System.Collections.IEnumerable waypoints)
+                foreach (var waypoint in waypoints)
+                    if (waypoint != null && (ReferenceEquals(waypoint, entrance) || ReferenceEquals(_parent.GetValue(waypoint), system)))
+                        return PocketDissolveOutcome.PlayerInside;
+            var sector = _sector.GetValue(system);
+            if (sector == null || _sectorSystems.GetValue(sector) is not System.Collections.IList systems)
+                return PocketDissolveOutcome.Missing;
+            int index = -1;
+            for (int i = 0; i < systems.Count; i++) if (ReferenceEquals(systems[i], system)) { index = i; break; }
+            if (index < 0) return PocketDissolveOutcome.Missing;
+            _removePoi.Invoke(anchor, new[] { entrance });
+            systems.RemoveAt(index);
+            if (Map(false, session, out var current) == null || !ReferenceEquals(current, player)) return PocketDissolveOutcome.Failed;
+            WorldMapIndex.Snapshot after;
+            try { after = _index.Read(map); }
+            catch (Exception e) { _report(e); return PocketDissolveOutcome.Failed; }
+            return VerifyDissolveDelta(before, after, system, entrance, o => _parent.GetValue(o))
+                ? PocketDissolveOutcome.Dissolved : PocketDissolveOutcome.Failed;
+        }
+        catch (Exception e) { ReportInvoke(e); return PocketDissolveOutcome.Failed; }
+    }
 
     public AuthoredSystemPocketInfo? ResolvePocket(Guid session, string systemId)
     {
