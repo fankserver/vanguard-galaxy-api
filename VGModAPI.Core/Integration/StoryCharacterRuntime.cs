@@ -116,9 +116,11 @@ internal sealed class StoryCharacterRuntime
         }
         else
         {
-            identity = "character '" + portrait.RegistryName + "'";
-            if (_lookup.Invoke(null, new object[] { portrait.RegistryName! }) is { } source)
-                sprite = _portrait.GetValue(source);
+            var source = _lookup.Invoke(null, new object[] { portrait.RegistryName! });
+            identity = source == null
+                ? "character '" + portrait.RegistryName + "'"
+                : "portrait on character '" + portrait.RegistryName + "'";
+            if (source != null) sprite = _portrait.GetValue(source);
         }
         if (sprite != null) { _portrait.SetValue(character, sprite); return; }
         // Cosmetic degradation must be visible in the log, once per identity, not silent.
