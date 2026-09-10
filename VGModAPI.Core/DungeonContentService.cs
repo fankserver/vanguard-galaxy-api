@@ -192,10 +192,11 @@ internal sealed class DungeonContentService : IDungeonContentService, IDisposabl
         {
             Owner._hub.CheckThread();
             if (installation == null) throw new ArgumentNullException(nameof(installation));
+            // A dead provider refuses like the handle overload; the ownership check only judges live objects.
+            if (!Owner.Live(this) || Owner.MutationBlocked) return Owner.Result(DungeonContentStatus.Unavailable);
             if (installation is not DungeonInstallationEvents.Installation own
                 || !_installations.TryGetValue(own.PoiId, out var cached) || !ReferenceEquals(cached, own))
                 throw new ArgumentException("Use an installation obtained from this provider.", nameof(installation));
-            if (!Owner.Live(this) || Owner.MutationBlocked || Owner._bindings == null) return Owner.Result(DungeonContentStatus.Unavailable);
             var target = Owner._native.ResolveInstallation(own.PoiId);
             if (target == null) return Owner.Result(DungeonContentStatus.StaleTarget);
             return Owner.Attach(this, localId, target);
