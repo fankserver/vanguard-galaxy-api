@@ -15,6 +15,10 @@ internal sealed class FakeAuthoredNative : IAuthoredSystemNative
     internal readonly Dictionary<string, (string Entrance, string Pocket)> Systems = new(StringComparer.Ordinal);
     internal readonly Dictionary<string, bool> Open = new(StringComparer.Ordinal);
     internal int ApplyCalls;
+    internal bool PlayerInside;
+    internal bool FailDissolve;
+    internal bool ThrowOnDissolve;
+    internal int DissolveCalls;
 
     public AuthoredSystemPocketInfo? CreatePocket(Guid session, string anchorSystemId)
     {
@@ -45,6 +49,18 @@ internal sealed class FakeAuthoredNative : IAuthoredSystemNative
     {
         string? sid = EntranceToSystem(entranceGateId);
         return sid != null && Open.TryGetValue(sid, out var openValue) && openValue;
+    }
+    public PocketDissolveOutcome DissolvePocket(Guid session, string systemId, string entranceGateId, string pocketGateId)
+    {
+        DissolveCalls++;
+        if (ThrowOnDissolve) throw new InvalidOperationException("native dissolve fault");
+        if (systemId == null || !Systems.TryGetValue(systemId, out var pair) || pair.Entrance != entranceGateId || pair.Pocket != pocketGateId)
+            return PocketDissolveOutcome.Missing;
+        if (PlayerInside) return PocketDissolveOutcome.PlayerInside;
+        if (FailDissolve) return PocketDissolveOutcome.Failed;
+        Systems.Remove(systemId);
+        Open.Remove(systemId);
+        return PocketDissolveOutcome.Dissolved;
     }
     public void BeginPass(Guid session) { }
     public void EndPass() { }

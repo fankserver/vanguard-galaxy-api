@@ -37,6 +37,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
     private event Action<Guid>? _shipsSettled;
     private readonly bool _ownsAmbient, _ownsProtection, _ownsDroneBays;
     private readonly List<Action<Guid>> _authoredRefreshes = new();
+    private readonly List<Action<string, (string Owner, string LocalId, string OccurrenceKey)[]>> _dissolveNotifiers = new();
     private event Action<ReconstructionSettledEvent>? _authoredSettled;
     public IAmbientTrafficService AmbientTraffic { get { _hub.CheckThread(); return _ambient; } }
     public IUnitProtectionService UnitProtection { get { _hub.CheckThread(); return _protection; } }
@@ -116,6 +117,20 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             try { refresh(session); } catch { /* one provider's fault must not block the others */ }
         }
     }
+    /// <summary>
+    /// After a successful native pocket dissolution: drop the retained authored-site rows inside the
+    /// removed system (their native POIs were removed with it) and let every provider terminally mark
+    /// and release its owned occurrence objects for that pocket.
+    /// </summary>
+    private void PocketDissolved(string systemId)
+    {
+        var droppedSites = _siteCoordinator?.DropOccurrencesInSystem(systemId) ?? Array.Empty<(string, string, string)>();
+        foreach (var notify in _dissolveNotifiers.ToArray())
+        {
+            try { notify(systemId, droppedSites); } catch { /* one provider's fault must not block the others */ }
+        }
+    }
+
     [MethodImpl(MethodImplOptions.NoInlining)]
     public IWorldProvider? AcquireProvider(object pluginInstance)
     {
@@ -156,6 +171,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
         private readonly Dictionary<(string LocalId, string OccurrenceKey), AuthoredSystemHandle> _objects = new();
         private readonly IDisposable _objectSubscription;
         private readonly Action<Guid> _refreshesEntry;
+        private readonly Action<string, (string Owner, string LocalId, string OccurrenceKey)[]> _dissolveEntry;
         private readonly Func<bool> _alive;
         private bool _disposed;
         internal Provider(WorldContentService service, WorldDefinitionRegistry.Provider provider, AuthoredSystemRegistry.Provider? authored, AuthoredSiteRegistry.Provider? authoredSites = null, AuthoredShipRegistry.Provider? authoredShips = null)
@@ -181,6 +197,8 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 _refreshesEntry = RefreshAuthoredObjects;
                 service._authoredRefreshes.Add(_refreshesEntry);
             }
+            _dissolveEntry = OnPocketDissolved;
+            service._dissolveNotifiers.Add(_dissolveEntry);
             _siteSubscription = service._hub.Subscribe("vgmodapi.combat-site-objects", e =>
             {
                 if (e.Kind is LifecycleEventKind.SessionStarting or LifecycleEventKind.SessionInvalidated or LifecycleEventKind.SessionStartFailed)
@@ -191,6 +209,20 @@ internal sealed class WorldContentService : IWorldService, IDisposable
         {
             _objects.Clear();
             _service._hub.CheckThread();
+        }
+        /// <summary>Terminally marks and releases this provider's site objects dropped with a dissolved pocket.</summary>
+        private void OnPocketDissolved(string systemId, (string Owner, string LocalId, string OccurrenceKey)[] droppedSites)
+        {
+            if (_disposed || _authoredSites == null) return;
+            foreach (var dropped in droppedSites)
+            {
+                if (dropped.Owner != _authoredSites.Owner) continue;
+                if (_siteObjects.TryGetValue((dropped.LocalId, dropped.OccurrenceKey), out var handle))
+                {
+                    _siteObjects.Remove((dropped.LocalId, dropped.OccurrenceKey));
+                    handle.MarkDissolved();
+                }
+            }
         }
         public event Action<AuthoredSystemsSettledEvent>? AuthoredSystemReconstructionSettled;
         private void ForwardSettled(ReconstructionSettledEvent args)
@@ -660,7 +692,8 @@ internal sealed class WorldContentService : IWorldService, IDisposable
         {
             var key = (localId, occurrenceKey);
             if (_objects.TryGetValue(key, out var existing)) return existing;
-            var handle = new AuthoredSystemHandle(_service, _authored!, _service._authoredCoordinator!, _alive, localId, occurrenceKey, session);
+            var handle = new AuthoredSystemHandle(_service, _authored!, _service._authoredCoordinator!, _alive, localId, occurrenceKey, session,
+                () => _objects.Remove(key));
             _objects[key] = handle;
             handle.Refresh();   // seed the cached state without firing Changed
             return handle;
@@ -685,6 +718,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             if (_authoredSites != null) _service._sitesSettled -= ForwardSitesSettled;
             if (_authoredShips != null) _service._shipsSettled -= ForwardShipsSettled;
             _service._authoredRefreshes.Remove(_refreshesEntry);
+            _service._dissolveNotifiers.Remove(_dissolveEntry);
             _siteSubscription.Dispose();
             _sites.Clear();
             _siteObjects.Clear();
@@ -726,8 +760,19 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             public AuthoredActionResult LastAction { get { _provider._service._hub.CheckThread(); return _lastAction; } }
             public event Action<IAuthoredSite>? Changed { add => _changed += value; remove => _changed -= value; }
             internal void RecordAction(AuthoredActionResult result) => _lastAction = result;
+            /// <summary>The pocket containing this site dissolved; the object is terminal for its session.</summary>
+            internal void MarkDissolved()
+            {
+                if (_dissolved) return;
+                _dissolved = true;
+                bool changed = _state.Status != AuthoredSystemReconstructionStatus.Dissolved;
+                _state = new AuthoredSiteState(AuthoredSystemReconstructionStatus.Dissolved);
+                if (changed) _changed?.Invoke(this);
+            }
+            private bool _dissolved;
             internal void Refresh()
             {
+                if (_dissolved) return;
                 // A replaced session freezes the last observed state; the handle never resolves against the replacement save.
                 if (Session == Guid.Empty || _provider._service._hub.CurrentSession?.Id != Session) return;
                 if (_provider._disposed || _provider._service._disposed || _provider._authoredSites == null || _provider._service._siteCoordinator == null) return;
@@ -793,13 +838,15 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             private readonly Guid _session;
             private AuthoredSystemReconstructionState _state = null!;
             private bool _seeded;
+            private bool _dissolved;
+            private readonly Action _evict;
             private AuthoredActionResult _lastAction = new(AuthoredActionStatus.NotReady, "No action has been taken yet on this occurrence.");
             private event Action<IAuthoredSystem>? _changed;
 
             internal AuthoredSystemHandle(WorldContentService service, AuthoredSystemRegistry.Provider authored,
-                AuthoredSystemCoordinator coordinator, Func<bool> alive, string localId, string occurrenceKey, Guid session)
+                AuthoredSystemCoordinator coordinator, Func<bool> alive, string localId, string occurrenceKey, Guid session, Action evict)
             { _service = service; _authored = authored; _coordinator = coordinator; _alive = alive;
-                _localId = localId; _occurrenceKey = occurrenceKey; _session = session; }
+                _localId = localId; _occurrenceKey = occurrenceKey; _session = session; _evict = evict; }
 
             public string OccurrenceKey => _occurrenceKey;
             public AuthoredSystemDefinition Definition
@@ -816,24 +863,26 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             {
                 get
                 {
+                    if (_dissolved) return new AuthoredSystemReconstructionState(AuthoredSystemReconstructionStatus.Dissolved);
                     if (!_seeded && _service._hub.CurrentSession?.Id == _session && _session != Guid.Empty)
                     { try { _state = _coordinator.ReconstructionState(_authored, Reference); _seeded = true; } catch { } }
                     return _state ?? new AuthoredSystemReconstructionState(AuthoredSystemReconstructionStatus.Pending);
                 }
             }
-            public string? SystemId => _state?.SystemId;
-            public string? EntranceGatePoiId => _state?.EntranceGatePoiId;
-            public string? PocketGatePoiId => _state?.PocketGatePoiId;
+            public string? SystemId => _dissolved ? null : _state?.SystemId;
+            public string? EntranceGatePoiId => _dissolved ? null : _state?.EntranceGatePoiId;
+            public string? PocketGatePoiId => _dissolved ? null : _state?.PocketGatePoiId;
             public AuthoredActionResult LastAction => _lastAction;
             public event Action<IAuthoredSystem>? Changed { add => _changed += value; remove => _changed -= value; }
 
             private AuthoredSystemReference Reference => new(_authored.Owner, _localId, _occurrenceKey);
             private bool IsCurrentSession() => _session != Guid.Empty && _service._hub.CurrentSession?.Id == _session;
 
-            public AuthoredActionResult SetEntranceOpen(bool open)
+            /// <summary>Uniform per-action gating shared by every occurrence action; null means actionable.</summary>
+            private AuthoredActionResult? GateAction()
             {
-                _service._hub.CheckThread();
                 AuthoredActionResult Fail(AuthoredActionStatus status, string detail) => _lastAction = new AuthoredActionResult(status, detail);
+                if (_dissolved) return Fail(AuthoredActionStatus.Rejected, "The occurrence was dissolved; create the key again for a fresh pocket.");
                 if (!_alive()) return Fail(AuthoredActionStatus.Unavailable, "The provider lease is no longer active.");
                 if (!IsCurrentSession()) return Fail(AuthoredActionStatus.GameEnded, "The owning session ended or was replaced; re-obtain the occurrence for the live game.");
                 if (!_service._canAuthor()) return Fail(AuthoredActionStatus.Unavailable, "World authoring is unavailable.");
@@ -841,8 +890,39 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 if (session == null || session.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks)
                     return Fail(AuthoredActionStatus.NotReady, "The world is not in a safely actionable state yet.");
                 if (_service._authoredCoordinator == null) return Fail(AuthoredActionStatus.Unavailable, "Authored systems are unavailable.");
-                var status = _service._authoredCoordinator.SetOpen(_authored, _session, Reference, open);
-                return Fail(ToActionStatus(status), "");
+                return null;
+            }
+
+            public AuthoredActionResult SetEntranceOpen(bool open)
+            {
+                _service._hub.CheckThread();
+                if (GateAction() is { } refused) return refused;
+                var status = _service._authoredCoordinator!.SetOpen(_authored, _session, Reference, open);
+                return _lastAction = new AuthoredActionResult(ToActionStatus(status), "");
+            }
+
+            public AuthoredActionResult Dissolve()
+            {
+                _service._hub.CheckThread();
+                if (GateAction() is { } refused) return refused;
+                // Never orphan combat-site records: their removal is not supported, so their presence refuses dissolution.
+                var row = _service._authoredCoordinator!.TryGetOccurrence(_authored.Owner, _localId, _occurrenceKey);
+                if (row != null && _service._authoring != null)
+                {
+                    var contains = _service._authoring.AnyInSystem(row.SystemId);
+                    if (contains == null)
+                        return _lastAction = new AuthoredActionResult(AuthoredActionStatus.NotReady,
+                            "Combat-site save data is not ready to prove the pocket is empty of combat sites.");
+                    if (contains == true)
+                        return _lastAction = new AuthoredActionResult(AuthoredActionStatus.Rejected,
+                            "The pocket still contains combat sites; they cannot be removed with it.");
+                }
+                var (status, detail, systemId) = _service._authoredCoordinator.Dissolve(_authored, _session, Reference);
+                if (status != WorldStatus.Succeeded) return _lastAction = new AuthoredActionResult(ToActionStatus(status), detail);
+                _dissolved = true;
+                _evict();
+                if (systemId != null) _service.PocketDissolved(systemId);
+                return _lastAction = new AuthoredActionResult(AuthoredActionStatus.Succeeded);
             }
             private static AuthoredActionStatus ToActionStatus(WorldStatus status) => status switch
             {
@@ -854,6 +934,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
 
             internal void Refresh()
             {
+                if (_dissolved) return;
                 if (_service._hub.CurrentSession?.Id != _session || _session == Guid.Empty) return;
                 AuthoredSystemReconstructionState updated;
                 try { updated = _coordinator.ReconstructionState(_authored, Reference); }

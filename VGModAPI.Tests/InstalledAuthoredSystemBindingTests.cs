@@ -22,9 +22,9 @@ public sealed class InstalledAuthoredSystemBindingTests
             {
                 var field = Assert.Single(type.Fields, value => value.Name == spec.Member);
                 Assert.Equal(spec.Shape, field.FieldType.FullName); Assert.Equal(spec.Static, field.IsStatic);
-                // Concrete fields are public; protected members (e.g. JumpGate.jumpgateOpen) stay protected
-                // in the publicized stub and are read via Public|NonPublic reflection.
-                Assert.True(field.IsPublic || field.IsFamily);
+                // Most bound fields are public; protected (JumpGate.jumpgateOpen) and private
+                // (SectorMapData.systems) members are read via Public|NonPublic reflection.
+                Assert.True(field.IsPublic || field.IsFamily || spec.Member == "systems");
             }
             else
             {
@@ -52,5 +52,8 @@ public sealed class InstalledAuthoredSystemBindingTests
         Assert.True(gate.Methods.Single(m => m.Name == "GetTargetPOI").HasBody);
         Assert.Contains(gate.Fields, field => field.Name == "jumpgateOpen");
         Assert.Contains(assembly.MainModule.GetType("Source.Galaxy.MapPointOfInterest").Fields, field => field.Name == "hidden");
+        // Dissolution boundaries: plain membership mutations with no side effects beyond the removal.
+        var removePoi = assembly.MainModule.GetType(AuthoredSystemBindings.System).Methods.Single(m => m.Name == "RemovePointOfInterest");
+        Assert.True(removePoi.HasBody && !removePoi.IsStatic);
     }
 }
