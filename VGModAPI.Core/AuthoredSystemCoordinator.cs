@@ -70,6 +70,30 @@ internal sealed class AuthoredSystemCoordinator : IDisposable
         return AuthoredSystemStateCodec.Encode(_committed.Values.ToArray());
     }
 
+    /// <summary>Read-only plumbing: the session-scoped occurrence rows this owner currently holds (committed + failed-pending), used to re-obtain surface objects.</summary>
+    internal IReadOnlyList<AuthoredSystemOccurrence> Occurrences(string owner)
+    {
+        _hub.CheckThread();
+        if (_disposed) return Array.Empty<AuthoredSystemOccurrence>();
+        return _committed.Values.Where(o => o.Owner == owner).Concat(_pending.Values.Where(o => o.Owner == owner)).ToArray();
+    }
+    /// <summary>Read-only plumbing: whether an owned row (committed or failed-pending) exists for this key.</summary>
+    internal bool ContainsOccurrence(string owner, string localId, string occurrenceKey)
+    {
+        _hub.CheckThread();
+        if (_disposed) return false;
+        return _committed.ContainsKey((owner, localId, occurrenceKey)) || _pending.ContainsKey((owner, localId, occurrenceKey));
+    }
+    /// <summary>Read-only plumbing: the owned row for a key (committed or failed-pending), if present.</summary>
+    internal AuthoredSystemOccurrence? TryGetOccurrence(string owner, string localId, string occurrenceKey)
+    {
+        _hub.CheckThread();
+        if (_disposed) return null;
+        return _committed.TryGetValue((owner, localId, occurrenceKey), out var committed) ? committed
+            : _pending.TryGetValue((owner, localId, occurrenceKey), out var pending) ? pending
+            : null;
+    }
+
     internal AuthoredSystemResult Create(AuthoredSystemRegistry.Provider provider, Guid expectedSession,
         string localId, string occurrenceKey, string anchorSystemId)
     {

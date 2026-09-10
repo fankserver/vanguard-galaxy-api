@@ -28,12 +28,14 @@ public sealed partial class Plugin
     /// <summary>Slow-cadence reconciled-invariant convergence for authored pocket systems; fails open.</summary>
     private void MaintainAuthoredSystems()
     {
-        if (_authoredCoordinator == null) return;
+        if (_authoredCoordinator == null || _worldContent == null) return;
         if (UnityEngine.Time.time < _authoredDue) return;
         _authoredDue = UnityEngine.Time.time + 2.0;
         var current = _hub?.CurrentSession;
         if (current == null || current.Phase != SessionPhase.GameplayInitialized) return;
-        try { _authoredCoordinator.Reconcile(current.Id); }
+        // Route through the service so the owned occurrence objects are refreshed and their Changed events
+        // fire on their own transitions after the coordinator converges gate/reconstruction state.
+        try { _worldContent.MaintainAuthoredSystems(current.Id); }
         catch (Exception error) { Logger.LogError(error); }
     }
 

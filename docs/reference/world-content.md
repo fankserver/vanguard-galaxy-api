@@ -186,12 +186,15 @@ a session, then create the pocket for the current game with an author-local occu
 
 ```csharp
 provider.RegisterAuthoredSystem(new AuthoredSystemDefinition("my-pocket", 1, "The Hollow"));
-var created = provider.CreateAuthoredSystem(sessionId, "my-pocket", "act3-pocket", "anchorsystem-guid");
-if (created.Succeeded)
+// Create (or reconcile) the owned occurrence for the current game; the SAME object instance is
+// returned for the same key for the life of the session. Null only while the world cannot author.
+var reference = provider.CreateAuthoredSystem("my-pocket", "act3-pocket", "anchorsystem-guid");
+if (reference != null)
 {
-    var systemId = created.SystemId;        // owned pocket system identity (travel target)
-    var entrance = created.EntranceGatePoiId; // anchor-side jump gate
-    var pocketGate = created.PocketGatePoiId; // pocket-side peer jump gate
+    reference.Changed += system => { /* this occurrence's State transitioned (e.g. Pending → Reconstructed on load) */ };
+    var systemId = reference.SystemId;          // owned pocket system identity (travel target)
+    var entrance = reference.EntranceGatePoiId; // anchor-side jump gate
+    var pocketGate = reference.PocketGatePoiId; // pocket-side peer jump gate
 }
 ```
 
@@ -215,9 +218,8 @@ Gate access is declarative and persisted as supported state — you do not need 
 unhide/open repair loop:
 
 ```csharp
-var reference = new AuthoredSystemReference("your-plugin-id", "my-pocket", "act3-pocket");
-provider.SetAuthoredSystemEntranceOpen(sessionId, reference, open: true);  // opens both paired gates
-provider.SetAuthoredSystemEntranceOpen(sessionId, reference, open: false); // closes both
+reference.SetEntranceOpen(open: true);   // opens both paired gates
+reference.SetEntranceOpen(open: false);  // closes both
 ```
 
 Opening unpairs and unhides **both** the entrance gate and the pocket-side peer together;
@@ -226,12 +228,25 @@ later ticks the API re-applies it, so a drifted save converges back to the decla
 
 ### Reconstruction and failures
 
-Query typed per-occurrence reconciliation state at any time:
+Each owned occurrence exposes typed per-occurrence reconciliation state, and its `Changed`
+event fires for its own transitions (there is no keyed status query):
 
 ```csharp
-var state = provider.GetAuthoredSystemReconstructionState(reference);
+var state = reference.State;
 if (state.Reconstructed) { /* pocket is live with its native identity */ }
 else if (state.Status == AuthoredSystemReconstructionStatus.Failed) { /* state.Reason explains why */ }
+
+// A stale occurrence from a replaced/reloaded session fails its actions instead of touching the new save:
+var result = reference.SetEntranceOpen(true);
+if (result.Status == AuthoredActionStatus.GameEnded) { /* re-obtain for the live game */ }
+```
+
+After a reload the owned occurrences are re-obtained (no replay), mirroring how the API
+hands back resolved content for the current game:
+
+```csharp
+foreach (var system in provider.GetAuthoredSystems("my-pocket")) { /* current-game occurrences */ }
+var one = provider.GetAuthoredSystem("my-pocket", "act3-pocket"); // or a single key; null if not created yet
 ```
 
 Reasons: `MissingDefinition`, `RevisionMismatch`, `NativeMissing`, `AmbiguousIdentity`,
@@ -243,10 +258,12 @@ live definition automatically instead of failing — `RevisionMismatch` only fir
 compatible previous declaration exists.
 
 Once per session, at the post-reconstruction safe boundary, one
-`AuthoredSystemReconstructionSettled` event reports the actual reconciliation outcomes
-(failures by occurrence). An empty failure list means every declared occurrence
-reconstructed. After that point you can still query each occurrence's live status.
+`AuthoredSystemReconstructionSettled` event reports the actual reconciliation outcomes,
+carrying the owned occurrence objects (a failure carries its occurrence and reason; an empty
+failure list means every declared occurrence reconstructed). Each occurrence's `Changed`
+also fires for its own transitions. After that point you can still read each occurrence's
+live `State` or re-obtain it.
 
 Creation is gameplay-intent only; expected-session identity is an internal invariant.
-`RegisterAuthoredSystem` is pre-session; `CreateAuthoredSystem`, `SetAuthoredSystemEntranceOpen`
-and the status query require a ready session and available persistence.
+`RegisterAuthoredSystem` is pre-session; `CreateAuthoredSystem`, `SetEntranceOpen` and the
+re-obtain methods require a ready session.
