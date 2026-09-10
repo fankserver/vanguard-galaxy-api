@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 
 namespace VGModAPI.Core;
 
@@ -25,13 +27,18 @@ internal sealed class DroneBayService : IDroneBayService, IDisposable
         _hub.SetCapability("drone-bays", value,
             value ? "Authored encounters can tune exact drone bays." : "Drone-bay integration unavailable.", reason);
     }
-    public IDisposable Tune(string unitId, DroneBayTuning tuning)
+    private readonly KeyedDeclarations _keyed = new();
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public IDisposable Tune(string unitId, DroneBayTuning tuning, string? key = null)
     {
         _hub.CheckThread();
+        KeyedDeclarations.Check(key, nameof(key));
+        var scope = Assembly.GetCallingAssembly();
         if (_disposed) throw new ObjectDisposedException(nameof(DroneBayService));
         if (tuning == null) throw new ArgumentNullException(nameof(tuning));
         var identity = CharacterText.Check(unitId, 4096, nameof(unitId));
-        var declaration = new Declaration(this, identity, tuning);
+        var declaration = new Declaration(this, identity, tuning, scope, key);
+        _keyed.Replace(scope, key, declaration);
         _declarations.Add(declaration);
         return declaration;
     }
@@ -66,7 +73,7 @@ internal sealed class DroneBayService : IDroneBayService, IDisposable
         _hub.CheckThread(); if (_disposed) return;
         _disposed = true;
         foreach (var declaration in _declarations.ToArray()) declaration.Dispose();
-        _declarations.Clear();
+        _declarations.Clear(); _keyed.Clear();
         _hub.SetCapability("drone-bays", false, "Drone-bay service stopped.", ServiceUnavailableReason.ApiStopped);
     }
     private sealed class Declaration : IDisposable
@@ -75,10 +82,12 @@ internal sealed class DroneBayService : IDroneBayService, IDisposable
         internal readonly string UnitId;
         internal readonly DroneBayTuning Tuning;
         internal bool Disposed;
-        internal Declaration(DroneBayService owner, string unitId, DroneBayTuning tuning)
-        { _owner = owner; UnitId = unitId; Tuning = tuning; }
+        private readonly object _scope; private readonly string? _key;
+        internal Declaration(DroneBayService owner, string unitId, DroneBayTuning tuning, object scope, string? key)
+        { _owner = owner; UnitId = unitId; Tuning = tuning; _scope = scope; _key = key; }
         public void Dispose()
         {
+            _owner._keyed.Forget(_scope, _key, this);
             _owner._hub.CheckThread(); if (Disposed) return;
             Disposed = true; _owner._declarations.Remove(this);
         }

@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 
 namespace VGModAPI.Core;
 
@@ -26,13 +28,18 @@ internal sealed class UnitProtectionService : IUnitProtectionService, IDisposabl
         _hub.SetCapability("unit-protection", value,
             value ? "Story-critical units can be kept alive." : "Unit-protection integration unavailable.", reason);
     }
-    public IDisposable Protect(string unitId)
+    private readonly KeyedDeclarations _keyed = new();
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public IDisposable Protect(string unitId, string? key = null)
     {
         _hub.CheckThread();
+        KeyedDeclarations.Check(key, nameof(key));
+        var scope = Assembly.GetCallingAssembly();
         if (_disposed) throw new ObjectDisposedException(nameof(UnitProtectionService));
         if (string.IsNullOrWhiteSpace(unitId) || unitId.Length > 4096 || unitId.Any(char.IsControl))
             throw new ArgumentException("A persistent unit identity is required.", nameof(unitId));
-        var declaration = new Declaration(this, unitId);
+        var declaration = new Declaration(this, unitId, scope, key);
+        _keyed.Replace(scope, key, declaration);
         _declarations.Add(declaration);
         return declaration;
     }
@@ -49,7 +56,7 @@ internal sealed class UnitProtectionService : IUnitProtectionService, IDisposabl
         _hub.CheckThread(); if (_disposed) return;
         _disposed = true;
         foreach (var declaration in _declarations.ToArray()) declaration.Dispose();
-        _declarations.Clear();
+        _declarations.Clear(); _keyed.Clear();
         _hub.SetCapability("unit-protection", false, "Unit-protection service stopped.", ServiceUnavailableReason.ApiStopped);
     }
     private sealed class Declaration : IDisposable
@@ -57,10 +64,13 @@ internal sealed class UnitProtectionService : IUnitProtectionService, IDisposabl
         private readonly UnitProtectionService _owner;
         internal readonly string UnitId;
         internal bool Disposed;
-        internal Declaration(UnitProtectionService owner, string unitId) { _owner = owner; UnitId = unitId; }
+        private readonly object _scope; private readonly string? _key;
+        internal Declaration(UnitProtectionService owner, string unitId, object scope, string? key)
+        { _owner = owner; UnitId = unitId; _scope = scope; _key = key; }
         public void Dispose()
         {
             _owner._hub.CheckThread(); if (Disposed) return;
+            _owner._keyed.Forget(_scope, _key, this);
             Disposed = true; _owner._declarations.Remove(this);
         }
     }

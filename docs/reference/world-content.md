@@ -43,7 +43,11 @@ identity is ambiguous in the current galaxy, traffic everywhere stays vanilla ra
 than being suppressed at a guessed location.
 
 Declarations from different mods are independent; the same location may be declared
-quiet by several mods, and disposing one declaration never releases another. Blank or
+quiet by several mods, and disposing one declaration never releases another. Pass an
+author-scoped `key:` to make a declaration replaceable: re-declaring the same key
+replaces only your previous declaration (other mods' keys are a separate namespace),
+removing any need for have-I-declared bookkeeping. Disposing a superseded handle is
+inert and never revokes the replacement. Blank or
 unbounded identities, wrong-thread access and use after API shutdown are programming
 errors. `Availability` reports binding health for this integration; while it is
 unavailable, declarations are retained but nothing is suppressed. Suppression
@@ -75,8 +79,11 @@ unchanged data, such as on save/load.
 
 Each `Protect` call creates an independent declaration, so different mods can protect
 the same unit without releasing each other. Declare once and retain the result rather
-than re-declaring per frame or per resolution: repeated calls accumulate declarations
-for the service lifetime until each is disposed.
+than re-declaring per frame or per resolution: repeated unkeyed calls accumulate
+declarations for the service lifetime until each is disposed. Alternatively pass an
+author-scoped `key:` — re-declaring the same key replaces only your previous
+declaration, and disposing the superseded handle is inert. `Tune` on
+`World.DroneBays` accepts the same `key:` parameter with the same semantics.
 
 Protection is scoped to the persistent identity and needs no live instance: declaring
 for persisted-but-not-yet-materialised unit data is supported and takes effect from

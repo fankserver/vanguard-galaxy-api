@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 
 namespace VGModAPI.Core;
 
@@ -28,15 +30,22 @@ internal sealed class AmbientTrafficService : IAmbientTrafficService, IDisposabl
         _hub.SetCapability("ambient-traffic", value,
             value ? "Authored locations can quiet decorative traffic." : "Ambient-traffic integration unavailable.", reason);
     }
-    public IDisposable SuppressAtStation(string stationId) => Declare(stationOnly: true, stationId, nameof(stationId));
-    public IDisposable SuppressInSystemContaining(string poiId) => Declare(stationOnly: false, poiId, nameof(poiId));
-    private Declaration Declare(bool stationOnly, string anchor, string parameter)
+    private readonly KeyedDeclarations _keyed = new();
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public IDisposable SuppressAtStation(string stationId, string? key = null)
+        => Declare(Assembly.GetCallingAssembly(), key, stationOnly: true, stationId, nameof(stationId));
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public IDisposable SuppressInSystemContaining(string poiId, string? key = null)
+        => Declare(Assembly.GetCallingAssembly(), key, stationOnly: false, poiId, nameof(poiId));
+    private Declaration Declare(object scope, string? key, bool stationOnly, string anchor, string parameter)
     {
+        KeyedDeclarations.Check(key, nameof(key));
         _hub.CheckThread();
         if (_disposed) throw new ObjectDisposedException(nameof(AmbientTrafficService));
         if (string.IsNullOrWhiteSpace(anchor) || anchor.Length > 4096 || anchor.Any(char.IsControl))
             throw new ArgumentException("An authored location identity is required.", parameter);
-        var declaration = new Declaration(this, stationOnly, anchor);
+        var declaration = new Declaration(this, stationOnly, anchor, scope, key);
+        _keyed.Replace(scope, key, declaration);
         _declarations.Add(declaration);
         return declaration;
     }
@@ -66,7 +75,7 @@ internal sealed class AmbientTrafficService : IAmbientTrafficService, IDisposabl
         _hub.CheckThread(); if (_disposed) return;
         _disposed = true;
         foreach (var declaration in _declarations.ToArray()) declaration.Dispose();
-        _declarations.Clear();
+        _declarations.Clear(); _keyed.Clear();
         _hub.SetCapability("ambient-traffic", false, "Ambient-traffic service stopped.", ServiceUnavailableReason.ApiStopped);
     }
     private sealed class Declaration : IDisposable
@@ -75,11 +84,13 @@ internal sealed class AmbientTrafficService : IAmbientTrafficService, IDisposabl
         internal readonly bool StationOnly;
         internal readonly string Anchor;
         internal bool Disposed;
-        internal Declaration(AmbientTrafficService owner, bool stationOnly, string anchor)
-        { _owner = owner; StationOnly = stationOnly; Anchor = anchor; }
+        private readonly object _scope; private readonly string? _key;
+        internal Declaration(AmbientTrafficService owner, bool stationOnly, string anchor, object scope, string? key)
+        { _owner = owner; StationOnly = stationOnly; Anchor = anchor; _scope = scope; _key = key; }
         public void Dispose()
         {
             _owner._hub.CheckThread(); if (Disposed) return;
+            _owner._keyed.Forget(_scope, _key, this);
             Disposed = true; _owner._declarations.Remove(this);
         }
     }
