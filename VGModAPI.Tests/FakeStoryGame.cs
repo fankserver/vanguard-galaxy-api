@@ -103,7 +103,9 @@ namespace Source.MissionSystem.Objectives
         public string? targetPOI;
         public float requiredVisitTime;
         public Func<bool>? Completion;
-        public override bool IsComplete() => Completion?.Invoke() ?? false;
+        /// <summary>Defaults to the game's real semantics: the visit record beats the timestamp floor.</summary>
+        public override bool IsComplete() => Completion?.Invoke()
+            ?? Source.Galaxy.GalaxyMapData.current?.GetPointOfInterest(targetPOI ?? "")?.lastVisitedTime > requiredVisitTime;
         public override string ToJson() => "{travel:" + targetPOI + ":" + requiredVisitTime + "}";
     }
     public sealed class KillEnemies : MissionObjective

@@ -13,7 +13,7 @@ public sealed class StoryDefinitionCodecTests
     public void GeneratedDefinitionRoundTripsAllSupportedAuthorData()
     {
         var definition = new StoryMissionDefinition("generated", "Generated title", "Generated description", new StoryFactionId("TradingGuild"),
-            new[] { new StoryStep("Travel", new[] { StoryObjective.TravelTo("original-poi", 15).WithKey("visit"), StoryObjective.CollectCredits(83) }, false) },
+            new[] { new StoryStep("Travel", new[] { StoryObjective.TravelTo("original-poi", requireNewVisit: true).WithKey("visit"), StoryObjective.CollectCredits(83) }, false) },
             new[] { StoryReward.Credits(17) }, StoryDifficulty.Hard, StoryRetention.Campaign, false,
             "category", "completion", new[] { "choice" });
         var bytes = StoryDefinitionCodec.Encode(definition);
@@ -77,11 +77,32 @@ public sealed class StoryDefinitionCodecTests
     }
 
     [Fact]
+    public void ReturnToSourceAndNewVisitFlagsRoundTrip()
+    {
+        var definition = new StoryMissionDefinition("closing", "Title", "Description", new StoryFactionId("TradingGuild"),
+            new[] { new StoryStep("Return", new[]
+            {
+                StoryObjective.TravelTo("embassy-adjacent", requireNewVisit: true).WithKey("fresh"),
+                StoryObjective.TravelTo("anywhere").WithKey("ever"),
+                StoryObjective.ReturnToSource().WithKey("return"),
+                StoryObjective.ReturnToSource(requireNewVisit: false).WithKey("return-ever")
+            }) });
+        var restored = StoryDefinitionCodec.Decode(StoryDefinitionCodec.Encode(definition));
+        Assert.Equal(StoryDefinitionCodec.Encode(definition), StoryDefinitionCodec.Encode(restored));
+        Assert.True(restored.Steps[0].Objectives[0].RequireNewVisit);
+        Assert.False(restored.Steps[0].Objectives[1].RequireNewVisit);
+        Assert.Equal(StoryObjectiveKind.ReturnToSource, restored.Steps[0].Objectives[2].Kind);
+        Assert.Null(restored.Steps[0].Objectives[2].TargetPoiId);
+        Assert.True(restored.Steps[0].Objectives[2].RequireNewVisit);
+        Assert.False(restored.Steps[0].Objectives[3].RequireNewVisit);
+    }
+
+    [Fact]
     public void LegacyVersion1PayloadsRemainReadable()
     {
         // A retained pre-delivery definition (schema 1) decodes exactly as before.
         var legacyShaped = new StoryMissionDefinition("legacy", "Title", "Description", new StoryFactionId("TradingGuild"),
-            new[] { new StoryStep("Travel", new[] { StoryObjective.TravelTo("poi", 5).WithKey("visit") }) },
+            new[] { new StoryStep("Travel", new[] { StoryObjective.TravelTo("poi", requireNewVisit: true).WithKey("visit") }) },
             new[] { StoryReward.Credits(17) });
         var v2 = StoryDefinitionCodec.Encode(legacyShaped);
         var v1 = DowngradeToVersion1(v2);

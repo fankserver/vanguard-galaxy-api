@@ -44,7 +44,7 @@ public readonly struct StoryContentId : IEquatable<StoryContentId>
 /// provider-defined objective type cannot round-trip through a vanilla save. Unsupported behaviour
 /// stays provider logic; it is never smuggled in as an opaque payload.
 /// </summary>
-public enum StoryObjectiveKind { TravelToPoi, KillEnemies, CollectCredits, Scripted, DeliverItems, MineItems, SalvageItems }
+public enum StoryObjectiveKind { TravelToPoi, KillEnemies, CollectCredits, Scripted, DeliverItems, MineItems, SalvageItems, ReturnToSource }
 
 /// <summary>
 /// Identity of a faction this API may reference. It is the game's own faction identifier, passed as a
@@ -101,30 +101,47 @@ public sealed class StoryObjective
     public string? Description { get; }
     /// <summary>Required for <see cref="StoryObjectiveKind.TravelToPoi"/>: an existing world POI identity, never a display name.</summary>
     public string? TargetPoiId { get; }
-    /// <summary>Required for the counting kinds; ignored by <see cref="StoryObjectiveKind.TravelToPoi"/>.</summary>
+    /// <summary>Required for the counting kinds; ignored by the travel kinds.</summary>
     public int RequiredAmount { get; }
+    /// <summary>
+    /// Travel kinds only: requires a visit AFTER the mission is built. The player already sitting at
+    /// the target must leave and come back. False accepts any recorded visit, including earlier ones.
+    /// </summary>
+    public bool RequireNewVisit { get; }
     /// <summary>Required for the item kinds (delivery, mining; optional for salvage): an existing item-type identity, never a display name.</summary>
     public string? ItemTypeId { get; }
     /// <summary>Required for <see cref="StoryObjectiveKind.KillEnemies"/>: the existing faction whose units the game counts.</summary>
     public string? EnemyFactionId { get; }
     public float RequiredVisitSeconds { get; }
 
-    private StoryObjective(StoryObjectiveKind kind, string? targetPoiId, int requiredAmount, float requiredVisitSeconds, string? localKey = null, string? description = null, string? itemTypeId = null, string? enemyFactionId = null)
-    { Kind = kind; TargetPoiId = targetPoiId; RequiredAmount = requiredAmount; RequiredVisitSeconds = requiredVisitSeconds; LocalKey = localKey; Description = description; ItemTypeId = itemTypeId; EnemyFactionId = enemyFactionId; }
+    private StoryObjective(StoryObjectiveKind kind, string? targetPoiId, int requiredAmount, bool requireNewVisit, string? localKey = null, string? description = null, string? itemTypeId = null, string? enemyFactionId = null)
+    { Kind = kind; TargetPoiId = targetPoiId; RequiredAmount = requiredAmount; RequireNewVisit = requireNewVisit; LocalKey = localKey; Description = description; ItemTypeId = itemTypeId; EnemyFactionId = enemyFactionId; }
 
     /// <summary>Returns an immutable keyed copy. Keys must be unique throughout one mission definition.</summary>
     public StoryObjective WithKey(string localKey)
     {
         if (!StoryContentId.IsValidSegment(localKey)) throw new ArgumentException("An objective key uses the story identity segment format.", nameof(localKey));
-        return new StoryObjective(Kind, TargetPoiId, RequiredAmount, RequiredVisitSeconds, localKey, Description, ItemTypeId, EnemyFactionId);
+        return new StoryObjective(Kind, TargetPoiId, RequiredAmount, RequireNewVisit, localKey, Description, ItemTypeId, EnemyFactionId);
     }
 
-    public static StoryObjective TravelTo(string targetPoiId, float requiredVisitSeconds = 0)
+    /// <summary>
+    /// The game's own travel objective. Completion is the native visit record, not dwell time:
+    /// <paramref name="requireNewVisit"/> requires a visit AFTER the mission is built (the baseline
+    /// is captured natively at build), while false accepts any recorded visit.
+    /// </summary>
+    public static StoryObjective TravelTo(string targetPoiId, bool requireNewVisit = false)
     {
         if (string.IsNullOrEmpty(targetPoiId) || targetPoiId.Length > 128) throw new ArgumentException("A travel objective requires a bounded target POI identity.", nameof(targetPoiId));
-        if (!(requiredVisitSeconds >= 0) || requiredVisitSeconds > MaxVisitSeconds) throw new ArgumentOutOfRangeException(nameof(requiredVisitSeconds));
-        return new StoryObjective(StoryObjectiveKind.TravelToPoi, targetPoiId, 0, requiredVisitSeconds);
+        return new StoryObjective(StoryObjectiveKind.TravelToPoi, targetPoiId, 0, requireNewVisit);
     }
+
+    /// <summary>
+    /// Return to the mission's SOURCE location - wherever the mission is actually built/accepted,
+    /// which the game records as sourcePoi. The identity is resolved per occurrence at build time,
+    /// so a campaign can end where its vanilla questgiver lives without knowing any generated guid.
+    /// </summary>
+    public static StoryObjective ReturnToSource(bool requireNewVisit = true)
+        => new(StoryObjectiveKind.ReturnToSource, null, 0, requireNewVisit);
 
     /// <summary>An author-driven counting objective. Progress is absolute, not an incrementing narrative event.</summary>
     public static StoryObjective Scripted(string localKey, string description, int requiredAmount = 1)
@@ -132,7 +149,7 @@ public sealed class StoryObjective
         if (!StoryContentId.IsValidSegment(localKey)) throw new ArgumentException("Invalid objective key.", nameof(localKey));
         if (string.IsNullOrWhiteSpace(description) || description.Length > 512) throw new ArgumentException("A bounded description is required.", nameof(description));
         if (requiredAmount is < 1 or > MaxAmount) throw new ArgumentOutOfRangeException(nameof(requiredAmount));
-        return new StoryObjective(StoryObjectiveKind.Scripted, null, requiredAmount, 0, localKey, description);
+        return new StoryObjective(StoryObjectiveKind.Scripted, null, requiredAmount, false, localKey, description);
     }
 
     /// <summary>
@@ -145,7 +162,7 @@ public sealed class StoryObjective
         if (string.IsNullOrWhiteSpace(itemTypeId) || itemTypeId.Length > 128) throw new ArgumentException("A bounded exact item-type identity is required.", nameof(itemTypeId));
         if (string.IsNullOrWhiteSpace(deliverToPoiId) || deliverToPoiId.Length > 128) throw new ArgumentException("A bounded delivery POI identity is required.", nameof(deliverToPoiId));
         if (requiredAmount is < 1 or > MaxAmount) throw new ArgumentOutOfRangeException(nameof(requiredAmount));
-        return new StoryObjective(StoryObjectiveKind.DeliverItems, deliverToPoiId, requiredAmount, 0, itemTypeId: itemTypeId);
+        return new StoryObjective(StoryObjectiveKind.DeliverItems, deliverToPoiId, requiredAmount, false, itemTypeId: itemTypeId);
     }
 
     /// <summary>
@@ -173,7 +190,7 @@ public sealed class StoryObjective
     {
         if (string.IsNullOrWhiteSpace(targetPoiId) || targetPoiId.Length > 128) throw new ArgumentException("A bounded target POI identity is required.", nameof(targetPoiId));
         if (requiredAmount is < 1 or > MaxAmount) throw new ArgumentOutOfRangeException(nameof(requiredAmount));
-        return new StoryObjective(kind, targetPoiId, requiredAmount, 0, itemTypeId: itemTypeId);
+        return new StoryObjective(kind, targetPoiId, requiredAmount, false, itemTypeId: itemTypeId);
     }
 
     /// <summary>
@@ -185,14 +202,14 @@ public sealed class StoryObjective
     {
         if (enemyFaction.Value == null) throw new ArgumentException("An enemy faction identity is required.", nameof(enemyFaction));
         if (requiredAmount is < 1 or > MaxAmount) throw new ArgumentOutOfRangeException(nameof(requiredAmount));
-        return new StoryObjective(StoryObjectiveKind.KillEnemies, null, requiredAmount, 0, enemyFactionId: enemyFaction.Value);
+        return new StoryObjective(StoryObjectiveKind.KillEnemies, null, requiredAmount, false, enemyFactionId: enemyFaction.Value);
     }
     public static StoryObjective CollectCredits(int requiredAmount) => Counting(StoryObjectiveKind.CollectCredits, requiredAmount);
 
     private static StoryObjective Counting(StoryObjectiveKind kind, int requiredAmount)
     {
         if (requiredAmount is < 1 or > MaxAmount) throw new ArgumentOutOfRangeException(nameof(requiredAmount));
-        return new StoryObjective(kind, null, requiredAmount, 0);
+        return new StoryObjective(kind, null, requiredAmount, false);
     }
 }
 

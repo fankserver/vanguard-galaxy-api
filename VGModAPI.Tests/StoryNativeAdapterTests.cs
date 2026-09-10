@@ -44,7 +44,7 @@ public sealed class StoryNativeAdapterTests : IDisposable
         => new(local, "Salvage run", "Recover the drifting cargo.", Trading,
             new[] { new StoryStep("Reach the wreck", objectives ?? new[]
             {
-                StoryObjective.TravelTo("poi-guid-1", 5),
+                StoryObjective.TravelTo("poi-guid-1", requireNewVisit: true),
                 StoryObjective.CollectCredits(250)
             }, requireAllObjectives: true) },
             new[] { StoryReward.Credits(500), StoryReward.Experience(40) },
@@ -91,7 +91,7 @@ public sealed class StoryNativeAdapterTests : IDisposable
     {
         using var world = World();
         var identifier = Identifier();
-        var expected = StoryObjective.TravelTo("poi-guid-1", 5).WithKey("visit");
+        var expected = StoryObjective.TravelTo("poi-guid-1", requireNewVisit: true).WithKey("visit");
         var definition = Definition(objectives: new[] { expected });
         Assert.True(world.Install(identifier, definition).Applied);
         Assert.True(world.Accept(identifier).Applied);
@@ -110,6 +110,49 @@ public sealed class StoryNativeAdapterTests : IDisposable
             return true;
         };
         Assert.Null(world.ReadProgress(identifier, slot, expected, () => true));
+    }
+
+    [Fact]
+    public void NewVisitTravelAndReturnToSourceCaptureTheNativeVisitBaseline()
+    {
+        using var world = World();
+        var embassy = new Source.Galaxy.MapPointOfInterest { guid = "embassy", lastVisitedTime = 41.5f };
+        var wreck = new Source.Galaxy.MapPointOfInterest { guid = "poi-guid-1", lastVisitedTime = 7f };
+        var galaxy = new Source.Galaxy.GalaxyMapData();
+        galaxy.AddPoi(embassy); galaxy.AddPoi(wreck);
+        Source.Galaxy.GalaxyMapData.current = galaxy;
+        _player.currentPointOfInterest = embassy; // where the mission is built = its source
+        try
+        {
+            var definition = Definition(objectives: new[]
+            {
+                StoryObjective.TravelTo("poi-guid-1", requireNewVisit: true).WithKey("visit"),
+                StoryObjective.TravelTo("poi-guid-1").WithKey("ever"),
+                StoryObjective.ReturnToSource().WithKey("return")
+            });
+            var identifier = Identifier();
+            Assert.True(world.Install(identifier, definition).Applied);
+            var mission = StoryMission.Get(_player, identifier);
+            var step = Assert.Single(mission.steps);
+            var fresh = (Source.MissionSystem.Objectives.TravelToPOI)step.objectives[0];
+            Assert.Equal(7f, fresh.requiredVisitTime);   // must visit AFTER the recorded 7f
+            var ever = (Source.MissionSystem.Objectives.TravelToPOI)step.objectives[1];
+            Assert.Equal(0f, ever.requiredVisitTime);    // any recorded visit counts
+            var back = (Source.MissionSystem.Objectives.TravelToPOI)step.objectives[2];
+            Assert.Equal("embassy", back.targetPOI);     // resolved per occurrence, no authored guid
+            Assert.Equal(41.5f, back.requiredVisitTime); // the player must LEAVE and come back
+            // Observation resolves the return target from the mission's own source, and refuses a swap.
+            Assert.True(world.Accept(identifier).Applied);
+            var layout = new StoryObjectiveLayout(definition);
+            Assert.True(layout.TryResolve("return", out var slot));
+            Assert.Equal(0, world.ReadProgress(identifier, slot, definition.Steps[0].Objectives[2], () => true));
+            embassy.lastVisitedTime = 90f;
+            Assert.Equal(1, world.ReadProgress(identifier, slot, definition.Steps[0].Objectives[2], () => true));
+            var held = (Mission)new StoryNativeBindings(typeof(StoryMission).Assembly).ActiveStory(_player, identifier)!;
+            ((Source.MissionSystem.Objectives.TravelToPOI)held.steps[0].objectives[2]).targetPOI = "elsewhere";
+            Assert.Null(world.ReadProgress(identifier, slot, definition.Steps[0].Objectives[2], () => true));
+        }
+        finally { Source.Galaxy.GalaxyMapData.current = null; _player.currentPointOfInterest = new Source.Galaxy.MapPointOfInterest { guid = "poi-source" }; }
     }
 
     [Fact]
@@ -408,7 +451,8 @@ public sealed class StoryNativeAdapterTests : IDisposable
         Assert.True(step.requireAllObjectives);
         var travel = Assert.IsType<Source.MissionSystem.Objectives.TravelToPOI>(step.objectives[0]);
         Assert.Equal("poi-guid-1", travel.targetPOI);
-        Assert.Equal(5f, travel.requiredVisitTime);
+        // New-visit baseline: no recorded visit yet, so the native timestamp floor is zero.
+        Assert.Equal(0f, travel.requiredVisitTime);
         Assert.Equal(250, Assert.IsType<Source.MissionSystem.Objectives.CollectCredits>(step.objectives[1]).requiredAmount);
         var credits = Assert.IsType<Source.MissionSystem.Rewards.Credits>(mission.rewards[0]);
         Assert.Equal(500, credits.amount);

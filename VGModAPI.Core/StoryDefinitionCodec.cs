@@ -37,7 +37,7 @@ internal static class StoryDefinitionCodec
             foreach (var objective in step.Objectives)
             {
                 writer.Write((byte)objective.Kind); Text(writer, objective.LocalKey);
-                Text(writer, objective.TargetPoiId); writer.Write(objective.RequiredAmount); writer.Write(objective.RequiredVisitSeconds);
+                Text(writer, objective.TargetPoiId); writer.Write(objective.RequiredAmount); writer.Write(objective.RequireNewVisit ? 1f : 0f);
                 Text(writer, objective.Description); Text(writer, objective.ItemTypeId); Text(writer, objective.EnemyFactionId);
             }
         }
@@ -71,17 +71,21 @@ internal static class StoryDefinitionCodec
             {
                 var kind = (StoryObjectiveKind)reader.ReadByte(); var key = Text(reader); var target = Text(reader);
                 int amount = reader.ReadInt32(); float visit = reader.ReadSingle(); var text = Text(reader);
+                // The float slot predates the honest travel semantics: 0/1 carries RequireNewVisit;
+                // any legacy nonzero value decodes as new-visit (the strictest compatible reading).
+                bool newVisit = visit != 0;
                 var itemType = version >= 2 ? Text(reader) : null;
                 var enemyFaction = version >= 2 ? Text(reader) : null;
                 StoryObjective objective = kind switch
                 {
-                    StoryObjectiveKind.TravelToPoi when amount == 0 && text == null && itemType == null && enemyFaction == null => StoryObjective.TravelTo(target!, visit),
+                    StoryObjectiveKind.TravelToPoi when amount == 0 && text == null && itemType == null && enemyFaction == null => StoryObjective.TravelTo(target!, newVisit),
                     StoryObjectiveKind.CollectCredits when target == null && visit == 0 && text == null && itemType == null && enemyFaction == null => StoryObjective.CollectCredits(amount),
                     StoryObjectiveKind.KillEnemies when target == null && visit == 0 && text == null && itemType == null && enemyFaction != null => StoryObjective.KillEnemies(amount, new StoryFactionId(enemyFaction)),
                     StoryObjectiveKind.Scripted when target == null && visit == 0 && itemType == null && enemyFaction == null => StoryObjective.Scripted(key!, text!, amount),
                     StoryObjectiveKind.DeliverItems when visit == 0 && text == null && itemType != null && enemyFaction == null => StoryObjective.DeliverItems(itemType, amount, target!),
                     StoryObjectiveKind.MineItems when visit == 0 && text == null && itemType != null && enemyFaction == null => StoryObjective.MineItems(itemType, amount, target!),
                     StoryObjectiveKind.SalvageItems when visit == 0 && text == null && enemyFaction == null => StoryObjective.SalvageItems(amount, target!, itemType),
+                    StoryObjectiveKind.ReturnToSource when amount == 0 && target == null && text == null && itemType == null && enemyFaction == null => StoryObjective.ReturnToSource(newVisit),
                     _ => throw new InvalidDataException("Invalid retained objective shape.")
                 };
                 objectives[item] = key == null ? objective : objective.WithKey(key);

@@ -40,7 +40,7 @@ public sealed class StoryProtectionTests : IDisposable
     }
 
     private static StoryMissionDefinition Definition() => new("salvage-run", "Salvage run", "Recover it.", Trading,
-        new[] { new StoryStep("Reach the wreck", new[] { StoryObjective.TravelTo("poi-guid-1", 5) }) },
+        new[] { new StoryStep("Reach the wreck", new[] { StoryObjective.TravelTo("poi-guid-1", requireNewVisit: true) }) },
         new[] { StoryReward.Credits(500) }, StoryDifficulty.Normal, StoryRetention.Campaign);
 
     private (string Identifier, Mission Mission) Hold(string local = "salvage-run")

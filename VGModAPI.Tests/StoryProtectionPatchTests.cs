@@ -67,7 +67,7 @@ public sealed class StoryProtectionPatchTests : IDisposable
         var identifier = StoryContentPolicy.OccurrenceIdentifier(new StoryContentId("anima", local), Guid.NewGuid());
         var world = new StoryNativeWorld(new StoryNativeBindings(typeof(StoryMission).Assembly), () => { });
         var definition = new StoryMissionDefinition(local, "Salvage run", "Recover it.", Trading,
-            new[] { new StoryStep("Reach the wreck", new[] { StoryObjective.TravelTo("poi-guid-1", 5) }) },
+            new[] { new StoryStep("Reach the wreck", new[] { StoryObjective.TravelTo("poi-guid-1", requireNewVisit: true) }) },
             new[] { StoryReward.Credits(500) }, StoryDifficulty.Normal, StoryRetention.Campaign);
         Assert.True(world.Install(identifier, definition).Applied);
         Assert.True(world.Accept(identifier).Applied);

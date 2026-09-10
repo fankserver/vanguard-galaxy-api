@@ -40,7 +40,8 @@ internal static class StoryContentPolicy
         [StoryObjectiveKind.Scripted] = "TriggerObjective",
         [StoryObjectiveKind.DeliverItems] = "TradeOffer",
         [StoryObjectiveKind.MineItems] = "Mining",
-        [StoryObjectiveKind.SalvageItems] = "Salvage"
+        [StoryObjectiveKind.SalvageItems] = "Salvage",
+        [StoryObjectiveKind.ReturnToSource] = "TravelToPOI"
     };
 
     /// <summary>Vanilla reward type names, exactly as <c>MissionReward.Create</c> resolves them.</summary>

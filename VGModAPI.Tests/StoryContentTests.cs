@@ -90,7 +90,7 @@ public sealed partial class StoryContentTests
     private static StoryMissionDefinition Definition(string local = "salvage-run",
         StoryRetention retention = StoryRetention.Temporary, IEnumerable<string>? choiceKeys = null)
         => new(local, "Salvage run", "Recover the drifting cargo.", Faction,
-            new[] { new StoryStep("Reach the wreck", new[] { StoryObjective.TravelTo("poi-guid-1", 5) }) },
+            new[] { new StoryStep("Reach the wreck", new[] { StoryObjective.TravelTo("poi-guid-1", requireNewVisit: true) }) },
             new[] { StoryReward.Credits(500) }, StoryDifficulty.Normal, retention,
             choiceKeys: choiceKeys ?? (retention == StoryRetention.Campaign ? new[] { "branch" } : null));
 
