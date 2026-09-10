@@ -59,7 +59,8 @@ the unit, restoring stock lethality.
 
 ```csharp
 private IDisposable? _promise;
-private void Awake() => _promise = ModApi.Services.World.UnitProtection.Protect(myShipDataGuid);
+// The identity is the unit data's guid string, exactly as the game stores it.
+private void Awake() => _promise = ModApi.Services.World.UnitProtection.Protect(myShipUnitId);
 private void OnDestroy() => _promise?.Dispose();
 ```
 
@@ -100,7 +101,8 @@ unit-data identity, so a ship of the same class â€” including the player's own â
 never affected, even when class identifiers collide.
 
 ```csharp
-_bossTuning = ModApi.Services.World.DroneBays.Tune(bossUnitGuid, new DroneBayTuning(
+string bossUnitId = /* the boss's persistent unit-data guid string */;
+_bossTuning = ModApi.Services.World.DroneBays.Tune(bossUnitId, new DroneBayTuning(
     launchSeconds: 0.05,                                   // the swarm is out in seconds, not minutes
     replacementDrones: new[] { "Combat Missile Drone", "Combat Laser Drone" },
     complement: 100));
