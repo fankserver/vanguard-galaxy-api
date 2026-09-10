@@ -104,8 +104,8 @@ public sealed class InventoryObjectTests
         using var f = new Fixture(); var source = f.Source; var destination = f.Destination;
         var pending = source.MoveTo(destination, Guid.NewGuid(), 2);
         pending.Completed += _ => Assert.Fail("Old game notification");
-        f.Start(); f.Tick();
-        Assert.Equal(InventoryTransferStatus.GameEnded, pending.Result.Status); Assert.Equal(0, f.Backend.Prepares);
+        f.Start(); Assert.Equal(InventoryTransferStatus.GameEnded, pending.Result.Status);
+        f.Tick(); Assert.Equal(0, f.Backend.Prepares);
         var stale = source.MoveTo(destination, Guid.NewGuid(), 2);
         Assert.Equal(InventoryTransferStatus.GameEnded, stale.Result.Status);
         Assert.Null(source.Snapshot); Assert.False(source.Game.IsActive);

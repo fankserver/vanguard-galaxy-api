@@ -76,4 +76,8 @@ operation IDs in results are runtime correlation, not a durable shipment ledger.
 
 Safe-boundary scheduling is not a shipping simulation. This API does not reserve
 goods for later, compute travel times, charge delivery fees or schedule shipment
-arrivals. Those are distinct gameplay features.
+arrivals. A move is not a cancellable shipping job. Each move commits independently;
+multiple moves and separate credit changes are not an atomic group. Consumers
+requiring all-or-nothing manifests and fees must retain a transaction design that
+provides that guarantee rather than treating several `MoveTo` calls as one move.
+Those are distinct gameplay features.

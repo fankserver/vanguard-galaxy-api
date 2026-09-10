@@ -36,7 +36,11 @@ internal sealed partial class InventoryService : IDisposable
         _lifetime = hub.Subscribe("vgmodapi.inventories", e =>
         {
             if (e.Kind is LifecycleEventKind.SessionStarting or LifecycleEventKind.SessionInvalidated or LifecycleEventKind.SessionStartFailed)
-            { _operations.Clear(); }
+            {
+                _operations.Clear();
+                foreach (var move in _moves.ToArray())
+                    if (!move.Game.IsActive) { move.End(InventoryTransferStatus.GameEnded); _moves.Remove(move); }
+            }
             else if (e.Kind == LifecycleEventKind.SaveStarted) _saveDepth++;
             else if (e.Kind is LifecycleEventKind.SaveSucceeded or LifecycleEventKind.SaveFailed or LifecycleEventKind.SaveSkipped)
             { if (_saveDepth > 0) _saveDepth--; }
