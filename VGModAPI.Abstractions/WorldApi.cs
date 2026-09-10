@@ -22,7 +22,7 @@ public sealed class WorldCombatSiteDefinition
     }
 }
 
-/// <summary>Stable owner-local-instance reference, never a native Unity object or session permission.</summary>
+/// <summary>Internal coordinator keying shape; consumers address a site through its <see cref="ICombatSite"/> object.</summary>
 public sealed class WorldSiteReference
 {
     public string ProviderId { get; }
@@ -62,10 +62,16 @@ public interface IWorldProvider : IDisposable
     string ProviderId { get; }
     /// <summary>Optional exact previous declaration permits a revision/name migration; faction, level and local identity must remain unchanged.</summary>
     WorldStatus Register(WorldCombatSiteDefinition definition, WorldCombatSiteDefinition? previous = null);
-    /// <summary>Resolves this provider's reference against the current observed session and native membership.</summary>
-    WorldSiteResult FindPersistentCombatSite(Guid expectedSessionId, WorldSiteReference reference);
-    /// <summary>Creates a persistent site in an existing system. Supported state is saved automatically; no provider save hooks are required.</summary>
-    WorldSiteResult CreatePersistentCombatSite(Guid expectedSessionId, string localId, Guid instanceId, string systemId, float x, float y);
+    /// <summary>
+    /// Creates (or reconciles) an owned persistent combat site in an existing system for the current
+    /// game, keyed by an author-local occurrence key. The API allocates and owns the native identity;
+    /// consumers never supply instance GUIDs or session tokens. Re-declaring the same key returns the
+    /// SAME object instance for the life of the session. Returns null while the world cannot author.
+    /// Supported state is saved automatically; no provider save hooks are required.
+    /// </summary>
+    ICombatSite? CreateCombatSite(string localId, string occurrenceKey, string systemId, float x, float y);
+    /// <summary>Re-obtains the owned occurrence for a key in the current game, or null if it does not exist.</summary>
+    ICombatSite? GetCombatSite(string localId, string occurrenceKey);
 
     /// <summary>Declares an enclosed authored pocket system. Optional exact previous declaration permits a revision/name migration.</summary>
     WorldStatus RegisterAuthoredSystem(AuthoredSystemDefinition definition, AuthoredSystemDefinition? previous = null);

@@ -39,13 +39,13 @@ public sealed class WorldContentServiceTests
         using var first = service.AcquireProvider(a); Assert.NotNull(first);
         var definition = new WorldCombatSiteDefinition("PoiX", 1, "Site", "player", 1);
         Assert.Equal(WorldStatus.Succeeded, first!.Register(definition));
-        Assert.Equal(WorldStatus.Unavailable, first.CreatePersistentCombatSite(Guid.NewGuid(), "PoiX", Guid.NewGuid(), "system", 0, 0).Status);
+        Assert.Equal(WorldStatus.Unavailable, ((VGModAPI.Core.IWorldProviderEngine)first).CreatePersistentCombatSite(Guid.NewGuid(), "PoiX", Guid.NewGuid(), "system", 0, 0).Status);
         using var second = service.AcquireProvider(b); Assert.NotNull(second);
         Assert.Equal(WorldStatus.Succeeded, second!.Register(definition));
-        Assert.Equal(WorldStatus.NotReady, first.CreatePersistentCombatSite(Guid.NewGuid(), "PoiX", Guid.NewGuid(), "system", 0, 0).Status);
+        Assert.Equal(WorldStatus.NotReady, ((VGModAPI.Core.IWorldProviderEngine)first).CreatePersistentCombatSite(Guid.NewGuid(), "PoiX", Guid.NewGuid(), "system", 0, 0).Status);
         current = false;
-        Assert.Equal(WorldStatus.Unavailable, first.CreatePersistentCombatSite(Guid.NewGuid(), "PoiX", Guid.NewGuid(), "system", 0, 0).Status);
-        Assert.Equal(WorldStatus.Unavailable, second.FindPersistentCombatSite(Guid.NewGuid(), new WorldSiteReference("author.b", "PoiX", Guid.NewGuid())).Status);
+        Assert.Equal(WorldStatus.Unavailable, ((VGModAPI.Core.IWorldProviderEngine)first).CreatePersistentCombatSite(Guid.NewGuid(), "PoiX", Guid.NewGuid(), "system", 0, 0).Status);
+        Assert.Equal(WorldStatus.Unavailable, ((VGModAPI.Core.IWorldProviderEngine)second).FindPersistentCombatSite(Guid.NewGuid(), new WorldSiteReference("author.b", "PoiX", Guid.NewGuid())).Status);
     }
 
     [Fact]
@@ -71,7 +71,7 @@ public sealed class WorldContentServiceTests
         Assert.True(definitions.MatchesRetained(prior)); Assert.Equal("New", definitions.Effective(prior)!.Definition.Name);
         Assert.False(definitions.MatchesRetained(new WorldSavedDefinition("author.a", new WorldCombatDefinition("Migrate", 1, "Different", "player", 1))));
         Assert.Equal(WorldStatus.InvalidDefinition, provider.Register(new WorldCombatSiteDefinition("BadMigration", 2, "New", "player", 2), new WorldCombatSiteDefinition("BadMigration", 1, "Old", "player", 1)));
-        Assert.Equal(WorldStatus.Unavailable, provider.CreatePersistentCombatSite(Guid.NewGuid(), "PoiX", Guid.NewGuid(), "system", 0, 0).Status);
+        Assert.Equal(WorldStatus.Unavailable, ((VGModAPI.Core.IWorldProviderEngine)provider).CreatePersistentCombatSite(Guid.NewGuid(), "PoiX", Guid.NewGuid(), "system", 0, 0).Status);
         service.Dispose();
         Assert.Equal(WorldStatus.UnknownProvider, provider.Register(definition));
         Assert.Null(service.AcquireProvider(plugin)); provider.Dispose(); provider.Dispose();
