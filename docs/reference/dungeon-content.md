@@ -83,6 +83,54 @@ The global `DungeonOperations.Changed` stream remains a low-level observational
 interface. Use installation events for ordinary installation-specific reactions,
 not a global handler that filters names or schedules its own later actions.
 
+## Keeping an owned target enterable
+
+An authored boarding objective can be invalidated before the player ever arrives:
+ambient world events destroy docking or floor the station's structure, the native
+enterable state flips off, and the boarding manager refuses the infiltration — a
+soft-lock with no in-game recovery. Declare the guarantee on the installation while
+the objective is live:
+
+```csharp
+_stationAKeep = dungeons.GetInstallation("MyCampaignStationA").KeepEnterable();
+// … when the objective completes or the arc ends:
+_stationAKeep.Dispose();
+```
+
+While a declaration is held, the API reconciles the target on a slow cadence
+against the current galaxy, wherever the player is:
+
+- **Prevention** uses the game's own persisted station invincibility, which the
+  game honors for physical parts — including docking pads and tunnels — and for
+  interior structure clamping. Already-live parts are covered when the declaration
+  binds. Disposal restores a flag this session observed off; hardening that was
+  already on, native (a stronghold) or foreign, is never cleared. The flag is the
+  game's own single persisted bool, which bounds what disposal can promise: after a
+  save written while the declaration held, a later session observes the flag already
+  on and leaves it on — dispose within the session that hardened, ideally before
+  saving, when returning the target to vanilla matters. A flag another mod turns on
+  after this session hardened is likewise indistinguishable and is restored off, and
+  a declaration disposed in the same instant the game shuts down may leave the flag
+  on in the save — always the safe, still-protected direction.
+- **Recovery** restores a target that was already unusable — destroyed docking,
+  floored facility integrity, or a collapsed/retreating non-victory interior — to
+  enterable, discarding only the broken interior so it regenerates on next entry,
+  and regenerating dockingless persisted station data natively. Each repair is
+  reported in the log.
+- **Guards come first.** A live operation, the player's physical presence at the
+  station and a legitimately cleared interior (victory and completion) are never
+  overridden; a healthy or legitimately progressed target is left completely alone.
+
+Declarations bind installations created later and rebind across save/load by
+persistent identity, with no consumer polling. An identity that is missing or
+ambiguous in the current galaxy hardens and repairs nothing. Unrelated dungeons,
+stations and ship boardings stay completely vanilla, and integration faults fail
+open with one report. Declare once and retain; each call is an independent
+declaration, and disposing the provider releases outstanding declarations. This
+keeps the target reachable — it does not alter the encounter's difficulty, loot or
+interior content, and whether a damaged target may become a boardable wreck remains
+the separate boarding-rules decision.
+
 ## Definitions and bounds
 
 - Authored provider/local, compartment, event and choice IDs: 1–128 letters, digits, underscores, hyphens or dots; case-sensitive.
