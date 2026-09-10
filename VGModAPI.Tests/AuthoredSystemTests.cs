@@ -258,6 +258,20 @@ public sealed class AuthoredSystemTests
     }
 
     [Fact]
+    public void AFaultySettledSubscriberDoesNotStarveSiblingSubscribers()
+    {
+        using var harness = new Harness();
+        Register(harness);
+        harness.BeginGameplay();
+        Create(harness, "k1");
+        AuthoredSystemsSettledEvent? second = null;
+        harness.Provider.AuthoredSystemReconstructionSettled += _ => throw new InvalidOperationException("consumer bug");
+        harness.Provider.AuthoredSystemReconstructionSettled += e => second = e;
+        harness.Service.MaintainAuthoredSystems(harness.Session);
+        Assert.NotNull(second); // The faulty sibling handler was isolated; delivery still happened.
+    }
+
+    [Fact]
     public void OccurrenceChangedFiresForItsOwnStateTransition()
     {
         using var harness = new Harness();

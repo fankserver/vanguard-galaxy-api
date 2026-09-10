@@ -41,7 +41,18 @@ internal sealed class WorldContentService : IWorldService, IDisposable
         _ownsDroneBays = droneBays == null;
         _droneBays = droneBays ?? new DroneBayService(hub);
         _authoredDefinitions = authoredDefinitions;
-        if (authoredCoordinator != null) authoredCoordinator.AttachSettled(args => _authoredSettled?.Invoke(args));
+        // Deliver settled to every subscriber independently: one provider's faulty handler must not
+        // starve sibling providers of their only aggregate reconstruction event for the session.
+        if (authoredCoordinator != null) authoredCoordinator.AttachSettled(args =>
+        {
+            var subscribers = _authoredSettled;
+            if (subscribers == null) return;
+            foreach (var subscriber in subscribers.GetInvocationList())
+            {
+                try { ((Action<ReconstructionSettledEvent>)subscriber)(args); }
+                catch { /* fail-open per subscriber; the coordinator reports its own faults */ }
+            }
+        });
         _authoredCoordinator = authoredCoordinator;
     }
 
@@ -134,7 +145,16 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 handle.Refresh();   // Changed fires for each transitioned occurrence
                 if (handle.State.Reconstructed) reconstructed.Add(handle);
             }
-            AuthoredSystemReconstructionSettled?.Invoke(new AuthoredSystemsSettledEvent(args.SessionId, reconstructed, failures));
+            // Deliver to every consumer handler independently: one faulty handler must not starve the
+            // rest of this provider's subscribers of the session's only aggregate reconstruction event.
+            var subscribers = AuthoredSystemReconstructionSettled;
+            if (subscribers == null) return;
+            var settledEvent = new AuthoredSystemsSettledEvent(args.SessionId, reconstructed, failures);
+            foreach (var subscriber in subscribers.GetInvocationList())
+            {
+                try { ((Action<AuthoredSystemsSettledEvent>)subscriber)(settledEvent); }
+                catch { /* fail-open per subscriber */ }
+            }
         }
         public string ProviderId => _provider.Owner;
         public WorldStatus Register(WorldCombatSiteDefinition definition, WorldCombatSiteDefinition? previous = null)

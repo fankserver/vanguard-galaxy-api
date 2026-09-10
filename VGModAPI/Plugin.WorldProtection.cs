@@ -72,10 +72,16 @@ public sealed partial class Plugin
             try
             {
                 _authoredDefinitions = new AuthoredSystemRegistry(authenticate, _hub.CheckThread);
+                // Once-per-distinct-cause fault reporting: authored-path faults must be visible in the log.
+                var authoredFaults = new System.Collections.Generic.HashSet<string>();
+                Action<Exception> reportAuthored = fault =>
+                {
+                    if (authoredFaults.Add(fault.GetType().Name + ":" + fault.Message)) Logger.LogError(fault);
+                };
                 authored = new AuthoredSystemCoordinator(_hub, _authoredDefinitions,
-                    new WorldNativeAuthored(_adapter, assembly),
+                    new WorldNativeAuthored(_adapter, assembly, report: reportAuthored),
                     admission, session => _worldPersistence != null && _worldPersistence.StateReady(session),
-                    _ => { });
+                    reportAuthored);
                 _authoredCoordinator = authored;
             }
             catch (Exception authoredError)
