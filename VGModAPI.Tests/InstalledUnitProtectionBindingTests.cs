@@ -43,7 +43,8 @@ public sealed class InstalledUnitProtectionBindingTests
         var ship = assembly.MainModule.GetType("Behaviour.Unit.SpaceShip").Methods.Single(method => method.Name == "TakeDamage");
         Assert.Contains(ship.Body.Instructions, instruction => instruction.Operand is MethodReference target &&
             target.Name == "TakeDamage" && target.DeclaringType.FullName == "Behaviour.Unit.AbstractUnit");
-        // The inspected lethality flow keeps the invincibility clamp after the destroyed latch.
+        // The damage body still consults the invincibility flag at all; the restore logic does not
+        // depend on where the clamp sits relative to the destroyed latch, since both are restored.
         Assert.Contains(damage.Body.Instructions, instruction => instruction.Operand is FieldReference field &&
             field.Name == "isInvincible");
     }

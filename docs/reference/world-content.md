@@ -68,7 +68,9 @@ reactions — but each hit's changes to the unit's recorded condition are restor
 the hit completes, and the native invincibility clamp is held only for the duration of
 the damage call. The unit therefore reads as a normal, resilient friendly ship rather
 than an obviously invulnerable object, can never be destroyed, and accumulates no
-lasting hull, armor, shield, EMP or battle-damage changes.
+recorded hull, armor, shield, EMP or battle-damage changes. Purely visual surface
+wear applied during a session may remain until the unit is next rebuilt from its
+unchanged data, such as on save/load.
 
 Protection is scoped to the persistent identity, so an identically named or same-class
 ship — including the player's own — is never affected, and it automatically covers
