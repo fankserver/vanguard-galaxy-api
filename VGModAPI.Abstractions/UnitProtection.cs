@@ -12,10 +12,12 @@ namespace VGModAPI;
 public interface IUnitProtectionService : IServiceStatus
 {
     /// <summary>
-    /// Protects the one live unit whose persistent unit-data identity matches. Identically named or
+    /// Protects the one unit whose persistent unit-data identity matches; no live instance is
+    /// required, so a persisted unit can be protected before it materialises. Identically named or
     /// same-class units, including the player's ship, are unaffected. The declaration reasserts
     /// itself whenever that unit is damaged, including after save/load and re-materialisation.
-    /// Becoming a boardable wreck is governed separately by boarding rules.
+    /// Declare once and retain the result: each call creates an independent declaration that lasts
+    /// until disposed. Becoming a boardable wreck is governed separately by boarding rules.
     /// </summary>
     IDisposable Protect(string unitId);
 }
