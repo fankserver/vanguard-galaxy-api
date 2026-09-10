@@ -168,6 +168,17 @@ native mechanism. Both identities are exact: an unknown item type or a delivery 
 native turn-in shape (only stations qualify) refuses the offer rather than substituting, with the
 same missing-dependency semantics as travel targets. `Snapshot`/`Changed` observe the native count.
 
+All three reward kinds together — Credits/Experience use the constructor, Reputation its factory:
+
+```csharp
+new[]
+{
+    new StoryReward(StoryRewardKind.Credits, 120000),
+    new StoryReward(StoryRewardKind.Experience, 2000),
+    StoryReward.Reputation(600) // the mission's source faction
+}
+```
+
 `StoryReward.Reputation(amount)` grants reputation with the mission's **source faction** (the
 native default); `StoryReward.Reputation(amount, faction)` names another existing faction,
 validated against the game's registry at registration exactly like the source faction. Reputation
