@@ -71,6 +71,12 @@ public interface IWorldProvider : IDisposable
     /// </summary>
     ICombatSite? CreateCombatSite(string localId, string occurrenceKey, string systemId, float x, float y);
     /// <summary>Re-obtains the owned occurrence for a key in the current game, or null if it does not exist.</summary>
+    /// <summary>
+    /// Re-obtains the owned occurrence for a key in the current game, or null if it does not exist.
+    /// Combat-site occurrence keys are author-local and not persisted (native identity is derived
+    /// from them deterministically), so unlike the other authored kinds there is no enumeration:
+    /// re-obtain each occurrence by the key you declared it under.
+    /// </summary>
     ICombatSite? GetCombatSite(string localId, string occurrenceKey);
 
     /// <summary>Declares an enclosed authored pocket system. Optional exact previous declaration permits a revision/name migration.</summary>
@@ -119,6 +125,8 @@ public interface IWorldProvider : IDisposable
     IAuthoredShip? CreateAuthoredShip(string localId, string occurrenceKey, string stationPoiId);
     /// <summary>Re-obtains the owned occurrence for a key in the current game, or null if it does not exist yet.</summary>
     IAuthoredShip? GetAuthoredShip(string localId, string occurrenceKey);
+    /// <summary>All current-game occurrences the provider owns for a registered moored-ship definition.</summary>
+    IReadOnlyList<IAuthoredShip> GetAuthoredShips(string localId);
     /// <summary>Once-per-session aggregate reconciliation report for this provider's authored ships.</summary>
     event Action<AuthoredShipsSettledEvent>? AuthoredShipReconstructionSettled;
 

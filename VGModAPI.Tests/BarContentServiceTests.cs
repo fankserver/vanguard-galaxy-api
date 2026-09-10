@@ -31,8 +31,8 @@ public sealed partial class BarContentServiceTests
         using var service = new BarContentService(storage, hub,
             (_, _) => new StoryHostPlugin("author", typeof(BarContentServiceTests).Assembly), _ => false, hub.CheckThread);
         using var author = service.AcquireProvider("author").Provider!;
-        Assert.Equal(BarStatus.Succeeded, author.Register(new BarPatronDefinition("contact", "station", "Captain", "Contact", "seed",
-            portrait: CharacterPortrait.Named("M2Captain"), isMale: false)).Status);
+        Assert.Equal(BarStatus.Succeeded, author.Register(new BarPatronDefinition("contact", "station", "Captain", "Contact",
+            new BarPatronPresentation("seed", CharacterPortrait.Named("M2Captain"), isMale: false))).Status);
         var session = Ready(hub, storage);
         Assert.Equal(BarStatus.Succeeded, author.Place(session, "contact").Status);
         var patron = Assert.Single(service.Plan(session, "station")!.Patrons);
@@ -344,7 +344,7 @@ public sealed partial class BarContentServiceTests
     }
 
     private static BarPatronDefinition Definition(BarPatronRetention retention = BarPatronRetention.Persistent) =>
-        new("contact", "station", "Name", "Description", "seed", retention);
+        new("contact", "station", "Name", "Description", new BarPatronPresentation("seed"), retention);
     private static Guid Ready(LifecycleHub hub, Storage storage, byte[]? bytes = null)
     {
         hub.SetCapability("session-lifecycle", true, "Bound.");
@@ -427,7 +427,7 @@ public sealed partial class BarContentServiceTests
         using var service = new BarContentService(storage, hub,
             (_, _) => new StoryHostPlugin("author", typeof(BarContentServiceTests).Assembly), _ => true, hub.CheckThread);
         var provider = service.AcquireProvider("author").Provider!;
-        provider.Register(new BarPatronDefinition("contact", "station", "Name", "Description", "seed",
+        provider.Register(new BarPatronDefinition("contact", "station", "Name", "Description", new BarPatronPresentation("seed"),
             mission: new StoryContentId(provider.ProviderId, "job")));
         service.ResolveOccurrence = (_, _) => Guid.NewGuid();
         var session = Ready(hub, storage);
@@ -476,7 +476,7 @@ public sealed partial class BarContentServiceTests
             (_, _) => new StoryHostPlugin("author", typeof(BarContentServiceTests).Assembly), _ => false, hub.CheckThread);
         var author = service.AcquireProvider("author").Provider!;
         foreach (string local in new[] { "first", "second" })
-            author.Register(new BarPatronDefinition(local, "station", local, "Description", "seed",
+            author.Register(new BarPatronDefinition(local, "station", local, "Description", new BarPatronPresentation("seed"),
                 mission: new StoryContentId(author.ProviderId, local)));
         service.ResolveOccurrence = (_, _) => Guid.NewGuid();
         var session = Ready(hub, storage);
@@ -539,7 +539,7 @@ public sealed partial class BarContentServiceTests
             }, hub.CheckThread, () => permissionEpoch);
         var a = service.AcquireProvider("a").Provider!;
         var b = service.AcquireProvider("b").Provider!;
-        a.Register(throughMission ? new BarPatronDefinition("contact", "station", "Name", "Description", "seed",
+        a.Register(throughMission ? new BarPatronDefinition("contact", "station", "Name", "Description", new BarPatronPresentation("seed"),
             mission: new StoryContentId(a.ProviderId, "job")) : Definition());
         service.ResolveOccurrence = (_, _) => Guid.NewGuid();
         a.ConfigureStation("station", BarRosterOwnership.Exclusive);

@@ -113,6 +113,18 @@ public sealed class StoryNativeAdapterTests : IDisposable
     }
 
     [Fact]
+    public void AutoCompleteIsInstalledOnTheNativeMissionOnlyWhenDeclared()
+    {
+        using var world = World();
+        var identifier = Identifier("auto");
+        Assert.True(world.Install(identifier, Definition("auto").WithAutoComplete()).Applied);
+        Assert.True(StoryMission.Get(_player, identifier).autoComplete);
+        var plain = Identifier("plain");
+        Assert.True(world.Install(plain, Definition("plain")).Applied);
+        Assert.False(StoryMission.Get(_player, plain).autoComplete);
+    }
+
+    [Fact]
     public void DeliveryObjectivesAndReputationRewardsBuildThroughVanillaFactories()
     {
         using var world = World();

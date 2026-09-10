@@ -519,6 +519,19 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             return false;
         }
 
+        public IReadOnlyList<IAuthoredShip> GetAuthoredShips(string localId)
+        {
+            _service._hub.CheckThread();
+            if (_disposed || _service._disposed || _authoredShips == null || _service._shipCoordinator == null) return Array.Empty<IAuthoredShip>();
+            var session = _service._hub.CurrentSession;
+            if (session == null || session.Id == Guid.Empty) return Array.Empty<IAuthoredShip>();
+            var list = new List<IAuthoredShip>();
+            foreach (var row in _service._shipCoordinator.Occurrences(_authoredShips.Owner))
+                if (string.Equals(row.LocalId, localId, StringComparison.Ordinal))
+                    list.Add(ObtainShipHandle(row.LocalId, row.OccurrenceKey, session.Id));
+            return list;
+        }
+
         private AuthoredShipHandle ObtainShipHandle(string localId, string occurrenceKey, Guid session)
         {
             var key = (localId, occurrenceKey);

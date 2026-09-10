@@ -142,7 +142,7 @@ public sealed partial class BarContentServiceTests
         using var f = new Objects();
         Guid? occurrence = null;
         f.Engine.ResolveOccurrence = (_, _) => occurrence;
-        var definition = f.Provider.Register(new BarPatronDefinition("contact", "station", "Name", "Description", "seed",
+        var definition = f.Provider.Register(new BarPatronDefinition("contact", "station", "Name", "Description", new BarPatronPresentation("seed"),
             mission: new StoryContentId(f.Provider.ProviderId, "job"))).Definition!;
         f.Start();
         var patron = f.Games.Current!.Bars.Get(definition);
@@ -196,7 +196,7 @@ public sealed partial class BarContentServiceTests
         using var f = new Objects();
         Guid? occurrence = null;
         f.Engine.ResolveOccurrence = (_, _) => occurrence;
-        var definition = f.Provider.Register(new BarPatronDefinition("contact", "station", "Name", "Description", "seed",
+        var definition = f.Provider.Register(new BarPatronDefinition("contact", "station", "Name", "Description", new BarPatronPresentation("seed"),
             mission: new StoryContentId(f.Provider.ProviderId, "job"))).Definition!;
         f.Start(); f.Pump(); f.Pump();
         var patron = f.Games.Current!.Bars.Get(definition);

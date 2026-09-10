@@ -32,7 +32,7 @@ public sealed class Plugin : BaseUnityPlugin
     public BarRegistrationResult RegisterLinked(string station, string local, string seed)
     {
         return AcquireBar().Register(new BarPatronDefinition(local, station, "Linked contact " + Id,
-            "Mission-dependent presentation", seed, BarPatronRetention.Persistent,
+            "Mission-dependent presentation", new BarPatronPresentation(seed), BarPatronRetention.Persistent,
             new StoryContentId(StoryProvider.ProviderId, LinkedStoryId)), _ => Interactions++);
     }
 

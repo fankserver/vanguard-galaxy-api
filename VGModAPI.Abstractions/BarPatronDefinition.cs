@@ -33,11 +33,6 @@ public sealed class BarPatronDefinition
     /// <summary>Same-owner story definition this contact depends on. The API resolves the current admitted occurrence itself.</summary>
     public StoryContentId? Mission { get; }
 
-    public BarPatronDefinition(string localId, string stationId, string name, string description, string seed,
-        BarPatronRetention retention = BarPatronRetention.Persistent, StoryContentId? mission = null,
-        CharacterPortrait? portrait = null, bool isMale = true)
-        : this(localId, stationId, name, description, new BarPatronPresentation(seed, portrait, isMale), retention, mission) { }
-
     public BarPatronDefinition(string localId, string stationId, string name, string description,
         BarPatronPresentation presentation, BarPatronRetention retention = BarPatronRetention.Persistent, StoryContentId? mission = null)
     {

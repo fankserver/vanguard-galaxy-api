@@ -51,6 +51,13 @@ public interface IStoryMission
     IGame Game { get; }
     IStoryDefinition Definition { get; }
     Guid Id { get; }
+    /// <summary>
+    /// The identifier native surfaces accept for THIS occurrence (character missionHighlights, the
+    /// world catalog) — never an authorization token, and null until the offer is admitted. The
+    /// definition-level NativeIdentifier is a catalog placeholder that is never offerable; always
+    /// highlight this per-occurrence identifier.
+    /// </summary>
+    string? NativeMissionId { get; }
     StoryMissionState State { get; }
     IReadOnlyDictionary<string, string> Choices { get; }
     StoryActionResult LastAction { get; }
