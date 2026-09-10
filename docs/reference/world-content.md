@@ -113,7 +113,8 @@ _bossTuning.Dispose();
   later launches immediately.
 - `replacementDrones` constrains what the bay reproduces when the game replaces
   losses, cycling the authored names deterministically so the encounter's composition
-  holds for the whole fight. Names are the game's drone catalog names; an unknown name
+  holds for the whole fight. Every native roll for the declared bay uses the authored
+  cycle, so previews of that bay's loadout reflect the same composition. Names are the game's drone catalog names; an unknown name
   is skipped with one report, and if none resolve the vanilla roll proceeds.
 - `complement` rebuilds the bay's docked drones to the authored count through the
   game's own per-drone initialisation — hull multiplier, equipment, faction
