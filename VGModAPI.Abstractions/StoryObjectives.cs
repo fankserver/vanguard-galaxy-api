@@ -12,10 +12,16 @@ public sealed class StoryObjectiveQuery
     public string Diagnostic { get; }
     /// <summary>Retained terminal outcome, or null while unresolved. Temporary outcomes expire with their tombstones.</summary>
     public StoryOutcome? Outcome { get; }
+    /// <summary>
+    /// True when the session is known but this objective's authored destination no longer exists in
+    /// the world. The API reports the broken destination and DECIDES NOTHING: only the owner knows
+    /// whether the arc fails, the world is repaired, or the player is told in the mod's own terms.
+    /// </summary>
+    public bool DestinationLost { get; }
     public StoryObjectiveQuery(StoryKnowledge knowledge, int? progress, int? required, int? contentRevision, string diagnostic)
         : this(knowledge, progress, required, contentRevision, diagnostic, null) { }
-    public StoryObjectiveQuery(StoryKnowledge knowledge, int? progress, int? required, int? contentRevision, string diagnostic, StoryOutcome? outcome)
-    { Knowledge = knowledge; Progress = progress; Required = required; ContentRevision = contentRevision; Diagnostic = diagnostic; Outcome = outcome; }
+    public StoryObjectiveQuery(StoryKnowledge knowledge, int? progress, int? required, int? contentRevision, string diagnostic, StoryOutcome? outcome, bool destinationLost = false)
+    { Knowledge = knowledge; Progress = progress; Required = required; ContentRevision = contentRevision; Diagnostic = diagnostic; Outcome = outcome; DestinationLost = destinationLost; }
 }
 
 /// <summary>Stable objective identity within one provider-owned mission occurrence.</summary>

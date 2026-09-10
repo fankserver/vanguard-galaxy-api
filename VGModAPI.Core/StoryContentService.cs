@@ -150,6 +150,8 @@ internal sealed partial class StoryContentService : IStoryService, IStoryUiTrans
     /// </summary>
     private readonly IStoryWorld? _world;
     private readonly Func<string, string, bool?>? _worldReferences;
+    /// <summary>Resolves a provider's authored-destination objective to a native POI in the loaded game, or null.</summary>
+    private readonly Func<string, StoryObjective, string?>? _authoredDestinations;
     private readonly List<string> _reconciliation = new();
     /// <summary>The catalog identifier each occurrence is installed under, so ownership survives a lease.</summary>
     private readonly Dictionary<Guid, string> _occurrenceIdentifiers = new();
@@ -204,7 +206,8 @@ internal sealed partial class StoryContentService : IStoryService, IStoryUiTrans
     internal StoryContentService(ServiceStatusRegistry statuses, ISaveDataService? persistence, ILifecycleService? lifecycle, StoryHostAuthenticator authenticate,
         Func<Guid>? newOccurrence = null, Action? checkThread = null, IStoryWorld? world = null,
         IMissionService? missions = null, Action<string, bool>? report = null, StoryProtection? protection = null,
-        Func<bool>? protectionHealthy = null, Func<string, string, bool?>? worldReferences = null)
+        Func<bool>? protectionHealthy = null, Func<string, string, bool?>? worldReferences = null,
+        Func<string, StoryObjective, string?>? authoredDestinations = null)
     {
         checkThread?.Invoke();
         _statuses = statuses ?? throw new ArgumentNullException(nameof(statuses));
@@ -212,7 +215,7 @@ internal sealed partial class StoryContentService : IStoryService, IStoryUiTrans
         if (lifecycle?.CurrentSession != null)
             throw new InvalidOperationException("The story module must be constructed before a session begins.");
         _authenticate = authenticate ?? throw new ArgumentNullException(nameof(authenticate));
-        _world = world; _worldReferences = worldReferences;
+        _world = world; _worldReferences = worldReferences; _authoredDestinations = authoredDestinations;
         _report = report;
         _protection = protection;
         _protectionHealthy = protectionHealthy;
@@ -710,6 +713,18 @@ internal sealed partial class StoryContentService : IStoryService, IStoryUiTrans
         return new StoryProviderResult(StoryProviderStatus.Acquired, lease, "");
     }
 
+    /// <summary>
+    /// Resolves an authored-destination objective of one OWNED occurrence identifier to a native POI,
+    /// for the world adapter's build and observation paths. Null while unresolvable, never a guess.
+    /// </summary>
+    internal string? ResolveAuthoredDestination(string identifier, StoryObjective objective)
+    {
+        if (objective.Kind is not (StoryObjectiveKind.TravelToAuthoredSystemEntrance or StoryObjectiveKind.TravelToAuthoredSite)) return null;
+        if (!StoryContentPolicy.TryParseOccurrenceIdentifier(identifier, out var id, out _)) return null;
+        if (_bindings.HostOwner(id.Provider) is not { } host) return null;
+        try { return _authoredDestinations?.Invoke(host, objective); } catch { return null; }
+    }
+
     private StoryObjectiveQuery ObserveObjective(Lease lease, Guid session, StoryOccurrenceEntry entry, StoryObjectiveLayout.Slot slot)
     {
         StoryObjectiveQuery Refused() => new(StoryKnowledge.Unavailable, null, null, null, "The current native objective cannot be verified.");
@@ -726,9 +741,15 @@ internal sealed partial class StoryContentService : IStoryService, IStoryUiTrans
                 && _ledger.TryGet(entry.OccurrenceId, out var current) && ReferenceEquals(entry, current)
                 && _registry.TryGet(entry.Id, out var registered) && ReferenceEquals(registered, registrationDefinition);
             var expected = definition.Steps[slot.Step].Objectives[slot.Objective];
-            var progress = world.ReadProgress(identifier, slot, expected, Stable);
-            if (!Stable() || !progress.HasValue) return Refused();
-            return new StoryObjectiveQuery(StoryKnowledge.Known, progress, slot.Required, entry.ObjectiveLayout.Revision, "current vanilla objective");
+            var reading = world.ReadProgress(identifier, slot, expected, Stable);
+            if (!Stable() || !reading.HasValue) return Refused();
+            if (reading.Value.DestinationLost)
+                // The world lost the authored destination AFTER the mission was built. Reported, not
+                // decided: the owner chooses whether the arc fails, the world is repaired, or the
+                // player is told in the mod's own terms.
+                return new StoryObjectiveQuery(StoryKnowledge.Known, null, slot.Required, entry.ObjectiveLayout.Revision,
+                    "The authored destination no longer exists in this game.", null, destinationLost: true);
+            return new StoryObjectiveQuery(StoryKnowledge.Known, reading.Value.Progress, slot.Required, entry.ObjectiveLayout.Revision, "current vanilla objective");
         }
         finally { EndOperation(); }
     }
@@ -925,6 +946,20 @@ internal sealed partial class StoryContentService : IStoryService, IStoryUiTrans
     private string? MissingTargets(string owner, StoryMissionDefinition definition, out bool worldUnknown)
     {
         worldUnknown = false;
+        foreach (var authored in definition.Steps.SelectMany(step => step.Objectives)
+            .Where(objective => objective.Kind is StoryObjectiveKind.TravelToAuthoredSystemEntrance or StoryObjectiveKind.TravelToAuthoredSite))
+        {
+            // The destination exists only per occurrence: while the provider's authored occurrence is
+            // not in the loaded game, the mission is neither offered nor accepted - refused at the
+            // edge, never a mission holding an unreachable step. Without a resolver nothing can be
+            // asserted about any authored destination; a resolver FAULT is likewise unknown, not a
+            // permanent-sounding missing-target refusal.
+            if (_authoredDestinations == null) { worldUnknown = true; return null; }
+            string? destination;
+            try { destination = _bindings.HostOwner(owner) is { } host ? _authoredDestinations(host, authored) : null; }
+            catch { worldUnknown = true; return null; }
+            if (destination == null) return authored.AuthoredLocalId + "/" + authored.AuthoredOccurrenceKey;
+        }
         foreach (var objective in definition.Steps.SelectMany(step => step.Objectives)
             .Where(objective => objective.Kind is StoryObjectiveKind.TravelToPoi or StoryObjectiveKind.DeliverItems
                 or StoryObjectiveKind.MineItems or StoryObjectiveKind.SalvageItems))

@@ -27,14 +27,22 @@ internal sealed class StoryNativeWorld : IStoryWorld, IStoryObjectiveWorld, ISto
     private readonly Dictionary<string, object> _accepted = new(StringComparer.Ordinal);
     private bool _disposed;
 
-    internal StoryNativeWorld(StoryNativeBindings bindings, Action checkThread, Action<Exception>? fault = null)
+    /// <summary>Resolves an authored-destination objective of one owned identifier to a native POI, or null while unresolvable.</summary>
+    private readonly Func<string, StoryObjective, string?>? _resolveAuthored;
+
+    internal StoryNativeWorld(StoryNativeBindings bindings, Action checkThread, Action<Exception>? fault = null,
+        Func<string, StoryObjective, string?>? resolveAuthored = null)
     {
         _bindings = bindings ?? throw new ArgumentNullException(nameof(bindings));
         _checkThread = checkThread ?? throw new ArgumentNullException(nameof(checkThread));
         _fault = fault;
+        _resolveAuthored = resolveAuthored;
     }
 
-    public int? ReadProgress(string identifier, StoryObjectiveLayout.Slot slot, StoryObjective expected, Func<bool> stillValid)
+    private Func<StoryObjective, string?> Resolver(string identifier)
+        => objective => _resolveAuthored?.Invoke(identifier, objective);
+
+    public StoryObjectiveReading? ReadProgress(string identifier, StoryObjectiveLayout.Slot slot, StoryObjective expected, Func<bool> stillValid)
     {
         _checkThread();
         try
@@ -53,7 +61,7 @@ internal sealed class StoryNativeWorld : IStoryWorld, IStoryObjectiveWorld, ISto
                 && _bindings.ActiveStoryIdentifiers(player).Count(value => value == identifier) == 1
                 && ReferenceEquals(_bindings.ActiveStory(player, identifier), mission);
             if (mission == null || !Stable()) return null;
-            return _bindings.ReadProgress(mission, player, slot, expected, Stable);
+            return _bindings.ReadProgress(mission, player, slot, expected, Stable, Resolver(identifier));
         }
         catch (Exception error) { Report(error); return null; }
     }
@@ -179,7 +187,7 @@ internal sealed class StoryNativeWorld : IStoryWorld, IStoryObjectiveWorld, ISto
             // The generator receives the player the game is building the mission for, which is where
             // the source location comes from; nothing else about the caller is captured.
             var native = _bindings.CreateDefinition(identifier,
-                player => _bindings.CreateMission(definition, identifier, player), definition.Title);
+                player => _bindings.CreateMission(definition, identifier, player, Resolver(identifier)), definition.Title);
             _bindings.AddDefinition(native);
             var installed = catalog.Contains(identifier) ? catalog[identifier] : null;
             if (installed == null || !ReferenceEquals(installed, native))

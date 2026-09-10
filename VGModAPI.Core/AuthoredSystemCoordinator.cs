@@ -261,6 +261,19 @@ internal sealed class AuthoredSystemCoordinator : IDisposable
         catch (Exception error) { _report(error); }
     }
 
+    /// <summary>
+    /// The entrance-gate POI of a COMMITTED owned occurrence while it is reconstructed in the loaded
+    /// game, or null. Story travel resolves destinations through this: an authored identity is never
+    /// handed out while the world does not actually hold it.
+    /// </summary>
+    internal string? ResolveEntranceGate(string owner, string localId, string occurrenceKey)
+    {
+        _hub.CheckThread();
+        if (_disposed || !_committed.TryGetValue((owner, localId, occurrenceKey), out var occurrence)) return null;
+        var state = Resolve(occurrence);
+        return state.Status == AuthoredSystemReconstructionStatus.Reconstructed ? state.EntranceGatePoiId : null;
+    }
+
     private AuthoredSystemOccurrence? Reconcile(AuthoredSystemOccurrence occurrence)
     {
         _hub.CheckThread();

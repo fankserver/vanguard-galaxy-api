@@ -208,6 +208,17 @@ internal sealed class AuthoredSiteCoordinator : IDisposable
         try { _settled?.Invoke(expectedSession); } catch (Exception error) { _report(error); }
     }
 
+    /// <summary>The site's POI while its owned occurrence is reconstructed in the loaded game, or null.</summary>
+    internal string? ResolveDestination(string owner, string localId, string occurrenceKey)
+    {
+        _hub.CheckThread();
+        if (_disposed) return null;
+        var occurrence = TryGetOccurrence(owner, localId, occurrenceKey);
+        if (occurrence == null) return null;
+        var state = Resolve(occurrence);
+        return state.Status == AuthoredSystemReconstructionStatus.Reconstructed ? state.PoiId : null;
+    }
+
     internal AuthoredSiteState Resolve(AuthoredSiteOccurrence occurrence)
     {
         _hub.CheckThread();

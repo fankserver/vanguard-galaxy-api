@@ -3226,6 +3226,49 @@ public sealed partial class StoryContentTests
         Assert.Null(query.Query(world.SessionId, objective).Progress);
     }
 
+    [Fact]
+    public void AuthoredDestinationsGateOfferingAndReportLossAsTypedStateNotRefusal()
+    {
+        var provider = Provider(out var world, out _, out _, StoryRetention.Campaign);
+        Assert.True(provider.Register(new StoryMissionDefinition("heed", "Heed the coordinates", "Description", new StoryFactionId("TradingGuild"),
+            new[] { new StoryStep("Enter the pocket", new[]
+            {
+                StoryObjective.TravelToAuthoredSystemEntrance("margin-pocket", "act2", requireNewVisit: true).WithKey("enter")
+            }) })).Succeeded);
+        // While the provider's authored occurrence does not exist in the loaded game, the mission is
+        // refused at the offering edge - never a mission holding an unreachable step.
+        Assert.False(provider.Offer("heed").Accepted);
+        string? gate = "gate-poi-7";
+        world.AuthoredDestinations = (owner, objective) =>
+            owner == AnimaPlugin && objective.Kind == StoryObjectiveKind.TravelToAuthoredSystemEntrance
+            && objective.AuthoredLocalId == "margin-pocket" && objective.AuthoredOccurrenceKey == "act2" ? gate : null;
+        var offered = provider.Offer("heed");
+        Assert.True(offered.Accepted);
+        Assert.True(provider.Activate(offered.OccurrenceId).Accepted);
+        var lease = (StoryContentService.Lease)provider;
+        var objectiveId = new StoryObjectiveId(new StoryContentId(provider.ProviderId, "heed"), offered.OccurrenceId, "enter");
+        world.World.ObservedObjectiveProgress = 0;
+        Assert.Equal(0, lease.Query(world.SessionId, objectiveId).Progress);
+        Assert.False(lease.Query(world.SessionId, objectiveId).DestinationLost);
+        // The world loses the pocket AFTER the mission is built: reported as typed state, decided by
+        // nobody but the owner. Knowledge stays Known - this is world truth, not an unavailable read.
+        world.World.ObservedDestinationLost = true;
+        var lost = lease.Query(world.SessionId, objectiveId);
+        Assert.Equal(StoryKnowledge.Known, lost.Knowledge);
+        Assert.True(lost.DestinationLost);
+        Assert.Null(lost.Progress);
+        // The service resolves the world adapter's destinations through the provider's own identity.
+        var identifier = FakeWorld.Native(provider, "heed", offered.OccurrenceId);
+        var expected = StoryObjective.TravelToAuthoredSystemEntrance("margin-pocket", "act2");
+        Assert.Equal("gate-poi-7", ServiceOf(provider).ResolveAuthoredDestination(identifier, expected));
+        gate = null;
+        Assert.Null(ServiceOf(provider).ResolveAuthoredDestination(identifier, expected));
+        Assert.Null(ServiceOf(provider).ResolveAuthoredDestination("vgmodapi.story.someone.else.00000000000000000000000000000000", expected));
+    }
+    private static StoryContentService ServiceOf(IStoryProvider provider) => (StoryContentService)typeof(StoryContentService.Lease)
+        .GetField("_service", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+        .GetValue(provider)!;
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -3427,12 +3470,13 @@ public sealed partial class StoryContentTests
         }
         internal readonly StoryProtection Protection = new();
         private readonly LifecycleHub _healthHub = new((_, _) => { });
+        internal Func<string, StoryObjective, string?>? AuthoredDestinations;
         internal StoryContentService Service(FakeHost host, Action? checkThread = null, Func<string, string, bool?>? worldReferences = null)
         {
             _healthHub.SetCapability("owned-story", true, "Test bindings.");
             return new(_healthHub.Services, Persistence, Lifecycle, host.Authenticate, null, checkThread, World, Missions,
                 (detail, available) => Reports.Add((available ? "available: " : "unavailable: ") + detail), Protection,
-                () => ProtectionHealthy, worldReferences);
+                () => ProtectionHealthy, worldReferences, (owner, objective) => AuthoredDestinations?.Invoke(owner, objective));
         }
 
         /// <summary>The identifier one occurrence is installed under, exactly as the module derives it.</summary>
@@ -3694,8 +3738,11 @@ public sealed partial class StoryContentTests
             StoryObjectiveLayout destination, Func<bool> stillValid)
             => _active.Contains(identifier) && stillValid() ? StoryWorldResult.Ok : new StoryWorldResult(StoryWorldStatus.Refused, "unavailable");
         internal int? ObservedObjectiveProgress;
-        public int? ReadProgress(string identifier, StoryObjectiveLayout.Slot slot, StoryObjective expected, Func<bool> stillValid)
-            => _active.Contains(identifier) && stillValid() ? ObservedObjectiveProgress : null;
+        internal bool ObservedDestinationLost = false;
+        public StoryObjectiveReading? ReadProgress(string identifier, StoryObjectiveLayout.Slot slot, StoryObjective expected, Func<bool> stillValid)
+            => !_active.Contains(identifier) || !stillValid() ? null
+                : ObservedDestinationLost ? StoryObjectiveReading.Lost
+                : ObservedObjectiveProgress is { } value ? StoryObjectiveReading.Of(value) : null;
         internal int ObjectiveWrites;
         internal Action? DuringObjectiveWrite;
         public StoryWorldResult SetScriptedProgress(string identifier, StoryObjectiveLayout.Slot slot, int progress, Func<bool>? stillValid = null)

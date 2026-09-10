@@ -185,6 +185,20 @@ begin and end at a vanilla questgiver location without ever knowing a generated 
 return leg defaults to requiring a fresh visit. Return targets are exempt from registration-time
 target validation (the identity does not exist until the occurrence is built).
 
+`StoryObjective.TravelToAuthoredSystemEntrance(systemLocalId, occurrenceKey, requireNewVisit?)` and
+`StoryObjective.TravelToAuthoredSite(siteLocalId, occurrenceKey, requireNewVisit?)` send the player
+to content the API owns. The definition names the AUTHOR-LOCAL identities — which exist before any
+session, in the same registry as the declaration — and the API resolves the native destination per
+occurrence when the mission is built. While the provider's authored occurrence is not reconstructed
+in the loaded game, the mission is neither offered nor accepted: refusal happens at the edge, never
+a mission holding an unreachable step. If the world loses the destination AFTER the mission is
+built, the objective query reports `DestinationLost` with `Knowledge = Known` — the API reports the
+broken destination and decides nothing; the owner chooses whether the arc fails, the world is
+repaired, or the player is told in the mod's own terms. One edge is deliberately stricter: if a
+dissolved occurrence is RE-CREATED under the same author keys, it owns a NEW native destination,
+and a mission built against the old one reads as unverifiable rather than lost — the API never
+silently re-points a held objective at a different place than the one it was built for.
+
 The native base objective carries an optional persisted `targetLayer`, but the gathering kinds do
 not consult it when counting (it only informs the ship-capability/HUD hint), so this subset omits
 it **deliberately** — a layer-restricted gather at a mixed-ore field would be a new need, not a
