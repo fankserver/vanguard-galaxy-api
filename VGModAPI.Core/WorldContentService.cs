@@ -33,6 +33,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
     private event Action<Guid>? _sitesSettled;
     private readonly AuthoredShipRegistry? _shipDefinitions;
     private readonly AuthoredShipCoordinator? _shipCoordinator;
+    private readonly VGModAPI.Core.Integration.IEncounterNative? _encounters;
     private event Action<Guid>? _shipsSettled;
     private readonly bool _ownsAmbient, _ownsProtection, _ownsDroneBays;
     private readonly List<Action<Guid>> _authoredRefreshes = new();
@@ -44,12 +45,13 @@ internal sealed class WorldContentService : IWorldService, IDisposable
     public event Action<ServiceAvailability>? AvailabilityChanged
     { add => _status.AvailabilityChanged += value; remove => _status.AvailabilityChanged -= value; }
     private bool _disposed;
-    internal WorldContentService(LifecycleHub hub, WorldDefinitionRegistry definitions, WorldAuthoringGate authoring, Func<bool> canAuthor, Action? providerReleased = null, AmbientTrafficService? ambient = null, UnitProtectionService? protection = null, DroneBayService? droneBays = null, AuthoredSystemRegistry? authoredDefinitions = null, AuthoredSystemCoordinator? authoredCoordinator = null, AuthoredSiteRegistry? siteDefinitions = null, AuthoredSiteCoordinator? siteCoordinator = null, AuthoredShipRegistry? shipDefinitions = null, AuthoredShipCoordinator? shipCoordinator = null)
+    internal WorldContentService(LifecycleHub hub, WorldDefinitionRegistry definitions, WorldAuthoringGate authoring, Func<bool> canAuthor, Action? providerReleased = null, AmbientTrafficService? ambient = null, UnitProtectionService? protection = null, DroneBayService? droneBays = null, AuthoredSystemRegistry? authoredDefinitions = null, AuthoredSystemCoordinator? authoredCoordinator = null, AuthoredSiteRegistry? siteDefinitions = null, AuthoredSiteCoordinator? siteCoordinator = null, AuthoredShipRegistry? shipDefinitions = null, AuthoredShipCoordinator? shipCoordinator = null, VGModAPI.Core.Integration.IEncounterNative? encounters = null)
     {
         _siteDefinitions = siteDefinitions;
         _siteCoordinator = siteCoordinator;
         _shipDefinitions = shipDefinitions;
         _shipCoordinator = shipCoordinator;
+        _encounters = encounters;
         shipCoordinator?.AttachSettled(session =>
         {
             var subscribers = _shipsSettled;
@@ -564,6 +566,29 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 _state = updated;
                 if (changed) _changed?.Invoke(this);
             }
+        }
+
+        public EncounterSpawnResult SpawnEncounter(string poiId, EncounterComposition composition)
+        {
+            _service._hub.CheckThread();
+            if (composition == null) throw new ArgumentNullException(nameof(composition));
+            if (_disposed || _service._disposed || _service._encounters == null)
+                return new EncounterSpawnResult(AuthoredActionStatus.Unavailable, detail: "Encounter integration is unavailable.");
+            if (!_service._canAuthor()) return new EncounterSpawnResult(AuthoredActionStatus.Unavailable, detail: "World authoring is unavailable.");
+            var session = _service._hub.CurrentSession;
+            if (session == null || session.Id == Guid.Empty || session.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks)
+                return new EncounterSpawnResult(AuthoredActionStatus.NotReady, detail: "The world is not in a safely actionable state yet.");
+            if (string.IsNullOrWhiteSpace(poiId) || poiId.Length > 4096)
+                return new EncounterSpawnResult(AuthoredActionStatus.Rejected, detail: "A POI identity is required.");
+            var outcome = _service._encounters.Spawn(session.Id, poiId, composition);
+            if (outcome == null) return new EncounterSpawnResult(AuthoredActionStatus.Unavailable, detail: "The encounter could not be scheduled.");
+            var (scheduled, detail) = outcome.Value;
+            int requested = 0;
+            foreach (var wave in composition.Waves) requested += wave.Count;
+            return scheduled == requested
+                ? new EncounterSpawnResult(AuthoredActionStatus.Succeeded, scheduled)
+                : new EncounterSpawnResult(AuthoredActionStatus.Rejected, scheduled,
+                    detail.Length > 0 ? detail : "The native trigger scheduled a different unit count than authored.");
         }
 
         public WorldStatus RegisterAuthoredSystem(AuthoredSystemDefinition definition, AuthoredSystemDefinition? previous = null)
