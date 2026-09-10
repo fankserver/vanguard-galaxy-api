@@ -110,7 +110,9 @@ public sealed partial class Plugin
                         ? (Systems: Array.Empty<AuthoredSystemOccurrence>(), Sites: Array.Empty<AuthoredSiteOccurrence>())
                         : AuthoredSystemStateCodec.DecodeAll(bytes);
                     authored.RestoreRows(session, decoded.Systems);
-                    _siteCoordinator?.RestoreRows(session, decoded.Sites);
+                    if (_siteCoordinator != null) _siteCoordinator.RestoreRows(session, decoded.Sites);
+                    else if (decoded.Sites.Length > 0)
+                        throw new System.IO.InvalidDataException("Authored-site rows present but the site integration is unavailable; refusing a restore that would erase them.");
                 });
             _worldRuntime = new WorldRuntimeState(_adapter, _worldLoadHost, definitions, creation,
                 lifetime, _worldPersistence.StateReady, admission);

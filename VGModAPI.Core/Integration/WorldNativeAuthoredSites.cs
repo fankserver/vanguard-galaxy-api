@@ -126,20 +126,33 @@ internal sealed class WorldNativeAuthoredSites : IAuthoredSiteNative
                 faction = _factionsGet.Invoke(null, new object[] { declaration.FactionId! });
                 if (faction == null) return null;
             }
+            // An exact-count field with no ore data would silently violate the count contract.
+            if (declaration.Kind == AuthoredSiteKind.MiningField && _oreData.GetValue(host) == null) return null;
             var poi = declaration.Kind == AuthoredSiteKind.SalvageSite ? _salvagePoi.Invoke(null) : _miningPoi.Invoke(null);
             var position = Activator.CreateInstance(_vector)!;
             _vectorX.SetValue(position, x); _vectorY.SetValue(position, y);
             var placed = _setup.Invoke(host, new[] { poi, position, faction, declaration.Level });
             if (!ReferenceEquals(placed, poi)) return null;
-            ((System.Collections.IList)_points.GetValue(host)!).Add(poi);
-            // Exact membership delta: exactly this one new POI, parented to the host, nothing removed.
-            var after = _index.Read(map);
-            if (!VerifySiteDelta(before, after, poi, host)) return null;
-            if (declaration.Kind == AuthoredSiteKind.SalvageSite) PopulateSalvage(host, poi, declaration);
-            else PopulateMining(host, poi, declaration);
-            foreach (var pair in after.Points)
-                if (ReferenceEquals(pair.Value, poi)) return pair.Key;
-            return null;
+            var members = (System.Collections.IList)_points.GetValue(host)!;
+            members.Add(poi);
+            try
+            {
+                // Exact membership delta: exactly this one new POI, parented to the host, nothing removed.
+                var after = _index.Read(map);
+                if (!VerifySiteDelta(before, after, poi, host)) { members.Remove(poi); return null; }
+                if (declaration.Kind == AuthoredSiteKind.SalvageSite) PopulateSalvage(host, poi, declaration);
+                else PopulateMining(host, poi, declaration);
+                foreach (var pair in after.Points)
+                    if (ReferenceEquals(pair.Value, poi)) return pair.Key;
+                members.Remove(poi);
+                return null;
+            }
+            catch
+            {
+                // A refused creation never leaves a partially populated native in the system.
+                try { members.Remove(poi); } catch { }
+                throw;
+            }
         }
         catch (Exception error) { Report(error); return null; }
     }

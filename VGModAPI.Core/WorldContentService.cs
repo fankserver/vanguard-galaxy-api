@@ -361,6 +361,10 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             var session = _service._hub.CurrentSession;
             if (session == null || session.Id == Guid.Empty || session.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks) return null;
             if (localId == null || !ValidOccurrenceKey(occurrenceKey)) return null;
+            // The persistence envelope keys occurrences per (owner, local, key) across BOTH kinds; a
+            // cross-kind collision must be refused here, not discovered at save time.
+            if (_authored != null && _service._authoredCoordinator != null
+                && _service._authoredCoordinator.ContainsOccurrence(_authored.Owner, localId, occurrenceKey)) return null;
             var (status, _) = _service._siteCoordinator.Create(_authoredSites, session.Id, localId, occurrenceKey, systemId, x, y);
             if (status != WorldStatus.Succeeded && status != WorldStatus.Rejected) return null;
             if (_service._siteCoordinator.TryGetOccurrence(_authoredSites.Owner, localId, occurrenceKey) == null && status != WorldStatus.Rejected) return null;
@@ -427,6 +431,9 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             var session = _service._hub.CurrentSession;
             if (session == null || session.Id == Guid.Empty || session.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks) return null;
             if (localId == null || !ValidOccurrenceKey(occurrenceKey)) return null;
+            // The persistence envelope keys occurrences per (owner, local, key) across BOTH kinds.
+            if (_authoredSites != null && _service._siteCoordinator != null
+                && _service._siteCoordinator.TryGetOccurrence(_authoredSites.Owner, localId, occurrenceKey) != null) return null;
             var result = _service._authoredCoordinator.Create(_authored, session.Id, localId, occurrenceKey, anchorSystemId);
             if (result.Status != WorldStatus.Succeeded && result.Status != WorldStatus.Rejected) return null;
             if (!_service._authoredCoordinator.ContainsOccurrence(_authored.Owner, localId, occurrenceKey)) return null;
@@ -508,8 +515,11 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                     if (_provider._service._siteDefinitions != null && _provider._authoredSites != null
                         && _provider._service._siteDefinitions.TryResolve(_provider._authoredSites, _localId, out var declaration) && declaration != null)
                         return declaration.ToDefinition();
-                    var revision = _provider._service._siteCoordinator?.TryGetOccurrence(_provider._authoredSites?.Owner ?? "", _localId, _occurrenceKey)?.Revision ?? 1;
-                    return AuthoredSiteDefinition.MiningField(_localId, revision, "unknown", 1, 1);
+                    // Honor the retained row's kind; only the declarative detail is unknown.
+                    var row = _provider._service._siteCoordinator?.TryGetOccurrence(_provider._authoredSites?.Owner ?? "", _localId, _occurrenceKey);
+                    return row?.Kind == AuthoredSiteKind.SalvageSite
+                        ? AuthoredSiteDefinition.Salvage(_localId, row.Revision, "unknown", 1, "unknown", "unknown")
+                        : AuthoredSiteDefinition.MiningField(_localId, row?.Revision ?? 1, "unknown", 1, 1);
                 }
             }
             public AuthoredSiteState State { get { _provider._service._hub.CheckThread(); return _state; } }

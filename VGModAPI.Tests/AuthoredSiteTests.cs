@@ -205,6 +205,52 @@ public sealed class AuthoredSiteTests
     }
 
     [Fact]
+    public void CrossKindKeyCollisionsAreRefusedAtCreationNotAtSaveTime()
+    {
+        using var hub = new LifecycleHub((_, error) => throw error);
+        var native = new FakeAuthoredSiteNative();
+        var systemsNative = new FakeAuthoredNative();
+        var plugin = new object();
+        StoryHostAuthenticator auth = (instance, caller) => ReferenceEquals(instance, plugin) ? new StoryHostPlugin("author.a", caller) : null;
+        using var combat = new WorldDefinitionRegistry(auth, hub.CheckThread);
+        using var systems = new AuthoredSystemRegistry(auth, hub.CheckThread);
+        using var sites = new AuthoredSiteRegistry(auth, hub.CheckThread);
+        using var systemCoordinator = new AuthoredSystemCoordinator(hub, systems, systemsNative, () => true, _ => true, _ => { });
+        using var siteCoordinator = new AuthoredSiteCoordinator(hub, sites, native, _ => true, _ => { });
+        using var service = new WorldContentService(hub, combat, null!, () => true, null, null, null, null, systems, systemCoordinator, sites, siteCoordinator);
+        using var provider = service.AcquireProvider(plugin)!;
+        Assert.Equal(WorldStatus.Succeeded, provider.RegisterAuthoredSystem(new AuthoredSystemDefinition("outpost", 1, "Pocket")));
+        Assert.Equal(WorldStatus.Succeeded, provider.RegisterAuthoredSite(AuthoredSiteDefinition.MiningField("outpost", 1, "Field", 8, 6)));
+        var session = hub.Begin(SessionOrigin.NewGame, null);
+        hub.PlayerReady(session); hub.GameplayInitialized(session);
+        Assert.NotNull(provider.CreateAuthoredSystem("outpost", "k", "anchor"));
+        // The same (local, key) under the other kind must refuse instead of poisoning the shared envelope.
+        Assert.Null(provider.CreateAuthoredSite("outpost", "k", "system", 0, 0));
+        Assert.NotNull(provider.CreateAuthoredSite("outpost", "other", "system", 0, 0));
+        Assert.Null(provider.CreateAuthoredSystem("outpost", "other", "anchor"));
+        // The combined capture stays encodable.
+        _ = AuthoredSystemStateCodec.Encode(systemCoordinator.CaptureRows(), siteCoordinator.CaptureRows());
+    }
+
+    [Fact]
+    public void DefinitionFallbackHonorsTheRetainedRowKind()
+    {
+        using var h = new Harness();
+        Assert.Equal(WorldStatus.Succeeded, h.Provider.RegisterAuthoredSite(Salvage()));
+        h.BeginGameplay();
+        _ = h.Provider.CreateAuthoredSite("wreck", "k", "system", 0, 0)!;
+        var rows = h.Coordinator.CaptureRows();
+        // A restored harness with NO live definition still reports the retained salvage kind.
+        using var bare = new Harness();
+        bare.BeginGameplay();
+        foreach (var pair in h.Native.Created) bare.Native.Created[pair.Key] = pair.Value;
+        bare.Coordinator.RestoreRows(bare.Session, rows);
+        var site = bare.Provider.GetAuthoredSite("wreck", "k")!;
+        Assert.Equal(AuthoredSiteKind.SalvageSite, site.Definition.Kind);
+        Assert.Equal(AuthoredSystemFailureReason.MissingDefinition, site.State.Reason);
+    }
+
+    [Fact]
     public void CodecRoundTripsMixedKindsAndReadsLegacySchema()
     {
         var systems = new[] { new AuthoredSystemOccurrence("o", "sys", "k1", 1, "system-1", "gate-a", "gate-b", declaredOpen: true) };
