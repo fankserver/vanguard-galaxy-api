@@ -66,6 +66,15 @@ internal interface IStoryWorld
     /// </summary>
     bool? KnowsPointOfInterest(string guid);
 
+    /// <summary>Whether the game's item registry knows this exact item-type identity, or null when nothing can be asserted.</summary>
+    bool? KnowsItemType(string itemTypeId);
+
+    /// <summary>
+    /// Whether the loaded galaxy holds this point of interest AND it has the native shape an item
+    /// delivery can be turned in at, or null when no galaxy is loaded.
+    /// </summary>
+    bool? KnowsDeliveryTarget(string guid);
+
     /// <summary>
     /// Installs a definition under an identifier the API owns. Vanilla's own registration REPLACES a
     /// duplicate, so an identifier the API did not install is reported as already present and left

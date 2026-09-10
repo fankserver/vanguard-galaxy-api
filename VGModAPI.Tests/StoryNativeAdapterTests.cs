@@ -113,6 +113,61 @@ public sealed class StoryNativeAdapterTests : IDisposable
     }
 
     [Fact]
+    public void DeliveryObjectivesAndReputationRewardsBuildThroughVanillaFactories()
+    {
+        using var world = World();
+        var metafiber = new Behaviour.Item.InventoryItemType { identifier = "UmbralMetafiber" };
+        Behaviour.Item.InventoryItemType.TestItems["UmbralMetafiber"] = metafiber;
+        var station = new Source.Galaxy.POI.SpaceStation { guid = "station-1" };
+        var galaxy = new Source.Galaxy.GalaxyMapData();
+        galaxy.AddPoi(station);
+        galaxy.AddPoi(new Source.Galaxy.MapPointOfInterest { guid = "not-a-station" });
+        Source.Galaxy.GalaxyMapData.current = galaxy;
+        try
+        {
+            Assert.True(world.KnowsItemType("UmbralMetafiber"));
+            Assert.False(world.KnowsItemType("Bogus"));
+            Assert.True(world.KnowsDeliveryTarget("station-1"));
+            Assert.False(world.KnowsDeliveryTarget("not-a-station")); // exists, but items cannot be turned in there
+            Assert.False(world.KnowsDeliveryTarget("missing"));
+
+            var objective = StoryObjective.DeliverItems("UmbralMetafiber", 1, "station-1").WithKey("deliver");
+            var definition = Definition(objectives: new[] { (StoryObjective)objective });
+            var withRewards = new StoryMissionDefinition(definition.LocalId, definition.Title, definition.Description, Trading,
+                definition.Steps, new[] { StoryReward.Reputation(600), StoryReward.Reputation(50, new StoryFactionId("MiningGuild")) });
+            var identifier = Identifier();
+            Assert.True(world.Install(identifier, withRewards).Applied);
+            var mission = StoryMission.Get(_player, identifier);
+            var trade = Assert.IsType<Source.MissionSystem.Objectives.TradeOffer>(Assert.Single(Assert.Single(mission.steps).objectives));
+            Assert.Same(metafiber, trade.itemType);
+            Assert.Equal(1, trade.requiredAmount);
+            Assert.Same(station, trade.deliverTo); // the native turn-in (consumption) target is the real station instance
+            var sourceRep = Assert.IsType<Source.MissionSystem.Rewards.Reputation>(mission.rewards[0]);
+            Assert.Equal(600, sourceRep.amount);
+            Assert.Null(sourceRep.faction); // native OnComplete falls back to the mission's source faction
+            var explicitRep = Assert.IsType<Source.MissionSystem.Rewards.Reputation>(mission.rewards[1]);
+            Assert.Equal(50, explicitRep.amount);
+            Assert.Equal("MiningGuild", explicitRep.faction!.identifier);
+
+            // Observation reads the native count from the HELD mission without writing it, clamped to the requirement.
+            Assert.True(world.Accept(identifier).Applied);
+            var layout = new StoryObjectiveLayout(withRewards);
+            Assert.True(layout.TryResolve("deliver", out var slot));
+            var held = (Mission)new StoryNativeBindings(typeof(StoryMission).Assembly).ActiveStory(_player, identifier)!;
+            trade = Assert.IsType<Source.MissionSystem.Objectives.TradeOffer>(held.steps[0].objectives[0]);
+            Assert.Equal(0, world.ReadProgress(identifier, slot, objective, () => true));
+            trade.currentAmount = 3;
+            Assert.Equal(1, world.ReadProgress(identifier, slot, objective, () => true));
+            Assert.Null(world.ReadProgress(identifier, slot, StoryObjective.DeliverItems("UmbralMetafiber", 2, "station-1").WithKey("deliver"), () => true));
+        }
+        finally
+        {
+            Source.Galaxy.GalaxyMapData.current = null;
+            Behaviour.Item.InventoryItemType.TestItems.Clear();
+        }
+    }
+
+    [Fact]
     public void NativeCreditProgressReadsCurrentResourcesWithoutWritingThem()
     {
         using var world = World();

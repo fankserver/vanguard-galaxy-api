@@ -130,6 +130,17 @@ namespace Source.MissionSystem.Objectives
         public int requiredAmount;
         public override string ToJson() => "{credits:" + requiredAmount + "}";
     }
+    public sealed class TradeOffer : MissionObjective
+    {
+        public Behaviour.Item.InventoryItemType? itemType;
+        public int requiredAmount;
+        public Source.Galaxy.POI.SpaceStation? deliverTo;
+        public int currentAmount { get; set; }
+        public int TurnIns;
+        public override bool IsComplete() => currentAmount >= requiredAmount;
+        public void OnMissionTurnedIn() { TurnIns++; currentAmount = 0; }
+        public override string ToJson() => "{trade:" + itemType?.identifier + ":" + currentAmount + "/" + requiredAmount + ":" + deliverTo?.guid + "}";
+    }
 }
 
 namespace Source.MissionSystem.Rewards
@@ -143,6 +154,22 @@ namespace Source.MissionSystem.Rewards
     {
         public int amount, baseAmount;
         public override string ToJson() => "{xp:" + amount + "/" + baseAmount + "}";
+    }
+    /// <summary>Exactly the game's shape: a flat amount, no baseAmount, and a null faction falls back to the source faction on completion.</summary>
+    public sealed class Reputation : MissionReward
+    {
+        public int amount;
+        public Source.Galaxy.Faction? faction;
+        public override string ToJson() => "{rep:" + amount + ":" + (faction?.identifier ?? "source") + "}";
+    }
+}
+
+namespace Behaviour.Item
+{
+    public sealed partial class InventoryItemType
+    {
+        public static readonly System.Collections.Generic.Dictionary<string, InventoryItemType> TestItems = new(StringComparer.Ordinal);
+        public static bool TryGet(string itemName, out InventoryItemType item) => TestItems.TryGetValue(itemName, out item!);
     }
 }
 

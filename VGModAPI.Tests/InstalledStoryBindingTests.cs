@@ -168,11 +168,25 @@ public sealed class InstalledStoryBindingTests
         AssertField(module, StoryContentPolicy.ObjectiveNamespace + ".TravelToPOI", "requiredVisitTime", "System.Single");
         AssertField(module, StoryContentPolicy.ObjectiveNamespace + ".KillEnemies", "requiredAmount", "System.Int32");
         AssertField(module, StoryContentPolicy.ObjectiveNamespace + ".CollectCredits", "requiredAmount", "System.Int32");
-        foreach (StoryRewardKind kind in Enum.GetValues(typeof(StoryRewardKind)))
+        AssertField(module, StoryContentPolicy.ObjectiveNamespace + ".TradeOffer", "itemType", "Behaviour.Item.InventoryItemType");
+        AssertField(module, StoryContentPolicy.ObjectiveNamespace + ".TradeOffer", "requiredAmount", "System.Int32");
+        AssertField(module, StoryContentPolicy.ObjectiveNamespace + ".TradeOffer", "deliverTo", "Source.Galaxy.POI.SpaceStation");
+        var tradeOffer = module.GetType(StoryContentPolicy.ObjectiveNamespace + ".TradeOffer")!;
+        // The native turn-in consumption and count refresh the delivery contract relies on.
+        Assert.Contains(tradeOffer.Methods, method => method.Name == "OnMissionTurnedIn" && method.HasBody);
+        Assert.Contains(tradeOffer.Properties, property => property.Name == "currentAmount" && property.PropertyType.FullName == "System.Int32");
+        var itemType = module.GetType("Behaviour.Item.InventoryItemType")!;
+        Assert.Contains(itemType.Methods, method => method.Name == "TryGet" && method.IsStatic && method.Parameters.Count == 2);
+        // baseAmount exists on the scaling reward types only; Reputation carries a flat amount + faction.
+        foreach (var kind in new[] { StoryRewardKind.Credits, StoryRewardKind.Experience })
         {
             AssertField(module, StoryContentPolicy.RewardNamespace + "." + StoryContentPolicy.RewardTypeName(kind), "amount", "System.Int32");
             AssertField(module, StoryContentPolicy.RewardNamespace + "." + StoryContentPolicy.RewardTypeName(kind), "baseAmount", "System.Int32");
         }
+        AssertField(module, StoryContentPolicy.RewardNamespace + ".Reputation", "amount", "System.Int32");
+        AssertField(module, StoryContentPolicy.RewardNamespace + ".Reputation", "faction", "Source.Galaxy.Faction");
+        var reputation = module.GetType(StoryContentPolicy.RewardNamespace + ".Reputation")!;
+        Assert.Contains(reputation.Methods, method => method.Name == "OnComplete" && method.HasBody);
 
         var player = module.GetType("Source.Player.GamePlayer")!;
         Assert.Contains(player.Fields, field => field.Name == "current" && field.IsStatic);

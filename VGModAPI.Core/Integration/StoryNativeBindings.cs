@@ -27,6 +27,9 @@ internal sealed class StoryNativeBindings
         _stepDescription, _stepRequireAll, _playerCurrent, _playerMissions, _playerArchive, _playerPoi, _allFactions, _missionLimit;
     private readonly PropertyInfo _missionSteps, _missionRewards, _stepObjectives, _galaxyCurrent;
     private readonly MethodInfo _storyAdd, _storyGet, _objectiveCreate, _rewardCreate, _addMission, _hasStory, _activeStory, _removeMission, _factionGet, _galaxyPoi, _missionsLimitExceeded;
+    private readonly Type _itemType;
+    private readonly MethodInfo _itemTryGet;
+    private readonly FieldInfo _deliverTo;
     private readonly ConstructorInfo _storyCtor, _missionCtor, _stepCtor;
 
     internal StoryNativeBindings(Assembly assembly)
@@ -90,6 +93,13 @@ internal sealed class StoryNativeBindings
 
         _objectiveCreate = Method(_objective, "Create", new[] { typeof(string) });
         _rewardCreate = Method(_reward, "Create", new[] { typeof(string) });
+        _itemType = Type(assembly, "Behaviour.Item.InventoryItemType");
+        _itemTryGet = Method(_itemType, "TryGet", new[] { typeof(string), _itemType.MakeByRefType() });
+        var tradeOffer = Type(assembly, StoryContentPolicy.ObjectiveNamespace + ".TradeOffer");
+        _deliverTo = tradeOffer.GetField("deliverTo", BindingFlags.Public | BindingFlags.Instance)
+            ?? throw new MissingFieldException(tradeOffer.FullName, "deliverTo");
+        _ = tradeOffer.GetMethod("OnMissionTurnedIn", BindingFlags.Public | BindingFlags.Instance)
+            ?? throw new MissingMethodException(tradeOffer.FullName, "OnMissionTurnedIn");
 
         _playerCurrent = Field(_player, "current");
         _playerMissions = Field(_player, "missions");
@@ -231,6 +241,19 @@ internal sealed class StoryNativeBindings
             case StoryObjectiveKind.CollectCredits:
                 Field(native.GetType(), "requiredAmount").SetValue(native, objective.RequiredAmount);
                 break;
+            case StoryObjectiveKind.DeliverItems:
+                // Exact identities only; the service refuses unknowns before installation, and this
+                // throws rather than substituting if the world changed in between.
+                var arguments = new object?[] { objective.ItemTypeId!, null };
+                if (_itemTryGet.Invoke(null, arguments) is not true || arguments[1] == null)
+                    throw new InvalidOperationException("The game does not know item type '" + objective.ItemTypeId + "'.");
+                Field(native.GetType(), "itemType").SetValue(native, arguments[1]);
+                Field(native.GetType(), "requiredAmount").SetValue(native, objective.RequiredAmount);
+                var delivery = _galaxyCurrent.GetValue(null) is { } galaxy ? _galaxyPoi.Invoke(galaxy, new object[] { objective.TargetPoiId! }) : null;
+                if (delivery == null || !_deliverTo.FieldType.IsInstanceOfType(delivery))
+                    throw new InvalidOperationException("Delivery target '" + objective.TargetPoiId + "' is not a station the game can turn items in at.");
+                _deliverTo.SetValue(native, delivery);
+                break;
             default: throw new ArgumentOutOfRangeException(nameof(objective));
         }
         return native;
@@ -242,7 +265,15 @@ internal sealed class StoryNativeBindings
         var native = _rewardCreate.Invoke(null, new object[] { name })
             ?? throw new InvalidOperationException("Vanilla did not create reward '" + name + "'.");
         Field(native.GetType(), "amount").SetValue(native, reward.Amount);
-        Field(native.GetType(), "baseAmount").SetValue(native, reward.Amount);
+        // baseAmount exists on the scaling reward types only; Reputation carries a flat amount.
+        var baseAmount = native.GetType().GetField("baseAmount", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+        baseAmount?.SetValue(native, reward.Amount);
+        if (reward.Kind == StoryRewardKind.Reputation && reward.Faction is { } rewardFaction)
+        {
+            var resolved = _factionGet.Invoke(null, new object[] { rewardFaction.Value })
+                ?? throw new InvalidOperationException("The game does not know reward faction '" + rewardFaction.Value + "'.");
+            Field(native.GetType(), "faction").SetValue(native, resolved);
+        }
         return native;
     }
 
@@ -256,6 +287,20 @@ internal sealed class StoryNativeBindings
         var galaxy = _galaxyCurrent.GetValue(null);
         if (galaxy == null) return null;                 // No galaxy loaded: nothing can be asserted.
         return _galaxyPoi.Invoke(galaxy, new object[] { guid }) != null;
+    }
+
+    internal bool KnowsItemType(string itemTypeId)
+    {
+        var arguments = new object?[] { itemTypeId, null };
+        return _itemTryGet.Invoke(null, arguments) is true && arguments[1] != null;
+    }
+    /// <summary>Exists in the loaded galaxy AND has the native shape a TradeOffer can turn in at.</summary>
+    internal bool? KnowsDeliveryTarget(string guid)
+    {
+        var galaxy = _galaxyCurrent.GetValue(null);
+        if (galaxy == null) return null;
+        var poi = _galaxyPoi.Invoke(galaxy, new object[] { guid });
+        return poi != null && _deliverTo.FieldType.IsInstanceOfType(poi);
     }
 
     /// <summary>
@@ -310,6 +355,14 @@ internal sealed class StoryNativeBindings
                     || (float)Field(objective.GetType(), "requiredVisitTime").GetValue(objective)! != expected.RequiredVisitSeconds) return null;
                 progress = (bool)objective.GetType().GetMethod("IsComplete", System.Type.EmptyTypes)!.Invoke(objective, null)! ? 1 : 0;
                 break;
+            case StoryObjectiveKind.DeliverItems:
+                if ((int)Field(objective.GetType(), "requiredAmount").GetValue(objective)! != expected.RequiredAmount) return null;
+                var item = Field(objective.GetType(), "itemType").GetValue(objective);
+                if (item == null || (string?)Property(_itemType, "identifier").GetValue(item) != expected.ItemTypeId) return null;
+                // IsComplete drives the native count refresh; currentAmount is then the observed value.
+                _ = objective.GetType().GetMethod("IsComplete", System.Type.EmptyTypes)!.Invoke(objective, null);
+                progress = Math.Min(expected.RequiredAmount, Math.Max(0, (int)Property(objective.GetType(), "currentAmount").GetValue(objective)!));
+                break;
             default: return null;
         }
         if (!stillValid() || !ReferenceEquals(_missionSteps.GetValue(mission), steps) || slot.Step >= steps.Count
@@ -320,6 +373,13 @@ internal sealed class StoryNativeBindings
         if (slot.Kind == StoryObjectiveKind.TravelToPoi
             && ((string?)Field(objective.GetType(), "targetPOI").GetValue(objective) != expected.TargetPoiId
                 || (float)Field(objective.GetType(), "requiredVisitTime").GetValue(objective)! != expected.RequiredVisitSeconds)) return null;
+        if (slot.Kind == StoryObjectiveKind.DeliverItems)
+        {
+            // The native IsComplete refresh is exactly the reentrancy window these trailing checks exist for.
+            if ((int)Field(objective.GetType(), "requiredAmount").GetValue(objective)! != expected.RequiredAmount) return null;
+            var refreshedItem = Field(objective.GetType(), "itemType").GetValue(objective);
+            if (refreshedItem == null || (string?)Property(_itemType, "identifier").GetValue(refreshedItem) != expected.ItemTypeId) return null;
+        }
         return progress;
     }
 

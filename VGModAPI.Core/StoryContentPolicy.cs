@@ -37,14 +37,16 @@ internal static class StoryContentPolicy
         [StoryObjectiveKind.TravelToPoi] = "TravelToPOI",
         [StoryObjectiveKind.KillEnemies] = "KillEnemies",
         [StoryObjectiveKind.CollectCredits] = "CollectCredits",
-        [StoryObjectiveKind.Scripted] = "TriggerObjective"
+        [StoryObjectiveKind.Scripted] = "TriggerObjective",
+        [StoryObjectiveKind.DeliverItems] = "TradeOffer"
     };
 
     /// <summary>Vanilla reward type names, exactly as <c>MissionReward.Create</c> resolves them.</summary>
     private static readonly Dictionary<StoryRewardKind, string> RewardTypes = new()
     {
         [StoryRewardKind.Credits] = "Credits",
-        [StoryRewardKind.Experience] = "Experience"
+        [StoryRewardKind.Experience] = "Experience",
+        [StoryRewardKind.Reputation] = "Reputation"
     };
 
     /// <summary>
