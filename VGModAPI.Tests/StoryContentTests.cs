@@ -2562,7 +2562,7 @@ public sealed partial class StoryContentTests
         world.World.ForgetPointOfInterest("poi-guid-1");
         var refused = provider.Offer("salvage-run");
         Assert.Equal(StoryTransitionStatus.InvalidTransition, refused.Status);
-        Assert.Contains("no point of interest", refused.Detail);
+        Assert.Contains("does not hold mission target", refused.Detail);
         Assert.Empty(service.Ledger.Entries);
 
         // No galaxy loaded is not the same as an absent place; nothing is asserted either way.
@@ -2677,7 +2677,7 @@ public sealed partial class StoryContentTests
         world.World.ForgetPointOfInterest("poi-guid-1");
         var refused = provider.Activate(occurrence.OccurrenceId);
         Assert.Equal(StoryTransitionStatus.InvalidTransition, refused.Status);
-        Assert.Contains("no point of interest", refused.Detail);
+        Assert.Contains("does not hold mission target", refused.Detail);
         Assert.Equal(accepts, world.World.Accepts);                  // the world was never asked
         Assert.True(service.Ledger.TryGet(occurrence.OccurrenceId, out var untouched));
         Assert.Equal(StoryOccurrenceState.Offered, untouched.State);
@@ -2700,7 +2700,7 @@ public sealed partial class StoryContentTests
         world.StartAndRestore(bytes);
 
         Assert.True(world.Protection.IsQuarantined(identifier));
-        Assert.Contains(service.Reconciliation, reason => reason.Contains("no point of interest"));
+        Assert.Contains(service.Reconciliation, reason => reason.Contains("does not hold mission target"));
         Assert.Equal(1, service.Ledger.Count);                       // the record is kept
         Assert.True(service.Ledger.TryGet(occurrence.OccurrenceId, out var kept));
         Assert.Equal(StoryOccurrenceState.Active, kept.State);

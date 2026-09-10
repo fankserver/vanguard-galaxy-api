@@ -48,6 +48,10 @@ public sealed class StoryDefinitionCodecTests
         Assert.Throws<ArgumentException>(() => new StoryMissionDefinition("x", "T", "D", new StoryFactionId("TradingGuild"),
             new[] { new StoryStep("s", new[] { StoryObjective.CollectCredits(1) }) },
             new[] { StoryReward.Reputation(1), StoryReward.Reputation(2) }));
+        // An explicit source-faction grant is the same grant as the null (source) form.
+        Assert.Throws<ArgumentException>(() => new StoryMissionDefinition("x", "T", "D", new StoryFactionId("TradingGuild"),
+            new[] { new StoryStep("s", new[] { StoryObjective.CollectCredits(1) }) },
+            new[] { StoryReward.Reputation(1), StoryReward.Reputation(2, new StoryFactionId("TradingGuild")) }));
     }
 
     [Fact]

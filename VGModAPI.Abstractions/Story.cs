@@ -331,8 +331,11 @@ public sealed class StoryMissionDefinition
         var rewardCopy = (rewards ?? Array.Empty<StoryReward>())
             .Select(reward => reward ?? throw new ArgumentException("Null reward.", nameof(rewards))).ToArray();
         if (rewardCopy.Length > MaxRewards) throw new ArgumentException("At most " + MaxRewards + " rewards.", nameof(rewards));
-        // Reputation may repeat per distinct faction (including one source-faction grant); other kinds stay unique.
-        if (rewardCopy.Select(reward => (reward.Kind, reward.Faction?.Value)).Distinct().Count() != rewardCopy.Length)
+        // Reputation may repeat per distinct faction; an explicit source-faction grant is the SAME
+        // grant as the null (source) form, so the two shapes dedup together. Other kinds stay unique.
+        if (rewardCopy.Select(reward => (reward.Kind,
+                reward.Faction is { } explicitFaction && explicitFaction.Equals(sourceFaction) ? null : reward.Faction?.Value))
+            .Distinct().Count() != rewardCopy.Length)
             throw new ArgumentException("Duplicate reward kind.", nameof(rewards));
         Rewards = Array.AsReadOnly(rewardCopy);
         var choiceCopy = (choiceKeys ?? Array.Empty<string>()).ToArray();

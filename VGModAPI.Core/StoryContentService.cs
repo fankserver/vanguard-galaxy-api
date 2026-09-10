@@ -326,7 +326,7 @@ internal sealed partial class StoryContentService : IStoryService, IStoryUiTrans
                 // Not vouched for, so the guards quarantine it: it stays exactly as the save has it,
                 // and nothing runs a mission whose destination this world no longer has.
                 _unrunnable.Add(entry.OccurrenceId);
-                _reconciliation.Add(identifier + ": this world holds no point of interest '"
+                _reconciliation.Add(identifier + ": this world does not hold mission target '"
                     + (missing ?? "(unknown)") + "', so the mission is not run.");
                 Report("Owned story content is held back: " + identifier + " needs a place this world does not have.");
                 continue;
@@ -879,7 +879,7 @@ internal sealed partial class StoryContentService : IStoryService, IStoryUiTrans
                 "The world could not be asked about this definition's travel targets.");
         if (targets != null)
             return new StoryTransitionResult(StoryTransitionStatus.InvalidTransition, Guid.Empty,
-                "This world holds no point of interest '" + targets + "', so the mission could never be completed.");
+                "This world does not hold mission target '" + targets + "', so the mission could never be completed.");
         var occurrenceId = _newOccurrence();
         // The outcome's worst-case payload is reserved now, so this occurrence can always be retired.
         try { StoryDefinitionCodec.Encode(definition!); }
@@ -1051,7 +1051,7 @@ internal sealed partial class StoryContentService : IStoryService, IStoryUiTrans
                     "The world could not be asked about this mission's travel targets.");
             if (missing != null)
                 return new StoryTransitionResult(StoryTransitionStatus.InvalidTransition, occurrenceId,
-                    "This world holds no point of interest '" + missing + "', so the mission could never be completed.");
+                    "This world does not hold mission target '" + missing + "', so the mission could never be completed.");
         }
         if (!BeginOperation(out var busy, occurrenceId)) return busy;
         StoryWorldResult accepted;

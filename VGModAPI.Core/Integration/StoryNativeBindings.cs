@@ -373,6 +373,13 @@ internal sealed class StoryNativeBindings
         if (slot.Kind == StoryObjectiveKind.TravelToPoi
             && ((string?)Field(objective.GetType(), "targetPOI").GetValue(objective) != expected.TargetPoiId
                 || (float)Field(objective.GetType(), "requiredVisitTime").GetValue(objective)! != expected.RequiredVisitSeconds)) return null;
+        if (slot.Kind == StoryObjectiveKind.DeliverItems)
+        {
+            // The native IsComplete refresh is exactly the reentrancy window these trailing checks exist for.
+            if ((int)Field(objective.GetType(), "requiredAmount").GetValue(objective)! != expected.RequiredAmount) return null;
+            var refreshedItem = Field(objective.GetType(), "itemType").GetValue(objective);
+            if (refreshedItem == null || (string?)Property(_itemType, "identifier").GetValue(refreshedItem) != expected.ItemTypeId) return null;
+        }
         return progress;
     }
 
