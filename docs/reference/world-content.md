@@ -92,6 +92,43 @@ unbounded identities, wrong-thread access and use after API shutdown are program
 errors. While `Availability` is unavailable, declarations are retained but stock
 lethality applies; internal faults log once and fail open to vanilla damage.
 
+## Encounter drone bays
+
+`ModApi.Services.World.DroneBays` tunes how one exactly identified unit's drone bay
+fights, for authored set-piece encounters. Identification is the unit's persistent
+unit-data identity, so a ship of the same class — including the player's own — is
+never affected, even when class identifiers collide.
+
+```csharp
+_bossTuning = ModApi.Services.World.DroneBays.Tune(bossUnitGuid, new DroneBayTuning(
+    launchSeconds: 0.05,                                   // the swarm is out in seconds, not minutes
+    replacementDrones: new[] { "Combat Missile Drone", "Combat Laser Drone" },
+    complement: 100));
+// … when the encounter ends:
+_bossTuning.Dispose();
+```
+
+- `launchSeconds` overrides the per-drone launch transition (stock 1.5) whenever that
+  bay reads it. Only the declared bay is affected; disposal restores stock timing for
+  later launches immediately.
+- `replacementDrones` constrains what the bay reproduces when the game replaces
+  losses, cycling the authored names deterministically so the encounter's composition
+  holds for the whole fight. Every native roll for the declared bay uses the authored
+  cycle, so previews of that bay's loadout reflect the same composition. Names are the game's drone catalog names; an unknown name
+  is skipped with one report, and if none resolve the vanilla roll proceeds.
+- `complement` rebuilds the bay's docked drones to the authored count through the
+  game's own per-drone initialisation — hull multiplier, equipment, faction
+  inheritance and all — in staggered batches across frames to avoid a hitch, then
+  deploys. It applies once per session per unit; the game's own replacement logic
+  maintains it afterwards. Declarations bind units that materialise later.
+
+Only supplied aspects change; later declarations override earlier ones per aspect for
+the same unit. Nothing is written to saves by this service, and an identity that is
+missing or ambiguous in the world tunes nothing. Undeclared bays, integration faults
+and unavailability all run completely vanilla, with one report per distinct cause.
+This tunes the declared bay's behavior; it is not a general equipment-stat, loadout or
+AI surface, and drone content itself remains the game's.
+
 ## Shared primitive selection
 
 Two consumers motivate an owned encounter location, not a campaign framework:

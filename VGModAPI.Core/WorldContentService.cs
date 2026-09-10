@@ -16,20 +16,24 @@ internal sealed class WorldContentService : IWorldService, IDisposable
     private readonly IServiceStatus _status;
     private readonly AmbientTrafficService _ambient;
     private readonly UnitProtectionService _protection;
-    private readonly bool _ownsAmbient, _ownsProtection;
+    private readonly DroneBayService _droneBays;
+    private readonly bool _ownsAmbient, _ownsProtection, _ownsDroneBays;
     public IAmbientTrafficService AmbientTraffic { get { _hub.CheckThread(); return _ambient; } }
     public IUnitProtectionService UnitProtection { get { _hub.CheckThread(); return _protection; } }
+    public IDroneBayService DroneBays { get { _hub.CheckThread(); return _droneBays; } }
     public ServiceAvailability Availability => _status.Availability;
     public event Action<ServiceAvailability>? AvailabilityChanged
     { add => _status.AvailabilityChanged += value; remove => _status.AvailabilityChanged -= value; }
     private bool _disposed;
-    internal WorldContentService(LifecycleHub hub, WorldDefinitionRegistry definitions, WorldAuthoringGate authoring, Func<bool> canAuthor, Action? providerReleased = null, AmbientTrafficService? ambient = null, UnitProtectionService? protection = null)
+    internal WorldContentService(LifecycleHub hub, WorldDefinitionRegistry definitions, WorldAuthoringGate authoring, Func<bool> canAuthor, Action? providerReleased = null, AmbientTrafficService? ambient = null, UnitProtectionService? protection = null, DroneBayService? droneBays = null)
     {
         _hub = hub; _status = hub.Services.Get("world-authoring"); _definitions = definitions; _authoring = authoring; _canAuthor = canAuthor; _providerReleased = providerReleased;
         _ownsAmbient = ambient == null;
         _ambient = ambient ?? new AmbientTrafficService(hub);
         _ownsProtection = protection == null;
         _protection = protection ?? new UnitProtectionService(hub);
+        _ownsDroneBays = droneBays == null;
+        _droneBays = droneBays ?? new DroneBayService(hub);
     }
     [MethodImpl(MethodImplOptions.NoInlining)]
     public IWorldProvider? AcquireProvider(object pluginInstance)
@@ -108,6 +112,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
         _hub.CheckThread(); if (_disposed) return; _disposed = true;
         if (_ownsAmbient) _ambient.Dispose();
         if (_ownsProtection) _protection.Dispose();
+        if (_ownsDroneBays) _droneBays.Dispose();
         var health = _status.Availability;
         _hub.SetCapability("world-authoring", false, health.IsAvailable ? "World service stopped." : health.Detail,
             health.IsAvailable ? ServiceUnavailableReason.ApiStopped : health.Reason);

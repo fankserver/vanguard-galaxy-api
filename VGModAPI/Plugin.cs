@@ -81,6 +81,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         _hub.SetCapability("unit-protection", false, "Not bound.");
         _hub.SetCapability("story-characters", false, "Not bound.");
         _hub.SetCapability("dungeon-enterability", false, "Not bound.");
+        _hub.SetCapability("drone-bays", false, "Not bound.");
         _hub.SetCapability("forge-ui", false, "Disabled or not bound; experimental.");
         _hub.SetCapability("crafting-commands", false, "Disabled or not bound; experimental.");
         _hub.SetCapability("crafting-jobs", false, "Disabled or not bound; experimental.");
@@ -133,6 +134,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             InstallUnitProtection(assembly);
             InstallStoryCharacters(assembly);
             InstallDungeonAegis(assembly);
+            InstallDroneBays(assembly);
             InstallRecipes(assembly);
             InstallBoarding(bindings);
             InstallBoardingRules(bindings);
@@ -155,6 +157,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             TeardownUnitProtection();
             TeardownStoryCharacters();
             TeardownDungeonAegis();
+            TeardownDroneBays();
             TeardownForgeUi();
             TeardownCraftingJobs();
             try { _harmony?.UnpatchSelf(); }
@@ -166,6 +169,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             _hub.SetCapability("unit-protection", false, ex.Message, reason);
             _hub.SetCapability("story-characters", false, ex.Message, reason);
             _hub.SetCapability("dungeon-enterability", false, ex.Message, reason);
+            _hub.SetCapability("drone-bays", false, ex.Message, reason);
             _hub.SetCapability("session-lifecycle", false, ex.Message, reason);
             _hub.SetCapability("save-outcomes", false, ex.Message, reason);
             if (_inspectedGameAssembly == null)
@@ -249,6 +253,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         catch (Exception error) { DisableModMenu(error); }
         _hub?.Installations.Tick();
         _dungeonAegisRuntime?.Tick(UnityEngine.Time.unscaledTimeAsDouble);
+        _droneBayRuntime?.Tick(UnityEngine.Time.unscaledTimeAsDouble);
     }
 
     private void InitializePersistence()
@@ -1003,6 +1008,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         TeardownUnitProtection();
         TeardownStoryCharacters();
         TeardownDungeonAegis();
+        TeardownDroneBays();
         TeardownForgeUi();
         TeardownCraftingCommands();
         StopBars();
