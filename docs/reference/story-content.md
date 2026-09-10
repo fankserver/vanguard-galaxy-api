@@ -27,12 +27,15 @@ var intro = registered.Definition ?? throw new InvalidOperationException(registe
 var nextResult = provider.Register(nextDefinition);
 var next = nextResult.Definition ?? throw new InvalidOperationException(nextResult.Diagnostic);
 
+var observing = new HashSet<IStoryMission>();
 intro.Accepted += mission =>
 {
-    mission.GetObjective("greeting").SetProgress(1);
-    // GetObjective returns the same object per mission; subscribing here observes native progress.
-    mission.GetObjective("reach-vault").Changed +=
-        objective => Logger.LogInfo($"Vault progress: {objective.Snapshot.Progress}");
+    mission.GetObjective("greeting").SetProgress(1); // Absolute progress; safe to repeat.
+    // GetObjective returns the same object per mission, and native retry can fire Accepted again
+    // for the same mission - subscribe Changed idempotently rather than stacking handlers.
+    if (observing.Add(mission))
+        mission.GetObjective("reach-vault").Changed +=
+            objective => Logger.LogInfo($"Vault progress: {objective.Snapshot.Progress}");
 };
 intro.Completed += mission => mission.Game.Story.Offer(next);
 ```
