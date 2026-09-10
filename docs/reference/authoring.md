@@ -11,7 +11,7 @@ Compile against `VGModAPI.Abstractions`, mark the reference non-copy-local, and 
 | LifecycleObserver | Thin BepInEx bootstrap and observed lifecycle |
 | ServiceConsumers | Plain .NET mission/travel observers, additional custom counter save data and explicit immediate inventory movement |
 | OwnedStoryJob / OwnedStoryCampaign | Supported objectives, temporary job lifetime versus retained campaign outcomes, without a MissionJournal requirement |
-| OwnedWorldAuthorA / OwnedWorldAuthorB | Independent providers using the same local `PoiX` ID; persistent Combat sites, explicit occurrence IDs and lookup after restoration |
+| OwnedWorldAuthorA / OwnedWorldAuthorB | Independent providers using the same local `PoiX` ID; persistent Combat sites, author-local occurrence keys and lookup after restoration |
 | OwnedGoodsAuthor | Fixed TradeGoods and recipe-first owned dependencies |
 | OwnedBarAuthorA / OwnedBarAuthorB | Independent bar providers and owned roster definitions |
 | ForgeInspector / ForgeInspectorHost | Plain .NET inspection/HUD actions plus thin host integration |
