@@ -16,11 +16,11 @@ public sealed class BarPatronDefinition
     /// <summary>Selects the native male or female seated body, independently of portrait and seed.</summary>
     public bool IsMale { get; }
     public BarPatronRetention Retention { get; }
+    /// <summary>Same-owner story definition this contact depends on. The API resolves the current admitted occurrence itself.</summary>
     public StoryContentId? Mission { get; }
-    public Guid? Occurrence { get; }
 
     public BarPatronDefinition(string localId, string stationId, string name, string description, string seed,
-        BarPatronRetention retention = BarPatronRetention.Persistent, StoryContentId? mission = null, Guid? occurrence = null,
+        BarPatronRetention retention = BarPatronRetention.Persistent, StoryContentId? mission = null,
         CharacterPortrait? portrait = null, bool isMale = true)
     {
         _ = new BarPatronId("validation", localId);
@@ -31,10 +31,8 @@ public sealed class BarPatronDefinition
         Description = Text(description, 1024, nameof(description));
         Seed = Text(seed, 128, nameof(seed));
         Portrait = portrait; IsMale = isMale;
-        if (mission.HasValue != occurrence.HasValue || occurrence == Guid.Empty)
-            throw new ArgumentException("Mission definition and nonempty occurrence must be supplied together.");
         if (mission.HasValue) _ = new StoryContentId(mission.Value.Provider, mission.Value.LocalId);
-        Mission = mission; Occurrence = occurrence; Retention = retention;
+        Mission = mission; Retention = retention;
     }
 
     private static string Text(string value, int maxBytes, string parameter)

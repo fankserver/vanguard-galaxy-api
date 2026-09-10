@@ -29,11 +29,11 @@ public sealed class Plugin : BaseUnityPlugin
             new[] { new StoryReward(StoryRewardKind.Credits, 1) }));
     }
 
-    public BarRegistrationResult RegisterLinked(string station, string local, string seed, Guid occurrence)
+    public BarRegistrationResult RegisterLinked(string station, string local, string seed)
     {
         return AcquireBar().Register(new BarPatronDefinition(local, station, "Linked contact " + Id,
             "Mission-dependent presentation", seed, BarPatronRetention.Persistent,
-            new StoryContentId(StoryProvider.ProviderId, LinkedStoryId), occurrence), _ => Interactions++);
+            new StoryContentId(StoryProvider.ProviderId, LinkedStoryId)), _ => Interactions++);
     }
 
     public void ReleaseStory() { _story?.Dispose(); _story = null; }

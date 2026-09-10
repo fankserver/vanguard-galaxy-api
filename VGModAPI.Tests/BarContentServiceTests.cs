@@ -428,7 +428,8 @@ public sealed partial class BarContentServiceTests
             (_, _) => new StoryHostPlugin("author", typeof(BarContentServiceTests).Assembly), _ => true, hub.CheckThread);
         var provider = service.AcquireProvider("author").Provider!;
         provider.Register(new BarPatronDefinition("contact", "station", "Name", "Description", "seed",
-            mission: new StoryContentId(provider.ProviderId, "job"), occurrence: Guid.NewGuid()));
+            mission: new StoryContentId(provider.ProviderId, "job")));
+        service.ResolveOccurrence = (_, _) => Guid.NewGuid();
         var session = Ready(hub, storage);
         provider.Place(session, "contact");
         Assert.Null(service.Plan(session, "station"));
@@ -476,7 +477,8 @@ public sealed partial class BarContentServiceTests
         var author = service.AcquireProvider("author").Provider!;
         foreach (string local in new[] { "first", "second" })
             author.Register(new BarPatronDefinition(local, "station", local, "Description", "seed",
-                mission: new StoryContentId(author.ProviderId, local), occurrence: Guid.NewGuid()));
+                mission: new StoryContentId(author.ProviderId, local)));
+        service.ResolveOccurrence = (_, _) => Guid.NewGuid();
         var session = Ready(hub, storage);
         author.Place(session, "first"); author.Place(session, "second");
         object epoch = new();
@@ -538,7 +540,8 @@ public sealed partial class BarContentServiceTests
         var a = service.AcquireProvider("a").Provider!;
         var b = service.AcquireProvider("b").Provider!;
         a.Register(throughMission ? new BarPatronDefinition("contact", "station", "Name", "Description", "seed",
-            mission: new StoryContentId(a.ProviderId, "job"), occurrence: Guid.NewGuid()) : Definition());
+            mission: new StoryContentId(a.ProviderId, "job")) : Definition());
+        service.ResolveOccurrence = (_, _) => Guid.NewGuid();
         a.ConfigureStation("station", BarRosterOwnership.Exclusive);
         if (!throughMission) b.ConfigureStation("station", BarRosterOwnership.Exclusive);
         var session = Ready(hub, storage);

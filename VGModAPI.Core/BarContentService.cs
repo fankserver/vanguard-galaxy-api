@@ -22,6 +22,7 @@ internal sealed partial class BarContentService : IBarService, IDisposable
     private readonly StoryProviderBindings _bindings = new();
     private readonly Dictionary<string, Lease> _leases = new(StringComparer.Ordinal);
     private readonly Dictionary<BarPatronId, BarPatronState> _transient = new();
+    internal Func<Guid, StoryContentId, Guid?>? ResolveOccurrence;
     private bool _disposed;
 
     internal BarContentService(ISaveDataService? persistence, LifecycleHub lifecycle, StoryHostAuthenticator authenticate,

@@ -168,6 +168,25 @@ public sealed partial class BarContentServiceTests
         Assert.Equal(BarPatronStatus.Assigned, f.Games.Current.Bars.Get(definition).Status);
     }
 
+    [Fact]
+    public void MissionLinkedContactWaitsUntilTheCurrentOccurrenceResolves()
+    {
+        using var f = new Objects();
+        Guid? occurrence = null;
+        f.Engine.ResolveOccurrence = (_, _) => occurrence;
+        var definition = f.Provider.Register(new BarPatronDefinition("contact", "station", "Name", "Description", "seed",
+            mission: new StoryContentId(f.Provider.ProviderId, "job"))).Definition!;
+        f.Start(); f.Pump(); f.Pump();
+        var patron = f.Games.Current!.Bars.Get(definition);
+        Assert.Equal(BarPatronStatus.Waiting, patron.Status);
+        Assert.Equal(BarStatus.MissionNotReady, patron.LastAction.Status);
+        occurrence = Guid.NewGuid();
+        f.Pump();
+        Assert.Equal(BarPatronStatus.Assigned, patron.Status);
+        var row = Assert.Single(BarPatronCodec.Decode(f.Storage.Provider.Capture()));
+        Assert.Equal(occurrence, row.Occurrence);
+    }
+
     private sealed class Objects : IDisposable
     {
         internal readonly LifecycleHub Hub = new((_, _) => { });

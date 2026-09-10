@@ -55,6 +55,7 @@ public sealed partial class Plugin
             _bars = bars;
             var story = _story;
             var noStory = new object();
+            bars.ResolveOccurrence = (session, id) => story?.CurrentBarOccurrence(session, id);
             _barHost = new BarRuntimeHost(bars, native.World, native.Contacts, native.Serialization,
                 station => _hub.CurrentSession is { } session ? bars.Plan(session.Id, station,
                     (id, occurrence) => story?.IsBarMissionReady(session.Id, id, occurrence) == true,

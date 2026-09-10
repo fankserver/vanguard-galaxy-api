@@ -5,7 +5,7 @@ namespace VGModAPI;
 public enum BarStatus
 {
     Succeeded, Unavailable, UnknownPlugin, CallerMismatch, AlreadyAcquired, ProviderConflict,
-    LimitExceeded, InvalidDefinition, GameEnded, NotRegistered, PermissionDenied, Queued, NotRequested
+    LimitExceeded, InvalidDefinition, GameEnded, NotRegistered, PermissionDenied, Queued, NotRequested, MissionNotReady
 }
 
 public sealed class BarResult

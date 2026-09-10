@@ -38,8 +38,8 @@ internal sealed partial class BarContentService
             return new(BarStatus.Succeeded, registration);
         }
         private BarPatronState State(BarPatronDefinition definition) => new(new BarPatronId(ProviderId, definition.LocalId),
-            definition.StationId, definition.Name, definition.Description, definition.Seed, definition.Mission,
-            definition.Occurrence, definition.Portrait, definition.IsMale);
+            definition.StationId, definition.Name, definition.Description, definition.Seed, null, null,
+            definition.Portrait, definition.IsMale);
         public BarResult Unregister(string localId)
         {
             _owner._checkThread();
@@ -75,8 +75,15 @@ internal sealed partial class BarContentService
             var refusal = _owner.Guard(this, expectedSessionId);
             if (refusal != null) return refusal;
             if (localId == null || !Definitions.TryGetValue(localId, out var definition)) return new BarResult(BarStatus.NotRegistered);
+            Guid? occurrence = null;
+            if (definition.Mission is { } mission)
+            {
+                occurrence = _owner.ResolveOccurrence?.Invoke(expectedSessionId, mission);
+                if (!_owner.Active(this) || _owner.Guard(this, expectedSessionId) != null) return new BarResult(BarStatus.Unavailable);
+                if (occurrence == null) return new BarResult(BarStatus.MissionNotReady, "The linked story occurrence is not currently admitted.");
+            }
             var state = new BarPatronState(new BarPatronId(ProviderId, localId), definition.StationId, definition.Name, definition.Description,
-                definition.Seed, definition.Mission, definition.Occurrence, definition.Portrait, definition.IsMale);
+                definition.Seed, definition.Mission, occurrence, definition.Portrait, definition.IsMale);
             if (definition.Retention == BarPatronRetention.Transient)
             {
                 if (!_owner._persistence.Read(expectedSessionId, out var persisted) || persisted.Any(row => row.Id == state.Id))
