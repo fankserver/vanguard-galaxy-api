@@ -93,7 +93,6 @@ public enum StoryOutcome { Completed, Failed, Abandoned }
 public sealed class StoryObjective
 {
     public const int MaxAmount = 1_000_000;
-    public const float MaxVisitSeconds = 3600;
 
     public StoryObjectiveKind Kind { get; }
     /// <summary>Optional stable author key, independent of display text or step position.</summary>
@@ -112,7 +111,6 @@ public sealed class StoryObjective
     public string? ItemTypeId { get; }
     /// <summary>Required for <see cref="StoryObjectiveKind.KillEnemies"/>: the existing faction whose units the game counts.</summary>
     public string? EnemyFactionId { get; }
-    public float RequiredVisitSeconds { get; }
 
     private StoryObjective(StoryObjectiveKind kind, string? targetPoiId, int requiredAmount, bool requireNewVisit, string? localKey = null, string? description = null, string? itemTypeId = null, string? enemyFactionId = null)
     { Kind = kind; TargetPoiId = targetPoiId; RequiredAmount = requiredAmount; RequireNewVisit = requireNewVisit; LocalKey = localKey; Description = description; ItemTypeId = itemTypeId; EnemyFactionId = enemyFactionId; }

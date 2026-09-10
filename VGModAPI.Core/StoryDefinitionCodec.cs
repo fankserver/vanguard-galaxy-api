@@ -37,7 +37,11 @@ internal static class StoryDefinitionCodec
             foreach (var objective in step.Objectives)
             {
                 writer.Write((byte)objective.Kind); Text(writer, objective.LocalKey);
-                Text(writer, objective.TargetPoiId); writer.Write(objective.RequiredAmount); writer.Write(objective.RequireNewVisit ? 1f : 0f);
+                Text(writer, objective.TargetPoiId); writer.Write(objective.RequiredAmount);
+                // Wire version 2 reinterprets this float slot: it once carried the (misread) visit
+                // seconds and now carries the RequireNewVisit flag. Bump the version before any
+                // third meaning; legacy nonzero decodes as new-visit below.
+                writer.Write(objective.RequireNewVisit ? 1f : 0f);
                 Text(writer, objective.Description); Text(writer, objective.ItemTypeId); Text(writer, objective.EnemyFactionId);
             }
         }
