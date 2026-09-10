@@ -251,7 +251,7 @@ public sealed partial class StoryContentTests
             Persistence = new(Hub); CustomData = new(Hub); var host = new FakeHost(); var plugin = new object(); host.Register(plugin, AnimaPlugin);
             Engine = new StoryContentService(Hub.Services, Persistence, Hub, host.Authenticate, checkThread: Hub.CheckThread, world: World, missions: Missions);
             Provider = Engine.AcquireProvider(plugin, saveData: CustomData).Provider!;
-            Games = new GameService(Hub, new NavigationService(Hub, _ => null, (_, _, _) => NavigationStatus.Unavailable, (_, _) => null), new InventoryService(Hub, () => null), Engine);
+            Games = new GameService(Hub, new NavigationService(Hub, _ => null, (_, _, _) => NavigationStatus.Unavailable, (_, _) => null), new InventoryService(Hub, () => null), Engine, new BarContentService(null, Hub, (_, _) => null, _ => false, Hub.CheckThread));
         }
         internal IStoryDefinition Register(string local = "salvage-run") => Provider.Register(Definition(local)).Definition!;
         internal void Start(byte[]? bytes = null)

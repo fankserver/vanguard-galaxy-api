@@ -34,7 +34,7 @@ internal static class BarPatronCodec
             long start = stream.Position;
             Write(writer, row.Id.Provider); Write(writer, row.Id.LocalId); Write(writer, row.Station);
             Write(writer, row.Name); Write(writer, row.Description); Write(writer, row.Seed);
-            writer.Write((byte)((row.Mission.HasValue ? 1 : 0) | (row.Portrait != null ? 2 : 0) | (!row.IsMale ? 4 : 0)));
+            writer.Write((byte)((row.Mission.HasValue ? 1 : 0) | (row.Portrait != null ? 2 : 0) | (!row.IsMale ? 4 : 0) | (row.Removed ? 8 : 0)));
             if (row.Mission.HasValue)
             {
                 Write(writer, row.Mission.Value.LocalId);
@@ -69,7 +69,7 @@ internal static class BarPatronCodec
             var id = new BarPatronId(Read(reader, 48), Read(reader, 48));
             var station = Read(reader, 128); var name = Read(reader, 128); var description = Read(reader, 1024); var seed = Read(reader, 128);
             byte flags = reader.ReadByte();
-            if (flags > (version == 1 ? 1 : 7)) throw new InvalidDataException("Invalid patron reference flag.");
+            if (flags > (version == 1 ? 1 : 15)) throw new InvalidDataException("Invalid patron reference flag.");
             StoryContentId? mission = null; Guid? occurrence = null;
             if ((flags & 1) != 0)
             {
@@ -86,7 +86,7 @@ internal static class BarPatronCodec
                     1 => CharacterPortrait.OfCharacter(Read(reader, 2048)),
                     _ => throw new InvalidDataException("Unknown patron portrait kind.")
                 };
-            rows[index] = new BarPatronState(id, station, name, description, seed, mission, occurrence, portrait, isMale: (flags & 4) == 0);
+            rows[index] = new BarPatronState(id, station, name, description, seed, mission, occurrence, portrait, isMale: (flags & 4) == 0, removed: (flags & 8) != 0);
         }
         if (stream.Position != stream.Length || !Encode(rows, version).SequenceEqual(payload)) throw new InvalidDataException("Noncanonical patron payload.");
         return rows;

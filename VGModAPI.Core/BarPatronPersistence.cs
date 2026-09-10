@@ -25,6 +25,8 @@ internal sealed class BarPatronPersistence : IDisposable
         catch { _registration.Dispose(); throw; }
     }
 
+    internal ISaveDataRegistration Registration => _registration;
+
     internal bool Read(Guid session, out IReadOnlyList<BarPatronState> rows)
     {
         _checkThread();

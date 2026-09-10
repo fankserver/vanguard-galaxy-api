@@ -4,7 +4,9 @@ Enable `[Bars] Enabled = true`; API-managed saves initialize automatically. Bars
 
 ## Provider lifecycle
 
-Acquire a provider from the loaded BepInEx plugin instance in `Start` with `ModApi.Services.Bars.AcquireProvider(this)`. Chainloader publishes its authenticated instance only after `Awake` returns; acquiring during `Awake` is refused. Consumers can latch managed mode in `Awake` to prevent a native fallback before acquisition. The API authenticates its stable owner identity. Register a `BarPatronDefinition` containing a local ID, native station GUID, display name, description and seed, with an optional interaction callback. Different providers may reuse local IDs.
+Acquire a provider from the loaded BepInEx plugin instance in `Start` with `ModApi.Services.Bars.AcquireProvider(this)`. Chainloader publishes its authenticated instance only after `Awake` returns; acquiring during `Awake` is refused. Consumers can latch managed mode in `Awake` to prevent a native fallback before acquisition. The API authenticates its stable owner identity. Pass an optional owned custom-save registration to `AcquireProvider(this, saveData: registration)` to make it a prerequisite for placements and interaction delivery.
+
+Declare contacts with `Register(new BarPatronDefinition(...), patron => ...)`. The definition contains a local ID, native station GUID, display name, description and seed. Different providers may reuse local IDs. Registration returns an `IBarPatronDefinition` handle. Re-registering the same local ID **replaces** this provider's declaration: the old handle's queued interactions are dropped and disposing the old handle does not revoke the replacement or any other provider's contact. Dispose the handle (or the provider) to withdraw the declaration.
 
 Use `portrait: CharacterPortrait.Named("M2Captain")` to request specific NPC portrait art, or
 `CharacterPortrait.OfCharacter("LuminateCommander")` to borrow a game character's portrait.
@@ -19,9 +21,13 @@ Portrait identities are saved with persistent patrons, not Unity objects. Schema
 remains readable with its default portrait; schema-2 writes preserve the existing provider and
 payload limits, including portrait bytes.
 
-`Place(currentSession.Id, localId)` stores the contribution. A successful placement is **not a visibility guarantee**: station policy, native capacity, readiness and dependencies determine admission at refresh. Always pass the current session identity; a saved occurrence ID does not make a stale session valid.
+## Automatic placement and live patrons
 
-`Unregister` revokes runtime behavior and transient placement, retaining persistent state. Registering the same identity again can reconstruct that state without another Place call. `Remove` explicitly deletes placement state; in a ready session it is idempotent. Disposing the provider removes its runtime registrations, not its saved persistent rows.
+Consumers do not place contacts per session. The API places each registered declaration automatically once the game and its save data are ready, and reconstructs saved presentation on load. Successful placement is **not a visibility guarantee**: station policy, native capacity, readiness and dependencies determine admission at refresh.
+
+`game.Bars.Get(definition)` returns the live patron for a captured game. `Status` reports `Waiting`, `Assigned`, `Removed`, `Unavailable` or `GameEnded`; `Changed` fires as a safe gameplay reaction. `Remove()` hides the patron in that game and the absence itself is saved — reloading does not resurrect a removed contact, and re-registering the definition does not either. `Restore()` reinstates the saved presentation (never startup defaults) or places the contact for the first time. Both actions return retained results that progress `Queued → Succeeded/Rejected/Unavailable/GameEnded`; a result queued into a replaced save ends `GameEnded` without another tick, and old game objects cannot act against a replacement save.
+
+Interaction callbacks receive the live `IBarPatron`, so `patron.Game`, `patron.Status` and actions such as `patron.Remove()` are directly available. Delivery is deferred to a safe boundary and only occurs while the definition, session, roster admission and save prerequisites are still current.
 
 ## Station policy and capacity
 
@@ -42,6 +48,8 @@ Unknown modifications to a retained native roster are refused rather than silent
 ## Persistence and linked missions
 
 Supported persistent presentation and same-owner mission/occurrence references are automatically saved by the API. Consumers do not supply serializers or save/load hooks for these fields. After session/provider loss, consumers must explicitly place transient contributions again. State remains bounded and owner-scoped; refusal never means that older or unreadable state was accepted as empty.
+
+Removal is a per-save persisted absence, not deletion: the retained row keeps its presentation so `Restore()` cannot invent defaults. Transient declarations keep their absence for the process session only.
 
 A linked contact requires a current live story provider, registered definition, matching unresolved occurrence, valid story admission and healthy runtime. Tentative registration and in-flight story operations cannot admit it. Registration, admission and operation epochs invalidate stale plans, including changes that return to an apparently identical state. Missing dependencies fail closed; consumers must not replace readiness tokens with constants.
 

@@ -20,7 +20,7 @@ internal sealed partial class BarContentService
             || (nativeAdmission != null && !nativeAdmission.IsCurrent) || !_interacting.Add(state.Id)) return false;
         try
         {
-            action(new BarInteraction(plan.Session, state.Id, state.Station));
+            action(new BarInteraction(plan.Session, state.Id, state.Station, () => IsCurrent(plan) && (nativeAdmission == null || nativeAdmission.IsCurrent)));
             return true;
         }
         catch { return false; }

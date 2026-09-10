@@ -10,6 +10,7 @@ public interface IGame
     INavigation Navigation { get; }
     IInventories Inventories { get; }
     IStory Story { get; }
+    IBars Bars { get; }
 }
 
 /// <summary>Stable plugin-lifetime access to running games. Subscribe once during plugin setup.</summary>

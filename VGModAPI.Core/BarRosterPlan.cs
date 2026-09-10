@@ -49,9 +49,9 @@ internal sealed partial class BarContentService
         _checkThread();
         if (_disposed || _storage == null || !Availability.IsAvailable || !_persistence.Read(session, out var saved)) return null;
         var revision = _revision;
-        var candidates = saved.Where(row => row.Station == station && _leases.TryGetValue(row.Id.Provider, out var lease)
+        var candidates = saved.Where(row => !row.Removed && row.Station == station && _leases.TryGetValue(row.Id.Provider, out var lease)
             && lease.Definitions.TryGetValue(row.Id.LocalId, out var definition) && definition.Retention == BarPatronRetention.Persistent)
-            .Concat(_transient.Values.Where(row => row.Station == station)).ToArray();
+            .Concat(_transient.Values.Where(row => !row.Removed && row.Station == station)).ToArray();
         // The host must replace this token on every permission change, including changes made
         // by mission resolution. Stamp accessors are read-only and must not return recycled tokens.
         object? permissionStamp = null;
