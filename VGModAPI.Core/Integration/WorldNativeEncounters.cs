@@ -81,16 +81,28 @@ internal sealed class WorldNativeEncounters : IEncounterNative
             try { rank = Enum.Parse(_rankType, composition.Rank.ToString()); }
             catch (ArgumentException) { return (0, "The installed game does not support rank " + composition.Rank + "."); }
             int scheduled = 0;
+            var parameterInfos = _addTriggered.GetParameters();
             foreach (var wave in composition.Waves)
             {
-                var arguments = new object?[_addTriggered.GetParameters().Length];
-                for (int i = 0; i < arguments.Length; i++) arguments[i] = _addTriggered.GetParameters()[i].HasDefaultValue ? _addTriggered.GetParameters()[i].DefaultValue : null;
+                var arguments = new object?[parameterInfos.Length];
+                for (int i = 0; i < arguments.Length; i++) arguments[i] = parameterInfos[i].HasDefaultValue ? parameterInfos[i].DefaultValue : null;
                 arguments[0] = wave.DelaySeconds; arguments[1] = wave.ShipClassId; arguments[2] = wave.Count;
                 arguments[3] = faction; arguments[4] = _gameplayCombat; arguments[5] = rank; arguments[6] = (int?)composition.Level;
-                var units = _addTriggered.Invoke(poi, arguments) as IList;
+                IList? units;
+                try { units = _addTriggered.Invoke(poi, arguments) as IList; }
+                catch (Exception waveError)
+                {
+                    // A mid-loop native throw keeps the honest partial count; null is reserved for
+                    // failures before anything scheduled.
+                    if (waveError is TargetInvocationException tie && tie.InnerException != null) _report(tie.InnerException); else _report(waveError);
+                    return (scheduled, "A native reinforcement wave failed.");
+                }
                 if (units == null) return (scheduled, "The native reinforcement trigger refused a wave.");
                 foreach (var unit in units)
                 {
+                    // Decomp-verified: AddTriggeredSpawnFromFixedPayload returns the exact data
+                    // instances it hands to AddTriggeredSpawn, which the delayed spawn later
+                    // materialises from - so per-unit flags set here reach the spawned ships.
                     if (composition.HostileToPlayer && _shipDataType.IsInstanceOfType(unit))
                     {
                         _playerHostile.SetValue(unit, true);

@@ -588,7 +588,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             return scheduled == requested
                 ? new EncounterSpawnResult(AuthoredActionStatus.Succeeded, scheduled)
                 : new EncounterSpawnResult(AuthoredActionStatus.Rejected, scheduled,
-                    detail.Length > 0 ? detail : "The native trigger scheduled fewer units than authored.");
+                    detail.Length > 0 ? detail : "The native trigger scheduled a different unit count than authored.");
         }
 
         public WorldStatus RegisterAuthoredSystem(AuthoredSystemDefinition definition, AuthoredSystemDefinition? previous = null)
