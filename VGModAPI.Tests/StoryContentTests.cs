@@ -19,12 +19,22 @@ namespace VGModAPI.Tests;
 /// vanilla registration/reconstruction is separate work and is not claimed here.
 /// </summary>
 /// <summary>
-/// Convenience wrappers that read the CURRENT session from the API itself, so the tests below stay
-/// about the behaviour under test. The session-token contract itself is exercised with the real
-/// signatures in <see cref="StoryContentTests.AMutationForAnotherSessionIsRefusedBeforeAnythingIsRead"/>.
+/// Internal engine regression helpers. Public authoring uses game/mission objects; these tests
+/// exercise the engine's session and ownership guards directly.
 /// </summary>
 internal static class StoryProviderCallExtensions
 {
+    internal static bool InternalActive(this IStoryProvider provider) => ((StoryContentService.Lease)provider).Active;
+    internal static bool InternalActive(this IStoryDefinition definition) => ((StoryContentService.Registration)definition).Active;
+    internal static StoryTransitionResult Offer(this IStoryProvider provider, Guid session, string localId) => ((StoryContentService.Lease)provider).Offer(session, localId);
+    internal static StoryTransitionResult Activate(this IStoryProvider provider, Guid session, Guid occurrence) => ((StoryContentService.Lease)provider).Activate(session, occurrence);
+    internal static StoryTransitionResult Withdraw(this IStoryProvider provider, Guid session, Guid occurrence) => ((StoryContentService.Lease)provider).Withdraw(session, occurrence);
+    internal static StoryTransitionResult Retire(this IStoryProvider provider, Guid session, Guid occurrence, StoryOutcome outcome, IReadOnlyDictionary<string, string>? choices = null) => ((StoryContentService.Lease)provider).Retire(session, occurrence, outcome, choices);
+    internal static StoryTransitionResult DeclareChoices(this IStoryProvider provider, Guid session, Guid occurrence, IReadOnlyDictionary<string, string> choices) => ((StoryContentService.Lease)provider).DeclareChoices(session, occurrence, choices);
+    internal static StoryOccurrenceQuery Occurrences(this IStoryProvider provider, string localId) => ((StoryContentService.Lease)provider).Occurrences(localId);
+    internal static StoryOccurrenceSnapshotQuery Unresolved(this IStoryProvider provider, string localId) => ((StoryContentService.Lease)provider).Unresolved(localId);
+    internal static StoryCompletionQuery IsCompleted(this IStoryProvider provider, string localId) => ((StoryContentService.Lease)provider).IsCompleted(localId);
+
     internal static Guid CurrentSession(this IStoryProvider provider)
         => provider.Occurrences("session-probe").SessionId ?? Guid.Empty;
     internal static StoryTransitionResult Offer(this IStoryProvider provider, string localId)
@@ -41,7 +51,7 @@ internal static class StoryProviderCallExtensions
         => provider.DeclareChoices(provider.CurrentSession(), occurrenceId, choices);
 }
 
-public sealed class StoryContentTests
+public sealed partial class StoryContentTests
 {
     [Fact]
     public void TypedUnavailableStoryDoesNotAuthenticateOrRegisterSaveData()
@@ -124,7 +134,7 @@ public sealed class StoryContentTests
         using var service = world.Service(host);
         world.StartAndRestore(); var plugin = new object(); host.Register(plugin, AnimaPlugin);
         var provider = service.AcquireProvider(plugin).Provider!;
-        var definition = Definition(); var registration = provider.Register(definition).Registration!;
+        var definition = Definition(); var registration = provider.Register(definition).Definition!;
         var offered = provider.Offer(definition.LocalId);
         Assert.True(offered.Accepted);
         var id = new StoryContentId(provider.ProviderId, definition.LocalId);
@@ -152,7 +162,7 @@ public sealed class StoryContentTests
         var host = new FakeHost(); var world = new FakeWorld(); using var service = world.Service(host);
         world.StartAndRestore(); var plugin = new object(); host.Register(plugin, AnimaPlugin);
         var provider = service.AcquireProvider(plugin).Provider!;
-        var definition = Definition(); var registration = provider.Register(definition).Registration!;
+        var definition = Definition(); var registration = provider.Register(definition).Definition!;
         var offered = provider.Offer(definition.LocalId);
         var id = new StoryContentId(provider.ProviderId, definition.LocalId);
         Assert.True(service.IsBarMissionReady(world.SessionId, id, offered.OccurrenceId));
@@ -354,7 +364,7 @@ public sealed class StoryContentTests
         var again = service.AcquireProvider(animaPlugin);
         Assert.Equal(StoryProviderStatus.AlreadyAcquired, again.Status);
         Assert.Null(again.Provider);
-        Assert.True(anima.Provider.Active);
+        Assert.True(anima.Provider.InternalActive());
     }
 
     /// <summary>
@@ -381,7 +391,7 @@ public sealed class StoryContentTests
         var second = service.AcquireProvider(plugin);
         Assert.Equal(StoryProviderStatus.Acquired, second.Status);
         Assert.NotSame(first, second.Provider);
-        Assert.False(first.Active);
+        Assert.False(first.InternalActive());
         Assert.Equal(StoryTransitionStatus.Unavailable, first.Offer("salvage-run").Status);
         // The ledger kept the occurrence; only the registration was released with the lease.
         Assert.Equal(first.ProviderId, second.Provider!.ProviderId);
@@ -436,6 +446,7 @@ public sealed class StoryContentTests
         var il = method.GetILGenerator();
         il.Emit(OpCodes.Ldarg_0);
         il.Emit(OpCodes.Ldarg_1);
+        il.Emit(OpCodes.Ldnull);
         il.Emit(OpCodes.Callvirt, typeof(IStoryService).GetMethod(nameof(IStoryService.AcquireProvider))!);
         il.Emit(OpCodes.Ret);
         return (Func<IStoryService, object, StoryProviderResult>)type.CreateType()!
@@ -455,16 +466,16 @@ public sealed class StoryContentTests
         host.Register(otherPlugin, OtherPlugin);
         var anima = service.AcquireProvider(animaPlugin).Provider!;
         var other = service.AcquireProvider(otherPlugin).Provider!;
-        var registration = anima.Register(Definition()).Registration!;
+        var registration = anima.Register(Definition()).Definition!;
         other.Register(Definition());
         anima.Dispose();
-        Assert.False(anima.Active);
-        Assert.False(registration.Active);
+        Assert.False(anima.InternalActive());
+        Assert.False(registration.InternalActive());
         Assert.Equal(StoryTransitionStatus.Unavailable, anima.Offer("salvage-run").Status);
         Assert.Equal(StoryKnowledge.Unavailable, anima.Occurrences("salvage-run").Knowledge);
         // The other mod keeps working, and the coordinator owner was never unregistered, so no other
         // mod's saves are paused by a consumer's teardown.
-        Assert.True(other.Active);
+        Assert.True(other.InternalActive());
         Assert.True(other.Offer("salvage-run").Accepted);
         Assert.False(world.Persistence.OwnerDisposed);
         service.Dispose();
@@ -485,14 +496,14 @@ public sealed class StoryContentTests
         var plugin = new object();
         host.Register(plugin, AnimaPlugin);
         var first = service.AcquireProvider(plugin).Provider!;
-        var stale = first.Register(Definition(retention: StoryRetention.Campaign)).Registration!;
+        var stale = first.Register(Definition(retention: StoryRetention.Campaign)).Definition!;
         first.Dispose();
 
         var second = service.AcquireProvider(plugin).Provider!;
-        var live = second.Register(Definition(retention: StoryRetention.Campaign)).Registration!;
+        var live = second.Register(Definition(retention: StoryRetention.Campaign)).Definition!;
         stale.Dispose();                                  // ordinary teardown of the old handle
 
-        Assert.True(live.Active);
+        Assert.True(live.InternalActive());
         var occurrence = second.Offer("salvage-run");
         Assert.True(occurrence.Accepted);
         Assert.True(second.DeclareChoices(occurrence.OccurrenceId, new Dictionary<string, string> { ["branch"] = "left" }).Accepted);
@@ -501,7 +512,7 @@ public sealed class StoryContentTests
         Assert.True(second.IsCompleted("salvage-run").Completed);
         // The live registration is still the one that can be released by its OWN handle.
         live.Dispose();
-        Assert.False(live.Active);
+        Assert.False(live.InternalActive());
     }
 
     /// <summary>
@@ -523,19 +534,19 @@ public sealed class StoryContentTests
         host.Register(plugin, AnimaPlugin);
         var provider = service.AcquireProvider(plugin).Provider!;
         var definition = Definition(retention: StoryRetention.Campaign);
-        var superseded = provider.Register(definition).Registration!;
+        var superseded = provider.Register(definition).Definition!;
         var id = superseded.Id;
 
         // The internal path a native adapter would use to release and reinstall content.
         Assert.True(service.Registry.Unregister(id));
-        Assert.False(superseded.Active);
-        var live = provider.Register(definition).Registration!;
-        Assert.True(live.Active);
+        Assert.False(superseded.InternalActive());
+        var live = provider.Register(definition).Definition!;
+        Assert.True(live.InternalActive());
         Assert.NotEqual(0, service.Registry.EntryOf(id));
 
         superseded.Dispose();
 
-        Assert.True(live.Active);
+        Assert.True(live.InternalActive());
         Assert.True(service.Registry.Contains(id));
         var occurrence = provider.Offer("salvage-run");
         Assert.True(occurrence.Accepted);
@@ -543,7 +554,7 @@ public sealed class StoryContentTests
             new Dictionary<string, string> { ["branch"] = "left" }).Accepted);
         // Only its own handle releases the live registration, and history is untouched by either.
         live.Dispose();
-        Assert.False(live.Active);
+        Assert.False(live.InternalActive());
         Assert.False(service.Registry.Contains(id));
         Assert.Single(provider.Occurrences("salvage-run").Records);
     }
@@ -930,7 +941,7 @@ public sealed class StoryContentTests
         var plugin = new object();
         relaxedHost.Register(plugin, AnimaPlugin);
         var provider = guarded.AcquireProvider(plugin).Provider!;
-        var registration = provider.Register(Definition()).Registration!;
+        var registration = provider.Register(Definition()).Definition!;
         guard = true;
         foreach (Action call in new Action[]
         {
@@ -941,8 +952,8 @@ public sealed class StoryContentTests
             () => provider.Retire(Guid.NewGuid(), StoryOutcome.Failed),
             () => provider.Occurrences("salvage-run"),
             () => provider.IsCompleted("salvage-run"),
-            () => { var _ = provider.Active; },
-            () => { var _ = registration.Active; },
+            () => { var _ = provider.InternalActive(); },
+            () => { var _ = registration.InternalActive(); },
             () => registration.Dispose(),
             () => provider.Dispose(),
             () => guarded.Dispose()
@@ -1919,7 +1930,7 @@ public sealed class StoryContentTests
         host.Register(otherPlugin, OtherPlugin);
         var anima = service.AcquireProvider(animaPlugin).Provider!;
         var other = service.AcquireProvider(otherPlugin).Provider!;
-        var registration = anima.Register(Definition()).Registration!;
+        var registration = anima.Register(Definition()).Definition!;
         Assert.True(other.Register(Definition()).Succeeded);
         var animaIdentifier = StoryContentPolicy.Identifier(new StoryContentId(anima.ProviderId, "salvage-run"));
         var otherIdentifier = StoryContentPolicy.Identifier(new StoryContentId(other.ProviderId, "salvage-run"));
@@ -1930,12 +1941,12 @@ public sealed class StoryContentTests
         Assert.False(world.World.IsInstalled(animaIdentifier));
         Assert.True(world.World.IsInstalled(otherIdentifier));
 
-        var again = anima.Register(Definition()).Registration!;
+        var again = anima.Register(Definition()).Definition!;
         Assert.True(world.World.IsInstalled(animaIdentifier));
         other.Dispose();
         Assert.False(world.World.IsInstalled(otherIdentifier));
         Assert.True(world.World.IsInstalled(animaIdentifier));
-        Assert.True(again.Active);
+        Assert.True(again.InternalActive());
         service.Dispose();
         Assert.False(world.World.IsInstalled(animaIdentifier));
     }
@@ -2877,7 +2888,7 @@ public sealed class StoryContentTests
         var plugin = new object();
         host.Register(plugin, AnimaPlugin);
         var provider = service.AcquireProvider(plugin).Provider!;
-        var registration = provider.Register(Definition(retention: StoryRetention.Campaign)).Registration!;
+        var registration = provider.Register(Definition(retention: StoryRetention.Campaign)).Definition!;
         var baseIdentifier = StoryContentPolicy.Identifier(new StoryContentId(provider.ProviderId, "salvage-run"));
         var occurrence = provider.Offer("salvage-run");
         Assert.True(provider.Activate(occurrence.OccurrenceId).Accepted);
@@ -2900,7 +2911,7 @@ public sealed class StoryContentTests
         var again = provider.Register(Definition(retention: StoryRetention.Campaign));
         Assert.True(again.Succeeded);
         Assert.True(world.World.IsInstalled(baseIdentifier));
-        Assert.True(again.Registration!.Active);
+        Assert.True(again.Definition!.InternalActive());
     }
 
     /// <summary>
@@ -3195,7 +3206,7 @@ public sealed class StoryContentTests
             new[] { new StoryStep("Credits", new[] { StoryObjective.CollectCredits(100).WithKey("balance") }) })).Succeeded);
         var offered = provider.Offer("observed");
         var objective = new StoryObjectiveId(new StoryContentId(provider.ProviderId, "observed"), offered.OccurrenceId, "balance");
-        var query = (IStoryObjectiveProvider)provider;
+        var query = (StoryContentService.Lease)provider;
         Assert.Equal(StoryKnowledge.Unavailable, query.Query(world.SessionId, objective).Knowledge);
         Assert.True(provider.Activate(offered.OccurrenceId).Accepted);
         world.World.ObservedObjectiveProgress = 20;
@@ -3237,7 +3248,7 @@ public sealed class StoryContentTests
         Assert.Equal(1, entry.ObjectiveLayout.Revision);
         Assert.False(entry.ObjectiveLayout.FullyScripted);
         var identity = new StoryObjectiveId(entry.Id, entry.OccurrenceId, "talk");
-        Assert.False(((IStoryObjectiveProvider)current).SetProgress(later.SessionId, identity, 1).Accepted);
+        Assert.False(((StoryContentService.Lease)current).SetProgress(later.SessionId, identity, 1).Accepted);
         Assert.Equal(bytes, later.Persistence.Provider!.Capture());
     }
 
@@ -3292,7 +3303,7 @@ public sealed class StoryContentTests
         if (active)
         {
             Assert.True(provider.Activate(offered.OccurrenceId).Accepted);
-            Assert.True(((IStoryObjectiveProvider)provider).SetProgress(world.SessionId, objective, 2).Accepted);
+            Assert.True(((StoryContentService.Lease)provider).SetProgress(world.SessionId, objective, 2).Accepted);
         }
         var older = world.Persistence.Provider!.Capture();
         var later = new FakeWorld();
@@ -3310,7 +3321,7 @@ public sealed class StoryContentTests
         Assert.Equal(1, talk.Step);
         Assert.Equal(active ? 2 : 0, talk.Progress);
         if (!active) Assert.True(currentProvider.Activate(offered.OccurrenceId).Accepted);
-        Assert.True(((IStoryObjectiveProvider)currentProvider).SetProgress(later.SessionId, objective, 5).Accepted);
+        Assert.True(((StoryContentService.Lease)currentProvider).SetProgress(later.SessionId, objective, 5).Accepted);
         var upgraded = later.Persistence.Provider!.Capture();
         later.StartAndRestore(upgraded);
         Assert.True(service.Ledger.TryGet(offered.OccurrenceId, out var complete));
@@ -3339,7 +3350,7 @@ public sealed class StoryContentTests
             if (disposeLease) provider.Dispose();
             else world.StartAndRestore(before);
         };
-        Assert.False(((IStoryObjectiveProvider)provider).SetProgress(world.SessionId, objective, 2).Accepted);
+        Assert.False(((StoryContentService.Lease)provider).SetProgress(world.SessionId, objective, 2).Accepted);
         Assert.Equal(0, world.World.ObjectiveWrites);
         Assert.Equal(0, Assert.Single(original.ObjectiveLayout.Slots).Progress);
         Assert.True(service.Ledger.TryGet(offered.OccurrenceId, out var current));
@@ -3354,7 +3365,7 @@ public sealed class StoryContentTests
             new[] { new StoryStep("Talk", new[] { StoryObjective.Scripted("answer", "Talk to the broker", 5) }) })).Succeeded);
         var offered = provider.Offer("conversation");
         var objective = new StoryObjectiveId(new StoryContentId(provider.ProviderId, "conversation"), offered.OccurrenceId, "answer");
-        var objectives = (IStoryObjectiveProvider)provider;
+        var objectives = (StoryContentService.Lease)provider;
         Assert.False(objectives.SetProgress(world.SessionId, objective, 2).Accepted);
         Assert.True(provider.Activate(offered.OccurrenceId).Accepted);
         Assert.True(objectives.SetProgress(world.SessionId, objective, 2).Accepted);

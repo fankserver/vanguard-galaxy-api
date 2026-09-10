@@ -38,7 +38,7 @@ public sealed class InventoryObjectTests
         {
             foreach (var name in new[] { "inventories", "session-lifecycle", "save-outcomes" }) Hub.SetCapability(name, true, "Bound");
             Engine = new InventoryService(Hub, () => Backend);
-            Games = new GameService(Hub, new NavigationService(Hub, _ => null, (_, _, _) => NavigationStatus.Unavailable, (_, _) => null), Engine);
+            Games = new GameService(Hub, new NavigationService(Hub, _ => null, (_, _, _) => NavigationStatus.Unavailable, (_, _) => null), Engine, new StoryContentService(Hub.Services, null, Hub, (_, _) => null));
             Start();
         }
         internal IGame Game => Games.Current!;

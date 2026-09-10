@@ -18,7 +18,7 @@ public sealed class GameServiceTests
             Assert.False(hub.IsDispatchingCallbacks);
             Assert.True(current()); focused.Add(id); return NavigationStatus.Succeeded;
         }, (_, _) => false);
-        using var games = new GameService(hub, navigation, new InventoryService(hub, () => null));
+        using var games = new GameService(hub, navigation, new InventoryService(hub, () => null), new StoryContentService(hub.Services, null, hub, (_, _) => null));
         var observed = new List<IGame>();
         games.Started += game => { observed.Add(game); Assert.Equal(NavigationStatus.Succeeded, game.Navigation.FocusPoi("station")); };
         Assert.Null(games.Current);
@@ -58,7 +58,7 @@ public sealed class GameServiceTests
     {
         using var hub = new LifecycleHub((_, _) => { });
         hub.SetCapability("session-lifecycle", true, "Bound"); hub.SetCapability("save-outcomes", true, "Bound");
-        using var games = new GameService(hub, new NavigationService(hub, _ => null, (_, _, _) => NavigationStatus.Unavailable, (_, _) => null), new InventoryService(hub, () => null));
+        using var games = new GameService(hub, new NavigationService(hub, _ => null, (_, _, _) => NavigationStatus.Unavailable, (_, _) => null), new InventoryService(hub, () => null), new StoryContentService(hub.Services, null, hub, (_, _) => null));
         Action<IGame> handler = _ => Assert.Fail("Removed"); games.Started += handler;
         var id = hub.Begin(SessionOrigin.NewGame, null); hub.PlayerReady(id); hub.GameplayInitialized(id);
         games.Started -= handler; hub.Gameplay.Tick();

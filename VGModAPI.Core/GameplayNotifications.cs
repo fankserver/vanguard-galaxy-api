@@ -18,11 +18,11 @@ internal sealed class GameplayNotifications : IDisposable
         hub.Services.AfterStopped(Dispose);
     }
 
-    internal void Enqueue(Guid session, string owner, Action callback, Func<bool> subscribed, ISaveDataRegistration? saveData = null)
+    internal void Enqueue(Guid session, string owner, Action callback, Func<bool> subscribed, ISaveDataRegistration? saveData = null, ISaveDataRegistration? prerequisite = null)
     {
         _hub.CheckThread();
         if (_disposed || !Current(session) || !subscribed()) return;
-        _pending.Add(new Delivery(session, owner, callback, subscribed, saveData));
+        _pending.Add(new Delivery(session, owner, callback, subscribed, saveData, prerequisite));
     }
 
     private bool Current(Guid session) => _hub.CurrentSession?.Id == session &&
@@ -56,14 +56,16 @@ internal sealed class GameplayNotifications : IDisposable
                     { DiagnoseWait(item, "Gameplay reaction is waiting for session or save observation."); continue; }
                     if (_hub.CurrentSession?.Phase != SessionPhase.GameplayInitialized || _saves.Count != 0) break;
                     if (waiting.Contains(item.Owner)) continue;
-                    var registration = item.SaveData;
-                    if (registration != null && (!registration.CanMutate || registration.State.SessionId != item.Session))
+                    var blocked = false;
+                    foreach (var registration in item.SaveData)
                     {
-                        waiting.Add(item.Owner);
+                        if (registration.CanMutate && registration.State.SessionId == item.Session) continue;
+                        waiting.Add(item.Owner); blocked = true;
                         if (registration.State.Kind is SaveDataStateKind.Blocked or SaveDataStateKind.Disposed)
                             DiagnoseWait(item, "Gameplay reaction is waiting for its custom save data.");
-                        continue;
+                        break;
                     }
+                    if (blocked) continue;
                     _pending.Remove(item);
                     item.Callback();
                 }
@@ -97,9 +99,13 @@ internal sealed class GameplayNotifications : IDisposable
         internal readonly string Owner;
         internal readonly Action Callback;
         internal readonly Func<bool> Subscribed;
-        internal readonly ISaveDataRegistration? SaveData;
+        internal readonly List<ISaveDataRegistration> SaveData = new();
         internal bool Reported;
-        internal Delivery(Guid session, string owner, Action callback, Func<bool> subscribed, ISaveDataRegistration? saveData)
-        { Session = session; Owner = owner; Callback = callback; Subscribed = subscribed; SaveData = saveData; }
+        internal Delivery(Guid session, string owner, Action callback, Func<bool> subscribed, ISaveDataRegistration? saveData, ISaveDataRegistration? prerequisite)
+        {
+            Session = session; Owner = owner; Callback = callback; Subscribed = subscribed;
+            if (saveData != null) SaveData.Add(saveData);
+            if (prerequisite != null && !ReferenceEquals(prerequisite, saveData)) SaveData.Add(prerequisite);
+        }
     }
 }

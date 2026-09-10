@@ -2,16 +2,7 @@ using System;
 
 namespace VGModAPI;
 
-/// <summary>Optional interface on an acquired story provider for owner-scoped scripted progress.</summary>
-public interface IStoryObjectiveProvider
-{
-    /// <summary>Sets absolute progress on the current live objective. Replayed values never increment progress.</summary>
-    StoryTransitionResult SetProgress(Guid expectedSessionId, StoryObjectiveId objective, int progress);
-    /// <summary>Reads retained scripted progress or the current active vanilla credit/travel objective.
-    /// Native credit progress follows current resources, not cumulative earnings. Unavailable is never zero progress.</summary>
-    StoryObjectiveQuery Query(Guid expectedSessionId, StoryObjectiveId objective);
-}
-
+/// <summary>Read-only objective progress. Unavailable progress is distinct from zero.</summary>
 public sealed class StoryObjectiveQuery
 {
     public StoryKnowledge Knowledge { get; }
@@ -28,7 +19,7 @@ public sealed class StoryObjectiveQuery
 }
 
 /// <summary>Stable objective identity within one provider-owned mission occurrence.</summary>
-public readonly struct StoryObjectiveId : IEquatable<StoryObjectiveId>
+internal readonly struct StoryObjectiveId : IEquatable<StoryObjectiveId>
 {
     public StoryContentId Definition { get; }
     public Guid OccurrenceId { get; }

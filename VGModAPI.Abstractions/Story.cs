@@ -355,27 +355,18 @@ public enum StoryRegistrationStatus
     Unavailable = 7
 }
 
-/// <summary>Session-owned handle. Disposal removes the registration; it never rewrites saved state.</summary>
-public interface IStoryRegistration : IDisposable
-{
-    StoryContentId Id { get; }
-    /// <summary>The namespaced identifier the API uses for this definition inside the game. Opaque to consumers.</summary>
-    string NativeIdentifier { get; }
-    bool Active { get; }
-}
-
 /// <summary>Result of a registration attempt; a refusal carries the reason, never a partial registration.</summary>
 public sealed class StoryRegistrationResult
 {
     public StoryRegistrationStatus Status { get; }
-    public IStoryRegistration? Registration { get; }
+    public IStoryDefinition? Definition { get; }
     public string Diagnostic { get; }
-    public StoryRegistrationResult(StoryRegistrationStatus status, IStoryRegistration? registration, string diagnostic)
+    public StoryRegistrationResult(StoryRegistrationStatus status, IStoryDefinition? definition, string diagnostic)
     {
         if (!Enum.IsDefined(typeof(StoryRegistrationStatus), status)) throw new ArgumentOutOfRangeException(nameof(status));
-        if ((status == StoryRegistrationStatus.Registered) != (registration != null))
-            throw new ArgumentException("Only a successful registration carries a handle.", nameof(registration));
-        Status = status; Registration = registration;
+        if ((status == StoryRegistrationStatus.Registered) != (definition != null))
+            throw new ArgumentException("Only a successful registration carries a definition.", nameof(definition));
+        Status = status; Definition = definition;
         Diagnostic = diagnostic ?? throw new ArgumentNullException(nameof(diagnostic));
     }
     public bool Succeeded => Status == StoryRegistrationStatus.Registered;
@@ -385,7 +376,7 @@ public sealed class StoryRegistrationResult
 /// One occurrence of a definition. Repeated occurrences of the same definition are separate
 /// records with separate identity and progress; another provider can neither update nor delete them.
 /// </summary>
-public sealed class StoryOccurrenceRecord
+internal sealed class StoryOccurrenceRecord
 {
     public StoryContentId Id { get; }
     public Guid OccurrenceId { get; }
@@ -409,7 +400,7 @@ public sealed class StoryOccurrenceRecord
 /// terminal record, with the outcome and the recorded choices, is a <see cref="StoryOccurrenceRecord"/>
 /// returned by the retained query.
 /// </summary>
-public enum StoryOccurrenceStage { Offered, Active }
+internal enum StoryOccurrenceStage { Offered, Active }
 
 /// <summary>
 /// An immutable read-only view of one occurrence the API is still holding UNRESOLVED for this save.
@@ -418,7 +409,7 @@ public enum StoryOccurrenceStage { Offered, Active }
 /// choices, because an unresolved occurrence has none; a recorded outcome is a
 /// <see cref="StoryOccurrenceRecord"/> from the retained query.
 /// </summary>
-public sealed class StoryOccurrenceSnapshot
+internal sealed class StoryOccurrenceSnapshot
 {
     public StoryContentId Id { get; }
     public Guid OccurrenceId { get; }
@@ -449,7 +440,7 @@ public enum StoryKnowledge
 }
 
 /// <summary>Occurrence answer scoped to the session it was read in. Records are empty when unavailable.</summary>
-public sealed class StoryOccurrenceQuery
+internal sealed class StoryOccurrenceQuery
 {
     public StoryKnowledge Knowledge { get; }
     /// <summary>The session the answer belongs to, or null when unavailable.</summary>
@@ -473,7 +464,7 @@ public sealed class StoryOccurrenceQuery
 /// Occurrence snapshots scoped to the session they were read in, with the same availability rules as
 /// every other answer. Snapshots are empty when unavailable.
 /// </summary>
-public sealed class StoryOccurrenceSnapshotQuery
+internal sealed class StoryOccurrenceSnapshotQuery
 {
     public StoryKnowledge Knowledge { get; }
     public Guid? SessionId { get; }
@@ -497,7 +488,7 @@ public sealed class StoryOccurrenceSnapshotQuery
 /// Campaign completion answer. <see cref="Completed"/> is null when unavailable, so a caller can
 /// never read an unreadable history as "not completed".
 /// </summary>
-public sealed class StoryCompletionQuery
+internal sealed class StoryCompletionQuery
 {
     public StoryKnowledge Knowledge { get; }
     public Guid? SessionId { get; }
@@ -547,58 +538,8 @@ public enum StoryProviderStatus
 /// </summary>
 public interface IStoryProvider : IDisposable
 {
-    /// <summary>The canonical provider segment derived from the host plugin identity.</summary>
     string ProviderId { get; }
-    bool Active { get; }
-
-    /// <summary>Registers a supported definition under this provider. Refusals are diagnosed and never overwrite content.</summary>
     StoryRegistrationResult Register(StoryMissionDefinition definition);
-
-    /// <summary>
-    /// Offers a new occurrence of one of THIS provider's definitions and returns its API-generated
-    /// identity. <paramref name="expectedSessionId"/> is the session the caller believes it is
-    /// acting in, taken from a query or from the session it observed; a mutation for another session
-    /// is refused with <see cref="StoryTransitionStatus.StaleSession"/> before anything is recorded.
-    /// </summary>
-    StoryTransitionResult Offer(Guid expectedSessionId, string localId);
-
-    /// <summary>Marks an offered occurrence of this provider as active, in the expected session.</summary>
-    StoryTransitionResult Activate(Guid expectedSessionId, Guid occurrenceId);
-
-    /// <summary>Withdraws an offered occurrence that was never accepted; it leaves no tombstone.</summary>
-    StoryTransitionResult Withdraw(Guid expectedSessionId, Guid occurrenceId);
-
-    /// <summary>
-    /// Declares the choices to record WITH this occurrence's outcome. Completions come from the game,
-    /// so the choices that belong to one are declared while the occurrence is still live and are
-    /// written when the game ends it. They are validated here, against the same declared keys and
-    /// bounds a retirement uses, so nothing unrecordable is ever staged. Declaring again replaces the
-    /// previous declaration; it never merges into it.
-    /// </summary>
-    StoryTransitionResult DeclareChoices(Guid expectedSessionId, Guid occurrenceId, IReadOnlyDictionary<string, string> choices);
-
-    /// <summary>
-    /// Records a terminal outcome the CALLER owns: an abandonment or a failure it decides. The mission
-    /// is ended in the game first and the outcome is recorded only if that succeeded.
-    ///
-    /// <see cref="StoryOutcome.Completed"/> is NOT a caller-declared outcome and is refused here: a
-    /// completion is recorded only when the game is observed completing the mission, so no caller can
-    /// claim one for content that was never accepted or that the player abandoned.
-    /// </summary>
-    StoryTransitionResult Retire(Guid expectedSessionId, Guid occurrenceId, StoryOutcome outcome, IReadOnlyDictionary<string, string>? choices = null);
-
-    /// <summary>Retained (retired) occurrences of one of this provider's definitions, scoped to the session that answered.</summary>
-    StoryOccurrenceQuery Occurrences(string localId);
-
-    /// <summary>
-    /// The occurrences of one of this provider's definitions that are still OFFERED or ACTIVE, with
-    /// the session they belong to. This is how a provider finds its unresolved content again after a
-    /// reload: it never has to store occurrence identities in its own save data.
-    /// </summary>
-    StoryOccurrenceSnapshotQuery Unresolved(string localId);
-
-    /// <summary>Campaign completion of one of this provider's definitions. Temporary tombstones never answer true.</summary>
-    StoryCompletionQuery IsCompleted(string localId);
 }
 
 /// <summary>
@@ -606,7 +547,7 @@ public interface IStoryProvider : IDisposable
 /// only ever appended with a new value, so inserting one can never silently renumber the others for
 /// code or persisted diagnostics compiled against an earlier build.
 /// </summary>
-public enum StoryTransitionStatus
+internal enum StoryTransitionStatus
 {
     Accepted = 0,
     /// <summary>The occurrence is unknown to the current ledger, including one pruned past the idempotency horizon.</summary>
@@ -633,7 +574,7 @@ public enum StoryTransitionStatus
     Unavailable = 7
 }
 
-public sealed class StoryTransitionResult
+internal sealed class StoryTransitionResult
 {
     public StoryTransitionStatus Status { get; }
     /// <summary>The occurrence this call created or addressed; empty when refused before one existed.</summary>
@@ -691,5 +632,5 @@ public interface IStoryService : IServiceStatus
     /// so the association cannot be spoofed by an argument. Callers cache the returned lease; a
     /// second acquisition while one is live reports <see cref="StoryProviderStatus.AlreadyAcquired"/>.
     /// </summary>
-    StoryProviderResult AcquireProvider(object pluginInstance);
+    StoryProviderResult AcquireProvider(object pluginInstance, ISaveDataRegistration? saveData = null);
 }

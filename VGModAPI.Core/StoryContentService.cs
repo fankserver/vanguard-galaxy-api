@@ -29,14 +29,15 @@ internal sealed partial class StoryContentService : IStoryService, IStoryUiTrans
 {
     private enum Readiness { None, Pending, Restored, Blocked }
 
-    private sealed class Lease : IStoryProvider, IStoryObjectiveProvider
+    internal sealed class Lease : IStoryProvider
     {
         private readonly StoryContentService _service;
         private bool _disposed;
         internal StoryHostPlugin Plugin { get; }
         public string ProviderId { get; }
-        internal Lease(StoryContentService service, StoryHostPlugin plugin, string providerId)
-        { _service = service; Plugin = plugin; ProviderId = providerId; }
+        internal readonly ISaveDataRegistration? SaveData;
+        internal Lease(StoryContentService service, StoryHostPlugin plugin, string providerId, ISaveDataRegistration? saveData)
+        { _service = service; Plugin = plugin; ProviderId = providerId; SaveData = saveData; }
 
         public bool Active { get { _service.CheckThread(); return !_disposed && !_service._disposed; } }
 
@@ -280,6 +281,7 @@ internal sealed partial class StoryContentService : IStoryService, IStoryUiTrans
         _readiness = Readiness.Restored;
         _readinessDetail = bytes == null ? "no stored story state for this save" : "restored";
         Reconcile();
+        _gameObjects?.ReconcileDefinitions();
         PublishAdmissions();
     }
 
@@ -428,6 +430,7 @@ internal sealed partial class StoryContentService : IStoryService, IStoryUiTrans
     /// </summary>
     private void PublishAdmissions()
     {
+        PublishMissionChanges();
         if (_protection == null) return;
         if (_disposed || _suspended != null || _fault != null || _readiness != Readiness.Restored || _restoredSession == Guid.Empty
             || _protectionHealthy?.Invoke() == false)
@@ -479,6 +482,7 @@ internal sealed partial class StoryContentService : IStoryService, IStoryUiTrans
             // eventually follows is what settles it.
             if (_ledger.ObserveFailure(entry.Id, occurrenceId, out var failureDetail) != StoryLedgerStatus.Accepted)
                 Report("An observed failure for '" + transition.Mission.DefinitionId + "' could not be recorded: " + failureDetail);
+            PublishMissionChanges();
             return;
         }
         StoryOutcome? outcome = transition.Kind switch
@@ -664,10 +668,10 @@ internal sealed partial class StoryContentService : IStoryService, IStoryUiTrans
     /// authenticator and is never a parameter, so no argument can claim to come from elsewhere.
     /// </summary>
     [MethodImpl(MethodImplOptions.NoInlining)]
-    public StoryProviderResult AcquireProvider(object pluginInstance)
-        => AcquireProviderFor(pluginInstance, Assembly.GetCallingAssembly());
+    public StoryProviderResult AcquireProvider(object pluginInstance, ISaveDataRegistration? saveData = null)
+        => AcquireProviderFor(pluginInstance, Assembly.GetCallingAssembly(), saveData);
 
-    private StoryProviderResult AcquireProviderFor(object pluginInstance, Assembly callingAssembly)
+    private StoryProviderResult AcquireProviderFor(object pluginInstance, Assembly callingAssembly, ISaveDataRegistration? saveData)
     {
         CheckThread();
         if (pluginInstance == null) throw new ArgumentNullException(nameof(pluginInstance));
@@ -701,7 +705,7 @@ internal sealed partial class StoryContentService : IStoryService, IStoryUiTrans
                     "This plugin already holds a live story provider lease; cache and reuse it.");
             _leasesBySegment.Remove(segment);
         }
-        var lease = new Lease(this, plugin, segment);
+        var lease = new Lease(this, plugin, segment, saveData);
         _leasesBySegment[segment] = lease;
         return new StoryProviderResult(StoryProviderStatus.Acquired, lease, "");
     }
@@ -809,10 +813,13 @@ internal sealed partial class StoryContentService : IStoryService, IStoryUiTrans
                     "The game does not know source faction '" + definition.SourceFaction + "'.");
             }
         }
-        return new StoryRegistrationResult(status, new Registration(this, lease, id, identifier, entry), "");
+        var registration = new Registration(this, lease, id, identifier, entry);
+        _authoredDefinitions[id] = registration;
+        _gameObjects?.ReconcileDefinitions();
+        return new StoryRegistrationResult(status, registration, "");
     }
 
-    private sealed class Registration : IStoryRegistration
+    internal sealed partial class Registration : IStoryDefinition
     {
         private readonly StoryContentService _service;
         private readonly Lease _lease;
@@ -821,7 +828,7 @@ internal sealed partial class StoryContentService : IStoryService, IStoryUiTrans
         public StoryContentId Id { get; }
         public string NativeIdentifier { get; }
         internal Registration(StoryContentService service, Lease lease, StoryContentId id, string identifier, long entry)
-        { _service = service; _lease = lease; Id = id; NativeIdentifier = identifier; _entry = entry; }
+        { _service = service; _lease = lease; Id = id; NativeIdentifier = identifier; _entry = entry; InitializeEvents(); }
         public bool Active
         {
             get
@@ -835,6 +842,9 @@ internal sealed partial class StoryContentService : IStoryService, IStoryUiTrans
             _service.CheckThread();
             if (_disposed) return;
             _disposed = true;
+            CloseEvents();
+            if (_service._authoredDefinitions.TryGetValue(Id, out var current) && ReferenceEquals(current, this))
+                _service._authoredDefinitions.Remove(Id);
             // A handle from a released lease is stale: the identifier may already belong to a NEW
             // registration made through a re-acquired lease, and this handle must never remove it.
             if (!_lease.Active) return;
@@ -1405,6 +1415,7 @@ internal sealed partial class StoryContentService : IStoryService, IStoryUiTrans
     /// </summary>
     private void ReleaseProvider(Lease lease)
     {
+        foreach (var definition in _authoredDefinitions.Values.Where(value => ReferenceEquals(value.Owner, lease)).ToArray()) definition.Dispose();
         if (_disposed) return;
         foreach (var identifier in _registry.IdentifiersOf(lease.ProviderId))
         {

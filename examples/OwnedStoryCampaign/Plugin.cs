@@ -67,9 +67,8 @@ public sealed class Plugin : BaseUnityPlugin
             retention: StoryRetention.Temporary));
 
     // Invoked by the consumer's conversation controller when the authored answer is chosen.
-    public StoryTransitionResult AnswerWitness(Guid session, Guid occurrence)
-        => ((IStoryObjectiveProvider)Provider).SetProgress(session,
-            new StoryObjectiveId(new StoryContentId(Provider.ProviderId, ObjectiveLocalId), occurrence, "report"), 1);
+    public StoryActionResult AnswerWitness(IStoryMission mission)
+        => mission.GetObjective("report").SetProgress(1);
 
     public void ReleaseProvider() { _provider?.Dispose(); _provider = null; }
     private void OnDestroy() => ReleaseProvider();

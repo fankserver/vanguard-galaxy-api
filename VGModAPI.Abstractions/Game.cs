@@ -9,6 +9,7 @@ public interface IGame
     bool IsActive { get; }
     INavigation Navigation { get; }
     IInventories Inventories { get; }
+    IStory Story { get; }
 }
 
 /// <summary>Stable plugin-lifetime access to running games. Subscribe once during plugin setup.</summary>
