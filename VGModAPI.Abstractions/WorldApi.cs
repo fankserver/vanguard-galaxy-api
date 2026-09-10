@@ -50,6 +50,8 @@ public interface IWorldService : IServiceStatus
     IWorldProvider? AcquireProvider(object pluginInstance);
     /// <summary>Declarative quiet-location presentation for authored content.</summary>
     IAmbientTrafficService AmbientTraffic { get; }
+    /// <summary>Runtime-only survivability for story-critical unit instances.</summary>
+    IUnitProtectionService UnitProtection { get; }
 }
 
 public interface IWorldProvider : IDisposable

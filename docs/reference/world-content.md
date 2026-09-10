@@ -49,6 +49,41 @@ errors. `Availability` reports binding health for this integration; while it is
 unavailable, declarations are retained but nothing is suppressed. Suppression
 decisions fail open: an internal fault logs once and vanilla traffic proceeds.
 
+## Protected story units
+
+`ModApi.Services.World.UnitProtection` keeps an exactly identified, story-critical unit
+alive for as long as the declaration is held — an allied ship moored as a narrative
+anchor must never be lost to stray combat. Declare once with the unit's persistent
+unit-data identity and retain the result; dispose it when the story no longer needs
+the unit, restoring stock lethality.
+
+```csharp
+private IDisposable? _promise;
+private void Awake() => _promise = ModApi.Services.World.UnitProtection.Protect(myShipDataGuid);
+private void OnDestroy() => _promise?.Dispose();
+```
+
+Damage still plays out natively — impact effects, shield flashes, damage numbers and
+reactions — but each hit's changes to the unit's recorded condition are restored when
+the hit completes, and the native invincibility clamp is held only for the duration of
+the damage call. The unit therefore reads as a normal, resilient friendly ship rather
+than an obviously invulnerable object, can never be destroyed, and accumulates no
+lasting hull, armor, shield, EMP or battle-damage changes.
+
+Protection is scoped to the persistent identity, so an identically named or same-class
+ship — including the player's own — is never affected, and it automatically covers
+whichever live instance carries that identity after save/load or re-materialisation,
+without consumer polling. Nothing is written to unit data or saves: removing the
+consumer restores completely vanilla behavior. A standing `isInvincible` flag set by
+another mod is preserved, and a unit that was already destroyed is never resurrected.
+
+Protection covers survivability only. Whether a heavily damaged unit may become a
+boardable wreck remains a separate [boarding-rules](boarding-contract.md) decision;
+declare both when a story unit must neither die nor become enterable. Blank or
+unbounded identities, wrong-thread access and use after API shutdown are programming
+errors. While `Availability` is unavailable, declarations are retained but stock
+lethality applies; internal faults log once and fail open to vanilla damage.
+
 ## Shared primitive selection
 
 Two consumers motivate an owned encounter location, not a campaign framework:
