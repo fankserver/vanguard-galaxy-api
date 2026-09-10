@@ -251,9 +251,12 @@ public sealed partial class Plugin : BaseUnityPlugin
         }
         try { _modMenu?.Poll(); }
         catch (Exception error) { DisableModMenu(error); }
-        _hub?.Installations.Tick();
         _dungeonAegisRuntime?.Tick(UnityEngine.Time.unscaledTimeAsDouble);
         _droneBayRuntime?.Tick(UnityEngine.Time.unscaledTimeAsDouble);
+        _story?.Tick();
+        _bars?.Tick();
+        _inventoryService?.Tick();
+        _hub?.Gameplay.Tick();
     }
 
     private void InitializePersistence()
@@ -429,11 +432,13 @@ public sealed partial class Plugin : BaseUnityPlugin
                 () => _quarantine?.Healthy ?? false, (owner, target) => _worldReferences?.Knows(owner, target));
             // Only a module that exists can say what a UI abandon or retry of owned content means.
             if (_quarantine != null) _quarantine.Transactions = _story;
+            StoryProtectionPatches.ProcessMissionTrigger.ObjectiveActivity = () => _story?.NotifyObjectiveActivity();
             _hub.SetCapability("owned-story", true, "Experimental owned story content enabled.");
         }
         catch (Exception error)
         {
             if (_quarantine != null) _quarantine.Transactions = null;
+            StoryProtectionPatches.ProcessMissionTrigger.ObjectiveActivity = null;
             _story?.Dispose(); _story = null;
             _storyWorld?.Dispose(); _storyWorld = null;
             _hub!.SetCapability("owned-story", false, "Story binding failed: " + error.Message);
@@ -1039,6 +1044,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         // The story module owns catalog entries AND a persistence owner, so it is torn down before
         // the coordinator: uninstalling its content cannot race an owner that is already gone, and
         // disposing the coordinator first would pause coordinated saves for every other owner.
+        StoryProtectionPatches.ProcessMissionTrigger.ObjectiveActivity = null;
         try { _story?.Dispose(); } catch (Exception error) { Logger.LogError("Story shutdown failed: " + error); }
         // The guards outlive the module on purpose: content it installed may still be held.
         if (_quarantine != null) _quarantine.Transactions = null;

@@ -9,7 +9,7 @@ public sealed class InventoryServiceTests
     {
         internal object Source = new int[] { 10 }, Destination = new int[] { 0 };
         internal int Calls;
-        public InventoryDiscovery Discover(Guid session) => new(InventoryTransferStatus.Succeeded, Array.Empty<InventorySnapshot>());
+        public InventorySnapshotSet Discover(Guid session) => new(InventoryTransferStatus.Succeeded, Array.Empty<InventorySnapshot>());
         public InventorySnapshot? Resolve(Guid session, InventoryReference reference) => null;
         public PreparedInventoryMove Prepare(InventoryHandle source, InventoryHandle destination, Guid stack, int quantity, InventoryTransferOptions options)
         {
@@ -32,7 +32,7 @@ public sealed class InventoryServiceTests
         using var second = service.Subscribe("observer", _ =>
         {
             notifications++;
-            Assert.Equal(InventoryTransferStatus.Busy, service.Transfer(Guid.NewGuid(), source, destination, stack, 1, new()).Status);
+            Assert.Equal(InventoryTransferStatus.Pending, service.Transfer(Guid.NewGuid(), source, destination, stack, 1, new()).Status);
         });
         var result = service.Transfer(operation, source, destination, stack, 3, new());
         Assert.Equal(InventoryTransferStatus.Succeeded, result.Status); Assert.Equal(3, result.Accepted);
@@ -40,9 +40,9 @@ public sealed class InventoryServiceTests
         Assert.Equal(InventoryTransferStatus.InvalidRequest, service.Transfer(operation, source, destination, stack, 4, new()).Status);
         Assert.Equal(1, notifications); Assert.Equal(1, backend.Calls); Assert.Equal(7, ((int[])backend.Source)[0]);
         service.BeginSerialization();
-        Assert.Equal(InventoryTransferStatus.Busy, service.Transfer(Guid.NewGuid(), source, destination, stack, 1, new()).Status);
+        Assert.Equal(InventoryTransferStatus.Pending, service.Transfer(Guid.NewGuid(), source, destination, stack, 1, new()).Status);
         service.EndSerialization();
         hub.Begin(SessionOrigin.NewGame, null);
-        Assert.Equal(InventoryTransferStatus.Stale, service.Transfer(Guid.NewGuid(), source, destination, stack, 1, new()).Status);
+        Assert.Equal(InventoryTransferStatus.GameEnded, service.Transfer(Guid.NewGuid(), source, destination, stack, 1, new()).Status);
     }
 }

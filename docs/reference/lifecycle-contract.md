@@ -15,7 +15,7 @@ All service access, event registration/removal and callbacks are main-thread-onl
 - Reentrant events are queued until current-event delivery finishes. Payload snapshots describe the event; querying current state can return a later state, especially during reentrant game actions.
 - Remove handlers with `Changed -= handler` when the consumer is destroyed. API shutdown clears subscriptions and unpatches its hooks.
 
-`ILifecycleService.IsDispatchingCallbacks` stays true throughout callback delivery, queued reentrant events, diagnostic reporting and disposal inside a callback. Mutating consumers can refuse request/cancel/tick while it is true. False is **not** permission to mutate, a readiness guarantee or a pre-serialization boundary; consumers still need current-session and save-in-flight guards.
+The API tracks its own callback-dispatch context internally: its mutating surfaces refuse or defer work queued from observational callbacks, and gameplay reactions (domain-object events) are delivered at a safe boundary instead. Consumers do not manage dispatch flags; act from domain-object events, or keep observational handlers short and set your own flags to act on your own frame.
 
 ## Identities
 

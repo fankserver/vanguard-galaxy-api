@@ -4,23 +4,15 @@ using System.Linq;
 
 namespace VGModAPI.Core;
 
-/// <summary>Owns actionable installation subscriptions separately from synchronous native observations.</summary>
+/// <summary>Identity-scoped installation subscriptions; gameplay delivery is shared with other domain events.</summary>
 internal sealed class DungeonInstallationEvents : IDisposable
 {
     private readonly LifecycleHub _hub;
     private readonly List<Installation> _installations = new();
-    private readonly List<Delivery> _pending = new();
-    private readonly HashSet<Guid> _saves = new();
-    private readonly IDisposable _lifecycle;
-    private bool _disposed, _draining;
+    private bool _disposed;
     internal DungeonAegisService Aegis { get; }
     internal DungeonInstallationEvents(LifecycleHub hub)
-    {
-        _hub = hub;
-        Aegis = new DungeonAegisService(hub);
-        _lifecycle = hub.Subscribe("vgmodapi.installations", OnLifecycle);
-        hub.Services.AfterStopped(Dispose);
-    }
+    { _hub = hub; Aegis = new DungeonAegisService(hub); hub.Services.AfterStopped(Dispose); }
 
     internal Installation Get(string owner, string poiId, ISaveDataRegistration? saveData)
     {
@@ -32,102 +24,27 @@ internal sealed class DungeonInstallationEvents : IDisposable
         return installation;
     }
 
-    // Resolve identity at the native boundary; never retain a native location in pending work.
     internal void ExtractionStarted(Guid session, Func<string, bool> matchesLocation)
     {
         _hub.CheckThread();
-        if (_disposed || !Current(session)) return;
+        if (_disposed) return;
         foreach (var installation in _installations.ToArray())
         {
             if (installation.Disposed || installation.Handlers.Count == 0) continue;
             try { if (!matchesLocation(installation.PoiId)) continue; }
-            catch (Exception error) { Report(installation.Owner, error); continue; }
-            if (_disposed || installation.Disposed || !Current(session)) continue;
+            catch (Exception error) { _hub.Gameplay.Report(installation.Owner, error); continue; }
             foreach (var handler in installation.Handlers.ToArray())
-                _pending.Add(new Delivery(session, installation, handler));
+                _hub.Gameplay.Enqueue(session, installation.Owner, handler.Callback,
+                    () => !_disposed && !installation.Disposed && handler.Active, installation.SaveData);
         }
-    }
-
-    private bool Current(Guid session) => _hub.CurrentSession?.Id == session &&
-        _hub.CurrentSession.Phase is SessionPhase.PlayerReady or SessionPhase.GameplayInitialized;
-
-    private void OnLifecycle(LifecycleEvent fact)
-    {
-        if (fact.Kind == LifecycleEventKind.SaveStarted && fact.OperationId.HasValue) _saves.Add(fact.OperationId.Value);
-        else if (fact.Kind is LifecycleEventKind.SaveSucceeded or LifecycleEventKind.SaveFailed or LifecycleEventKind.SaveSkipped && fact.OperationId.HasValue)
-            _saves.Remove(fact.OperationId.Value);
-        if (fact.Kind is LifecycleEventKind.SessionInvalidated or LifecycleEventKind.SessionStartFailed)
-            _pending.RemoveAll(value => value.Session == fact.Session?.Id);
-        // Saves can remain on the native stack while a nested callback replaces a session.
-        // Only their actual terminal events clear the barrier, never a session transition.
-    }
-
-    internal void Tick()
-    {
-        _hub.CheckThread();
-        if (_disposed || _draining || _hub.IsDispatchingCallbacks) return;
-        _draining = true;
-        try
-        {
-            var delivered = 0;
-            var waiting = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var item in _pending.ToArray())
-            {
-                if (!Current(item.Session) || item.Installation.Disposed || !item.Handler.Active)
-                { _pending.Remove(item); continue; }
-                if (!_hub.SessionTracking.Availability.IsAvailable || !_hub.SaveOutcomes.Availability.IsAvailable)
-                {
-                    if (!item.Reported)
-                    {
-                        item.Reported = true;
-                        Report(item.Installation.Owner, new InvalidOperationException("Installation reaction is waiting because session or save observation is unavailable."));
-                    }
-                    continue;
-                }
-                if (_hub.CurrentSession?.Phase != SessionPhase.GameplayInitialized || _saves.Count != 0) break;
-                if (waiting.Contains(item.Installation.Owner)) continue;
-                try
-                {
-                    var registration = item.Installation.SaveData;
-                    if (registration != null && (!registration.CanMutate || registration.State.SessionId != item.Session))
-                    {
-                        // A valid story reaction is retained while this session's data is blocked, not lost.
-                        waiting.Add(item.Installation.Owner);
-                        if (!item.Reported && registration.State.Kind is SaveDataStateKind.Blocked or SaveDataStateKind.Disposed)
-                        {
-                            item.Reported = true;
-                            Report(item.Installation.Owner, new InvalidOperationException("Installation reaction is waiting for the provider's save data."));
-                        }
-                        continue;
-                    }
-                    _pending.Remove(item);
-                    // Deliberately not an observational dispatch scope: handlers may perform gameplay actions.
-                    item.Handler.Callback();
-                }
-                catch (Exception error)
-                {
-                    _pending.Remove(item);
-                    Report(item.Installation.Owner, error);
-                }
-                if (++delivered >= 64) break;
-            }
-        }
-        finally { _draining = false; }
-    }
-
-    private void Report(string owner, Exception error)
-    {
-        using var scope = _hub.EnterServiceDispatch();
-        _hub.ReportSubscriberFailure(owner, error);
     }
 
     public void Dispose()
     {
         _hub.CheckThread();
         if (_disposed) return;
-        _disposed = true; _lifecycle.Dispose();
+        _disposed = true;
         foreach (var installation in _installations.ToArray()) installation.Dispose();
-        _pending.Clear(); _saves.Clear();
         Aegis.Dispose();
     }
 
@@ -181,7 +98,6 @@ internal sealed class DungeonInstallationEvents : IDisposable
             foreach (var declaration in _declarations) declaration.Dispose();
             _declarations.Clear();
             Handlers.Clear(); _events._installations.Remove(this);
-            _events._pending.RemoveAll(item => ReferenceEquals(item.Installation, this));
         }
     }
 
@@ -190,14 +106,5 @@ internal sealed class DungeonInstallationEvents : IDisposable
         internal readonly Action Callback;
         internal bool Active = true;
         internal Handler(Action callback) { Callback = callback; }
-    }
-    private sealed class Delivery
-    {
-        internal readonly Guid Session;
-        internal readonly Installation Installation;
-        internal readonly Handler Handler;
-        internal bool Reported;
-        internal Delivery(Guid session, Installation installation, Handler handler)
-        { Session = session; Installation = installation; Handler = handler; }
     }
 }

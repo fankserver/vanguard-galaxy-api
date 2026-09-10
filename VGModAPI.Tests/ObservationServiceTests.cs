@@ -72,7 +72,7 @@ public sealed class ObservationServiceTests
         var id = hub.Begin(SessionOrigin.NewGame, null);
         source.SetSession(id);
         var scopes = new List<bool>();
-        service.Transitioned += _ => scopes.Add(hub.IsDispatchingCallbacks && service.IsDispatchingCallbacks);
+        service.Transitioned += _ => scopes.Add(hub.IsDispatchingCallbacks);
         source.Emit(id, null, TravelTransitionKind.InitialPlacement, TravelMode.InSystem, null, null, new TravelLocation("system", null, null, null), 1);
         Assert.Equal(new[] { true }, scopes);
         Assert.False(hub.IsDispatchingCallbacks);
@@ -128,7 +128,7 @@ public sealed class ObservationServiceTests
         var id = hub.Begin(SessionOrigin.NewGame, null);
         source.SetSession(id);
         var gates = new List<bool>();
-        service.Transitioned += _ => gates.Add(hub.IsDispatchingCallbacks && service.IsDispatchingCallbacks);
+        service.Transitioned += _ => gates.Add(hub.IsDispatchingCallbacks);
         source.Emit(id, StationTransitionKind.InteriorReady, null, 1);
         Assert.True(Assert.Single(gates));
         Assert.Equal(id, service.SessionId);

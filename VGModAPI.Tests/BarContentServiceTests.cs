@@ -5,7 +5,7 @@ using Xunit;
 
 namespace VGModAPI.Tests;
 
-public sealed class BarContentServiceTests
+public sealed partial class BarContentServiceTests
 {
     [Fact]
     public void UnavailableBarServiceDoesNotAuthenticateOrInstallAnEmptySaveOwner()
@@ -22,6 +22,26 @@ public sealed class BarContentServiceTests
         Assert.Null(typeof(ModApi).GetProperty("Bars"));
         Assert.Null(typeof(ModApi).Assembly.GetType("VGModAPI.IBarApi"));
     }
+    [Fact]
+    public void NamedPortraitDeclarationReachesThePersistedRoster()
+    {
+        using var hub = new LifecycleHub((_, _) => { });
+        hub.SetCapability("owned-bars", true, "Bound.");
+        var storage = new Storage();
+        using var service = new BarContentService(storage, hub,
+            (_, _) => new StoryHostPlugin("author", typeof(BarContentServiceTests).Assembly), _ => false, hub.CheckThread);
+        using var author = service.AcquireProvider("author").Provider!;
+        Assert.Equal(BarStatus.Succeeded, author.Register(new BarPatronDefinition("contact", "station", "Captain", "Contact", "seed",
+            portrait: CharacterPortrait.Named("M2Captain"), isMale: false)).Status);
+        var session = Ready(hub, storage);
+        Assert.Equal(BarStatus.Succeeded, author.Place(session, "contact").Status);
+        var patron = Assert.Single(service.Plan(session, "station")!.Patrons);
+        Assert.Equal("M2Captain", patron.Portrait!.PortraitName); Assert.False(patron.IsMale);
+        var saved = Assert.Single(BarPatronCodec.Decode(storage.Provider!.Capture()));
+        Assert.Equal("M2Captain", saved.Portrait!.PortraitName); Assert.False(saved.IsMale);
+        Assert.True(storage.Provider.Migrations.ContainsKey(1));
+    }
+
     [Fact]
     public void TypedRosterHandlersAreScopedIsolatedRemovableAndHealthGated()
     {
@@ -56,7 +76,7 @@ public sealed class BarContentServiceTests
         var author = service.AcquireProvider("author").Provider!;
         BarRosterPlan? plan = null;
         int calls = 0;
-        author.Register(Definition(), interaction =>
+        author.RegisterEngine(Definition(), interaction =>
         {
             calls++;
             Assert.Equal(plan!.Session, interaction.SessionId);
@@ -83,7 +103,7 @@ public sealed class BarContentServiceTests
             (_, _) => new StoryHostPlugin("author", typeof(BarContentServiceTests).Assembly), _ => false, hub.CheckThread);
         var author = service.AcquireProvider("author").Provider!;
         int calls = 0;
-        author.Register(Definition(), _ => { calls++; throw new InvalidOperationException("provider failure"); });
+        author.RegisterEngine(Definition(), _ => { calls++; throw new InvalidOperationException("provider failure"); });
         var session = Ready(hub, storage);
         author.Place(session, "contact");
         var plan = service.Plan(session, "station")!;
@@ -111,7 +131,7 @@ public sealed class BarContentServiceTests
             _ => { if (invalidate) station.bar.availablePatrons.Clear(); return true; }, hub.CheckThread, () => FixedPermissionStamp);
         var author = service.AcquireProvider("author").Provider!;
         int calls = 0;
-        author.Register(Definition(), _ => calls++);
+        author.RegisterEngine(Definition(), _ => calls++);
         author.ConfigureStation("station", BarRosterOwnership.Exclusive);
         var session = Ready(hub, storage);
         author.Place(session, "contact");
@@ -147,7 +167,7 @@ public sealed class BarContentServiceTests
         var author = service.AcquireProvider("author").Provider!;
         if (faultStage == 3) author.ConfigureStation("station", BarRosterOwnership.Exclusive);
         int clicks = 0;
-        author.Register(Definition(), _ => clicks++);
+        author.RegisterEngine(Definition(), _ => clicks++);
         var session = Ready(hub, storage); author.Place(session, "contact");
         var station = new BarNativeSerializationTests.Station();
         var vanilla = new BarNativeSerializationTests.Patron(); station.bar.availablePatrons.Add(vanilla);
@@ -258,13 +278,13 @@ public sealed class BarContentServiceTests
             (_, _) => new StoryHostPlugin("author", typeof(BarContentServiceTests).Assembly), _ => false, hub.CheckThread);
         var author = service.AcquireProvider("author").Provider!;
         int oldCalls = 0, newCalls = 0;
-        author.Register(Definition(), _ => oldCalls++);
+        author.RegisterEngine(Definition(), _ => oldCalls++);
         var session = Ready(hub, storage); author.Place(session, "contact");
         var oldPlan = service.Plan(session, "station")!;
         Assert.True(author.Unregister("contact").Succeeded);
         Assert.Empty(service.Plan(session, "station")!.Patrons);
         Assert.False(service.Interact(oldPlan, oldPlan.Patrons[0]));
-        Assert.True(author.Register(Definition(), _ => newCalls++).Succeeded);
+        Assert.True(author.RegisterEngine(Definition(), _ => newCalls++).Succeeded);
         var restored = service.Plan(session, "station")!;
         Assert.Single(restored.Patrons);
         Assert.True(service.Interact(restored, restored.Patrons[0]));
@@ -280,6 +300,8 @@ public sealed class BarContentServiceTests
         internal PersistenceProvider Provider = null!;
         public bool MutationAllowed { get; set; } = true;
         public bool StateReady { get; set; } = true;
+        internal Guid SessionId = Guid.NewGuid();
+        public override SaveDataState State => new(StateReady ? SaveDataStateKind.Ready : SaveDataStateKind.Blocked, SessionId);
         public string Status => "test";
         public override bool CanRead => StateReady;
         public override bool CanMutate => StateReady && MutationAllowed;
@@ -328,6 +350,7 @@ public sealed class BarContentServiceTests
         hub.SetCapability("session-lifecycle", true, "Bound.");
         hub.SetCapability("save-outcomes", true, "Bound.");
         var session = hub.Begin(SessionOrigin.SaveLoad, "slot");
+        storage.SessionId = session;
         hub.PlayerReady(session); storage.Provider.Restore(hub.CurrentSession!, bytes); hub.GameplayInitialized(session);
         return session;
     }
@@ -348,13 +371,15 @@ public sealed class BarContentServiceTests
         Assert.Equal(BarStatus.UnknownPlugin, service.AcquireProvider(new object()).Status);
         Assert.True(a.Register(Definition()).Succeeded);
         Assert.True(b.Register(Definition()).Succeeded);
-        Assert.Equal(BarStatus.DuplicateLocalId, a.Register(Definition()).Status);
+        Assert.Equal(BarStatus.Succeeded, a.Register(Definition()).Status);
         var session = Ready(hub, storage);
         Assert.True(a.Place(session, "contact").Succeeded);
         Assert.True(b.Place(session, "contact").Succeeded);
         Assert.Equal(2, BarPatronCodec.Decode(storage.Provider.Capture()).Length);
         Assert.True(a.Remove(session, "contact").Succeeded);
-        Assert.Equal(b.ProviderId, Assert.Single(BarPatronCodec.Decode(storage.Provider.Capture())).Id.Provider);
+        var retained = BarPatronCodec.Decode(storage.Provider.Capture());
+        Assert.Equal(b.ProviderId, Assert.Single(retained, row => !row.Removed).Id.Provider);
+        Assert.Equal(a.ProviderId, Assert.Single(retained, row => row.Removed).Id.Provider);
         a.Dispose();
         Assert.Equal(BarStatus.Unavailable, a.Place(session, "contact").Status);
         Assert.NotNull(service.AcquireProvider("author.a").Provider);
@@ -403,7 +428,8 @@ public sealed class BarContentServiceTests
             (_, _) => new StoryHostPlugin("author", typeof(BarContentServiceTests).Assembly), _ => true, hub.CheckThread);
         var provider = service.AcquireProvider("author").Provider!;
         provider.Register(new BarPatronDefinition("contact", "station", "Name", "Description", "seed",
-            mission: new StoryContentId(provider.ProviderId, "job"), occurrence: Guid.NewGuid()));
+            mission: new StoryContentId(provider.ProviderId, "job")));
+        service.ResolveOccurrence = (_, _) => Guid.NewGuid();
         var session = Ready(hub, storage);
         provider.Place(session, "contact");
         Assert.Null(service.Plan(session, "station"));
@@ -451,7 +477,8 @@ public sealed class BarContentServiceTests
         var author = service.AcquireProvider("author").Provider!;
         foreach (string local in new[] { "first", "second" })
             author.Register(new BarPatronDefinition(local, "station", local, "Description", "seed",
-                mission: new StoryContentId(author.ProviderId, local), occurrence: Guid.NewGuid()));
+                mission: new StoryContentId(author.ProviderId, local)));
+        service.ResolveOccurrence = (_, _) => Guid.NewGuid();
         var session = Ready(hub, storage);
         author.Place(session, "first"); author.Place(session, "second");
         object epoch = new();
@@ -513,7 +540,8 @@ public sealed class BarContentServiceTests
         var a = service.AcquireProvider("a").Provider!;
         var b = service.AcquireProvider("b").Provider!;
         a.Register(throughMission ? new BarPatronDefinition("contact", "station", "Name", "Description", "seed",
-            mission: new StoryContentId(a.ProviderId, "job"), occurrence: Guid.NewGuid()) : Definition());
+            mission: new StoryContentId(a.ProviderId, "job")) : Definition());
+        service.ResolveOccurrence = (_, _) => Guid.NewGuid();
         a.ConfigureStation("station", BarRosterOwnership.Exclusive);
         if (!throughMission) b.ConfigureStation("station", BarRosterOwnership.Exclusive);
         var session = Ready(hub, storage);
@@ -574,7 +602,7 @@ public sealed class BarContentServiceTests
         Assert.Empty(BarPatronCodec.Decode(storage.Provider.Capture()));
         var old = session;
         session = Ready(hub, storage);
-        Assert.Equal(BarStatus.StaleSession, author.Remove(old, "contact").Status);
+        Assert.Equal(BarStatus.GameEnded, author.Remove(old, "contact").Status);
         Assert.Equal(BarStatus.Succeeded, author.Remove(session, "contact").Status);
     }
 }

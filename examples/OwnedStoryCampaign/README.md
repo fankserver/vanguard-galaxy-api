@@ -7,9 +7,10 @@ They are not shipped in the API package.
 decision token. `OwnedStoryJob` takes a generated pitch, destination and reward.
 Both use local ID `mission-x` in separate authenticated provider assemblies.
 Call their `Register` methods from your own interaction/UI after choosing an
-existing destination, then use the public provider handles to offer/activate and
-query API-owned occurrences. Neither author implements persistence, serialization
-or a load callback.
+existing destination. Use the returned `Definition` with `game.Story.Offer`, then
+call `Activate` on the mission. Definition events carry the mission and its game;
+scripted progress uses `mission.GetObjective(key).SetProgress(value)`. Neither
+author implements persistence, serialization or a load callback.
 
 A travel objective observes the destination's native visit timestamp; it is not a
 dwell timer. These examples do not implement an LLM request or a universal mission

@@ -9,8 +9,8 @@ public enum InventoryOwner { LocalPlayer }
 public enum InventoryAccess { Available, Unavailable, Unsupported, DockingRequired }
 public enum InventoryTransferStatus
 {
-    Succeeded, Partial, InvalidRequest, NotReady, Stale, Missing, AccessDenied, Unsupported,
-    Protected, InsufficientStock, CapacityExceeded, Changed, Failed, RecoveryRequired, Busy, LimitReached
+    Succeeded, Partial, Pending, InvalidRequest, NotReady, GameEnded, Missing, AccessDenied, Unsupported,
+    Protected, InsufficientStock, CapacityExceeded, ItemChanged, Failed, LimitReached
 }
 
 /// <summary>Save-local identity. Ship cargo names an exact ship GUID; station storage names an exact POI ID.
@@ -35,7 +35,7 @@ public sealed class InventoryReference : IEquatable<InventoryReference>
     public override bool Equals(object? obj) => Equals(obj as InventoryReference);
     public override int GetHashCode() => ((int)Kind * 397) ^ StringComparer.Ordinal.GetHashCode(LocationId);
 }
-public sealed class InventoryHandle
+internal sealed class InventoryHandle
 {
     public Guid SessionId { get; }
     public InventoryReference Reference { get; }
@@ -56,19 +56,20 @@ public sealed class InventoryStackSnapshot
 }
 public sealed class InventorySnapshot
 {
-    public InventoryHandle Handle { get; }
+    internal InventoryHandle Handle { get; }
+    public InventoryReference Reference => Handle.Reference;
     public InventoryAccess Access { get; }
     public double? Capacity { get; }
     public double? SpaceUsed { get; }
     public IReadOnlyList<InventoryStackSnapshot> Stacks { get; }
-    public InventorySnapshot(InventoryHandle handle, InventoryAccess access, double? capacity, double? spaceUsed, IEnumerable<InventoryStackSnapshot> stacks)
+    internal InventorySnapshot(InventoryHandle handle, InventoryAccess access, double? capacity, double? spaceUsed, IEnumerable<InventoryStackSnapshot> stacks)
     { Handle = handle; Access = access; Capacity = capacity; SpaceUsed = spaceUsed; Stacks = new ReadOnlyCollection<InventoryStackSnapshot>(new List<InventoryStackSnapshot>(stacks)); }
 }
-public sealed class InventoryDiscovery
+internal sealed class InventorySnapshotSet
 {
     public InventoryTransferStatus Status { get; }
     public IReadOnlyList<InventorySnapshot> Inventories { get; }
-    public InventoryDiscovery(InventoryTransferStatus status, IEnumerable<InventorySnapshot> inventories)
+    public InventorySnapshotSet(InventoryTransferStatus status, IEnumerable<InventorySnapshot> inventories)
     { Status = status; Inventories = new ReadOnlyCollection<InventorySnapshot>(new List<InventorySnapshot>(inventories)); }
 }
 public sealed class InventoryTransferOptions
@@ -86,23 +87,39 @@ public sealed class InventoryTransferResult
     public int? Removed { get; }
     public int? Accepted { get; }
     public int? Returned { get; }
-    public bool RequiresRecovery => Status == InventoryTransferStatus.RecoveryRequired;
     public InventoryTransferResult(Guid operationId, InventoryTransferStatus status, int requested, int? removed, int? accepted, int? returned)
     { OperationId = operationId; Status = status; Requested = requested; Removed = removed; Accepted = accepted; Returned = returned; }
 }
-public sealed class InventoryRecovery
+public sealed class InventoryDiscovery
 {
-    public Guid SessionId { get; }
-    public InventoryTransferResult Result { get; }
-    public InventoryRecovery(Guid sessionId, InventoryTransferResult result) { SessionId = sessionId; Result = result; }
+    public InventoryTransferStatus Status { get; }
+    public IReadOnlyList<IInventory> Inventories { get; }
+    internal InventoryDiscovery(InventoryTransferStatus status, IEnumerable<IInventory> inventories)
+    { Status = status; Inventories = new ReadOnlyCollection<IInventory>(new List<IInventory>(inventories)); }
 }
-public interface IInventoryService : IServiceStatus
+
+/// <summary>Inventories belonging to one game, never rebound to a replacement save.</summary>
+public interface IInventories
 {
-    Guid? SessionId { get; }
-    InventoryRecovery? PendingRecovery { get; }
-    InventoryDiscovery Discover(Guid expectedSessionId);
-    InventorySnapshot? Resolve(Guid expectedSessionId, InventoryReference reference);
-    InventoryTransferResult Transfer(Guid operationId, InventoryHandle source, InventoryHandle destination, Guid stackId, int quantity, InventoryTransferOptions options);
-    InventoryTransferResult Recover(Guid expectedSessionId, Guid operationId);
-    IDisposable Subscribe(string pluginId, Action<InventoryTransferResult> callback);
+    IGame Game { get; }
+    InventoryDiscovery Discover();
+    IInventory Get(InventoryReference reference);
+}
+
+public interface IInventory
+{
+    IGame Game { get; }
+    InventoryReference Reference { get; }
+    InventorySnapshot? Snapshot { get; }
+    /// <summary>Request a move of the selected stack. The API owns transaction identity, safe execution
+    /// and recovery. A missing or changed stack is refused rather than replaced with another stack.</summary>
+    IInventoryTransfer MoveTo(IInventory destination, Guid stackId, int quantity, InventoryTransferOptions? options = null);
+}
+
+public interface IInventoryTransfer
+{
+    IGame Game { get; }
+    InventoryTransferResult Result { get; }
+    /// <summary>Actionable terminal result, never a request to run recovery. No replay; delivery ends with the game.</summary>
+    event Action<IInventoryTransfer>? Completed;
 }

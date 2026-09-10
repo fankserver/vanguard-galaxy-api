@@ -3,5 +3,6 @@
   <ItemGroup>
     <InternalsVisibleTo Include="VGModAPI" />
     <InternalsVisibleTo Include="VGModAPI.Core" />
+    <InternalsVisibleTo Include="VGModAPI.Tests" />
   </ItemGroup>
 </Project>

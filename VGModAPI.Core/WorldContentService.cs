@@ -7,6 +7,13 @@ using VGModAPI.Core.Integration;
 
 namespace VGModAPI.Core;
 
+/// <summary>Internal engine surface retained for guard/reconciliation regressions; not part of the public modder API.</summary>
+internal interface IWorldProviderEngine
+{
+    WorldSiteResult FindPersistentCombatSite(Guid expectedSessionId, WorldSiteReference reference);
+    WorldSiteResult CreatePersistentCombatSite(Guid expectedSessionId, string localId, Guid instanceId, string systemId, float x, float y);
+}
+
 /// <summary>Authenticated Unity-free declaration/creation facade; operations enforce live binding, session and save-data readiness.</summary>
 internal sealed class WorldContentService : IWorldService, IDisposable
 {
@@ -87,8 +94,10 @@ internal sealed class WorldContentService : IWorldService, IDisposable
         }
         return new Provider(this, provider, authored);
     }
-    private sealed class Provider : IWorldProvider
+    private sealed class Provider : IWorldProvider, IWorldProviderEngine
     {
+        private readonly Dictionary<(string LocalId, string OccurrenceKey), CombatSiteHandle> _sites = new();
+        private readonly IDisposable _siteSubscription;
         private readonly WorldContentService _service;
         private readonly WorldDefinitionRegistry.Provider _provider;
         private readonly AuthoredSystemRegistry.Provider? _authored;
@@ -112,7 +121,17 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 _refreshesEntry = RefreshAuthoredObjects;
                 service._authoredRefreshes.Add(_refreshesEntry);
             }
-            else { _objectSubscription = null!; _refreshesEntry = _ => { }; }
+            else
+            {
+                _objectSubscription = null!;
+                _refreshesEntry = RefreshAuthoredObjects;
+                service._authoredRefreshes.Add(_refreshesEntry);
+            }
+            _siteSubscription = service._hub.Subscribe("vgmodapi.combat-site-objects", e =>
+            {
+                if (e.Kind is LifecycleEventKind.SessionStarting or LifecycleEventKind.SessionInvalidated or LifecycleEventKind.SessionStartFailed)
+                    _sites.Clear();
+            });
         }
         private void ResetObjects()
         {
@@ -172,6 +191,67 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             }
             catch (ArgumentException) { return WorldStatus.InvalidDefinition; }
         }
+        /// <summary>Uniform occurrence-key contract: bounded, no control characters.</summary>
+        internal static bool ValidOccurrenceKey(string? key)
+        {
+            if (string.IsNullOrWhiteSpace(key) || key!.Length > 128) return false;
+            foreach (char character in key) if (char.IsControl(character)) return false;
+            return true;
+        }
+
+        /// <summary>Deterministic API-allocated native identity for an author-local occurrence key.</summary>
+        internal static Guid SiteInstanceId(string providerId, string localId, string occurrenceKey)
+        {
+            using var sha = System.Security.Cryptography.SHA256.Create();
+            var bytes = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(providerId + "\n" + localId + "\n" + occurrenceKey));
+            var guid = new byte[16];
+            Array.Copy(bytes, guid, 16);
+            return new Guid(guid);
+        }
+
+        public ICombatSite? CreateCombatSite(string localId, string occurrenceKey, string systemId, float x, float y)
+        {
+            _service._hub.CheckThread();
+            if (_disposed || _service._disposed || !_service._canAuthor()) return null;
+            var session = _service._hub.CurrentSession;
+            if (session == null || session.Id == Guid.Empty || session.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks) return null;
+            if (localId == null || !ValidOccurrenceKey(occurrenceKey)) return null;
+            if (!_service._definitions.TryResolve(_provider, localId, out _)) return null;
+            var instanceId = SiteInstanceId(ProviderId, localId, occurrenceKey);
+            // Keyed reconciliation: an existing occurrence under this key is the occurrence; never a duplicate.
+            var existing = FindPersistentCombatSite(session.Id, new WorldSiteReference(ProviderId, localId, instanceId));
+            var result = existing.Succeeded ? existing : CreatePersistentCombatSite(session.Id, localId, instanceId, systemId, x, y);
+            if (result.Status is not (WorldStatus.Succeeded or WorldStatus.Rejected)) return null;
+            var handle = ObtainSite(localId, occurrenceKey, session.Id);
+            handle.RecordAction(result.Status == WorldStatus.Succeeded
+                ? new AuthoredActionResult(AuthoredActionStatus.Succeeded)
+                : new AuthoredActionResult(AuthoredActionStatus.Rejected, "The native site could not be created."));
+            handle.Refresh();
+            return handle;
+        }
+
+        public ICombatSite? GetCombatSite(string localId, string occurrenceKey)
+        {
+            _service._hub.CheckThread();
+            if (_disposed || _service._disposed || !_service._canAuthor()) return null;
+            var session = _service._hub.CurrentSession;
+            if (session == null || session.Id == Guid.Empty || localId == null || !ValidOccurrenceKey(occurrenceKey)) return null;
+            var instanceId = SiteInstanceId(ProviderId, localId, occurrenceKey);
+            if (!FindPersistentCombatSite(session.Id, new WorldSiteReference(ProviderId, localId, instanceId)).Succeeded) return null;
+            var handle = ObtainSite(localId, occurrenceKey, session.Id);
+            handle.Refresh();
+            return handle;
+        }
+
+        private CombatSiteHandle ObtainSite(string localId, string occurrenceKey, Guid session)
+        {
+            var key = (localId, occurrenceKey);
+            if (_sites.TryGetValue(key, out var existing) && existing.Session == session) return existing;
+            var handle = new CombatSiteHandle(this, localId, occurrenceKey, session);
+            _sites[key] = handle;
+            return handle;
+        }
+
         public WorldSiteResult FindPersistentCombatSite(Guid expectedSessionId, WorldSiteReference reference)
         {
             _service._hub.CheckThread();
@@ -228,7 +308,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             if (!_service._canAuthor() || _disposed || _service._disposed) return null;
             var session = _service._hub.CurrentSession;
             if (session == null || session.Id == Guid.Empty || session.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks) return null;
-            if (localId == null) return null;
+            if (localId == null || !ValidOccurrenceKey(occurrenceKey)) return null;
             var result = _service._authoredCoordinator.Create(_authored, session.Id, localId, occurrenceKey, anchorSystemId);
             if (result.Status != WorldStatus.Succeeded && result.Status != WorldStatus.Rejected) return null;
             if (!_service._authoredCoordinator.ContainsOccurrence(_authored.Owner, localId, occurrenceKey)) return null;
@@ -266,7 +346,9 @@ internal sealed class WorldContentService : IWorldService, IDisposable
         }
         private void RefreshAuthoredObjects(Guid session)
         {
-            if (session == Guid.Empty || session != _service._hub.CurrentSession?.Id || _authored == null || _service._authoredCoordinator == null) return;
+            if (session == Guid.Empty || session != _service._hub.CurrentSession?.Id) return;
+            foreach (var site in _sites.Values.ToArray()) if (site.Session == session) site.Refresh();
+            if (_authored == null || _service._authoredCoordinator == null) return;
             foreach (var handle in _objects.Values.ToArray()) handle.Refresh();
         }
         public void Dispose()
@@ -275,12 +357,57 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             if (_authored != null)
             {
                 _service._authoredSettled -= ForwardSettled;
-                _service._authoredRefreshes.Remove(_refreshesEntry);
                 _objectSubscription.Dispose();
             }
+            _service._authoredRefreshes.Remove(_refreshesEntry);
+            _siteSubscription.Dispose();
+            _sites.Clear();
             _objects.Clear();
             _provider.Dispose(); _authored?.Dispose(); _disposed = true;
             _service._providerReleased?.Invoke();
+        }
+
+        /// <summary>The owned combat-site occurrence object; one instance per key per session.</summary>
+        private sealed class CombatSiteHandle : ICombatSite
+        {
+            private readonly Provider _provider;
+            private readonly string _localId;
+            private readonly string _occurrenceKey;
+            internal readonly Guid Session;
+            private CombatSiteState _state = new(AuthoredSystemReconstructionStatus.Pending);
+            private AuthoredActionResult _lastAction = new(AuthoredActionStatus.NotReady, "No action has been taken yet on this occurrence.");
+            private event Action<ICombatSite>? _changed;
+            internal CombatSiteHandle(Provider provider, string localId, string occurrenceKey, Guid session)
+            { _provider = provider; _localId = localId; _occurrenceKey = occurrenceKey; Session = session; }
+            public string OccurrenceKey => _occurrenceKey;
+            public WorldCombatSiteDefinition Definition
+            {
+                get
+                {
+                    if (_provider._service._definitions.TryResolve(_provider._provider, _localId, out var declaration) && declaration?.Definition is { } definition)
+                        return new WorldCombatSiteDefinition(definition.LocalId, definition.Revision, definition.Name, definition.FactionId, definition.Level);
+                    return new WorldCombatSiteDefinition(_localId, 1, "", "", 1);
+                }
+            }
+            public CombatSiteState State { get { _provider._service._hub.CheckThread(); return _state; } }
+            public string? PoiId => State.PoiId;
+            public AuthoredActionResult LastAction { get { _provider._service._hub.CheckThread(); return _lastAction; } }
+            public event Action<ICombatSite>? Changed { add => _changed += value; remove => _changed -= value; }
+            internal void RecordAction(AuthoredActionResult result) => _lastAction = result;
+            internal void Refresh()
+            {
+                // A replaced session freezes the last observed state; the handle never resolves against the replacement save.
+                if (Session == Guid.Empty || _provider._service._hub.CurrentSession?.Id != Session) return;
+                if (_provider._disposed || _provider._service._disposed || !_provider._service._canAuthor()) return;
+                var found = _provider.FindPersistentCombatSite(Session,
+                    new WorldSiteReference(_provider.ProviderId, _localId, SiteInstanceId(_provider.ProviderId, _localId, _occurrenceKey)));
+                var updated = found.Succeeded
+                    ? new CombatSiteState(AuthoredSystemReconstructionStatus.Reconstructed, poiId: found.PoiId)
+                    : new CombatSiteState(AuthoredSystemReconstructionStatus.Pending);
+                bool changed = _state.Status != updated.Status || _state.PoiId != updated.PoiId;
+                _state = updated;
+                if (changed) _changed?.Invoke(this);
+            }
         }
 
         /// <summary>The owned occurrence object exposed to consumers; one instance per key per session.</summary>

@@ -5,7 +5,7 @@ using System.Linq;
 namespace VGModAPI.Core;
 
 /// <summary>Observation registry; the adapter supplies copied facts, never native objects.</summary>
-internal sealed class BoardingService : IDungeonOperationService, IDisposable
+internal sealed class BoardingService : IDungeonOperationService, ICallbackDispatch, IDisposable
 {
     private readonly LifecycleHub _hub;
     private readonly IServiceStatus _status;

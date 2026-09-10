@@ -32,6 +32,12 @@ public sealed class InstalledBarBindingTests
         Assert.Equal("System.String", getIcon.Parameters[0].ParameterType.FullName);
         Assert.Equal(icon.FullName, getIcon.ReturnType.FullName);
         Assert.Equal("UnityEngine.Sprite", icon.Fields.Single(field => field.Name == "sprite").FieldType.FullName);
+        var character = module.GetType("Source.Dialogues.Character");
+        var lookup = module.GetType("Source.Dialogues.Characters").Methods.Single(method => method.Name == "GetCharacter" && method.Parameters.Count == 1);
+        Assert.True(lookup.IsPublic && lookup.IsStatic);
+        Assert.Equal("System.String", lookup.Parameters[0].ParameterType.FullName);
+        Assert.Equal(character.FullName, lookup.ReturnType.FullName);
+        Assert.Equal("UnityEngine.Sprite", character.Fields.Single(field => field.Name == "portretSprite").FieldType.FullName);
         var element = module.GetType("Source.Galaxy.MapElement");
         var guid = element.Properties.Single(property => property.Name == "guid");
         var guidField = element.Fields.Single(field => field.Name == "<guid>k__BackingField");

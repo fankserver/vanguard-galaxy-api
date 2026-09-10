@@ -115,7 +115,6 @@ public sealed class CraftingJobEvent
 /// <summary>Main-thread observations. Query restored jobs; subscribing never replays them as newly queued.</summary>
 public interface ICraftingJobService : IServiceStatus
 {
-    bool IsDispatchingCallbacks { get; }
     CraftingJobListSnapshot Read(RecipeStationHandle station);
     event Action<CraftingJobEvent>? Changed;
 }

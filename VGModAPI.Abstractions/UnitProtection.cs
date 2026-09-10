@@ -19,5 +19,8 @@ public interface IUnitProtectionService : IServiceStatus
     /// Declare once and retain the result: each call creates an independent declaration that lasts
     /// until disposed. Becoming a boardable wreck is governed separately by boarding rules.
     /// </summary>
-    IDisposable Protect(string unitId);
+    /// <param name="unitId">The persistent unit-data identity to protect.</param>
+    /// <param name="key">Optional author-scoped declaration key: re-declaring the same key replaces
+    /// only your previous declaration; disposing a superseded handle is inert.</param>
+    IDisposable Protect(string unitId, string? key = null);
 }

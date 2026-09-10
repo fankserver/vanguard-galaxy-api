@@ -74,18 +74,18 @@ public sealed class BoardingObserverTests
         station.ExtractionStarted += () => count++;
         other.ExtractionStarted += () => Assert.Fail("Wrong station");
         f.Sim["awaitingPlayerExtraction"] = true;
-        f.Start(true); f.Hub.Installations.Tick(); Assert.Equal(0, count);
+        f.Start(true); f.Hub.Gameplay.Tick(); Assert.Equal(0, count);
         var noOp = f.Observer.BeforeExtraction(f.Sim);
-        f.Observer.AfterExtraction(noOp); f.Hub.Installations.Tick(); Assert.Equal(0, count);
+        f.Observer.AfterExtraction(noOp); f.Hub.Gameplay.Tick(); Assert.Equal(0, count);
         f.Sim["awaitingPlayerExtraction"] = false;
         var rejected = f.Observer.BeforeExtraction(f.Sim);
-        f.Observer.AfterExtraction(rejected); f.Hub.Installations.Tick(); Assert.Equal(0, count);
+        f.Observer.AfterExtraction(rejected); f.Hub.Gameplay.Tick(); Assert.Equal(0, count);
         var accepted = f.Observer.BeforeExtraction(f.Sim);
         f.Sim["awaitingPlayerExtraction"] = true;
         f.Observer.AfterExtraction(accepted); Assert.Equal(0, count);
-        f.Hub.Installations.Tick(); Assert.Equal(1, count);
+        f.Hub.Gameplay.Tick(); Assert.Equal(1, count);
         f.Hub.Begin(SessionOrigin.NewGame, null);
-        f.Observer.AfterExtraction(accepted); f.Hub.Installations.Tick(); Assert.Equal(1, count);
+        f.Observer.AfterExtraction(accepted); f.Hub.Gameplay.Tick(); Assert.Equal(1, count);
     }
 
     [Fact]
@@ -96,7 +96,7 @@ public sealed class BoardingObserverTests
         station.ExtractionStarted += () => Assert.Fail("Ship is not an installation");
         var state = f.Observer.BeforeExtraction(f.Sim);
         Assert.Null(state); f.Sim["awaitingPlayerExtraction"] = true;
-        f.Observer.AfterExtraction(state); f.Hub.Installations.Tick();
+        f.Observer.AfterExtraction(state); f.Hub.Gameplay.Tick();
     }
 
     [Fact]

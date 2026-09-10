@@ -63,7 +63,7 @@ Output amounts are base or conditional estimates for the requested batches. `Pro
 
 `CraftingJobHandle` identifies one native job instance at one issued station in one session. It is not a persistent save identifier. Snapshots copy process/recipe identity, initial/remaining batches, captured Forge level, bounded display progress and per-batch duration. Unknown timing remains null. No native object is exposed.
 
-Subscribe with `Changed += handler` and remove with `Changed -= handler` during teardown. Sequence numbers increase during the service lifetime. Callbacks are individually isolated and reentrant notifications are queued. `IsDispatchingCallbacks` permits command integrations to reject reentrant requests. Facts are distinct:
+Subscribe with `Changed += handler` and remove with `Changed -= handler` during teardown. Sequence numbers increase during the service lifetime. Callbacks are individually isolated and reentrant notifications are queued; command integrations reject reentrant requests internally (a command issued from a handler returns `Busy`). Facts are distinct:
 
 - `Queued`: an actual new queue entry was observed through native `StartJob`, including normal `TryStartJob` callers. This is not a payment or ingredient-consumption receipt. Failed admission without a new job emits no queue fact.
 - `BatchObserved`: one native batch call ended. Multiple batches in a tick remain separate. Inspect `DeliveryStatus` and each transfer: remaining count decreases before output delivery and cannot establish successful arrival.

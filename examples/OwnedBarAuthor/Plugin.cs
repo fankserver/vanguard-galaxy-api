@@ -29,11 +29,11 @@ public sealed class Plugin : BaseUnityPlugin
             new[] { new StoryReward(StoryRewardKind.Credits, 1) }));
     }
 
-    public BarResult RegisterLinked(string station, string local, string seed, Guid occurrence)
+    public BarRegistrationResult RegisterLinked(string station, string local, string seed)
     {
         return AcquireBar().Register(new BarPatronDefinition(local, station, "Linked contact " + Id,
             "Mission-dependent presentation", seed, BarPatronRetention.Persistent,
-            new StoryContentId(StoryProvider.ProviderId, LinkedStoryId), occurrence), _ => Interactions++);
+            new StoryContentId(StoryProvider.ProviderId, LinkedStoryId)), _ => Interactions++);
     }
 
     public void ReleaseStory() { _story?.Dispose(); _story = null; }
@@ -48,13 +48,13 @@ public sealed class Plugin : BaseUnityPlugin
         return _provider;
     }
 
-    public BarResult Register(string station, string local, string seed) =>
+    public BarRegistrationResult Register(string station, string local, string seed) =>
         AcquireBar().Register(new BarPatronDefinition(local, station, "Contact " + Id,
-            "Independently authored contact", seed, BarPatronRetention.Persistent), _ => Interactions++);
+            "Independently authored contact",
+            new BarPatronPresentation(seed, CharacterPortrait.Named("MercWoman"), isMale: false)), _ => Interactions++);
 
     public BarResult Configure(string station, BarRosterOwnership mode)
         => Provider.ConfigureStation(station, mode);
-    public BarResult Place(Guid session, string local) => Provider.Place(session, local);
     public void Release() { _provider?.Dispose(); _provider = null; }
     private void OnDestroy() { Release(); ReleaseStory(); }
 }

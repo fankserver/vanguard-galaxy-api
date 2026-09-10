@@ -6,7 +6,22 @@
 
 Acquire `IWorldProvider` directly from the loaded plugin assembly and register immutable `WorldCombatSiteDefinition` values before starting a session. Definitions identify local content, revision, display name, an existing faction ID and level. Same-owner duplicate declarations are rejected; registration does not create a POI. The authenticated lease owns its declarations and must be disposed on provider teardown.
 
-`CreatePersistentCombatSite` specifies an expected session, declaration ID, separate instance GUID, existing system ID and coordinates. Creation requires a ready session and available persistence. A `WorldSiteReference` carries provider/local/instance identity only: it is not a native object or permission to mutate another owner's content. `FindPersistentCombatSite` checks the authenticated provider, expected session and exact current native membership; a reference alone does not establish existence. Lookup refuses stale sessions, unavailable persistence and missing native membership.
+`CreateCombatSite(localId, occurrenceKey, systemId, x, y)` creates — or reconciles — an owned
+persistent combat site in the current game, following the uniform occurrence contract shared with
+authored systems: the consumer names the occurrence with an author-local key; the API allocates and
+owns the native identity; no session tokens or instance GUIDs are supplied. Re-declaring the same
+key returns the **same** `ICombatSite` object instance for the life of the session, never a
+duplicate site. `GetCombatSite(localId, occurrenceKey)` re-obtains the occurrence in the current
+game (null when it does not exist or the world cannot answer). Creation requires a ready session
+and available persistence; the method returns null while the world cannot author — that is a
+temporary refusal, not existence information.
+
+`ICombatSite.State` reports typed occurrence state (`Reconstructed` with `PoiId`, or `Pending`);
+`Changed` fires when the observed state transitions within its own session, for example when exact
+native membership is lost or restored. `LastAction` retains the creation outcome. An occurrence
+from an ended or replaced session keeps its last state and never resolves against the replacement
+save — re-obtain objects for the live game. Existence still means exact current native membership:
+an object in hand does not establish that the site is present right now; check `State`.
 
 ## Quiet authored locations
 
@@ -43,7 +58,11 @@ identity is ambiguous in the current galaxy, traffic everywhere stays vanilla ra
 than being suppressed at a guessed location.
 
 Declarations from different mods are independent; the same location may be declared
-quiet by several mods, and disposing one declaration never releases another. Blank or
+quiet by several mods, and disposing one declaration never releases another. Pass an
+author-scoped `key:` to make a declaration replaceable: re-declaring the same key
+replaces only your previous declaration (other mods' keys are a separate namespace),
+removing any need for have-I-declared bookkeeping. Disposing a superseded handle is
+inert and never revokes the replacement. Blank or
 unbounded identities, wrong-thread access and use after API shutdown are programming
 errors. `Availability` reports binding health for this integration; while it is
 unavailable, declarations are retained but nothing is suppressed. Suppression
@@ -75,8 +94,11 @@ unchanged data, such as on save/load.
 
 Each `Protect` call creates an independent declaration, so different mods can protect
 the same unit without releasing each other. Declare once and retain the result rather
-than re-declaring per frame or per resolution: repeated calls accumulate declarations
-for the service lifetime until each is disposed.
+than re-declaring per frame or per resolution: repeated unkeyed calls accumulate
+declarations for the service lifetime until each is disposed. Alternatively pass an
+author-scoped `key:` — re-declaring the same key replaces only your previous
+declaration, and disposing the superseded handle is inert. `Tune` on
+`World.DroneBays` accepts the same `key:` parameter with the same semantics.
 
 Protection is scoped to the persistent identity and needs no live instance: declaring
 for persisted-but-not-yet-materialised unit data is supported and takes effect from

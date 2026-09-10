@@ -18,7 +18,12 @@ for access, availability and lifetime requirements.
   provider state without re-registering, and distinguishes reading from mutation.
   Its four-byte serializer belongs to that custom data, not to API-owned content.
 
+- `StoryReactions` subscribes to an authored definition and offers its follow-up
+  through the completed mission's game. The API supplies safe delivery and execution.
+- `InventoryMoves` uses game-bound inventories and transfer completion rather than
+  a consumer recovery or session-token protocol.
+
 Retain each consumer instance for its intended lifetime and dispose it during
-consumer teardown. Callbacks are observational; action code still checks current
-context/permission. No polling loop, native hooks, file paths or Core references
-are introduced by these examples.
+consumer teardown. Story and inventory gameplay reactions are actionable; the
+low-level observer examples remain distinct from those domain events. No consumer
+frame drain, native hooks, file paths or Core references are introduced.

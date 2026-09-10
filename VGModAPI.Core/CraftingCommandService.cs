@@ -70,7 +70,7 @@ internal sealed class CraftingCommandService : ICraftingCommandService, IDisposa
             return prior == null ? Result(request, CraftingCommandStatus.Busy, "This request is already executing.") :
                 new CraftingCommandResult(prior.RequestId, prior.Status, prior.Detail, prior.MutationMayHaveRun, true, prior.CreditDelta, prior.Jobs, prior.Deliveries);
         }
-        if (_busy || _serializationDepth > 0 || _saveDepth > 0 || _hub.IsDispatchingCallbacks || _jobs.IsDispatchingCallbacks)
+        if (_busy || _serializationDepth > 0 || _saveDepth > 0 || _hub.IsDispatchingCallbacks || (_jobs is ICallbackDispatch { IsDispatchingCallbacks: true }))
             return Result(request, CraftingCommandStatus.Busy, "Save, callback or reentrant context refuses mutation.");
         if (_requests.Count >= 4096) return Result(request, CraftingCommandStatus.RequestLimitExceeded, "Session request history is full; uncertain outcomes are never evicted to allow retries.");
         var entry = new Entry(request); _requests.Add(key, entry); _busy = true;

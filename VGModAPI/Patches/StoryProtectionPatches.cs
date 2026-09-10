@@ -1,3 +1,4 @@
+using System;
 using VGModAPI.Runtime;
 
 namespace VGModAPI.Patches;
@@ -90,6 +91,8 @@ internal static class StoryProtectionPatches
     /// </summary>
     internal static class ProcessMissionTrigger
     {
+        internal static Action? ObjectiveActivity { get; set; }
         private static bool Prefix(object __instance) => Quarantine == null || !Quarantine.BlocksObjective(__instance);
+        private static void Postfix() { try { ObjectiveActivity?.Invoke(); } catch { } }
     }
 }

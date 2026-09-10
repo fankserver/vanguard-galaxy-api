@@ -19,11 +19,10 @@ public sealed class Plugin : BaseUnityPlugin
         _world = ModApi.Services.World.AcquireProvider(this);
         _world?.Register(new WorldCombatSiteDefinition("PoiX", 1, "Example Combat Site", "player", 1));
     }
-    // Call from explicit gameplay logic outside API callbacks. Supply an existing system ID
-    // and retain the occurrence GUID in your campaign definition, not a native object.
-    public WorldSiteResult Create(Guid session, Guid occurrence, string system, float x, float y) =>
-        _world?.CreatePersistentCombatSite(session, "PoiX", occurrence, system, x, y) ?? new(WorldStatus.Unavailable);
-    public WorldSiteResult Find(Guid session, Guid occurrence) =>
-        _world?.FindPersistentCombatSite(session, new WorldSiteReference(PluginId, "PoiX", occurrence)) ?? new(WorldStatus.Unavailable);
+    // Call from explicit gameplay logic outside API callbacks. Name the occurrence with your own
+    // key; the API allocates the native identity and reconciles the same key to the same object.
+    public ICombatSite? Create(string occurrenceKey, string system, float x, float y) =>
+        _world?.CreateCombatSite("PoiX", occurrenceKey, system, x, y);
+    public ICombatSite? Find(string occurrenceKey) => _world?.GetCombatSite("PoiX", occurrenceKey);
     private void OnDestroy() => _world?.Dispose();
 }

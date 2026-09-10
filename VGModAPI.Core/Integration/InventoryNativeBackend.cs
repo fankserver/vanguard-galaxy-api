@@ -83,7 +83,7 @@ internal sealed partial class InventoryNativeBackend : IInventoryBackend
         return (string)Get(item, "identifier")! != "VanguardMark" && !Flag(row, "canBuyback") && !Flag(row, "isSoldByPlayer") &&
             Get(row, "costItem") == null && (int)Get(row, "costCount")! == 0;
     }
-    public InventoryDiscovery Discover(Guid session)
+    public InventorySnapshotSet Discover(Guid session)
     {
         var player = Player(session); var endpoints = new List<Endpoint>();
         void Add(InventoryReference reference) { var endpoint = Find(player, reference); if (endpoint != null) endpoints.Add(endpoint); }

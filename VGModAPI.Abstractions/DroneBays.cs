@@ -51,5 +51,7 @@ public interface IDroneBayService : IServiceStatus
     /// declarations override earlier ones per aspect for the same unit. Declare once and retain;
     /// dispose when the encounter ends.
     /// </summary>
-    IDisposable Tune(string unitId, DroneBayTuning tuning);
+    /// <param name="key">Optional author-scoped declaration key: re-declaring the same key replaces
+    /// only your previous declaration; disposing a superseded handle is inert.</param>
+    IDisposable Tune(string unitId, DroneBayTuning tuning, string? key = null);
 }

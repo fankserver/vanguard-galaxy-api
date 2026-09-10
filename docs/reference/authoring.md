@@ -11,7 +11,7 @@ Compile against `VGModAPI.Abstractions`, mark the reference non-copy-local, and 
 | LifecycleObserver | Thin BepInEx bootstrap and observed lifecycle |
 | ServiceConsumers | Plain .NET mission/travel observers, additional custom counter save data and explicit immediate inventory movement |
 | OwnedStoryJob / OwnedStoryCampaign | Supported objectives, temporary job lifetime versus retained campaign outcomes, without a MissionJournal requirement |
-| OwnedWorldAuthorA / OwnedWorldAuthorB | Independent providers using the same local `PoiX` ID; persistent Combat sites, explicit occurrence IDs and lookup after restoration |
+| OwnedWorldAuthorA / OwnedWorldAuthorB | Independent providers using the same local `PoiX` ID; persistent Combat sites, author-local occurrence keys and lookup after restoration |
 | OwnedGoodsAuthor | Fixed TradeGoods and recipe-first owned dependencies |
 | OwnedBarAuthorA / OwnedBarAuthorB | Independent bar providers and owned roster definitions |
 | ForgeInspector / ForgeInspectorHost | Plain .NET inspection/HUD actions plus thin host integration |
@@ -19,7 +19,7 @@ Compile against `VGModAPI.Abstractions`, mark the reference non-copy-local, and 
 | AuthoredDungeon / DungeonAuthor | Authored dungeon content and host bootstrap |
 | UpdateParticipant | Optional update metadata integration |
 
-World authors register definitions in Awake and create occurrences only from explicit gameplay logic with an existing system ID. They do not create sites automatically on every load. The two projects have different authenticated plugin IDs, so sharing a local ID or occurrence GUID cannot bind one owner's reference to the other. Persisted native identity, not a retained Unity object, determines restoration.
+World authors register definitions in Awake and create occurrences only from explicit gameplay logic with an existing system ID. They do not create sites automatically on every load. The two projects have different authenticated plugin IDs, so sharing a local ID or occurrence key cannot bind one owner's occurrence to the other. Persisted native identity, not a retained Unity object, determines restoration.
 
 Supported owned story/world/item/recipe/dungeon data is saved by the API. Do not add provider save hooks, codecs or sidecar writers for those fields. `ServiceConsumers/CustomCounter.cs` deliberately shows a different concern: **additional custom mod information**, for which the generic save-data API is appropriate. See each domain contract for supported shapes, missing-provider handling and migrations; arbitrary custom gameplay state is not inferred from a registration.
 

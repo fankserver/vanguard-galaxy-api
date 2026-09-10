@@ -22,6 +22,7 @@ internal sealed partial class BarContentService : IBarService, IDisposable
     private readonly StoryProviderBindings _bindings = new();
     private readonly Dictionary<string, Lease> _leases = new(StringComparer.Ordinal);
     private readonly Dictionary<BarPatronId, BarPatronState> _transient = new();
+    internal Func<Guid, StoryContentId, Guid?>? ResolveOccurrence;
     private bool _disposed;
 
     internal BarContentService(ISaveDataService? persistence, LifecycleHub lifecycle, StoryHostAuthenticator authenticate,
@@ -49,7 +50,7 @@ internal sealed partial class BarContentService : IBarService, IDisposable
     public event Action<BarRosterFinalized>? RosterFinalized { add => _handlers.Add(value); remove => _handlers.Remove(value); }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    public BarProviderResult AcquireProvider(object pluginInstance)
+    public BarProviderResult AcquireProvider(object pluginInstance, ISaveDataRegistration? saveData = null)
     {
         _checkThread();
         if (_disposed || _storage == null || !Availability.IsAvailable) return new BarProviderResult(BarStatus.Unavailable, null);
@@ -64,7 +65,7 @@ internal sealed partial class BarContentService : IBarService, IDisposable
         if (binding == StoryBindingStatus.Conflict) return new BarProviderResult(BarStatus.ProviderConflict, null);
         if (binding == StoryBindingStatus.LimitExceeded) return new BarProviderResult(BarStatus.LimitExceeded, null);
         if (_leases.ContainsKey(segment)) return new BarProviderResult(BarStatus.AlreadyAcquired, null);
-        var lease = new Lease(this, segment, plugin.PluginId);
+        var lease = new Lease(this, segment, plugin.PluginId, saveData);
         _leases.Add(segment, lease);
         Changed();
         return new BarProviderResult(BarStatus.Succeeded, lease);
@@ -86,7 +87,7 @@ internal sealed partial class BarContentService : IBarService, IDisposable
     {
         _checkThread();
         if (!Active(lease) || !Availability.IsAvailable || _storage == null) return new BarResult(BarStatus.Unavailable);
-        if (_lifecycle.CurrentSession?.Id != session) return new BarResult(BarStatus.StaleSession);
+        if (_lifecycle.CurrentSession?.Id != session) return new BarResult(BarStatus.GameEnded);
         if (!_persistence.CanMutate(session)) return new BarResult(BarStatus.Unavailable);
         return null;
     }
@@ -95,6 +96,7 @@ internal sealed partial class BarContentService : IBarService, IDisposable
         if (_lifecycle.CurrentSession?.Id != value.Session?.Id || _lifecycle.CurrentSession?.Phase != value.Session?.Phase) return;
         if (value.Kind == LifecycleEventKind.SessionStarting || value.Kind == LifecycleEventKind.SessionInvalidated || value.Kind == LifecycleEventKind.SessionStartFailed)
         {
+            _game?.Close(); _game = null;
             _transient.Clear();
             Changed();
         }
@@ -106,9 +108,10 @@ internal sealed partial class BarContentService : IBarService, IDisposable
         _disposed = true;
         var health = Availability;
         _hub.SetCapability("owned-bars", false, health.IsAvailable ? "Bar service stopped." : health.Detail, health.IsAvailable ? ServiceUnavailableReason.ApiStopped : health.Reason);
+        _game?.Close(); _game = null;
         _handlers.Dispose();
         Changed();
-        foreach (var lease in _leases.Values) { lease.Definitions.Clear(); lease.Stations.Clear(); lease.Interactions.Clear(); }
+        foreach (var lease in _leases.Values) { foreach (var registration in lease.Registrations.Values) registration.Close(); lease.Registrations.Clear(); lease.Definitions.Clear(); lease.Stations.Clear(); lease.Interactions.Clear(); }
         _leases.Clear(); _transient.Clear();
         foreach (var observer in _observers) observer.Active = false;
         _observers.Clear();

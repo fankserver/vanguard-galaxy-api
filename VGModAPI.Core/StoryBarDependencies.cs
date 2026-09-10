@@ -45,6 +45,20 @@ internal sealed partial class StoryContentService
         return _barDependencyEpoch;
     }
 
+    /// <summary>The unique currently ready occurrence of an authored definition; null when none or ambiguous.</summary>
+    internal Guid? CurrentBarOccurrence(Guid expectedSession, StoryContentId definition)
+    {
+        CheckThread();
+        Guid? found = null;
+        foreach (var entry in _ledger.Entries)
+        {
+            if (entry.Id != definition || !IsBarMissionReady(expectedSession, definition, entry.OccurrenceId)) continue;
+            if (found != null) return null;
+            found = entry.OccurrenceId;
+        }
+        return found;
+    }
+
     internal bool IsBarMissionReady(Guid expectedSession, StoryContentId definition, Guid occurrence)
     {
         CheckThread();

@@ -46,13 +46,16 @@ public sealed partial class Plugin
             UpdateBarPermissions(null, EventArgs.Empty);
             _barPermissionConfig.SettingChanged += UpdateBarPermissions;
             var assembly = Assembly.Load("Assembly-CSharp");
-            var native = new BarNativeBindings(assembly);
+            var native = new BarNativeBindings(assembly,
+                art => UnityEngine.Resources.Load<UnityEngine.Sprite>("Sprites/NPC/" + art),
+                error => Logger.LogWarning(error.Message));
             var bars = new BarContentService(_persistence, _hub, StoryHostAuthentication.Resolve,
                 plugin => _barPermissions.Allowed.Contains(plugin), _hub.CheckThread, () => _barPermissions,
                 (owner, error) => Logger.LogError("Bar observer '" + owner + "' failed: " + error));
             _bars = bars;
             var story = _story;
             var noStory = new object();
+            bars.ResolveOccurrence = (session, id) => story?.CurrentBarOccurrence(session, id);
             _barHost = new BarRuntimeHost(bars, native.World, native.Contacts, native.Serialization,
                 station => _hub.CurrentSession is { } session ? bars.Plan(session.Id, station,
                     (id, occurrence) => story?.IsBarMissionReady(session.Id, id, occurrence) == true,

@@ -13,10 +13,12 @@ public interface IAmbientTrafficService : IServiceStatus
     /// Quiets decorative visitor traffic at one station. Everything else stays vanilla,
     /// including jump gates in the same system.
     /// </summary>
-    IDisposable SuppressAtStation(string stationId);
+    /// <param name="key">Optional author-scoped declaration key: re-declaring the same key replaces
+    /// only your previous declaration; disposing a superseded handle is inert.</param>
+    IDisposable SuppressAtStation(string stationId, string? key = null);
     /// <summary>
     /// Quiets decorative station and gate traffic throughout the single system that contains the
     /// anchor location. Neighbouring systems stay vanilla, including a suppressed gate's peer gate.
     /// </summary>
-    IDisposable SuppressInSystemContaining(string poiId);
+    IDisposable SuppressInSystemContaining(string poiId, string? key = null);
 }

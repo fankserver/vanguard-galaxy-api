@@ -16,7 +16,7 @@ public class DispatchStateTests
         hub = new LifecycleHub((_, _) => observations.Add(hub!.IsDispatchingCallbacks));
         using (hub)
         {
-            ILifecycleService state = hub;
+            var state = hub;
             Assert.False(state.IsDispatchingCallbacks);
             using var first = hub.Subscribe("first", e =>
             {

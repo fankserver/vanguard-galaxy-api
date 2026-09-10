@@ -47,9 +47,8 @@ public sealed class Plugin : BaseUnityPlugin
             new[] { new StoryReward(StoryRewardKind.Credits, 3) }, retention: StoryRetention.Temporary));
     }
 
-    public StoryTransitionResult ReportProgress(Guid session, Guid occurrence, int observedReports)
-        => ((IStoryObjectiveProvider)Provider).SetProgress(session,
-            new StoryObjectiveId(new StoryContentId(Provider.ProviderId, ObjectiveLocalId), occurrence, "talk"), observedReports);
+    public StoryActionResult ReportProgress(IStoryMission mission, int observedReports)
+        => mission.GetObjective("talk").SetProgress(observedReports);
 
     public void ReleaseProvider() { _provider?.Dispose(); _provider = null; }
     private void OnDestroy() => ReleaseProvider();
