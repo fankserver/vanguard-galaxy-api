@@ -16,11 +16,14 @@ internal sealed class WorldNativeAuthored : IAuthoredSystemNative
     private readonly WorldMapIndex _index;
     private readonly Type _jumpGateType;
     private readonly PropertyInfo _map;
-    private readonly FieldInfo _sector, _hidden, _jumpgateOpen;
+    private readonly FieldInfo _sector, _parent, _hidden, _jumpgateOpen;
     private readonly PropertyInfo _guid;
     private readonly MethodInfo _create, _entrance, _target, _unlock, _lock;
     private readonly int _level;
     private readonly Action<Exception> _report;
+    private bool _inPass;
+    private Guid _passSession;
+    private WorldMapIndex.Snapshot? _passSnapshot;
 
     internal WorldNativeAuthored(GameAdapter game, Assembly assembly, int level = 10, Action<Exception>? report = null)
     {
@@ -30,6 +33,7 @@ internal sealed class WorldNativeAuthored : IAuthoredSystemNative
         _map = assembly.GetType("Source.Player.GamePlayer", true)!.GetProperty("map", BindingFlags.Public | BindingFlags.Instance)
             ?? throw new MissingMemberException("GamePlayer.map");
         _sector = Field(assembly.GetType(AuthoredSystemBindings.System, true)!, "sector");
+        _parent = Field(assembly.GetType(AuthoredSystemBindings.Element, true)!, "system");
         _hidden = Field(assembly.GetType(AuthoredSystemBindings.Poi, true)!, "hidden");
         _jumpgateOpen = Field(_jumpGateType, "jumpgateOpen");
         _guid = assembly.GetType(AuthoredSystemBindings.Element, true)!.GetProperty("guid", BindingFlags.Public | BindingFlags.Instance)
@@ -69,6 +73,58 @@ internal sealed class WorldNativeAuthored : IAuthoredSystemNative
         else _report(error);
     }
 
+    /// <summary>Bounds a reconciliation pass to a single observed snapshot for its read paths (ResolvePocket/AmbiguousCount/IsOpen).</summary>
+    public void BeginPass(Guid session) { _inPass = true; _passSession = session; _passSnapshot = null; }
+    public void EndPass() { _inPass = false; _passSnapshot = null; }
+    private WorldMapIndex.Snapshot? Snapshot(bool observed, Guid session)
+    {
+        bool cache = observed && _inPass && session == _passSession;
+        if (cache && _passSnapshot != null) return _passSnapshot;
+        var map = Map(observed, session, out _);
+        if (map == null) return null;
+        var snapshot = _index.Read(map);
+        if (cache) _passSnapshot = snapshot;
+        return snapshot;
+    }
+
+    /// <summary>
+    /// Verifies a genuinely-successful pocket creation changed membership by EXACTLY one new system
+    /// (the created pocket), its pocket-side gate POI, and the one anchor-side entrance gate POI — and
+    /// removed nothing and adopted nothing foreign. Never accepts a no-op or any extra membership growth.
+    /// </summary>
+    internal static bool VerifyPocketDelta(WorldMapIndex.Snapshot before, WorldMapIndex.Snapshot after,
+        object created, object anchor, Func<object, bool> isGate, Func<object, object?> parentOf)
+    {
+        var beforeSystems = new System.Collections.Generic.HashSet<object>();
+        foreach (var pair in before.Systems) beforeSystems.Add(pair.Value);
+        var afterSystems = new System.Collections.Generic.HashSet<object>();
+        foreach (var pair in after.Systems) afterSystems.Add(pair.Value);
+        if (afterSystems.Count != beforeSystems.Count + 1 || Has(beforeSystems, created) || !Has(afterSystems, created)) return false;
+        foreach (var value in beforeSystems) if (!Has(afterSystems, value)) return false; // a prior system was removed
+        var beforePoints = new System.Collections.Generic.HashSet<object>();
+        foreach (var pair in before.Points) beforePoints.Add(pair.Value);
+        var afterPoints = new System.Collections.Generic.HashSet<object>();
+        foreach (var pair in after.Points) afterPoints.Add(pair.Value);
+        if (afterPoints.Count != beforePoints.Count + 2) return false;
+        foreach (var value in beforePoints) if (!Has(afterPoints, value)) return false; // a prior POI was removed
+        int anchorGates = 0, pocketGates = 0;
+        foreach (var value in afterPoints)
+        {
+            if (Has(beforePoints, value)) continue;
+            if (!isGate(value)) return false; // the only new POIs must be jump gates
+            var parent = parentOf(value);
+            if (ReferenceEquals(parent, anchor)) anchorGates++;
+            else if (ReferenceEquals(parent, created)) pocketGates++;
+            else return false; // a new POI parented somewhere foreign
+        }
+        return anchorGates == 1 && pocketGates == 1;
+    }
+    private static bool Has(System.Collections.Generic.HashSet<object> set, object value)
+    {
+        foreach (var item in set) if (ReferenceEquals(item, value)) return true;
+        return false;
+    }
+
     public AuthoredSystemPocketInfo? CreatePocket(Guid session, string anchorSystemId)
     {
         var map = Map(false, session, out var player);
@@ -87,7 +143,8 @@ internal sealed class WorldNativeAuthored : IAuthoredSystemNative
             if (Map(false, session, out var current) == null || !ReferenceEquals(current, player)) return null;
             WorldMapIndex.Snapshot after;
             try { after = _index.Read(map); } catch (Exception e) { _report(e); return null; }
-            if (!before.SameMembership(after)) return null;
+            if (!VerifyPocketDelta(before, after, created, anchor, o => _jumpGateType.IsInstanceOfType(o), o => _parent.GetValue(o)))
+                return null;
             var info = ResolveFromSystem(created);
             if (info == null) return null;
             return info;
@@ -98,11 +155,11 @@ internal sealed class WorldNativeAuthored : IAuthoredSystemNative
 
     public AuthoredSystemPocketInfo? ResolvePocket(Guid session, string systemId)
     {
-        var map = Map(true, session, out _);
-        if (map == null) return null;
+        var snapshot = Snapshot(true, session);
+        if (snapshot == null) return null;
         try
         {
-            var system = _index.Read(map).FindSystem(systemId);
+            var system = snapshot.FindSystem(systemId);
             if (system == null) return null;
             return ResolveFromSystem(system);
         }
@@ -111,12 +168,12 @@ internal sealed class WorldNativeAuthored : IAuthoredSystemNative
 
     public int AmbiguousCount(Guid session, string systemId)
     {
-        var map = Map(true, session, out _);
-        if (map == null) return 0;
+        var snapshot = Snapshot(true, session);
+        if (snapshot == null) return 0;
         int count = 0;
         try
         {
-            foreach (var pair in _index.Read(map).Systems) if (pair.Key == systemId) count++;
+            foreach (var pair in snapshot.Systems) if (pair.Key == systemId) count++;
         }
         catch (Exception e) { _report(e); }
         return count;
@@ -149,11 +206,10 @@ internal sealed class WorldNativeAuthored : IAuthoredSystemNative
 
     public bool IsOpen(Guid session, string entranceGateId, string pocketGateId)
     {
-        var map = Map(true, session, out _);
-        if (map == null) return false;
+        var snapshot = Snapshot(true, session);
+        if (snapshot == null) return false;
         try
         {
-            var snapshot = _index.Read(map);
             var entrance = snapshot.FindPoint(entranceGateId);
             var peer = snapshot.FindPoint(pocketGateId);
             if (entrance == null || peer == null) return false;

@@ -15,7 +15,7 @@ internal sealed class AuthoredSystemOccurrence
     internal string Owner { get; }
     internal string LocalId { get; }
     internal string OccurrenceKey { get; }
-    internal int Revision { get; }
+    internal int Revision { get; private set; }
     internal string SystemId { get; }
     internal string EntranceGateId { get; }
     internal string PocketGateId { get; }
@@ -32,6 +32,12 @@ internal sealed class AuthoredSystemOccurrence
         if (string.IsNullOrWhiteSpace(pocketGateId) || WorldStateCodec.TextByteCount(pocketGateId) > 128) throw new ArgumentException("A bounded native gate identity is required.", nameof(pocketGateId));
         Owner = owner; LocalId = localId; OccurrenceKey = occurrenceKey; Revision = revision;
         SystemId = systemId; EntranceGateId = entranceGateId; PocketGateId = pocketGateId; DeclaredOpen = declaredOpen;
+    }
+    /// <summary>Moves a retained occurrence up to a validated live definition revision (previous-revision migration).</summary>
+    internal void MigrateRevision(int revision)
+    {
+        if (revision < 1 || revision <= Revision) throw new ArgumentOutOfRangeException(nameof(revision));
+        Revision = revision;
     }
 }
 

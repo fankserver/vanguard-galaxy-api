@@ -28,4 +28,8 @@ internal interface IAuthoredSystemNative
     bool ApplyOpen(Guid session, string entranceGateId, string pocketGateId, bool open);
     /// <summary>Reads the current paired-gate open state (both open and unhidden means open).</summary>
     bool IsOpen(Guid session, string entranceGateId, string pocketGateId);
+    /// <summary>Begins a single reconciliation pass over the session's map; read paths reuse one snapshot until EndPass.</summary>
+    void BeginPass(Guid session);
+    /// <summary>Ends a reconciliation pass, releasing the cached snapshot.</summary>
+    void EndPass();
 }

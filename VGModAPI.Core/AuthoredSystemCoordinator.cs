@@ -88,6 +88,9 @@ internal sealed class AuthoredSystemCoordinator : IDisposable
         }
         if (_pending.TryGetValue(key, out var attempted)) return new AuthoredSystemResult(WorldStatus.Rejected, reference,
             attempted.SystemId, attempted.EntranceGateId, attempted.PocketGateId);
+        // Fail at Create (not save-time) once the owned envelope reaches its encode bound (1024 rows).
+        if (_committed.Count + _pending.Count >= WorldSerializationAssociation.MaxObjects)
+            return new AuthoredSystemResult(WorldStatus.Rejected, reference);
         // Allocate native identity only here; never adopt a foreign or ambiguous native identity.
         try
         {
@@ -105,7 +108,14 @@ internal sealed class AuthoredSystemCoordinator : IDisposable
         catch (Exception error) { _report(error); return new AuthoredSystemResult(WorldStatus.Unavailable, reference); }
     }
     private static AuthoredSystemOccurrence Failing(string owner, string localId, string key, int revision)
-        => new(owner, localId, key, revision, "pending." + localId + "." + key, "pending-entrance", "pending-pocket", declaredOpen: false);
+        => new(owner, localId, key, revision, PendingSystemId(localId, key), "pending-entrance", "pending-pocket", declaredOpen: false);
+    /// <summary>Projective, bounded placeholder native id for failed creations — never persisted, so it only needs to stay in the 128-byte encode bound.</summary>
+    private static string PendingSystemId(string localId, string key)
+    {
+        using var sha = System.Security.Cryptography.SHA256.Create();
+        var hash = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes("pending." + localId + "." + key));
+        return "pending." + BitConverter.ToString(hash, 0, 12).Replace("-", "").ToLowerInvariant();
+    }
 
     internal WorldStatus SetOpen(AuthoredSystemRegistry.Provider provider, Guid expectedSession, AuthoredSystemReference reference, bool open)
     {
@@ -114,10 +124,11 @@ internal sealed class AuthoredSystemCoordinator : IDisposable
         if (reference == null || provider == null || reference.ProviderId != provider.Owner) return WorldStatus.NotRegistered;
         if (!_committed.TryGetValue((provider.Owner, reference.LocalId, reference.OccurrenceKey), out var occurrence))
             return WorldStatus.NotRegistered;
-        occurrence.DeclaredOpen = open;
         try
         {
+            // Apply to the native gate first; only commit the declared persistence state once the apply succeeds.
             if (!_native.ApplyOpen(expectedSession, occurrence.EntranceGateId, occurrence.PocketGateId, open)) return WorldStatus.Rejected;
+            occurrence.DeclaredOpen = open;
             return WorldStatus.Succeeded;
         }
         catch (Exception error) { _report(error); return WorldStatus.Unavailable; }
@@ -140,20 +151,31 @@ internal sealed class AuthoredSystemCoordinator : IDisposable
     {
         _hub.CheckThread();
         if (_disposed || expectedSession == Guid.Empty || expectedSession != Session()) return;
-        foreach (var occurrence in _committed.Values.ToArray())
+        _native.BeginPass(expectedSession);
+        try
         {
-            var state = Resolve(occurrence);
-            if (state.Status == AuthoredSystemReconstructionStatus.Reconstructed)
+            foreach (var occurrence in _committed.Values.ToArray())
             {
-                try
+                var state = Resolve(occurrence);
+                if (state.Status == AuthoredSystemReconstructionStatus.Reconstructed)
                 {
-                    if (occurrence.DeclaredOpen != _native.IsOpen(expectedSession, occurrence.EntranceGateId, occurrence.PocketGateId))
-                        _native.ApplyOpen(expectedSession, occurrence.EntranceGateId, occurrence.PocketGateId, occurrence.DeclaredOpen);
+                    try
+                    {
+                        if (occurrence.DeclaredOpen != _native.IsOpen(expectedSession, occurrence.EntranceGateId, occurrence.PocketGateId))
+                            _native.ApplyOpen(expectedSession, occurrence.EntranceGateId, occurrence.PocketGateId, occurrence.DeclaredOpen);
+                    }
+                    catch (Exception error) { _report(error); }
                 }
-                catch (Exception error) { _report(error); }
+            }
+            // Emit the once-per-session settlement at the gameplay boundary regardless of persistence
+            // readiness so PersistenceUnavailable is genuinely reportable, not query-only.
+            if (!_settledOnce && _hub.CurrentSession?.Phase == SessionPhase.GameplayInitialized)
+            {
+                _settledOnce = true;
+                EmitSettled(expectedSession);
             }
         }
-        if (!_settledOnce && _persistenceReady(expectedSession)) { _settledOnce = true; EmitSettled(expectedSession); }
+        finally { _native.EndPass(); }
     }
 
     private void EmitSettled(Guid session)
@@ -163,14 +185,18 @@ internal sealed class AuthoredSystemCoordinator : IDisposable
         foreach (var pair in _committed)
         {
             var state = Resolve(pair.Value);
-            var reason = state.Reason ?? (state.Status == AuthoredSystemReconstructionStatus.Pending ? AuthoredSystemFailureReason.NativeMissing : (AuthoredSystemFailureReason?)null);
+            var reason = state.Reason ?? (state.Status == AuthoredSystemReconstructionStatus.Pending
+                ? (_persistenceReady(session) ? AuthoredSystemFailureReason.NativeMissing : AuthoredSystemFailureReason.PersistenceUnavailable)
+                : (AuthoredSystemFailureReason?)null);
             if (state.Status != AuthoredSystemReconstructionStatus.Reconstructed && reason != null)
                 failures.Add(new AuthoredSystemFailure(new AuthoredSystemReference(pair.Key.Owner, pair.Key.Local, pair.Key.Key), reason.Value));
         }
         foreach (var pair in _pending)
         {
             var state = Resolve(pair.Value);
-            var reason = state.Reason ?? (state.Status == AuthoredSystemReconstructionStatus.Pending ? AuthoredSystemFailureReason.NativeMissing : (AuthoredSystemFailureReason?)null);
+            var reason = state.Reason ?? (state.Status == AuthoredSystemReconstructionStatus.Pending
+                ? (_persistenceReady(session) ? AuthoredSystemFailureReason.NativeMissing : AuthoredSystemFailureReason.PersistenceUnavailable)
+                : (AuthoredSystemFailureReason?)null);
             if (state.Status != AuthoredSystemReconstructionStatus.Reconstructed && reason != null)
                 failures.Add(new AuthoredSystemFailure(new AuthoredSystemReference(pair.Key.Owner, pair.Key.Local, pair.Key.Key), reason.Value));
         }
@@ -193,10 +219,17 @@ internal sealed class AuthoredSystemCoordinator : IDisposable
 
     private AuthoredSystemReconstructionState Resolve(AuthoredSystemOccurrence occurrence)
     {
-        if (!_definitions.TryResolveRevision(occurrence.Owner, occurrence.LocalId, out var liveRevision))
+        if (!_definitions.TryResolveMigration(occurrence.Owner, occurrence.LocalId, out var liveRevision, out var previousRevision))
             return new AuthoredSystemReconstructionState(AuthoredSystemReconstructionStatus.Failed, AuthoredSystemFailureReason.MissingDefinition);
+        // Previous-revision migration: a retained row stamped with the immediately-previous revision is
+        // the same owned occurrence under an upgraded definition, so migrate it up rather than failing.
         if (liveRevision != occurrence.Revision)
-            return new AuthoredSystemReconstructionState(AuthoredSystemReconstructionStatus.Failed, AuthoredSystemFailureReason.RevisionMismatch);
+        {
+            if (previousRevision.HasValue && previousRevision.Value == occurrence.Revision && previousRevision.Value < liveRevision)
+                occurrence.MigrateRevision(liveRevision);
+            else
+                return new AuthoredSystemReconstructionState(AuthoredSystemReconstructionStatus.Failed, AuthoredSystemFailureReason.RevisionMismatch);
+        }
         if (!_persistenceReady(Session()))
             return new AuthoredSystemReconstructionState(AuthoredSystemReconstructionStatus.Failed, AuthoredSystemFailureReason.PersistenceUnavailable);
         try

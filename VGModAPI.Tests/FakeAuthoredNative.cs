@@ -46,6 +46,8 @@ internal sealed class FakeAuthoredNative : IAuthoredSystemNative
         string? sid = EntranceToSystem(entranceGateId);
         return sid != null && Open.TryGetValue(sid, out var openValue) && openValue;
     }
+    public void BeginPass(Guid session) { }
+    public void EndPass() { }
     private string? EntranceToSystem(string entrance)
     {
         foreach (var pair in Systems) if (pair.Value.Entrance == entrance) return pair.Key;

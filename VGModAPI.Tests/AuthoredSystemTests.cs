@@ -1,6 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
+using LightJson;
 using VGModAPI.Core;
+using VGModAPI.Core.Integration;
 using Xunit;
 
 namespace VGModAPI.Tests;
@@ -235,6 +238,12 @@ public sealed class AuthoredSystemTests
             });
             var state = persisted.Provider.GetAuthoredSystemReconstructionState(new AuthoredSystemReference("author.a", "sysA", "k"));
             Assert.Equal(AuthoredSystemFailureReason.PersistenceUnavailable, state.Reason);
+            // PersistenceUnavailable is genuinely reportable, not query-only: it reaches the settled event.
+            AuthoredSystemFailuresCapture? capturedPersisted = null;
+            persisted.Provider.AuthoredSystemReconstructionSettled += e => capturedPersisted = new AuthoredSystemFailuresCapture(e);
+            persisted.Coordinator.Reconcile(persisted.Session);
+            Assert.NotNull(capturedPersisted);
+            Assert.Equal(AuthoredSystemFailureReason.PersistenceUnavailable, capturedPersisted!.Event.Failures.Single().Reason);
         }
     }
 
@@ -318,16 +327,100 @@ public sealed class AuthoredSystemTests
     }
 
     [Fact]
-    public void EmptyAuthoredCaptureDoesNotAlterCombatStateBytes()
+    public void EmptyAuthoredCapturePreservesCombatOwnerAndOmitsAuthoredOwner()
     {
-        // The authored owner is a distinct envelope key; an empty authored inventory never touches the
-        // Combat-site WorldStateCodec.Owner encoding (byte-identical when no authored systems exist).
-        byte[] emptyAuthored = AuthoredSystemStateCodec.Encode(Array.Empty<AuthoredSystemOccurrence>());
-        Assert.NotEmpty(emptyAuthored);
-        var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
-        var row = new WorldSavedObject(identity, "system", new string('a', 64), 1);
-        var combatBytes = WorldStateCodec.Encode(new[] { row });
-        // Re-encoding the same combat rows yields the exact same bytes regardless of authored state.
-        Assert.True(combatBytes.SequenceEqual(WorldStateCodec.Encode(new[] { row })));
+        // Driving the full recorder with and without an authored capture proves the authored owner is a
+        // distinct envelope key: combat + definitions owner bytes are byte-identical, and the authored key
+        // only exists when an authored capture is wired (no-authored saves are byte-identical to combat-only).
+        var json = new WorldJsonInspection(typeof(JsonObject).Assembly);
+        var instances = Array.Empty<WorldSnapshotInstance>();
+
+        var plain = new WorldSnapshotRecorder(json);
+        var plainRoot = EmptySnapshotRoot();
+        var token = plain.Begin(1, instances);
+        Assert.True(plain.Complete(token, 1, instances, plainRoot));
+        var plainStore = plain.ForStore(plainRoot);
+
+        var authored = new WorldSnapshotRecorder(json, () => AuthoredSystemStateCodec.Encode(Array.Empty<AuthoredSystemOccurrence>()));
+        var authoredRoot = EmptySnapshotRoot();
+        var token2 = authored.Begin(1, instances);
+        Assert.True(authored.Complete(token2, 1, instances, authoredRoot));
+        var authoredStore = authored.ForStore(authoredRoot);
+
+        Assert.True(plainStore[WorldStateCodec.Owner].SequenceEqual(authoredStore[WorldStateCodec.Owner]));
+        Assert.True(plainStore[WorldDefinitionCodec.Owner].SequenceEqual(authoredStore[WorldDefinitionCodec.Owner]));
+        Assert.False(plainStore.ContainsKey(AuthoredSystemStateCodec.Owner));
+        Assert.True(authoredStore.ContainsKey(AuthoredSystemStateCodec.Owner));
+    }
+    private static JsonObject EmptySnapshotRoot() => new()
+    {
+        ["Player"] = new(new JsonObject { ["map"] = new(new JsonObject { ["sectors"] = new(new List<JsonValue>()) }) }),
+        ["Version"] = new("0.8.2.3")
+    };
+
+    [Fact]
+    public void PreviousRevisionRowsMigrateUpOnReconcileAndMismatchWithoutPreviousFails()
+    {
+        // Migration success: rev2 declared with previous rev1; a retained row stamped rev1 reconstructs
+        // after migrating up, and the migrated revision is what the next capture persists.
+        using (var migrate = new Harness())
+        {
+            Assert.Equal(WorldStatus.Succeeded, migrate.Provider.RegisterAuthoredSystem(
+                new AuthoredSystemDefinition("sysA", 2, "New"), new AuthoredSystemDefinition("sysA", 1, "Old")));
+            migrate.BeginGameplay();
+            migrate.Coordinator.RestoreRows(migrate.Session, new[]
+            {
+                new AuthoredSystemOccurrence("author.a", "sysA", "k1", 1, "sys-1", "en-1", "pk-1", false)
+            });
+            migrate.Native.Systems["sys-1"] = ("en-1", "pk-1");   // owned pocket is present natively
+            var state = migrate.Provider.GetAuthoredSystemReconstructionState(new AuthoredSystemReference("author.a", "sysA", "k1"));
+            Assert.Equal(AuthoredSystemReconstructionStatus.Reconstructed, state.Status);
+            byte[] encoded = migrate.Coordinator.CaptureBytes();
+            Assert.Equal(2, AuthoredSystemStateCodec.Decode(encoded).Single(o => o.OccurrenceKey == "k1").Revision);
+        }
+        // Mismatch with no previous declared: a retained older revision is not silently adopted.
+        using (var mismatch = new Harness())
+        {
+            Assert.Equal(WorldStatus.Succeeded, mismatch.Provider.RegisterAuthoredSystem(new AuthoredSystemDefinition("sysA", 2, "New")));
+            mismatch.BeginGameplay();
+            mismatch.Coordinator.RestoreRows(mismatch.Session, new[]
+            {
+                new AuthoredSystemOccurrence("author.a", "sysA", "k1", 1, "sys-1", "en-1", "pk-1", false)
+            });
+            var state = mismatch.Provider.GetAuthoredSystemReconstructionState(new AuthoredSystemReference("author.a", "sysA", "k1"));
+            Assert.Equal(AuthoredSystemFailureReason.RevisionMismatch, state.Reason);
+        }
+    }
+
+    [Fact]
+    public void FailedGateApplyDoesNotCommitDeclaredOpen()
+    {
+        using var harness = new Harness();
+        Register(harness);
+        harness.BeginGameplay();
+        var created = harness.Provider.CreateAuthoredSystem(harness.Session, "sysA", "k1", "anchor");
+        Assert.True(created.Succeeded);
+        harness.Native.ThrowOnApply = true;
+        var reference = new AuthoredSystemReference("author.a", "sysA", "k1");
+        Assert.Equal(WorldStatus.Unavailable, harness.Provider.SetAuthoredSystemEntranceOpen(harness.Session, reference, true));
+        harness.Native.ThrowOnApply = false;
+        // DeclaredOpen was not committed on failure, so reconciliation must not force the gate open.
+        harness.Coordinator.Reconcile(harness.Session);
+        Assert.False(harness.Native.IsOpen(harness.Session, "en-1", "pk-1"));
+    }
+
+    [Fact]
+    public void CreateFailsAtTheOwnedEnvelopeBoundInsteadOfAtSaveTime()
+    {
+        using var harness = new Harness();
+        Register(harness);
+        harness.BeginGameplay();
+        for (int i = 1; i <= 1024; i++)
+        {
+            var r = harness.Provider.CreateAuthoredSystem(harness.Session, "sysA", "k" + i, "anchor");
+            Assert.True(r.Succeeded);
+        }
+        var overflow = harness.Provider.CreateAuthoredSystem(harness.Session, "sysA", "k-over", "anchor");
+        Assert.Equal(WorldStatus.Rejected, overflow.Status);
     }
 }

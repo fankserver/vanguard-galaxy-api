@@ -205,7 +205,9 @@ Re-declaring the same key **reconciles to the owned occurrence** instead of crea
 duplicate. A foreign or ambiguous native identity is never adopted. The occurrence,
 its gate pairing and its declarative gate state live inside the same sealed save envelope
 as other owned world content, so ownership survives reload, save-as and rollback; a brand
-new game starts with no bleed from an earlier one.
+new game starts with no bleed from an earlier one. The authored envelope shares the owned
+save bound (1024 rows); creating past that bound is refused at Create time rather than
+failing at save.
 
 ### Entrance gate state
 
@@ -236,6 +238,9 @@ Reasons: `MissingDefinition`, `RevisionMismatch`, `NativeMissing`, `AmbiguousIde
 `PersistenceUnavailable`. Excess occurrences converge or report; a pocket whose native
 system cannot be located reports `NativeMissing`, and a re-declared definition whose
 revision no longer matches the owned occurrence reports `RevisionMismatch`.
+A retained row stamped with the immediately-previous declared revision migrates up to the
+live definition automatically instead of failing — `RevisionMismatch` only fires when no
+compatible previous declaration exists.
 
 Once per session, at the post-reconstruction safe boundary, one
 `AuthoredSystemReconstructionSettled` event reports the actual reconciliation outcomes

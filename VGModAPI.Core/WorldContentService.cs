@@ -148,7 +148,9 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             if (_disposed || _service._disposed) return WorldStatus.UnknownProvider;
             if (_authored == null || _service._authoredCoordinator == null) return WorldStatus.NotReady;
             if (!_service._canAuthor() || _disposed || _service._disposed) return WorldStatus.Unavailable;
-            if (expectedSessionId == Guid.Empty || _service._hub.CurrentSession?.Id != expectedSessionId) return WorldStatus.NotReady;
+            if (expectedSessionId == Guid.Empty || _service._hub.CurrentSession?.Id != expectedSessionId ||
+                _service._hub.CurrentSession.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks)
+                return WorldStatus.NotReady;
             if (reference == null) return WorldStatus.NotRegistered;
             return _service._authoredCoordinator.SetOpen(_authored, expectedSessionId, reference, open);
         }

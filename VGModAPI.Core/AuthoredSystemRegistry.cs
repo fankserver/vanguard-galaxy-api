@@ -69,11 +69,13 @@ internal sealed class AuthoredSystemRegistry : IDisposable
         return true;
     }
     private bool Active(Provider provider) => !_disposed && _providers.TryGetValue(provider.Owner, out var current) && ReferenceEquals(current, provider);
-    internal bool TryResolveRevision(string owner, string localId, out int revision)
+    /// <summary>Resolves the live definition's revision and, when a previous-revision migration is registered, its previous revision — so retained rows can be migrated up instead of failing with RevisionMismatch.</summary>
+    internal bool TryResolveMigration(string owner, string localId, out int liveRevision, out int? previousRevision)
     {
-        _checkThread(); revision = 0;
+        _checkThread(); liveRevision = 0; previousRevision = null;
         if (_disposed || !_providers.ContainsKey(owner) || !_definitions.TryGetValue((owner, localId), out var definition)) return false;
-        revision = definition.Revision;
+        liveRevision = definition.Revision;
+        if (_previous.TryGetValue((owner, localId), out var previous) && previous.Revision < definition.Revision) previousRevision = previous.Revision;
         return true;
     }
     private void Release(Provider provider)
