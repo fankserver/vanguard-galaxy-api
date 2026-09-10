@@ -204,6 +204,7 @@ internal sealed class StoryNativeBindings
         _missionCompletionText.SetValue(mission, definition.CompletionText ?? "");
         _missionDifficulty.SetValue(mission, Enum.Parse(_difficulty, StoryContentPolicy.DifficultyName(definition.Difficulty)));
         _missionCanAbandon.SetValue(mission, definition.CanAbandon);
+        Field(_mission, "autoComplete").SetValue(mission, definition.AutoComplete);
         _missionStoryId.SetValue(mission, identifier);
         var steps = (IList)_missionSteps.GetValue(mission)!;
         foreach (var step in definition.Steps)

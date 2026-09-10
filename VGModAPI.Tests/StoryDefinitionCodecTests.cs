@@ -79,6 +79,7 @@ public sealed class StoryDefinitionCodecTests
         writer.Write((byte)1); Assert.Equal(2, reader.ReadByte());
         for (int text = 0; text < 6; text++) CopyText(reader, writer);
         writer.Write(reader.ReadBytes(2)); writer.Write(reader.ReadBoolean());
+        Assert.False(reader.ReadBoolean()); // drop the v2 autoComplete slot
         writer.Write(reader.ReadInt32()); writer.Write(reader.ReadInt32());
         int steps = reader.ReadByte(); writer.Write((byte)steps);
         for (int step = 0; step < steps; step++)
@@ -107,6 +108,19 @@ public sealed class StoryDefinitionCodecTests
     {
         int size = reader.ReadInt32(); writer.Write(size);
         if (size > 0) writer.Write(reader.ReadBytes(size));
+    }
+
+    [Fact]
+    public void AutoCompleteRoundTripsAndDefaultsOff()
+    {
+        var definition = new StoryMissionDefinition("closing", "Title", "Description", new StoryFactionId("TradingGuild"),
+            new[] { new StoryStep("Talk", new[] { StoryObjective.Scripted("closing-beat", "Speak with Ricko", 1) }) }).WithAutoComplete();
+        Assert.True(definition.AutoComplete);
+        var restored = StoryDefinitionCodec.Decode(StoryDefinitionCodec.Encode(definition));
+        Assert.True(restored.AutoComplete);
+        Assert.False(StoryDefinitionCodec.Decode(StoryDefinitionCodec.Encode(
+            new StoryMissionDefinition("plain", "T", "D", new StoryFactionId("TradingGuild"),
+                new[] { new StoryStep("s", new[] { StoryObjective.CollectCredits(1) }) }))).AutoComplete);
     }
 
     [Fact]

@@ -152,6 +152,14 @@ internal sealed partial class StoryContentService
         public IGame Game => _scope.Game;
         public IStoryDefinition Definition { get { _scope.Service.CheckThread(); return Authored; } }
         public Guid Id { get { _scope.Service.CheckThread(); return Occurrence; } }
+        public string? NativeMissionId
+        {
+            get
+            {
+                _scope.Service.CheckThread();
+                return Occurrence == Guid.Empty ? null : StoryContentPolicy.OccurrenceIdentifier(Authored.Id, Occurrence);
+            }
+        }
         public StoryActionResult LastAction
         { get { _scope.Service.CheckThread(); return _lastAction; } }
         public StoryMissionState State { get { _scope.Service.CheckThread(); return ReadState(); } }

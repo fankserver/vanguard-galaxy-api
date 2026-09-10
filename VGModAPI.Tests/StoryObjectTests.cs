@@ -262,6 +262,22 @@ public sealed partial class StoryContentTests
         Assert.Equal(new int?[] { 20, 45 }, observed);
     }
 
+    [Fact]
+    public void NativeMissionIdAppearsOnAdmissionAndTargetsTheOccurrence()
+    {
+        using var f = new StoryObjectsFixture(); using var definition = f.Register(); f.Start();
+        var mission = f.Game.Story.Offer(definition);
+        Assert.Null(mission.NativeMissionId); // nothing to highlight before admission
+        f.Tick();
+        var native = mission.NativeMissionId;
+        Assert.NotNull(native);
+        Assert.EndsWith(mission.Id.ToString("N"), native);
+        Assert.StartsWith("vgmodapi.story.", native);
+        // Distinct occurrences of one definition highlight distinct identifiers.
+        var second = f.Game.Story.Offer(definition); f.Tick();
+        Assert.NotEqual(native, second.NativeMissionId);
+    }
+
     private sealed class StoryObjectsFixture : IDisposable
     {
         internal readonly List<Exception> Errors = new();

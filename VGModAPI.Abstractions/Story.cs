@@ -276,6 +276,21 @@ public sealed class StoryMissionDefinition
     public string? CompletionText { get; }
     public StoryDifficulty Difficulty { get; }
     public bool CanAbandon { get; }
+    /// <summary>
+    /// When true the game itself completes the mission once every objective is satisfied and no
+    /// dialogue is open (the native anti-race: a closing conversation always finishes first).
+    /// Default false: the mission stays claimable until the player turns it in through the log.
+    /// End-on-a-narrative-beat missions pair this with a final Scripted objective the closing
+    /// dialogue satisfies.
+    /// </summary>
+    public bool AutoComplete { get; private set; }
+    /// <summary>Returns an immutable copy that the game auto-completes at the native safe point.</summary>
+    public StoryMissionDefinition WithAutoComplete()
+    {
+        var copy = (StoryMissionDefinition)MemberwiseClone();
+        copy.AutoComplete = true;
+        return copy;
+    }
     public StoryRetention Retention { get; }
     /// <summary>
     /// The faction this mission comes FROM. It is required because the game writes

@@ -181,6 +181,30 @@ new[]
 }
 ```
 
+### Completion, narrative endings and step tracking
+
+Completion is game-owned: by default a fully satisfied mission stays **claimable** until the player
+turns it in through the mission log. A mission that ends on a narrative beat declares
+`.WithAutoComplete()` and authors a final `Scripted` objective that the closing conversation
+satisfies via `SetProgress` — the game then completes the mission itself at its native safe point,
+which explicitly waits for any open dialogue to finish first, so the closing beat can never race
+the archive. There is no consumer-driven `Complete` call.
+
+There is deliberately no current-step index: steps reorder across content revisions and indices
+break saves, so beats gate on **objective keys** (`GetObjective(key).Snapshot` / `.Changed`). A
+"live step" is derivable when genuinely needed — the first step whose keyed objectives are not all
+complete — but key-gated beats do not need it.
+
+### Native surfaces and the offer marker
+
+`mission.NativeMissionId` is the identifier native surfaces accept for that occurrence — most
+importantly character `missionHighlights` for the pickup marker. It is null until the offer is
+admitted. The native marker shows while a highlighted identifier is offerable and not held, so the
+flow is: evaluate your own prerequisite, `Offer`, then highlight `mission.NativeMissionId`; the
+player picks the mission up through the character's native dialogue, and verified acceptance fires
+`Accepted`. Never highlight the definition-level `NativeIdentifier` — it is a catalog placeholder
+that is never offerable, so its marker would show forever and its pickup is refused.
+
 `StoryReward.Reputation(amount)` grants reputation with the mission's **source faction** (the
 native default); `StoryReward.Reputation(amount, faction)` names another existing faction,
 validated against the game's registry at registration exactly like the source faction. Reputation
