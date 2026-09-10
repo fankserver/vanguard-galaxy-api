@@ -157,9 +157,22 @@ reservation.
 
 ## Objectives and revisions
 
-Supported objectives are `TravelToPoi`, `CollectCredits` and `Scripted`; supported rewards are
-`Credits` and `Experience`. Unsupported kinds, including `KillEnemies`, are refused rather than
-installed with missing native dependencies. Item and reputation rewards are not part of this subset.
+Supported objectives are `TravelToPoi`, `CollectCredits`, `Scripted` and `DeliverItems`; supported
+rewards are `Credits`, `Experience` and `Reputation`. Unsupported kinds, including `KillEnemies`,
+are refused rather than installed with missing native dependencies.
+
+`StoryObjective.DeliverItems(itemTypeId, requiredAmount, deliverToPoiId)` is the game's own
+item-delivery step: the native objective tracks the count at the delivery station and **consumes
+the delivered items on mission turn-in** — the API reproduces none of that, it installs the real
+native mechanism. Both identities are exact: an unknown item type or a delivery target without the
+native turn-in shape (only stations qualify) refuses the offer rather than substituting, with the
+same missing-dependency semantics as travel targets. `Snapshot`/`Changed` observe the native count.
+
+`StoryReward.Reputation(amount)` grants reputation with the mission's **source faction** (the
+native default); `StoryReward.Reputation(amount, faction)` names another existing faction,
+validated against the game's registry at registration exactly like the source faction. Reputation
+may repeat per distinct faction; other reward kinds stay unique. Item rewards remain outside the
+subset.
 
 ```csharp
 var objective = mission.GetObjective("answer");

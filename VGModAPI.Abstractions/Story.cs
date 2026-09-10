@@ -44,7 +44,7 @@ public readonly struct StoryContentId : IEquatable<StoryContentId>
 /// provider-defined objective type cannot round-trip through a vanilla save. Unsupported behaviour
 /// stays provider logic; it is never smuggled in as an opaque payload.
 /// </summary>
-public enum StoryObjectiveKind { TravelToPoi, KillEnemies, CollectCredits, Scripted }
+public enum StoryObjectiveKind { TravelToPoi, KillEnemies, CollectCredits, Scripted, DeliverItems }
 
 /// <summary>
 /// Identity of a faction this API may reference. It is the game's own faction identifier, passed as a
@@ -73,7 +73,7 @@ public readonly struct StoryFactionId : IEquatable<StoryFactionId>
 /// the API refuses unsupported rewards at registration instead of letting them disappear on load.
 /// Item/reputation rewards need owner-scoped item/faction identities and are deliberately absent.
 /// </summary>
-public enum StoryRewardKind { Credits, Experience }
+public enum StoryRewardKind { Credits, Experience, Reputation }
 
 /// <summary>Mirrors the inspected vanilla mission difficulty names; the API never invents its own scale.</summary>
 public enum StoryDifficulty { Easy, Normal, Hard, VeryHard }
@@ -103,16 +103,18 @@ public sealed class StoryObjective
     public string? TargetPoiId { get; }
     /// <summary>Required for the counting kinds; ignored by <see cref="StoryObjectiveKind.TravelToPoi"/>.</summary>
     public int RequiredAmount { get; }
+    /// <summary>Required for <see cref="StoryObjectiveKind.DeliverItems"/>: an existing item-type identity, never a display name.</summary>
+    public string? ItemTypeId { get; }
     public float RequiredVisitSeconds { get; }
 
-    private StoryObjective(StoryObjectiveKind kind, string? targetPoiId, int requiredAmount, float requiredVisitSeconds, string? localKey = null, string? description = null)
-    { Kind = kind; TargetPoiId = targetPoiId; RequiredAmount = requiredAmount; RequiredVisitSeconds = requiredVisitSeconds; LocalKey = localKey; Description = description; }
+    private StoryObjective(StoryObjectiveKind kind, string? targetPoiId, int requiredAmount, float requiredVisitSeconds, string? localKey = null, string? description = null, string? itemTypeId = null)
+    { Kind = kind; TargetPoiId = targetPoiId; RequiredAmount = requiredAmount; RequiredVisitSeconds = requiredVisitSeconds; LocalKey = localKey; Description = description; ItemTypeId = itemTypeId; }
 
     /// <summary>Returns an immutable keyed copy. Keys must be unique throughout one mission definition.</summary>
     public StoryObjective WithKey(string localKey)
     {
         if (!StoryContentId.IsValidSegment(localKey)) throw new ArgumentException("An objective key uses the story identity segment format.", nameof(localKey));
-        return new StoryObjective(Kind, TargetPoiId, RequiredAmount, RequiredVisitSeconds, localKey, Description);
+        return new StoryObjective(Kind, TargetPoiId, RequiredAmount, RequiredVisitSeconds, localKey, Description, ItemTypeId);
     }
 
     public static StoryObjective TravelTo(string targetPoiId, float requiredVisitSeconds = 0)
@@ -129,6 +131,19 @@ public sealed class StoryObjective
         if (string.IsNullOrWhiteSpace(description) || description.Length > 512) throw new ArgumentException("A bounded description is required.", nameof(description));
         if (requiredAmount is < 1 or > MaxAmount) throw new ArgumentOutOfRangeException(nameof(requiredAmount));
         return new StoryObjective(StoryObjectiveKind.Scripted, null, requiredAmount, 0, localKey, description);
+    }
+
+    /// <summary>
+    /// A native item-delivery objective: the game itself tracks the count at the delivery POI and
+    /// CONSUMES the delivered items on mission turn-in. Both identities are exact: an unknown item
+    /// type or an unresolvable delivery POI refuses installation, never substitutes.
+    /// </summary>
+    public static StoryObjective DeliverItems(string itemTypeId, int requiredAmount, string deliverToPoiId)
+    {
+        if (string.IsNullOrWhiteSpace(itemTypeId) || itemTypeId.Length > 128) throw new ArgumentException("A bounded exact item-type identity is required.", nameof(itemTypeId));
+        if (string.IsNullOrWhiteSpace(deliverToPoiId) || deliverToPoiId.Length > 128) throw new ArgumentException("A bounded delivery POI identity is required.", nameof(deliverToPoiId));
+        if (requiredAmount is < 1 or > MaxAmount) throw new ArgumentOutOfRangeException(nameof(requiredAmount));
+        return new StoryObjective(StoryObjectiveKind.DeliverItems, deliverToPoiId, requiredAmount, 0, itemTypeId: itemTypeId);
     }
 
     public static StoryObjective KillEnemies(int requiredAmount) => Counting(StoryObjectiveKind.KillEnemies, requiredAmount);
@@ -165,12 +180,21 @@ public sealed class StoryReward
 {
     public StoryRewardKind Kind { get; }
     public int Amount { get; }
+    /// <summary>Optional explicit faction for <see cref="StoryRewardKind.Reputation"/>; null grants to the mission's source faction.</summary>
+    public StoryFactionId? Faction { get; }
     public StoryReward(StoryRewardKind kind, int amount)
     {
         if (!Enum.IsDefined(typeof(StoryRewardKind), kind)) throw new ArgumentOutOfRangeException(nameof(kind));
         if (amount is < 1 or > StoryObjective.MaxAmount) throw new ArgumentOutOfRangeException(nameof(amount));
         Kind = kind; Amount = amount;
     }
+    private StoryReward(int amount, StoryFactionId? faction)
+    {
+        if (amount is < 1 or > StoryObjective.MaxAmount) throw new ArgumentOutOfRangeException(nameof(amount));
+        Kind = StoryRewardKind.Reputation; Amount = amount; Faction = faction;
+    }
+    /// <summary>Reputation with an existing faction; null grants to the mission's source faction (the native default).</summary>
+    public static StoryReward Reputation(int amount, StoryFactionId? faction = null) => new(amount, faction);
 }
 
 internal static class StoryText
@@ -307,7 +331,8 @@ public sealed class StoryMissionDefinition
         var rewardCopy = (rewards ?? Array.Empty<StoryReward>())
             .Select(reward => reward ?? throw new ArgumentException("Null reward.", nameof(rewards))).ToArray();
         if (rewardCopy.Length > MaxRewards) throw new ArgumentException("At most " + MaxRewards + " rewards.", nameof(rewards));
-        if (rewardCopy.Select(reward => reward.Kind).Distinct().Count() != rewardCopy.Length)
+        // Reputation may repeat per distinct faction (including one source-faction grant); other kinds stay unique.
+        if (rewardCopy.Select(reward => (reward.Kind, reward.Faction?.Value)).Distinct().Count() != rewardCopy.Length)
             throw new ArgumentException("Duplicate reward kind.", nameof(rewards));
         Rewards = Array.AsReadOnly(rewardCopy);
         var choiceCopy = (choiceKeys ?? Array.Empty<string>()).ToArray();

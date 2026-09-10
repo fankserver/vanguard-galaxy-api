@@ -812,6 +812,16 @@ internal sealed partial class StoryContentService : IStoryService, IStoryUiTrans
                 return new StoryRegistrationResult(StoryRegistrationStatus.InvalidDefinition, null,
                     "The game does not know source faction '" + definition.SourceFaction + "'.");
             }
+            // Explicit reward factions ride the same registry rule as the source faction: the game
+            // serializes them, so an unknown identity would break the save rather than a display line.
+            foreach (var reward in definition.Rewards)
+                if (reward.Kind == StoryRewardKind.Reputation && reward.Faction is { } rewardFaction && !_world.KnowsFaction(rewardFaction.Value))
+                {
+                    _world.Uninstall(identifier);
+                    _registry.RemoveIfMatches(id, entry);
+                    return new StoryRegistrationResult(StoryRegistrationStatus.InvalidDefinition, null,
+                        "The game does not know reward faction '" + rewardFaction + "'.");
+                }
         }
         var registration = new Registration(this, lease, id, identifier, entry);
         _authoredDefinitions[id] = registration;
@@ -905,17 +915,32 @@ internal sealed partial class StoryContentService : IStoryService, IStoryUiTrans
     private string? MissingTargets(string owner, StoryMissionDefinition definition, out bool worldUnknown)
     {
         worldUnknown = false;
-        foreach (var target in definition.Steps.SelectMany(step => step.Objectives)
-            .Where(objective => objective.Kind == StoryObjectiveKind.TravelToPoi)
-            .Select(objective => objective.TargetPoiId!).Distinct(StringComparer.Ordinal))
+        foreach (var objective in definition.Steps.SelectMany(step => step.Objectives)
+            .Where(objective => objective.Kind is StoryObjectiveKind.TravelToPoi or StoryObjectiveKind.DeliverItems))
         {
+            var target = objective.TargetPoiId!;
             bool owned = WorldObjectIdentity.IsReserved(target);
             if (_world == null && !owned) continue;
             bool? known;
-            try { known = owned ? (_bindings.HostOwner(owner) is { } hostOwner ? _worldReferences?.Invoke(hostOwner, target) : null) : _world!.KnowsPointOfInterest(target); }
+            try
+            {
+                // A delivery target must additionally have the native turn-in shape; an owned combat
+                // site can be travelled to but items cannot be turned in there.
+                known = objective.Kind == StoryObjectiveKind.DeliverItems ? _world!.KnowsDeliveryTarget(target)
+                    : owned ? (_bindings.HostOwner(owner) is { } hostOwner ? _worldReferences?.Invoke(hostOwner, target) : null)
+                    : _world!.KnowsPointOfInterest(target);
+            }
             catch { known = null; }
             if (known == null) { worldUnknown = true; return null; }
             if (known == false) return target;
+            if (objective.Kind == StoryObjectiveKind.DeliverItems && _world != null)
+            {
+                bool? item;
+                try { item = _world.KnowsItemType(objective.ItemTypeId!); }
+                catch { item = null; }
+                if (item == null) { worldUnknown = true; return null; }
+                if (item == false) return objective.ItemTypeId;
+            }
         }
         return null;
     }

@@ -3664,6 +3664,11 @@ public sealed partial class StoryContentTests
         internal void RestorePointOfInterest(string guid) => _pointsOfInterest.Add(guid);
         public bool? KnowsPointOfInterest(string guid)
             => !GalaxyLoaded || Unavailable ? null : _pointsOfInterest.Contains(guid);
+        internal readonly HashSet<string> ItemTypes = new(StringComparer.Ordinal) { "UmbralMetafiber" };
+        internal readonly HashSet<string> DeliveryStations = new(StringComparer.Ordinal) { "poi-guid-1" };
+        public bool? KnowsItemType(string itemTypeId) => Unavailable ? null : ItemTypes.Contains(itemTypeId);
+        public bool? KnowsDeliveryTarget(string guid)
+            => !GalaxyLoaded || Unavailable ? null : _pointsOfInterest.Contains(guid) && DeliveryStations.Contains(guid);
         private readonly HashSet<string> _foreign = new(StringComparer.Ordinal);
         private readonly HashSet<string> _active = new(StringComparer.Ordinal);
         private readonly HashSet<string> _archived = new(StringComparer.Ordinal);

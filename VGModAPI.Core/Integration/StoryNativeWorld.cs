@@ -129,6 +129,20 @@ internal sealed class StoryNativeWorld : IStoryWorld, IStoryObjectiveWorld, ISto
         catch (Exception error) { Report(error); return false; }
     }
 
+    public bool? KnowsItemType(string itemTypeId)
+    {
+        _checkThread();
+        if (_disposed) return null;
+        try { return _bindings.KnowsItemType(itemTypeId); }
+        catch (Exception error) { Report(error); return null; }
+    }
+    public bool? KnowsDeliveryTarget(string guid)
+    {
+        _checkThread();
+        if (_disposed) return null;
+        try { return _bindings.KnowsDeliveryTarget(guid); }
+        catch (Exception error) { Report(error); return null; }
+    }
     public bool? KnowsPointOfInterest(string guid)
     {
         _checkThread();
