@@ -68,7 +68,7 @@ internal sealed class AuthoredShipWorld : IAuthoredShipNative
         _allFactions = faction.GetField("allFactions", BindingFlags.NonPublic | BindingFlags.Static) ?? throw new MissingFieldException("allFactions");
         _factionGet = faction.GetMethod("Get", BindingFlags.Public | BindingFlags.Static, null, new[] { typeof(string) }, null)
             ?? throw new MissingMethodException("Faction.Get");
-        _vector = Get("UnityEngine.Vector2");
+        _vector = _worldPosition.ReturnType;
         _vectorX = Field(_vector, "x"); _vectorY = Field(_vector, "y");
         // Enum types are derived from CreateFixedPayload's own parameters; namespaces are not part of the contract.
         var parameters = _createPayload.GetParameters();

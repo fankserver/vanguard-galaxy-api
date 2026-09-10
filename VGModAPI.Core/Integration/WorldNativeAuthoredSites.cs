@@ -72,7 +72,10 @@ internal sealed class WorldNativeAuthoredSites : IAuthoredSiteNative
         _fieldDensity = field.GetProperty("density", BindingFlags.Public | BindingFlags.Instance) ?? throw new MissingMemberException("density");
         _fieldWealth = field.GetProperty("wealth", BindingFlags.Public | BindingFlags.Instance) ?? throw new MissingMemberException("wealth");
         _fieldSurface = Field(field, "surfaceOres"); _fieldCore = Field(field, "coreOres");
-        _vector = Get(AuthoredSiteBindings.Vector2);
+        // Vector2 is defined in UnityEngine.CoreModule, not Assembly-CSharp, so a name lookup against the
+        // game assembly throws at runtime while Cecil metadata tests pass. Resolve the real type from a
+        // bound method's return value (GetWorldPosition returns UnityEngine.Vector2) instead.
+        _vector = _worldPosition.ReturnType;
         _vectorX = Field(_vector, "x"); _vectorY = Field(_vector, "y");
         var random = Get(AuthoredSiteBindings.SeededRandom);
         _randomGlobal = random.GetField("Global", BindingFlags.Public | BindingFlags.Static) ?? throw new MissingMemberException("SeededRandom.Global");
