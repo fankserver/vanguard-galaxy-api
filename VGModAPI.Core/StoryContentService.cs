@@ -951,11 +951,13 @@ internal sealed partial class StoryContentService : IStoryService, IStoryUiTrans
         {
             // The destination exists only per occurrence: while the provider's authored occurrence is
             // not in the loaded game, the mission is neither offered nor accepted - refused at the
-            // edge, never a mission holding an unreachable step.
-            string? destination;
-            try { destination = _bindings.HostOwner(owner) is { } host ? _authoredDestinations?.Invoke(host, authored) : null; }
-            catch { destination = null; }
+            // edge, never a mission holding an unreachable step. Without a resolver nothing can be
+            // asserted about any authored destination; a resolver FAULT is likewise unknown, not a
+            // permanent-sounding missing-target refusal.
             if (_authoredDestinations == null) { worldUnknown = true; return null; }
+            string? destination;
+            try { destination = _bindings.HostOwner(owner) is { } host ? _authoredDestinations(host, authored) : null; }
+            catch { worldUnknown = true; return null; }
             if (destination == null) return authored.AuthoredLocalId + "/" + authored.AuthoredOccurrenceKey;
         }
         foreach (var objective in definition.Steps.SelectMany(step => step.Objectives)

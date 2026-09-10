@@ -493,9 +493,14 @@ internal sealed class StoryNativeBindings
             && !GatherIdentityMatches(objective, expected)) return null;
         if (slot.Kind is StoryObjectiveKind.TravelToAuthoredSystemEntrance or StoryObjectiveKind.TravelToAuthoredSite)
         {
+            // The trailing resolve is authoritative for the whole read: a destination that came back
+            // within the window is a reading again, one that vanished is Lost, a mismatch refuses.
             var stillResolved = resolveAuthored?.Invoke(expected);
             if (stillResolved == null) destinationLost = true;
             else if ((string?)Field(objective.GetType(), "targetPOI").GetValue(objective) != stillResolved) return null;
+            // A destination that came BACK within the window: the placeholder progress from the lost
+            // branch was never read from the objective, so this call refuses and the next one reads.
+            else if (destinationLost) return null;
         }
         return destinationLost ? StoryObjectiveReading.Lost : StoryObjectiveReading.Of(progress);
     }
