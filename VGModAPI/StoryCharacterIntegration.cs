@@ -19,7 +19,11 @@ public sealed partial class Plugin
         try
         {
             var methods = StoryCharacterBindings.Validate(assembly);
-            StoryCharacterPatches.Runtime = new StoryCharacterRuntime(assembly, _storyCharacters, error => Logger.LogError(error));
+            // The game keeps every NPC portrait under one resource set; loading by art name is the
+            // primitive its own factories use, so every shipped portrait stays expressible.
+            StoryCharacterPatches.Runtime = new StoryCharacterRuntime(assembly, _storyCharacters,
+                art => UnityEngine.Resources.Load<UnityEngine.Sprite>("Sprites/NPC/" + art),
+                error => Logger.LogError(error));
             _storyCharacterHarmony = new Harmony(ModApi.PluginId + ".story-characters");
             _storyCharacterHarmony.Patch(methods["characterLookup"],
                 prefix: new HarmonyMethod(typeof(StoryCharacterPatches.Lookup), "Prefix"),
