@@ -6,6 +6,17 @@ Enable `[Bars] Enabled = true`; API-managed saves initialize automatically. Bars
 
 Acquire a provider from the loaded BepInEx plugin instance in `Start` with `ModApi.Services.Bars.AcquireProvider(this)`. Chainloader publishes its authenticated instance only after `Awake` returns; acquiring during `Awake` is refused. Consumers can latch managed mode in `Awake` to prevent a native fallback before acquisition. The API authenticates its stable owner identity. Register a `BarPatronDefinition` containing a local ID, native station GUID, display name, description and seed, with an optional interaction callback. Different providers may reuse local IDs.
 
+Use `portrait: CharacterPortrait.Named("M2Captain")` to request specific NPC portrait art, or
+`CharacterPortrait.OfCharacter("LuminateCommander")` to borrow a game character's portrait.
+The seed still controls independent native seating/body presentation; it is not a portrait selector.
+Omitting the portrait retains the default contact icon. An unresolved explicit portrait leaves the
+contact usable without an icon and reports the missing identity once. Rebuilt contacts resolve it
+again, so an initially unavailable art catalog is not cached as a permanent failure.
+
+Portrait identities are saved with persistent patrons, not Unity objects. Schema-1 patron data
+remains readable with its default portrait; schema-2 writes preserve the existing provider and
+payload limits, including portrait bytes.
+
 `Place(currentSession.Id, localId)` stores the contribution. A successful placement is **not a visibility guarantee**: station policy, native capacity, readiness and dependencies determine admission at refresh. Always pass the current session identity; a saved occurrence ID does not make a stale session valid.
 
 `Unregister` revokes runtime behavior and transient placement, retaining persistent state. Registering the same identity again can reconstruct that state without another Place call. `Remove` explicitly deletes placement state; in a ready session it is idempotent. Disposing the provider removes its runtime registrations, not its saved persistent rows.

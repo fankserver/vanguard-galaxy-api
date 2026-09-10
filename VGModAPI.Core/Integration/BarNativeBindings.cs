@@ -10,7 +10,7 @@ internal sealed class BarNativeBindings
     internal BarNativeWorld World { get; }
     internal BarNativeSerialization Serialization { get; }
 
-    internal BarNativeBindings(Assembly assembly)
+    internal BarNativeBindings(Assembly assembly, Func<string, object?> loadNpcPortrait, Action<Exception> report)
     {
         Type Type(string name) => assembly.GetType(name, true)!;
         var station = Type("Source.Galaxy.POI.SpaceStation");
@@ -25,8 +25,22 @@ internal sealed class BarNativeBindings
             ?? throw new MissingFieldException("OfficerIcon.sprite");
         if (getIcon.ReturnType != icon || sprite.FieldType.FullName != "UnityEngine.Sprite")
             throw new InvalidOperationException("Unsupported officer portrait binding.");
+        var characters = Type("Source.Dialogues.Characters");
+        var character = Type("Source.Dialogues.Character");
+        var lookup = characters.GetMethod("GetCharacter", BindingFlags.Public | BindingFlags.Static, null, new[] { typeof(string) }, null)
+            ?? throw new MissingMethodException("Characters.GetCharacter");
+        var characterSprite = character.GetField("portretSprite", BindingFlags.Public | BindingFlags.Instance)
+            ?? throw new MissingFieldException("Character.portretSprite");
+        if (lookup.ReturnType != character || characterSprite.FieldType != sprite.FieldType)
+            throw new InvalidOperationException("Unsupported character portrait binding.");
+        var portraits = new BarPortraitResolver(loadNpcPortrait, name =>
+        {
+            var source = lookup.Invoke(null, new object[] { name });
+            return source == null ? null : characterSprite.GetValue(source);
+        }, sprite.FieldType.IsInstanceOfType, report);
         object? Portrait(BarPatronState state)
         {
+            if (state.Portrait != null) return portraits.Resolve(state.Portrait);
             // The inspected Salesman recovery path uses this existing male portrait. Do not
             // consume global RNG or initialize a random sale just to obtain an icon.
             try

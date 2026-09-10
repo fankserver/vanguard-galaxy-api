@@ -52,7 +52,7 @@ public sealed class BarPatronCodecTests
         var bytes = BarPatronCodec.Encode(new[] { Row() });
         for (int length = 0; length < bytes.Length; length++) Assert.False(BarPatronCodec.Validate(bytes.Take(length).ToArray()));
         Assert.False(BarPatronCodec.Validate(bytes.Concat(new byte[] { 0 }).ToArray()));
-        bytes[4] = 2;
+        bytes[4] = BarPatronCodec.SchemaVersion + 1;
         Assert.False(BarPatronCodec.Validate(bytes));
         Assert.Empty(BarPatronCodec.Decode(BarPatronCodec.Encode(Array.Empty<BarPatronState>())));
     }

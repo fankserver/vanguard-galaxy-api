@@ -19,7 +19,8 @@ internal sealed class BarPatronPersistence : IDisposable
         _checkThread = checkThread ?? throw new ArgumentNullException(nameof(checkThread));
         _checkThread();
         _registration = (persistence ?? throw new ArgumentNullException(nameof(persistence))).Register(new PersistenceProvider(
-            BarPatronCodec.Owner, BarPatronCodec.SchemaVersion, Capture, Restore, BarPatronCodec.Validate)).Registration ?? throw new InvalidOperationException("Patron save provider registration refused.");
+            BarPatronCodec.Owner, BarPatronCodec.SchemaVersion, Capture, Restore, BarPatronCodec.Validate,
+            migrations: new Dictionary<int, Func<byte[], byte[]>> { [1] = bytes => bytes })).Registration ?? throw new InvalidOperationException("Patron save provider registration refused.");
         try { lifecycle.Changed += OnLifecycle; }
         catch { _registration.Dispose(); throw; }
     }

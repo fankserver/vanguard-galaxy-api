@@ -23,6 +23,26 @@ public sealed class BarContentServiceTests
         Assert.Null(typeof(ModApi).Assembly.GetType("VGModAPI.IBarApi"));
     }
     [Fact]
+    public void NamedPortraitDeclarationReachesThePersistedRoster()
+    {
+        using var hub = new LifecycleHub((_, _) => { });
+        hub.SetCapability("owned-bars", true, "Bound.");
+        var storage = new Storage();
+        using var service = new BarContentService(storage, hub,
+            (_, _) => new StoryHostPlugin("author", typeof(BarContentServiceTests).Assembly), _ => false, hub.CheckThread);
+        using var author = service.AcquireProvider("author").Provider!;
+        Assert.Equal(BarStatus.Succeeded, author.Register(new BarPatronDefinition("contact", "station", "Captain", "Contact", "seed",
+            portrait: CharacterPortrait.Named("M2Captain"))).Status);
+        var session = Ready(hub, storage);
+        Assert.Equal(BarStatus.Succeeded, author.Place(session, "contact").Status);
+        var patron = Assert.Single(service.Plan(session, "station")!.Patrons);
+        Assert.Equal("M2Captain", patron.Portrait!.PortraitName);
+        var saved = Assert.Single(BarPatronCodec.Decode(storage.Provider!.Capture()));
+        Assert.Equal("M2Captain", saved.Portrait!.PortraitName);
+        Assert.True(storage.Provider.Migrations.ContainsKey(1));
+    }
+
+    [Fact]
     public void TypedRosterHandlersAreScopedIsolatedRemovableAndHealthGated()
     {
         using var hub = new LifecycleHub((_, _) => { });

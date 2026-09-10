@@ -21,6 +21,9 @@ internal sealed partial class BarContentService
             _owner._checkThread();
             if (!_owner.Active(this)) return new BarResult(BarStatus.Unavailable);
             if (definition == null || (definition.Mission.HasValue && definition.Mission.Value.Provider != ProviderId)) return new BarResult(BarStatus.InvalidDefinition);
+            try { _ = new BarPatronState(new BarPatronId(ProviderId, definition.LocalId), definition.StationId, definition.Name,
+                definition.Description, definition.Seed, definition.Mission, definition.Occurrence, definition.Portrait); }
+            catch (ArgumentException error) { return new BarResult(BarStatus.InvalidDefinition, error.Message); }
             if (Definitions.ContainsKey(definition.LocalId)) return new BarResult(BarStatus.DuplicateLocalId);
             if (Definitions.Count >= BarPatronCodec.MaxPerProvider) return new BarResult(BarStatus.LimitExceeded);
             Definitions.Add(definition.LocalId, definition);
@@ -63,7 +66,7 @@ internal sealed partial class BarContentService
             if (refusal != null) return refusal;
             if (localId == null || !Definitions.TryGetValue(localId, out var definition)) return new BarResult(BarStatus.NotRegistered);
             var state = new BarPatronState(new BarPatronId(ProviderId, localId), definition.StationId, definition.Name, definition.Description,
-                definition.Seed, definition.Mission, definition.Occurrence);
+                definition.Seed, definition.Mission, definition.Occurrence, definition.Portrait);
             if (definition.Retention == BarPatronRetention.Transient)
             {
                 if (!_owner._persistence.Read(expectedSessionId, out var persisted) || persisted.Any(row => row.Id == state.Id))

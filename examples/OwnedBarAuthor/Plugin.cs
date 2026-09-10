@@ -50,7 +50,8 @@ public sealed class Plugin : BaseUnityPlugin
 
     public BarResult Register(string station, string local, string seed) =>
         AcquireBar().Register(new BarPatronDefinition(local, station, "Contact " + Id,
-            "Independently authored contact", seed, BarPatronRetention.Persistent), _ => Interactions++);
+            "Independently authored contact", seed, BarPatronRetention.Persistent,
+            portrait: CharacterPortrait.Named("MercWoman")), _ => Interactions++);
 
     public BarResult Configure(string station, BarRosterOwnership mode)
         => Provider.ConfigureStation(station, mode);
