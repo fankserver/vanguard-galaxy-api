@@ -12,11 +12,12 @@ internal sealed class BarPatronState
     internal string Description { get; }
     internal string Seed { get; }
     internal CharacterPortrait? Portrait { get; }
+    internal bool IsMale { get; }
     internal StoryContentId? Mission { get; }
     internal Guid? Occurrence { get; }
 
     internal BarPatronState(BarPatronId id, string station, string name, string description, string seed,
-        StoryContentId? mission = null, Guid? occurrence = null, CharacterPortrait? portrait = null)
+        StoryContentId? mission = null, Guid? occurrence = null, CharacterPortrait? portrait = null, bool isMale = true)
     {
         _ = new BarPatronId(id.Provider, id.LocalId);
         Id = id;
@@ -30,7 +31,7 @@ internal sealed class BarPatronState
             if (registry.StartsWith(StoryCharacterService.LookupPrefix, StringComparison.Ordinal))
                 throw new ArgumentException("Borrow portraits from game characters, not introduced ones.", nameof(portrait));
         }
-        Portrait = portrait;
+        Portrait = portrait; IsMale = isMale;
         if (mission.HasValue != occurrence.HasValue || occurrence == Guid.Empty)
             throw new ArgumentException("A mission reference needs both definition and nonempty occurrence identity.");
         if (mission.HasValue)

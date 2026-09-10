@@ -8,7 +8,9 @@ Acquire a provider from the loaded BepInEx plugin instance in `Start` with `ModA
 
 Use `portrait: CharacterPortrait.Named("M2Captain")` to request specific NPC portrait art, or
 `CharacterPortrait.OfCharacter("LuminateCommander")` to borrow a game character's portrait.
-The seed still controls independent native seating/body presentation; it is not a portrait selector.
+Set `isMale: false` for the native female seated body (`true` is the default). Vanilla selects
+body sprites using `IsMale` independently of the seed; neither gender nor portrait is inferred from
+the other. The seed remains a separate presentation input, not a portrait or gender selector.
 Omitting the portrait retains the default contact icon. An unresolved explicit portrait leaves the
 contact usable without an icon and reports the missing identity once. Rebuilt contacts resolve it
 again, so an initially unavailable art catalog is not cached as a permanent failure.

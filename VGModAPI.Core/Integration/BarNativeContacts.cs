@@ -35,7 +35,7 @@ internal sealed class BarNativeContacts
         var contact = _constructor.Invoke(new object[] { state.Seed, station });
         _name.SetValue(contact, state.Name);
         _description.SetValue(contact, state.Description);
-        _male.SetValue(contact, true);
+        _male.SetValue(contact, state.IsMale);
         _icon.SetValue(contact, icon);
         // Do not invoke Salesman.InitializeData: it creates an unrelated sale and native dialogue.
         _initialized.SetValue(contact, true);

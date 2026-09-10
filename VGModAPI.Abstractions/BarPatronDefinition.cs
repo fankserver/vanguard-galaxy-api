@@ -13,13 +13,15 @@ public sealed class BarPatronDefinition
     public string Seed { get; }
     /// <summary>Named NPC portrait or a game character's portrait. Null uses the default contact portrait; the seat/body seed is independent.</summary>
     public CharacterPortrait? Portrait { get; }
+    /// <summary>Selects the native male or female seated body, independently of portrait and seed.</summary>
+    public bool IsMale { get; }
     public BarPatronRetention Retention { get; }
     public StoryContentId? Mission { get; }
     public Guid? Occurrence { get; }
 
     public BarPatronDefinition(string localId, string stationId, string name, string description, string seed,
         BarPatronRetention retention = BarPatronRetention.Persistent, StoryContentId? mission = null, Guid? occurrence = null,
-        CharacterPortrait? portrait = null)
+        CharacterPortrait? portrait = null, bool isMale = true)
     {
         _ = new BarPatronId("validation", localId);
         if (!Enum.IsDefined(typeof(BarPatronRetention), retention)) throw new ArgumentOutOfRangeException(nameof(retention));
@@ -28,7 +30,7 @@ public sealed class BarPatronDefinition
         Name = Text(name, 128, nameof(name));
         Description = Text(description, 1024, nameof(description));
         Seed = Text(seed, 128, nameof(seed));
-        Portrait = portrait;
+        Portrait = portrait; IsMale = isMale;
         if (mission.HasValue != occurrence.HasValue || occurrence == Guid.Empty)
             throw new ArgumentException("Mission definition and nonempty occurrence must be supplied together.");
         if (mission.HasValue) _ = new StoryContentId(mission.Value.Provider, mission.Value.LocalId);

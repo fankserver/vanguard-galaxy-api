@@ -38,6 +38,24 @@ public sealed class BarPortraitTests
     }
 
     [Fact]
+    public void FemaleBodySelectionIsPersistedAndAppliedIndependentlyOfPortraitAndSeed()
+    {
+        var state = new BarPatronState(new BarPatronId("author", "contact"), "station", "Estratega", "Contact", "fixed-seed",
+            portrait: CharacterPortrait.Named("MercWoman"), isMale: false);
+        var bytes = BarPatronCodec.Encode(new[] { state });
+        var restored = Assert.Single(BarPatronCodec.Decode(bytes));
+        Assert.False(restored.IsMale); Assert.Equal("fixed-seed", restored.Seed);
+        Assert.Equal("MercWoman", restored.Portrait!.PortraitName);
+        var sprite = new UnityEngine.Sprite();
+        var factory = new BarNativeContacts(typeof(BarNativeContactsTests.Salesman), typeof(BarNativeContactsTests.Patron),
+            typeof(BarNativeContactsTests.Station), _ => sprite);
+        var contact = Assert.IsType<BarNativeContactsTests.Salesman>(factory.Create(restored, new BarNativeContactsTests.Station()));
+        Assert.False(contact._isMale); Assert.Equal("fixed-seed", contact.Seed); Assert.Same(sprite, contact._icon);
+        var legacy = BarPatronCodec.Encode(new[] { State() }); legacy[4] = 1;
+        Assert.True(Assert.Single(BarPatronCodec.Decode(legacy)).IsMale);
+    }
+
+    [Fact]
     public void UnknownPortraitKindsAndLegacyPortraitFlagsAreRefused()
     {
         var bytes = BarPatronCodec.Encode(new[] { State(CharacterPortrait.Named("M2Captain")) });

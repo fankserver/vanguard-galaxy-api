@@ -32,13 +32,13 @@ public sealed class BarContentServiceTests
             (_, _) => new StoryHostPlugin("author", typeof(BarContentServiceTests).Assembly), _ => false, hub.CheckThread);
         using var author = service.AcquireProvider("author").Provider!;
         Assert.Equal(BarStatus.Succeeded, author.Register(new BarPatronDefinition("contact", "station", "Captain", "Contact", "seed",
-            portrait: CharacterPortrait.Named("M2Captain"))).Status);
+            portrait: CharacterPortrait.Named("M2Captain"), isMale: false)).Status);
         var session = Ready(hub, storage);
         Assert.Equal(BarStatus.Succeeded, author.Place(session, "contact").Status);
         var patron = Assert.Single(service.Plan(session, "station")!.Patrons);
-        Assert.Equal("M2Captain", patron.Portrait!.PortraitName);
+        Assert.Equal("M2Captain", patron.Portrait!.PortraitName); Assert.False(patron.IsMale);
         var saved = Assert.Single(BarPatronCodec.Decode(storage.Provider!.Capture()));
-        Assert.Equal("M2Captain", saved.Portrait!.PortraitName);
+        Assert.Equal("M2Captain", saved.Portrait!.PortraitName); Assert.False(saved.IsMale);
         Assert.True(storage.Provider.Migrations.ContainsKey(1));
     }
 
