@@ -290,6 +290,39 @@ Creation is gameplay-intent only; expected-session identity is an internal invar
 `RegisterAuthoredSystem` is pre-session; `CreateAuthoredSystem`, `SetEntranceOpen` and the
 re-obtain methods require a ready session.
 
+## Authored wormhole pairs
+
+Use an authored wormhole pair when two existing systems should be connected through the game's
+native wormhole map icon, scene and travel flow rather than a jump gate. Register the immutable
+definition before a session, then create the pair from ordinary gameplay logic:
+
+```csharp
+provider.RegisterAuthoredWormholePair(
+    new AuthoredWormholePairDefinition("unstable-rift", 1, "Unstable Rift"));
+
+var rift = provider.CreateAuthoredWormholePair(
+    "unstable-rift", "daily-rift", originSystemId, pocket.SystemId!);
+
+if (rift != null)
+{
+    rift.Changed += pair => { /* inspect pair.State */ };
+    rift.SetOpen(false); // hides and disables both ends together
+}
+```
+
+The API creates exactly two native `Wormhole` POIs and targets each end only at its owned peer.
+The pair therefore never joins vanilla's untargeted global wormhole mesh and does not depend on
+the player's global wormhole-unlock progression. Both systems must already exist and must be
+different. Either endpoint may be an authored pocket system.
+
+The API allocates both native POI identities, saves the system/POI association and declared open
+state, and reconstructs it after load. `SetOpen` shows/enables or hides/disables both ends together
+while retaining their exact pairing. Expiry remains consumer logic: a mod can close the pair on
+its own clock. Reusing an occurrence key returns the same `IAuthoredWormholePair` object for that
+session; re-obtain restored pairs with `GetAuthoredWormholePair` or `GetAuthoredWormholePairs`.
+`AuthoredWormholePairReconstructionSettled` reports the provider's reconstructed and failed pair
+objects once the world settles; each failed object's `State.Reason` gives the typed reason.
+
 ## Authored sites
 
 Authored sites place campaign set-pieces inside an existing system — including an owned pocket

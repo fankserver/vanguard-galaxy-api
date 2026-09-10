@@ -28,6 +28,9 @@ internal sealed class WorldContentService : IWorldService, IDisposable
     private readonly DroneBayService _droneBays;
     private readonly AuthoredSystemRegistry? _authoredDefinitions;
     private readonly AuthoredSystemCoordinator? _authoredCoordinator;
+    private readonly AuthoredWormholePairRegistry? _wormholeDefinitions;
+    private readonly AuthoredWormholePairCoordinator? _wormholeCoordinator;
+    private event Action<Guid>? _wormholesSettled;
     private readonly AuthoredSiteRegistry? _siteDefinitions;
     private readonly AuthoredSiteCoordinator? _siteCoordinator;
     private event Action<Guid>? _sitesSettled;
@@ -45,8 +48,15 @@ internal sealed class WorldContentService : IWorldService, IDisposable
     public event Action<ServiceAvailability>? AvailabilityChanged
     { add => _status.AvailabilityChanged += value; remove => _status.AvailabilityChanged -= value; }
     private bool _disposed;
-    internal WorldContentService(LifecycleHub hub, WorldDefinitionRegistry definitions, WorldAuthoringGate authoring, Func<bool> canAuthor, Action? providerReleased = null, AmbientTrafficService? ambient = null, UnitProtectionService? protection = null, DroneBayService? droneBays = null, AuthoredSystemRegistry? authoredDefinitions = null, AuthoredSystemCoordinator? authoredCoordinator = null, AuthoredSiteRegistry? siteDefinitions = null, AuthoredSiteCoordinator? siteCoordinator = null, AuthoredShipRegistry? shipDefinitions = null, AuthoredShipCoordinator? shipCoordinator = null, VGModAPI.Core.Integration.IEncounterNative? encounters = null)
+    internal WorldContentService(LifecycleHub hub, WorldDefinitionRegistry definitions, WorldAuthoringGate authoring, Func<bool> canAuthor, Action? providerReleased = null, AmbientTrafficService? ambient = null, UnitProtectionService? protection = null, DroneBayService? droneBays = null, AuthoredSystemRegistry? authoredDefinitions = null, AuthoredSystemCoordinator? authoredCoordinator = null, AuthoredSiteRegistry? siteDefinitions = null, AuthoredSiteCoordinator? siteCoordinator = null, AuthoredShipRegistry? shipDefinitions = null, AuthoredShipCoordinator? shipCoordinator = null, VGModAPI.Core.Integration.IEncounterNative? encounters = null, AuthoredWormholePairRegistry? wormholeDefinitions = null, AuthoredWormholePairCoordinator? wormholeCoordinator = null)
     {
+        _wormholeDefinitions = wormholeDefinitions;
+        _wormholeCoordinator = wormholeCoordinator;
+        wormholeCoordinator?.AttachSettled(session =>
+        {
+            var subscribers = _wormholesSettled; if (subscribers == null) return;
+            foreach (var subscriber in subscribers.GetInvocationList()) try { ((Action<Guid>)subscriber)(session); } catch { }
+        });
         _siteDefinitions = siteDefinitions;
         _siteCoordinator = siteCoordinator;
         _shipDefinitions = shipDefinitions;
@@ -101,6 +111,10 @@ internal sealed class WorldContentService : IWorldService, IDisposable
         {
             try { _authoredCoordinator.Reconcile(session); } catch { /* fail-open; gate convergence is best-effort */ }
         }
+        if (_wormholeCoordinator != null)
+        {
+            try { _wormholeCoordinator.Reconcile(session); } catch { /* fail-open */ }
+        }
         if (_siteCoordinator != null)
         {
             _siteCoordinator.BeginPass(session);
@@ -128,19 +142,25 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             authored = _authoredDefinitions.Acquire(pluginInstance, Assembly.GetCallingAssembly());
             if (authored == null) { provider.Dispose(); return null; }
         }
+        AuthoredWormholePairRegistry.Provider? wormholes = null;
+        if (_wormholeDefinitions != null)
+        {
+            wormholes = _wormholeDefinitions.Acquire(pluginInstance, Assembly.GetCallingAssembly());
+            if (wormholes == null) { provider.Dispose(); authored?.Dispose(); return null; }
+        }
         AuthoredSiteRegistry.Provider? sites = null;
         if (_siteDefinitions != null)
         {
             sites = _siteDefinitions.Acquire(pluginInstance, Assembly.GetCallingAssembly());
-            if (sites == null) { provider.Dispose(); authored?.Dispose(); return null; }
+            if (sites == null) { provider.Dispose(); authored?.Dispose(); wormholes?.Dispose(); return null; }
         }
         AuthoredShipRegistry.Provider? ships = null;
         if (_shipDefinitions != null)
         {
             ships = _shipDefinitions.Acquire(pluginInstance, Assembly.GetCallingAssembly());
-            if (ships == null) { provider.Dispose(); authored?.Dispose(); sites?.Dispose(); return null; }
+            if (ships == null) { provider.Dispose(); authored?.Dispose(); wormholes?.Dispose(); sites?.Dispose(); return null; }
         }
-        return new Provider(this, provider, authored, sites, ships);
+        return new Provider(this, provider, authored, sites, ships, wormholes);
     }
     private sealed class Provider : IWorldProvider, IWorldProviderEngine
     {
@@ -150,6 +170,8 @@ internal sealed class WorldContentService : IWorldService, IDisposable
         private readonly WorldDefinitionRegistry.Provider _provider;
         private readonly AuthoredSystemRegistry.Provider? _authored;
         private readonly AuthoredSiteRegistry.Provider? _authoredSites;
+        private readonly AuthoredWormholePairRegistry.Provider? _wormholes;
+        private readonly Dictionary<(string LocalId, string OccurrenceKey), AuthoredWormholePairHandle> _wormholeObjects = new();
         private readonly AuthoredShipRegistry.Provider? _authoredShips;
         private readonly Dictionary<(string LocalId, string OccurrenceKey), AuthoredShipHandle> _shipObjects = new();
         private readonly Dictionary<(string LocalId, string OccurrenceKey), AuthoredSiteHandle> _siteObjects = new();
@@ -158,9 +180,10 @@ internal sealed class WorldContentService : IWorldService, IDisposable
         private readonly Action<Guid> _refreshesEntry;
         private readonly Func<bool> _alive;
         private bool _disposed;
-        internal Provider(WorldContentService service, WorldDefinitionRegistry.Provider provider, AuthoredSystemRegistry.Provider? authored, AuthoredSiteRegistry.Provider? authoredSites = null, AuthoredShipRegistry.Provider? authoredShips = null)
+        internal Provider(WorldContentService service, WorldDefinitionRegistry.Provider provider, AuthoredSystemRegistry.Provider? authored, AuthoredSiteRegistry.Provider? authoredSites = null, AuthoredShipRegistry.Provider? authoredShips = null, AuthoredWormholePairRegistry.Provider? wormholes = null)
         {
-            _service = service; _provider = provider; _authored = authored; _authoredSites = authoredSites; _authoredShips = authoredShips;
+            _service = service; _provider = provider; _authored = authored; _authoredSites = authoredSites; _authoredShips = authoredShips; _wormholes = wormholes;
+            if (wormholes != null) service._wormholesSettled += ForwardWormholesSettled;
             if (authoredSites != null) service._sitesSettled += ForwardSitesSettled;
             if (authoredShips != null) service._shipsSettled += ForwardShipsSettled;
             _alive = () => !_disposed && !_service._disposed;
@@ -184,7 +207,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             _siteSubscription = service._hub.Subscribe("vgmodapi.combat-site-objects", e =>
             {
                 if (e.Kind is LifecycleEventKind.SessionStarting or LifecycleEventKind.SessionInvalidated or LifecycleEventKind.SessionStartFailed)
-                { _sites.Clear(); _siteObjects.Clear(); _shipObjects.Clear(); }
+                { _sites.Clear(); _siteObjects.Clear(); _shipObjects.Clear(); _wormholeObjects.Clear(); }
             });
         }
         private void ResetObjects()
@@ -394,6 +417,8 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 && _service._authoredCoordinator.ContainsOccurrence(_authored.Owner, localId, occurrenceKey)) return null;
             if (_authoredShips != null && _service._shipCoordinator != null
                 && _service._shipCoordinator.ContainsOccurrence(_authoredShips.Owner, localId, occurrenceKey)) return null;
+            if (_wormholes != null && _service._wormholeCoordinator != null
+                && _service._wormholeCoordinator.Contains(_wormholes.Owner, localId, occurrenceKey)) return null;
             var (status, _) = _service._siteCoordinator.Create(_authoredSites, session.Id, localId, occurrenceKey, systemId, x, y);
             if (status != WorldStatus.Succeeded && status != WorldStatus.Rejected) return null;
             if (_service._siteCoordinator.TryGetOccurrence(_authoredSites.Owner, localId, occurrenceKey) == null && status != WorldStatus.Rejected) return null;
@@ -516,6 +541,8 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 && _service._siteCoordinator.ContainsOccurrence(_authoredSites.Owner, localId, occurrenceKey)) return true;
             if (!exceptShips && _authoredShips != null && _service._shipCoordinator != null
                 && _service._shipCoordinator.ContainsOccurrence(_authoredShips.Owner, localId, occurrenceKey)) return true;
+            if (_wormholes != null && _service._wormholeCoordinator != null
+                && _service._wormholeCoordinator.Contains(_wormholes.Owner, localId, occurrenceKey)) return true;
             return false;
         }
 
@@ -604,6 +631,61 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                     detail.Length > 0 ? detail : "The native trigger scheduled a different unit count than authored.");
         }
 
+        public event Action<AuthoredWormholePairsSettledEvent>? AuthoredWormholePairReconstructionSettled;
+        private void ForwardWormholesSettled(Guid session)
+        {
+            if (_wormholes == null || _service._wormholeCoordinator == null || _service._hub.CurrentSession?.Id != session) return;
+            var good = new List<IAuthoredWormholePair>(); var failed = new List<IAuthoredWormholePair>();
+            foreach (var row in _service._wormholeCoordinator.Occurrences(_wormholes.Owner))
+            {
+                var handle = ObtainWormhole(row.LocalId, row.OccurrenceKey, session); handle.Refresh();
+                if (handle.State.Reconstructed) good.Add(handle); else failed.Add(handle);
+            }
+            var subscribers = AuthoredWormholePairReconstructionSettled; if (subscribers == null) return;
+            var args = new AuthoredWormholePairsSettledEvent(session, good, failed);
+            foreach (var subscriber in subscribers.GetInvocationList()) try { ((Action<AuthoredWormholePairsSettledEvent>)subscriber)(args); } catch { }
+        }
+        public WorldStatus RegisterAuthoredWormholePair(AuthoredWormholePairDefinition definition, AuthoredWormholePairDefinition? previous = null)
+        {
+            _service._hub.CheckThread();
+            if (_disposed || _service._disposed) return WorldStatus.UnknownProvider;
+            if (_service._hub.CurrentSession != null) return WorldStatus.NotReady;
+            if (_wormholes == null || definition == null) return WorldStatus.InvalidDefinition;
+            try
+            {
+                if (_service._wormholeDefinitions!.TryResolve(_wormholes, definition.LocalId, out _)) return WorldStatus.DuplicateDefinition;
+                return _wormholes.Register(definition, previous) ? WorldStatus.Succeeded : WorldStatus.Rejected;
+            }
+            catch (ArgumentException) { return WorldStatus.InvalidDefinition; }
+        }
+        public IAuthoredWormholePair? CreateAuthoredWormholePair(string localId, string occurrenceKey, string firstSystemId, string secondSystemId)
+        {
+            _service._hub.CheckThread();
+            if (_disposed || _service._disposed || _wormholes == null || _service._wormholeCoordinator == null || !_service._canAuthor()) return null;
+            var session = _service._hub.CurrentSession;
+            if (session == null || session.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks || !ValidOccurrenceKey(occurrenceKey)) return null;
+            if (_authored != null && _service._authoredCoordinator != null && _service._authoredCoordinator.ContainsOccurrence(_authored.Owner, localId, occurrenceKey)) return null;
+            if (_authoredSites != null && _service._siteCoordinator != null && _service._siteCoordinator.ContainsOccurrence(_authoredSites.Owner, localId, occurrenceKey)) return null;
+            if (_authoredShips != null && _service._shipCoordinator != null && _service._shipCoordinator.ContainsOccurrence(_authoredShips.Owner, localId, occurrenceKey)) return null;
+            var result = _service._wormholeCoordinator.Create(_wormholes, session.Id, localId, occurrenceKey, firstSystemId, secondSystemId);
+            return result.Row == null ? null : ObtainWormhole(localId, occurrenceKey, session.Id);
+        }
+        public IAuthoredWormholePair? GetAuthoredWormholePair(string localId, string occurrenceKey)
+        {
+            _service._hub.CheckThread(); if (_wormholes == null || _service._wormholeCoordinator?.TryGet(_wormholes.Owner, localId, occurrenceKey) == null) return null;
+            var session = _service._hub.CurrentSession; return session == null ? null : ObtainWormhole(localId, occurrenceKey, session.Id);
+        }
+        public IReadOnlyList<IAuthoredWormholePair> GetAuthoredWormholePairs(string localId)
+        {
+            _service._hub.CheckThread(); if (_wormholes == null || _service._wormholeCoordinator == null || _service._hub.CurrentSession is not { } session) return Array.Empty<IAuthoredWormholePair>();
+            return _service._wormholeCoordinator.Occurrences(_wormholes.Owner).Where(r => r.LocalId == localId).Select(r => (IAuthoredWormholePair)ObtainWormhole(r.LocalId, r.OccurrenceKey, session.Id)).ToArray();
+        }
+        private AuthoredWormholePairHandle ObtainWormhole(string localId, string occurrenceKey, Guid session)
+        {
+            var key = (localId, occurrenceKey); if (_wormholeObjects.TryGetValue(key, out var found)) return found;
+            var handle = new AuthoredWormholePairHandle(this, localId, occurrenceKey, session); _wormholeObjects.Add(key, handle); handle.Refresh(); return handle;
+        }
+
         public WorldStatus RegisterAuthoredSystem(AuthoredSystemDefinition definition, AuthoredSystemDefinition? previous = null)
         {
             _service._hub.CheckThread();
@@ -630,6 +712,8 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 && _service._siteCoordinator.ContainsOccurrence(_authoredSites.Owner, localId, occurrenceKey)) return null;
             if (_authoredShips != null && _service._shipCoordinator != null
                 && _service._shipCoordinator.ContainsOccurrence(_authoredShips.Owner, localId, occurrenceKey)) return null;
+            if (_wormholes != null && _service._wormholeCoordinator != null
+                && _service._wormholeCoordinator.Contains(_wormholes.Owner, localId, occurrenceKey)) return null;
             var result = _service._authoredCoordinator.Create(_authored, session.Id, localId, occurrenceKey, anchorSystemId);
             if (result.Status != WorldStatus.Succeeded && result.Status != WorldStatus.Rejected) return null;
             if (!_service._authoredCoordinator.ContainsOccurrence(_authored.Owner, localId, occurrenceKey)) return null;
@@ -671,6 +755,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             foreach (var site in _sites.Values.ToArray()) if (site.Session == session) site.Refresh();
             foreach (var handle in _siteObjects.Values.ToArray()) if (handle.Session == session) handle.Refresh();
             foreach (var handle in _shipObjects.Values.ToArray()) if (handle.Session == session) handle.Refresh();
+            foreach (var handle in _wormholeObjects.Values.ToArray()) if (handle.Session == session) handle.Refresh();
             if (_authored == null || _service._authoredCoordinator == null) return;
             foreach (var handle in _objects.Values.ToArray()) handle.Refresh();
         }
@@ -684,13 +769,15 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             }
             if (_authoredSites != null) _service._sitesSettled -= ForwardSitesSettled;
             if (_authoredShips != null) _service._shipsSettled -= ForwardShipsSettled;
+            if (_wormholes != null) _service._wormholesSettled -= ForwardWormholesSettled;
             _service._authoredRefreshes.Remove(_refreshesEntry);
             _siteSubscription.Dispose();
             _sites.Clear();
             _siteObjects.Clear();
             _shipObjects.Clear();
+            _wormholeObjects.Clear();
             _objects.Clear();
-            _provider.Dispose(); _authored?.Dispose(); _authoredSites?.Dispose(); _authoredShips?.Dispose(); _disposed = true;
+            _provider.Dispose(); _authored?.Dispose(); _authoredSites?.Dispose(); _authoredShips?.Dispose(); _wormholes?.Dispose(); _disposed = true;
             _service._providerReleased?.Invoke();
         }
 
@@ -778,6 +865,50 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 bool changed = _state.Status != updated.Status || _state.PoiId != updated.PoiId;
                 _state = updated;
                 if (changed) _changed?.Invoke(this);
+            }
+        }
+
+        private sealed class AuthoredWormholePairHandle : IAuthoredWormholePair
+        {
+            private readonly Provider _provider; private readonly string _localId, _key; internal Guid Session { get; }
+            private AuthoredWormholePairState _state = new(AuthoredSystemReconstructionStatus.Pending);
+            private AuthoredActionResult _last = new(AuthoredActionStatus.NotReady, "No action has been taken yet on this occurrence.");
+            private event Action<IAuthoredWormholePair>? _changed;
+            internal AuthoredWormholePairHandle(Provider provider, string localId, string key, Guid session)
+            { _provider = provider; _localId = localId; _key = key; Session = session; }
+            public string OccurrenceKey => _key;
+            public AuthoredWormholePairDefinition Definition
+            {
+                get
+                {
+                    if (_provider._wormholes != null && _provider._service._wormholeDefinitions != null &&
+                        _provider._service._wormholeDefinitions.TryResolve(_provider._wormholes, _localId, out var d) && d != null)
+                        return new(d.LocalId, d.Revision, d.Name);
+                    return new(_localId, 1, "unknown");
+                }
+            }
+            public AuthoredWormholePairState State { get { _provider._service._hub.CheckThread(); return _state; } }
+            public string? FirstWormholePoiId => State.FirstWormholePoiId;
+            public string? SecondWormholePoiId => State.SecondWormholePoiId;
+            public AuthoredActionResult LastAction => _last;
+            public event Action<IAuthoredWormholePair>? Changed { add => _changed += value; remove => _changed -= value; }
+            public AuthoredActionResult SetOpen(bool open)
+            {
+                _provider._service._hub.CheckThread();
+                if (_provider._disposed || _provider._service._disposed || _provider._wormholes == null || _provider._service._wormholeCoordinator == null)
+                    return _last = new(AuthoredActionStatus.Unavailable);
+                if (_provider._service._hub.CurrentSession?.Id != Session) return _last = new(AuthoredActionStatus.GameEnded);
+                if (_provider._service._hub.CurrentSession.Phase != SessionPhase.GameplayInitialized || _provider._service._hub.IsDispatchingCallbacks)
+                    return _last = new(AuthoredActionStatus.NotReady);
+                var status = _provider._service._wormholeCoordinator.SetOpen(_provider._wormholes, Session, _localId, _key, open);
+                return _last = new(status == WorldStatus.Succeeded ? AuthoredActionStatus.Succeeded : status == WorldStatus.Unavailable ? AuthoredActionStatus.Unavailable : AuthoredActionStatus.Rejected);
+            }
+            internal void Refresh()
+            {
+                if (_provider._service._hub.CurrentSession?.Id != Session || _provider._wormholes == null || _provider._service._wormholeCoordinator == null) return;
+                var updated = _provider._service._wormholeCoordinator.State(_provider._wormholes, _localId, _key);
+                bool changed = updated.Status != _state.Status || updated.Reason != _state.Reason || updated.FirstWormholePoiId != _state.FirstWormholePoiId || updated.SecondWormholePoiId != _state.SecondWormholePoiId;
+                _state = updated; if (changed) _changed?.Invoke(this);
             }
         }
 

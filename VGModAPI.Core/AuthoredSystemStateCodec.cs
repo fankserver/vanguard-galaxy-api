@@ -45,8 +45,8 @@ internal sealed class AuthoredSystemOccurrence
 internal static class AuthoredSystemStateCodec
 {
     internal const string Owner = "vgmodapi.world-authored-systems";
-    /// <summary>Schema 2 adds a per-row kind tag (0 = pocket system, 1 = authored site, 2 = moored ship); schema 1 rows are all pocket systems.</summary>
-    internal const int SchemaVersion = 2;
+    /// <summary>Schema 3 adds kind 3 (owned wormhole pair); schema 2 supports systems, sites and ships; schema 1 rows are pocket systems.</summary>
+    internal const int SchemaVersion = 3;
     private static readonly UTF8Encoding Utf8 = new(false, true);
     private const int Magic = 0x32534756;
 
@@ -57,12 +57,16 @@ internal static class AuthoredSystemStateCodec
         => Encode(rows, sites, Array.Empty<AuthoredShipOccurrence>());
 
     internal static byte[] Encode(IReadOnlyList<AuthoredSystemOccurrence> rows, IReadOnlyList<AuthoredSiteOccurrence> sites, IReadOnlyList<AuthoredShipOccurrence> ships)
+        => Encode(rows, sites, ships, Array.Empty<AuthoredWormholePairOccurrence>());
+
+    internal static byte[] Encode(IReadOnlyList<AuthoredSystemOccurrence> rows, IReadOnlyList<AuthoredSiteOccurrence> sites,
+        IReadOnlyList<AuthoredShipOccurrence> ships, IReadOnlyList<AuthoredWormholePairOccurrence> wormholes)
     {
-        if (rows == null || sites == null || ships == null || rows.Count + sites.Count + ships.Count > WorldSerializationAssociation.MaxObjects)
+        if (rows == null || sites == null || ships == null || wormholes == null || rows.Count + sites.Count + ships.Count + wormholes.Count > WorldSerializationAssociation.MaxObjects)
             throw new InvalidDataException("Invalid authored-system inventory count.");
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream, Utf8, true);
-        writer.Write(Magic); writer.Write(SchemaVersion); writer.Write(rows.Count + sites.Count + ships.Count);
+        writer.Write(Magic); writer.Write(SchemaVersion); writer.Write(rows.Count + sites.Count + ships.Count + wormholes.Count);
         var keys = new HashSet<(string, string, string)>();
         foreach (var row in rows)
         {
@@ -92,13 +96,23 @@ internal static class AuthoredSystemStateCodec
             writer.Write(ship.Revision); WriteText(writer, ship.StationPoiId); WriteText(writer, ship.UnitId);
             if (stream.Length > WorldSerializationAssociation.MaxMetadataBytes) throw new InvalidDataException("Authored-system metadata exceeds its quota.");
         }
+        foreach (var pair in wormholes)
+        {
+            if (pair == null || !keys.Add((pair.Owner, pair.LocalId, pair.OccurrenceKey)))
+                throw new InvalidDataException("Duplicate authored-system occurrence.");
+            writer.Write((byte)3);
+            WriteText(writer, pair.Owner); WriteText(writer, pair.LocalId); WriteText(writer, pair.OccurrenceKey);
+            writer.Write(pair.Revision); WriteText(writer, pair.FirstSystemId); WriteText(writer, pair.SecondSystemId);
+            WriteText(writer, pair.FirstPoiId); WriteText(writer, pair.SecondPoiId); writer.Write(pair.DeclaredOpen);
+            if (stream.Length > WorldSerializationAssociation.MaxMetadataBytes) throw new InvalidDataException("Authored-system metadata exceeds its quota.");
+        }
         writer.Flush(); return stream.ToArray();
     }
 
     internal static AuthoredSystemOccurrence[] Decode(byte[] payload)
         => DecodeAll(payload).Systems;
 
-    internal static (AuthoredSystemOccurrence[] Systems, AuthoredSiteOccurrence[] Sites, AuthoredShipOccurrence[] Ships) DecodeAll(byte[] payload)
+    internal static (AuthoredSystemOccurrence[] Systems, AuthoredSiteOccurrence[] Sites, AuthoredShipOccurrence[] Ships, AuthoredWormholePairOccurrence[] Wormholes) DecodeAll(byte[] payload)
     {
         if (payload == null || payload.Length < 12 || payload.Length > WorldSerializationAssociation.MaxMetadataBytes)
             throw new InvalidDataException("Missing or oversized authored-system metadata.");
@@ -108,17 +122,18 @@ internal static class AuthoredSystemStateCodec
         {
             if (reader.ReadInt32() != Magic) throw new InvalidDataException("Unsupported authored-system metadata format.");
             int version = reader.ReadInt32();
-            if (version != 1 && version != SchemaVersion) throw new InvalidDataException("Unsupported authored-system metadata format.");
+            if (version < 1 || version > SchemaVersion) throw new InvalidDataException("Unsupported authored-system metadata format.");
             int count = reader.ReadInt32();
             if (count < 0 || count > WorldSerializationAssociation.MaxObjects) throw new InvalidDataException("Invalid authored-system inventory count.");
             var rows = new List<AuthoredSystemOccurrence>();
             var sites = new List<AuthoredSiteOccurrence>();
             var ships = new List<AuthoredShipOccurrence>();
+            var wormholes = new List<AuthoredWormholePairOccurrence>();
             var keys = new HashSet<(string, string, string)>();
             for (int i = 0; i < count; i++)
             {
                 byte kind = version == 1 ? (byte)0 : reader.ReadByte();
-                if (kind > 2) throw new InvalidDataException("Unknown authored-occurrence kind.");
+                if (kind > 3 || (kind == 3 && version < 3)) throw new InvalidDataException("Unknown authored-occurrence kind.");
                 string owner = ReadText(reader, 128), local = ReadText(reader, 128), key = ReadText(reader, 256);
                 int revision = reader.ReadInt32();
                 if (kind == 0)
@@ -131,12 +146,15 @@ internal static class AuthoredSystemStateCodec
                     sites.Add(new AuthoredSiteOccurrence(owner, local, key, revision,
                         (AuthoredSiteKind)siteKind, ReadText(reader, 128), ReadText(reader, 128)));
                 }
-                else
+                else if (kind == 2)
                     ships.Add(new AuthoredShipOccurrence(owner, local, key, revision, ReadText(reader, 128), ReadText(reader, 128)));
+                else
+                    wormholes.Add(new AuthoredWormholePairOccurrence(owner, local, key, revision,
+                        ReadText(reader, 128), ReadText(reader, 128), ReadText(reader, 128), ReadText(reader, 128), reader.ReadBoolean()));
                 if (!keys.Add((owner, local, key))) throw new InvalidDataException("Duplicate authored-system occurrence.");
             }
             if (stream.Position != stream.Length) throw new InvalidDataException("Trailing authored-system metadata.");
-            return (rows.ToArray(), sites.ToArray(), ships.ToArray());
+            return (rows.ToArray(), sites.ToArray(), ships.ToArray(), wormholes.ToArray());
         }
         catch (Exception error) when (error is ArgumentException || error is EndOfStreamException)
         { throw new InvalidDataException("Malformed authored-system metadata.", error); }
