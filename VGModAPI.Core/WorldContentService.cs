@@ -191,6 +191,14 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             }
             catch (ArgumentException) { return WorldStatus.InvalidDefinition; }
         }
+        /// <summary>Uniform occurrence-key contract: bounded, no control characters.</summary>
+        internal static bool ValidOccurrenceKey(string? key)
+        {
+            if (string.IsNullOrWhiteSpace(key) || key!.Length > 128) return false;
+            foreach (char character in key) if (char.IsControl(character)) return false;
+            return true;
+        }
+
         /// <summary>Deterministic API-allocated native identity for an author-local occurrence key.</summary>
         internal static Guid SiteInstanceId(string providerId, string localId, string occurrenceKey)
         {
@@ -207,7 +215,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             if (_disposed || _service._disposed || !_service._canAuthor()) return null;
             var session = _service._hub.CurrentSession;
             if (session == null || session.Id == Guid.Empty || session.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks) return null;
-            if (localId == null || string.IsNullOrWhiteSpace(occurrenceKey) || occurrenceKey.Length > 128) return null;
+            if (localId == null || !ValidOccurrenceKey(occurrenceKey)) return null;
             if (!_service._definitions.TryResolve(_provider, localId, out _)) return null;
             var instanceId = SiteInstanceId(ProviderId, localId, occurrenceKey);
             // Keyed reconciliation: an existing occurrence under this key is the occurrence; never a duplicate.
@@ -227,7 +235,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             _service._hub.CheckThread();
             if (_disposed || _service._disposed || !_service._canAuthor()) return null;
             var session = _service._hub.CurrentSession;
-            if (session == null || session.Id == Guid.Empty || localId == null || string.IsNullOrWhiteSpace(occurrenceKey)) return null;
+            if (session == null || session.Id == Guid.Empty || localId == null || !ValidOccurrenceKey(occurrenceKey)) return null;
             var instanceId = SiteInstanceId(ProviderId, localId, occurrenceKey);
             if (!FindPersistentCombatSite(session.Id, new WorldSiteReference(ProviderId, localId, instanceId)).Succeeded) return null;
             var handle = ObtainSite(localId, occurrenceKey, session.Id);
@@ -300,7 +308,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             if (!_service._canAuthor() || _disposed || _service._disposed) return null;
             var session = _service._hub.CurrentSession;
             if (session == null || session.Id == Guid.Empty || session.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks) return null;
-            if (localId == null) return null;
+            if (localId == null || !ValidOccurrenceKey(occurrenceKey)) return null;
             var result = _service._authoredCoordinator.Create(_authored, session.Id, localId, occurrenceKey, anchorSystemId);
             if (result.Status != WorldStatus.Succeeded && result.Status != WorldStatus.Rejected) return null;
             if (!_service._authoredCoordinator.ContainsOccurrence(_authored.Owner, localId, occurrenceKey)) return null;

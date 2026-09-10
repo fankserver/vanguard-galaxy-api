@@ -84,6 +84,7 @@ internal sealed partial class BarContentService
         private readonly BarGame _scope;
         internal readonly DefinitionRegistration Authored;
         internal bool Pending;
+        private BarPatronStatus? _publishedStatus;
         private BarResult _last = new(BarStatus.NotRequested);
         private readonly GameplayEvent<IBarPatron> _changed;
         internal Patron(BarGame scope, DefinitionRegistration definition)
@@ -144,6 +145,10 @@ internal sealed partial class BarContentService
                 catch (Exception error)
                 { result.Finish(BarStatus.Unavailable, "The bar action failed."); owner._hub.Gameplay.Report(Authored.Id.Provider, error); }
                 finally { Pending = false; }
+                // Waiting-state retries are frame-driven; only actual status transitions are events.
+                var status = Status;
+                if (_publishedStatus == status) return;
+                _publishedStatus = status;
                 _changed.Publish(owner._hub, _scope.Session, Authored.Id.Provider, this, () => Game.IsActive && Authored.Live, owner._storage.Registration, Authored.Lease.SaveData);
             }, () => Game.IsActive && Authored.Live, owner._storage.Registration, Authored.Lease.SaveData);
             return result;

@@ -55,4 +55,11 @@ Removal is a per-save persisted absence, not deletion: the retained row keeps it
 
 A linked contact declares only its same-owner story definition (`mission:`); consumers never supply occurrence GUIDs. At placement the API resolves the unique currently admitted occurrence of that definition itself; while none (or more than one) is admitted, the patron reports `MissionNotReady` and stays `Waiting`, and automatic placement retries when readiness changes. A linked contact requires a current live story provider, registered definition, valid story admission and healthy runtime. Tentative registration and in-flight story operations cannot admit it. Registration, admission and operation epochs invalidate stale plans, including changes that return to an apparently identical state. Missing dependencies fail closed; consumers must not replace readiness tokens with constants.
 
+Fail-closed is station-wide by design: while any admitted saved contact's linked occurrence is not
+ready, the whole station's owned contributions are withheld (vanilla is retained) rather than
+publishing a roster that silently omits one provider's contact. A completed or retired linked
+mission therefore keeps its contact — and the shared station — withheld until the owning provider
+removes the contact (`patron.Remove()`) or re-registers it without the association. Owners of
+mission-linked contacts should remove them when their mission retires.
+
 Native bar JSON contains only vanilla patrons and native metadata. Persistent owned contacts are reconstructed from API state after restoration and registration, preventing native factories from being asked to deserialize custom CLR types.

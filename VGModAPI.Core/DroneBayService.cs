@@ -87,8 +87,8 @@ internal sealed class DroneBayService : IDroneBayService, IDisposable
         { _owner = owner; UnitId = unitId; Tuning = tuning; _scope = scope; _key = key; }
         public void Dispose()
         {
-            _owner._keyed.Forget(_scope, _key, this);
             _owner._hub.CheckThread(); if (Disposed) return;
+            _owner._keyed.Forget(_scope, _key, this);
             Disposed = true; _owner._declarations.Remove(this);
         }
     }

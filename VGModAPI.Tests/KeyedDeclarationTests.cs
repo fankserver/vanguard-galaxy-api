@@ -71,6 +71,20 @@ public sealed class KeyedDeclarationTests : IDisposable
     }
 
     [Fact]
+    public void FailedDroneDisposeCannotOrphanTheKeyedReplacementChain()
+    {
+        using var service = new DroneBayService(_hub);
+        service.SetAvailable(true);
+        var first = service.Tune("unit-a", new DroneBayTuning(launchSeconds: 2), key: "boss");
+        first.Dispose();
+        first.Dispose(); // A second (already-disposed) dispose must not touch the keyed map.
+        var second = service.Tune("unit-a", new DroneBayTuning(launchSeconds: 3), key: "boss");
+        service.Tune("unit-a", new DroneBayTuning(launchSeconds: 5), key: "boss");
+        second.Dispose();
+        Assert.Equal(5, service.EffectiveFor("unit-a")!.LaunchSeconds);
+    }
+
+    [Fact]
     public void InvalidKeysAreRejected()
     {
         using var service = new UnitProtectionService(_hub);

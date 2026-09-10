@@ -137,6 +137,28 @@ public sealed partial class BarContentServiceTests
     }
 
     [Fact]
+    public void WaitingRetriesAreNotChangedEvents()
+    {
+        using var f = new Objects();
+        Guid? occurrence = null;
+        f.Engine.ResolveOccurrence = (_, _) => occurrence;
+        var definition = f.Provider.Register(new BarPatronDefinition("contact", "station", "Name", "Description", "seed",
+            mission: new StoryContentId(f.Provider.ProviderId, "job"))).Definition!;
+        f.Start();
+        var patron = f.Games.Current!.Bars.Get(definition);
+        int changes = 0;
+        patron.Changed += _ => changes++;
+        f.Pump(); f.Pump(); f.Pump(); f.Pump();
+        Assert.Equal(BarPatronStatus.Waiting, patron.Status);
+        Assert.True(changes <= 1); // Entering Waiting may publish once; per-frame retries publish nothing.
+        var beforeAssign = changes;
+        occurrence = Guid.NewGuid();
+        f.Pump(); f.Pump(); f.Pump();
+        Assert.Equal(BarPatronStatus.Assigned, patron.Status);
+        Assert.Equal(beforeAssign + 1, changes);
+    }
+
+    [Fact]
     public void ProviderSavePrerequisiteGatesPlacementAndInteraction()
     {
         var prerequisite = new Storage { MutationAllowed = false };
