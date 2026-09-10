@@ -329,3 +329,28 @@ a typed `Rejected` retained on the returned object; it is not retried implicitly
 `Changed`, revision migration and the once-per-session `AuthoredSiteReconstructionSettled`
 event follow the authored-system semantics above; site failures report `MissingDefinition`,
 `RevisionMismatch`, `NativeMissing`, `AmbiguousIdentity` or `PersistenceUnavailable`.
+
+## Moored authored ships
+
+A moored authored ship is one friendly ship of an exact class held beside a station POI — a
+narrative anchor like a permanently docked companion vessel — under the same occurrence contract.
+The API owns its persistent unit identity (spawned through the game's own fixed-payload path so the
+datum persists in the station's unit list), converges to exactly one instance by that identity, and
+maintains the mooring idempotently while the station is the current POI: never boardable, no
+docking state, no auto-AI, display name and commander callsign set to the declared name (the ship
+class identity is never renamed), snapped to the authored offset with zeroed velocity.
+
+```csharp
+provider.RegisterAuthoredShip(new AuthoredShipDefinition(
+    "promise", revision: 1, "Foundation's Promise", shipClassId: "Redemption",
+    factionId: "Gold", offsetX: 24, offsetY: 30, protect: true));
+var ship = provider.CreateAuthoredShip("promise", "act3", stationPoiId);
+```
+
+`protect: true` keeps the instance alive through unit protection, declared once per owned
+occurrence (keyed, never accumulated) and re-declared automatically after restoration — covering a
+persisted-but-not-yet-materialised ship from its first damage event. An unknown ship class or
+faction refuses creation. `State`, `Changed`, revision migration and the once-per-session
+`AuthoredShipReconstructionSettled` event follow the occurrence semantics above; a saved ship that
+has not yet surfaced reports `NativeMissing` at settlement and converges with a `Changed`
+transition when it does.

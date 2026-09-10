@@ -107,4 +107,18 @@ public interface IWorldProvider : IDisposable
     IReadOnlyList<IAuthoredSite> GetAuthoredSites(string localId);
     /// <summary>Once-per-session aggregate reconciliation report for this provider's authored sites.</summary>
     event Action<AuthoredSitesSettledEvent>? AuthoredSiteReconstructionSettled;
+
+    /// <summary>Declares a moored authored ship. Optional exact previous declaration permits a revision migration.</summary>
+    WorldStatus RegisterAuthoredShip(AuthoredShipDefinition definition, AuthoredShipDefinition? previous = null);
+    /// <summary>
+    /// Creates (or reconciles) the one owned moored ship beside a station POI, keyed by an author-local
+    /// occurrence key. The API owns its persistent unit identity, converges to exactly one instance,
+    /// maintains the mooring (no docking, no auto-AI, never boardable) and reconstructs after load.
+    /// Returns null while the world cannot author.
+    /// </summary>
+    IAuthoredShip? CreateAuthoredShip(string localId, string occurrenceKey, string stationPoiId);
+    /// <summary>Re-obtains the owned occurrence for a key in the current game, or null if it does not exist yet.</summary>
+    IAuthoredShip? GetAuthoredShip(string localId, string occurrenceKey);
+    /// <summary>Once-per-session aggregate reconciliation report for this provider's authored ships.</summary>
+    event Action<AuthoredShipsSettledEvent>? AuthoredShipReconstructionSettled;
 }

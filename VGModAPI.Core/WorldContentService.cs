@@ -31,6 +31,9 @@ internal sealed class WorldContentService : IWorldService, IDisposable
     private readonly AuthoredSiteRegistry? _siteDefinitions;
     private readonly AuthoredSiteCoordinator? _siteCoordinator;
     private event Action<Guid>? _sitesSettled;
+    private readonly AuthoredShipRegistry? _shipDefinitions;
+    private readonly AuthoredShipCoordinator? _shipCoordinator;
+    private event Action<Guid>? _shipsSettled;
     private readonly bool _ownsAmbient, _ownsProtection, _ownsDroneBays;
     private readonly List<Action<Guid>> _authoredRefreshes = new();
     private event Action<ReconstructionSettledEvent>? _authoredSettled;
@@ -41,10 +44,19 @@ internal sealed class WorldContentService : IWorldService, IDisposable
     public event Action<ServiceAvailability>? AvailabilityChanged
     { add => _status.AvailabilityChanged += value; remove => _status.AvailabilityChanged -= value; }
     private bool _disposed;
-    internal WorldContentService(LifecycleHub hub, WorldDefinitionRegistry definitions, WorldAuthoringGate authoring, Func<bool> canAuthor, Action? providerReleased = null, AmbientTrafficService? ambient = null, UnitProtectionService? protection = null, DroneBayService? droneBays = null, AuthoredSystemRegistry? authoredDefinitions = null, AuthoredSystemCoordinator? authoredCoordinator = null, AuthoredSiteRegistry? siteDefinitions = null, AuthoredSiteCoordinator? siteCoordinator = null)
+    internal WorldContentService(LifecycleHub hub, WorldDefinitionRegistry definitions, WorldAuthoringGate authoring, Func<bool> canAuthor, Action? providerReleased = null, AmbientTrafficService? ambient = null, UnitProtectionService? protection = null, DroneBayService? droneBays = null, AuthoredSystemRegistry? authoredDefinitions = null, AuthoredSystemCoordinator? authoredCoordinator = null, AuthoredSiteRegistry? siteDefinitions = null, AuthoredSiteCoordinator? siteCoordinator = null, AuthoredShipRegistry? shipDefinitions = null, AuthoredShipCoordinator? shipCoordinator = null)
     {
         _siteDefinitions = siteDefinitions;
         _siteCoordinator = siteCoordinator;
+        _shipDefinitions = shipDefinitions;
+        _shipCoordinator = shipCoordinator;
+        shipCoordinator?.AttachSettled(session =>
+        {
+            var subscribers = _shipsSettled;
+            if (subscribers == null) return;
+            foreach (var subscriber in subscribers.GetInvocationList())
+            { try { ((Action<Guid>)subscriber)(session); } catch { /* fail-open per subscriber */ } }
+        });
         siteCoordinator?.AttachSettled(session =>
         {
             var subscribers = _sitesSettled;
@@ -93,6 +105,10 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             try { _siteCoordinator.Reconcile(session); } catch { /* fail-open */ }
             finally { _siteCoordinator.EndPass(); }
         }
+        if (_shipCoordinator != null)
+        {
+            try { _shipCoordinator.Reconcile(session); } catch { /* fail-open */ }
+        }
         foreach (var refresh in _authoredRefreshes.ToArray())
         {
             try { refresh(session); } catch { /* one provider's fault must not block the others */ }
@@ -116,7 +132,13 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             sites = _siteDefinitions.Acquire(pluginInstance, Assembly.GetCallingAssembly());
             if (sites == null) { provider.Dispose(); authored?.Dispose(); return null; }
         }
-        return new Provider(this, provider, authored, sites);
+        AuthoredShipRegistry.Provider? ships = null;
+        if (_shipDefinitions != null)
+        {
+            ships = _shipDefinitions.Acquire(pluginInstance, Assembly.GetCallingAssembly());
+            if (ships == null) { provider.Dispose(); authored?.Dispose(); sites?.Dispose(); return null; }
+        }
+        return new Provider(this, provider, authored, sites, ships);
     }
     private sealed class Provider : IWorldProvider, IWorldProviderEngine
     {
@@ -126,16 +148,19 @@ internal sealed class WorldContentService : IWorldService, IDisposable
         private readonly WorldDefinitionRegistry.Provider _provider;
         private readonly AuthoredSystemRegistry.Provider? _authored;
         private readonly AuthoredSiteRegistry.Provider? _authoredSites;
+        private readonly AuthoredShipRegistry.Provider? _authoredShips;
+        private readonly Dictionary<(string LocalId, string OccurrenceKey), AuthoredShipHandle> _shipObjects = new();
         private readonly Dictionary<(string LocalId, string OccurrenceKey), AuthoredSiteHandle> _siteObjects = new();
         private readonly Dictionary<(string LocalId, string OccurrenceKey), AuthoredSystemHandle> _objects = new();
         private readonly IDisposable _objectSubscription;
         private readonly Action<Guid> _refreshesEntry;
         private readonly Func<bool> _alive;
         private bool _disposed;
-        internal Provider(WorldContentService service, WorldDefinitionRegistry.Provider provider, AuthoredSystemRegistry.Provider? authored, AuthoredSiteRegistry.Provider? authoredSites = null)
+        internal Provider(WorldContentService service, WorldDefinitionRegistry.Provider provider, AuthoredSystemRegistry.Provider? authored, AuthoredSiteRegistry.Provider? authoredSites = null, AuthoredShipRegistry.Provider? authoredShips = null)
         {
-            _service = service; _provider = provider; _authored = authored; _authoredSites = authoredSites;
+            _service = service; _provider = provider; _authored = authored; _authoredSites = authoredSites; _authoredShips = authoredShips;
             if (authoredSites != null) service._sitesSettled += ForwardSitesSettled;
+            if (authoredShips != null) service._shipsSettled += ForwardShipsSettled;
             _alive = () => !_disposed && !_service._disposed;
             if (authored != null)
             {
@@ -157,7 +182,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             _siteSubscription = service._hub.Subscribe("vgmodapi.combat-site-objects", e =>
             {
                 if (e.Kind is LifecycleEventKind.SessionStarting or LifecycleEventKind.SessionInvalidated or LifecycleEventKind.SessionStartFailed)
-                { _sites.Clear(); _siteObjects.Clear(); }
+                { _sites.Clear(); _siteObjects.Clear(); _shipObjects.Clear(); }
             });
         }
         private void ResetObjects()
@@ -361,10 +386,12 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             var session = _service._hub.CurrentSession;
             if (session == null || session.Id == Guid.Empty || session.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks) return null;
             if (localId == null || !ValidOccurrenceKey(occurrenceKey)) return null;
-            // The persistence envelope keys occurrences per (owner, local, key) across BOTH kinds; a
+            // The persistence envelope keys occurrences per (owner, local, key) across ALL kinds; a
             // cross-kind collision must be refused here, not discovered at save time.
             if (_authored != null && _service._authoredCoordinator != null
                 && _service._authoredCoordinator.ContainsOccurrence(_authored.Owner, localId, occurrenceKey)) return null;
+            if (_authoredShips != null && _service._shipCoordinator != null
+                && _service._shipCoordinator.ContainsOccurrence(_authoredShips.Owner, localId, occurrenceKey)) return null;
             var (status, _) = _service._siteCoordinator.Create(_authoredSites, session.Id, localId, occurrenceKey, systemId, x, y);
             if (status != WorldStatus.Succeeded && status != WorldStatus.Rejected) return null;
             if (_service._siteCoordinator.TryGetOccurrence(_authoredSites.Owner, localId, occurrenceKey) == null && status != WorldStatus.Rejected) return null;
@@ -410,6 +437,135 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             return handle;
         }
 
+        public event Action<AuthoredShipsSettledEvent>? AuthoredShipReconstructionSettled;
+        private void ForwardShipsSettled(Guid session)
+        {
+            if (_authoredShips == null || _service._shipCoordinator == null || _service._hub.CurrentSession?.Id != session) return;
+            var reconstructed = new List<IAuthoredShip>();
+            var failures = new List<AuthoredShipFailure>();
+            foreach (var row in _service._shipCoordinator.Occurrences(_authoredShips.Owner))
+            {
+                var handle = ObtainShipHandle(row.LocalId, row.OccurrenceKey, session);
+                handle.Refresh();
+                var state = handle.State;
+                if (state.Reconstructed) reconstructed.Add(handle);
+                else failures.Add(new AuthoredShipFailure(handle, state.Reason ?? _service._shipCoordinator.PendingReason(session)));
+            }
+            var subscribers = AuthoredShipReconstructionSettled;
+            if (subscribers == null) return;
+            var settled = new AuthoredShipsSettledEvent(session, reconstructed, failures);
+            foreach (var subscriber in subscribers.GetInvocationList())
+            { try { ((Action<AuthoredShipsSettledEvent>)subscriber)(settled); } catch { /* fail-open per subscriber */ } }
+        }
+
+        public WorldStatus RegisterAuthoredShip(AuthoredShipDefinition definition, AuthoredShipDefinition? previous = null)
+        {
+            _service._hub.CheckThread();
+            if (_disposed || _service._disposed) return WorldStatus.UnknownProvider;
+            if (_service._hub.CurrentSession != null) return WorldStatus.NotReady;
+            if (_authoredShips == null || _service._shipDefinitions == null || definition == null) return WorldStatus.InvalidDefinition;
+            try
+            {
+                var mapped = new AuthoredShipDeclaration(definition);
+                if (_service._shipDefinitions.TryResolve(_authoredShips, definition.LocalId, out _)) return WorldStatus.DuplicateDefinition;
+                var prior = previous == null ? null : new AuthoredShipDeclaration(previous);
+                return _service._shipDefinitions.Register(_authoredShips, mapped, prior) ? WorldStatus.Succeeded : WorldStatus.Rejected;
+            }
+            catch (ArgumentException) { return WorldStatus.InvalidDefinition; }
+        }
+
+        public IAuthoredShip? CreateAuthoredShip(string localId, string occurrenceKey, string stationPoiId)
+        {
+            _service._hub.CheckThread();
+            if (_disposed || _service._disposed || _authoredShips == null || _service._shipCoordinator == null) return null;
+            if (!_service._canAuthor()) return null;
+            var session = _service._hub.CurrentSession;
+            if (session == null || session.Id == Guid.Empty || session.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks) return null;
+            if (localId == null || !ValidOccurrenceKey(occurrenceKey)) return null;
+            // The persistence envelope keys occurrences per (owner, local, key) across ALL kinds.
+            if (OtherKindOwnsKey(exceptShips: true, localId, occurrenceKey)) return null;
+            var (status, _) = _service._shipCoordinator.Create(_authoredShips, session.Id, localId, occurrenceKey, stationPoiId);
+            if (status != WorldStatus.Succeeded && status != WorldStatus.Rejected) return null;
+            var handle = ObtainShipHandle(localId, occurrenceKey, session.Id);
+            handle.RecordAction(status == WorldStatus.Succeeded
+                ? new AuthoredActionResult(AuthoredActionStatus.Succeeded)
+                : new AuthoredActionResult(AuthoredActionStatus.Rejected, "The moored ship could not be created."));
+            handle.Refresh();
+            return handle;
+        }
+
+        public IAuthoredShip? GetAuthoredShip(string localId, string occurrenceKey)
+        {
+            _service._hub.CheckThread();
+            if (_disposed || _service._disposed || _authoredShips == null || _service._shipCoordinator == null) return null;
+            var session = _service._hub.CurrentSession;
+            if (session == null || session.Id == Guid.Empty || localId == null || !ValidOccurrenceKey(occurrenceKey)) return null;
+            if (_service._shipCoordinator.TryGetOccurrence(_authoredShips.Owner, localId, occurrenceKey) == null) return null;
+            var handle = ObtainShipHandle(localId, occurrenceKey, session.Id);
+            handle.Refresh();
+            return handle;
+        }
+
+        private bool OtherKindOwnsKey(bool exceptShips, string localId, string occurrenceKey)
+        {
+            if (_authored != null && _service._authoredCoordinator != null
+                && _service._authoredCoordinator.ContainsOccurrence(_authored.Owner, localId, occurrenceKey)) return true;
+            if (_authoredSites != null && _service._siteCoordinator != null
+                && _service._siteCoordinator.ContainsOccurrence(_authoredSites.Owner, localId, occurrenceKey)) return true;
+            if (!exceptShips && _authoredShips != null && _service._shipCoordinator != null
+                && _service._shipCoordinator.ContainsOccurrence(_authoredShips.Owner, localId, occurrenceKey)) return true;
+            return false;
+        }
+
+        private AuthoredShipHandle ObtainShipHandle(string localId, string occurrenceKey, Guid session)
+        {
+            var key = (localId, occurrenceKey);
+            if (_shipObjects.TryGetValue(key, out var existing) && existing.Session == session) return existing;
+            var handle = new AuthoredShipHandle(this, localId, occurrenceKey, session);
+            _shipObjects[key] = handle;
+            return handle;
+        }
+
+        /// <summary>The owned moored-ship occurrence object; one instance per key per session.</summary>
+        private sealed class AuthoredShipHandle : IAuthoredShip
+        {
+            private readonly Provider _provider;
+            private readonly string _localId;
+            private readonly string _occurrenceKey;
+            internal readonly Guid Session;
+            private AuthoredShipState _state = new(AuthoredSystemReconstructionStatus.Pending);
+            private AuthoredActionResult _lastAction = new(AuthoredActionStatus.NotReady, "No action has been taken yet on this occurrence.");
+            private event Action<IAuthoredShip>? _changed;
+            internal AuthoredShipHandle(Provider provider, string localId, string occurrenceKey, Guid session)
+            { _provider = provider; _localId = localId; _occurrenceKey = occurrenceKey; Session = session; }
+            public string OccurrenceKey => _occurrenceKey;
+            public AuthoredShipDefinition Definition
+            {
+                get
+                {
+                    if (_provider._service._shipDefinitions != null && _provider._authoredShips != null
+                        && _provider._service._shipDefinitions.TryResolve(_provider._authoredShips, _localId, out var declaration) && declaration != null)
+                        return declaration.ToDefinition();
+                    var row = _provider._service._shipCoordinator?.TryGetOccurrence(_provider._authoredShips?.Owner ?? "", _localId, _occurrenceKey);
+                    return new AuthoredShipDefinition(_localId, row?.Revision ?? 1, "unknown", "unknown", "unknown", 0, 0);
+                }
+            }
+            public AuthoredShipState State { get { _provider._service._hub.CheckThread(); return _state; } }
+            public string? UnitId => State.UnitId;
+            public AuthoredActionResult LastAction { get { _provider._service._hub.CheckThread(); return _lastAction; } }
+            public event Action<IAuthoredShip>? Changed { add => _changed += value; remove => _changed -= value; }
+            internal void RecordAction(AuthoredActionResult result) => _lastAction = result;
+            internal void Refresh()
+            {
+                if (Session == Guid.Empty || _provider._service._hub.CurrentSession?.Id != Session) return;
+                if (_provider._disposed || _provider._service._disposed || _provider._authoredShips == null || _provider._service._shipCoordinator == null) return;
+                var updated = _provider._service._shipCoordinator.ReconstructionState(_provider._authoredShips.Owner, _localId, _occurrenceKey);
+                bool changed = _state.Status != updated.Status || _state.Reason != updated.Reason || _state.UnitId != updated.UnitId;
+                _state = updated;
+                if (changed) _changed?.Invoke(this);
+            }
+        }
+
         public WorldStatus RegisterAuthoredSystem(AuthoredSystemDefinition definition, AuthoredSystemDefinition? previous = null)
         {
             _service._hub.CheckThread();
@@ -431,9 +587,11 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             var session = _service._hub.CurrentSession;
             if (session == null || session.Id == Guid.Empty || session.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks) return null;
             if (localId == null || !ValidOccurrenceKey(occurrenceKey)) return null;
-            // The persistence envelope keys occurrences per (owner, local, key) across BOTH kinds.
+            // The persistence envelope keys occurrences per (owner, local, key) across ALL kinds.
             if (_authoredSites != null && _service._siteCoordinator != null
-                && _service._siteCoordinator.TryGetOccurrence(_authoredSites.Owner, localId, occurrenceKey) != null) return null;
+                && _service._siteCoordinator.ContainsOccurrence(_authoredSites.Owner, localId, occurrenceKey)) return null;
+            if (_authoredShips != null && _service._shipCoordinator != null
+                && _service._shipCoordinator.ContainsOccurrence(_authoredShips.Owner, localId, occurrenceKey)) return null;
             var result = _service._authoredCoordinator.Create(_authored, session.Id, localId, occurrenceKey, anchorSystemId);
             if (result.Status != WorldStatus.Succeeded && result.Status != WorldStatus.Rejected) return null;
             if (!_service._authoredCoordinator.ContainsOccurrence(_authored.Owner, localId, occurrenceKey)) return null;
@@ -474,6 +632,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             if (session == Guid.Empty || session != _service._hub.CurrentSession?.Id) return;
             foreach (var site in _sites.Values.ToArray()) if (site.Session == session) site.Refresh();
             foreach (var handle in _siteObjects.Values.ToArray()) if (handle.Session == session) handle.Refresh();
+            foreach (var handle in _shipObjects.Values.ToArray()) if (handle.Session == session) handle.Refresh();
             if (_authored == null || _service._authoredCoordinator == null) return;
             foreach (var handle in _objects.Values.ToArray()) handle.Refresh();
         }
@@ -486,12 +645,14 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 _objectSubscription.Dispose();
             }
             if (_authoredSites != null) _service._sitesSettled -= ForwardSitesSettled;
+            if (_authoredShips != null) _service._shipsSettled -= ForwardShipsSettled;
             _service._authoredRefreshes.Remove(_refreshesEntry);
             _siteSubscription.Dispose();
             _sites.Clear();
             _siteObjects.Clear();
+            _shipObjects.Clear();
             _objects.Clear();
-            _provider.Dispose(); _authored?.Dispose(); _authoredSites?.Dispose(); _disposed = true;
+            _provider.Dispose(); _authored?.Dispose(); _authoredSites?.Dispose(); _authoredShips?.Dispose(); _disposed = true;
             _service._providerReleased?.Invoke();
         }
 
