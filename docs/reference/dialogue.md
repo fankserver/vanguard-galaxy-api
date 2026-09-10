@@ -27,7 +27,7 @@ and again on every click, so content survives save/load and repeated station boa
 without consumer patches, caching or bookkeeping, and nothing is written to saves.
 
 ```csharp
-var characters = ModApi.Services.Dialogue.Characters;
+IStoryCharacterService characters = ModApi.Services.Dialogue.Characters;
 // A character the game does not have. Place ricko.LookupName wherever the game
 // expects a character name, such as a station's persisted character list.
 _ricko = characters.Introduce(pluginId,
@@ -63,7 +63,9 @@ _arle = characters.Extend(pluginId, "LuminateCommander",
   conversation wins and null falls back to vanilla. Pending native trigger dialogues
   keep their vanilla priority over default dialogue, exactly as they do today. Multiple owners may extend one character; one owner's
   fault or disposal never silences another owner or the character itself.
-- Lines speak as the character (`Self`), the player's captain, the ship AI, or any
+- `CharacterLine.Self` speaks as whichever character the player is talking to — the
+  common case, needing no lookup name at all. Other lines speak as the player's
+  captain, the ship AI, or any
   named character — including other introduced ones via their lookup names, which is
   how an invented recurring voice (an "ORACLE") speaks with its own art across acts.
   Named references use **registry names** (the factory names the game's registry
