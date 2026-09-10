@@ -14,12 +14,19 @@ internal sealed class WorldContentService : IWorldService, IDisposable
     private readonly Func<bool> _canAuthor;
     private readonly Action? _providerReleased;
     private readonly IServiceStatus _status;
+    private readonly AmbientTrafficService _ambient;
+    private readonly bool _ownsAmbient;
+    public IAmbientTrafficService AmbientTraffic { get { _hub.CheckThread(); return _ambient; } }
     public ServiceAvailability Availability => _status.Availability;
     public event Action<ServiceAvailability>? AvailabilityChanged
     { add => _status.AvailabilityChanged += value; remove => _status.AvailabilityChanged -= value; }
     private bool _disposed;
-    internal WorldContentService(LifecycleHub hub, WorldDefinitionRegistry definitions, WorldAuthoringGate authoring, Func<bool> canAuthor, Action? providerReleased = null)
-    { _hub = hub; _status = hub.Services.Get("world-authoring"); _definitions = definitions; _authoring = authoring; _canAuthor = canAuthor; _providerReleased = providerReleased; }
+    internal WorldContentService(LifecycleHub hub, WorldDefinitionRegistry definitions, WorldAuthoringGate authoring, Func<bool> canAuthor, Action? providerReleased = null, AmbientTrafficService? ambient = null)
+    {
+        _hub = hub; _status = hub.Services.Get("world-authoring"); _definitions = definitions; _authoring = authoring; _canAuthor = canAuthor; _providerReleased = providerReleased;
+        _ownsAmbient = ambient == null;
+        _ambient = ambient ?? new AmbientTrafficService(hub);
+    }
     [MethodImpl(MethodImplOptions.NoInlining)]
     public IWorldProvider? AcquireProvider(object pluginInstance)
     {
@@ -95,6 +102,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
     public void Dispose()
     {
         _hub.CheckThread(); if (_disposed) return; _disposed = true;
+        if (_ownsAmbient) _ambient.Dispose();
         var health = _status.Availability;
         _hub.SetCapability("world-authoring", false, health.IsAvailable ? "World service stopped." : health.Detail,
             health.IsAvailable ? ServiceUnavailableReason.ApiStopped : health.Reason);

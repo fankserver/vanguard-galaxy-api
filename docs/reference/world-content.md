@@ -8,6 +8,47 @@ Acquire `IWorldProvider` directly from the loaded plugin assembly and register i
 
 `CreatePersistentCombatSite` specifies an expected session, declaration ID, separate instance GUID, existing system ID and coordinates. Creation requires a ready session and available persistence. A `WorldSiteReference` carries provider/local/instance identity only: it is not a native object or permission to mutate another owner's content. `FindPersistentCombatSite` checks the authenticated provider, expected session and exact current native membership; a reference alone does not establish existence. Lookup refuses stale sessions, unavailable persistence and missing native membership.
 
+## Quiet authored locations
+
+`ModApi.Services.World.AmbientTraffic` keeps an authored location visually quiet:
+only the ships the story places there remain, while vanilla's decorative "passerby"
+traffic is suppressed. Declare once, typically in `Awake`, and retain the returned
+declaration for the mod's lifetime; dispose it to restore vanilla traffic.
+
+```csharp
+private IDisposable? _quietPocket;
+private void Awake() =>
+    _quietPocket = ModApi.Services.World.AmbientTraffic.SuppressInSystemContaining("my-authored-station");
+private void OnDestroy() => _quietPocket?.Dispose();
+```
+
+- `SuppressAtStation(stationId)` quiets one station's decorative visitor ships. Use it
+  for an authored station placed inside an ordinary populated system: gates and other
+  stations in that system stay vanilla.
+- `SuppressInSystemContaining(poiId)` quiets decorative station **and** jump-gate
+  traffic in the single system containing the anchor location. Neighbouring systems
+  stay vanilla: a suppressed gate's peer gate one jump away remains busy, so the
+  contrast between an authored pocket and the ordinary galaxy is preserved.
+
+Only the periodic decorative spawners are affected. Player docking, station services,
+faction relations, security responses and any story-, mission- or consumer-placed
+ships are untouched. Suppressed decorative ships are simply never created; nothing is
+written to saves and no consumer save handling is needed.
+
+Anchors are authored location identities, re-resolved against the current player's
+galaxy on every decorative spawn. A declaration made before its authored content
+exists stays inert and binds when the anchor appears, holds across save reloads, and
+returns to inert if a loaded save lacks the anchor. When an anchor is missing or its
+identity is ambiguous in the current galaxy, traffic everywhere stays vanilla rather
+than being suppressed at a guessed location.
+
+Declarations from different mods are independent; the same location may be declared
+quiet by several mods, and disposing one declaration never releases another. Blank or
+unbounded identities, wrong-thread access and use after API shutdown are programming
+errors. `Availability` reports binding health for this integration; while it is
+unavailable, declarations are retained but nothing is suppressed. Suppression
+decisions fail open: an internal fault logs once and vanilla traffic proceeds.
+
 ## Shared primitive selection
 
 Two consumers motivate an owned encounter location, not a campaign framework:

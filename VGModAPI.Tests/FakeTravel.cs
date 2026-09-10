@@ -116,8 +116,10 @@ namespace Source.Galaxy
         public static GalaxyMapData? current { get; set; }
         private readonly System.Collections.Generic.Dictionary<string, SystemMapData> _systems = new();
         private readonly System.Collections.Generic.Dictionary<string, MapPointOfInterest> _pois = new();
+        private readonly System.Collections.Generic.List<MapPointOfInterest> _allPois = new();
+        public System.Collections.Generic.IEnumerable<MapPointOfInterest> allPointsOfInterest => _allPois;
         public void AddSystem(SystemMapData s) => _systems[s.guid] = s;
-        public void AddPoi(MapPointOfInterest p) => _pois[p.guid] = p;
+        public void AddPoi(MapPointOfInterest p) { _pois[p.guid] = p; _allPois.Add(p); }
         public SystemMapData? GetSystem(string guid) => _systems.TryGetValue(guid, out var s) ? s : null;
         public MapPointOfInterest? GetPointOfInterest(string guid) => _pois.TryGetValue(guid, out var p) ? p : null;
     }
