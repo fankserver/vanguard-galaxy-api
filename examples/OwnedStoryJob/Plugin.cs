@@ -26,7 +26,7 @@ public sealed class Plugin : BaseUnityPlugin
         return _provider.Register(new StoryMissionDefinition(LocalId, title, description,
             new StoryFactionId(sourceFaction),
             new[] { new StoryStep("Visit the delivery point", new[] { StoryObjective.TravelTo(destinationPoiId) }) },
-            new[] { new StoryReward(StoryRewardKind.Credits, rewardCredits) },
+            new[] { StoryReward.Credits(rewardCredits) },
             retention: StoryRetention.Temporary));
     }
 
@@ -44,7 +44,7 @@ public sealed class Plugin : BaseUnityPlugin
         return _provider.Register(new StoryMissionDefinition(ObjectiveLocalId, "Generated field report", generatedDescription,
             new StoryFactionId(sourceFaction), new[] { new StoryStep("Collect reports",
                 new[] { StoryObjective.Scripted("talk", generatedDescription, requiredReports) }) },
-            new[] { new StoryReward(StoryRewardKind.Credits, 3) }, retention: StoryRetention.Temporary));
+            new[] { StoryReward.Credits(3) }, retention: StoryRetention.Temporary));
     }
 
     public StoryActionResult ReportProgress(IStoryMission mission, int observedReports)

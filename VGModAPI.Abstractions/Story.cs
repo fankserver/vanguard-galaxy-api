@@ -182,19 +182,15 @@ public sealed class StoryReward
     public int Amount { get; }
     /// <summary>Optional explicit faction for <see cref="StoryRewardKind.Reputation"/>; null grants to the mission's source faction.</summary>
     public StoryFactionId? Faction { get; }
-    public StoryReward(StoryRewardKind kind, int amount)
-    {
-        if (!Enum.IsDefined(typeof(StoryRewardKind), kind)) throw new ArgumentOutOfRangeException(nameof(kind));
-        if (amount is < 1 or > StoryObjective.MaxAmount) throw new ArgumentOutOfRangeException(nameof(amount));
-        Kind = kind; Amount = amount;
-    }
-    private StoryReward(int amount, StoryFactionId? faction)
+    private StoryReward(StoryRewardKind kind, int amount, StoryFactionId? faction)
     {
         if (amount is < 1 or > StoryObjective.MaxAmount) throw new ArgumentOutOfRangeException(nameof(amount));
-        Kind = StoryRewardKind.Reputation; Amount = amount; Faction = faction;
+        Kind = kind; Amount = amount; Faction = faction;
     }
+    public static StoryReward Credits(int amount) => new(StoryRewardKind.Credits, amount, null);
+    public static StoryReward Experience(int amount) => new(StoryRewardKind.Experience, amount, null);
     /// <summary>Reputation with an existing faction; null grants to the mission's source faction (the native default).</summary>
-    public static StoryReward Reputation(int amount, StoryFactionId? faction = null) => new(amount, faction);
+    public static StoryReward Reputation(int amount, StoryFactionId? faction = null) => new(StoryRewardKind.Reputation, amount, faction);
 }
 
 internal static class StoryText
