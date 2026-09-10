@@ -28,6 +28,9 @@ internal sealed class WorldContentService : IWorldService, IDisposable
     private readonly DroneBayService _droneBays;
     private readonly AuthoredSystemRegistry? _authoredDefinitions;
     private readonly AuthoredSystemCoordinator? _authoredCoordinator;
+    private readonly AuthoredSiteRegistry? _siteDefinitions;
+    private readonly AuthoredSiteCoordinator? _siteCoordinator;
+    private event Action<Guid>? _sitesSettled;
     private readonly bool _ownsAmbient, _ownsProtection, _ownsDroneBays;
     private readonly List<Action<Guid>> _authoredRefreshes = new();
     private event Action<ReconstructionSettledEvent>? _authoredSettled;
@@ -38,8 +41,17 @@ internal sealed class WorldContentService : IWorldService, IDisposable
     public event Action<ServiceAvailability>? AvailabilityChanged
     { add => _status.AvailabilityChanged += value; remove => _status.AvailabilityChanged -= value; }
     private bool _disposed;
-    internal WorldContentService(LifecycleHub hub, WorldDefinitionRegistry definitions, WorldAuthoringGate authoring, Func<bool> canAuthor, Action? providerReleased = null, AmbientTrafficService? ambient = null, UnitProtectionService? protection = null, DroneBayService? droneBays = null, AuthoredSystemRegistry? authoredDefinitions = null, AuthoredSystemCoordinator? authoredCoordinator = null)
+    internal WorldContentService(LifecycleHub hub, WorldDefinitionRegistry definitions, WorldAuthoringGate authoring, Func<bool> canAuthor, Action? providerReleased = null, AmbientTrafficService? ambient = null, UnitProtectionService? protection = null, DroneBayService? droneBays = null, AuthoredSystemRegistry? authoredDefinitions = null, AuthoredSystemCoordinator? authoredCoordinator = null, AuthoredSiteRegistry? siteDefinitions = null, AuthoredSiteCoordinator? siteCoordinator = null)
     {
+        _siteDefinitions = siteDefinitions;
+        _siteCoordinator = siteCoordinator;
+        siteCoordinator?.AttachSettled(session =>
+        {
+            var subscribers = _sitesSettled;
+            if (subscribers == null) return;
+            foreach (var subscriber in subscribers.GetInvocationList())
+            { try { ((Action<Guid>)subscriber)(session); } catch { /* fail-open per subscriber */ } }
+        });
         _hub = hub; _status = hub.Services.Get("world-authoring"); _definitions = definitions; _authoring = authoring; _canAuthor = canAuthor; _providerReleased = providerReleased;
         _ownsAmbient = ambient == null;
         _ambient = ambient ?? new AmbientTrafficService(hub);
@@ -75,6 +87,12 @@ internal sealed class WorldContentService : IWorldService, IDisposable
         {
             try { _authoredCoordinator.Reconcile(session); } catch { /* fail-open; gate convergence is best-effort */ }
         }
+        if (_siteCoordinator != null)
+        {
+            _siteCoordinator.BeginPass(session);
+            try { _siteCoordinator.Reconcile(session); } catch { /* fail-open */ }
+            finally { _siteCoordinator.EndPass(); }
+        }
         foreach (var refresh in _authoredRefreshes.ToArray())
         {
             try { refresh(session); } catch { /* one provider's fault must not block the others */ }
@@ -92,7 +110,13 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             authored = _authoredDefinitions.Acquire(pluginInstance, Assembly.GetCallingAssembly());
             if (authored == null) { provider.Dispose(); return null; }
         }
-        return new Provider(this, provider, authored);
+        AuthoredSiteRegistry.Provider? sites = null;
+        if (_siteDefinitions != null)
+        {
+            sites = _siteDefinitions.Acquire(pluginInstance, Assembly.GetCallingAssembly());
+            if (sites == null) { provider.Dispose(); authored?.Dispose(); return null; }
+        }
+        return new Provider(this, provider, authored, sites);
     }
     private sealed class Provider : IWorldProvider, IWorldProviderEngine
     {
@@ -101,14 +125,17 @@ internal sealed class WorldContentService : IWorldService, IDisposable
         private readonly WorldContentService _service;
         private readonly WorldDefinitionRegistry.Provider _provider;
         private readonly AuthoredSystemRegistry.Provider? _authored;
+        private readonly AuthoredSiteRegistry.Provider? _authoredSites;
+        private readonly Dictionary<(string LocalId, string OccurrenceKey), AuthoredSiteHandle> _siteObjects = new();
         private readonly Dictionary<(string LocalId, string OccurrenceKey), AuthoredSystemHandle> _objects = new();
         private readonly IDisposable _objectSubscription;
         private readonly Action<Guid> _refreshesEntry;
         private readonly Func<bool> _alive;
         private bool _disposed;
-        internal Provider(WorldContentService service, WorldDefinitionRegistry.Provider provider, AuthoredSystemRegistry.Provider? authored)
+        internal Provider(WorldContentService service, WorldDefinitionRegistry.Provider provider, AuthoredSystemRegistry.Provider? authored, AuthoredSiteRegistry.Provider? authoredSites = null)
         {
-            _service = service; _provider = provider; _authored = authored;
+            _service = service; _provider = provider; _authored = authored; _authoredSites = authoredSites;
+            if (authoredSites != null) service._sitesSettled += ForwardSitesSettled;
             _alive = () => !_disposed && !_service._disposed;
             if (authored != null)
             {
@@ -130,7 +157,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             _siteSubscription = service._hub.Subscribe("vgmodapi.combat-site-objects", e =>
             {
                 if (e.Kind is LifecycleEventKind.SessionStarting or LifecycleEventKind.SessionInvalidated or LifecycleEventKind.SessionStartFailed)
-                    _sites.Clear();
+                { _sites.Clear(); _siteObjects.Clear(); }
             });
         }
         private void ResetObjects()
@@ -288,6 +315,97 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             catch (ArgumentException) { return new WorldSiteResult(WorldStatus.InvalidDefinition); }
         }
 
+        public event Action<AuthoredSitesSettledEvent>? AuthoredSiteReconstructionSettled;
+        private void ForwardSitesSettled(Guid session)
+        {
+            if (_authoredSites == null || _service._siteCoordinator == null || _service._hub.CurrentSession?.Id != session) return;
+            var reconstructed = new List<IAuthoredSite>();
+            var failures = new List<AuthoredSiteFailure>();
+            foreach (var row in _service._siteCoordinator.Occurrences(_authoredSites.Owner))
+            {
+                var handle = ObtainSiteHandle(row.LocalId, row.OccurrenceKey, session);
+                handle.Refresh();
+                var state = handle.State;
+                if (state.Reconstructed) reconstructed.Add(handle);
+                else failures.Add(new AuthoredSiteFailure(handle,
+                    state.Reason ?? _service._siteCoordinator.PendingReason(session)));
+            }
+            var subscribers = AuthoredSiteReconstructionSettled;
+            if (subscribers == null) return;
+            var settled = new AuthoredSitesSettledEvent(session, reconstructed, failures);
+            foreach (var subscriber in subscribers.GetInvocationList())
+            { try { ((Action<AuthoredSitesSettledEvent>)subscriber)(settled); } catch { /* fail-open per subscriber */ } }
+        }
+
+        public WorldStatus RegisterAuthoredSite(AuthoredSiteDefinition definition, AuthoredSiteDefinition? previous = null)
+        {
+            _service._hub.CheckThread();
+            if (_disposed || _service._disposed) return WorldStatus.UnknownProvider;
+            if (_service._hub.CurrentSession != null) return WorldStatus.NotReady;
+            if (_authoredSites == null || _service._siteDefinitions == null || definition == null) return WorldStatus.InvalidDefinition;
+            try
+            {
+                var mapped = new AuthoredSiteDeclaration(definition);
+                if (_service._siteDefinitions.TryResolve(_authoredSites, definition.LocalId, out _)) return WorldStatus.DuplicateDefinition;
+                var prior = previous == null ? null : new AuthoredSiteDeclaration(previous);
+                return _service._siteDefinitions.Register(_authoredSites, mapped, prior) ? WorldStatus.Succeeded : WorldStatus.Rejected;
+            }
+            catch (ArgumentException) { return WorldStatus.InvalidDefinition; }
+        }
+
+        public IAuthoredSite? CreateAuthoredSite(string localId, string occurrenceKey, string systemId, float x, float y)
+        {
+            _service._hub.CheckThread();
+            if (_disposed || _service._disposed || _authoredSites == null || _service._siteCoordinator == null) return null;
+            if (!_service._canAuthor()) return null;
+            var session = _service._hub.CurrentSession;
+            if (session == null || session.Id == Guid.Empty || session.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks) return null;
+            if (localId == null || !ValidOccurrenceKey(occurrenceKey)) return null;
+            var (status, _) = _service._siteCoordinator.Create(_authoredSites, session.Id, localId, occurrenceKey, systemId, x, y);
+            if (status != WorldStatus.Succeeded && status != WorldStatus.Rejected) return null;
+            if (_service._siteCoordinator.TryGetOccurrence(_authoredSites.Owner, localId, occurrenceKey) == null && status != WorldStatus.Rejected) return null;
+            var handle = ObtainSiteHandle(localId, occurrenceKey, session.Id);
+            handle.RecordAction(status == WorldStatus.Succeeded
+                ? new AuthoredActionResult(AuthoredActionStatus.Succeeded)
+                : new AuthoredActionResult(AuthoredActionStatus.Rejected, "The native site could not be created."));
+            handle.Refresh();
+            return handle;
+        }
+
+        public IAuthoredSite? GetAuthoredSite(string localId, string occurrenceKey)
+        {
+            _service._hub.CheckThread();
+            if (_disposed || _service._disposed || _authoredSites == null || _service._siteCoordinator == null) return null;
+            var session = _service._hub.CurrentSession;
+            if (session == null || session.Id == Guid.Empty || localId == null || !ValidOccurrenceKey(occurrenceKey)) return null;
+            if (_service._siteCoordinator.TryGetOccurrence(_authoredSites.Owner, localId, occurrenceKey) == null) return null;
+            var handle = ObtainSiteHandle(localId, occurrenceKey, session.Id);
+            handle.Refresh();
+            return handle;
+        }
+
+        public IReadOnlyList<IAuthoredSite> GetAuthoredSites(string localId)
+        {
+            _service._hub.CheckThread();
+            if (_disposed || _service._disposed || _authoredSites == null || _service._siteCoordinator == null) return Array.Empty<IAuthoredSite>();
+            var session = _service._hub.CurrentSession;
+            if (session == null || session.Id == Guid.Empty) return Array.Empty<IAuthoredSite>();
+            var list = new List<IAuthoredSite>();
+            foreach (var row in _service._siteCoordinator.Occurrences(_authoredSites.Owner))
+                if (string.Equals(row.LocalId, localId, StringComparison.Ordinal))
+                    list.Add(ObtainSiteHandle(row.LocalId, row.OccurrenceKey, session.Id));
+            return list;
+        }
+
+        private AuthoredSiteHandle ObtainSiteHandle(string localId, string occurrenceKey, Guid session)
+        {
+            var key = (localId, occurrenceKey);
+            if (_siteObjects.TryGetValue(key, out var existing) && existing.Session == session) return existing;
+            var handle = new AuthoredSiteHandle(this, localId, occurrenceKey, session);
+            _siteObjects[key] = handle;
+            return handle;
+        }
+
         public WorldStatus RegisterAuthoredSystem(AuthoredSystemDefinition definition, AuthoredSystemDefinition? previous = null)
         {
             _service._hub.CheckThread();
@@ -348,6 +466,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
         {
             if (session == Guid.Empty || session != _service._hub.CurrentSession?.Id) return;
             foreach (var site in _sites.Values.ToArray()) if (site.Session == session) site.Refresh();
+            foreach (var handle in _siteObjects.Values.ToArray()) if (handle.Session == session) handle.Refresh();
             if (_authored == null || _service._authoredCoordinator == null) return;
             foreach (var handle in _objects.Values.ToArray()) handle.Refresh();
         }
@@ -359,12 +478,55 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 _service._authoredSettled -= ForwardSettled;
                 _objectSubscription.Dispose();
             }
+            if (_authoredSites != null) _service._sitesSettled -= ForwardSitesSettled;
             _service._authoredRefreshes.Remove(_refreshesEntry);
             _siteSubscription.Dispose();
             _sites.Clear();
+            _siteObjects.Clear();
             _objects.Clear();
-            _provider.Dispose(); _authored?.Dispose(); _disposed = true;
+            _provider.Dispose(); _authored?.Dispose(); _authoredSites?.Dispose(); _disposed = true;
             _service._providerReleased?.Invoke();
+        }
+
+        /// <summary>The owned authored-site occurrence object; one instance per key per session.</summary>
+        private sealed class AuthoredSiteHandle : IAuthoredSite
+        {
+            private readonly Provider _provider;
+            private readonly string _localId;
+            private readonly string _occurrenceKey;
+            internal readonly Guid Session;
+            private AuthoredSiteState _state = new(AuthoredSystemReconstructionStatus.Pending);
+            private AuthoredActionResult _lastAction = new(AuthoredActionStatus.NotReady, "No action has been taken yet on this occurrence.");
+            private event Action<IAuthoredSite>? _changed;
+            internal AuthoredSiteHandle(Provider provider, string localId, string occurrenceKey, Guid session)
+            { _provider = provider; _localId = localId; _occurrenceKey = occurrenceKey; Session = session; }
+            public string OccurrenceKey => _occurrenceKey;
+            public AuthoredSiteDefinition Definition
+            {
+                get
+                {
+                    if (_provider._service._siteDefinitions != null && _provider._authoredSites != null
+                        && _provider._service._siteDefinitions.TryResolve(_provider._authoredSites, _localId, out var declaration) && declaration != null)
+                        return declaration.ToDefinition();
+                    var revision = _provider._service._siteCoordinator?.TryGetOccurrence(_provider._authoredSites?.Owner ?? "", _localId, _occurrenceKey)?.Revision ?? 1;
+                    return AuthoredSiteDefinition.MiningField(_localId, revision, "unknown", 1, 1);
+                }
+            }
+            public AuthoredSiteState State { get { _provider._service._hub.CheckThread(); return _state; } }
+            public string? PoiId => State.PoiId;
+            public AuthoredActionResult LastAction { get { _provider._service._hub.CheckThread(); return _lastAction; } }
+            public event Action<IAuthoredSite>? Changed { add => _changed += value; remove => _changed -= value; }
+            internal void RecordAction(AuthoredActionResult result) => _lastAction = result;
+            internal void Refresh()
+            {
+                // A replaced session freezes the last observed state; the handle never resolves against the replacement save.
+                if (Session == Guid.Empty || _provider._service._hub.CurrentSession?.Id != Session) return;
+                if (_provider._disposed || _provider._service._disposed || _provider._authoredSites == null || _provider._service._siteCoordinator == null) return;
+                var updated = _provider._service._siteCoordinator.ReconstructionState(_provider._authoredSites.Owner, _localId, _occurrenceKey);
+                bool changed = _state.Status != updated.Status || _state.Reason != updated.Reason || _state.PoiId != updated.PoiId;
+                _state = updated;
+                if (changed) _changed?.Invoke(this);
+            }
         }
 
         /// <summary>The owned combat-site occurrence object; one instance per key per session.</summary>

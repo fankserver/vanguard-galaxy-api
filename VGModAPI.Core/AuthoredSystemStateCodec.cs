@@ -45,30 +45,48 @@ internal sealed class AuthoredSystemOccurrence
 internal static class AuthoredSystemStateCodec
 {
     internal const string Owner = "vgmodapi.world-authored-systems";
-    internal const int SchemaVersion = 1;
+    /// <summary>Schema 2 adds a per-row kind tag (0 = pocket system, 1 = authored site); schema 1 rows are all pocket systems.</summary>
+    internal const int SchemaVersion = 2;
     private static readonly UTF8Encoding Utf8 = new(false, true);
     private const int Magic = 0x32534756;
 
     internal static byte[] Encode(IReadOnlyList<AuthoredSystemOccurrence> rows)
+        => Encode(rows, Array.Empty<AuthoredSiteOccurrence>());
+
+    internal static byte[] Encode(IReadOnlyList<AuthoredSystemOccurrence> rows, IReadOnlyList<AuthoredSiteOccurrence> sites)
     {
-        if (rows == null || rows.Count > WorldSerializationAssociation.MaxObjects) throw new InvalidDataException("Invalid authored-system inventory count.");
+        if (rows == null || sites == null || rows.Count + sites.Count > WorldSerializationAssociation.MaxObjects)
+            throw new InvalidDataException("Invalid authored-system inventory count.");
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream, Utf8, true);
-        writer.Write(Magic); writer.Write(SchemaVersion); writer.Write(rows.Count);
+        writer.Write(Magic); writer.Write(SchemaVersion); writer.Write(rows.Count + sites.Count);
         var keys = new HashSet<(string, string, string)>();
         foreach (var row in rows)
         {
             if (row == null || !keys.Add((row.Owner, row.LocalId, row.OccurrenceKey)))
                 throw new InvalidDataException("Duplicate authored-system occurrence.");
+            writer.Write((byte)0);
             WriteText(writer, row.Owner); WriteText(writer, row.LocalId); WriteText(writer, row.OccurrenceKey);
             writer.Write(row.Revision); WriteText(writer, row.SystemId); WriteText(writer, row.EntranceGateId);
             WriteText(writer, row.PocketGateId); writer.Write(row.DeclaredOpen);
+            if (stream.Length > WorldSerializationAssociation.MaxMetadataBytes) throw new InvalidDataException("Authored-system metadata exceeds its quota.");
+        }
+        foreach (var site in sites)
+        {
+            if (site == null || !keys.Add((site.Owner, site.LocalId, site.OccurrenceKey)))
+                throw new InvalidDataException("Duplicate authored-system occurrence.");
+            writer.Write((byte)1);
+            WriteText(writer, site.Owner); WriteText(writer, site.LocalId); WriteText(writer, site.OccurrenceKey);
+            writer.Write(site.Revision); writer.Write((byte)site.Kind); WriteText(writer, site.SystemId); WriteText(writer, site.PoiId);
             if (stream.Length > WorldSerializationAssociation.MaxMetadataBytes) throw new InvalidDataException("Authored-system metadata exceeds its quota.");
         }
         writer.Flush(); return stream.ToArray();
     }
 
     internal static AuthoredSystemOccurrence[] Decode(byte[] payload)
+        => DecodeAll(payload).Systems;
+
+    internal static (AuthoredSystemOccurrence[] Systems, AuthoredSiteOccurrence[] Sites) DecodeAll(byte[] payload)
     {
         if (payload == null || payload.Length < 12 || payload.Length > WorldSerializationAssociation.MaxMetadataBytes)
             throw new InvalidDataException("Missing or oversized authored-system metadata.");
@@ -76,22 +94,34 @@ internal static class AuthoredSystemStateCodec
         using var reader = new BinaryReader(stream, Utf8, true);
         try
         {
-            if (reader.ReadInt32() != Magic || reader.ReadInt32() != SchemaVersion) throw new InvalidDataException("Unsupported authored-system metadata format.");
+            if (reader.ReadInt32() != Magic) throw new InvalidDataException("Unsupported authored-system metadata format.");
+            int version = reader.ReadInt32();
+            if (version != 1 && version != SchemaVersion) throw new InvalidDataException("Unsupported authored-system metadata format.");
             int count = reader.ReadInt32();
             if (count < 0 || count > WorldSerializationAssociation.MaxObjects) throw new InvalidDataException("Invalid authored-system inventory count.");
-            var rows = new AuthoredSystemOccurrence[count];
+            var rows = new List<AuthoredSystemOccurrence>();
+            var sites = new List<AuthoredSiteOccurrence>();
             var keys = new HashSet<(string, string, string)>();
             for (int i = 0; i < count; i++)
             {
+                byte kind = version == 1 ? (byte)0 : reader.ReadByte();
+                if (kind > 1) throw new InvalidDataException("Unknown authored-occurrence kind.");
                 string owner = ReadText(reader, 128), local = ReadText(reader, 128), key = ReadText(reader, 256);
                 int revision = reader.ReadInt32();
-                var row = new AuthoredSystemOccurrence(owner, local, key, revision,
-                    ReadText(reader, 128), ReadText(reader, 128), ReadText(reader, 128), reader.ReadBoolean());
+                if (kind == 0)
+                    rows.Add(new AuthoredSystemOccurrence(owner, local, key, revision,
+                        ReadText(reader, 128), ReadText(reader, 128), ReadText(reader, 128), reader.ReadBoolean()));
+                else
+                {
+                    byte siteKind = reader.ReadByte();
+                    if (siteKind > (byte)AuthoredSiteKind.MiningField) throw new InvalidDataException("Unknown authored-site kind.");
+                    sites.Add(new AuthoredSiteOccurrence(owner, local, key, revision,
+                        (AuthoredSiteKind)siteKind, ReadText(reader, 128), ReadText(reader, 128)));
+                }
                 if (!keys.Add((owner, local, key))) throw new InvalidDataException("Duplicate authored-system occurrence.");
-                rows[i] = row;
             }
             if (stream.Position != stream.Length) throw new InvalidDataException("Trailing authored-system metadata.");
-            return rows;
+            return (rows.ToArray(), sites.ToArray());
         }
         catch (Exception error) when (error is ArgumentException || error is EndOfStreamException)
         { throw new InvalidDataException("Malformed authored-system metadata.", error); }

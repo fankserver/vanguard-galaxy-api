@@ -69,6 +69,7 @@ internal sealed class AuthoredSystemCoordinator : IDisposable
         _hub.CheckThread();
         return AuthoredSystemStateCodec.Encode(_committed.Values.ToArray());
     }
+    internal AuthoredSystemOccurrence[] CaptureRows() { _hub.CheckThread(); return _committed.Values.ToArray(); }
 
     /// <summary>Read-only plumbing: the session-scoped occurrence rows this owner currently holds (committed + failed-pending), used to re-obtain surface objects.</summary>
     internal IReadOnlyList<AuthoredSystemOccurrence> Occurrences(string owner)
