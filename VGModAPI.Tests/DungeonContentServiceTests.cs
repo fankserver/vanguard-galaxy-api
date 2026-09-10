@@ -25,6 +25,7 @@ public sealed class DungeonContentServiceTests
         internal readonly Persistence Persistence = new();
         internal int Applied, Diagnosed, ChoiceChecks;
         internal bool ThrowNative;
+        internal Func<string, BoardingHandle?>? Resolve;
         internal Fixture()
         {
             State = new(Hub, Persistence);
@@ -33,7 +34,8 @@ public sealed class DungeonContentServiceTests
             Hub.SetCapability("dungeon-content", true, "Test bindings.");
             Service = new(Hub, new(_ => true, _ => true, _ => true), State,
                 new((_, _) => DungeonContentStatus.Attached, (_, _) => { }, (_, _, _) => { ChoiceChecks++; return DungeonContentStatus.ChoiceApplied; },
-                    (_, _, _) => { Applied++; if (ThrowNative) throw new InvalidOperationException("native failure"); }), (_, _) => Diagnosed++);
+                    (_, _, _) => { Applied++; if (ThrowNative) throw new InvalidOperationException("native failure"); },
+                    poiId => Resolve?.Invoke(poiId)), (_, _) => Diagnosed++);
         }
         internal BoardingHandle Target => new(Hub.CurrentSession!.Id, Guid.NewGuid());
         public void Dispose() { Service.Dispose(); State.Dispose(); Hub.Dispose(); }
@@ -120,6 +122,34 @@ public sealed class DungeonContentServiceTests
         allowed = true; Assert.Equal(DungeonContentStatus.ChoiceApplied, f.Service.ChooseFromPanel(id, "event", "choice").Status);
         Assert.Empty(f.Service.PanelChoices(id)); Assert.Equal(1, f.Applied);
         provider.Dispose(); Assert.Empty(f.Service.PanelChoices(id));
+    }
+    [Fact]
+    public void AttachByInstallationResolvesIdentityWithoutDisplayNames()
+    {
+        using var f = new Fixture(); using var provider = f.Service.AcquireProvider("owner");
+        using var registration = provider.Register("content", Definition());
+        var installation = provider.GetInstallation("station-poi");
+        // No live boarding target belongs to the installation yet: temporary refusal, not a name guess.
+        Assert.Equal(DungeonContentStatus.StaleTarget, provider.Attach("content", installation).Status);
+        var target = f.Target;
+        f.Resolve = poiId => poiId == "station-poi" ? target : null;
+        var attached = provider.Attach("content", installation);
+        Assert.Equal(DungeonContentStatus.Attached, attached.Status);
+        Assert.NotNull(attached.OccurrenceId);
+        // Ambiguity resolves to null in the adapter and stays a temporary refusal here.
+        f.Resolve = _ => null;
+        Assert.Equal(DungeonContentStatus.StaleTarget, provider.Attach("content", installation).Status);
+    }
+    [Fact]
+    public void ForeignOrUnobtainedInstallationObjectsAreProgrammingErrors()
+    {
+        using var f = new Fixture();
+        using var provider = f.Service.AcquireProvider("owner");
+        using var other = f.Service.AcquireProvider("other");
+        using var registration = provider.Register("content", Definition());
+        var foreign = other.GetInstallation("station-poi");
+        Assert.Throws<ArgumentException>(() => provider.Attach("content", foreign));
+        Assert.Throws<ArgumentNullException>(() => provider.Attach("content", (IDungeonInstallation)null!));
     }
     [Fact]
     public void CargoRecoveryExampleCreatesIndependentSavedAuthoredContent()

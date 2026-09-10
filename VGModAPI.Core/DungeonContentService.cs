@@ -11,11 +11,15 @@ internal sealed class DungeonContentBindings
     internal readonly Action<BoardingHandle, DungeonOccurrence> Bind;
     internal readonly Func<DungeonOccurrence, DungeonEventDefinition, DungeonChoiceDefinition, DungeonContentStatus> ValidateChoice;
     internal readonly Action<DungeonOccurrence, DungeonEventDefinition, DungeonChoiceDefinition> ApplyChoice;
+    /// <summary>The one live boarding target currently belonging to a persistent installation; null when none or ambiguous.</summary>
+    internal readonly Func<string, BoardingHandle?> ResolveInstallation;
     internal DungeonContentBindings(Func<BoardingHandle, DungeonDefinition, DungeonContentStatus> validateAttachment,
         Action<BoardingHandle, DungeonOccurrence> bind,
         Func<DungeonOccurrence, DungeonEventDefinition, DungeonChoiceDefinition, DungeonContentStatus> validateChoice,
-        Action<DungeonOccurrence, DungeonEventDefinition, DungeonChoiceDefinition> applyChoice)
-    { ValidateAttachment = validateAttachment; Bind = bind; ValidateChoice = validateChoice; ApplyChoice = applyChoice; }
+        Action<DungeonOccurrence, DungeonEventDefinition, DungeonChoiceDefinition> applyChoice,
+        Func<string, BoardingHandle?>? resolveInstallation = null)
+    { ValidateAttachment = validateAttachment; Bind = bind; ValidateChoice = validateChoice; ApplyChoice = applyChoice;
+        ResolveInstallation = resolveInstallation ?? (_ => null); }
 }
 
 internal sealed class DungeonContentService : IDungeonContentService, IDisposable
@@ -184,6 +188,18 @@ internal sealed class DungeonContentService : IDungeonContentService, IDisposabl
             var behavior = new Behavior(this, localId, registration, allowChoice); Behaviors.Add(localId, behavior); return behavior;
         }
         public DungeonContentResult Attach(string localId, BoardingHandle target) => Owner.Attach(this, localId, target);
+        public DungeonContentResult Attach(string localId, IDungeonInstallation installation)
+        {
+            Owner._hub.CheckThread();
+            if (installation == null) throw new ArgumentNullException(nameof(installation));
+            if (installation is not DungeonInstallationEvents.Installation own
+                || !_installations.TryGetValue(own.PoiId, out var cached) || !ReferenceEquals(cached, own))
+                throw new ArgumentException("Use an installation obtained from this provider.", nameof(installation));
+            if (!Owner.Live(this) || Owner.MutationBlocked || Owner._bindings == null) return Owner.Result(DungeonContentStatus.Unavailable);
+            var target = Owner._native.ResolveInstallation(own.PoiId);
+            if (target == null) return Owner.Result(DungeonContentStatus.StaleTarget);
+            return Owner.Attach(this, localId, target);
+        }
         public DungeonContentResult Choose(Guid occurrenceId, string eventId, string choiceId) => Owner.Choose(this, occurrenceId, eventId, choiceId);
         public IReadOnlyList<DungeonOccurrenceSnapshot> GetOccurrences()
         {
