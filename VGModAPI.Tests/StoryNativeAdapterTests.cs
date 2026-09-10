@@ -125,6 +125,75 @@ public sealed class StoryNativeAdapterTests : IDisposable
     }
 
     [Fact]
+    public void GatherAndKillObjectivesBuildThroughVanillaFactoriesAndObserve()
+    {
+        using var world = World();
+        var ore = new Behaviour.Item.InventoryItemType { identifier = "OreCommon1" };
+        Behaviour.Item.InventoryItemType.TestItems["OreCommon1"] = ore;
+        try
+        {
+            var objectives = new[]
+            {
+                StoryObjective.SalvageItems(1, "monsoon-poi").WithKey("salvage"),
+                StoryObjective.MineItems("OreCommon1", 40, "singers-field").WithKey("mine"),
+                StoryObjective.KillEnemies(5, new StoryFactionId("TradingGuild")).WithKey("repel")
+            };
+            var identifier = Identifier();
+            var definition = Definition(objectives: objectives);
+            Assert.True(world.Install(identifier, definition).Applied);
+            var mission = StoryMission.Get(_player, identifier);
+            var step = Assert.Single(mission.steps);
+            var salvage = Assert.IsType<Source.MissionSystem.Objectives.Salvage>(step.objectives[0]);
+            Assert.Null(salvage.itemType); // native meaning: any material at the wreck counts
+            Assert.Equal(1, salvage.requiredAmount);
+            Assert.Equal("monsoon-poi", salvage.targetPOI);
+            var mine = Assert.IsType<Source.MissionSystem.Objectives.Mining>(step.objectives[1]);
+            Assert.Same(ore, mine.itemType);
+            Assert.Equal(40, mine.requiredAmount);
+            Assert.Equal("singers-field", mine.targetPOI);
+            var kill = Assert.IsType<Source.MissionSystem.Objectives.KillEnemies>(step.objectives[2]);
+            Assert.Equal(5, kill.requiredAmount);
+            Assert.Equal("TradingGuild", kill.enemyFaction!.identifier);
+            Assert.Null(kill.shipType);
+
+            // Observation reads the native trigger-driven counts from the held mission, clamped.
+            Assert.True(world.Accept(identifier).Applied);
+            var layout = new StoryObjectiveLayout(definition);
+            var held = (Mission)new StoryNativeBindings(typeof(StoryMission).Assembly).ActiveStory(_player, identifier)!;
+            var heldMine = (Source.MissionSystem.Objectives.Mining)held.steps[0].objectives[1];
+            var heldKill = (Source.MissionSystem.Objectives.KillEnemies)held.steps[0].objectives[2];
+            Assert.True(layout.TryResolve("mine", out var mineSlot));
+            Assert.True(layout.TryResolve("repel", out var killSlot));
+            Assert.Equal(0, world.ReadProgress(identifier, mineSlot, objectives[1], () => true));
+            heldMine.currentAmount = 55;
+            Assert.Equal(40, world.ReadProgress(identifier, mineSlot, objectives[1], () => true));
+            heldKill.currentAmount = 3;
+            Assert.Equal(3, world.ReadProgress(identifier, killSlot, objectives[2], () => true));
+            Assert.Null(world.ReadProgress(identifier, killSlot, StoryObjective.KillEnemies(9, new StoryFactionId("TradingGuild")).WithKey("repel"), () => true));
+            // A swapped identity refuses the read outright - amount alone is not the objective's identity.
+            heldKill.enemyFaction = new Source.Galaxy.Faction { identifier = "SomeoneElse" };
+            Assert.Null(world.ReadProgress(identifier, killSlot, objectives[2], () => true));
+            heldMine.targetPOI = "elsewhere";
+            Assert.Null(world.ReadProgress(identifier, mineSlot, objectives[1], () => true));
+        }
+        finally { Behaviour.Item.InventoryItemType.TestItems.Clear(); }
+    }
+
+    [Fact]
+    public void UnknownEnemyFactionRefusesTheMissionBuildRatherThanCreatingTheFaction()
+    {
+        // Registration-level refusal is covered by the service tests; this is the defensive seam:
+        // even a definition that slipped past registration cannot build - and the unknown identity
+        // is never created through the native Get.
+        using var world = World();
+        var identifier = Identifier("bad-kill");
+        var definition = Definition("bad-kill", objectives: new[] { StoryObjective.KillEnemies(5, new StoryFactionId("NoSuchClan")) });
+        Assert.True(world.Install(identifier, definition).Applied);
+        Assert.False(world.Accept(identifier).Applied);
+        Assert.False(world.KnowsFaction("NoSuchClan"));
+    }
+
+    [Fact]
     public void DeliveryObjectivesAndReputationRewardsBuildThroughVanillaFactories()
     {
         using var world = World();

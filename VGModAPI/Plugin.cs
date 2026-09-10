@@ -391,7 +391,9 @@ public sealed partial class Plugin : BaseUnityPlugin
                 ["storyGuardRetry"] = typeof(StoryProtectionPatches.RetryAsNextMission),
                 ["storyGuardAbandon"] = typeof(StoryProtectionPatches.AbandonMission),
                 ["storyGuardTrigger"] = typeof(StoryProtectionPatches.ProcessMissionTrigger),
-                ["storyGuardScriptedTrigger"] = typeof(StoryProtectionPatches.ProcessMissionTrigger)
+                ["storyGuardScriptedTrigger"] = typeof(StoryProtectionPatches.ProcessMissionTrigger),
+                ["storyGuardKillTrigger"] = typeof(StoryProtectionPatches.ProcessMissionTrigger),
+                ["storyGuardMiningTrigger"] = typeof(StoryProtectionPatches.ProcessMissionTrigger)
             });
             if (!_hub.Capabilities.Any(c => c.Name == "story-protection" && c.Available))
             { StoryProtectionPatches.Quarantine = null; _quarantine = null; _protection = null; }

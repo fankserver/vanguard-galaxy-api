@@ -111,6 +111,13 @@ namespace Source.MissionSystem.Objectives
         public string? shipType;
         public Source.Galaxy.Faction? enemyFaction;
         public int requiredAmount;
+        public int currentAmount { get; set; }
+        /// <summary>Models the real game: a declared trigger override counting kills of the enemy faction.</summary>
+        public override void ProcessMissionTrigger(MissionTrigger trigger, object data)
+        {
+            if (data is Source.Galaxy.Faction faction && ReferenceEquals(faction, enemyFaction))
+                currentAmount = Math.Min(currentAmount + 1, requiredAmount);
+        }
         /// <summary>Exactly the game's dependency: a null enemy faction throws while saving.</summary>
         public override string ToJson() => "{kill:" + enemyFaction!.identifier + ":" + requiredAmount + "}";
     }

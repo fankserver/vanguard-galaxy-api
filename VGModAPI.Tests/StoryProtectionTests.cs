@@ -466,7 +466,12 @@ public sealed class StoryProtectionTests : IDisposable
         Assert.False(guard.IsMission("not a mission"));
         Assert.Single(guard.Objectives(owned.Mission));
         Assert.ThrowsAny<Exception>(() => new StoryProtectionGuard(typeof(string).Assembly));
-        // Scripted objectives have a dedicated mandatory override guard; other installable kinds use the base guard.
+        // Kinds with a dedicated guard binding must declare the override that binding patches
+        // (Scripted, KillEnemies, MineItems); every other installable kind must ride a patched
+        // method - the base guard, or Mining's patched override in Salvage's case. The fakes model
+        // the REAL assembly here; the Cecil suite pins the same map against the installed game.
+        var overriding = new System.Collections.Generic.HashSet<StoryObjectiveKind>
+        { StoryObjectiveKind.Scripted, StoryObjectiveKind.KillEnemies, StoryObjectiveKind.MineItems };
         foreach (StoryObjectiveKind kind in Enum.GetValues(typeof(StoryObjectiveKind)))
         {
             if (StoryContentPolicy.RefuseObjective(kind) != null) continue;
@@ -475,7 +480,7 @@ public sealed class StoryProtectionTests : IDisposable
             var method = type.GetMethod("ProcessMissionTrigger",
                 System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic
                 | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly);
-            if (kind == StoryObjectiveKind.Scripted) Assert.NotNull(method);
+            if (overriding.Contains(kind)) Assert.NotNull(method);
             else Assert.Null(method);
         }
     }

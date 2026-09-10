@@ -812,6 +812,16 @@ internal sealed partial class StoryContentService : IStoryService, IStoryUiTrans
                 return new StoryRegistrationResult(StoryRegistrationStatus.InvalidDefinition, null,
                     "The game does not know source faction '" + definition.SourceFaction + "'.");
             }
+            // Objective enemy factions ride the same registry rule as the source faction: the game
+            // serializes and renders them, so an unknown identity is a save-breaking, uncompletable objective.
+            foreach (var objective in definition.Steps.SelectMany(step => step.Objectives))
+                if (objective.EnemyFactionId is { } enemyFaction && !_world.KnowsFaction(enemyFaction))
+                {
+                    _world.Uninstall(identifier);
+                    _registry.RemoveIfMatches(id, entry);
+                    return new StoryRegistrationResult(StoryRegistrationStatus.InvalidDefinition, null,
+                        "The game does not know enemy faction '" + enemyFaction + "'.");
+                }
             // Explicit reward factions ride the same registry rule as the source faction: the game
             // serializes them, so an unknown identity would break the save rather than a display line.
             foreach (var reward in definition.Rewards)
@@ -916,7 +926,8 @@ internal sealed partial class StoryContentService : IStoryService, IStoryUiTrans
     {
         worldUnknown = false;
         foreach (var objective in definition.Steps.SelectMany(step => step.Objectives)
-            .Where(objective => objective.Kind is StoryObjectiveKind.TravelToPoi or StoryObjectiveKind.DeliverItems))
+            .Where(objective => objective.Kind is StoryObjectiveKind.TravelToPoi or StoryObjectiveKind.DeliverItems
+                or StoryObjectiveKind.MineItems or StoryObjectiveKind.SalvageItems))
         {
             var target = objective.TargetPoiId!;
             bool owned = WorldObjectIdentity.IsReserved(target);
@@ -933,7 +944,7 @@ internal sealed partial class StoryContentService : IStoryService, IStoryUiTrans
             catch { known = null; }
             if (known == null) { worldUnknown = true; return null; }
             if (known == false) return target;
-            if (objective.Kind == StoryObjectiveKind.DeliverItems && _world != null)
+            if (objective.ItemTypeId != null && _world != null)
             {
                 bool? item;
                 try { item = _world.KnowsItemType(objective.ItemTypeId!); }
