@@ -4,16 +4,16 @@ using System.Linq;
 
 namespace VGModAPI.Core.Integration;
 
-/// <summary>Registers both automatic world owners; restore must match the generation inspected before native construction.</summary>
+/// <summary>Registers the automatic world owners; restore must match the generation inspected before native construction.</summary>
 internal sealed class WorldPersistenceBindings : IDisposable
 {
     private readonly LifecycleHub _hub;
     private readonly WorldLoadHookHost _loads;
     private readonly WorldCreationCoordinator _creation;
-    private readonly ISaveDataRegistration _state, _definitions;
+    private readonly ISaveDataRegistration _state, _definitions, _authored;
     private bool _disposed;
     internal WorldPersistenceBindings(ISaveDataService persistence, LifecycleHub hub, WorldLoadHookHost loads,
-        WorldSnapshotHookHost snapshots, WorldCreationCoordinator creation)
+        WorldSnapshotHookHost snapshots, WorldCreationCoordinator creation, Action<Guid, byte[]?>? restoreAuthored = null)
     {
         _hub = hub; _loads = loads; _creation = creation; _hub.CheckThread();
         _state = persistence.Register(new PersistenceProvider(WorldStateCodec.Owner, WorldStateCodec.SchemaVersion,
@@ -24,15 +24,22 @@ internal sealed class WorldPersistenceBindings : IDisposable
             _definitions = persistence.Register(new PersistenceProvider(WorldDefinitionCodec.Owner, WorldDefinitionCodec.SchemaVersion,
                 () => snapshots.CaptureOwner(WorldDefinitionCodec.Owner), (session, payload) => Restore(WorldDefinitionCodec.Owner, session, payload),
                 payload => Validate(payload, true))).Registration ?? throw new InvalidOperationException("World definitions registration refused.");
+            _authored = restoreAuthored == null ? null! :
+                persistence.Register(new PersistenceProvider(AuthoredSystemStateCodec.Owner, AuthoredSystemStateCodec.SchemaVersion,
+                    () => snapshots.CaptureOwner(AuthoredSystemStateCodec.Owner),
+                    (session, payload) => Restore(AuthoredSystemStateCodec.Owner, session, payload,
+                        bytes => restoreAuthored(session.Id, bytes)),
+                    payload => { try { AuthoredSystemStateCodec.Decode(payload); return true; } catch (InvalidDataException) { return false; } }))
+                .Registration ?? throw new InvalidOperationException("Authored-system registration refused.");
         }
-        catch { _state.Dispose(); throw; }
+        catch { _state.Dispose(); _definitions?.Dispose(); _authored?.Dispose(); throw; }
     }
     private static bool Validate(byte[] payload, bool definitions)
     {
         try { if (definitions) WorldDefinitionCodec.Decode(payload); else WorldStateCodec.Decode(payload); return true; }
         catch (InvalidDataException) { return false; }
     }
-    private void Restore(string owner, SessionSnapshot session, byte[]? payload)
+    private void Restore(string owner, SessionSnapshot session, byte[]? payload, Action<byte[]?>? consume = null)
     {
         _hub.CheckThread();
         if (_disposed || _hub.CurrentSession?.Id != session.Id) throw new InvalidDataException("Stale world persistence restore.");
@@ -45,18 +52,20 @@ internal sealed class WorldPersistenceBindings : IDisposable
         if (_disposed || _hub.CurrentSession?.Id != session.Id ||
             (expected == null ? payload != null : payload == null || !expected.SequenceEqual(payload)))
             throw new InvalidDataException("World persistence differs from the admitted native generation.");
+        consume?.Invoke(payload);
     }
     internal bool StateReady(Guid session)
     {
         _hub.CheckThread();
         return !_disposed && _hub.CurrentSession?.Id == session && _creation.HasRestoredInventory(session) &&
-            Ready(_state, session) && Ready(_definitions, session);
+            Ready(_state, session) && Ready(_definitions, session) && (_authored == null || Ready(_authored, session));
     }
     internal bool CanMutate(Guid session)
     {
         _hub.CheckThread();
         return !_disposed && _hub.CurrentSession?.Id == session && _creation.HasRestoredInventory(session) &&
-            Ready(_state, session) && Ready(_definitions, session) && _state.CanMutate && _definitions.CanMutate;
+            Ready(_state, session) && Ready(_definitions, session) && (_authored == null || Ready(_authored, session)) &&
+            _state.CanMutate && _definitions.CanMutate && (_authored == null || _authored.CanMutate);
     }
     private static bool Ready(ISaveDataRegistration registration, Guid session)
         => registration.State.Kind == SaveDataStateKind.Ready && registration.State.SessionId == session;
@@ -65,5 +74,6 @@ internal sealed class WorldPersistenceBindings : IDisposable
         _hub.CheckThread(); if (_disposed) return;
         _disposed = true;
         try { _state.Dispose(); } finally { _definitions.Dispose(); }
+        if (_authored != null) _authored.Dispose();
     }
 }

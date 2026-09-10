@@ -34,10 +34,12 @@ internal sealed class WorldSnapshotRecorder
         { Operation = operation; Revision = revision; Instances = instances; Definitions = definitions; }
     }
     private readonly WorldJsonInspection _json;
-    private readonly WorldSerializationAssociation _states = new(), _definitions = new();
+    private readonly WorldSerializationAssociation _states = new(), _definitions = new(), _systems = new();
+    private readonly Func<byte[]>? _authoredCapture;
     private ConditionalWeakTable<object, Capture> _captures = new();
     private long _operation;
-    internal WorldSnapshotRecorder(WorldJsonInspection json) => _json = json;
+    internal WorldSnapshotRecorder(WorldJsonInspection json, Func<byte[]>? authoredCapture = null)
+    { _json = json; _authoredCapture = authoredCapture; }
 
     internal object Begin(long revision, IReadOnlyList<WorldSnapshotInstance> instances)
     {
@@ -106,6 +108,16 @@ internal sealed class WorldSnapshotRecorder
         if (operation != _operation) return false;
         var stateToken = _states.Begin(revision, state, objects);
         var definitionToken = _definitions.Begin(revision, capture.Definitions, objects);
+        if (_authoredCapture != null)
+        {
+            // A new row KIND alongside the existing owned rows, inside the same sealed envelope:
+            // authored occurrence rows never reach the Combat-POI read/write/reconstruct path.
+            var authoredBytes = _authoredCapture() ?? throw new InvalidDataException("Missing authored-system capture.");
+            var systemsToken = _systems.Begin(revision, authoredBytes, objects);
+            return _states.Complete(stateToken, revision, objects, root, digest) &&
+                _definitions.Complete(definitionToken, revision, objects, root, digest) &&
+                _systems.Complete(systemsToken, revision, objects, root, digest);
+        }
         return _states.Complete(stateToken, revision, objects, root, digest) &&
             _definitions.Complete(definitionToken, revision, objects, root, digest);
     }
@@ -113,13 +125,15 @@ internal sealed class WorldSnapshotRecorder
     internal Dictionary<string, byte[]> ForStore(object root)
     {
         var digest = WorldJsonInspection.DigestRoot(root);
-        return new Dictionary<string, byte[]>
+        var result = new Dictionary<string, byte[]>
         {
             [WorldStateCodec.Owner] = _states.ForStore(root, digest),
             [WorldDefinitionCodec.Owner] = _definitions.ForStore(root, digest)
         };
+        if (_authoredCapture != null) result[AuthoredSystemStateCodec.Owner] = _systems.ForStore(root, digest);
+        return result;
     }
-    internal void Reset() { Next(); _captures = new(); _states.Reset(); _definitions.Reset(); }
+    internal void Reset() { Next(); _captures = new(); _states.Reset(); _definitions.Reset(); if (_authoredCapture != null) _systems.Reset(); }
     private long Next() => _operation = checked(_operation + 1);
     private static WorldSnapshotInstance[] Copy(IReadOnlyList<WorldSnapshotInstance> instances)
     {

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace VGModAPI;
 
@@ -65,4 +66,23 @@ public interface IWorldProvider : IDisposable
     WorldSiteResult FindPersistentCombatSite(Guid expectedSessionId, WorldSiteReference reference);
     /// <summary>Creates a persistent site in an existing system. Supported state is saved automatically; no provider save hooks are required.</summary>
     WorldSiteResult CreatePersistentCombatSite(Guid expectedSessionId, string localId, Guid instanceId, string systemId, float x, float y);
+
+    /// <summary>Declares an enclosed authored pocket system. Optional exact previous declaration permits a revision/name migration.</summary>
+    WorldStatus RegisterAuthoredSystem(AuthoredSystemDefinition definition, AuthoredSystemDefinition? previous = null);
+    /// <summary>
+    /// Creates (or reconciles) an owned pocket system for the current game, keyed by an author-local
+    /// occurrence key. Returns the owned occurrence object; re-declaring the same key returns the SAME
+    /// object instance for the life of the session. Returns null while the world cannot author (no
+    /// current gameplay-initialized session, definition not registered, or not authorable).
+    /// </summary>
+    IAuthoredSystem? CreateAuthoredSystem(string localId, string occurrenceKey, string anchorSystemId);
+    /// <summary>All current-game occurrences the provider owns for a registered local definition (including restored rows, no replay).</summary>
+    IReadOnlyList<IAuthoredSystem> GetAuthoredSystems(string localId);
+    /// <summary>Re-obtains the owned occurrence for a key in the current game, or null if it does not exist yet.</summary>
+    IAuthoredSystem? GetAuthoredSystem(string localId, string occurrenceKey);
+    /// <summary>
+    /// Reports actual reconciliation outcomes once per session at the post-reconstruction safe boundary,
+    /// carrying the owned occurrence objects. An empty failure list means every declared occurrence reconstructed.
+    /// </summary>
+    event Action<AuthoredSystemsSettledEvent>? AuthoredSystemReconstructionSettled;
 }
