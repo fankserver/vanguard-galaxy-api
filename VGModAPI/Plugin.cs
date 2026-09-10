@@ -79,6 +79,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         _hub.SetCapability("gameplay-ui", false, "Not bound.");
         _hub.SetCapability("ambient-traffic", false, "Not bound.");
         _hub.SetCapability("unit-protection", false, "Not bound.");
+        _hub.SetCapability("story-characters", false, "Not bound.");
         _hub.SetCapability("forge-ui", false, "Disabled or not bound; experimental.");
         _hub.SetCapability("crafting-commands", false, "Disabled or not bound; experimental.");
         _hub.SetCapability("crafting-jobs", false, "Disabled or not bound; experimental.");
@@ -129,6 +130,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             InstallGameplayUi(assembly);
             InstallAmbientTraffic(assembly);
             InstallUnitProtection(assembly);
+            InstallStoryCharacters(assembly);
             InstallRecipes(assembly);
             InstallBoarding(bindings);
             InstallBoardingRules(bindings);
@@ -149,6 +151,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             TeardownGameplayUi();
             TeardownAmbientTraffic();
             TeardownUnitProtection();
+            TeardownStoryCharacters();
             TeardownForgeUi();
             TeardownCraftingJobs();
             try { _harmony?.UnpatchSelf(); }
@@ -158,6 +161,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             _hub.SetCapability("gameplay-ui", false, ex.Message, reason);
             _hub.SetCapability("ambient-traffic", false, ex.Message, reason);
             _hub.SetCapability("unit-protection", false, ex.Message, reason);
+            _hub.SetCapability("story-characters", false, ex.Message, reason);
             _hub.SetCapability("session-lifecycle", false, ex.Message, reason);
             _hub.SetCapability("save-outcomes", false, ex.Message, reason);
             if (_inspectedGameAssembly == null)
@@ -992,6 +996,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         TeardownGameplayUi();
         TeardownAmbientTraffic();
         TeardownUnitProtection();
+        TeardownStoryCharacters();
         TeardownForgeUi();
         TeardownCraftingCommands();
         StopBars();

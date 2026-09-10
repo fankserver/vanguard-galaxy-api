@@ -12,7 +12,7 @@ public sealed class DialogueServiceTests
         public ServiceAvailability Availability => ServiceAvailability.Available;
         public event Action<ServiceAvailability>? AvailabilityChanged { add { } remove { } }
     }
-    private static DialogueService Create() => new(new Status(), () => { }, _ => { });
+    private static DialogueService Create() => new(new Status(), () => { }, _ => { }, new StoryCharacterService(new LifecycleHub((_, _) => { })));
     [Fact]
     public void CompetingPresentersCannotStealCurrentLineAndStaleWorkIsCancelled()
     {

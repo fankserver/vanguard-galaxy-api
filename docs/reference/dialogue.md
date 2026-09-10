@@ -1,6 +1,6 @@
-# Dialogue observation
+# Dialogue observation and story characters
 
-`ModApi.Services.Dialogue` observes the game's conversation manager without controlling its narrative or audio. It initializes automatically when its native bindings are available.
+`ModApi.Services.Dialogue` observes the game's conversation manager without controlling its narrative or audio, and its `Characters` service introduces and extends named story characters. Each initializes automatically when its native bindings are available; their availability is independent.
 
 ## Supported channel
 
@@ -17,3 +17,63 @@ A speech provider can call `TryAcquirePresentation(ownerId, conversationId, sequ
 Use the returned cancellation token for asynchronous synthesis. After returning to the main thread, check `IsCurrent` before playback. A replaced line, closed window, scene/session change, disposal or shutdown invalidates the lease. A stale completion cannot reacquire an old line. Providers must honor cancellation; the API does not own their audio devices or task scheduler.
 
 All snapshots, subscriptions and presentation claims are transient. This service does not record persistent choices or outcomes. Persisted story state belongs to the story API; additional narrative information remains custom mod data.
+
+## Named story characters
+
+`ModApi.Services.Dialogue.Characters` makes story characters exist as ordinary clickable
+NPCs, and attaches owner content to characters the game already owns. The game rebuilds
+characters freshly on every registry lookup; declarations are consulted at that moment
+and again on every click, so content survives save/load and repeated station boarding
+without consumer patches, caching or bookkeeping, and nothing is written to saves.
+
+```csharp
+var characters = ModApi.Services.Dialogue.Characters;
+// A character the game does not have. Place ricko.LookupName wherever the game
+// expects a character name, such as a station's persisted character list.
+_ricko = characters.Introduce(pluginId,
+    new StoryCharacterDefinition("ricko", "Ricko", "Luminate Ship Mechanic", portraitOf: "Voss"),
+    conversation: () => CurrentStep switch
+    {
+        DeliveryPending => new CharacterConversation(new[]
+        {
+            CharacterLine.Self("Still need those canisters."),
+            CharacterLine.Captain("We're on it."),
+        }),
+        Handoff => new CharacterConversation(new[] { CharacterLine.Self("That's everything. Thank you.") },
+            completed: CompleteDelivery),
+        _ => null,
+    },
+    missionHighlights: new[] { MissionId });
+// Owner content on a game character, without owning its identity.
+_arle = characters.Extend(pluginId, "LuminateCommander",
+    conversation: () => OfferAvailable ? OfferConversation() : null,
+    missionHighlights: new[] { MissionId });
+```
+
+- **Introduce** creates an owner-scoped character. Its `LookupName` embeds the provider,
+  so two mods introducing similar names can never collide or capture each other's NPC;
+  the display name is the definition's `Name`. The conversation callback is asked for
+  the current conversation on each click — a natural place for arc state machines — and
+  null shows nothing. Same-provider duplicate local identities are rejected; disposing
+  a registration frees its identity for re-declaration.
+- **Extend** attaches to the registry name of a game-owned character (for example
+  `LuminateCommander`, whose display name is Arle). Extensions are consulted in
+  registration order before the character's own dialogue; the first conversation wins
+  and null falls back to vanilla. Multiple owners may extend one character; one owner's
+  fault or disposal never silences another owner or the character itself.
+- Lines speak as the character (`Self`), the player's captain, the ship AI, or any
+  named character — including other introduced ones via their lookup names. Portraits
+  are reused from a named game character; there is no asset-path surface. `Completed`
+  runs once when the conversation finishes and is the place to advance mission state.
+- `missionHighlights` lists native mission identities for the game's own offer marker;
+  whether the marker shows still follows the game's mission state.
+
+Every unrelated lookup stays completely vanilla. While the integration is unavailable,
+declarations are retained but resolve nothing, and extended characters behave stock.
+Consumer callbacks are isolated: a fault is reported once and that click falls back to
+vanilla. Registration, disposal and callbacks are main-thread-only. Character content
+is transient API-owned presentation; persisted mission progress belongs to the story
+API and saves are never written by this service. A station list entry naming an owned
+`LookupName` is consumer-placed data with the same lifetime rules as any other entry
+there; when the owner is absent, the game's registry simply reports that name unknown,
+as it does today for any missing character.

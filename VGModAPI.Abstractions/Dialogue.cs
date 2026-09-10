@@ -35,4 +35,6 @@ public interface IDialogueService : IServiceStatus
     IDisposable Subscribe(Action<DialogueSnapshot> observer);
     /// <summary>First claimant owns this line's optional presentation. Does not stop or replace vanilla dialogue.</summary>
     IDialoguePresentation? TryAcquirePresentation(string ownerId, Guid conversationId, long sequence);
+    /// <summary>Introduced and extended named story characters.</summary>
+    IStoryCharacterService Characters { get; }
 }

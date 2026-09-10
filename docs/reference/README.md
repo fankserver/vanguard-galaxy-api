@@ -12,6 +12,6 @@
 - Boarding: [operations and policies](boarding-contract.md), [authored dungeons](dungeon-content.md), [reward and settlement](dungeon-settlement.md), [save/load boundaries](dungeon-save-load.md), [panel integration](dungeon-panel.md)
 - [Forge and refinery](recipes.md)
 - [Owned items](owned-items.md), [owned recipes](owned-recipes.md) and [inventories](inventories.md)
-- [Persistent world content](world-content.md), [dialogue](dialogue.md) and [navigation](navigation.md)
+- [Persistent world content](world-content.md), [dialogue and story characters](dialogue.md) and [navigation](navigation.md)
 - [Shared HUD and presentation](hud.md) and [consumer-owned gameplay UI](gameplay-ui.md)
 - [Mod information](mod-information.md) and [publishing mod updates](mod-update-publishing.md)
