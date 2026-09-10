@@ -177,3 +177,71 @@ Nested state must satisfy the supported data-only contract at creation, save and
 Successful creation/lookup results carry a `PoiId` for `StoryObjective.TravelTo`. Reserved world targets are checked through the world's restored inventory and exact native membership, not the vanilla lookup alone. Story provider segments resolve to authenticated host plugin IDs; references to another world's owner are refused. These read-only checks work during `PlayerReady` after world reconstruction, before dependent story/bar restoration, while public creation remains blocked during dispatch. Missing or unready world dependency inspection is unknown, never proof of existence.
 
 Mission references resolve after world reconstruction, with dependent story and bar restoration ordered accordingly. Save/load, cross-slot changes, save-as/rollback, failed saves, missing providers and declaration migration use the coordinated persistence and lifetime checks rather than provider-authored rebuild hooks.
+
+## Authored pocket systems
+
+`IWorldProvider` also authors enclosed pocket systems for bespoke encounters, alongside
+the Combat-site surface. Register an immutable `AuthoredSystemDefinition` before starting
+a session, then create the pocket for the current game with an author-local occurrence key.
+
+```csharp
+provider.RegisterAuthoredSystem(new AuthoredSystemDefinition("my-pocket", 1, "The Hollow"));
+var created = provider.CreateAuthoredSystem(sessionId, "my-pocket", "act3-pocket", "anchorsystem-guid");
+if (created.Succeeded)
+{
+    var systemId = created.SystemId;        // owned pocket system identity (travel target)
+    var entrance = created.EntranceGatePoiId; // anchor-side jump gate
+    var pocketGate = created.PocketGatePoiId; // pocket-side peer jump gate
+}
+```
+
+A pocket system is anchored next to an existing system and created with **no storyteller**,
+so vanilla generates nothing inside it; it is reachable only through its paired entrance
+jump gate. The API creates the owned occurrence for the current game if it does not exist
+and **owns every native identity** (system guid and both gate guids). You never supply a
+native or instance GUID; you only name the occurrence with an author-local key.
+
+Re-declaring the same key **reconciles to the owned occurrence** instead of creating a
+duplicate. A foreign or ambiguous native identity is never adopted. The occurrence,
+its gate pairing and its declarative gate state live inside the same sealed save envelope
+as other owned world content, so ownership survives reload, save-as and rollback; a brand
+new game starts with no bleed from an earlier one.
+
+### Entrance gate state
+
+Gate access is declarative and persisted as supported state — you do not need a per-frame
+unhide/open repair loop:
+
+```csharp
+var reference = new AuthoredSystemReference("your-plugin-id", "my-pocket", "act3-pocket");
+provider.SetAuthoredSystemEntranceOpen(sessionId, reference, open: true);  // opens both paired gates
+provider.SetAuthoredSystemEntranceOpen(sessionId, reference, open: false); // closes both
+```
+
+Opening unpairs and unhides **both** the entrance gate and the pocket-side peer together;
+closing does the reverse. The declared state is a reconciled invariant: on load and on
+later ticks the API re-applies it, so a drifted save converges back to the declared state.
+
+### Reconstruction and failures
+
+Query typed per-occurrence reconciliation state at any time:
+
+```csharp
+var state = provider.GetAuthoredSystemReconstructionState(reference);
+if (state.Reconstructed) { /* pocket is live with its native identity */ }
+else if (state.Status == AuthoredSystemReconstructionStatus.Failed) { /* state.Reason explains why */ }
+```
+
+Reasons: `MissingDefinition`, `RevisionMismatch`, `NativeMissing`, `AmbiguousIdentity`,
+`PersistenceUnavailable`. Excess occurrences converge or report; a pocket whose native
+system cannot be located reports `NativeMissing`, and a re-declared definition whose
+revision no longer matches the owned occurrence reports `RevisionMismatch`.
+
+Once per session, at the post-reconstruction safe boundary, one
+`AuthoredSystemReconstructionSettled` event reports the actual reconciliation outcomes
+(failures by occurrence). An empty failure list means every declared occurrence
+reconstructed. After that point you can still query each occurrence's live status.
+
+Creation is gameplay-intent only; expected-session identity is an internal invariant.
+`RegisterAuthoredSystem` is pre-session; `CreateAuthoredSystem`, `SetAuthoredSystemEntranceOpen`
+and the status query require a ready session and available persistence.

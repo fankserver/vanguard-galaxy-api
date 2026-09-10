@@ -65,4 +65,15 @@ public interface IWorldProvider : IDisposable
     WorldSiteResult FindPersistentCombatSite(Guid expectedSessionId, WorldSiteReference reference);
     /// <summary>Creates a persistent site in an existing system. Supported state is saved automatically; no provider save hooks are required.</summary>
     WorldSiteResult CreatePersistentCombatSite(Guid expectedSessionId, string localId, Guid instanceId, string systemId, float x, float y);
+
+    /// <summary>Declares an enclosed authored pocket system. Optional exact previous declaration permits a revision/name migration.</summary>
+    WorldStatus RegisterAuthoredSystem(AuthoredSystemDefinition definition, AuthoredSystemDefinition? previous = null);
+    /// <summary>Creates or reconciles an owned pocket system for the current game, keyed by an author-local occurrence key. The API owns all native identity.</summary>
+    AuthoredSystemResult CreateAuthoredSystem(Guid expectedSessionId, string localId, string occurrenceKey, string anchorSystemId);
+    /// <summary>Declarative entrance-gate state for an owned pocket; persisted as supported state, not a callback.</summary>
+    WorldStatus SetAuthoredSystemEntranceOpen(Guid expectedSessionId, AuthoredSystemReference reference, bool open);
+    /// <summary>Typed per-occurrence reconciliation state for the current game.</summary>
+    AuthoredSystemReconstructionState GetAuthoredSystemReconstructionState(AuthoredSystemReference reference);
+    /// <summary>Reports actual reconciliation outcomes once per session at the post-reconstruction safe boundary.</summary>
+    event Action<ReconstructionSettledEvent>? AuthoredSystemReconstructionSettled;
 }

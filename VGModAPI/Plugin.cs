@@ -973,6 +973,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         _dungeonRecovery?.Poll();
         _boarding?.Poll();
         _adapter?.Poll(); _missions?.Poll();
+        MaintainAuthoredSystems();
         if (_travel != null)
         {
             // A genuine travel adapter fault (main-thread violation) disables the whole group.

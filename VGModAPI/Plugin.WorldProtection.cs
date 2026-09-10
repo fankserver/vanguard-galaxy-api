@@ -20,7 +20,22 @@ public sealed partial class Plugin
     private WorldPersistenceBindings? _worldPersistence;
     private WorldContentService? _worldContent;
     private WorldReferenceResolver? _worldReferences;
+    private AuthoredSystemRegistry? _authoredDefinitions;
+    private AuthoredSystemCoordinator? _authoredCoordinator;
+    private double _authoredDue;
     private bool _worldAvailable;
+
+    /// <summary>Slow-cadence reconciled-invariant convergence for authored pocket systems; fails open.</summary>
+    private void MaintainAuthoredSystems()
+    {
+        if (_authoredCoordinator == null) return;
+        if (UnityEngine.Time.time < _authoredDue) return;
+        _authoredDue = UnityEngine.Time.time + 2.0;
+        var current = _hub?.CurrentSession;
+        if (current == null || current.Phase != SessionPhase.GameplayInitialized) return;
+        try { _authoredCoordinator.Reconcile(current.Id); }
+        catch (Exception error) { Logger.LogError(error); }
+    }
 
     private void InitializeWorldProtection()
     {
@@ -48,14 +63,38 @@ public sealed partial class Plugin
                 ?? throw new MissingMethodException("SalvageData..ctor()");
             var lifetime = new WorldLifetimeGuard();
             var creation = new WorldCreationCoordinator(new WorldNativeAttachment(_adapter, inspectProfile), _hub.CheckThread, lifetime, inspectProfile);
+            // Authored-pocket integration is fail-open: a binding failure disables only authored systems,
+            // never the shared Combat-site machine. Generalizing the owned chain to kinds (system + gates)
+            // is the follow-up unification slice (see #233 keyed-ownership pass).
+            AuthoredSystemCoordinator? authored = null;
+            try
+            {
+                _authoredDefinitions = new AuthoredSystemRegistry(authenticate, _hub.CheckThread);
+                authored = new AuthoredSystemCoordinator(_hub, _authoredDefinitions,
+                    new WorldNativeAuthored(_adapter, assembly),
+                    admission, session => _worldPersistence != null && _worldPersistence.StateReady(session),
+                    _ => { });
+                _authoredCoordinator = authored;
+            }
+            catch (Exception authoredError)
+            {
+                _authoredDefinitions?.Dispose(); _authoredDefinitions = null; _authoredCoordinator = null;
+                _hub.SetCapability("authored-systems", false, "Authored-system integration unavailable: " + authoredError.GetType().Name);
+                Logger.LogError(authoredError);
+            }
             _worldLifetimeHost = new WorldLifetimeHookHost(assembly, _hub, lifetime, new WorldActorPhysics(assembly).Stop,
                 session => { creation.Refuse(session); _story?.RefreshWorldDependencies(); }, inspectProfile);
-            _worldSnapshotHost = new WorldSnapshotHookHost(_hub, new WorldSnapshotRecorder(new WorldJsonInspection(assembly, emptyProfile, RestoreOwnedItem, RestoreOwnedRecipe)), creation.Snapshot, () => { requireContext(); return creation.Revision; }, requireContext);
-            _worldPersistence = new WorldPersistenceBindings(_persistence, _hub, _worldLoadHost, _worldSnapshotHost, creation);
+            _worldSnapshotHost = new WorldSnapshotHookHost(_hub, new WorldSnapshotRecorder(
+                new WorldJsonInspection(assembly, emptyProfile, RestoreOwnedItem, RestoreOwnedRecipe),
+                authored == null ? null : () => authored.CaptureBytes()),
+                creation.Snapshot, () => { requireContext(); return creation.Revision; }, requireContext);
+            _worldPersistence = new WorldPersistenceBindings(_persistence, _hub, _worldLoadHost, _worldSnapshotHost, creation,
+                authored == null ? null : (session, bytes) => authored.RestoreRows(session,
+                    bytes == null ? Array.Empty<AuthoredSystemOccurrence>() : AuthoredSystemStateCodec.Decode(bytes)));
             _worldRuntime = new WorldRuntimeState(_adapter, _worldLoadHost, definitions, creation,
                 lifetime, _worldPersistence.StateReady, admission);
             _worldReferences = new WorldReferenceResolver(_hub, creation, definitions, _worldPersistence, _worldLifetimeHost);
-            _worldContent = new WorldContentService(_hub, definitions, new WorldAuthoringGate(definitions, creation, _worldPersistence.CanMutate), admission, () => { try { _story?.RefreshWorldDependencies(); } finally { _worldLifetimeHost?.MaintainActors(); } }, _ambientTraffic ??= new AmbientTrafficService(_hub), _unitProtection ??= new UnitProtectionService(_hub), _droneBays ??= new DroneBayService(_hub));
+            _worldContent = new WorldContentService(_hub, definitions, new WorldAuthoringGate(definitions, creation, _worldPersistence.CanMutate), admission, () => { try { _story?.RefreshWorldDependencies(); } finally { _worldLifetimeHost?.MaintainActors(); } }, _ambientTraffic ??= new AmbientTrafficService(_hub), _unitProtection ??= new UnitProtectionService(_hub), _droneBays ??= new DroneBayService(_hub), _authoredDefinitions, authored);
             var selected = WorldNativeBindings.Methods.Where(m => m.Key == "worldPoiRead" || m.Key == "worldRecall" || m.Key == "worldCombatUpdate" || m.Key == "worldRemove" || m.Key == "worldSnapshot" || m.Key == "worldStore" || m.Key == "worldActiveUpdate" || m.Key == "worldCanTravel" || m.Key == "worldRoute" || m.Key == "worldBaseArrival" || m.Key == "worldCombatArrival" || m.Key == "worldSpawnPersistable" || m.Key == "worldSpawnUnit" || m.Key == "worldManagerStart" || m.Key == "worldManagerUpdate" || m.Key == "worldSecurityPatrol" || m.Key == "worldManagerInit" || m.Key == "worldInitializePoi" || m.Key == "worldInitializationComplete" || m.Key == "worldBaseAwake" || m.Key == "worldCombatAwake" || m.Key == "worldStoreLastX" || m.Key == "worldStorePosition" || m.Key == "worldIncomingReinforcements" || m.Key == "worldCreateSecurityPatrol" || m.Key == "worldStartTravel" || m.Key == "worldNextWaypoint" || m.Key == "worldTravelChild" || m.Key == "worldCheckLocalScene" || m.Key == "worldUnloadScene" || m.Key == "worldWaitUnload" || m.Key == "worldCancelTravel" || m.Key == "worldGenerate" || m.Key == "worldRegenerateGuards" || m.Key == "worldRegenerateCargo" || m.Key == "worldRegenerateSalvage" || m.Key == "worldRegenerateAsteroids" || m.Key == "worldRebuildStation" || m.Key == "worldJumpgateWave" || m.Key == "worldDeferGeneration" || m.Key == "worldPayloadUpdate" || m.Key == "worldPayloadTrigger" || m.Key == "worldPayloadSpawn" || m.Key == "worldPoiAddPersistable" || m.Key == "worldPoiRemovePersistable" || m.Key == "worldPoiAddUnit" || m.Key == "worldPoiRemoveUnit" || m.Key == "worldPoiAddPayload" || m.Key == "worldAddTriggered" || m.Key == "worldAddBudgetPayload" || m.Key == "worldAddFixedPayload" || m.Key == "worldActorAwake" || m.Key == "worldActorStart" || m.Key == "worldActorUpdate" || m.Key == "worldActorPhysics" || m.Key == "worldShipStart" || m.Key == "worldShipUpdate" || m.Key == "worldActorSetData" || m.Key == "worldShipSetData" || m.Key == "worldActorModules" || m.Key == "worldActorDamage" || m.Key == "worldShipDamage" || m.Key == "worldActorCollisionEnter" || m.Key == "worldActorCollisionStay" || m.Key == "worldPersistableStart" || m.Key == "worldPersistableUpdate" || m.Key == "worldBudgetBuilder" || m.Key == "worldSalvageReset" || m.Key == "worldSalvageAdd" || m.Key == "worldSalvageSlot" || m.Key == "worldSalvageDescriptor" || m.Key.StartsWith("worldEmpty", StringComparison.Ordinal) || m.Key.StartsWith("worldActorRoutine", StringComparison.Ordinal)).ToArray();
             var targets = new GameBindings(assembly).Resolve(selected);
             _worldLoadHarmony = new Harmony(ModApi.PluginId + ".world-load");
@@ -146,6 +185,8 @@ public sealed partial class Plugin
             _hub.SetCapability("world-save-protection", true, "Owned world state participates in coordinated saves.");
             _hub.SetCapability("world-load-protection", true, "Owned world state is restored before dependent content.");
             _hub.SetCapability("world-authoring", true, "Persistent Combat sites are available to authenticated providers in ready sessions.");
+            if (authored != null)
+                _hub.SetCapability("authored-systems", true, "Authored pocket systems are available to authenticated providers in ready sessions.");
         }
         catch (Exception error)
         {
@@ -170,7 +211,8 @@ public sealed partial class Plugin
         _worldAvailable = false;
         _worldReferences = null;
         try { _worldContent?.Dispose(); }
-        finally { StopWorldGuards(); }
+        finally { _authoredCoordinator?.Dispose(); StopWorldGuards(); }
+        _authoredCoordinator = null;
     }
 
     private void StopWorldGuards()
@@ -188,7 +230,7 @@ public sealed partial class Plugin
                     finally
                     {
                         try { _worldPersistence?.Dispose(); }
-                        finally { _worldDefinitions?.Dispose(); }
+                        finally { _authoredDefinitions?.Dispose(); _worldDefinitions?.Dispose(); }
                     }
                 }
             }
