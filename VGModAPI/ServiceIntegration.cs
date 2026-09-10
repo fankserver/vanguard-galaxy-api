@@ -40,7 +40,8 @@ public sealed partial class Plugin
         _worldDefinitions ??= new WorldDefinitionRegistry((_, _) => null, hub.CheckThread);
         var ambient = _ambientTraffic ??= new AmbientTrafficService(hub);
         var protection = _unitProtection ??= new UnitProtectionService(hub);
-        _worldContent ??= new WorldContentService(hub, _worldDefinitions, null!, () => false, null, ambient, protection);
+        var droneBays = _droneBays ??= new DroneBayService(hub);
+        _worldContent ??= new WorldContentService(hub, _worldDefinitions, null!, () => false, null, ambient, protection, droneBays);
         _ownedItems ??= CreateOwnedItems();
         _ownedRecipes ??= CreateOwnedRecipes();
         _inventoryService ??= CreateInventories();
@@ -56,6 +57,7 @@ public sealed partial class Plugin
         hub.Services.AfterStopped(_gameplayUi.Dispose);
         hub.Services.AfterStopped(ambient.Dispose);
         hub.Services.AfterStopped(protection.Dispose);
+        hub.Services.AfterStopped(droneBays.Dispose);
         hub.Services.AfterStopped(storyCharacters.Dispose);
         hub.Services.AfterStopped(StopDialogue);
         hub.Services.AfterStopped(StopNavigation);

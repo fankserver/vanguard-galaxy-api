@@ -52,6 +52,8 @@ public interface IWorldService : IServiceStatus
     IAmbientTrafficService AmbientTraffic { get; }
     /// <summary>Runtime-only survivability for story-critical unit instances.</summary>
     IUnitProtectionService UnitProtection { get; }
+    /// <summary>Instance-scoped drone-bay tuning for authored encounters.</summary>
+    IDroneBayService DroneBays { get; }
 }
 
 public interface IWorldProvider : IDisposable
