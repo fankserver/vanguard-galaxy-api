@@ -9,6 +9,7 @@
     <Compile Include="../VGModAPI/Patches/WorldLifetimePatches.cs" Link="WorldLifetimePatches.cs" />
     <Compile Include="../VGModAPI/Patches/WorldSnapshotPatches.cs" Link="WorldSnapshotPatches.cs" />
     <Compile Include="../VGModAPI/Patches/BoardingPatches.cs" Link="BoardingPatches.cs" />
+    <Compile Include="../VGModAPI/Patches/AmbientTrafficPatches.cs" Link="AmbientTrafficPatches.cs" />
     <Compile Include="../VGModAPI/Patches/DungeonRewardPatches.cs" Link="DungeonRewardPatches.cs" />
     <Compile Include="../VGModAPI/Patches/DungeonCrewResumePatches.cs" Link="DungeonCrewResumePatches.cs" />
     <Compile Include="../VGModAPI/Patches/DungeonTerminalRecoveryPatches.cs" Link="DungeonTerminalRecoveryPatches.cs" />

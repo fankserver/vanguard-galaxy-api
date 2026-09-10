@@ -38,7 +38,8 @@ public sealed partial class Plugin
         _story ??= new StoryContentService(hub.Services, null, hub, StoryHostAuthentication.Resolve, checkThread: hub.CheckThread);
         _bars ??= new BarContentService(null, hub, StoryHostAuthentication.Resolve, _ => false, hub.CheckThread);
         _worldDefinitions ??= new WorldDefinitionRegistry((_, _) => null, hub.CheckThread);
-        _worldContent ??= new WorldContentService(hub, _worldDefinitions, null!, () => false);
+        var ambient = _ambientTraffic ??= new AmbientTrafficService(hub);
+        _worldContent ??= new WorldContentService(hub, _worldDefinitions, null!, () => false, null, ambient);
         _ownedItems ??= CreateOwnedItems();
         _ownedRecipes ??= CreateOwnedRecipes();
         _inventoryService ??= CreateInventories();
@@ -51,6 +52,7 @@ public sealed partial class Plugin
         foreach (var service in new IDisposable[] { mods, missions, travel, station, _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService, _boardingCombat, _dungeonRewards, _boardingCommands, _boardingTactics, _boardingService, _dungeonSettlement, _dungeonPanelService, _dungeons, _story, _bars })
             hub.Services.AfterStopped(service.Dispose);
         hub.Services.AfterStopped(_gameplayUi.Dispose);
+        hub.Services.AfterStopped(ambient.Dispose);
         hub.Services.AfterStopped(StopDialogue);
         hub.Services.AfterStopped(StopNavigation);
         hub.Services.AfterStopped(StopInventories);
