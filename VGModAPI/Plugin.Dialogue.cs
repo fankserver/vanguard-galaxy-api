@@ -13,7 +13,7 @@ public sealed partial class Plugin
     private Harmony? _dialogueHarmony;
     private void InitializeDialogue()
     {
-        _dialogueService = new DialogueService(_hub!.Services.Get("dialogue"), _hub.CheckThread, error => _hub.ReportSubscriberFailure("dialogue", error));
+        _dialogueService = new DialogueService(_hub!.Services.Get("dialogue"), _hub.CheckThread, error => _hub.ReportSubscriberFailure("dialogue", error), _storyCharacters ??= new StoryCharacterService(_hub));
         _hub.SetCapability("dialogue", false, "Dialogue bindings are initializing.");
         try
         {

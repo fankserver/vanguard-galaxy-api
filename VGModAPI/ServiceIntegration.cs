@@ -45,7 +45,8 @@ public sealed partial class Plugin
         _ownedRecipes ??= CreateOwnedRecipes();
         _inventoryService ??= CreateInventories();
         _navigationService ??= CreateNavigation();
-        _dialogueService ??= new DialogueService(hub.Services.Get("dialogue"), hub.CheckThread, error => hub.ReportSubscriberFailure("dialogue", error));
+        var storyCharacters = _storyCharacters ??= new StoryCharacterService(hub);
+        _dialogueService ??= new DialogueService(hub.Services.Get("dialogue"), hub.CheckThread, error => hub.ReportSubscriberFailure("dialogue", error), storyCharacters);
         var root = new ModServices(lifecycle, mods, (_persistence ??= new PersistenceService(hub)), missions, travel, station,
             _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService, _boardingCombat, _dungeonRewards, _boardingCommands, _boardingTactics, _boardingService, _dungeonSettlement, _dungeonPanelService, _dungeons, _story, _bars, _worldContent, _dialogueService, _navigationService, _ownedItems, _ownedRecipes, _inventoryService, _gameplayUi);
         // Deferred cleanup preserves terminal lifecycle delivery when shutdown starts inside a callback.
@@ -55,6 +56,7 @@ public sealed partial class Plugin
         hub.Services.AfterStopped(_gameplayUi.Dispose);
         hub.Services.AfterStopped(ambient.Dispose);
         hub.Services.AfterStopped(protection.Dispose);
+        hub.Services.AfterStopped(storyCharacters.Dispose);
         hub.Services.AfterStopped(StopDialogue);
         hub.Services.AfterStopped(StopNavigation);
         hub.Services.AfterStopped(StopInventories);

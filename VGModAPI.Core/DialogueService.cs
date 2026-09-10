@@ -21,8 +21,10 @@ internal sealed class DialogueService : IDialogueService, IDisposable
     public event Action<ServiceAvailability>? AvailabilityChanged
     { add => _status.AvailabilityChanged += value; remove => _status.AvailabilityChanged -= value; }
     public DialogueSnapshot? Current { get { _checkThread(); return _current; } }
-    internal DialogueService(IServiceStatus status, Action checkThread, Action<Exception> report)
-    { _status = status; _checkThread = checkThread; _report = report; }
+    private readonly StoryCharacterService _characters;
+    public IStoryCharacterService Characters { get { _checkThread(); return _characters; } }
+    internal DialogueService(IServiceStatus status, Action checkThread, Action<Exception> report, StoryCharacterService characters)
+    { _status = status; _checkThread = checkThread; _report = report; _characters = characters ?? throw new ArgumentNullException(nameof(characters)); }
 
     public IDisposable Subscribe(Action<DialogueSnapshot> observer)
     {
