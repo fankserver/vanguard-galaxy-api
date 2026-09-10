@@ -131,6 +131,20 @@ internal sealed class StoryNativeBindings
     private static FieldInfo Field(Type type, string name) => type.GetField(name,
         BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly)
         ?? throw new MissingFieldException(type.FullName, name);
+    /// <summary>Every identity field the kill/gather kinds carry must still match the retained definition.</summary>
+    private bool GatherIdentityMatches(object objective, StoryObjective expected)
+    {
+        if ((int)FieldInherited(objective.GetType(), "requiredAmount").GetValue(objective)! != expected.RequiredAmount) return false;
+        if (expected.Kind == StoryObjectiveKind.KillEnemies)
+        {
+            var faction = FieldInherited(objective.GetType(), "enemyFaction").GetValue(objective);
+            return faction != null && (string?)PropertyInherited(_faction, "identifier").GetValue(faction) == expected.EnemyFactionId;
+        }
+        var item = FieldInherited(objective.GetType(), "itemType").GetValue(objective);
+        if (expected.ItemTypeId == null ? item != null : item == null || (string?)Property(_itemType, "identifier").GetValue(item) != expected.ItemTypeId) return false;
+        return (string?)FieldInherited(objective.GetType(), "targetPOI").GetValue(objective) == expected.TargetPoiId;
+    }
+
     /// <summary>Walks the inheritance chain: Salvage declares its gather fields on its Mining base, exactly like the game.</summary>
     private static FieldInfo FieldInherited(Type type, string name)
     {
@@ -401,7 +415,7 @@ internal sealed class StoryNativeBindings
             case StoryObjectiveKind.MineItems:
             case StoryObjectiveKind.SalvageItems:
             case StoryObjectiveKind.KillEnemies:
-                if ((int)FieldInherited(objective.GetType(), "requiredAmount").GetValue(objective)! != expected.RequiredAmount) return null;
+                if (!GatherIdentityMatches(objective, expected)) return null;
                 progress = Math.Min(expected.RequiredAmount, Math.Max(0, (int)PropertyInherited(objective.GetType(), "currentAmount").GetValue(objective)!));
                 break;
             default: return null;
@@ -421,6 +435,8 @@ internal sealed class StoryNativeBindings
             var refreshedItem = Field(objective.GetType(), "itemType").GetValue(objective);
             if (refreshedItem == null || (string?)Property(_itemType, "identifier").GetValue(refreshedItem) != expected.ItemTypeId) return null;
         }
+        if (slot.Kind is StoryObjectiveKind.MineItems or StoryObjectiveKind.SalvageItems or StoryObjectiveKind.KillEnemies
+            && !GatherIdentityMatches(objective, expected)) return null;
         return progress;
     }
 

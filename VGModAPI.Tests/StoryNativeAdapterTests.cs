@@ -170,6 +170,11 @@ public sealed class StoryNativeAdapterTests : IDisposable
             heldKill.currentAmount = 3;
             Assert.Equal(3, world.ReadProgress(identifier, killSlot, objectives[2], () => true));
             Assert.Null(world.ReadProgress(identifier, killSlot, StoryObjective.KillEnemies(9, new StoryFactionId("TradingGuild")).WithKey("repel"), () => true));
+            // A swapped identity refuses the read outright - amount alone is not the objective's identity.
+            heldKill.enemyFaction = new Source.Galaxy.Faction { identifier = "SomeoneElse" };
+            Assert.Null(world.ReadProgress(identifier, killSlot, objectives[2], () => true));
+            heldMine.targetPOI = "elsewhere";
+            Assert.Null(world.ReadProgress(identifier, mineSlot, objectives[1], () => true));
         }
         finally { Behaviour.Item.InventoryItemType.TestItems.Clear(); }
     }

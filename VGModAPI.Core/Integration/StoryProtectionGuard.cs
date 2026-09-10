@@ -14,9 +14,10 @@ namespace VGModAPI.Runtime;
 /// <see cref="StoryNativeBindings"/>, because the guards must work when the story module itself is
 /// disabled, unbound or absent — that is exactly when an orphaned owned mission is dangerous.
 ///
-/// It also verifies that every objective kind this API can install uses the BASE trigger method, so
-/// the one guard on that method really does cover everything the API can put into a save. A kind that
-/// overrode it would need its own guard, so binding refuses instead of quarantining incompletely.
+/// It also verifies the trigger-override map of every installable kind matches the guard catalog:
+/// kinds WITH a dedicated guard binding (Scripted, KillEnemies, MineItems) must declare the override
+/// that binding patches, kinds WITHOUT one must ride a patched method (the base guard, or Mining's
+/// patched override for Salvage). Any mismatch refuses binding instead of quarantining incompletely.
 /// </summary>
 internal sealed class StoryProtectionGuard
 {
@@ -43,16 +44,32 @@ internal sealed class StoryProtectionGuard
             BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             ?? throw new MissingMethodException(objective.FullName, "ProcessMissionTrigger");
         if (!trigger.IsVirtual) throw new MissingMethodException(objective.FullName, "ProcessMissionTrigger");
+        // Kinds whose vanilla types declare their own trigger override, each covered by a dedicated
+        // guard binding in the catalog (Harmony on the base method does not cover overrides).
+        var guarded = new Dictionary<StoryObjectiveKind, bool>
+        {
+            [StoryObjectiveKind.Scripted] = true,
+            [StoryObjectiveKind.KillEnemies] = true,
+            [StoryObjectiveKind.MineItems] = true,
+        };
         foreach (StoryObjectiveKind kind in Enum.GetValues(typeof(StoryObjectiveKind)))
         {
             if (StoryContentPolicy.RefuseObjective(kind) != null) continue;      // not installable anyway
             var type = assembly.GetType(StoryContentPolicy.ObjectiveNamespace + "." + StoryContentPolicy.ObjectiveTypeName(kind), true)!;
-            // The scripted override has its own mandatory catalog binding and identical guard prefix.
-            if (kind == StoryObjectiveKind.Scripted) continue;
-            if (type.GetMethod("ProcessMissionTrigger",
-                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly) != null)
+            var declared = type.GetMethod("ProcessMissionTrigger",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly);
+            if (guarded.ContainsKey(kind))
+            {
+                // The dedicated binding patches THIS declared override; a game version that removed
+                // it would leave the catalog binding unresolvable, so both sides must agree.
+                if (declared == null || !declared.IsVirtual)
+                    throw new NotSupportedException("Objective '" + type.FullName
+                        + "' no longer declares the ProcessMissionTrigger override its guard binding patches.");
+                continue;
+            }
+            if (declared != null)
                 throw new NotSupportedException("Objective '" + type.FullName
-                    + "' overrides ProcessMissionTrigger, so the base guard would not cover it.");
+                    + "' overrides ProcessMissionTrigger, so no existing guard would cover it.");
         }
     }
 

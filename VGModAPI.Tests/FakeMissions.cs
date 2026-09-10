@@ -73,6 +73,9 @@ namespace Source.MissionSystem.Objectives
         public string? targetPOI;
         public int currentAmount { get; set; }
         public override bool IsComplete() => currentAmount >= requiredAmount;
+        /// <summary>Models the real game: Mining declares the trigger override; Salvage inherits it.</summary>
+        public override void ProcessMissionTrigger(Source.MissionSystem.MissionTrigger trigger, object data)
+            => currentAmount = System.Math.Min(currentAmount + (data is int amount ? amount : 1), requiredAmount);
         public override string ToJson() => "{mine:" + (itemType?.identifier ?? "any") + ":" + currentAmount + "/" + requiredAmount + "@" + targetPOI + "}";
     }
     public class Salvage : Mining
