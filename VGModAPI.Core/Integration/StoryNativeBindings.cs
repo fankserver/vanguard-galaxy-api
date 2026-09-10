@@ -131,6 +131,15 @@ internal sealed class StoryNativeBindings
     private static FieldInfo Field(Type type, string name) => type.GetField(name,
         BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly)
         ?? throw new MissingFieldException(type.FullName, name);
+    private string PoiGuid(object poi) => (string?)PropertyInherited(poi.GetType(), "guid").GetValue(poi)
+        ?? throw new InvalidOperationException("The source location has no identity.");
+    private float LastVisited(string poiId)
+    {
+        var galaxy = _galaxyCurrent.GetValue(null);
+        var poi = galaxy == null ? null : _galaxyPoi.Invoke(galaxy, new object[] { poiId });
+        return poi == null ? 0f : (float)FieldInherited(poi.GetType(), "lastVisitedTime").GetValue(poi)!;
+    }
+
     /// <summary>Every identity field the kill/gather kinds carry must still match the retained definition.</summary>
     private bool GatherIdentityMatches(object objective, StoryObjective expected)
     {
@@ -240,7 +249,7 @@ internal sealed class StoryNativeBindings
             _stepDescription.SetValue(native, step.Description);
             _stepRequireAll.SetValue(native, step.RequireAllObjectives);
             var objectives = (IList)_stepObjectives.GetValue(native)!;
-            foreach (var objective in step.Objectives) objectives.Add(CreateObjective(objective));
+            foreach (var objective in step.Objectives) objectives.Add(CreateObjective(objective, mission));
             steps.Add(native);
         }
         var rewards = (IList)_missionRewards.GetValue(mission)!;
@@ -248,7 +257,7 @@ internal sealed class StoryNativeBindings
         return mission;
     }
 
-    private object CreateObjective(StoryObjective objective)
+    private object CreateObjective(StoryObjective objective, object mission)
     {
         var name = StoryContentPolicy.ObjectiveTypeName(objective.Kind);
         var native = _objectiveCreate.Invoke(null, new object[] { name })
@@ -257,7 +266,18 @@ internal sealed class StoryNativeBindings
         {
             case StoryObjectiveKind.TravelToPoi:
                 Field(native.GetType(), "targetPOI").SetValue(native, objective.TargetPoiId);
-                Field(native.GetType(), "requiredVisitTime").SetValue(native, objective.RequiredVisitSeconds);
+                // The native field is a TIMESTAMP FLOOR (lastVisitedTime > requiredVisitTime), not a
+                // dwell duration: a new-visit requirement captures the target's current record.
+                Field(native.GetType(), "requiredVisitTime").SetValue(native,
+                    objective.RequireNewVisit ? LastVisited(objective.TargetPoiId!) : 0f);
+                break;
+            case StoryObjectiveKind.ReturnToSource:
+                // The mission's own source location, resolved per occurrence at build time.
+                var source = _missionSourcePoi.GetValue(mission)
+                    ?? throw new InvalidOperationException("A return-to-source objective needs the mission's source location.");
+                Field(native.GetType(), "targetPOI").SetValue(native, PoiGuid(source));
+                Field(native.GetType(), "requiredVisitTime").SetValue(native,
+                    objective.RequireNewVisit ? (float)FieldInherited(source.GetType(), "lastVisitedTime").GetValue(source)! : 0f);
                 break;
             case StoryObjectiveKind.Scripted:
                 var trigger = Field(native.GetType(), "trigger");
@@ -400,8 +420,14 @@ internal sealed class StoryNativeBindings
                 progress = (int)Math.Min(expected.RequiredAmount, Math.Max(0L, (long)Property(_player, "credits").GetValue(player)!));
                 break;
             case StoryObjectiveKind.TravelToPoi:
-                if ((string?)Field(objective.GetType(), "targetPOI").GetValue(objective) != expected.TargetPoiId
-                    || (float)Field(objective.GetType(), "requiredVisitTime").GetValue(objective)! != expected.RequiredVisitSeconds) return null;
+                // The visit baseline is a per-occurrence timestamp, not identity; the target is.
+                if ((string?)Field(objective.GetType(), "targetPOI").GetValue(objective) != expected.TargetPoiId) return null;
+                progress = (bool)objective.GetType().GetMethod("IsComplete", System.Type.EmptyTypes)!.Invoke(objective, null)! ? 1 : 0;
+                break;
+            case StoryObjectiveKind.ReturnToSource:
+                var missionSource = _missionSourcePoi.GetValue(mission);
+                if (missionSource == null
+                    || (string?)Field(objective.GetType(), "targetPOI").GetValue(objective) != PoiGuid(missionSource)) return null;
                 progress = (bool)objective.GetType().GetMethod("IsComplete", System.Type.EmptyTypes)!.Invoke(objective, null)! ? 1 : 0;
                 break;
             case StoryObjectiveKind.DeliverItems:
@@ -426,8 +452,13 @@ internal sealed class StoryNativeBindings
         if (slot.Kind == StoryObjectiveKind.CollectCredits
             && (int)Field(objective.GetType(), "requiredAmount").GetValue(objective)! != expected.RequiredAmount) return null;
         if (slot.Kind == StoryObjectiveKind.TravelToPoi
-            && ((string?)Field(objective.GetType(), "targetPOI").GetValue(objective) != expected.TargetPoiId
-                || (float)Field(objective.GetType(), "requiredVisitTime").GetValue(objective)! != expected.RequiredVisitSeconds)) return null;
+            && (string?)Field(objective.GetType(), "targetPOI").GetValue(objective) != expected.TargetPoiId) return null;
+        if (slot.Kind == StoryObjectiveKind.ReturnToSource)
+        {
+            var stableSource = _missionSourcePoi.GetValue(mission);
+            if (stableSource == null
+                || (string?)Field(objective.GetType(), "targetPOI").GetValue(objective) != PoiGuid(stableSource)) return null;
+        }
         if (slot.Kind == StoryObjectiveKind.DeliverItems)
         {
             // The native IsComplete refresh is exactly the reentrancy window these trailing checks exist for.

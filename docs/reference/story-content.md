@@ -175,6 +175,16 @@ authored sites from the world service are valid targets, so an exact-count minin
 an exactly balanced ore requirement. Progress is observable through `Snapshot`/`Changed`; the API
 never counts gameplay itself.
 
+`StoryObjective.TravelTo(targetPoiId, requireNewVisit?)` completes on the game's own visit record.
+The native mechanism is a timestamp floor, not dwell time: `requireNewVisit: true` captures the
+target's current visit record when the mission is built, so a player already sitting there must
+leave and come back; the default accepts any recorded visit. `StoryObjective.ReturnToSource()`
+targets the mission's own SOURCE location — wherever the occurrence is actually built/accepted,
+which the game records natively — resolved per occurrence at build time. A campaign can therefore
+begin and end at a vanilla questgiver location without ever knowing a generated guid, and the
+return leg defaults to requiring a fresh visit. Return targets are exempt from registration-time
+target validation (the identity does not exist until the occurrence is built).
+
 The native base objective carries an optional persisted `targetLayer`, but the gathering kinds do
 not consult it when counting (it only informs the ship-capability/HUD hint), so this subset omits
 it **deliberately** — a layer-restricted gather at a mixed-ore field would be a new need, not a
