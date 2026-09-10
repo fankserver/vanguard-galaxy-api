@@ -220,7 +220,8 @@ internal sealed class StoryNativeBindings
     internal object BuildMission(object player, string identifier) => _storyGet.Invoke(null, new[] { player, (object)identifier })!;
 
     /// <summary>Builds the mission body from a definition using vanilla's own factories only.</summary>
-    internal object CreateMission(StoryMissionDefinition definition, string identifier, object? player)
+    internal object CreateMission(StoryMissionDefinition definition, string identifier, object? player,
+        Func<StoryObjective, string?>? resolveAuthored = null)
     {
         var faction = Faction(definition.SourceFaction.Value)
             ?? throw new InvalidOperationException("The game does not know faction '" + definition.SourceFaction + "'.");
@@ -249,7 +250,7 @@ internal sealed class StoryNativeBindings
             _stepDescription.SetValue(native, step.Description);
             _stepRequireAll.SetValue(native, step.RequireAllObjectives);
             var objectives = (IList)_stepObjectives.GetValue(native)!;
-            foreach (var objective in step.Objectives) objectives.Add(CreateObjective(objective, mission));
+            foreach (var objective in step.Objectives) objectives.Add(CreateObjective(objective, mission, resolveAuthored));
             steps.Add(native);
         }
         var rewards = (IList)_missionRewards.GetValue(mission)!;
@@ -257,7 +258,7 @@ internal sealed class StoryNativeBindings
         return mission;
     }
 
-    private object CreateObjective(StoryObjective objective, object mission)
+    private object CreateObjective(StoryObjective objective, object mission, Func<StoryObjective, string?>? resolveAuthored)
     {
         var name = StoryContentPolicy.ObjectiveTypeName(objective.Kind);
         var native = _objectiveCreate.Invoke(null, new object[] { name })
@@ -278,6 +279,17 @@ internal sealed class StoryNativeBindings
                 Field(native.GetType(), "targetPOI").SetValue(native, PoiGuid(source));
                 Field(native.GetType(), "requiredVisitTime").SetValue(native,
                     objective.RequireNewVisit ? (float)FieldInherited(source.GetType(), "lastVisitedTime").GetValue(source)! : 0f);
+                break;
+            case StoryObjectiveKind.TravelToAuthoredSystemEntrance:
+            case StoryObjectiveKind.TravelToAuthoredSite:
+                // The definition names author-local identities; the native destination exists only
+                // per occurrence, so an unresolvable one refuses the BUILD - never a broken step.
+                var destination = resolveAuthored?.Invoke(objective)
+                    ?? throw new InvalidOperationException("The authored destination '" + objective.AuthoredLocalId
+                        + "/" + objective.AuthoredOccurrenceKey + "' does not exist in the loaded game.");
+                Field(native.GetType(), "targetPOI").SetValue(native, destination);
+                Field(native.GetType(), "requiredVisitTime").SetValue(native,
+                    objective.RequireNewVisit ? LastVisited(destination) : 0f);
                 break;
             case StoryObjectiveKind.Scripted:
                 var trigger = Field(native.GetType(), "trigger");
@@ -402,8 +414,10 @@ internal sealed class StoryNativeBindings
         return objectives;
     }
 
-    internal int? ReadProgress(object mission, object player, StoryObjectiveLayout.Slot slot, StoryObjective expected, Func<bool> stillValid)
+    internal StoryObjectiveReading? ReadProgress(object mission, object player, StoryObjectiveLayout.Slot slot, StoryObjective expected,
+        Func<bool> stillValid, Func<StoryObjective, string?>? resolveAuthored = null)
     {
+        bool destinationLost = false;
         var steps = (IList)_missionSteps.GetValue(mission)!;
         if (slot.Step >= steps.Count) return null;
         var step = steps[slot.Step]!;
@@ -428,6 +442,15 @@ internal sealed class StoryNativeBindings
                 var missionSource = _missionSourcePoi.GetValue(mission);
                 if (missionSource == null
                     || (string?)Field(objective.GetType(), "targetPOI").GetValue(objective) != PoiGuid(missionSource)) return null;
+                progress = (bool)objective.GetType().GetMethod("IsComplete", System.Type.EmptyTypes)!.Invoke(objective, null)! ? 1 : 0;
+                break;
+            case StoryObjectiveKind.TravelToAuthoredSystemEntrance:
+            case StoryObjectiveKind.TravelToAuthoredSite:
+                // A destination the world lost is a REPORT, not a refusal: the objective is still
+                // verifiably ours, and only the owner knows what a broken arc should mean.
+                var resolved = resolveAuthored?.Invoke(expected);
+                if (resolved == null) { destinationLost = true; progress = 0; break; }
+                if ((string?)Field(objective.GetType(), "targetPOI").GetValue(objective) != resolved) return null;
                 progress = (bool)objective.GetType().GetMethod("IsComplete", System.Type.EmptyTypes)!.Invoke(objective, null)! ? 1 : 0;
                 break;
             case StoryObjectiveKind.DeliverItems:
@@ -468,7 +491,13 @@ internal sealed class StoryNativeBindings
         }
         if (slot.Kind is StoryObjectiveKind.MineItems or StoryObjectiveKind.SalvageItems or StoryObjectiveKind.KillEnemies
             && !GatherIdentityMatches(objective, expected)) return null;
-        return progress;
+        if (slot.Kind is StoryObjectiveKind.TravelToAuthoredSystemEntrance or StoryObjectiveKind.TravelToAuthoredSite)
+        {
+            var stillResolved = resolveAuthored?.Invoke(expected);
+            if (stillResolved == null) destinationLost = true;
+            else if ((string?)Field(objective.GetType(), "targetPOI").GetValue(objective) != stillResolved) return null;
+        }
+        return destinationLost ? StoryObjectiveReading.Lost : StoryObjectiveReading.Of(progress);
     }
 
     internal bool MigrateScripted(object mission, object player, string identifier, StoryMissionDefinition definition,

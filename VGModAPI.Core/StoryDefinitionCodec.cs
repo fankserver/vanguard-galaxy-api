@@ -23,8 +23,9 @@ internal static class StoryDefinitionCodec
     {
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream, Utf8, true);
-        // Version 2 adds the delivery item identity per objective and the optional reward faction.
-        writer.Write((byte)2);
+        // Version 2 added the delivery item identity per objective and the optional reward faction;
+        // version 3 adds the authored-destination identities per objective.
+        writer.Write((byte)3);
         Text(writer, definition.LocalId); Text(writer, definition.Title); Text(writer, definition.Description);
         Text(writer, definition.SourceFaction.Value); Text(writer, definition.Category); Text(writer, definition.CompletionText);
         writer.Write((byte)definition.Difficulty); writer.Write((byte)definition.Retention); writer.Write(definition.CanAbandon);
@@ -43,6 +44,7 @@ internal static class StoryDefinitionCodec
                 // third meaning; legacy nonzero decodes as new-visit below.
                 writer.Write(objective.RequireNewVisit ? 1f : 0f);
                 Text(writer, objective.Description); Text(writer, objective.ItemTypeId); Text(writer, objective.EnemyFactionId);
+                Text(writer, objective.AuthoredLocalId); Text(writer, objective.AuthoredOccurrenceKey);
             }
         }
         writer.Write((byte)definition.Rewards.Count);
@@ -60,7 +62,7 @@ internal static class StoryDefinitionCodec
         using var stream = new MemoryStream(payload, false);
         using var reader = new BinaryReader(stream, Utf8);
         int version = reader.ReadByte();
-        if (version != 1 && version != 2) throw new InvalidDataException("Unknown definition format.");
+        if (version is not (1 or 2 or 3)) throw new InvalidDataException("Unknown definition format.");
         var local = Required(reader); var title = Required(reader); var description = Required(reader);
         var faction = new StoryFactionId(Required(reader)); var category = Text(reader); var completion = Text(reader);
         var difficulty = (StoryDifficulty)reader.ReadByte(); var retention = (StoryRetention)reader.ReadByte(); var abandon = Boolean(reader);
@@ -80,8 +82,16 @@ internal static class StoryDefinitionCodec
                 bool newVisit = visit != 0;
                 var itemType = version >= 2 ? Text(reader) : null;
                 var enemyFaction = version >= 2 ? Text(reader) : null;
+                var authoredLocal = version >= 3 ? Text(reader) : null;
+                var authoredKey = version >= 3 ? Text(reader) : null;
                 StoryObjective objective = kind switch
                 {
+                    StoryObjectiveKind.TravelToAuthoredSystemEntrance or StoryObjectiveKind.TravelToAuthoredSite
+                        when amount == 0 && target == null && text == null && itemType == null && enemyFaction == null && authoredLocal != null && authoredKey != null
+                        => kind == StoryObjectiveKind.TravelToAuthoredSystemEntrance
+                            ? StoryObjective.TravelToAuthoredSystemEntrance(authoredLocal, authoredKey, newVisit)
+                            : StoryObjective.TravelToAuthoredSite(authoredLocal, authoredKey, newVisit),
+                    _ when authoredLocal != null || authoredKey != null => throw new InvalidDataException("Invalid retained objective shape."),
                     StoryObjectiveKind.TravelToPoi when amount == 0 && text == null && itemType == null && enemyFaction == null => StoryObjective.TravelTo(target!, newVisit),
                     StoryObjectiveKind.CollectCredits when target == null && visit == 0 && text == null && itemType == null && enemyFaction == null => StoryObjective.CollectCredits(amount),
                     StoryObjectiveKind.KillEnemies when target == null && visit == 0 && text == null && itemType == null && enemyFaction != null => StoryObjective.KillEnemies(amount, new StoryFactionId(enemyFaction)),

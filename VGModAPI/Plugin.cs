@@ -406,6 +406,25 @@ public sealed partial class Plugin : BaseUnityPlugin
         }
     }
 
+    /// <summary>
+    /// Resolves a provider's authored-destination objective to the native POI its OWN authored
+    /// occurrence currently holds - entrance gate for systems, site POI for sites - or null while
+    /// the occurrence is absent or not reconstructed in the loaded game.
+    /// </summary>
+    private string? ResolveAuthoredTravelDestination(string hostOwner, StoryObjective objective)
+    {
+        var session = _hub?.CurrentSession;
+        if (session == null || session.Id == Guid.Empty || objective.AuthoredLocalId == null || objective.AuthoredOccurrenceKey == null) return null;
+        return objective.Kind switch
+        {
+            StoryObjectiveKind.TravelToAuthoredSystemEntrance
+                => _authoredCoordinator?.ResolveEntranceGate(hostOwner, objective.AuthoredLocalId, objective.AuthoredOccurrenceKey),
+            StoryObjectiveKind.TravelToAuthoredSite
+                => _siteCoordinator?.ResolveDestination(hostOwner, objective.AuthoredLocalId, objective.AuthoredOccurrenceKey),
+            _ => null
+        };
+    }
+
     private void InitializeStory()
     {
         if (!Config.Bind("Story", "Enabled", false, "Experimental API-owned story content installed into the game's catalog; back up saves before enabling.").Value)
@@ -425,13 +444,15 @@ public sealed partial class Plugin : BaseUnityPlugin
         {
             var assembly = Assembly.Load("Assembly-CSharp");
             _storyWorld = new StoryNativeWorld(new StoryNativeBindings(assembly), _hub.CheckThread,
-                error => Logger.LogError("Story world fault: " + error));
+                error => Logger.LogError("Story world fault: " + error),
+                (identifier, objective) => _story?.ResolveAuthoredDestination(identifier, objective));
             // Outcomes are observed through the same mission boundary consumers see; without it the
             // module can still install and offer, but completions cannot be recorded at all.
             _story = new StoryContentService(_hub.Services, _persistence, _hub, StoryHostAuthentication.Resolve, null, _hub.CheckThread,
                 _storyWorld, _missions?.Events,
                 (detail, available) => Logger.LogInfo(detail), _protection,
-                () => _quarantine?.Healthy ?? false, (owner, target) => _worldReferences?.Knows(owner, target));
+                () => _quarantine?.Healthy ?? false, (owner, target) => _worldReferences?.Knows(owner, target),
+                ResolveAuthoredTravelDestination);
             // Only a module that exists can say what a UI abandon or retry of owned content means.
             if (_quarantine != null) _quarantine.Transactions = _story;
             StoryProtectionPatches.ProcessMissionTrigger.ObjectiveActivity = () => _story?.NotifyObjectiveActivity();

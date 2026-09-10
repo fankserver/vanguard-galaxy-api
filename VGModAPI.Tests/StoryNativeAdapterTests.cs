@@ -99,9 +99,9 @@ public sealed class StoryNativeAdapterTests : IDisposable
         var bindings = new StoryNativeBindings(typeof(StoryMission).Assembly);
         var mission = (Mission)bindings.ActiveStory(_player, identifier)!;
         var objective = (Source.MissionSystem.Objectives.TravelToPOI)mission.steps[0].objectives[0];
-        Assert.Equal(0, world.ReadProgress(identifier, slot, expected, () => true));
+        Assert.Equal(0, world.ReadProgress(identifier, slot, expected, () => true)?.Progress);
         objective.Completion = () => true;
-        Assert.Equal(1, world.ReadProgress(identifier, slot, expected, () => true));
+        Assert.Equal(1, world.ReadProgress(identifier, slot, expected, () => true)?.Progress);
         objective.Completion = () =>
         {
             if (change == 0) Source.Player.GamePlayer.current = new Source.Player.GamePlayer();
@@ -145,14 +145,57 @@ public sealed class StoryNativeAdapterTests : IDisposable
             Assert.True(world.Accept(identifier).Applied);
             var layout = new StoryObjectiveLayout(definition);
             Assert.True(layout.TryResolve("return", out var slot));
-            Assert.Equal(0, world.ReadProgress(identifier, slot, definition.Steps[0].Objectives[2], () => true));
+            Assert.Equal(0, world.ReadProgress(identifier, slot, definition.Steps[0].Objectives[2], () => true)?.Progress);
             embassy.lastVisitedTime = 90f;
-            Assert.Equal(1, world.ReadProgress(identifier, slot, definition.Steps[0].Objectives[2], () => true));
+            Assert.Equal(1, world.ReadProgress(identifier, slot, definition.Steps[0].Objectives[2], () => true)?.Progress);
             var held = (Mission)new StoryNativeBindings(typeof(StoryMission).Assembly).ActiveStory(_player, identifier)!;
             ((Source.MissionSystem.Objectives.TravelToPOI)held.steps[0].objectives[2]).targetPOI = "elsewhere";
             Assert.Null(world.ReadProgress(identifier, slot, definition.Steps[0].Objectives[2], () => true));
         }
         finally { Source.Galaxy.GalaxyMapData.current = null; _player.currentPointOfInterest = new Source.Galaxy.MapPointOfInterest { guid = "poi-source" }; }
+    }
+
+    [Fact]
+    public void AuthoredDestinationsResolveAtBuildRefuseWhenAbsentAndReportLossDistinctly()
+    {
+        string? gate = null;
+        using var world = new StoryNativeWorld(new StoryNativeBindings(typeof(StoryMission).Assembly), () => { }, null,
+            (identifier, objective) => objective.AuthoredLocalId == "margin-pocket" && objective.AuthoredOccurrenceKey == "act2" ? gate : null);
+        var pocket = new Source.Galaxy.MapPointOfInterest { guid = "gate-poi-7", lastVisitedTime = 11f };
+        var galaxy = new Source.Galaxy.GalaxyMapData(); galaxy.AddPoi(pocket);
+        Source.Galaxy.GalaxyMapData.current = galaxy;
+        try
+        {
+            var definition = Definition(objectives: new[]
+            { StoryObjective.TravelToAuthoredSystemEntrance("margin-pocket", "act2", requireNewVisit: true).WithKey("enter") });
+            var identifier = Identifier();
+            Assert.True(world.Install(identifier, definition).Applied);
+            // Unresolvable at build: acceptance is REFUSED, the player never holds a broken step.
+            Assert.Equal(StoryWorldStatus.Refused, world.Accept(identifier).Status);
+            Assert.Null(new StoryNativeBindings(typeof(StoryMission).Assembly).ActiveStory(_player, identifier));
+            gate = "gate-poi-7";
+            Assert.True(world.Accept(identifier).Applied);
+            var mission = (Mission)new StoryNativeBindings(typeof(StoryMission).Assembly).ActiveStory(_player, identifier)!;
+            var native = (Source.MissionSystem.Objectives.TravelToPOI)mission.steps[0].objectives[0];
+            Assert.Equal("gate-poi-7", native.targetPOI);   // per-occurrence resolution, no authored guid
+            Assert.Equal(11f, native.requiredVisitTime);    // new-visit baseline captured from the gate
+            var layout = new StoryObjectiveLayout(definition);
+            Assert.True(layout.TryResolve("enter", out var slot));
+            var expected = definition.Steps[0].Objectives[0];
+            Assert.Equal(0, world.ReadProgress(identifier, slot, expected, () => true)?.Progress);
+            pocket.lastVisitedTime = 30f;
+            Assert.Equal(1, world.ReadProgress(identifier, slot, expected, () => true)?.Progress);
+            // A swapped native target is a refusal; a destination the world LOST is a typed report.
+            native.targetPOI = "elsewhere";
+            Assert.Null(world.ReadProgress(identifier, slot, expected, () => true));
+            native.targetPOI = "gate-poi-7";
+            gate = null;
+            var reading = world.ReadProgress(identifier, slot, expected, () => true);
+            Assert.True(reading.HasValue);
+            Assert.True(reading!.Value.DestinationLost);
+            Assert.Null(reading.Value.Progress);
+        }
+        finally { Source.Galaxy.GalaxyMapData.current = null; }
     }
 
     [Fact]
@@ -207,11 +250,11 @@ public sealed class StoryNativeAdapterTests : IDisposable
             var heldKill = (Source.MissionSystem.Objectives.KillEnemies)held.steps[0].objectives[2];
             Assert.True(layout.TryResolve("mine", out var mineSlot));
             Assert.True(layout.TryResolve("repel", out var killSlot));
-            Assert.Equal(0, world.ReadProgress(identifier, mineSlot, objectives[1], () => true));
+            Assert.Equal(0, world.ReadProgress(identifier, mineSlot, objectives[1], () => true)?.Progress);
             heldMine.currentAmount = 55;
-            Assert.Equal(40, world.ReadProgress(identifier, mineSlot, objectives[1], () => true));
+            Assert.Equal(40, world.ReadProgress(identifier, mineSlot, objectives[1], () => true)?.Progress);
             heldKill.currentAmount = 3;
-            Assert.Equal(3, world.ReadProgress(identifier, killSlot, objectives[2], () => true));
+            Assert.Equal(3, world.ReadProgress(identifier, killSlot, objectives[2], () => true)?.Progress);
             Assert.Null(world.ReadProgress(identifier, killSlot, StoryObjective.KillEnemies(9, new StoryFactionId("TradingGuild")).WithKey("repel"), () => true));
             // A swapped identity refuses the read outright - amount alone is not the objective's identity.
             heldKill.enemyFaction = new Source.Galaxy.Faction { identifier = "SomeoneElse" };
@@ -279,9 +322,9 @@ public sealed class StoryNativeAdapterTests : IDisposable
             Assert.True(layout.TryResolve("deliver", out var slot));
             var held = (Mission)new StoryNativeBindings(typeof(StoryMission).Assembly).ActiveStory(_player, identifier)!;
             trade = Assert.IsType<Source.MissionSystem.Objectives.TradeOffer>(held.steps[0].objectives[0]);
-            Assert.Equal(0, world.ReadProgress(identifier, slot, objective, () => true));
+            Assert.Equal(0, world.ReadProgress(identifier, slot, objective, () => true)?.Progress);
             trade.currentAmount = 3;
-            Assert.Equal(1, world.ReadProgress(identifier, slot, objective, () => true));
+            Assert.Equal(1, world.ReadProgress(identifier, slot, objective, () => true)?.Progress);
             Assert.Null(world.ReadProgress(identifier, slot, StoryObjective.DeliverItems("UmbralMetafiber", 2, "station-1").WithKey("deliver"), () => true));
         }
         finally
@@ -303,12 +346,12 @@ public sealed class StoryNativeAdapterTests : IDisposable
         var layout = new StoryObjectiveLayout(definition);
         Assert.True(layout.TryResolve("credits", out var slot));
         _player.credits = 40;
-        Assert.Equal(40, world.ReadProgress(identifier, slot, objective, () => true));
+        Assert.Equal(40, world.ReadProgress(identifier, slot, objective, () => true)?.Progress);
         Assert.Equal(40, _player.credits);
         _player.credits = 12;
-        Assert.Equal(12, world.ReadProgress(identifier, slot, objective, () => true));
+        Assert.Equal(12, world.ReadProgress(identifier, slot, objective, () => true)?.Progress);
         _player.credits = 200;
-        Assert.Equal(100, world.ReadProgress(identifier, slot, objective, () => true));
+        Assert.Equal(100, world.ReadProgress(identifier, slot, objective, () => true)?.Progress);
         Assert.Null(world.ReadProgress(identifier, slot, objective, () => false));
         Assert.Null(world.ReadProgress(identifier, slot, StoryObjective.CollectCredits(99).WithKey("credits"), () => true));
     }
