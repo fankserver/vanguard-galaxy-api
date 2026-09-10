@@ -13,9 +13,11 @@ internal sealed class DungeonInstallationEvents : IDisposable
     private readonly HashSet<Guid> _saves = new();
     private readonly IDisposable _lifecycle;
     private bool _disposed, _draining;
+    internal DungeonAegisService Aegis { get; }
     internal DungeonInstallationEvents(LifecycleHub hub)
     {
         _hub = hub;
+        Aegis = new DungeonAegisService(hub);
         _lifecycle = hub.Subscribe("vgmodapi.installations", OnLifecycle);
         hub.Services.AfterStopped(Dispose);
     }
@@ -126,6 +128,7 @@ internal sealed class DungeonInstallationEvents : IDisposable
         _disposed = true; _lifecycle.Dispose();
         foreach (var installation in _installations.ToArray()) installation.Dispose();
         _pending.Clear(); _saves.Clear();
+        Aegis.Dispose();
     }
 
     internal sealed class Installation : IDungeonInstallation, IDisposable
@@ -160,12 +163,23 @@ internal sealed class DungeonInstallationEvents : IDisposable
                 }
             }
         }
+        public IDisposable KeepEnterable()
+        {
+            _events._hub.CheckThread();
+            if (Disposed) throw new ObjectDisposedException(nameof(IDungeonInstallation));
+            var declaration = _events.Aegis.Declare(Owner, _poiId);
+            _declarations.Add(declaration);
+            return declaration;
+        }
+        private readonly List<IDisposable> _declarations = new();
         public void Dispose()
         {
             _events._hub.CheckThread();
             if (Disposed) return;
             Disposed = true;
             foreach (var handler in Handlers) handler.Active = false;
+            foreach (var declaration in _declarations) declaration.Dispose();
+            _declarations.Clear();
             Handlers.Clear(); _events._installations.Remove(this);
             _events._pending.RemoveAll(item => ReferenceEquals(item.Installation, this));
         }

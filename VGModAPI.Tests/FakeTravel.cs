@@ -17,7 +17,13 @@ namespace Source.Galaxy
         public System.Collections.Generic.List<SystemMapData> NavigationNeighbors = new();
         public System.Collections.Generic.IEnumerable<SystemMapData> GetAdjacentSystems() => NavigationNeighbors;
     }
-    public partial class MapPointOfInterest : MapElement { public ulong backgroundSeed, contentSeed; public bool hidden; public float lastVisitedTime; }
+    public partial class MapPointOfInterest : MapElement
+    {
+        public ulong backgroundSeed, contentSeed; public bool hidden; public float lastVisitedTime;
+        private readonly System.Collections.Generic.List<Source.Data.Persistable.PersistableData> _persistables = new();
+        public System.Collections.Generic.IReadOnlyList<Source.Data.Persistable.PersistableData> GetPersistables() => _persistables;
+        public void AddTestPersistable(Source.Data.Persistable.PersistableData value) => _persistables.Add(value);
+    }
 }
 namespace Source.Player
 {
@@ -62,6 +68,7 @@ namespace Behaviour.Util
     public class Singleton<T> where T : class
     {
         protected static T? instance;
+        public static T? Instance => instance;
         public static T? SetTestInstance { set => instance = value; }
     }
 }
