@@ -6,7 +6,20 @@ restoration, safe execution and native ownership checks. All authoring members a
 
 ## Authoring and reactions
 
+The whole happy path in one block — acquire, define, register, react. `AcquireProvider` and
+`Register` return nullable results so refusals stay honest; unwrap each once with its diagnostic:
+
 ```csharp
+var introDefinition = new StoryMissionDefinition("intro", "First contact", "Meet the guide",
+    new StoryFactionId("TradingGuild"),
+    new[] { new StoryStep("Reach the vault", new[]
+    {
+        // WithKey links the declared objective to GetObjective(key); without it there is no keyed handle.
+        StoryObjective.TravelTo("vault-poi").WithKey("reach-vault"),
+        StoryObjective.Scripted("greeting", "Answer the guide", 1)
+    }) },
+    new[] { new StoryReward(StoryRewardKind.Credits, 100) });
+
 var acquired = ModApi.Services.Story.AcquireProvider(this);
 var provider = acquired.Provider ?? throw new InvalidOperationException(acquired.Diagnostic);
 var registered = provider.Register(introDefinition);
@@ -14,8 +27,14 @@ var intro = registered.Definition ?? throw new InvalidOperationException(registe
 var nextResult = provider.Register(nextDefinition);
 var next = nextResult.Definition ?? throw new InvalidOperationException(nextResult.Diagnostic);
 
+intro.Accepted += mission =>
+{
+    mission.GetObjective("greeting").SetProgress(1);
+    // GetObjective returns the same object per mission; subscribing here observes native progress.
+    mission.GetObjective("reach-vault").Changed +=
+        objective => Logger.LogInfo($"Vault progress: {objective.Snapshot.Progress}");
+};
 intro.Completed += mission => mission.Game.Story.Offer(next);
-intro.Accepted += mission => mission.GetObjective("greeting").SetProgress(1);
 ```
 
 The `greeting` key must be a scripted objective declared by `introDefinition`. Definitions use

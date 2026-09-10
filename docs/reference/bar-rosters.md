@@ -8,7 +8,7 @@ Acquire a provider from the loaded BepInEx plugin instance in `Start` with `ModA
 
 Declare contacts with `Register(new BarPatronDefinition(...), patron => ...)`. The definition contains a local ID, native station GUID, display name, description and seed. Different providers may reuse local IDs. Registration returns an `IBarPatronDefinition` handle. The optional `interact` argument and the handle's `Interacted` event are the **same** subscription list: `Register(definition, handler)` simply adds the handler to `Interacted`. Use the argument for the common case; use `Interacted +=`/`-=` only to add or remove handlers later. Wiring both delivers the interaction twice. Re-registering the same local ID **replaces** this provider's declaration: the old handle's queued interactions are dropped and disposing the old handle does not revoke the replacement or any other provider's contact. Dispose the handle (or the provider) to withdraw the declaration.
 
-Presentation attributes (seed, portrait, seated body) can be grouped in a
+Prefer grouping presentation attributes (seed, portrait, seated body) in a
 `BarPatronPresentation(seed, portrait, isMale)`; the flat constructor overload with named
 `portrait:`/`isMale:` arguments remains available. Use `CharacterPortrait.Named("M2Captain")` to request specific NPC portrait art, or
 `CharacterPortrait.OfCharacter("LuminateCommander")` to borrow a game character's portrait.
