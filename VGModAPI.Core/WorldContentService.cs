@@ -391,7 +391,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             if (_authored != null && _service._authoredCoordinator != null
                 && _service._authoredCoordinator.ContainsOccurrence(_authored.Owner, localId, occurrenceKey)) return null;
             if (_authoredShips != null && _service._shipCoordinator != null
-                && _service._shipCoordinator.TryGetOccurrence(_authoredShips.Owner, localId, occurrenceKey) != null) return null;
+                && _service._shipCoordinator.ContainsOccurrence(_authoredShips.Owner, localId, occurrenceKey)) return null;
             var (status, _) = _service._siteCoordinator.Create(_authoredSites, session.Id, localId, occurrenceKey, systemId, x, y);
             if (status != WorldStatus.Succeeded && status != WorldStatus.Rejected) return null;
             if (_service._siteCoordinator.TryGetOccurrence(_authoredSites.Owner, localId, occurrenceKey) == null && status != WorldStatus.Rejected) return null;
@@ -511,9 +511,9 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             if (_authored != null && _service._authoredCoordinator != null
                 && _service._authoredCoordinator.ContainsOccurrence(_authored.Owner, localId, occurrenceKey)) return true;
             if (_authoredSites != null && _service._siteCoordinator != null
-                && _service._siteCoordinator.TryGetOccurrence(_authoredSites.Owner, localId, occurrenceKey) != null) return true;
+                && _service._siteCoordinator.ContainsOccurrence(_authoredSites.Owner, localId, occurrenceKey)) return true;
             if (!exceptShips && _authoredShips != null && _service._shipCoordinator != null
-                && _service._shipCoordinator.TryGetOccurrence(_authoredShips.Owner, localId, occurrenceKey) != null) return true;
+                && _service._shipCoordinator.ContainsOccurrence(_authoredShips.Owner, localId, occurrenceKey)) return true;
             return false;
         }
 
@@ -589,9 +589,9 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             if (localId == null || !ValidOccurrenceKey(occurrenceKey)) return null;
             // The persistence envelope keys occurrences per (owner, local, key) across ALL kinds.
             if (_authoredSites != null && _service._siteCoordinator != null
-                && _service._siteCoordinator.TryGetOccurrence(_authoredSites.Owner, localId, occurrenceKey) != null) return null;
+                && _service._siteCoordinator.ContainsOccurrence(_authoredSites.Owner, localId, occurrenceKey)) return null;
             if (_authoredShips != null && _service._shipCoordinator != null
-                && _service._shipCoordinator.TryGetOccurrence(_authoredShips.Owner, localId, occurrenceKey) != null) return null;
+                && _service._shipCoordinator.ContainsOccurrence(_authoredShips.Owner, localId, occurrenceKey)) return null;
             var result = _service._authoredCoordinator.Create(_authored, session.Id, localId, occurrenceKey, anchorSystemId);
             if (result.Status != WorldStatus.Succeeded && result.Status != WorldStatus.Rejected) return null;
             if (!_service._authoredCoordinator.ContainsOccurrence(_authored.Owner, localId, occurrenceKey)) return null;

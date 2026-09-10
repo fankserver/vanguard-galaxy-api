@@ -142,6 +142,12 @@ internal sealed class AuthoredSiteCoordinator : IDisposable
         _hub.CheckThread();
         return _disposed ? null : _committed.TryGetValue((owner, localId, occurrenceKey), out var row) ? row : null;
     }
+    /// <summary>Committed or failed: the key is claimed by this kind for the session either way.</summary>
+    internal bool ContainsOccurrence(string owner, string localId, string occurrenceKey)
+    {
+        _hub.CheckThread();
+        return !_disposed && (_committed.ContainsKey((owner, localId, occurrenceKey)) || _failed.Contains((owner, localId, occurrenceKey)));
+    }
 
     internal (WorldStatus Status, AuthoredSiteOccurrence? Row) Create(AuthoredSiteRegistry.Provider provider,
         Guid expectedSession, string localId, string occurrenceKey, string systemId, float x, float y)
