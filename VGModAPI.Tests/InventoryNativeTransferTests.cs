@@ -75,7 +75,7 @@ public sealed class InventoryNativeTransferTests
                 var array = (Array)typeof(Source.Item.Inventory).GetField("allItems", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(ship.cargo)!;
                 var replacement = remove ? null : new Source.Item.Inventory.InventoryItem(item, ship.cargo, 0, 4, false);
                 GamePlayer.current.RequirementCallback = () => array.SetValue(replacement, 0);
-                Assert.Equal(InventoryTransferStatus.Changed, backend.Prepare(cargo, armory, selected.StackId, 1, new()).Status);
+                Assert.Equal(InventoryTransferStatus.ItemChanged, backend.Prepare(cargo, armory, selected.StackId, 1, new()).Status);
                 Assert.Same(replacement, array.GetValue(0)); Assert.Empty(GamePlayer.current.globalInventory.items);
                 GamePlayer.current.RequirementCallback = null;
             }

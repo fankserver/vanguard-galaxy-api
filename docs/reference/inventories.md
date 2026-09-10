@@ -1,6 +1,15 @@
 # Player-owned inventories
 
-`ModApi.Services.Inventories` provides immutable snapshots and immediate, main-thread transfers. Availability describes inspected integration support; each operation independently requires a current gameplay session.
+Inventories belong to a captured game. Get them through `game.Inventories`; old
+inventory objects never rebind to another save. A transfer owns its execution,
+transaction identity and recovery rather than asking the mod to coordinate them.
+
+```csharp
+var source = game.Inventories.Get(sourceReference);
+var destination = game.Inventories.Get(destinationReference);
+var move = source.MoveTo(destination, selectedStackId, quantity);
+move.Completed += completed => ShowResult(completed.Result);
+```
 
 ## Endpoints and access
 
@@ -11,20 +20,60 @@
 | StationMaterials | Local player's belongings at the exact station POI | Remote station-to-station movement supported; movement to/from player inventories requires docking at that station; native materials eligibility applies |
 | PlayerData | Local player, global | Readable, movement unsupported because data/currency have special routing |
 
-Shop/trade stock, other ships, hidden stations and arbitrary containers are not endpoints. Discovery neither generates shop stock nor creates containers. An unavailable container is not an empty container. Snapshots expose access state, volume capacity and independent stack selections; they do not aggregate nonfungible instances. A reference is save-local: resolve it again after loading the intended save, never interpret it as a campaign identity. Runtime handles and stack IDs become stale across sessions or stack replacement.
+`Discover()` returns inventory objects and an honest discovery result. `Get(reference)`
+returns the same object for that reference within a game. A reference does not
+create a container or grant access: `Snapshot` is null if the inventory cannot be
+resolved, and moves recheck the exact endpoints before changing anything.
 
-## Transfer semantics
+Shop stock, other ships, hidden stations and arbitrary containers are not endpoints.
+Discovery never generates shop stock or creates containers. An unavailable inventory
+is not an empty inventory. Copied snapshots expose access, capacity and individual
+stacks; select a stack from the inventory's snapshot rather than guessing its ID.
 
-Choose a stack from a fresh snapshot and supply a nonempty operation GUID, two distinct handles, quantity 1–100000 and explicit options. By default insufficient stock/capacity refuses the whole request. `AllowPartial` permits the smaller fitting quantity. Favourites require `IncludeFavourite`; mission-required items remain protected. Buyback/sold/cost-item stock and Vanguard marks are refused. Data items never bypass native special routing through cargo.
+## Moves and completion
 
-The adapter retains the exact native item instance and copies stack flags, rather than resolving a generated item by type or merging unrelated stacks. Destination insertion uses a separate slot (bounded to 16384); the inspected container has volume rather than a gameplay slot limit. Native visible-item caches are refreshed after movement. API notifications describe the actual result; they are not purchases, pickups, fees or shipment admission.
+`MoveTo` returns an `IInventoryTransfer`. Its `Result` starts as `Pending`; the API
+executes at a safe gameplay boundary. No caller-generated operation ID, dispatch
+check, polling loop or recovery call is needed. `Completed` delivers the terminal
+result and may start another gameplay operation. It does not replay, so subscribe
+when creating the move. Each subscriber is isolated; removing a handler before
+its turn suppresses it. A completion-triggered move executes at a later boundary.
 
-Both replacement inventory arrays are allocated before publication. The inspected field assignments invoke no virtual Add/Remove or consumer callbacks between debit and credit. Success requires both published arrays to match. A failed assignment restores only this transaction's own arrays and verifies restoration; unrelated replacements are never overwritten. An unverified recovery returns unknown quantities, retains `PendingRecovery`, blocks further movement and refuses serialization/save. Use its session and operation ID with `Recover`; a successful recovery changes the result and notifies subscribers. Recovery state is not discarded just because a new session begins.
+A move requires distinct inventories in the same game and a quantity of 1–100000.
+By default insufficient stock/capacity refuses the whole request. `AllowPartial`
+permits the smaller fitting quantity. Favourites require `IncludeFavourite`;
+mission-required items remain protected. Buyback/sold/cost-item stock and Vanguard
+marks are refused. Data items do not bypass native special routing through cargo.
 
-Operation IDs deduplicate accepted requests within a session, including refused prepared operations. Reusing an ID with different arguments is invalid. A repeat does not repeat publication or notification. There is a bounded 4096-operation session history. Pre-admission refusals (busy/stale/not-ready/invalid) are not reserved operations. Callbacks are isolated and observational; mutation during dispatch or serialization is refused.
+The selected native item instance and stack flags are preserved; a changed stack
+is not silently replaced with another instance. Destination insertion uses a
+separate slot (bounded to 16384), and visible-item caches refresh after movement.
+These are inventory moves, not purchases, pickups, fees or shipment admission.
 
-## Persistence and deferred delivery
+## Safety and recovery
 
-Completed movement lives entirely in vanilla inventories: no consumer save hooks or transfer sidecars are required. Native saves retain both inventory contents and item representations. Loading an older save restores its older contents; operation IDs are runtime-only and must not be used as a durable shipment ledger.
+Save/serialization boundaries delay execution internally. The API prepares both
+replacement inventory arrays before publishing them, with no consumer callback
+between debit and credit. Success requires both arrays to match. A failed
+publication restores only that transaction's own arrays; unrelated replacements
+are never overwritten.
 
-This service is the **immediate movement primitive**, not a replacement for Stockpile's pending-transfer engine. It does not reserve goods for later, schedule arrivals, charge fees, compute ETA or own deferred jobs. Managed deferred delivery remains separate functionality; consumers must not infer it from an immediate transfer result.
+Unverified rollback keeps the move pending with unknown quantities, blocks further
+movement and prevents saving inconsistent inventory state. The API retries that
+rollback itself at safe boundaries. It does not retry the transfer or duplicate
+its effects. Successful rollback ends the move without claiming items moved.
+
+A replaced game ends its queued moves as `GameEnded` and suppresses old-game
+completion callbacks; retained move objects still expose their result. Accounting
+is left unknown where it cannot be established. Outstanding rollback ownership
+is retained until verified rather than discarded on a load.
+
+## Persistence and scope
+
+Completed movement lives in vanilla inventories. No consumer save hooks or
+transfer sidecars are required. Loading an older save restores its older contents;
+operation IDs in results are runtime correlation, not a durable shipment ledger.
+
+Safe-boundary scheduling is not a shipping simulation. This API does not reserve
+goods for later, compute travel times, charge delivery fees or schedule shipment
+arrivals. Those are distinct gameplay features.

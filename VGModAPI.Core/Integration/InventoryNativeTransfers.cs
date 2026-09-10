@@ -40,9 +40,9 @@ internal sealed partial class InventoryNativeBackend
         // callback-capable admission, before reading stock or preparing either replacement array.
         if (!_current(source.SessionId) || !ReferenceEquals(Get(_player, "current"), player) ||
             !ReferenceEquals(Find(player, source.Reference)?.Inventory, from.Inventory) || !ReferenceEquals(Find(player, destination.Reference)?.Inventory, to.Inventory))
-            return Refuse(InventoryTransferStatus.Stale);
+            return Refuse(InventoryTransferStatus.GameEnded);
         if (!ReferenceEquals(_all.GetValue(from.Inventory), beforeFrom) || !ReferenceEquals(_all.GetValue(to.Inventory), beforeTo) ||
-            !ReferenceEquals(beforeFrom.GetValue(index), selected)) return Refuse(InventoryTransferStatus.Changed);
+            !ReferenceEquals(beforeFrom.GetValue(index), selected)) return Refuse(InventoryTransferStatus.ItemChanged);
         if (!Supported(selected)) return Refuse(InventoryTransferStatus.Unsupported);
         if (Flag(selected, "favourite") && !options.IncludeFavourite) return Refuse(InventoryTransferStatus.Protected);
         if (source.Reference.Kind != InventoryKind.StationMaterials || destination.Reference.Kind != InventoryKind.StationMaterials)

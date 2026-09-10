@@ -18,7 +18,7 @@ public sealed class GameServiceTests
             Assert.False(hub.IsDispatchingCallbacks);
             Assert.True(current()); focused.Add(id); return NavigationStatus.Succeeded;
         }, (_, _) => false);
-        using var games = new GameService(hub, navigation);
+        using var games = new GameService(hub, navigation, new InventoryService(hub, () => null));
         var observed = new List<IGame>();
         games.Started += game => { observed.Add(game); Assert.Equal(NavigationStatus.Succeeded, game.Navigation.FocusPoi("station")); };
         Assert.Null(games.Current);
@@ -35,11 +35,30 @@ public sealed class GameServiceTests
     }
 
     [Fact]
+    public void NavigationAndInventoryExposeObjectsRatherThanSessionAndRecoveryProtocols()
+    {
+        var assembly = typeof(IGame).Assembly;
+        Assert.Null(assembly.GetType("VGModAPI.INavigationService"));
+        Assert.Null(assembly.GetType("VGModAPI.IInventoryService"));
+        Assert.Null(assembly.GetType("VGModAPI.InventoryRecovery"));
+        Assert.False(assembly.GetType("VGModAPI.InventoryHandle")!.IsPublic);
+        foreach (var type in assembly.GetExportedTypes())
+            Assert.Null(type.GetProperty("IsDispatchingCallbacks"));
+        foreach (var type in new[] { typeof(INavigation), typeof(IInventories), typeof(IInventory), typeof(IInventoryTransfer) })
+        {
+            Assert.Null(type.GetProperty("SessionId")); Assert.Null(type.GetProperty("PendingRecovery"));
+            Assert.Null(type.GetMethod("Recover"));
+            foreach (var method in type.GetMethods())
+                foreach (var parameter in method.GetParameters()) Assert.NotEqual("expectedSessionId", parameter.Name);
+        }
+    }
+
+    [Fact]
     public void StartingSubscriptionRemovalSuppressesPendingCallback()
     {
         using var hub = new LifecycleHub((_, _) => { });
         hub.SetCapability("session-lifecycle", true, "Bound"); hub.SetCapability("save-outcomes", true, "Bound");
-        using var games = new GameService(hub, new NavigationService(hub, _ => null, (_, _, _) => NavigationStatus.Unavailable, (_, _) => null));
+        using var games = new GameService(hub, new NavigationService(hub, _ => null, (_, _, _) => NavigationStatus.Unavailable, (_, _) => null), new InventoryService(hub, () => null));
         Action<IGame> handler = _ => Assert.Fail("Removed"); games.Started += handler;
         var id = hub.Begin(SessionOrigin.NewGame, null); hub.PlayerReady(id); hub.GameplayInitialized(id);
         games.Started -= handler; hub.Gameplay.Tick();

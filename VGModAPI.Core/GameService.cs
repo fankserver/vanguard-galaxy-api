@@ -7,13 +7,15 @@ internal sealed class GameService : IGameService, IDisposable
 {
     private readonly LifecycleHub _hub;
     private readonly NavigationService _navigation;
+    private readonly InventoryService _inventories;
     private readonly IDisposable _lifetime;
     private readonly List<Handler> _handlers = new();
     private Game? _game;
     private bool _disposed;
-    internal GameService(LifecycleHub hub, NavigationService navigation)
+    internal GameService(LifecycleHub hub, NavigationService navigation, InventoryService inventories)
     {
-        _hub = hub; _navigation = navigation;
+        _hub = hub; _navigation = navigation ?? throw new ArgumentNullException(nameof(navigation));
+        _inventories = inventories ?? throw new ArgumentNullException(nameof(inventories));
         _lifetime = hub.Subscribe("vgmodapi.games", OnLifecycle);
         hub.Services.AfterStopped(Dispose);
     }
@@ -47,7 +49,7 @@ internal sealed class GameService : IGameService, IDisposable
     {
         if (fact.Kind != LifecycleEventKind.GameplayInitialized || fact.Session == null ||
             _hub.CurrentSession?.Id != fact.Session.Id || _disposed) return;
-        var game = new Game(_hub, fact.Session.Id, _navigation);
+        var game = new Game(_hub, fact.Session.Id, _navigation, _inventories);
         _game = game;
         foreach (var handler in _handlers.ToArray())
             _hub.Gameplay.Enqueue(fact.Session.Id, handler.Callback.Method.Module.Assembly.GetName().Name ?? "game subscriber",
@@ -71,10 +73,12 @@ internal sealed class GameService : IGameService, IDisposable
         private readonly LifecycleHub _hub;
         private readonly Guid _session;
         private readonly INavigation _navigation;
-        internal Game(LifecycleHub hub, Guid session, NavigationService navigation)
-        { _hub = hub; _session = session; _navigation = navigation.ForGame(session); }
+        private readonly IInventories _inventories;
+        internal Game(LifecycleHub hub, Guid session, NavigationService navigation, InventoryService inventories)
+        { _hub = hub; _session = session; _navigation = navigation.ForGame(session); _inventories = inventories.ForGame(this, session); }
         public bool IsActive
-        { get { _hub.CheckThread(); return !_hub.Services.IsStopping && _hub.CurrentSession?.Id == _session && _hub.CurrentSession.Phase == SessionPhase.GameplayInitialized; } }
+        { get { _hub.CheckThread(); return !_hub.Services.IsStopping && _hub.SessionTracking.Availability.IsAvailable && _hub.CurrentSession?.Id == _session && _hub.CurrentSession.Phase == SessionPhase.GameplayInitialized; } }
         public INavigation Navigation { get { _hub.CheckThread(); return _navigation; } }
+        public IInventories Inventories { get { _hub.CheckThread(); return _inventories; } }
     }
 }
