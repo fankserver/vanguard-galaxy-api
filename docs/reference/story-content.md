@@ -18,7 +18,7 @@ var introDefinition = new StoryMissionDefinition("intro", "First contact", "Meet
         StoryObjective.TravelTo("vault-poi").WithKey("reach-vault"),
         StoryObjective.Scripted("greeting", "Answer the guide", 1)
     }) },
-    new[] { new StoryReward(StoryRewardKind.Credits, 100) });
+    new[] { StoryReward.Credits(100) });
 
 var acquired = ModApi.Services.Story.AcquireProvider(this);
 var provider = acquired.Provider ?? throw new InvalidOperationException(acquired.Diagnostic);
@@ -168,14 +168,16 @@ native mechanism. Both identities are exact: an unknown item type or a delivery 
 native turn-in shape (only stations qualify) refuses the offer rather than substituting, with the
 same missing-dependency semantics as travel targets. `Snapshot`/`Changed` observe the native count.
 
-All three reward kinds together — Credits/Experience use the constructor, Reputation its factory:
+Rewards are declared through factories only — one idiom per kind, and a kind can never carry a
+parameter it does not support:
 
 ```csharp
 new[]
 {
-    new StoryReward(StoryRewardKind.Credits, 120000),
-    new StoryReward(StoryRewardKind.Experience, 2000),
-    StoryReward.Reputation(600) // the mission's source faction
+    StoryReward.Credits(120000),
+    StoryReward.Experience(2000),
+    StoryReward.Reputation(600),                       // the mission's source faction
+    StoryReward.Reputation(50, new StoryFactionId("MiningGuild"))
 }
 ```
 

@@ -29,7 +29,7 @@ public sealed class Plugin : BaseUnityPlugin
             {
                 new StoryStep("Reach the rendezvous", new[] { StoryObjective.TravelTo(destinationPoiId) }),
                 new StoryStep("Report to the witness", new[] { StoryObjective.TravelTo(destinationPoiId) })
-            }, new[] { new StoryReward(StoryRewardKind.Credits, 17) },
+            }, new[] { StoryReward.Credits(17) },
             retention: StoryRetention.Campaign, choiceKeys: new[] { "witness" }));
     }
 
@@ -48,7 +48,7 @@ public sealed class Plugin : BaseUnityPlugin
         var report = new StoryStep("Choose an answer", new[] { StoryObjective.Scripted("report", "Promise to investigate") });
         var definition = new StoryMissionDefinition(ObjectiveLocalId, "A witness's account", "Listen, then choose your reply.",
             new StoryFactionId(sourceFaction), revision == 1 ? new[] { talk, report } : new[] { report, talk },
-            new[] { new StoryReward(StoryRewardKind.Credits, 7) }, retention: StoryRetention.Campaign);
+            new[] { StoryReward.Credits(7) }, retention: StoryRetention.Campaign);
         return _provider.Register(revision == 1 ? definition : definition.WithRevision(revision, 1));
     }
 

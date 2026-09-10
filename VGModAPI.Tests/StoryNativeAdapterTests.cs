@@ -47,7 +47,7 @@ public sealed class StoryNativeAdapterTests : IDisposable
                 StoryObjective.TravelTo("poi-guid-1", 5),
                 StoryObjective.CollectCredits(250)
             }, requireAllObjectives: true) },
-            new[] { new StoryReward(StoryRewardKind.Credits, 500), new StoryReward(StoryRewardKind.Experience, 40) },
+            new[] { StoryReward.Credits(500), StoryReward.Experience(40) },
             difficulty, StoryRetention.Campaign, canAbandon: true, category: "story", completionText: "done",
             choiceKeys: new[] { "branch" });
 

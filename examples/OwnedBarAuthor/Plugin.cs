@@ -26,7 +26,7 @@ public sealed class Plugin : BaseUnityPlugin
         return _story.Register(new StoryMissionDefinition(LinkedStoryId, "Linked contact", "A retained contact and mission",
             new StoryFactionId(faction), new[] { new StoryStep("Speak to the contact",
                 new[] { StoryObjective.Scripted("talk", "Speak twice", 2) }) },
-            new[] { new StoryReward(StoryRewardKind.Credits, 1) }));
+            new[] { StoryReward.Credits(1) }));
     }
 
     public BarRegistrationResult RegisterLinked(string station, string local, string seed)

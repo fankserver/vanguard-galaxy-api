@@ -91,7 +91,7 @@ public sealed partial class StoryContentTests
         StoryRetention retention = StoryRetention.Temporary, IEnumerable<string>? choiceKeys = null)
         => new(local, "Salvage run", "Recover the drifting cargo.", Faction,
             new[] { new StoryStep("Reach the wreck", new[] { StoryObjective.TravelTo("poi-guid-1", 5) }) },
-            new[] { new StoryReward(StoryRewardKind.Credits, 500) }, StoryDifficulty.Normal, retention,
+            new[] { StoryReward.Credits(500) }, StoryDifficulty.Normal, retention,
             choiceKeys: choiceKeys ?? (retention == StoryRetention.Campaign ? new[] { "branch" } : null));
 
     /// <summary>A campaign definition declaring the largest supported choice payload.</summary>
@@ -114,7 +114,7 @@ public sealed partial class StoryContentTests
         var provider = service.AcquireProvider(plugin).Provider!;
         var definition = new StoryMissionDefinition("world-trip", "Visit", "Visit the site", Faction,
             new[] { new StoryStep("Travel", new[] { StoryObjective.TravelTo(identity.NativeId) }) },
-            new[] { new StoryReward(StoryRewardKind.Credits, 1) });
+            new[] { StoryReward.Credits(1) });
         var registered = provider.Register(definition); Assert.True(registered.Succeeded, registered.Diagnostic);
         Assert.False(provider.Offer(definition.LocalId).Accepted);
         ready = false; Assert.False(provider.Offer(definition.LocalId).Accepted);
@@ -272,11 +272,11 @@ public sealed partial class StoryContentTests
         Assert.Throws<ArgumentException>(() => new StoryMissionDefinition("salvage", "t", "d", Faction,
             Enumerable.Range(0, StoryMissionDefinition.MaxSteps + 1).Select(_ => step)));
         Assert.Throws<ArgumentException>(() => new StoryMissionDefinition("salvage", "t", "d", Faction, new[] { step },
-            new[] { new StoryReward(StoryRewardKind.Credits, 1), new StoryReward(StoryRewardKind.Credits, 2) }));
+            new[] { StoryReward.Credits(1), StoryReward.Credits(2) }));
         Assert.Throws<ArgumentException>(() => new StoryStep("s", Array.Empty<StoryObjective>()));
         Assert.Throws<ArgumentOutOfRangeException>(() => StoryObjective.KillEnemies(0));
         Assert.Throws<ArgumentException>(() => StoryObjective.TravelTo(""));
-        Assert.Throws<ArgumentOutOfRangeException>(() => new StoryReward(StoryRewardKind.Credits, 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => StoryReward.Credits(0));
         var objectives = new List<StoryObjective> { StoryObjective.CollectCredits(10) };
         var built = new StoryStep("s", objectives);
         objectives.Add(StoryObjective.KillEnemies(3));
@@ -3180,7 +3180,7 @@ public sealed partial class StoryContentTests
         var current = service.AcquireProvider(plugin).Provider!;
         Assert.True(current.Register(new StoryMissionDefinition("salvage-run", "Different generated pitch", "Not the saved payload", Faction,
             new[] { new StoryStep("Wrong destination", new[] { StoryObjective.TravelTo("missing-new-target") }) },
-            new[] { new StoryReward(StoryRewardKind.Credits, 999) }, retention: StoryRetention.Campaign)).Succeeded);
+            new[] { StoryReward.Credits(999) }, retention: StoryRetention.Campaign)).Succeeded);
         var native = FakeWorld.Native(current, "salvage-run", offered.OccurrenceId);
         if (active) later.World.AdoptInWorld(native);
         later.StartAndRestore(saved);
@@ -3261,7 +3261,7 @@ public sealed partial class StoryContentTests
         StoryMissionDefinition DefinitionFor(bool next) => new StoryMissionDefinition("conversation", next ? "New title" : "Old title", "Description", Faction,
             next ? new[] { new StoryStep("B", new[] { StoryObjective.Scripted("b", "B") }), new StoryStep("A", new[] { StoryObjective.Scripted("a", "A") }) }
                 : new[] { new StoryStep("A", new[] { StoryObjective.Scripted("a", "A") }), new StoryStep("B", new[] { StoryObjective.Scripted("b", "B") }) },
-            new[] { new StoryReward(StoryRewardKind.Credits, next ? 200 : 100) });
+            new[] { StoryReward.Credits(next ? 200 : 100) });
         Assert.True(provider.Register(DefinitionFor(false)).Succeeded);
         var offered = provider.Offer("conversation");
         if (active) Assert.True(provider.Activate(offered.OccurrenceId).Accepted);

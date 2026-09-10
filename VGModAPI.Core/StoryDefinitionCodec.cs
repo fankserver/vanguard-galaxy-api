@@ -89,9 +89,13 @@ internal static class StoryDefinitionCodec
             var kind = (StoryRewardKind)reader.ReadByte(); int amount = reader.ReadInt32();
             var rewardFaction = version >= 2 ? Text(reader) : null;
             if (rewardFaction != null && kind != StoryRewardKind.Reputation) throw new InvalidDataException("Invalid retained reward shape.");
-            rewards[index] = kind == StoryRewardKind.Reputation
-                ? StoryReward.Reputation(amount, rewardFaction == null ? null : new StoryFactionId(rewardFaction))
-                : new StoryReward(kind, amount);
+            rewards[index] = kind switch
+            {
+                StoryRewardKind.Reputation => StoryReward.Reputation(amount, rewardFaction == null ? null : new StoryFactionId(rewardFaction)),
+                StoryRewardKind.Credits => StoryReward.Credits(amount),
+                StoryRewardKind.Experience => StoryReward.Experience(amount),
+                _ => throw new InvalidDataException("Unknown retained reward kind.")
+            };
         }
         var choices = new string[Count(reader, 0, StoryMissionDefinition.MaxChoiceKeys)];
         for (int index = 0; index < choices.Length; index++) choices[index] = Required(reader);

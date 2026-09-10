@@ -14,7 +14,7 @@ public sealed class StoryDefinitionCodecTests
     {
         var definition = new StoryMissionDefinition("generated", "Generated title", "Generated description", new StoryFactionId("TradingGuild"),
             new[] { new StoryStep("Travel", new[] { StoryObjective.TravelTo("original-poi", 15).WithKey("visit"), StoryObjective.CollectCredits(83) }, false) },
-            new[] { new StoryReward(StoryRewardKind.Credits, 17) }, StoryDifficulty.Hard, StoryRetention.Campaign, false,
+            new[] { StoryReward.Credits(17) }, StoryDifficulty.Hard, StoryRetention.Campaign, false,
             "category", "completion", new[] { "choice" });
         var bytes = StoryDefinitionCodec.Encode(definition);
         var restored = StoryDefinitionCodec.Decode(bytes);
@@ -31,7 +31,7 @@ public sealed class StoryDefinitionCodecTests
     {
         var definition = new StoryMissionDefinition("delivery", "Title", "Description", new StoryFactionId("TradingGuild"),
             new[] { new StoryStep("Deliver", new[] { StoryObjective.DeliverItems("UmbralMetafiber", 1, "station-poi").WithKey("deliver") }) },
-            new[] { StoryReward.Reputation(600), StoryReward.Reputation(50, new StoryFactionId("MiningGuild")), new StoryReward(StoryRewardKind.Credits, 5) });
+            new[] { StoryReward.Reputation(600), StoryReward.Reputation(50, new StoryFactionId("MiningGuild")), StoryReward.Credits(5) });
         var bytes = StoryDefinitionCodec.Encode(definition);
         var restored = StoryDefinitionCodec.Decode(bytes);
         Assert.Equal(bytes, StoryDefinitionCodec.Encode(restored));
@@ -60,7 +60,7 @@ public sealed class StoryDefinitionCodecTests
         // A retained pre-delivery definition (schema 1) decodes exactly as before.
         var legacyShaped = new StoryMissionDefinition("legacy", "Title", "Description", new StoryFactionId("TradingGuild"),
             new[] { new StoryStep("Travel", new[] { StoryObjective.TravelTo("poi", 5).WithKey("visit") }) },
-            new[] { new StoryReward(StoryRewardKind.Credits, 17) });
+            new[] { StoryReward.Credits(17) });
         var v2 = StoryDefinitionCodec.Encode(legacyShaped);
         var v1 = DowngradeToVersion1(v2);
         var restored = StoryDefinitionCodec.Decode(v1);
