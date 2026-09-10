@@ -72,10 +72,16 @@ recorded hull, armor, shield, EMP or battle-damage changes. Purely visual surfac
 wear applied during a session may remain until the unit is next rebuilt from its
 unchanged data, such as on save/load.
 
-Protection is scoped to the persistent identity, so an identically named or same-class
-ship — including the player's own — is never affected, and it automatically covers
+Each `Protect` call creates an independent declaration, so different mods can protect
+the same unit without releasing each other. Declare once and retain the result rather
+than re-declaring per frame or per resolution: repeated calls accumulate declarations
+for the service lifetime until each is disposed.
+
+Protection is scoped to the persistent identity and needs no live instance: declaring
+for persisted-but-not-yet-materialised unit data is supported and takes effect from
+the unit's first damage event, leaving no unprotected window. It automatically covers
 whichever live instance carries that identity after save/load or re-materialisation,
-without consumer polling. Nothing is written to unit data or saves: removing the
+without consumer polling or frame-driven re-resolution. Nothing is written to unit data or saves: removing the
 consumer restores completely vanilla behavior. A standing `isInvincible` flag set by
 another mod is preserved, and a unit that was already destroyed is never resurrected.
 
