@@ -91,4 +91,20 @@ public interface IWorldProvider : IDisposable
     /// carrying the owned occurrence objects. An empty failure list means every declared occurrence reconstructed.
     /// </summary>
     event Action<AuthoredSystemsSettledEvent>? AuthoredSystemReconstructionSettled;
+
+    /// <summary>Declares an authored site (salvage site or exact-count mining field). Optional exact previous declaration permits a revision migration.</summary>
+    WorldStatus RegisterAuthoredSite(AuthoredSiteDefinition definition, AuthoredSiteDefinition? previous = null);
+    /// <summary>
+    /// Creates (or reconciles) an owned authored site in an existing system — including an owned pocket
+    /// system — keyed by an author-local occurrence key. The API allocates and owns the native identity.
+    /// Re-declaring the same key returns the SAME object instance for the life of the session. Returns
+    /// null while the world cannot author.
+    /// </summary>
+    IAuthoredSite? CreateAuthoredSite(string localId, string occurrenceKey, string systemId, float x, float y);
+    /// <summary>Re-obtains the owned occurrence for a key in the current game, or null if it does not exist yet.</summary>
+    IAuthoredSite? GetAuthoredSite(string localId, string occurrenceKey);
+    /// <summary>All current-game occurrences the provider owns for a registered site definition (including restored rows, no replay).</summary>
+    IReadOnlyList<IAuthoredSite> GetAuthoredSites(string localId);
+    /// <summary>Once-per-session aggregate reconciliation report for this provider's authored sites.</summary>
+    event Action<AuthoredSitesSettledEvent>? AuthoredSiteReconstructionSettled;
 }

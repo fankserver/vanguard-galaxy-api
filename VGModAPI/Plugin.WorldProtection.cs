@@ -22,6 +22,8 @@ public sealed partial class Plugin
     private WorldReferenceResolver? _worldReferences;
     private AuthoredSystemRegistry? _authoredDefinitions;
     private AuthoredSystemCoordinator? _authoredCoordinator;
+    private AuthoredSiteRegistry? _siteDefinitions;
+    private AuthoredSiteCoordinator? _siteCoordinator;
     private double _authoredDue;
     private bool _worldAvailable;
 
@@ -83,10 +85,15 @@ public sealed partial class Plugin
                     admission, session => _worldPersistence != null && _worldPersistence.StateReady(session),
                     reportAuthored);
                 _authoredCoordinator = authored;
+                _siteDefinitions = new AuthoredSiteRegistry(authenticate, _hub.CheckThread);
+                _siteCoordinator = new AuthoredSiteCoordinator(_hub, _siteDefinitions,
+                    new WorldNativeAuthoredSites(_adapter, assembly, reportAuthored),
+                    session => _worldPersistence != null && _worldPersistence.StateReady(session), reportAuthored);
             }
             catch (Exception authoredError)
             {
                 _authoredDefinitions?.Dispose(); _authoredDefinitions = null; _authoredCoordinator = null;
+                _siteDefinitions?.Dispose(); _siteDefinitions = null; _siteCoordinator?.Dispose(); _siteCoordinator = null;
                 _hub.SetCapability("authored-systems", false, "Authored-system integration unavailable: " + authoredError.GetType().Name);
                 Logger.LogError(authoredError);
             }
@@ -94,15 +101,23 @@ public sealed partial class Plugin
                 session => { creation.Refuse(session); _story?.RefreshWorldDependencies(); }, inspectProfile);
             _worldSnapshotHost = new WorldSnapshotHookHost(_hub, new WorldSnapshotRecorder(
                 new WorldJsonInspection(assembly, emptyProfile, RestoreOwnedItem, RestoreOwnedRecipe),
-                authored == null ? null : () => authored.CaptureBytes()),
+                authored == null ? null : () => AuthoredSystemStateCodec.Encode(authored.CaptureRows(), _siteCoordinator?.CaptureRows() ?? Array.Empty<AuthoredSiteOccurrence>())),
                 creation.Snapshot, () => { requireContext(); return creation.Revision; }, requireContext);
             _worldPersistence = new WorldPersistenceBindings(_persistence, _hub, _worldLoadHost, _worldSnapshotHost, creation,
-                authored == null ? null : (session, bytes) => authored.RestoreRows(session,
-                    bytes == null ? Array.Empty<AuthoredSystemOccurrence>() : AuthoredSystemStateCodec.Decode(bytes)));
+                authored == null ? null : (session, bytes) =>
+                {
+                    var decoded = bytes == null
+                        ? (Systems: Array.Empty<AuthoredSystemOccurrence>(), Sites: Array.Empty<AuthoredSiteOccurrence>())
+                        : AuthoredSystemStateCodec.DecodeAll(bytes);
+                    authored.RestoreRows(session, decoded.Systems);
+                    if (_siteCoordinator != null) _siteCoordinator.RestoreRows(session, decoded.Sites);
+                    else if (decoded.Sites.Length > 0)
+                        throw new System.IO.InvalidDataException("Authored-site rows present but the site integration is unavailable; refusing a restore that would erase them.");
+                });
             _worldRuntime = new WorldRuntimeState(_adapter, _worldLoadHost, definitions, creation,
                 lifetime, _worldPersistence.StateReady, admission);
             _worldReferences = new WorldReferenceResolver(_hub, creation, definitions, _worldPersistence, _worldLifetimeHost);
-            _worldContent = new WorldContentService(_hub, definitions, new WorldAuthoringGate(definitions, creation, _worldPersistence.CanMutate), admission, () => { try { _story?.RefreshWorldDependencies(); } finally { _worldLifetimeHost?.MaintainActors(); } }, _ambientTraffic ??= new AmbientTrafficService(_hub), _unitProtection ??= new UnitProtectionService(_hub), _droneBays ??= new DroneBayService(_hub), _authoredDefinitions, authored);
+            _worldContent = new WorldContentService(_hub, definitions, new WorldAuthoringGate(definitions, creation, _worldPersistence.CanMutate), admission, () => { try { _story?.RefreshWorldDependencies(); } finally { _worldLifetimeHost?.MaintainActors(); } }, _ambientTraffic ??= new AmbientTrafficService(_hub), _unitProtection ??= new UnitProtectionService(_hub), _droneBays ??= new DroneBayService(_hub), _authoredDefinitions, authored, _siteDefinitions, _siteCoordinator);
             var selected = WorldNativeBindings.Methods.Where(m => m.Key == "worldPoiRead" || m.Key == "worldRecall" || m.Key == "worldCombatUpdate" || m.Key == "worldRemove" || m.Key == "worldSnapshot" || m.Key == "worldStore" || m.Key == "worldActiveUpdate" || m.Key == "worldCanTravel" || m.Key == "worldRoute" || m.Key == "worldBaseArrival" || m.Key == "worldCombatArrival" || m.Key == "worldSpawnPersistable" || m.Key == "worldSpawnUnit" || m.Key == "worldManagerStart" || m.Key == "worldManagerUpdate" || m.Key == "worldSecurityPatrol" || m.Key == "worldManagerInit" || m.Key == "worldInitializePoi" || m.Key == "worldInitializationComplete" || m.Key == "worldBaseAwake" || m.Key == "worldCombatAwake" || m.Key == "worldStoreLastX" || m.Key == "worldStorePosition" || m.Key == "worldIncomingReinforcements" || m.Key == "worldCreateSecurityPatrol" || m.Key == "worldStartTravel" || m.Key == "worldNextWaypoint" || m.Key == "worldTravelChild" || m.Key == "worldCheckLocalScene" || m.Key == "worldUnloadScene" || m.Key == "worldWaitUnload" || m.Key == "worldCancelTravel" || m.Key == "worldGenerate" || m.Key == "worldRegenerateGuards" || m.Key == "worldRegenerateCargo" || m.Key == "worldRegenerateSalvage" || m.Key == "worldRegenerateAsteroids" || m.Key == "worldRebuildStation" || m.Key == "worldJumpgateWave" || m.Key == "worldDeferGeneration" || m.Key == "worldPayloadUpdate" || m.Key == "worldPayloadTrigger" || m.Key == "worldPayloadSpawn" || m.Key == "worldPoiAddPersistable" || m.Key == "worldPoiRemovePersistable" || m.Key == "worldPoiAddUnit" || m.Key == "worldPoiRemoveUnit" || m.Key == "worldPoiAddPayload" || m.Key == "worldAddTriggered" || m.Key == "worldAddBudgetPayload" || m.Key == "worldAddFixedPayload" || m.Key == "worldActorAwake" || m.Key == "worldActorStart" || m.Key == "worldActorUpdate" || m.Key == "worldActorPhysics" || m.Key == "worldShipStart" || m.Key == "worldShipUpdate" || m.Key == "worldActorSetData" || m.Key == "worldShipSetData" || m.Key == "worldActorModules" || m.Key == "worldActorDamage" || m.Key == "worldShipDamage" || m.Key == "worldActorCollisionEnter" || m.Key == "worldActorCollisionStay" || m.Key == "worldPersistableStart" || m.Key == "worldPersistableUpdate" || m.Key == "worldBudgetBuilder" || m.Key == "worldSalvageReset" || m.Key == "worldSalvageAdd" || m.Key == "worldSalvageSlot" || m.Key == "worldSalvageDescriptor" || m.Key.StartsWith("worldEmpty", StringComparison.Ordinal) || m.Key.StartsWith("worldActorRoutine", StringComparison.Ordinal)).ToArray();
             var targets = new GameBindings(assembly).Resolve(selected);
             _worldLoadHarmony = new Harmony(ModApi.PluginId + ".world-load");
@@ -219,8 +234,8 @@ public sealed partial class Plugin
         _worldAvailable = false;
         _worldReferences = null;
         try { _worldContent?.Dispose(); }
-        finally { _authoredCoordinator?.Dispose(); StopWorldGuards(); }
-        _authoredCoordinator = null;
+        finally { _authoredCoordinator?.Dispose(); _siteCoordinator?.Dispose(); _siteDefinitions?.Dispose(); StopWorldGuards(); }
+        _authoredCoordinator = null; _siteCoordinator = null; _siteDefinitions = null;
     }
 
     private void StopWorldGuards()

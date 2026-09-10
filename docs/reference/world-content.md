@@ -289,3 +289,43 @@ live `State` or re-obtain it.
 Creation is gameplay-intent only; expected-session identity is an internal invariant.
 `RegisterAuthoredSystem` is pre-session; `CreateAuthoredSystem`, `SetEntranceOpen` and the
 re-obtain methods require a ready session.
+
+## Authored sites
+
+Authored sites place campaign set-pieces inside an existing system — including an owned pocket
+system — under the same occurrence contract as pocket systems and combat sites: author-local
+occurrence keys, API-allocated native identity, same-key=same object per session, and typed
+reconstruction state. The API persists the owned identity rows and re-resolves them per game;
+the site's native content (wreck, station, asteroids) is persisted by the game's own
+persistable pipeline. This replaces consumer-side per-galaxy cache-and-revalidate layers.
+
+```csharp
+provider.RegisterAuthoredSite(AuthoredSiteDefinition.Salvage(
+    "failed-refuge", revision: 1, "Failed Industrial Refuge", level: 8,
+    wreckShipId: "Monsoon", factionId: "Fanatics",
+    withStation: true, hazard: AuthoredSiteHazard.DamageInRadius, scatterAsteroids: false));
+provider.RegisterAuthoredSite(AuthoredSiteDefinition.MiningField(
+    "singers-field", revision: 1, "Singer's Field", level: 8, asteroidCount: 6));
+
+// From explicit gameplay logic, once the session is ready:
+var site = provider.CreateAuthoredSite("failed-refuge", "act2-a", pocket.SystemId!, x: 10, y: 4);
+var field = provider.CreateAuthoredSite("singers-field", "act4", pocket.SystemId!, x: -6, y: 2);
+```
+
+- A **salvage site** contains a defeated wreck of the exact declared ship class (an unknown
+  class refuses creation — no silent template substitution), sized to the site level so it
+  carries real salvage HP and material drops, with cargo containers nearby. `withStation: true`
+  guarantees a boardable derelict station deterministically — no probability roll and no
+  consumer retry loop; type and crewing keep the native distribution. The one supported hazard
+  is a radiation cloud around the wreck. `scatterAsteroids` adds a decorative field around a
+  bare wreck.
+- A **mining field** contains exactly the declared asteroid count drawn from the host system's
+  own ore data — the count is gameplay-relevant (objectives may count ore from it) and is not a
+  probabilistic request.
+
+Creation verifies the exact native membership delta (exactly one new POI, parented to the host
+system, nothing removed) and never adopts a foreign or ambiguous native. A refused creation is
+a typed `Rejected` retained on the returned object; it is not retried implicitly. `State`,
+`Changed`, revision migration and the once-per-session `AuthoredSiteReconstructionSettled`
+event follow the authored-system semantics above; site failures report `MissingDefinition`,
+`RevisionMismatch`, `NativeMissing`, `AmbiguousIdentity` or `PersistenceUnavailable`.
