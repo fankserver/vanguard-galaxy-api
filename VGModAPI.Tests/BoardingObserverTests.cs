@@ -35,6 +35,7 @@ public sealed class BoardingObserverTests
         internal readonly Dictionary<string, object?> Location, Unit, Native, Sim;
         internal int Faults;
         internal readonly object DataInventory = new();
+        internal Func<string, object, bool> Contains = (_, _) => false;
         internal Fixture()
         {
             Hub.SetCapability("session-lifecycle", true, "Test bindings.");
@@ -42,7 +43,8 @@ public sealed class BoardingObserverTests
             Hub.SetCapability("boarding-observation", true, "Test bindings.");
             Service = new BoardingService(Hub, (_, _) => { });
             Observer = new BoardingObserver(Hub, Service, (obj, name) => ((Dictionary<string, object?>)obj)[name], obj => !Dead.Contains(obj), _ => Faults++, obj => ReferenceEquals(obj, DataInventory),
-                (id, location) => id == "station-a" && ReferenceEquals(location, Location));
+                (id, location) => Contains(id, location));
+            Contains = (id, location) => id == "station-a" && ReferenceEquals(location, Location);
             Service.Subscribe("test", Events.Add);
             var session = Hub.Begin(SessionOrigin.SaveLoad, "save"); Hub.PlayerReady(session); Hub.GameplayInitialized(session);
             Location = new() { ["availability"] = BoardingAvailability.Available, ["shipTemplate"] = "Scout", ["shipData"] = new object(), ["faction"] = null, ["isShipBased"] = true, ["dungeonType"] = "Ship" };
@@ -143,6 +145,37 @@ public sealed class BoardingObserverTests
         Assert.Equal(BoardingPhase.Settled, Assert.Single(f.Service.GetOperations()).Phase);
         Assert.Single(f.Events, e => e.Kind == BoardingEventKind.CrewReturnSettled);
         f.Signal("HandlePodCrewReturned"); Assert.Single(f.Events, e => e.Kind == BoardingEventKind.CrewReturnSettled);
+    }
+    [Fact]
+    public void InstallationHandlesResolveOnlyUniqueLiveMembership()
+    {
+        using var f = new Fixture();
+        var otherLocation = new Dictionary<string, object?>(f.Location);
+        var otherUnit = new Dictionary<string, object?> { ["data"] = otherLocation };
+        f.Observer.Guard(() => f.Observer.TargetReady(f.Unit));
+        f.Observer.Guard(() => f.Observer.TargetReady(otherUnit));
+        var handles = f.Service.GetTargets();
+        Assert.Equal(2, handles.Count);
+        // Unique membership resolves the exact target's handle.
+        f.Contains = (id, location) => id == "station-a" && ReferenceEquals(location, f.Location);
+        var resolved = f.Observer.HandleForInstallation("station-a");
+        Assert.NotNull(resolved);
+        Assert.NotNull(f.Service.GetTarget(resolved!));
+        Assert.Same(f.Location, ((Dictionary<string, object?>)f.Unit)["data"]);
+        Assert.Null(f.Observer.HandleForInstallation("station-b"));
+        // Ambiguous membership refuses rather than guessing between two live targets.
+        f.Contains = (id, _) => id == "station-a";
+        Assert.Null(f.Observer.HandleForInstallation("station-a"));
+        // A membership probe throwing for one target skips it without redirecting resolution.
+        f.Contains = (id, location) => ReferenceEquals(location, f.Location)
+            ? throw new InvalidOperationException("binding fault") : id == "station-a";
+        var fallback = f.Observer.HandleForInstallation("station-a");
+        Assert.NotNull(fallback);
+        Assert.NotEqual(resolved, fallback);
+        // A retired target no longer resolves.
+        f.Contains = (id, location) => id == "station-a" && ReferenceEquals(location, f.Location);
+        f.Dead.Add(f.Unit); f.Observer.Poll();
+        Assert.Null(f.Observer.HandleForInstallation("station-a"));
     }
     [Fact]
     public void DestroyedIdleTargetIsRetiredAndOldGenerationCannotBeQueried()

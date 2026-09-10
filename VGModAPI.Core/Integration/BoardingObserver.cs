@@ -321,6 +321,23 @@ internal sealed class BoardingObserver : IDisposable
         return location != null && _targets.TryGetValue(location, out var target) && !target.Retired && _service.GetTarget(target.Handle) != null ? target.Handle : null;
     }
 
+    /// <summary>The one live boarding target whose location currently belongs to the installation; null when none or ambiguous.</summary>
+    internal BoardingHandle? HandleForInstallation(string poiId)
+    {
+        _hub.CheckThread();
+        BoardingHandle? found = null;
+        foreach (var target in _targets.Values)
+        {
+            if (target.Retired || _service.GetTarget(target.Handle) == null) continue;
+            bool contains;
+            try { contains = _installationContains(poiId, target.Data); } catch { continue; }
+            if (!contains) continue;
+            if (found != null) return null;
+            found = target.Handle;
+        }
+        return found;
+    }
+
     /// <summary>Resolve only the current observed generation; never revive a retired target for commands.</summary>
     internal bool TryResolveCommandTarget(BoardingHandle handle, out object? location, out object? component, out object? operation)
     {

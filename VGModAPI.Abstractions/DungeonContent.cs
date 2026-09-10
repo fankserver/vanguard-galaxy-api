@@ -57,6 +57,15 @@ public interface IDungeonProvider : IDisposable
     IDungeonInstallation GetInstallation(string poiId);
     IDisposable Register(string localId, DungeonDefinition definition, Func<DungeonChoiceContext, bool>? allowChoice = null);
     DungeonContentResult Attach(string localId, BoardingHandle target);
+    /// <summary>
+    /// Attaches by supported persistent installation identity instead of a boarding target handle.
+    /// Use the installation object obtained from this provider's <see cref="GetInstallation"/>; a
+    /// foreign object is a programming error. The attachment resolves the one live boarding target
+    /// currently belonging to that installation; while none (or more than one) is observed the
+    /// result is <see cref="DungeonContentStatus.StaleTarget"/> - a temporary refusal, not a
+    /// display-name match.
+    /// </summary>
+    DungeonContentResult Attach(string localId, IDungeonInstallation installation);
     DungeonContentResult Choose(Guid occurrenceId, string eventId, string choiceId);
     IReadOnlyList<DungeonOccurrenceSnapshot> GetOccurrences();
 }
