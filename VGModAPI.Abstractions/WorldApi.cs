@@ -121,4 +121,12 @@ public interface IWorldProvider : IDisposable
     IAuthoredShip? GetAuthoredShip(string localId, string occurrenceKey);
     /// <summary>Once-per-session aggregate reconciliation report for this provider's authored ships.</summary>
     event Action<AuthoredShipsSettledEvent>? AuthoredShipReconstructionSettled;
+
+    /// <summary>
+    /// Schedules a deterministic authored encounter at an existing POI in the current game through the
+    /// native timed-reinforcement trigger: exact counts per wave, never a point-budget request. All
+    /// inputs are validated up front (POI, every ship class, faction, rank) before anything is
+    /// scheduled. Spawned units are transient session content; nothing is persisted or replayed.
+    /// </summary>
+    EncounterSpawnResult SpawnEncounter(string poiId, EncounterComposition composition);
 }

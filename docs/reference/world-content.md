@@ -354,3 +354,23 @@ faction refuses creation. `State`, `Changed`, revision migration and the once-pe
 `AuthoredShipReconstructionSettled` event follow the occurrence semantics above; a saved ship that
 has not yet surfaced reports `NativeMissing` at settlement and converges with a `Changed`
 transition when it does.
+
+## Deterministic encounters
+
+`provider.SpawnEncounter(poiId, composition)` schedules the exact ship counts an encounter was
+designed around, routed through the game's timed-reinforcement trigger (point-budgeted payloads
+under-place large requests, so exactness is the contract). All inputs — POI existence, every wave's
+ship class, faction, rank — are validated before anything is scheduled; a refusal schedules
+nothing, and a native under-schedule is an honest `Rejected` carrying the actual count.
+
+```csharp
+var result = provider.SpawnEncounter(sitePoiId, new EncounterComposition(
+    new[] { new EncounterWave(15, "Monsoon", 10), new EncounterWave(45, "Monsoon", 10) },
+    factionId: "Fanatics", level: 12, EncounterRank.Standard, hostileToPlayer: true));
+```
+
+`hostileToPlayer` scopes hostility to the spawned units only (`playerHostile` per unit) — an
+existing faction's diplomacy and the player's reputation ledger are never modified, and
+`noReputationLoss` (default) keeps kills reputation-free. Spawned units are transient session
+content: the API does not persist, reconstruct or replay them, and the composition carries no
+occurrence key. Re-spawning after a reload is explicit consumer gameplay logic.
