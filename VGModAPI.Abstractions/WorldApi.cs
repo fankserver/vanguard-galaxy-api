@@ -98,6 +98,17 @@ public interface IWorldProvider : IDisposable
     /// </summary>
     event Action<AuthoredSystemsSettledEvent>? AuthoredSystemReconstructionSettled;
 
+    /// <summary>Declares an owned pair of exactly connected native wormholes.</summary>
+    WorldStatus RegisterAuthoredWormholePair(AuthoredWormholePairDefinition definition, AuthoredWormholePairDefinition? previous = null);
+    /// <summary>Creates or reconciles one owned pair between two existing systems for the current game.</summary>
+    IAuthoredWormholePair? CreateAuthoredWormholePair(string localId, string occurrenceKey, string firstSystemId, string secondSystemId);
+    /// <summary>Re-obtains the owned pair for a key in the current game, or null if it does not exist.</summary>
+    IAuthoredWormholePair? GetAuthoredWormholePair(string localId, string occurrenceKey);
+    /// <summary>All current-game occurrences owned for a registered wormhole-pair definition.</summary>
+    IReadOnlyList<IAuthoredWormholePair> GetAuthoredWormholePairs(string localId);
+    /// <summary>Once-per-session reconstruction outcomes for this provider's owned pairs.</summary>
+    event Action<AuthoredWormholePairsSettledEvent>? AuthoredWormholePairReconstructionSettled;
+
     /// <summary>Declares an authored site (salvage site or exact-count mining field). Optional exact previous declaration permits a revision migration.</summary>
     WorldStatus RegisterAuthoredSite(AuthoredSiteDefinition definition, AuthoredSiteDefinition? previous = null);
     /// <summary>
