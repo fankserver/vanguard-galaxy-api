@@ -32,7 +32,7 @@ var characters = ModApi.Services.Dialogue.Characters;
 // expects a character name, such as a station's persisted character list.
 _ricko = characters.Introduce(pluginId,
     new StoryCharacterDefinition("ricko", "Ricko", "Luminate Ship Mechanic",
-        portraitOf: "QuestgiverHullBlueprints"), // registry name; displayed in game as Voss
+        CharacterPortrait.Named("PirateM")),
     conversation: () => CurrentStep switch
     {
         DeliveryPending => new CharacterConversation(new[]
@@ -64,11 +64,18 @@ _arle = characters.Extend(pluginId, "LuminateCommander",
   keep their vanilla priority over default dialogue, exactly as they do today. Multiple owners may extend one character; one owner's
   fault or disposal never silences another owner or the character itself.
 - Lines speak as the character (`Self`), the player's captain, the ship AI, or any
-  named character — including other introduced ones via their lookup names. Named
-  references use **registry names** (the factory names the game's registry resolves,
-  like `LuminateCommander`), not display names like Arle. Portraits are reused from a
-  named game character the same way; an unknown registry name leaves the portrait
-  unset and there is no asset-path surface. `Completed`
+  named character — including other introduced ones via their lookup names, which is
+  how an invented recurring voice (an "ORACLE") speaks with its own art across acts.
+  Named references use **registry names** (the factory names the game's registry
+  resolves, like `LuminateCommander`), not display names like Arle.
+- Portraits say "I want this portrait" directly: `CharacterPortrait.Named("PirateM")`
+  addresses the game's NPC portrait set by art name, so every shipped portrait is
+  expressible — including art no registry character currently wears, such as `Umbral`
+  or `MercWoman`. `CharacterPortrait.OfCharacter("QuestgiverHullBlueprints")` borrows
+  an existing character's look by registry name instead. A portrait the game cannot
+  resolve degrades to no portrait and is **reported once per identity in the log**,
+  never silently, and resolution is re-attempted on later rebuilds, so art that
+  arrives late still appears. There is no free-form asset-path surface. `Completed`
   runs once when the conversation finishes and is the place to advance mission state.
 - `missionHighlights` lists native mission identities for the game's own offer marker;
   whether the marker shows still follows the game's mission state.

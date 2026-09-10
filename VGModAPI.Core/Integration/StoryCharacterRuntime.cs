@@ -14,16 +14,21 @@ internal sealed class StoryCharacterRuntime
 {
     private readonly StoryCharacterService _service;
     private readonly Action<Exception> _report;
+    private readonly Func<string, object?> _portraits;
+    private readonly System.Collections.Generic.HashSet<string> _missingPortraits = new(StringComparer.Ordinal);
     private readonly Type _character, _dialogue;
     private readonly ConstructorInfo _characterCtor, _lineCtor;
     private readonly FieldInfo _name, _description, _portrait, _createDialogue, _missionIds, _captain, _shipAi, _lines, _onComplete;
     private readonly MethodInfo _lookup;
     private readonly Type _createDialogueType, _linesType, _lineListType;
+    private readonly Type _sprite;
     private bool _reported;
 
-    internal StoryCharacterRuntime(Assembly assembly, StoryCharacterService service, Action<Exception> report)
+    /// <param name="portraitLoader">Loads one game NPC portrait by art name; null when the game has no such art.</param>
+    internal StoryCharacterRuntime(Assembly assembly, StoryCharacterService service, Func<string, object?> portraitLoader, Action<Exception> report)
     {
         _service = service; _report = report;
+        _portraits = portraitLoader ?? throw new ArgumentNullException(nameof(portraitLoader));
         _character = assembly.GetType("Source.Dialogues.Character", true)!;
         _dialogue = assembly.GetType("Source.Dialogues.Dialogue", true)!;
         var line = assembly.GetType("Source.Dialogues.DialogueLine", true)!;
@@ -34,6 +39,7 @@ internal sealed class StoryCharacterRuntime
             ?? throw new MissingMethodException(line.FullName, ".ctor(Character, string)");
         _name = Field(_character, "name"); _description = Field(_character, "description");
         _portrait = Field(_character, "portretSprite");
+        _sprite = _portrait.FieldType;
         _createDialogue = Field(_character, "createDialogue"); _missionIds = Field(_character, "missionIds");
         _captain = Field(characters, "captain"); _shipAi = Field(characters, "shipAi");
         _lines = Field(_dialogue, "dialogues"); _onComplete = Field(_dialogue, "onComplete");
@@ -61,9 +67,7 @@ internal sealed class StoryCharacterRuntime
             if (_service.IntroductionFor(name) is not { } introduction) return null;
             var character = _characterCtor.Invoke(new object[] { introduction.Definition.Name });
             _description.SetValue(character, introduction.Definition.Description);
-            if (introduction.Definition.PortraitOf is { } portraitOf &&
-                _lookup.Invoke(null, new object[] { portraitOf }) is { } source)
-                _portrait.SetValue(character, _portrait.GetValue(source));
+            ResolvePortrait(character, introduction.Definition.Portrait);
             var lookupName = introduction.LookupName;
             _createDialogue.SetValue(character, CreateDialogueDelegate(self =>
                 BuildConversation(self, _service.IntroductionFor(lookupName)?.Conversation)));
@@ -97,6 +101,29 @@ internal sealed class StoryCharacterRuntime
             foreach (var extension in extensions) Highlight(character, extension.MissionHighlights);
         }
         catch (Exception error) { ReportOnce(error); }
+    }
+
+    private void ResolvePortrait(object character, CharacterPortrait? portrait)
+    {
+        if (portrait == null) return;
+        object? sprite = null;
+        string identity;
+        if (portrait.PortraitName is { } art)
+        {
+            identity = "portrait '" + art + "'";
+            sprite = _portraits(art);
+            if (sprite != null && !_sprite.IsInstanceOfType(sprite)) sprite = null;
+        }
+        else
+        {
+            identity = "character '" + portrait.RegistryName + "'";
+            if (_lookup.Invoke(null, new object[] { portrait.RegistryName! }) is { } source)
+                sprite = _portrait.GetValue(source);
+        }
+        if (sprite != null) { _portrait.SetValue(character, sprite); return; }
+        // Cosmetic degradation must be visible in the log, once per identity, not silent.
+        if (_missingPortraits.Add(identity))
+            try { _report(new InvalidOperationException("The game has no " + identity + "; the introduced character keeps no portrait.")); } catch { }
     }
 
     private void Highlight(object character, string[] missionIds)

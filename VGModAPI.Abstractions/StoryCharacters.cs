@@ -60,22 +60,49 @@ public sealed class CharacterConversation
     }
 }
 
+/// <summary>
+/// A character portrait from the game's own art. "I want this portrait" is expressed directly;
+/// naming another character is a convenience for "look like them". An identity the game cannot
+/// resolve degrades to no portrait and is reported once per identity — never a hard failure.
+/// </summary>
+public sealed class CharacterPortrait
+{
+    internal string? PortraitName { get; }
+    internal string? RegistryName { get; }
+    private CharacterPortrait(string? portraitName, string? registryName)
+    { PortraitName = portraitName; RegistryName = registryName; }
+    /// <summary>
+    /// A portrait from the game's NPC portrait set by its art name, such as "PirateM", "AI",
+    /// "Umbral" or "MercWoman". Every shipped NPC portrait is expressible this way, including art
+    /// no registry character currently wears.
+    /// </summary>
+    public static CharacterPortrait Named(string portraitName)
+    {
+        CharacterText.Check(portraitName, 64, nameof(portraitName));
+        foreach (var character in portraitName)
+            if (!char.IsLetterOrDigit(character) && character != '_')
+                throw new ArgumentException("Portrait names contain letters, digits and underscores only.", nameof(portraitName));
+        return new CharacterPortrait(portraitName, null);
+    }
+    /// <summary>The portrait of an existing game character by its registry factory name,
+    /// such as "QuestgiverHullBlueprints" (displayed as Voss), not its display name.</summary>
+    public static CharacterPortrait OfCharacter(string registryName)
+        => new(null, CharacterText.Check(registryName, 512, nameof(registryName)));
+}
+
 /// <summary>An owner-scoped named character the game's registry does not contain.</summary>
 public sealed class StoryCharacterDefinition
 {
     public string LocalId { get; }
     public string Name { get; }
     public string Description { get; }
-    /// <summary>Optional registry name of a game character whose portrait this character reuses,
-    /// such as "QuestgiverHullBlueprints" (the character displayed as Voss). The registry resolves
-    /// factory names, not display names; an unknown name simply leaves the portrait unset.</summary>
-    public string? PortraitOf { get; }
-    public StoryCharacterDefinition(string localId, string name, string description, string? portraitOf = null)
+    public CharacterPortrait? Portrait { get; }
+    public StoryCharacterDefinition(string localId, string name, string description, CharacterPortrait? portrait = null)
     {
         LocalId = CharacterText.Check(localId, 128, nameof(localId));
         Name = CharacterText.Check(name, 128, nameof(name));
         Description = CharacterText.Check(description, 1024, nameof(description));
-        PortraitOf = portraitOf == null ? null : CharacterText.Check(portraitOf, 512, nameof(portraitOf));
+        Portrait = portrait;
     }
 }
 

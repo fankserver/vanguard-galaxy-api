@@ -18,12 +18,14 @@ public sealed class StoryCharacterTests : IDisposable
     public StoryCharacterTests()
     {
         _service = new StoryCharacterService(_hub); _service.SetAvailable(true);
-        _runtime = new StoryCharacterRuntime(typeof(Character).Assembly, _service, _errors.Add);
+        _runtime = new StoryCharacterRuntime(typeof(Character).Assembly, _service,
+            art => _portraits.TryGetValue(art, out var sprite) ? sprite : null, _errors.Add);
         Characters.captain = new Character("Reyna");
         Characters.shipAi = new Character("ECHO");
         Characters.TestVossPortrait = VossPortrait;
     }
     private static readonly UnityEngine.Sprite VossPortrait = new();
+    private readonly Dictionary<string, object> _portraits = new() { ["PirateM"] = new UnityEngine.Sprite() };
 
     private static Dialogue? Talk(object character)
     {
@@ -37,8 +39,8 @@ public sealed class StoryCharacterTests : IDisposable
     public void IntroducedCharacterResolvesConsistentlyWithOwnedIdentityContentAndPortrait()
     {
         var step = 1;
-        // Portraits resolve through the registry's factory names, not display names.
-        using var ricko = _service.Introduce("mod.a", new StoryCharacterDefinition("ricko", "Ricko", "Luminate Ship Mechanic", portraitOf: "QuestgiverHullBlueprints"),
+        // "I want this portrait" is direct: the game's own art name, no registry indirection.
+        using var ricko = _service.Introduce("mod.a", new StoryCharacterDefinition("ricko", "Ricko", "Luminate Ship Mechanic", CharacterPortrait.Named("PirateM")),
             () => step switch
             {
                 1 => new CharacterConversation(new[]
@@ -51,7 +53,7 @@ public sealed class StoryCharacterTests : IDisposable
         Assert.Null(_runtime.ResolveOwned("QuestgiverHullBlueprints"));
         var built = Assert.IsType<Character>(_runtime.ResolveOwned(ricko.LookupName));
         Assert.Equal("Ricko", built.name); Assert.Equal("Luminate Ship Mechanic", built.description);
-        Assert.Same(VossPortrait, built.portretSprite);
+        Assert.Same(_portraits["PirateM"], built.portretSprite);
         Assert.Equal(new[] { "CustomAct3Quest" }, built.missionIds);
         var first = Talk(built)!;
         Assert.Equal(new[] { "Ricko: Still need the canisters.", "Reyna: On it.", "ECHO: Singing continues." }, Spoken(first));
@@ -169,21 +171,43 @@ public sealed class StoryCharacterTests : IDisposable
     }
 
     [Fact]
-    public void UnknownPortraitRegistryNameFailsOpenToNoPortrait()
+    public void BorrowedCharacterPortraitsResolveThroughRegistryFactoryNames()
     {
-        using var npc = _service.Introduce("mod.a", new StoryCharacterDefinition("npc", "N", "D", portraitOf: "Voss"),
-            () => null);
+        using var npc = _service.Introduce("mod.a", new StoryCharacterDefinition("npc", "N", "D",
+            CharacterPortrait.OfCharacter("QuestgiverHullBlueprints")), () => null);
         var built = Assert.IsType<Character>(_runtime.ResolveOwned(npc.LookupName));
-        Assert.Null(built.portretSprite);
+        Assert.Same(VossPortrait, built.portretSprite);
         Assert.Empty(_errors);
+    }
+
+    [Fact]
+    public void UnresolvablePortraitsDegradeVisiblyOncePerIdentityNotSilently()
+    {
+        using var art = _service.Introduce("mod.a", new StoryCharacterDefinition("a", "A", "D",
+            CharacterPortrait.Named("MissingArt")), () => null);
+        // Display name instead of a registry factory name: same visible, non-fatal degradation.
+        using var borrowed = _service.Introduce("mod.a", new StoryCharacterDefinition("b", "B", "D",
+            CharacterPortrait.OfCharacter("Voss")), () => null);
+        Assert.Null(((Character)_runtime.ResolveOwned(art.LookupName)!).portretSprite);
+        Assert.Null(((Character)_runtime.ResolveOwned(borrowed.LookupName)!).portretSprite);
+        Assert.Equal(2, _errors.Count);
+        Assert.All(_errors, error => Assert.Contains("no ", error.Message));
+        // Rebuilds re-attempt resolution but report each missing identity only once.
+        Assert.NotNull(_runtime.ResolveOwned(art.LookupName));
+        Assert.Equal(2, _errors.Count);
+        _portraits["MissingArt"] = new UnityEngine.Sprite();
+        Assert.NotNull(((Character)_runtime.ResolveOwned(art.LookupName)!).portretSprite);
+        _errors.Clear();
     }
 
     [Fact]
     public void ContractValidationRejectsProgrammingErrors()
     {
         Assert.Throws<ArgumentException>(() => new StoryCharacterDefinition(" ", "N", "D"));
-        Assert.Throws<ArgumentException>(() => new StoryCharacterDefinition("id", "N", "D", portraitOf: "vgmodapi.character.v1.x.y")
-            is var _ ? _service.Introduce("mod.a", new("id", "N", "D", "vgmodapi.character.v1.x.y"), () => null) : null);
+        Assert.Throws<ArgumentException>(() => CharacterPortrait.Named("Sprites/NPC/PirateM"));
+        Assert.Throws<ArgumentException>(() => CharacterPortrait.Named(".."));
+        Assert.Throws<ArgumentException>(() => _service.Introduce("mod.a",
+            new("id", "N", "D", CharacterPortrait.OfCharacter("vgmodapi.character.v1.x.y")), () => null));
         Assert.Throws<ArgumentException>(() => CharacterLine.Self(" "));
         Assert.Throws<ArgumentException>(() => CharacterLine.By(" ", "text"));
         Assert.Throws<ArgumentException>(() => new CharacterConversation(Array.Empty<CharacterLine>()));

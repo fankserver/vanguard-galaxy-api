@@ -37,8 +37,8 @@ internal sealed class StoryCharacterService : IStoryCharacterService, IDisposabl
         if (definition == null || conversation == null)
             throw new ArgumentNullException(definition == null ? nameof(definition) : nameof(conversation));
         var provider = Identity(pluginId, nameof(pluginId));
-        if (definition.PortraitOf != null && definition.PortraitOf.StartsWith(LookupPrefix, StringComparison.Ordinal))
-            throw new ArgumentException("Portraits are reused from game characters, not owned ones.", nameof(definition));
+        if (definition.Portrait?.RegistryName is { } registryName && registryName.StartsWith(LookupPrefix, StringComparison.Ordinal))
+            throw new ArgumentException("Character portraits are reused from game characters, not owned ones.", nameof(definition));
         var highlights = Highlights(missionHighlights);
         if (_introductions.Any(entry => !entry.Disposed && entry.Provider == provider && entry.Definition.LocalId == definition.LocalId))
             throw new InvalidOperationException("Duplicate provider character identity.");
