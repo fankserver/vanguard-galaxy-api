@@ -274,12 +274,13 @@ public sealed partial class StoryContentTests
         Assert.Throws<ArgumentException>(() => new StoryMissionDefinition("salvage", "t", "d", Faction, new[] { step },
             new[] { StoryReward.Credits(1), StoryReward.Credits(2) }));
         Assert.Throws<ArgumentException>(() => new StoryStep("s", Array.Empty<StoryObjective>()));
-        Assert.Throws<ArgumentOutOfRangeException>(() => StoryObjective.KillEnemies(0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => StoryObjective.KillEnemies(0, new StoryFactionId("TradingGuild")));
+        Assert.Throws<ArgumentException>(() => StoryObjective.KillEnemies(1, default));
         Assert.Throws<ArgumentException>(() => StoryObjective.TravelTo(""));
         Assert.Throws<ArgumentOutOfRangeException>(() => StoryReward.Credits(0));
         var objectives = new List<StoryObjective> { StoryObjective.CollectCredits(10) };
         var built = new StoryStep("s", objectives);
-        objectives.Add(StoryObjective.KillEnemies(3));
+        objectives.Add(StoryObjective.KillEnemies(3, new StoryFactionId("TradingGuild")));
         Assert.Single(built.Objectives);
     }
 
@@ -2180,11 +2181,13 @@ public sealed partial class StoryContentTests
         var plugin = new object();
         host.Register(plugin, AnimaPlugin);
         var provider = service.AcquireProvider(plugin).Provider!;
+        // A kill objective naming a faction the game does not know is refused like every other
+        // serialized faction identity; the kind itself is now installable.
         var unsupported = new StoryMissionDefinition("hunt", "Hunt", "Clear the raiders.", Faction,
-            new[] { new StoryStep("Destroy them", new[] { StoryObjective.KillEnemies(5) }) });
+            new[] { new StoryStep("Destroy them", new[] { StoryObjective.KillEnemies(5, new StoryFactionId("NoSuchClan")) }) });
         var refused = provider.Register(unsupported);
         Assert.Equal(StoryRegistrationStatus.InvalidDefinition, refused.Status);
-        Assert.Contains("enemy faction identity", refused.Diagnostic);
+        Assert.Contains("does not know", refused.Diagnostic);
         Assert.Empty(world.World.InstalledIdentifiers());
 
         // A faction the game does not know is refused for the same reason: the save would break.

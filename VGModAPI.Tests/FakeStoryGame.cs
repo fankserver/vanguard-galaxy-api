@@ -111,6 +111,7 @@ namespace Source.MissionSystem.Objectives
         public string? shipType;
         public Source.Galaxy.Faction? enemyFaction;
         public int requiredAmount;
+        public int currentAmount { get; set; }
         /// <summary>Exactly the game's dependency: a null enemy faction throws while saving.</summary>
         public override string ToJson() => "{kill:" + enemyFaction!.identifier + ":" + requiredAmount + "}";
     }

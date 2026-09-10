@@ -175,6 +175,24 @@ public sealed class InstalledStoryBindingTests
         // The native turn-in consumption and count refresh the delivery contract relies on.
         Assert.Contains(tradeOffer.Methods, method => method.Name == "OnMissionTurnedIn" && method.HasBody);
         Assert.Contains(tradeOffer.Properties, property => property.Name == "currentAmount" && property.PropertyType.FullName == "System.Int32");
+        // Gather kinds: trigger-counted at a string POI identity with a nullable item; kill carries its faction.
+        foreach (var gather in new[] { "Mining", "Salvage" })
+        {
+            var gatherType = module.GetType(StoryContentPolicy.ObjectiveNamespace + "." + gather)!;
+            bool foundItem = false, foundAmount = false, foundTarget = false, foundCurrent = false;
+            for (var walk = gatherType; walk != null; walk = walk.BaseType?.Resolve())
+            {
+                foundItem |= walk.Fields.Any(f => f.Name == "itemType" && f.FieldType.FullName == "Behaviour.Item.InventoryItemType");
+                foundAmount |= walk.Fields.Any(f => f.Name == "requiredAmount" && f.FieldType.FullName == "System.Int32");
+                foundTarget |= walk.Fields.Any(f => f.Name == "targetPOI" && f.FieldType.FullName == "System.String");
+                foundCurrent |= walk.Properties.Any(p => p.Name == "currentAmount" && p.PropertyType.FullName == "System.Int32");
+                if (walk.BaseType == null || walk.BaseType.FullName == Objective) break;
+            }
+            Assert.True(foundItem && foundAmount && foundTarget && foundCurrent, gather);
+        }
+        AssertField(module, StoryContentPolicy.ObjectiveNamespace + ".KillEnemies", "enemyFaction", "Source.Galaxy.Faction");
+        var killType = module.GetType(StoryContentPolicy.ObjectiveNamespace + ".KillEnemies")!;
+        Assert.Contains(killType.Properties, p => p.Name == "currentAmount" && p.PropertyType.FullName == "System.Int32");
         var itemType = module.GetType("Behaviour.Item.InventoryItemType")!;
         Assert.Contains(itemType.Methods, method => method.Name == "TryGet" && method.IsStatic && method.Parameters.Count == 2);
         // baseAmount exists on the scaling reward types only; Reputation carries a flat amount + faction.
@@ -279,11 +297,12 @@ public sealed class InstalledStoryBindingTests
     }
 
     /// <summary>
-    /// Why KillEnemies is refused: the objective serializes its enemy faction's identifier, so an
-    /// objective without one breaks the save exactly as a missing source faction does.
+    /// Why KillEnemies REQUIRES a faction: the objective serializes its enemy faction's identifier,
+    /// so an objective without one would break the save exactly as a missing source faction does.
+    /// The API therefore carries the identity on the definition instead of refusing the kind.
     /// </summary>
     [Fact]
-    public void TheRefusedObjectiveKindDependsOnAFactionThisSubsetCannotSupply()
+    public void TheKillObjectiveSerializesItsFactionSoTheDefinitionMustCarryOne()
     {
         using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
         var module = assembly.MainModule;
@@ -291,7 +310,7 @@ public sealed class InstalledStoryBindingTests
         Assert.Contains(kill.Fields, field => field.Name == "enemyFaction" && field.FieldType.FullName == "Source.Galaxy.Faction");
         var data = kill.Methods.Single(method => method.Name == "DataToJson");
         Assert.Contains(Calls(data), name => name == "get_identifier");
-        Assert.NotNull(StoryContentPolicy.RefuseObjective(StoryObjectiveKind.KillEnemies));
+        Assert.Null(StoryContentPolicy.RefuseObjective(StoryObjectiveKind.KillEnemies));
         Assert.Null(StoryContentPolicy.RefuseObjective(StoryObjectiveKind.TravelToPoi));
         Assert.Null(StoryContentPolicy.RefuseObjective(StoryObjectiveKind.CollectCredits));
     }
@@ -368,14 +387,24 @@ public sealed class InstalledStoryBindingTests
         {
             if (StoryContentPolicy.RefuseObjective(kind) != null) continue;
             var type = module.GetType(StoryContentPolicy.ObjectiveNamespace + "." + StoryContentPolicy.ObjectiveTypeName(kind))!;
-            if (kind == StoryObjectiveKind.Scripted)
+            // A kind that overrides the trigger entry point must have its own guard binding, because
+            // Harmony on the base method does not cover overrides. Salvage inherits Mining's.
+            var guardKeys = new System.Collections.Generic.Dictionary<StoryObjectiveKind, string>
             {
-                var scripted = Assert.Single(type.Methods, method => method.Name == "ProcessMissionTrigger");
-                Assert.True(scripted.IsVirtual);
-                Assert.Equal("System.Void", scripted.ReturnType.FullName);
-                Assert.Equal(new[] { "Source.MissionSystem.MissionTrigger", "System.Object" }, scripted.Parameters.Select(value => value.ParameterType.FullName));
-                Assert.Contains(BindingCatalog.StoryProtection, binding => binding.Key == "storyGuardScriptedTrigger");
+                [StoryObjectiveKind.Scripted] = "storyGuardScriptedTrigger",
+                [StoryObjectiveKind.KillEnemies] = "storyGuardKillTrigger",
+                [StoryObjectiveKind.MineItems] = "storyGuardMiningTrigger",
+            };
+            if (guardKeys.TryGetValue(kind, out var guardKey))
+            {
+                var overridden = Assert.Single(type.Methods, method => method.Name == "ProcessMissionTrigger");
+                Assert.True(overridden.IsVirtual);
+                Assert.Equal("System.Void", overridden.ReturnType.FullName);
+                Assert.Equal(new[] { "Source.MissionSystem.MissionTrigger", "System.Object" }, overridden.Parameters.Select(value => value.ParameterType.FullName));
+                Assert.Contains(BindingCatalog.StoryProtection, binding => binding.Key == guardKey);
             }
+            else if (kind == StoryObjectiveKind.SalvageItems)
+                Assert.DoesNotContain(type.Methods, method => method.Name == "ProcessMissionTrigger"); // covered by the Mining base patch
             else Assert.DoesNotContain(type.Methods, method => method.Name == "ProcessMissionTrigger");
         }
     }

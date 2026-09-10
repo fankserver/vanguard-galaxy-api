@@ -44,7 +44,7 @@ public readonly struct StoryContentId : IEquatable<StoryContentId>
 /// provider-defined objective type cannot round-trip through a vanilla save. Unsupported behaviour
 /// stays provider logic; it is never smuggled in as an opaque payload.
 /// </summary>
-public enum StoryObjectiveKind { TravelToPoi, KillEnemies, CollectCredits, Scripted, DeliverItems }
+public enum StoryObjectiveKind { TravelToPoi, KillEnemies, CollectCredits, Scripted, DeliverItems, MineItems, SalvageItems }
 
 /// <summary>
 /// Identity of a faction this API may reference. It is the game's own faction identifier, passed as a
@@ -103,18 +103,20 @@ public sealed class StoryObjective
     public string? TargetPoiId { get; }
     /// <summary>Required for the counting kinds; ignored by <see cref="StoryObjectiveKind.TravelToPoi"/>.</summary>
     public int RequiredAmount { get; }
-    /// <summary>Required for <see cref="StoryObjectiveKind.DeliverItems"/>: an existing item-type identity, never a display name.</summary>
+    /// <summary>Required for the item kinds (delivery, mining; optional for salvage): an existing item-type identity, never a display name.</summary>
     public string? ItemTypeId { get; }
+    /// <summary>Required for <see cref="StoryObjectiveKind.KillEnemies"/>: the existing faction whose units the game counts.</summary>
+    public string? EnemyFactionId { get; }
     public float RequiredVisitSeconds { get; }
 
-    private StoryObjective(StoryObjectiveKind kind, string? targetPoiId, int requiredAmount, float requiredVisitSeconds, string? localKey = null, string? description = null, string? itemTypeId = null)
-    { Kind = kind; TargetPoiId = targetPoiId; RequiredAmount = requiredAmount; RequiredVisitSeconds = requiredVisitSeconds; LocalKey = localKey; Description = description; ItemTypeId = itemTypeId; }
+    private StoryObjective(StoryObjectiveKind kind, string? targetPoiId, int requiredAmount, float requiredVisitSeconds, string? localKey = null, string? description = null, string? itemTypeId = null, string? enemyFactionId = null)
+    { Kind = kind; TargetPoiId = targetPoiId; RequiredAmount = requiredAmount; RequiredVisitSeconds = requiredVisitSeconds; LocalKey = localKey; Description = description; ItemTypeId = itemTypeId; EnemyFactionId = enemyFactionId; }
 
     /// <summary>Returns an immutable keyed copy. Keys must be unique throughout one mission definition.</summary>
     public StoryObjective WithKey(string localKey)
     {
         if (!StoryContentId.IsValidSegment(localKey)) throw new ArgumentException("An objective key uses the story identity segment format.", nameof(localKey));
-        return new StoryObjective(Kind, TargetPoiId, RequiredAmount, RequiredVisitSeconds, localKey, Description, ItemTypeId);
+        return new StoryObjective(Kind, TargetPoiId, RequiredAmount, RequiredVisitSeconds, localKey, Description, ItemTypeId, EnemyFactionId);
     }
 
     public static StoryObjective TravelTo(string targetPoiId, float requiredVisitSeconds = 0)
@@ -146,7 +148,45 @@ public sealed class StoryObjective
         return new StoryObjective(StoryObjectiveKind.DeliverItems, deliverToPoiId, requiredAmount, 0, itemTypeId: itemTypeId);
     }
 
-    public static StoryObjective KillEnemies(int requiredAmount) => Counting(StoryObjectiveKind.KillEnemies, requiredAmount);
+    /// <summary>
+    /// The game's own mining objective: the engine counts ore the player tractors in at the target
+    /// POI. The exact ore identity is required and validated; pair with an exact-count authored
+    /// mining field for a fully balanced gather arc.
+    /// </summary>
+    public static StoryObjective MineItems(string itemTypeId, int requiredAmount, string targetPoiId)
+    {
+        if (string.IsNullOrWhiteSpace(itemTypeId) || itemTypeId.Length > 128) throw new ArgumentException("A bounded exact item-type identity is required.", nameof(itemTypeId));
+        return Gather(StoryObjectiveKind.MineItems, itemTypeId, requiredAmount, targetPoiId);
+    }
+
+    /// <summary>
+    /// The game's own salvage objective: the engine counts salvage the player collects at the target
+    /// POI. A null item identity means any salvaged material there counts (the native meaning).
+    /// </summary>
+    public static StoryObjective SalvageItems(int requiredAmount, string targetPoiId, string? itemTypeId = null)
+    {
+        if (itemTypeId != null && (string.IsNullOrWhiteSpace(itemTypeId) || itemTypeId.Length > 128)) throw new ArgumentException("A bounded exact item-type identity is required.", nameof(itemTypeId));
+        return Gather(StoryObjectiveKind.SalvageItems, itemTypeId, requiredAmount, targetPoiId);
+    }
+
+    private static StoryObjective Gather(StoryObjectiveKind kind, string? itemTypeId, int requiredAmount, string targetPoiId)
+    {
+        if (string.IsNullOrWhiteSpace(targetPoiId) || targetPoiId.Length > 128) throw new ArgumentException("A bounded target POI identity is required.", nameof(targetPoiId));
+        if (requiredAmount is < 1 or > MaxAmount) throw new ArgumentOutOfRangeException(nameof(requiredAmount));
+        return new StoryObjective(kind, targetPoiId, requiredAmount, 0, itemTypeId: itemTypeId);
+    }
+
+    /// <summary>
+    /// The game's own kill objective: the engine counts destroyed units of the named existing
+    /// faction. The faction identity is required - the game serializes it and renders its name, so
+    /// a kill objective without one could never complete.
+    /// </summary>
+    public static StoryObjective KillEnemies(int requiredAmount, StoryFactionId enemyFaction)
+    {
+        if (enemyFaction.Value == null) throw new ArgumentException("An enemy faction identity is required.", nameof(enemyFaction));
+        if (requiredAmount is < 1 or > MaxAmount) throw new ArgumentOutOfRangeException(nameof(requiredAmount));
+        return new StoryObjective(StoryObjectiveKind.KillEnemies, null, requiredAmount, 0, enemyFactionId: enemyFaction.Value);
+    }
     public static StoryObjective CollectCredits(int requiredAmount) => Counting(StoryObjectiveKind.CollectCredits, requiredAmount);
 
     private static StoryObjective Counting(StoryObjectiveKind kind, int requiredAmount)

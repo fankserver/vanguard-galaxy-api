@@ -38,7 +38,9 @@ internal static class StoryContentPolicy
         [StoryObjectiveKind.KillEnemies] = "KillEnemies",
         [StoryObjectiveKind.CollectCredits] = "CollectCredits",
         [StoryObjectiveKind.Scripted] = "TriggerObjective",
-        [StoryObjectiveKind.DeliverItems] = "TradeOffer"
+        [StoryObjectiveKind.DeliverItems] = "TradeOffer",
+        [StoryObjectiveKind.MineItems] = "Mining",
+        [StoryObjectiveKind.SalvageItems] = "Salvage"
     };
 
     /// <summary>Vanilla reward type names, exactly as <c>MissionReward.Create</c> resolves them.</summary>
@@ -76,10 +78,7 @@ internal static class StoryContentPolicy
     /// mission. Owner-scoped faction identity for objectives is not part of this subset, so the kind
     /// stays in the vocabulary and is refused at registration rather than installed unsafely.
     /// </summary>
-    private static readonly Dictionary<StoryObjectiveKind, string> UnsupportedObjectives = new()
-    {
-        [StoryObjectiveKind.KillEnemies] = "KillEnemies needs an owner-scoped enemy faction identity, which this subset does not carry yet; the game would serialize a null faction and the objective could never complete."
-    };
+    private static readonly Dictionary<StoryObjectiveKind, string> UnsupportedObjectives = new();
 
     internal static string? RefuseObjective(StoryObjectiveKind kind)
         => UnsupportedObjectives.TryGetValue(kind, out var reason) ? reason : null;

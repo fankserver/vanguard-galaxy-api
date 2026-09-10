@@ -131,6 +131,19 @@ internal sealed class StoryNativeBindings
     private static FieldInfo Field(Type type, string name) => type.GetField(name,
         BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly)
         ?? throw new MissingFieldException(type.FullName, name);
+    /// <summary>Walks the inheritance chain: Salvage declares its gather fields on its Mining base, exactly like the game.</summary>
+    private static FieldInfo FieldInherited(Type type, string name)
+    {
+        for (var walk = type; walk != null; walk = walk.BaseType)
+            if (walk.GetField(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly) is { } field) return field;
+        throw new MissingFieldException(type.FullName, name);
+    }
+    private static PropertyInfo PropertyInherited(Type type, string name)
+    {
+        for (var walk = type; walk != null; walk = walk.BaseType)
+            if (walk.GetProperty(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly) is { } property) return property;
+        throw new MissingMemberException(type.FullName, name);
+    }
     private static PropertyInfo Property(Type type, string name) => type.GetProperty(name,
         BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)
         ?? throw new MissingMemberException(type.FullName, name);
@@ -239,8 +252,29 @@ internal sealed class StoryNativeBindings
                 Field(native.GetType(), "requiredAmount").SetValue(native, objective.RequiredAmount);
                 break;
             case StoryObjectiveKind.KillEnemies:
+                Field(native.GetType(), "requiredAmount").SetValue(native, objective.RequiredAmount);
+                // KnowsFaction, not Get: the native Get would CREATE an unknown identity.
+                if (!KnowsFaction(objective.EnemyFactionId!))
+                    throw new InvalidOperationException("The game does not know enemy faction '" + objective.EnemyFactionId + "'.");
+                var enemy = Faction(objective.EnemyFactionId!)!;
+                Field(native.GetType(), "enemyFaction").SetValue(native, enemy);
+                break;
             case StoryObjectiveKind.CollectCredits:
                 Field(native.GetType(), "requiredAmount").SetValue(native, objective.RequiredAmount);
+                break;
+            case StoryObjectiveKind.MineItems:
+            case StoryObjectiveKind.SalvageItems:
+                // The game counts the gathering itself (ItemCollected trigger, POI-scoped); a null
+                // salvage item means any material there, exactly the native meaning.
+                if (objective.ItemTypeId != null)
+                {
+                    var gatherArguments = new object?[] { objective.ItemTypeId, null };
+                    if (_itemTryGet.Invoke(null, gatherArguments) is not true || gatherArguments[1] == null)
+                        throw new InvalidOperationException("The game does not know item type '" + objective.ItemTypeId + "'.");
+                    FieldInherited(native.GetType(), "itemType").SetValue(native, gatherArguments[1]);
+                }
+                FieldInherited(native.GetType(), "requiredAmount").SetValue(native, objective.RequiredAmount);
+                FieldInherited(native.GetType(), "targetPOI").SetValue(native, objective.TargetPoiId);
                 break;
             case StoryObjectiveKind.DeliverItems:
                 // Exact identities only; the service refuses unknowns before installation, and this
@@ -363,6 +397,12 @@ internal sealed class StoryNativeBindings
                 // IsComplete drives the native count refresh; currentAmount is then the observed value.
                 _ = objective.GetType().GetMethod("IsComplete", System.Type.EmptyTypes)!.Invoke(objective, null);
                 progress = Math.Min(expected.RequiredAmount, Math.Max(0, (int)Property(objective.GetType(), "currentAmount").GetValue(objective)!));
+                break;
+            case StoryObjectiveKind.MineItems:
+            case StoryObjectiveKind.SalvageItems:
+            case StoryObjectiveKind.KillEnemies:
+                if ((int)FieldInherited(objective.GetType(), "requiredAmount").GetValue(objective)! != expected.RequiredAmount) return null;
+                progress = Math.Min(expected.RequiredAmount, Math.Max(0, (int)PropertyInherited(objective.GetType(), "currentAmount").GetValue(objective)!));
                 break;
             default: return null;
         }

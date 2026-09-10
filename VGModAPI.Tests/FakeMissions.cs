@@ -64,6 +64,20 @@ namespace Source.MissionSystem
 namespace Source.MissionSystem.Objectives
 {
     public enum ItemCategory { Ore, Salvage }
-    public class Mining { public ItemCategory? itemCategory; }
-    public class Salvage : Mining { }
+    /// <summary>Exactly the game's shape: trigger-counted gathering scoped to a target POI, with a nullable item identity.</summary>
+    public class Mining : Source.MissionSystem.MissionObjective
+    {
+        public ItemCategory? itemCategory;
+        public Behaviour.Item.InventoryItemType? itemType;
+        public int requiredAmount;
+        public string? targetPOI;
+        public int currentAmount { get; set; }
+        public override bool IsComplete() => currentAmount >= requiredAmount;
+        public override string ToJson() => "{mine:" + (itemType?.identifier ?? "any") + ":" + currentAmount + "/" + requiredAmount + "@" + targetPOI + "}";
+    }
+    public class Salvage : Mining
+    {
+        public bool guaranteedByDedicatedWreck;
+        public override string ToJson() => "{salvage:" + (itemType?.identifier ?? "any") + ":" + currentAmount + "/" + requiredAmount + "@" + targetPOI + "}";
+    }
 }

@@ -157,9 +157,23 @@ reservation.
 
 ## Objectives and revisions
 
-Supported objectives are `TravelToPoi`, `CollectCredits`, `Scripted` and `DeliverItems`; supported
-rewards are `Credits`, `Experience` and `Reputation`. Unsupported kinds, including `KillEnemies`,
-are refused rather than installed with missing native dependencies.
+Supported objectives are `TravelToPoi`, `CollectCredits`, `Scripted`, `DeliverItems`,
+`MineItems`, `SalvageItems` and `KillEnemies`; supported rewards are `Credits`, `Experience` and
+`Reputation`.
+
+`StoryObjective.KillEnemies(requiredAmount, enemyFaction)` counts destroyed units of the named
+existing faction through the game's own trigger — the identity is required because the game
+serializes and renders it, and it is validated against the registry at registration exactly like
+the source faction.
+
+`StoryObjective.MineItems(itemTypeId, requiredAmount, targetPoiId)` and
+`StoryObjective.SalvageItems(requiredAmount, targetPoiId, itemTypeId?)` are the game's own
+gather-at-location objectives: the engine itself counts the ore mined or material salvaged at the
+target POI. A null salvage item means any salvaged material there counts (the native meaning); a
+mining item identity is required and validated. Target POIs follow travel-target semantics —
+authored sites from the world service are valid targets, so an exact-count mining field pairs with
+an exactly balanced ore requirement. Progress is observable through `Snapshot`/`Changed`; the API
+never counts gameplay itself.
 
 `StoryObjective.DeliverItems(itemTypeId, requiredAmount, deliverToPoiId)` is the game's own
 item-delivery step: the native objective tracks the count at the delivery station and **consumes

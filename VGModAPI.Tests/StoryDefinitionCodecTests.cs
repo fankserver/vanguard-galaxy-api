@@ -55,6 +55,28 @@ public sealed class StoryDefinitionCodecTests
     }
 
     [Fact]
+    public void GatherAndKillObjectivesRoundTrip()
+    {
+        var definition = new StoryMissionDefinition("acts", "Title", "Description", new StoryFactionId("TradingGuild"),
+            new[] { new StoryStep("Gather", new[]
+            {
+                StoryObjective.SalvageItems(1, "monsoon-poi").WithKey("salvage"),
+                StoryObjective.MineItems("OreCommon1", 40, "singers-field").WithKey("mine"),
+                StoryObjective.KillEnemies(5, new StoryFactionId("Fanatics")).WithKey("repel")
+            }) });
+        var restored = StoryDefinitionCodec.Decode(StoryDefinitionCodec.Encode(definition));
+        Assert.Equal(StoryDefinitionCodec.Encode(definition), StoryDefinitionCodec.Encode(restored));
+        var salvage = restored.Steps[0].Objectives[0];
+        Assert.Equal(StoryObjectiveKind.SalvageItems, salvage.Kind);
+        Assert.Null(salvage.ItemTypeId);
+        Assert.Equal("monsoon-poi", salvage.TargetPoiId);
+        var mine = restored.Steps[0].Objectives[1];
+        Assert.Equal("OreCommon1", mine.ItemTypeId);
+        Assert.Equal(40, mine.RequiredAmount);
+        Assert.Equal("Fanatics", restored.Steps[0].Objectives[2].EnemyFactionId);
+    }
+
+    [Fact]
     public void LegacyVersion1PayloadsRemainReadable()
     {
         // A retained pre-delivery definition (schema 1) decodes exactly as before.
@@ -91,6 +113,7 @@ public sealed class StoryDefinitionCodecTests
                 writer.Write(reader.ReadByte()); CopyText(reader, writer); CopyText(reader, writer);
                 writer.Write(reader.ReadInt32()); writer.Write(reader.ReadSingle()); CopyText(reader, writer);
                 Assert.Equal(-1, reader.ReadInt32()); // drop the v2 item id slot
+                Assert.Equal(-1, reader.ReadInt32()); // drop the v2 enemy faction slot
             }
         }
         int rewards = reader.ReadByte(); writer.Write((byte)rewards);
