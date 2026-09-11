@@ -4,7 +4,7 @@ using Xunit;
 
 namespace VGModAPI.Tests;
 
-public sealed class BossGuardianMathTests
+public sealed class EncounterMathTests
 {
     [Theory]
     [InlineData(50, 80, 92, 20, 120, 92)]   // 50+20=70 < floor 92 -> floor
@@ -13,44 +13,44 @@ public sealed class BossGuardianMathTests
     public void ResolveLevel_honours_floor_threat_and_cap(int player, int fixedLevel, int floor, int over, int ceiling, int expected)
     {
         var policy = new EncounterLevelPolicy(levelFloor: floor, threatOver: over);
-        Assert.Equal(expected, BossGuardianMath.ResolveLevel(player, fixedLevel, policy, ceiling));
+        Assert.Equal(expected, EncounterMath.ResolveLevel(player, fixedLevel, policy, ceiling));
     }
 
     [Fact]
     public void ResolveLevel_preserves_fixed_level_when_not_dynamic()
     {
         // No level policy -> existing behavior unchanged, no added ceiling.
-        Assert.Equal(95, BossGuardianMath.ResolveLevel(60, 95, null, 100));
+        Assert.Equal(95, EncounterMath.ResolveLevel(60, 95, null, 100));
     }
 
     [Fact]
     public void ResolveLevel_threat_only_uses_fixed_as_floor()
     {
         var policy = new EncounterLevelPolicy(threatOver: 10);
-        Assert.Equal(80, BossGuardianMath.ResolveLevel(60, 80, policy, 100)); // max(80, 60+10)
-        Assert.Equal(90, BossGuardianMath.ResolveLevel(80, 80, policy, 100)); // max(80, 80+10)
+        Assert.Equal(80, EncounterMath.ResolveLevel(60, 80, policy, 100)); // max(80, 60+10)
+        Assert.Equal(90, EncounterMath.ResolveLevel(80, 80, policy, 100)); // max(80, 80+10)
     }
 
     [Fact]
     public void ResolveLevel_floor_only_scales_with_player()
     {
         var policy = new EncounterLevelPolicy(levelFloor: 50);
-        Assert.Equal(50, BossGuardianMath.ResolveLevel(40, 90, policy, 100)); // max(50, 40)
-        Assert.Equal(80, BossGuardianMath.ResolveLevel(80, 90, policy, 100)); // max(50, 80)
+        Assert.Equal(50, EncounterMath.ResolveLevel(40, 90, policy, 100)); // max(50, 40)
+        Assert.Equal(80, EncounterMath.ResolveLevel(80, 90, policy, 100)); // max(50, 80)
     }
 
     [Fact]
     public void ApplyItemLevelCap_returns_level_at_or_below_player()
     {
-        Assert.Equal(10, BossGuardianMath.ApplyItemLevelCap(10, 30));
-        Assert.Equal(30, BossGuardianMath.ApplyItemLevelCap(30, 30));
+        Assert.Equal(10, EncounterMath.ApplyItemLevelCap(10, 30));
+        Assert.Equal(30, EncounterMath.ApplyItemLevelCap(30, 30));
     }
 
     [Fact]
     public void ApplyItemLevelCap_above_player_uses_ceiling_power()
     {
         // gap 20 -> 20^0.7 = 8.14 -> ceil 9 -> 30 + 9 = 39
-        Assert.Equal(39, BossGuardianMath.ApplyItemLevelCap(50, 30));
+        Assert.Equal(39, EncounterMath.ApplyItemLevelCap(50, 30));
     }
 
     [Theory]
@@ -59,24 +59,25 @@ public sealed class BossGuardianMathTests
     [InlineData(50, 32.0)]
     public void DamageMultiplier_is_two_to_the_quarter(int level, double expected)
     {
-        Assert.Equal((float)expected, BossGuardianMath.DamageMultiplier(level), 5);
+        Assert.Equal((float)expected, EncounterMath.DamageMultiplier(level), 5);
     }
 
     [Fact]
     public void ComputeDamageBoost_raises_damage_toward_requested_tier()
     {
-        int player = 40, spawn = 40, requested = 60;
-        int achieved = BossGuardianMath.ApplyItemLevelCap(spawn, player);
-        float ratio = BossGuardianMath.DamageMultiplier(requested) / BossGuardianMath.DamageMultiplier(achieved);
-        Assert.Equal(ratio - 1f, BossGuardianMath.ComputeDamageBoost(player, spawn, requested), 5);
+        // Hand-computed independently of the functions under test: player 40, spawn 40 -> item-level
+        // cap no-ops (achieved 40); DamageMultiplier(60)=2^6=64, DamageMultiplier(40)=2^4=16,
+        // ratio 4 -> boost 3.
+        Assert.Equal(40, EncounterMath.ApplyItemLevelCap(40, 40));
+        Assert.Equal(3f, EncounterMath.ComputeDamageBoost(40, 40, 60), 5);
     }
 
     [Fact]
     public void ComputeDamageBoost_is_zero_when_requested_below_achieved()
     {
         int player = 40, spawn = 70, requested = 50;
-        int achieved = BossGuardianMath.ApplyItemLevelCap(spawn, player);
+        int achieved = EncounterMath.ApplyItemLevelCap(spawn, player);
         Assert.True(achieved >= requested);
-        Assert.Equal(0f, BossGuardianMath.ComputeDamageBoost(player, spawn, requested));
+        Assert.Equal(0f, EncounterMath.ComputeDamageBoost(player, spawn, requested));
     }
 }

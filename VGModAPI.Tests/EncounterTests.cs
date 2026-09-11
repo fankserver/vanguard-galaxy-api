@@ -12,13 +12,13 @@ public sealed class EncounterTests
     private sealed class FakeEncounters : IEncounterNative
     {
         internal readonly List<(string Poi, EncounterComposition Composition)> Spawned = new();
-        internal Func<string, EncounterComposition, (int, string)?>? Handler;
-        public (int Scheduled, string Detail)? Spawn(Guid session, string poiId, EncounterComposition composition)
+        internal Func<string, EncounterComposition, (int, string, string[])?>? Handler;
+        public (int Scheduled, string Detail, string[] UnitIds)? Spawn(Guid session, string poiId, EncounterComposition composition)
         {
             Spawned.Add((poiId, composition));
             if (Handler != null) return Handler(poiId, composition);
             int total = 0; foreach (var wave in composition.Waves) total += wave.Count;
-            return (total, "");
+            return (total, "", Array.Empty<string>());
         }
     }
     private sealed class Harness : IDisposable
@@ -81,11 +81,11 @@ public sealed class EncounterTests
     {
         using var h = new Harness();
         h.BeginGameplay();
-        h.Native.Handler = (_, _) => (4, "");
+        h.Native.Handler = (_, _) => (4, "", Array.Empty<string>());
         var partial = h.Provider.SpawnEncounter("poi", Ambush());
         Assert.Equal(AuthoredActionStatus.Rejected, partial.Status);
         Assert.Equal(4, partial.ScheduledUnits);
-        h.Native.Handler = (_, _) => (0, "Unknown ship class: Bogus");
+        h.Native.Handler = (_, _) => (0, "Unknown ship class: Bogus", Array.Empty<string>());
         var unknown = h.Provider.SpawnEncounter("poi", Ambush());
         Assert.Equal(AuthoredActionStatus.Rejected, unknown.Status);
         Assert.Contains("Bogus", unknown.Detail);

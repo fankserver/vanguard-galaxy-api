@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Reflection;
 using VGModAPI.Runtime;
 
@@ -8,8 +9,8 @@ namespace VGModAPI.Core.Integration;
 /// <summary>Core-facing seam so the encounter path is unit-testable without native types.</summary>
 internal interface IEncounterNative
 {
-    /// <summary>Validates every input, then schedules all waves. Returns the scheduled unit count, or null as a typed refusal with a reason.</summary>
-    (int Scheduled, string Detail)? Spawn(Guid session, string poiId, EncounterComposition composition);
+    /// <summary>Validates every input, then schedules all waves. Returns the scheduled unit count plus the owned unit-data ids of the units scheduled (empty on refusal), or null as a typed refusal with a reason.</summary>
+    (int Scheduled, string Detail, string[] UnitIds)? Spawn(Guid session, string poiId, EncounterComposition composition);
 }
 
 /// <summary>
@@ -21,17 +22,17 @@ internal sealed class WorldNativeEncounters : IEncounterNative
 {
     private readonly GameAdapter _game;
     private readonly WorldMapIndex _index;
-    private readonly BossGuardianRuntime? _guardian;
-    private readonly PropertyInfo _map;
+    private readonly EncounterEquipmentRuntime? _equipment;
+    private readonly PropertyInfo _map, _guid;
     private readonly MethodInfo _addTriggered, _shipExists, _factionGet;
     private readonly FieldInfo _allFactions, _playerHostile, _noReputationLoss;
     private readonly Type _combatType, _rankType, _shipDataType;
     private readonly object _gameplayCombat;
     private readonly Action<Exception> _report;
 
-    internal WorldNativeEncounters(GameAdapter game, Assembly assembly, BossGuardianRuntime? guardian = null, Action<Exception>? report = null)
+    internal WorldNativeEncounters(GameAdapter game, Assembly assembly, EncounterEquipmentRuntime? equipment = null, Action<Exception>? report = null)
     {
-        _game = game; _report = report ?? (_ => { }); _guardian = guardian;
+        _game = game; _report = report ?? (_ => { }); _equipment = equipment;
         _index = new WorldMapIndex(assembly);
         Type Get(string name) => assembly.GetType(name, true)!;
         _map = Get("Source.Player.GamePlayer").GetProperty("map", BindingFlags.Public | BindingFlags.Instance)
@@ -58,11 +59,12 @@ internal sealed class WorldNativeEncounters : IEncounterNative
         // flags themselves are declared on the unit-data base type.
         _shipDataType = Get("Source.SpaceShip.SpaceShipData");
         var unitData = Get("Source.Data.AbstractUnitData");
+        _guid = unitData.GetProperty("guid", BindingFlags.Public | BindingFlags.Instance) ?? throw new MissingMemberException("AbstractUnitData.guid");
         _playerHostile = unitData.GetField("playerHostile", BindingFlags.Public | BindingFlags.Instance) ?? throw new MissingFieldException("playerHostile");
         _noReputationLoss = unitData.GetField("noReputationLoss", BindingFlags.Public | BindingFlags.Instance) ?? throw new MissingFieldException("noReputationLoss");
     }
 
-    public (int Scheduled, string Detail)? Spawn(Guid session, string poiId, EncounterComposition composition)
+    public (int Scheduled, string Detail, string[] UnitIds)? Spawn(Guid session, string poiId, EncounterComposition composition)
     {
         try
         {
@@ -70,27 +72,28 @@ internal sealed class WorldNativeEncounters : IEncounterNative
             var map = _map.GetValue(player);
             if (map == null) return null;
             var poi = _index.Read(map).FindPoint(poiId);
-            if (poi == null) return (0, "The POI does not exist in the current galaxy.");
+            if (poi == null) return (0, "The POI does not exist in the current galaxy.", Array.Empty<string>());
             // Validate everything before scheduling anything: a partial encounter is not the authored one.
             foreach (var wave in composition.Waves)
                 if (_shipExists.Invoke(null, new object[] { wave.ShipClassId }) is not true)
-                    return (0, "Unknown ship class: " + wave.ShipClassId);
+                    return (0, "Unknown ship class: " + wave.ShipClassId, Array.Empty<string>());
             if (_allFactions.GetValue(null) is not IDictionary factions || !factions.Contains(composition.FactionId))
-                return (0, "Unknown faction: " + composition.FactionId);
+                return (0, "Unknown faction: " + composition.FactionId, Array.Empty<string>());
             var faction = _factionGet.Invoke(null, new object[] { composition.FactionId });
             object rank;
             try { rank = Enum.Parse(_rankType, composition.Rank.ToString()); }
-            catch (ArgumentException) { return (0, "The installed game does not support rank " + composition.Rank + "."); }
+            catch (ArgumentException) { return (0, "The installed game does not support rank " + composition.Rank + ".", Array.Empty<string>()); }
             int scheduled = 0;
+            var unitIds = new List<string>();
             var parameterInfos = _addTriggered.GetParameters();
-            // Dynamic guardian scaling resolves once against the observed player before any wave is offered.
+            // Dynamic level scaling resolves once against the observed player before any wave is offered.
             int level = composition.Level;
-            if (composition.LevelPolicy?.Dynamic == true && _guardian != null)
+            if (composition.LevelPolicy?.Dynamic == true && _equipment != null)
             {
-                var playerLevel = _guardian.ReadPlayerLevel(player);
-                var maxLevel = _guardian.ReadMaxLevel();
+                var playerLevel = _equipment.ReadPlayerLevel(player);
+                var maxLevel = _equipment.ReadMaxLevel();
                 if (playerLevel is int pl && maxLevel is int mx)
-                    level = BossGuardianMath.ResolveLevel(pl, composition.Level, composition.LevelPolicy, mx);
+                    level = EncounterMath.ResolveLevel(pl, composition.Level, composition.LevelPolicy, mx);
             }
             foreach (var wave in composition.Waves)
             {
@@ -105,9 +108,9 @@ internal sealed class WorldNativeEncounters : IEncounterNative
                     // A mid-loop native throw keeps the honest partial count; null is reserved for
                     // failures before anything scheduled.
                     if (waveError is TargetInvocationException tie && tie.InnerException != null) _report(tie.InnerException); else _report(waveError);
-                    return (scheduled, "A native reinforcement wave failed.");
+                    return (scheduled, "A native reinforcement wave failed.", unitIds.ToArray());
                 }
-                if (units == null) return (scheduled, "The native reinforcement trigger refused a wave.");
+                if (units == null) return (scheduled, "The native reinforcement trigger refused a wave.", unitIds.ToArray());
                 foreach (var unit in units)
                 {
                     // Decomp-verified: AddTriggeredSpawnFromFixedPayload returns the exact data
@@ -118,12 +121,14 @@ internal sealed class WorldNativeEncounters : IEncounterNative
                         _playerHostile.SetValue(unit, true);
                         if (composition.NoReputationLoss) _noReputationLoss.SetValue(unit, true);
                     }
-                    if (composition.Loadout != null && _guardian != null)
-                        _guardian.ApplyLoadout(unit, level, null, composition.Loadout);
+                    if (composition.EquipmentOverride != null && _equipment != null)
+                        _equipment.Apply(unit, level, composition.EquipmentOverride);
+                    if (_shipDataType.IsInstanceOfType(unit) && _guid.GetValue(unit) is string id && !string.IsNullOrEmpty(id))
+                        unitIds.Add(id);
                     scheduled++;
                 }
             }
-            return (scheduled, "");
+            return (scheduled, "", unitIds.ToArray());
         }
         catch (Exception error)
         {

@@ -9,7 +9,7 @@ namespace VGModAPI.Core;
 /// unit-testable without the game. Never drift: if the game changes the formula the runtime binding
 /// must be re-inspected, and this mirror updated to match.
 /// </summary>
-internal static class BossGuardianMath
+internal static class EncounterMath
 {
     /// <summary>
     /// Resolves the level to spawn at. Dynamic scaling (an <see cref="EncounterLevelPolicy"/> with at

@@ -654,13 +654,15 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 return new EncounterSpawnResult(AuthoredActionStatus.Rejected, detail: "A POI identity is required.");
             var outcome = _service._encounters.Spawn(session.Id, poiId, composition);
             if (outcome == null) return new EncounterSpawnResult(AuthoredActionStatus.Unavailable, detail: "The encounter could not be scheduled.");
-            var (scheduled, detail) = outcome.Value;
+            var outgoing = outcome.Value;
+            var scheduled = outgoing.Scheduled;
             int requested = 0;
             foreach (var wave in composition.Waves) requested += wave.Count;
             return scheduled == requested
-                ? new EncounterSpawnResult(AuthoredActionStatus.Succeeded, scheduled)
+                ? new EncounterSpawnResult(AuthoredActionStatus.Succeeded, scheduled, unitIds: outgoing.UnitIds)
                 : new EncounterSpawnResult(AuthoredActionStatus.Rejected, scheduled,
-                    detail.Length > 0 ? detail : "The native trigger scheduled a different unit count than authored.");
+                    detail: (outgoing.Detail.Length > 0 ? outgoing.Detail : "The native trigger scheduled a different unit count than authored."),
+                    unitIds: outgoing.UnitIds);
         }
 
         public event Action<AuthoredWormholePairsSettledEvent>? AuthoredWormholePairReconstructionSettled;
