@@ -1007,6 +1007,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             private WorldContentResult _last = new(WorldContentStatus.NotReady, "No action has been taken yet on this occurrence.");
             private bool _dissolved;
             private readonly Action _evict;
+            private IDisposable? _quietFirst, _quietSecond;
             private event Action<IWormholePair>? _changed;
             internal WormholePairHandle(Provider provider, string localId, string key, Guid session, Action evict)
             { _provider = provider; _localId = localId; _key = key; Session = session; _evict = evict; }
@@ -1017,7 +1018,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 {
                     if (_provider._wormholes != null && _provider._service._wormholeDefinitions != null &&
                         _provider._service._wormholeDefinitions.TryResolve(_provider._wormholes, _localId, out var d) && d != null)
-                        return new(d.LocalId, d.Revision, d.Name);
+                        return new(d.LocalId, d.Revision, d.Name, d.Quiet);
                     return new(_localId, 1, "unknown");
                 }
             }
@@ -1050,6 +1051,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 if (status != WorldStatus.Succeeded) return _last = new(status == WorldStatus.Unavailable ? WorldContentStatus.Unavailable : WorldContentStatus.Rejected, detail);
                 _dissolved = true;
                 _evict();
+                ReleaseQuiet();
                 _last = new(WorldContentStatus.Succeeded);
                 _state = new(ReconstructionStatus.Dissolved);
                 _changed?.Invoke(this);
@@ -1062,6 +1064,31 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 var updated = _provider._service._wormholeCoordinator.State(_provider._wormholes, _localId, _key);
                 bool changed = updated.Status != _state.Status || updated.Reason != _state.Reason || updated.FirstWormholePoiId != _state.FirstWormholePoiId || updated.SecondWormholePoiId != _state.SecondWormholePoiId;
                 _state = updated; if (changed) _changed?.Invoke(this);
+                ApplyQuiet();
+            }
+            /// <summary>Declares the private-door quieting for both owned ends once their native identities
+            /// are known. Idempotent: each end is declared at most once and re-resolves across reloads. A
+            /// quiet pair spawns no passerby traffic and no security patrol at either end.</summary>
+            private void ApplyQuiet()
+            {
+                try
+                {
+                    if (!Definition.Quiet) return;
+                    var ambient = _provider._service._ambient;
+                    if (ambient == null) return;
+                    if (_quietFirst == null && _state.FirstWormholePoiId is { Length: > 0 } first)
+                        _quietFirst = ambient.SuppressAtWormhole(first, _localId + "|" + _key + "|quiet-a");
+                    if (_quietSecond == null && _state.SecondWormholePoiId is { Length: > 0 } second)
+                        _quietSecond = ambient.SuppressAtWormhole(second, _localId + "|" + _key + "|quiet-b");
+                }
+                catch (Exception error) { _provider._service._hub.ReportSubscriberFailure("world.quiet-wormhole", error); }
+            }
+            private void ReleaseQuiet()
+            {
+                var first = _quietFirst; _quietFirst = null;
+                var second = _quietSecond; _quietSecond = null;
+                try { first?.Dispose(); } catch { }
+                try { second?.Dispose(); } catch { }
             }
         }
 

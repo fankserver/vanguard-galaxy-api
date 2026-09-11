@@ -18,7 +18,9 @@ internal static class AmbientTrafficBindings
     internal static readonly MethodBinding[] Methods =
     {
         new("trafficStationSpawn", "SpacestationExteriorManager", "CreatePasserbyShip", false, "System.Boolean", "Behaviour.Spacestation.Docking.DockingOptionSize"),
-        new("trafficGateSpawn", "Behaviour.Travel.JumpGateManager", "CreatePasserbyShip", false, "System.Void")
+        new("trafficGateSpawn", "Behaviour.Travel.JumpGateManager", "CreatePasserbyShip", false, "System.Void"),
+        new("trafficWormholeSpawn", "Behaviour.Travel.WormholeManager", "CreatePasserbyShip", false, "System.Void"),
+        new("trafficSecurityPatrol", "Behaviour.Managers.BasePoiManager", "CreateSecurityPatrol", false, "System.Void")
     };
     internal static Dictionary<string, MethodInfo> Validate(Assembly assembly)
     {

@@ -391,6 +391,20 @@ session; re-obtain restored pairs with `GetWormholePair` or `GetWormholePairs`.
 `WormholePairReconstructionSettled` reports the provider's reconstructed and failed pair
 objects once the world settles; each failed object's `State.Reason` gives the typed reason.
 
+A pair declared `quiet: true` is a private door rather than a highway: no decorative passerby
+traffic flies through either end and no security patrol is created there. The API declares that
+quieting itself when the pair's identities are known and releases it when the pair dissolves, so
+no consumer bookkeeping (or `IAmbientTrafficService` call) is required:
+
+```csharp
+provider.RegisterWormholePair(new WormholePairDefinition("my-rift", 1, "My Rift", quiet: true));
+```
+
+Docking, services, faction relations and story- or mission-placed ships are unaffected. For finer
+control, `IAmbientTrafficService.SuppressAtWormhole` quiets one wormhole and
+`SuppressInSystemContaining` quiets decorative traffic throughout a system (security presence is
+left alone there — only a quieted wormhole strips it).
+
 A mod can remove the pair and release both native wormhole POIs (plus the owned occurrence row)
 with `IwWormholePair.Dissolve()` — the teardown mirror of creation:
 

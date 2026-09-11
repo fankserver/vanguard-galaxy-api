@@ -45,7 +45,7 @@ internal sealed class WormholePairRegistry : IDisposable
     internal bool Register(Provider provider, WormholePairDefinition definition, WormholePairDefinition? previous = null)
         => Register(provider, Map(definition ?? throw new ArgumentNullException(nameof(definition))), previous == null ? null : Map(previous));
     private static WormholePairDeclaration Map(WormholePairDefinition definition)
-        => new(definition.LocalId, definition.Revision, definition.Name);
+        => new(definition.LocalId, definition.Revision, definition.Name, definition.Quiet);
     private bool Register(Provider provider, WormholePairDeclaration definition, WormholePairDeclaration? previous)
     {
         _checkThread();

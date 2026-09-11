@@ -35,6 +35,23 @@ internal sealed class AmbientTrafficRuntime
 
     internal bool SuppressStationVisitor(object? manager) => Suppress(AmbientSpawnSite.Station, manager);
     internal bool SuppressGateTraffic(object? manager) => Suppress(AmbientSpawnSite.JumpGate, manager);
+    internal bool SuppressWormholeTraffic(object? manager) => Suppress(AmbientSpawnSite.Wormhole, manager);
+    /// <summary>A quiet wormhole spawns no security patrol either; other POIs keep theirs.</summary>
+    internal bool SuppressQuietWormholePatrol(object? manager)
+    {
+        try
+        {
+            if (manager == null || !_manager.IsInstanceOfType(manager)) return false;
+            var poi = _poi.GetValue(manager);
+            if (poi == null) return false;
+            return _service.ShouldSuppressPatrol(_guid.GetValue(poi) as string);
+        }
+        catch (Exception error)
+        {
+            if (!_reported) { _reported = true; try { _report(error); } catch { } }
+            return false;
+        }
+    }
 
     private bool Suppress(AmbientSpawnSite site, object? manager)
     {

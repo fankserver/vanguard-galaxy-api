@@ -16,6 +16,41 @@ public sealed class AmbientTrafficServiceTests : IDisposable
     private static string? NoAnchor(string _) => null;
 
     [Fact]
+    public void WormholeDeclarationFullyQuietsThatWormholeOnly()
+    {
+        IAmbientTrafficService api = _service;
+        using var declaration = api.SuppressAtWormhole("rift-a");
+        // Traffic through this rift stops, and so does the security patrol it would otherwise spawn.
+        Assert.True(_service.ShouldSuppress(AmbientSpawnSite.Wormhole, "rift-a", "sys-1", NoAnchor));
+        Assert.True(_service.ShouldSuppressPatrol("rift-a"));
+        // A different wormhole, gates and stations are untouched.
+        Assert.False(_service.ShouldSuppress(AmbientSpawnSite.Wormhole, "rift-b", "sys-1", NoAnchor));
+        Assert.False(_service.ShouldSuppress(AmbientSpawnSite.JumpGate, "rift-a", "sys-1", NoAnchor));
+        Assert.False(_service.ShouldSuppress(AmbientSpawnSite.Station, "rift-a", "sys-1", NoAnchor));
+        Assert.False(_service.ShouldSuppressPatrol("rift-b"));
+    }
+
+    [Fact]
+    public void SystemDeclarationAlsoQuietsWormholeTrafficButNotItsPatrol()
+    {
+        using var declaration = _service.SuppressInSystemContaining("anchor-station");
+        string? Resolve(string anchor) => anchor == "anchor-station" ? "pocket" : null;
+        Assert.True(_service.ShouldSuppress(AmbientSpawnSite.Wormhole, "pocket-rift", "pocket", Resolve));
+        // Security presence in a whole system is deliberately left alone; only a quieted wormhole strips it.
+        Assert.False(_service.ShouldSuppressPatrol("pocket-rift"));
+    }
+
+    [Fact]
+    public void WormholeQuietingDisposesCleanly()
+    {
+        var declaration = _service.SuppressAtWormhole("rift-a");
+        Assert.True(_service.ShouldSuppressPatrol("rift-a"));
+        declaration.Dispose(); declaration.Dispose();
+        Assert.False(_service.ShouldSuppress(AmbientSpawnSite.Wormhole, "rift-a", "sys-1", NoAnchor));
+        Assert.False(_service.ShouldSuppressPatrol("rift-a"));
+    }
+
+    [Fact]
     public void StationDeclarationQuietsExactlyThatStationSpawner()
     {
         IAmbientTrafficService api = _service;

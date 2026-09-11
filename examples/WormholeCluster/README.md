@@ -61,8 +61,10 @@ guard, not a silent failure).
   gates to A and B).
 - **Wormhole-pair** creation and **dissolution** (entry + per-off-world doors), including that a
   pocket that is still a wormhole endpoint refuses to dissolve.
+- **Quiet wormholes** (`quiet: true`): an owned rift spawns no decorative passerby traffic and no
+  security patrol at either end — a private door, not a highway.
 - **Resource sites** (mining + salvage) placed **inside** owned pockets, removed with the pocket.
-- **Static** system names.
+- **Static** system names, plus named subsectors.
 - **Full cleanup** / tear-down of everything spawned.
 
 ## Build

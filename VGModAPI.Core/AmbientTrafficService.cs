@@ -6,7 +6,7 @@ using System.Runtime.CompilerServices;
 
 namespace VGModAPI.Core;
 
-internal enum AmbientSpawnSite { Station, JumpGate }
+internal enum AmbientSpawnSite { Station, JumpGate, Wormhole }
 
 /// <summary>
 /// Plugin-lifetime quiet-location declarations. Anchors are re-resolved by the adapter at each
@@ -33,18 +33,21 @@ internal sealed class AmbientTrafficService : IAmbientTrafficService, IDisposabl
     private readonly KeyedDeclarations _keyed = new();
     [MethodImpl(MethodImplOptions.NoInlining)]
     public IDisposable SuppressAtStation(string stationId, string? key = null)
-        => Declare(Assembly.GetCallingAssembly(), key, stationOnly: true, stationId, nameof(stationId));
+        => Declare(Assembly.GetCallingAssembly(), key, AmbientSpawnSite.Station, stationId, nameof(stationId));
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public IDisposable SuppressAtWormhole(string wormholePoiId, string? key = null)
+        => Declare(Assembly.GetCallingAssembly(), key, AmbientSpawnSite.Wormhole, wormholePoiId, nameof(wormholePoiId));
     [MethodImpl(MethodImplOptions.NoInlining)]
     public IDisposable SuppressInSystemContaining(string poiId, string? key = null)
-        => Declare(Assembly.GetCallingAssembly(), key, stationOnly: false, poiId, nameof(poiId));
-    private Declaration Declare(object scope, string? key, bool stationOnly, string anchor, string parameter)
+        => Declare(Assembly.GetCallingAssembly(), key, null, poiId, nameof(poiId));
+    private Declaration Declare(object scope, string? key, AmbientSpawnSite? site, string anchor, string parameter)
     {
         KeyedDeclarations.Check(key, nameof(key));
         _hub.CheckThread();
         if (_disposed) throw new ObjectDisposedException(nameof(AmbientTrafficService));
         if (string.IsNullOrWhiteSpace(anchor) || anchor.Length > 4096 || anchor.Any(char.IsControl))
             throw new ArgumentException("An authored location identity is required.", parameter);
-        var declaration = new Declaration(this, stationOnly, anchor, scope, key);
+        var declaration = new Declaration(this, site, anchor, scope, key);
         _keyed.Replace(scope, key, declaration);
         _declarations.Add(declaration);
         return declaration;
@@ -62,12 +65,25 @@ internal sealed class AmbientTrafficService : IAmbientTrafficService, IDisposabl
         foreach (var declaration in _declarations.ToArray())
         {
             if (declaration.Disposed) continue;
-            if (declaration.StationOnly)
+            if (declaration.Site is { } declaredSite)
             {
-                if (site == AmbientSpawnSite.Station && declaration.Anchor == sitePoiId) return true;
+                if (site == declaredSite && declaration.Anchor == sitePoiId) return true;
             }
             else if (!string.IsNullOrEmpty(siteSystemId) && uniqueSystemOf(declaration.Anchor) == siteSystemId) return true;
         }
+        return false;
+    }
+    /// <summary>
+    /// Whether a security patrol must not be created at this POI. Only an explicitly quieted wormhole
+    /// qualifies: a quiet wormhole spawns nothing at all, while the system-wide declaration deliberately
+    /// leaves security presence alone.
+    /// </summary>
+    internal bool ShouldSuppressPatrol(string? sitePoiId)
+    {
+        _hub.CheckThread();
+        if (_disposed || !Availability.IsAvailable || string.IsNullOrEmpty(sitePoiId)) return false;
+        foreach (var declaration in _declarations.ToArray())
+            if (!declaration.Disposed && declaration.Site == AmbientSpawnSite.Wormhole && declaration.Anchor == sitePoiId) return true;
         return false;
     }
     public void Dispose()
@@ -81,12 +97,12 @@ internal sealed class AmbientTrafficService : IAmbientTrafficService, IDisposabl
     private sealed class Declaration : IDisposable
     {
         private readonly AmbientTrafficService _owner;
-        internal readonly bool StationOnly;
+        internal readonly AmbientSpawnSite? Site;
         internal readonly string Anchor;
         internal bool Disposed;
         private readonly object _scope; private readonly string? _key;
-        internal Declaration(AmbientTrafficService owner, bool stationOnly, string anchor, object scope, string? key)
-        { _owner = owner; StationOnly = stationOnly; Anchor = anchor; _scope = scope; _key = key; }
+        internal Declaration(AmbientTrafficService owner, AmbientSpawnSite? site, string anchor, object scope, string? key)
+        { _owner = owner; Site = site; Anchor = anchor; _scope = scope; _key = key; }
         public void Dispose()
         {
             _owner._hub.CheckThread(); if (Disposed) return;

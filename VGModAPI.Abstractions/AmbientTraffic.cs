@@ -17,8 +17,18 @@ public interface IAmbientTrafficService : IServiceStatus
     /// only your previous declaration; disposing a superseded handle is inert.</param>
     IDisposable SuppressAtStation(string stationId, string? key = null);
     /// <summary>
-    /// Quiets decorative station and gate traffic throughout the single system that contains the
-    /// anchor location. Neighbouring systems stay vanilla, including a suppressed gate's peer gate.
+    /// Fully quiets one wormhole: no decorative passerby traffic flies through it and no security
+    /// patrol is created there — an owned wormhole stays a private door rather than a highway.
+    /// Docking, services, faction relations and story- or mission-placed ships are unaffected.
+    /// </summary>
+    /// <param name="key">Optional author-scoped declaration key: re-declaring the same key replaces
+    /// only your previous declaration; disposing a superseded handle is inert.</param>
+    IDisposable SuppressAtWormhole(string wormholePoiId, string? key = null);
+    /// <summary>
+    /// Quiets decorative station, gate and wormhole traffic throughout the single system that
+    /// contains the anchor location. Neighbouring systems stay vanilla, including a suppressed
+    /// gate's peer gate. Security patrols are deliberately left alone here; use
+    /// <see cref="SuppressAtWormhole"/> to quiet one wormhole completely.
     /// </summary>
     IDisposable SuppressInSystemContaining(string poiId, string? key = null);
 }
