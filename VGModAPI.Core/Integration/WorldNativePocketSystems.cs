@@ -20,6 +20,7 @@ internal sealed class WorldNativePocketSystems : IPocketSystemNative
     private readonly FieldInfo _sectorSystems, _galaxySectors, _playerCurrentSystem, _playerCurrentPoi, _playerWaypoints;
     private readonly FieldInfo _parentLevel, _pocketSystem, _systemPosition, _allFactions;
     private readonly MethodInfo _factionGet;
+    private readonly PropertyInfo _systemName, _systemFaction;
     private readonly PropertyInfo _guid;
     private readonly MethodInfo _entrance, _target, _unlock, _lock, _removePoi;
     private readonly MethodInfo _galaxyRandomPosition, _galaxyAddSector, _sectorCreate, _sectorName, _emptyCreate, _gatePair;
@@ -61,6 +62,10 @@ internal sealed class WorldNativePocketSystems : IPocketSystemNative
         _entrance = resolved["authoredEntrance"];
         _target = resolved["gateTarget"]; _unlock = resolved["gateUnlock"]; _lock = resolved["gateLock"];
         _removePoi = resolved["systemRemovePoi"];
+        _systemName = assembly.GetType(PocketSystemBindings.Element, true)!.GetProperty("name", BindingFlags.Public | BindingFlags.Instance)
+            ?? throw new MissingMemberException("MapElement.name");
+        _systemFaction = assembly.GetType(PocketSystemBindings.Element, true)!.GetProperty("faction", BindingFlags.Public | BindingFlags.Instance)
+            ?? throw new MissingMemberException("MapElement.faction");
         _galaxyRandomPosition = resolved["galaxyRandomPosition"]; _galaxyAddSector = resolved["galaxyAddSector"];
         _sectorCreate = resolved["sectorCreate"]; _sectorName = resolved["sectorName"];
         _emptyCreate = resolved["emptyCreate"]; _gatePair = resolved["gatePair"];
@@ -148,16 +153,19 @@ internal sealed class WorldNativePocketSystems : IPocketSystemNative
         return false;
     }
 
-    public PocketSystemInfo? CreatePocket(Guid session, string anchorSystemId, PocketSystemPlacement placement, string? factionId)
+    public PocketSystemInfo? CreatePocket(Guid session, string anchorSystemId, PocketSystemPlacement placement, string? factionId, string? name)
     {
         var map = Map(false, session, out var player);
         if (map == null || player == null) return null;
-        object? owner = ResolveFaction(factionId);
         WorldMapIndex.Snapshot before;
         try { before = _index.Read(map); }
         catch (Exception e) { _report(e); return null; }
         var parent = before.FindSystem(anchorSystemId);
         if (parent == null) return null;
+        // Inherit the anchor's facade owner when the consumer declared none (or an unknown faction), so
+        // the authored pocket's gates always have a non-null system.faction to draw from — a null-faction
+        // pocket makes its JumpGateManager NRE on init (stuck gate).
+        object? owner = ResolveFaction(factionId) ?? facadeFactionOf(parent);
         try
         {
             object? created = null;
@@ -178,6 +186,7 @@ internal sealed class WorldNativePocketSystems : IPocketSystemNative
                 CreateRemoteSector(map, parent, owner, out created);
             }
             if (created == null || !_system_IsInstance(created)) return null;
+            if (name != null) _systemName.SetValue(created, name);
             if (Map(false, session, out var current) == null || !ReferenceEquals(current, player)) return null;
             WorldMapIndex.Snapshot after;
             try { after = _index.Read(map); } catch (Exception e) { _report(e); return null; }
@@ -283,6 +292,13 @@ internal sealed class WorldNativePocketSystems : IPocketSystemNative
             return _factionGet.Invoke(null, new object[] { factionId });
         }
         catch (Exception e) { _report(e); return null; }
+    }
+    /// <summary>Reads the anchor system's facade owner (never null for a live system) so a pocket with no
+    /// declared faction inherits one and its gates keep working.</summary>
+    private object? facadeFactionOf(object system)
+    {
+        try { return _systemFaction.GetValue(system); }
+        catch { return null; }
     }
     private bool _system_IsInstance(object value) => value.GetType().FullName == PocketSystemBindings.System;
 

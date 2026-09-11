@@ -35,7 +35,9 @@ internal static class PocketSystemBindings
         (Player, "currentSystem", System, false, true),
         (Player, "currentPointOfInterest", Poi, false, true),
         (Player, "waypoints", "System.Collections.Generic.List`1<" + Poi + ">", false, true),
-        (Element, "level", "System.Int32", false, true)
+        (Element, "level", "System.Int32", false, true),
+        (Element, "faction", Faction, false, false),
+        (Element, "name", "System.String", false, false)
     };
     internal static readonly MethodBinding[] Methods =
     {

@@ -7,13 +7,15 @@ wormhole, site) dissolves back out.
 ## What it builds
 
 From your current system `X`, press **Spawn Wormhole** to open a wormhole into a small authored
-cluster of three gate-linked owned pocket systems:
+cluster of three gate-linked owned pocket systems. The three systems (E/A/B) use **Visible**
+placement, so they render as distinct dots on the belt/galaxy map (in/near your sector); the two
+off-world instances stay **OffMap** — reachable only through their wormhole from Hub Alpha:
 
 ```
  X  --wormhole-->  E (Cluster Entry)   --gate-->  A (Hub Alpha)
                                     \--gate-->  B (Anchor Beta)
 
- A  --[gate back to E]--   + two wormholes into themed off-world instances:
+ A  --[gate back to E]--   + two wormholes into themed off-world instances (OffMap):
                                 * "Mining Instance"  (a mining-field site)
                                 * "Salvage Instance" (a salvage wreck site)
  B  --[gate back to E]--   nothing else (a quiet dead-end anchor)
