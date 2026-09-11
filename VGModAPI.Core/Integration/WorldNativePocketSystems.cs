@@ -64,6 +64,7 @@ internal sealed class WorldNativePocketSystems : IPocketSystemNative
         _removePoi = resolved["systemRemovePoi"];
         _systemName = assembly.GetType(PocketSystemBindings.Element, true)!.GetProperty("name", BindingFlags.Public | BindingFlags.Instance)
             ?? throw new MissingMemberException("MapElement.name");
+        if (_systemName.SetMethod == null) throw new MissingMethodException("MapElement.name", "set_name");
         _systemFaction = assembly.GetType(PocketSystemBindings.Element, true)!.GetProperty("faction", BindingFlags.Public | BindingFlags.Instance)
             ?? throw new MissingMemberException("MapElement.faction");
         _galaxyRandomPosition = resolved["galaxyRandomPosition"]; _galaxyAddSector = resolved["galaxyAddSector"];
@@ -164,8 +165,10 @@ internal sealed class WorldNativePocketSystems : IPocketSystemNative
         if (parent == null) return null;
         // Inherit the anchor's facade owner when the consumer declared none (or an unknown faction), so
         // the authored pocket's gates always have a non-null system.faction to draw from — a null-faction
-        // pocket makes its JumpGateManager NRE on init (stuck gate).
+        // pocket makes its JumpGateManager NRE on init (stuck gate). Refuse (rather than author a broken
+        // gate) if even the anchor system has no faction we can inherit.
         object? owner = ResolveFaction(factionId) ?? facadeFactionOf(parent);
+        if (owner == null) { _report(new InvalidOperationException("Pocket has no declared faction and its anchor system has no faction to inherit; refusing to author a broken gate.")); return null; }
         try
         {
             object? created = null;
