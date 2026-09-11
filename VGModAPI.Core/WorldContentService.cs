@@ -782,6 +782,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             if (_authored != null && _service._authoredCoordinator != null && _service._authoredCoordinator.ContainsOccurrence(_authored.Owner, localId, occurrenceKey)) return null;
             if (_authoredSites != null && _service._siteCoordinator != null && _service._siteCoordinator.ContainsOccurrence(_authoredSites.Owner, localId, occurrenceKey)) return null;
             if (_authoredShips != null && _service._shipCoordinator != null && _service._shipCoordinator.ContainsOccurrence(_authoredShips.Owner, localId, occurrenceKey)) return null;
+            if (CombatKeyOwnsKey(localId, occurrenceKey)) return null;
             var result = _service._wormholeCoordinator.Create(_wormholes, session.Id, localId, occurrenceKey, firstSystemId, secondSystemId);
             return result.Row == null ? null : ObtainWormhole(localId, occurrenceKey, session.Id);
         }

@@ -164,4 +164,46 @@ public sealed class CombatSiteParityTests
         // A different key is untouched by the guard.
         Assert.NotNull(h.Provider.CreateAuthoredSite("wreck", "other-key", "pocket-system", 10, 4));
     }
+
+    [Fact]
+    public void CombatKeysBlockWormholeCreationUnderTheSameKey()
+    {
+        // The review caught this guard missing: without it the collision surfaced only at save time
+        // as an encode refusal - exactly the failure the creation-edge guard exists to prevent.
+        using var h = new WormholeHarness();
+        h.Provider.RegisterAuthoredWormholePair(new AuthoredWormholePairDefinition("rift", 1, "Rift"));
+        h.BeginGameplay();
+        h.Service.RestoreCombatKeys(h.Session, new[] { new CombatSiteKeyRow("author.a", "rift", "k", Guid.NewGuid()) });
+        Assert.Null(h.Provider.CreateAuthoredWormholePair("rift", "k", "a", "b"));
+        Assert.NotNull(h.Provider.CreateAuthoredWormholePair("rift", "other", "a", "b"));
+    }
+
+    private sealed class WormholeHarness : IDisposable
+    {
+        internal readonly LifecycleHub Hub;
+        internal readonly WorldDefinitionRegistry Combat;
+        internal readonly AuthoredWormholePairRegistry Wormholes;
+        internal readonly AuthoredWormholePairCoordinator Coordinator;
+        internal readonly WorldContentService Service;
+        internal readonly IWorldProvider Provider;
+        internal Guid Session;
+        internal WormholeHarness()
+        {
+            Hub = new LifecycleHub((_, error) => throw error);
+            var plugin = new object();
+            StoryHostAuthenticator auth = (instance, caller) => ReferenceEquals(instance, plugin) ? new StoryHostPlugin("author.a", caller) : null;
+            Combat = new WorldDefinitionRegistry(auth, Hub.CheckThread);
+            Wormholes = new AuthoredWormholePairRegistry(auth, Hub.CheckThread);
+            Coordinator = new AuthoredWormholePairCoordinator(Hub, Wormholes, new FakeAuthoredWormholes(), _ => true, _ => { });
+            Service = new WorldContentService(Hub, Combat, null!, () => true,
+                wormholeDefinitions: Wormholes, wormholeCoordinator: Coordinator);
+            Provider = Service.AcquireProvider(plugin)!;
+        }
+        internal void BeginGameplay()
+        {
+            Session = Hub.Begin(SessionOrigin.NewGame, null);
+            Hub.PlayerReady(Session); Hub.GameplayInitialized(Session);
+        }
+        public void Dispose() { Provider?.Dispose(); Coordinator.Dispose(); Service.Dispose(); Combat.Dispose(); Wormholes.Dispose(); Hub.Dispose(); }
+    }
 }

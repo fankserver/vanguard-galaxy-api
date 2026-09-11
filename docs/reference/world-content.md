@@ -31,7 +31,10 @@ after reconstruction has settled at the safe boundary, `CombatSiteReconstruction
 the actual outcomes: reconstructed occurrences and typed per-occurrence failures. The keys share
 one cross-kind key space per owner: a `(localId, occurrenceKey)` claimed by a combat site cannot be
 claimed by an authored system, site, ship or wormhole pair, and vice versa — the collision refuses
-at creation, and a save carrying a colliding pair refuses to encode.
+at creation, and a save carrying a colliding pair refuses to encode. The key rows ride the shared
+authored envelope: if the authored-systems integration failed to bind for this run, combat sites
+still work for the session, but their keys cannot persist and no settled report fires on later
+loads — the same degraded mode the other envelope kinds share in that failure state.
 
 ## Quiet authored locations
 
