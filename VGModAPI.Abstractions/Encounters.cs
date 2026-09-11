@@ -39,8 +39,13 @@ public sealed class EncounterComposition
     public bool HostileToPlayer { get; }
     /// <summary>Killing the spawned units costs no reputation with their faction. Only meaningful with hostility.</summary>
     public bool NoReputationLoss { get; }
+    /// <summary>Optional dynamic level scaling (floor + player threat) resolved at materialisation. Null uses the fixed <see cref="Level"/>.</summary>
+    public EncounterLevelPolicy? LevelPolicy { get; }
+    /// <summary>Optional forced loadout rarity / outgoing-damage tier for the spawned units.</summary>
+    public EncounterEquipmentOverride? EquipmentOverride { get; }
     public EncounterComposition(IEnumerable<EncounterWave> waves, string factionId, int level,
-        EncounterRank rank = EncounterRank.Standard, bool hostileToPlayer = false, bool noReputationLoss = true)
+        EncounterRank rank = EncounterRank.Standard, bool hostileToPlayer = false, bool noReputationLoss = true,
+        EncounterLevelPolicy? levelPolicy = null, EncounterEquipmentOverride? equipmentOverride = null)
     {
         if (waves == null) throw new ArgumentNullException(nameof(waves));
         var copied = waves.ToArray();
@@ -52,6 +57,7 @@ public sealed class EncounterComposition
         Waves = new ReadOnlyCollection<EncounterWave>(copied);
         FactionId = factionId; Level = level; Rank = rank;
         HostileToPlayer = hostileToPlayer; NoReputationLoss = noReputationLoss;
+        LevelPolicy = levelPolicy; EquipmentOverride = equipmentOverride;
     }
 }
 
@@ -62,7 +68,14 @@ public sealed class EncounterSpawnResult
     public string Detail { get; }
     /// <summary>Units actually scheduled through the native trigger; equals the composition total on success.</summary>
     public int ScheduledUnits { get; }
+    /// <summary>
+    /// The owned persistent unit-data identities of the units this spawn materialises (in schedule
+    /// order), for the units that carry one. These are the identities <see cref="IUnitProtectionService.Protect"/>
+    /// and <see cref="IDroneBayService.Tune"/> take, so an author can keep a named boss alive and arm
+    /// its drone bay. Empty when nothing with a stable identity was scheduled, or the request failed.
+    /// </summary>
+    public IReadOnlyList<string> UnitIds { get; }
     public bool Succeeded => Status == AuthoredActionStatus.Succeeded;
-    public EncounterSpawnResult(AuthoredActionStatus status, int scheduledUnits = 0, string detail = "")
-    { Status = status; ScheduledUnits = scheduledUnits; Detail = detail ?? ""; }
+    public EncounterSpawnResult(AuthoredActionStatus status, int scheduledUnits = 0, string detail = "", IEnumerable<string>? unitIds = null)
+    { Status = status; ScheduledUnits = scheduledUnits; Detail = detail ?? ""; UnitIds = Array.AsReadOnly((unitIds ?? Array.Empty<string>()).ToArray()); }
 }
