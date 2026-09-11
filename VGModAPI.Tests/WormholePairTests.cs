@@ -8,7 +8,9 @@ namespace VGModAPI.Tests;
 
 internal sealed class FakeWormholePairs : IWormholePairNative
 {
-    internal int Next, Creates, Applies; internal bool FailCreate; internal int Ambiguity = 1;
+    internal int Next, Creates, Applies, Dissolves; internal bool FailCreate; internal int Ambiguity = 1;
+    internal bool PlayerInside;
+    internal readonly bool FailDissolve = false;
     internal readonly Dictionary<string, (string A, string B, string ASys, string BSys, bool Open)> Pairs = new();
     public WormholePairInfo? CreatePair(Guid session, string name, string a, string b, bool open)
     {
@@ -29,6 +31,16 @@ internal sealed class FakeWormholePairs : IWormholePairNative
     }
     public void BeginPass(Guid session) { }
     public void EndPass() { }
+    public WormholeDissolveOutcome DissolveWormhole(Guid session, string wa, string wb)
+    {
+        Dissolves++;
+        string? key = null;
+        foreach (var entry in Pairs) if (entry.Value.A == wa && entry.Value.B == wb) { key = entry.Key; break; }
+        if (key == null) return WormholeDissolveOutcome.Missing;
+        if (PlayerInside) return WormholeDissolveOutcome.PlayerInside;
+        if (FailDissolve) return WormholeDissolveOutcome.Failed;
+        Pairs.Remove(key); return WormholeDissolveOutcome.Dissolved;
+    }
 }
 
 public sealed class WormholePairTests
@@ -127,5 +139,51 @@ public sealed class WormholePairTests
         var pair = h.Provider.CreateWormholePair("rift", "k", "a", "b")!; int applies = h.Native.Applies;
         h.Hub.Invalidate("test"); h.Begin();
         Assert.Equal(WorldContentStatus.GameEnded, pair.SetOpen(false).Status); Assert.Equal(applies, h.Native.Applies);
+    }
+
+    [Fact]
+    public void DissolveRemovesThePairAndFreesTheKey()
+    {
+        using var h = new Harness(); h.Provider.RegisterWormholePair(new("rift", 1, "Rift")); h.Begin();
+        var pair = h.Provider.CreateWormholePair("rift", "k", "a", "b")!;
+        Assert.True(pair.Dissolve().Succeeded);
+        Assert.Equal(ReconstructionStatus.Dissolved, pair.State.Status);
+        Assert.Empty(h.Native.Pairs);
+        // The key is freed: creating it again authors a fresh pair.
+        var fresh = h.Provider.CreateWormholePair("rift", "k", "a", "b")!;
+        Assert.Equal(ReconstructionStatus.Reconstructed, fresh.State.Status);
+        Assert.Equal(2, h.Native.Creates);
+    }
+
+    [Fact]
+    public void DissolveIsRefusedWhileThePlayerIsAtAWormhole()
+    {
+        using var h = new Harness(); h.Provider.RegisterWormholePair(new("rift", 1, "Rift")); h.Begin();
+        var pair = h.Provider.CreateWormholePair("rift", "k", "a", "b")!;
+        h.Native.PlayerInside = true;
+        Assert.Equal(WorldContentStatus.Rejected, pair.Dissolve().Status);
+        Assert.Single(h.Native.Pairs); // untouched on refusal
+    }
+
+    [Fact]
+    public void DissolveOnMissingPairIsRejectedAndRowIsRetained()
+    {
+        using var h = new Harness(); h.Provider.RegisterWormholePair(new("rift", 1, "Rift")); h.Begin();
+        var pair = h.Provider.CreateWormholePair("rift", "k", "a", "b")!;
+        h.Native.Pairs.Clear();
+        Assert.Equal(WorldContentStatus.Rejected, pair.Dissolve().Status);
+        // The row was retained: re-obtaining the key returns the same occurrence and does not create anew.
+        Assert.Same(pair, h.Provider.GetWormholePair("rift", "k"));
+        Assert.Equal(1, h.Native.Creates);
+    }
+
+    [Fact]
+    public void DissolveOnAStaleSessionIsRefused()
+    {
+        using var h = new Harness(); h.Provider.RegisterWormholePair(new("rift", 1, "Rift")); h.Begin();
+        var pair = h.Provider.CreateWormholePair("rift", "k", "a", "b")!;
+        h.Hub.Invalidate("test"); h.Begin();
+        Assert.Equal(WorldContentStatus.GameEnded, pair.Dissolve().Status);
+        Assert.Single(h.Native.Pairs);
     }
 }

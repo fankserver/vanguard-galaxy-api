@@ -800,7 +800,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
         private WormholePairHandle ObtainWormhole(string localId, string occurrenceKey, Guid session)
         {
             var key = (localId, occurrenceKey); if (_wormholeObjects.TryGetValue(key, out var found)) return found;
-            var handle = new WormholePairHandle(this, localId, occurrenceKey, session); _wormholeObjects.Add(key, handle); handle.Refresh(); return handle;
+            var handle = new WormholePairHandle(this, localId, occurrenceKey, session, () => _wormholeObjects.Remove(key)); _wormholeObjects.Add(key, handle); handle.Refresh(); return handle;
         }
 
         public WorldStatus RegisterPocketSystem(PocketSystemDefinition definition, PocketSystemDefinition? previous = null)
@@ -1005,9 +1005,11 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             private readonly Provider _provider; private readonly string _localId, _key; internal Guid Session { get; }
             private WormholePairState _state = new(ReconstructionStatus.Pending);
             private WorldContentResult _last = new(WorldContentStatus.NotReady, "No action has been taken yet on this occurrence.");
+            private bool _dissolved;
+            private readonly Action _evict;
             private event Action<IWormholePair>? _changed;
-            internal WormholePairHandle(Provider provider, string localId, string key, Guid session)
-            { _provider = provider; _localId = localId; _key = key; Session = session; }
+            internal WormholePairHandle(Provider provider, string localId, string key, Guid session, Action evict)
+            { _provider = provider; _localId = localId; _key = key; Session = session; _evict = evict; }
             public string OccurrenceKey => _key;
             public WormholePairDefinition Definition
             {
@@ -1019,7 +1021,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                     return new(_localId, 1, "unknown");
                 }
             }
-            public WormholePairState State { get { _provider._service._hub.CheckThread(); return _state; } }
+            public WormholePairState State { get { _provider._service._hub.CheckThread(); return _dissolved ? new(ReconstructionStatus.Dissolved) : _state; } }
             public string? FirstWormholePoiId => State.FirstWormholePoiId;
             public string? SecondWormholePoiId => State.SecondWormholePoiId;
             public WorldContentResult LastAction => _last;
@@ -1035,8 +1037,27 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 var status = _provider._service._wormholeCoordinator.SetOpen(_provider._wormholes, Session, _localId, _key, open);
                 return _last = new(status == WorldStatus.Succeeded ? WorldContentStatus.Succeeded : status == WorldStatus.Unavailable ? WorldContentStatus.Unavailable : WorldContentStatus.Rejected);
             }
+            public WorldContentResult Dissolve()
+            {
+                _provider._service._hub.CheckThread();
+                if (_dissolved) return _last = new(WorldContentStatus.Rejected, "The pair was dissolved; create the key again for a fresh pair.");
+                if (_provider._disposed || _provider._service._disposed || _provider._wormholes == null || _provider._service._wormholeCoordinator == null)
+                    return _last = new(WorldContentStatus.Unavailable);
+                if (_provider._service._hub.CurrentSession?.Id != Session) return _last = new(WorldContentStatus.GameEnded);
+                if (_provider._service._hub.CurrentSession.Phase != SessionPhase.GameplayInitialized || _provider._service._hub.IsDispatchingCallbacks)
+                    return _last = new(WorldContentStatus.NotReady);
+                var (status, detail) = _provider._service._wormholeCoordinator.Dissolve(_provider._wormholes, Session, _localId, _key);
+                if (status != WorldStatus.Succeeded) return _last = new(status == WorldStatus.Unavailable ? WorldContentStatus.Unavailable : WorldContentStatus.Rejected, detail);
+                _dissolved = true;
+                _evict();
+                _last = new(WorldContentStatus.Succeeded);
+                _state = new(ReconstructionStatus.Dissolved);
+                _changed?.Invoke(this);
+                return _last;
+            }
             internal void Refresh()
             {
+                if (_dissolved) return;
                 if (_provider._service._hub.CurrentSession?.Id != Session || _provider._wormholes == null || _provider._service._wormholeCoordinator == null) return;
                 var updated = _provider._service._wormholeCoordinator.State(_provider._wormholes, _localId, _key);
                 bool changed = updated.Status != _state.Status || updated.Reason != _state.Reason || updated.FirstWormholePoiId != _state.FirstWormholePoiId || updated.SecondWormholePoiId != _state.SecondWormholePoiId;
