@@ -131,6 +131,12 @@ public sealed class WorldRuntimeStateTests
                 Assert.Same(site, provider.CreateCombatSite("PoiX", "encounter", "system", 24, 24));
                 Assert.Same(site, provider.GetCombatSite("PoiX", "encounter"));
                 Assert.Null(provider.GetCombatSite("PoiX", "missing"));
+                // Parity: the persisted key row backs enumeration and the save capture, so the
+                // occurrence outlives the handle cache exactly like every other authored kind.
+                Assert.Same(site, Assert.Single(provider.GetCombatSites("PoiX")));
+                var capturedKey = Assert.Single(world.CaptureCombatKeys());
+                Assert.Equal("author.a", capturedKey.Owner); Assert.Equal("PoiX", capturedKey.LocalId);
+                Assert.Equal("encounter", capturedKey.OccurrenceKey);
                 Assert.Equal(3, creation.Snapshot().Length);
                 int siteChanges = 0;
                 site.Changed += _ => siteChanges++;

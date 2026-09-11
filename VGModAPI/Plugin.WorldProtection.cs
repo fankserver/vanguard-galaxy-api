@@ -117,13 +117,13 @@ public sealed partial class Plugin
                 session => { creation.Refuse(session); _story?.RefreshWorldDependencies(); }, inspectProfile);
             _worldSnapshotHost = new WorldSnapshotHookHost(_hub, new WorldSnapshotRecorder(
                 new WorldJsonInspection(assembly, emptyProfile, RestoreOwnedItem, RestoreOwnedRecipe),
-                authored == null ? null : () => AuthoredSystemStateCodec.Encode(authored.CaptureRows(), _siteCoordinator?.CaptureRows() ?? Array.Empty<AuthoredSiteOccurrence>(), _shipCoordinator?.CaptureRows() ?? Array.Empty<AuthoredShipOccurrence>(), _wormholeCoordinator?.CaptureRows() ?? Array.Empty<AuthoredWormholePairOccurrence>())),
+                authored == null ? null : () => AuthoredSystemStateCodec.Encode(authored.CaptureRows(), _siteCoordinator?.CaptureRows() ?? Array.Empty<AuthoredSiteOccurrence>(), _shipCoordinator?.CaptureRows() ?? Array.Empty<AuthoredShipOccurrence>(), _wormholeCoordinator?.CaptureRows() ?? Array.Empty<AuthoredWormholePairOccurrence>(), _worldContent?.CaptureCombatKeys() ?? Array.Empty<CombatSiteKeyRow>())),
                 creation.Snapshot, () => { requireContext(); return creation.Revision; }, requireContext);
             _worldPersistence = new WorldPersistenceBindings(_persistence, _hub, _worldLoadHost, _worldSnapshotHost, creation,
                 authored == null ? null : new Action<Guid, byte[]?>((session, bytes) =>
                 {
                     var decoded = bytes == null
-                        ? (Array.Empty<AuthoredSystemOccurrence>(), Array.Empty<AuthoredSiteOccurrence>(), Array.Empty<AuthoredShipOccurrence>(), Array.Empty<AuthoredWormholePairOccurrence>())
+                        ? (Array.Empty<AuthoredSystemOccurrence>(), Array.Empty<AuthoredSiteOccurrence>(), Array.Empty<AuthoredShipOccurrence>(), Array.Empty<AuthoredWormholePairOccurrence>(), Array.Empty<CombatSiteKeyRow>())
                         : AuthoredSystemStateCodec.DecodeAll(bytes);
                     authored.RestoreRows(session, decoded.Item1);
                     if (_siteCoordinator != null) _siteCoordinator.RestoreRows(session, decoded.Item2);
@@ -135,6 +135,9 @@ public sealed partial class Plugin
                     if (_wormholeCoordinator != null) _wormholeCoordinator.RestoreRows(session, decoded.Item4);
                     else if (decoded.Item4.Length > 0)
                         throw new System.IO.InvalidDataException("Authored-wormhole rows present but the wormhole integration is unavailable; refusing a restore that would erase them.");
+                    if (_worldContent != null) _worldContent.RestoreCombatKeys(session, decoded.Item5);
+                    else if (decoded.Item5.Length > 0)
+                        throw new System.IO.InvalidDataException("Combat-site key rows present but the world module is unavailable; refusing a restore that would erase them.");
                 }));
             _worldRuntime = new WorldRuntimeState(_adapter, _worldLoadHost, definitions, creation,
                 lifetime, _worldPersistence.StateReady, admission);
