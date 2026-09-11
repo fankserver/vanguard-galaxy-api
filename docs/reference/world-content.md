@@ -239,6 +239,12 @@ jump gate. The API creates the owned occurrence for the current game if it does 
 and **owns every native identity** (system guid and both gate guids). You never supply a
 native or instance GUID; you only name the occurrence with an author-local key.
 
+The definition's `Name` is written onto the authored pocket system as its static display
+name, so the map shows your declared label rather than an auto-generated star name. When no
+faction (or an unknown faction) is declared, the pocket **inherits the anchor system's own
+faction** rather than being authored ownerless — a null-faction system makes its jump gates
+NRE on init (a stuck gate), so this inheritance keeps authored gates functional.
+
 Re-declaring the same key **reconciles to the owned occurrence** instead of creating a
 duplicate. A foreign or ambiguous native identity is never adopted. The occurrence,
 its gate pairing and its declarative gate state live inside the same sealed save envelope

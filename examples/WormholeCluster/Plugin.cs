@@ -77,9 +77,12 @@ public sealed class Plugin : BaseUnityPlugin
         if (_world == null) { Logger.LogWarning(DisplayName + ": world authoring unavailable."); return; }
 
         // Register immutable definitions (pre-session; registering never creates native objects).
-        _world.RegisterPocketSystem(new PocketSystemDefinition(EntryDef, 1, EntryName));
-        _world.RegisterPocketSystem(new PocketSystemDefinition(HubDef, 1, HubName));
-        _world.RegisterPocketSystem(new PocketSystemDefinition(AnchorDef, 1, AnchorName));
+        // The 3 gate-linked systems (E/A/B) are Visible so they render on the map (in their anchor's
+        // sector) — you can see them on the belt/galaxy views. The two off-world instances stay OffMap:
+        // they are only reachable through their wormhole from Hub Alpha, as "off system" instances.
+        _world.RegisterPocketSystem(new PocketSystemDefinition(EntryDef, 1, EntryName, PocketSystemPlacement.Visible));
+        _world.RegisterPocketSystem(new PocketSystemDefinition(HubDef, 1, HubName, PocketSystemPlacement.Visible));
+        _world.RegisterPocketSystem(new PocketSystemDefinition(AnchorDef, 1, AnchorName, PocketSystemPlacement.Visible));
         _world.RegisterPocketSystem(new PocketSystemDefinition(MiningDef, 1, MiningWorldName));
         _world.RegisterPocketSystem(new PocketSystemDefinition(SalvageDef, 1, SalvageWorldName));
         _world.RegisterWormholePair(new WormholePairDefinition(EntryDoorDef, 1, "Cluster Rift"));

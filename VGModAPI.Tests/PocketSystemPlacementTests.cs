@@ -116,6 +116,19 @@ public sealed class PocketSystemPlacementTests
     }
 
     [Fact]
+    public void StaticNameIsForwardedToTheNativeSeamAndRetainedOnTheHandle()
+    {
+        using var harness = new Harness();
+        Assert.Equal(WorldStatus.Succeeded, harness.Provider.RegisterPocketSystem(
+            new PocketSystemDefinition("p", 1, "Cluster Entry")));
+        harness.BeginGameplay();
+        var pocket = harness.Provider.CreatePocketSystem("p", "k1", "anchor")!;
+        // The static Name (requirement 6) is written onto the authored system at create time.
+        Assert.Equal("Cluster Entry", Assert.Single(harness.Native.CreatedNames));
+        Assert.Equal("Cluster Entry", pocket.Definition.Name);
+    }
+
+    [Fact]
     public void OwnerFactionIsForwardedToTheNativeSeamAndRetainedOnTheHandle()
     {
         using var harness = new Harness();
