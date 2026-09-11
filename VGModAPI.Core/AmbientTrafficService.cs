@@ -38,7 +38,10 @@ internal sealed class AmbientTrafficService : IAmbientTrafficService, IDisposabl
     public IDisposable SuppressAtWormhole(string wormholePoiId, string? key = null)
         => Declare(Assembly.GetCallingAssembly(), key, site: AmbientSpawnSite.Wormhole, wholeSystem: false, stripPatrols: true, wormholePoiId, nameof(wormholePoiId));
     [MethodImpl(MethodImplOptions.NoInlining)]
-    public IDisposable SuppressInSystemContaining(string poiId, string? key = null, bool includeSecurityPatrols = false)
+    public IDisposable SuppressInSystemContaining(string poiId, string? key = null)
+        => Declare(Assembly.GetCallingAssembly(), key, site: null, wholeSystem: true, stripPatrols: false, poiId, nameof(poiId));
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public IDisposable SuppressInSystemContaining(string poiId, string? key, bool includeSecurityPatrols)
         => Declare(Assembly.GetCallingAssembly(), key, site: null, wholeSystem: true, stripPatrols: includeSecurityPatrols, poiId, nameof(poiId));
     private Declaration Declare(object scope, string? key, AmbientSpawnSite? site, bool wholeSystem, bool stripPatrols, string anchor, string parameter)
     {

@@ -17,6 +17,11 @@ public sealed class WormholePairDefinition
     public bool Quiet { get; }
     public WormholePairDefinition(string localId, int revision, string name, bool quiet = false)
     { LocalId = localId ?? throw new ArgumentNullException(nameof(localId)); Revision = revision; Name = name ?? throw new ArgumentNullException(nameof(name)); Quiet = quiet; }
+
+    /// <summary>Binary-compatibility overload for the pre-<c>quiet</c> shape; consumers built against an
+    /// earlier API keep working because that call site binds to this exact three-argument signature.</summary>
+    public WormholePairDefinition(string localId, int revision, string name)
+        : this(localId, revision, name, false) { }
 }
 
 public enum WormholePairFailureReason

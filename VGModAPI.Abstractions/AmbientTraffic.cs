@@ -25,11 +25,15 @@ public interface IAmbientTrafficService : IServiceStatus
     /// only your previous declaration; disposing a superseded handle is inert.</param>
     IDisposable SuppressAtWormhole(string wormholePoiId, string? key = null);
     /// <summary>
+    /// As <see cref="SuppressInSystemContaining(string, string?)"/>, and additionally silences security
+    /// patrols in that system — the way an authored cluster stays entirely quiet.
+    /// </summary>
+    IDisposable SuppressInSystemContaining(string poiId, string? key, bool includeSecurityPatrols);
+    /// <summary>
     /// Quiets decorative station, gate and wormhole traffic throughout the single system that
     /// contains the anchor location (a point of interest or a system). Neighbouring systems stay
-    /// vanilla, including a suppressed gate's peer gate. Security patrols are left alone unless
-    /// <paramref name="includeSecurityPatrols"/> is set, which silences the whole system — the way an
-    /// authored cluster stays entirely quiet.
+    /// vanilla, including a suppressed gate's peer gate. Security patrols are left alone; use the
+    /// overload that takes <c>includeSecurityPatrols</c> to silence a whole authored system.
     /// </summary>
-    IDisposable SuppressInSystemContaining(string poiId, string? key = null, bool includeSecurityPatrols = false);
+    IDisposable SuppressInSystemContaining(string poiId, string? key = null);
 }

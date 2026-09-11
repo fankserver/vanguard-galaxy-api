@@ -63,14 +63,18 @@ public sealed class PocketSystemDefinition
     public bool Quiet { get; }
     public PocketSystemDefinition(string localId, int revision, string name, PocketSystemPlacement placement = PocketSystemPlacement.OffMap, string? factionId = null, string? sectorName = null, bool quiet = false)
     {
-        LocalId = localId ?? throw new ArgumentNullException(nameof(localId));
-        Name = name ?? throw new ArgumentNullException(nameof(name));
+        LocalId = localId ?? throw new ArgumentNullException(nameof(localId));        Name = name ?? throw new ArgumentNullException(nameof(name));
         Revision = revision;
         Placement = placement;
         FactionId = factionId;
         SectorName = sectorName;
         Quiet = quiet;
     }
+
+    /// <summary>Binary-compatibility overload for the pre-<c>sectorName</c> shape; consumers built against an
+    /// earlier API keep working because that call site binds to this exact five-argument signature.</summary>
+    public PocketSystemDefinition(string localId, int revision, string name, PocketSystemPlacement placement, string? factionId)
+        : this(localId, revision, name, placement, factionId, null, false) { }
 }
 
 /// <summary>

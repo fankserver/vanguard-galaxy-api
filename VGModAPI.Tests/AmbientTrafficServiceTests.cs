@@ -60,7 +60,7 @@ public sealed class AmbientTrafficServiceTests : IDisposable
         Assert.False(_service.ShouldSuppressPatrol("cluster-gate", "cluster-system", Resolve));
         sites.Dispose();
         // With it, the whole authored system goes silent, patrols included.
-        using var everything = _service.SuppressInSystemContaining("cluster-system", includeSecurityPatrols: true);
+        using var everything = _service.SuppressInSystemContaining("cluster-system", key: null, includeSecurityPatrols: true);
         Assert.True(_service.ShouldSuppress(AmbientSpawnSite.JumpGate, "cluster-gate", "cluster-system", Resolve));
         Assert.True(_service.ShouldSuppress(AmbientSpawnSite.Wormhole, "cluster-rift", "cluster-system", Resolve));
         Assert.True(_service.ShouldSuppressPatrol("cluster-gate", "cluster-system", Resolve));
