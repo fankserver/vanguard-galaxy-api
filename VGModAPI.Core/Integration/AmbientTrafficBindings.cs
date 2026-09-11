@@ -12,7 +12,8 @@ internal static class AmbientTrafficBindings
         ("Source.Galaxy.MapElement", "guid", "System.String", false, false),
         ("Source.Galaxy.MapElement", "system", "Source.Galaxy.SystemMapData", false, true),
         ("Source.Galaxy.GalaxyMapData", "current", "Source.Galaxy.GalaxyMapData", true, false),
-        ("Source.Galaxy.GalaxyMapData", "allPointsOfInterest", "System.Collections.Generic.IEnumerable`1<Source.Galaxy.MapPointOfInterest>", false, false)
+        ("Source.Galaxy.GalaxyMapData", "allPointsOfInterest", "System.Collections.Generic.IEnumerable`1<Source.Galaxy.MapPointOfInterest>", false, false),
+        ("Source.Galaxy.GalaxyMapData", "allSystems", "System.Collections.Generic.IEnumerable`1<Source.Galaxy.SystemMapData>", false, false)
     };
     /// <summary>Periodic decorative "passerby" spawners only; docking, services and payload delivery are untouched.</summary>
     internal static readonly MethodBinding[] Methods =

@@ -33,21 +33,21 @@ internal sealed class AmbientTrafficService : IAmbientTrafficService, IDisposabl
     private readonly KeyedDeclarations _keyed = new();
     [MethodImpl(MethodImplOptions.NoInlining)]
     public IDisposable SuppressAtStation(string stationId, string? key = null)
-        => Declare(Assembly.GetCallingAssembly(), key, AmbientSpawnSite.Station, stationId, nameof(stationId));
+        => Declare(Assembly.GetCallingAssembly(), key, site: AmbientSpawnSite.Station, wholeSystem: false, stripPatrols: false, stationId, nameof(stationId));
     [MethodImpl(MethodImplOptions.NoInlining)]
     public IDisposable SuppressAtWormhole(string wormholePoiId, string? key = null)
-        => Declare(Assembly.GetCallingAssembly(), key, AmbientSpawnSite.Wormhole, wormholePoiId, nameof(wormholePoiId));
+        => Declare(Assembly.GetCallingAssembly(), key, site: AmbientSpawnSite.Wormhole, wholeSystem: false, stripPatrols: true, wormholePoiId, nameof(wormholePoiId));
     [MethodImpl(MethodImplOptions.NoInlining)]
-    public IDisposable SuppressInSystemContaining(string poiId, string? key = null)
-        => Declare(Assembly.GetCallingAssembly(), key, null, poiId, nameof(poiId));
-    private Declaration Declare(object scope, string? key, AmbientSpawnSite? site, string anchor, string parameter)
+    public IDisposable SuppressInSystemContaining(string poiId, string? key = null, bool includeSecurityPatrols = false)
+        => Declare(Assembly.GetCallingAssembly(), key, site: null, wholeSystem: true, stripPatrols: includeSecurityPatrols, poiId, nameof(poiId));
+    private Declaration Declare(object scope, string? key, AmbientSpawnSite? site, bool wholeSystem, bool stripPatrols, string anchor, string parameter)
     {
         KeyedDeclarations.Check(key, nameof(key));
         _hub.CheckThread();
         if (_disposed) throw new ObjectDisposedException(nameof(AmbientTrafficService));
         if (string.IsNullOrWhiteSpace(anchor) || anchor.Length > 4096 || anchor.Any(char.IsControl))
             throw new ArgumentException("An authored location identity is required.", parameter);
-        var declaration = new Declaration(this, site, anchor, scope, key);
+        var declaration = new Declaration(this, site, wholeSystem, stripPatrols, anchor, scope, key);
         _keyed.Replace(scope, key, declaration);
         _declarations.Add(declaration);
         return declaration;
@@ -74,16 +74,25 @@ internal sealed class AmbientTrafficService : IAmbientTrafficService, IDisposabl
         return false;
     }
     /// <summary>
-    /// Whether a security patrol must not be created at this POI. Only an explicitly quieted wormhole
-    /// qualifies: a quiet wormhole spawns nothing at all, while the system-wide declaration deliberately
-    /// leaves security presence alone.
+    /// Whether a security patrol must not be created at this point of interest. A quieted wormhole
+    /// strips the patrol at its own ends; a declaration that quiets a whole system
+    /// (<c>includeSecurityPatrols</c>) strips patrols everywhere in that system — which is how an
+    /// authored cluster stays silent rather than merely traffic-free.
     /// </summary>
-    internal bool ShouldSuppressPatrol(string? sitePoiId)
+    internal bool ShouldSuppressPatrol(string? sitePoiId, string? siteSystemId, Func<string, string?> uniqueSystemOf)
     {
         _hub.CheckThread();
-        if (_disposed || !Availability.IsAvailable || string.IsNullOrEmpty(sitePoiId)) return false;
+        if (uniqueSystemOf == null) throw new ArgumentNullException(nameof(uniqueSystemOf));
+        if (_disposed || !Availability.IsAvailable) return false;
         foreach (var declaration in _declarations.ToArray())
-            if (!declaration.Disposed && declaration.Site == AmbientSpawnSite.Wormhole && declaration.Anchor == sitePoiId) return true;
+        {
+            if (declaration.Disposed || !declaration.StripPatrols) continue;
+            if (declaration.Site == AmbientSpawnSite.Wormhole)
+            {
+                if (!string.IsNullOrEmpty(sitePoiId) && declaration.Anchor == sitePoiId) return true;
+            }
+            else if (!string.IsNullOrEmpty(siteSystemId) && uniqueSystemOf(declaration.Anchor) == siteSystemId) return true;
+        }
         return false;
     }
     public void Dispose()
@@ -98,11 +107,13 @@ internal sealed class AmbientTrafficService : IAmbientTrafficService, IDisposabl
     {
         private readonly AmbientTrafficService _owner;
         internal readonly AmbientSpawnSite? Site;
+        internal readonly bool WholeSystem;
+        internal readonly bool StripPatrols;
         internal readonly string Anchor;
         internal bool Disposed;
         private readonly object _scope; private readonly string? _key;
-        internal Declaration(AmbientTrafficService owner, AmbientSpawnSite? site, string anchor, object scope, string? key)
-        { _owner = owner; Site = site; Anchor = anchor; _scope = scope; _key = key; }
+        internal Declaration(AmbientTrafficService owner, AmbientSpawnSite? site, bool wholeSystem, bool stripPatrols, string anchor, object scope, string? key)
+        { _owner = owner; Site = site; WholeSystem = wholeSystem; StripPatrols = stripPatrols; Anchor = anchor; _scope = scope; _key = key; }
         public void Dispose()
         {
             _owner._hub.CheckThread(); if (Disposed) return;

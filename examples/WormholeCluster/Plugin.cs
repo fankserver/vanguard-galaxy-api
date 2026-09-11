@@ -88,11 +88,13 @@ public sealed class Plugin : BaseUnityPlugin
         //   * Salvage is OffMap -> its own separate subsector outside the cluster.
         // The result is one cluster subsector holding Entry + Hub + Anchor + Mining, plus one
         // outside instance, with every system named statically.
-        _world.RegisterPocketSystem(new PocketSystemDefinition(EntryDef, 1, EntryName, PocketSystemPlacement.OffMap, factionId: null, sectorName: ClusterSectorName));
-        _world.RegisterPocketSystem(new PocketSystemDefinition(HubDef, 1, HubName, PocketSystemPlacement.Visible));
-        _world.RegisterPocketSystem(new PocketSystemDefinition(AnchorDef, 1, AnchorName, PocketSystemPlacement.Visible));
-        _world.RegisterPocketSystem(new PocketSystemDefinition(MiningDef, 1, MiningWorldName, PocketSystemPlacement.Visible));
-        _world.RegisterPocketSystem(new PocketSystemDefinition(SalvageDef, 1, SalvageWorldName, PocketSystemPlacement.OffMap, factionId: null, sectorName: SalvageSectorName));
+        // quiet: true on every cluster system — the cluster is a private place, so nothing vanilla
+        // spawns inside it (no station visitors, no passerby traffic at its gates, no security patrols).
+        _world.RegisterPocketSystem(new PocketSystemDefinition(EntryDef, 1, EntryName, PocketSystemPlacement.OffMap, factionId: null, sectorName: ClusterSectorName, quiet: true));
+        _world.RegisterPocketSystem(new PocketSystemDefinition(HubDef, 1, HubName, PocketSystemPlacement.Visible, factionId: null, sectorName: null, quiet: true));
+        _world.RegisterPocketSystem(new PocketSystemDefinition(AnchorDef, 1, AnchorName, PocketSystemPlacement.Visible, factionId: null, sectorName: null, quiet: true));
+        _world.RegisterPocketSystem(new PocketSystemDefinition(MiningDef, 1, MiningWorldName, PocketSystemPlacement.Visible, factionId: null, sectorName: null, quiet: true));
+        _world.RegisterPocketSystem(new PocketSystemDefinition(SalvageDef, 1, SalvageWorldName, PocketSystemPlacement.OffMap, factionId: null, sectorName: SalvageSectorName, quiet: true));
         // quiet: true — these are owned passages, not highways: no passerby ships fly through them and
         // no security patrol is created at either end.
         _world.RegisterWormholePair(new WormholePairDefinition(EntryDoorDef, 1, "Cluster Rift", quiet: true));

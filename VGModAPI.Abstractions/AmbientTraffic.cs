@@ -26,9 +26,10 @@ public interface IAmbientTrafficService : IServiceStatus
     IDisposable SuppressAtWormhole(string wormholePoiId, string? key = null);
     /// <summary>
     /// Quiets decorative station, gate and wormhole traffic throughout the single system that
-    /// contains the anchor location. Neighbouring systems stay vanilla, including a suppressed
-    /// gate's peer gate. Security patrols are deliberately left alone here; use
-    /// <see cref="SuppressAtWormhole"/> to quiet one wormhole completely.
+    /// contains the anchor location (a point of interest or a system). Neighbouring systems stay
+    /// vanilla, including a suppressed gate's peer gate. Security patrols are left alone unless
+    /// <paramref name="includeSecurityPatrols"/> is set, which silences the whole system — the way an
+    /// authored cluster stays entirely quiet.
     /// </summary>
-    IDisposable SuppressInSystemContaining(string poiId, string? key = null);
+    IDisposable SuppressInSystemContaining(string poiId, string? key = null, bool includeSecurityPatrols = false);
 }

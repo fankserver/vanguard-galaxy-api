@@ -1105,6 +1105,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             private PocketSystemState _state = null!;
             private bool _seeded;
             private bool _dissolved;
+            private IDisposable? _quiet;
             private readonly Action _evict;
             private WorldContentResult _lastAction = new(WorldContentStatus.NotReady, "No action has been taken yet on this occurrence.");
             private event Action<IPocketSystem>? _changed;
@@ -1120,7 +1121,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 get
                 {
                     if (_service._authoredDefinitions != null && _service._authoredDefinitions.TryResolve(_authored, _localId, out var declaration) && declaration != null)
-                        return new PocketSystemDefinition(declaration.LocalId, declaration.Revision, declaration.Name, declaration.Placement, declaration.FactionId, declaration.SectorName);
+                        return new PocketSystemDefinition(declaration.LocalId, declaration.Revision, declaration.Name, declaration.Placement, declaration.FactionId, declaration.SectorName, declaration.Quiet);
                     var revision = _coordinator.TryGetOccurrence(_authored.Owner, _localId, _occurrenceKey)?.Revision ?? 1;
                     return new PocketSystemDefinition(_localId, revision, "");
                 }
@@ -1193,6 +1194,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 if (status != WorldStatus.Succeeded) return _lastAction = new WorldContentResult(ToActionStatus(status), detail);
                 _dissolved = true;
                 _evict();
+                ReleaseQuiet();
                 if (systemId != null) _service.PocketDissolved(systemId);
                 return _lastAction = new WorldContentResult(WorldContentStatus.Succeeded);
             }
@@ -1211,10 +1213,30 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 PocketSystemState updated;
                 try { updated = _coordinator.ReconstructionState(_authored, Reference); }
                 catch { return; }
-                if (!_seeded) { _state = updated; _seeded = true; return; }
+                if (!_seeded) { _state = updated; _seeded = true; ApplyQuiet(); return; }
                 bool changed = StateChanged(_state, updated);
                 _state = updated;
                 if (changed) _changed?.Invoke(this);
+                ApplyQuiet();
+            }
+            /// <summary>Makes the authored system silent once its native identity is known: no decorative
+            /// traffic at its stations, gates or wormholes, and no security patrols. Idempotent, and
+            /// re-resolves across reloads because the declaration anchors on the system identity.</summary>
+            private void ApplyQuiet()
+            {
+                try
+                {
+                    if (_quiet != null || !Definition.Quiet || _state.SystemId is not { Length: > 0 } systemId) return;
+                    var ambient = _service._ambient;
+                    if (ambient == null) return;
+                    _quiet = ambient.SuppressInSystemContaining(systemId, _localId + "|" + _occurrenceKey + "|quiet", includeSecurityPatrols: true);
+                }
+                catch (Exception error) { _service._hub.ReportSubscriberFailure("world.quiet-system", error); }
+            }
+            private void ReleaseQuiet()
+            {
+                var quiet = _quiet; _quiet = null;
+                try { quiet?.Dispose(); } catch { }
             }
             private static bool StateChanged(PocketSystemState a, PocketSystemState b)
                 => a.Status != b.Status || a.Reason != b.Reason || a.SystemId != b.SystemId

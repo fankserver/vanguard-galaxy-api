@@ -46,7 +46,14 @@ public sealed class PocketSystemDefinition
     /// that cluster's subsector, which is how a multi-system cluster is assembled.
     /// </summary>
     public string? SectorName { get; }
-    public PocketSystemDefinition(string localId, int revision, string name, PocketSystemPlacement placement = PocketSystemPlacement.OffMap, string? factionId = null, string? sectorName = null)
+    /// <summary>
+    /// Makes this authored system silent: no decorative visitor traffic at its stations, no passerby
+    /// traffic at its gates, no wormhole traffic, and no security patrols anywhere in it. Use it for an
+    /// authored cluster that should feel like your own private place rather than a thoroughfare.
+    /// Docking, services, faction relations and story- or mission-placed ships are unaffected.
+    /// </summary>
+    public bool Quiet { get; }
+    public PocketSystemDefinition(string localId, int revision, string name, PocketSystemPlacement placement = PocketSystemPlacement.OffMap, string? factionId = null, string? sectorName = null, bool quiet = false)
     {
         LocalId = localId ?? throw new ArgumentNullException(nameof(localId));
         Name = name ?? throw new ArgumentNullException(nameof(name));
@@ -54,6 +61,7 @@ public sealed class PocketSystemDefinition
         Placement = placement;
         FactionId = factionId;
         SectorName = sectorName;
+        Quiet = quiet;
     }
 }
 

@@ -265,6 +265,20 @@ A pocket's paired gates start **sealed** (closed *and* hidden), so a pocket reac
 (for example through a wormhole) draws no phantom gate line on the map. `SetEntranceOpen(true)`
 reveals and enables the pair.
 
+A pocket declared `quiet: true` is silent: nothing vanilla spawns inside that system — no
+station visitor traffic, no passerby traffic at its gates, and no security patrols. That is what
+keeps an authored cluster from feeling like a public thoroughfare:
+
+```csharp
+provider.RegisterPocketSystem(new PocketSystemDefinition(
+    "cluster-entry", 1, "Cluster Entry", PocketSystemPlacement.OffMap,
+    sectorName: "Wormhole Cluster", quiet: true));
+```
+
+Docking, services, faction relations and story- or mission-placed ships are unaffected. For
+direct control, `IAmbientTrafficService.SuppressInSystemContaining(id, key, includeSecurityPatrols)`
+quiets a system (set the flag to silence patrols as well), and `SuppressAtWormhole` quiets one rift.
+
 Re-declaring the same key **reconciles to the owned occurrence** instead of creating a
 duplicate. A foreign or ambiguous native identity is never adopted. The occurrence,
 its gate pairing and its declarative gate state live inside the same sealed save envelope
