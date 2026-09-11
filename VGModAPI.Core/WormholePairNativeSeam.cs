@@ -11,12 +11,27 @@ internal sealed class WormholePairInfo
     { FirstPoiId = firstPoiId; SecondPoiId = secondPoiId; Open = open; }
 }
 
+/// <summary>Typed outcome of a native wormhole-pair dissolution attempt.</summary>
+internal enum WormholeDissolveOutcome
+{
+    /// <summary>Both wormhole POIs were removed from their systems; the pair is gone from the live map.</summary>
+    Dissolved,
+    /// <summary>The player's current location/Poi or a waypoint is at one of the wormholes; nothing was removed.</summary>
+    PlayerInside,
+    /// <summary>One or both owned wormhole POIs are not currently present natively; nothing was removed.</summary>
+    Missing,
+    /// <summary>The native removal could not be performed or verified; the map may be unchanged.</summary>
+    Failed
+}
+
 internal interface IWormholePairNative
 {
     WormholePairInfo? CreatePair(Guid session, string name, string firstSystemId, string secondSystemId, bool open);
     WormholePairInfo? ResolvePair(Guid session, string firstSystemId, string secondSystemId, string firstPoiId, string secondPoiId);
     int AmbiguousCount(Guid session, string poiId);
     bool ApplyOpen(Guid session, string firstPoiId, string secondPoiId, bool open);
+    /// <summary>Removes both owned wormhole POIs from their systems. Refuses while the player is at/inside either.</summary>
+    WormholeDissolveOutcome DissolveWormhole(Guid session, string firstPoiId, string secondPoiId);
     void BeginPass(Guid session);
     void EndPass();
 }

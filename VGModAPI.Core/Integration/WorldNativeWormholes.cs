@@ -13,6 +13,7 @@ internal sealed class WorldNativeWormholes : IWormholePairNative
     private readonly Type _wormholeType;
     private readonly PropertyInfo _map, _guid, _name;
     private readonly FieldInfo _points, _parent, _hidden, _discovered, _targets;
+    private readonly FieldInfo _playerCurrentPoi, _playerWaypoints;
     private readonly MethodInfo _setup, _position;
     private readonly Action<Exception> _report;
     private bool _inPass; private Guid _passSession; private WorldMapIndex.Snapshot? _snapshot;
@@ -30,6 +31,7 @@ internal sealed class WorldNativeWormholes : IWormholePairNative
         _name = element.GetProperty("name", BindingFlags.Public | BindingFlags.Instance) ?? throw new MissingMemberException("MapElement.name");
         _hidden = Field(poi, "hidden"); _discovered = Field(_wormholeType, "discovered"); _targets = Field(_wormholeType, "targetWormholeGuids");
         _guid = element.GetProperty("guid", BindingFlags.Public | BindingFlags.Instance) ?? throw new MissingMemberException("MapElement.guid");
+        _playerCurrentPoi = Field(player, "currentPointOfInterest"); _playerWaypoints = Field(player, "waypoints");
         var methods = WormholePairBindings.Validate(assembly); _setup = methods["wormholeSetup"]; _position = methods["wormholePosition"];
     }
     private static FieldInfo Field(Type type, string name) => type.GetField(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
@@ -112,6 +114,66 @@ internal sealed class WorldNativeWormholes : IWormholePairNative
         if (first == null || second == null || !_wormholeType.IsInstanceOfType(first) || !_wormholeType.IsInstanceOfType(second)) return false;
         try { SetPair(first, second, open); return snapshot.SameMembership(_index.Read(map)); }
         catch (Exception error) { _report(error); return false; }
+    }
+
+    /// <summary>Removes both owned wormhole POIs from their systems. Refuses while the player's current
+    /// POI or any waypoint is at either wormhole (relocation is the consumer's responsibility).</summary>
+    public WormholeDissolveOutcome DissolveWormhole(Guid session, string firstPoiId, string secondPoiId)
+    {
+        var map = Map(false, session); if (map == null) return WormholeDissolveOutcome.Failed;
+        var before = _index.Read(map);
+        var first = before.FindPoint(firstPoiId); var second = before.FindPoint(secondPoiId);
+        if (first == null || second == null || !_wormholeType.IsInstanceOfType(first) || !_wormholeType.IsInstanceOfType(second))
+            return WormholeDissolveOutcome.Missing;
+        // Verify the pair is exactly as owned (each targets the other) before removing.
+        var a = Targets(first); var b = Targets(second);
+        if (a.Count != 1 || b.Count != 1 || (string)a[0]! != secondPoiId || (string)b[0]! != firstPoiId)
+            return WormholeDissolveOutcome.Missing;
+        // Refuse while the player is at or routed into either wormhole; relocation is the consumer's move.
+        try
+        {
+            if (!_game.TryGetCurrentReadyPlayer(session, out var player) || player == null)
+                return WormholeDissolveOutcome.Failed;
+            var currentPoi = _playerCurrentPoi.GetValue(player);
+            if (currentPoi != null && (ReferenceEquals(currentPoi, first) || ReferenceEquals(currentPoi, second)))
+                return WormholeDissolveOutcome.PlayerInside;
+            if (_playerWaypoints.GetValue(player) is System.Collections.IEnumerable waypoints)
+                foreach (var waypoint in waypoints)
+                    if (waypoint != null && (ReferenceEquals(waypoint, first) || ReferenceEquals(waypoint, second)))
+                        return WormholeDissolveOutcome.PlayerInside;
+            var firstSystem = _parent.GetValue(first);
+            var secondSystem = _parent.GetValue(second);
+            if (firstSystem == null || secondSystem == null) return WormholeDissolveOutcome.Missing;
+            // Remove both wormholes from their systems' point lists.
+            Points(firstSystem).Remove(first);
+            Points(secondSystem).Remove(second);
+            if (Map(false, session) == null) return WormholeDissolveOutcome.Failed;
+            var after = _index.Read(map);
+            // Verify membership shrank by exactly these two wormhole POIs and nothing else changed.
+            if (after.FindPoint(firstPoiId) != null || after.FindPoint(secondPoiId) != null) return WormholeDissolveOutcome.Failed;
+            return VerifyDissolveDelta(before, after, first, second) ? WormholeDissolveOutcome.Dissolved : WormholeDissolveOutcome.Failed;
+        }
+        catch (Exception error) { _report(error); return WormholeDissolveOutcome.Failed; }
+    }
+    /// <summary>Exactly the two given wormhole POIs were removed; nothing else was removed and nothing added.</summary>
+    private static bool VerifyDissolveDelta(WorldMapIndex.Snapshot before, WorldMapIndex.Snapshot after,
+        object first, object second)
+    {
+        var beforeSet = new System.Collections.Generic.HashSet<object>();
+        foreach (var pair in before.Points) if (pair.Value != null) beforeSet.Add(pair.Value);
+        var afterSet = new System.Collections.Generic.HashSet<object>();
+        foreach (var pair in after.Points) if (pair.Value != null) afterSet.Add(pair.Value);
+        if (afterSet.Count != beforeSet.Count - 2) return false;
+        bool foundFirst = false, foundSecond = false;
+        foreach (var value in beforeSet)
+        {
+            if (ReferenceEquals(value, first)) { foundFirst = true; continue; }
+            if (ReferenceEquals(value, second)) { foundSecond = true; continue; }
+            if (!afterSet.Contains(value)) return false; // an unrelated POI was removed
+        }
+        if (!foundFirst || !foundSecond) return false; // the owned wormholes were not both present
+        foreach (var value in afterSet) if (!beforeSet.Contains(value)) return false; // a POI was added
+        return true;
     }
     public void BeginPass(Guid session) { _inPass = true; _passSession = session; _snapshot = null; }
     public void EndPass() { _inPass = false; _snapshot = null; }

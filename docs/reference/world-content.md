@@ -362,6 +362,20 @@ session; re-obtain restored pairs with `GetWormholePair` or `GetWormholePairs`.
 `WormholePairReconstructionSettled` reports the provider's reconstructed and failed pair
 objects once the world settles; each failed object's `State.Reason` gives the typed reason.
 
+A mod can remove the pair and release both native wormhole POIs (plus the owned occurrence row)
+with `IwWormholePair.Dissolve()` — the teardown mirror of creation:
+
+```csharp
+var result = rift.Dissolve(); // WorldContentResult: Succeeded / Refused (typed reason on .Detail)
+if (result.Succeeded) { /* both wormhole ends are gone; the key can be recreated */ }
+```
+
+Dissolution is refused (`Refused`) while the player's current location or any waypoint is at
+either wormhole end, and when the pair is already gone or the session has ended. On success the
+owned row is dropped, so the occurrence key becomes reusable in the same session. This matters
+for authored cleanup: a pocket system that is still a wormhole endpoint cannot dissolve, so to
+tear a wormhole-linked cluster down, dissolve every wormhole pair first, then the pockets.
+
 ## Resource sites
 
 Resource sites place campaign set-pieces inside an existing system — including an owned pocket
