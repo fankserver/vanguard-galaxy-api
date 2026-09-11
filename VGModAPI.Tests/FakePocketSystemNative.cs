@@ -14,6 +14,8 @@ internal sealed class FakePocketSystemNative : IPocketSystemNative
     internal int NextId;
     internal readonly Dictionary<string, (string Entrance, string Pocket)> Systems = new(StringComparer.Ordinal);
     internal readonly Dictionary<string, bool> Open = new(StringComparer.Ordinal);
+    /// <summary>Native <c>hidden</c> flag per system; a freshly created pocket's gates are hidden+closed (sealed).</summary>
+    internal readonly Dictionary<string, bool> Hidden = new(StringComparer.Ordinal);
     internal int ApplyCalls;
     internal bool PlayerInside;
     internal bool FailDissolve;
@@ -22,18 +24,21 @@ internal sealed class FakePocketSystemNative : IPocketSystemNative
     internal readonly List<PocketSystemPlacement> CreatedPlacements = new();
     internal readonly List<string?> CreatedFactionIds = new();
     internal readonly List<string?> CreatedNames = new();
+    internal readonly List<string?> CreatedSectorNames = new();
 
-    public PocketSystemInfo? CreatePocket(Guid session, string anchorSystemId, PocketSystemPlacement placement, string? factionId, string? name)
+    public PocketSystemInfo? CreatePocket(Guid session, string anchorSystemId, PocketSystemPlacement placement, string? factionId, string? name, string? sectorName)
     {
         if (ThrowOnCreate) throw new InvalidOperationException("native create fault");
         if (FailCreate) return null;
         CreatedPlacements.Add(placement);
         CreatedFactionIds.Add(factionId);
         CreatedNames.Add(name);
+        CreatedSectorNames.Add(sectorName);
         NextId++;
         string sid = "sys-" + NextId;
         Systems[sid] = ("en-" + NextId, "pk-" + NextId);
         Open[sid] = false;
+        Hidden[sid] = true; // authored pockets start sealed (closed AND hidden) — no phantom gate line
         return new PocketSystemInfo(sid, "en-" + NextId, "pk-" + NextId);
     }
     public PocketSystemInfo? ResolvePocket(Guid session, string systemId)
@@ -48,13 +53,20 @@ internal sealed class FakePocketSystemNative : IPocketSystemNative
         ApplyCalls++;
         if (ThrowOnApply) throw new InvalidOperationException("native apply fault");
         string? sid = EntranceToSystem(entranceGateId);
-        if (sid != null) Open[sid] = open;
+        if (sid != null) { Open[sid] = open; Hidden[sid] = !open; }
         return true;
     }
     public bool IsOpen(Guid session, string entranceGateId, string pocketGateId)
     {
         string? sid = EntranceToSystem(entranceGateId);
-        return sid != null && Open.TryGetValue(sid, out var openValue) && openValue;
+        return sid != null && Open.TryGetValue(sid, out var openValue) && openValue
+            && Hidden.TryGetValue(sid, out var hiddenValue) && !hiddenValue;
+    }
+    public bool IsSealed(Guid session, string entranceGateId, string pocketGateId)
+    {
+        string? sid = EntranceToSystem(entranceGateId);
+        return sid != null && Open.TryGetValue(sid, out var openValue) && !openValue
+            && Hidden.TryGetValue(sid, out var hiddenValue) && hiddenValue;
     }
     public PocketDissolveOutcome DissolvePocket(Guid session, string systemId, string entranceGateId, string pocketGateId)
     {
@@ -66,6 +78,7 @@ internal sealed class FakePocketSystemNative : IPocketSystemNative
         if (FailDissolve) return PocketDissolveOutcome.Failed;
         Systems.Remove(systemId);
         Open.Remove(systemId);
+        Hidden.Remove(systemId);
         return PocketDissolveOutcome.Dissolved;
     }
     public void BeginPass(Guid session) { }

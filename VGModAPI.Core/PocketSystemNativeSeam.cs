@@ -33,8 +33,9 @@ internal interface IPocketSystemNative
 {
     /// <summary>Creates an enclosed pocket per the given placement, next to/off-grid for the given anchor system. Returns null when no free position exists (a typed failure).
     /// When <paramref name="factionId"/> is null/unknown the pocket inherits the anchor system's facade owner so its gates always function (a null-faction system draws a broken gate).
-    /// <paramref name="name"/> (when non-null) is written onto the pocket system as its static display name.</summary>
-    PocketSystemInfo? CreatePocket(Guid session, string anchorSystemId, PocketSystemPlacement placement, string? factionId, string? name);
+    /// <paramref name="name"/> (when non-null) is written onto the pocket system as its static display name.
+    /// <paramref name="sectorName"/> (when non-null) names the remote subsector an OffMap pocket allocates.</summary>
+    PocketSystemInfo? CreatePocket(Guid session, string anchorSystemId, PocketSystemPlacement placement, string? factionId, string? name, string? sectorName);
     /// <summary>Re-resolves the owned pocket structurally by its systems identity; null until native construction surfaces it.</summary>
     PocketSystemInfo? ResolvePocket(Guid session, string systemId);
     /// <summary>Number of native systems currently bearing the given identity (ambiguity detection).</summary>
@@ -43,6 +44,9 @@ internal interface IPocketSystemNative
     bool ApplyOpen(Guid session, string entranceGateId, string pocketGateId, bool open);
     /// <summary>Reads the current paired-gate open state (both open and unhidden means open).</summary>
     bool IsOpen(Guid session, string entranceGateId, string pocketGateId);
+    /// <summary>True when both paired gates are in the sealed state (closed AND hidden), which is how a
+    /// closed pocket must present so the map draws no phantom gate line for it.</summary>
+    bool IsSealed(Guid session, string entranceGateId, string pocketGateId);
     /// <summary>Removes the owned pocket, its paired gates and its contained POIs. Refuses while the player is inside.</summary>
     PocketDissolveOutcome DissolvePocket(Guid session, string systemId, string entranceGateId, string pocketGateId);
     /// <summary>Begins a single reconciliation pass over the session's map; read paths reuse one snapshot until EndPass.</summary>

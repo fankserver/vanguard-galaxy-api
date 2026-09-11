@@ -19,4 +19,14 @@ internal static class AmbientTrafficPatches
     {
         internal static bool Prefix(object __instance) => Runtime?.SuppressGateTraffic(__instance) != true;
     }
+    internal static class WormholeTraffic
+    {
+        internal static bool Prefix(object __instance) => Runtime?.SuppressWormholeTraffic(__instance) != true;
+    }
+    /// <summary>Skips the security-patrol creation at an explicitly quieted wormhole, so an owned
+    /// wormhole spawns nothing at all; every other POI keeps its vanilla patrol.</summary>
+    internal static class SecurityPatrol
+    {
+        internal static bool Prefix(object __instance) => Runtime?.SuppressQuietWormholePatrol(__instance) != true;
+    }
 }

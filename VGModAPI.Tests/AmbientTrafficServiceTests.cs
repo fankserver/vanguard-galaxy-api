@@ -16,6 +16,58 @@ public sealed class AmbientTrafficServiceTests : IDisposable
     private static string? NoAnchor(string _) => null;
 
     [Fact]
+    public void WormholeDeclarationFullyQuietsThatWormholeOnly()
+    {
+        IAmbientTrafficService api = _service;
+        using var declaration = api.SuppressAtWormhole("rift-a");
+        // Traffic through this rift stops, and so does the security patrol it would otherwise spawn.
+        Assert.True(_service.ShouldSuppress(AmbientSpawnSite.Wormhole, "rift-a", "sys-1", NoAnchor));
+        Assert.True(_service.ShouldSuppressPatrol("rift-a", null, NoAnchor));
+        // A different wormhole, gates and stations are untouched.
+        Assert.False(_service.ShouldSuppress(AmbientSpawnSite.Wormhole, "rift-b", "sys-1", NoAnchor));
+        Assert.False(_service.ShouldSuppress(AmbientSpawnSite.JumpGate, "rift-a", "sys-1", NoAnchor));
+        Assert.False(_service.ShouldSuppress(AmbientSpawnSite.Station, "rift-a", "sys-1", NoAnchor));
+        Assert.False(_service.ShouldSuppressPatrol("rift-b", null, NoAnchor));
+    }
+
+    [Fact]
+    public void SystemDeclarationAlsoQuietsWormholeTrafficButNotItsPatrol()
+    {
+        using var declaration = _service.SuppressInSystemContaining("anchor-station");
+        string? Resolve(string anchor) => anchor == "anchor-station" ? "pocket" : null;
+        Assert.True(_service.ShouldSuppress(AmbientSpawnSite.Wormhole, "pocket-rift", "pocket", Resolve));
+        // Security presence in a whole system is deliberately left alone; only a quieted wormhole strips it.
+        Assert.False(_service.ShouldSuppressPatrol("pocket-rift", null, NoAnchor));
+    }
+
+    [Fact]
+    public void WormholeQuietingDisposesCleanly()
+    {
+        var declaration = _service.SuppressAtWormhole("rift-a");
+        Assert.True(_service.ShouldSuppressPatrol("rift-a", null, NoAnchor));
+        declaration.Dispose(); declaration.Dispose();
+        Assert.False(_service.ShouldSuppress(AmbientSpawnSite.Wormhole, "rift-a", "sys-1", NoAnchor));
+        Assert.False(_service.ShouldSuppressPatrol("rift-a", null, NoAnchor));
+    }
+
+    [Fact]
+    public void SystemDeclarationCanSilencePatrolsTooForAnAuthoredCluster()
+    {
+        string? Resolve(string anchor) => anchor == "cluster-system" ? "cluster-system" : null;
+        // Without the flag, a quiet system still keeps security presence (existing behaviour).
+        using var sites = _service.SuppressInSystemContaining("cluster-system");
+        Assert.True(_service.ShouldSuppress(AmbientSpawnSite.JumpGate, "cluster-gate", "cluster-system", Resolve));
+        Assert.False(_service.ShouldSuppressPatrol("cluster-gate", "cluster-system", Resolve));
+        sites.Dispose();
+        // With it, the whole authored system goes silent, patrols included.
+        using var everything = _service.SuppressInSystemContaining("cluster-system", key: null, includeSecurityPatrols: true);
+        Assert.True(_service.ShouldSuppress(AmbientSpawnSite.JumpGate, "cluster-gate", "cluster-system", Resolve));
+        Assert.True(_service.ShouldSuppress(AmbientSpawnSite.Wormhole, "cluster-rift", "cluster-system", Resolve));
+        Assert.True(_service.ShouldSuppressPatrol("cluster-gate", "cluster-system", Resolve));
+        Assert.False(_service.ShouldSuppressPatrol("elsewhere-gate", "other-system", Resolve));
+    }
+
+    [Fact]
     public void StationDeclarationQuietsExactlyThatStationSpawner()
     {
         IAmbientTrafficService api = _service;

@@ -18,7 +18,15 @@ public enum PocketSystemPlacement
     /// linking it to the anchor (the consumer still supplies an anchor system id); the pocket has no
     /// storyteller and stays enclosed.
     /// </summary>
-    Visible
+    Visible,
+    /// <summary>
+    /// The pocket allocates a subsector of its own, placed among the ordinary frontier subsectors so it
+    /// renders on the galaxy map next to colonised space, and named by the definition's
+    /// <see cref="PocketSystemDefinition.SectorName"/>. It is deliberately NOT linked by a sector jump gate:
+    /// the wormhole/gate pair remains the only way in, and no sector line is drawn to it. Other systems can
+    /// join this subsector by declaring <see cref="Visible"/> with a system already inside it as the anchor.
+    /// </summary>
+    OwnSector
 }
 
 /// <summary>
@@ -35,17 +43,38 @@ public sealed class PocketSystemDefinition
     public PocketSystemPlacement Placement { get; }
     /// <summary>
     /// Optional owning faction identifier (for example "Marauders"). When null or not a faction the game
-    /// knows, the system is authored with no owner, so the map shows no "Controlled by" line (unknown).
+    /// knows, the pocket inherits the anchor system's faction, so the map shows a real "Controlled by" line.
     /// </summary>
     public string? FactionId { get; }
-    public PocketSystemDefinition(string localId, int revision, string name, PocketSystemPlacement placement = PocketSystemPlacement.OffMap, string? factionId = null)
+    /// <summary>
+    /// Optional name for the subsector this pocket creates when it is placed <see cref="PocketSystemPlacement.OffMap"/>.
+    /// An OffMap pocket allocates its own remote subsector; naming it makes the resulting place a properly
+    /// named cluster instead of an auto-generated one. Ignored for <see cref="PocketSystemPlacement.Visible"/>,
+    /// which reuses its anchor's subsector. A pocket whose anchor is another pocket's system therefore joins
+    /// that cluster's subsector, which is how a multi-system cluster is assembled.
+    /// </summary>
+    public string? SectorName { get; }
+    /// <summary>
+    /// Makes this authored system silent: no decorative visitor traffic at its stations, no passerby
+    /// traffic at its gates, no wormhole traffic, and no security patrols anywhere in it. Use it for an
+    /// authored cluster that should feel like your own private place rather than a thoroughfare.
+    /// Docking, services, faction relations and story- or mission-placed ships are unaffected.
+    /// </summary>
+    public bool Quiet { get; }
+    public PocketSystemDefinition(string localId, int revision, string name, PocketSystemPlacement placement = PocketSystemPlacement.OffMap, string? factionId = null, string? sectorName = null, bool quiet = false)
     {
-        LocalId = localId ?? throw new ArgumentNullException(nameof(localId));
-        Name = name ?? throw new ArgumentNullException(nameof(name));
+        LocalId = localId ?? throw new ArgumentNullException(nameof(localId));        Name = name ?? throw new ArgumentNullException(nameof(name));
         Revision = revision;
         Placement = placement;
         FactionId = factionId;
+        SectorName = sectorName;
+        Quiet = quiet;
     }
+
+    /// <summary>Binary-compatibility overload for the pre-<c>sectorName</c> shape; consumers built against an
+    /// earlier API keep working because that call site binds to this exact five-argument signature.</summary>
+    public PocketSystemDefinition(string localId, int revision, string name, PocketSystemPlacement placement, string? factionId)
+        : this(localId, revision, name, placement, factionId, null, false) { }
 }
 
 /// <summary>

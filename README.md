@@ -62,6 +62,9 @@ For consumer-owned windows, also reference `VGModAPI.Unity.dll` and use the
 The [API reference](docs/reference/README.md) describes each service's contract and
 configuration. A compiled example is available in the source repository at
 [`examples/LifecycleObserver`](https://github.com/fankserver/vanguard-galaxy-api/tree/main/examples/LifecycleObserver).
+For world authoring — pocket systems, wormhole pairs, placement, quiet traffic, static names,
+resource sites and full cleanup — see
+[`examples/WormholeWorld`](https://github.com/fankserver/vanguard-galaxy-api/tree/main/examples/WormholeWorld).
 
 ## Contribute
 

@@ -25,6 +25,10 @@ public sealed partial class Plugin
                 prefix: new HarmonyMethod(typeof(AmbientTrafficPatches.StationVisitor), "Prefix"));
             _ambientTrafficHarmony.Patch(methods["trafficGateSpawn"],
                 prefix: new HarmonyMethod(typeof(AmbientTrafficPatches.GateTraffic), "Prefix"));
+            _ambientTrafficHarmony.Patch(methods["trafficWormholeSpawn"],
+                prefix: new HarmonyMethod(typeof(AmbientTrafficPatches.WormholeTraffic), "Prefix"));
+            _ambientTrafficHarmony.Patch(methods["trafficSecurityPatrol"],
+                prefix: new HarmonyMethod(typeof(AmbientTrafficPatches.SecurityPatrol), "Prefix"));
             _ambientTraffic.SetAvailable(true);
         }
         catch (Exception error) { TeardownAmbientTraffic(); Logger.LogError(error); }

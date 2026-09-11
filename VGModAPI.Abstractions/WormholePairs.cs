@@ -8,8 +8,20 @@ public sealed class WormholePairDefinition
     public string LocalId { get; }
     public int Revision { get; }
     public string Name { get; }
+    /// <summary>
+    /// Keeps both ends of this owned pair free of vanilla decorative traffic: no passerby ships fly
+    /// through the rift and no security patrol is created at either end, so a private wormhole stays
+    /// private instead of becoming a highway. Docking, services, faction relations and story- or
+    /// mission-placed ships are unaffected. Defaults to false (vanilla traffic).
+    /// </summary>
+    public bool Quiet { get; }
+    public WormholePairDefinition(string localId, int revision, string name, bool quiet = false)
+    { LocalId = localId ?? throw new ArgumentNullException(nameof(localId)); Revision = revision; Name = name ?? throw new ArgumentNullException(nameof(name)); Quiet = quiet; }
+
+    /// <summary>Binary-compatibility overload for the pre-<c>quiet</c> shape; consumers built against an
+    /// earlier API keep working because that call site binds to this exact three-argument signature.</summary>
     public WormholePairDefinition(string localId, int revision, string name)
-    { LocalId = localId ?? throw new ArgumentNullException(nameof(localId)); Revision = revision; Name = name ?? throw new ArgumentNullException(nameof(name)); }
+        : this(localId, revision, name, false) { }
 }
 
 public enum WormholePairFailureReason

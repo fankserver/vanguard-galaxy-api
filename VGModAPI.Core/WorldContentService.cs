@@ -1007,6 +1007,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             private WorldContentResult _last = new(WorldContentStatus.NotReady, "No action has been taken yet on this occurrence.");
             private bool _dissolved;
             private readonly Action _evict;
+            private IDisposable? _quietFirst, _quietSecond;
             private event Action<IWormholePair>? _changed;
             internal WormholePairHandle(Provider provider, string localId, string key, Guid session, Action evict)
             { _provider = provider; _localId = localId; _key = key; Session = session; _evict = evict; }
@@ -1017,7 +1018,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 {
                     if (_provider._wormholes != null && _provider._service._wormholeDefinitions != null &&
                         _provider._service._wormholeDefinitions.TryResolve(_provider._wormholes, _localId, out var d) && d != null)
-                        return new(d.LocalId, d.Revision, d.Name);
+                        return new(d.LocalId, d.Revision, d.Name, d.Quiet);
                     return new(_localId, 1, "unknown");
                 }
             }
@@ -1050,6 +1051,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 if (status != WorldStatus.Succeeded) return _last = new(status == WorldStatus.Unavailable ? WorldContentStatus.Unavailable : WorldContentStatus.Rejected, detail);
                 _dissolved = true;
                 _evict();
+                ReleaseQuiet();
                 _last = new(WorldContentStatus.Succeeded);
                 _state = new(ReconstructionStatus.Dissolved);
                 _changed?.Invoke(this);
@@ -1062,6 +1064,31 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 var updated = _provider._service._wormholeCoordinator.State(_provider._wormholes, _localId, _key);
                 bool changed = updated.Status != _state.Status || updated.Reason != _state.Reason || updated.FirstWormholePoiId != _state.FirstWormholePoiId || updated.SecondWormholePoiId != _state.SecondWormholePoiId;
                 _state = updated; if (changed) _changed?.Invoke(this);
+                ApplyQuiet();
+            }
+            /// <summary>Declares the private-door quieting for both owned ends once their native identities
+            /// are known. Idempotent: each end is declared at most once and re-resolves across reloads. A
+            /// quiet pair spawns no passerby traffic and no security patrol at either end.</summary>
+            private void ApplyQuiet()
+            {
+                try
+                {
+                    if (!Definition.Quiet) return;
+                    var ambient = _provider._service._ambient;
+                    if (ambient == null) return;
+                    if (_quietFirst == null && _state.FirstWormholePoiId is { Length: > 0 } first)
+                        _quietFirst = ambient.SuppressAtWormhole(first, _localId + "|" + _key + "|quiet-a");
+                    if (_quietSecond == null && _state.SecondWormholePoiId is { Length: > 0 } second)
+                        _quietSecond = ambient.SuppressAtWormhole(second, _localId + "|" + _key + "|quiet-b");
+                }
+                catch (Exception error) { _provider._service._hub.ReportSubscriberFailure("world.quiet-wormhole", error); }
+            }
+            private void ReleaseQuiet()
+            {
+                var first = _quietFirst; _quietFirst = null;
+                var second = _quietSecond; _quietSecond = null;
+                try { first?.Dispose(); } catch { }
+                try { second?.Dispose(); } catch { }
             }
         }
 
@@ -1078,6 +1105,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             private PocketSystemState _state = null!;
             private bool _seeded;
             private bool _dissolved;
+            private IDisposable? _quiet;
             private readonly Action _evict;
             private WorldContentResult _lastAction = new(WorldContentStatus.NotReady, "No action has been taken yet on this occurrence.");
             private event Action<IPocketSystem>? _changed;
@@ -1093,7 +1121,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 get
                 {
                     if (_service._authoredDefinitions != null && _service._authoredDefinitions.TryResolve(_authored, _localId, out var declaration) && declaration != null)
-                        return new PocketSystemDefinition(declaration.LocalId, declaration.Revision, declaration.Name, declaration.Placement, declaration.FactionId);
+                        return new PocketSystemDefinition(declaration.LocalId, declaration.Revision, declaration.Name, declaration.Placement, declaration.FactionId, declaration.SectorName, declaration.Quiet);
                     var revision = _coordinator.TryGetOccurrence(_authored.Owner, _localId, _occurrenceKey)?.Revision ?? 1;
                     return new PocketSystemDefinition(_localId, revision, "");
                 }
@@ -1166,6 +1194,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 if (status != WorldStatus.Succeeded) return _lastAction = new WorldContentResult(ToActionStatus(status), detail);
                 _dissolved = true;
                 _evict();
+                ReleaseQuiet();
                 if (systemId != null) _service.PocketDissolved(systemId);
                 return _lastAction = new WorldContentResult(WorldContentStatus.Succeeded);
             }
@@ -1184,10 +1213,30 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 PocketSystemState updated;
                 try { updated = _coordinator.ReconstructionState(_authored, Reference); }
                 catch { return; }
-                if (!_seeded) { _state = updated; _seeded = true; return; }
+                if (!_seeded) { _state = updated; _seeded = true; ApplyQuiet(); return; }
                 bool changed = StateChanged(_state, updated);
                 _state = updated;
                 if (changed) _changed?.Invoke(this);
+                ApplyQuiet();
+            }
+            /// <summary>Makes the authored system silent once its native identity is known: no decorative
+            /// traffic at its stations, gates or wormholes, and no security patrols. Idempotent, and
+            /// re-resolves across reloads because the declaration anchors on the system identity.</summary>
+            private void ApplyQuiet()
+            {
+                try
+                {
+                    if (_quiet != null || !Definition.Quiet || _state.SystemId is not { Length: > 0 } systemId) return;
+                    var ambient = _service._ambient;
+                    if (ambient == null) return;
+                    _quiet = ambient.SuppressInSystemContaining(systemId, _localId + "|" + _occurrenceKey + "|quiet", includeSecurityPatrols: true);
+                }
+                catch (Exception error) { _service._hub.ReportSubscriberFailure("world.quiet-system", error); }
+            }
+            private void ReleaseQuiet()
+            {
+                var quiet = _quiet; _quiet = null;
+                try { quiet?.Dispose(); } catch { }
             }
             private static bool StateChanged(PocketSystemState a, PocketSystemState b)
                 => a.Status != b.Status || a.Reason != b.Reason || a.SystemId != b.SystemId

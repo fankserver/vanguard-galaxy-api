@@ -245,6 +245,47 @@ faction (or an unknown faction) is declared, the pocket **inherits the anchor sy
 faction** rather than being authored ownerless — a null-faction system makes its jump gates
 NRE on init (a stuck gate), so this inheritance keeps authored gates functional.
 
+### A multi-system cluster in its own subsector
+
+`Visible` places a pocket in **its anchor's** subsector, `OwnSector` allocates a new subsector placed
+among the ordinary frontier subsectors (so it renders on the galaxy map and stays within its zoom
+range), and `OffMap` allocates one far outside that band (invisible on the galaxy map). Combining
+them builds a self-contained cluster without a separate primitive: make the entry system `OwnSector`
+(it allocates and — via `SectorName` — names the cluster subsector), then make every other system
+`Visible` and anchor it to a system already in the cluster. Those land in the same subsector. Use
+`OffMap` instead when a pocket should sit entirely off the settled map.
+
+`OwnSector` deliberately creates **no sector jump gate**, so the subsector appears on the map but
+stays reachable only through the wormhole/gate you author — no sector line is drawn to it.
+`SettledMapBounds` exposes the band the galaxy map can actually show
+(`MinX`/`MaxX`/`MinY`/`MaxY`/`MinSeparation`), which is what keeps an authored subsector visible
+instead of stranded beyond the map's zoom limit.
+
+```csharp
+provider.RegisterPocketSystem(new PocketSystemDefinition(
+    "cluster-entry", 1, "Cluster Entry", PocketSystemPlacement.OwnSector, sectorName: "Wormhole Cluster"));
+provider.RegisterPocketSystem(new PocketSystemDefinition(
+    "cluster-hub", 1, "Hub Alpha", PocketSystemPlacement.Visible)); // joins the entry's subsector
+```
+
+A pocket's paired gates start **sealed** (closed *and* hidden), so a pocket reached another way
+(for example through a wormhole) draws no phantom gate line on the map. `SetEntranceOpen(true)`
+reveals and enables the pair.
+
+A pocket declared `quiet: true` is silent: nothing vanilla spawns inside that system — no
+station visitor traffic, no passerby traffic at its gates, and no security patrols. That is what
+keeps an authored cluster from feeling like a public thoroughfare:
+
+```csharp
+provider.RegisterPocketSystem(new PocketSystemDefinition(
+    "cluster-entry", 1, "Cluster Entry", PocketSystemPlacement.OffMap,
+    sectorName: "Wormhole Cluster", quiet: true));
+```
+
+Docking, services, faction relations and story- or mission-placed ships are unaffected. For
+direct control, `IAmbientTrafficService.SuppressInSystemContaining(id, key, includeSecurityPatrols)`
+quiets a system (set the flag to silence patrols as well), and `SuppressAtWormhole` quiets one rift.
+
 Re-declaring the same key **reconciles to the owned occurrence** instead of creating a
 duplicate. A foreign or ambiguous native identity is never adopted. The occurrence,
 its gate pairing and its declarative gate state live inside the same sealed save envelope
@@ -266,6 +307,9 @@ reference.SetEntranceOpen(open: false);  // closes both
 Opening unlocks and unhides **both** the entrance gate and the pocket-side peer together;
 closing does the reverse. The declared state is a reconciled invariant: on load and on
 later ticks the API re-applies it, so a drifted save converges back to the declared state.
+A **closed** pocket is sealed — its paired gates are hidden as well as closed — so the map
+draws no phantom gate line for a pocket that is reached another way (for example through a
+wormhole). Opening the entrance reveals and enables the pair.
 
 ### Dissolving a pocket
 
@@ -367,6 +411,20 @@ its own clock. Reusing an occurrence key returns the same `IWormholePair` object
 session; re-obtain restored pairs with `GetWormholePair` or `GetWormholePairs`.
 `WormholePairReconstructionSettled` reports the provider's reconstructed and failed pair
 objects once the world settles; each failed object's `State.Reason` gives the typed reason.
+
+A pair declared `quiet: true` is a private door rather than a highway: no decorative passerby
+traffic flies through either end and no security patrol is created there. The API declares that
+quieting itself when the pair's identities are known and releases it when the pair dissolves, so
+no consumer bookkeeping (or `IAmbientTrafficService` call) is required:
+
+```csharp
+provider.RegisterWormholePair(new WormholePairDefinition("my-rift", 1, "My Rift", quiet: true));
+```
+
+Docking, services, faction relations and story- or mission-placed ships are unaffected. For finer
+control, `IAmbientTrafficService.SuppressAtWormhole` quiets one wormhole and
+`SuppressInSystemContaining` quiets decorative traffic throughout a system (security presence is
+left alone there — only a quieted wormhole strips it).
 
 A mod can remove the pair and release both native wormhole POIs (plus the owned occurrence row)
 with `IwWormholePair.Dissolve()` — the teardown mirror of creation:
