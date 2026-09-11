@@ -10,11 +10,14 @@ From your current system `X`, press **Spawn Wormhole** to open a wormhole into a
 cluster that lives in **its own subsector** — it is not mixed into your sector's systems or gate
 network. The cluster subsector is assembled by combining placements:
 
-- **Entry (E)** is `OffMap`, so it allocates a fresh, remote subsector — the cluster itself — and
-  names it ("Wormhole Cluster") via the definition's `SectorName`.
+- **Entry (E)** is **`OwnSector`**, so it allocates its own subsector placed among the ordinary
+  frontier subsectors — inside the band the galaxy map can zoom to — and names it
+  ("Wormhole Cluster") via the definition's `SectorName`. It creates no sector jump gate, so the
+  subsector shows on the map but stays reachable only through the wormhole.
 - **Hub (A)**, **Anchor (B)** and **Mining** are `Visible` anchored to a *cluster* system; `Visible`
   places a pocket in its anchor's own subsector, so they land **inside E's subsector**.
-- **Salvage** is `OffMap`, giving it its own subsector ("Salvage Drift") outside the cluster.
+- **Salvage** is also `OwnSector`, giving it its own visible subsector ("Salvage Drift") outside
+  the cluster.
 
 ```
  [ Wormhole Cluster subsector ]
@@ -61,8 +64,13 @@ guard, not a silent failure).
   gates to A and B).
 - **Wormhole-pair** creation and **dissolution** (entry + per-off-world doors), including that a
   pocket that is still a wormhole endpoint refuses to dissolve.
-- **Quiet wormholes** (`quiet: true`): an owned rift spawns no decorative passerby traffic and no
-  security patrol at either end — a private door, not a highway.
+- **Quiet wormholes and quiet systems** (`quiet: true`): an owned rift spawns no decorative
+  passerby traffic and no security patrol at either end, and `quiet: true` on a pocket keeps its
+  whole system silent — no station/gate/wormhole traffic and no security patrols — so the cluster
+  behaves like a private place rather than a thoroughfare.
+- **Authoring diagnostics**: spawning writes the authored topology to the log (one line per system:
+  the gates and wormholes it holds with their far ends, plus its site), and a **Log topology** button
+  re-prints it. That is the ground truth to compare against the in-game map.
 - **Resource sites** (mining + salvage) placed **inside** owned pockets, removed with the pocket.
 - **Static** system names, plus named subsectors.
 - **Full cleanup** / tear-down of everything spawned.

@@ -186,7 +186,7 @@ internal sealed class WorldNativePocketSystems : IPocketSystemNative
             {
                 // OffMap: allocate a distant, remote sector (seeded, matching the game's own placement) and
                 // place the pocket system in it — a wormhole-only door, off the settled belt/galaxy map.
-                CreateRemoteSector(map, parent, owner, sectorName, out created);
+                CreateRemoteSector(map, parent, owner, sectorName, placement, out created);
             }
             if (created == null || !_system_IsInstance(created)) return null;
             if (name != null) _systemName.SetValue(created, name);
@@ -202,14 +202,34 @@ internal sealed class WorldNativePocketSystems : IPocketSystemNative
         catch (Exception e) { ReportInvoke(e); return null; }
     }
 
-    /// <summary>Allocates a remote, sparsely-populated sector and places the pocket system in it.</summary>
-    private object? CreateRemoteSector(object map, object parent, object? owner, string? sectorName, out object? created)
+    /// <summary>
+    /// Allocates a sector for the pocket and places the system in it. <see cref="PocketSystemPlacement.OwnSector"/>
+    /// positions the sector among the ordinary frontier subsectors (the game's own bounded band, avoiding every
+    /// existing sector) so it renders on the galaxy map; <see cref="PocketSystemPlacement.OffMap"/> places it far
+    /// outside that band, off the settled map entirely.
+    /// </summary>
+    private object? CreateRemoteSector(object map, object parent, object? owner, string? sectorName, PocketSystemPlacement placement, out object? created)
     {
         created = null;
         var vector = _galaxyRandomPosition.ReturnType;                     // UnityEngine.Vector2 (resolved, never by-name)
         var exclude = Activator.CreateInstance(typeof(System.Collections.Generic.List<>).MakeGenericType(vector))!;
         object? pos;
-        try { pos = _galaxyRandomPosition.Invoke(null, new[] { exclude, 150f, 350f, 150f, 350f, 8f }); }
+        try
+        {
+            if (placement == PocketSystemPlacement.OwnSector)
+            {
+                // Mirror the game's own frontier-sector placement: keep clear of every existing sector so the
+                // authored subsector lands inside the band the galaxy map actually draws and can zoom to.
+                if (exclude is System.Collections.IList positions && _galaxySectors.GetValue(map) is System.Collections.IEnumerable sectors)
+                    foreach (var existingSector in sectors)
+                        if (existingSector != null) positions.Add(_systemPosition.GetValue(existingSector));
+                pos = _galaxyRandomPosition.Invoke(null, new object[] { exclude, SettledMapBounds.MinX, SettledMapBounds.MaxX, SettledMapBounds.MinY, SettledMapBounds.MaxY, SettledMapBounds.MinSeparation });
+            }
+            else
+            {
+                pos = _galaxyRandomPosition.Invoke(null, new[] { exclude, 150f, 350f, 150f, 350f, 8f });
+            }
+        }
         catch (Exception e) { ReportInvoke(e); return null; }
         if (pos == null) return null;
         var name = sectorName ?? (string?)_sectorName.Invoke(null, null) ?? "The Rift";

@@ -173,6 +173,30 @@ public sealed class PocketSystemPlacementTests
     }
 
     [Fact]
+    public void OwnSectorPlacementIsAPlacementThatStaysOnTheMap()
+    {
+        using var harness = new Harness();
+        Assert.Equal(WorldStatus.Succeeded, harness.Provider.RegisterPocketSystem(
+            new PocketSystemDefinition("p", 1, "Pocket", PocketSystemPlacement.OwnSector)));
+        harness.BeginGameplay();
+        var pocket = harness.Provider.CreatePocketSystem("p", "k1", "anchor")!;
+        Assert.Equal(PocketSystemPlacement.OwnSector, Assert.Single(harness.Native.CreatedPlacements));
+        Assert.Equal(PocketSystemPlacement.OwnSector, pocket.Definition.Placement);
+    }
+
+    [Fact]
+    public void SettledMapBoundsDescribeTheBandTheGalaxyMapCanShow()
+    {
+        Assert.True(SettledMapBounds.Contains(0f, 0f));
+        Assert.True(SettledMapBounds.Contains(SettledMapBounds.MinX, SettledMapBounds.MaxY));
+        Assert.False(SettledMapBounds.Contains(SettledMapBounds.MinX - 0.1f, 0f));
+        Assert.False(SettledMapBounds.Contains(0f, SettledMapBounds.MaxY + 0.1f));
+        // An off-map allocation well outside the band is exactly what makes a sector invisible.
+        Assert.False(SettledMapBounds.Contains(200f, 200f));
+        Assert.True(SettledMapBounds.MinSeparation > 0f);
+    }
+
+    [Fact]
     public void StaticNameIsForwardedToTheNativeSeamAndRetainedOnTheHandle()
     {
         using var harness = new Harness();

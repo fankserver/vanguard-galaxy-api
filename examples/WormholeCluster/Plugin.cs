@@ -90,11 +90,11 @@ public sealed class Plugin : BaseUnityPlugin
         // outside instance, with every system named statically.
         // quiet: true on every cluster system — the cluster is a private place, so nothing vanilla
         // spawns inside it (no station visitors, no passerby traffic at its gates, no security patrols).
-        _world.RegisterPocketSystem(new PocketSystemDefinition(EntryDef, 1, EntryName, PocketSystemPlacement.OffMap, factionId: null, sectorName: ClusterSectorName, quiet: true));
+        _world.RegisterPocketSystem(new PocketSystemDefinition(EntryDef, 1, EntryName, PocketSystemPlacement.OwnSector, factionId: null, sectorName: ClusterSectorName, quiet: true));
         _world.RegisterPocketSystem(new PocketSystemDefinition(HubDef, 1, HubName, PocketSystemPlacement.Visible, factionId: null, sectorName: null, quiet: true));
         _world.RegisterPocketSystem(new PocketSystemDefinition(AnchorDef, 1, AnchorName, PocketSystemPlacement.Visible, factionId: null, sectorName: null, quiet: true));
         _world.RegisterPocketSystem(new PocketSystemDefinition(MiningDef, 1, MiningWorldName, PocketSystemPlacement.Visible, factionId: null, sectorName: null, quiet: true));
-        _world.RegisterPocketSystem(new PocketSystemDefinition(SalvageDef, 1, SalvageWorldName, PocketSystemPlacement.OffMap, factionId: null, sectorName: SalvageSectorName, quiet: true));
+        _world.RegisterPocketSystem(new PocketSystemDefinition(SalvageDef, 1, SalvageWorldName, PocketSystemPlacement.OwnSector, factionId: null, sectorName: SalvageSectorName, quiet: true));
         // quiet: true — these are owned passages, not highways: no passerby ships fly through them and
         // no security patrol is created at either end.
         _world.RegisterWormholePair(new WormholePairDefinition(EntryDoorDef, 1, "Cluster Rift", quiet: true));
@@ -132,6 +132,11 @@ public sealed class Plugin : BaseUnityPlugin
                     + "pocket (its gate and any site POIs go with it). Moving into any part of the cluster first "
                     + "would refuse deletion until you leave.",
                     clickable: _entryDoor != null),
+                new HudRow("log", _entryDoor == null ? "spawn first" : "Log topology",
+                    "write what each spawned system contains and how it is connected, to the log file",
+                    "Prints one line per spawned system: the gates and wormholes it holds (with their far "
+                    + "ends) and the sites inside it, so the log shows exactly how the cluster is wired.",
+                    clickable: _entryDoor != null),
                 new HudRow("status", StatusLine(), "Each owned occurrence shows its live reconstruction state."),
             },
             closable: false));
@@ -153,6 +158,7 @@ public sealed class Plugin : BaseUnityPlugin
             {
                 case "spawn": SpawnCluster(); break;
                 case "delete": DeleteCluster(); break;
+                case "log": LogTopology(); break;
             }
             RefreshPanel();
         }
@@ -212,7 +218,58 @@ public sealed class Plugin : BaseUnityPlugin
         }
 
         Logger.LogInfo("Wormhole Cluster ready: fly the rift from " + (NameOf(EntryDef)) + " through Hub Alpha into either off-world.");
+        LogTopology();
     }
+
+    /// <summary>
+    /// Writes what was actually authored: one line per spawned system listing the gates and wormholes it
+    /// holds (with the far end each one leads to) and any site inside it. This is the ground truth a player
+    /// can compare against the in-game map when a connection looks surprising.
+    /// </summary>
+    private void LogTopology()
+    {
+        if (_world == null || _entryDoor == null) return;
+        Logger.LogInfo("=== Wormhole Cluster topology ===");
+        Logger.LogInfo($"subsector: {ClusterSectorName} (contains {EntryName}, {HubName}, {AnchorName}, {MiningWorldName})");
+        Logger.LogInfo($"subsector: {SalvageSectorName} (contains {SalvageWorldName})");
+        Logger.LogInfo($"origin: {OriginSystemName()} --wormhole[{_entryDoor.Definition.Name}]--> {EntryName}");
+        Logger.LogInfo("note: each authored system also holds one SEALED, HIDDEN anchor gate back to the system it "
+            + "was anchored to; it is not a usable connection and is deliberately not drawn on the map, so it is "
+            + "not listed below.");
+
+        Describe(EntryName, _entry, new[]
+        {
+            Gate("to " + HubName, _hub),
+            Gate("to " + AnchorName, _anchor),
+        });
+        Describe(HubName, _hub, new[]
+        {
+            Gate("back to " + EntryName, _entry),
+            Wormhole("to " + MiningWorldName, _miningHole),
+            Wormhole("to " + SalvageWorldName, _salvageHole),
+        });
+        Describe(AnchorName, _anchor, new[ ] { Gate("back to " + EntryName, _entry) });
+        Describe(MiningWorldName, _mining, new[] { Wormhole("to " + HubName, _miningHole) });
+        Describe(SalvageWorldName, _salvage, new[] { Wormhole("to " + HubName, _salvageHole) });
+        Logger.LogInfo("=== end topology ===");
+    }
+
+    private static string Gate(string to, IPocketSystem? peer)
+        => peer == null ? "gate " + to + " (not spawned)" : "gate " + to;
+    private static string Wormhole(string to, IWormholePair? pair)
+        => pair == null ? "wormhole " + to + " (not spawned)" : "wormhole " + to;
+
+    private void Describe(string name, IPocketSystem? system, string[] connections)
+    {
+        if (system == null) { Logger.LogInfo(name + ": not spawned"); return; }
+        string sites = name == MiningWorldName && _miningSite != null ? " | site: mining field"
+            : name == SalvageWorldName && _salvageSite != null ? " | site: salvage wreck"
+            : "";
+        Logger.LogInfo($"{name}: {connections.Length} connection(s) -> {string.Join(", ", connections)} | system={system.SystemId} state={system.State.Status}{sites}");
+    }
+
+    private string OriginSystemName()
+        => _travel?.CurrentLocation?.SystemName is { Length: > 0 } n ? n : (_travel?.CurrentLocation?.SystemId ?? "?");
 
     private string NameOf(string def) => def switch
     {

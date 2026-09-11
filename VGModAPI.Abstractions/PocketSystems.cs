@@ -18,7 +18,15 @@ public enum PocketSystemPlacement
     /// linking it to the anchor (the consumer still supplies an anchor system id); the pocket has no
     /// storyteller and stays enclosed.
     /// </summary>
-    Visible
+    Visible,
+    /// <summary>
+    /// The pocket allocates a subsector of its own, placed among the ordinary frontier subsectors so it
+    /// renders on the galaxy map next to colonised space, and named by the definition's
+    /// <see cref="PocketSystemDefinition.SectorName"/>. It is deliberately NOT linked by a sector jump gate:
+    /// the wormhole/gate pair remains the only way in, and no sector line is drawn to it. Other systems can
+    /// join this subsector by declaring <see cref="Visible"/> with a system already inside it as the anchor.
+    /// </summary>
+    OwnSector
 }
 
 /// <summary>

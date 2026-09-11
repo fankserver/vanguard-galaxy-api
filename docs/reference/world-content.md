@@ -247,16 +247,23 @@ NRE on init (a stuck gate), so this inheritance keeps authored gates functional.
 
 ### A multi-system cluster in its own subsector
 
-`Visible` places a pocket in **its anchor's** subsector, and `OffMap` allocates a fresh remote
-subsector. Combining them builds a self-contained cluster without a separate primitive: make the
-entry system `OffMap` (it allocates and — via `SectorName` — names the cluster subsector), then
-make every other system `Visible` and anchor it to a system already in the cluster. Those land in
-the same subsector. Anchor an `OffMap` pocket to a cluster system instead when it should sit
-somewhere else entirely.
+`Visible` places a pocket in **its anchor's** subsector, `OwnSector` allocates a new subsector placed
+among the ordinary frontier subsectors (so it renders on the galaxy map and stays within its zoom
+range), and `OffMap` allocates one far outside that band (invisible on the galaxy map). Combining
+them builds a self-contained cluster without a separate primitive: make the entry system `OwnSector`
+(it allocates and — via `SectorName` — names the cluster subsector), then make every other system
+`Visible` and anchor it to a system already in the cluster. Those land in the same subsector. Use
+`OffMap` instead when a pocket should sit entirely off the settled map.
+
+`OwnSector` deliberately creates **no sector jump gate**, so the subsector appears on the map but
+stays reachable only through the wormhole/gate you author — no sector line is drawn to it.
+`SettledMapBounds` exposes the band the galaxy map can actually show
+(`MinX`/`MaxX`/`MinY`/`MaxY`/`MinSeparation`), which is what keeps an authored subsector visible
+instead of stranded beyond the map's zoom limit.
 
 ```csharp
 provider.RegisterPocketSystem(new PocketSystemDefinition(
-    "cluster-entry", 1, "Cluster Entry", PocketSystemPlacement.OffMap, sectorName: "Wormhole Cluster"));
+    "cluster-entry", 1, "Cluster Entry", PocketSystemPlacement.OwnSector, sectorName: "Wormhole Cluster"));
 provider.RegisterPocketSystem(new PocketSystemDefinition(
     "cluster-hub", 1, "Hub Alpha", PocketSystemPlacement.Visible)); // joins the entry's subsector
 ```
