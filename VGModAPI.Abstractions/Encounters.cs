@@ -39,8 +39,13 @@ public sealed class EncounterComposition
     public bool HostileToPlayer { get; }
     /// <summary>Killing the spawned units costs no reputation with their faction. Only meaningful with hostility.</summary>
     public bool NoReputationLoss { get; }
+    /// <summary>Optional dynamic level scaling (floor + player threat) resolved at materialisation. Null uses the fixed <see cref="Level"/>.</summary>
+    public EncounterLevelPolicy? LevelPolicy { get; }
+    /// <summary>Optional forced loadout rarity / outgoing-damage tier for the spawned units.</summary>
+    public AuthoredLoadout? Loadout { get; }
     public EncounterComposition(IEnumerable<EncounterWave> waves, string factionId, int level,
-        EncounterRank rank = EncounterRank.Standard, bool hostileToPlayer = false, bool noReputationLoss = true)
+        EncounterRank rank = EncounterRank.Standard, bool hostileToPlayer = false, bool noReputationLoss = true,
+        EncounterLevelPolicy? levelPolicy = null, AuthoredLoadout? loadout = null)
     {
         if (waves == null) throw new ArgumentNullException(nameof(waves));
         var copied = waves.ToArray();
@@ -52,6 +57,7 @@ public sealed class EncounterComposition
         Waves = new ReadOnlyCollection<EncounterWave>(copied);
         FactionId = factionId; Level = level; Rank = rank;
         HostileToPlayer = hostileToPlayer; NoReputationLoss = noReputationLoss;
+        LevelPolicy = levelPolicy; Loadout = loadout;
     }
 }
 

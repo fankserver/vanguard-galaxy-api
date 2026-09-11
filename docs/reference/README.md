@@ -13,5 +13,6 @@
 - [Forge and refinery](recipes.md)
 - [Owned items](owned-items.md), [owned recipes](owned-recipes.md) and [inventories](inventories.md)
 - [Persistent world content](world-content.md), [dialogue and story characters](dialogue.md) and [navigation](navigation.md)
+- [Authored guardian encounters](guardian-encounters.md) (dynamic boss scaling, loadout and damage overclock)
 - [Shared HUD and presentation](hud.md) and [consumer-owned gameplay UI](gameplay-ui.md)
 - [Mod information](mod-information.md) and [publishing mod updates](mod-update-publishing.md)

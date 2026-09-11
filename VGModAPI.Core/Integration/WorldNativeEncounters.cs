@@ -21,6 +21,7 @@ internal sealed class WorldNativeEncounters : IEncounterNative
 {
     private readonly GameAdapter _game;
     private readonly WorldMapIndex _index;
+    private readonly BossGuardianRuntime? _guardian;
     private readonly PropertyInfo _map;
     private readonly MethodInfo _addTriggered, _shipExists, _factionGet;
     private readonly FieldInfo _allFactions, _playerHostile, _noReputationLoss;
@@ -28,9 +29,9 @@ internal sealed class WorldNativeEncounters : IEncounterNative
     private readonly object _gameplayCombat;
     private readonly Action<Exception> _report;
 
-    internal WorldNativeEncounters(GameAdapter game, Assembly assembly, Action<Exception>? report = null)
+    internal WorldNativeEncounters(GameAdapter game, Assembly assembly, BossGuardianRuntime? guardian = null, Action<Exception>? report = null)
     {
-        _game = game; _report = report ?? (_ => { });
+        _game = game; _report = report ?? (_ => { }); _guardian = guardian;
         _index = new WorldMapIndex(assembly);
         Type Get(string name) => assembly.GetType(name, true)!;
         _map = Get("Source.Player.GamePlayer").GetProperty("map", BindingFlags.Public | BindingFlags.Instance)
@@ -82,12 +83,21 @@ internal sealed class WorldNativeEncounters : IEncounterNative
             catch (ArgumentException) { return (0, "The installed game does not support rank " + composition.Rank + "."); }
             int scheduled = 0;
             var parameterInfos = _addTriggered.GetParameters();
+            // Dynamic guardian scaling resolves once against the observed player before any wave is offered.
+            int level = composition.Level;
+            if (composition.LevelPolicy?.Dynamic == true && _guardian != null)
+            {
+                var playerLevel = _guardian.ReadPlayerLevel(player);
+                var maxLevel = _guardian.ReadMaxLevel();
+                if (playerLevel is int pl && maxLevel is int mx)
+                    level = BossGuardianMath.ResolveLevel(pl, composition.Level, composition.LevelPolicy, mx);
+            }
             foreach (var wave in composition.Waves)
             {
                 var arguments = new object?[parameterInfos.Length];
                 for (int i = 0; i < arguments.Length; i++) arguments[i] = parameterInfos[i].HasDefaultValue ? parameterInfos[i].DefaultValue : null;
                 arguments[0] = wave.DelaySeconds; arguments[1] = wave.ShipClassId; arguments[2] = wave.Count;
-                arguments[3] = faction; arguments[4] = _gameplayCombat; arguments[5] = rank; arguments[6] = (int?)composition.Level;
+                arguments[3] = faction; arguments[4] = _gameplayCombat; arguments[5] = rank; arguments[6] = (int?)level;
                 IList? units;
                 try { units = _addTriggered.Invoke(poi, arguments) as IList; }
                 catch (Exception waveError)
@@ -108,6 +118,8 @@ internal sealed class WorldNativeEncounters : IEncounterNative
                         _playerHostile.SetValue(unit, true);
                         if (composition.NoReputationLoss) _noReputationLoss.SetValue(unit, true);
                     }
+                    if (composition.Loadout != null && _guardian != null)
+                        _guardian.ApplyLoadout(unit, level, null, composition.Loadout);
                     scheduled++;
                 }
             }
