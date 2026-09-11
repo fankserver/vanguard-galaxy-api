@@ -154,7 +154,7 @@ internal sealed class WorldNativePocketSystems : IPocketSystemNative
         return false;
     }
 
-    public PocketSystemInfo? CreatePocket(Guid session, string anchorSystemId, PocketSystemPlacement placement, string? factionId, string? name)
+    public PocketSystemInfo? CreatePocket(Guid session, string anchorSystemId, PocketSystemPlacement placement, string? factionId, string? name, string? sectorName)
     {
         var map = Map(false, session, out var player);
         if (map == null || player == null) return null;
@@ -186,7 +186,7 @@ internal sealed class WorldNativePocketSystems : IPocketSystemNative
             {
                 // OffMap: allocate a distant, remote sector (seeded, matching the game's own placement) and
                 // place the pocket system in it — a wormhole-only door, off the settled belt/galaxy map.
-                CreateRemoteSector(map, parent, owner, out created);
+                CreateRemoteSector(map, parent, owner, sectorName, out created);
             }
             if (created == null || !_system_IsInstance(created)) return null;
             if (name != null) _systemName.SetValue(created, name);
@@ -203,7 +203,7 @@ internal sealed class WorldNativePocketSystems : IPocketSystemNative
     }
 
     /// <summary>Allocates a remote, sparsely-populated sector and places the pocket system in it.</summary>
-    private object? CreateRemoteSector(object map, object parent, object? owner, out object? created)
+    private object? CreateRemoteSector(object map, object parent, object? owner, string? sectorName, out object? created)
     {
         created = null;
         var vector = _galaxyRandomPosition.ReturnType;                     // UnityEngine.Vector2 (resolved, never by-name)
@@ -212,7 +212,7 @@ internal sealed class WorldNativePocketSystems : IPocketSystemNative
         try { pos = _galaxyRandomPosition.Invoke(null, new[] { exclude, 150f, 350f, 150f, 350f, 8f }); }
         catch (Exception e) { ReportInvoke(e); return null; }
         if (pos == null) return null;
-        var name = (string?)_sectorName.Invoke(null, null) ?? "The Rift";
+        var name = sectorName ?? (string?)_sectorName.Invoke(null, null) ?? "The Rift";
         object? sector;
         try { sector = _sectorCreate.Invoke(null, new[] { pos, name }); }
         catch (Exception e) { ReportInvoke(e); return null; }

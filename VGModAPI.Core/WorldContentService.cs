@@ -1093,7 +1093,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 get
                 {
                     if (_service._authoredDefinitions != null && _service._authoredDefinitions.TryResolve(_authored, _localId, out var declaration) && declaration != null)
-                        return new PocketSystemDefinition(declaration.LocalId, declaration.Revision, declaration.Name, declaration.Placement, declaration.FactionId);
+                        return new PocketSystemDefinition(declaration.LocalId, declaration.Revision, declaration.Name, declaration.Placement, declaration.FactionId, declaration.SectorName);
                     var revision = _coordinator.TryGetOccurrence(_authored.Owner, _localId, _occurrenceKey)?.Revision ?? 1;
                     return new PocketSystemDefinition(_localId, revision, "");
                 }

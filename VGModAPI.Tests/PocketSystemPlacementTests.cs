@@ -159,6 +159,20 @@ public sealed class PocketSystemPlacementTests
     }
 
     [Fact]
+    public void SectorNameIsForwardedToTheNativeSeamSoAClusterIsNamed()
+    {
+        using var harness = new Harness();
+        Assert.Equal(WorldStatus.Succeeded, harness.Provider.RegisterPocketSystem(
+            new PocketSystemDefinition("p", 1, "Cluster Entry", PocketSystemPlacement.OffMap, factionId: null, sectorName: "Wormhole Cluster")));
+        harness.BeginGameplay();
+        var pocket = harness.Provider.CreatePocketSystem("p", "k1", "anchor")!;
+        // The OffMap pocket allocates a remote subsector; its declared name must reach the native seam so
+        // the cluster is named instead of getting a procedural subsector name.
+        Assert.Equal("Wormhole Cluster", Assert.Single(harness.Native.CreatedSectorNames));
+        Assert.Equal("Wormhole Cluster", pocket.Definition.SectorName);
+    }
+
+    [Fact]
     public void StaticNameIsForwardedToTheNativeSeamAndRetainedOnTheHandle()
     {
         using var harness = new Harness();

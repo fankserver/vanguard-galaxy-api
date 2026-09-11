@@ -35,16 +35,25 @@ public sealed class PocketSystemDefinition
     public PocketSystemPlacement Placement { get; }
     /// <summary>
     /// Optional owning faction identifier (for example "Marauders"). When null or not a faction the game
-    /// knows, the system is authored with no owner, so the map shows no "Controlled by" line (unknown).
+    /// knows, the pocket inherits the anchor system's faction, so the map shows a real "Controlled by" line.
     /// </summary>
     public string? FactionId { get; }
-    public PocketSystemDefinition(string localId, int revision, string name, PocketSystemPlacement placement = PocketSystemPlacement.OffMap, string? factionId = null)
+    /// <summary>
+    /// Optional name for the subsector this pocket creates when it is placed <see cref="PocketSystemPlacement.OffMap"/>.
+    /// An OffMap pocket allocates its own remote subsector; naming it makes the resulting place a properly
+    /// named cluster instead of an auto-generated one. Ignored for <see cref="PocketSystemPlacement.Visible"/>,
+    /// which reuses its anchor's subsector. A pocket whose anchor is another pocket's system therefore joins
+    /// that cluster's subsector, which is how a multi-system cluster is assembled.
+    /// </summary>
+    public string? SectorName { get; }
+    public PocketSystemDefinition(string localId, int revision, string name, PocketSystemPlacement placement = PocketSystemPlacement.OffMap, string? factionId = null, string? sectorName = null)
     {
         LocalId = localId ?? throw new ArgumentNullException(nameof(localId));
         Name = name ?? throw new ArgumentNullException(nameof(name));
         Revision = revision;
         Placement = placement;
         FactionId = factionId;
+        SectorName = sectorName;
     }
 }
 

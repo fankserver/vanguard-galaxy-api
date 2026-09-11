@@ -245,6 +245,26 @@ faction (or an unknown faction) is declared, the pocket **inherits the anchor sy
 faction** rather than being authored ownerless — a null-faction system makes its jump gates
 NRE on init (a stuck gate), so this inheritance keeps authored gates functional.
 
+### A multi-system cluster in its own subsector
+
+`Visible` places a pocket in **its anchor's** subsector, and `OffMap` allocates a fresh remote
+subsector. Combining them builds a self-contained cluster without a separate primitive: make the
+entry system `OffMap` (it allocates and — via `SectorName` — names the cluster subsector), then
+make every other system `Visible` and anchor it to a system already in the cluster. Those land in
+the same subsector. Anchor an `OffMap` pocket to a cluster system instead when it should sit
+somewhere else entirely.
+
+```csharp
+provider.RegisterPocketSystem(new PocketSystemDefinition(
+    "cluster-entry", 1, "Cluster Entry", PocketSystemPlacement.OffMap, sectorName: "Wormhole Cluster"));
+provider.RegisterPocketSystem(new PocketSystemDefinition(
+    "cluster-hub", 1, "Hub Alpha", PocketSystemPlacement.Visible)); // joins the entry's subsector
+```
+
+A pocket's paired gates start **sealed** (closed *and* hidden), so a pocket reached another way
+(for example through a wormhole) draws no phantom gate line on the map. `SetEntranceOpen(true)`
+reveals and enables the pair.
+
 Re-declaring the same key **reconciles to the owned occurrence** instead of creating a
 duplicate. A foreign or ambiguous native identity is never adopted. The occurrence,
 its gate pairing and its declarative gate state live inside the same sealed save envelope

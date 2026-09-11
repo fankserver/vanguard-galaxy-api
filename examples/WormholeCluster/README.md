@@ -7,28 +7,35 @@ wormhole, site) dissolves back out.
 ## What it builds
 
 From your current system `X`, press **Spawn Wormhole** to open a wormhole into a small authored
-cluster of three gate-linked owned pocket systems. The three systems (E/A/B) use **Visible**
-placement, so they render as distinct dots on the belt/galaxy map (in/near your sector); the two
-off-world instances stay **OffMap** — reachable only through their wormhole from Hub Alpha:
+cluster that lives in **its own subsector** — it is not mixed into your sector's systems or gate
+network. The cluster subsector is assembled by combining placements:
+
+- **Entry (E)** is `OffMap`, so it allocates a fresh, remote subsector — the cluster itself — and
+  names it ("Wormhole Cluster") via the definition's `SectorName`.
+- **Hub (A)**, **Anchor (B)** and **Mining** are `Visible` anchored to a *cluster* system; `Visible`
+  places a pocket in its anchor's own subsector, so they land **inside E's subsector**.
+- **Salvage** is `OffMap`, giving it its own subsector ("Salvage Drift") outside the cluster.
 
 ```
- X  --wormhole-->  E (Cluster Entry)   --gate-->  A (Hub Alpha)
-                                    \--gate-->  B (Anchor Beta)
+ [ Wormhole Cluster subsector ]
+   E (Cluster Entry)  --gate-->  A (Hub Alpha)
+                   \--gate-->  B (Anchor Beta)     B is a dead-end
+   A  --[gate back to E]--  + two wormholes:
+          * Mining Instance  (inside this subsector, a mining-field site)
+          * Salvage Instance (its own subsector, a salvage wreck site)
 
- A  --[gate back to E]--   + two wormholes into themed off-world instances (OffMap):
-                                * "Mining Instance"  (a mining-field site)
-                                * "Salvage Instance" (a salvage wreck site)
- B  --[gate back to E]--   nothing else (a quiet dead-end anchor)
+ X --wormhole-->  E        (the only way in from your system)
 ```
 
 - **Entry system (E)** — reached from `X` only through the entry wormhole; its own anchored gate to
-  `X` stays sealed. E connects by gate to both A and B ("only 2 gates").
-- **Hub Alpha (A)** — a gate back to E, and **two wormholes** each leading into a separate themed
-  off-world pocket: a mining-only instance and a salvage-only instance. Each off-world is seeded
-  with one site kind so the instance is "all one theme".
+  `X` is sealed *and hidden*, so no gate line is drawn for it. E connects by gate to both A and B
+  ("only 2 gates").
+- **Hub Alpha (A)** — a gate back to E, and **two wormholes** into separate themed instances:
+  a mining-only one (inside the cluster) and a salvage-only one (outside). Each is seeded with a
+  single site kind so the instance is "all one theme".
 - **Anchor Beta (B)** — just the gate back to E; no content (a dead-end).
-- **Static test names** — every system has a fixed, unchanging display name (Cluster Entry, Hub
-  Alpha, Anchor Beta, Mining Instance, Salvage Instance).
+- **Static names** — every system has a fixed, unchanging display name (Cluster Entry, Hub
+  Alpha, Anchor Beta, Mining Instance, Salvage Instance) plus the two named subsectors.
 
 ## Buttons
 

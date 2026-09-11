@@ -114,7 +114,7 @@ internal sealed class PocketSystemCoordinator : IDisposable
         // Allocate native identity only here; never adopt a foreign or ambiguous native identity.
         try
         {
-            var info = _native.CreatePocket(expectedSession, anchorSystemId, definition.Placement, definition.FactionId, definition.Name);
+            var info = _native.CreatePocket(expectedSession, anchorSystemId, definition.Placement, definition.FactionId, definition.Name, definition.SectorName);
             if (info == null)
             {
                 _pending[key] = Failing(provider.Owner, localId, occurrenceKey, definition.Revision);

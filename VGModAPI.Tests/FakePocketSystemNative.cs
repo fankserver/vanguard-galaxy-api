@@ -24,14 +24,16 @@ internal sealed class FakePocketSystemNative : IPocketSystemNative
     internal readonly List<PocketSystemPlacement> CreatedPlacements = new();
     internal readonly List<string?> CreatedFactionIds = new();
     internal readonly List<string?> CreatedNames = new();
+    internal readonly List<string?> CreatedSectorNames = new();
 
-    public PocketSystemInfo? CreatePocket(Guid session, string anchorSystemId, PocketSystemPlacement placement, string? factionId, string? name)
+    public PocketSystemInfo? CreatePocket(Guid session, string anchorSystemId, PocketSystemPlacement placement, string? factionId, string? name, string? sectorName)
     {
         if (ThrowOnCreate) throw new InvalidOperationException("native create fault");
         if (FailCreate) return null;
         CreatedPlacements.Add(placement);
         CreatedFactionIds.Add(factionId);
         CreatedNames.Add(name);
+        CreatedSectorNames.Add(sectorName);
         NextId++;
         string sid = "sys-" + NextId;
         Systems[sid] = ("en-" + NextId, "pk-" + NextId);

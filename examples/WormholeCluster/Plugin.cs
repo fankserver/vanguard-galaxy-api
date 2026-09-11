@@ -37,6 +37,10 @@ public sealed class Plugin : BaseUnityPlugin
     private const string AnchorName = "Anchor Beta";
     private const string MiningWorldName = "Mining Instance";
     private const string SalvageWorldName = "Salvage Instance";
+    // Static names for the two subsectors the cluster allocates (the cluster itself, and the outside
+    // instance). Without these the game would generate a procedural subsector name.
+    private const string ClusterSectorName = "Wormhole Cluster";
+    private const string SalvageSectorName = "Salvage Drift";
 
     // Local definition identities (author-local; API owns native ids).
     private const string EntryDef = "cluster-entry";
@@ -77,14 +81,18 @@ public sealed class Plugin : BaseUnityPlugin
         if (_world == null) { Logger.LogWarning(DisplayName + ": world authoring unavailable."); return; }
 
         // Register immutable definitions (pre-session; registering never creates native objects).
-        // The 3 gate-linked systems (E/A/B) are Visible so they render on the map (in their anchor's
-        // sector) — you can see them on the belt/galaxy views. The two off-world instances stay OffMap:
-        // they are only reachable through their wormhole from Hub Alpha, as "off system" instances.
-        _world.RegisterPocketSystem(new PocketSystemDefinition(EntryDef, 1, EntryName, PocketSystemPlacement.Visible));
+        // The cluster lives in its OWN subsector, built by combining placements:
+        //   * Entry (E) is OffMap  -> it creates a fresh, remote subsector: the cluster.
+        //   * Hub (A), Anchor (B) and Mining are Visible anchored to a cluster system, and Visible
+        //     places a pocket in its ANCHOR's own subsector -> they land inside E's subsector, not yours.
+        //   * Salvage is OffMap -> its own separate subsector outside the cluster.
+        // The result is one cluster subsector holding Entry + Hub + Anchor + Mining, plus one
+        // outside instance, with every system named statically.
+        _world.RegisterPocketSystem(new PocketSystemDefinition(EntryDef, 1, EntryName, PocketSystemPlacement.OffMap, factionId: null, sectorName: ClusterSectorName));
         _world.RegisterPocketSystem(new PocketSystemDefinition(HubDef, 1, HubName, PocketSystemPlacement.Visible));
         _world.RegisterPocketSystem(new PocketSystemDefinition(AnchorDef, 1, AnchorName, PocketSystemPlacement.Visible));
-        _world.RegisterPocketSystem(new PocketSystemDefinition(MiningDef, 1, MiningWorldName));
-        _world.RegisterPocketSystem(new PocketSystemDefinition(SalvageDef, 1, SalvageWorldName));
+        _world.RegisterPocketSystem(new PocketSystemDefinition(MiningDef, 1, MiningWorldName, PocketSystemPlacement.Visible));
+        _world.RegisterPocketSystem(new PocketSystemDefinition(SalvageDef, 1, SalvageWorldName, PocketSystemPlacement.OffMap, factionId: null, sectorName: SalvageSectorName));
         _world.RegisterWormholePair(new WormholePairDefinition(EntryDoorDef, 1, "Cluster Rift"));
         _world.RegisterWormholePair(new WormholePairDefinition(MiningWormholeDef, 1, MiningWorldName + " Rift"));
         _world.RegisterWormholePair(new WormholePairDefinition(SalvageWormholeDef, 1, SalvageWorldName + " Rift"));

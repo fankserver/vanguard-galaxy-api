@@ -45,7 +45,7 @@ internal sealed class PocketSystemRegistry : IDisposable
     internal bool Register(Provider provider, PocketSystemDefinition definition, PocketSystemDefinition? previous = null)
         => Register(provider, Map(definition ?? throw new ArgumentNullException(nameof(definition))), previous == null ? null : Map(previous));
     private static PocketSystemDeclaration Map(PocketSystemDefinition definition)
-        => new(definition.LocalId, definition.Revision, definition.Name, definition.Placement, definition.FactionId);
+        => new(definition.LocalId, definition.Revision, definition.Name, definition.Placement, definition.FactionId, definition.SectorName);
     private bool Register(Provider provider, PocketSystemDeclaration definition, PocketSystemDeclaration? previous)
     {
         _checkThread();
