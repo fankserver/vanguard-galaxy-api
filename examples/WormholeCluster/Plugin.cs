@@ -94,7 +94,7 @@ public sealed class Plugin : BaseUnityPlugin
         _world.RegisterPocketSystem(new PocketSystemDefinition(HubDef, 1, HubName, PocketSystemPlacement.Visible, factionId: null, sectorName: null, quiet: true));
         _world.RegisterPocketSystem(new PocketSystemDefinition(AnchorDef, 1, AnchorName, PocketSystemPlacement.Visible, factionId: null, sectorName: null, quiet: true));
         _world.RegisterPocketSystem(new PocketSystemDefinition(MiningDef, 1, MiningWorldName, PocketSystemPlacement.Visible, factionId: null, sectorName: null, quiet: true));
-        _world.RegisterPocketSystem(new PocketSystemDefinition(SalvageDef, 1, SalvageWorldName, PocketSystemPlacement.OwnSector, factionId: null, sectorName: SalvageSectorName, quiet: true));
+        _world.RegisterPocketSystem(new PocketSystemDefinition(SalvageDef, 1, SalvageWorldName, PocketSystemPlacement.OffMap, factionId: null, sectorName: SalvageSectorName, quiet: true));
         // quiet: true — these are owned passages, not highways: no passerby ships fly through them and
         // no security patrol is created at either end.
         _world.RegisterWormholePair(new WormholePairDefinition(EntryDoorDef, 1, "Cluster Rift", quiet: true));
@@ -231,7 +231,7 @@ public sealed class Plugin : BaseUnityPlugin
         if (_world == null || _entryDoor == null) return;
         Logger.LogInfo("=== Wormhole Cluster topology ===");
         Logger.LogInfo($"subsector: {ClusterSectorName} (contains {EntryName}, {HubName}, {AnchorName}, {MiningWorldName})");
-        Logger.LogInfo($"subsector: {SalvageSectorName} (contains {SalvageWorldName})");
+        Logger.LogInfo($"subsector: {SalvageSectorName} (contains {SalvageWorldName}) — off-map: exists and works, but the galaxy map cannot pan or zoom to it");
         Logger.LogInfo($"origin: {OriginSystemName()} --wormhole[{_entryDoor.Definition.Name}]--> {EntryName}");
         Logger.LogInfo("note: each authored system also holds one SEALED, HIDDEN anchor gate back to the system it "
             + "was anchored to; it is not a usable connection and is deliberately not drawn on the map, so it is "

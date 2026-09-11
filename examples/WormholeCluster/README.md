@@ -16,8 +16,9 @@ network. The cluster subsector is assembled by combining placements:
   subsector shows on the map but stays reachable only through the wormhole.
 - **Hub (A)**, **Anchor (B)** and **Mining** are `Visible` anchored to a *cluster* system; `Visible`
   places a pocket in its anchor's own subsector, so they land **inside E's subsector**.
-- **Salvage** is also `OwnSector`, giving it its own visible subsector ("Salvage Drift") outside
-  the cluster.
+- **Salvage** is **`OffMap`**: it gets its own subsector ("Salvage Drift") placed far outside the
+  settled band, so it exists and works, but the galaxy map cannot pan or zoom to it — it is only
+  reachable through its wormhole. This is the "one inside, one off" split.
 
 ```
  [ Wormhole Cluster subsector ]
@@ -25,7 +26,7 @@ network. The cluster subsector is assembled by combining placements:
                    \--gate-->  B (Anchor Beta)     B is a dead-end
    A  --[gate back to E]--  + two wormholes:
           * Mining Instance  (inside this subsector, a mining-field site)
-          * Salvage Instance (its own subsector, a salvage wreck site)
+          * Salvage Instance (its own OFF-MAP subsector, a salvage wreck site)
 
  X --wormhole-->  E        (the only way in from your system)
 ```
