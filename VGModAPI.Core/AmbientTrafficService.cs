@@ -28,7 +28,7 @@ internal sealed class AmbientTrafficService : IAmbientTrafficService, IDisposabl
     {
         _hub.CheckThread(); if (_disposed) return;
         _hub.SetCapability("ambient-traffic", value,
-            value ? "Authored locations can quiet decorative traffic." : "Ambient-traffic integration unavailable.", reason);
+            value ? "Resource locations can quiet decorative traffic." : "Ambient-traffic integration unavailable.", reason);
     }
     private readonly KeyedDeclarations _keyed = new();
     [MethodImpl(MethodImplOptions.NoInlining)]

@@ -34,7 +34,7 @@ internal sealed class NavigationService
         public JumpCountsResult GetJumpCounts(string fromSystemId) => _owner.GetJumpCounts(_session, fromSystemId);
         public JumpCountResult GetJumpCount(string fromSystemId, string toSystemId) => _owner.GetJumpCount(_session, fromSystemId, toSystemId);
         public NavigationStatus FocusPoi(string poiId) => _owner.FocusPoi(_session, poiId);
-        public NavigationStatus FocusWorldSite(WorldSiteReference reference) => _owner.FocusWorldSite(_session, reference);
+        public NavigationStatus FocusCombatSite(CombatSiteReference reference) => _owner.FocusCombatSite(_session, reference);
     }
     private bool Ready(Guid session) => session != Guid.Empty && SessionId == session &&
         (_hub.CurrentSession!.Phase == SessionPhase.PlayerReady || _hub.CurrentSession.Phase == SessionPhase.GameplayInitialized);
@@ -112,7 +112,7 @@ internal sealed class NavigationService
         if (string.IsNullOrWhiteSpace(poiId) || WorldObjectIdentity.IsReserved(poiId)) return NavigationStatus.Rejected;
         return Focus(expectedSessionId, poiId, () => Ready(expectedSessionId));
     }
-    public NavigationStatus FocusWorldSite(Guid expectedSessionId, WorldSiteReference reference)
+    public NavigationStatus FocusCombatSite(Guid expectedSessionId, CombatSiteReference reference)
     {
         _hub.CheckThread();
         if (!Availability.IsAvailable) return NavigationStatus.Unavailable;

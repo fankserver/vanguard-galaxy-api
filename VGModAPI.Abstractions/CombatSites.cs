@@ -5,12 +5,12 @@ namespace VGModAPI;
 /// <summary>Typed per-occurrence combat-site state, never a lifecycle marker or an admission token.</summary>
 public sealed class CombatSiteState
 {
-    public AuthoredSystemReconstructionStatus Status { get; }
-    public AuthoredSystemFailureReason? Reason { get; }
+    public ReconstructionStatus Status { get; }
+    public ReconstructionFailureReason? Reason { get; }
     /// <summary>Native POI identity accepted by story travel objectives; populated only while reconstructed.</summary>
     public string? PoiId { get; }
-    public bool Reconstructed => Status == AuthoredSystemReconstructionStatus.Reconstructed;
-    public CombatSiteState(AuthoredSystemReconstructionStatus status, AuthoredSystemFailureReason? reason = null, string? poiId = null)
+    public bool Reconstructed => Status == ReconstructionStatus.Reconstructed;
+    public CombatSiteState(ReconstructionStatus status, ReconstructionFailureReason? reason = null, string? poiId = null)
     { Status = status; Reason = reason; PoiId = poiId; }
 }
 
@@ -25,8 +25,8 @@ public sealed class CombatSiteState
 public sealed class CombatSiteFailure
 {
     public ICombatSite Occurrence { get; }
-    public AuthoredSystemFailureReason Reason { get; }
-    public CombatSiteFailure(ICombatSite occurrence, AuthoredSystemFailureReason reason)
+    public ReconstructionFailureReason Reason { get; }
+    public CombatSiteFailure(ICombatSite occurrence, ReconstructionFailureReason reason)
     { Occurrence = occurrence ?? throw new ArgumentNullException(nameof(occurrence)); Reason = reason; }
 }
 
@@ -50,13 +50,13 @@ public interface ICombatSite
     /// <summary>The author-local occurrence key this occurrence is owned under.</summary>
     string OccurrenceKey { get; }
     /// <summary>The declaration this occurrence belongs to (live revision after migration).</summary>
-    WorldCombatSiteDefinition Definition { get; }
+    CombatSiteDefinition Definition { get; }
     /// <summary>Current typed per-occurrence state (Reconstructed / Pending / Failed(reason)).</summary>
     CombatSiteState State { get; }
     /// <summary>Native POI identity; populated only while <see cref="State"/> is reconstructed.</summary>
     string? PoiId { get; }
     /// <summary>The retained result of the most recent action on this occurrence (creation included).</summary>
-    AuthoredActionResult LastAction { get; }
+    WorldContentResult LastAction { get; }
     /// <summary>Fired when this occurrence's observed state changes within its own session.</summary>
     event Action<ICombatSite>? Changed;
 }

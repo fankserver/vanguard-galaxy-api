@@ -13,7 +13,7 @@ internal sealed class WorldPersistenceBindings : IDisposable
     private readonly ISaveDataRegistration _state, _definitions, _authored;
     private bool _disposed;
     internal WorldPersistenceBindings(ISaveDataService persistence, LifecycleHub hub, WorldLoadHookHost loads,
-        WorldSnapshotHookHost snapshots, WorldCreationCoordinator creation, Action<Guid, byte[]?>? restoreAuthored = null)
+        WorldSnapshotHookHost snapshots, WorldCreationCoordinator creation, Action<Guid, byte[]?>? restoreContent = null)
     {
         _hub = hub; _loads = loads; _creation = creation; _hub.CheckThread();
         _state = persistence.Register(new PersistenceProvider(WorldStateCodec.Owner, WorldStateCodec.SchemaVersion,
@@ -24,13 +24,13 @@ internal sealed class WorldPersistenceBindings : IDisposable
             _definitions = persistence.Register(new PersistenceProvider(WorldDefinitionCodec.Owner, WorldDefinitionCodec.SchemaVersion,
                 () => snapshots.CaptureOwner(WorldDefinitionCodec.Owner), (session, payload) => Restore(WorldDefinitionCodec.Owner, session, payload),
                 payload => Validate(payload, true))).Registration ?? throw new InvalidOperationException("World definitions registration refused.");
-            _authored = restoreAuthored == null ? null! :
-                persistence.Register(new PersistenceProvider(AuthoredSystemStateCodec.Owner, AuthoredSystemStateCodec.SchemaVersion,
-                    () => snapshots.CaptureOwner(AuthoredSystemStateCodec.Owner),
-                    (session, payload) => Restore(AuthoredSystemStateCodec.Owner, session, payload,
-                        bytes => restoreAuthored(session.Id, bytes)),
-                    payload => { try { AuthoredSystemStateCodec.Decode(payload); return true; } catch (InvalidDataException) { return false; } }))
-                .Registration ?? throw new InvalidOperationException("Authored-system registration refused.");
+            _authored = restoreContent == null ? null! :
+                persistence.Register(new PersistenceProvider(PocketSystemStateCodec.Owner, PocketSystemStateCodec.SchemaVersion,
+                    () => snapshots.CaptureOwner(PocketSystemStateCodec.Owner),
+                    (session, payload) => Restore(PocketSystemStateCodec.Owner, session, payload,
+                        bytes => restoreContent(session.Id, bytes)),
+                    payload => { try { PocketSystemStateCodec.Decode(payload); return true; } catch (InvalidDataException) { return false; } }))
+                .Registration ?? throw new InvalidOperationException("Resource-system registration refused.");
         }
         catch { _state.Dispose(); _definitions?.Dispose(); _authored?.Dispose(); throw; }
     }

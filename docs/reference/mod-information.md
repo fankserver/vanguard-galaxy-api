@@ -20,7 +20,7 @@ The owned panel is anchored to the native **Gameview**, ignoring its horizontal 
 
 ### Presentation and verification limits
 
-UI-owned text uses ASCII punctuation supported by the native pixel font. Authored Unicode is preserved, except for the documented unsafe direction controls; glyph availability still depends on the installed font. Rich text is never enabled to compensate for missing glyphs.
+UI-owned text uses ASCII punctuation supported by the native pixel font. Resource Unicode is preserved, except for the documented unsafe direction controls; glyph availability still depends on the installed font. Rich text is never enabled to compensate for missing glyphs.
 
 Tests cover bounded/stale inventory, explicit links, lifetime, scheduling, failure and cache behavior. Installed metadata checks verify reflected members and compile-only references.
 

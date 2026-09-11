@@ -44,7 +44,7 @@ internal static class StoryDefinitionCodec
                 // third meaning; legacy nonzero decodes as new-visit below.
                 writer.Write(objective.RequireNewVisit ? 1f : 0f);
                 Text(writer, objective.Description); Text(writer, objective.ItemTypeId); Text(writer, objective.EnemyFactionId);
-                Text(writer, objective.AuthoredLocalId); Text(writer, objective.AuthoredOccurrenceKey);
+                Text(writer, objective.LocalId); Text(writer, objective.OccurrenceKey);
             }
         }
         writer.Write((byte)definition.Rewards.Count);
@@ -86,11 +86,11 @@ internal static class StoryDefinitionCodec
                 var authoredKey = version >= 3 ? Text(reader) : null;
                 StoryObjective objective = kind switch
                 {
-                    StoryObjectiveKind.TravelToAuthoredSystemEntrance or StoryObjectiveKind.TravelToAuthoredSite
+                    StoryObjectiveKind.TravelToPocketSystemEntrance or StoryObjectiveKind.TravelToResourceSite
                         when amount == 0 && target == null && text == null && itemType == null && enemyFaction == null && authoredLocal != null && authoredKey != null
-                        => kind == StoryObjectiveKind.TravelToAuthoredSystemEntrance
-                            ? StoryObjective.TravelToAuthoredSystemEntrance(authoredLocal, authoredKey, newVisit)
-                            : StoryObjective.TravelToAuthoredSite(authoredLocal, authoredKey, newVisit),
+                        => kind == StoryObjectiveKind.TravelToPocketSystemEntrance
+                            ? StoryObjective.TravelToPocketSystemEntrance(authoredLocal, authoredKey, newVisit)
+                            : StoryObjective.TravelToResourceSite(authoredLocal, authoredKey, newVisit),
                     _ when authoredLocal != null || authoredKey != null => throw new InvalidDataException("Invalid retained objective shape."),
                     StoryObjectiveKind.TravelToPoi when amount == 0 && text == null && itemType == null && enemyFaction == null => StoryObjective.TravelTo(target!, newVisit),
                     StoryObjectiveKind.CollectCredits when target == null && visit == 0 && text == null && itemType == null && enemyFaction == null => StoryObjective.CollectCredits(amount),

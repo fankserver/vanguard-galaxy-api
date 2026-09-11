@@ -20,7 +20,7 @@ Action presenters are reevaluated on activation. A changed view, target generati
 
 Sections accept titles up to 128 characters and text up to 4096. Actions accept labels up to 128 and tooltip text up to 1024. Rendering disables rich-text parsing, wraps text and uses a scrollable region beside, above or below the native panel without covering its controls. Native panel scale and position are respected; keyboard/controller selection scrolls into view. If no unobstructed region fits, a “Mod actions” button opens an explicitly requested overlay drawer with a close button. This compact mode does not resize or change native window preferences. Viewports too small for a 160×120 drawer plus its toggle remain unsupported.
 
-## Authored choices and estimates
+## Resource choices and estimates
 
 Supported authored choices appear only after native choice validation permits their discovered compartment and crew context. Event text is shown in full; long choice labels retain their full text beneath the shortened label. Clicking routes through the registered provider's ordinary choice path, including its veto, persistence readiness and current native validation. Applied choices disappear and cannot replay their effects. See [authored content](dungeon-content.md).
 

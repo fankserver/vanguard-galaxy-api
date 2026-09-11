@@ -109,7 +109,7 @@ internal sealed class DungeonContentAdapter : IDisposable
     internal bool ReplaceLayout(object simulation, object location)
     {
         _hub.CheckThread(); var id = _index.Find(location); if (_disposed || !id.HasValue) return false;
-        var occurrence = _state.Get(id.Value) ?? throw new InvalidOperationException("Authored dungeon state is unavailable; creation cannot use a replacement vanilla layout.");
+        var occurrence = _state.Get(id.Value) ?? throw new InvalidOperationException("Resource dungeon state is unavailable; creation cannot use a replacement vanilla layout.");
         var rooms = _builder.Rooms(occurrence.Definition.Layout, Convert.ToInt32(_native.Get(location, "authoredLocationSize")));
         object? profile = null;
         if (occurrence.Definition.FactionId != null)

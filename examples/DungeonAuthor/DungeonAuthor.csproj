@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>netstandard2.1</TargetFramework><IsPackable>false</IsPackable></PropertyGroup>
   <ItemGroup>
-    <Compile Include="../AuthoredDungeon/CargoRecovery.cs" Link="CargoRecovery.cs" />
-    <Compile Include="../AuthoredDungeon/CargoRecoveryPanel.cs" Link="CargoRecoveryPanel.cs" />
+    <Compile Include="../ExampleDungeon/CargoRecovery.cs" Link="CargoRecovery.cs" />
+    <Compile Include="../ExampleDungeon/CargoRecoveryPanel.cs" Link="CargoRecoveryPanel.cs" />
     <ProjectReference Include="../../VGModAPI.Abstractions/VGModAPI.Abstractions.csproj" Private="false" />
     <Reference Include="BepInEx"><HintPath>../../VGModAPI/lib/BepInEx.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine"><HintPath>../../VGModAPI/lib/UnityEngine.dll</HintPath><Private>false</Private></Reference>

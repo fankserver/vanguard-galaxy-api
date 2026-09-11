@@ -24,7 +24,7 @@ public sealed class EncounterWave
 }
 
 /// <summary>
-/// A deterministic authored encounter: the exact ship counts the encounter was designed around,
+/// A deterministic owned encounter: the exact ship counts the encounter was designed around,
 /// delivered through the game's timed-reinforcement trigger (point-budgeted payloads under-place
 /// large requests, so exactness is the contract here). Hostility is scoped to the spawned units
 /// only — an existing faction's diplomacy is never modified.
@@ -58,11 +58,11 @@ public sealed class EncounterComposition
 /// <summary>Retained outcome of one encounter spawn request. Scheduled units are transient session content, never persisted or replayed by the API.</summary>
 public sealed class EncounterSpawnResult
 {
-    public AuthoredActionStatus Status { get; }
+    public WorldContentStatus Status { get; }
     public string Detail { get; }
     /// <summary>Units actually scheduled through the native trigger; equals the composition total on success.</summary>
     public int ScheduledUnits { get; }
-    public bool Succeeded => Status == AuthoredActionStatus.Succeeded;
-    public EncounterSpawnResult(AuthoredActionStatus status, int scheduledUnits = 0, string detail = "")
+    public bool Succeeded => Status == WorldContentStatus.Succeeded;
+    public EncounterSpawnResult(WorldContentStatus status, int scheduledUnits = 0, string detail = "")
     { Status = status; ScheduledUnits = scheduledUnits; Detail = detail ?? ""; }
 }

@@ -12,7 +12,7 @@ Queries read current membership without persistent caches or saved query state. 
 
 ## Focus
 
-`FocusPoi(poiId)` requests the native map tab and selected POI. Success means scheduled, not travel or completed UI animation. Missing/hidden destinations and overlapping focus requests are refused. API-owned world sites require `FocusWorldSite(reference)` instead of their internal native IDs. This resolves provider, local ID and instance ID against restored world content and continues checking that reference while the request is active. Two providers can use the same local destination name without aliasing.
+`FocusPoi(poiId)` requests the native map tab and selected POI. Success means scheduled, not travel or completed UI animation. Missing/hidden destinations and overlapping focus requests are refused. API-owned world sites require `FocusResourceSite(reference)` instead of their internal native IDs. This resolves provider, local ID and instance ID against restored world content and continues checking that reference while the request is active. Two providers can use the same local destination name without aliasing.
 
 The native coroutine is stopped on session replacement, API shutdown or loss/replacement of its target. Cleanup does not clear a different focus target. The operation never starts travel or creates destinations. Consumers should not run a parallel native focus coroutine for the same request.
 

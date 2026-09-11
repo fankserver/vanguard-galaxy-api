@@ -185,8 +185,8 @@ begin and end at a vanilla questgiver location without ever knowing a generated 
 return leg defaults to requiring a fresh visit. Return targets are exempt from registration-time
 target validation (the identity does not exist until the occurrence is built).
 
-`StoryObjective.TravelToAuthoredSystemEntrance(systemLocalId, occurrenceKey, requireNewVisit?)` and
-`StoryObjective.TravelToAuthoredSite(siteLocalId, occurrenceKey, requireNewVisit?)` send the player
+`StoryObjective.TravelToPocketSystemEntrance(systemLocalId, occurrenceKey, requireNewVisit?)` and
+`StoryObjective.TravelToResourceSite(siteLocalId, occurrenceKey, requireNewVisit?)` send the player
 to content the API owns. The definition names the AUTHOR-LOCAL identities — which exist before any
 session, in the same registry as the declaration — and the API resolves the native destination per
 occurrence when the mission is built. While the provider's authored occurrence is not reconstructed

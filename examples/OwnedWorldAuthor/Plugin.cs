@@ -17,7 +17,7 @@ public sealed class Plugin : BaseUnityPlugin
     private void Awake()
     {
         _world = ModApi.Services.World.AcquireProvider(this);
-        _world?.Register(new WorldCombatSiteDefinition("PoiX", 1, "Example Combat Site", "player", 1));
+        _world?.RegisterCombatSite(new CombatSiteDefinition("PoiX", 1, "Example Combat Site", "player", 1));
     }
     // Call from explicit gameplay logic outside API callbacks. Name the occurrence with your own
     // key; the API allocates the native identity and reconciles the same key to the same object.

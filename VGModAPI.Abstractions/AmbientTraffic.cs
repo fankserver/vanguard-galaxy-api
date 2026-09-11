@@ -3,7 +3,7 @@ using System;
 namespace VGModAPI;
 
 /// <summary>
-/// Keeps authored locations visually quiet by suppressing vanilla's decorative passerby traffic
+/// Keeps owned locations visually quiet by suppressing vanilla's decorative passerby traffic
 /// there. Docking, station services, faction relations and story- or mission-placed ships are
 /// unaffected, and nothing is written to saves.
 /// </summary>

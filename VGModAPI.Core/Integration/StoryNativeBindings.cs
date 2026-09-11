@@ -221,7 +221,7 @@ internal sealed class StoryNativeBindings
 
     /// <summary>Builds the mission body from a definition using vanilla's own factories only.</summary>
     internal object CreateMission(StoryMissionDefinition definition, string identifier, object? player,
-        Func<StoryObjective, string?>? resolveAuthored = null)
+        Func<StoryObjective, string?>? resolveContent = null)
     {
         var faction = Faction(definition.SourceFaction.Value)
             ?? throw new InvalidOperationException("The game does not know faction '" + definition.SourceFaction + "'.");
@@ -250,7 +250,7 @@ internal sealed class StoryNativeBindings
             _stepDescription.SetValue(native, step.Description);
             _stepRequireAll.SetValue(native, step.RequireAllObjectives);
             var objectives = (IList)_stepObjectives.GetValue(native)!;
-            foreach (var objective in step.Objectives) objectives.Add(CreateObjective(objective, mission, resolveAuthored));
+            foreach (var objective in step.Objectives) objectives.Add(CreateObjective(objective, mission, resolveContent));
             steps.Add(native);
         }
         var rewards = (IList)_missionRewards.GetValue(mission)!;
@@ -258,7 +258,7 @@ internal sealed class StoryNativeBindings
         return mission;
     }
 
-    private object CreateObjective(StoryObjective objective, object mission, Func<StoryObjective, string?>? resolveAuthored)
+    private object CreateObjective(StoryObjective objective, object mission, Func<StoryObjective, string?>? resolveContent)
     {
         var name = StoryContentPolicy.ObjectiveTypeName(objective.Kind);
         var native = _objectiveCreate.Invoke(null, new object[] { name })
@@ -280,13 +280,13 @@ internal sealed class StoryNativeBindings
                 Field(native.GetType(), "requiredVisitTime").SetValue(native,
                     objective.RequireNewVisit ? (float)FieldInherited(source.GetType(), "lastVisitedTime").GetValue(source)! : 0f);
                 break;
-            case StoryObjectiveKind.TravelToAuthoredSystemEntrance:
-            case StoryObjectiveKind.TravelToAuthoredSite:
+            case StoryObjectiveKind.TravelToPocketSystemEntrance:
+            case StoryObjectiveKind.TravelToResourceSite:
                 // The definition names author-local identities; the native destination exists only
                 // per occurrence, so an unresolvable one refuses the BUILD - never a broken step.
-                var destination = resolveAuthored?.Invoke(objective)
-                    ?? throw new InvalidOperationException("The authored destination '" + objective.AuthoredLocalId
-                        + "/" + objective.AuthoredOccurrenceKey + "' does not exist in the loaded game.");
+                var destination = resolveContent?.Invoke(objective)
+                    ?? throw new InvalidOperationException("The authored destination '" + objective.LocalId
+                        + "/" + objective.OccurrenceKey + "' does not exist in the loaded game.");
                 Field(native.GetType(), "targetPOI").SetValue(native, destination);
                 Field(native.GetType(), "requiredVisitTime").SetValue(native,
                     objective.RequireNewVisit ? LastVisited(destination) : 0f);
@@ -415,7 +415,7 @@ internal sealed class StoryNativeBindings
     }
 
     internal StoryObjectiveReading? ReadProgress(object mission, object player, StoryObjectiveLayout.Slot slot, StoryObjective expected,
-        Func<bool> stillValid, Func<StoryObjective, string?>? resolveAuthored = null)
+        Func<bool> stillValid, Func<StoryObjective, string?>? resolveContent = null)
     {
         bool destinationLost = false;
         var steps = (IList)_missionSteps.GetValue(mission)!;
@@ -444,11 +444,11 @@ internal sealed class StoryNativeBindings
                     || (string?)Field(objective.GetType(), "targetPOI").GetValue(objective) != PoiGuid(missionSource)) return null;
                 progress = (bool)objective.GetType().GetMethod("IsComplete", System.Type.EmptyTypes)!.Invoke(objective, null)! ? 1 : 0;
                 break;
-            case StoryObjectiveKind.TravelToAuthoredSystemEntrance:
-            case StoryObjectiveKind.TravelToAuthoredSite:
+            case StoryObjectiveKind.TravelToPocketSystemEntrance:
+            case StoryObjectiveKind.TravelToResourceSite:
                 // A destination the world lost is a REPORT, not a refusal: the objective is still
                 // verifiably ours, and only the owner knows what a broken arc should mean.
-                var resolved = resolveAuthored?.Invoke(expected);
+                var resolved = resolveContent?.Invoke(expected);
                 if (resolved == null) { destinationLost = true; progress = 0; break; }
                 if ((string?)Field(objective.GetType(), "targetPOI").GetValue(objective) != resolved) return null;
                 progress = (bool)objective.GetType().GetMethod("IsComplete", System.Type.EmptyTypes)!.Invoke(objective, null)! ? 1 : 0;
@@ -491,11 +491,11 @@ internal sealed class StoryNativeBindings
         }
         if (slot.Kind is StoryObjectiveKind.MineItems or StoryObjectiveKind.SalvageItems or StoryObjectiveKind.KillEnemies
             && !GatherIdentityMatches(objective, expected)) return null;
-        if (slot.Kind is StoryObjectiveKind.TravelToAuthoredSystemEntrance or StoryObjectiveKind.TravelToAuthoredSite)
+        if (slot.Kind is StoryObjectiveKind.TravelToPocketSystemEntrance or StoryObjectiveKind.TravelToResourceSite)
         {
             // The trailing resolve is authoritative for the whole read: a destination that came back
             // within the window is a reading again, one that vanished is Lost, a mismatch refuses.
-            var stillResolved = resolveAuthored?.Invoke(expected);
+            var stillResolved = resolveContent?.Invoke(expected);
             if (stillResolved == null) destinationLost = true;
             else if ((string?)Field(objective.GetType(), "targetPOI").GetValue(objective) != stillResolved) return null;
             // A destination that came BACK within the window: the placeholder progress from the lost

@@ -5,7 +5,7 @@ using System.Linq;
 namespace VGModAPI;
 
 /// <summary>
-/// Instance-scoped tuning of one unit's drone bay for an authored encounter. Only supplied aspects
+/// Instance-scoped tuning of one unit's drone bay for an owned encounter. Only supplied aspects
 /// change; everything else stays vanilla. Nothing is written to saves, and disposing the
 /// declaration restores stock behavior for later launches and replacements.
 /// </summary>
@@ -15,12 +15,12 @@ public sealed class DroneBayTuning
     public double? LaunchSeconds { get; }
     /// <summary>
     /// Drone catalog names the bay reproduces when replacing losses, cycled deterministically, so an
-    /// authored composition holds for the whole fight. An unknown name is skipped with one report.
+    /// owned composition holds for the whole fight. An unknown name is skipped with one report.
     /// </summary>
     public IReadOnlyList<string>? ReplacementDrones { get; }
     /// <summary>
     /// Desired docked complement. The bay is rebuilt through the game's own drone initialisation in
-    /// staggered batches, then deploys, so authored drones behave exactly like natively created ones.
+    /// staggered batches, then deploys, so owned drones behave exactly like natively created ones.
     /// </summary>
     public int? Complement { get; }
     public DroneBayTuning(double? launchSeconds = null, IReadOnlyList<string>? replacementDrones = null, int? complement = null)

@@ -21,12 +21,12 @@ public sealed class CombatSiteParityTests
     [Fact]
     public void CombatKeyRowsRoundTripBesideEveryOtherKind()
     {
-        var system = new AuthoredSystemOccurrence("author.a", "pocket", "k1", 1, "sys", "gate-in", "gate-out", true);
-        var wormhole = new AuthoredWormholePairOccurrence("author.a", "rift", "k2", 1, "a", "b", "wa", "wb", false);
+        var system = new PocketSystemOccurrence("author.a", "pocket", "k1", 1, "sys", "gate-in", "gate-out", true);
+        var wormhole = new WormholePairOccurrence("author.a", "rift", "k2", 1, "a", "b", "wa", "wb", false);
         var combat = new CombatSiteKeyRow("author.a", "PoiX", "encounter", Guid.NewGuid());
-        var bytes = AuthoredSystemStateCodec.Encode(new[] { system }, Array.Empty<AuthoredSiteOccurrence>(),
-            Array.Empty<AuthoredShipOccurrence>(), new[] { wormhole }, new[] { combat });
-        var decoded = AuthoredSystemStateCodec.DecodeAll(bytes);
+        var bytes = PocketSystemStateCodec.Encode(new[] { system }, Array.Empty<ResourceSiteOccurrence>(),
+            Array.Empty<MooredShipOccurrence>(), new[] { wormhole }, new[] { combat });
+        var decoded = PocketSystemStateCodec.DecodeAll(bytes);
         Assert.Single(decoded.Systems); Assert.Single(decoded.Wormholes);
         var row = Assert.Single(decoded.CombatKeys);
         Assert.Equal("author.a", row.Owner); Assert.Equal("PoiX", row.LocalId);
@@ -38,11 +38,11 @@ public sealed class CombatSiteParityTests
     {
         // The envelope keys occurrences per (owner, local, key) across ALL kinds; a combat key that
         // collides with a site row is refused at save time, exactly like every other kind pair.
-        var site = new AuthoredSiteOccurrence("author.a", "wreck", "k", 1, AuthoredSiteKind.SalvageSite, "sys", "poi");
+        var site = new ResourceSiteOccurrence("author.a", "wreck", "k", 1, ResourceSiteKind.SalvageSite, "sys", "poi");
         var combat = new CombatSiteKeyRow("author.a", "wreck", "k", Guid.NewGuid());
-        Assert.Throws<InvalidDataException>(() => AuthoredSystemStateCodec.Encode(
-            Array.Empty<AuthoredSystemOccurrence>(), new[] { site }, Array.Empty<AuthoredShipOccurrence>(),
-            Array.Empty<AuthoredWormholePairOccurrence>(), new[] { combat }));
+        Assert.Throws<InvalidDataException>(() => PocketSystemStateCodec.Encode(
+            Array.Empty<PocketSystemOccurrence>(), new[] { site }, Array.Empty<MooredShipOccurrence>(),
+            Array.Empty<WormholePairOccurrence>(), new[] { combat }));
     }
 
     [Fact]
@@ -50,17 +50,17 @@ public sealed class CombatSiteParityTests
     {
         // A hand-built schema-3 payload carrying kind 4 must refuse: the kind did not exist yet, so
         // accepting it would invent meaning for bytes an older writer could not have produced.
-        var valid = AuthoredSystemStateCodec.Encode(Array.Empty<AuthoredSystemOccurrence>(),
-            Array.Empty<AuthoredSiteOccurrence>(), Array.Empty<AuthoredShipOccurrence>(),
-            Array.Empty<AuthoredWormholePairOccurrence>(), new[] { new CombatSiteKeyRow("author.a", "PoiX", "k", Guid.NewGuid()) });
+        var valid = PocketSystemStateCodec.Encode(Array.Empty<PocketSystemOccurrence>(),
+            Array.Empty<ResourceSiteOccurrence>(), Array.Empty<MooredShipOccurrence>(),
+            Array.Empty<WormholePairOccurrence>(), new[] { new CombatSiteKeyRow("author.a", "PoiX", "k", Guid.NewGuid()) });
         var downgraded = (byte[])valid.Clone();
         BitConverter.GetBytes(3).CopyTo(downgraded, 4); // version slot follows the magic
-        Assert.Throws<InvalidDataException>(() => AuthoredSystemStateCodec.DecodeAll(downgraded));
+        Assert.Throws<InvalidDataException>(() => PocketSystemStateCodec.DecodeAll(downgraded));
         // Truncated identity refuses instead of decoding a short guid.
         var truncated = valid.Take(valid.Length - 8).ToArray();
-        Assert.Throws<InvalidDataException>(() => AuthoredSystemStateCodec.DecodeAll(truncated));
+        Assert.Throws<InvalidDataException>(() => PocketSystemStateCodec.DecodeAll(truncated));
         // Full valid payload still decodes after both tamper checks (the clone protected it).
-        Assert.Single(AuthoredSystemStateCodec.DecodeAll(valid).CombatKeys);
+        Assert.Single(PocketSystemStateCodec.DecodeAll(valid).CombatKeys);
     }
 
     // ---- service state: enumeration, settled report, cross-kind guard ---------------------
@@ -68,22 +68,22 @@ public sealed class CombatSiteParityTests
     private sealed class Harness : IDisposable
     {
         internal readonly LifecycleHub Hub;
-        internal readonly FakeAuthoredSiteNative Native;
+        internal readonly FakeResourceSiteNative Native;
         internal readonly WorldDefinitionRegistry Combat;
-        internal readonly AuthoredSiteRegistry Sites;
-        internal readonly AuthoredSiteCoordinator Coordinator;
+        internal readonly ResourceSiteRegistry Sites;
+        internal readonly ResourceSiteCoordinator Coordinator;
         internal readonly WorldContentService Service;
         internal IWorldProvider Provider;
         internal Guid Session;
         internal Harness()
         {
             Hub = new LifecycleHub((_, error) => throw error);
-            Native = new FakeAuthoredSiteNative();
+            Native = new FakeResourceSiteNative();
             var plugin = new object();
             StoryHostAuthenticator auth = (instance, caller) => ReferenceEquals(instance, plugin) ? new StoryHostPlugin("author.a", caller) : null;
             Combat = new WorldDefinitionRegistry(auth, Hub.CheckThread);
-            Sites = new AuthoredSiteRegistry(auth, Hub.CheckThread);
-            Coordinator = new AuthoredSiteCoordinator(Hub, Sites, Native, _ => true, _ => { });
+            Sites = new ResourceSiteRegistry(auth, Hub.CheckThread);
+            Coordinator = new ResourceSiteCoordinator(Hub, Sites, Native, _ => true, _ => { });
             // A REAL authoring gate: keyed combat handles resolve through it, unlike authored sites.
             var game = new GameAdapter(Hub, new GameBindings(typeof(Source.Player.GamePlayer).Assembly), _ => { });
             var creation = new WorldCreationCoordinator(new WorldNativeAttachment(game), Hub.CheckThread, new WorldLifetimeGuard());
@@ -137,7 +137,7 @@ public sealed class CombatSiteParityTests
         h.Service.RestoreCombatKeys(h.Session, new[] { new CombatSiteKeyRow("author.a", "PoiX", "encounter", Guid.NewGuid()) });
         int reports = 0; CombatSitesSettledEvent? seen = null;
         h.Provider.CombatSiteReconstructionSettled += settled => { reports++; seen = settled; };
-        h.Service.MaintainAuthoredSystems(h.Session);
+        h.Service.MaintainPocketSystems(h.Session);
         Assert.Equal(1, reports);
         Assert.NotNull(seen);
         Assert.Equal(h.Session, seen!.SessionId);
@@ -147,7 +147,7 @@ public sealed class CombatSiteParityTests
         var failure = Assert.Single(seen.Failures);
         Assert.False(failure.Occurrence.State.Reconstructed);
         // Once per session: a second maintenance pass reports nothing again.
-        h.Service.MaintainAuthoredSystems(h.Session);
+        h.Service.MaintainPocketSystems(h.Session);
         Assert.Equal(1, reports);
     }
 
@@ -155,14 +155,14 @@ public sealed class CombatSiteParityTests
     public void CombatKeysRefuseCrossKindKeyCollisionsAtCreation()
     {
         using var h = new Harness();
-        Assert.Equal(WorldStatus.Succeeded, h.Provider.RegisterAuthoredSite(
-            AuthoredSiteDefinition.Salvage("wreck", 1, "Failed Refuge", 8, "Monsoon", "Fanatics")));
+        Assert.Equal(WorldStatus.Succeeded, h.Provider.RegisterResourceSite(
+            ResourceSiteDefinition.Salvage("wreck", 1, "Failed Refuge", 8, "Monsoon", "Fanatics")));
         h.BeginGameplay();
         // A combat key already claims this (local, key); the authored-site creation must refuse it.
         h.Service.RestoreCombatKeys(h.Session, new[] { new CombatSiteKeyRow("author.a", "wreck", "act2-refuge", Guid.NewGuid()) });
-        Assert.Null(h.Provider.CreateAuthoredSite("wreck", "act2-refuge", "pocket-system", 10, 4));
+        Assert.Null(h.Provider.CreateResourceSite("wreck", "act2-refuge", "pocket-system", 10, 4));
         // A different key is untouched by the guard.
-        Assert.NotNull(h.Provider.CreateAuthoredSite("wreck", "other-key", "pocket-system", 10, 4));
+        Assert.NotNull(h.Provider.CreateResourceSite("wreck", "other-key", "pocket-system", 10, 4));
     }
 
     [Fact]
@@ -171,19 +171,19 @@ public sealed class CombatSiteParityTests
         // The review caught this guard missing: without it the collision surfaced only at save time
         // as an encode refusal - exactly the failure the creation-edge guard exists to prevent.
         using var h = new WormholeHarness();
-        h.Provider.RegisterAuthoredWormholePair(new AuthoredWormholePairDefinition("rift", 1, "Rift"));
+        h.Provider.RegisterWormholePair(new WormholePairDefinition("rift", 1, "Rift"));
         h.BeginGameplay();
         h.Service.RestoreCombatKeys(h.Session, new[] { new CombatSiteKeyRow("author.a", "rift", "k", Guid.NewGuid()) });
-        Assert.Null(h.Provider.CreateAuthoredWormholePair("rift", "k", "a", "b"));
-        Assert.NotNull(h.Provider.CreateAuthoredWormholePair("rift", "other", "a", "b"));
+        Assert.Null(h.Provider.CreateWormholePair("rift", "k", "a", "b"));
+        Assert.NotNull(h.Provider.CreateWormholePair("rift", "other", "a", "b"));
     }
 
     private sealed class WormholeHarness : IDisposable
     {
         internal readonly LifecycleHub Hub;
         internal readonly WorldDefinitionRegistry Combat;
-        internal readonly AuthoredWormholePairRegistry Wormholes;
-        internal readonly AuthoredWormholePairCoordinator Coordinator;
+        internal readonly WormholePairRegistry Wormholes;
+        internal readonly WormholePairCoordinator Coordinator;
         internal readonly WorldContentService Service;
         internal readonly IWorldProvider Provider;
         internal Guid Session;
@@ -193,8 +193,8 @@ public sealed class CombatSiteParityTests
             var plugin = new object();
             StoryHostAuthenticator auth = (instance, caller) => ReferenceEquals(instance, plugin) ? new StoryHostPlugin("author.a", caller) : null;
             Combat = new WorldDefinitionRegistry(auth, Hub.CheckThread);
-            Wormholes = new AuthoredWormholePairRegistry(auth, Hub.CheckThread);
-            Coordinator = new AuthoredWormholePairCoordinator(Hub, Wormholes, new FakeAuthoredWormholes(), _ => true, _ => { });
+            Wormholes = new WormholePairRegistry(auth, Hub.CheckThread);
+            Coordinator = new WormholePairCoordinator(Hub, Wormholes, new FakeWormholePairs(), _ => true, _ => { });
             Service = new WorldContentService(Hub, Combat, null!, () => true,
                 wormholeDefinitions: Wormholes, wormholeCoordinator: Coordinator);
             Provider = Service.AcquireProvider(plugin)!;

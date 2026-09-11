@@ -35,12 +35,12 @@ public sealed class NavigationServiceTests
         bool restored = true; var ids = new List<string>(); Func<bool>? ongoing = null;
         var api = new NavigationService(hub, _ => null, (_, id, current) => { ids.Add(id); ongoing = current; return NavigationStatus.Succeeded; }, (_, _) => restored);
         var instance = Guid.NewGuid();
-        Assert.Equal(NavigationStatus.Succeeded, api.FocusWorldSite(session, new WorldSiteReference("owner.a", "port", instance)));
-        Assert.Equal(NavigationStatus.Succeeded, api.FocusWorldSite(session, new WorldSiteReference("owner.b", "port", instance)));
+        Assert.Equal(NavigationStatus.Succeeded, api.FocusCombatSite(session, new CombatSiteReference("owner.a", "port", instance)));
+        Assert.Equal(NavigationStatus.Succeeded, api.FocusCombatSite(session, new CombatSiteReference("owner.b", "port", instance)));
         Assert.NotEqual(ids[0], ids[1]);
         Assert.Equal(NavigationStatus.Rejected, api.FocusPoi(session, ids[0]));
         restored = false; Assert.False(ongoing!());
-        Assert.Equal(NavigationStatus.Missing, api.FocusWorldSite(session, new WorldSiteReference("owner.a", "port", instance)));
+        Assert.Equal(NavigationStatus.Missing, api.FocusCombatSite(session, new CombatSiteReference("owner.a", "port", instance)));
         Assert.Equal(2, ids.Count);
     }
     [Fact]

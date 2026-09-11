@@ -103,19 +103,19 @@ public sealed class StoryDefinitionCodecTests
         var definition = new StoryMissionDefinition("heed", "Title", "Description", new StoryFactionId("TradingGuild"),
             new[] { new StoryStep("Enter", new[]
             {
-                StoryObjective.TravelToAuthoredSystemEntrance("margin-pocket", "act2", requireNewVisit: true).WithKey("enter"),
-                StoryObjective.TravelToAuthoredSite("singers-field", "act4").WithKey("field")
+                StoryObjective.TravelToPocketSystemEntrance("margin-pocket", "act2", requireNewVisit: true).WithKey("enter"),
+                StoryObjective.TravelToResourceSite("singers-field", "act4").WithKey("field")
             }) });
         var restored = StoryDefinitionCodec.Decode(StoryDefinitionCodec.Encode(definition));
         Assert.Equal(StoryDefinitionCodec.Encode(definition), StoryDefinitionCodec.Encode(restored));
         var enter = restored.Steps[0].Objectives[0];
-        Assert.Equal(StoryObjectiveKind.TravelToAuthoredSystemEntrance, enter.Kind);
-        Assert.Equal("margin-pocket", enter.AuthoredLocalId);
-        Assert.Equal("act2", enter.AuthoredOccurrenceKey);
+        Assert.Equal(StoryObjectiveKind.TravelToPocketSystemEntrance, enter.Kind);
+        Assert.Equal("margin-pocket", enter.LocalId);
+        Assert.Equal("act2", enter.OccurrenceKey);
         Assert.True(enter.RequireNewVisit);
         Assert.Null(enter.TargetPoiId);
         var field = restored.Steps[0].Objectives[1];
-        Assert.Equal(StoryObjectiveKind.TravelToAuthoredSite, field.Kind);
+        Assert.Equal(StoryObjectiveKind.TravelToResourceSite, field.Kind);
         Assert.False(field.RequireNewVisit);
         // A tampered payload carrying authored identities on a non-authored kind refuses to decode.
         var plain = StoryDefinitionCodec.Encode(new StoryMissionDefinition("plain", "T", "D", new StoryFactionId("TradingGuild"),

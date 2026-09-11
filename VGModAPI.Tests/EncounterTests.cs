@@ -66,14 +66,14 @@ public sealed class EncounterTests
     public void SpawnIsGameplayGatedAndReportsExactScheduling()
     {
         using var h = new Harness();
-        Assert.Equal(AuthoredActionStatus.NotReady, h.Provider.SpawnEncounter("poi", Ambush()).Status);
+        Assert.Equal(WorldContentStatus.NotReady, h.Provider.SpawnEncounter("poi", Ambush()).Status);
         h.BeginGameplay();
         var result = h.Provider.SpawnEncounter("poi", Ambush());
         Assert.True(result.Succeeded);
         Assert.Equal(20, result.ScheduledUnits);
         Assert.Single(h.Native.Spawned);
         Assert.Throws<ArgumentNullException>(() => h.Provider.SpawnEncounter("poi", null!));
-        Assert.Equal(AuthoredActionStatus.Rejected, h.Provider.SpawnEncounter(" ", Ambush()).Status);
+        Assert.Equal(WorldContentStatus.Rejected, h.Provider.SpawnEncounter(" ", Ambush()).Status);
     }
 
     [Fact]
@@ -83,14 +83,14 @@ public sealed class EncounterTests
         h.BeginGameplay();
         h.Native.Handler = (_, _) => (4, "");
         var partial = h.Provider.SpawnEncounter("poi", Ambush());
-        Assert.Equal(AuthoredActionStatus.Rejected, partial.Status);
+        Assert.Equal(WorldContentStatus.Rejected, partial.Status);
         Assert.Equal(4, partial.ScheduledUnits);
         h.Native.Handler = (_, _) => (0, "Unknown ship class: Bogus");
         var unknown = h.Provider.SpawnEncounter("poi", Ambush());
-        Assert.Equal(AuthoredActionStatus.Rejected, unknown.Status);
+        Assert.Equal(WorldContentStatus.Rejected, unknown.Status);
         Assert.Contains("Bogus", unknown.Detail);
         h.Native.Handler = (_, _) => null;
-        Assert.Equal(AuthoredActionStatus.Unavailable, h.Provider.SpawnEncounter("poi", Ambush()).Status);
+        Assert.Equal(WorldContentStatus.Unavailable, h.Provider.SpawnEncounter("poi", Ambush()).Status);
     }
 
     [Fact]
@@ -98,7 +98,7 @@ public sealed class EncounterTests
     {
         using var h = new Harness(canAuthor: () => false);
         h.BeginGameplay();
-        Assert.Equal(AuthoredActionStatus.Unavailable, h.Provider.SpawnEncounter("poi", Ambush()).Status);
+        Assert.Equal(WorldContentStatus.Unavailable, h.Provider.SpawnEncounter("poi", Ambush()).Status);
         Assert.Empty(h.Native.Spawned);
     }
 }
