@@ -266,6 +266,9 @@ reference.SetEntranceOpen(open: false);  // closes both
 Opening unlocks and unhides **both** the entrance gate and the pocket-side peer together;
 closing does the reverse. The declared state is a reconciled invariant: on load and on
 later ticks the API re-applies it, so a drifted save converges back to the declared state.
+A **closed** pocket is sealed — its paired gates are hidden as well as closed — so the map
+draws no phantom gate line for a pocket that is reached another way (for example through a
+wormhole). Opening the entrance reveals and enables the pair.
 
 ### Dissolving a pocket
 

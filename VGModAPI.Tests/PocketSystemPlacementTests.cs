@@ -116,6 +116,49 @@ public sealed class PocketSystemPlacementTests
     }
 
     [Fact]
+    public void FreshPocketGatesAreSealedHiddenNotVisible()
+    {
+        using var harness = new Harness();
+        Assert.Equal(WorldStatus.Succeeded, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("p", 1, "Pocket")));
+        harness.BeginGameplay();
+        var pocket = harness.Provider.CreatePocketSystem("p", "k1", "anchor")!;
+        // A freshly authored pocket must present sealed gates (closed AND hidden) so the map draws no
+        // phantom red gate line for a pocket the consumer reaches another way (e.g. a wormhole).
+        Assert.False(harness.Native.IsOpen(harness.Session, pocket.EntranceGatePoiId!, pocket.PocketGatePoiId!));
+        Assert.True(harness.Native.IsSealed(harness.Session, pocket.EntranceGatePoiId!, pocket.PocketGatePoiId!));
+    }
+
+    [Fact]
+    public void OpeningAPocketUnsealsAndClosagainReseals()
+    {
+        using var harness = new Harness();
+        Assert.Equal(WorldStatus.Succeeded, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("p", 1, "Pocket")));
+        harness.BeginGameplay();
+        var pocket = harness.Provider.CreatePocketSystem("p", "k1", "anchor")!;
+        Assert.True(pocket.SetEntranceOpen(true).Succeeded);
+        Assert.True(harness.Native.IsOpen(harness.Session, pocket.EntranceGatePoiId!, pocket.PocketGatePoiId!));
+        Assert.False(harness.Native.IsSealed(harness.Session, pocket.EntranceGatePoiId!, pocket.PocketGatePoiId!));
+        Assert.True(pocket.SetEntranceOpen(false).Succeeded);
+        Assert.True(harness.Native.IsSealed(harness.Session, pocket.EntranceGatePoiId!, pocket.PocketGatePoiId!));
+    }
+
+    [Fact]
+    public void ReconcileRepairsAClosedButStillVisiblePocketGate()
+    {
+        using var harness = new Harness();
+        Assert.Equal(WorldStatus.Succeeded, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("p", 1, "Pocket")));
+        harness.BeginGameplay();
+        var pocket = harness.Provider.CreatePocketSystem("p", "k1", "anchor")!;
+        // Simulate a pocket authored before gates were hidden at create: closed but visible (not sealed).
+        var sid = Assert.Single(harness.Native.Systems.Keys);
+        harness.Native.Hidden[sid] = false;
+        Assert.False(harness.Native.IsSealed(harness.Session, pocket.EntranceGatePoiId!, pocket.PocketGatePoiId!));
+        // A reconciliation pass must re-apply the declared closed state, sealing the pair again.
+        harness.Coordinator.Reconcile(harness.Session);
+        Assert.True(harness.Native.IsSealed(harness.Session, pocket.EntranceGatePoiId!, pocket.PocketGatePoiId!));
+    }
+
+    [Fact]
     public void StaticNameIsForwardedToTheNativeSeamAndRetainedOnTheHandle()
     {
         using var harness = new Harness();

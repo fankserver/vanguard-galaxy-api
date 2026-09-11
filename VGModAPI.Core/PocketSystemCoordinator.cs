@@ -213,7 +213,7 @@ internal sealed class PocketSystemCoordinator : IDisposable
                 {
                     try
                     {
-                        if (occurrence.DeclaredOpen != _native.IsOpen(expectedSession, occurrence.EntranceGateId, occurrence.PocketGateId))
+                        if (!GateStateMatches(expectedSession, occurrence))
                             _native.ApplyOpen(expectedSession, occurrence.EntranceGateId, occurrence.PocketGateId, occurrence.DeclaredOpen);
                     }
                     catch (Exception error) { _report(error); }
@@ -275,12 +275,20 @@ internal sealed class PocketSystemCoordinator : IDisposable
         if (Resolve(occurrence).Status != ReconstructionStatus.Reconstructed) return null;
         try
         {
-            if (occurrence.DeclaredOpen != _native.IsOpen(Session(), occurrence.EntranceGateId, occurrence.PocketGateId))
+            if (!GateStateMatches(Session(), occurrence))
                 _native.ApplyOpen(Session(), occurrence.EntranceGateId, occurrence.PocketGateId, occurrence.DeclaredOpen);
         }
         catch (Exception error) { _report(error); }
         return occurrence;
     }
+
+    /// <summary>Whether the native gate pair currently presents the declared state. An open pocket must be
+    /// open and visible; a closed pocket must be sealed (closed AND hidden), so a pocket authored before
+    /// gates were hidden at create is repaired instead of leaving a phantom gate line on the map.</summary>
+    private bool GateStateMatches(Guid session, PocketSystemOccurrence occurrence)
+        => occurrence.DeclaredOpen
+            ? _native.IsOpen(session, occurrence.EntranceGateId, occurrence.PocketGateId)
+            : _native.IsSealed(session, occurrence.EntranceGateId, occurrence.PocketGateId);
 
     private PocketSystemState Resolve(PocketSystemOccurrence occurrence)
     {

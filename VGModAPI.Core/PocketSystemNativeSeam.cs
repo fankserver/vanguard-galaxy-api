@@ -43,6 +43,9 @@ internal interface IPocketSystemNative
     bool ApplyOpen(Guid session, string entranceGateId, string pocketGateId, bool open);
     /// <summary>Reads the current paired-gate open state (both open and unhidden means open).</summary>
     bool IsOpen(Guid session, string entranceGateId, string pocketGateId);
+    /// <summary>True when both paired gates are in the sealed state (closed AND hidden), which is how a
+    /// closed pocket must present so the map draws no phantom gate line for it.</summary>
+    bool IsSealed(Guid session, string entranceGateId, string pocketGateId);
     /// <summary>Removes the owned pocket, its paired gates and its contained POIs. Refuses while the player is inside.</summary>
     PocketDissolveOutcome DissolvePocket(Guid session, string systemId, string entranceGateId, string pocketGateId);
     /// <summary>Begins a single reconciliation pass over the session's map; read paths reuse one snapshot until EndPass.</summary>

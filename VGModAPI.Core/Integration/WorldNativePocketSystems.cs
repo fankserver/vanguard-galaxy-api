@@ -229,8 +229,33 @@ internal sealed class WorldNativePocketSystems : IPocketSystemNative
         // VerifyPocketDelta / DissolvePocket structurally intact. The wormhole is the only usable door.
         try { _gatePair.Invoke(null, new[] { parent, pocket, false, false }); }
         catch (Exception e) { ReportInvoke(e); return null; }
+        SealGates(pocket);
         created = pocket;
         return sector;
+    }
+
+    /// <summary>
+    /// Puts both paired gates into the closed+hidden state at creation, matching what SetEntranceOpen(false)
+    /// applies. Without this a fresh pocket's gates are closed but still VISIBLE, so the map draws them as
+    /// red jumpgate lines (a phantom gate the player cannot use); reconcile cannot correct it later because
+    /// IsOpen reports false for closed-and-visible, which already equals the declared closed state.
+    /// </summary>
+    private void SealGates(object pocket)
+    {
+        try
+        {
+            var entrance = _entrance.Invoke(pocket, null);
+            if (entrance == null) return;
+            var peer = _target.Invoke(entrance, null);
+            foreach (var gate in new[] { entrance, peer })
+            {
+                if (gate == null) continue;
+                _hidden.SetValue(gate, true);
+                _jumpgateOpen.SetValue(gate, false);
+                _lock.Invoke(gate, null);
+            }
+        }
+        catch (Exception e) { ReportInvoke(e); }
     }
 
     /// <summary>Creates a distinct visible pocket system in the ANCHOR's own sector, placed well away from
@@ -278,6 +303,7 @@ internal sealed class WorldNativePocketSystems : IPocketSystemNative
         // Sealed identity+traversal scaffolding only (never unlocked); explicitly gate-linked to the parent.
         try { _gatePair.Invoke(null, new[] { parent, pocket, false, false }); }
         catch (Exception e) { ReportInvoke(e); return null; }
+        SealGates(pocket);
         created = pocket;
         return neighborSector;
     }
@@ -444,6 +470,23 @@ internal sealed class WorldNativePocketSystems : IPocketSystemNative
             if (entrance == null || peer == null) return false;
             return (bool)_jumpgateOpen.GetValue(entrance)! && !(bool)_hidden.GetValue(entrance)! &&
                 (bool)_jumpgateOpen.GetValue(peer)! && !(bool)_hidden.GetValue(peer)!;
+        }
+        catch (Exception e) { _report(e); return false; }
+    }
+
+    /// <summary>True when both paired gates are closed AND hidden (the sealed presentation). A closed but
+    /// visible gate is not sealed, so reconcile repairs pockets authored before gates were hidden at create.</summary>
+    public bool IsSealed(Guid session, string entranceGateId, string pocketGateId)
+    {
+        var snapshot = Snapshot(true, session);
+        if (snapshot == null) return false;
+        try
+        {
+            var entrance = snapshot.FindPoint(entranceGateId);
+            var peer = snapshot.FindPoint(pocketGateId);
+            if (entrance == null || peer == null) return false;
+            return (bool)_hidden.GetValue(entrance)! && !(bool)_jumpgateOpen.GetValue(entrance)! &&
+                (bool)_hidden.GetValue(peer)! && !(bool)_jumpgateOpen.GetValue(peer)!;
         }
         catch (Exception e) { _report(e); return false; }
     }
