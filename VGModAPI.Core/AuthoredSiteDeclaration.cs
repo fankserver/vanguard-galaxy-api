@@ -70,3 +70,25 @@ internal sealed class AuthoredSiteOccurrence
         Revision = revision;
     }
 }
+
+
+/// <summary>
+/// One persisted combat-site key row: the author-local occurrence key and the API-allocated
+/// instance identity it derived. Pure association - creation/resolution stay on the combat-POI
+/// pipeline; this row exists so keyed occurrences are enumerable and settle-reportable.
+/// </summary>
+internal sealed class CombatSiteKeyRow
+{
+    internal string Owner { get; }
+    internal string LocalId { get; }
+    internal string OccurrenceKey { get; }
+    internal Guid InstanceId { get; }
+    internal CombatSiteKeyRow(string owner, string localId, string occurrenceKey, Guid instanceId)
+    {
+        if (string.IsNullOrWhiteSpace(owner) || WorldStateCodec.TextByteCount(owner) > 128) throw new ArgumentException("A bounded owner is required.", nameof(owner));
+        if (string.IsNullOrWhiteSpace(localId) || WorldStateCodec.TextByteCount(localId) > 128) throw new ArgumentException("A bounded local identity is required.", nameof(localId));
+        if (string.IsNullOrWhiteSpace(occurrenceKey) || WorldStateCodec.TextByteCount(occurrenceKey) > 256) throw new ArgumentException("A bounded occurrence key is required.", nameof(occurrenceKey));
+        if (instanceId == Guid.Empty) throw new ArgumentException("An instance identity is required.", nameof(instanceId));
+        Owner = owner; LocalId = localId; OccurrenceKey = occurrenceKey; InstanceId = instanceId;
+    }
+}

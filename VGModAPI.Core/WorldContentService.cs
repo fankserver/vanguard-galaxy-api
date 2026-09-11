@@ -34,6 +34,30 @@ internal sealed class WorldContentService : IWorldService, IDisposable
     private readonly AuthoredSiteRegistry? _siteDefinitions;
     private readonly AuthoredSiteCoordinator? _siteCoordinator;
     private event Action<Guid>? _sitesSettled;
+    private readonly Dictionary<(string Owner, string Local, string Key), CombatSiteKeyRow> _combatKeys = new();
+    private Guid _combatKeySession;
+    private bool _combatSettledOnce;
+    private event Action<Guid>? _combatSettled;
+    internal void RestoreCombatKeys(Guid session, CombatSiteKeyRow[] rows)
+    {
+        _hub.CheckThread();
+        if (_disposed || session == Guid.Empty || _hub.CurrentSession?.Id != session) throw new System.IO.InvalidDataException("Stale combat-key restore.");
+        _combatKeys.Clear(); _combatKeySession = session; _combatSettledOnce = false;
+        if (rows != null) foreach (var row in rows) _combatKeys[(row.Owner, row.LocalId, row.OccurrenceKey)] = row;
+    }
+    internal CombatSiteKeyRow[] CaptureCombatKeys()
+    {
+        _hub.CheckThread();
+        return _combatKeySession == _hub.CurrentSession?.Id ? _combatKeys.Values.ToArray() : Array.Empty<CombatSiteKeyRow>();
+    }
+    private void EnsureCombatKeySession(Guid session)
+    {
+        if (_combatKeySession == session) return;
+        _combatKeys.Clear(); _combatKeySession = session; _combatSettledOnce = false;
+    }
+    internal bool CombatKeyClaimed(string owner, string localId, string occurrenceKey)
+    { _hub.CheckThread(); return _combatKeySession == _hub.CurrentSession?.Id && _combatKeys.ContainsKey((owner, localId, occurrenceKey)); }
+
     private readonly AuthoredShipRegistry? _shipDefinitions;
     private readonly AuthoredShipCoordinator? _shipCoordinator;
     private readonly VGModAPI.Core.Integration.IEncounterNative? _encounters;
@@ -126,6 +150,14 @@ internal sealed class WorldContentService : IWorldService, IDisposable
         {
             try { _shipCoordinator.Reconcile(session); } catch { /* fail-open */ }
         }
+        if (!_combatSettledOnce && _combatKeySession == session && _hub.CurrentSession?.Phase == SessionPhase.GameplayInitialized)
+        {
+            _combatSettledOnce = true;
+            var subscribers = _combatSettled;
+            if (subscribers != null)
+                foreach (var subscriber in subscribers.GetInvocationList())
+                { try { ((Action<Guid>)subscriber)(session); } catch { /* fail-open per subscriber */ } }
+        }
         foreach (var refresh in _authoredRefreshes.ToArray())
         {
             try { refresh(session); } catch { /* one provider's fault must not block the others */ }
@@ -202,6 +234,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             if (wormholes != null) service._wormholesSettled += ForwardWormholesSettled;
             if (authoredSites != null) service._sitesSettled += ForwardSitesSettled;
             if (authoredShips != null) service._shipsSettled += ForwardShipsSettled;
+            service._combatSettled += ForwardCombatSettled;
             _alive = () => !_disposed && !_service._disposed;
             if (authored != null)
             {
@@ -318,6 +351,45 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             return new Guid(guid);
         }
 
+        public event Action<CombatSitesSettledEvent>? CombatSiteReconstructionSettled;
+        private void ForwardCombatSettled(Guid session)
+        {
+            if (_disposed || _service._hub.CurrentSession?.Id != session) return;
+            var reconstructed = new List<ICombatSite>();
+            var failures = new List<CombatSiteFailure>();
+            foreach (var row in _service._combatKeys.Values.ToArray())
+            {
+                if (row.Owner != ProviderId) continue;
+                var handle = ObtainSite(row.LocalId, row.OccurrenceKey, session);
+                handle.Refresh();
+                var state = handle.State;
+                if (state.Reconstructed) reconstructed.Add(handle);
+                else failures.Add(new CombatSiteFailure(handle, state.Reason ?? AuthoredSystemFailureReason.NativeMissing));
+            }
+            var subscribers = CombatSiteReconstructionSettled;
+            if (subscribers == null) return;
+            var settled = new CombatSitesSettledEvent(session, reconstructed, failures);
+            foreach (var subscriber in subscribers.GetInvocationList())
+            { try { ((Action<CombatSitesSettledEvent>)subscriber)(settled); } catch { /* fail-open per subscriber */ } }
+        }
+
+        public IReadOnlyList<ICombatSite> GetCombatSites(string localId)
+        {
+            _service._hub.CheckThread();
+            if (_disposed || _service._disposed || localId == null) return Array.Empty<ICombatSite>();
+            var session = _service._hub.CurrentSession;
+            if (session == null || session.Id == Guid.Empty || _service._combatKeySession != session.Id) return Array.Empty<ICombatSite>();
+            var list = new List<ICombatSite>();
+            foreach (var row in _service._combatKeys.Values.ToArray())
+                if (row.Owner == ProviderId && string.Equals(row.LocalId, localId, StringComparison.Ordinal))
+                {
+                    var handle = ObtainSite(row.LocalId, row.OccurrenceKey, session.Id);
+                    handle.Refresh();
+                    list.Add(handle);
+                }
+            return list;
+        }
+
         public ICombatSite? CreateCombatSite(string localId, string occurrenceKey, string systemId, float x, float y)
         {
             _service._hub.CheckThread();
@@ -325,12 +397,18 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             var session = _service._hub.CurrentSession;
             if (session == null || session.Id == Guid.Empty || session.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks) return null;
             if (localId == null || !ValidOccurrenceKey(occurrenceKey)) return null;
+            if (OtherKindOwnsKey(exceptShips: false, localId, occurrenceKey)) return null;
             if (!_service._definitions.TryResolve(_provider, localId, out _)) return null;
             var instanceId = SiteInstanceId(ProviderId, localId, occurrenceKey);
             // Keyed reconciliation: an existing occurrence under this key is the occurrence; never a duplicate.
             var existing = FindPersistentCombatSite(session.Id, new WorldSiteReference(ProviderId, localId, instanceId));
             var result = existing.Succeeded ? existing : CreatePersistentCombatSite(session.Id, localId, instanceId, systemId, x, y);
             if (result.Status is not (WorldStatus.Succeeded or WorldStatus.Rejected)) return null;
+            if (result.Status == WorldStatus.Succeeded)
+            {
+                _service.EnsureCombatKeySession(session.Id);
+                _service._combatKeys[(ProviderId, localId, occurrenceKey)] = new CombatSiteKeyRow(ProviderId, localId, occurrenceKey, instanceId);
+            }
             var handle = ObtainSite(localId, occurrenceKey, session.Id);
             handle.RecordAction(result.Status == WorldStatus.Succeeded
                 ? new AuthoredActionResult(AuthoredActionStatus.Succeeded)
@@ -451,6 +529,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 && _service._shipCoordinator.ContainsOccurrence(_authoredShips.Owner, localId, occurrenceKey)) return null;
             if (_wormholes != null && _service._wormholeCoordinator != null
                 && _service._wormholeCoordinator.Contains(_wormholes.Owner, localId, occurrenceKey)) return null;
+            if (CombatKeyOwnsKey(localId, occurrenceKey)) return null;
             var (status, _) = _service._siteCoordinator.Create(_authoredSites, session.Id, localId, occurrenceKey, systemId, x, y);
             if (status != WorldStatus.Succeeded && status != WorldStatus.Rejected) return null;
             if (_service._siteCoordinator.TryGetOccurrence(_authoredSites.Owner, localId, occurrenceKey) == null && status != WorldStatus.Rejected) return null;
@@ -542,7 +621,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             if (session == null || session.Id == Guid.Empty || session.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks) return null;
             if (localId == null || !ValidOccurrenceKey(occurrenceKey)) return null;
             // The persistence envelope keys occurrences per (owner, local, key) across ALL kinds.
-            if (OtherKindOwnsKey(exceptShips: true, localId, occurrenceKey)) return null;
+            if (OtherKindOwnsKey(exceptShips: true, localId, occurrenceKey) || CombatKeyOwnsKey(localId, occurrenceKey)) return null;
             var (status, _) = _service._shipCoordinator.Create(_authoredShips, session.Id, localId, occurrenceKey, stationPoiId);
             if (status != WorldStatus.Succeeded && status != WorldStatus.Rejected) return null;
             var handle = ObtainShipHandle(localId, occurrenceKey, session.Id);
@@ -576,6 +655,10 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             if (_wormholes != null && _service._wormholeCoordinator != null
                 && _service._wormholeCoordinator.Contains(_wormholes.Owner, localId, occurrenceKey)) return true;
             return false;
+        }
+        private bool CombatKeyOwnsKey(string localId, string occurrenceKey)
+        {
+            return _service.CombatKeyClaimed(ProviderId, localId, occurrenceKey);
         }
 
         public IReadOnlyList<IAuthoredShip> GetAuthoredShips(string localId)
@@ -746,6 +829,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 && _service._shipCoordinator.ContainsOccurrence(_authoredShips.Owner, localId, occurrenceKey)) return null;
             if (_wormholes != null && _service._wormholeCoordinator != null
                 && _service._wormholeCoordinator.Contains(_wormholes.Owner, localId, occurrenceKey)) return null;
+            if (CombatKeyOwnsKey(localId, occurrenceKey)) return null;
             var result = _service._authoredCoordinator.Create(_authored, session.Id, localId, occurrenceKey, anchorSystemId);
             if (result.Status != WorldStatus.Succeeded && result.Status != WorldStatus.Rejected) return null;
             if (!_service._authoredCoordinator.ContainsOccurrence(_authored.Owner, localId, occurrenceKey)) return null;
@@ -803,6 +887,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             if (_authoredSites != null) _service._sitesSettled -= ForwardSitesSettled;
             if (_authoredShips != null) _service._shipsSettled -= ForwardShipsSettled;
             if (_wormholes != null) _service._wormholesSettled -= ForwardWormholesSettled;
+            _service._combatSettled -= ForwardCombatSettled;
             _service._authoredRefreshes.Remove(_refreshesEntry);
             _service._dissolveNotifiers.Remove(_dissolveEntry);
             _siteSubscription.Dispose();

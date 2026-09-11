@@ -71,13 +71,12 @@ public interface IWorldProvider : IDisposable
     /// </summary>
     ICombatSite? CreateCombatSite(string localId, string occurrenceKey, string systemId, float x, float y);
     /// <summary>Re-obtains the owned occurrence for a key in the current game, or null if it does not exist.</summary>
-    /// <summary>
-    /// Re-obtains the owned occurrence for a key in the current game, or null if it does not exist.
-    /// Combat-site occurrence keys are author-local and not persisted (native identity is derived
-    /// from them deterministically), so unlike the other authored kinds there is no enumeration:
-    /// re-obtain each occurrence by the key you declared it under.
-    /// </summary>
+    /// <summary>Re-obtains the owned occurrence for a key in the current game, or null if it does not exist.</summary>
     ICombatSite? GetCombatSite(string localId, string occurrenceKey);
+    /// <summary>All current-game occurrences the provider owns for a registered combat-site definition (including restored rows, no replay).</summary>
+    IReadOnlyList<ICombatSite> GetCombatSites(string localId);
+    /// <summary>Once-per-session aggregate reconciliation report for this provider's keyed combat sites.</summary>
+    event Action<CombatSitesSettledEvent>? CombatSiteReconstructionSettled;
 
     /// <summary>Declares an enclosed authored pocket system. Optional exact previous declaration permits a revision/name migration.</summary>
     WorldStatus RegisterAuthoredSystem(AuthoredSystemDefinition definition, AuthoredSystemDefinition? previous = null);

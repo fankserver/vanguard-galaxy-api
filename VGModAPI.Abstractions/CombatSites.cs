@@ -22,6 +22,29 @@ public sealed class CombatSiteState
 /// replaced keeps its last state and never resolves against the replacement save — re-obtain the
 /// object for the live game explicitly.
 /// </summary>
+public sealed class CombatSiteFailure
+{
+    public ICombatSite Occurrence { get; }
+    public AuthoredSystemFailureReason Reason { get; }
+    public CombatSiteFailure(ICombatSite occurrence, AuthoredSystemFailureReason reason)
+    { Occurrence = occurrence ?? throw new ArgumentNullException(nameof(occurrence)); Reason = reason; }
+}
+
+/// <summary>Once-per-session aggregate reconciliation report for keyed combat sites at the post-reconstruction safe boundary.</summary>
+public sealed class CombatSitesSettledEvent
+{
+    public Guid SessionId { get; }
+    public System.Collections.Generic.IReadOnlyList<ICombatSite> Reconstructed { get; }
+    public System.Collections.Generic.IReadOnlyList<CombatSiteFailure> Failures { get; }
+    public bool HasFailures => Failures.Count > 0;
+    public CombatSitesSettledEvent(Guid sessionId, System.Collections.Generic.IEnumerable<ICombatSite> reconstructed, System.Collections.Generic.IEnumerable<CombatSiteFailure> failures)
+    {
+        SessionId = sessionId;
+        Reconstructed = new System.Collections.ObjectModel.ReadOnlyCollection<ICombatSite>(new System.Collections.Generic.List<ICombatSite>(reconstructed ?? throw new ArgumentNullException(nameof(reconstructed))));
+        Failures = new System.Collections.ObjectModel.ReadOnlyCollection<CombatSiteFailure>(new System.Collections.Generic.List<CombatSiteFailure>(failures ?? throw new ArgumentNullException(nameof(failures))));
+    }
+}
+
 public interface ICombatSite
 {
     /// <summary>The author-local occurrence key this occurrence is owned under.</summary>

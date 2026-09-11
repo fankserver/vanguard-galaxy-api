@@ -23,6 +23,16 @@ from an ended or replaced session keeps its last state and never resolves agains
 save — re-obtain objects for the live game. Existence still means exact current native membership:
 an object in hand does not establish that the site is present right now; check `State`.
 
+Keyed combat sites carry the same persisted-key parity as every other authored kind. The author
+keys survive the save (kind-4 rows in the shared authored envelope), so `GetCombatSites(localId)`
+enumerates the provider's own keyed occurrences after a reload — from persisted state, never a
+handle cache — each with its honest typed state, including un-reconstructed ones. Once per session,
+after reconstruction has settled at the safe boundary, `CombatSiteReconstructionSettled` reports
+the actual outcomes: reconstructed occurrences and typed per-occurrence failures. The keys share
+one cross-kind key space per owner: a `(localId, occurrenceKey)` claimed by a combat site cannot be
+claimed by an authored system, site, ship or wormhole pair, and vice versa — the collision refuses
+at creation, and a save carrying a colliding pair refuses to encode.
+
 ## Quiet authored locations
 
 `ModApi.Services.World.AmbientTraffic` keeps an authored location visually quiet:
