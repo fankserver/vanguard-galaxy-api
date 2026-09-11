@@ -29,8 +29,8 @@ public sealed class PocketSystemDissolveTests
             Native = new FakePocketSystemNative();
             SiteNative = new FakeResourceSiteNative();
             var plugin = new object();
-            StoryHostAuthenticator auth = (instance, caller) =>
-                ReferenceEquals(instance, plugin) ? new StoryHostPlugin("author.a", caller) : null;
+            StoryHostAuthenticator auth = (occurrence, caller) =>
+                ReferenceEquals(occurrence, plugin) ? new StoryHostPlugin("author.a", caller) : null;
             Combat = new WorldDefinitionRegistry(auth, Hub.CheckThread);
             Systems = new PocketSystemRegistry(auth, Hub.CheckThread);
             Coordinator = new PocketSystemCoordinator(Hub, Systems, Native, () => true, _ => true, _ => { });
@@ -66,7 +66,7 @@ public sealed class PocketSystemDissolveTests
     }
 
     [Fact]
-    public void DissolveRemovesThePocketItsSaveRowAndFreesTheKeyForAFreshOccurrence()
+    public void DissolveRemovesThePocketItsSaveRowAndFreesTheKeyForAFreshInstance()
     {
         using var harness = new Harness();
         var pocket = harness.CreatePocket();
@@ -93,7 +93,7 @@ public sealed class PocketSystemDissolveTests
     }
 
     [Fact]
-    public void PlayerInsideThePocketRefusesDissolutionAndRetainsTheOccurrence()
+    public void PlayerInsideThePocketRefusesDissolutionAndRetainsTheInstance()
     {
         using var harness = new Harness();
         var pocket = harness.CreatePocket();

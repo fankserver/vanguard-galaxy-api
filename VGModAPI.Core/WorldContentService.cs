@@ -683,7 +683,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             return handle;
         }
 
-        /// <summary>The owned moored-ship occurrence object; one instance per key per session.</summary>
+        /// <summary>The owned moored-ship occurrence object; one occurrence per key per session.</summary>
         private sealed class MooredShipHandle : IMooredShip
         {
             private readonly Provider _provider;
@@ -901,7 +901,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             _service._providerReleased?.Invoke();
         }
 
-        /// <summary>The owned authored-site occurrence object; one instance per key per session.</summary>
+        /// <summary>The owned authored-site occurrence object; one occurrence per key per session.</summary>
         private sealed class ResourceSiteHandle : IResourceSite
         {
             private readonly Provider _provider;
@@ -956,7 +956,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             }
         }
 
-        /// <summary>The owned combat-site occurrence object; one instance per key per session.</summary>
+        /// <summary>The owned combat-site occurrence object; one occurrence per key per session.</summary>
         private sealed class CombatSiteHandle : ICombatSite
         {
             private readonly Provider _provider;
@@ -1043,7 +1043,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             }
         }
 
-        /// <summary>The owned occurrence object exposed to consumers; one instance per key per session.</summary>
+        /// <summary>The owned occurrence object exposed to consumers; one occurrence per key per session.</summary>
         private sealed class PocketSystemHandle : IPocketSystem
         {
             private readonly WorldContentService _service;
@@ -1071,7 +1071,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 get
                 {
                     if (_service._authoredDefinitions != null && _service._authoredDefinitions.TryResolve(_authored, _localId, out var declaration) && declaration != null)
-                        return new PocketSystemDefinition(declaration.LocalId, declaration.Revision, declaration.Name);
+                        return new PocketSystemDefinition(declaration.LocalId, declaration.Revision, declaration.Name, declaration.Placement, declaration.FactionId);
                     var revision = _coordinator.TryGetOccurrence(_authored.Owner, _localId, _occurrenceKey)?.Revision ?? 1;
                     return new PocketSystemDefinition(_localId, revision, "");
                 }

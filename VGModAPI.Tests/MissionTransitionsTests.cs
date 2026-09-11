@@ -47,7 +47,7 @@ public sealed class MissionTransitionsTests
     }
 
     [Fact]
-    public void FailurePrecedesReplacementAndReusedObjectsStartNewOccurrences()
+    public void FailurePrecedesReplacementAndReusedObjectsStartNewInstances()
     {
         using var hub = new MissionTransitions(new LifecycleHub((_, _) => { })); hub.Reset(Guid.NewGuid());
         var events = new List<MissionTransition>(); using var sub = hub.Subscribe("test", events.Add); var token = new object();

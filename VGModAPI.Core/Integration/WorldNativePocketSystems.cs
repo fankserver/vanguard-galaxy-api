@@ -17,9 +17,12 @@ internal sealed class WorldNativePocketSystems : IPocketSystemNative
     private readonly Type _jumpGateType;
     private readonly PropertyInfo _map;
     private readonly FieldInfo _sector, _parent, _hidden, _jumpgateOpen;
-    private readonly FieldInfo _sectorSystems, _playerCurrentSystem, _playerCurrentPoi, _playerWaypoints;
+    private readonly FieldInfo _sectorSystems, _galaxySectors, _playerCurrentSystem, _playerCurrentPoi, _playerWaypoints;
+    private readonly FieldInfo _parentLevel, _pocketSystem, _systemPosition, _allFactions;
+    private readonly MethodInfo _factionGet;
     private readonly PropertyInfo _guid;
-    private readonly MethodInfo _create, _entrance, _target, _unlock, _lock, _removePoi;
+    private readonly MethodInfo _entrance, _target, _unlock, _lock, _removePoi;
+    private readonly MethodInfo _galaxyRandomPosition, _galaxyAddSector, _sectorCreate, _sectorName, _emptyCreate, _gatePair;
     private readonly int _level;
     private readonly Action<Exception> _report;
     private bool _inPass;
@@ -34,8 +37,18 @@ internal sealed class WorldNativePocketSystems : IPocketSystemNative
         _map = assembly.GetType("Source.Player.GamePlayer", true)!.GetProperty("map", BindingFlags.Public | BindingFlags.Instance)
             ?? throw new MissingMemberException("GamePlayer.map");
         _sector = Field(assembly.GetType(PocketSystemBindings.System, true)!, "sector");
+        _systemPosition = Field(assembly.GetType(PocketSystemBindings.System, true)!, "position");
         _parent = Field(assembly.GetType(PocketSystemBindings.Element, true)!, "system");
         _sectorSystems = Field(assembly.GetType(PocketSystemBindings.Sector, true)!, "systems");
+        _galaxySectors = Field(assembly.GetType(PocketSystemBindings.Galaxy, true)!, "sectors");
+        _parentLevel = Field(assembly.GetType(PocketSystemBindings.Element, true)!, "level");
+        _pocketSystem = Field(assembly.GetType(PocketSystemBindings.System, true)!, "pocketSystem");
+
+        var factionType = assembly.GetType(PocketSystemBindings.Faction, true)!;
+        _allFactions = factionType.GetField("allFactions", BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new MissingFieldException(PocketSystemBindings.Faction, "allFactions");
+        _factionGet = factionType.GetMethod("Get", BindingFlags.Public | BindingFlags.Static, null, new[] { typeof(string) }, null)
+            ?? throw new MissingMethodException(PocketSystemBindings.Faction, "Get(string)");
         var playerType = assembly.GetType(PocketSystemBindings.Player, true)!;
         _playerCurrentSystem = Field(playerType, "currentSystem");
         _playerCurrentPoi = Field(playerType, "currentPointOfInterest");
@@ -45,9 +58,12 @@ internal sealed class WorldNativePocketSystems : IPocketSystemNative
         _guid = assembly.GetType(PocketSystemBindings.Element, true)!.GetProperty("guid", BindingFlags.Public | BindingFlags.Instance)
             ?? throw new MissingMemberException("MapElement.guid");
         var resolved = PocketSystemBindings.Validate(assembly);
-        _create = resolved["authoredCreate"]; _entrance = resolved["authoredEntrance"];
+        _entrance = resolved["authoredEntrance"];
         _target = resolved["gateTarget"]; _unlock = resolved["gateUnlock"]; _lock = resolved["gateLock"];
         _removePoi = resolved["systemRemovePoi"];
+        _galaxyRandomPosition = resolved["galaxyRandomPosition"]; _galaxyAddSector = resolved["galaxyAddSector"];
+        _sectorCreate = resolved["sectorCreate"]; _sectorName = resolved["sectorName"];
+        _emptyCreate = resolved["emptyCreate"]; _gatePair = resolved["gatePair"];
     }
     private static FieldInfo Field(Type type, string name) => type.GetField(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
         ?? throw new MissingFieldException(type.FullName, name);
@@ -96,11 +112,11 @@ internal sealed class WorldNativePocketSystems : IPocketSystemNative
 
     /// <summary>
     /// Verifies a genuinely-successful pocket creation changed membership by EXACTLY one new system
-    /// (the created pocket), its pocket-side gate POI, and the one anchor-side entrance gate POI — and
+    /// (the created pocket), its pocket-side gate POI, and the one parent-side entrance gate POI — and
     /// removed nothing and adopted nothing foreign. Never accepts a no-op or any extra membership growth.
     /// </summary>
     internal static bool VerifyPocketDelta(WorldMapIndex.Snapshot before, WorldMapIndex.Snapshot after,
-        object created, object anchor, Func<object, bool> isGate, Func<object, object?> parentOf)
+        object created, object parent, Func<object, bool> isGate, Func<object, object?> poiParentOf)
     {
         var beforeSystems = new System.Collections.Generic.HashSet<object>();
         foreach (var pair in before.Systems) beforeSystems.Add(pair.Value);
@@ -119,9 +135,9 @@ internal sealed class WorldNativePocketSystems : IPocketSystemNative
         {
             if (Has(beforePoints, value)) continue;
             if (!isGate(value)) return false; // the only new POIs must be jump gates
-            var parent = parentOf(value);
-            if (ReferenceEquals(parent, anchor)) anchorGates++;
-            else if (ReferenceEquals(parent, created)) pocketGates++;
+            var poiParent = poiParentOf(value);
+            if (ReferenceEquals(poiParent, parent)) anchorGates++;
+            else if (ReferenceEquals(poiParent, created)) pocketGates++;
             else return false; // a new POI parented somewhere foreign
         }
         return anchorGates == 1 && pocketGates == 1;
@@ -132,25 +148,40 @@ internal sealed class WorldNativePocketSystems : IPocketSystemNative
         return false;
     }
 
-    public PocketSystemInfo? CreatePocket(Guid session, string anchorSystemId)
+    public PocketSystemInfo? CreatePocket(Guid session, string anchorSystemId, PocketSystemPlacement placement, string? factionId)
     {
         var map = Map(false, session, out var player);
         if (map == null || player == null) return null;
+        object? owner = ResolveFaction(factionId);
         WorldMapIndex.Snapshot before;
         try { before = _index.Read(map); }
         catch (Exception e) { _report(e); return null; }
-        var anchor = before.FindSystem(anchorSystemId);
-        if (anchor == null) return null;
-        var sector = _sector.GetValue(anchor);
-        if (sector == null) return null;
+        var parent = before.FindSystem(anchorSystemId);
+        if (parent == null) return null;
         try
         {
-            var created = _create.Invoke(null, new[] { sector, anchor, _level });
+            object? created = null;
+            if (placement == PocketSystemPlacement.Visible)
+            {
+                // Visible: a distinct system in the parent's OWN sector (renders on the settled
+                // belt/galaxy map), placed well away from the parent so its dot is clearly separate,
+                // and gate-linked explicitly to the parent. Same contract as OffMap: empty, sealed,
+                // +1 system / +2 gates.
+                var neighborSector = _sector.GetValue(parent);
+                if (neighborSector == null) return null;
+                if (CreateVisiblePocket(neighborSector, parent, owner, out created) == null) return null;
+            }
+            else
+            {
+                // OffMap: allocate a distant, remote sector (seeded, matching the game's own placement) and
+                // place the pocket system in it — a wormhole-only door, off the settled belt/galaxy map.
+                CreateRemoteSector(map, parent, owner, out created);
+            }
             if (created == null || !_system_IsInstance(created)) return null;
             if (Map(false, session, out var current) == null || !ReferenceEquals(current, player)) return null;
             WorldMapIndex.Snapshot after;
             try { after = _index.Read(map); } catch (Exception e) { _report(e); return null; }
-            if (!VerifyPocketDelta(before, after, created, anchor, o => _jumpGateType.IsInstanceOfType(o), o => _parent.GetValue(o)))
+            if (!VerifyPocketDelta(before, after, created, parent, o => _jumpGateType.IsInstanceOfType(o), o => _parent.GetValue(o)))
                 return null;
             var info = ResolveFromSystem(created);
             if (info == null) return null;
@@ -158,10 +189,105 @@ internal sealed class WorldNativePocketSystems : IPocketSystemNative
         }
         catch (Exception e) { ReportInvoke(e); return null; }
     }
+
+    /// <summary>Allocates a remote, sparsely-populated sector and places the pocket system in it.</summary>
+    private object? CreateRemoteSector(object map, object parent, object? owner, out object? created)
+    {
+        created = null;
+        var vector = _galaxyRandomPosition.ReturnType;                     // UnityEngine.Vector2 (resolved, never by-name)
+        var exclude = Activator.CreateInstance(typeof(System.Collections.Generic.List<>).MakeGenericType(vector))!;
+        object? pos;
+        try { pos = _galaxyRandomPosition.Invoke(null, new[] { exclude, 150f, 350f, 150f, 350f, 8f }); }
+        catch (Exception e) { ReportInvoke(e); return null; }
+        if (pos == null) return null;
+        var name = (string?)_sectorName.Invoke(null, null) ?? "The Rift";
+        object? sector;
+        try { sector = _sectorCreate.Invoke(null, new[] { pos, name }); }
+        catch (Exception e) { ReportInvoke(e); return null; }
+        if (sector == null) return null;
+        try { _galaxyAddSector.Invoke(map, new[] { sector }); }
+        catch (Exception e) { ReportInvoke(e); return null; }
+        int level = (int)_parentLevel.GetValue(parent)! + _level;
+        object? pocket;
+        try { pocket = _emptyCreate.Invoke(null, new[] { sector, level, owner, pos, false }); }
+        catch (Exception e) { ReportInvoke(e); return null; }
+        if (pocket == null) return null;
+        _pocketSystem.SetValue(pocket, true);
+        // Sealed identity+traversal scaffolding only (never unlocked): keeps ResolveFromSystem /
+        // VerifyPocketDelta / DissolvePocket structurally intact. The wormhole is the only usable door.
+        try { _gatePair.Invoke(null, new[] { parent, pocket, false, false }); }
+        catch (Exception e) { ReportInvoke(e); return null; }
+        created = pocket;
+        return sector;
+    }
+
+    /// <summary>Creates a distinct visible pocket system in the ANCHOR's own sector, placed well away from
+    /// the parent (maximizing distance to existing systems so its dot is clearly separate on the sector map),
+    /// no storyteller, and gate-linked explicitly to the parent. Mirrors the OffMap contract: +1 system / +2 gates.</summary>
+    private object? CreateVisiblePocket(object neighborSector, object parent, object? owner, out object? created)
+    {
+        created = null;
+        var vector = _galaxyRandomPosition.ReturnType; // UnityEngine.Vector2 (resolved, never by-name)
+        var vx = vector.GetField("x");
+        var vy = vector.GetField("y");
+        var systems = _sectorSystems.GetValue(neighborSector) as System.Collections.IEnumerable;
+        // Collect existing system positions in this sector.
+        var existing = new System.Collections.Generic.List<object>();
+        if (systems != null)
+            foreach (var sys in systems)
+                if (sys != null) existing.Add(_systemPosition.GetValue(sys)!);
+        // Pick the local grid cell (mirroring the game's side-content scan) farthest from every existing
+        // system, so the pocket renders as a clearly separate dot on the belt map.
+        float winX = 0f, winY = 0f;
+        float best = -1f;
+        for (float gx = -33f; gx <= 33f; gx += 2f)
+        {
+            for (float gy = -4f; gy <= 4f; gy += 2f)
+            {
+                float minDist = float.MaxValue;
+                foreach (var e in existing)
+                {
+                    float dx = gx - (float)vx.GetValue(e);
+                    float dy = gy - (float)vy.GetValue(e);
+                    float d = dx * dx + dy * dy;
+                    if (d < minDist) minDist = d;
+                }
+                if (minDist > best) { best = minDist; winX = gx; winY = gy; }
+            }
+        }
+        object pos = Activator.CreateInstance(vector)!;
+        vx.SetValue(pos, winX); vy.SetValue(pos, winY);
+        int level = (int)_parentLevel.GetValue(parent)! + _level;
+        object? pocket;
+        try { pocket = _emptyCreate.Invoke(null, new[] { neighborSector, level, owner, pos, false }); }
+        catch (Exception e) { ReportInvoke(e); return null; }
+        if (pocket == null) return null;
+        _pocketSystem.SetValue(pocket, true);
+        // Sealed identity+traversal scaffolding only (never unlocked); explicitly gate-linked to the parent.
+        try { _gatePair.Invoke(null, new[] { parent, pocket, false, false }); }
+        catch (Exception e) { ReportInvoke(e); return null; }
+        created = pocket;
+        return neighborSector;
+    }
+
+    /// <summary>Resolves a known owning faction to its native object, or null (unknown owner) when the
+    /// id is null/empty or the game does not know it. Guards <see cref="Faction.Get"/> which would otherwise
+    /// throw for an unknown id by constructing a missing type.</summary>
+    private object? ResolveFaction(string? factionId)
+    {
+        if (string.IsNullOrEmpty(factionId)) return null;
+        try
+        {
+            if (_allFactions.GetValue(null) is not System.Collections.IDictionary factions || !factions.Contains(factionId))
+                return null;
+            return _factionGet.Invoke(null, new object[] { factionId });
+        }
+        catch (Exception e) { _report(e); return null; }
+    }
     private bool _system_IsInstance(object value) => value.GetType().FullName == PocketSystemBindings.System;
 
     /// <summary>
-    /// Verifies a dissolution changed membership by EXACTLY the removed pocket system, the anchor-side
+    /// Verifies a dissolution changed membership by EXACTLY the removed pocket system, the parent-side
     /// entrance gate and the POIs parented to the pocket — and removed nothing else and added nothing.
     /// </summary>
     internal static bool VerifyDissolveDelta(WorldMapIndex.Snapshot before, WorldMapIndex.Snapshot after,
@@ -203,8 +329,8 @@ internal sealed class WorldNativePocketSystems : IPocketSystemNative
             || !_jumpGateType.IsInstanceOfType(entrance) || !_jumpGateType.IsInstanceOfType(peer)) return PocketDissolveOutcome.Missing;
         try
         {
-            var anchor = _parent.GetValue(entrance);
-            if (anchor == null || ReferenceEquals(anchor, system) || !ReferenceEquals(_parent.GetValue(peer), system))
+            var parent = _parent.GetValue(entrance);
+            if (parent == null || ReferenceEquals(parent, system) || !ReferenceEquals(_parent.GetValue(peer), system))
                 return PocketDissolveOutcome.Missing;
             // Refuse while the player is inside the pocket or routed into it; relocation is the consumer's move.
             if (ReferenceEquals(_playerCurrentSystem.GetValue(player), system)) return PocketDissolveOutcome.PlayerInside;
@@ -220,8 +346,13 @@ internal sealed class WorldNativePocketSystems : IPocketSystemNative
             int index = -1;
             for (int i = 0; i < systems.Count; i++) if (ReferenceEquals(systems[i], system)) { index = i; break; }
             if (index < 0) return PocketDissolveOutcome.Missing;
-            _removePoi.Invoke(anchor, new[] { entrance });
+            _removePoi.Invoke(parent, new[] { entrance });
             systems.RemoveAt(index);
+            // Reclaim the remote pocket sector once its only system is gone: it existed solely to give
+            // the pocket an isolated, wormhole-only home, so a leftover empty sector would be a leak.
+            if (systems.Count == 0 && _galaxySectors.GetValue(map) is System.Collections.IList galaxy)
+                for (int i = 0; i < galaxy.Count; i++)
+                    if (ReferenceEquals(galaxy[i], sector)) { galaxy.RemoveAt(i); break; }
             if (Map(false, session, out var current) == null || !ReferenceEquals(current, player)) return PocketDissolveOutcome.Failed;
             WorldMapIndex.Snapshot after;
             try { after = _index.Read(map); }

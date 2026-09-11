@@ -6,7 +6,7 @@ using System.Reflection;
 
 namespace VGModAPI.Core;
 
-/// <summary>Host-authenticated live authored-site declarations. Registration neither creates native objects nor overwrites saved instances.</summary>
+/// <summary>Host-authenticated live authored-site declarations. Registration neither creates native objects nor overwrites saved occurrences.</summary>
 internal sealed class ResourceSiteRegistry : IDisposable
 {
     internal sealed class Provider : IDisposable

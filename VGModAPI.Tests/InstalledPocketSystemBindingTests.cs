@@ -23,8 +23,8 @@ public sealed class InstalledPocketSystemBindingTests
                 var field = Assert.Single(type.Fields, value => value.Name == spec.Member);
                 Assert.Equal(spec.Shape, field.FieldType.FullName); Assert.Equal(spec.Static, field.IsStatic);
                 // Most bound fields are public; protected (JumpGate.jumpgateOpen) and private
-                // (SectorMapData.systems) members are read via Public|NonPublic reflection.
-                Assert.True(field.IsPublic || field.IsFamily || spec.Member == "systems");
+                // (SectorMapData.systems, GalaxyMapData.sectors) members are read via Public|NonPublic reflection.
+                Assert.True(field.IsPublic || field.IsFamily || spec.Member == "systems" || spec.Member == "sectors");
             }
             else
             {
@@ -55,5 +55,23 @@ public sealed class InstalledPocketSystemBindingTests
         // Dissolution boundaries: plain membership mutations with no side effects beyond the removal.
         var removePoi = assembly.MainModule.GetType(PocketSystemBindings.System).Methods.Single(m => m.Name == "RemovePointOfInterest");
         Assert.True(removePoi.HasBody && !removePoi.IsStatic);
+    }
+
+    [Fact]
+    public void OwnerFactionResolutionBindsToInstalledGame()
+    {
+        using var assembly = AssemblyDefinition.ReadAssembly(Environment.GetEnvironmentVariable("VG_GAME_ASSEMBLY")
+            ?? throw new InvalidOperationException("Run make check-bindings."));
+        var faction = assembly.MainModule.GetType(PocketSystemBindings.Faction);
+        Assert.NotNull(faction);
+        // WorldNativePocketSystems reads the private static catalog to guard Faction.Get from constructing a missing type.
+        var allFactions = Assert.Single(faction.Fields, field => field.Name == "allFactions");
+        Assert.True(allFactions.IsStatic);
+        Assert.Equal("System.Collections.Generic.Dictionary`2<System.String,Source.Galaxy.Faction>", allFactions.FieldType.FullName);
+        // The public resolver used once the id is known.
+        var get = Assert.Single(faction.Methods, m => m.Name == "Get" &&
+            m.Parameters.Count == 1 && m.Parameters[0].ParameterType.FullName == "System.String" &&
+            m.ReturnType.FullName == PocketSystemBindings.Faction);
+        Assert.True(get.IsStatic);
     }
 }

@@ -6,11 +6,11 @@ namespace VGModAPI;
 
 public enum ResourceSiteKind { SalvageSite, MiningField }
 
-/// <summary>The one supported owned hazard: a constant-damage radiation cloud around the wreck.</summary>
+/// <summary>The one supported authored hazard: a constant-damage radiation cloud around the wreck.</summary>
 public enum ResourceSiteHazard { DamageInRadius }
 
 /// <summary>
-/// Immutable persistent site declaration. Register before starting a session. A salvage
+/// Immutable persistent authored-site declaration. Register before starting a session. A salvage
 /// site contains a defeated wreck of an exact ship class, optionally a guaranteed derelict boardable
 /// station, an optional hazard cloud and an optional scattered asteroid field. A mining field
 /// contains an exact asteroid count drawn from the host system's ore data.
@@ -64,7 +64,7 @@ public sealed class ResourceSiteDefinition
     }
 }
 
-/// <summary>Typed per-occurrence site state, never a lifecycle marker or an admission token.</summary>
+/// <summary>Typed per-occurrence authored-site state, never a lifecycle marker or an admission token.</summary>
 public sealed class ResourceSiteState
 {
     public ReconstructionStatus Status { get; }
@@ -77,8 +77,8 @@ public sealed class ResourceSiteState
 }
 
 /// <summary>
-/// One owned site occurrence for a single captured game, following the uniform occurrence
-/// contract: author-local key, API-allocated native identity, same-key=same object instance per
+/// One owned authored-site occurrence for a single captured game, following the uniform occurrence
+/// contract: author-local key, API-allocated native identity, same-key=same object occurrence per
 /// session, keyed reconciliation instead of duplicates, and stale-session freeze.
 /// </summary>
 public interface IResourceSite
@@ -99,7 +99,7 @@ public sealed class ResourceSiteFailure
     { Occurrence = occurrence ?? throw new ArgumentNullException(nameof(occurrence)); Reason = reason; }
 }
 
-/// <summary>Once-per-session aggregate reconciliation report for owned sites at the post-reconstruction safe boundary.</summary>
+/// <summary>Once-per-session aggregate reconciliation report for authored sites at the post-reconstruction safe boundary.</summary>
 public sealed class ResourceSitesSettledEvent
 {
     public Guid SessionId { get; }

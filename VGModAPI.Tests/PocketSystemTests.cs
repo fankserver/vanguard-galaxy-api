@@ -26,8 +26,8 @@ public sealed class PocketSystemTests
             Hub = new LifecycleHub((_, error) => throw error);
             Native = new FakePocketSystemNative();
             var plugin = new object();
-            StoryHostAuthenticator auth = (instance, caller) =>
-                ReferenceEquals(instance, plugin) && extensionAvailable ? new StoryHostPlugin("author.a", caller) : null;
+            StoryHostAuthenticator auth = (occurrence, caller) =>
+                ReferenceEquals(occurrence, plugin) && extensionAvailable ? new StoryHostPlugin("author.a", caller) : null;
             Combat = new WorldDefinitionRegistry(auth, Hub.CheckThread);
             Systems = new PocketSystemRegistry(auth, Hub.CheckThread);
             Coordinator = new PocketSystemCoordinator(Hub, Systems, Native,
@@ -87,7 +87,7 @@ public sealed class PocketSystemTests
         Assert.Equal("en-1", first.EntranceGatePoiId);
         Assert.Equal("pk-1", first.PocketGatePoiId);
         Assert.Equal(1, harness.Native.NextId);
-        // Re-declaring the same key returns the SAME object instance (no duplicate native system).
+        // Re-declaring the same key returns the SAME object occurrence (no duplicate native system).
         var second = Create(harness, "k1");
         Assert.Same(first, second);
         Assert.Equal(1, harness.Native.NextId);
@@ -272,7 +272,7 @@ public sealed class PocketSystemTests
     }
 
     [Fact]
-    public void OccurrenceChangedFiresForItsOwnStateTransition()
+    public void InstanceChangedFiresForItsOwnStateTransition()
     {
         using var harness = new Harness();
         Register(harness);
@@ -294,7 +294,7 @@ public sealed class PocketSystemTests
     }
 
     [Fact]
-    public void StaleOccurrenceAfterSessionReplacementFailsActionsWithGameEndedAndDoesNotBleedNativeIdentity()
+    public void StaleInstanceAfterSessionReplacementFailsActionsWithGameEndedAndDoesNotBleedNativeIdentity()
     {
         using var harness = new Harness();
         Register(harness);
@@ -362,18 +362,18 @@ public sealed class PocketSystemTests
         // distinct envelope key: combat + definitions owner bytes are byte-identical, and the authored key
         // only exists when an authored capture is wired (no-authored saves are byte-identical to combat-only).
         var json = new WorldJsonInspection(typeof(JsonObject).Assembly);
-        var instances = Array.Empty<WorldSnapshotInstance>();
+        var occurrences = Array.Empty<WorldSnapshotInstance>();
 
         var plain = new WorldSnapshotRecorder(json);
         var plainRoot = EmptySnapshotRoot();
-        var token = plain.Begin(1, instances);
-        Assert.True(plain.Complete(token, 1, instances, plainRoot));
+        var token = plain.Begin(1, occurrences);
+        Assert.True(plain.Complete(token, 1, occurrences, plainRoot));
         var plainStore = plain.ForStore(plainRoot);
 
         var authored = new WorldSnapshotRecorder(json, () => PocketSystemStateCodec.Encode(Array.Empty<PocketSystemOccurrence>()));
         var authoredRoot = EmptySnapshotRoot();
-        var token2 = authored.Begin(1, instances);
-        Assert.True(authored.Complete(token2, 1, instances, authoredRoot));
+        var token2 = authored.Begin(1, occurrences);
+        Assert.True(authored.Complete(token2, 1, occurrences, authoredRoot));
         var authoredStore = authored.ForStore(authoredRoot);
 
         Assert.True(plainStore[WorldStateCodec.Owner].SequenceEqual(authoredStore[WorldStateCodec.Owner]));

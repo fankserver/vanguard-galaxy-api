@@ -1,0 +1,129 @@
+using System;
+using LightJson;
+using VGModAPI.Core;
+using VGModAPI.Core.Integration;
+using Xunit;
+
+namespace VGModAPI.Tests;
+
+/// <summary>Placement-mode declaration: OffMap is the default, Visible is an explicit opt-in, and the
+/// declared placement reaches the native seam and survives the handle's Definition reconstruction.</summary>
+public sealed class PocketSystemPlacementTests
+{
+    private sealed class Harness : IDisposable
+    {
+        internal readonly LifecycleHub Hub;
+        internal readonly FakePocketSystemNative Native;
+        internal readonly WorldDefinitionRegistry Combat;
+        internal readonly PocketSystemRegistry Systems;
+        internal readonly PocketSystemCoordinator Coordinator;
+        internal readonly WorldContentService Service;
+        internal IWorldProvider Provider = null!;
+        internal Guid Session;
+        private readonly bool _disposeProvider;
+        internal Harness()
+        {
+            Hub = new LifecycleHub((_, error) => throw error);
+            Native = new FakePocketSystemNative();
+            var plugin = new object();
+            StoryHostAuthenticator auth = (occurrence, caller) =>
+                ReferenceEquals(occurrence, plugin) ? new StoryHostPlugin("author.a", caller) : null;
+            Combat = new WorldDefinitionRegistry(auth, Hub.CheckThread);
+            Systems = new PocketSystemRegistry(auth, Hub.CheckThread);
+            Coordinator = new PocketSystemCoordinator(Hub, Systems, Native, () => true, _ => true, _ => { });
+            Service = new WorldContentService(Hub, Combat, null!, () => true, null, null, null, null, Systems, Coordinator);
+            Provider = Service.AcquireProvider(plugin)!;
+            _disposeProvider = Provider != null;
+        }
+        internal void BeginGameplay()
+        {
+            Session = Hub.Begin(SessionOrigin.NewGame, null);
+            Hub.PlayerReady(Session);
+            Hub.GameplayInitialized(Session);
+        }
+        public void Dispose()
+        {
+            if (_disposeProvider) Provider.Dispose();
+            Coordinator.Dispose();
+            Service.Dispose();
+            Combat.Dispose();
+            Systems.Dispose();
+            Hub.Dispose();
+        }
+    }
+
+    [Fact]
+    public void PlacementDefaultsToOffMap()
+    {
+        var definition = new PocketSystemDefinition("p", 1, "Pocket");
+        Assert.Equal(PocketSystemPlacement.OffMap, definition.Placement);
+        // The explicit form is the way to opt into a visible, on-map pocket.
+        Assert.Equal(PocketSystemPlacement.Visible, new PocketSystemDefinition("p", 1, "Pocket", PocketSystemPlacement.Visible).Placement);
+    }
+
+    [Fact]
+    public void OffMapPlacementIsForwardedToTheNativeSeam()
+    {
+        using var harness = new Harness();
+        Assert.Equal(WorldStatus.Succeeded, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("p", 1, "Pocket")));
+        harness.BeginGameplay();
+        var pocket = harness.Provider.CreatePocketSystem("p", "k1", "anchor")!;
+        Assert.NotNull(pocket);
+        Assert.Equal(PocketSystemPlacement.OffMap, Assert.Single(harness.Native.CreatedPlacements));
+        Assert.Equal(PocketSystemPlacement.OffMap, pocket.Definition.Placement);
+    }
+
+    [Fact]
+    public void VisiblePlacementIsForwardedToTheNativeSeamAndRetainedOnTheHandle()
+    {
+        using var harness = new Harness();
+        Assert.Equal(WorldStatus.Succeeded, harness.Provider.RegisterPocketSystem(
+            new PocketSystemDefinition("p", 1, "Pocket", PocketSystemPlacement.Visible)));
+        harness.BeginGameplay();
+        var pocket = harness.Provider.CreatePocketSystem("p", "k1", "anchor")!;
+        Assert.NotNull(pocket);
+        Assert.Equal(PocketSystemPlacement.Visible, Assert.Single(harness.Native.CreatedPlacements));
+        // The handle's Definition carries the declared placement (not just the fallback default).
+        Assert.Equal(PocketSystemPlacement.Visible, pocket.Definition.Placement);
+        // Both modes still author a single enclosed gate pair (same occurrence contract).
+        Assert.Equal(ReconstructionStatus.Reconstructed, pocket.State.Status);
+        Assert.NotNull(pocket.SystemId);
+        Assert.NotNull(pocket.EntranceGatePoiId);
+        Assert.NotNull(pocket.PocketGatePoiId);
+    }
+
+    [Fact]
+    public void DefininitionsWithDifferentPlacementAreDistinctAndRevisionCheckedByIdentity()
+    {
+        using var harness = new Harness();
+        // A Visible declaration under a local id used before as OffMap is still keyed by (owner, local id):
+        // registering the same local id again is a duplicate even when placement differs.
+        Assert.Equal(WorldStatus.Succeeded, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("p", 1, "Pocket")));
+        Assert.Equal(WorldStatus.DuplicateDefinition, harness.Provider.RegisterPocketSystem(
+            new PocketSystemDefinition("p", 1, "Pocket", PocketSystemPlacement.Visible)));
+    }
+
+    [Fact]
+    public void OwnerFactionDefaultsToUnknownAndSurvivesHandleReconstruction()
+    {
+        using var harness = new Harness();
+        Assert.Equal(WorldStatus.Succeeded, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("p", 1, "Pocket")));
+        harness.BeginGameplay();
+        var pocket = harness.Provider.CreatePocketSystem("p", "k1", "anchor")!;
+        // No owner specified => unknown (null) forwarded to the native seam, and retained as null on the handle.
+        Assert.Null(Assert.Single(harness.Native.CreatedFactionIds));
+        Assert.Null(pocket.Definition.FactionId);
+    }
+
+    [Fact]
+    public void OwnerFactionIsForwardedToTheNativeSeamAndRetainedOnTheHandle()
+    {
+        using var harness = new Harness();
+        Assert.Equal(WorldStatus.Succeeded, harness.Provider.RegisterPocketSystem(
+            new PocketSystemDefinition("p", 1, "Pocket", PocketSystemPlacement.OffMap, "Marauders")));
+        harness.BeginGameplay();
+        var pocket = harness.Provider.CreatePocketSystem("p", "k1", "anchor")!;
+        Assert.Equal("Marauders", Assert.Single(harness.Native.CreatedFactionIds));
+        Assert.Equal("Marauders", pocket.Definition.FactionId);
+    }
+}

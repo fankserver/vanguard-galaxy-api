@@ -31,8 +31,8 @@ internal enum PocketDissolveOutcome
 /// </summary>
 internal interface IPocketSystemNative
 {
-    /// <summary>Creates an enclosed pocket next to the given anchor system. Returns null when no free position exists (a typed failure).</summary>
-    PocketSystemInfo? CreatePocket(Guid session, string anchorSystemId);
+    /// <summary>Creates an enclosed pocket per the given placement, next to/off-grid for the given anchor system. Returns null when no free position exists (a typed failure).</summary>
+    PocketSystemInfo? CreatePocket(Guid session, string anchorSystemId, PocketSystemPlacement placement, string? factionId);
     /// <summary>Re-resolves the owned pocket structurally by its systems identity; null until native construction surfaces it.</summary>
     PocketSystemInfo? ResolvePocket(Guid session, string systemId);
     /// <summary>Number of native systems currently bearing the given identity (ambiguity detection).</summary>

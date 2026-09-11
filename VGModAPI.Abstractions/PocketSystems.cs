@@ -4,6 +4,23 @@ using System.Collections.ObjectModel;
 
 namespace VGModAPI;
 
+/// <summary>Where an authored pocket system is placed on the galaxy map.</summary>
+public enum PocketSystemPlacement
+{
+    /// <summary>
+    /// The pocket is placed in a remote, sparsely-populated sector away from colonized space — reachable
+    /// only through its paired entrance jump gate, off the settled belt/galaxy map. Default placement.
+    /// </summary>
+    OffMap,
+    /// <summary>
+    /// The pocket is placed in the anchor's own sector at a position well away from existing systems, so it
+    /// renders as a clearly separate system on the settled belt/galaxy map. Still a single sealed gate pair
+    /// linking it to the anchor (the consumer still supplies an anchor system id); the pocket has no
+    /// storyteller and stays enclosed.
+    /// </summary>
+    Visible
+}
+
 /// <summary>
 /// Immutable persistent enclosed-pocket-system declaration. Register before starting a session.
 /// Anchored next to an existing system, created with no storyteller (vanilla generates nothing inside),
@@ -14,17 +31,26 @@ public sealed class PocketSystemDefinition
     public string LocalId { get; }
     public int Revision { get; }
     public string Name { get; }
-    public PocketSystemDefinition(string localId, int revision, string name)
+    /// <summary>Whether the pocket is placed off the settled map (default) or as a visible adjacent system.</summary>
+    public PocketSystemPlacement Placement { get; }
+    /// <summary>
+    /// Optional owning faction identifier (for example "Marauders"). When null or not a faction the game
+    /// knows, the system is authored with no owner, so the map shows no "Controlled by" line (unknown).
+    /// </summary>
+    public string? FactionId { get; }
+    public PocketSystemDefinition(string localId, int revision, string name, PocketSystemPlacement placement = PocketSystemPlacement.OffMap, string? factionId = null)
     {
         LocalId = localId ?? throw new ArgumentNullException(nameof(localId));
         Name = name ?? throw new ArgumentNullException(nameof(name));
         Revision = revision;
+        Placement = placement;
+        FactionId = factionId;
     }
 }
 
 /// <summary>
 /// Author-local occurrence key. The API allocates and owns any native identity (system guid and the
-/// paired gate guids); a consumer never supplies a native or instance GUID. This type is the internal
+/// paired gate guids); a consumer never supplies a native or occurrence GUID. This type is the internal
 /// coordinator keying shape; consumers address an occurrence through its <see cref="IPocketSystem"/> object.
 /// </summary>
 public sealed class PocketSystemReference
@@ -88,7 +114,7 @@ public sealed class PocketSystemState
     }
 }
 
-/// <summary>Outcome of an action performed on an owned system occurrence.</summary>
+/// <summary>Outcome of an action performed on an owned authored-system occurrence.</summary>
 public enum WorldContentStatus
 {
     /// <summary>The action was applied to the native state and its declared outcome retained.</summary>
@@ -114,9 +140,9 @@ public sealed class WorldContentResult
 }
 
 /// <summary>
-/// One owned pocket-system occurrence for a single captured game. The API owns every native
+/// One owned authored-pocket-system occurrence for a single captured game. The API owns every native
 /// identity; the consumer names the occurrence with an author-local key. Re-creating or re-obtaining the
-/// same key returns the SAME object instance for the life of the owning session (keyed reconciliation
+/// same key returns the SAME object occurrence for the life of the owning session (keyed reconciliation
 /// surfaces as object identity, never a duplicate). An occurrence from a session that has ended or been
 /// replaced refuses its actions with <see cref="WorldContentStatus.GameEnded"/> rather than touching the
 /// replacement save — re-obtain the objects for the live game explicitly.
@@ -150,7 +176,7 @@ public interface IPocketSystem
     WorldContentResult SetEntranceOpen(bool open);
     /// <summary>
     /// Dissolves the owned pocket: removes the pocket system, both paired gates and this API's
-    /// owned sites inside it from the live map and from save data. Refused while the player's
+    /// authored sites inside it from the live map and from save data. Refused while the player's
     /// current system, current location or any waypoint is inside the pocket — relocating the player
     /// first is the consumer's responsibility — and while the pocket still contains combat sites.
     /// On success this object is terminal (<see cref="ReconstructionStatus.Dissolved"/>);
@@ -161,7 +187,7 @@ public interface IPocketSystem
 
 /// <summary>
 /// A single reconciled occurrence that did not settle in a reconstructed state.
-/// Carries the owned occurrence object; the internal coordinator also builds reference-backed instances.
+/// Carries the owned occurrence object; the internal coordinator also builds reference-backed occurrences.
 /// </summary>
 public sealed class ReconstructionFailure
 {

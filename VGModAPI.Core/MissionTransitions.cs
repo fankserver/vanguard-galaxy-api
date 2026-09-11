@@ -123,7 +123,7 @@ internal sealed class MissionTransitions : IMissionService, IDisposable
     { CheckThread(); return _entries.TryGetValue(identity, out var entry) && entry.Removed; }
     internal bool WasRemovedSince(object identity, long order)
     { CheckThread(); return _entries.TryGetValue(identity, out var entry) && entry.Removed && entry.RemovedOrder > order; }
-    internal bool HasActiveOccurrence(object identity)
+    internal bool HasActiveInstance(object identity)
     {
         CheckThread(); return _entries.TryGetValue(identity, out var entry) && !entry.Removed &&
             (entry.Seen.Contains(MissionTransitionKind.Accepted) || entry.Seen.Contains(MissionTransitionKind.Restored));

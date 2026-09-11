@@ -4,7 +4,7 @@ using System.Reflection;
 
 namespace VGModAPI.Core;
 
-/// <summary>Host-authenticated live authored-system declarations. Registration neither creates native objects nor overwrites saved instances.</summary>
+/// <summary>Host-authenticated live authored-system declarations. Registration neither creates native objects nor overwrites saved occurrences.</summary>
 internal sealed class PocketSystemRegistry : IDisposable
 {
     internal sealed class Provider : IDisposable
@@ -45,7 +45,7 @@ internal sealed class PocketSystemRegistry : IDisposable
     internal bool Register(Provider provider, PocketSystemDefinition definition, PocketSystemDefinition? previous = null)
         => Register(provider, Map(definition ?? throw new ArgumentNullException(nameof(definition))), previous == null ? null : Map(previous));
     private static PocketSystemDeclaration Map(PocketSystemDefinition definition)
-        => new(definition.LocalId, definition.Revision, definition.Name);
+        => new(definition.LocalId, definition.Revision, definition.Name, definition.Placement, definition.FactionId);
     private bool Register(Provider provider, PocketSystemDeclaration definition, PocketSystemDeclaration? previous)
     {
         _checkThread();
