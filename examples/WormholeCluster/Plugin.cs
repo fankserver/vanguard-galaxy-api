@@ -107,7 +107,7 @@ public sealed class Plugin : BaseUnityPlugin
                 new HudRow("location", "You are at " + current + ".", "The cluster is a wormhole-only place reached from here."),
                 new HudRow("spawn", _entryDoor != null ? "Cluster ready" : "Spawn Wormhole",
                     "open a wormhole into a 3-system authored cluster",
-                    "Creates Cluster Entry (E) achored to this system, then Hub Alpha (A) and Anchor Beta (B) "
+                    "Creates Cluster Entry (E) anchored to this system, then Hub Alpha (A) and Anchor Beta (B) "
                     + "linked to E by gates. A holds two wormholes into themed off-world instances (mining, salvage). "
                     + "Everything you spawn is dissolvable later.",
                     clickable: _entryDoor == null),
@@ -211,10 +211,12 @@ public sealed class Plugin : BaseUnityPlugin
     {
         if (_world == null || _entryDoor == null) return;
 
-        // Wormholes first: freeing the pair releases all pocket endpoints that used them.
-        DissolveWormhole(_miningHole); _miningHole = null;
-        DissolveWormhole(_salvageHole); _salvageHole = null;
-        DissolveWormhole(_entryDoor); _entryDoor = null;
+        // Wormholes first: freeing the pair releases all pocket endpoints that used them. A refused
+        // dissolve (e.g. the player is at a wormhole) leaves the occurrence in place, so keep the handle
+        // and reflect the real state instead of claiming it is gone.
+        if (!DissolveWormhole(_miningHole)) return;   _miningHole = null;
+        if (!DissolveWormhole(_salvageHole)) return;  _salvageHole = null;
+        if (!DissolveWormhole(_entryDoor)) return;    _entryDoor = null;
 
         // Off-world pockets (their site rows drop with the pocket).
         DissolvePocket(_mining); _mining = null; _miningSite = null;
@@ -227,11 +229,14 @@ public sealed class Plugin : BaseUnityPlugin
         Logger.LogInfo("Wormhole Cluster deleted: every authored system, gate, wormhole and site is gone.");
     }
 
-    private void DissolveWormhole(IWormholePair? w)
+    /// <summary>Dissolves a wormhole pair; returns true only when it actually went away. On refusal the
+    /// pair is left in place (the cascade stops so a half-torn cluster is never presented as cleared).</summary>
+    private bool DissolveWormhole(IWormholePair? w)
     {
-        if (w == null) return;
+        if (w == null) return true;
         var result = w.Dissolve();
         if (!result.Succeeded) Logger.LogWarning("Wormhole dissolve: " + result.Status + " - " + result.Detail);
+        return result.Succeeded;
     }
 
     private void DissolvePocket(IPocketSystem? p)
