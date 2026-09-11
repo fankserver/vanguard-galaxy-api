@@ -130,7 +130,7 @@ internal sealed class WorldSnapshotRecorder
             [WorldStateCodec.Owner] = _states.ForStore(root, digest),
             [WorldDefinitionCodec.Owner] = _definitions.ForStore(root, digest)
         };
-        if (_authoredCapture != null) result[AuthoredSystemStateCodec.Owner] = _systems.ForStore(root, digest);
+        if (_authoredCapture != null) result[PocketSystemStateCodec.Owner] = _systems.ForStore(root, digest);
         return result;
     }
     internal void Reset() { Next(); _captures = new(); _states.Reset(); _definitions.Reset(); if (_authoredCapture != null) _systems.Reset(); }

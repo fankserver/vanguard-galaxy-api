@@ -18,7 +18,7 @@ public sealed class StoryActionResult
     internal void Finish(StoryActionStatus status, string detail) { _status = status; Detail = detail; }
 }
 
-/// <summary>An authored mission definition. Register once; event arguments identify live occurrences and their games.</summary>
+/// <summary>An owned mission definition. Register once; event arguments identify live occurrences and their games.</summary>
 public interface IStoryDefinition : IDisposable
 {
     StoryContentId Id { get; }

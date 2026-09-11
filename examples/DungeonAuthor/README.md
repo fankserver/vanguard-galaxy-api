@@ -1,6 +1,6 @@
 # Loadable cargo recovery author
 
-This BepInEx example wires the public-only [cargo library](../AuthoredDungeon/README.md) into plugin and session lifetimes. Build with `make build-dungeon-author CONFIGURATION=Release`. Output is `bin/Release/netstandard2.1/DungeonAuthor.dll`; it is not included in the API package.
+This BepInEx example wires the public-only [cargo library](../ExampleDungeon/README.md) into plugin and session lifetimes. Build with `make build-dungeon-author CONFIGURATION=Release`. Output is `bin/Release/netstandard2.1/DungeonAuthor.dll`; it is not included in the API package.
 
 Requires Mod API 0.2.10, available boarding/dungeon services on the inspected game build. Before a controlled run, set `[Content] RewardItemId` in `vgmodapi.example.cargo.cfg` to an existing game item identifier. Blank configuration deliberately registers nothing: the example does not invent asset IDs or mutate player configuration. A catalog-validation failure receives one retry at gameplay readiness; persistent failures log the item identifier and catalog diagnostic. Restart after correcting configuration.
 

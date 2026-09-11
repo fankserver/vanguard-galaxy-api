@@ -4,7 +4,7 @@
 
 ## Declaration facade
 
-Acquire `IWorldProvider` directly from the loaded plugin assembly and register immutable `WorldCombatSiteDefinition` values before starting a session. Definitions identify local content, revision, display name, an existing faction ID and level. Same-owner duplicate declarations are rejected; registration does not create a POI. The authenticated lease owns its declarations and must be disposed on provider teardown.
+Acquire `IWorldProvider` directly from the loaded plugin assembly and register immutable `CombatSiteDefinition` values before starting a session. Definitions identify local content, revision, display name, an existing faction ID and level. Same-owner duplicate declarations are rejected; registration does not create a POI. The authenticated lease owns its declarations and must be disposed on provider teardown.
 
 `CreateCombatSite(localId, occurrenceKey, systemId, x, y)` creates — or reconciles — an owned
 persistent combat site in the current game, following the uniform occurrence contract shared with
@@ -213,17 +213,17 @@ Successful creation/lookup results carry a `PoiId` for `StoryObjective.TravelTo`
 
 Mission references resolve after world reconstruction, with dependent story and bar restoration ordered accordingly. Save/load, cross-slot changes, save-as/rollback, failed saves, missing providers and declaration migration use the coordinated persistence and lifetime checks rather than provider-authored rebuild hooks.
 
-## Authored pocket systems
+## Pocket systems
 
 `IWorldProvider` also authors enclosed pocket systems for bespoke encounters, alongside
-the Combat-site surface. Register an immutable `AuthoredSystemDefinition` before starting
+the Combat-site surface. Register an immutable `PocketSystemDefinition` before starting
 a session, then create the pocket for the current game with an author-local occurrence key.
 
 ```csharp
-provider.RegisterAuthoredSystem(new AuthoredSystemDefinition("my-pocket", 1, "The Hollow"));
+provider.RegisterPocketSystem(new PocketSystemDefinition("my-pocket", 1, "The Hollow"));
 // Create (or reconcile) the owned occurrence for the current game; the SAME object instance is
 // returned for the same key for the life of the session. Null only while the world cannot author.
-var reference = provider.CreateAuthoredSystem("my-pocket", "act3-pocket", "anchorsystem-guid");
+var reference = provider.CreatePocketSystem("my-pocket", "act3-pocket", "anchorsystem-guid");
 if (reference != null)
 {
     reference.Changed += system => { /* this occurrence's State transitioned (e.g. Pending → Reconstructed on load) */ };
@@ -270,7 +270,7 @@ var result = reference.Dissolve();
 if (result.Succeeded)
 {
     // This object is terminal. The same key can now create a fresh pocket.
-    var replacement = provider.CreateAuthoredSystem("my-pocket", "act3-pocket", "anchorsystem-guid");
+    var replacement = provider.CreatePocketSystem("my-pocket", "act3-pocket", "anchorsystem-guid");
 }
 ```
 
@@ -295,19 +295,19 @@ event fires for its own transitions (there is no keyed status query):
 ```csharp
 var state = reference.State;
 if (state.Reconstructed) { /* pocket is live with its native identity */ }
-else if (state.Status == AuthoredSystemReconstructionStatus.Failed) { /* state.Reason explains why */ }
+else if (state.Status == ReconstructionStatus.Failed) { /* state.Reason explains why */ }
 
 // A stale occurrence from a replaced/reloaded session fails its actions instead of touching the new save:
 var result = reference.SetEntranceOpen(true);
-if (result.Status == AuthoredActionStatus.GameEnded) { /* re-obtain for the live game */ }
+if (result.Status == WorldContentStatus.GameEnded) { /* re-obtain for the live game */ }
 ```
 
 After a reload the owned occurrences are re-obtained (no replay), mirroring how the API
 hands back resolved content for the current game:
 
 ```csharp
-foreach (var system in provider.GetAuthoredSystems("my-pocket")) { /* current-game occurrences */ }
-var one = provider.GetAuthoredSystem("my-pocket", "act3-pocket"); // or a single key; null if not created yet
+foreach (var system in provider.GetPocketSystems("my-pocket")) { /* current-game occurrences */ }
+var one = provider.GetPocketSystem("my-pocket", "act3-pocket"); // or a single key; null if not created yet
 ```
 
 Reasons: `MissingDefinition`, `RevisionMismatch`, `NativeMissing`, `AmbiguousIdentity`,
@@ -319,27 +319,27 @@ live definition automatically instead of failing — `RevisionMismatch` only fir
 compatible previous declaration exists.
 
 Once per session, at the post-reconstruction safe boundary, one
-`AuthoredSystemReconstructionSettled` event reports the actual reconciliation outcomes,
+`PocketSystemReconstructionSettled` event reports the actual reconciliation outcomes,
 carrying the owned occurrence objects (a failure carries its occurrence and reason; an empty
 failure list means every declared occurrence reconstructed). Each occurrence's `Changed`
 also fires for its own transitions. After that point you can still read each occurrence's
 live `State` or re-obtain it.
 
 Creation is gameplay-intent only; expected-session identity is an internal invariant.
-`RegisterAuthoredSystem` is pre-session; `CreateAuthoredSystem`, `SetEntranceOpen`, `Dissolve`
+`RegisterPocketSystem` is pre-session; `CreatePocketSystem`, `SetEntranceOpen`, `Dissolve`
 and the re-obtain methods require a ready session.
 
-## Authored wormhole pairs
+## Wormhole pairs
 
 Use an authored wormhole pair when two existing systems should be connected through the game's
 native wormhole map icon, scene and travel flow rather than a jump gate. Register the immutable
 definition before a session, then create the pair from ordinary gameplay logic:
 
 ```csharp
-provider.RegisterAuthoredWormholePair(
-    new AuthoredWormholePairDefinition("unstable-rift", 1, "Unstable Rift"));
+provider.RegisterWormholePair(
+    new WormholePairDefinition("unstable-rift", 1, "Unstable Rift"));
 
-var rift = provider.CreateAuthoredWormholePair(
+var rift = provider.CreateWormholePair(
     "unstable-rift", "daily-rift", originSystemId, pocket.SystemId!);
 
 if (rift != null)
@@ -357,14 +357,14 @@ different. Either endpoint may be an authored pocket system.
 The API allocates both native POI identities, saves the system/POI association and declared open
 state, and reconstructs it after load. `SetOpen` shows/enables or hides/disables both ends together
 while retaining their exact pairing. Expiry remains consumer logic: a mod can close the pair on
-its own clock. Reusing an occurrence key returns the same `IAuthoredWormholePair` object for that
-session; re-obtain restored pairs with `GetAuthoredWormholePair` or `GetAuthoredWormholePairs`.
-`AuthoredWormholePairReconstructionSettled` reports the provider's reconstructed and failed pair
+its own clock. Reusing an occurrence key returns the same `IWormholePair` object for that
+session; re-obtain restored pairs with `GetWormholePair` or `GetWormholePairs`.
+`WormholePairReconstructionSettled` reports the provider's reconstructed and failed pair
 objects once the world settles; each failed object's `State.Reason` gives the typed reason.
 
-## Authored sites
+## Resource sites
 
-Authored sites place campaign set-pieces inside an existing system — including an owned pocket
+Resource sites place campaign set-pieces inside an existing system — including an owned pocket
 system — under the same occurrence contract as pocket systems and combat sites: author-local
 occurrence keys, API-allocated native identity, same-key=same object per session, and typed
 reconstruction state. The API persists the owned identity rows and re-resolves them per game;
@@ -372,16 +372,16 @@ the site's native content (wreck, station, asteroids) is persisted by the game's
 persistable pipeline. This replaces consumer-side per-galaxy cache-and-revalidate layers.
 
 ```csharp
-provider.RegisterAuthoredSite(AuthoredSiteDefinition.Salvage(
+provider.RegisterResourceSite(ResourceSiteDefinition.Salvage(
     "failed-refuge", revision: 1, "Failed Industrial Refuge", level: 8,
     wreckShipId: "Monsoon", factionId: "Fanatics",
-    withStation: true, hazard: AuthoredSiteHazard.DamageInRadius, scatterAsteroids: false));
-provider.RegisterAuthoredSite(AuthoredSiteDefinition.MiningField(
+    withStation: true, hazard: ResourceSiteHazard.DamageInRadius, scatterAsteroids: false));
+provider.RegisterResourceSite(ResourceSiteDefinition.MiningField(
     "singers-field", revision: 1, "Singer's Field", level: 8, asteroidCount: 6));
 
 // From explicit gameplay logic, once the session is ready:
-var site = provider.CreateAuthoredSite("failed-refuge", "act2-a", pocket.SystemId!, x: 10, y: 4);
-var field = provider.CreateAuthoredSite("singers-field", "act4", pocket.SystemId!, x: -6, y: 2);
+var site = provider.CreateResourceSite("failed-refuge", "act2-a", pocket.SystemId!, x: 10, y: 4);
+var field = provider.CreateResourceSite("singers-field", "act4", pocket.SystemId!, x: -6, y: 2);
 ```
 
 - A **salvage site** contains a defeated wreck of the exact declared ship class (an unknown
@@ -398,7 +398,7 @@ var field = provider.CreateAuthoredSite("singers-field", "act4", pocket.SystemId
 Creation verifies the exact native membership delta (exactly one new POI, parented to the host
 system, nothing removed) and never adopts a foreign or ambiguous native. A refused creation is
 a typed `Rejected` retained on the returned object; it is not retried implicitly. `State`,
-`Changed`, revision migration and the once-per-session `AuthoredSiteReconstructionSettled`
+`Changed`, revision migration and the once-per-session `ResourceSiteReconstructionSettled`
 event follow the authored-system semantics above; site failures report `MissingDefinition`,
 `RevisionMismatch`, `NativeMissing`, `AmbiguousIdentity` or `PersistenceUnavailable`.
 
@@ -413,17 +413,17 @@ docking state, no auto-AI, display name and commander callsign set to the declar
 class identity is never renamed), snapped to the authored offset with zeroed velocity.
 
 ```csharp
-provider.RegisterAuthoredShip(new AuthoredShipDefinition(
+provider.RegisterMooredShip(new MooredShipDefinition(
     "promise", revision: 1, "Foundation's Promise", shipClassId: "Redemption",
     factionId: "Gold", offsetX: 24, offsetY: 30, protect: true));
-var ship = provider.CreateAuthoredShip("promise", "act3", stationPoiId);
+var ship = provider.CreateMooredShip("promise", "act3", stationPoiId);
 ```
 
 `protect: true` keeps the instance alive through unit protection, declared once per owned
 occurrence (keyed, never accumulated) and re-declared automatically after restoration — covering a
 persisted-but-not-yet-materialised ship from its first damage event. An unknown ship class or
 faction refuses creation. `State`, `Changed`, revision migration and the once-per-session
-`AuthoredShipReconstructionSettled` event follow the occurrence semantics above; a saved ship that
+`MooredShipReconstructionSettled` event follow the occurrence semantics above; a saved ship that
 has not yet surfaced reports `NativeMissing` at settlement and converges with a `Changed`
 transition when it does.
 

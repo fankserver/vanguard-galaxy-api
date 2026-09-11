@@ -56,8 +56,8 @@ public sealed class WorldRuntimeStateTests
             using var bindings = new WorldPersistenceBindings(persistence, hub, loads, snapshots, creation);
             using var world = new WorldContentService(hub, definitions, new WorldAuthoringGate(definitions, creation, bindings.CanMutate), () => true);
             var provider = world.AcquireProvider(new object())!;
-            Assert.Equal(WorldStatus.Succeeded, provider.Register(new WorldCombatSiteDefinition("PoiX", 2, "Renamed site", "player", 1),
-                new WorldCombatSiteDefinition("PoiX", 1, "Site", "player", 1)));
+            Assert.Equal(WorldStatus.Succeeded, provider.RegisterCombatSite(new CombatSiteDefinition("PoiX", 2, "Renamed site", "player", 1),
+                new CombatSiteDefinition("PoiX", 1, "Site", "player", 1)));
             Action? runtimeChange = null;
             using var runtime = new WorldRuntimeState(game, loads, definitions, creation, lifetime, bindings.StateReady, () => { runtimeChange?.Invoke(); return true; });
             var references = new WorldReferenceResolver(hub, creation, definitions, bindings, lifetimeHost);
@@ -110,7 +110,7 @@ public sealed class WorldRuntimeStateTests
                 var created = ((VGModAPI.Core.IWorldProviderEngine)provider).CreatePersistentCombatSite(request.Id, "PoiX", instance, "system", 20, 20);
                 Assert.True(created.Succeeded); Assert.Equal(instance, created.Reference!.InstanceId); Assert.Equal("author.a", created.Reference.ProviderId);
                 Assert.True(((VGModAPI.Core.IWorldProviderEngine)provider).FindPersistentCombatSite(request.Id, created.Reference).Succeeded);
-                Assert.Equal(WorldStatus.NotRegistered, ((VGModAPI.Core.IWorldProviderEngine)provider).FindPersistentCombatSite(request.Id, new WorldSiteReference("other.owner", "PoiX", instance)).Status);
+                Assert.Equal(WorldStatus.NotRegistered, ((VGModAPI.Core.IWorldProviderEngine)provider).FindPersistentCombatSite(request.Id, new CombatSiteReference("other.owner", "PoiX", instance)).Status);
                 Assert.Equal(WorldStatus.NotReady, ((VGModAPI.Core.IWorldProviderEngine)provider).FindPersistentCombatSite(Guid.NewGuid(), created.Reference).Status);
                 var createdNative = creation.Snapshot()[1].Native;
                 Assert.True(system.pointsOfInterest.Remove((MapPointOfInterest)createdNative));
@@ -118,7 +118,7 @@ public sealed class WorldRuntimeStateTests
                 system.pointsOfInterest.Add((MapPointOfInterest)createdNative);
                 Assert.True(((VGModAPI.Core.IWorldProviderEngine)provider).FindPersistentCombatSite(request.Id, created.Reference).Succeeded);
                 Assert.Equal(WorldStatus.Rejected, ((VGModAPI.Core.IWorldProviderEngine)provider).CreatePersistentCombatSite(request.Id, "PoiX", instance, "system", 20, 20).Status);
-                Assert.Equal(WorldStatus.NotReady, provider.Register(new WorldCombatSiteDefinition("Late", 1, "Site", "player", 1)));
+                Assert.Equal(WorldStatus.NotReady, provider.RegisterCombatSite(new CombatSiteDefinition("Late", 1, "Site", "player", 1)));
                 Assert.Equal(2, creation.Snapshot().Length);
 
                 // Uniform occurrence contract: author-local key, API-allocated identity, same-key=same object.
@@ -126,7 +126,7 @@ public sealed class WorldRuntimeStateTests
                 Assert.NotNull(site);
                 Assert.True(site!.State.Reconstructed);
                 Assert.NotNull(site.PoiId);
-                Assert.Equal(AuthoredActionStatus.Succeeded, site.LastAction.Status);
+                Assert.Equal(WorldContentStatus.Succeeded, site.LastAction.Status);
                 Assert.Equal("Renamed site", site.Definition.Name);
                 Assert.Same(site, provider.CreateCombatSite("PoiX", "encounter", "system", 24, 24));
                 Assert.Same(site, provider.GetCombatSite("PoiX", "encounter"));
@@ -142,10 +142,10 @@ public sealed class WorldRuntimeStateTests
                 site.Changed += _ => siteChanges++;
                 var keyedNative = creation.Snapshot()[2].Native;
                 Assert.True(system.pointsOfInterest.Remove((MapPointOfInterest)keyedNative));
-                world.MaintainAuthoredSystems(request.Id);
+                world.MaintainPocketSystems(request.Id);
                 Assert.False(site.State.Reconstructed); Assert.Equal(1, siteChanges);
                 system.pointsOfInterest.Add((MapPointOfInterest)keyedNative);
-                world.MaintainAuthoredSystems(request.Id);
+                world.MaintainPocketSystems(request.Id);
                 Assert.True(site.State.Reconstructed); Assert.Equal(2, siteChanges);
             }
             finally { if (!hadFaction) Faction.allFactions.Remove("player"); else Faction.allFactions["player"] = oldFaction!; }

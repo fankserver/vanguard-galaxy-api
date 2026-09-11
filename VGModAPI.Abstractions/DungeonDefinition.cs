@@ -45,7 +45,7 @@ public sealed class DungeonChoiceDefinition
     }
 }
 
-/// <summary>Contextual authored event and persisted choice IDs. Provider callbacks are registered separately, never serialized.</summary>
+/// <summary>Contextual owned event and persisted choice IDs. Provider callbacks are registered separately, never serialized.</summary>
 public sealed class DungeonEventDefinition
 {
     public string Id { get; }

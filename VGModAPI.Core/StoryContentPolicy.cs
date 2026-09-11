@@ -42,8 +42,8 @@ internal static class StoryContentPolicy
         [StoryObjectiveKind.MineItems] = "Mining",
         [StoryObjectiveKind.SalvageItems] = "Salvage",
         [StoryObjectiveKind.ReturnToSource] = "TravelToPOI",
-        [StoryObjectiveKind.TravelToAuthoredSystemEntrance] = "TravelToPOI",
-        [StoryObjectiveKind.TravelToAuthoredSite] = "TravelToPOI"
+        [StoryObjectiveKind.TravelToPocketSystemEntrance] = "TravelToPOI",
+        [StoryObjectiveKind.TravelToResourceSite] = "TravelToPOI"
     };
 
     /// <summary>Vanilla reward type names, exactly as <c>MissionReward.Create</c> resolves them.</summary>

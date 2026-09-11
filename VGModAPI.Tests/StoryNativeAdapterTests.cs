@@ -160,14 +160,14 @@ public sealed class StoryNativeAdapterTests : IDisposable
     {
         string? gate = null;
         using var world = new StoryNativeWorld(new StoryNativeBindings(typeof(StoryMission).Assembly), () => { }, null,
-            (identifier, objective) => objective.AuthoredLocalId == "margin-pocket" && objective.AuthoredOccurrenceKey == "act2" ? gate : null);
+            (identifier, objective) => objective.LocalId == "margin-pocket" && objective.OccurrenceKey == "act2" ? gate : null);
         var pocket = new Source.Galaxy.MapPointOfInterest { guid = "gate-poi-7", lastVisitedTime = 11f };
         var galaxy = new Source.Galaxy.GalaxyMapData(); galaxy.AddPoi(pocket);
         Source.Galaxy.GalaxyMapData.current = galaxy;
         try
         {
             var definition = Definition(objectives: new[]
-            { StoryObjective.TravelToAuthoredSystemEntrance("margin-pocket", "act2", requireNewVisit: true).WithKey("enter") });
+            { StoryObjective.TravelToPocketSystemEntrance("margin-pocket", "act2", requireNewVisit: true).WithKey("enter") });
             var identifier = Identifier();
             Assert.True(world.Install(identifier, definition).Applied);
             // Unresolvable at build: acceptance is REFUSED, the player never holds a broken step.

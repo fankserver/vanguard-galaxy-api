@@ -3233,15 +3233,15 @@ public sealed partial class StoryContentTests
         Assert.True(provider.Register(new StoryMissionDefinition("heed", "Heed the coordinates", "Description", new StoryFactionId("TradingGuild"),
             new[] { new StoryStep("Enter the pocket", new[]
             {
-                StoryObjective.TravelToAuthoredSystemEntrance("margin-pocket", "act2", requireNewVisit: true).WithKey("enter")
+                StoryObjective.TravelToPocketSystemEntrance("margin-pocket", "act2", requireNewVisit: true).WithKey("enter")
             }) })).Succeeded);
         // While the provider's authored occurrence does not exist in the loaded game, the mission is
         // refused at the offering edge - never a mission holding an unreachable step.
         Assert.False(provider.Offer("heed").Accepted);
         string? gate = "gate-poi-7";
         world.AuthoredDestinations = (owner, objective) =>
-            owner == AnimaPlugin && objective.Kind == StoryObjectiveKind.TravelToAuthoredSystemEntrance
-            && objective.AuthoredLocalId == "margin-pocket" && objective.AuthoredOccurrenceKey == "act2" ? gate : null;
+            owner == AnimaPlugin && objective.Kind == StoryObjectiveKind.TravelToPocketSystemEntrance
+            && objective.LocalId == "margin-pocket" && objective.OccurrenceKey == "act2" ? gate : null;
         var offered = provider.Offer("heed");
         Assert.True(offered.Accepted);
         Assert.True(provider.Activate(offered.OccurrenceId).Accepted);
@@ -3259,11 +3259,11 @@ public sealed partial class StoryContentTests
         Assert.Null(lost.Progress);
         // The service resolves the world adapter's destinations through the provider's own identity.
         var identifier = FakeWorld.Native(provider, "heed", offered.OccurrenceId);
-        var expected = StoryObjective.TravelToAuthoredSystemEntrance("margin-pocket", "act2");
-        Assert.Equal("gate-poi-7", ServiceOf(provider).ResolveAuthoredDestination(identifier, expected));
+        var expected = StoryObjective.TravelToPocketSystemEntrance("margin-pocket", "act2");
+        Assert.Equal("gate-poi-7", ServiceOf(provider).ResolveContentDestination(identifier, expected));
         gate = null;
-        Assert.Null(ServiceOf(provider).ResolveAuthoredDestination(identifier, expected));
-        Assert.Null(ServiceOf(provider).ResolveAuthoredDestination("vgmodapi.story.someone.else.00000000000000000000000000000000", expected));
+        Assert.Null(ServiceOf(provider).ResolveContentDestination(identifier, expected));
+        Assert.Null(ServiceOf(provider).ResolveContentDestination("vgmodapi.story.someone.else.00000000000000000000000000000000", expected));
     }
     private static StoryContentService ServiceOf(IStoryProvider provider) => (StoryContentService)typeof(StoryContentService.Lease)
         .GetField("_service", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!

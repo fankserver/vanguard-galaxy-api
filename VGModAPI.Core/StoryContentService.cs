@@ -717,9 +717,9 @@ internal sealed partial class StoryContentService : IStoryService, IStoryUiTrans
     /// Resolves an authored-destination objective of one OWNED occurrence identifier to a native POI,
     /// for the world adapter's build and observation paths. Null while unresolvable, never a guess.
     /// </summary>
-    internal string? ResolveAuthoredDestination(string identifier, StoryObjective objective)
+    internal string? ResolveContentDestination(string identifier, StoryObjective objective)
     {
-        if (objective.Kind is not (StoryObjectiveKind.TravelToAuthoredSystemEntrance or StoryObjectiveKind.TravelToAuthoredSite)) return null;
+        if (objective.Kind is not (StoryObjectiveKind.TravelToPocketSystemEntrance or StoryObjectiveKind.TravelToResourceSite)) return null;
         if (!StoryContentPolicy.TryParseOccurrenceIdentifier(identifier, out var id, out _)) return null;
         if (_bindings.HostOwner(id.Provider) is not { } host) return null;
         try { return _authoredDestinations?.Invoke(host, objective); } catch { return null; }
@@ -947,7 +947,7 @@ internal sealed partial class StoryContentService : IStoryService, IStoryUiTrans
     {
         worldUnknown = false;
         foreach (var authored in definition.Steps.SelectMany(step => step.Objectives)
-            .Where(objective => objective.Kind is StoryObjectiveKind.TravelToAuthoredSystemEntrance or StoryObjectiveKind.TravelToAuthoredSite))
+            .Where(objective => objective.Kind is StoryObjectiveKind.TravelToPocketSystemEntrance or StoryObjectiveKind.TravelToResourceSite))
         {
             // The destination exists only per occurrence: while the provider's authored occurrence is
             // not in the loaded game, the mission is neither offered nor accepted - refused at the
@@ -958,7 +958,7 @@ internal sealed partial class StoryContentService : IStoryService, IStoryUiTrans
             string? destination;
             try { destination = _bindings.HostOwner(owner) is { } host ? _authoredDestinations(host, authored) : null; }
             catch { worldUnknown = true; return null; }
-            if (destination == null) return authored.AuthoredLocalId + "/" + authored.AuthoredOccurrenceKey;
+            if (destination == null) return authored.LocalId + "/" + authored.OccurrenceKey;
         }
         foreach (var objective in definition.Steps.SelectMany(step => step.Objectives)
             .Where(objective => objective.Kind is StoryObjectiveKind.TravelToPoi or StoryObjectiveKind.DeliverItems

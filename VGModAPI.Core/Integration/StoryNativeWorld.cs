@@ -28,19 +28,19 @@ internal sealed class StoryNativeWorld : IStoryWorld, IStoryObjectiveWorld, ISto
     private bool _disposed;
 
     /// <summary>Resolves an authored-destination objective of one owned identifier to a native POI, or null while unresolvable.</summary>
-    private readonly Func<string, StoryObjective, string?>? _resolveAuthored;
+    private readonly Func<string, StoryObjective, string?>? _resolveContent;
 
     internal StoryNativeWorld(StoryNativeBindings bindings, Action checkThread, Action<Exception>? fault = null,
-        Func<string, StoryObjective, string?>? resolveAuthored = null)
+        Func<string, StoryObjective, string?>? resolveContent = null)
     {
         _bindings = bindings ?? throw new ArgumentNullException(nameof(bindings));
         _checkThread = checkThread ?? throw new ArgumentNullException(nameof(checkThread));
         _fault = fault;
-        _resolveAuthored = resolveAuthored;
+        _resolveContent = resolveContent;
     }
 
     private Func<StoryObjective, string?> Resolver(string identifier)
-        => objective => _resolveAuthored?.Invoke(identifier, objective);
+        => objective => _resolveContent?.Invoke(identifier, objective);
 
     public StoryObjectiveReading? ReadProgress(string identifier, StoryObjectiveLayout.Slot slot, StoryObjective expected, Func<bool> stillValid)
     {

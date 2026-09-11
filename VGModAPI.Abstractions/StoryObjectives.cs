@@ -13,7 +13,7 @@ public sealed class StoryObjectiveQuery
     /// <summary>Retained terminal outcome, or null while unresolved. Temporary outcomes expire with their tombstones.</summary>
     public StoryOutcome? Outcome { get; }
     /// <summary>
-    /// True when the session is known but this objective's authored destination no longer exists in
+    /// True when the session is known but this objective's owned destination no longer exists in
     /// the world. The API reports the broken destination and DECIDES NOTHING: only the owner knows
     /// whether the arc fails, the world is repaired, or the player is told in the mod's own terms.
     /// </summary>

@@ -44,7 +44,7 @@ public readonly struct StoryContentId : IEquatable<StoryContentId>
 /// provider-defined objective type cannot round-trip through a vanilla save. Unsupported behaviour
 /// stays provider logic; it is never smuggled in as an opaque payload.
 /// </summary>
-public enum StoryObjectiveKind { TravelToPoi, KillEnemies, CollectCredits, Scripted, DeliverItems, MineItems, SalvageItems, ReturnToSource, TravelToAuthoredSystemEntrance, TravelToAuthoredSite }
+public enum StoryObjectiveKind { TravelToPoi, KillEnemies, CollectCredits, Scripted, DeliverItems, MineItems, SalvageItems, ReturnToSource, TravelToPocketSystemEntrance, TravelToResourceSite }
 
 /// <summary>
 /// Identity of a faction this API may reference. It is the game's own faction identifier, passed as a
@@ -111,19 +111,19 @@ public sealed class StoryObjective
     public string? ItemTypeId { get; }
     /// <summary>Required for <see cref="StoryObjectiveKind.KillEnemies"/>: the existing faction whose units the game counts.</summary>
     public string? EnemyFactionId { get; }
-    /// <summary>Authored-content travel kinds only: the LOCAL identity of the provider's own declaration.</summary>
-    public string? AuthoredLocalId { get; }
-    /// <summary>Authored-content travel kinds only: the author's occurrence key for that declaration.</summary>
-    public string? AuthoredOccurrenceKey { get; }
+    /// <summary>content travel kinds only: the LOCAL identity of the provider's own declaration.</summary>
+    public string? LocalId { get; }
+    /// <summary>content travel kinds only: the author's occurrence key for that declaration.</summary>
+    public string? OccurrenceKey { get; }
 
-    private StoryObjective(StoryObjectiveKind kind, string? targetPoiId, int requiredAmount, bool requireNewVisit, string? localKey = null, string? description = null, string? itemTypeId = null, string? enemyFactionId = null, string? authoredLocalId = null, string? authoredOccurrenceKey = null)
-    { Kind = kind; TargetPoiId = targetPoiId; RequiredAmount = requiredAmount; RequireNewVisit = requireNewVisit; LocalKey = localKey; Description = description; ItemTypeId = itemTypeId; EnemyFactionId = enemyFactionId; AuthoredLocalId = authoredLocalId; AuthoredOccurrenceKey = authoredOccurrenceKey; }
+    private StoryObjective(StoryObjectiveKind kind, string? targetPoiId, int requiredAmount, bool requireNewVisit, string? localKey = null, string? description = null, string? itemTypeId = null, string? enemyFactionId = null, string? ownedLocalId = null, string? ownedOccurrenceKey = null)
+    { Kind = kind; TargetPoiId = targetPoiId; RequiredAmount = requiredAmount; RequireNewVisit = requireNewVisit; LocalKey = localKey; Description = description; ItemTypeId = itemTypeId; EnemyFactionId = enemyFactionId; LocalId = ownedLocalId; OccurrenceKey = ownedOccurrenceKey; }
 
     /// <summary>Returns an immutable keyed copy. Keys must be unique throughout one mission definition.</summary>
     public StoryObjective WithKey(string localKey)
     {
         if (!StoryContentId.IsValidSegment(localKey)) throw new ArgumentException("An objective key uses the story identity segment format.", nameof(localKey));
-        return new StoryObjective(Kind, TargetPoiId, RequiredAmount, RequireNewVisit, localKey, Description, ItemTypeId, EnemyFactionId, AuthoredLocalId, AuthoredOccurrenceKey);
+        return new StoryObjective(Kind, TargetPoiId, RequiredAmount, RequireNewVisit, localKey, Description, ItemTypeId, EnemyFactionId, LocalId, OccurrenceKey);
     }
 
     /// <summary>
@@ -146,26 +146,26 @@ public sealed class StoryObjective
         => new(StoryObjectiveKind.ReturnToSource, null, 0, requireNewVisit);
 
     /// <summary>
-    /// Travel through the entrance jump gate of an authored system THIS provider declared. The
+    /// Travel through the entrance jump gate of an owned system THIS provider declared. The
     /// definition names the author-local identities - which exist before any session - and the API
     /// resolves the native gate per occurrence when the mission is built. A mission is neither
-    /// offered nor accepted while the authored occurrence does not exist in the loaded game.
+    /// offered nor accepted while the owned occurrence does not exist in the loaded game.
     /// </summary>
-    public static StoryObjective TravelToAuthoredSystemEntrance(string systemLocalId, string occurrenceKey, bool requireNewVisit = false)
-        => Authored(StoryObjectiveKind.TravelToAuthoredSystemEntrance, systemLocalId, occurrenceKey, requireNewVisit);
+    public static StoryObjective TravelToPocketSystemEntrance(string systemLocalId, string occurrenceKey, bool requireNewVisit = false)
+        => Owned(StoryObjectiveKind.TravelToPocketSystemEntrance, systemLocalId, occurrenceKey, requireNewVisit);
 
     /// <summary>
-    /// Travel to an authored site THIS provider declared, named by its author-local identities.
-    /// Resolution follows <see cref="TravelToAuthoredSystemEntrance"/>: per occurrence, at build.
+    /// Travel to an owned site THIS provider declared, named by its author-local identities.
+    /// Resolution follows <see cref="TravelToPocketSystemEntrance"/>: per occurrence, at build.
     /// </summary>
-    public static StoryObjective TravelToAuthoredSite(string siteLocalId, string occurrenceKey, bool requireNewVisit = false)
-        => Authored(StoryObjectiveKind.TravelToAuthoredSite, siteLocalId, occurrenceKey, requireNewVisit);
+    public static StoryObjective TravelToResourceSite(string siteLocalId, string occurrenceKey, bool requireNewVisit = false)
+        => Owned(StoryObjectiveKind.TravelToResourceSite, siteLocalId, occurrenceKey, requireNewVisit);
 
-    private static StoryObjective Authored(StoryObjectiveKind kind, string localId, string occurrenceKey, bool requireNewVisit)
+    private static StoryObjective Owned(StoryObjectiveKind kind, string localId, string occurrenceKey, bool requireNewVisit)
     {
-        if (string.IsNullOrWhiteSpace(localId) || localId.Length > 128) throw new ArgumentException("A bounded authored local identity is required.", nameof(localId));
-        if (string.IsNullOrWhiteSpace(occurrenceKey) || occurrenceKey.Length > 256) throw new ArgumentException("A bounded authored occurrence key is required.", nameof(occurrenceKey));
-        return new StoryObjective(kind, null, 0, requireNewVisit, authoredLocalId: localId, authoredOccurrenceKey: occurrenceKey);
+        if (string.IsNullOrWhiteSpace(localId) || localId.Length > 128) throw new ArgumentException("A bounded owned local identity is required.", nameof(localId));
+        if (string.IsNullOrWhiteSpace(occurrenceKey) || occurrenceKey.Length > 256) throw new ArgumentException("A bounded owned occurrence key is required.", nameof(occurrenceKey));
+        return new StoryObjective(kind, null, 0, requireNewVisit, ownedLocalId: localId, ownedOccurrenceKey: occurrenceKey);
     }
 
     /// <summary>An author-driven counting objective. Progress is absolute, not an incrementing narrative event.</summary>
@@ -192,7 +192,7 @@ public sealed class StoryObjective
 
     /// <summary>
     /// The game's own mining objective: the engine counts ore the player tractors in at the target
-    /// POI. The exact ore identity is required and validated; pair with an exact-count authored
+    /// POI. The exact ore identity is required and validated; pair with an exact-count owned
     /// mining field for a fully balanced gather arc.
     /// </summary>
     public static StoryObjective MineItems(string itemTypeId, int requiredAmount, string targetPoiId)

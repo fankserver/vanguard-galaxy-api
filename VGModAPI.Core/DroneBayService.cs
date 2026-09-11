@@ -25,7 +25,7 @@ internal sealed class DroneBayService : IDroneBayService, IDisposable
     {
         _hub.CheckThread(); if (_disposed) return;
         _hub.SetCapability("drone-bays", value,
-            value ? "Authored encounters can tune exact drone bays." : "Drone-bay integration unavailable.", reason);
+            value ? "Resource encounters can tune exact drone bays." : "Drone-bay integration unavailable.", reason);
     }
     private readonly KeyedDeclarations _keyed = new();
     [MethodImpl(MethodImplOptions.NoInlining)]

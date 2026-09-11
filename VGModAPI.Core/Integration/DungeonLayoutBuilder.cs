@@ -32,7 +32,7 @@ internal sealed class DungeonLayoutBuilder
             _native.Set(room, "authoredRoomState", "Unknown"); _native.Set(room, "authoredRoomLocked", definition.Locked); _native.Set(room, "authoredRoomWasLocked", definition.Locked);
             _native.Set(room, "authoredRoomNeighbors", definition.Adjacent.Select(id => indices[id]).ToList());
             var capacity = (int)_native.Call("dungeonRoomCapacity", room, sizeTier)!;
-            if (definition.Defenders.Values.Sum() > capacity) throw new ArgumentException("Authored defenders exceed this target's native compartment capacity.");
+            if (definition.Defenders.Values.Sum() > capacity) throw new ArgumentException("Resource defenders exceed this target's native compartment capacity.");
             rooms.Add(room);
         }
         return rooms;

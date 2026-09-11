@@ -13,7 +13,7 @@ public enum CompartmentType
     DebrisField, GeneratorRoom, ServerRoom, SecurityOffice, MedicalBay
 }
 
-/// <summary>One immutable authored compartment. Crew identifiers are checked against the native catalog on registration.</summary>
+/// <summary>One immutable owned compartment. Crew identifiers are checked against the native catalog on registration.</summary>
 public sealed class DungeonCompartmentDefinition
 {
     public string Id { get; }
@@ -69,7 +69,7 @@ public sealed class DungeonLayout
     }
 }
 
-/// <summary>Native catalog keys are not authored identifiers; preserve spaces and punctuation verbatim.</summary>
+/// <summary>Native catalog keys are not owned identifiers; preserve spaces and punctuation verbatim.</summary>
 internal static class DungeonNativeIds
 {
     internal static void Check(string id)

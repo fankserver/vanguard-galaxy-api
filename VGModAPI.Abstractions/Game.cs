@@ -29,5 +29,5 @@ public interface INavigation
     JumpCountsResult GetJumpCounts(string fromSystemId);
     JumpCountResult GetJumpCount(string fromSystemId, string toSystemId);
     NavigationStatus FocusPoi(string poiId);
-    NavigationStatus FocusWorldSite(WorldSiteReference reference);
+    NavigationStatus FocusCombatSite(CombatSiteReference reference);
 }

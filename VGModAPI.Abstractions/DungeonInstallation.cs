@@ -12,7 +12,7 @@ public interface IDungeonInstallation
     /// Remove handlers or dispose the owning dungeon provider to stop delivery.</summary>
     event Action? ExtractionStarted;
     /// <summary>
-    /// Keeps this installation enterable while the declaration is held, so an authored boarding
+    /// Keeps this installation enterable while the declaration is held, so an owned boarding
     /// objective cannot be invalidated by ambient world damage before the player arrives. The
     /// station's parts — including docking — cannot be destroyed and its interior structure cannot
     /// collapse, and a target that was already unusable (destroyed docking, floored integrity or a

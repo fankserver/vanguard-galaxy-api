@@ -20,19 +20,19 @@ public sealed partial class Plugin
     private WorldPersistenceBindings? _worldPersistence;
     private WorldContentService? _worldContent;
     private WorldReferenceResolver? _worldReferences;
-    private AuthoredSystemRegistry? _authoredDefinitions;
-    private AuthoredSystemCoordinator? _authoredCoordinator;
-    private AuthoredWormholePairRegistry? _wormholeDefinitions;
-    private AuthoredWormholePairCoordinator? _wormholeCoordinator;
-    private AuthoredSiteRegistry? _siteDefinitions;
-    private AuthoredSiteCoordinator? _siteCoordinator;
-    private AuthoredShipRegistry? _shipDefinitions;
-    private AuthoredShipCoordinator? _shipCoordinator;
+    private PocketSystemRegistry? _authoredDefinitions;
+    private PocketSystemCoordinator? _authoredCoordinator;
+    private WormholePairRegistry? _wormholeDefinitions;
+    private WormholePairCoordinator? _wormholeCoordinator;
+    private ResourceSiteRegistry? _siteDefinitions;
+    private ResourceSiteCoordinator? _siteCoordinator;
+    private MooredShipRegistry? _shipDefinitions;
+    private MooredShipCoordinator? _shipCoordinator;
     private double _authoredDue;
     private bool _worldAvailable;
 
     /// <summary>Slow-cadence reconciled-invariant convergence for authored pocket systems; fails open.</summary>
-    private void MaintainAuthoredSystems()
+    private void MaintainPocketSystems()
     {
         if (_authoredCoordinator == null || _worldContent == null) return;
         if (UnityEngine.Time.time < _authoredDue) return;
@@ -41,7 +41,7 @@ public sealed partial class Plugin
         if (current == null || current.Phase != SessionPhase.GameplayInitialized) return;
         // Route through the service so the owned occurrence objects are refreshed and their Changed events
         // fire on their own transitions after the coordinator converges gate/reconstruction state.
-        try { _worldContent.MaintainAuthoredSystems(current.Id); }
+        try { _worldContent.MaintainPocketSystems(current.Id); }
         catch (Exception error) { Logger.LogError(error); }
     }
 
@@ -71,38 +71,38 @@ public sealed partial class Plugin
                 ?? throw new MissingMethodException("SalvageData..ctor()");
             var lifetime = new WorldLifetimeGuard();
             var creation = new WorldCreationCoordinator(new WorldNativeAttachment(_adapter, inspectProfile), _hub.CheckThread, lifetime, inspectProfile);
-            // Authored-pocket integration is fail-open: a binding failure disables only authored systems,
+            // Resource-pocket integration is fail-open: a binding failure disables only authored systems,
             // never the shared Combat-site machine. Generalizing the owned chain to kinds (system + gates)
             // is the follow-up unification slice (see #233 keyed-ownership pass).
-            AuthoredSystemCoordinator? authored = null;
+            PocketSystemCoordinator? authored = null;
             try
             {
-                _authoredDefinitions = new AuthoredSystemRegistry(authenticate, _hub.CheckThread);
+                _authoredDefinitions = new PocketSystemRegistry(authenticate, _hub.CheckThread);
                 // Once-per-distinct-cause fault reporting: authored-path faults must be visible in the log.
                 var authoredFaults = new System.Collections.Generic.HashSet<string>();
-                Action<Exception> reportAuthored = fault =>
+                Action<Exception> reportContent = fault =>
                 {
                     if (authoredFaults.Add(fault.GetType().Name + ":" + fault.Message)) Logger.LogError(fault);
                 };
-                authored = new AuthoredSystemCoordinator(_hub, _authoredDefinitions,
-                    new WorldNativeAuthored(_adapter, assembly, report: reportAuthored),
+                authored = new PocketSystemCoordinator(_hub, _authoredDefinitions,
+                    new WorldNativePocketSystems(_adapter, assembly, report: reportContent),
                     admission, session => _worldPersistence != null && _worldPersistence.StateReady(session),
-                    reportAuthored);
+                    reportContent);
                 _authoredCoordinator = authored;
-                _wormholeDefinitions = new AuthoredWormholePairRegistry(authenticate, _hub.CheckThread);
-                _wormholeCoordinator = new AuthoredWormholePairCoordinator(_hub, _wormholeDefinitions,
-                    new WorldNativeAuthoredWormholes(_adapter, assembly, reportAuthored),
-                    session => _worldPersistence != null && _worldPersistence.StateReady(session), reportAuthored);
-                _siteDefinitions = new AuthoredSiteRegistry(authenticate, _hub.CheckThread);
-                _siteCoordinator = new AuthoredSiteCoordinator(_hub, _siteDefinitions,
-                    new WorldNativeAuthoredSites(_adapter, assembly, reportAuthored),
-                    session => _worldPersistence != null && _worldPersistence.StateReady(session), reportAuthored);
-                _shipDefinitions = new AuthoredShipRegistry(authenticate, _hub.CheckThread);
-                _shipCoordinator = new AuthoredShipCoordinator(_hub, _shipDefinitions,
-                    new Runtime.AuthoredShipWorld(_adapter, assembly, reportAuthored),
+                _wormholeDefinitions = new WormholePairRegistry(authenticate, _hub.CheckThread);
+                _wormholeCoordinator = new WormholePairCoordinator(_hub, _wormholeDefinitions,
+                    new WorldNativeWormholes(_adapter, assembly, reportContent),
+                    session => _worldPersistence != null && _worldPersistence.StateReady(session), reportContent);
+                _siteDefinitions = new ResourceSiteRegistry(authenticate, _hub.CheckThread);
+                _siteCoordinator = new ResourceSiteCoordinator(_hub, _siteDefinitions,
+                    new WorldNativeResourceSites(_adapter, assembly, reportContent),
+                    session => _worldPersistence != null && _worldPersistence.StateReady(session), reportContent);
+                _shipDefinitions = new MooredShipRegistry(authenticate, _hub.CheckThread);
+                _shipCoordinator = new MooredShipCoordinator(_hub, _shipDefinitions,
+                    new Runtime.MooredShipWorld(_adapter, assembly, reportContent),
                     session => _worldPersistence != null && _worldPersistence.StateReady(session),
                     (unitId, key) => (_unitProtection ??= new UnitProtectionService(_hub)).Protect(unitId, key),
-                    reportAuthored);
+                    reportContent);
             }
             catch (Exception authoredError)
             {
@@ -110,31 +110,31 @@ public sealed partial class Plugin
                 _wormholeDefinitions?.Dispose(); _wormholeDefinitions = null; _wormholeCoordinator?.Dispose(); _wormholeCoordinator = null;
                 _siteDefinitions?.Dispose(); _siteDefinitions = null; _siteCoordinator?.Dispose(); _siteCoordinator = null;
                 _shipDefinitions?.Dispose(); _shipDefinitions = null; _shipCoordinator?.Dispose(); _shipCoordinator = null;
-                _hub.SetCapability("authored-systems", false, "Authored-system integration unavailable: " + authoredError.GetType().Name);
+                _hub.SetCapability("authored-systems", false, "Resource-system integration unavailable: " + authoredError.GetType().Name);
                 Logger.LogError(authoredError);
             }
             _worldLifetimeHost = new WorldLifetimeHookHost(assembly, _hub, lifetime, new WorldActorPhysics(assembly).Stop,
                 session => { creation.Refuse(session); _story?.RefreshWorldDependencies(); }, inspectProfile);
             _worldSnapshotHost = new WorldSnapshotHookHost(_hub, new WorldSnapshotRecorder(
                 new WorldJsonInspection(assembly, emptyProfile, RestoreOwnedItem, RestoreOwnedRecipe),
-                authored == null ? null : () => AuthoredSystemStateCodec.Encode(authored.CaptureRows(), _siteCoordinator?.CaptureRows() ?? Array.Empty<AuthoredSiteOccurrence>(), _shipCoordinator?.CaptureRows() ?? Array.Empty<AuthoredShipOccurrence>(), _wormholeCoordinator?.CaptureRows() ?? Array.Empty<AuthoredWormholePairOccurrence>(), _worldContent?.CaptureCombatKeys() ?? Array.Empty<CombatSiteKeyRow>())),
+                authored == null ? null : () => PocketSystemStateCodec.Encode(authored.CaptureRows(), _siteCoordinator?.CaptureRows() ?? Array.Empty<ResourceSiteOccurrence>(), _shipCoordinator?.CaptureRows() ?? Array.Empty<MooredShipOccurrence>(), _wormholeCoordinator?.CaptureRows() ?? Array.Empty<WormholePairOccurrence>(), _worldContent?.CaptureCombatKeys() ?? Array.Empty<CombatSiteKeyRow>())),
                 creation.Snapshot, () => { requireContext(); return creation.Revision; }, requireContext);
             _worldPersistence = new WorldPersistenceBindings(_persistence, _hub, _worldLoadHost, _worldSnapshotHost, creation,
                 authored == null ? null : new Action<Guid, byte[]?>((session, bytes) =>
                 {
                     var decoded = bytes == null
-                        ? (Array.Empty<AuthoredSystemOccurrence>(), Array.Empty<AuthoredSiteOccurrence>(), Array.Empty<AuthoredShipOccurrence>(), Array.Empty<AuthoredWormholePairOccurrence>(), Array.Empty<CombatSiteKeyRow>())
-                        : AuthoredSystemStateCodec.DecodeAll(bytes);
+                        ? (Array.Empty<PocketSystemOccurrence>(), Array.Empty<ResourceSiteOccurrence>(), Array.Empty<MooredShipOccurrence>(), Array.Empty<WormholePairOccurrence>(), Array.Empty<CombatSiteKeyRow>())
+                        : PocketSystemStateCodec.DecodeAll(bytes);
                     authored.RestoreRows(session, decoded.Item1);
                     if (_siteCoordinator != null) _siteCoordinator.RestoreRows(session, decoded.Item2);
                     else if (decoded.Item2.Length > 0)
-                        throw new System.IO.InvalidDataException("Authored-site rows present but the site integration is unavailable; refusing a restore that would erase them.");
+                        throw new System.IO.InvalidDataException("Resource-site rows present but the site integration is unavailable; refusing a restore that would erase them.");
                     if (_shipCoordinator != null) _shipCoordinator.RestoreRows(session, decoded.Item3);
                     else if (decoded.Item3.Length > 0)
-                        throw new System.IO.InvalidDataException("Authored-ship rows present but the ship integration is unavailable; refusing a restore that would erase them.");
+                        throw new System.IO.InvalidDataException("Resource-ship rows present but the ship integration is unavailable; refusing a restore that would erase them.");
                     if (_wormholeCoordinator != null) _wormholeCoordinator.RestoreRows(session, decoded.Item4);
                     else if (decoded.Item4.Length > 0)
-                        throw new System.IO.InvalidDataException("Authored-wormhole rows present but the wormhole integration is unavailable; refusing a restore that would erase them.");
+                        throw new System.IO.InvalidDataException("Resource-wormhole rows present but the wormhole integration is unavailable; refusing a restore that would erase them.");
                     if (_worldContent != null) _worldContent.RestoreCombatKeys(session, decoded.Item5);
                     else if (decoded.Item5.Length > 0)
                         throw new System.IO.InvalidDataException("Combat-site key rows present but the world module is unavailable; refusing a restore that would erase them.");
@@ -235,7 +235,7 @@ public sealed partial class Plugin
             _hub.SetCapability("world-load-protection", true, "Owned world state is restored before dependent content.");
             _hub.SetCapability("world-authoring", true, "Persistent Combat sites are available to authenticated providers in ready sessions.");
             if (authored != null)
-                _hub.SetCapability("authored-systems", true, "Authored pocket systems are available to authenticated providers in ready sessions.");
+                _hub.SetCapability("authored-systems", true, "Resource pocket systems are available to authenticated providers in ready sessions.");
         }
         catch (Exception error)
         {

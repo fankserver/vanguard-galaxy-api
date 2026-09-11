@@ -21,7 +21,7 @@ build-examples: link-libs
 	@set -eu; for project in $(sort $(wildcard examples/*/*.csproj)); do $(DOTNET) build "$$project" -c $(CONFIGURATION); done
 .PHONY: build-dungeon-example build-dungeon-author
 build-dungeon-example:
-	$(DOTNET) build examples/AuthoredDungeon/AuthoredDungeon.csproj -c $(CONFIGURATION)
+	$(DOTNET) build examples/ExampleDungeon/ExampleDungeon.csproj -c $(CONFIGURATION)
 build-dungeon-author: link-libs
 	$(DOTNET) build examples/DungeonAuthor/DungeonAuthor.csproj -c $(CONFIGURATION)
 .PHONY: build-forge-example build-forge-host

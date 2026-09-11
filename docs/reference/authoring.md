@@ -16,7 +16,7 @@ Compile against `VGModAPI.Abstractions`, mark the reference non-copy-local, and 
 | OwnedBarAuthorA / OwnedBarAuthorB | Independent bar providers and owned roster definitions |
 | ForgeInspector / ForgeInspectorHost | Plain .NET inspection/HUD actions plus thin host integration |
 | GameplayWindow | Gameplay UI lifecycle, owned Unity container and a window created later from a shared HUD launcher |
-| AuthoredDungeon / DungeonAuthor | Authored dungeon content and host bootstrap |
+| ExampleDungeon / DungeonAuthor | Example dungeon content and host bootstrap |
 | UpdateParticipant | Optional update metadata integration |
 
 World authors register definitions in Awake and create occurrences only from explicit gameplay logic with an existing system ID. They do not create sites automatically on every load. The two projects have different authenticated plugin IDs, so sharing a local ID or occurrence key cannot bind one owner's occurrence to the other. Persisted native identity, not a retained Unity object, determines restoration.
