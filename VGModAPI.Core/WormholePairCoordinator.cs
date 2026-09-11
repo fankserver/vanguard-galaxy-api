@@ -31,6 +31,8 @@ internal sealed class WormholePairCoordinator : IDisposable
     }
     internal WormholePairOccurrence[] CaptureRows() { _hub.CheckThread(); return _rows.Values.ToArray(); }
     internal IReadOnlyList<WormholePairOccurrence> Occurrences(string owner) { _hub.CheckThread(); return _rows.Values.Where(r => r.Owner == owner).ToArray(); }
+    /// <summary>True when any owned wormhole occurrence has <paramref name="systemId"/> as one of its endpoints across all providers.</summary>
+    internal bool AnyOccurrenceInSystem(string systemId) { _hub.CheckThread(); return !string.IsNullOrEmpty(systemId) && _rows.Values.Any(r => r.FirstSystemId == systemId || r.SecondSystemId == systemId); }
     internal WormholePairOccurrence? TryGet(string owner, string local, string key)
         => _rows.TryGetValue((owner, local, key), out var row) ? row : null;
     internal bool Contains(string owner, string local, string key) => _rows.ContainsKey((owner, local, key));

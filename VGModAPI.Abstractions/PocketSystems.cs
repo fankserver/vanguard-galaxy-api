@@ -178,7 +178,8 @@ public interface IPocketSystem
     /// Dissolves the owned pocket: removes the pocket system, both paired gates and this API's
     /// authored sites inside it from the live map and from save data. Refused while the player's
     /// current system, current location or any waypoint is inside the pocket — relocating the player
-    /// first is the consumer's responsibility — and while the pocket still contains combat sites.
+    /// first is the consumer's responsibility — while the pocket still contains combat sites, and
+    /// while the pocket is still an endpoint of a wormhole (dissolve the wormhole first).
     /// On success this object is terminal (<see cref="ReconstructionStatus.Dissolved"/>);
     /// creating the same occurrence key again authors a fresh pocket with fresh native identity.
     /// </summary>

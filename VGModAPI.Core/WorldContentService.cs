@@ -778,7 +778,8 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             _service._hub.CheckThread();
             if (_disposed || _service._disposed || _wormholes == null || _service._wormholeCoordinator == null || !_service._canAuthor()) return null;
             var session = _service._hub.CurrentSession;
-            if (session == null || session.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks || !ValidOccurrenceKey(occurrenceKey)) return null;
+            if (session == null || session.Id == Guid.Empty || session.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks) return null;
+            if (localId == null || !ValidOccurrenceKey(occurrenceKey)) return null;
             if (_authored != null && _service._authoredCoordinator != null && _service._authoredCoordinator.ContainsOccurrence(_authored.Owner, localId, occurrenceKey)) return null;
             if (_authoredSites != null && _service._siteCoordinator != null && _service._siteCoordinator.ContainsOccurrence(_authoredSites.Owner, localId, occurrenceKey)) return null;
             if (_authoredShips != null && _service._shipCoordinator != null && _service._shipCoordinator.ContainsOccurrence(_authoredShips.Owner, localId, occurrenceKey)) return null;
@@ -1134,6 +1135,12 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                         return _lastAction = new WorldContentResult(WorldContentStatus.Rejected,
                             "The pocket still contains combat sites; they cannot be removed with it.");
                 }
+                // Never orphan wormhole-pair occurrences: a wormhole with an endpoint inside the pocket would lose
+                // its pocket-side POI on dissolve and leave a permanently-failed persisted row, so its presence refuses dissolution.
+                if (row != null && _service._wormholeCoordinator != null
+                    && _service._wormholeCoordinator.AnyOccurrenceInSystem(row.SystemId))
+                    return _lastAction = new WorldContentResult(WorldContentStatus.Rejected,
+                        "The pocket is still the endpoint of a wormhole; dissolve the wormhole before removing the pocket.");
                 var (status, detail, systemId) = _service._authoredCoordinator.Dissolve(_authored, _session, Reference);
                 if (status != WorldStatus.Succeeded) return _lastAction = new WorldContentResult(ToActionStatus(status), detail);
                 _dissolved = true;

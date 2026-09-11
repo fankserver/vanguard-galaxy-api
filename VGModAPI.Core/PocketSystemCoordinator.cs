@@ -64,11 +64,6 @@ internal sealed class PocketSystemCoordinator : IDisposable
         _settledOnce = false;
     }
 
-    internal byte[] CaptureBytes()
-    {
-        _hub.CheckThread();
-        return PocketSystemStateCodec.Encode(_committed.Values.ToArray());
-    }
     internal PocketSystemOccurrence[] CaptureRows() { _hub.CheckThread(); return _committed.Values.ToArray(); }
 
     /// <summary>Read-only plumbing: the session-scoped occurrence rows this owner currently holds (committed + failed-pending), used to re-obtain surface objects.</summary>

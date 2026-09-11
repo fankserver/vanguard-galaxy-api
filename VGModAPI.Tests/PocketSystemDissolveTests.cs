@@ -19,6 +19,9 @@ public sealed class PocketSystemDissolveTests
         internal readonly PocketSystemCoordinator Coordinator;
         internal readonly ResourceSiteRegistry Sites;
         internal readonly ResourceSiteCoordinator SiteCoordinator;
+        internal readonly FakeWormholePairs WormholeNative = new();
+        internal readonly WormholePairRegistry Wormholes;
+        internal readonly WormholePairCoordinator WormholeCoordinator;
         internal readonly WorldCreationCoordinator? Creation;
         internal readonly WorldContentService Service;
         internal IWorldProvider Provider = null!;
@@ -36,13 +39,16 @@ public sealed class PocketSystemDissolveTests
             Coordinator = new PocketSystemCoordinator(Hub, Systems, Native, () => true, _ => true, _ => { });
             Sites = new ResourceSiteRegistry(auth, Hub.CheckThread);
             SiteCoordinator = new ResourceSiteCoordinator(Hub, Sites, SiteNative, _ => true, _ => { });
+            Wormholes = new WormholePairRegistry(auth, Hub.CheckThread);
+            WormholeCoordinator = new WormholePairCoordinator(Hub, Wormholes, WormholeNative, _ => true, _ => { });
             WorldAuthoringGate gate = null!;
             if (withCombatGate)
             {
                 Creation = new WorldCreationCoordinator(null!, Hub.CheckThread);
                 gate = new WorldAuthoringGate(Combat, Creation, _ => true);
             }
-            Service = new WorldContentService(Hub, Combat, gate, () => true, null, null, null, null, Systems, Coordinator, Sites, SiteCoordinator);
+            Service = new WorldContentService(Hub, Combat, gate, () => true, null, null, null, null, Systems, Coordinator, Sites, SiteCoordinator,
+                null, null, null, Wormholes, WormholeCoordinator);
             Provider = Service.AcquireProvider(plugin)!;
         }
         internal void BeginGameplay()
@@ -60,9 +66,24 @@ public sealed class PocketSystemDissolveTests
         public void Dispose()
         {
             Provider?.Dispose();
-            Coordinator.Dispose(); SiteCoordinator.Dispose();
-            Service.Dispose(); Combat.Dispose(); Systems.Dispose(); Sites.Dispose(); Hub.Dispose();
+            Coordinator.Dispose(); SiteCoordinator.Dispose(); WormholeCoordinator.Dispose();
+            Service.Dispose(); Combat.Dispose(); Systems.Dispose(); Sites.Dispose(); Wormholes.Dispose(); Hub.Dispose();
         }
+    }
+
+    [Fact]
+    public void DissolveRefusesWhileThePocketIsStillAWormholeEndpoint()
+    {
+        using var harness = new Harness();
+        Assert.Equal(WorldStatus.Succeeded, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("pocket", 1, "The Hollow")));
+        Assert.Equal(WorldStatus.Succeeded, harness.Provider.RegisterWormholePair(new WormholePairDefinition("rift", 1, "Unstable Rift")));
+        harness.BeginGameplay();
+        var pocket = harness.Provider.CreatePocketSystem("pocket", "k1", "anchor")!;
+        var hook = harness.Provider.CreateWormholePair("rift", "default", pocket.SystemId!, "other-system");
+        Assert.NotNull(hook);
+        // Orphaning the pocket-side wormhole POI is refused, mirroring the combat-site refusal.
+        Assert.Equal(WorldContentStatus.Rejected, pocket.Dissolve().Status);
+        Assert.Equal(WorldContentStatus.Rejected, pocket.LastAction.Status);
     }
 
     [Fact]

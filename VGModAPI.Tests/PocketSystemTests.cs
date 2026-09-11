@@ -405,7 +405,7 @@ public sealed class PocketSystemTests
             var occurrence = migrate.Provider.GetPocketSystem("sysA", "k1");
             Assert.NotNull(occurrence);
             Assert.Equal(ReconstructionStatus.Reconstructed, occurrence!.State.Status);
-            byte[] encoded = migrate.Coordinator.CaptureBytes();
+            byte[] encoded = PocketSystemStateCodec.Encode(migrate.Coordinator.CaptureRows());
             Assert.Equal(2, PocketSystemStateCodec.Decode(encoded).Single(o => o.OccurrenceKey == "k1").Revision);
         }
         // Mismatch with no previous declared: a retained older revision is not silently adopted.

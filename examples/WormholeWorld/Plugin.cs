@@ -39,8 +39,8 @@ public sealed class Plugin : BaseUnityPlugin
     private void Awake()
     {
         // Definitions are registered before any game session starts; registering never creates native
-        // objects. Registration is deferred to Start(): BepInEx only populates PluginInfos[].Occurrence
-        // AFTER the plugin's Awake returns, so host authentication (which matches the plugin occurrence in
+        // objects. Registration is deferred to Start(): BepInEx only populates PluginInfos[].Instance
+        // AFTER the plugin's Awake returns, so host authentication (which matches the plugin instance in
         // Chainloader.PluginInfos) cannot succeed in Awake. Start() runs after BepInEx finishes loading
         // and still before the first session, which is exactly when providers may be acquired.
     }
