@@ -28,7 +28,7 @@ public sealed class MissionIdentitySnapshotTests
         Assert.All(MissionIdentitySnapshot.MatchUnique(new[] { first }, new[] { first.Fingerprint, first.Fingerprint }), id => Assert.Null(id));
     }
     [Fact]
-    public void RepeatedOccurrenceIdsAreRejectedEvenWithDifferentContents()
+    public void RepeatedInstanceIdsAreRejectedEvenWithDifferentContents()
     {
         var id = Guid.NewGuid();
         Assert.Throws<InvalidDataException>(() => MissionIdentitySnapshot.Encode(new[] {

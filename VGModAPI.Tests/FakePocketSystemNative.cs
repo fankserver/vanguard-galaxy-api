@@ -19,11 +19,15 @@ internal sealed class FakePocketSystemNative : IPocketSystemNative
     internal bool FailDissolve;
     internal bool ThrowOnDissolve;
     internal int DissolveCalls;
+    internal readonly List<PocketSystemPlacement> CreatedPlacements = new();
+    internal readonly List<string?> CreatedFactionIds = new();
 
-    public PocketSystemInfo? CreatePocket(Guid session, string anchorSystemId)
+    public PocketSystemInfo? CreatePocket(Guid session, string anchorSystemId, PocketSystemPlacement placement, string? factionId)
     {
         if (ThrowOnCreate) throw new InvalidOperationException("native create fault");
         if (FailCreate) return null;
+        CreatedPlacements.Add(placement);
+        CreatedFactionIds.Add(factionId);
         NextId++;
         string sid = "sys-" + NextId;
         Systems[sid] = ("en-" + NextId, "pk-" + NextId);

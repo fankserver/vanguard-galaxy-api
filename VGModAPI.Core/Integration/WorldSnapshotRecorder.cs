@@ -28,10 +28,10 @@ internal sealed class WorldSnapshotRecorder
     private sealed class Capture
     {
         internal readonly long Operation, Revision;
-        internal readonly WorldSnapshotInstance[] Instances;
+        internal readonly WorldSnapshotInstance[] Occurrences;
         internal readonly byte[] Definitions;
-        internal Capture(long operation, long revision, WorldSnapshotInstance[] instances, byte[] definitions)
-        { Operation = operation; Revision = revision; Instances = instances; Definitions = definitions; }
+        internal Capture(long operation, long revision, WorldSnapshotInstance[] occurrences, byte[] definitions)
+        { Operation = operation; Revision = revision; Occurrences = occurrences; Definitions = definitions; }
     }
     private readonly WorldJsonInspection _json;
     private readonly WorldSerializationAssociation _states = new(), _definitions = new(), _systems = new();
@@ -41,25 +41,25 @@ internal sealed class WorldSnapshotRecorder
     internal WorldSnapshotRecorder(WorldJsonInspection json, Func<byte[]>? authoredCapture = null)
     { _json = json; _authoredCapture = authoredCapture; }
 
-    internal object Begin(long revision, IReadOnlyList<WorldSnapshotInstance> instances)
+    internal object Begin(long revision, IReadOnlyList<WorldSnapshotInstance> occurrences)
     {
         long operation = Next();
-        var frozen = Copy(instances);
+        var frozen = Copy(occurrences);
         var definitions = new Dictionary<(string, string), WorldSavedDefinition>();
         var ids = new HashSet<string>(StringComparer.Ordinal);
         var references = new ConditionalWeakTable<object, object>();
-        foreach (var instance in frozen)
+        foreach (var occurrence in frozen)
         {
-            if (!ids.Add(instance.Identity.NativeId) || references.TryGetValue(instance.Native, out _)) throw new InvalidDataException("Duplicate world snapshot instance.");
-            references.Add(instance.Native, new object());
-            var key = (instance.Definition.Owner, instance.Identity.LocalId);
+            if (!ids.Add(occurrence.Identity.NativeId) || references.TryGetValue(occurrence.Native, out _)) throw new InvalidDataException("Duplicate world snapshot occurrence.");
+            references.Add(occurrence.Native, new object());
+            var key = (occurrence.Definition.Owner, occurrence.Identity.LocalId);
             if (definitions.TryGetValue(key, out var prior))
             {
-                var a = prior.Definition; var b = instance.Definition.Definition;
+                var a = prior.Definition; var b = occurrence.Definition.Definition;
                 if (a.Revision != b.Revision || a.Name != b.Name || a.FactionId != b.FactionId || a.Level != b.Level)
                     throw new InvalidDataException("Conflicting retained world declarations.");
             }
-            else definitions.Add(key, instance.Definition);
+            else definitions.Add(key, occurrence.Definition);
         }
         var bytes = WorldDefinitionCodec.Encode(new List<WorldSavedDefinition>(definitions.Values).ToArray());
         if (operation != _operation) throw new InvalidDataException("Reentrant world snapshot capture.");
@@ -77,8 +77,8 @@ internal sealed class WorldSnapshotRecorder
         _states.Forget(root); _definitions.Forget(root);
         if (capture.Revision != revision) return false;
         var observed = Copy(current);
-        if (observed.Length != capture.Instances.Length) return false;
-        for (int i = 0; i < observed.Length; i++) if (!ReferenceEquals(observed[i], capture.Instances[i])) return false;
+        if (observed.Length != capture.Occurrences.Length) return false;
+        for (int i = 0; i < observed.Length; i++) if (!ReferenceEquals(observed[i], capture.Occurrences[i])) return false;
         var nodes = _json.Read(root, nativeSnapshot: true);
         if (nodes.Length != observed.Length) return false;
         var byId = new Dictionary<string, WorldParsedNode>(StringComparer.Ordinal);
@@ -86,10 +86,10 @@ internal sealed class WorldSnapshotRecorder
         var rows = new WorldSavedObject[observed.Length]; var objects = new object[observed.Length];
         for (int i = 0; i < observed.Length; i++)
         {
-            var instance = observed[i];
-            if (!byId.TryGetValue(instance.Identity.NativeId, out var node) || node.SystemId != instance.SystemId) return false;
-            rows[i] = new WorldSavedObject(instance.Identity, node.SystemId, node.Digest, instance.Definition.Definition.Revision);
-            objects[i] = instance.Native;
+            var occurrence = observed[i];
+            if (!byId.TryGetValue(occurrence.Identity.NativeId, out var node) || node.SystemId != occurrence.SystemId) return false;
+            rows[i] = new WorldSavedObject(occurrence.Identity, node.SystemId, node.Digest, occurrence.Definition.Definition.Revision);
+            objects[i] = occurrence.Native;
         }
         var beforeValidation = WorldJsonInspection.DigestRoot(root);
         validateBeforePublish?.Invoke();
@@ -98,8 +98,8 @@ internal sealed class WorldSnapshotRecorder
         foreach (var node in nodes) _json.StampOwnedPoi(node.Json, node.NativeId);
         for (int i = 0; i < observed.Length; i++)
         {
-            var instance = observed[i]; var node = byId[instance.Identity.NativeId];
-            rows[i] = new WorldSavedObject(instance.Identity, node.SystemId, WorldJsonInspection.Digest(node.Json), instance.Definition.Definition.Revision);
+            var occurrence = observed[i]; var node = byId[occurrence.Identity.NativeId];
+            rows[i] = new WorldSavedObject(occurrence.Identity, node.SystemId, WorldJsonInspection.Digest(node.Json), occurrence.Definition.Definition.Revision);
         }
         var state = WorldStateCodec.Encode(rows);
         _json.SealSnapshot(root, rows.Length != 0);
@@ -135,14 +135,14 @@ internal sealed class WorldSnapshotRecorder
     }
     internal void Reset() { Next(); _captures = new(); _states.Reset(); _definitions.Reset(); if (_authoredCapture != null) _systems.Reset(); }
     private long Next() => _operation = checked(_operation + 1);
-    private static WorldSnapshotInstance[] Copy(IReadOnlyList<WorldSnapshotInstance> instances)
+    private static WorldSnapshotInstance[] Copy(IReadOnlyList<WorldSnapshotInstance> occurrences)
     {
-        if (instances == null) throw new ArgumentNullException(nameof(instances));
-        int count = instances.Count;
+        if (occurrences == null) throw new ArgumentNullException(nameof(occurrences));
+        int count = occurrences.Count;
         if (count < 0 || count > WorldSerializationAssociation.MaxObjects) throw new InvalidDataException("World snapshot count exceeds bound.");
         var result = new WorldSnapshotInstance[count];
-        for (int i = 0; i < count; i++) result[i] = instances[i] ?? throw new InvalidDataException("Null world snapshot instance.");
-        if (instances.Count != count) throw new InvalidDataException("World snapshot membership changed during capture.");
+        for (int i = 0; i < count; i++) result[i] = occurrences[i] ?? throw new InvalidDataException("Null world snapshot occurrence.");
+        if (occurrences.Count != count) throw new InvalidDataException("World snapshot membership changed during capture.");
         return result;
     }
 }

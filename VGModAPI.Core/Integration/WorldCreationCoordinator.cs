@@ -3,7 +3,7 @@ using System.IO;
 
 namespace VGModAPI.Core.Integration;
 
-/// <summary>Preallocates instance bookkeeping before native append; commits without callbacks after append.</summary>
+/// <summary>Preallocates occurrence bookkeeping before native append; commits without callbacks after append.</summary>
 internal sealed class WorldCreationCoordinator
 {
     private readonly WorldNativeAttachment _native;
@@ -47,16 +47,16 @@ internal sealed class WorldCreationCoordinator
         try
         {
             var plan = reconstruct() ?? throw new InvalidDataException("Missing reconstruction plan.");
-            var source = plan.Instances ?? throw new InvalidDataException("Missing reconstructed inventory.");
+            var source = plan.Occurrences ?? throw new InvalidDataException("Missing reconstructed inventory.");
             if (source.Length > WorldSerializationAssociation.MaxObjects) throw new InvalidDataException("Reconstructed inventory exceeds bound.");
             var prepared = (WorldSnapshotInstance[])source.Clone();
             var ids = new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal);
             var references = new System.Runtime.CompilerServices.ConditionalWeakTable<object, object>();
-            foreach (var instance in prepared)
+            foreach (var occurrence in prepared)
             {
-                if (instance == null || !ids.Add(instance.Identity.NativeId) || references.TryGetValue(instance.Native, out _))
-                    throw new InvalidDataException("Invalid reconstructed instance inventory.");
-                references.Add(instance.Native, new object());
+                if (occurrence == null || !ids.Add(occurrence.Identity.NativeId) || references.TryGetValue(occurrence.Native, out _))
+                    throw new InvalidDataException("Invalid reconstructed occurrence inventory.");
+                references.Add(occurrence.Native, new object());
             }
             var tracking = _lifetime?.PrepareTracking(session, System.Linq.Enumerable.Select(prepared, item => (item.Native, item.Identity)));
             if (session != _session || revision != _revision || (tracking != null && !tracking.Current)) return false;
@@ -94,7 +94,7 @@ internal sealed class WorldCreationCoordinator
     internal WorldSnapshotInstance[] Snapshot()
     {
         _checkThread();
-        if (_creating || !_restored) throw new InvalidDataException("World instance state is not ready for snapshot capture.");
+        if (_creating || !_restored) throw new InvalidDataException("World occurrence state is not ready for snapshot capture.");
         foreach (var record in _instances) _profile?.Invoke(record.Native);
         return (WorldSnapshotInstance[])_instances.Clone();
     }
@@ -104,14 +104,14 @@ internal sealed class WorldCreationCoordinator
         _checkThread();
         if (admission == null) throw new ArgumentNullException(nameof(admission));
         if (_creating || !_restored || session == Guid.Empty || session != _session || _instances.Length >= WorldSerializationAssociation.MaxObjects) return null;
-        foreach (var instance in _instances)
+        foreach (var occurrence in _instances)
         {
-            if (instance.Identity.NativeId == identity.NativeId) return null;
-            if (instance.Definition.Owner == definition.Owner && instance.Identity.LocalId == definition.Definition.LocalId)
+            if (occurrence.Identity.NativeId == identity.NativeId) return null;
+            if (occurrence.Definition.Owner == definition.Owner && occurrence.Identity.LocalId == definition.Definition.LocalId)
             {
-                var prior = instance.Definition.Definition; var next = definition.Definition;
+                var prior = occurrence.Definition.Definition; var next = definition.Definition;
                 if (prior.Revision != next.Revision || prior.Name != next.Name || prior.FactionId != next.FactionId || prior.Level != next.Level)
-                    throw new InvalidDataException("Live instances require explicit definition migration.");
+                    throw new InvalidDataException("Live occurrences require explicit definition migration.");
             }
         }
         long revision = _revision, committedRevision = checked(_revision + 1);

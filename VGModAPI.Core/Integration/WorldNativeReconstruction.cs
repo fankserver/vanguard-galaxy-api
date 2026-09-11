@@ -33,7 +33,7 @@ internal sealed class WorldNativeReconstruction
         return () => _game.TryGetObservedPlayer(session, out var current) && ReferenceEquals(current, player) && ReferenceEquals(_map.GetValue(current), map);
     }
     internal WorldSnapshotInstance[] Read(WorldPreparedLoad prepared, Func<bool> stillAdmitted, Func<WorldSnapshotInstance, bool> constructed)
-        => Prepare(prepared, stillAdmitted, constructed).Instances;
+        => Prepare(prepared, stillAdmitted, constructed).Occurrences;
     internal WorldRestorationPlan Prepare(WorldPreparedLoad prepared, Func<bool> stillAdmitted, Func<WorldSnapshotInstance, bool> constructed, Func<WorldSavedDefinition, WorldSavedDefinition?>? effective = null)
     {
         if (prepared == null || stillAdmitted == null || constructed == null) throw new ArgumentNullException("Verified load and admission fence required.");
@@ -50,7 +50,7 @@ internal sealed class WorldNativeReconstruction
             if (poi == null || poi.GetType() != _combat || system == null || !ReferenceEquals(_parent.GetValue(poi), system))
                 throw new InvalidDataException("Loaded world identity, type or parent differs from verified metadata.");
             result[i] = new WorldSnapshotInstance(poi, row.Identity, row.SystemId, prepared.Generation!.DefinitionFor(row));
-            if (!constructed(result[i])) throw new InvalidDataException("World instance lacks admitted native construction provenance.");
+            if (!constructed(result[i])) throw new InvalidDataException("World occurrence lacks admitted native construction provenance.");
         }
         var names = new string?[result.Length]; var replacements = new string?[result.Length];
         if (effective != null)

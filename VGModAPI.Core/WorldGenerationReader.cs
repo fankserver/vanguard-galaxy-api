@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace VGModAPI.Core;
 
@@ -16,17 +17,26 @@ internal sealed class WorldGenerationReader
         internal WorldSavedDefinition DefinitionFor(WorldSavedObject row) => _definitions[(row.Identity.Owner, row.Identity.LocalId)];
         private readonly byte[] _statePayload;
         private readonly byte[]? _definitionPayload;
+        // Every non-world owner retained in the committed generation (authored systems, wormholes, sites, ships,
+        // other modules) so a SaveLoad can restore and cross-check their payloads. World + world-definitions are
+        // represented by the reconstructed payloads above; everything else is served from the stored envelope.
+        private readonly IReadOnlyDictionary<string, byte[]> _otherOwners;
         internal byte[]? PayloadFor(string owner) => owner == WorldStateCodec.Owner ? (byte[])_statePayload.Clone() :
-            owner == WorldDefinitionCodec.Owner ? (_definitionPayload == null ? null : (byte[])_definitionPayload.Clone()) : throw new ArgumentException("Unknown world owner.", nameof(owner));
-        internal Result(SnapshotAssociation association, WorldSavedObject[] rows, WorldSavedDefinition[] definitions, bool definitionsPresent)
+            owner == WorldDefinitionCodec.Owner ? (_definitionPayload == null ? null : (byte[])_definitionPayload.Clone()) :
+            _otherOwners.TryGetValue(owner, out var envelope) ? (byte[])envelope.Clone() : null;
+        internal Result(SnapshotAssociation association, WorldSavedObject[] rows, WorldSavedDefinition[] definitions, bool definitionsPresent,
+            IEnumerable<KeyValuePair<string, byte[]>>? otherOwners = null)
         {
             Association = association; _rows = (WorldSavedObject[])rows.Clone();
             _statePayload = WorldStateCodec.Encode(rows);
             _definitionPayload = definitionsPresent ? WorldDefinitionCodec.Encode(definitions) : null;
+            _otherOwners = otherOwners == null
+                ? (IReadOnlyDictionary<string, byte[]>)new Dictionary<string, byte[]>(StringComparer.Ordinal)
+                : otherOwners is IReadOnlyDictionary<string, byte[]> map ? map : otherOwners.ToDictionary(p => p.Key, p => (byte[])p.Value.Clone(), StringComparer.Ordinal);
             foreach (var definition in definitions) _definitions.Add((definition.Owner, definition.Definition.LocalId), definition);
             foreach (var row in rows)
                 if (!_definitions.TryGetValue((row.Identity.Owner, row.Identity.LocalId), out var definition) || definition.Definition.Revision != row.DefinitionRevision)
-                    throw new InvalidDataException("World instance has no matching retained declaration.");
+                    throw new InvalidDataException("World occurrence has no matching retained declaration.");
         }
     }
     private readonly GenerationStore _store;
@@ -56,7 +66,7 @@ internal sealed class WorldGenerationReader
         if (!generation.Owners.TryGetValue(WorldStateCodec.Owner, out var envelope))
         {
             if (generation.Owners.ContainsKey(WorldDefinitionCodec.Owner))
-                throw new InvalidDataException("Retained world declarations have no paired instance inventory.");
+                throw new InvalidDataException("Retained world declarations have no paired occurrence inventory.");
             if (!required) return null;
             throw new InvalidDataException("Owned world metadata is missing from the committed generation.");
         }
@@ -72,7 +82,10 @@ internal sealed class WorldGenerationReader
                 throw new InvalidDataException("Retained world declarations are protected: " + result.Status);
             definitions = WorldDefinitionCodec.Decode(definitionPayload);
         }
-        return new Result(generation.Identity, rows, definitions, generation.Owners.ContainsKey(WorldDefinitionCodec.Owner));
+        var otherOwners = generation.Owners
+            .Where(pair => pair.Key != WorldStateCodec.Owner && pair.Key != WorldDefinitionCodec.Owner)
+            .ToDictionary(pair => pair.Key, pair => (byte[])pair.Value.Clone(), StringComparer.Ordinal);
+        return new Result(generation.Identity, rows, definitions, generation.Owners.ContainsKey(WorldDefinitionCodec.Owner), otherOwners);
     }
 
     private static bool ValidateDefinitions(byte[] payload)

@@ -34,7 +34,7 @@ internal sealed partial class MissionAdapter
     }
     private void WitnessSweepInsertion(object mission)
     {
-        if (_sweeps.Count == 0 || !_bindings.Contains(_player!, mission) || Events.HasActiveOccurrence(mission)) return;
+        if (_sweeps.Count == 0 || !_bindings.Contains(_player!, mission) || Events.HasActiveInstance(mission)) return;
         if (!_sweeps.Any(s => Events.WasRemovedSince(mission, s.Observation.Order) || !s.Before.Any(row => ReferenceEquals(row.Mission, mission)))) return;
         using var observation = Events.Begin();
         Events.Record(observation, mission, MissionTransitionKind.Accepted, new MissionFacts(false, true),
@@ -53,7 +53,7 @@ internal sealed partial class MissionAdapter
                 if (!after.Any(m => ReferenceEquals(m, old.Mission)) && !Events.WasRemoved(old.Mission))
                     Events.Record(changes, old.Mission, MissionTransitionKind.Removed, new MissionFacts(true, false), old.Definition, old.Name, old.Tags);
             foreach (var mission in after)
-                if ((!sweep.Before.Any(row => ReferenceEquals(row.Mission, mission)) || Events.WasRemovedSince(mission, sweep.Observation.Order)) && !Events.HasActiveOccurrence(mission))
+                if ((!sweep.Before.Any(row => ReferenceEquals(row.Mission, mission)) || Events.WasRemovedSince(mission, sweep.Observation.Order)) && !Events.HasActiveInstance(mission))
                     Events.Record(changes, mission, MissionTransitionKind.Accepted, new MissionFacts(false, true),
                         _bindings.Definition(mission), _bindings.Name(mission), _bindings.Tags(mission));
         }

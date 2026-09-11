@@ -6,20 +6,20 @@ namespace VGModAPI;
 
 /// <summary>
 /// Immutable persistent moored-ship declaration: one friendly ship of an exact class, placed at an
-/// owned offset beside a station POI, held on station (no docking or auto-AI, never boardable),
+/// authored offset beside a station POI, held on station (no docking or auto-AI, never boardable),
 /// optionally kept alive through unit protection. Register before starting a session.
 /// </summary>
 public sealed class MooredShipDefinition
 {
     public string LocalId { get; }
     public int Revision { get; }
-    /// <summary>Display name and commander callsign for this instance; the ship class identity is never renamed.</summary>
+    /// <summary>Display name and commander callsign for this occurrence; the ship class identity is never renamed.</summary>
     public string Name { get; }
     public string ShipClassId { get; }
     public string FactionId { get; }
     public float OffsetX { get; }
     public float OffsetY { get; }
-    /// <summary>Keeps the moored instance alive through unit protection while its occurrence is owned.</summary>
+    /// <summary>Keeps the moored occurrence alive through unit protection while its occurrence is owned.</summary>
     public bool Protect { get; }
     public MooredShipDefinition(string localId, int revision, string name, string shipClassId, string factionId,
         float offsetX, float offsetY, bool protect = true)

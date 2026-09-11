@@ -101,5 +101,31 @@ public sealed class WorldGenerationReaderTests : IDisposable
         Assert.Throws<InvalidDataException>(() => new WorldGenerationReader(store).Read(Slot, _native));
     }
 
+    [Fact]
+    public void RetainedNonWorldOwnerPayloadIsExposedToRestoreInsteadOfThrowing()
+    {
+        // Regression: on a SaveLoad, WorldPersistenceBindings.Restore cross-checks every registered owner
+        // against prepared.Generation.PayloadFor(owner). The authored-systems owner (and any other non-world
+        // owner retained in the committed generation) previously threw ArgumentException, marking that owner
+        // RestoreFailed -> blocked, so an authored pocket created natively could never resolve its SystemId.
+        var store = Store;
+        var authoredOwner = "vgmodapi.world-authored-systems";
+        var authoredEnvelope = new OwnerSchemaCodec(authoredOwner, 1, _ => true).Encode(PocketSystemStateCodec.Encode(Array.Empty<PocketSystemOccurrence>()));
+        store.Publish(Slot, GenerationStore.Hash(_native), Guid.NewGuid(), new Dictionary<string, byte[]>
+        {
+            [WorldStateCodec.Owner] = Envelope(),
+            [authoredOwner] = authoredEnvelope
+        });
+
+        var result = new WorldGenerationReader(store).Read(Slot, _native);
+        // The authored owner's envelope must be served verbatim (and compared against the restored payload),
+        // never "unknown".
+        Assert.Equal(authoredEnvelope, result.PayloadFor(authoredOwner));
+        // Non-world owners absent from the generation simply resolve to null (absent), not an exception.
+        Assert.Null(result.PayloadFor("vgmodapi.never-present"));
+        // The canonical world + definition payloads keep behaving as before.
+        Assert.NotNull(result.PayloadFor(WorldStateCodec.Owner));
+    }
+
     public void Dispose() { if (Directory.Exists(_root)) Directory.Delete(_root, true); }
 }

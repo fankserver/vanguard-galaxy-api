@@ -31,7 +31,7 @@ public sealed class MissionIdentityEvidenceTests
         Assert.Throws<InvalidOperationException>(() => events.SeedIdentity(mission, null, evidence));
     }
     [Fact]
-    public void SnapshotOnlyOccurrenceDoesNotReuseIdOnLaterWitnessedAcceptance()
+    public void SnapshotOnlyInstanceDoesNotReuseIdOnLaterWitnessedAcceptance()
     {
         using var events = new MissionTransitions(new LifecycleHub((_, _) => { })); events.Reset(Guid.NewGuid());
         var received = new List<MissionTransition>(); events.Subscribe("test", received.Add); var mission = new object();
@@ -40,7 +40,7 @@ public sealed class MissionIdentityEvidenceTests
         Assert.NotEqual(original, Assert.Single(received).Mission.InstanceId);
     }
     [Fact]
-    public void FailedOnlyOccurrenceDoesNotReuseIdOnLaterAcceptance()
+    public void FailedOnlyInstanceDoesNotReuseIdOnLaterAcceptance()
     {
         using var events = new MissionTransitions(new LifecycleHub((_, _) => { })); events.Reset(Guid.NewGuid());
         var received = new List<MissionTransition>(); events.Subscribe("test", received.Add); var mission = new object();
