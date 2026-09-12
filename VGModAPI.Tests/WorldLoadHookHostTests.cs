@@ -64,7 +64,7 @@ public sealed class WorldLoadHookHostTests
         string text = "fixture-" + Guid.NewGuid().ToString("N"); Directory.CreateDirectory(dir);
         try
         {
-            var identity = new WorldObjectIdentity(new ContentDeclaration("author.one", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
+            var identity = new WorldObjectIdentity(new PersistentDeclaration("author.one", "PoiX", PersistentKind.WorldObject, PersistenceImpact.ApiDependent), Guid.NewGuid());
             var poi = new JsonObject { Text = "poi", ["guid"] = new(identity.NativeId), ["type"] = new(WorldSaveFormat.OwnedCombatType), ["systemName"] = new("system-a"),
                 ["guardDescriptors"] = new(new List<JsonValue> { new(new JsonObject { ["type"] = new("FixedPayloadDescriptor"), ["fixedUnit"] = new(assetId), ["unitCount"] = new(1) }) }) };
             var system = new JsonObject { ["guid"] = new("system-a"), ["pointsOfInterest"] = new(new List<JsonValue> { new(poi) }) };

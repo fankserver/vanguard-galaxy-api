@@ -20,10 +20,10 @@ internal sealed class DungeonPodResumeState
     internal bool ReturnDelivered { get; }
     internal bool ReturnAttempted { get; }
     internal IReadOnlyDictionary<string, int> ReturnCrew { get; }
-    internal DungeonPodResumeState(Guid id, Guid occurrence, DungeonPodPhase phase, bool playerOwned,
+    internal DungeonPodResumeState(Guid id, Guid dungeon, DungeonPodPhase phase, bool playerOwned,
         bool returnManifestKnown, bool returnDelivered, IEnumerable<KeyValuePair<string, int>> returnCrew, bool returnAttempted = false, string parentShipId = "", DungeonPodTransport? transport = null)
     {
-        if (id == Guid.Empty || occurrence == Guid.Empty || !Enum.IsDefined(typeof(DungeonPodPhase), phase)) throw new ArgumentException("Invalid saved pod identity or phase.");
+        if (id == Guid.Empty || dungeon == Guid.Empty || !Enum.IsDefined(typeof(DungeonPodPhase), phase)) throw new ArgumentException("Invalid saved pod identity or phase.");
         var copy = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var pair in returnCrew ?? throw new ArgumentNullException(nameof(returnCrew)))
         {
@@ -35,7 +35,7 @@ internal sealed class DungeonPodResumeState
         if (returnDelivered && (!returnManifestKnown || phase is not (DungeonPodPhase.Arrived or DungeonPodPhase.Refunded))) throw new ArgumentException("Delivery requires an observed arrival or direct refund and known manifest.");
         if (parentShipId == null || parentShipId.Length > 128 || parentShipId.IndexOf('\0') >= 0) throw new ArgumentException("Invalid parent ship identity.");
         ParentShipId = parentShipId; Transport = transport;
-        Id = id; OperationId = occurrence; Phase = phase; PlayerOwned = playerOwned; ReturnManifestKnown = returnManifestKnown;
+        Id = id; OperationId = dungeon; Phase = phase; PlayerOwned = playerOwned; ReturnManifestKnown = returnManifestKnown;
         ReturnAttempted = returnAttempted || returnDelivered;
         ReturnDelivered = returnDelivered; ReturnCrew = new ReadOnlyDictionary<string, int>(copy);
     }

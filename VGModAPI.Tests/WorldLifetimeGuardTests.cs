@@ -7,7 +7,7 @@ namespace VGModAPI.Tests;
 
 public sealed class WorldLifetimeGuardTests
 {
-    private static WorldObjectIdentity Identity() => new(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
+    private static WorldObjectIdentity Identity() => new(new PersistentDeclaration("author.a", "PoiX", PersistentKind.WorldObject, PersistenceImpact.ApiDependent), Guid.NewGuid());
 
     [Fact]
     public void PreparedTrackingDoesNotAdmitBeforeCommitAndCannotOverwriteReplacementInventory()

@@ -54,16 +54,16 @@ public sealed class StoryObjectiveIdentityTests
     [Fact]
     public void OccurrenceCodecPersistsLayoutAndCountsItAgainstAdmissionBudget()
     {
-        var definition = new StoryContentId("campaign", "mission-x");
+        var definition = new StoryMissionDefinitionId("campaign", "mission-x");
         var layout = new StoryObjectiveLayout(new[] { new StoryObjectiveLayout.Slot("visit", 1, 2, StoryObjectiveKind.TravelToPoi) });
         var ledger = new StoryLedger();
-        var occurrence = Guid.NewGuid();
-        Assert.Equal(StoryLedgerStatus.Accepted, ledger.Offer(definition, StoryRetention.Campaign, occurrence, 0, out _, layout));
+        var mission = Guid.NewGuid();
+        Assert.Equal(StoryLedgerStatus.Accepted, ledger.Offer(definition, StoryRetention.Campaign, mission, 0, out _, layout));
         var bytes = StoryStateCodec.Encode(ledger.Entries);
         var restored = Assert.Single(StoryStateCodec.Decode(bytes));
-        Assert.Equal(occurrence, restored.OccurrenceId);
+        Assert.Equal(mission, restored.MissionId);
         Assert.True(restored.ObjectiveLayout.SamePositions(layout));
-        var empty = new StoryOccurrenceEntry(definition, occurrence, StoryRetention.Campaign, 1);
+        var empty = new StoryMissionEntry(definition, mission, StoryRetention.Campaign, 1);
         Assert.Equal(23, StoryStateCodec.EncodedSize(restored) - StoryStateCodec.EncodedSize(empty));
         var legacy = StoryStateCodec.Encode(new[] { empty });
         Array.Copy(BitConverter.GetBytes(2), 0, legacy, 4, 4);
@@ -102,18 +102,18 @@ public sealed class StoryObjectiveIdentityTests
     public void VerifiedRetryResetsProgressWithoutChangingObjectiveIdentity()
     {
         var ledger = new StoryLedger();
-        var id = new StoryContentId("campaign", "mission-x");
-        var occurrence = Guid.NewGuid();
+        var id = new StoryMissionDefinitionId("campaign", "mission-x");
+        var mission = Guid.NewGuid();
         var layout = new StoryObjectiveLayout(new[] { new StoryObjectiveLayout.Slot("beat", 0, 0, StoryObjectiveKind.Scripted, 5) });
-        Assert.Equal(StoryLedgerStatus.Accepted, ledger.Offer(id, StoryRetention.Campaign, occurrence, 0, out _, layout));
-        Assert.Equal(StoryLedgerStatus.Accepted, ledger.Activate(id, occurrence, out _));
-        Assert.True(ledger.TryGet(occurrence, out var entry));
+        Assert.Equal(StoryLedgerStatus.Accepted, ledger.Offer(id, StoryRetention.Campaign, mission, 0, out _, layout));
+        Assert.Equal(StoryLedgerStatus.Accepted, ledger.Activate(id, mission, out _));
+        Assert.True(ledger.TryGet(mission, out var entry));
         entry.SetObjectiveProgress("beat", 3);
         var beforeRetry = StoryStateCodec.Encode(ledger.Entries);
-        Assert.Equal(StoryLedgerStatus.Accepted, ledger.ClearFailure(id, occurrence, out _));
+        Assert.Equal(StoryLedgerStatus.Accepted, ledger.ClearFailure(id, mission, out _));
         Assert.Equal(0, Assert.Single(entry.ObjectiveLayout.Slots).Progress);
         Assert.Equal("beat", Assert.Single(entry.ObjectiveLayout.Slots).Key);
-        Assert.Equal(occurrence, entry.OccurrenceId);
+        Assert.Equal(mission, entry.MissionId);
         Assert.Equal(3, Assert.Single(Assert.Single(StoryStateCodec.Decode(beforeRetry)).ObjectiveLayout.Slots).Progress);
     }
 
@@ -126,10 +126,10 @@ public sealed class StoryObjectiveIdentityTests
         Assert.Equal(0, Assert.Single(layout.Slots).Progress);
         Assert.Throws<ArgumentOutOfRangeException>(() => partial.WithProgress("beat", 1));
         Assert.Throws<ArgumentOutOfRangeException>(() => partial.WithProgress("beat", 6));
-        var id = new StoryContentId("campaign", "mission-x");
-        var occurrence = Guid.NewGuid();
+        var id = new StoryMissionDefinitionId("campaign", "mission-x");
+        var mission = Guid.NewGuid();
         byte[] Capture(StoryObjectiveLayout value) => StoryStateCodec.Encode(new[] {
-            new StoryOccurrenceEntry(id, occurrence, StoryRetention.Campaign, 1, objectiveLayout: value) });
+            new StoryMissionEntry(id, mission, StoryRetention.Campaign, 1, objectiveLayout: value) });
         var older = Capture(partial);
         Assert.Equal(5, Assert.Single(Assert.Single(StoryStateCodec.Decode(Capture(partial.WithProgress("beat", 5)))).ObjectiveLayout.Slots).Progress);
         Assert.Equal(2, Assert.Single(Assert.Single(StoryStateCodec.Decode(older)).ObjectiveLayout.Slots).Progress);
@@ -158,13 +158,13 @@ public sealed class StoryObjectiveIdentityTests
     [Fact]
     public void OwnerOccurrenceAndKeyAllParticipateInIdentity()
     {
-        var occurrence = Guid.NewGuid();
-        var definition = new StoryContentId("campaign", "mission-x");
-        var id = new StoryObjectiveId(definition, occurrence, "visit");
-        Assert.Equal(id, new StoryObjectiveId(definition, occurrence, "visit"));
-        Assert.NotEqual(id, new StoryObjectiveId(new StoryContentId("job", "mission-x"), occurrence, "visit"));
+        var mission = Guid.NewGuid();
+        var definition = new StoryMissionDefinitionId("campaign", "mission-x");
+        var id = new StoryObjectiveId(definition, mission, "visit");
+        Assert.Equal(id, new StoryObjectiveId(definition, mission, "visit"));
+        Assert.NotEqual(id, new StoryObjectiveId(new StoryMissionDefinitionId("job", "mission-x"), mission, "visit"));
         Assert.NotEqual(id, new StoryObjectiveId(definition, Guid.NewGuid(), "visit"));
-        Assert.NotEqual(id, new StoryObjectiveId(definition, occurrence, "report"));
+        Assert.NotEqual(id, new StoryObjectiveId(definition, mission, "report"));
         Assert.Throws<ArgumentException>(() => new StoryObjectiveId(definition, Guid.Empty, "visit"));
     }
 }

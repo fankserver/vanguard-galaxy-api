@@ -10,7 +10,7 @@ public sealed class WorldDefinitionRegistryTests
     private static readonly Assembly Caller = typeof(WorldDefinitionRegistryTests).Assembly;
     private static WorldCombatDefinition Definition() => new("PoiX", 1, "世界-é", "player", 1);
     private static WorldSavedObject Saved(string owner) => new(new WorldObjectIdentity(
-        new ContentDeclaration(owner, "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid()), "system-a", new string('a', 64), 1);
+        new PersistentDeclaration(owner, "PoiX", PersistentKind.WorldObject, PersistenceImpact.ApiDependent), Guid.NewGuid()), "system-a", new string('a', 64), 1);
 
     [Fact]
     public void OwnersCanReuseLocalIdsButDuplicatesAndRetiredLeasesAreRejected()

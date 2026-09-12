@@ -118,7 +118,7 @@ internal sealed class WorldNativeWormholes : IWormholePairNative
 
     /// <summary>Removes both owned wormhole POIs from their systems. Refuses while the player's current
     /// POI or any waypoint is at either wormhole, and refuses when either GUID is ambiguous (a duplicated
-    /// native id means the occurrence's ownership cannot be decided safely). On a post-removal
+    /// native id means the poi's ownership cannot be decided safely). On a post-removal
     /// verification failure the removed POIs are rolled back so the map is left unchanged. This is the
     /// plain native removal: it does not check transient player-safety conditions (occupancy) — the
     /// modder inspects <see cref="Readiness"/> first or uses the deferred removal path.</summary>

@@ -13,7 +13,7 @@ public sealed class Plugin : BaseUnityPlugin
     public IStoryProvider Provider => _provider ?? throw new InvalidOperationException("Story provider is not acquired.");
 
     // Called by the demonstration UI/driver after choosing an existing destination. No save hooks:
-    // the API retains the definition, occurrences, progress and declared campaign choices.
+    // the API retains the definition, pois, progress and declared campaign choices.
     public StoryRegistrationResult Register(string destinationPoiId, string sourceFaction)
     {
         if (_provider == null)

@@ -16,7 +16,7 @@ internal sealed class WorldAuthoringGate
         if (!_definitions.TryResolve(provider, localId, out _)) return null;
         long revision = _definitions.Revision;
         if (!availability() || !_persistenceReady(session) || revision != _definitions.Revision || !_definitions.TryResolve(provider, localId, out var definition)) return null;
-        var identity = new WorldObjectIdentity(new ContentDeclaration(definition!.Owner, localId, PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), instanceId);
+        var identity = new WorldObjectIdentity(new PersistentDeclaration(definition!.Owner, localId, PersistentKind.WorldObject, PersistenceImpact.ApiDependent), instanceId);
         var record = _creation.Find(session, identity);
         return record != null && _definitions.MatchesRetained(record.Definition) ? record : null;
     }
@@ -35,15 +35,15 @@ internal sealed class WorldAuthoringGate
     {
         if (!_definitions.TryResolve(provider, localId, out var saved)) return null;
         long revision = _definitions.Revision;
-        var identity = new WorldObjectIdentity(new ContentDeclaration(saved!.Owner, localId,
-            PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), instanceId);
+        var identity = new WorldObjectIdentity(new PersistentDeclaration(saved!.Owner, localId,
+            PersistentKind.WorldObject, PersistenceImpact.ApiDependent), instanceId);
         return _creation.TryCreate(session, saved, identity, systemId, x, y, () =>
             (availability?.Invoke() ?? true) && _persistenceReady(session) && _definitions.Revision == revision &&
             _definitions.TryResolve(provider, localId, out var current) &&
             ReferenceEquals(current!.Definition, saved.Definition));
     }
 
-    /// <summary>Removes a retained owned world occurrence after a verified native removal.</summary>
+    /// <summary>Removes a retained owned world poi after a verified native removal.</summary>
     internal WorldRemoveOutcome RemoveChecked(WorldDefinitionRegistry.Provider provider, Guid session, string localId, Guid instanceId, Func<bool>? availability = null)
     {
         if (!_definitions.TryResolve(provider, localId, out var definition)) return WorldRemoveOutcome.Missing;
@@ -52,13 +52,13 @@ internal sealed class WorldAuthoringGate
         if (!_persistenceReady(session) || revision != _definitions.Revision ||
             !_definitions.TryResolve(provider, localId, out var current) || !ReferenceEquals(current!.Definition, definition!.Definition))
             return WorldRemoveOutcome.Failed;
-        var identity = new WorldObjectIdentity(new ContentDeclaration(definition!.Owner, localId,
-            PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), instanceId);
+        var identity = new WorldObjectIdentity(new PersistentDeclaration(definition!.Owner, localId,
+            PersistentKind.WorldObject, PersistenceImpact.ApiDependent), instanceId);
         return _creation.RemoveChecked(session, identity);
     }
 
     /// <summary>
-    /// Pure readiness for removing the retained occurrence, applying the same admission the remove path
+    /// Pure readiness for removing the retained poi, applying the same admission the remove path
     /// requires (definition tenant, availability, persistence-ready, definition-stable). Never mutates
     /// native state.
     /// </summary>
@@ -69,8 +69,8 @@ internal sealed class WorldAuthoringGate
         if (!_persistenceReady(session) || _definitions.Revision != _definitions.Revision ||
             !_definitions.TryResolve(provider, localId, out var current) || !ReferenceEquals(current!.Definition, definition!.Definition))
             return WorldContentRemovalStatus.NotReady;
-        var identity = new WorldObjectIdentity(new ContentDeclaration(definition!.Owner, localId,
-            PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), instanceId);
+        var identity = new WorldObjectIdentity(new PersistentDeclaration(definition!.Owner, localId,
+            PersistentKind.WorldObject, PersistenceImpact.ApiDependent), instanceId);
         return _creation.CanRemove(session, identity);
     }
 }

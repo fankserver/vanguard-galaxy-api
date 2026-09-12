@@ -64,7 +64,7 @@ public sealed class ResourceSiteDefinition
     }
 }
 
-/// <summary>Typed per-occurrence authored-site state, never a lifecycle marker or an admission token.</summary>
+/// <summary>Typed per-poi authored-site state, never a lifecycle marker or an admission token.</summary>
 public sealed class ResourceSiteState
 {
     public ReconstructionStatus Status { get; }
@@ -77,13 +77,13 @@ public sealed class ResourceSiteState
 }
 
 /// <summary>
-/// One owned authored-site occurrence for a single captured game, following the uniform occurrence
-/// contract: author-local key, API-allocated native identity, same-key=same object occurrence per
+/// One owned authored-site poi for a single captured game, following the uniform poi
+/// contract: author-local key, API-allocated native identity, same-key=same object poi per
 /// session, keyed reconciliation instead of duplicates, and stale-session freeze.
 /// </summary>
 public interface IResourceSite
 {
-    string OccurrenceKey { get; }
+    string PoiKey { get; }
     ResourceSiteDefinition Definition { get; }
     ResourceSiteState State { get; }
     string? PoiId { get; }
@@ -98,7 +98,7 @@ public interface IResourceSite
     /// transient player-safety conditions. To avoid acting while the player is at or inside the
     /// site, query <see cref="CanRemove"/> first, or use <see cref="RequestRemoval"/> to defer the
     /// teardown to the next safe cleanup window. On success this object is terminal
-    /// (<see cref="ReconstructionStatus.Removed"/>); creating the same occurrence key again authors
+    /// (<see cref="ReconstructionStatus.Removed"/>); creating the same poi key again authors
     /// a fresh site with fresh native identity.
     /// </summary>
     WorldContentResult Remove();
@@ -122,10 +122,10 @@ public interface IResourceSite
 
 public sealed class ResourceSiteFailure
 {
-    public IResourceSite Occurrence { get; }
+    public IResourceSite Poi { get; }
     public ReconstructionFailureReason Reason { get; }
-    public ResourceSiteFailure(IResourceSite occurrence, ReconstructionFailureReason reason)
-    { Occurrence = occurrence ?? throw new ArgumentNullException(nameof(occurrence)); Reason = reason; }
+    public ResourceSiteFailure(IResourceSite poi, ReconstructionFailureReason reason)
+    { Poi = poi ?? throw new ArgumentNullException(nameof(poi)); Reason = reason; }
 }
 
 /// <summary>Once-per-session aggregate reconciliation report for authored sites at the post-reconstruction safe boundary.</summary>

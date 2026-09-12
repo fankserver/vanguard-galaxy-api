@@ -6,7 +6,7 @@ using System.Runtime.CompilerServices;
 
 namespace VGModAPI.Core;
 
-internal sealed partial class BarContentService : IBarService, IDisposable
+internal sealed partial class BarService : IBarService, IDisposable
 {
     private readonly StoryHostAuthenticator _authenticate;
     private readonly Func<string, bool> _exclusivePermission;
@@ -22,10 +22,10 @@ internal sealed partial class BarContentService : IBarService, IDisposable
     private readonly StoryProviderBindings _bindings = new();
     private readonly Dictionary<string, Lease> _leases = new(StringComparer.Ordinal);
     private readonly Dictionary<BarPatronId, BarPatronState> _transient = new();
-    internal Func<Guid, StoryContentId, Guid?>? ResolveOccurrence;
+    internal Func<Guid, StoryMissionDefinitionId, Guid?>? ResolveMission;
     private bool _disposed;
 
-    internal BarContentService(ISaveDataService? persistence, LifecycleHub lifecycle, StoryHostAuthenticator authenticate,
+    internal BarService(ISaveDataService? persistence, LifecycleHub lifecycle, StoryHostAuthenticator authenticate,
         Func<string, bool> exclusivePermission, Action checkThread, Func<object>? permissionStamp = null, Action<string, Exception>? reportObserver = null)
     {
         _hub = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));

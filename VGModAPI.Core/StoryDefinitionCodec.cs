@@ -5,7 +5,7 @@ using System.Text;
 
 namespace VGModAPI.Core;
 
-/// <summary>Bounded immutable author data needed to rebuild an occurrence without a provider serializer.</summary>
+/// <summary>Bounded immutable author data needed to rebuild an mission without a provider serializer.</summary>
 internal static class StoryDefinitionCodec
 {
     internal const int MaxBytes = StoryLedger.ProviderPayloadBudget;
@@ -30,7 +30,7 @@ internal static class StoryDefinitionCodec
         Text(writer, definition.SourceFaction.Value); Text(writer, definition.Category); Text(writer, definition.CompletionText);
         writer.Write((byte)definition.Difficulty); writer.Write((byte)definition.Retention); writer.Write(definition.CanAbandon);
         writer.Write(definition.AutoComplete);
-        writer.Write(definition.ContentRevision); writer.Write(definition.MigratesFromRevision ?? 0);
+        writer.Write(definition.MissionRevision); writer.Write(definition.MigratesFromRevision ?? 0);
         writer.Write((byte)definition.Steps.Count);
         foreach (var step in definition.Steps)
         {
@@ -44,7 +44,7 @@ internal static class StoryDefinitionCodec
                 // third meaning; legacy nonzero decodes as new-visit below.
                 writer.Write(objective.RequireNewVisit ? 1f : 0f);
                 Text(writer, objective.Description); Text(writer, objective.ItemTypeId); Text(writer, objective.EnemyFactionId);
-                Text(writer, objective.LocalId); Text(writer, objective.OccurrenceKey);
+                Text(writer, objective.LocalId); Text(writer, objective.PoiKey);
             }
         }
         writer.Write((byte)definition.Rewards.Count);

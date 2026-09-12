@@ -20,8 +20,8 @@ internal sealed class MooredShipDeclaration
     internal MooredShipDeclaration(MooredShipDefinition definition)
     {
         if (definition == null) throw new ArgumentNullException(nameof(definition));
-        _ = new ContentDeclaration("vgmodapi.world", definition.LocalId, PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent);
-        _ = new ContentDeclaration("vgmodapi.world", definition.FactionId, PersistentContentKind.Faction, ContentPersistenceImpact.ApiDependent);
+        _ = new PersistentDeclaration("vgmodapi.world", definition.LocalId, PersistentKind.WorldObject, PersistenceImpact.ApiDependent);
+        _ = new PersistentDeclaration("vgmodapi.world", definition.FactionId, PersistentKind.Faction, PersistenceImpact.ApiDependent);
         if (string.IsNullOrWhiteSpace(definition.Name) || definition.Name.IndexOf('\0') >= 0 || WorldStateCodec.TextByteCount(definition.Name) > 64)
             throw new ArgumentException("A bounded moored-ship display name is required.");
         if (WorldStateCodec.TextByteCount(definition.ShipClassId) > 128) throw new ArgumentException("A bounded ship class is required.");
@@ -33,24 +33,24 @@ internal sealed class MooredShipDeclaration
         => new(LocalId, Revision, Name, ShipClassId, FactionId, OffsetX, OffsetY, Protect);
 }
 
-/// <summary>One persisted moored-ship occurrence row: retained identity plus owned per-game native references.</summary>
-internal sealed class MooredShipOccurrence
+/// <summary>One persisted moored-ship unit row: retained identity plus owned per-game native references.</summary>
+internal sealed class MooredShipUnit
 {
     internal string Owner { get; }
     internal string LocalId { get; }
-    internal string OccurrenceKey { get; }
+    internal string UnitKey { get; }
     internal int Revision { get; private set; }
     internal string StationPoiId { get; }
     internal string UnitId { get; }
-    internal MooredShipOccurrence(string owner, string localId, string occurrenceKey, int revision, string stationPoiId, string unitId)
+    internal MooredShipUnit(string owner, string localId, string unitKey, int revision, string stationPoiId, string unitId)
     {
         if (string.IsNullOrWhiteSpace(owner) || WorldStateCodec.TextByteCount(owner) > 128) throw new ArgumentException("A bounded owner is required.", nameof(owner));
         if (string.IsNullOrWhiteSpace(localId) || WorldStateCodec.TextByteCount(localId) > 128) throw new ArgumentException("A bounded local identity is required.", nameof(localId));
-        if (string.IsNullOrWhiteSpace(occurrenceKey) || WorldStateCodec.TextByteCount(occurrenceKey) > 256) throw new ArgumentException("A bounded occurrence key is required.", nameof(occurrenceKey));
+        if (string.IsNullOrWhiteSpace(unitKey) || WorldStateCodec.TextByteCount(unitKey) > 256) throw new ArgumentException("A bounded unit key is required.", nameof(unitKey));
         if (revision < 1) throw new ArgumentOutOfRangeException(nameof(revision));
         if (string.IsNullOrWhiteSpace(stationPoiId) || WorldStateCodec.TextByteCount(stationPoiId) > 128) throw new ArgumentException("A bounded native POI identity is required.", nameof(stationPoiId));
         if (string.IsNullOrWhiteSpace(unitId) || WorldStateCodec.TextByteCount(unitId) > 128) throw new ArgumentException("A bounded native unit identity is required.", nameof(unitId));
-        Owner = owner; LocalId = localId; OccurrenceKey = occurrenceKey; Revision = revision;
+        Owner = owner; LocalId = localId; UnitKey = unitKey; Revision = revision;
         StationPoiId = stationPoiId; UnitId = unitId;
     }
     internal void MigrateRevision(int revision)
@@ -152,7 +152,7 @@ internal sealed class MooredShipCoordinator : IDisposable
     private readonly Action<string, string?> _protect;
     private readonly Action<Exception> _report;
     private readonly IDisposable _subscription;
-    private readonly Dictionary<(string Owner, string Local, string Key), MooredShipOccurrence> _committed = new();
+    private readonly Dictionary<(string Owner, string Local, string Key), MooredShipUnit> _committed = new();
     private readonly HashSet<(string Owner, string Local, string Key)> _failed = new();
     private Action<Guid>? _settled;
     private Guid _session;
@@ -175,30 +175,30 @@ internal sealed class MooredShipCoordinator : IDisposable
     { _committed.Clear(); _failed.Clear(); _session = _hub.CurrentSession?.Id ?? Guid.Empty; _settledOnce = false; }
     private Guid Session() => _hub.CurrentSession?.Id ?? Guid.Empty;
 
-    internal void RestoreRows(Guid session, MooredShipOccurrence[] rows)
+    internal void RestoreRows(Guid session, MooredShipUnit[] rows)
     {
         _hub.CheckThread();
         if (_disposed || session == Guid.Empty || session != Session()) throw new InvalidDataException("Stale authored-ship restore.");
         _committed.Clear();
-        if (rows != null) foreach (var row in rows) _committed[(row.Owner, row.LocalId, row.OccurrenceKey)] = row;
+        if (rows != null) foreach (var row in rows) _committed[(row.Owner, row.LocalId, row.UnitKey)] = row;
         _settledOnce = false;
     }
-    internal MooredShipOccurrence[] CaptureRows() { _hub.CheckThread(); return _committed.Values.ToArray(); }
-    internal IReadOnlyList<MooredShipOccurrence> Occurrences(string owner)
-    { _hub.CheckThread(); return _disposed ? Array.Empty<MooredShipOccurrence>() : _committed.Values.Where(o => o.Owner == owner).ToArray(); }
-    internal MooredShipOccurrence? TryGetOccurrence(string owner, string localId, string occurrenceKey)
-    { _hub.CheckThread(); return _disposed ? null : _committed.TryGetValue((owner, localId, occurrenceKey), out var row) ? row : null; }
-    internal bool ContainsOccurrence(string owner, string localId, string occurrenceKey)
-    { _hub.CheckThread(); return TryGetOccurrence(owner, localId, occurrenceKey) != null || _failed.Contains((owner, localId, occurrenceKey)); }
+    internal MooredShipUnit[] CaptureRows() { _hub.CheckThread(); return _committed.Values.ToArray(); }
+    internal IReadOnlyList<MooredShipUnit> Units(string owner)
+    { _hub.CheckThread(); return _disposed ? Array.Empty<MooredShipUnit>() : _committed.Values.Where(o => o.Owner == owner).ToArray(); }
+    internal MooredShipUnit? TryGetUnit(string owner, string localId, string unitKey)
+    { _hub.CheckThread(); return _disposed ? null : _committed.TryGetValue((owner, localId, unitKey), out var row) ? row : null; }
+    internal bool ContainsUnit(string owner, string localId, string unitKey)
+    { _hub.CheckThread(); return TryGetUnit(owner, localId, unitKey) != null || _failed.Contains((owner, localId, unitKey)); }
 
-    internal (WorldStatus Status, MooredShipOccurrence? Row) Create(MooredShipRegistry.Provider provider,
-        Guid expectedSession, string localId, string occurrenceKey, string stationPoiId)
+    internal (WorldStatus Status, MooredShipUnit? Row) Create(MooredShipRegistry.Provider provider,
+        Guid expectedSession, string localId, string unitKey, string stationPoiId)
     {
         _hub.CheckThread();
         if (_disposed) return (WorldStatus.Unavailable, null);
         if (provider == null || !_definitions.TryResolve(provider, localId, out var declaration) || declaration == null)
             return (WorldStatus.NotRegistered, null);
-        var key = (provider.Owner, localId, occurrenceKey);
+        var key = (provider.Owner, localId, unitKey);
         if (_committed.TryGetValue(key, out var owned)) return (WorldStatus.Succeeded, owned);
         if (_failed.Contains(key)) return (WorldStatus.Rejected, null);
         if (string.IsNullOrWhiteSpace(stationPoiId) || WorldStateCodec.TextByteCount(stationPoiId) > 128) return (WorldStatus.InvalidDefinition, null);
@@ -207,21 +207,21 @@ internal sealed class MooredShipCoordinator : IDisposable
         {
             var unitId = _native.CreateShip(expectedSession, stationPoiId, declaration);
             if (unitId == null) { _failed.Add(key); return (WorldStatus.Rejected, null); }
-            var occurrence = new MooredShipOccurrence(provider.Owner, localId, occurrenceKey, declaration.Revision, stationPoiId, unitId);
-            _committed[key] = occurrence;
-            if (declaration.Protect) TryProtect(occurrence);
-            return (WorldStatus.Succeeded, occurrence);
+            var unit = new MooredShipUnit(provider.Owner, localId, unitKey, declaration.Revision, stationPoiId, unitId);
+            _committed[key] = unit;
+            if (declaration.Protect) TryProtect(unit);
+            return (WorldStatus.Succeeded, unit);
         }
         catch (Exception error) { _report(error); return (WorldStatus.Unavailable, null); }
     }
 
-    internal MooredShipState ReconstructionState(string owner, string localId, string occurrenceKey)
+    internal MooredShipState ReconstructionState(string owner, string localId, string unitKey)
     {
         _hub.CheckThread();
         if (_disposed) return new MooredShipState(ReconstructionStatus.Pending);
-        if (_failed.Contains((owner, localId, occurrenceKey)))
+        if (_failed.Contains((owner, localId, unitKey)))
             return new MooredShipState(ReconstructionStatus.Failed, ReconstructionFailureReason.NativeMissing);
-        return _committed.TryGetValue((owner, localId, occurrenceKey), out var row)
+        return _committed.TryGetValue((owner, localId, unitKey), out var row)
             ? Resolve(row) : new MooredShipState(ReconstructionStatus.Pending);
     }
 
@@ -230,14 +230,14 @@ internal sealed class MooredShipCoordinator : IDisposable
     {
         _hub.CheckThread();
         if (_disposed || expectedSession == Guid.Empty || expectedSession != Session()) return;
-        foreach (var occurrence in _committed.Values.ToArray())
+        foreach (var unit in _committed.Values.ToArray())
         {
-            var declaration = _definitions.Resolve(occurrence.Owner, occurrence.LocalId);
+            var declaration = _definitions.Resolve(unit.Owner, unit.LocalId);
             if (declaration == null) continue;
             try
             {
-                _native.Maintain(expectedSession, occurrence.StationPoiId, occurrence.UnitId, declaration);
-                if (declaration.Protect) TryProtect(occurrence);
+                _native.Maintain(expectedSession, unit.StationPoiId, unit.UnitId, declaration);
+                if (declaration.Protect) TryProtect(unit);
             }
             catch (Exception error) { _report(error); }
         }
@@ -246,31 +246,31 @@ internal sealed class MooredShipCoordinator : IDisposable
         try { _settled?.Invoke(expectedSession); } catch (Exception error) { _report(error); }
     }
     private readonly HashSet<string> _protected = new(StringComparer.Ordinal);
-    private void TryProtect(MooredShipOccurrence occurrence)
+    private void TryProtect(MooredShipUnit unit)
     {
-        // Keyed API-internal protection: one declaration per occurrence, replaced not accumulated.
-        if (!_protected.Add(occurrence.Owner + "\n" + occurrence.LocalId + "\n" + occurrence.OccurrenceKey + "\n" + occurrence.UnitId)) return;
-        try { _protect(occurrence.UnitId, "vgmodapi.authored-ship." + occurrence.Owner + "." + occurrence.LocalId + "." + occurrence.OccurrenceKey); }
+        // Keyed API-internal protection: one declaration per unit, replaced not accumulated.
+        if (!_protected.Add(unit.Owner + "\n" + unit.LocalId + "\n" + unit.UnitKey + "\n" + unit.UnitId)) return;
+        try { _protect(unit.UnitId, "vgmodapi.authored-ship." + unit.Owner + "." + unit.LocalId + "." + unit.UnitKey); }
         catch (Exception error) { _report(error); }
     }
 
-    internal MooredShipState Resolve(MooredShipOccurrence occurrence)
+    internal MooredShipState Resolve(MooredShipUnit unit)
     {
         _hub.CheckThread();
-        if (!_definitions.TryResolveMigration(occurrence.Owner, occurrence.LocalId, out var liveRevision, out var previousRevision))
+        if (!_definitions.TryResolveMigration(unit.Owner, unit.LocalId, out var liveRevision, out var previousRevision))
             return new MooredShipState(ReconstructionStatus.Failed, ReconstructionFailureReason.MissingDefinition);
-        if (liveRevision != occurrence.Revision)
+        if (liveRevision != unit.Revision)
         {
-            if (previousRevision.HasValue && previousRevision.Value == occurrence.Revision && previousRevision.Value < liveRevision)
-                occurrence.MigrateRevision(liveRevision);
+            if (previousRevision.HasValue && previousRevision.Value == unit.Revision && previousRevision.Value < liveRevision)
+                unit.MigrateRevision(liveRevision);
             else return new MooredShipState(ReconstructionStatus.Failed, ReconstructionFailureReason.RevisionMismatch);
         }
         if (!_persistenceReady(Session()))
             return new MooredShipState(ReconstructionStatus.Failed, ReconstructionFailureReason.PersistenceUnavailable);
         try
         {
-            return _native.ResolveShip(Session(), occurrence.StationPoiId, occurrence.UnitId)
-                ? new MooredShipState(ReconstructionStatus.Reconstructed, unitId: occurrence.UnitId)
+            return _native.ResolveShip(Session(), unit.StationPoiId, unit.UnitId)
+                ? new MooredShipState(ReconstructionStatus.Reconstructed, unitId: unit.UnitId)
                 : new MooredShipState(ReconstructionStatus.Pending);
         }
         catch (Exception error)

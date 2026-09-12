@@ -54,8 +54,8 @@ internal sealed class StoryProtectionGuard
         };
         foreach (StoryObjectiveKind kind in Enum.GetValues(typeof(StoryObjectiveKind)))
         {
-            if (StoryContentPolicy.RefuseObjective(kind) != null) continue;      // not installable anyway
-            var type = assembly.GetType(StoryContentPolicy.ObjectiveNamespace + "." + StoryContentPolicy.ObjectiveTypeName(kind), true)!;
+            if (StoryMissionPolicy.RefuseObjective(kind) != null) continue;      // not installable anyway
+            var type = assembly.GetType(StoryMissionPolicy.ObjectiveNamespace + "." + StoryMissionPolicy.ObjectiveTypeName(kind), true)!;
             var declared = type.GetMethod("ProcessMissionTrigger",
                 BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly);
             if (guarded.ContainsKey(kind))

@@ -10,7 +10,7 @@ using Xunit;
 namespace VGModAPI.Tests;
 
 /// <summary>
-/// Keyed combat sites carry the SAME occurrence contract as the other authored kinds: persisted
+/// Keyed combat sites carry the SAME poi contract as the other authored kinds: persisted
 /// author-local keys (schema-4 kind-4 rows), honest enumeration from persisted state rather than a
 /// handle cache, a once-per-session settled report, and cross-kind key-collision refusal.
 /// </summary>
@@ -21,28 +21,28 @@ public sealed class CombatSiteParityTests
     [Fact]
     public void CombatKeyRowsRoundTripBesideEveryOtherKind()
     {
-        var system = new PocketSystemOccurrence("author.a", "pocket", "k1", 1, "sys", "gate-in", "gate-out", true);
-        var wormhole = new WormholePairOccurrence("author.a", "rift", "k2", 1, "a", "b", "wa", "wb", false);
+        var system = new PocketSystemPoi("author.a", "pocket", "k1", 1, "sys", "gate-in", "gate-out", true);
+        var wormhole = new WormholePairPoi("author.a", "rift", "k2", 1, "a", "b", "wa", "wb", false);
         var combat = new CombatSiteKeyRow("author.a", "PoiX", "encounter", Guid.NewGuid());
-        var bytes = PocketSystemStateCodec.Encode(new[] { system }, Array.Empty<ResourceSiteOccurrence>(),
-            Array.Empty<MooredShipOccurrence>(), new[] { wormhole }, new[] { combat });
+        var bytes = PocketSystemStateCodec.Encode(new[] { system }, Array.Empty<ResourceSitePoi>(),
+            Array.Empty<MooredShipUnit>(), new[] { wormhole }, new[] { combat });
         var decoded = PocketSystemStateCodec.DecodeAll(bytes);
         Assert.Single(decoded.Systems); Assert.Single(decoded.Wormholes);
         var row = Assert.Single(decoded.CombatKeys);
         Assert.Equal("author.a", row.Owner); Assert.Equal("PoiX", row.LocalId);
-        Assert.Equal("encounter", row.OccurrenceKey); Assert.Equal(combat.InstanceId, row.InstanceId);
+        Assert.Equal("encounter", row.PoiKey); Assert.Equal(combat.InstanceId, row.InstanceId);
     }
 
     [Fact]
     public void CombatKeyRowsShareTheCrossKindKeySpace()
     {
-        // The envelope keys occurrences per (owner, local, key) across ALL kinds; a combat key that
+        // The envelope keys pois per (owner, local, key) across ALL kinds; a combat key that
         // collides with a site row is refused at save time, exactly like every other kind pair.
-        var site = new ResourceSiteOccurrence("author.a", "wreck", "k", 1, ResourceSiteKind.SalvageSite, "sys", "poi");
+        var site = new ResourceSitePoi("author.a", "wreck", "k", 1, ResourceSiteKind.SalvageSite, "sys", "poi");
         var combat = new CombatSiteKeyRow("author.a", "wreck", "k", Guid.NewGuid());
         Assert.Throws<InvalidDataException>(() => PocketSystemStateCodec.Encode(
-            Array.Empty<PocketSystemOccurrence>(), new[] { site }, Array.Empty<MooredShipOccurrence>(),
-            Array.Empty<WormholePairOccurrence>(), new[] { combat }));
+            Array.Empty<PocketSystemPoi>(), new[] { site }, Array.Empty<MooredShipUnit>(),
+            Array.Empty<WormholePairPoi>(), new[] { combat }));
     }
 
     [Fact]
@@ -50,9 +50,9 @@ public sealed class CombatSiteParityTests
     {
         // A hand-built schema-3 payload carrying kind 4 must refuse: the kind did not exist yet, so
         // accepting it would invent meaning for bytes an older writer could not have produced.
-        var valid = PocketSystemStateCodec.Encode(Array.Empty<PocketSystemOccurrence>(),
-            Array.Empty<ResourceSiteOccurrence>(), Array.Empty<MooredShipOccurrence>(),
-            Array.Empty<WormholePairOccurrence>(), new[] { new CombatSiteKeyRow("author.a", "PoiX", "k", Guid.NewGuid()) });
+        var valid = PocketSystemStateCodec.Encode(Array.Empty<PocketSystemPoi>(),
+            Array.Empty<ResourceSitePoi>(), Array.Empty<MooredShipUnit>(),
+            Array.Empty<WormholePairPoi>(), new[] { new CombatSiteKeyRow("author.a", "PoiX", "k", Guid.NewGuid()) });
         var downgraded = (byte[])valid.Clone();
         BitConverter.GetBytes(3).CopyTo(downgraded, 4); // version slot follows the magic
         Assert.Throws<InvalidDataException>(() => PocketSystemStateCodec.DecodeAll(downgraded));
@@ -142,10 +142,10 @@ public sealed class CombatSiteParityTests
         Assert.NotNull(seen);
         Assert.Equal(h.Session, seen!.SessionId);
         // In this world no native combat POI backs the key, so the report is a FAILURE with the
-        // occurrence object attached - actual outcomes, never a success invented from the key row.
+        // poi object attached - actual outcomes, never a success invented from the key row.
         Assert.Empty(seen.Reconstructed);
         var failure = Assert.Single(seen.Failures);
-        Assert.False(failure.Occurrence.State.Reconstructed);
+        Assert.False(failure.Poi.State.Reconstructed);
         // Once per session: a second maintenance pass reports nothing again.
         h.Service.MaintainPocketSystems(h.Session);
         Assert.Equal(1, reports);

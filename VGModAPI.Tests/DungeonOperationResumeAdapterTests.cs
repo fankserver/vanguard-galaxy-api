@@ -21,7 +21,7 @@ public sealed class DungeonOperationResumeAdapterTests
         var fresh = adapter.Created(Operation(location, "ship"), content, "")!.Value;
         Assert.NotEqual(old, fresh); Assert.Equal(fresh, adapter.LocationMarker(location));
         Assert.Equal(state.Operation(old)!.LocationId, state.Operation(fresh)!.LocationId);
-        Assert.Equal(content, state.Operation(fresh)!.ContentOccurrence); Assert.True(state.Get(pod.Id)!.CanRecover);
+        Assert.Equal(content, state.Operation(fresh)!.DungeonId); Assert.True(state.Get(pod.Id)!.CanRecover);
         Assert.Equal(old, state.Get(pod.Id)!.OperationId);
     }
     [Fact]

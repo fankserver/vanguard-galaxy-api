@@ -4,7 +4,7 @@ using System.Linq;
 
 namespace VGModAPI.Core;
 
-internal sealed partial class BarContentService
+internal sealed partial class BarService
 {
     private BarGame? _game;
     internal IBars ForGame(IGame game, Guid session)
@@ -21,12 +21,12 @@ internal sealed partial class BarContentService
 
     internal sealed class DefinitionRegistration : IBarPatronDefinition
     {
-        internal readonly BarContentService Owner;
+        internal readonly BarService Owner;
         internal readonly Lease Lease;
         private readonly BarPatronId _id;
         internal readonly GameplayEvent<IBarPatron> Interactions;
         private bool _closed;
-        internal DefinitionRegistration(BarContentService owner, Lease lease, string local)
+        internal DefinitionRegistration(BarService owner, Lease lease, string local)
         { Owner = owner; Lease = lease; _id = new BarPatronId(lease.ProviderId, local); Interactions = new(owner._checkThread); }
         public BarPatronId Id { get { Owner._checkThread(); return _id; } }
         internal bool Live => !_closed && Lease.SaveData?.State.Kind != SaveDataStateKind.Disposed && Owner.Active(Lease) && Lease.Registrations.TryGetValue(_id.LocalId, out var current) && ReferenceEquals(current, this);
@@ -42,11 +42,11 @@ internal sealed partial class BarContentService
 
     private sealed class BarGame : IBars
     {
-        internal readonly BarContentService Owner;
+        internal readonly BarService Owner;
         internal readonly Guid Session;
         private readonly IGame _game;
         private readonly Dictionary<DefinitionRegistration, Patron> _patrons = new();
-        internal BarGame(BarContentService owner, IGame game, Guid session) { Owner = owner; _game = game; Session = session; }
+        internal BarGame(BarService owner, IGame game, Guid session) { Owner = owner; _game = game; Session = session; }
         public IGame Game { get { Owner._checkThread(); return _game; } }
         public IBarPatron Get(IBarPatronDefinition definition)
         {

@@ -6,15 +6,15 @@ using System.Text;
 
 namespace VGModAPI.Core;
 
-internal sealed class DungeonOccurrence
+internal sealed class Dungeon
 {
     internal readonly Guid Id;
     internal readonly DungeonDefinitionId DefinitionId;
     internal readonly DungeonDefinition Definition;
     internal readonly Dictionary<string, string> Choices;
-    internal DungeonOccurrence(Guid id, DungeonDefinitionId definitionId, DungeonDefinition definition, IEnumerable<KeyValuePair<string, string>>? choices = null)
+    internal Dungeon(Guid id, DungeonDefinitionId definitionId, DungeonDefinition definition, IEnumerable<KeyValuePair<string, string>>? choices = null)
     {
-        if (id == Guid.Empty) throw new ArgumentException("Occurrence identity required.");
+        if (id == Guid.Empty) throw new ArgumentException("Dungeon identity required.");
         Id = id; DefinitionId = definitionId ?? throw new ArgumentNullException(nameof(definitionId)); Definition = definition ?? throw new ArgumentNullException(nameof(definition));
         Choices = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var pair in choices ?? Array.Empty<KeyValuePair<string, string>>())
@@ -29,12 +29,12 @@ internal sealed class DungeonOccurrence
 /// <summary>API-owned selected choices and retained definition snapshots. No executable callbacks or game objects.</summary>
 internal static class DungeonStateCodec
 {
-    internal const int MaximumOccurrences = 256;
+    internal const int MaximumDungeons = 256;
     private static readonly UTF8Encoding Utf8 = new(false, true);
-    internal static byte[] Encode(IEnumerable<DungeonOccurrence> occurrences)
+    internal static byte[] Encode(IEnumerable<Dungeon> dungeons)
     {
-        var entries = occurrences.ToArray();
-        if (entries.Length > MaximumOccurrences || entries.Select(e => e.Id).Distinct().Count() != entries.Length) throw new InvalidDataException("Invalid occurrence collection.");
+        var entries = dungeons.ToArray();
+        if (entries.Length > MaximumDungeons || entries.Select(e => e.Id).Distinct().Count() != entries.Length) throw new InvalidDataException("Invalid dungeon collection.");
         using var stream = new MemoryStream(); using var writer = new BinaryWriter(stream, Utf8, true);
         writer.Write(1); writer.Write(entries.Length);
         foreach (var entry in entries.OrderBy(e => e.Id))
@@ -47,23 +47,23 @@ internal static class DungeonStateCodec
         }
         return stream.ToArray();
     }
-    internal static IReadOnlyList<DungeonOccurrence> Decode(byte[] payload)
+    internal static IReadOnlyList<Dungeon> Decode(byte[] payload)
     {
         if (payload == null || payload.Length > OwnerSchemaCodec.MaxPayload) throw new InvalidDataException("Invalid dungeon state size.");
         using var stream = new MemoryStream(payload, false); using var reader = new BinaryReader(stream, Utf8, true);
         if (reader.ReadInt32() != 1) throw new InvalidDataException("Unsupported dungeon state schema.");
-        var count = Count(reader, MaximumOccurrences); var entries = new List<DungeonOccurrence>(); var ids = new HashSet<Guid>();
+        var count = Count(reader, MaximumDungeons); var entries = new List<Dungeon>(); var ids = new HashSet<Guid>();
         for (var index = 0; index < count; index++)
         {
             var guid = reader.ReadBytes(16); if (guid.Length != 16) throw new EndOfStreamException();
-            var id = new Guid(guid); if (id == Guid.Empty || !ids.Add(id)) throw new InvalidDataException("Duplicate or empty dungeon occurrence identity.");
+            var id = new Guid(guid); if (id == Guid.Empty || !ids.Add(id)) throw new InvalidDataException("Duplicate or empty dungeon identity.");
             var definitionId = new DungeonDefinitionId(Text(reader), Text(reader));
             var length = Count(reader, DungeonDefinitionCodec.MaximumBytes);
             if (length > stream.Length - stream.Position) throw new EndOfStreamException();
             var definition = DungeonDefinitionCodec.Decode(reader.ReadBytes(length));
             var choices = new Dictionary<string, string>(StringComparer.Ordinal); var choiceCount = Count(reader, 128);
             for (var c = 0; c < choiceCount; c++) choices.Add(Text(reader), Text(reader));
-            entries.Add(new DungeonOccurrence(id, definitionId, definition, choices));
+            entries.Add(new Dungeon(id, definitionId, definition, choices));
         }
         if (stream.Position != stream.Length) throw new InvalidDataException("Trailing dungeon state bytes.");
         return entries.AsReadOnly();

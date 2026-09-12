@@ -1,6 +1,6 @@
 # Dungeon save/load boundaries
 
-API-owned authored definitions and choices use the `vgmodapi.dungeons` save provider. Consumers re-register their behavior; they do not serialize definitions or reconstruct saved occurrences themselves. Native location markers identify occurrences but do not contain their definitions. See [authored content](dungeon-content.md) and [save compatibility](compatibility.md).
+API-owned authored definitions and choices use the `vgmodapi.dungeons` save provider. Consumers re-register their behavior; they do not serialize definitions or reconstruct saved occurrences themselves. Native location markers identify occurrences but do not contain their definitions. See [authored content](dungeon.md) and [save compatibility](compatibility.md).
 
 ## Native serialization audit
 
@@ -49,7 +49,7 @@ Docked refunds in recall, movement cancellation and terminal pod return record a
 
 The recovery provider uses envelope schema 1, operation schema 6 and pod schema 2. Only these versions are accepted; no automatic conversion of unsupported recovery payloads is provided. Unknown schemas, corrupt payloads and inconsistent identities must not be replaced with empty obligations. Restore a compatible API version or a matching backup rather than editing markers to bypass validation.
 
-A missing content provider does not erase retained authored definitions, but provider-owned choices require its registered behavior; see [authored content](dungeon-content.md). New API-owned creation requires restored, writable persistence. Missing original ships or live locations leave recovery staged, without substituting the current player ship or creating a replacement location.
+A missing content provider does not erase retained authored definitions, but provider-owned choices require its registered behavior; see [authored content](dungeon.md). New API-owned creation requires restored, writable persistence. Missing original ships or live locations leave recovery staged, without substituting the current player ship or creating a replacement location.
 
 Removing or disabling the API/recovery hooks removes their protection: vanilla does not interpret the supplemental return manifests or settlement receipts. There is no automatic removal/migration procedure for outstanding operations. Retain a matching native-save/sidecar backup and keep recovery enabled while those obligations remain. A save made without these hooks is not evidence that all crew or effects were settled.
 

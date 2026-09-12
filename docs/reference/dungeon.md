@@ -195,7 +195,7 @@ existing occurrences; an incompatible choice request returns `VersionMismatch`.
 Session changes invalidate native mappings and hide previous-slot state until the
 current slot has restored.
 
-`ModApi.Services.Dungeons` exposes a stable `IDungeonContentService` with typed
+`ModApi.Services.Dungeons` exposes a stable `IDungeonService` with typed
 `Availability` and `AvailabilityChanged`. Missing catalogs refuse provider acquisition
 without placeholder native definitions. Health loss refuses attachment and choice
 mutation without altering saved occurrences. Provider ownership and save-data

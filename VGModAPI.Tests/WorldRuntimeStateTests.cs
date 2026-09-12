@@ -28,7 +28,7 @@ public sealed class WorldRuntimeStateTests
         Directory.CreateDirectory(dir);
         try
         {
-            var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
+            var identity = new WorldObjectIdentity(new PersistentDeclaration("author.a", "PoiX", PersistentKind.WorldObject, PersistenceImpact.ApiDependent), Guid.NewGuid());
             var poiJson = new JsonObject { Text = "native-poi", ["guid"] = new(identity.NativeId), ["type"] = new(WorldSaveFormat.OwnedCombatType), ["systemName"] = new("system") };
             var systemJson = new JsonObject { ["guid"] = new("system"), ["pointsOfInterest"] = new(new List<JsonValue> { new(poiJson) }) };
             var root = new JsonObject { Text = text, ["Version"] = new(WorldSaveFormat.Marker), [WorldSaveFormat.OriginalVersion] = new("0.8.2.3"), ["Player"] = new(new JsonObject { ["map"] = new(new JsonObject { ["systems"] = new(new List<JsonValue> { new(systemJson) }) }) }) };
@@ -121,7 +121,7 @@ public sealed class WorldRuntimeStateTests
                 Assert.Equal(WorldStatus.NotReady, provider.RegisterCombatSite(new CombatSiteDefinition("Late", 1, "Site", "player", 1)));
                 Assert.Equal(2, creation.Snapshot().Length);
 
-                // Uniform occurrence contract: author-local key, API-allocated identity, same-key=same object.
+                // Uniform poi contract: author-local key, API-allocated identity, same-key=same object.
                 var site = provider.CreateCombatSite("PoiX", "encounter", "system", 24, 24);
                 Assert.NotNull(site);
                 Assert.True(site!.State.Reconstructed);
@@ -132,11 +132,11 @@ public sealed class WorldRuntimeStateTests
                 Assert.Same(site, provider.GetCombatSite("PoiX", "encounter"));
                 Assert.Null(provider.GetCombatSite("PoiX", "missing"));
                 // Parity: the persisted key row backs enumeration and the save capture, so the
-                // occurrence outlives the handle cache exactly like every other authored kind.
+                // poi outlives the handle cache exactly like every other authored kind.
                 Assert.Same(site, Assert.Single(provider.GetCombatSites("PoiX")));
                 var capturedKey = Assert.Single(world.CaptureCombatKeys());
                 Assert.Equal("author.a", capturedKey.Owner); Assert.Equal("PoiX", capturedKey.LocalId);
-                Assert.Equal("encounter", capturedKey.OccurrenceKey);
+                Assert.Equal("encounter", capturedKey.PoiKey);
                 Assert.Equal(3, creation.Snapshot().Length);
                 int siteChanges = 0;
                 site.Changed += _ => siteChanges++;

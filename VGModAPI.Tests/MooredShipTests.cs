@@ -95,7 +95,7 @@ public sealed class MooredShipTests
         h.BeginGameplay();
         var ship = h.Provider.CreateMooredShip("promise", "act3", "station-poi")!;
         var rows = h.Coordinator.CaptureRows();
-        var bytes = PocketSystemStateCodec.Encode(Array.Empty<PocketSystemOccurrence>(), Array.Empty<ResourceSiteOccurrence>(), rows);
+        var bytes = PocketSystemStateCodec.Encode(Array.Empty<PocketSystemPoi>(), Array.Empty<ResourceSitePoi>(), rows);
         var decoded = PocketSystemStateCodec.DecodeAll(bytes);
         Assert.Single(decoded.Ships);
 
@@ -111,10 +111,10 @@ public sealed class MooredShipTests
         var failure = Assert.Single(settled!.Failures);
         Assert.Equal(ReconstructionFailureReason.NativeMissing, failure.Reason);
         int changes = 0;
-        failure.Occurrence.Changed += _ => changes++;
+        failure.Unit.Changed += _ => changes++;
         restored.Native.Units[ship.UnitId!] = "station-poi";
         restored.Service.MaintainPocketSystems(restored.Session);
-        Assert.True(failure.Occurrence.State.Reconstructed);
+        Assert.True(failure.Unit.State.Reconstructed);
         Assert.Equal(1, changes);
         // Restoration re-declares protection for the owned identity exactly once.
         Assert.Single(restored.Protections, p => p.UnitId == ship.UnitId);

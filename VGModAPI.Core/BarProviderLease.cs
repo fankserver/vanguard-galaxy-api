@@ -4,11 +4,11 @@ using System.Linq;
 
 namespace VGModAPI.Core;
 
-internal sealed partial class BarContentService
+internal sealed partial class BarService
 {
     internal sealed class Lease : IBarProvider
     {
-        private readonly BarContentService _owner;
+        private readonly BarService _owner;
         private readonly string _pluginId;
         internal string PluginId => _pluginId;
         internal readonly Dictionary<string, BarPatronDefinition> Definitions = new(StringComparer.Ordinal);
@@ -16,7 +16,7 @@ internal sealed partial class BarContentService
         internal readonly Dictionary<string, BarRosterOwnership> Stations = new(StringComparer.Ordinal);
         public string ProviderId { get; }
         internal readonly ISaveDataRegistration? SaveData;
-        internal Lease(BarContentService owner, string provider, string pluginId, ISaveDataRegistration? saveData)
+        internal Lease(BarService owner, string provider, string pluginId, ISaveDataRegistration? saveData)
         { _owner = owner; ProviderId = provider; _pluginId = pluginId; SaveData = saveData; }
         internal readonly Dictionary<string, DefinitionRegistration> Registrations = new(StringComparer.Ordinal);
         public BarRegistrationResult Register(BarPatronDefinition definition, Action<IBarPatron>? interact = null)
@@ -75,15 +75,15 @@ internal sealed partial class BarContentService
             var refusal = _owner.Guard(this, expectedSessionId);
             if (refusal != null) return refusal;
             if (localId == null || !Definitions.TryGetValue(localId, out var definition)) return new BarResult(BarStatus.NotRegistered);
-            Guid? occurrence = null;
+            Guid? missionId = null;
             if (definition.Mission is { } mission)
             {
-                occurrence = _owner.ResolveOccurrence?.Invoke(expectedSessionId, mission);
+                missionId = _owner.ResolveMission?.Invoke(expectedSessionId, mission);
                 if (!_owner.Active(this) || _owner.Guard(this, expectedSessionId) != null) return new BarResult(BarStatus.Unavailable);
-                if (occurrence == null) return new BarResult(BarStatus.MissionNotReady, "The linked story occurrence is not currently admitted.");
+                if (missionId == null) return new BarResult(BarStatus.MissionNotReady, "The linked story mission is not currently admitted.");
             }
             var state = new BarPatronState(new BarPatronId(ProviderId, localId), definition.StationId, definition.Name, definition.Description,
-                definition.Seed, definition.Mission, occurrence, definition.Portrait, definition.IsMale);
+                definition.Seed, definition.Mission, missionId, definition.Portrait, definition.IsMale);
             if (definition.Retention == BarPatronRetention.Transient)
             {
                 if (!_owner._persistence.Read(expectedSessionId, out var persisted) || persisted.Any(row => row.Id == state.Id))

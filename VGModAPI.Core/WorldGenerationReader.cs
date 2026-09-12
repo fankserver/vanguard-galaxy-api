@@ -36,7 +36,7 @@ internal sealed class WorldGenerationReader
             foreach (var definition in definitions) _definitions.Add((definition.Owner, definition.Definition.LocalId), definition);
             foreach (var row in rows)
                 if (!_definitions.TryGetValue((row.Identity.Owner, row.Identity.LocalId), out var definition) || definition.Definition.Revision != row.DefinitionRevision)
-                    throw new InvalidDataException("World occurrence has no matching retained declaration.");
+                    throw new InvalidDataException("World poi has no matching retained declaration.");
         }
     }
     private readonly GenerationStore _store;
@@ -66,7 +66,7 @@ internal sealed class WorldGenerationReader
         if (!generation.Owners.TryGetValue(WorldStateCodec.Owner, out var envelope))
         {
             if (generation.Owners.ContainsKey(WorldDefinitionCodec.Owner))
-                throw new InvalidDataException("Retained world declarations have no paired occurrence inventory.");
+                throw new InvalidDataException("Retained world declarations have no paired poi inventory.");
             if (!required) return null;
             throw new InvalidDataException("Owned world metadata is missing from the committed generation.");
         }

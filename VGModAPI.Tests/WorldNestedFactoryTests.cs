@@ -81,7 +81,7 @@ namespace VGModAPI.Tests
         [InlineData("KnownData", false, double.PositiveInfinity)]
         public void NestedSelectorsAreNativeMetadataOnly(string selector, bool allowed, double count)
         {
-            var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
+            var identity = new WorldObjectIdentity(new PersistentDeclaration("author.a", "PoiX", PersistentKind.WorldObject, PersistenceImpact.ApiDependent), Guid.NewGuid());
             var persistable = new JsonObject
             {
                 ["type"] = new(selector),
@@ -115,7 +115,7 @@ namespace VGModAPI.Tests
                 ["minPointsPerUnit"] = new(0), ["maxPointsPerUnit"] = new(0)
             };
             // Previously accepted inputs: native Combat expansion alone adds 50,000 at level 10,000.
-            var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
+            var identity = new WorldObjectIdentity(new PersistentDeclaration("author.a", "PoiX", PersistentKind.WorldObject, PersistenceImpact.ApiDependent), Guid.NewGuid());
             var poi = new JsonObject { ["guid"] = new(identity.NativeId), ["type"] = new(WorldSaveFormat.OwnedCombatType), ["systemName"] = new("system"), ["level"] = new(10000) };
             if (deferred) poi["guardDescriptors"] = new(new List<JsonValue> { new(descriptor) });
             else poi["payloads"] = new(new List<JsonValue> { new(new JsonObject { ["descriptor"] = new(descriptor) }) });
@@ -159,7 +159,7 @@ namespace VGModAPI.Tests
         public void FixedDescriptorRequiresNamedEnumsAndPairedBonusChance(string field, string value, bool valid)
         {
             var descriptor = new JsonObject { ["type"] = new("FixedPayloadDescriptor"), ["fixedUnit"] = new("NativeShip"), ["unitCount"] = new(1), [field] = new(value) };
-            var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
+            var identity = new WorldObjectIdentity(new PersistentDeclaration("author.a", "PoiX", PersistentKind.WorldObject, PersistenceImpact.ApiDependent), Guid.NewGuid());
             var poi = new JsonObject { ["guid"] = new(identity.NativeId), ["type"] = new(WorldSaveFormat.OwnedCombatType), ["systemName"] = new("system"), ["guardDescriptors"] = new(new List<JsonValue> { new(descriptor) }) };
             var system = new JsonObject { ["guid"] = new("system"), ["pointsOfInterest"] = new(new List<JsonValue> { new(poi) }) };
             var root = new JsonObject { ["Player"] = new(new JsonObject { ["map"] = new(new JsonObject { ["systems"] = new(new List<JsonValue> { new(system) }) }) }) };

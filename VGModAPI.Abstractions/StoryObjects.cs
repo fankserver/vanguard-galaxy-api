@@ -18,10 +18,10 @@ public sealed class StoryActionResult
     internal void Finish(StoryActionStatus status, string detail) { _status = status; Detail = detail; }
 }
 
-/// <summary>An owned mission definition. Register once; event arguments identify live occurrences and their games.</summary>
+/// <summary>An owned mission definition. Register once; event arguments identify live missions and their games.</summary>
 public interface IStoryDefinition : IDisposable
 {
-    StoryContentId Id { get; }
+    StoryMissionDefinitionId Id { get; }
     event Action<IStoryMission>? Accepted;
     event Action<IStoryMission>? Completed;
     event Action<IStoryMission>? Failed;
@@ -32,7 +32,7 @@ public interface IStoryDefinition : IDisposable
 public interface IStory
 {
     IGame Game { get; }
-    /// <summary>Offer an occurrence in this game. The mission owns safe execution and reports its result through Changed/LastAction.</summary>
+    /// <summary>Offer an mission in this game. The mission owns safe execution and reports its result through Changed/LastAction.</summary>
     IStoryMission Offer(IStoryDefinition definition);
     StoryMissionQuery GetMissions(IStoryDefinition definition);
 }
@@ -52,10 +52,10 @@ public interface IStoryMission
     IStoryDefinition Definition { get; }
     Guid Id { get; }
     /// <summary>
-    /// The identifier native surfaces accept for THIS occurrence (character missionHighlights, the
+    /// The identifier native surfaces accept for THIS mission (character missionHighlights, the
     /// world catalog) — never an authorization token, and null until the offer is admitted. The
     /// definition-level NativeIdentifier is a catalog placeholder that is never offerable; always
-    /// highlight this per-occurrence identifier.
+    /// highlight this per-mission identifier.
     /// </summary>
     string? NativeMissionId { get; }
     StoryMissionState State { get; }

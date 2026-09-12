@@ -4,15 +4,15 @@ using System.Linq;
 
 namespace VGModAPI.Core;
 
-internal sealed partial class BarContentService
+internal sealed partial class BarService
 {
     private sealed class Observer : IDisposable
     {
-        private readonly BarContentService _service;
+        private readonly BarService _service;
         internal readonly Action<BarRosterFinalized> Callback;
         internal readonly string Owner;
         internal bool Active = true;
-        internal Observer(BarContentService service, string owner, Action<BarRosterFinalized> callback) { _service = service; Owner = owner; Callback = callback; }
+        internal Observer(BarService service, string owner, Action<BarRosterFinalized> callback) { _service = service; Owner = owner; Callback = callback; }
         public void Dispose() { _service._checkThread(); Active = false; _service._observers.Remove(this); }
     }
     private readonly List<Observer> _observers = new();
@@ -21,7 +21,7 @@ internal sealed partial class BarContentService
     internal IDisposable Subscribe(string owner, Action<BarRosterFinalized> callback)
     {
         _checkThread();
-        if (_disposed) throw new ObjectDisposedException(nameof(BarContentService));
+        if (_disposed) throw new ObjectDisposedException(nameof(BarService));
         if (string.IsNullOrWhiteSpace(owner)) throw new ArgumentException("Observer identity required.", nameof(owner));
         if (callback == null) throw new ArgumentNullException(nameof(callback));
         if (_observers.Count >= 128) throw new InvalidOperationException("Bar observer limit reached.");

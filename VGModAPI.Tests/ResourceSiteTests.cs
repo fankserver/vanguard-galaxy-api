@@ -160,8 +160,8 @@ public sealed class ResourceSiteTests
         restored.Provider.ResourceSiteReconstructionSettled += e => settled = e;
         restored.BeginGameplay();
         foreach (var pair in h.Native.Created) restored.Native.Created[pair.Key] = pair.Value;
-        restored.Native.Hidden.Add(field.PoiId!); // one occurrence not yet natively present
-        var bytes = PocketSystemStateCodec.Encode(Array.Empty<PocketSystemOccurrence>(), rows);
+        restored.Native.Hidden.Add(field.PoiId!); // one poi not yet natively present
+        var bytes = PocketSystemStateCodec.Encode(Array.Empty<PocketSystemPoi>(), rows);
         var decoded = PocketSystemStateCodec.DecodeAll(bytes);
         restored.Coordinator.RestoreRows(restored.Session, decoded.Sites);
         restored.Service.MaintainPocketSystems(restored.Session);
@@ -169,13 +169,13 @@ public sealed class ResourceSiteTests
         Assert.Equal(wreck.PoiId, Assert.Single(settled!.Reconstructed).PoiId);
         var failure = Assert.Single(settled.Failures);
         Assert.Equal(ReconstructionFailureReason.NativeMissing, failure.Reason);
-        Assert.Equal("b", failure.Occurrence.OccurrenceKey);
+        Assert.Equal("b", failure.Poi.PoiKey);
         // Convergence: the missing native surfaces later and the object transitions with a Changed event.
         int changes = 0;
-        failure.Occurrence.Changed += _ => changes++;
+        failure.Poi.Changed += _ => changes++;
         restored.Native.Hidden.Clear();
         restored.Service.MaintainPocketSystems(restored.Session);
-        Assert.True(failure.Occurrence.State.Reconstructed);
+        Assert.True(failure.Poi.State.Reconstructed);
         Assert.Equal(1, changes);
         // Settlement is once per session.
         settled = null;
@@ -278,11 +278,11 @@ public sealed class ResourceSiteTests
     [Fact]
     public void CodecRoundTripsMixedKindsAndReadsLegacySchema()
     {
-        var systems = new[] { new PocketSystemOccurrence("o", "sys", "k1", 1, "system-1", "gate-a", "gate-b", declaredOpen: true) };
+        var systems = new[] { new PocketSystemPoi("o", "sys", "k1", 1, "system-1", "gate-a", "gate-b", declaredOpen: true) };
         var sites = new[]
         {
-            new ResourceSiteOccurrence("o", "wreck", "k2", 3, ResourceSiteKind.SalvageSite, "system-1", "poi-1"),
-            new ResourceSiteOccurrence("o", "field", "k3", 1, ResourceSiteKind.MiningField, "system-1", "poi-2")
+            new ResourceSitePoi("o", "wreck", "k2", 3, ResourceSiteKind.SalvageSite, "system-1", "poi-1"),
+            new ResourceSitePoi("o", "field", "k3", 1, ResourceSiteKind.MiningField, "system-1", "poi-2")
         };
         var decoded = PocketSystemStateCodec.DecodeAll(PocketSystemStateCodec.Encode(systems, sites));
         Assert.Single(decoded.Systems);
@@ -297,10 +297,10 @@ public sealed class ResourceSiteTests
         Assert.Throws<InvalidDataException>(() => PocketSystemStateCodec.DecodeAll(legacy.Concat(new byte[] { 1 }).ToArray()));
         // Duplicate keys across kinds are refused.
         Assert.Throws<InvalidDataException>(() => PocketSystemStateCodec.Encode(systems,
-            new[] { new ResourceSiteOccurrence("o", "sys", "k1", 1, ResourceSiteKind.SalvageSite, "s", "p") }));
+            new[] { new ResourceSitePoi("o", "sys", "k1", 1, ResourceSiteKind.SalvageSite, "s", "p") }));
     }
 
-    private static byte[] LegacyEncode(PocketSystemOccurrence[] rows)
+    private static byte[] LegacyEncode(PocketSystemPoi[] rows)
     {
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream, new System.Text.UTF8Encoding(false, true), true);
@@ -308,7 +308,7 @@ public sealed class ResourceSiteTests
         void Text(string value) { var bytes = System.Text.Encoding.UTF8.GetBytes(value); writer.Write(bytes.Length); writer.Write(bytes); }
         foreach (var row in rows)
         {
-            Text(row.Owner); Text(row.LocalId); Text(row.OccurrenceKey); writer.Write(row.Revision);
+            Text(row.Owner); Text(row.LocalId); Text(row.PoiKey); writer.Write(row.Revision);
             Text(row.SystemId); Text(row.EntranceGateId); Text(row.PocketGateId); writer.Write(row.DeclaredOpen);
         }
         writer.Flush(); return stream.ToArray();
@@ -358,7 +358,7 @@ public sealed class ResourceSiteTests
         var refused = site.Remove();
         Assert.Equal(WorldContentStatus.Rejected, refused.Status);
         Assert.False(string.IsNullOrWhiteSpace(refused.Detail));
-        // Nothing was dropped or removed; the occurrence stays live and actionable.
+        // Nothing was dropped or removed; the poi stays live and actionable.
         Assert.Single(h.Coordinator.CaptureRows());
         Assert.Same(site, h.Provider.GetResourceSite("wreck", "k"));
         Assert.True(site.State.Reconstructed);
@@ -427,36 +427,36 @@ public sealed class ResourceSiteTests
     }
 
     [Fact]
-    public void RemoveDropsAnAttachedDungeonOccurrenceOnlyAfterVerifiedRemoval()
+    public void RemoveDropsAnAttachedDungeonOnlyAfterVerifiedRemoval()
     {
         using var h = new Harness();
         Assert.Equal(WorldStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage(withStation: true)));
         h.BeginGameplay();
         var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
-        var occurrence = Guid.NewGuid();
+        var poi = Guid.NewGuid();
         var resolved = new List<string>(); var dropped = new List<Guid>();
-        h.Coordinator.AttachDungeonOccurrencePrune(
-            poiId => { resolved.Add(poiId); return occurrence; },
+        h.Coordinator.AttachDungeonPrune(
+            poiId => { resolved.Add(poiId); return poi; },
             id => { dropped.Add(id); return true; });
         int changes = 0; site.Changed += _ => changes++;
         var poiId = site.PoiId;
         Assert.True(site.Remove().Succeeded);
         // The location is resolved (before removal) and the row dropped (after) exactly once.
         Assert.Equal(poiId, Assert.Single(resolved));
-        Assert.Equal(occurrence, Assert.Single(dropped));
+        Assert.Equal(poi, Assert.Single(dropped));
         Assert.Empty(h.Coordinator.CaptureRows());
         Assert.Equal(1, changes);
     }
 
     [Fact]
-    public void AttachedDungeonOccurrenceIsNotDroppedWhenTheNativeRemovalIsRefused()
+    public void AttachedDungeonIsNotDroppedWhenTheNativeRemovalIsRefused()
     {
         using var h = new Harness();
         Assert.Equal(WorldStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage(withStation: true)));
         h.BeginGameplay();
         var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
         var dropped = new List<Guid>();
-        h.Coordinator.AttachDungeonOccurrencePrune(_ => Guid.NewGuid(), id => { dropped.Add(id); return true; });
+        h.Coordinator.AttachDungeonPrune(_ => Guid.NewGuid(), id => { dropped.Add(id); return true; });
         h.Native.RemoveOutcome = ResourceSiteRemoveOutcome.BoardingActive;
         Assert.Equal(WorldContentStatus.Rejected, site.Remove().Status);
         Assert.Empty(dropped);
@@ -470,7 +470,7 @@ public sealed class ResourceSiteTests
         Assert.Equal(WorldStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage(withStation: true)));
         h.BeginGameplay();
         var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
-        h.Coordinator.AttachDungeonOccurrencePrune(_ => throw new InvalidOperationException("read fault"), _ => true);
+        h.Coordinator.AttachDungeonPrune(_ => throw new InvalidOperationException("read fault"), _ => true);
         Assert.Equal(WorldContentStatus.Unavailable, site.Remove().Status);
         Assert.Equal(0, h.Native.RemoveCalls); // nothing native was touched
         Assert.Single(h.Coordinator.CaptureRows());
@@ -484,7 +484,7 @@ public sealed class ResourceSiteTests
         h.BeginGameplay();
         var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
         var dropped = new List<Guid>();
-        h.Coordinator.AttachDungeonOccurrencePrune(_ => Guid.NewGuid(), id => { dropped.Add(id); return false; });
+        h.Coordinator.AttachDungeonPrune(_ => Guid.NewGuid(), id => { dropped.Add(id); return false; });
         Assert.True(site.Remove().Succeeded);
         Assert.Single(dropped); // the drop was attempted
         Assert.Empty(h.Coordinator.CaptureRows());

@@ -36,7 +36,7 @@ public sealed class WorldNativeAttachmentTests
         const string faction = "world.attach.test"; Faction.allFactions.Add(faction, new Faction());
         try
         {
-            var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
+            var identity = new WorldObjectIdentity(new PersistentDeclaration("author.a", "PoiX", PersistentKind.WorldObject, PersistenceImpact.ApiDependent), Guid.NewGuid());
             var definition = new WorldSavedDefinition("author.a", new WorldCombatDefinition("PoiX", 1, "世界", faction, 2));
             var attachment = new WorldNativeAttachment(game);
             var coordinator = new WorldCreationCoordinator(attachment, hub.CheckThread);
@@ -100,7 +100,7 @@ public sealed class WorldNativeAttachmentTests
         const string faction = "world.attach.test"; Faction.allFactions.Add(faction, new Faction());
         try
         {
-            var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
+            var identity = new WorldObjectIdentity(new PersistentDeclaration("author.a", "PoiX", PersistentKind.WorldObject, PersistenceImpact.ApiDependent), Guid.NewGuid());
             var definition = new WorldSavedDefinition("author.a", new WorldCombatDefinition("PoiX", 1, "世界", faction, 2));
             var attachment = new WorldNativeAttachment(game);
             var coordinator = new WorldCreationCoordinator(attachment, hub.CheckThread);

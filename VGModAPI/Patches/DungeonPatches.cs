@@ -2,9 +2,9 @@ using VGModAPI.Runtime;
 
 namespace VGModAPI.Patches;
 
-internal static class DungeonContentPatches
+internal static class DungeonPatches
 {
-    internal static DungeonContentAdapter? Adapter { get; set; }
+    internal static DungeonAdapter? Adapter { get; set; }
     internal static DungeonMarkerJson? Json { get; set; }
     internal static class Entered
     {
@@ -20,8 +20,8 @@ internal static class DungeonContentPatches
     }
     internal static class Serialization
     {
-        internal static void Prefix(out DungeonContentAdapter? __state) { __state = Adapter; __state?.BeginSerialization(); }
-        internal static System.Exception? Finalizer(DungeonContentAdapter? __state, System.Exception? __exception)
+        internal static void Prefix(out DungeonAdapter? __state) { __state = Adapter; __state?.BeginSerialization(); }
+        internal static System.Exception? Finalizer(DungeonAdapter? __state, System.Exception? __exception)
         { __state?.EndSerialization(); return __exception; }
     }
     internal static class SaveLocation

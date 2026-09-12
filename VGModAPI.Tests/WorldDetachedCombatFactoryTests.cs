@@ -13,7 +13,7 @@ namespace VGModAPI.Tests
         [Fact]
         public void CreationDoesNotAttachMoveNeighboursOrConstructFactions()
         {
-            var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
+            var identity = new WorldObjectIdentity(new PersistentDeclaration("author.a", "PoiX", PersistentKind.WorldObject, PersistenceImpact.ApiDependent), Guid.NewGuid());
             // A unique already-loaded catalog entry avoids changing shared faction fixtures.
             string factionId = "world.factory.test";
             var faction = new Faction(); Faction.allFactions.Add(factionId, faction);

@@ -4,13 +4,13 @@ using System.Reflection;
 
 namespace VGModAPI.Runtime;
 
-/// <summary>The native location carries only occurrence identity; API-owned data stays in its provider envelope.</summary>
+/// <summary>The native location carries only dungeon identity; API-owned data stays in its provider envelope.</summary>
 internal sealed class DungeonMarkerJson
 {
     private readonly string Key;
     private readonly PropertyInfo _item, _string, _isString;
     private readonly MethodInfo _convert;
-    internal DungeonMarkerJson(Assembly assembly, string key = "vgmodapiDungeonOccurrence")
+    internal DungeonMarkerJson(Assembly assembly, string key = "vgmodapiDungeon")
     {
         Key = key;
         var json = assembly.GetType("LightJson.JsonObject", true)!; var value = assembly.GetType("LightJson.JsonValue", true)!;
@@ -34,10 +34,10 @@ internal sealed class DungeonMarkerJson
         if (isNull.GetValue(value) is true) return null;
         return Read(json) ?? throw new System.IO.InvalidDataException("Invalid persistent dungeon identity marker.");
     }
-    internal void Write(object json, Guid occurrence)
+    internal void Write(object json, Guid dungeon)
     {
-        if (occurrence == Guid.Empty) throw new ArgumentException("Occurrence identity required.");
-        var value = _convert.Invoke(null, new object[] { occurrence.ToString("D") });
+        if (dungeon == Guid.Empty) throw new ArgumentException("Dungeon identity required.");
+        var value = _convert.Invoke(null, new object[] { dungeon.ToString("D") });
         _item.SetValue(json, value, new object[] { Key });
     }
 }

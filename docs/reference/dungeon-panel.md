@@ -22,7 +22,7 @@ Sections accept titles up to 128 characters and text up to 4096. Actions accept 
 
 ## Resource choices and estimates
 
-Supported authored choices appear only after native choice validation permits their discovered compartment and crew context. Event text is shown in full; long choice labels retain their full text beneath the shortened label. Clicking routes through the registered provider's ordinary choice path, including its veto, persistence readiness and current native validation. Applied choices disappear and cannot replay their effects. See [authored content](dungeon-content.md).
+Supported authored choices appear only after native choice validation permits their discovered compartment and crew context. Event text is shown in full; long choice labels retain their full text beneath the shortened label. Clicking routes through the registered provider's ordinary choice path, including its veto, persistence readiness and current native validation. Applied choices disappear and cannot replay their effects. See [authored content](dungeon.md).
 
 The native panel retains its own estimates. Its inspected estimate boundary is already integrated with [boarding tuning rules](boarding-contract.md); the contribution renderer does not create another simulation or apply modifiers again. Native manual/autonomous gameplay continues independently of whether the panel is open.
 

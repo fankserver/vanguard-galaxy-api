@@ -11,10 +11,10 @@ internal sealed class BarRosterPlan
     internal object Revision { get; }
     internal BarRosterPolicy.Decision Policy { get; }
     internal IReadOnlyList<BarPatronState> Patrons { get; }
-    internal Func<StoryContentId, Guid, bool>? MissionReady { get; }
+    internal Func<StoryMissionDefinitionId, Guid, bool>? MissionReady { get; }
     internal Func<object>? DependencyStamp { get; }
     internal BarRosterPlan(Guid session, string station, object revision, BarRosterPolicy.Decision policy, IEnumerable<BarPatronState> patrons,
-        Func<StoryContentId, Guid, bool>? missionReady, Func<object>? dependencyStamp)
+        Func<StoryMissionDefinitionId, Guid, bool>? missionReady, Func<object>? dependencyStamp)
     {
         Session = session; Station = station; Revision = revision; Policy = policy;
         MissionReady = missionReady; DependencyStamp = dependencyStamp;
@@ -23,7 +23,7 @@ internal sealed class BarRosterPlan
     }
 }
 
-internal sealed partial class BarContentService
+internal sealed partial class BarService
 {
     private object _revision = new();
     private void Changed() => _revision = new object();
@@ -44,7 +44,7 @@ internal sealed partial class BarContentService
     // A dependency stamp is an opaque immutable token. The integration must replace it whenever
     // any referenced mission's availability changes, including changes made during resolution.
     // Missing stamps fail closed; repeated boolean queries cannot prove a coherent multi-mission view.
-    internal BarRosterPlan? Plan(Guid session, string station, Func<StoryContentId, Guid, bool>? missionReady = null, Func<object>? dependencyStamp = null)
+    internal BarRosterPlan? Plan(Guid session, string station, Func<StoryMissionDefinitionId, Guid, bool>? missionReady = null, Func<object>? dependencyStamp = null)
     {
         _checkThread();
         if (_disposed || _storage == null || !Availability.IsAvailable || !_persistence.Read(session, out var saved)) return null;
@@ -82,7 +82,7 @@ internal sealed partial class BarContentService
         {
             if (!row.Mission.HasValue) continue;
             bool ready;
-            try { ready = missionReady != null && missionReady(row.Mission.Value, row.Occurrence!.Value); }
+            try { ready = missionReady != null && missionReady(row.Mission.Value, row.MissionId!.Value); }
             catch { ready = false; }
             if (!ready || _disposed || _storage == null || !Availability.IsAvailable || !ReferenceEquals(revision, _revision) || !_persistence.Read(session, out _)) return null;
         }

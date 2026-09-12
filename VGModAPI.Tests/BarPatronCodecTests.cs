@@ -11,7 +11,7 @@ public sealed class BarPatronCodecTests
 {
     private static BarPatronState Row(string provider = "campaign", string local = "contact") =>
         new(new BarPatronId(provider, local), "CustomAct3RickoStation", "Élodie", "A contact", "fixed-seed",
-            new StoryContentId(provider, "mission-x"), new Guid("01234567-1234-1234-1234-012345678901"));
+            new StoryMissionDefinitionId(provider, "mission-x"), new Guid("01234567-1234-1234-1234-012345678901"));
 
     [Fact]
     public void CanonicalRoundTripRetainsOwnerStateAndMissionReference()
@@ -26,7 +26,7 @@ public sealed class BarPatronCodecTests
         Assert.Equal(rows[1].Name, restored[0].Name);
         Assert.Equal(rows[1].Seed, restored[0].Seed);
         Assert.Equal(rows[1].Mission, restored[0].Mission);
-        Assert.Equal(rows[1].Occurrence, restored[0].Occurrence);
+        Assert.Equal(rows[1].Mission, restored[0].Mission);
         Assert.True(BarPatronCodec.Validate(bytes));
     }
 

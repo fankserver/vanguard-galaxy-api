@@ -54,7 +54,7 @@ internal static class StoryProviderIdentity
         if (plugin == null) throw new ArgumentNullException(nameof(plugin));
         var slug = Slug(plugin.PluginId);
         var segment = slug + "-" + Digest(plugin.PluginId);
-        if (!StoryContentId.IsValidSegment(segment)) throw new InvalidOperationException("Derived provider segment is not a valid identity segment.");
+        if (!StoryMissionDefinitionId.IsValidSegment(segment)) throw new InvalidOperationException("Derived provider segment is not a valid identity segment.");
         return segment;
     }
 
@@ -98,13 +98,13 @@ internal enum StoryBindingStatus { Bound, AlreadyBoundToSelf, Conflict, LimitExc
 /// (<see cref="StoryProviderIdentity"/> derives a digest-qualified segment), but the module refuses
 /// rather than trusting a truncated digest to be injective.
 ///
-/// The count is bounded because each bound provider owns a reserved share of the occurrence ledger
-/// (<see cref="StoryLedger.MaxOccurrencesPerProvider"/>): a provider beyond the bound is refused
+/// The count is bounded because each bound provider owns a reserved share of the mission ledger
+/// (<see cref="StoryLedger.MaxMissionsPerProvider"/>): a provider beyond the bound is refused
 /// rather than granted a share that would have to come out of an existing provider's history.
 /// </summary>
 internal sealed class StoryProviderBindings
 {
-    /// <summary>Bound providers per session-lifetime module. See <see cref="StoryLedger.MaxOccurrencesPerProvider"/>.</summary>
+    /// <summary>Bound providers per session-lifetime module. See <see cref="StoryLedger.MaxMissionsPerProvider"/>.</summary>
     internal const int MaxProviders = 32;
 
     private readonly Dictionary<string, string> _pluginBySegment = new(StringComparer.Ordinal);

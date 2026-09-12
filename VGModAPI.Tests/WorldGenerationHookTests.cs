@@ -19,7 +19,7 @@ public sealed class WorldGenerationHookTests
         var hub = new LifecycleHub((_, error) => throw error); var guard = new WorldLifetimeGuard();
         using var host = new WorldLifetimeHookHost(typeof(Source.Galaxy.MapElement).Assembly, hub, guard);
         var session = hub.Begin(SessionOrigin.NewGame, null);
-        var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
+        var identity = new WorldObjectIdentity(new PersistentDeclaration("author.a", "PoiX", PersistentKind.WorldObject, PersistenceImpact.ApiDependent), Guid.NewGuid());
         var poi = new SlotPoi { guid = identity.NativeId };
         guard.Track(session, poi, identity); guard.Ready(session);
         WorldLifetimePatches.Generation.Capture? capture = null, slot = null;
@@ -68,7 +68,7 @@ public sealed class WorldGenerationHookTests
         using var host = new WorldLifetimeHookHost(typeof(Source.Galaxy.MapElement).Assembly, hub, guard, generationFailure: creation.Refuse);
         var session = hub.Begin(SessionOrigin.NewGame, null); creation.Reset(session);
         Assert.True(creation.TryRestore(session, () => Array.Empty<WorldSnapshotInstance>()));
-        var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
+        var identity = new WorldObjectIdentity(new PersistentDeclaration("author.a", "PoiX", PersistentKind.WorldObject, PersistenceImpact.ApiDependent), Guid.NewGuid());
         var poi = new SlotPoi { guid = identity.NativeId };
         bool mutateDuringAncestor = false; int approvals = 0;
         guard.Track(session, poi, identity);

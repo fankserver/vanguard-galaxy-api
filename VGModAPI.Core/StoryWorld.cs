@@ -112,7 +112,7 @@ internal interface IStoryWorld
 
 /// <summary>
 /// What the story module offers the native guards when the game's own UI performs a remove-and-re-add
-/// of an owned mission. The guards cannot decide that alone: only the module knows which occurrence
+/// of an owned mission. The guards cannot decide that alone: only the module knows which mission
 /// the identifier belongs to and what its removal means.
 /// </summary>
 /// <summary>
@@ -145,11 +145,11 @@ internal sealed class StoryUiTransactionToken
     internal Guid Id { get; }
     /// <summary>The session this transaction belongs to; a replacement session invalidates it.</summary>
     internal Guid SessionId { get; }
-    internal Guid OccurrenceId { get; }
-    internal StoryUiTransactionToken(Guid id, Guid sessionId, Guid occurrenceId)
+    internal Guid MissionId { get; }
+    internal StoryUiTransactionToken(Guid id, Guid sessionId, Guid missionId)
     {
         if (id == Guid.Empty) throw new ArgumentException("A transaction requires its own identity.", nameof(id));
-        Id = id; SessionId = sessionId; OccurrenceId = occurrenceId;
+        Id = id; SessionId = sessionId; MissionId = missionId;
     }
 }
 
@@ -157,7 +157,7 @@ internal interface IStoryUiTransaction
 {
     /// <summary>
     /// A UI abandon/retry of this identifier is about to run. A token suspends the outcome the removal
-    /// would otherwise record and holds the catalog entry, so a retry can re-add the same occurrence;
+    /// would otherwise record and holds the catalog entry, so a retry can re-add the same mission;
     /// null refuses the route outright, so the game does not remove the mission at all.
     /// </summary>
     StoryUiTransactionToken? BeginAbandon(string identifier);

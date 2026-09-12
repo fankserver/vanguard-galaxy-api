@@ -33,7 +33,7 @@ internal sealed class WorldDefinitionRegistry : IDisposable
         StoryHostPlugin? plugin;
         try { plugin = _authenticate(pluginInstance, caller); } catch { return null; }
         if (_disposed || plugin == null || !ReferenceEquals(plugin.Assembly, caller)) return null;
-        _ = new ContentDeclaration(plugin.PluginId, "definition", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent);
+        _ = new PersistentDeclaration(plugin.PluginId, "definition", PersistentKind.WorldObject, PersistenceImpact.ApiDependent);
         if (_providers.ContainsKey(plugin.PluginId) || _providers.Count >= 32) return null;
         var provider = new Provider(this, plugin.PluginId);
         Changed(); _providers.Add(plugin.PluginId, provider); return provider;

@@ -46,7 +46,7 @@ public sealed class WorldActorOriginTests
             using var host = new WorldLifetimeHookHost(typeof(Source.Galaxy.MapElement).Assembly, hub, guard, root =>
             { stopped.Add(root); if (ReferenceEquals(root, failingRoot)) throw shutdownFailure; });
             var session = hub.Begin(SessionOrigin.NewGame, null);
-            var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
+            var identity = new WorldObjectIdentity(new PersistentDeclaration("author.a", "PoiX", PersistentKind.WorldObject, PersistenceImpact.ApiDependent), Guid.NewGuid());
             var poi = new Source.Galaxy.MapPointOfInterest { guid = identity.NativeId };
             var manager = new Behaviour.Managers.TestPoiManager { poi = poi };
             var travel = new Behaviour.Managers.TravelManager { localPoiManager = manager, localTarget = poi };

@@ -6,7 +6,7 @@ using System.Reflection;
 
 namespace VGModAPI.Core;
 
-/// <summary>Host-authenticated live authored-site declarations. Registration neither creates native objects nor overwrites saved occurrences.</summary>
+/// <summary>Host-authenticated live authored-site declarations. Registration neither creates native objects nor overwrites saved pois.</summary>
 internal sealed class ResourceSiteRegistry : IDisposable
 {
     internal sealed class Provider : IDisposable
@@ -109,7 +109,7 @@ internal enum ResourceSiteRemoveOutcome
 }
 
 /// <summary>
-/// Keyed-owned reconciliation for authored sites. One occurrence row per (owner, local, key); the API
+/// Keyed-owned reconciliation for authored sites. One poi row per (owner, local, key); the API
 /// owns the native POI identity, re-declaring the same key reconciles rather than duplicating, and a
 /// once-per-session settled event reports actual outcomes. Native site content is persisted by the
 /// game's own persistable pipeline; the coordinator re-resolves identity only.
@@ -122,11 +122,11 @@ internal sealed class ResourceSiteCoordinator : IDisposable
     private readonly Func<Guid, bool> _persistenceReady;
     private readonly Action<Exception> _report;
     private readonly IDisposable _subscription;
-    private readonly Dictionary<(string Owner, string Local, string Key), ResourceSiteOccurrence> _committed = new();
+    private readonly Dictionary<(string Owner, string Local, string Key), ResourceSitePoi> _committed = new();
     private readonly HashSet<(string Owner, string Local, string Key)> _failed = new();
     private Action<Guid>? _settled;
     private Func<string, Guid?>? _resolveAttachedDungeon;
-    private Func<Guid, bool>? _dropDungeonOccurrence;
+    private Func<Guid, bool>? _dropDungeon;
     private Guid _session;
     private bool _settledOnce;
     private bool _disposed;
@@ -143,54 +143,54 @@ internal sealed class ResourceSiteCoordinator : IDisposable
     }
     internal void AttachSettled(Action<Guid> settled) { _hub.CheckThread(); _settled = settled; }
     /// <summary>
-    /// Bridges the dungeon-content layer so a site's attached authored dungeon occurrence can be
+    /// Bridges the dungeon-content layer so a site's attached authored dungeon poi can be
     /// dropped when the site is removed. The resolver runs before native removal (while the native
     /// location is still resolvable) and the drop runs only after a verified removal, so a failed
     /// removal never strands or loses dungeon state.
     /// </summary>
-    internal void AttachDungeonOccurrencePrune(Func<string, Guid?> resolveAttached, Func<Guid, bool> drop)
+    internal void AttachDungeonPrune(Func<string, Guid?> resolveAttached, Func<Guid, bool> drop)
     {
         _hub.CheckThread();
         _resolveAttachedDungeon = resolveAttached ?? throw new ArgumentNullException(nameof(resolveAttached));
-        _dropDungeonOccurrence = drop ?? throw new ArgumentNullException(nameof(drop));
+        _dropDungeon = drop ?? throw new ArgumentNullException(nameof(drop));
     }
     private void Reset()
     { _committed.Clear(); _failed.Clear(); _session = _hub.CurrentSession?.Id ?? Guid.Empty; _settledOnce = false; }
     private Guid Session() => _hub.CurrentSession?.Id ?? Guid.Empty;
 
-    internal void RestoreRows(Guid session, ResourceSiteOccurrence[] rows)
+    internal void RestoreRows(Guid session, ResourceSitePoi[] rows)
     {
         _hub.CheckThread();
         if (_disposed || session == Guid.Empty || session != Session()) throw new InvalidDataException("Stale authored-site restore.");
         _committed.Clear();
-        if (rows != null) foreach (var row in rows) _committed[(row.Owner, row.LocalId, row.OccurrenceKey)] = row;
+        if (rows != null) foreach (var row in rows) _committed[(row.Owner, row.LocalId, row.PoiKey)] = row;
         _settledOnce = false;
     }
-    internal ResourceSiteOccurrence[] CaptureRows() { _hub.CheckThread(); return _committed.Values.ToArray(); }
+    internal ResourceSitePoi[] CaptureRows() { _hub.CheckThread(); return _committed.Values.ToArray(); }
 
-    internal IReadOnlyList<ResourceSiteOccurrence> Occurrences(string owner)
+    internal IReadOnlyList<ResourceSitePoi> Pois(string owner)
     {
         _hub.CheckThread();
-        return _disposed ? Array.Empty<ResourceSiteOccurrence>() : _committed.Values.Where(o => o.Owner == owner).ToArray();
+        return _disposed ? Array.Empty<ResourceSitePoi>() : _committed.Values.Where(o => o.Owner == owner).ToArray();
     }
-    internal ResourceSiteOccurrence? TryGetOccurrence(string owner, string localId, string occurrenceKey)
+    internal ResourceSitePoi? TryGetPoi(string owner, string localId, string poiKey)
     {
         _hub.CheckThread();
-        return _disposed ? null : _committed.TryGetValue((owner, localId, occurrenceKey), out var row) ? row : null;
+        return _disposed ? null : _committed.TryGetValue((owner, localId, poiKey), out var row) ? row : null;
     }
     /// <summary>Committed or failed: the key is claimed by this kind for the session either way.</summary>
-    internal bool ContainsOccurrence(string owner, string localId, string occurrenceKey)
+    internal bool ContainsPoi(string owner, string localId, string poiKey)
     {
         _hub.CheckThread();
-        return !_disposed && (_committed.ContainsKey((owner, localId, occurrenceKey)) || _failed.Contains((owner, localId, occurrenceKey)));
+        return !_disposed && (_committed.ContainsKey((owner, localId, poiKey)) || _failed.Contains((owner, localId, poiKey)));
     }
 
     /// <summary>
     /// Drops every retained site row inside a removed pocket system (any owner — the native POIs are
     /// removed with the system either way) so save data records them as intentionally absent rather
-    /// than reporting them as reconstruction failures. Returns the dropped occurrence identities.
+    /// than reporting them as reconstruction failures. Returns the dropped poi identities.
     /// </summary>
-    internal (string Owner, string LocalId, string OccurrenceKey)[] DropOccurrencesInSystem(string systemId)
+    internal (string Owner, string LocalId, string PoiKey)[] DropPoisInSystem(string systemId)
     {
         _hub.CheckThread();
         if (_disposed || string.IsNullOrEmpty(systemId)) return Array.Empty<(string, string, string)>();
@@ -199,14 +199,14 @@ internal sealed class ResourceSiteCoordinator : IDisposable
         return dropped;
     }
 
-    internal (WorldStatus Status, ResourceSiteOccurrence? Row) Create(ResourceSiteRegistry.Provider provider,
-        Guid expectedSession, string localId, string occurrenceKey, string systemId, float x, float y)
+    internal (WorldStatus Status, ResourceSitePoi? Row) Create(ResourceSiteRegistry.Provider provider,
+        Guid expectedSession, string localId, string poiKey, string systemId, float x, float y)
     {
         _hub.CheckThread();
         if (_disposed) return (WorldStatus.Unavailable, null);
         if (provider == null || !_definitions.TryResolve(provider, localId, out var declaration) || declaration == null)
             return (WorldStatus.NotRegistered, null);
-        var key = (provider.Owner, localId, occurrenceKey);
+        var key = (provider.Owner, localId, poiKey);
         if (_committed.TryGetValue(key, out var owned)) return (WorldStatus.Succeeded, owned);
         if (_failed.Contains(key)) return (WorldStatus.Rejected, null);
         if (string.IsNullOrWhiteSpace(systemId) || WorldStateCodec.TextByteCount(systemId) > 128) return (WorldStatus.InvalidDefinition, null);
@@ -216,21 +216,21 @@ internal sealed class ResourceSiteCoordinator : IDisposable
             // Allocate native identity only here; never adopt a foreign or ambiguous native identity.
             var poiId = _native.CreateSite(expectedSession, systemId, x, y, declaration);
             if (poiId == null) { _failed.Add(key); return (WorldStatus.Rejected, null); }
-            var occurrence = new ResourceSiteOccurrence(provider.Owner, localId, occurrenceKey, declaration.Revision,
+            var poi = new ResourceSitePoi(provider.Owner, localId, poiKey, declaration.Revision,
                 declaration.Kind, systemId, poiId);
-            _committed[key] = occurrence;
-            return (WorldStatus.Succeeded, occurrence);
+            _committed[key] = poi;
+            return (WorldStatus.Succeeded, poi);
         }
         catch (Exception error) { _report(error); return (WorldStatus.Unavailable, null); }
     }
 
     /// <summary>
-    /// Removes the owned occurrence: removes the native POI from its host system and drops the row so
-    /// save data records the occurrence as intentionally absent rather than reconstructing it as a
+    /// Removes the owned poi: removes the native POI from its host system and drops the row so
+    /// save data records the poi as intentionally absent rather than reconstructing it as a
     /// failure. Refuses typed: the key is creatable again only after a verified removal. Residual risk:
     /// if an attached authored dungeon row cannot be dropped after a successful site removal (persistence
     /// is not mutable at that instant), the site is still removed and the fault reported; the surviving
-    /// row can still surface through <c>IDungeonProvider.GetOccurrences()</c>.
+    /// row can still surface through <c>IDungeonProvider.GetPois()</c>.
     /// </summary>
     internal (WorldStatus Status, string Detail) Remove(ResourceSiteRegistry.Provider provider, Guid session, string local, string key)
     {
@@ -241,7 +241,7 @@ internal sealed class ResourceSiteCoordinator : IDisposable
         // A creation that never produced a native POI is still an owned key; removing it frees the key.
         if (_failed.Remove(rowKey)) return (WorldStatus.Succeeded, "");
         if (!_committed.TryGetValue(rowKey, out var row)) return (WorldStatus.NotRegistered, "");
-        // Resolve any attached authored dungeon occurrence before removal; the native location is no
+        // Resolve any attached authored dungeon poi before removal; the native location is no
         // longer discoverable once the POI is gone.
         Guid? attachedDungeon = null;
         if (_resolveAttachedDungeon != null && row.PoiId is { Length: > 0 } attachedPoi)
@@ -257,9 +257,9 @@ internal sealed class ResourceSiteCoordinator : IDisposable
                 case ResourceSiteRemoveOutcome.Removed:
                     _committed.Remove(rowKey);
                     // The native site is gone; dropping the attached row records its absence rather than
-                    // leaving a dead occurrence that could never bind again.
-                    if (attachedDungeon.HasValue && _dropDungeonOccurrence != null && !_dropDungeonOccurrence(attachedDungeon.Value))
-                        _report(new InvalidOperationException("An attached authored dungeon occurrence could not be dropped after site removal."));
+                    // leaving a dead poi that could never bind again.
+                    if (attachedDungeon.HasValue && _dropDungeon != null && !_dropDungeon(attachedDungeon.Value))
+                        _report(new InvalidOperationException("An attached authored dungeon poi could not be dropped after site removal."));
                     return (WorldStatus.Succeeded, "");
                 case ResourceSiteRemoveOutcome.Missing:
                     return (WorldStatus.Rejected, "The site is not currently present natively; wait for reconstruction or check its state.");
@@ -293,13 +293,13 @@ internal sealed class ResourceSiteCoordinator : IDisposable
         return _native.Readiness(session, row.SystemId, row.PoiId, row.Kind);
     }
 
-    internal ResourceSiteState ReconstructionState(string owner, string localId, string occurrenceKey)
+    internal ResourceSiteState ReconstructionState(string owner, string localId, string poiKey)
     {
         _hub.CheckThread();
         if (_disposed) return new ResourceSiteState(ReconstructionStatus.Pending);
-        if (_failed.Contains((owner, localId, occurrenceKey)))
+        if (_failed.Contains((owner, localId, poiKey)))
             return new ResourceSiteState(ReconstructionStatus.Failed, ReconstructionFailureReason.NativeMissing);
-        return _committed.TryGetValue((owner, localId, occurrenceKey), out var row)
+        return _committed.TryGetValue((owner, localId, poiKey), out var row)
             ? Resolve(row) : new ResourceSiteState(ReconstructionStatus.Pending);
     }
 
@@ -313,35 +313,35 @@ internal sealed class ResourceSiteCoordinator : IDisposable
         try { _settled?.Invoke(expectedSession); } catch (Exception error) { _report(error); }
     }
 
-    /// <summary>The site's POI while its owned occurrence is reconstructed in the loaded game, or null.</summary>
-    internal string? ResolveDestination(string owner, string localId, string occurrenceKey)
+    /// <summary>The site's POI while its owned poi is reconstructed in the loaded game, or null.</summary>
+    internal string? ResolveDestination(string owner, string localId, string poiKey)
     {
         _hub.CheckThread();
         if (_disposed) return null;
-        var occurrence = TryGetOccurrence(owner, localId, occurrenceKey);
-        if (occurrence == null) return null;
-        var state = Resolve(occurrence);
+        var poi = TryGetPoi(owner, localId, poiKey);
+        if (poi == null) return null;
+        var state = Resolve(poi);
         return state.Status == ReconstructionStatus.Reconstructed ? state.PoiId : null;
     }
 
-    internal ResourceSiteState Resolve(ResourceSiteOccurrence occurrence)
+    internal ResourceSiteState Resolve(ResourceSitePoi poi)
     {
         _hub.CheckThread();
-        if (!_definitions.TryResolveMigration(occurrence.Owner, occurrence.LocalId, out var liveRevision, out var previousRevision))
+        if (!_definitions.TryResolveMigration(poi.Owner, poi.LocalId, out var liveRevision, out var previousRevision))
             return new ResourceSiteState(ReconstructionStatus.Failed, ReconstructionFailureReason.MissingDefinition);
-        if (liveRevision != occurrence.Revision)
+        if (liveRevision != poi.Revision)
         {
-            if (previousRevision.HasValue && previousRevision.Value == occurrence.Revision && previousRevision.Value < liveRevision)
-                occurrence.MigrateRevision(liveRevision);
+            if (previousRevision.HasValue && previousRevision.Value == poi.Revision && previousRevision.Value < liveRevision)
+                poi.MigrateRevision(liveRevision);
             else return new ResourceSiteState(ReconstructionStatus.Failed, ReconstructionFailureReason.RevisionMismatch);
         }
         if (!_persistenceReady(Session()))
             return new ResourceSiteState(ReconstructionStatus.Failed, ReconstructionFailureReason.PersistenceUnavailable);
         try
         {
-            if (_native.AmbiguousCount(Session(), occurrence.PoiId) > 1)
+            if (_native.AmbiguousCount(Session(), poi.PoiId) > 1)
                 return new ResourceSiteState(ReconstructionStatus.Failed, ReconstructionFailureReason.AmbiguousIdentity);
-            var poiId = _native.ResolveSite(Session(), occurrence.SystemId, occurrence.PoiId, occurrence.Kind);
+            var poiId = _native.ResolveSite(Session(), poi.SystemId, poi.PoiId, poi.Kind);
             return poiId == null
                 ? new ResourceSiteState(ReconstructionStatus.Pending)
                 : new ResourceSiteState(ReconstructionStatus.Reconstructed, poiId: poiId);
@@ -352,7 +352,7 @@ internal sealed class ResourceSiteCoordinator : IDisposable
 
     internal void BeginPass(Guid session) => _native.BeginPass(session);
     internal void EndPass() => _native.EndPass();
-    /// <summary>Classifies a still-pending occurrence for the settled report, mirroring the systems coordinator.</summary>
+    /// <summary>Classifies a still-pending poi for the settled report, mirroring the systems coordinator.</summary>
     internal ReconstructionFailureReason PendingReason(Guid session)
         => _persistenceReady(session) ? ReconstructionFailureReason.NativeMissing : ReconstructionFailureReason.PersistenceUnavailable;
 

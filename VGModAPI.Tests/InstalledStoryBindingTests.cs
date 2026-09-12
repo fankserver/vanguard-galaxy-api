@@ -33,7 +33,7 @@ public sealed class InstalledStoryBindingTests
         var module = assembly.MainModule;
         foreach (StoryObjectiveKind kind in Enum.GetValues(typeof(StoryObjectiveKind)))
         {
-            var type = module.GetType(StoryContentPolicy.ObjectiveNamespace + "." + StoryContentPolicy.ObjectiveTypeName(kind));
+            var type = module.GetType(StoryMissionPolicy.ObjectiveNamespace + "." + StoryMissionPolicy.ObjectiveTypeName(kind));
             Assert.NotNull(type);
             Assert.False(type!.IsAbstract);
             Assert.Equal(Objective, Base(type));
@@ -42,7 +42,7 @@ public sealed class InstalledStoryBindingTests
         }
         foreach (StoryRewardKind kind in Enum.GetValues(typeof(StoryRewardKind)))
         {
-            var type = module.GetType(StoryContentPolicy.RewardNamespace + "." + StoryContentPolicy.RewardTypeName(kind));
+            var type = module.GetType(StoryMissionPolicy.RewardNamespace + "." + StoryMissionPolicy.RewardTypeName(kind));
             Assert.NotNull(type);
             Assert.False(type!.IsAbstract);
             Assert.Equal(Reward, type.BaseType!.FullName);
@@ -62,11 +62,11 @@ public sealed class InstalledStoryBindingTests
         using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
         var module = assembly.MainModule;
         var objectiveCreate = Method(module, Objective, "Create");
-        Assert.Contains(Strings(objectiveCreate), text => text == StoryContentPolicy.ObjectiveNamespace + ".");
+        Assert.Contains(Strings(objectiveCreate), text => text == StoryMissionPolicy.ObjectiveNamespace + ".");
         Assert.Contains(Calls(objectiveCreate), name => name == "GetType");
         Assert.Contains(Calls(objectiveCreate), name => name == "GetConstructor");
         var rewardCreate = Method(module, Reward, "Create");
-        Assert.Contains(Strings(rewardCreate), text => text == StoryContentPolicy.RewardNamespace + ".");
+        Assert.Contains(Strings(rewardCreate), text => text == StoryMissionPolicy.RewardNamespace + ".");
         Assert.Contains(Strings(rewardCreate), text => text.Contains("Could not resolve reward type", StringComparison.Ordinal));
         Assert.Contains(Strings(rewardCreate), text => text.Contains("skipping reward", StringComparison.Ordinal));
     }
@@ -104,7 +104,7 @@ public sealed class InstalledStoryBindingTests
     /// <summary>
     /// A live mission is serialized by vanilla as a full object carrying its story identifier, and a
     /// duplicate story identifier is refused while it is active or archived. Repeated runs are
-    /// therefore later occurrences, which is exactly what the ledger records.
+    /// therefore later missions, which is exactly what the ledger records.
     /// </summary>
     [Fact]
     public void VanillaPersistsMissionsItselfAndRefusesADuplicateStoryIdentifier()
@@ -164,21 +164,21 @@ public sealed class InstalledStoryBindingTests
             && property.PropertyType.FullName == "System.Collections.Generic.List`1<" + Objective + ">");
 
         // The fields the supported subset writes, per objective and reward kind.
-        AssertField(module, StoryContentPolicy.ObjectiveNamespace + ".TravelToPOI", "targetPOI", "System.String");
-        AssertField(module, StoryContentPolicy.ObjectiveNamespace + ".TravelToPOI", "requiredVisitTime", "System.Single");
-        AssertField(module, StoryContentPolicy.ObjectiveNamespace + ".KillEnemies", "requiredAmount", "System.Int32");
-        AssertField(module, StoryContentPolicy.ObjectiveNamespace + ".CollectCredits", "requiredAmount", "System.Int32");
-        AssertField(module, StoryContentPolicy.ObjectiveNamespace + ".TradeOffer", "itemType", "Behaviour.Item.InventoryItemType");
-        AssertField(module, StoryContentPolicy.ObjectiveNamespace + ".TradeOffer", "requiredAmount", "System.Int32");
-        AssertField(module, StoryContentPolicy.ObjectiveNamespace + ".TradeOffer", "deliverTo", "Source.Galaxy.POI.SpaceStation");
-        var tradeOffer = module.GetType(StoryContentPolicy.ObjectiveNamespace + ".TradeOffer")!;
+        AssertField(module, StoryMissionPolicy.ObjectiveNamespace + ".TravelToPOI", "targetPOI", "System.String");
+        AssertField(module, StoryMissionPolicy.ObjectiveNamespace + ".TravelToPOI", "requiredVisitTime", "System.Single");
+        AssertField(module, StoryMissionPolicy.ObjectiveNamespace + ".KillEnemies", "requiredAmount", "System.Int32");
+        AssertField(module, StoryMissionPolicy.ObjectiveNamespace + ".CollectCredits", "requiredAmount", "System.Int32");
+        AssertField(module, StoryMissionPolicy.ObjectiveNamespace + ".TradeOffer", "itemType", "Behaviour.Item.InventoryItemType");
+        AssertField(module, StoryMissionPolicy.ObjectiveNamespace + ".TradeOffer", "requiredAmount", "System.Int32");
+        AssertField(module, StoryMissionPolicy.ObjectiveNamespace + ".TradeOffer", "deliverTo", "Source.Galaxy.POI.SpaceStation");
+        var tradeOffer = module.GetType(StoryMissionPolicy.ObjectiveNamespace + ".TradeOffer")!;
         // The native turn-in consumption and count refresh the delivery contract relies on.
         Assert.Contains(tradeOffer.Methods, method => method.Name == "OnMissionTurnedIn" && method.HasBody);
         Assert.Contains(tradeOffer.Properties, property => property.Name == "currentAmount" && property.PropertyType.FullName == "System.Int32");
         // Gather kinds: trigger-counted at a string POI identity with a nullable item; kill carries its faction.
         foreach (var gather in new[] { "Mining", "Salvage" })
         {
-            var gatherType = module.GetType(StoryContentPolicy.ObjectiveNamespace + "." + gather)!;
+            var gatherType = module.GetType(StoryMissionPolicy.ObjectiveNamespace + "." + gather)!;
             bool foundItem = false, foundAmount = false, foundTarget = false, foundCurrent = false;
             for (var walk = gatherType; walk != null; walk = walk.BaseType?.Resolve())
             {
@@ -190,20 +190,20 @@ public sealed class InstalledStoryBindingTests
             }
             Assert.True(foundItem && foundAmount && foundTarget && foundCurrent, gather);
         }
-        AssertField(module, StoryContentPolicy.ObjectiveNamespace + ".KillEnemies", "enemyFaction", "Source.Galaxy.Faction");
-        var killType = module.GetType(StoryContentPolicy.ObjectiveNamespace + ".KillEnemies")!;
+        AssertField(module, StoryMissionPolicy.ObjectiveNamespace + ".KillEnemies", "enemyFaction", "Source.Galaxy.Faction");
+        var killType = module.GetType(StoryMissionPolicy.ObjectiveNamespace + ".KillEnemies")!;
         Assert.Contains(killType.Properties, p => p.Name == "currentAmount" && p.PropertyType.FullName == "System.Int32");
         var itemType = module.GetType("Behaviour.Item.InventoryItemType")!;
         Assert.Contains(itemType.Methods, method => method.Name == "TryGet" && method.IsStatic && method.Parameters.Count == 2);
         // baseAmount exists on the scaling reward types only; Reputation carries a flat amount + faction.
         foreach (var kind in new[] { StoryRewardKind.Credits, StoryRewardKind.Experience })
         {
-            AssertField(module, StoryContentPolicy.RewardNamespace + "." + StoryContentPolicy.RewardTypeName(kind), "amount", "System.Int32");
-            AssertField(module, StoryContentPolicy.RewardNamespace + "." + StoryContentPolicy.RewardTypeName(kind), "baseAmount", "System.Int32");
+            AssertField(module, StoryMissionPolicy.RewardNamespace + "." + StoryMissionPolicy.RewardTypeName(kind), "amount", "System.Int32");
+            AssertField(module, StoryMissionPolicy.RewardNamespace + "." + StoryMissionPolicy.RewardTypeName(kind), "baseAmount", "System.Int32");
         }
-        AssertField(module, StoryContentPolicy.RewardNamespace + ".Reputation", "amount", "System.Int32");
-        AssertField(module, StoryContentPolicy.RewardNamespace + ".Reputation", "faction", "Source.Galaxy.Faction");
-        var reputation = module.GetType(StoryContentPolicy.RewardNamespace + ".Reputation")!;
+        AssertField(module, StoryMissionPolicy.RewardNamespace + ".Reputation", "amount", "System.Int32");
+        AssertField(module, StoryMissionPolicy.RewardNamespace + ".Reputation", "faction", "Source.Galaxy.Faction");
+        var reputation = module.GetType(StoryMissionPolicy.RewardNamespace + ".Reputation")!;
         Assert.Contains(reputation.Methods, method => method.Name == "OnComplete" && method.HasBody);
 
         var player = module.GetType("Source.Player.GamePlayer")!;
@@ -255,7 +255,7 @@ public sealed class InstalledStoryBindingTests
         long previous = -1;
         foreach (StoryDifficulty tier in Enum.GetValues(typeof(StoryDifficulty)))
         {
-            var name = StoryContentPolicy.DifficultyName(tier);
+            var name = StoryMissionPolicy.DifficultyName(tier);
             Assert.True(values.ContainsKey(name), "Missing native difficulty " + name);
             Assert.True(values[name] > previous, "Native difficulty order is not ascending at " + name);
             previous = values[name];
@@ -306,13 +306,13 @@ public sealed class InstalledStoryBindingTests
     {
         using var assembly = AssemblyDefinition.ReadAssembly(AssemblyPath);
         var module = assembly.MainModule;
-        var kill = module.GetType(StoryContentPolicy.ObjectiveNamespace + ".KillEnemies")!;
+        var kill = module.GetType(StoryMissionPolicy.ObjectiveNamespace + ".KillEnemies")!;
         Assert.Contains(kill.Fields, field => field.Name == "enemyFaction" && field.FieldType.FullName == "Source.Galaxy.Faction");
         var data = kill.Methods.Single(method => method.Name == "DataToJson");
         Assert.Contains(Calls(data), name => name == "get_identifier");
-        Assert.Null(StoryContentPolicy.RefuseObjective(StoryObjectiveKind.KillEnemies));
-        Assert.Null(StoryContentPolicy.RefuseObjective(StoryObjectiveKind.TravelToPoi));
-        Assert.Null(StoryContentPolicy.RefuseObjective(StoryObjectiveKind.CollectCredits));
+        Assert.Null(StoryMissionPolicy.RefuseObjective(StoryObjectiveKind.KillEnemies));
+        Assert.Null(StoryMissionPolicy.RefuseObjective(StoryObjectiveKind.TravelToPoi));
+        Assert.Null(StoryMissionPolicy.RefuseObjective(StoryObjectiveKind.CollectCredits));
     }
 
     /// <summary>
@@ -385,8 +385,8 @@ public sealed class InstalledStoryBindingTests
         Assert.Contains(Calls(dispatch), name => name == "get_allMissions");
         foreach (StoryObjectiveKind kind in Enum.GetValues(typeof(StoryObjectiveKind)))
         {
-            if (StoryContentPolicy.RefuseObjective(kind) != null) continue;
-            var type = module.GetType(StoryContentPolicy.ObjectiveNamespace + "." + StoryContentPolicy.ObjectiveTypeName(kind))!;
+            if (StoryMissionPolicy.RefuseObjective(kind) != null) continue;
+            var type = module.GetType(StoryMissionPolicy.ObjectiveNamespace + "." + StoryMissionPolicy.ObjectiveTypeName(kind))!;
             // A kind that overrides the trigger entry point must have its own guard binding, because
             // Harmony on the base method does not cover overrides. Salvage inherits Mining's.
             var guardKeys = new System.Collections.Generic.Dictionary<StoryObjectiveKind, string>

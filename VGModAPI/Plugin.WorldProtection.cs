@@ -39,7 +39,7 @@ public sealed partial class Plugin
         _authoredDue = UnityEngine.Time.time + 2.0;
         var current = _hub?.CurrentSession;
         if (current == null || current.Phase != SessionPhase.GameplayInitialized) return;
-        // Route through the service so the owned occurrence objects are refreshed and their Changed events
+        // Route through the service so the owned poi objects are refreshed and their Changed events
         // fire on their own transitions after the coordinator converges gate/reconstruction state.
         try { _worldContent.MaintainPocketSystems(current.Id); }
         catch (Exception error) { Logger.LogError(error); }
@@ -117,13 +117,13 @@ public sealed partial class Plugin
                 session => { creation.Refuse(session); _story?.RefreshWorldDependencies(); }, inspectProfile);
             _worldSnapshotHost = new WorldSnapshotHookHost(_hub, new WorldSnapshotRecorder(
                 new WorldJsonInspection(assembly, emptyProfile, RestoreOwnedItem, RestoreOwnedRecipe),
-                authored == null ? null : () => PocketSystemStateCodec.Encode(authored.CaptureRows(), _siteCoordinator?.CaptureRows() ?? Array.Empty<ResourceSiteOccurrence>(), _shipCoordinator?.CaptureRows() ?? Array.Empty<MooredShipOccurrence>(), _wormholeCoordinator?.CaptureRows() ?? Array.Empty<WormholePairOccurrence>(), _worldContent?.CaptureCombatKeys() ?? Array.Empty<CombatSiteKeyRow>())),
+                authored == null ? null : () => PocketSystemStateCodec.Encode(authored.CaptureRows(), _siteCoordinator?.CaptureRows() ?? Array.Empty<ResourceSitePoi>(), _shipCoordinator?.CaptureRows() ?? Array.Empty<MooredShipUnit>(), _wormholeCoordinator?.CaptureRows() ?? Array.Empty<WormholePairPoi>(), _worldContent?.CaptureCombatKeys() ?? Array.Empty<CombatSiteKeyRow>())),
                 creation.Snapshot, () => { requireContext(); return creation.Revision; }, requireContext);
             _worldPersistence = new WorldPersistenceBindings(_persistence, _hub, _worldLoadHost, _worldSnapshotHost, creation,
                 authored == null ? null : new Action<Guid, byte[]?>((session, bytes) =>
                 {
                     var decoded = bytes == null
-                        ? (Array.Empty<PocketSystemOccurrence>(), Array.Empty<ResourceSiteOccurrence>(), Array.Empty<MooredShipOccurrence>(), Array.Empty<WormholePairOccurrence>(), Array.Empty<CombatSiteKeyRow>())
+                        ? (Array.Empty<PocketSystemPoi>(), Array.Empty<ResourceSitePoi>(), Array.Empty<MooredShipUnit>(), Array.Empty<WormholePairPoi>(), Array.Empty<CombatSiteKeyRow>())
                         : PocketSystemStateCodec.DecodeAll(bytes);
                     authored.RestoreRows(session, decoded.Item1);
                     if (_siteCoordinator != null) _siteCoordinator.RestoreRows(session, decoded.Item2);

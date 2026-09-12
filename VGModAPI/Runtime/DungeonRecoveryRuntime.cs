@@ -23,7 +23,7 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
     private readonly IBoardingTacticalNativeBindings _native;
     private readonly Type _shipType;
     private readonly DungeonOperationOptionsAdapter _options;
-    internal Func<object, Guid?>? ContentOccurrence { get; set; }
+    internal Func<object, Guid?>? DungeonId { get; set; }
     internal Func<object, bool>? SimulationReady { get; set; }
     internal Func<object, bool>? ValidateInitialOperation { get; set; }
     internal Action<object>? ObserveInitialOperation { get; set; }
@@ -130,7 +130,7 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
             {
                 var token = (string?)_native.Get(location, "resumeCaptureToken") ?? "";
                 var mission = (string?)_native.Get(_native.Get(location, "shipData"), "resumeMissionGuid") ?? "";
-                id = Operations.Created(operation, ContentOccurrence?.Invoke(location), token.Length == 0 ? mission : token + (mission.Length == 0 ? "" : "|" + mission));
+                id = Operations.Created(operation, DungeonId?.Invoke(location), token.Length == 0 ? mission : token + (mission.Length == 0 ? "" : "|" + mission));
             }
         }
         if (!id.HasValue || Operations.Conflicted(id.Value)) return false;
@@ -140,7 +140,7 @@ internal sealed class DungeonRecoveryRuntime : IDisposable
         var walkReturn = previous.WalkReturn;
         if (walkReturn == null && phase == "Extraction" && _native.Get(location, "isShipBased") is false)
             walkReturn = new DungeonWalkReturnState((System.Collections.Generic.IReadOnlyDictionary<string, int>)_native.Call("walkManifest", operation, _native.Get(operation, "simulation")!)!);
-        if (!State.TrackOperation(new(previous.Id, previous.LocationId, previous.ContentOccurrence, previous.AttackerShipId, previous.DungeonType,
+        if (!State.TrackOperation(new(previous.Id, previous.LocationId, previous.DungeonId, previous.AttackerShipId, previous.DungeonType,
             phase, outcome, previous.MissionProtection, previous.TerminalProgress, previous.Autonomous, _options.Capture(_native.Get(operation, "options")!), _world.CaptureDonors(_native.Get(operation, "boardableTarget"), (actions, ship, shipId) =>
             { DonorHooks.Capture(actions, previous.Id, shipId, ship); }), (bool)_native.Get(operation, "resumeCrewWalking")!, walkReturn, previous.Retired || _native.Get(operation, "isComplete") is true))) return false;
         Pods.TrackLocation(location);

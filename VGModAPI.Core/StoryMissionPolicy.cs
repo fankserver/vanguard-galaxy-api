@@ -22,11 +22,11 @@ namespace VGModAPI.Core;
 /// unresolvable reward is SKIPPED with a log line, which is why unsupported rewards are refused here.</item>
 /// </list>
 /// </summary>
-internal static class StoryContentPolicy
+internal static class StoryMissionPolicy
 {
     /// <summary>Namespace prefix of every identifier this API installs. Vanilla identifiers never contain it.</summary>
     internal const string IdentifierPrefix = "vgmodapi.story.";
-    /// <summary>Bounds the base identifier AND the per-occurrence identifier derived from it.</summary>
+    /// <summary>Bounds the base identifier AND the per-mission identifier derived from it.</summary>
     internal const int MaxIdentifierLength = 192;
     /// <summary>Bounded registry capacity; overflow is refused with a diagnostic, never silently dropped.</summary>
     internal const int MaxDefinitions = 256;
@@ -98,7 +98,7 @@ internal static class StoryContentPolicy
     /// local ID <c>mission-x</c> produce different identifiers, so neither can capture the other's
     /// saved content.
     /// </summary>
-    internal static string Identifier(StoryContentId id)
+    internal static string Identifier(StoryMissionDefinitionId id)
     {
         if (id.Provider == null) throw new ArgumentException("A default identity has no identifier.", nameof(id));
         var identifier = IdentifierPrefix + id.Provider + "." + id.LocalId;
@@ -108,32 +108,32 @@ internal static class StoryContentPolicy
 
     /// <summary>Reads back an identifier this API produced. Foreign identifiers are not ours to interpret.</summary>
     /// <summary>
-    /// The identifier ONE occurrence is installed under. The game archives a completed story
-    /// identifier and refuses a duplicate of it forever after, so every occurrence needs its own:
+    /// The identifier ONE mission is installed under. The game archives a completed story
+    /// identifier and refuses a duplicate of it forever after, so every mission needs its own:
     /// a shared base identifier could be accepted exactly once per save. It is derived
-    /// deterministically from the content identity and the occurrence, so a reload reinstalls exactly
+    /// deterministically from the content identity and the mission, so a reload reinstalls exactly
     /// the same entries without storing the string itself.
     /// </summary>
-    internal static string OccurrenceIdentifier(StoryContentId id, Guid occurrenceId)
+    internal static string MissionIdentifier(StoryMissionDefinitionId id, Guid missionId)
     {
-        if (occurrenceId == Guid.Empty) throw new ArgumentException("An occurrence requires its own identity.", nameof(occurrenceId));
-        var identifier = Identifier(id) + "." + occurrenceId.ToString("N");
-        if (identifier.Length > MaxIdentifierLength) throw new ArgumentException("Occurrence identifier exceeds its bound.", nameof(id));
+        if (missionId == Guid.Empty) throw new ArgumentException("An mission requires its own identity.", nameof(missionId));
+        var identifier = Identifier(id) + "." + missionId.ToString("N");
+        if (identifier.Length > MaxIdentifierLength) throw new ArgumentException("Mission identifier exceeds its bound.", nameof(id));
         return identifier;
     }
 
-    /// <summary>Parses an occurrence identifier back to its content identity and occurrence.</summary>
-    internal static bool TryParseOccurrenceIdentifier(string? identifier, out StoryContentId id, out Guid occurrenceId)
+    /// <summary>Parses an mission identifier back to its content identity and mission.</summary>
+    internal static bool TryParseMissionIdentifier(string? identifier, out StoryMissionDefinitionId id, out Guid missionId)
     {
-        id = default; occurrenceId = Guid.Empty;
+        id = default; missionId = Guid.Empty;
         if (identifier == null || identifier.Length < 33) return false;
         var separator = identifier.Length - 33;
         if (identifier[separator] != '.') return false;
-        if (!Guid.TryParseExact(identifier.Substring(separator + 1), "N", out occurrenceId) || occurrenceId == Guid.Empty) return false;
+        if (!Guid.TryParseExact(identifier.Substring(separator + 1), "N", out missionId) || missionId == Guid.Empty) return false;
         return TryParseIdentifier(identifier.Substring(0, separator), out id);
     }
 
-    internal static bool TryParseIdentifier(string? identifier, out StoryContentId id)
+    internal static bool TryParseIdentifier(string? identifier, out StoryMissionDefinitionId id)
     {
         id = default;
         if (identifier == null || identifier.Length > MaxIdentifierLength || !identifier.StartsWith(IdentifierPrefix, StringComparison.Ordinal)) return false;
@@ -142,13 +142,13 @@ internal static class StoryContentPolicy
         if (separator <= 0 || separator == rest.Length - 1) return false;
         var provider = rest.Substring(0, separator);
         var local = rest.Substring(separator + 1);
-        if (!StoryContentId.IsValidSegment(provider) || !StoryContentId.IsValidSegment(local)) return false;
-        id = new StoryContentId(provider, local);
+        if (!StoryMissionDefinitionId.IsValidSegment(provider) || !StoryMissionDefinitionId.IsValidSegment(local)) return false;
+        id = new StoryMissionDefinitionId(provider, local);
         return true;
     }
 
     /// <summary>Null when the definition only uses supported types, otherwise the exact refusal reason.</summary>
-    internal static string? Refuse(StoryContentId id, StoryMissionDefinition definition)
+    internal static string? Refuse(StoryMissionDefinitionId id, StoryMissionDefinition definition)
     {
         if (definition == null) return "A definition is required.";
         if (id.Provider == null || id.LocalId != definition.LocalId) return "The definition's local ID does not match its resolved identity.";

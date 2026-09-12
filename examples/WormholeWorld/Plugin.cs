@@ -7,7 +7,7 @@ namespace WormholeWorld;
 
 /// <summary>
 /// Sample/test mod demonstrating pocket-cluster + wormhole + themed-site authoring together, and
-/// the full-cleanup surface (each owned occurrence removes back out).
+/// the full-cleanup surface (each owned poi removes back out).
 ///
 /// From your current system X you press "Spawn Wormhole" to open a wormhole into a small authored
 /// cluster. The cluster is a chain of owned pockets:
@@ -21,7 +21,7 @@ namespace WormholeWorld;
 ///   B  --[gate back to E]--    nothing else (a quiet dead-end anchor)
 ///
 /// Every system has a fixed test name (static, not changing). "Delete Cluster" removes each owned
-/// occurrence — the wormhole pair first (its endpoints must be freed), then each pocket (its own gate
+/// poi — the wormhole pair first (its endpoints must be freed), then each pocket (its own gate
 /// and site POIs go with it) — so a delete leaves no authored system, gate, wormhole or site behind.
 /// </summary>
 [BepInPlugin(Id, "Wormhole World example", "1.0.0")]
@@ -137,7 +137,7 @@ public sealed class Plugin : BaseUnityPlugin
                     "Prints one line per spawned system: the gates and wormholes it holds (with their far "
                     + "ends) and the sites inside it, so the log shows exactly how the cluster is wired.",
                     clickable: _entryDoor != null),
-                new HudRow("status", StatusLine(), "Each owned occurrence shows its live reconstruction state."),
+                new HudRow("status", StatusLine(), "Each owned poi shows its live reconstruction state."),
             },
             closable: false));
     }
@@ -284,7 +284,7 @@ public sealed class Plugin : BaseUnityPlugin
         if (_world == null || _entryDoor == null) return;
 
         // Wormholes first: freeing the pair releases all pocket endpoints that used them. A refused
-        // remove (e.g. the player is at a wormhole) leaves the occurrence in place, so keep the handle
+        // remove (e.g. the player is at a wormhole) leaves the poi in place, so keep the handle
         // and reflect the real state instead of claiming it is gone.
         if (!RemoveWormhole(_miningHole)) return;   _miningHole = null;
         if (!RemoveWormhole(_salvageHole)) return;  _salvageHole = null;

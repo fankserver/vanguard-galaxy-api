@@ -8,7 +8,7 @@ public sealed class WorldObjectIdentityTests
 {
     private static readonly Guid Instance = Guid.Parse("89b5d079-8ec2-42a3-aa65-cd183bf5eec1");
     private static WorldObjectIdentity Identity(string owner, string local, Guid? instance = null) =>
-        new(new ContentDeclaration(owner, local, PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), instance ?? Instance);
+        new(new PersistentDeclaration(owner, local, PersistentKind.WorldObject, PersistenceImpact.ApiDependent), instance ?? Instance);
 
     [Fact]
     public void ReconstructedTupleHasStableBoundedNativeIdentity()
@@ -39,7 +39,7 @@ public sealed class WorldObjectIdentityTests
         Assert.Throws<ArgumentException>(() => Identity("author.one", "PoiX", Guid.Empty));
         Assert.Throws<ArgumentException>(() => Identity("", "PoiX"));
         Assert.Throws<ArgumentException>(() => new WorldObjectIdentity(
-            new ContentDeclaration("author.one", "PoiX", PersistentContentKind.Patron, ContentPersistenceImpact.ApiDependent), Instance));
+            new PersistentDeclaration("author.one", "PoiX", PersistentKind.Patron, PersistenceImpact.ApiDependent), Instance));
     }
 
     [Theory]

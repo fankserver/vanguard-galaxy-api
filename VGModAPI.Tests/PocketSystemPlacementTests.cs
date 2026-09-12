@@ -26,8 +26,8 @@ public sealed class PocketSystemPlacementTests
             Hub = new LifecycleHub((_, error) => throw error);
             Native = new FakePocketSystemNative();
             var plugin = new object();
-            StoryHostAuthenticator auth = (occurrence, caller) =>
-                ReferenceEquals(occurrence, plugin) ? new StoryHostPlugin("author.a", caller) : null;
+            StoryHostAuthenticator auth = (poi, caller) =>
+                ReferenceEquals(poi, plugin) ? new StoryHostPlugin("author.a", caller) : null;
             Combat = new WorldDefinitionRegistry(auth, Hub.CheckThread);
             Systems = new PocketSystemRegistry(auth, Hub.CheckThread);
             Coordinator = new PocketSystemCoordinator(Hub, Systems, Native, () => true, _ => true, _ => { });
@@ -85,7 +85,7 @@ public sealed class PocketSystemPlacementTests
         Assert.Equal(PocketSystemPlacement.Visible, Assert.Single(harness.Native.CreatedPlacements));
         // The handle's Definition carries the declared placement (not just the fallback default).
         Assert.Equal(PocketSystemPlacement.Visible, pocket.Definition.Placement);
-        // Both modes still author a single enclosed gate pair (same occurrence contract).
+        // Both modes still author a single enclosed gate pair (same poi contract).
         Assert.Equal(ReconstructionStatus.Reconstructed, pocket.State.Status);
         Assert.NotNull(pocket.SystemId);
         Assert.NotNull(pocket.EntranceGatePoiId);

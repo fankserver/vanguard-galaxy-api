@@ -52,7 +52,7 @@ Relevant types: `Behaviour.Item.InventoryItemType` and `Behaviour.Crafting.Craft
 
 Item and recipe loaders clear private dictionaries and repopulate them from Resources. `InventoryItemType.Get` directly indexes its registry. Consequently, content registration must account for reset order and missing references; inserting an item once is insufficient. Reusing a global category such as `UnusedMissionItem` can create cross-mod naming and ownership conflicts.
 
-Stable ownership, collision checks, initialization order, reload behavior and [missing-content policy](../reference/content-safety.md) are prerequisites for safe registration. The pure content-safety planner does not itself install items or recipes.
+Stable ownership, collision checks, initialization order, reload behavior and [missing-content policy](../reference/persistence-safety.md) are prerequisites for safe registration. The pure content-safety planner does not itself install items or recipes.
 
 ## Campaign state and objectives
 

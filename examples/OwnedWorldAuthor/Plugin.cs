@@ -19,10 +19,10 @@ public sealed class Plugin : BaseUnityPlugin
         _world = ModApi.Services.World.AcquireProvider(this);
         _world?.RegisterCombatSite(new CombatSiteDefinition("PoiX", 1, "Example Combat Site", "player", 1));
     }
-    // Call from explicit gameplay logic outside API callbacks. Name the occurrence with your own
+    // Call from explicit gameplay logic outside API callbacks. Name the poi with your own
     // key; the API allocates the native identity and reconciles the same key to the same object.
-    public ICombatSite? Create(string occurrenceKey, string system, float x, float y) =>
-        _world?.CreateCombatSite("PoiX", occurrenceKey, system, x, y);
-    public ICombatSite? Find(string occurrenceKey) => _world?.GetCombatSite("PoiX", occurrenceKey);
+    public ICombatSite? Create(string poiKey, string system, float x, float y) =>
+        _world?.CreateCombatSite("PoiX", poiKey, system, x, y);
+    public ICombatSite? Find(string poiKey) => _world?.GetCombatSite("PoiX", poiKey);
     private void OnDestroy() => _world?.Dispose();
 }

@@ -128,7 +128,7 @@ objects for restored occurrences.
   campaign progression rather than relying on a temporary tombstone remaining present.
 - Withdrawing an unaccepted offer leaves no tombstone.
 - Removed definitions do not delete saved missions. Provider-required content still needs its owner;
-  see [content safety](content-safety.md).
+  see [content safety](persistence-safety.md).
 
 Limits refuse admission rather than dropping existing state:
 
@@ -185,8 +185,8 @@ begin and end at a vanilla questgiver location without ever knowing a generated 
 return leg defaults to requiring a fresh visit. Return targets are exempt from registration-time
 target validation (the identity does not exist until the occurrence is built).
 
-`StoryObjective.TravelToPocketSystemEntrance(systemLocalId, occurrenceKey, requireNewVisit?)` and
-`StoryObjective.TravelToResourceSite(siteLocalId, occurrenceKey, requireNewVisit?)` send the player
+`StoryObjective.TravelToPocketSystemEntrance(systemLocalId, poiKey, requireNewVisit?)` and
+`StoryObjective.TravelToResourceSite(siteLocalId, poiKey, requireNewVisit?)` send the player
 to content the API owns. The definition names the AUTHOR-LOCAL identities — which exist before any
 session, in the same registry as the declaration — and the API resolves the native destination per
 occurrence when the mission is built. While the provider's authored occurrence is not reconstructed

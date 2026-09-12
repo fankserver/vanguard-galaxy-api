@@ -14,10 +14,10 @@ internal sealed class WorldObjectIdentity
     internal Guid InstanceId { get; }
     internal string NativeId { get; }
 
-    internal WorldObjectIdentity(ContentDeclaration declaration, Guid instanceId)
+    internal WorldObjectIdentity(PersistentDeclaration declaration, Guid instanceId)
     {
         if (declaration == null) throw new ArgumentNullException(nameof(declaration));
-        if (declaration.Kind != PersistentContentKind.WorldObject)
+        if (declaration.Kind != PersistentKind.WorldObject)
             throw new ArgumentException("A world declaration is required.", nameof(declaration));
         if (instanceId == Guid.Empty) throw new ArgumentException("A nonempty instance identity is required.", nameof(instanceId));
         Owner = declaration.Owner;

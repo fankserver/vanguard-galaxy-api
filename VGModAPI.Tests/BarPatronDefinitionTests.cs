@@ -9,7 +9,7 @@ public sealed class BarPatronDefinitionTests
     [Fact]
     public void ContactRetainsLocalizedDataWithoutNativeObjects()
     {
-        var mission = new StoryContentId("author", "job");
+        var mission = new StoryMissionDefinitionId("author", "job");
         var definition = new BarPatronDefinition("contact", "CustomAct3RickoStation", "Élodie", "Contact description", new BarPatronPresentation("stable-seed"),
             mission: mission);
         Assert.Equal("Élodie", definition.Name);

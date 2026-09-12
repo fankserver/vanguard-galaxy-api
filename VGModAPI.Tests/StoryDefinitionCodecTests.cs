@@ -111,7 +111,7 @@ public sealed class StoryDefinitionCodecTests
         var enter = restored.Steps[0].Objectives[0];
         Assert.Equal(StoryObjectiveKind.TravelToPocketSystemEntrance, enter.Kind);
         Assert.Equal("margin-pocket", enter.LocalId);
-        Assert.Equal("act2", enter.OccurrenceKey);
+        Assert.Equal("act2", enter.PoiKey);
         Assert.True(enter.RequireNewVisit);
         Assert.Null(enter.TargetPoiId);
         var field = restored.Steps[0].Objectives[1];
@@ -186,7 +186,7 @@ public sealed class StoryDefinitionCodecTests
                 Assert.Equal(-1, reader.ReadInt32()); // drop the v2 item id slot
                 Assert.Equal(-1, reader.ReadInt32()); // drop the v2 enemy faction slot
                 Assert.Equal(-1, reader.ReadInt32()); // drop the v3 authored local id slot
-                Assert.Equal(-1, reader.ReadInt32()); // drop the v3 authored occurrence key slot
+                Assert.Equal(-1, reader.ReadInt32()); // drop the v3 authored mission key slot
             }
         }
         int rewards = reader.ReadByte(); writer.Write((byte)rewards);
@@ -227,7 +227,7 @@ public sealed class StoryDefinitionCodecTests
         var bytes = StoryDefinitionCodec.Encode(definition);
         var restored = StoryDefinitionCodec.Decode(bytes);
         Assert.Equal(bytes, StoryDefinitionCodec.Encode(restored));
-        Assert.Equal(2, restored.ContentRevision);
+        Assert.Equal(2, restored.MissionRevision);
         Assert.Equal(1, restored.MigratesFromRevision);
         Assert.Equal("Réponse", restored.Steps[0].Objectives[0].Description);
     }
@@ -248,7 +248,7 @@ public sealed class StoryDefinitionCodecTests
         }
         stream.Position += 3;
         int revisionOffset = (int)stream.Position;
-        var state = StoryStateCodec.Encode(new[] { new StoryOccurrenceEntry(new StoryContentId("author", "job"), Guid.NewGuid(),
+        var state = StoryStateCodec.Encode(new[] { new StoryMissionEntry(new StoryMissionDefinitionId("author", "job"), Guid.NewGuid(),
             StoryRetention.Temporary, 1, retainedDefinition: definition) });
         int payloadOffset = -1;
         for (int index = 0; index <= state.Length - bytes.Length; index++)

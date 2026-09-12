@@ -12,7 +12,7 @@ public sealed class WorldSnapshotRecorderTests
 {
     private static (WorldSnapshotInstance instance, JsonObject root, JsonObject poi) Fixture()
     {
-        var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
+        var identity = new WorldObjectIdentity(new PersistentDeclaration("author.a", "PoiX", PersistentKind.WorldObject, PersistenceImpact.ApiDependent), Guid.NewGuid());
         var instance = new WorldSnapshotInstance(new object(), identity, "system-a", new WorldSavedDefinition("author.a", new WorldCombatDefinition("PoiX", 1, "世界", "player", 2)));
         var poi = new JsonObject { Text = "native-poi", ["guid"] = new(identity.NativeId), ["type"] = new("Combat"), ["systemName"] = new("system-a") };
         var system = new JsonObject { ["guid"] = new("system-a"), ["pointsOfInterest"] = new(new List<JsonValue> { new(poi) }) };

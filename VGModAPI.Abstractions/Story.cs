@@ -10,12 +10,12 @@ namespace VGModAPI;
 /// local ID the provider chooses. Two independently loaded mods may both use the local ID
 /// <c>MissionX</c>; the pair is what identifies content, never the bare local ID.
 /// </summary>
-public readonly struct StoryContentId : IEquatable<StoryContentId>
+public readonly struct StoryMissionDefinitionId : IEquatable<StoryMissionDefinitionId>
 {
     public string Provider { get; }
     public string LocalId { get; }
 
-    public StoryContentId(string provider, string localId)
+    public StoryMissionDefinitionId(string provider, string localId)
     {
         Provider = Validate(provider, nameof(provider));
         LocalId = Validate(localId, nameof(localId));
@@ -29,13 +29,13 @@ public readonly struct StoryContentId : IEquatable<StoryContentId>
     private static string Validate(string value, string name)
         => IsValidSegment(value) ? value : throw new ArgumentException("Story identity segments are 1-48 lowercase ASCII letters/digits/hyphens starting with a letter.", name);
 
-    public bool Equals(StoryContentId other)
+    public bool Equals(StoryMissionDefinitionId other)
         => string.Equals(Provider, other.Provider, StringComparison.Ordinal) && string.Equals(LocalId, other.LocalId, StringComparison.Ordinal);
-    public override bool Equals(object? obj) => obj is StoryContentId other && Equals(other);
+    public override bool Equals(object? obj) => obj is StoryMissionDefinitionId other && Equals(other);
     public override int GetHashCode() => (Provider, LocalId).GetHashCode();
     public override string ToString() => Provider + "/" + LocalId;
-    public static bool operator ==(StoryContentId left, StoryContentId right) => left.Equals(right);
-    public static bool operator !=(StoryContentId left, StoryContentId right) => !left.Equals(right);
+    public static bool operator ==(StoryMissionDefinitionId left, StoryMissionDefinitionId right) => left.Equals(right);
+    public static bool operator !=(StoryMissionDefinitionId left, StoryMissionDefinitionId right) => !left.Equals(right);
 }
 
 /// <summary>
@@ -86,7 +86,7 @@ public enum StoryDifficulty { Easy, Normal, Hard, VeryHard }
 /// </summary>
 public enum StoryRetention { Temporary, Campaign }
 
-/// <summary>Terminal state of one occurrence. Removal without a terminal proof is not an outcome.</summary>
+/// <summary>Terminal state of one mission. Removal without a terminal proof is not an outcome.</summary>
 public enum StoryOutcome { Completed, Failed, Abandoned }
 
 /// <summary>One supported objective with its bounded parameters. Immutable and validated at construction.</summary>
@@ -113,17 +113,17 @@ public sealed class StoryObjective
     public string? EnemyFactionId { get; }
     /// <summary>content travel kinds only: the LOCAL identity of the provider's own declaration.</summary>
     public string? LocalId { get; }
-    /// <summary>content travel kinds only: the author's occurrence key for that declaration.</summary>
-    public string? OccurrenceKey { get; }
+    /// <summary>content travel kinds only: the author's poi key for that declaration.</summary>
+    public string? PoiKey { get; }
 
-    private StoryObjective(StoryObjectiveKind kind, string? targetPoiId, int requiredAmount, bool requireNewVisit, string? localKey = null, string? description = null, string? itemTypeId = null, string? enemyFactionId = null, string? ownedLocalId = null, string? ownedOccurrenceKey = null)
-    { Kind = kind; TargetPoiId = targetPoiId; RequiredAmount = requiredAmount; RequireNewVisit = requireNewVisit; LocalKey = localKey; Description = description; ItemTypeId = itemTypeId; EnemyFactionId = enemyFactionId; LocalId = ownedLocalId; OccurrenceKey = ownedOccurrenceKey; }
+    private StoryObjective(StoryObjectiveKind kind, string? targetPoiId, int requiredAmount, bool requireNewVisit, string? localKey = null, string? description = null, string? itemTypeId = null, string? enemyFactionId = null, string? ownedLocalId = null, string? ownedPoiKey = null)
+    { Kind = kind; TargetPoiId = targetPoiId; RequiredAmount = requiredAmount; RequireNewVisit = requireNewVisit; LocalKey = localKey; Description = description; ItemTypeId = itemTypeId; EnemyFactionId = enemyFactionId; LocalId = ownedLocalId; PoiKey = ownedPoiKey; }
 
     /// <summary>Returns an immutable keyed copy. Keys must be unique throughout one mission definition.</summary>
     public StoryObjective WithKey(string localKey)
     {
-        if (!StoryContentId.IsValidSegment(localKey)) throw new ArgumentException("An objective key uses the story identity segment format.", nameof(localKey));
-        return new StoryObjective(Kind, TargetPoiId, RequiredAmount, RequireNewVisit, localKey, Description, ItemTypeId, EnemyFactionId, LocalId, OccurrenceKey);
+        if (!StoryMissionDefinitionId.IsValidSegment(localKey)) throw new ArgumentException("An objective key uses the story identity segment format.", nameof(localKey));
+        return new StoryObjective(Kind, TargetPoiId, RequiredAmount, RequireNewVisit, localKey, Description, ItemTypeId, EnemyFactionId, LocalId, PoiKey);
     }
 
     /// <summary>
@@ -139,7 +139,7 @@ public sealed class StoryObjective
 
     /// <summary>
     /// Return to the mission's SOURCE location - wherever the mission is actually built/accepted,
-    /// which the game records as sourcePoi. The identity is resolved per occurrence at build time,
+    /// which the game records as sourcePoi. The identity is resolved per mission at build time,
     /// so a campaign can end where its vanilla questgiver lives without knowing any generated guid.
     /// </summary>
     public static StoryObjective ReturnToSource(bool requireNewVisit = true)
@@ -148,30 +148,30 @@ public sealed class StoryObjective
     /// <summary>
     /// Travel through the entrance jump gate of an owned system THIS provider declared. The
     /// definition names the author-local identities - which exist before any session - and the API
-    /// resolves the native gate per occurrence when the mission is built. A mission is neither
-    /// offered nor accepted while the owned occurrence does not exist in the loaded game.
+    /// resolves the native gate per mission when the mission is built. A mission is neither
+    /// offered nor accepted while the owned poi does not exist in the loaded game.
     /// </summary>
-    public static StoryObjective TravelToPocketSystemEntrance(string systemLocalId, string occurrenceKey, bool requireNewVisit = false)
-        => Owned(StoryObjectiveKind.TravelToPocketSystemEntrance, systemLocalId, occurrenceKey, requireNewVisit);
+    public static StoryObjective TravelToPocketSystemEntrance(string systemLocalId, string poiKey, bool requireNewVisit = false)
+        => Owned(StoryObjectiveKind.TravelToPocketSystemEntrance, systemLocalId, poiKey, requireNewVisit);
 
     /// <summary>
     /// Travel to an owned site THIS provider declared, named by its author-local identities.
-    /// Resolution follows <see cref="TravelToPocketSystemEntrance"/>: per occurrence, at build.
+    /// Resolution follows <see cref="TravelToPocketSystemEntrance"/>: per mission, at build.
     /// </summary>
-    public static StoryObjective TravelToResourceSite(string siteLocalId, string occurrenceKey, bool requireNewVisit = false)
-        => Owned(StoryObjectiveKind.TravelToResourceSite, siteLocalId, occurrenceKey, requireNewVisit);
+    public static StoryObjective TravelToResourceSite(string siteLocalId, string poiKey, bool requireNewVisit = false)
+        => Owned(StoryObjectiveKind.TravelToResourceSite, siteLocalId, poiKey, requireNewVisit);
 
-    private static StoryObjective Owned(StoryObjectiveKind kind, string localId, string occurrenceKey, bool requireNewVisit)
+    private static StoryObjective Owned(StoryObjectiveKind kind, string localId, string poiKey, bool requireNewVisit)
     {
         if (string.IsNullOrWhiteSpace(localId) || localId.Length > 128) throw new ArgumentException("A bounded owned local identity is required.", nameof(localId));
-        if (string.IsNullOrWhiteSpace(occurrenceKey) || occurrenceKey.Length > 256) throw new ArgumentException("A bounded owned occurrence key is required.", nameof(occurrenceKey));
-        return new StoryObjective(kind, null, 0, requireNewVisit, ownedLocalId: localId, ownedOccurrenceKey: occurrenceKey);
+        if (string.IsNullOrWhiteSpace(poiKey) || poiKey.Length > 256) throw new ArgumentException("A bounded owned poi key is required.", nameof(poiKey));
+        return new StoryObjective(kind, null, 0, requireNewVisit, ownedLocalId: localId, ownedPoiKey: poiKey);
     }
 
     /// <summary>An author-driven counting objective. Progress is absolute, not an incrementing narrative event.</summary>
     public static StoryObjective Scripted(string localKey, string description, int requiredAmount = 1)
     {
-        if (!StoryContentId.IsValidSegment(localKey)) throw new ArgumentException("Invalid objective key.", nameof(localKey));
+        if (!StoryMissionDefinitionId.IsValidSegment(localKey)) throw new ArgumentException("Invalid objective key.", nameof(localKey));
         if (string.IsNullOrWhiteSpace(description) || description.Length > 512) throw new ArgumentException("A bounded description is required.", nameof(description));
         if (requiredAmount is < 1 or > MaxAmount) throw new ArgumentOutOfRangeException(nameof(requiredAmount));
         return new StoryObjective(StoryObjectiveKind.Scripted, null, requiredAmount, false, localKey, description);
@@ -307,9 +307,9 @@ internal static class StoryText
 /// </summary>
 public sealed class StoryMissionDefinition
 {
-    private int _contentRevision = 1;
+    private int _missionRevision = 1;
     private int? _migratesFromRevision;
-    public int ContentRevision => _contentRevision;
+    public int MissionRevision => _missionRevision;
     public int? MigratesFromRevision => _migratesFromRevision;
 
     /// <summary>Returns a revisioned immutable copy with explicit key-preserving migration permission.
@@ -322,29 +322,29 @@ public sealed class StoryMissionDefinition
         if (Steps.SelectMany(step => step.Objectives).Any(objective => objective.Kind != StoryObjectiveKind.Scripted))
             throw new InvalidOperationException("Revision migration requires fully keyed scripted objectives.");
         var copy = (StoryMissionDefinition)MemberwiseClone();
-        copy._contentRevision = revision;
+        copy._missionRevision = revision;
         copy._migratesFromRevision = migratesFromRevision;
         return copy;
     }
 
     public const int MaxSteps = 8;
     public const int MaxRewards = 4;
-    /// <summary>Declared choice keys a campaign definition may record per occurrence.</summary>
+    /// <summary>Declared choice keys a campaign definition may record per mission.</summary>
     public const int MaxChoiceKeys = 8;
     /// <summary>Encoded size bound of one declared choice key.</summary>
     public const int MaxChoiceKeyBytes = 32;
     /// <summary>
     /// Encoded size bound of one declared choice VALUE. Declared choices are short decision tokens
     /// ("spared-captain"), not narrative text: the API reserves this much space for every declared
-    /// key of every offered occurrence, so the bound is what makes an outcome guaranteed recordable.
+    /// key of every offered mission, so the bound is what makes an outcome guaranteed recordable.
     /// </summary>
     public const int MaxChoiceValueBytes = 64;
     /// <summary>
-    /// Total encoded size the API reserves for one occurrence's declared choices. A definition whose
+    /// Total encoded size the API reserves for one mission's declared choices. A definition whose
     /// declared keys would need more is refused at construction, so no definition can be registered
     /// that the API could not finish recording.
     /// </summary>
-    public const int MaxChoiceBytesPerOccurrence = 1024;
+    public const int MaxChoiceBytesPerMission = 1024;
 
     /// <summary>
     /// The provider's OWN local identifier. The provider segment is never supplied by the caller: it
@@ -384,14 +384,14 @@ public sealed class StoryMissionDefinition
     public IReadOnlyList<StoryStep> Steps { get; }
     public IReadOnlyList<StoryReward> Rewards { get; }
     /// <summary>
-    /// The declared choice keys this definition may record when an occurrence retires. Choices are
+    /// The declared choice keys this definition may record when an mission retires. Choices are
     /// declared up front, never invented at retirement, because the API reserves their worst-case
-    /// persisted size when the occurrence is offered. A key that is not declared here is refused.
+    /// persisted size when the mission is offered. A key that is not declared here is refused.
     /// Campaign retention only: a temporary definition retains no choices at all.
     /// </summary>
     public IReadOnlyList<string> ChoiceKeys { get; }
     /// <summary>
-    /// Worst-case encoded bytes this definition's declared choices can occupy in one occurrence. It
+    /// Worst-case encoded bytes this definition's declared choices can occupy in one mission. It
     /// is reserved at offer time and released when the outcome is recorded, so recording an outcome
     /// can never be refused for space.
     /// </summary>
@@ -402,7 +402,7 @@ public sealed class StoryMissionDefinition
         StoryRetention retention = StoryRetention.Temporary, bool canAbandon = true,
         string? category = null, string? completionText = null, IEnumerable<string>? choiceKeys = null)
     {
-        if (!StoryContentId.IsValidSegment(localId)) throw new ArgumentException("A local ID is 1-48 lowercase ASCII letters/digits/hyphens starting with a letter.", nameof(localId));
+        if (!StoryMissionDefinitionId.IsValidSegment(localId)) throw new ArgumentException("A local ID is 1-48 lowercase ASCII letters/digits/hyphens starting with a letter.", nameof(localId));
         if (sourceFaction.Value == null) throw new ArgumentException("A source faction identity is required.", nameof(sourceFaction));
         SourceFaction = sourceFaction;
         if (!Enum.IsDefined(typeof(StoryDifficulty), difficulty)) throw new ArgumentOutOfRangeException(nameof(difficulty));
@@ -447,9 +447,9 @@ public sealed class StoryMissionDefinition
             // value of the maximum supported size.
             reserved += 2 + keyBytes + 2 + MaxChoiceValueBytes;
         }
-        if (reserved > MaxChoiceBytesPerOccurrence)
+        if (reserved > MaxChoiceBytesPerMission)
             throw new ArgumentException("Declared choices would reserve " + reserved + " bytes, above the "
-                + MaxChoiceBytesPerOccurrence + "-byte bound for one occurrence.", nameof(choiceKeys));
+                + MaxChoiceBytesPerMission + "-byte bound for one mission.", nameof(choiceKeys));
         ChoiceKeys = Array.AsReadOnly(choiceCopy);
         ReservedChoiceBytes = reserved;
     }
@@ -494,56 +494,56 @@ public sealed class StoryRegistrationResult
 }
 
 /// <summary>
-/// One occurrence of a definition. Repeated occurrences of the same definition are separate
+/// One mission of a definition. Repeated missions of the same definition are separate
 /// records with separate identity and progress; another provider can neither update nor delete them.
 /// </summary>
-internal sealed class StoryOccurrenceRecord
+internal sealed class StoryMissionRecord
 {
-    public StoryContentId Id { get; }
-    public Guid OccurrenceId { get; }
+    public StoryMissionDefinitionId Id { get; }
+    public Guid MissionId { get; }
     public StoryOutcome? Outcome { get; }
     public IReadOnlyDictionary<string, string> Choices { get; }
-    public StoryOccurrenceRecord(StoryContentId id, Guid occurrenceId, StoryOutcome? outcome, IReadOnlyDictionary<string, string>? choices = null)
+    public StoryMissionRecord(StoryMissionDefinitionId id, Guid missionId, StoryOutcome? outcome, IReadOnlyDictionary<string, string>? choices = null)
     {
         if (id.Provider == null) throw new ArgumentException("A default identity is not a content identity.", nameof(id));
-        if (occurrenceId == Guid.Empty) throw new ArgumentException("An occurrence requires its own identity.", nameof(occurrenceId));
+        if (missionId == Guid.Empty) throw new ArgumentException("An mission requires its own identity.", nameof(missionId));
         if (outcome.HasValue && !Enum.IsDefined(typeof(StoryOutcome), outcome.Value)) throw new ArgumentOutOfRangeException(nameof(outcome));
-        Id = id; OccurrenceId = occurrenceId; Outcome = outcome;
+        Id = id; MissionId = missionId; Outcome = outcome;
         var copy = new Dictionary<string, string>(StringComparer.Ordinal);
         if (choices != null) foreach (var pair in choices) copy[pair.Key] = pair.Value;
         Choices = copy;
     }
 }
 
-/// <summary>How far one occurrence has progressed. A retired occurrence is terminal and never re-opens.</summary>
+/// <summary>How far one mission has progressed. A retired mission is terminal and never re-opens.</summary>
 /// <summary>
-/// How far an UNRESOLVED occurrence has progressed. A retired occurrence is not a stage here: its
-/// terminal record, with the outcome and the recorded choices, is a <see cref="StoryOccurrenceRecord"/>
+/// How far an UNRESOLVED mission has progressed. A retired mission is not a stage here: its
+/// terminal record, with the outcome and the recorded choices, is a <see cref="StoryMissionRecord"/>
 /// returned by the retained query.
 /// </summary>
-internal enum StoryOccurrenceStage { Offered, Active }
+internal enum StoryMissionStage { Offered, Active }
 
 /// <summary>
-/// An immutable read-only view of one occurrence the API is still holding UNRESOLVED for this save.
-/// It exists so a provider never has to persist occurrence identities itself: the API owns the
+/// An immutable read-only view of one mission the API is still holding UNRESOLVED for this save.
+/// It exists so a provider never has to persist mission identities itself: the API owns the
 /// state, so it also has to be able to hand it back after a reload. It carries no outcome and no
-/// choices, because an unresolved occurrence has none; a recorded outcome is a
-/// <see cref="StoryOccurrenceRecord"/> from the retained query.
+/// choices, because an unresolved mission has none; a recorded outcome is a
+/// <see cref="StoryMissionRecord"/> from the retained query.
 /// </summary>
-internal sealed class StoryOccurrenceSnapshot
+internal sealed class StoryMissionSnapshot
 {
-    public StoryContentId Id { get; }
-    public Guid OccurrenceId { get; }
-    public StoryOccurrenceStage Stage { get; }
+    public StoryMissionDefinitionId Id { get; }
+    public Guid MissionId { get; }
+    public StoryMissionStage Stage { get; }
     public StoryRetention Retention { get; }
 
-    public StoryOccurrenceSnapshot(StoryContentId id, Guid occurrenceId, StoryOccurrenceStage stage, StoryRetention retention)
+    public StoryMissionSnapshot(StoryMissionDefinitionId id, Guid missionId, StoryMissionStage stage, StoryRetention retention)
     {
         if (id.Provider == null) throw new ArgumentException("A default identity is not a content identity.", nameof(id));
-        if (occurrenceId == Guid.Empty) throw new ArgumentException("An occurrence requires its own identity.", nameof(occurrenceId));
-        if (!Enum.IsDefined(typeof(StoryOccurrenceStage), stage)) throw new ArgumentOutOfRangeException(nameof(stage));
+        if (missionId == Guid.Empty) throw new ArgumentException("An mission requires its own identity.", nameof(missionId));
+        if (!Enum.IsDefined(typeof(StoryMissionStage), stage)) throw new ArgumentOutOfRangeException(nameof(stage));
         if (!Enum.IsDefined(typeof(StoryRetention), retention)) throw new ArgumentOutOfRangeException(nameof(retention));
-        Id = id; OccurrenceId = occurrenceId; Stage = stage; Retention = retention;
+        Id = id; MissionId = missionId; Stage = stage; Retention = retention;
     }
 }
 
@@ -560,20 +560,20 @@ public enum StoryKnowledge
     Unavailable
 }
 
-/// <summary>Occurrence answer scoped to the session it was read in. Records are empty when unavailable.</summary>
-internal sealed class StoryOccurrenceQuery
+/// <summary>Mission answer scoped to the session it was read in. Records are empty when unavailable.</summary>
+internal sealed class StoryMissionRecordQuery
 {
     public StoryKnowledge Knowledge { get; }
     /// <summary>The session the answer belongs to, or null when unavailable.</summary>
     public Guid? SessionId { get; }
-    public IReadOnlyList<StoryOccurrenceRecord> Records { get; }
+    public IReadOnlyList<StoryMissionRecord> Records { get; }
     public string Detail { get; }
-    public StoryOccurrenceQuery(StoryKnowledge knowledge, Guid? sessionId, IEnumerable<StoryOccurrenceRecord>? records, string detail)
+    public StoryMissionRecordQuery(StoryKnowledge knowledge, Guid? sessionId, IEnumerable<StoryMissionRecord>? records, string detail)
     {
         if (!Enum.IsDefined(typeof(StoryKnowledge), knowledge)) throw new ArgumentOutOfRangeException(nameof(knowledge));
         if ((knowledge == StoryKnowledge.Known) != sessionId.HasValue) throw new ArgumentException("Only a known answer carries its session.", nameof(sessionId));
         Knowledge = knowledge; SessionId = sessionId;
-        var copy = (records ?? Array.Empty<StoryOccurrenceRecord>())
+        var copy = (records ?? Array.Empty<StoryMissionRecord>())
             .Select(record => record ?? throw new ArgumentException("Null record.", nameof(records))).ToArray();
         if (knowledge != StoryKnowledge.Known && copy.Length > 0) throw new ArgumentException("An unavailable answer carries no records.", nameof(records));
         Records = Array.AsReadOnly(copy);
@@ -582,25 +582,25 @@ internal sealed class StoryOccurrenceQuery
 }
 
 /// <summary>
-/// Occurrence snapshots scoped to the session they were read in, with the same availability rules as
+/// Mission snapshots scoped to the session they were read in, with the same availability rules as
 /// every other answer. Snapshots are empty when unavailable.
 /// </summary>
-internal sealed class StoryOccurrenceSnapshotQuery
+internal sealed class StoryMissionSnapshotQuery
 {
     public StoryKnowledge Knowledge { get; }
     public Guid? SessionId { get; }
-    public IReadOnlyList<StoryOccurrenceSnapshot> Occurrences { get; }
+    public IReadOnlyList<StoryMissionSnapshot> Missions { get; }
     public string Detail { get; }
-    public StoryOccurrenceSnapshotQuery(StoryKnowledge knowledge, Guid? sessionId,
-        IEnumerable<StoryOccurrenceSnapshot>? occurrences, string detail)
+    public StoryMissionSnapshotQuery(StoryKnowledge knowledge, Guid? sessionId,
+        IEnumerable<StoryMissionSnapshot>? missions, string detail)
     {
         if (!Enum.IsDefined(typeof(StoryKnowledge), knowledge)) throw new ArgumentOutOfRangeException(nameof(knowledge));
         if ((knowledge == StoryKnowledge.Known) != sessionId.HasValue) throw new ArgumentException("Only a known answer carries its session.", nameof(sessionId));
-        var copy = (occurrences ?? Array.Empty<StoryOccurrenceSnapshot>())
-            .Select(item => item ?? throw new ArgumentException("Null snapshot.", nameof(occurrences))).ToArray();
-        if (knowledge != StoryKnowledge.Known && copy.Length > 0) throw new ArgumentException("An unavailable answer carries no snapshots.", nameof(occurrences));
+        var copy = (missions ?? Array.Empty<StoryMissionSnapshot>())
+            .Select(item => item ?? throw new ArgumentException("Null snapshot.", nameof(missions))).ToArray();
+        if (knowledge != StoryKnowledge.Known && copy.Length > 0) throw new ArgumentException("An unavailable answer carries no snapshots.", nameof(missions));
         Knowledge = knowledge; SessionId = sessionId;
-        Occurrences = Array.AsReadOnly(copy);
+        Missions = Array.AsReadOnly(copy);
         Detail = detail ?? throw new ArgumentNullException(nameof(detail));
     }
 }
@@ -664,16 +664,16 @@ public interface IStoryProvider : IDisposable
 }
 
 /// <summary>
-/// Why an occurrence transition was refused. The numeric values are explicit and stable: a member is
+/// Why an mission transition was refused. The numeric values are explicit and stable: a member is
 /// only ever appended with a new value, so inserting one can never silently renumber the others for
 /// code or persisted diagnostics compiled against an earlier build.
 /// </summary>
 internal enum StoryTransitionStatus
 {
     Accepted = 0,
-    /// <summary>The occurrence is unknown to the current ledger, including one pruned past the idempotency horizon.</summary>
-    UnknownOccurrence = 1,
-    /// <summary>The occurrence belongs to another provider or another definition; ownership is never crossed.</summary>
+    /// <summary>The mission is unknown to the current ledger, including one pruned past the idempotency horizon.</summary>
+    UnknownMission = 1,
+    /// <summary>The mission belongs to another provider or another definition; ownership is never crossed.</summary>
     ForeignOwner = 2,
     /// <summary>The transition does not follow the recorded state, for example a second terminal outcome.</summary>
     InvalidTransition = 3,
@@ -681,7 +681,7 @@ internal enum StoryTransitionStatus
     LimitExceeded = 4,
     /// <summary>
     /// The expected session is not the session that is loaded now. A reload restores the SAME
-    /// occurrence identities, so a delayed callback from the pre-reload world would otherwise apply
+    /// mission identities, so a delayed callback from the pre-reload world would otherwise apply
     /// an outcome the loaded save never produced. Re-read the state and use the current session.
     /// </summary>
     StaleSession = 5,
@@ -698,13 +698,13 @@ internal enum StoryTransitionStatus
 internal sealed class StoryTransitionResult
 {
     public StoryTransitionStatus Status { get; }
-    /// <summary>The occurrence this call created or addressed; empty when refused before one existed.</summary>
-    public Guid OccurrenceId { get; }
+    /// <summary>The mission this call created or addressed; empty when refused before one existed.</summary>
+    public Guid MissionId { get; }
     public string Detail { get; }
-    public StoryTransitionResult(StoryTransitionStatus status, Guid occurrenceId, string detail)
+    public StoryTransitionResult(StoryTransitionStatus status, Guid missionId, string detail)
     {
         if (!Enum.IsDefined(typeof(StoryTransitionStatus), status)) throw new ArgumentOutOfRangeException(nameof(status));
-        Status = status; OccurrenceId = occurrenceId;
+        Status = status; MissionId = missionId;
         Detail = detail ?? throw new ArgumentNullException(nameof(detail));
     }
     public bool Accepted => Status == StoryTransitionStatus.Accepted;
@@ -731,7 +731,7 @@ public sealed class StoryProviderResult
 /// instance, the implementation captures the assembly that actually made the call, and the host
 /// resolves both to one loaded plugin identity. Passing another plugin's instance from a different
 /// assembly is refused (<see cref="StoryProviderStatus.CallerMismatch"/>), so an ordinary API call
-/// cannot take another mod's provider identity. The API then owns registration, occurrence identity
+/// cannot take another mod's provider identity. The API then owns registration, mission identity
 /// and the supported persisted state, so a provider writes no codec, save/load callback or
 /// restoration scheduling for it. Additional provider-owned information keeps using the separate
 /// save-data API.

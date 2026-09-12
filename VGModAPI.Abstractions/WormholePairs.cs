@@ -44,7 +44,7 @@ public sealed class WormholePairState
 /// <summary>An owned, exactly connected native wormhole pair for one captured game.</summary>
 public interface IWormholePair
 {
-    string OccurrenceKey { get; }
+    string PoiKey { get; }
     WormholePairDefinition Definition { get; }
     WormholePairState State { get; }
     string? FirstWormholePoiId { get; }
@@ -55,13 +55,13 @@ public interface IWormholePair
     WorldContentResult SetOpen(bool open);
     /// <summary>
     /// Removes the owned pair: removes both native wormhole POIs from their systems and clears the
-    /// owned row so the pair no longer reconstructs and its occurrence key becomes creatable again.
+    /// owned row so the pair no longer reconstructs and its poi key becomes creatable again.
     /// This is the plain native removal: it refuses only when removal would be impossible or corrupt
     /// save state (the pair is not present natively, or the world is not in an actionable state). It
     /// does not check transient player-safety conditions. To avoid acting while the player's current
     /// location or a waypoint is at a wormhole end, query <see cref="CanRemove"/> first, or use
     /// <see cref="RequestRemoval"/> to defer to the next safe cleanup window. On success this object
-    /// is terminal (<see cref="ReconstructionStatus.Removed"/>); creating the same occurrence key
+    /// is terminal (<see cref="ReconstructionStatus.Removed"/>); creating the same poi key
     /// again authors a fresh pair with fresh native identity.
     /// </summary>
     WorldContentResult Remove();

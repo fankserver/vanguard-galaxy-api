@@ -17,7 +17,7 @@ internal static class DungeonOperationResumeCodec
         writer.Write(6); writer.Write(entries.Length);
         foreach (var entry in entries.OrderBy(state => state.Id))
         {
-            writer.Write(entry.Id.ToByteArray()); writer.Write(entry.LocationId.ToByteArray()); writer.Write((entry.ContentOccurrence ?? Guid.Empty).ToByteArray());
+            writer.Write(entry.Id.ToByteArray()); writer.Write(entry.LocationId.ToByteArray()); writer.Write((entry.DungeonId ?? Guid.Empty).ToByteArray());
             foreach (var text in new[] { entry.AttackerShipId, entry.DungeonType, entry.NativePhase, entry.Outcome, entry.MissionProtection })
             { var bytes = Utf8.GetBytes(text); writer.Write(bytes.Length); writer.Write(bytes); }
             writer.Write((byte)entry.TerminalProgress); writer.Write((byte)(entry.Autonomous ? 1 : 0));

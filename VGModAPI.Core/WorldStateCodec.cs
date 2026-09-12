@@ -71,7 +71,7 @@ internal static class WorldStateCodec
                 string owner = ReadText(reader, 128), local = ReadText(reader, 128);
                 var instance = reader.ReadBytes(16);
                 if (instance.Length != 16) throw new InvalidDataException("Truncated world instance identity.");
-                var identity = new WorldObjectIdentity(new ContentDeclaration(owner, local, PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), new Guid(instance));
+                var identity = new WorldObjectIdentity(new PersistentDeclaration(owner, local, PersistentKind.WorldObject, PersistenceImpact.ApiDependent), new Guid(instance));
                 var row = new WorldSavedObject(identity, ReadText(reader, 128), ReadText(reader, 64), reader.ReadInt32());
                 if (!ids.Add(identity.NativeId)) throw new InvalidDataException("Duplicate world instance identity.");
                 rows[i] = row;

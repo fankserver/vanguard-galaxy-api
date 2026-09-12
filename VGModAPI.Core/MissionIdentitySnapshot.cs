@@ -53,7 +53,7 @@ internal static class MissionIdentitySnapshot
     private static void CheckRows(IReadOnlyCollection<MissionIdentityRecord> rows)
     {
         if (rows.Count > MaxEntries || rows.Any(r => r == null) || rows.Select(r => r.InstanceId).Distinct().Count() != rows.Count)
-            throw new InvalidDataException("Invalid or repeated mission occurrence identity.");
+            throw new InvalidDataException("Invalid or repeated mission identity.");
     }
     internal static Guid?[] MatchUnique(IReadOnlyCollection<MissionIdentityRecord> saved, IReadOnlyList<string> currentFingerprints)
     {

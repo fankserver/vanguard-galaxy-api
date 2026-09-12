@@ -52,7 +52,7 @@ internal sealed class MissionSerializationTracker
         if (capture.Revision != revision || current.Count != capture.Missions.Length || serializedFingerprints.Count != current.Count ||
             !current.Zip(capture.Missions, ReferenceEquals).All(equal => equal)) return false;
         var rows = serializedFingerprints.Select((fingerprint, index) => new MissionIdentityRecord(fingerprint, capture.Ids[index]));
-        // Ambiguous occurrences get session-local IDs after reload; never persist that churn against identical vanilla bytes.
+        // Ambiguous missions get session-local IDs after reload; never persist that churn against identical vanilla bytes.
         var unique = rows.GroupBy(row => row.Fingerprint, StringComparer.Ordinal).Where(group => group.Count() == 1).Select(group => group.Single());
         _snapshots.Add(playerJson, new Payload(MissionIdentitySnapshot.Encode(unique), serializedFingerprints.ToArray())); return true;
     }

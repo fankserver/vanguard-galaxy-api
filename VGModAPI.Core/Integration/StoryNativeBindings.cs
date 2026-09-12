@@ -95,7 +95,7 @@ internal sealed class StoryNativeBindings
         _rewardCreate = Method(_reward, "Create", new[] { typeof(string) });
         _itemType = Type(assembly, "Behaviour.Item.InventoryItemType");
         _itemTryGet = Method(_itemType, "TryGet", new[] { typeof(string), _itemType.MakeByRefType() });
-        var tradeOffer = Type(assembly, StoryContentPolicy.ObjectiveNamespace + ".TradeOffer");
+        var tradeOffer = Type(assembly, StoryMissionPolicy.ObjectiveNamespace + ".TradeOffer");
         _deliverTo = tradeOffer.GetField("deliverTo", BindingFlags.Public | BindingFlags.Instance)
             ?? throw new MissingFieldException(tradeOffer.FullName, "deliverTo");
         _ = tradeOffer.GetMethod("OnMissionTurnedIn", BindingFlags.Public | BindingFlags.Instance)
@@ -119,12 +119,12 @@ internal sealed class StoryNativeBindings
         _removeMission = Method(_player, "RemoveMission", new[] { _mission, typeof(bool) });
 
         foreach (StoryObjectiveKind kind in Enum.GetValues(typeof(StoryObjectiveKind)))
-            RequireDerived(assembly, StoryContentPolicy.ObjectiveNamespace + "." + StoryContentPolicy.ObjectiveTypeName(kind), _objective);
+            RequireDerived(assembly, StoryMissionPolicy.ObjectiveNamespace + "." + StoryMissionPolicy.ObjectiveTypeName(kind), _objective);
         foreach (StoryRewardKind kind in Enum.GetValues(typeof(StoryRewardKind)))
-            RequireDerived(assembly, StoryContentPolicy.RewardNamespace + "." + StoryContentPolicy.RewardTypeName(kind), _reward);
+            RequireDerived(assembly, StoryMissionPolicy.RewardNamespace + "." + StoryMissionPolicy.RewardTypeName(kind), _reward);
         foreach (StoryDifficulty difficulty in Enum.GetValues(typeof(StoryDifficulty)))
-            if (!Enum.IsDefined(_difficulty, Enum.Parse(_difficulty, StoryContentPolicy.DifficultyName(difficulty))))
-                throw new MissingFieldException(_difficulty.FullName, StoryContentPolicy.DifficultyName(difficulty));
+            if (!Enum.IsDefined(_difficulty, Enum.Parse(_difficulty, StoryMissionPolicy.DifficultyName(difficulty))))
+                throw new MissingFieldException(_difficulty.FullName, StoryMissionPolicy.DifficultyName(difficulty));
     }
 
     private static Type Type(Assembly assembly, string name) => assembly.GetType(name, true)!;
@@ -239,7 +239,7 @@ internal sealed class StoryNativeBindings
         _missionDescription.SetValue(mission, definition.Description);
         _missionCategory.SetValue(mission, definition.Category ?? "");
         _missionCompletionText.SetValue(mission, definition.CompletionText ?? "");
-        _missionDifficulty.SetValue(mission, Enum.Parse(_difficulty, StoryContentPolicy.DifficultyName(definition.Difficulty)));
+        _missionDifficulty.SetValue(mission, Enum.Parse(_difficulty, StoryMissionPolicy.DifficultyName(definition.Difficulty)));
         _missionCanAbandon.SetValue(mission, definition.CanAbandon);
         Field(_mission, "autoComplete").SetValue(mission, definition.AutoComplete);
         _missionStoryId.SetValue(mission, identifier);
@@ -260,7 +260,7 @@ internal sealed class StoryNativeBindings
 
     private object CreateObjective(StoryObjective objective, object mission, Func<StoryObjective, string?>? resolveContent)
     {
-        var name = StoryContentPolicy.ObjectiveTypeName(objective.Kind);
+        var name = StoryMissionPolicy.ObjectiveTypeName(objective.Kind);
         var native = _objectiveCreate.Invoke(null, new object[] { name })
             ?? throw new InvalidOperationException("Vanilla did not create objective '" + name + "'.");
         switch (objective.Kind)
@@ -273,7 +273,7 @@ internal sealed class StoryNativeBindings
                     objective.RequireNewVisit ? LastVisited(objective.TargetPoiId!) : 0f);
                 break;
             case StoryObjectiveKind.ReturnToSource:
-                // The mission's own source location, resolved per occurrence at build time.
+                // The mission's own source location, resolved per mission at build time.
                 var source = _missionSourcePoi.GetValue(mission)
                     ?? throw new InvalidOperationException("A return-to-source objective needs the mission's source location.");
                 Field(native.GetType(), "targetPOI").SetValue(native, PoiGuid(source));
@@ -283,10 +283,10 @@ internal sealed class StoryNativeBindings
             case StoryObjectiveKind.TravelToPocketSystemEntrance:
             case StoryObjectiveKind.TravelToResourceSite:
                 // The definition names author-local identities; the native destination exists only
-                // per occurrence, so an unresolvable one refuses the BUILD - never a broken step.
+                // per mission, so an unresolvable one refuses the BUILD - never a broken step.
                 var destination = resolveContent?.Invoke(objective)
                     ?? throw new InvalidOperationException("The authored destination '" + objective.LocalId
-                        + "/" + objective.OccurrenceKey + "' does not exist in the loaded game.");
+                        + "/" + objective.PoiKey + "' does not exist in the loaded game.");
                 Field(native.GetType(), "targetPOI").SetValue(native, destination);
                 Field(native.GetType(), "requiredVisitTime").SetValue(native,
                     objective.RequireNewVisit ? LastVisited(destination) : 0f);
@@ -342,7 +342,7 @@ internal sealed class StoryNativeBindings
 
     private object CreateReward(StoryReward reward)
     {
-        var name = StoryContentPolicy.RewardTypeName(reward.Kind);
+        var name = StoryMissionPolicy.RewardTypeName(reward.Kind);
         var native = _rewardCreate.Invoke(null, new object[] { name })
             ?? throw new InvalidOperationException("Vanilla did not create reward '" + name + "'.");
         Field(native.GetType(), "amount").SetValue(native, reward.Amount);
@@ -425,7 +425,7 @@ internal sealed class StoryNativeBindings
         if (slot.Objective >= objectives.Count) return null;
         var objective = objectives[slot.Objective]!;
         if (expected.Kind != slot.Kind || expected.LocalKey != slot.Key
-            || objective.GetType().FullName != StoryContentPolicy.ObjectiveNamespace + "." + StoryContentPolicy.ObjectiveTypeName(slot.Kind)) return null;
+            || objective.GetType().FullName != StoryMissionPolicy.ObjectiveNamespace + "." + StoryMissionPolicy.ObjectiveTypeName(slot.Kind)) return null;
         int progress;
         switch (slot.Kind)
         {
@@ -434,7 +434,7 @@ internal sealed class StoryNativeBindings
                 progress = (int)Math.Min(expected.RequiredAmount, Math.Max(0L, (long)Property(_player, "credits").GetValue(player)!));
                 break;
             case StoryObjectiveKind.TravelToPoi:
-                // The visit baseline is a per-occurrence timestamp, not identity; the target is.
+                // The visit baseline is a per-mission timestamp, not identity; the target is.
                 if ((string?)Field(objective.GetType(), "targetPOI").GetValue(objective) != expected.TargetPoiId) return null;
                 progress = (bool)objective.GetType().GetMethod("IsComplete", System.Type.EmptyTypes)!.Invoke(objective, null)! ? 1 : 0;
                 break;
@@ -516,7 +516,7 @@ internal sealed class StoryNativeBindings
             var objectives = (IList)_stepObjectives.GetValue(steps[slot.Step])!;
             if (slot.Objective >= objectives.Count) return false;
             var objective = objectives[slot.Objective]!;
-            if (objective.GetType().FullName != StoryContentPolicy.ObjectiveNamespace + ".TriggerObjective") return false;
+            if (objective.GetType().FullName != StoryMissionPolicy.ObjectiveNamespace + ".TriggerObjective") return false;
             var trigger = Field(objective.GetType(), "trigger");
             if (!Equals(trigger.GetValue(objective), Enum.Parse(trigger.FieldType, "None"))
                 || (int)Field(objective.GetType(), "requiredAmount").GetValue(objective)! != slot.Required
@@ -575,7 +575,7 @@ internal sealed class StoryNativeBindings
         object? currentStep = null;
         foreach (var candidate in steps)
             if (!(bool)Property(_missionStep, "isComplete").GetValue(candidate)!) { currentStep = candidate; break; }
-        if (objective.GetType().FullName != StoryContentPolicy.ObjectiveNamespace + ".TriggerObjective") return false;
+        if (objective.GetType().FullName != StoryMissionPolicy.ObjectiveNamespace + ".TriggerObjective") return false;
         if ((int)Field(objective.GetType(), "requiredAmount").GetValue(objective)! != slot.Required) return false;
         var trigger = Field(objective.GetType(), "trigger");
         if (!Equals(trigger.GetValue(objective), Enum.Parse(trigger.FieldType, "None"))) return false;

@@ -29,11 +29,11 @@ public sealed class DungeonPodResumeAdapterTests
         var data = new NativeObject(); data.Fields["resumePodPhase"] = "Returning"; data.Fields["resumePodPlayer"] = true;
         var pod = new NativeObject(); pod.Fields["resumePodData"] = data;
         var crew = new Dictionary<string, int> { ["Marine"] = 2 }; pod.Fields["resumeReturnCrew"] = crew;
-        var occurrence = Guid.NewGuid(); DungeonPodPersistenceTests.TrackOperation(pods, occurrence); Assert.True(adapter.Observe(pod, occurrence, "ship-guid", true));
+        var dungeon = Guid.NewGuid(); DungeonPodPersistenceTests.TrackOperation(pods, dungeon); Assert.True(adapter.Observe(pod, dungeon, "ship-guid", true));
         var id = adapter.IdentityFor(data)!.Value; crew["Marine"] = 9; Assert.Equal(2, pods.Get(id)!.ReturnCrew["Marine"]);
         var saved = persistence.Provider.Capture(); adapter.Clear(); persistence.Provider.Restore(hub.CurrentSession!, saved);
         adapter.Loaded(data, id); pod.Fields["resumeReturnCrew"] = new Dictionary<string, int>();
-        Assert.True(adapter.Observe(pod, occurrence, "ship-guid")); Assert.Equal(2, pods.Get(id)!.ReturnCrew["Marine"]);
+        Assert.True(adapter.Observe(pod, dungeon, "ship-guid")); Assert.Equal(2, pods.Get(id)!.ReturnCrew["Marine"]);
         Assert.False(adapter.RestoreReturnManifest(pod, "another-ship"));
         Assert.True(adapter.RestoreReturnManifest(pod, "ship-guid"));
         var restoredCrew = Assert.IsType<Dictionary<string, int>>(pod.Fields["resumeReturnCrew"]);
@@ -41,8 +41,8 @@ public sealed class DungeonPodResumeAdapterTests
         Assert.Equal(2, pods.Get(id)!.ReturnCrew["Marine"]);
         var duplicate = new NativeObject(); adapter.Loaded(duplicate, id);
         Assert.True(adapter.Conflicted(id)); Assert.False(adapter.RestoreReturnManifest(pod, "ship-guid"));
-        Assert.False(adapter.Observe(pod, occurrence, "ship-guid", true));
+        Assert.False(adapter.Observe(pod, dungeon, "ship-guid", true));
         persistence.Provider.Restore(hub.CurrentSession!, null);
-        Assert.False(adapter.Observe(pod, occurrence, "ship-guid", true)); Assert.Empty(pods.Snapshot);
+        Assert.False(adapter.Observe(pod, dungeon, "ship-guid", true)); Assert.Empty(pods.Snapshot);
     }
 }

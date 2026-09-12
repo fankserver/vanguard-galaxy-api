@@ -10,7 +10,7 @@ public sealed class WorldConstructionGateTests
     private static readonly string Hash = new('a', 64);
     private static SnapshotAssociation Association() => new("/save/a", Hash, Hash, Guid.NewGuid(), Guid.NewGuid());
     private static WorldConstructionNode Node(string owner = "author.one") => new(new object(), new WorldObjectIdentity(
-        new ContentDeclaration(owner, "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid()), Hash);
+        new PersistentDeclaration(owner, "PoiX", PersistentKind.WorldObject, PersistenceImpact.ApiDependent), Guid.NewGuid()), Hash);
 
     [Fact]
     public void RefusesReservedFactoriesBeforeMetadataAndAllowsUnrelatedVanilla()

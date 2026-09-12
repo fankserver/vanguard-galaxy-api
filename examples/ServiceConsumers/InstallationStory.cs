@@ -8,7 +8,7 @@ public sealed class InstallationStory : IDisposable
 {
     private readonly IDungeonProvider _dungeons;
 
-    public InstallationStory(IDungeonContentService dungeons, string pluginId, ISaveDataRegistration customSaveData,
+    public InstallationStory(IDungeonService dungeons, string pluginId, ISaveDataRegistration customSaveData,
         Action stationAStoryBeat, Action stationBStoryBeat)
     {
         _dungeons = dungeons.AcquireProvider(pluginId, saveData: customSaveData);

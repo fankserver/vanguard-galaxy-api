@@ -59,7 +59,7 @@ public sealed class WorldGenerationReaderTests : IDisposable
     [InlineData(2)]
     public void InstancesRequireTheirExactRetainedDefinitionRevision(int revision)
     {
-        var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
+        var identity = new WorldObjectIdentity(new PersistentDeclaration("author.a", "PoiX", PersistentKind.WorldObject, PersistenceImpact.ApiDependent), Guid.NewGuid());
         var row = new WorldSavedObject(identity, "system-a", GenerationStore.Hash(_native), 1);
         var owners = new Dictionary<string, byte[]>
         {
@@ -110,7 +110,7 @@ public sealed class WorldGenerationReaderTests : IDisposable
         // RestoreFailed -> blocked, so an authored pocket created natively could never resolve its SystemId.
         var store = Store;
         var authoredOwner = "vgmodapi.world-authored-systems";
-        var authoredEnvelope = new OwnerSchemaCodec(authoredOwner, 1, _ => true).Encode(PocketSystemStateCodec.Encode(Array.Empty<PocketSystemOccurrence>()));
+        var authoredEnvelope = new OwnerSchemaCodec(authoredOwner, 1, _ => true).Encode(PocketSystemStateCodec.Encode(Array.Empty<PocketSystemPoi>()));
         store.Publish(Slot, GenerationStore.Hash(_native), Guid.NewGuid(), new Dictionary<string, byte[]>
         {
             [WorldStateCodec.Owner] = Envelope(),

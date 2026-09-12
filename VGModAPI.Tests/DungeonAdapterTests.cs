@@ -6,7 +6,7 @@ using NativeObject = VGModAPI.Tests.DungeonLayoutBuilderTests.NativeObject;
 
 namespace VGModAPI.Tests;
 
-public sealed class DungeonContentAdapterTests
+public sealed class DungeonAdapterTests
 {
     private sealed class Persistence : TestSaveDataService
     {
@@ -24,7 +24,7 @@ public sealed class DungeonContentAdapterTests
         internal readonly LifecycleHub Hub = new((_, _) => { });
         internal readonly Persistence Persistence = new();
         internal readonly DungeonStateStore Store;
-        internal readonly DungeonContentAdapter Adapter;
+        internal readonly DungeonAdapter Adapter;
         internal readonly NativeObject Simulation = new(), Location = new(), Operation = new();
         internal readonly Guid Id = Guid.NewGuid();
         internal Fixture(bool retained)

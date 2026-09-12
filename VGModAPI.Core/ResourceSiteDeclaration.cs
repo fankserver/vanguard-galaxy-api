@@ -19,14 +19,14 @@ internal sealed class ResourceSiteDeclaration
     internal ResourceSiteDeclaration(ResourceSiteDefinition definition)
     {
         if (definition == null) throw new ArgumentNullException(nameof(definition));
-        _ = new ContentDeclaration("vgmodapi.world", definition.LocalId, PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent);
+        _ = new PersistentDeclaration("vgmodapi.world", definition.LocalId, PersistentKind.WorldObject, PersistenceImpact.ApiDependent);
         if (string.IsNullOrWhiteSpace(definition.Name) || definition.Name.IndexOf('\0') >= 0 || WorldStateCodec.TextByteCount(definition.Name) > 1024)
             throw new ArgumentException("A bounded world display name is required.");
         if (definition.Kind == ResourceSiteKind.SalvageSite)
         {
             if (string.IsNullOrWhiteSpace(definition.WreckShipId) || WorldStateCodec.TextByteCount(definition.WreckShipId!) > 128)
                 throw new ArgumentException("A bounded exact wreck ship class is required.");
-            _ = new ContentDeclaration("vgmodapi.world", definition.FactionId!, PersistentContentKind.Faction, ContentPersistenceImpact.ApiDependent);
+            _ = new PersistentDeclaration("vgmodapi.world", definition.FactionId!, PersistentKind.Faction, PersistenceImpact.ApiDependent);
         }
         LocalId = definition.LocalId; Revision = definition.Revision; Name = definition.Name; Kind = definition.Kind;
         Level = definition.Level; FactionId = definition.FactionId; WreckShipId = definition.WreckShipId;
@@ -39,29 +39,29 @@ internal sealed class ResourceSiteDeclaration
 }
 
 /// <summary>
-/// One persisted authored-site occurrence row: retained declarative identity plus the fresh per-game
-/// native references owned by the occurrence. Nothing executable or callback-shaped is stored.
+/// One persisted authored-site poi row: retained declarative identity plus the fresh per-game
+/// native references owned by the poi. Nothing executable or callback-shaped is stored.
 /// </summary>
-internal sealed class ResourceSiteOccurrence
+internal sealed class ResourceSitePoi
 {
     internal string Owner { get; }
     internal string LocalId { get; }
-    internal string OccurrenceKey { get; }
+    internal string PoiKey { get; }
     internal int Revision { get; private set; }
     internal ResourceSiteKind Kind { get; }
     internal string SystemId { get; }
     internal string PoiId { get; }
-    internal ResourceSiteOccurrence(string owner, string localId, string occurrenceKey, int revision,
+    internal ResourceSitePoi(string owner, string localId, string poiKey, int revision,
         ResourceSiteKind kind, string systemId, string poiId)
     {
         if (string.IsNullOrWhiteSpace(owner) || WorldStateCodec.TextByteCount(owner) > 128) throw new ArgumentException("A bounded owner is required.", nameof(owner));
         if (string.IsNullOrWhiteSpace(localId) || WorldStateCodec.TextByteCount(localId) > 128) throw new ArgumentException("A bounded local identity is required.", nameof(localId));
-        if (string.IsNullOrWhiteSpace(occurrenceKey) || WorldStateCodec.TextByteCount(occurrenceKey) > 256) throw new ArgumentException("A bounded occurrence key is required.", nameof(occurrenceKey));
+        if (string.IsNullOrWhiteSpace(poiKey) || WorldStateCodec.TextByteCount(poiKey) > 256) throw new ArgumentException("A bounded poi key is required.", nameof(poiKey));
         if (revision < 1) throw new ArgumentOutOfRangeException(nameof(revision));
         if (!Enum.IsDefined(typeof(ResourceSiteKind), kind)) throw new ArgumentOutOfRangeException(nameof(kind));
         if (string.IsNullOrWhiteSpace(systemId) || WorldStateCodec.TextByteCount(systemId) > 128) throw new ArgumentException("A bounded native system identity is required.", nameof(systemId));
         if (string.IsNullOrWhiteSpace(poiId) || WorldStateCodec.TextByteCount(poiId) > 128) throw new ArgumentException("A bounded native POI identity is required.", nameof(poiId));
-        Owner = owner; LocalId = localId; OccurrenceKey = occurrenceKey; Revision = revision;
+        Owner = owner; LocalId = localId; PoiKey = poiKey; Revision = revision;
         Kind = kind; SystemId = systemId; PoiId = poiId;
     }
     internal void MigrateRevision(int revision)
@@ -73,22 +73,22 @@ internal sealed class ResourceSiteOccurrence
 
 
 /// <summary>
-/// One persisted combat-site key row: the author-local occurrence key and the API-allocated
+/// One persisted combat-site key row: the author-local poi key and the API-allocated
 /// instance identity it derived. Pure association - creation/resolution stay on the combat-POI
-/// pipeline; this row exists so keyed occurrences are enumerable and settle-reportable.
+/// pipeline; this row exists so keyed pois are enumerable and settle-reportable.
 /// </summary>
 internal sealed class CombatSiteKeyRow
 {
     internal string Owner { get; }
     internal string LocalId { get; }
-    internal string OccurrenceKey { get; }
+    internal string PoiKey { get; }
     internal Guid InstanceId { get; }
-    internal CombatSiteKeyRow(string owner, string localId, string occurrenceKey, Guid instanceId)
+    internal CombatSiteKeyRow(string owner, string localId, string poiKey, Guid instanceId)
     {
         if (string.IsNullOrWhiteSpace(owner) || WorldStateCodec.TextByteCount(owner) > 128) throw new ArgumentException("A bounded owner is required.", nameof(owner));
         if (string.IsNullOrWhiteSpace(localId) || WorldStateCodec.TextByteCount(localId) > 128) throw new ArgumentException("A bounded local identity is required.", nameof(localId));
-        if (string.IsNullOrWhiteSpace(occurrenceKey) || WorldStateCodec.TextByteCount(occurrenceKey) > 256) throw new ArgumentException("A bounded occurrence key is required.", nameof(occurrenceKey));
+        if (string.IsNullOrWhiteSpace(poiKey) || WorldStateCodec.TextByteCount(poiKey) > 256) throw new ArgumentException("A bounded poi key is required.", nameof(poiKey));
         if (instanceId == Guid.Empty) throw new ArgumentException("An instance identity is required.", nameof(instanceId));
-        Owner = owner; LocalId = localId; OccurrenceKey = occurrenceKey; InstanceId = instanceId;
+        Owner = owner; LocalId = localId; PoiKey = poiKey; InstanceId = instanceId;
     }
 }
