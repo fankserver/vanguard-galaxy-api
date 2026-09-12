@@ -25,6 +25,9 @@ internal sealed class WorldNativeResourceSites : IResourceSiteNative
         _dataShip, _dataAngle, _dataPosition, _dataHazard, _hazardName, _hazardDamage, _hazardChance,
         _fieldSurface, _fieldCore, _vectorX, _vectorY;
     private readonly MethodInfo _getPersistables, _getOperation;
+    // The game's own generic teardown for an authored POI: SystemMapData.RemovePointOfInterest(poi)
+    // => pointsOfInterest.Remove(poi). Delegated rather than re-implemented with field surgery.
+    private readonly MethodInfo _removePointOfInterest;
     private readonly PropertyInfo _dungeonManagerInstance;
     private readonly FieldInfo _locationDungeonData, _dungeonOperationActive, _dungeonSimulation,
         _playerCurrentPoi, _playerWaypoints;
@@ -65,6 +68,8 @@ internal sealed class WorldNativeResourceSites : IResourceSiteNative
         var system = Get(ResourceSiteBindings.System);
         _oreData = system.GetProperty("systemOreData", BindingFlags.Public | BindingFlags.Instance) ?? throw new MissingMemberException("systemOreData");
         _points = Field(system, "pointsOfInterest");
+        _removePointOfInterest = system.GetMethod("RemovePointOfInterest", BindingFlags.Public | BindingFlags.Instance)
+            ?? throw new MissingMethodException(ResourceSiteBindings.System, "RemovePointOfInterest");
         _elementFaction = Get(ResourceSiteBindings.Element).GetProperty("faction", BindingFlags.Public | BindingFlags.Instance)
             ?? throw new MissingMemberException("MapElement.faction");
         var poi = Get(ResourceSiteBindings.Poi);
@@ -310,13 +315,15 @@ internal sealed class WorldNativeResourceSites : IResourceSiteNative
         var members = (System.Collections.IList)_points.GetValue(host)!;
         if (!members.Contains(poi)) return ResourceSiteRemoveOutcome.Missing;
         if (!_game.TryGetObservedPlayer(session, out var player) || player == null) return ResourceSiteRemoveOutcome.Failed;
-        // Remove by reference, never by equality: a native POI that overrode Equals must not let the
-        // removal pick a different-but-equal member while the owned POI survives.
+        // Capture the slot for rollback ordering only; the removal itself delegates to the game's own
+        // teardown (SystemMapData.RemovePointOfInterest => pointsOfInterest.Remove(poi), equality-based,
+        // exactly as the game itself removes a POI). VerifyRemoveDelta + rollback remain the
+        // atomicity/save-safety net, unchanged by the primitive we delegate to.
         int removalIndex = IndexOf(members, poi);
         if (removalIndex < 0) return ResourceSiteRemoveOutcome.Missing;
         try
         {
-            members.RemoveAt(removalIndex);
+            _removePointOfInterest.Invoke(host, new object[] { poi });
             if (!_game.TryGetObservedPlayer(session, out var current) || !ReferenceEquals(current, player) ||
                 !ReferenceEquals(_map.GetValue(current), map))
             { Rollback(members, poi, removalIndex); return ResourceSiteRemoveOutcome.Failed; }
