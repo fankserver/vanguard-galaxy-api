@@ -73,10 +73,11 @@ var mission = game.Story.Offer(intro);
 mission.Activate();
 ```
 
-`Offer` returns the mission immediately in `Offering` state. The API executes the offer safely;
-`Offered` means the occurrence was admitted, and `Active` means the game accepted it. Every call
-requests a separate occurrence. Pending offers are included in discovery, but are not persisted
-until admitted. `Id` is empty until admission; callers do not need it to perform actions.
+`Offer` returns the mission immediately without an admission yet — its `Availability` is
+`PendingOffering` until admission. `Offered` (admitted, not yet accepted), `Active` (accepted and
+live) and the terminals `Completed`/`Failed`/`Abandoned` are the real `State`. Every call requests a
+separate occurrence. Pending offers are included in discovery, but are not persisted until admitted.
+`Id` is empty until admission; callers do not need it to perform actions.
 
 | Member | Meaning |
 |---|---|
@@ -97,8 +98,9 @@ registration ends, without delivering callbacks into the replacement game. Compl
 remain completed.
 
 A mission object never rebinds after loading another game, even when the save restores the same
-occurrence ID. Its state becomes `GameEnded`, and its actions cannot affect the replacement game.
-A disposed or superseded definition likewise cannot control content through an old mission object.
+occurrence ID. Its `Availability` becomes `GameEnded` (its `State` keeps the last recorded state),
+and its actions cannot affect the replacement game. A disposed or superseded definition likewise
+cannot control content through an old mission object, surfacing as `Availability.Unavailable`.
 
 Completion belongs to the game: there is no author-facing `Complete()` command. An observed failure
 may still be retryable in the native UI. `Failed` therefore describes a failure, not necessarily a
