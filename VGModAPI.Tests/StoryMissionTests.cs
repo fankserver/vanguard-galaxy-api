@@ -99,6 +99,18 @@ public sealed partial class StoryMissionTests
         => Definition(local, StoryRetention.Campaign,
             Enumerable.Range(0, StoryMissionDefinition.MaxChoiceKeys).Select(index => "k" + index + new string('x', StoryMissionDefinition.MaxChoiceKeyBytes - 2)));
 
+    /// <summary>
+    /// A campaign definition runs once (the game admits one story mission per identifier), so filling
+    /// a provider's budget with campaign missions needs a fresh definition per mission. Returns false
+    /// once the provider can no longer take another registration+offer pair.
+    /// </summary>
+    private static bool OfferFreshCampaign(IStoryProvider lease, string prefix, int index)
+    {
+        var local = prefix + index;
+        if (!lease.Register(WorstDefinition(local)).Succeeded) return false;
+        return lease.Offer(local).Accepted;
+    }
+
     private static Dictionary<string, string> WorstChoices(StoryMissionDefinition definition)
         => definition.ChoiceKeys.ToDictionary(key => key, _ => new string('v', StoryMissionDefinition.MaxChoiceValueBytes), StringComparer.Ordinal);
 
@@ -1037,67 +1049,59 @@ public sealed partial class StoryMissionTests
     }
 
     /// <summary>
-    /// Campaign outcomes are never pruned, so the per-definition bound has to be spent at OFFER time:
-    /// an mission is refused before it exists rather than admitted and then stranded active with
-    /// an outcome it could never record. The bound counts retired and unresolved missions alike.
+    /// A campaign definition runs ONCE, mirroring the game: GamePlayer.AddMissionWithLog refuses a
+    /// story mission whose identifier HasStoryMission already reports active or archived, and the
+    /// archive keeps it forever. A retired campaign mission therefore closes its definition.
     /// </summary>
     [Fact]
-    public void TheCampaignBoundRefusesTheOfferSoNoAdmittedOccurrenceIsStranded()
+    public void ARetiredCampaignDefinitionRunsOnceSoASecondOfferIsRefused()
     {
         var provider = Provider(out _, out _, out var service, StoryRetention.Campaign);
-        for (int index = 0; index < StoryLedger.MaxRetainedPerDefinition; index++)
-        {
-            var offer = provider.Offer("salvage-run");
-            Assert.True(offer.Accepted);
-            Assert.True(provider.Retire(offer.MissionId, StoryOutcome.Failed,
-                new Dictionary<string, string> { ["branch"] = "left" }).Accepted);
-        }
+        var offer = provider.Offer("salvage-run");
+        Assert.True(offer.Accepted);
+        Assert.True(provider.Retire(offer.MissionId, StoryOutcome.Failed,
+            new Dictionary<string, string> { ["branch"] = "left" }).Accepted);
         int before = service.Ledger.Count;
-        var overflow = provider.Offer("salvage-run");
-        Assert.Equal(StoryTransitionStatus.LimitExceeded, overflow.Status);
-        Assert.Equal(Guid.Empty, overflow.MissionId);
-        Assert.Contains("could never retire", overflow.Detail);
+        var refused = provider.Offer("salvage-run");
+        Assert.Equal(StoryTransitionStatus.InvalidTransition, refused.Status);
+        Assert.Equal(Guid.Empty, refused.MissionId);
+        Assert.Contains("runs once", refused.Detail);
         Assert.Equal(before, service.Ledger.Count);
         var records = provider.Missions("salvage-run").Records;
-        Assert.Equal(StoryLedger.MaxRetainedPerDefinition, records.Count);
+        Assert.Single(records);
         // Declared choices are never silently dropped or truncated.
         Assert.All(records, record => Assert.Equal("left", record.Choices["branch"]));
     }
 
     /// <summary>
-    /// The same bound counts missions that are merely OFFERED: 48 concurrent offers are admitted,
-    /// the 49th is refused before any of them retires, and every admitted one still retires.
+    /// An UNRESOLVED campaign mission already claims its definition, exactly as the game counts an
+    /// active story mission: the second offer is refused before the first retires, and the admitted
+    /// one still retires. A crafted payload holding two campaign rows is refused by the same rule.
     /// </summary>
     [Fact]
-    public void UnresolvedCampaignOccurrencesConsumeTheirDefinitionsBoundAndAllRemainRetirable()
+    public void AnUnresolvedCampaignOccurrenceAlreadyClaimsItsDefinition()
     {
         var provider = Provider(out _, out _, out var service, StoryRetention.Campaign);
-        var admitted = new List<Guid>();
-        for (int index = 0; index < StoryLedger.MaxRetainedPerDefinition; index++)
-        {
-            var offer = provider.Offer("salvage-run");
-            Assert.True(offer.Accepted);
-            admitted.Add(offer.MissionId);
-        }
+        var offer = provider.Offer("salvage-run");
+        Assert.True(offer.Accepted);
         int before = service.Ledger.Count;
         var refused = provider.Offer("salvage-run");
-        Assert.Equal(StoryTransitionStatus.LimitExceeded, refused.Status);
-        // The CAMPAIGN bound is what refuses here; a payload-budget or quota refusal must not be
-        // able to pass for it.
-        Assert.Contains("campaign missions including unresolved ones", refused.Detail);
-        Assert.Contains("could never retire", refused.Detail);
+        Assert.Equal(StoryTransitionStatus.InvalidTransition, refused.Status);
+        // The one-run-per-definition rule is what refuses here; a payload-budget or quota refusal
+        // must not be able to pass for it.
+        Assert.Contains("already has a campaign mission", refused.Detail);
+        Assert.Contains("runs once", refused.Detail);
         Assert.Equal(before, service.Ledger.Count);
-        // Everything that was admitted can still record its outcome; none is stranded.
-        foreach (var mission in admitted)
-            Assert.True(provider.Retire(mission, StoryOutcome.Failed,
-                new Dictionary<string, string> { ["branch"] = "left" }).Accepted);
-        Assert.Equal(StoryLedger.MaxRetainedPerDefinition, provider.Missions("salvage-run").Records.Count);
-        // A crafted payload that exceeds the same sum is refused by the shared bounds, not restored.
-        var rows = Enumerable.Range(1, StoryLedger.MaxRetainedPerDefinition + 1)
+        // What was admitted can still record its outcome; nothing is stranded.
+        Assert.True(provider.Retire(offer.MissionId, StoryOutcome.Failed,
+            new Dictionary<string, string> { ["branch"] = "left" }).Accepted);
+        Assert.Single(provider.Missions("salvage-run").Records);
+        // A crafted payload holding more than one campaign row is refused, not restored.
+        var rows = Enumerable.Range(1, 2)
             .Select(index => new StoryMissionEntry(new StoryMissionDefinitionId("anima", "salvage-run"), Guid.NewGuid(),
                 StoryRetention.Campaign, index))
             .ToArray();
-        Assert.Contains("campaign mission cap", StoryLedger.RefuseBounds(rows));
+        Assert.Contains("more than one campaign mission", StoryLedger.RefuseBounds(rows));
         Assert.Throws<InvalidDataException>(() => StoryStateCodec.Encode(rows));
     }
 
@@ -1658,15 +1662,31 @@ public sealed partial class StoryMissionTests
             var first = lease.Offer("salvage-run");
             Assert.True(first.Accepted);
             reserved.Add(first.MissionId);
-            // Fill the rest of this provider's budget.
-            while (lease.Offer("salvage-run").Accepted) { }
-            int before = service.Ledger.Count;
-            var refusal = lease.Offer("salvage-run");
+            // A campaign definition runs once, so every further mission brings its own definition.
+            // Register them up front, then spend the remaining budget on offers, so the refusal that
+            // matters here comes from the payload budget and not from the one-run rule.
+            var locals = new List<string>();
+            for (int index = 0; lease.Register(WorstDefinition("fill-" + index)).Succeeded; index++)
+                locals.Add("fill-" + index);
+            StoryTransitionResult refusal;
+            int fill = 0;
+            while (true)
+            {
+                Assert.True(fill < locals.Count, "registration room ran out before the payload budget did");
+                int before = service.Ledger.Count;
+                var attempt = lease.Offer(locals[fill]);
+                if (!attempt.Accepted)
+                {
+                    refusal = attempt;
+                    // Refused BEFORE mutating: the ledger is byte-for-byte what it was.
+                    Assert.Equal(before, service.Ledger.Count);
+                    break;
+                }
+                fill++;
+            }
             Assert.Equal(StoryTransitionStatus.LimitExceeded, refusal.Status);
             Assert.Contains("payload budget", refusal.Detail);
             Assert.Equal(Guid.Empty, refusal.MissionId);
-            // Refused BEFORE mutating: the ledger is byte-for-byte what it was.
-            Assert.Equal(before, service.Ledger.Count);
         }
         // Every provider is full, and every reserved outcome is still recordable at full size.
         var worstPayload = WorstChoices(WorstDefinition());
@@ -3100,7 +3120,7 @@ public sealed partial class StoryMissionTests
         var overHorizon = Rows(StoryLedger.TemporaryTombstoneHorizon + 1, "anima", "salvage-run", StoryRetention.Temporary, retired: true);
         Assert.Throws<InvalidDataException>(() => StoryStateCodec.Encode(overHorizon));
         Assert.False(StoryStateCodec.Validate(Craft(overHorizon)));
-        var overRetained = Rows(StoryLedger.MaxRetainedPerDefinition + 1, "anima", "salvage-run", StoryRetention.Campaign, retired: true);
+        var overRetained = Rows(2, "anima", "salvage-run", StoryRetention.Campaign, retired: true);
         Assert.Throws<InvalidDataException>(() => StoryStateCodec.Encode(overRetained));
         Assert.False(StoryStateCodec.Validate(Craft(overRetained)));
         // A refused payload leaves the owner blocked and its retained bytes intact; nothing is pruned.

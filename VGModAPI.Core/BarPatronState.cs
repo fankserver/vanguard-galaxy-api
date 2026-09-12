@@ -34,8 +34,12 @@ internal sealed class BarPatronState
                 throw new ArgumentException("Borrow portraits from game characters, not introduced ones.", nameof(portrait));
         }
         Portrait = portrait; IsMale = isMale; Removed = removed;
-        if (mission.HasValue != missionId.HasValue || missionId == Guid.Empty)
-            throw new ArgumentException("A mission reference needs both definition and nonempty mission identity.");
+        // Definition and run are independent facts: a patron offers a definition, and separately may
+        // be bound to a run of it. Requiring both (or neither) erased the "offers X, not yet bound"
+        // state the BarPatronDefinition model already expects.
+        if (missionId == Guid.Empty) throw new ArgumentException("A bound mission needs a nonempty identity.", nameof(missionId));
+        if (missionId.HasValue && !mission.HasValue)
+            throw new ArgumentException("A bound mission run needs the definition it runs.", nameof(mission));
         if (mission.HasValue)
         {
             _ = new StoryMissionDefinitionId(mission.Value.Provider, mission.Value.LocalId);

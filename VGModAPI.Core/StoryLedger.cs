@@ -161,12 +161,6 @@ internal sealed class StoryLedger
     /// </summary>
     internal const long MaxSequence = long.MaxValue - MaxMissions;
     /// <summary>
-    /// Campaign outcomes are never pruned; reaching this bound refuses instead of dropping
-    /// progression. It stays BELOW <see cref="MaxMissionsPerProvider"/> so one definition's
-    /// history cannot consume its owner's whole share before this bound is reached.
-    /// </summary>
-    internal const int MaxRetainedPerDefinition = 48;
-    /// <summary>
     /// The idempotency horizon for TEMPORARY definitions: the newest terminal tombstones per
     /// definition are retained and older ones are pruned. A pruned mission reports
     /// <see cref="StoryLedgerStatus.UnknownMission"/>; it is never re-offered or re-accepted,
@@ -228,13 +222,15 @@ internal sealed class StoryLedger
             diagnostic = "The mission sequence reached its bound; refusing rather than wrapping the timeline.";
             return StoryLedgerStatus.LimitExceeded;
         }
-        if (retention == StoryRetention.Campaign && CampaignSlotsUsed(id) >= MaxRetainedPerDefinition)
+        if (retention == StoryRetention.Campaign && HasCampaignMission(id))
         {
-            // Campaign outcomes are never pruned, so an mission admitted beyond this bound could
-            // never record its outcome. Refused HERE, before anything exists to strand.
-            diagnostic = "Definition '" + id + "' already holds " + MaxRetainedPerDefinition
-                + " campaign missions including unresolved ones; refusing the offer rather than admitting one that could never retire.";
-            return StoryLedgerStatus.LimitExceeded;
+            // The game admits one story mission per identifier, ever: GamePlayer.AddMissionWithLog
+            // refuses when HasStoryMission(storyId) reports it already active or archived, and the
+            // archive keeps it forever. A campaign definition mirrors that exactly - it runs once,
+            // and its outcome is the definition's outcome. Repeatable content is temporary.
+            diagnostic = "Definition '" + id + "' already has a campaign mission (unresolved or retired); "
+                + "a campaign definition runs once, mirroring the game's one story mission per identifier.";
+            return StoryLedgerStatus.InvalidTransition;
         }
         if (retention != StoryRetention.Campaign && choiceReservation > 0)
         { diagnostic = "Only a campaign definition reserves declared-choice space."; return StoryLedgerStatus.InvalidTransition; }
@@ -467,12 +463,12 @@ internal sealed class StoryLedger
     private int ReservedFootprint() => StoryStateCodec.HeaderBytes + _byMission.Values.Sum(Footprint);
 
     /// <summary>
-    /// Campaign slots a definition already holds: retired outcomes AND unresolved missions that
-    /// still have their outcome to record. The bound covers both, because an unresolved mission
-    /// is a retirement that must still fit.
+    /// Whether a definition already has a campaign mission: a retired outcome OR an unresolved
+    /// mission that still has its outcome to record. Either one means the definition has run,
+    /// matching the game's <c>HasStoryMission</c> (active or archived).
     /// </summary>
-    private int CampaignSlotsUsed(StoryMissionDefinitionId id)
-        => _byMission.Values.Count(entry => entry.Id == id && entry.Retention == StoryRetention.Campaign);
+    private bool HasCampaignMission(StoryMissionDefinitionId id)
+        => _byMission.Values.Any(entry => entry.Id == id && entry.Retention == StoryRetention.Campaign);
 
     /// <summary>
     /// Ownership resolution for callers that need the entry before deciding anything else. It uses
@@ -588,10 +584,10 @@ internal sealed class StoryLedger
         }
         foreach (var group in rows.GroupBy(row => row.Id))
         {
-            // The same sum the ledger reserves at offer time: retired outcomes plus unresolved
-            // missions that still have an outcome to record.
-            if (group.Count(row => row.Retention == StoryRetention.Campaign) > MaxRetainedPerDefinition)
-                return "Definition '" + group.Key + "' exceeds its campaign mission cap.";
+            // The same rule the ledger applies at offer time: one campaign mission per definition,
+            // whether it is retired or still has an outcome to record.
+            if (group.Count(row => row.Retention == StoryRetention.Campaign) > 1)
+                return "Definition '" + group.Key + "' has more than one campaign mission.";
             if (group.Any(row => row.Retention == StoryRetention.Temporary)
                 && group.Count(row => row.Retention == StoryRetention.Temporary && row.State.IsTerminal()) > TemporaryTombstoneHorizon)
                 return "Definition '" + group.Key + "' exceeds its temporary tombstone horizon.";
