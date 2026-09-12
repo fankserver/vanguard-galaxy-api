@@ -32,7 +32,7 @@ public sealed class DerelictSite : IDisposable
     private const string SiteName = "Abandoned Freight Station";
 
     private readonly IWorldProvider _world;
-    private readonly CargoEncounter _encounter;
+    private readonly Func<CargoEncounter?> _encounter;
     private readonly Action<string> _log;
 
     private IPocketSystem? _pocket;
@@ -40,17 +40,30 @@ public sealed class DerelictSite : IDisposable
     private IDungeonInstallation? _installation;
     private IDisposable? _enterable;
 
-    public DerelictSite(IWorldProvider world, CargoEncounter encounter, Action<string> log)
+    /// <summary>
+    /// Construct BEFORE a session exists. World declarations are refused with
+    /// <see cref="WorldStatus.NotReady"/> once a session is running, so registering lazily on first
+    /// use silently leaves nothing to create. Registering declares content; it never creates a
+    /// native object, so doing it early costs nothing.
+    /// </summary>
+    public DerelictSite(IWorldProvider world, Func<CargoEncounter?> encounter, Action<string> log)
     {
         _world = world ?? throw new ArgumentNullException(nameof(world));
         _encounter = encounter ?? throw new ArgumentNullException(nameof(encounter));
         _log = log ?? throw new ArgumentNullException(nameof(log));
 
-        // Registering declares content; it never creates a native object.
-        _world.RegisterPocketSystem(new PocketSystemDefinition(PocketDef, 1, PocketName,
-            PocketSystemPlacement.Visible, factionId: null, sectorName: null, quiet: true));
-        _world.RegisterResourceSite(ResourceSiteDefinition.Salvage(SiteDef, 1, SiteName, StationLevel,
-            wreckShipId: "Monsoon", factionId: "Fanatics", withStation: true, hazard: null, scatterAsteroids: true));
+        Declare("approach system", _world.RegisterPocketSystem(new PocketSystemDefinition(PocketDef, 1, PocketName,
+            PocketSystemPlacement.Visible, factionId: null, sectorName: null, quiet: true)));
+        Declare("salvage site", _world.RegisterResourceSite(ResourceSiteDefinition.Salvage(SiteDef, 1, SiteName, StationLevel,
+            wreckShipId: "Monsoon", factionId: "Fanatics", withStation: true, hazard: null, scatterAsteroids: true)));
+    }
+
+    /// <summary>Never ignore a declaration result: a refused declaration cannot create anything later.</summary>
+    private void Declare(string what, WorldStatus status)
+    {
+        if (status == WorldStatus.Succeeded) return;
+        _log($"Derelict {what} declaration refused: {status}"
+            + (status == WorldStatus.NotReady ? " (world content must be declared before a session starts)." : "."));
     }
 
     public bool Exists => _pocket != null;
@@ -65,7 +78,8 @@ public sealed class DerelictSite : IDisposable
     {
         if (_pocket != null) return true;
         _pocket = _world.CreatePocketSystem(PocketDef, "derelict", anchorSystemId);
-        if (_pocket?.SystemId == null) { _log("Could not create the approach system."); _pocket = null; return false; }
+        if (_pocket?.SystemId == null)
+        { _log("Could not create the approach system (declaration refused earlier, or the world cannot author right now)."); _pocket = null; return false; }
 
         // Open the anchored gate: this is the way in from the player's own system.
         _pocket.SetEntranceOpen(true);
@@ -85,7 +99,8 @@ public sealed class DerelictSite : IDisposable
     private void HoldEnterable()
     {
         if (_site?.PoiId is not string poi || _installation != null) return;
-        _installation = _encounter.GetInstallation(poi);
+        if (_encounter() is not CargoEncounter encounter) return;
+        _installation = encounter.GetInstallation(poi);
         _enterable = _installation.KeepEnterable();
     }
 

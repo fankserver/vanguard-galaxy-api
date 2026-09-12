@@ -41,19 +41,15 @@ public sealed class Plugin : BaseUnityPlugin
         // The example authors its own boarding target, so world authoring is required, not optional.
         _world = ModApi.Services.World.AcquireProvider(this);
         if (_world == null) Logger.LogWarning("World authoring unavailable: this example cannot create its derelict.");
+        else
+            // Declare the world content NOW, while no session exists: world declarations are refused
+            // with NotReady once a session is running. The encounter is resolved lazily because
+            // dungeon content only registers at gameplay readiness.
+            _derelict = new DerelictSite(_world, () => _session?.Encounter, message => Logger.LogInfo(message));
         if (_session != null) _session.OwnInstallation = () => _derelict?.Installation;
         _travel = ModApi.Services.Travel;
         _hud = ModApi.Services.Hud.Register(Id, "panel", OnHud);
         RefreshPanel();
-    }
-
-    /// <summary>Created on first use: the encounter must be registered before a target can adopt it.</summary>
-    private DerelictSite? Derelict()
-    {
-        if (_derelict != null) return _derelict;
-        if (_world == null || _session?.Encounter == null) return null;
-        _derelict = new DerelictSite(_world, _session.Encounter, message => Logger.LogInfo(message));
-        return _derelict;
     }
 
     private void RefreshPanel()
@@ -75,13 +71,13 @@ public sealed class Plugin : BaseUnityPlugin
                 new HudRow("attach", _session?.Attached == true ? "Layout attached" : "Layout attaches on arrival",
                     "the derelict adopts this mod's compartment layout by itself",
                     "Attaches by installation identity as soon as a live boarding target belongs to the authored station, "
-                    + "which happens when you arrive. Until then the API answers StaleTarget — a temporary refusal that is "
+                    + "which happens when you arrive. Until then the API answers StaleTarget, a temporary refusal that is "
                     + "simply retried. No vanilla encounter is ever touched.",
                     clickable: false),
                 new HudRow("remove", "Remove derelict",
                     "dissolve the station, the site and the system together",
                     "Authored sites have no Dissolve of their own: they are removed with the pocket that holds them. "
-                    + "A dissolve is refused while you are inside \u2014 leave first.",
+                    + "A dissolve is refused while you are inside, so leave first.",
                     clickable: spawned),
                 new HudRow("status", StatusLine(),
                     "Board the station, walk airlock -> cargo hold -> control room, then take the shipment choice."),
@@ -107,10 +103,10 @@ public sealed class Plugin : BaseUnityPlugin
                 case "spawn":
                     var system = _travel?.CurrentLocation?.SystemId;
                     if (string.IsNullOrEmpty(system)) { Logger.LogWarning("No current system to anchor the derelict to."); break; }
-                    Derelict()?.Spawn(system!);
+                    _derelict?.Spawn(system!);
                     break;
                 case "remove":
-                    if (Derelict()?.Remove() == true) _session?.ResetAdoption();
+                    if (_derelict?.Remove() == true) _session?.ResetAdoption();
                     break;
             }
             RefreshPanel();

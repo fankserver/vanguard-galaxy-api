@@ -159,7 +159,7 @@ public sealed class Plugin : BaseUnityPlugin
                 new HudRow("place", "Place contact",
                     "declare the bar contact at the first visited station",
                     "Uses a real station id discovered through navigation. The API places the declared contact "
-                    + "once the game and its save data are ready — there is no per-session placement call.",
+                    + "once the game and its save data are ready; there is no per-session placement call.",
                     clickable: _bars != null && station != null),
                 new HudRow("additive", "Station ownership: additive",
                     "keep the vanilla roster and add this contact",
