@@ -40,6 +40,16 @@ internal sealed class DungeonAttachmentIndex
             if (matchesLocation(pair.Key)) return pair.Value.Id;
         return null;
     }
+    /// <summary>Forgets an occurrence's session-local binding after its row is intentionally dropped.</summary>
+    internal void Detach(Guid occurrence)
+    {
+        if (_occurrences.TryGetValue(occurrence, out var reference))
+        {
+            if (reference.TryGetTarget(out var location)) _locations.Remove(location);
+            _occurrences.Remove(occurrence);
+        }
+        _conflicts.Remove(occurrence);
+    }
     internal void Clear()
     { _locations = new(); _occurrences.Clear(); _conflicts.Clear(); }
 }

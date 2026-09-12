@@ -995,7 +995,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 _provider._service._hub.CheckThread();
                 if (_dissolved) return _lastAction = new(WorldContentStatus.Rejected, "The occurrence was dissolved; create the key again for a fresh site.");
                 var service = _provider._service;
-                if (_provider._disposed || service._disposed || _provider._authoredSites == null || service._siteCoordinator == null)
+                if (_provider._disposed || service._disposed || _provider._authoredSites == null || service._siteCoordinator == null || !service._canAuthor())
                     return _lastAction = new(WorldContentStatus.Unavailable);
                 if (service._hub.CurrentSession?.Id != Session) return _lastAction = new(WorldContentStatus.GameEnded);
                 if (service._hub.CurrentSession.Phase != SessionPhase.GameplayInitialized || service._hub.IsDispatchingCallbacks)

@@ -309,7 +309,6 @@ internal sealed class WorldNativeResourceSites : IResourceSiteNative
         var members = (System.Collections.IList)_points.GetValue(host)!;
         if (!members.Contains(poi)) return ResourceSiteDissolveOutcome.Missing;
         if (!_game.TryGetObservedPlayer(session, out var player) || player == null) return ResourceSiteDissolveOutcome.Failed;
-        // Refuse while the player is at or routed into the site; relocation is the consumer's move.
         var currentPoi = _playerCurrentPoi.GetValue(player);
         if (currentPoi != null && ReferenceEquals(currentPoi, poi)) return ResourceSiteDissolveOutcome.PlayerInside;
         if (_playerWaypoints.GetValue(player) is System.Collections.IEnumerable waypoints)
@@ -317,17 +316,23 @@ internal sealed class WorldNativeResourceSites : IResourceSiteNative
                 if (waypoint != null && ReferenceEquals(waypoint, poi)) return ResourceSiteDissolveOutcome.PlayerInside;
         var boarding = StationInUse(poi);
         if (boarding != ResourceSiteDissolveOutcome.Dissolved) return boarding;
+        // Remove by reference, never by equality: a native POI that overrode Equals must not let the
+        // removal pick a different-but-equal member while the owned POI survives.
+        int removalIndex = IndexOf(members, poi);
+        if (removalIndex < 0) return ResourceSiteDissolveOutcome.Missing;
         try
         {
-            members.Remove(poi);
-            if (Map(session) == null) { Rollback(members, poi); return ResourceSiteDissolveOutcome.Failed; }
+            members.RemoveAt(removalIndex);
+            if (!_game.TryGetObservedPlayer(session, out var current) || !ReferenceEquals(current, player) ||
+                !ReferenceEquals(_map.GetValue(current), map))
+            { Rollback(members, poi, removalIndex); return ResourceSiteDissolveOutcome.Failed; }
             var after = _index.Read(map);
-            if (!VerifyDissolveDelta(before, after, poi, host)) { Rollback(members, poi); return ResourceSiteDissolveOutcome.Failed; }
+            if (!VerifyDissolveDelta(before, after, poi, host)) { Rollback(members, poi, removalIndex); return ResourceSiteDissolveOutcome.Failed; }
             return ResourceSiteDissolveOutcome.Dissolved;
         }
         catch (Exception error)
         {
-            try { Rollback(members, poi); } catch { /* rollback is best-effort only */ }
+            try { Rollback(members, poi, removalIndex); } catch { /* rollback is best-effort only */ }
             Report(error); return ResourceSiteDissolveOutcome.Failed;
         }
     }
@@ -357,11 +362,14 @@ internal sealed class WorldNativeResourceSites : IResourceSiteNative
         return ResourceSiteDissolveOutcome.Dissolved;
     }
 
-    /// <summary>Best-effort restoration of the site POI after a failed removal.</summary>
-    private static void Rollback(System.Collections.IList members, object poi)
+    /// <summary>Best-effort restoration of the site POI at its original list position after a failed removal.</summary>
+    private static void Rollback(System.Collections.IList members, object poi, int index)
     {
-        try { if (!members.Contains(poi)) members.Add(poi); } catch { /* best-effort only */ }
+        try { if (IndexOf(members, poi) < 0) members.Insert(index < members.Count ? index : members.Count, poi); } catch { /* best-effort only */ }
     }
+
+    private static int IndexOf(System.Collections.IList members, object value)
+    { for (int i = 0; i < members.Count; i++) if (ReferenceEquals(members[i], value)) return i; return -1; }
 
     /// <summary>Exactly the given site POI was removed from the host and nothing else changed.</summary>
     internal static bool VerifyDissolveDelta(WorldMapIndex.Snapshot before, WorldMapIndex.Snapshot after, object removed, object host)

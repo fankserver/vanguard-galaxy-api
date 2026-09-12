@@ -183,6 +183,9 @@ internal sealed class DungeonAegisRuntime
         }
     }
 
+    /// <summary>The native DungeonLocationData for a persistent POI identity, or null when absent or ambiguous.</summary>
+    internal object? ResolveLocation(string poiId) => Resolve(poiId);
+
     private object? Resolve(string poiId)
     {
         if (_mapCurrent.GetValue(null) is not { } map || _allPois.GetValue(map) is not IEnumerable points) return null;

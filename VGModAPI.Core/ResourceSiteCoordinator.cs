@@ -124,6 +124,8 @@ internal sealed class ResourceSiteCoordinator : IDisposable
     private readonly Dictionary<(string Owner, string Local, string Key), ResourceSiteOccurrence> _committed = new();
     private readonly HashSet<(string Owner, string Local, string Key)> _failed = new();
     private Action<Guid>? _settled;
+    private Func<string, Guid?>? _resolveAttachedDungeon;
+    private Func<Guid, bool>? _dropDungeonOccurrence;
     private Guid _session;
     private bool _settledOnce;
     private bool _disposed;
@@ -139,6 +141,18 @@ internal sealed class ResourceSiteCoordinator : IDisposable
         });
     }
     internal void AttachSettled(Action<Guid> settled) { _hub.CheckThread(); _settled = settled; }
+    /// <summary>
+    /// Bridges the dungeon-content layer so a site's attached authored dungeon occurrence can be
+    /// dropped when the site is dissolved. The resolver runs before native removal (while the native
+    /// location is still resolvable) and the drop runs only after a verified removal, so a failed
+    /// removal never strands or loses dungeon state.
+    /// </summary>
+    internal void AttachDungeonOccurrencePrune(Func<string, Guid?> resolveAttached, Func<Guid, bool> drop)
+    {
+        _hub.CheckThread();
+        _resolveAttachedDungeon = resolveAttached ?? throw new ArgumentNullException(nameof(resolveAttached));
+        _dropDungeonOccurrence = drop ?? throw new ArgumentNullException(nameof(drop));
+    }
     private void Reset()
     { _committed.Clear(); _failed.Clear(); _session = _hub.CurrentSession?.Id ?? Guid.Empty; _settledOnce = false; }
     private Guid Session() => _hub.CurrentSession?.Id ?? Guid.Empty;
@@ -227,6 +241,14 @@ internal sealed class ResourceSiteCoordinator : IDisposable
         if (row.PoiId is { Length: > 0 } held
             && _hub.Installations.Aegis.DeclaredTargets().Any(poi => string.Equals(poi, held, StringComparison.Ordinal)))
             return (WorldStatus.Rejected, "The site's installation is held enterable; dispose the KeepEnterable hold before dissolving it.");
+        // Resolve any attached authored dungeon occurrence before removal; the native location is no
+        // longer discoverable once the POI is gone.
+        Guid? attachedDungeon = null;
+        if (_resolveAttachedDungeon != null && row.PoiId is { Length: > 0 } attachedPoi)
+        {
+            try { attachedDungeon = _resolveAttachedDungeon(attachedPoi); }
+            catch (Exception error) { _report(error); return (WorldStatus.Unavailable, "The site's attached dungeon state could not be read."); }
+        }
         try
         {
             var outcome = _native.DissolveSite(session, row.SystemId, row.PoiId, row.Kind);
@@ -234,6 +256,10 @@ internal sealed class ResourceSiteCoordinator : IDisposable
             {
                 case ResourceSiteDissolveOutcome.Dissolved:
                     _committed.Remove(rowKey);
+                    // The native site is gone; dropping the attached row records its absence rather than
+                    // leaving a dead occurrence that could never bind again.
+                    if (attachedDungeon.HasValue && _dropDungeonOccurrence != null && !_dropDungeonOccurrence(attachedDungeon.Value))
+                        _report(new InvalidOperationException("An attached authored dungeon occurrence could not be dropped after site removal."));
                     return (WorldStatus.Succeeded, "");
                 case ResourceSiteDissolveOutcome.PlayerInside:
                     return (WorldStatus.Rejected, "The player is at the site; move away before dissolving it.");

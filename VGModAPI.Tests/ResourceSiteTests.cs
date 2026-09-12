@@ -414,4 +414,86 @@ public sealed class ResourceSiteTests
         Assert.Equal(WorldContentStatus.GameEnded, site.Dissolve().Status);
         Assert.Equal(0, h.Native.DissolveCalls); // the replacement save was never touched
     }
+
+    [Fact]
+    public void DissolveDropsAnAttachedDungeonOccurrenceOnlyAfterVerifiedRemoval()
+    {
+        using var h = new Harness();
+        Assert.Equal(WorldStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage(withStation: true)));
+        h.BeginGameplay();
+        var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
+        var occurrence = Guid.NewGuid();
+        var resolved = new List<string>(); var dropped = new List<Guid>();
+        h.Coordinator.AttachDungeonOccurrencePrune(
+            poiId => { resolved.Add(poiId); return occurrence; },
+            id => { dropped.Add(id); return true; });
+        int changes = 0; site.Changed += _ => changes++;
+        var poiId = site.PoiId;
+        Assert.True(site.Dissolve().Succeeded);
+        // The location is resolved (before removal) and the row dropped (after) exactly once.
+        Assert.Equal(poiId, Assert.Single(resolved));
+        Assert.Equal(occurrence, Assert.Single(dropped));
+        Assert.Empty(h.Coordinator.CaptureRows());
+        Assert.Equal(1, changes);
+    }
+
+    [Fact]
+    public void AttachedDungeonOccurrenceIsNotDroppedWhenTheNativeRemovalIsRefused()
+    {
+        using var h = new Harness();
+        Assert.Equal(WorldStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage(withStation: true)));
+        h.BeginGameplay();
+        var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
+        var dropped = new List<Guid>();
+        h.Coordinator.AttachDungeonOccurrencePrune(_ => Guid.NewGuid(), id => { dropped.Add(id); return true; });
+        h.Native.DissolveOutcome = ResourceSiteDissolveOutcome.BoardingActive;
+        Assert.Equal(WorldContentStatus.Rejected, site.Dissolve().Status);
+        Assert.Empty(dropped);
+        Assert.Single(h.Coordinator.CaptureRows());
+    }
+
+    [Fact]
+    public void UnreadableAttachedDungeonStateRefusesDissolveWithoutTouchingTheSite()
+    {
+        using var h = new Harness();
+        Assert.Equal(WorldStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage(withStation: true)));
+        h.BeginGameplay();
+        var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
+        h.Coordinator.AttachDungeonOccurrencePrune(_ => throw new InvalidOperationException("read fault"), _ => true);
+        Assert.Equal(WorldContentStatus.Unavailable, site.Dissolve().Status);
+        Assert.Equal(0, h.Native.DissolveCalls); // nothing native was touched
+        Assert.Single(h.Coordinator.CaptureRows());
+    }
+
+    [Fact]
+    public void FailedDungeonRowDropStillRemovesTheSite()
+    {
+        using var h = new Harness();
+        Assert.Equal(WorldStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage(withStation: true)));
+        h.BeginGameplay();
+        var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
+        var dropped = new List<Guid>();
+        h.Coordinator.AttachDungeonOccurrencePrune(_ => Guid.NewGuid(), id => { dropped.Add(id); return false; });
+        Assert.True(site.Dissolve().Succeeded);
+        Assert.Single(dropped); // the drop was attempted
+        Assert.Empty(h.Coordinator.CaptureRows());
+        Assert.Equal(ReconstructionStatus.Dissolved, site.State.Status);
+    }
+
+    [Fact]
+    public void DissolveRefusesWhenWorldAuthoringIsUnavailable()
+    {
+        bool canAuthor = true;
+        using var h = new Harness(canAuthor: () => canAuthor);
+        Assert.Equal(WorldStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage()));
+        h.BeginGameplay();
+        var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
+        canAuthor = false;
+        var refused = site.Dissolve();
+        Assert.Equal(WorldContentStatus.Unavailable, refused.Status);
+        Assert.Equal(0, h.Native.DissolveCalls); // no native mutation while authoring is unavailable
+        Assert.Single(h.Coordinator.CaptureRows());
+        canAuthor = true;
+        Assert.True(site.Dissolve().Succeeded);
+    }
 }

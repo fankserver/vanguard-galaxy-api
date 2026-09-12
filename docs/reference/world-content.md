@@ -518,6 +518,14 @@ On success the save row is dropped (intentional absence, not a reconstruction fa
 is terminal (`Dissolved`), `GetResourceSite` no longer resolves it, and the freed occurrence key
 authors a fresh site with a fresh native identity. `Changed` fires for the transition.
 
+If an authored dungeon was attached to the site's derelict station, its `DungeonStateStore` row is
+dropped with the site so `IDungeonProvider.GetOccurrences()` does not keep reporting a dead
+occurrence that can never bind again. The location is resolved before native removal and the row is
+dropped only after the verified removal, so a refused or failed dissolve never loses dungeon state.
+The same prune on the pocket-dissolve path is deferred: the pocket's sites are removed with their
+system before their rows are dropped, so the location must be captured before a native removal that
+may itself fail; the direct `Dissolve()` path is what authored sites use directly.
+
 ## Moored authored ships
 
 A moored authored ship is one friendly ship of an exact class held beside a station POI — a

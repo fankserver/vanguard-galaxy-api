@@ -715,6 +715,22 @@ public sealed partial class Plugin : BaseUnityPlugin
             _dungeonRecovery.ContentOccurrence = _dungeonAdapter.Marker;
             _dungeons = new DungeonContentService(_hub, _dungeonAdapter.Catalogs(), _dungeonState, _dungeonAdapter.Bindings(), (owner, error) => Logger.LogError($"Dungeon provider '{owner}': {error}"),
                 () => _dungeonRecovery?.State.CanMutate != true || (_dungeonSettlement?.IsDispatchingCallbacks ?? false) || (_dungeonRewards?.IsEvaluating ?? false) || (_boardingCombat?.IsEvaluating ?? false) || (_boardingRuleService?.IsEvaluating ?? false));
+            // When an authored site is dissolved, drop the authored dungeon occurrence attached to its
+            // station (if any) so the row is intentionally absent instead of a dead entry that could
+            // never bind again. The resolver reads the location before native removal; the drop runs
+            // after the verified removal only.
+            _siteCoordinator?.AttachDungeonOccurrencePrune(
+                poiId =>
+                {
+                    var location = _dungeonAegisRuntime?.ResolveLocation(poiId);
+                    return location == null ? (Guid?)null : _dungeonAdapter?.AttachedOccurrence(location);
+                },
+                occurrence =>
+                {
+                    var dropped = _dungeons?.DropOccurrence(occurrence) ?? false;
+                    if (dropped) { try { _dungeonAdapter?.DetachOccurrence(occurrence); } catch { /* best-effort cleanup */ } }
+                    return dropped;
+                });
             DungeonContentPatches.Adapter = _dungeonAdapter; DungeonContentPatches.Json = new DungeonMarkerJson(bindings.Assembly);
             var patches = new Dictionary<string, Type>
             {

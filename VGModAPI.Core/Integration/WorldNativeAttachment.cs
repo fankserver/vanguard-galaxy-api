@@ -102,19 +102,23 @@ internal sealed class WorldNativeAttachment
                 if (waypoint != null && ReferenceEquals(waypoint, record.Native)) return WorldRemoveOutcome.PlayerInside;
         var members = (IList)_points.GetValue(system)!;
         if (!Contains(members, record.Native)) return WorldRemoveOutcome.Missing;
-        members.Remove(record.Native);
+        // Remove by reference, never by equality, so a native POI that overrode Equals cannot cause a
+        // different-but-equal member to be removed while the owned POI survives.
+        int removalIndex = IndexOf(members, record.Native);
+        if (removalIndex < 0) return WorldRemoveOutcome.Missing;
         try
         {
+            members.RemoveAt(removalIndex);
             if (!_game.TryGetCurrentReadyPlayer(session, out var current) || !ReferenceEquals(current, player) ||
                 !ReferenceEquals(_map.GetValue(current), map))
-            { Rollback(members, record.Native); return WorldRemoveOutcome.Failed; }
+            { Rollback(members, record.Native, removalIndex); return WorldRemoveOutcome.Failed; }
             var after = _index.Read(map);
-            if (!VerifyRemoveDelta(before, after, record.Native, system)) { Rollback(members, record.Native); return WorldRemoveOutcome.Failed; }
+            if (!VerifyRemoveDelta(before, after, record.Native, system)) { Rollback(members, record.Native, removalIndex); return WorldRemoveOutcome.Failed; }
             return WorldRemoveOutcome.Removed;
         }
         catch
         {
-            try { Rollback(members, record.Native); } catch { /* rollback is best-effort only */ }
+            try { Rollback(members, record.Native, removalIndex); } catch { /* rollback is best-effort only */ }
             throw;
         }
     }
@@ -122,8 +126,11 @@ internal sealed class WorldNativeAttachment
     private static bool Contains(IList members, object value)
     { foreach (var item in members) if (ReferenceEquals(item, value)) return true; return false; }
 
-    private static void Rollback(IList members, object poi)
-    { try { if (!Contains(members, poi)) members.Add(poi); } catch { /* best-effort only */ } }
+    private static int IndexOf(IList members, object value)
+    { for (int i = 0; i < members.Count; i++) if (ReferenceEquals(members[i], value)) return i; return -1; }
+
+    private static void Rollback(IList members, object poi, int index)
+    { try { if (IndexOf(members, poi) < 0) members.Insert(index < members.Count ? index : members.Count, poi); } catch { /* best-effort only */ } }
 
     /// <summary>Exactly the given POI was removed from the host and nothing else changed.</summary>
     private static bool VerifyRemoveDelta(WorldMapIndex.Snapshot before, WorldMapIndex.Snapshot after, object removed, object host)
