@@ -6,7 +6,7 @@ using VGModAPI;
 using Xunit;
 namespace VGModAPI.Tests;
 
-public sealed class CargoRecoveryPanelTests
+public sealed class CargoEncounterPanelTests
 {
     // Test-only interface stubs; the consumer example itself contains no reflection.
     public class Stub : DispatchProxy

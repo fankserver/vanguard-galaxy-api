@@ -35,6 +35,15 @@ public sealed class CargoEncounter : IDisposable
         })
     }, allowHazards: false, allowScheduledReinforcements: false);
     public DungeonContentResult Attach(BoardingHandle observedTarget) => _provider.Attach("cargo-recovery", observedTarget);
+    /// <summary>
+    /// Attaches by persistent installation identity instead of a live target handle — the form to use
+    /// for a station this mod authored itself, because the installation exists before any boarding
+    /// target is observed. While no live target belongs to it yet (you are not there), the result is
+    /// a temporary <see cref="DungeonContentStatus.StaleTarget"/> refusal, not a failure.
+    /// </summary>
+    public DungeonContentResult Attach(IDungeonInstallation installation) => _provider.Attach("cargo-recovery", installation);
+    /// <summary>A stable view of a POI's installation, valid before its native POI exists.</summary>
+    public IDungeonInstallation GetInstallation(string poiId) => _provider.GetInstallation(poiId);
     public DungeonContentResult Recover(Guid occurrence) => _provider.Choose(occurrence, "recover", "recover");
     public DungeonContentResult Leave(Guid occurrence) => _provider.Choose(occurrence, "recover", "leave");
     public IReadOnlyList<DungeonOccurrenceSnapshot> SavedOccurrences => _provider.GetOccurrences();
