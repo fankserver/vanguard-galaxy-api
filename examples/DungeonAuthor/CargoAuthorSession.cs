@@ -15,16 +15,15 @@ public sealed class CargoAuthorSession : IDisposable
     private CargoRecovery? _author;
     private bool _disposed;
     private ILifecycleService? _lifecycle;
-    private IDungeonOperationService? _boarding;
+    private IDungeonService? _dungeons;
     private Action<BoardingEvent>? _boardingHandler;
     private Action<LifecycleEvent>? _lifecycleHandler;
-    public CargoAuthorSession(string reward, ILifecycleService? lifecycle, IDungeonOperationService? boarding, IDungeonService? content,
-        IDungeonPanelService? panel, IDungeonCommandService? commands, IDungeonTacticalService? tactics, IDungeonSettlementService? settlement,
+    public CargoAuthorSession(string reward, ILifecycleService? lifecycle, IDungeonService? dungeons,
         Action<string> log, Action<string>? warn = null)
     {
         if (log == null) throw new ArgumentNullException(nameof(log));
         warn ??= log;
-        if (lifecycle == null || boarding == null || content == null || string.IsNullOrWhiteSpace(reward))
+        if (lifecycle == null || dungeons == null || string.IsNullOrWhiteSpace(reward))
         { warn("Cargo example requires configured RewardItemId and available boarding/dungeon content."); return; }
         var retried = false;
         void Initialize(bool allowContentAttempt = true)
@@ -33,7 +32,7 @@ public sealed class CargoAuthorSession : IDisposable
             if (_author == null)
             {
                 if (!allowContentAttempt) return;
-                try { _author = new CargoRecovery(content, Id, reward); }
+                try { _author = new CargoRecovery(dungeons, Id, reward); }
                 catch (ArgumentException error)
                 {
                     warn($"Cargo definition unavailable for RewardItemId '{reward}': {error.Message}. Check native item/crew catalogs; one retry is allowed at gameplay readiness.");
@@ -42,26 +41,26 @@ public sealed class CargoAuthorSession : IDisposable
             }
             try
             {
-                if (panel == null || !panel.Capabilities.ContextualActions || commands == null || tactics == null || settlement == null)
+                if (!dungeons.Capabilities.ContextualActions)
                 { warn("Content registered; optional contextual control/settlement services unavailable."); return; }
-                _leases.Add(panel.RegisterAction(Id, "attach-cargo", view => view.Operation == null
+                _leases.Add(dungeons.RegisterAction(Id, "attach-cargo", view => view.Operation == null
                     ? new DungeonPanelAction("Attach cargo encounter", "Explicitly attach cargo content to this observed target. Existing attachments are never replaced.") : null,
                     view => log("Cargo attach: " + _author.Attach(view.Target.Handle).Status)));
                 void Track(BoardingOperationSnapshot operation)
                 {
                     if (_panels.ContainsKey(operation.Target)) return;
-                    _panels.Add(operation.Target, new CargoRecoveryPanel(Id, operation.Target, panel, boarding, commands, tactics, settlement,
+                    _panels.Add(operation.Target, new CargoRecoveryPanel(Id, operation.Target, dungeons,
                         result => log("Cargo command: " + result.Status),
                         result => log($"Cargo settlement: {result.NativeOutcome}; crew return settled={result.CrewReturnSettled}; observed counts={result.CrewCountsObserved}")));
                 }
-                _boarding = boarding;
+                _dungeons = dungeons;
                 _boardingHandler = fact =>
                 {
                     if (fact.Kind == BoardingEventKind.Retired) _retiredTargets.Add(fact.Target.Handle);
                     if ((fact.Kind == BoardingEventKind.Retired || fact.Kind == BoardingEventKind.OperationRetired) && _retiredTargets.Contains(fact.Target.Handle))
                     {
                         // A removed host can still have living return pods. Keep observing until its last operation retires.
-                        if (!boarding.GetOperations().Any(operation => operation.Target.Equals(fact.Target.Handle)))
+                        if (!dungeons.GetOperations().Any(operation => operation.Target.Equals(fact.Target.Handle)))
                         {
                             if (_panels.TryGetValue(fact.Target.Handle, out var stale)) { stale.Dispose(); _panels.Remove(fact.Target.Handle); }
                             _retiredTargets.Remove(fact.Target.Handle);
@@ -70,8 +69,8 @@ public sealed class CargoAuthorSession : IDisposable
                     }
                     if (fact.Kind != BoardingEventKind.OperationRetired && fact.Operation != null) Track(fact.Operation);
                 };
-                boarding.Changed += _boardingHandler;
-                foreach (var operation in boarding.GetOperations()) Track(operation);
+                dungeons.Changed += _boardingHandler;
+                foreach (var operation in dungeons.GetOperations()) Track(operation);
             }
             catch { Dispose(); throw; }
         }
@@ -100,8 +99,8 @@ public sealed class CargoAuthorSession : IDisposable
         if (_disposed) return; _disposed = true;
         if (_lifecycle != null) _lifecycle.Changed -= _lifecycleHandler;
         _lifecycle = null; _lifecycleHandler = null;
-        if (_boarding != null) _boarding.Changed -= _boardingHandler;
-        _boarding = null; _boardingHandler = null;
+        if (_dungeons != null) _dungeons.Changed -= _boardingHandler;
+        _dungeons = null; _boardingHandler = null;
         ClearTargets();
         for (var i = _leases.Count - 1; i >= 0; i--) _leases[i].Dispose();
         _leases.Clear(); _author?.Dispose(); _author = null;

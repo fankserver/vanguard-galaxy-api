@@ -15,10 +15,10 @@ internal interface IBoardingCommandBackend
         BoardingCommandOptions? options, bool allowFactionConsequences);
 }
 
-internal sealed class BoardingCommandService : IDungeonCommandService, IDisposable
+internal sealed class BoardingCommandService : IDisposable
 {
     private readonly LifecycleHub _hub;
-    private readonly IDungeonOperationService? _events;
+    private readonly BoardingService? _events;
     private readonly IServiceStatus _status;
     private readonly IBoardingCommandBackend? _backend;
     private readonly Func<bool> _rulesEvaluating;
@@ -27,7 +27,7 @@ internal sealed class BoardingCommandService : IDungeonCommandService, IDisposab
     private int _serializationDepth;
     internal void BeginSerialization() { _hub.CheckThread(); _serializationDepth++; }
     internal void EndSerialization() { _hub.CheckThread(); if (_serializationDepth > 0) _serializationDepth--; }
-    internal BoardingCommandService(LifecycleHub hub, IDungeonOperationService? events, IBoardingCommandBackend? backend, Func<bool> rulesEvaluating)
+    internal BoardingCommandService(LifecycleHub hub, BoardingService? events, IBoardingCommandBackend? backend, Func<bool> rulesEvaluating)
     {
         _hub = hub; _events = events; _backend = backend; _rulesEvaluating = rulesEvaluating;
         _status = hub.Services.Get("boarding-commands");

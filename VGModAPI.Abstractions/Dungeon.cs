@@ -76,4 +76,25 @@ public interface IDungeonService : IServiceStatus
     /// <summary>Acquire once during plugin setup. Optional custom save data is a provider-lifetime
     /// dependency: actionable installation events wait until its mutation gate opens.</summary>
     IDungeonProvider AcquireProvider(string pluginId, ISaveDataRegistration? saveData = null);
+    /// <summary>The game fronts combat with the same dungeon runtime as everything else here.</summary>
+    bool IsEvaluating { get; }
+    IBoardingCombatProvider AcquireCombatProvider(string pluginId);
+    IDungeonRewardProvider AcquireRewardProvider(string pluginId);
+    Guid? SessionId { get; }
+    IReadOnlyList<BoardingTargetSnapshot> GetTargets();
+    IReadOnlyList<BoardingOperationSnapshot> GetOperations();
+    BoardingTargetSnapshot? GetTarget(BoardingHandle handle);
+    BoardingOperationSnapshot? GetOperation(BoardingHandle handle);
+    event Action<BoardingEvent>? Changed;
+    BoardingCommandResult AcquireControl(string pluginId, BoardingHandle target, out IBoardingController? controller);
+    BoardingTacticalSnapshot? GetSnapshot(BoardingHandle operation);
+    BoardingCommandResult Execute(IBoardingController controller, BoardingTacticalRequest request);
+    DungeonSettlementSnapshot? Get(BoardingHandle operation);
+    event Action<DungeonSettlementSnapshot>? SettlementChanged;
+    DungeonPanelCapabilities Capabilities { get; }
+    DungeonPanelSnapshot? Current { get; }
+    DungeonPanelOpenStatus Open(BoardingHandle target);
+    IDisposable RegisterSection(string pluginId, string localId, Func<DungeonPanelSnapshot, DungeonPanelSection?> present, int order = 0);
+    IDisposable RegisterAction(string pluginId, string localId, Func<DungeonPanelSnapshot, DungeonPanelAction?> present,
+        Action<DungeonPanelSnapshot> activate, int order = 0);
 }

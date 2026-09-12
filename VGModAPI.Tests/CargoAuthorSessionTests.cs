@@ -31,34 +31,35 @@ public sealed class CargoAuthorSessionTests
             else { Assert.Equal("remove_Changed", name); Lifecycle.Remove(callback); }
             return null;
         });
-        internal IDungeonOperationService Events => Fake<IDungeonOperationService>((name, args) =>
+        internal IDungeonService Dungeons => Fake<IDungeonService>((name, args) =>
         {
-            if (name == "GetOperations") { Assert.NotEmpty(Boarding); return Seed; }
-            if (name == "GetOperation") return null;
-            var callback = (Action<BoardingEvent>)args[0]!;
-            if (name == "add_Changed") Boarding.Add(callback);
-            else { Assert.Equal("remove_Changed", name); Boarding.Remove(callback); }
-            return null;
-        });
-        internal IDungeonService Content => Fake<IDungeonService>((name, _) =>
-        {
-            Assert.Equal("AcquireProvider", name);
-            return Fake<IDungeonProvider>((method, args) =>
+            switch (name)
             {
-                if (method == "Register") { RegisterCalls++; if (RejectDefinition) throw new ArgumentException("Catalog unavailable"); return new Lease(() => { }); }
-                if (method == "Attach") { AttachCalls++; return new DungeonResult(DungeonStatus.TargetInUse, "already attached"); }
-                Assert.Equal("Dispose", method); ProviderDisposals++; return null;
-            });
+                case "get_Capabilities": return new DungeonPanelCapabilities(true, true, ContextualActions);
+                case "GetOperations": return Seed;
+                case "GetOperation": return null;
+                case "AcquireProvider":
+                    return Fake<IDungeonProvider>((method, margs) =>
+                    {
+                        if (method == "Register") { RegisterCalls++; if (RejectDefinition) throw new ArgumentException("Catalog unavailable"); return new Lease(() => { }); }
+                        if (method == "Attach") { AttachCalls++; return new DungeonResult(DungeonStatus.TargetInUse, "already attached"); }
+                        Assert.Equal("Dispose", method); ProviderDisposals++; return null;
+                    });
+                case "RegisterAction":
+                    if (RejectAction) throw new InvalidOperationException("Rejected action");
+                    var key = (string)args[1]!; Assert.False(Actions.ContainsKey(key));
+                    Actions.Add(key, (Action<DungeonPanelSnapshot>)args[3]!); Presenters.Add(key, (Func<DungeonPanelSnapshot, DungeonPanelAction?>)args[2]!);
+                    return new Lease(() => { Actions.Remove(key); Presenters.Remove(key); });
+                case "add_Changed": Boarding.Add((Action<BoardingEvent>)args[0]!); return null;
+                case "remove_Changed": Boarding.Remove((Action<BoardingEvent>)args[0]!); return null;
+                case "add_SettlementChanged": SettlementLeases++; Settlements.Add((Action<DungeonSettlementSnapshot>)args[0]!); return null;
+                case "remove_SettlementChanged": SettlementLeases--; Settlements.Remove((Action<DungeonSettlementSnapshot>)args[0]!); return null;
+                case "GetSnapshot": return null;
+                case "AcquireControl": return new BoardingCommandResult(BoardingCommandStatus.ControlConflict, "stub");
+                default: throw new InvalidOperationException("Unexpected IDungeonService member: " + name);
+            }
         });
-        internal IDungeonPanelService Panel => Fake<IDungeonPanelService>((name, args) =>
-        {
-            if (name == "get_Capabilities") return new DungeonPanelCapabilities(true, true, ContextualActions);
-            Assert.Equal("RegisterAction", name); if (RejectAction) throw new InvalidOperationException("Rejected action"); var key = (string)args[1]!; Assert.False(Actions.ContainsKey(key)); Actions.Add(key, (Action<DungeonPanelSnapshot>)args[3]!); Presenters.Add(key, (Func<DungeonPanelSnapshot, DungeonPanelAction?>)args[2]!);
-            return new Lease(() => { Actions.Remove(key); Presenters.Remove(key); });
-        });
-        internal CargoAuthorSession Create(bool optional = true, bool required = true) => new("item", Life, Events, required ? Content : null,
-            optional ? Panel : null, Fake<IDungeonCommandService>((_, _) => throw new InvalidOperationException()), Fake<IDungeonTacticalService>((_, _) => throw new InvalidOperationException()),
-            Fake<IDungeonSettlementService>((name, args) => { var handler = (Action<DungeonSettlementSnapshot>)args[0]!; if (name == "add_Changed") { SettlementLeases++; Settlements.Add(handler); } else { Assert.Equal("remove_Changed", name); SettlementLeases--; Settlements.Remove(handler); } return null; }), Logs.Add);
+        internal CargoAuthorSession Create(bool content = true) => new("item", Life, content ? Dungeons : null, Logs.Add);
         internal BoardingEvent Event(BoardingHandle target, BoardingEventKind kind)
         {
             var operation = new BoardingHandle(Session, Guid.NewGuid());
@@ -138,7 +139,7 @@ public sealed class CargoAuthorSessionTests
     [Theory]
     [InlineData(false)] [InlineData(true)]
     public void CapabilityAbsenceNeverCreatesControls(bool required)
-    { var f = new Fixture(); using var author = f.Create(optional: false, required: required); Assert.Equal(required ? 1 : 0, f.RegisterCalls); Assert.Empty(f.Actions); Assert.Empty(f.Boarding); }
+    { var f = new Fixture { ContextualActions = false }; using var author = f.Create(content: required); Assert.Equal(required ? 1 : 0, f.RegisterCalls); Assert.Empty(f.Actions); Assert.Empty(f.Boarding); }
     [Theory]
     [InlineData(false)] [InlineData(true)]
     public void CatalogFailureRetriesOnlyOnceAtGameplayReadiness(bool recover)

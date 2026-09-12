@@ -22,6 +22,14 @@ public sealed class DungeonServiceTests
         internal readonly LifecycleHub Hub = new((_, _) => { });
         internal readonly DungeonStateStore State;
         internal readonly DungeonService Service;
+        internal readonly DungeonFacade Public;
+        private readonly BoardingService _operations;
+        private readonly BoardingCombatService _combat;
+        private readonly DungeonRewardService _rewards;
+        private readonly DungeonSettlementService _settlement;
+        private readonly BoardingCommandService _commands;
+        private readonly Runtime.BoardingTacticalAdapter _tactics;
+        private readonly DungeonPanelService _panel;
         internal readonly Persistence Persistence = new();
         internal int Applied, Diagnosed, ChoiceChecks;
         internal bool ThrowNative;
@@ -36,9 +44,22 @@ public sealed class DungeonServiceTests
                 new((_, _) => DungeonStatus.Attached, (_, _) => { }, (_, _, _) => { ChoiceChecks++; return DungeonStatus.ChoiceApplied; },
                     (_, _, _) => { Applied++; if (ThrowNative) throw new InvalidOperationException("native failure"); },
                     poiId => Resolve?.Invoke(poiId)), (_, _) => Diagnosed++);
+            _combat = new BoardingCombatService(Hub, Hub.ReportSubscriberFailure);
+            _rewards = new DungeonRewardService(Hub, Hub.ReportSubscriberFailure);
+            _operations = new BoardingService(Hub, Hub.ReportSubscriberFailure);
+            _settlement = new DungeonSettlementService(Hub, _operations, Hub.ReportSubscriberFailure);
+            _commands = new BoardingCommandService(Hub, _operations, null, () => _combat.IsEvaluating || _rewards.IsEvaluating);
+            _tactics = new Runtime.BoardingTacticalAdapter(Hub, _commands);
+            _panel = new DungeonPanelService(Hub, null, Hub.ReportSubscriberFailure);
+            Public = new DungeonFacade(Service, _combat, _rewards, _commands, _tactics, _operations, _settlement, _panel);
         }
         internal BoardingHandle Target => new(Hub.CurrentSession!.Id, Guid.NewGuid());
-        public void Dispose() { Service.Dispose(); State.Dispose(); Hub.Dispose(); }
+        public void Dispose()
+        {
+            Service.Dispose(); State.Dispose(); Hub.Dispose();
+            _combat.Dispose(); _rewards.Dispose(); _operations.Dispose(); _settlement.Dispose();
+            _commands.Dispose(); _tactics.Dispose(); _panel.Dispose();
+        }
     }
     private static DungeonDefinition Definition(int version = 1) => new(version, "Dungeon", new DungeonLayout(new[]
     {
@@ -48,7 +69,7 @@ public sealed class DungeonServiceTests
     [Fact]
     public void HealthLossInAuthorCallbackDoesNotCommitChoiceOrNativeEffects()
     {
-        using var f = new Fixture(); IDungeonService service = f.Service;
+        using var f = new Fixture(); var service = f.Service;
         using var provider = service.AcquireProvider("owner");
         using var registration = provider.Register("content", Definition(), _ =>
         { f.Hub.SetCapability("dungeon-content", false, "Fault.", ServiceUnavailableReason.ObserverFault); return true; });
@@ -154,7 +175,7 @@ public sealed class DungeonServiceTests
     [Fact]
     public void CargoRecoveryExampleCreatesIndependentSavedAuthoredContent()
     {
-        using var f = new Fixture(); using var example = new ExampleDungeon.CargoRecovery(f.Service, "recovery", "native-item");
+        using var f = new Fixture(); using var example = new ExampleDungeon.CargoRecovery(f.Public, "recovery", "native-item");
         var first = example.Attach(f.Target).DungeonId!.Value;
         var second = example.Attach(f.Target).DungeonId!.Value;
         Assert.NotEqual(first, second);

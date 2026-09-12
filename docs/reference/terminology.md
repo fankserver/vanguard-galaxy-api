@@ -24,7 +24,7 @@ Use native/game terminology for the corresponding concept, without exporting nat
 
 ## Dungeon service names
 
-Dungeon operation, command, tactical and combat access uses one canonical set of accessors: `DungeonOperations` (`IDungeonOperationService`), `DungeonCommands` (`IDungeonCommandService`), `DungeonTactics` (`IDungeonTacticalService`) and `DungeonCombat` (`IDungeonCombatService`). `BoardingHandle`, `BoardingOperationSnapshot`, `BoardingCommandOptions` and related DTO names describe native dungeon operations/options for ship boarding and installations; they are shared data contracts, not a competing runtime model. No save, provider ID, configuration key, capability key or native enum value encodes a service accessor name.
+Dungeon operation, command, tactical, combat, resources, settlement and panel access fronts one canonical accessor: `Dungeons` (`IDungeonService`), mirroring the game's single `DungeonManager` runtime. The distinct member groups (operations, commands, tactics, combat, rewards, settlement, panel) live as typed members on that one interface rather than as eight separately-injected contracts. `BoardingHandle`, `BoardingOperationSnapshot`, `BoardingCommandOptions` and related DTO names describe native dungeon operations/options for ship boarding and installations; they are shared data contracts, not a competing runtime model. No save, provider ID, configuration key, capability key or native enum value encodes a service accessor name.
 
 `BoardingRules` keeps the *boarding* name because it governs becoming boardable and ship-integrity boundaries before a dungeon operation exists. New APIs for shared interior mechanics use DungeonSimulation/DungeonOperation vocabulary; retain *boarding* where the actual mechanic is ship boarding.
 

@@ -1,6 +1,6 @@
 # Dungeon rewards and settlement
 
-`ModApi.Services.DungeonRewards` and `ModApi.Services.DungeonSettlement` are experimental
+`ModApi.Services.Dungeons` exposes rewards and settlement on the single dungeon service and is experimental
 services requiring inspected reward bindings and boarding observation. Inspect their typed
 availability before using snapshots or interpreting outcomes.
 
@@ -35,8 +35,8 @@ Unrelated or nested loot entries cannot borrow an outer entry's reward context.
 
 ## Observed settlement
 
-`IDungeonSettlementService.Get` returns a copied, session-local snapshot for a known
-operation; `Changed` reports subsequent snapshots without replay. Capture is
+`IDungeonService.Get` returns a copied, session-local snapshot for a known
+operation; `SettlementChanged` reports subsequent snapshots without replay. Capture is
 recorded only from its native capture boundary. A friendly victory does not imply
 capture, and resolved combat does not imply returning-crew delivery.
 
@@ -67,13 +67,13 @@ hangar preparation and world departure. The API does not implement capture by
 assigning ownership. Defeat, retreat and explosion retain their native mission
 failure and crew handling; investigation/extraction remain separate outcomes.
 
-`ModApi.Services.DungeonRewards` exposes a stable `IDungeonRewardService`. Its typed
+`ModApi.Services.Dungeons` exposes rewards on the single dungeon service. Its typed
 `Availability` and `AvailabilityChanged` describe integration health separately from
 provider registration. Unavailable or interrupted reward evaluation preserves the
 native amount; registered policies cannot bypass mission-token capture exclusions.
 
-`ModApi.Services.DungeonSettlement` exposes a stable `IDungeonSettlementService`.
-Use `Changed += handler` / `Changed -= handler` for isolated, main-thread facts.
+`ModApi.Services.Dungeons` exposes settlement on the single dungeon service.
+Use `SettlementChanged += handler` / `SettlementChanged -= handler` for isolated, main-thread facts.
 Typed availability requires settlement bindings plus reward and boarding-observation
 bindings; it is separate from capture, crew-return and count-observation state.
 Queries return null while unavailable or outside the operation’s session.

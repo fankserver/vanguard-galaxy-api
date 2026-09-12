@@ -16,7 +16,7 @@ public sealed class DungeonSettlementServiceTests
         hub.SetCapability("dungeon-rewards", false, "Disabled.", ServiceUnavailableReason.Disabled);
         using var boarding = new BoardingService(hub, (_, _) => { });
         using var engine = new DungeonSettlementService(hub, boarding, (_, _) => { });
-        IDungeonSettlementService service = engine;
+        DungeonSettlementService service = engine;
         var reason = service.Availability.Reason;
         Assert.False(service.Availability.IsAvailable);
         engine.Dispose();
@@ -37,7 +37,7 @@ public sealed class DungeonSettlementServiceTests
         var operation = new BoardingOperationSnapshot(new(session, Guid.NewGuid()), target.Handle, 1, BoardingPhase.Resolved, false, false, 10, 10, "FriendlyVictory",
             new Dictionary<string, int>(), Array.Empty<BoardingCompartmentSnapshot>(), 1);
         var scopes = new List<bool>();
-        IDungeonSettlementService service = settlement;
+        DungeonSettlementService service = settlement;
         Action<DungeonSettlementSnapshot> handlers = _ => throw new InvalidOperationException("Expected failure.");
         handlers += _ => scopes.Add(hub.IsDispatchingCallbacks);
         service.Changed += handlers;

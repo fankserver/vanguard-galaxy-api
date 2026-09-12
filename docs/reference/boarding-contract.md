@@ -1,6 +1,6 @@
 # Boarding integration constraints and source coverage
 
-Boarding initializes automatically when its compatibility and dependency guards pass. Use the stable `ModApi.Services.DungeonOperations`, `BoardingRules`, `DungeonCommands`, `DungeonTactics` and `DungeonCombat` services. Each exposes independent typed availability; registration or a healthy binding is not permission to act on a stale session or operation. This document distinguishes observation from action constraints.
+Boarding initializes automatically when its compatibility and dependency guards pass. Use the stable `ModApi.Services.Dungeons` service (covering operations, rules, commands, tactics and combat) with independent typed availability for each capability. Registration or a healthy binding is not permission to act on a stale session or operation. This document distinguishes observation from action constraints.
 
 ## Supported bindings
 
@@ -61,7 +61,7 @@ Enemy donor selection consumes a reinforcement request before finding a donor, d
 
 ## Public shape and identity constraints
 
-The current observation surface is `IDungeonOperationService`, `BoardingHandle`, `BoardingTargetSnapshot`, `BoardingOperationSnapshot`, `BoardingCompartmentSnapshot` and `BoardingEvent`. `BoardingHandle` is opaque runtime identity; separate query dictionaries distinguish targets from operations. Handler registration/removal is main-thread-only and does not replay; remove retained handlers with `Changed -= handler`. All snapshots copy their collections. Invalidated/retired handles cannot be queried or resurrected.
+The current observation surface is `IDungeonService` (via `ModApi.Services.Dungeons`), `BoardingHandle`, `BoardingTargetSnapshot`, `BoardingOperationSnapshot`, `BoardingCompartmentSnapshot` and `BoardingEvent`. `BoardingHandle` is opaque runtime identity; separate query dictionaries distinguish targets from operations. Handler registration/removal is main-thread-only and does not replay; remove retained handlers with `Changed -= handler`. All snapshots copy their collections. Invalidated/retired handles cannot be queried or resurrected.
 
 The following naming and behavioral constraints apply to richer interfaces; names not listed above are design terminology, not advertised available types:
 
@@ -146,9 +146,9 @@ Tactical execution requires the actual current `IBoardingController` occurrence,
 | Hazards and venting | Veto native hazard firing, airlock vent attempts or random structural vent selection | Discrete family validation and exact native binding checks |
 | Structural damage | `IBoardingRuleProvider.RegisterIntegrity`, scuttle and explosion policies | Cause-aware exactly-once composition; authoritative host destruction remains unchanged |
 
-`ModApi.Services.DungeonCombat` is a stable service with typed `Availability` and `AvailabilityChanged`. Unavailable evaluation preserves vanilla values without invoking providers; health loss discards the entire composition.
+`ModApi.Services.Dungeons` fronts combat on the single dungeon service with typed `Availability` and `AvailabilityChanged`. Unavailable evaluation preserves vanilla values without invoking providers; health loss discards the entire composition.
 
-`IDungeonCombatService.AcquireProvider` creates a disposable provider occurrence independent of command control. RegisterMultiplier accepts Power, InitialHealth, Morale or CasualtyRate; RegisterVeto accepts Surrender, Defection, Reinforcement, Hazard or Venting. Callbacks receive copied encounter kind/level, side, optional room and boundary value. InitialHealth scales the native HP initialization multiplier; Morale scales the absolute change, retaining its sign and clamping resulting morale to [0,1]. Policies do not rewrite saved HP on load.
+`IDungeonService.AcquireCombatProvider` creates a disposable provider occurrence independent of command control. RegisterMultiplier accepts Power, InitialHealth, Morale or CasualtyRate; RegisterVeto accepts Surrender, Defection, Reinforcement, Hazard or Venting. Callbacks receive copied encounter kind/level, side, optional room and boundary value. InitialHealth scales the native HP initialization multiplier; Morale scales the absolute change, retaining its sign and clamping resulting morale to [0,1]. Policies do not rewrite saved HP on load.
 
 Individual multipliers must be finite in [0,10]; combined multipliers above 100 or overflowing the boundary value reject the offending contribution with diagnostics. Contributions run by descending priority then ordinal provider/local ID. Vetoes aggregate as denials, and throwing callbacks do not prevent later contributions. Provider disposal removes only that occurrence's registrations. Nested evaluation preserves native defaults; session replacement discards results. Policy callbacks must not issue commands.
 
@@ -158,7 +158,7 @@ These are request/effect vetoes, not outcome notifications. Vetoing a hazard eff
 
 ## Boarding commands
 
-`ModApi.Services.DungeonCommands.AcquireControl(pluginId, target, out controller)` returns a typed result and, when admitted, an occurrence-scoped disposable controller. Acquire from a current target snapshot, not a saved handle. Event subscriptions do not grant command control. Only one mod controller can hold a target; manual native HUD cancellation and panel start, extraction, reinforcement and option actions revoke it. Native autonomous re-enabling is blocked while it is held. Disposal does not restore old autonomous settings over newer player choices.
+`ModApi.Services.Dungeons.AcquireControl(pluginId, target, out controller)` returns a typed result and, when admitted, an occurrence-scoped disposable controller. Acquire from a current target snapshot, not a saved handle. Event subscriptions do not grant command control. Only one mod controller can hold a target; manual native HUD cancellation and panel start, extraction, reinforcement and option actions revoke it. Native autonomous re-enabling is blocked while it is held. Disposal does not restore old autonomous settings over newer player choices.
 
 The controller exposes Start, Resume, Reinforce, CancelApproach, Retreat, RequestExtraction, ConfirmExtraction and SetOptions. Crew manifests are copied, nonempty, positive-count maps of native crew identifiers. Options expose ammunition, stealth, auto-move and automatic buyout. Automatic buyout can spend credits later according to native rules; no upfront credit charge is invented. Starting with friendly-faction consequences requires explicit consent, then uses native reputation/aggro bookkeeping. Availability, crew, capacity, travel, phase and target/ship identity are revalidated at execution. Installation entry restrictions do not apply to ship targets. Reinforcement requires an existing receiving simulation; approach or prelanding without one is rejected before crew debit.
 
@@ -180,20 +180,20 @@ Callbacks receive immutable numeric contexts and must be pure, quick and determi
 
 Tests cover policy composition and adapter boundaries.
 
-`ModApi.Services.DungeonCommands` is a stable `IDungeonCommandService` with typed
+`ModApi.Services.Dungeons` exposes commands on the single dungeon service with typed
 `Availability` and `AvailabilityChanged`. Missing bindings refuse control without
 native access. Health loss closes controller admission; loss during a native
 invocation reports `Uncertain` because effects may already have occurred. Never
 blindly retry an uncertain command. Admission is not a completed native outcome.
 
-`ModApi.Services.DungeonTactics` exposes a stable `IDungeonTacticalService`.
+`ModApi.Services.Dungeons` exposes tactics on the single dungeon service.
 Typed availability is independent of whether an operation has a tactical snapshot.
 Unavailable snapshots perform no native reads; successful reads revalidate their
 session and service health. Tactical mutations retain controller arbitration and
 all specialist, movement, resource and consent checks. Health loss after invocation
 reports `Uncertain`; native UI validation remains independent of consumer access.
 
-`ModApi.Services.DungeonOperations` is a stable `IDungeonOperationService`. Subscribe using
+`ModApi.Services.Dungeons` exposes observation on the single dungeon service. Subscribe using
 `Changed += handler` and remove the exact handler during teardown. Registration
 does not replay existing observations; query explicitly after subscribing.
 `Availability` and `AvailabilityChanged` describe binding health. Outside an

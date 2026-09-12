@@ -29,7 +29,7 @@ public sealed class DungeonPanelServiceTests
     [Fact]
     public void HealthLossDuringNavigationIsUncertainAndStopsFurtherReads()
     {
-        using var f = new Fixture(); IDungeonPanelService service = f.Service;
+        using var f = new Fixture(); DungeonPanelService service = f.Service;
         f.Source.OpenCallback = _ =>
         { f.Hub.SetCapability("dungeon-panel-opening", false, "Fault.", ServiceUnavailableReason.ObserverFault); return DungeonPanelOpenStatus.Opened; };
         Assert.Equal(DungeonPanelOpenStatus.Uncertain, service.Open(f.Source.Snapshot!.Target.Handle));

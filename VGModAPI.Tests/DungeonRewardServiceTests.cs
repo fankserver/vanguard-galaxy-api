@@ -13,7 +13,7 @@ public sealed class DungeonRewardServiceTests
         var session = hub.Begin(SessionOrigin.NewGame, null); hub.PlayerReady(session);
         hub.SetCapability("dungeon-rewards", true, "Test bindings.");
         using var engine = new DungeonRewardService(hub, (_, _) => { });
-        IDungeonRewardService service = engine;
+        DungeonRewardService service = engine;
         using var provider = service.AcquireProvider("mod");
         var calls = 0;
         provider.Register("reward", DungeonRewardKind.LootAmount, _ =>
