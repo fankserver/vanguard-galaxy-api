@@ -98,17 +98,19 @@ public sealed class PocketSystemReference
 /// <summary>Internal coordinator creation outcome; consumers receive an <see cref="IPocketSystem"/> object instead.</summary>
 public sealed class PocketSystemResult
 {
-    public WorldStatus Status { get; }
+    public WorldContentStatus Status { get; }
+    public RegistrationFailureReason? Reason { get; }
     public PocketSystemReference? Reference { get; }
     /// <summary>Owned pocket-system identity accepted by gameplay travel targets; not an authorization token.</summary>
     public string? SystemId { get; }
     public string? EntranceGatePoiId { get; }
     public string? PocketGatePoiId { get; }
-    public bool Succeeded => Status == WorldStatus.Succeeded;
-    public PocketSystemResult(WorldStatus status, PocketSystemReference? reference = null,
-        string? systemId = null, string? entranceGatePoiId = null, string? pocketGatePoiId = null)
+    public bool Succeeded => Status == WorldContentStatus.Succeeded;
+    public PocketSystemResult(WorldContentStatus status, PocketSystemReference? reference = null,
+        string? systemId = null, string? entranceGatePoiId = null, string? pocketGatePoiId = null,
+        RegistrationFailureReason? reason = null)
     {
-        Status = status; Reference = reference;
+        Status = status; Reason = reason; Reference = reference;
         SystemId = systemId; EntranceGatePoiId = entranceGatePoiId; PocketGatePoiId = pocketGatePoiId;
     }
 }
@@ -158,13 +160,40 @@ public enum WorldContentStatus
     GameEnded
 }
 
+/// <summary>Registration-specific reasons for a refused world-content declaration, mirroring how
+/// <see cref="ReconstructionFailureReason"/> splits reasons from status. Attached to a
+/// <see cref="RegistrationResult"/> when <see cref="WorldContentStatus.Rejected"/> or
+/// <see cref="WorldContentStatus.Unavailable"/> is reported.</summary>
+public enum RegistrationFailureReason
+{
+    /// <summary>The owning provider is not present or the service is not available.</summary>
+    UnknownProvider,
+    /// <summary>A declaration with the same author-local key/id already exists.</summary>
+    DuplicateDefinition,
+    /// <summary>The declaration is malformed (null or rejected by the definition contract).</summary>
+    InvalidDefinition,
+    /// <summary>No declaration with that identifier is registered by this provider.</summary>
+    NotRegistered
+}
+
+/// <summary>Outcome of a world-content declaration (<c>Register*</c>). A refused declaration carries a
+/// <see cref="RegistrationFailureReason"/>; <see cref="Succeeded"/> reports the declaration was applied.</summary>
+public sealed class RegistrationResult
+{
+    public WorldContentStatus Status { get; }
+    public RegistrationFailureReason? Reason { get; }
+    public bool Succeeded => Status == WorldContentStatus.Succeeded;
+    internal RegistrationResult(WorldContentStatus status, RegistrationFailureReason? reason = null)
+    { Status = status; Reason = reason; }
+}
+
 /// <summary>
 /// A typed, read-only report of why (if at all) an owned world-content poi can currently be
 /// removed. Returned by <c>CanRemove()</c>; it never mutates native state. A value of
 /// <see cref="Ready"/> means a cleanup window may act now. The distinct reasons are a joint report
 /// across the four poi kinds; a kind only ever reports the reasons that apply to it.
 /// </summary>
-public enum WorldContentRemovalStatus
+public enum RemovalStatus
 {
     /// <summary>Removal can proceed now; it is safe for a cleanup window to <c>Remove()</c> or complete a <c>RequestRemoval()</c>.</summary>
     Ready,
@@ -251,14 +280,14 @@ public interface IPocketSystem
     /// <summary>
     /// Pure readiness report, no mutation: why (if at all) the pocket can currently be removed
     /// (player at/inside, still contains combat sites, still a wormhole endpoint, not present,
-    /// session ended, or not yet actionable). <see cref="WorldContentRemovalStatus.Ready"/> means a
+    /// session ended, or not yet actionable). <see cref="RemovalStatus.Ready"/> means a
     /// cleanup window may remove it now.
     /// </summary>
-    WorldContentRemovalStatus CanRemove();
+    RemovalStatus CanRemove();
     /// <summary>
     /// Requests deferred removal, mirroring the game's ambient cleanup window: the pocket is marked
     /// for removal and removed at the next safe maintenance pass once <see cref="CanRemove"/> is
-    /// <see cref="WorldContentRemovalStatus.Ready"/> (offsetting occupancy and gate conditions).
+    /// <see cref="RemovalStatus.Ready"/> (offsetting occupancy and gate conditions).
     /// Returns a retained result; completion is signalled by <see cref="Changed"/> with the object
     /// becoming terminal (<see cref="ReconstructionStatus.Removed"/>). Refused when the pocket is
     /// already gone or the world is not actionable.

@@ -74,13 +74,13 @@ public interface ICombatSite
     /// <summary>
     /// Pure readiness report, no mutation: why (if at all) the combat site can currently be removed
     /// (player at/routed, not present, session ended, or not yet actionable).
-    /// <see cref="WorldContentRemovalStatus.Ready"/> means a cleanup window may remove it now.
+    /// <see cref="RemovalStatus.Ready"/> means a cleanup window may remove it now.
     /// </summary>
-    WorldContentRemovalStatus CanRemove();
+    RemovalStatus CanRemove();
     /// <summary>
     /// Requests deferred removal, mirroring the game's ambient cleanup window: the combat site is
     /// marked for removal and removed at the next safe maintenance pass once
-    /// <see cref="CanRemove"/> is <see cref="WorldContentRemovalStatus.Ready"/> (offsetting
+    /// <see cref="CanRemove"/> is <see cref="RemovalStatus.Ready"/> (offsetting
     /// occupancy). Returns a retained result; completion is signalled by <see cref="Changed"/> with
     /// the object becoming terminal (<see cref="ReconstructionStatus.Removed"/>). Refused when the
     /// site is already gone or the world is not actionable.

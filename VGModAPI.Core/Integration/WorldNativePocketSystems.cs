@@ -425,29 +425,29 @@ internal sealed class WorldNativePocketSystems : IPocketSystemNative
     /// Unavailable. PlayerInside also covers a waypoint routed into the pocket. Never mutates native
     /// state.
     /// </summary>
-    public WorldContentRemovalStatus Readiness(Guid session, string systemId, string entranceGateId, string pocketGateId)
+    public RemovalStatus Readiness(Guid session, string systemId, string entranceGateId, string pocketGateId)
     {
         var map = Map(false, session, out var player);
-        if (map == null || player == null) return WorldContentRemovalStatus.Unavailable;
+        if (map == null || player == null) return RemovalStatus.Unavailable;
         WorldMapIndex.Snapshot before;
         try { before = _index.Read(map); }
-        catch { return WorldContentRemovalStatus.Unavailable; }
+        catch { return RemovalStatus.Unavailable; }
         var system = before.FindSystem(systemId);
         var entrance = before.FindPoint(entranceGateId);
         var peer = before.FindPoint(pocketGateId);
         if (system == null || entrance == null || peer == null
-            || !_jumpGateType.IsInstanceOfType(entrance) || !_jumpGateType.IsInstanceOfType(peer)) return WorldContentRemovalStatus.NotPresent;
+            || !_jumpGateType.IsInstanceOfType(entrance) || !_jumpGateType.IsInstanceOfType(peer)) return RemovalStatus.NotPresent;
         var parent = _parent.GetValue(entrance);
         if (parent == null || ReferenceEquals(parent, system) || !ReferenceEquals(_parent.GetValue(peer), system))
-            return WorldContentRemovalStatus.NotPresent;
-        if (ReferenceEquals(_playerCurrentSystem.GetValue(player), system)) return WorldContentRemovalStatus.PlayerInside;
+            return RemovalStatus.NotPresent;
+        if (ReferenceEquals(_playerCurrentSystem.GetValue(player), system)) return RemovalStatus.PlayerInside;
         var currentPoi = _playerCurrentPoi.GetValue(player);
-        if (currentPoi != null && ReferenceEquals(_parent.GetValue(currentPoi), system)) return WorldContentRemovalStatus.PlayerInside;
+        if (currentPoi != null && ReferenceEquals(_parent.GetValue(currentPoi), system)) return RemovalStatus.PlayerInside;
         if (_playerWaypoints.GetValue(player) is System.Collections.IEnumerable waypoints)
             foreach (var waypoint in waypoints)
                 if (waypoint != null && (ReferenceEquals(waypoint, entrance) || ReferenceEquals(_parent.GetValue(waypoint), system)))
-                    return WorldContentRemovalStatus.PlayerInside;
-        return WorldContentRemovalStatus.Ready;
+                    return RemovalStatus.PlayerInside;
+        return RemovalStatus.Ready;
     }
 
     public PocketSystemInfo? ResolvePocket(Guid session, string systemId)

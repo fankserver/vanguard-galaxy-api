@@ -81,13 +81,13 @@ internal sealed class FakePocketSystemNative : IPocketSystemNative
         Hidden.Remove(systemId);
         return PocketRemoveOutcome.Removed;
     }
-    public WorldContentRemovalStatus Readiness(Guid session, string systemId, string entranceGateId, string pocketGateId)
+    public RemovalStatus Readiness(Guid session, string systemId, string entranceGateId, string pocketGateId)
     {
         if (systemId == null || !Systems.TryGetValue(systemId, out var pair) || pair.Entrance != entranceGateId || pair.Pocket != pocketGateId)
-            return WorldContentRemovalStatus.NotPresent;
-        if (PlayerInside) return WorldContentRemovalStatus.PlayerInside;
-        if (FailRemove) return WorldContentRemovalStatus.Unavailable;
-        return WorldContentRemovalStatus.Ready;
+            return RemovalStatus.NotPresent;
+        if (PlayerInside) return RemovalStatus.PlayerInside;
+        if (FailRemove) return RemovalStatus.Unavailable;
+        return RemovalStatus.Ready;
     }
     public void BeginPass(Guid session) { }
     public void EndPass() { }

@@ -105,14 +105,14 @@ public interface IResourceSite
     /// <summary>
     /// Pure readiness report, no mutation: why (if at all) the site can currently be removed
     /// (player at/routed, live boarding, persisted interior, held enterable, not present, session
-    /// ended, or not yet actionable). <see cref="WorldContentRemovalStatus.Ready"/> means a cleanup
+    /// ended, or not yet actionable). <see cref="RemovalStatus.Ready"/> means a cleanup
     /// window may remove it now.
     /// </summary>
-    WorldContentRemovalStatus CanRemove();
+    RemovalStatus CanRemove();
     /// <summary>
     /// Requests deferred removal, mirroring the game's ambient cleanup window: the site is marked
     /// for removal and removed at the next safe maintenance pass once <see cref="CanRemove"/> is
-    /// <see cref="WorldContentRemovalStatus.Ready"/> (offsetting occupancy, boarding, interior and
+    /// <see cref="RemovalStatus.Ready"/> (offsetting occupancy, boarding, interior and
     /// hold conditions). Returns a retained result; completion is signalled by <see cref="Changed"/>
     /// with the object becoming terminal (<see cref="ReconstructionStatus.Removed"/>). Refused when
     /// the site is already gone or the world is not actionable.

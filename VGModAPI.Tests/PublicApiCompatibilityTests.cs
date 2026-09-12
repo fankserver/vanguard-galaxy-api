@@ -97,9 +97,9 @@ public sealed class PublicApiCompatibilityTests
         // CanRemove returns a typed readiness result, truthfully naming the removal condition rather
         // than the misleading try-remove idiom.
         AssertMethod("IResourceSite", "CanRemove");
-        Assert.NotNull(Api.GetType("VGModAPI.WorldContentRemovalStatus"));
-        Assert.Contains("Ready", Api.GetType("VGModAPI.WorldContentRemovalStatus")!.GetEnumNames(), StringComparer.Ordinal);
-        Assert.Contains("PlayerInside", Api.GetType("VGModAPI.WorldContentRemovalStatus")!.GetEnumNames(), StringComparer.Ordinal);
+        Assert.NotNull(Api.GetType("VGModAPI.RemovalStatus"));
+        Assert.Contains("Ready", Api.GetType("VGModAPI.RemovalStatus")!.GetEnumNames(), StringComparer.Ordinal);
+        Assert.Contains("PlayerInside", Api.GetType("VGModAPI.RemovalStatus")!.GetEnumNames(), StringComparer.Ordinal);
     }
 
     [Fact]

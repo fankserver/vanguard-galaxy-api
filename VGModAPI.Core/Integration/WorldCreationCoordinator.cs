@@ -166,15 +166,15 @@ internal sealed class WorldCreationCoordinator
     /// Pure readiness for removing the retained poi by native identity, never mutating native
     /// state: Ready, PlayerInside, NotPresent, NotReady or Unavailable.
     /// </summary>
-    internal WorldContentRemovalStatus CanRemove(Guid session, WorldObjectIdentity identity)
+    internal RemovalStatus CanRemove(Guid session, WorldObjectIdentity identity)
     {
         _checkThread();
         if (identity == null) throw new ArgumentNullException(nameof(identity));
-        if (_creating || !HasRestoredInventory(session) || session != _session) return WorldContentRemovalStatus.NotReady;
+        if (_creating || !HasRestoredInventory(session) || session != _session) return RemovalStatus.NotReady;
         WorldSnapshotInstance? found = null;
         foreach (var poi in _instances)
             if (poi.Identity.NativeId == identity.NativeId) { found = poi; break; }
-        if (found == null) return WorldContentRemovalStatus.NotPresent;
+        if (found == null) return RemovalStatus.NotPresent;
         return _native.Readiness(session, found);
     }
 }

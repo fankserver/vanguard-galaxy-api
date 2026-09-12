@@ -175,27 +175,27 @@ internal sealed class WorldNativeWormholes : IWormholePairNative
     /// Pure readiness for removing the pair (no mutation): Ready, PlayerInside, NotPresent or
     /// Unavailable. Never mutates native state.
     /// </summary>
-    public WorldContentRemovalStatus Readiness(Guid session, string firstPoiId, string secondPoiId)
+    public RemovalStatus Readiness(Guid session, string firstPoiId, string secondPoiId)
     {
-        var map = Map(false, session); if (map == null) return WorldContentRemovalStatus.Unavailable;
+        var map = Map(false, session); if (map == null) return RemovalStatus.Unavailable;
         var before = _index.Read(map);
         var first = before.FindPoint(firstPoiId); var second = before.FindPoint(secondPoiId);
         if (first == null || second == null || !_wormholeType.IsInstanceOfType(first) || !_wormholeType.IsInstanceOfType(second))
-            return WorldContentRemovalStatus.NotPresent;
+            return RemovalStatus.NotPresent;
         var a = Targets(first); var b = Targets(second);
         if (a.Count != 1 || b.Count != 1 || (string)a[0]! != secondPoiId || (string)b[0]! != firstPoiId)
-            return WorldContentRemovalStatus.NotPresent;
+            return RemovalStatus.NotPresent;
         if (_game.TryGetCurrentReadyPlayer(session, out var player) && player != null)
         {
             var currentPoi = _playerCurrentPoi.GetValue(player);
             if (currentPoi != null && (ReferenceEquals(currentPoi, first) || ReferenceEquals(currentPoi, second)))
-                return WorldContentRemovalStatus.PlayerInside;
+                return RemovalStatus.PlayerInside;
             if (_playerWaypoints.GetValue(player) is System.Collections.IEnumerable waypoints)
                 foreach (var waypoint in waypoints)
                     if (waypoint != null && (ReferenceEquals(waypoint, first) || ReferenceEquals(waypoint, second)))
-                        return WorldContentRemovalStatus.PlayerInside;
+                        return RemovalStatus.PlayerInside;
         }
-        return WorldContentRemovalStatus.Ready;
+        return RemovalStatus.Ready;
     }
     /// <summary>Best-effort restoration of both wormhole POIs into their systems after a failed removal.</summary>
     private void Rollback(object firstSystem, object secondSystem, object first, object second)

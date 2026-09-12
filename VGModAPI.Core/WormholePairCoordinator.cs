@@ -40,34 +40,34 @@ internal sealed class WormholePairCoordinator : IDisposable
     internal WormholePairPoi? TryGet(string owner, string local, string key)
         => _rows.TryGetValue((owner, local, key), out var row) ? row : null;
     internal bool Contains(string owner, string local, string key) => _rows.ContainsKey((owner, local, key));
-    internal (WorldStatus Status, WormholePairPoi? Row) Create(WormholePairRegistry.Provider provider, Guid session,
+    internal (WorldContentStatus Status, WormholePairPoi? Row) Create(WormholePairRegistry.Provider provider, Guid session,
         string localId, string poiKey, string firstSystemId, string secondSystemId)
     {
-        _hub.CheckThread(); if (_disposed) return (WorldStatus.Unavailable, null);
-        if (!_definitions.TryResolve(provider, localId, out var definition) || definition == null) return (WorldStatus.NotRegistered, null);
-        if (string.IsNullOrWhiteSpace(poiKey) || firstSystemId == secondSystemId) return (WorldStatus.InvalidDefinition, null);
+        _hub.CheckThread(); if (_disposed) return (WorldContentStatus.Unavailable, null);
+        if (!_definitions.TryResolve(provider, localId, out var definition) || definition == null) return (WorldContentStatus.Rejected, null);
+        if (string.IsNullOrWhiteSpace(poiKey) || firstSystemId == secondSystemId) return (WorldContentStatus.Rejected, null);
         var key = (provider.Owner, localId, poiKey);
-        if (_rows.TryGetValue(key, out var existing)) return Resolve(existing).Reconstructed ? (WorldStatus.Succeeded, existing) : (WorldStatus.Rejected, existing);
-        if (_rows.Count >= WorldSerializationAssociation.MaxObjects) return (WorldStatus.Rejected, null);
+        if (_rows.TryGetValue(key, out var existing)) return Resolve(existing).Reconstructed ? (WorldContentStatus.Succeeded, existing) : (WorldContentStatus.Rejected, existing);
+        if (_rows.Count >= WorldSerializationAssociation.MaxObjects) return (WorldContentStatus.Rejected, null);
         try
         {
             var info = _native.CreatePair(session, definition.Name, firstSystemId, secondSystemId, open: true);
-            if (info == null) return (WorldStatus.Rejected, null);
+            if (info == null) return (WorldContentStatus.Rejected, null);
             var row = new WormholePairPoi(provider.Owner, localId, poiKey, definition.Revision,
                 firstSystemId, secondSystemId, info.FirstPoiId, info.SecondPoiId, declaredOpen: true);
-            _rows.Add(key, row); return (WorldStatus.Succeeded, row);
+            _rows.Add(key, row); return (WorldContentStatus.Succeeded, row);
         }
-        catch (Exception error) { _report(error); return (WorldStatus.Unavailable, null); }
+        catch (Exception error) { _report(error); return (WorldContentStatus.Unavailable, null); }
     }
     /// <summary>
     /// Removes the owned pair: removes both native wormhole POIs and drops the row so save data no
     /// longer reconstructs it and the key becomes creatable again. Refuses while the player is at/inside
     /// either wormhole. Leaves the row untouched on refusal/failure.
     /// </summary>
-    internal (WorldStatus Status, string Detail) Remove(WormholePairRegistry.Provider provider, Guid session, string local, string key)
+    internal (WorldContentStatus Status, string Detail) Remove(WormholePairRegistry.Provider provider, Guid session, string local, string key)
     {
-        _hub.CheckThread(); if (_disposed) return (WorldStatus.Unavailable, "Wormhole pairs are unavailable.");
-        if (provider == null || !_rows.TryGetValue((provider.Owner, local, key), out var row)) return (WorldStatus.NotRegistered, "");
+        _hub.CheckThread(); if (_disposed) return (WorldContentStatus.Unavailable, "Wormhole pairs are unavailable.");
+        if (provider == null || !_rows.TryGetValue((provider.Owner, local, key), out var row)) return (WorldContentStatus.Rejected, "");
         try
         {
             var outcome = _native.RemoveWormhole(session, row.FirstPoiId, row.SecondPoiId);
@@ -75,30 +75,30 @@ internal sealed class WormholePairCoordinator : IDisposable
             {
                 case WormholeRemoveOutcome.Removed:
                     _rows.Remove((provider.Owner, local, key));
-                    return (WorldStatus.Succeeded, "");
+                    return (WorldContentStatus.Succeeded, "");
                 case WormholeRemoveOutcome.Missing:
-                    return (WorldStatus.Rejected, "The pair is not currently present natively; wait for reconstruction or check its state.");
+                    return (WorldContentStatus.Rejected, "The pair is not currently present natively; wait for reconstruction or check its state.");
                 default:
-                    return (WorldStatus.Rejected, "The native removal could not be performed or verified.");
+                    return (WorldContentStatus.Rejected, "The native removal could not be performed or verified.");
             }
         }
-        catch (Exception error) { _report(error); return (WorldStatus.Unavailable, "The native removal faulted."); }
+        catch (Exception error) { _report(error); return (WorldContentStatus.Unavailable, "The native removal faulted."); }
     }
 
     /// <summary>Pure readiness for removing the pair (no mutation): Ready, PlayerInside, NotPresent or Unavailable.</summary>
-    internal WorldContentRemovalStatus CanRemove(WormholePairRegistry.Provider provider, Guid session, string local, string key)
+    internal RemovalStatus CanRemove(WormholePairRegistry.Provider provider, Guid session, string local, string key)
     {
-        _hub.CheckThread(); if (_disposed || provider == null) return WorldContentRemovalStatus.Unavailable;
-        if (!_rows.TryGetValue((provider.Owner, local, key), out var row)) return WorldContentRemovalStatus.NotPresent;
+        _hub.CheckThread(); if (_disposed || provider == null) return RemovalStatus.Unavailable;
+        if (!_rows.TryGetValue((provider.Owner, local, key), out var row)) return RemovalStatus.NotPresent;
         try { return _native.Readiness(session, row.FirstPoiId, row.SecondPoiId); }
-        catch (Exception error) { _report(error); return WorldContentRemovalStatus.Unavailable; }
+        catch (Exception error) { _report(error); return RemovalStatus.Unavailable; }
     }
-    internal WorldStatus SetOpen(WormholePairRegistry.Provider provider, Guid session, string local, string key, bool open)
+    internal WorldContentStatus SetOpen(WormholePairRegistry.Provider provider, Guid session, string local, string key, bool open)
     {
-        _hub.CheckThread(); if (!_rows.TryGetValue((provider.Owner, local, key), out var row)) return WorldStatus.NotRegistered;
-        if (!Resolve(row).Reconstructed) return WorldStatus.Rejected;
-        try { if (!_native.ApplyOpen(session, row.FirstPoiId, row.SecondPoiId, open)) return WorldStatus.Rejected; row.DeclaredOpen = open; return WorldStatus.Succeeded; }
-        catch (Exception error) { _report(error); return WorldStatus.Unavailable; }
+        _hub.CheckThread(); if (!_rows.TryGetValue((provider.Owner, local, key), out var row)) return WorldContentStatus.Rejected;
+        if (!Resolve(row).Reconstructed) return WorldContentStatus.Rejected;
+        try { if (!_native.ApplyOpen(session, row.FirstPoiId, row.SecondPoiId, open)) return WorldContentStatus.Rejected; row.DeclaredOpen = open; return WorldContentStatus.Succeeded; }
+        catch (Exception error) { _report(error); return WorldContentStatus.Unavailable; }
     }
     internal WormholePairState State(WormholePairRegistry.Provider provider, string local, string key)
     { _hub.CheckThread(); return _rows.TryGetValue((provider.Owner, local, key), out var row) ? Resolve(row) : new(ReconstructionStatus.Pending); }

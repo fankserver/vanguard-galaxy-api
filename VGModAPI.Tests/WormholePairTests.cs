@@ -41,14 +41,14 @@ internal sealed class FakeWormholePairs : IWormholePairNative
         if (FailRemove) return WormholeRemoveOutcome.Failed;
         Pairs.Remove(key); return WormholeRemoveOutcome.Removed;
     }
-    public WorldContentRemovalStatus Readiness(Guid session, string wa, string wb)
+    public RemovalStatus Readiness(Guid session, string wa, string wb)
     {
         string? key = null;
         foreach (var entry in Pairs) if (entry.Value.A == wa && entry.Value.B == wb) { key = entry.Key; break; }
-        if (key == null) return WorldContentRemovalStatus.NotPresent;
-        if (PlayerInside) return WorldContentRemovalStatus.PlayerInside;
-        if (FailRemove) return WorldContentRemovalStatus.Unavailable;
-        return WorldContentRemovalStatus.Ready;
+        if (key == null) return RemovalStatus.NotPresent;
+        if (PlayerInside) return RemovalStatus.PlayerInside;
+        if (FailRemove) return RemovalStatus.Unavailable;
+        return RemovalStatus.Ready;
     }
 }
 
@@ -80,8 +80,9 @@ public sealed class WormholePairTests
     public void DefinitionAndCreationAreModderKeyedDomainObjects()
     {
         using var h = new Harness();
-        Assert.Equal(WorldStatus.Succeeded, h.Provider.RegisterWormholePair(new("rift", 1, "Unstable Rift")));
-        Assert.Equal(WorldStatus.DuplicateDefinition, h.Provider.RegisterWormholePair(new("rift", 1, "Duplicate")));
+        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterWormholePair(new("rift", 1, "Unstable Rift")).Status);
+        Assert.Equal(WorldContentStatus.Rejected, h.Provider.RegisterWormholePair(new("rift", 1, "Duplicate")).Status);
+            Assert.Equal(RegistrationFailureReason.DuplicateDefinition, h.Provider.RegisterWormholePair(new("rift", 1, "Duplicate")).Reason);
         h.Begin();
         var first = h.Provider.CreateWormholePair("rift", "daily", "system-a", "system-b")!;
         Assert.True(first.State.Reconstructed); Assert.Equal("wa-1", first.FirstWormholePoiId); Assert.Equal("wb-1", first.SecondWormholePoiId);

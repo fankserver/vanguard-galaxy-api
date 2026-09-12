@@ -3,8 +3,6 @@ using System.Collections.Generic;
 
 namespace VGModAPI;
 
-public enum WorldStatus { Succeeded, Unavailable, NotReady, UnknownProvider, DuplicateDefinition, InvalidDefinition, NotRegistered, Rejected }
-
 /// <summary>Immutable persistent Combat-site declaration. Register before starting a session.</summary>
 public sealed class CombatSiteDefinition
 {
@@ -37,12 +35,13 @@ public sealed class CombatSiteReference
 
 public sealed class CombatSiteResult
 {
-    public WorldStatus Status { get; }
+    public WorldContentStatus Status { get; }
+    public RegistrationFailureReason? Reason { get; }
     public CombatSiteReference? Reference { get; }
     /// <summary>POI identity accepted by story travel objectives; not an authorization token.</summary>
     public string? PoiId { get; }
-    public bool Succeeded => Status == WorldStatus.Succeeded;
-    public CombatSiteResult(WorldStatus status, CombatSiteReference? reference = null, string? poiId = null) { Status = status; Reference = reference; PoiId = poiId; }
+    public bool Succeeded => Status == WorldContentStatus.Succeeded;
+    public CombatSiteResult(WorldContentStatus status, CombatSiteReference? reference = null, string? poiId = null, RegistrationFailureReason? reason = null) { Status = status; Reason = reason; Reference = reference; PoiId = poiId; }
 }
 
 public interface IWorldService : IServiceStatus
@@ -61,7 +60,7 @@ public interface IWorldProvider : IDisposable
 {
     string ProviderId { get; }
     /// <summary>Optional exact previous declaration permits a revision/name migration; faction, level and local identity must remain unchanged.</summary>
-    WorldStatus RegisterCombatSite(CombatSiteDefinition definition, CombatSiteDefinition? previous = null);
+    RegistrationResult RegisterCombatSite(CombatSiteDefinition definition, CombatSiteDefinition? previous = null);
     /// <summary>
     /// Creates (or reconciles) an owned persistent combat site in an existing system for the current
     /// game, keyed by an author-local poi key. The API allocates and owns the native identity;
@@ -79,7 +78,7 @@ public interface IWorldProvider : IDisposable
     event Action<CombatSitesSettledEvent>? CombatSiteReconstructionSettled;
 
     /// <summary>Declares an enclosed owned pocket system. Optional exact previous declaration permits a revision/name migration.</summary>
-    WorldStatus RegisterPocketSystem(PocketSystemDefinition definition, PocketSystemDefinition? previous = null);
+    RegistrationResult RegisterPocketSystem(PocketSystemDefinition definition, PocketSystemDefinition? previous = null);
     /// <summary>
     /// Creates (or reconciles) an owned pocket system for the current game, keyed by an author-local
     /// poi key. Returns the owned poi object; re-declaring the same key returns the SAME
@@ -98,7 +97,7 @@ public interface IWorldProvider : IDisposable
     event Action<PocketSystemsSettledEvent>? PocketSystemReconstructionSettled;
 
     /// <summary>Declares an owned pair of exactly connected native wormholes.</summary>
-    WorldStatus RegisterWormholePair(WormholePairDefinition definition, WormholePairDefinition? previous = null);
+    RegistrationResult RegisterWormholePair(WormholePairDefinition definition, WormholePairDefinition? previous = null);
     /// <summary>Creates or reconciles one owned pair between two existing systems for the current game.</summary>
     IWormholePair? CreateWormholePair(string localId, string poiKey, string firstSystemId, string secondSystemId);
     /// <summary>Re-obtains the owned pair for a key in the current game, or null if it does not exist.</summary>
@@ -109,7 +108,7 @@ public interface IWorldProvider : IDisposable
     event Action<WormholePairsSettledEvent>? WormholePairReconstructionSettled;
 
     /// <summary>Declares an owned site (salvage site or exact-count mining field). Optional exact previous declaration permits a revision migration.</summary>
-    WorldStatus RegisterResourceSite(ResourceSiteDefinition definition, ResourceSiteDefinition? previous = null);
+    RegistrationResult RegisterResourceSite(ResourceSiteDefinition definition, ResourceSiteDefinition? previous = null);
     /// <summary>
     /// Creates (or reconciles) an owned site in an existing system — including an owned pocket
     /// system — keyed by an author-local poi key. The API allocates and owns the native identity.
@@ -125,7 +124,7 @@ public interface IWorldProvider : IDisposable
     event Action<ResourceSitesSettledEvent>? ResourceSiteReconstructionSettled;
 
     /// <summary>Declares a moored owned ship. Optional exact previous declaration permits a revision migration.</summary>
-    WorldStatus RegisterMooredShip(MooredShipDefinition definition, MooredShipDefinition? previous = null);
+    RegistrationResult RegisterMooredShip(MooredShipDefinition definition, MooredShipDefinition? previous = null);
     /// <summary>
     /// Creates (or reconciles) the one owned moored ship beside a station POI, keyed by an author-local
     /// poi key. The API owns its persistent unit identity, converges to exactly one instance,

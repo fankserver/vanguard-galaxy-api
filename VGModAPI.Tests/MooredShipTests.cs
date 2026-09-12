@@ -66,8 +66,9 @@ public sealed class MooredShipTests
     public void KeyedCreationOwnsIdentityProtectsAndMaintains()
     {
         using var h = new Harness();
-        Assert.Equal(WorldStatus.Succeeded, h.Provider.RegisterMooredShip(Promise()));
-        Assert.Equal(WorldStatus.DuplicateDefinition, h.Provider.RegisterMooredShip(Promise()));
+        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterMooredShip(Promise()).Status);
+        Assert.Equal(WorldContentStatus.Rejected, h.Provider.RegisterMooredShip(Promise()).Status);
+            Assert.Equal(RegistrationFailureReason.DuplicateDefinition, h.Provider.RegisterMooredShip(Promise()).Reason);
         h.BeginGameplay();
         var ship = h.Provider.CreateMooredShip("promise", "act3", "station-poi");
         Assert.NotNull(ship);
@@ -91,7 +92,7 @@ public sealed class MooredShipTests
     public void RestoredRowsReconstructAndSettleWithActualOutcomes()
     {
         using var h = new Harness();
-        Assert.Equal(WorldStatus.Succeeded, h.Provider.RegisterMooredShip(Promise()));
+        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterMooredShip(Promise()).Status);
         h.BeginGameplay();
         var ship = h.Provider.CreateMooredShip("promise", "act3", "station-poi")!;
         var rows = h.Coordinator.CaptureRows();
@@ -100,7 +101,7 @@ public sealed class MooredShipTests
         Assert.Single(decoded.Ships);
 
         using var restored = new Harness();
-        Assert.Equal(WorldStatus.Succeeded, restored.Provider.RegisterMooredShip(Promise()));
+        Assert.Equal(WorldContentStatus.Succeeded, restored.Provider.RegisterMooredShip(Promise()).Status);
         MooredShipsSettledEvent? settled = null;
         restored.Provider.MooredShipReconstructionSettled += e => settled = e;
         restored.BeginGameplay();
@@ -124,7 +125,7 @@ public sealed class MooredShipTests
     public void CrossKindKeysAndTypedRefusalsAreEnforced()
     {
         using var h = new Harness();
-        Assert.Equal(WorldStatus.Succeeded, h.Provider.RegisterMooredShip(Promise()));
+        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterMooredShip(Promise()).Status);
         h.BeginGameplay();
         h.Native.RefuseCreation = true;
         var refused = h.Provider.CreateMooredShip("promise", "k", "station");

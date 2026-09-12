@@ -62,13 +62,13 @@ internal sealed class WorldAuthoringGate
     /// requires (definition tenant, availability, persistence-ready, definition-stable). Never mutates
     /// native state.
     /// </summary>
-    internal WorldContentRemovalStatus CanRemove(WorldDefinitionRegistry.Provider provider, Guid session, string localId, Guid instanceId, Func<bool>? availability = null)
+    internal RemovalStatus CanRemove(WorldDefinitionRegistry.Provider provider, Guid session, string localId, Guid instanceId, Func<bool>? availability = null)
     {
-        if (!_definitions.TryResolve(provider, localId, out var definition)) return WorldContentRemovalStatus.NotPresent;
-        if (availability != null && !availability()) return WorldContentRemovalStatus.Unavailable;
+        if (!_definitions.TryResolve(provider, localId, out var definition)) return RemovalStatus.NotPresent;
+        if (availability != null && !availability()) return RemovalStatus.Unavailable;
         if (!_persistenceReady(session) || _definitions.Revision != _definitions.Revision ||
             !_definitions.TryResolve(provider, localId, out var current) || !ReferenceEquals(current!.Definition, definition!.Definition))
-            return WorldContentRemovalStatus.NotReady;
+            return RemovalStatus.NotReady;
         var identity = new WorldObjectIdentity(new PersistentDeclaration(definition!.Owner, localId,
             PersistentKind.WorldObject, PersistenceImpact.ApiDependent), instanceId);
         return _creation.CanRemove(session, identity);

@@ -33,7 +33,7 @@ internal interface IWormholePairNative
     /// <summary>Removes both owned wormhole POIs from their systems (plain: no transient player-safety refusal).</summary>
     WormholeRemoveOutcome RemoveWormhole(Guid session, string firstPoiId, string secondPoiId);
     /// <summary>Pure readiness for removing the pair (no mutation): Ready/PlayerInside/NotPresent/Unavailable.</summary>
-    WorldContentRemovalStatus Readiness(Guid session, string firstPoiId, string secondPoiId);
+    RemovalStatus Readiness(Guid session, string firstPoiId, string secondPoiId);
     void BeginPass(Guid session);
     void EndPass();
 }

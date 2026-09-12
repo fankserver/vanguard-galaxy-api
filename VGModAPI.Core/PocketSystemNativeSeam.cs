@@ -50,7 +50,7 @@ internal interface IPocketSystemNative
     /// <summary>Removes the owned pocket, its paired gates and its contained POIs. Refuses while the player is inside.</summary>
     PocketRemoveOutcome RemovePocket(Guid session, string systemId, string entranceGateId, string pocketGateId);
     /// <summary>Pure readiness for removing the owned pocket (no mutation): Ready/PlayerInside/NotPresent/Unavailable.</summary>
-    WorldContentRemovalStatus Readiness(Guid session, string systemId, string entranceGateId, string pocketGateId);
+    RemovalStatus Readiness(Guid session, string systemId, string entranceGateId, string pocketGateId);
     /// <summary>Begins a single reconciliation pass over the session's map; read paths reuse one snapshot until EndPass.</summary>
     void BeginPass(Guid session);
     /// <summary>Ends a reconciliation pass, releasing the cached snapshot.</summary>
