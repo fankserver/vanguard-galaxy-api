@@ -150,6 +150,23 @@ public sealed class PocketSystemRemoveTests
     }
 
     [Fact]
+    public void RequestRemovalIsAbandonedAndEvictedAcrossSessionReplacement()
+    {
+        using var harness = new Harness();
+        var pocket = harness.CreatePocket(); // session A
+        pocket.RequestRemoval();             // queued for session A
+        Assert.Equal(1, harness.Service.PendingRemovalCount);
+        // Replace the session (a save/load re-anchoring to a new session).
+        harness.Hub.Invalidate("replaced");
+        harness.BeginGameplay();             // session B
+        harness.Service.MaintainPocketSystems(harness.Session);
+        // The request queued in the ended session is abandoned: evicted, not leaked.
+        Assert.Equal(0, harness.Service.PendingRemovalCount);
+        // And session B did not complete the stale request against the ended-session handle.
+        Assert.Equal(ReconstructionStatus.Reconstructed, pocket.State.Status);
+    }
+
+    [Fact]
     public void NativelyAbsentPocketRefusesRemovalWithoutDroppingTheRow()
     {
         using var harness = new Harness();

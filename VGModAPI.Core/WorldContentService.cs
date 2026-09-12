@@ -187,19 +187,36 @@ internal sealed class WorldContentService : IWorldService, IDisposable
 
     /// <summary>Sweep for <c>RequestRemoval</c> occurrences: completes a deferred removal once the world
     /// is safely actionable and the occurrence reports <see cref="WorldContentRemovalStatus.Ready"/>,
-    /// mirroring the game's ambient cleanup window. Each finalizer returns true only when the removal
-    /// actually completed, so a request persists until its conditions clear.</summary>
-    private readonly HashSet<Func<bool>> _pendingRemovals = new();
+    /// mirroring the game's ambient cleanup window. A request persists until its conditions clear;
+    /// it is evicted when the removal completes, and evicted (abandoned) when the owning session is
+    /// replaced/ends, because a handle bound to an ended session can never act again.
+    private readonly HashSet<PendingRemoval> _pendingRemovals = new();
+    /// <summary>A deferred-removal request bound to the session it was queued in.</summary>
+    private readonly struct PendingRemoval : IEquatable<PendingRemoval>
+    {
+        public Guid Session { get; }
+        public Func<bool> Finalize { get; }
+        public PendingRemoval(Guid session, Func<bool> finalize) { Session = session; Finalize = finalize; }
+        public bool Equals(PendingRemoval other) => ReferenceEquals(Finalize, other.Finalize);
+        public override bool Equals(object? o) => o is PendingRemoval p && Equals(p);
+        public override int GetHashCode() => Finalize.GetHashCode();
+    }
+    internal int PendingRemovalCount => _pendingRemovals.Count;
     private void CompletePendingRemovals()
     {
         if (_disposed) return;
-        foreach (var finalize in _pendingRemovals.ToArray())
+        var current = _hub.CurrentSession?.Id ?? Guid.Empty;
+        foreach (var pending in _pendingRemovals.ToArray())
         {
-            try { if (finalize()) _pendingRemovals.Remove(finalize); } catch { /* one request's fault must not block the others */ }
+            // A request queued in a session that is no longer current is abandoned: the handle bound
+            // to that session can never act, so evict it instead of leaking it forever.
+            if (pending.Session != Guid.Empty && pending.Session != current)
+            { _pendingRemovals.Remove(pending); continue; }
+            try { if (pending.Finalize()) _pendingRemovals.Remove(pending); } catch { /* one request's fault must not block the others */ }
         }
     }
-    internal void RegisterPendingRemoval(Func<bool> finalize)
-    { if (finalize != null) _pendingRemovals.Add(finalize); }
+    internal void RegisterPendingRemoval(Guid session, Func<bool> finalize)
+    { if (finalize != null) _pendingRemovals.Add(new PendingRemoval(session, finalize)); }
     /// <summary>
     /// After a successful native pocket removal: drop the retained authored-site rows inside the
     /// removed system (their native POIs were removed with it) and let every provider terminally mark
@@ -1072,7 +1089,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 if (_removed) return _lastAction = new(WorldContentStatus.Rejected, "The occurrence was removed; create the key again for a fresh site.");
                 if (Gate() is { } refused) return refused;
                 _removalRequested = true;
-                _provider._service.RegisterPendingRemoval(CompletePendingRemoval);
+                _provider._service.RegisterPendingRemoval(Session, CompletePendingRemoval);
                 return _lastAction = new(WorldContentStatus.Succeeded, "Queued for removal; it happens at the next safe cleanup window.");
             }
             private bool CompletePendingRemoval()
@@ -1182,7 +1199,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 if (_removed) return _lastAction = new(WorldContentStatus.Rejected, "The occurrence was removed; create the key again for a fresh site.");
                 if (Gate() is { } refused) return refused;
                 _removalRequested = true;
-                _provider._service.RegisterPendingRemoval(CompletePendingRemoval);
+                _provider._service.RegisterPendingRemoval(Session, CompletePendingRemoval);
                 return _lastAction = new(WorldContentStatus.Succeeded, "Queued for removal; it happens at the next safe cleanup window.");
             }
             private bool CompletePendingRemoval()
@@ -1295,7 +1312,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 if (_removed) return _last = new(WorldContentStatus.Rejected, "The pair was removed; create the key again for a fresh pair.");
                 if (Gate() is { } refused) return refused;
                 _removalRequested = true;
-                _provider._service.RegisterPendingRemoval(CompletePendingRemoval);
+                _provider._service.RegisterPendingRemoval(Session, CompletePendingRemoval);
                 return _last = new(WorldContentStatus.Succeeded, "Queued for removal; it happens at the next safe cleanup window.");
             }
             private bool CompletePendingRemoval()
@@ -1465,7 +1482,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 _service._hub.CheckThread();
                 if (GateAction() is { } refused) return refused;
                 _removalRequested = true;
-                _service.RegisterPendingRemoval(CompletePendingRemoval);
+                _service.RegisterPendingRemoval(_session, CompletePendingRemoval);
                 return _lastAction = new WorldContentResult(WorldContentStatus.Succeeded, "Queued for removal; it happens at the next safe cleanup window.");
             }
             public WorldContentResult Remove()
