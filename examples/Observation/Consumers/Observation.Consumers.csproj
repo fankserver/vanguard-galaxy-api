@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Unity-free injected consumers. This stays a SEPARATE assembly on purpose: the repository host
+       tests load it into an isolated load context that refuses Abstractions resolution, which proves
+       the optional-dependency entry point exposes no API type in its members. Adding a BepInEx or
+       Unity reference here would invalidate that test. Never part of the shipped API package. -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <AssemblyName>VGModAPI.ServiceConsumers</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../VGModAPI.Abstractions/VGModAPI.Abstractions.csproj" />
+  </ItemGroup>
+</Project>

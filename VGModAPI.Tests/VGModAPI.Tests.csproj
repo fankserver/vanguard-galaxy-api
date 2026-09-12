@@ -19,7 +19,7 @@
     <Compile Include="../VGModAPI/Patches/DungeonRefundPatches.cs" Link="DungeonRefundPatches.cs" />
     <Compile Include="../VGModAPI/Patches/DungeonPodReturnPatches.cs" Link="DungeonPodReturnPatches.cs" />
     <ProjectReference Include="../VGModAPI.Core/VGModAPI.Core.csproj" />
-    <ProjectReference Include="../examples/ServiceConsumers/ServiceConsumers.csproj" />
+    <ProjectReference Include="../examples/Observation/Consumers/Observation.Consumers.csproj" />
     <ProjectReference Include="../tools/ReleaseMetadata/ReleaseMetadata.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
     <PackageReference Include="coverlet.collector" Version="10.0.1" PrivateAssets="all" />
@@ -28,9 +28,11 @@
     <PackageReference Include="Mono.Cecil" Version="0.11.4" PrivateAssets="all" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="../examples/ForgeInspector/Inspector.cs" Link="Examples/Inspector.cs" />
-    <Compile Include="../examples/DungeonAuthor/CargoAuthorSession.cs" Link="Examples/CargoAuthorSession.cs" />
-    <Compile Include="../examples/ExampleDungeon/CargoRecovery.cs" Link="Examples/CargoRecovery.cs" />
-    <Compile Include="../examples/ExampleDungeon/CargoRecoveryPanel.cs" Link="Examples/CargoRecoveryPanel.cs" />
+    <!-- These example sources are compiled directly (not project-referenced) because they must stay
+         free of Unity/BepInEx types; compiling them here without those references keeps that honest. -->
+    <Compile Include="../examples/UiSurfaces/Inspector.cs" Link="Examples/Inspector.cs" />
+    <Compile Include="../examples/CargoRecovery/CargoAuthorSession.cs" Link="Examples/CargoAuthorSession.cs" />
+    <Compile Include="../examples/CargoRecovery/CargoEncounter.cs" Link="Examples/CargoEncounter.cs" />
+    <Compile Include="../examples/CargoRecovery/CargoEncounterPanel.cs" Link="Examples/CargoEncounterPanel.cs" />
   </ItemGroup>
 </Project>
