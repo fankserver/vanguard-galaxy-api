@@ -229,10 +229,8 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
             capture: () => StoryStateCodec.Encode(_ledger.Entries),
             restore: OnRestore,
             validate: StoryStateCodec.Validate,
-            // Schema 1 rows are read as what they meant: no declaration staged for a future outcome
-            // and no observed failure. The bytes are handed through unchanged; the decoder does the
-            // reading, so nothing is rewritten to fit a newer shape.
-            migrations: new Dictionary<int, Func<byte[], byte[]>> { [StoryStateCodec.FirstSchemaVersion] = payload => payload, [2] = payload => payload, [3] = payload => payload })).Registration;
+            // This is the single supported schema; there are no older-layout migrations to run.
+            migrations: new Dictionary<int, Func<byte[], byte[]>>())).Registration;
         if (persistence != null && _persistence == null) throw new InvalidOperationException("Story save provider registration refused.");
         // Availability is bound to the lifecycle independently of restore: a failed or invalidated
         // session never calls restore, and its queries must not answer from the previous save.
@@ -307,7 +305,7 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
         // exactly the provider-absence case handled below.
         foreach (var entry in _ledger.Entries)
         {
-            if (entry.State == StoryMissionLedgerState.Resolved) continue;
+            if (entry.State.IsTerminal()) continue;
             var identifier = StoryMissionPolicy.MissionIdentifier(entry.Id, entry.MissionId);
             if (!_registry.TryGet(entry.Id, out var definition))
             { Suspend(identifier + ": this save holds owned story content whose provider is not registered."); continue; }
@@ -316,7 +314,7 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
                 definition = entry.RetainedDefinition;
             StoryObjectiveLayout? migrated = null;
             if (!entry.ObjectiveLayout.SamePositions(new StoryObjectiveLayout(definition))
-                && ((entry.State == StoryMissionLedgerState.Active && !StoryDefinitionCodec.SameMetadata(entry.RetainedDefinition, definition))
+                && ((entry.State == StoryMissionState.Active && !StoryDefinitionCodec.SameMetadata(entry.RetainedDefinition, definition))
                     || !entry.ObjectiveLayout.TryMigrate(definition, out migrated) || !_ledger.CanReplaceObjectiveLayout(entry, migrated, definition)))
             {
                 _unrunnable.Add(entry.MissionId);
@@ -352,7 +350,7 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
                     bool applied = false;
                     try
                     {
-                        applied = entry.State != StoryMissionLedgerState.Active || (_world is IStoryObjectiveWorld objectiveWorld
+                        applied = entry.State != StoryMissionState.Active || (_world is IStoryObjectiveWorld objectiveWorld
                             && objectiveWorld.MigrateScripted(identifier, definition, entry.ObjectiveLayout, migrated, Stable).Applied);
                         if (!Stable()) return;
                         if (applied) { entry.ReplaceObjectiveLayout(migrated); entry.ReplaceDefinition(definition); }
@@ -383,7 +381,7 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
         var admitted = new HashSet<string>(StringComparer.Ordinal);
         foreach (var entry in _ledger.Entries)
         {
-            if (entry.State != StoryMissionLedgerState.Active) continue;
+            if (entry.State != StoryMissionState.Active) continue;
             var identifier = StoryMissionPolicy.MissionIdentifier(entry.Id, entry.MissionId);
             admitted.Add(identifier);
             if (active.Contains(identifier)) continue;
@@ -443,7 +441,7 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
             return;
         }
         _protection.Admit(_restoredSession,
-            _ledger.Entries.Where(entry => entry.State != StoryMissionLedgerState.Resolved && !_unrunnable.Contains(entry.MissionId))
+            _ledger.Entries.Where(entry => !entry.State.IsTerminal() && !_unrunnable.Contains(entry.MissionId))
                 .Select(entry => StoryMissionPolicy.MissionIdentifier(entry.Id, entry.MissionId)),
             "admitted by the owning module for this session");
     }
@@ -472,7 +470,7 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
     {
         if (_disposed || transition?.Mission?.DefinitionId == null) return;
         if (!StoryMissionPolicy.TryParseMissionIdentifier(transition.Mission.DefinitionId, out var id, out var missionId)) return;
-        if (!_ledger.TryGet(missionId, out var entry) || entry.Id != id || entry.State == StoryMissionLedgerState.Resolved) return;
+        if (!_ledger.TryGet(missionId, out var entry) || entry.Id != id || entry.State.IsTerminal()) return;
         // A removal this module is performing is recorded by the operation that asked for it, and a
         // removal the game's own abandon/retry button is performing is settled when that finishes:
         // the very next thing may be the same mission being re-added.
@@ -523,7 +521,7 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
         if (InFlight) return null;
         if (!StoryMissionPolicy.TryParseMissionIdentifier(identifier, out var id, out var missionId)) return null;
         if (!_ledger.TryGet(missionId, out var entry) || entry.Id != id
-            || entry.State == StoryMissionLedgerState.Resolved) return null;
+            || entry.State.IsTerminal()) return null;
         _barOperationEpoch = new object();
         _uiAbandon = missionId;
         _uiToken = new StoryUiTransactionToken(Guid.NewGuid(), _restoredSession, missionId);
@@ -569,7 +567,7 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
         try
         {
             if (_disposed || missionId == Guid.Empty) return;
-            if (!_ledger.TryGet(missionId, out var entry) || entry.State == StoryMissionLedgerState.Resolved) return;
+            if (!_ledger.TryGet(missionId, out var entry) || entry.State.IsTerminal()) return;
             switch (settlement)
             {
                 case StoryAbandonSettlement.OneReplacementHeld:
@@ -728,7 +726,7 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
     private StoryObjectiveQuery ObserveObjective(Lease lease, Guid session, StoryMissionEntry entry, StoryObjectiveLayout.Slot slot)
     {
         StoryObjectiveQuery Refused() => new(StoryKnowledge.Unavailable, null, null, null, "The current native objective cannot be verified.");
-        if (entry.State != StoryMissionLedgerState.Active || _world is not IStoryObjectiveObservationWorld world
+        if (entry.State != StoryMissionState.Active || _world is not IStoryObjectiveObservationWorld world
             || _unrunnable.Contains(entry.MissionId) || !_registry.TryGet(entry.Id, out var definition)
             || !_missionIdentifiers.TryGetValue(entry.MissionId, out var identifier)) return Refused();
         var registrationDefinition = definition;
@@ -758,7 +756,7 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
     {
         if (!Guard(lease, session, out var detail, out var status)) return new StoryTransitionResult(status, objective.MissionId, detail);
         if (objective.Definition.Provider != lease.ProviderId || !_ledger.TryGet(objective.MissionId, out var entry)
-            || !entry.Id.Equals(objective.Definition) || entry.State != StoryMissionLedgerState.Active
+            || !entry.Id.Equals(objective.Definition) || entry.State != StoryMissionState.Active
             || !entry.ObjectiveLayout.TryResolve(objective.LocalKey, out var slot) || slot.Kind != StoryObjectiveKind.Scripted
             || progress < slot.Progress || progress > slot.Required)
             return new StoryTransitionResult(StoryTransitionStatus.InvalidTransition, objective.MissionId, "The objective is not an active owned scripted objective or progress is invalid.");
@@ -770,7 +768,7 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
         {
             bool Stable() => GuardStable(lease, session, out _, out _) && !_unrunnable.Contains(objective.MissionId)
                 && _ledger.TryGet(objective.MissionId, out var current) && ReferenceEquals(current, entry)
-                && entry.State == StoryMissionLedgerState.Active;
+                && entry.State == StoryMissionState.Active;
             var result = world.SetScriptedProgress(identifier, slot, progress, Stable);
             if (!Stable()) return new StoryTransitionResult(StoryTransitionStatus.Unavailable, objective.MissionId, "The objective operation was invalidated.");
             if (!result.Applied) return new StoryTransitionResult(StoryTransitionStatus.Unavailable, objective.MissionId, result.Detail);
@@ -1137,7 +1135,7 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
     private string? ReleaseInWorld(StoryMissionEntry entry, StoryOutcome outcome, out bool unavailable)
     {
         unavailable = false;
-        if (_world == null || entry.State != StoryMissionLedgerState.Active) return null;
+        if (_world == null || entry.State != StoryMissionState.Active) return null;
         if (!_missionIdentifiers.TryGetValue(entry.MissionId, out var identifier))
         { unavailable = true; return "This mission has no installed catalog entry in the current world."; }
         var released = _world.Release(identifier, outcome);

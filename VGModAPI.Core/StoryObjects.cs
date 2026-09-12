@@ -168,7 +168,7 @@ internal sealed partial class StoryMissionService
         private void CaptureChoices()
         {
             if (Game.IsActive && Owned.IsLive && _scope.Service._ledger.TryGet(MissionId, out var entry))
-                _choices = new ReadOnlyDictionary<string, string>((entry.State == StoryMissionLedgerState.Resolved ? entry.Choices : entry.PendingChoices)
+                _choices = new ReadOnlyDictionary<string, string>((entry.State.IsTerminal() ? entry.Choices : entry.PendingChoices)
                     .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal));
         }
         public event Action<IStoryMission>? Changed { add => _changed.Add(value); remove => _changed.Remove(value); }
@@ -181,7 +181,7 @@ internal sealed partial class StoryMissionService
                     StoryOutcome.Failed => StoryMissionState.Failed,
                     StoryOutcome.Abandoned => StoryMissionState.Abandoned,
                     _ => entry.FailureObserved ? StoryMissionState.Failed
-                       : entry.State == StoryMissionLedgerState.Active ? StoryMissionState.Active : StoryMissionState.Offered
+                       : entry.State == StoryMissionState.Active ? StoryMissionState.Active : StoryMissionState.Offered
                 };
             return _published;
         }

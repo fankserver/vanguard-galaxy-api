@@ -17,12 +17,14 @@ internal static class StoryStateCodec
     /// <summary>Reserved owner namespace of API-managed story content.</summary>
     internal const string Owner = "vgmodapi.story-content";
     /// <summary>
-    /// Schema 2 adds the choices declared for an outcome the game has not produced yet, and the fact
-    /// that the game reported a mission failed while still holding it. Schema 1 is read unchanged:
-    /// its rows simply have neither, which is exactly what they meant.
+    /// Schema 5 encodes the terminal outcome IN the state byte: one <see cref="StoryMissionState"/>
+    /// axis (Offered/Active/Failed/Completed/Abandoned) with no separate outcome field, which is the
+    /// single supported layout. The three-state Offered/Active/Resolved format of schemas 1-4 is a
+    /// development-era format, not a shipped save, so it is not read: any other schema is refused and
+    /// protected, never guessed at.
     /// </summary>
-    internal const int SchemaVersion = 4;
-    internal const int FirstSchemaVersion = 1;
+    internal const int SchemaVersion = 5;
+    internal const int FirstSchemaVersion = 5;
     private const uint Magic = 0x31435356; // VSC1, little-endian.
     /// <summary>Strict UTF-8 on BOTH sides: invalid bytes or unpaired surrogates throw instead of decoding to U+FFFD.</summary>
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
@@ -51,7 +53,7 @@ internal static class StoryStateCodec
     internal static int PendingSize(StoryMissionEntry entry)
     {
         if (entry == null) throw new ArgumentNullException(nameof(entry));
-        if (entry.State == StoryMissionLedgerState.Resolved) return 0;
+        if (entry.State.IsTerminal()) return 0;
         int size = 0;
         foreach (var pair in entry.PendingChoices)
             try { size += 2 + StrictUtf8.GetByteCount(pair.Key) + 2 + StrictUtf8.GetByteCount(pair.Value); }
@@ -63,7 +65,7 @@ internal static class StoryStateCodec
     {
         if (entry == null) throw new ArgumentNullException(nameof(entry));
         // The row carries a pending-choice block and a flags byte as well since schema 2.
-        int size = 1 + entry.Id.Provider!.Length + 1 + entry.Id.LocalId.Length + 16 + 8 + 3 + 2 + 1 + 1 + 1 + PendingSize(entry) + (entry.ObjectiveLayout.Slots.Count == 0 ? 0 : StoryObjectiveLayoutCodec.EncodedSize(entry.ObjectiveLayout));
+        int size = 1 + entry.Id.Provider!.Length + 1 + entry.Id.LocalId.Length + 16 + 8 + 2 + 2 + 1 + 1 + 1 + PendingSize(entry) + (entry.ObjectiveLayout.Slots.Count == 0 ? 0 : StoryObjectiveLayoutCodec.EncodedSize(entry.ObjectiveLayout));
         if (entry.RetainedDefinition != null) size += 4 + StoryDefinitionCodec.Encode(entry.RetainedDefinition).Length;
         if (entry.Retention != StoryRetention.Campaign) return size;
         foreach (var pair in entry.Choices)
@@ -92,7 +94,6 @@ internal static class StoryStateCodec
                 writer.Write(row.MissionId.ToByteArray());
                 writer.Write(row.Sequence);
                 writer.Write((byte)row.State);
-                writer.Write((byte)(row.Outcome.HasValue ? (int)row.Outcome.Value + 1 : 0));
                 writer.Write((byte)row.Retention);
                 writer.Write((ushort)row.ChoiceReservation);
                 var choices = row.Retention == StoryRetention.Campaign ? row.Choices : new Dictionary<string, string>(StringComparer.Ordinal);
@@ -103,7 +104,7 @@ internal static class StoryStateCodec
                     WriteText(writer, pair.Key, StoryMissionDefinition.MaxChoiceKeyBytes);
                     WriteText(writer, pair.Value, StoryMissionDefinition.MaxChoiceValueBytes);
                 }
-                var pending = row.State == StoryMissionLedgerState.Resolved ? Empty : row.PendingChoices;
+                var pending = row.State.IsTerminal() ? Empty : row.PendingChoices;
                 if (pending.Count > StoryMissionDefinition.MaxChoiceKeys) throw new InvalidDataException("Too many declared choices to persist.");
                 writer.Write((byte)pending.Count);
                 foreach (var pair in pending.OrderBy(pair => pair.Key, StringComparer.Ordinal))
@@ -150,23 +151,15 @@ internal static class StoryStateCodec
             if (sequence < 1) throw new InvalidDataException("Malformed story mission sequence.");
             if (index > 0 && sequence <= rows[index - 1].Sequence)
                 throw new InvalidDataException("Story mission sequences must be strictly increasing.");
-            var state = (StoryMissionLedgerState)reader.ReadByte();
-            int outcomeCode = reader.ReadByte();
+            var state = (StoryMissionState)reader.ReadByte();
+            if (!Enum.IsDefined(typeof(StoryMissionState), state))
+                throw new InvalidDataException("Malformed story mission state.");
             var retention = (StoryRetention)reader.ReadByte();
             int reservation = reader.ReadUInt16();
             if (reservation > StoryMissionDefinition.MaxChoiceBytesPerMission)
                 throw new InvalidDataException("Malformed story choice reservation.");
-            if (!Enum.IsDefined(typeof(StoryMissionLedgerState), state) || !Enum.IsDefined(typeof(StoryRetention), retention))
+            if (!Enum.IsDefined(typeof(StoryRetention), retention))
                 throw new InvalidDataException("Malformed story mission state.");
-            StoryOutcome? outcome = null;
-            if (outcomeCode != 0)
-            {
-                var value = (StoryOutcome)(outcomeCode - 1);
-                if (!Enum.IsDefined(typeof(StoryOutcome), value)) throw new InvalidDataException("Malformed story outcome.");
-                outcome = value;
-            }
-            if ((state == StoryMissionLedgerState.Resolved) != outcome.HasValue)
-                throw new InvalidDataException("A retired mission requires exactly one outcome.");
             int choiceCount = reader.ReadByte();
             if (choiceCount > StoryMissionDefinition.MaxChoiceKeys) throw new InvalidDataException("Malformed story choice count.");
             if (choiceCount > 0 && retention != StoryRetention.Campaign) throw new InvalidDataException("Temporary retention carries no declared choices.");
@@ -184,25 +177,22 @@ internal static class StoryStateCodec
             bool failure = false;
             bool hasLayout = false;
             bool hasDefinition = false;
-            if (version >= 2)
+            int pendingCount = reader.ReadByte();
+            if (pendingCount > StoryMissionDefinition.MaxChoiceKeys) throw new InvalidDataException("Malformed story choice count.");
+            for (int choice = 0; choice < pendingCount; choice++)
             {
-                int pendingCount = reader.ReadByte();
-                if (pendingCount > StoryMissionDefinition.MaxChoiceKeys) throw new InvalidDataException("Malformed story choice count.");
-                for (int choice = 0; choice < pendingCount; choice++)
-                {
-                    var key = ReadText(reader, StoryMissionDefinition.MaxChoiceKeyBytes);
-                    var value = ReadText(reader, StoryMissionDefinition.MaxChoiceValueBytes);
-                    if (key.Length == 0) throw new InvalidDataException("Malformed story choice key.");
-                    pending.Add(new KeyValuePair<string, string>(key, value));
-                }
-                if (pending.Select(pair => pair.Key).Distinct(StringComparer.Ordinal).Count() != pending.Count)
-                    throw new InvalidDataException("Duplicate story choice key.");
-                int flags = reader.ReadByte();
-                if (flags > (version >= 4 ? 7 : version >= 3 ? 3 : 1)) throw new InvalidDataException("Malformed story mission flags.");
-                failure = (flags & 1) != 0;
-                hasLayout = (flags & 2) != 0;
-                hasDefinition = (flags & 4) != 0;
+                var key = ReadText(reader, StoryMissionDefinition.MaxChoiceKeyBytes);
+                var value = ReadText(reader, StoryMissionDefinition.MaxChoiceValueBytes);
+                if (key.Length == 0) throw new InvalidDataException("Malformed story choice key.");
+                pending.Add(new KeyValuePair<string, string>(key, value));
             }
+            if (pending.Select(pair => pair.Key).Distinct(StringComparer.Ordinal).Count() != pending.Count)
+                throw new InvalidDataException("Duplicate story choice key.");
+            int flags = reader.ReadByte();
+            if (flags > 7) throw new InvalidDataException("Malformed story mission flags.");
+            failure = (flags & 1) != 0;
+            hasLayout = (flags & 2) != 0;
+            hasDefinition = (flags & 4) != 0;
             var layout = hasLayout ? StoryObjectiveLayoutCodec.Read(reader) : null;
             if (hasLayout && layout!.Slots.Count == 0) throw new InvalidDataException("Empty objective layout must omit its presence flag.");
             StoryMissionDefinition? definition = null;
@@ -213,7 +203,7 @@ internal static class StoryStateCodec
                     throw new InvalidDataException("Invalid retained definition length.");
                 definition = StoryDefinitionCodec.Decode(reader.ReadBytes(length));
             }
-            rows[index] = new StoryMissionEntry(new StoryMissionDefinitionId(provider, local), mission, retention, sequence, state, outcome, choices, reservation, pending, failure, layout, definition);
+            rows[index] = new StoryMissionEntry(new StoryMissionDefinitionId(provider, local), mission, retention, sequence, state, choices, reservation, pending, failure, layout, definition);
         }
         if (stream.Position != bytes.Length) throw new InvalidDataException("Trailing story state bytes.");
         var refusal = StoryLedger.RefuseBounds(rows);
