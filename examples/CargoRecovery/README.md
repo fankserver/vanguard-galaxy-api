@@ -21,21 +21,24 @@ suitable vanilla derelict for the example to have anything to show.
 ## The flow
 
 ```
-  Spawn derelict  ->  fly the gate  ->  station adopts the layout  ->  board
-        |                                                               |
-        +------------------  Remove derelict  <----  extract  <---------+
+  Spawn derelict  ->  station adopts the layout  ->  board  ->  extract
+        |                                                          |
+        +------------------  Remove derelict  <--------------------+
 ```
 
-1. **Spawn derelict** creates a quiet owned pocket system beside your current one with its gate
-   open, and an owned salvage site inside it declared `withStation: true` — which *guarantees* a
-   native derelict station (research / relay / industrial). Not a probability roll.
+1. **Spawn derelict** creates an owned salvage site **in the system you are already in**, declared
+   `withStation: true` — which *guarantees* a native derelict station (research / relay /
+   industrial). Not a probability roll.
 2. The station is held **enterable**, so ambient world damage cannot destroy its docking or collapse
-   its interior before you arrive. Unrelated stations stay entirely vanilla.
-3. Fly the gate. As soon as a live boarding target belongs to that installation, the cargo layout
-   **attaches itself** by installation identity. Until then the API answers `StaleTarget` — a
-   temporary refusal that is simply retried, not a failure.
+   its interior before you reach it. Unrelated stations stay entirely vanilla.
+3. As soon as a live boarding target belongs to that installation, the cargo layout **attaches
+   itself** by installation identity. Until then the API answers `StaleTarget` — a temporary refusal
+   that is simply retried, not a failure.
 4. Board it, take the shipment choice, request extraction, watch settlement.
-5. **Remove derelict** dissolves the pocket; the station and the site go with it.
+5. **Remove derelict** releases the enterable hold, checks `CanRemove()`, and removes the site: the
+   native POI, its derelict station, its save row and the attached cargo occurrence all go. Your
+   system is left exactly as it was found — no leftover POI, no extra system, no gate. If you are
+   still at it (or boarding it), removal is queued for the next safe cleanup window instead.
 
 ## What it demonstrates (the abilities)
 
@@ -43,10 +46,10 @@ suitable vanilla derelict for the example to have anything to show.
 |---|---|
 | **Authored dungeon content** (`IDungeonProvider.Register`) | A three-compartment derelict: airlock → cargo hold (with a defender) → locked control room. |
 | **Authored choices** | A discovered cargo-room event offering "Recover shipment" (crew-gated, yields loot) or "Leave shipment". Choice effects and occurrence state are saved by the API. |
-| **Authored boarding target** (`CreateResourceSite` + `withStation`) | The example supplies its own derelict station rather than waiting for a suitable vanilla one. World creation is a separate service from dungeon content, so this composes the two. |
+| **Authored boarding target** (`CreateResourceSite` + `withStation`) | The example supplies its own derelict station in the player's current system rather than waiting for a suitable vanilla one. World creation is a separate service from dungeon content, so this composes the two. |
 | **Held enterable** (`KeepEnterable`) | The authored objective cannot be invalidated by ambient damage before the player arrives; the hold is released on cleanup. |
 | **Attachment by installation** (`Attach(IDungeonInstallation)`) | Attaches by persistent installation identity, which exists before any boarding target does — never by display-name matching. `StaleTarget` is treated as "not there yet", not as an error. |
-| **Full cleanup** | One button dissolves the pocket, and the station and site go with it: authored sites have no `Dissolve` of their own. |
+| **Full cleanup** (`Remove` / `CanRemove` / `RequestRemoval`) | One button removes the POI, the station, the save row and the attached cargo occurrence. `Remove()` is the plain removal and does **not** check player safety, so the example asks `CanRemove()` first and falls back to `RequestRemoval()`, which completes at the next safe cleanup window. |
 | **Restored occurrences** (`SavedOccurrences`) | Reads API-restored occurrence state rather than keeping a private ledger. |
 | **Contextual panel actions** (`IDungeonPanelService.RegisterAction`) | Per-target extraction control whose identity includes the target generation, so helpers for distinct targets coexist. |
 | **Command leases** (`AcquireControl`) | Control is acquired **only on activation** and always released; another controller owning the target is reported as a typed refusal, never a forced takeover. |
@@ -63,7 +66,7 @@ suitable vanilla derelict for the example to have anything to show.
 |---|---|
 | `CargoEncounter.cs` | The authored encounter: layout, choices, attach/choose, restored occurrences. |
 | `CargoEncounterPanel.cs` | Optional per-target controls: panel action, command lease, tactics, settlement. |
-| `DerelictSite.cs` | Authors the boarding target itself: pocket system + salvage site with a guaranteed derelict station. |
+| `DerelictSite.cs` | Authors the boarding target itself: a salvage site with a guaranteed derelict station, and its teardown. |
 | `CargoAuthorSession.cs` | Main-thread consumer wiring, and the isolation rule. |
 | `InstallationStory.cs` | Named-installation extraction events for campaign stations. |
 | `Plugin.cs` | The thin BepInEx entry point that owns the session. |
@@ -83,6 +86,28 @@ Blank configuration deliberately registers nothing. A catalog-validation failure
 gameplay readiness; persistent failures log the offending identifier and the catalog diagnostic, then
 restart after correcting it. Successful registration logs `Cargo content registered; shipment reward = …`
 so you can confirm it positively rather than by absence of a warning.
+
+## Teardown ordering and player safety
+
+`Remove()` is the **plain** native removal: it refuses only when removal would be impossible or would
+corrupt save state, and deliberately does *not* check transient player-safety conditions. Calling it
+blind can therefore pull the station out from under a docked or boarding player. The example asks
+`CanRemove()` first and, when the answer is not `Ready`, calls `RequestRemoval()` so the teardown
+happens at the next safe cleanup window.
+
+The enterable hold is released **before** asking: while it is held, readiness reports `HeldEnterable`
+and removal could never become possible. It is deliberately *not* re-acquired after a deferral, since
+that would block the queued removal forever.
+
+## A queued removal does not survive a reload
+
+`RequestRemoval()` completes only inside the session that requested it: readiness reports
+`SessionEnded` for a handle from a replaced session, and the deferred pass declines. Across a
+save/load the queued teardown is therefore **abandoned** — no completion event, the site still there.
+
+This example drops its handle on `SessionInvalidated`, re-obtains it with `GetResourceSite` at
+`GameplayInitialized`, and reports an abandoned request so you know to press **Remove derelict**
+again. Re-read state after a load; do not trust a queued removal to finish across one.
 
 ## Known API limitation
 

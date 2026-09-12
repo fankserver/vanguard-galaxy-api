@@ -7,7 +7,7 @@ namespace PocketWorlds;
 
 /// <summary>
 /// Sample/test mod demonstrating pocket-cluster + wormhole + themed-site + combat-site authoring
-/// together, and the full-cleanup surface (each owned occurrence dissolves back out).
+/// together, and the full-cleanup surface (each owned occurrence removes back out).
 ///
 /// From your current system X you press "Spawn Wormhole" to open a wormhole into a small authored
 /// cluster. The cluster is a chain of owned pockets:
@@ -20,7 +20,7 @@ namespace PocketWorlds;
 ///                                  * off-world "Salvage" (salvage wreck site)
 ///   B  --[gate back to E]--    a guarded dead-end: it holds an owned COMBAT site
 ///
-/// Every system has a fixed test name (static, not changing). "Delete Cluster" dissolves each owned
+/// Every system has a fixed test name (static, not changing). "Delete Cluster" removes each owned
 /// occurrence — the wormhole pair first (its endpoints must be freed), then each pocket (its own gate
 /// and site POIs go with it) — so a delete leaves no authored system, gate, wormhole or site behind.
 /// </summary>
@@ -57,6 +57,7 @@ public sealed class Plugin : BaseUnityPlugin
 
     private IWorldProvider? _world;
     private ITravelService? _travel;
+    private ILifecycleService? _lifecycle;
     private IHudRegistration? _hud;
 
     private IPocketSystem? _entry;   // E
@@ -107,12 +108,56 @@ public sealed class Plugin : BaseUnityPlugin
             SalvageSiteDef, 1, SalvageWorldName + " Wreck", 8, wreckShipId: "Monsoon", factionId: "Fanatics",
             withStation: false, hazard: null, scatterAsteroids: false));
         // An owned persistent COMBAT site. Like a resource site it lives inside a pocket, so it is
-        // removed with that pocket; a combat site has no Dissolve of its own.
+        // removed with that pocket. A combat site also has its own Remove(), but letting the pocket
+        // take it is simpler and is what this example demonstrates.
         _world.RegisterCombatSite(new CombatSiteDefinition(GuardDef, 1, AnchorName + " Guard", "Fanatics", 1));
 
         _travel = ModApi.Services.Travel;
+        // Occurrence objects belong to ONE session: an occurrence from an ended session keeps its last
+        // observed state and never resolves against the replacement save. Drop the handles when a
+        // session ends and re-obtain them after a load, or this panel reports a cluster that the
+        // loaded save does not contain.
+        _lifecycle = ModApi.Services.Lifecycle;
+        _lifecycle.Changed += OnLifecycle;
         _hud = ModApi.Services.Hud.Register(Id, "panel", OnHud);
         RefreshPanel();
+    }
+
+    private void OnLifecycle(LifecycleEvent message)
+    {
+        if (message.Kind == LifecycleEventKind.SessionInvalidated) ForgetSession();
+        else if (message.Kind == LifecycleEventKind.GameplayInitialized) Reacquire();
+        else return;
+        RefreshPanel();
+    }
+
+    /// <summary>Drops every handle from a session that has ended; it can never resolve again.</summary>
+    private void ForgetSession()
+    {
+        _entry = _hub = _anchor = _mining = _salvage = null;
+        _entryDoor = _miningHole = _salvageHole = null;
+        _miningSite = _salvageSite = null; _guard = null;
+    }
+
+    /// <summary>
+    /// Re-obtains the cluster for the live game after a load. The API restored the occurrences from
+    /// save data; these calls only re-acquire handles to them and create nothing. Anything the save
+    /// does not contain simply stays null.
+    /// </summary>
+    private void Reacquire()
+    {
+        if (_world == null) return;
+        _entry = _world.GetPocketSystem(EntryDef, "cluster");
+        _hub = _world.GetPocketSystem(HubDef, "hub");
+        _anchor = _world.GetPocketSystem(AnchorDef, "anchor");
+        _mining = _world.GetPocketSystem(MiningDef, "mining");
+        _salvage = _world.GetPocketSystem(SalvageDef, "salvage");
+        _entryDoor = _world.GetWormholePair(EntryDoorDef, "cluster-door");
+        _miningHole = _world.GetWormholePair(MiningWormholeDef, "mining-hole");
+        _salvageHole = _world.GetWormholePair(SalvageWormholeDef, "salvage-hole");
+        _miningSite = _world.GetResourceSite(MiningSiteDef, "mining-site");
+        _salvageSite = _world.GetResourceSite(SalvageSiteDef, "salvage-site");
+        _guard = _world.GetCombatSite(GuardDef, "anchor-guard");
     }
 
     private void RefreshPanel()
@@ -129,11 +174,11 @@ public sealed class Plugin : BaseUnityPlugin
                     "open a wormhole into a 5-system authored cluster",
                     "Creates Cluster Entry (E) anchored to this system, then Hub Alpha (A) and Anchor Beta (B) "
                     + "linked to E by gates. A holds two wormholes into themed off-world instances (mining, salvage), "
-                    + "and B holds an owned combat site. Everything you spawn is dissolvable later.",
+                    + "and B holds an owned combat site. Everything you spawn is removable later.",
                     clickable: _entryDoor == null),
                 new HudRow("delete", _entryDoor == null ? "spawn first" : "Delete Cluster",
-                    "dissolve the entry wormhole, then every authored system, gate, wormhole and site",
-                    "Full cleanup: dissolves the wormhole pairs first (their endpoints must be freed), then each "
+                    "remove the entry wormhole, then every authored system, gate, wormhole and site",
+                    "Full cleanup: removes the wormhole pairs first (their endpoints must be freed), then each "
                     + "pocket (its gate and any site POIs go with it). Moving into any part of the cluster first "
                     + "would refuse deletion until you leave.",
                     clickable: _entryDoor != null),
@@ -192,7 +237,7 @@ public sealed class Plugin : BaseUnityPlugin
         // The entry wormhole X <-> E (the "first wormhole").
         _entryDoor = _world.CreateWormholePair(EntryDoorDef, "cluster-door", x, _entry.SystemId);
         if (_entryDoor == null)
-        { Logger.LogWarning("Failed to link the entry wormhole; dissolving the bare entry."); _entry.Dissolve(); _entry = null; return; }
+        { Logger.LogWarning("Failed to link the entry wormhole; removing the bare entry."); _entry.Remove(); _entry = null; return; }
         _entryDoor.SetOpen(true);
 
         // A: Hub Alpha, anchored to E (gate E <-> A). Open it so the gate is a real way to travel.
@@ -287,50 +332,70 @@ public sealed class Plugin : BaseUnityPlugin
         MiningDef => MiningWorldName, SalvageDef => SalvageWorldName, _ => def
     };
 
-    /// <summary>Full cleanup (requirement 8): dissolve the wormhole pairs first (a pocket that is still a
-    /// wormhole endpoint cannot dissolve), then each pocket — its gate and site POIs go with it.</summary>
+    /// <summary>Full cleanup (requirement 8): remove the wormhole pairs first (a pocket that is still a
+    /// wormhole endpoint cannot be removed), then each pocket — its gate and site POIs go with it.</summary>
     private void DeleteCluster()
     {
         if (_world == null || _entryDoor == null) return;
 
-        // Wormholes first: freeing the pair releases all pocket endpoints that used them. A refused
-        // dissolve (e.g. the player is at a wormhole) leaves the occurrence in place, so keep the handle
-        // and reflect the real state instead of claiming it is gone.
-        if (!DissolveWormhole(_miningHole)) return;   _miningHole = null;
-        if (!DissolveWormhole(_salvageHole)) return;  _salvageHole = null;
-        if (!DissolveWormhole(_entryDoor)) return;    _entryDoor = null;
+        // Order is dictated by the API's integrity rules, not by taste:
+        //   * a pocket that is still a wormhole endpoint cannot be removed, so pairs go first;
+        //   * a pocket that still contains an owned COMBAT site cannot be removed either, so the guard
+        //     goes before its anchor. (Resource sites are different: they DO go with their pocket.)
+        if (!RemoveWormhole("mining rift", _miningHole)) return;   _miningHole = null;
+        if (!RemoveWormhole("salvage rift", _salvageHole)) return; _salvageHole = null;
+        if (!RemoveWormhole("entry rift", _entryDoor)) return;     _entryDoor = null;
 
-        // Off-world pockets (their site rows drop with the pocket).
-        DissolvePocket(_mining); _mining = null; _miningSite = null;
-        DissolvePocket(_salvage); _salvage = null; _salvageSite = null;
-        // The branch systems, then the entry.
-        DissolvePocket(_hub); _hub = null;
-        // The combat site has no Dissolve of its own: it is removed with the pocket that holds it.
-        DissolvePocket(_anchor); _anchor = null; _guard = null;
-        DissolvePocket(_entry); _entry = null;
+        // Off-world pockets (their resource-site rows drop with the pocket).
+        if (!RemovePocket(MiningWorldName, _mining)) return;   _mining = null; _miningSite = null;
+        if (!RemovePocket(SalvageWorldName, _salvage)) return; _salvage = null; _salvageSite = null;
+        if (!RemovePocket(HubName, _hub)) return; _hub = null;
+        if (!RemoveCombatSite(AnchorName + " guard", _guard)) return; _guard = null;
+        if (!RemovePocket(AnchorName, _anchor)) return; _anchor = null;
+        if (!RemovePocket(EntryName, _entry)) return; _entry = null;
 
         Logger.LogInfo("Pocket Worlds deleted: every authored system, gate, wormhole and site is gone.");
     }
 
-    /// <summary>Dissolves a wormhole pair; returns true only when it actually went away. On refusal the
-    /// pair is left in place (the cascade stops so a half-torn cluster is never presented as cleared).</summary>
-    private bool DissolveWormhole(IWormholePair? w)
-    {
-        if (w == null) return true;
-        var result = w.Dissolve();
-        if (!result.Succeeded) Logger.LogWarning("Wormhole dissolve: " + result.Status + " - " + result.Detail);
-        return result.Succeeded;
-    }
+    private bool RemoveWormhole(string label, IWormholePair? w)
+        => w == null || Teardown(label, w.CanRemove(), w.Remove, w.RequestRemoval);
 
-    private void DissolvePocket(IPocketSystem? p)
+    private bool RemovePocket(string label, IPocketSystem? p)
+        => p == null || Teardown(label, p.CanRemove(), p.Remove, p.RequestRemoval);
+
+    private bool RemoveCombatSite(string label, ICombatSite? c)
+        => c == null || Teardown(label, c.CanRemove(), c.Remove, c.RequestRemoval);
+
+    /// <summary>
+    /// Removes one occurrence safely, and returns true only when it actually went away.
+    ///
+    /// `Remove()` is the PLAIN native removal: it refuses only when removal would be impossible or
+    /// would corrupt save state, and deliberately does NOT check transient player-safety conditions.
+    /// So a consumer that does not want to tear the world out from under the player must ask
+    /// `CanRemove()` first. When the answer is not Ready, this hands the job to `RequestRemoval()`,
+    /// which mirrors the game's own ambient cleanup window and completes once the condition clears.
+    ///
+    /// Returning false stops the cascade, so a half-torn cluster is never reported as cleared.
+    /// </summary>
+    private bool Teardown(string label, WorldContentRemovalStatus status, Func<WorldContentResult> remove, Func<WorldContentResult> request)
     {
-        if (p == null) return;
-        var result = p.Dissolve();
-        if (!result.Succeeded) Logger.LogWarning("Pocket dissolve: " + result.Status + " - " + result.Detail);
+        if (status == WorldContentRemovalStatus.NotPresent) return true; // nothing there to remove
+        if (status == WorldContentRemovalStatus.Ready)
+        {
+            var result = remove();
+            if (result.Succeeded) return true;
+            Logger.LogWarning($"{label} removal refused: {result.Status} - {result.Detail}");
+            return false;
+        }
+        var deferred = request();
+        Logger.LogInfo($"{label} cannot be removed yet ({status}); "
+            + (deferred.Succeeded ? "queued for the next safe cleanup window." : "deferral refused: " + deferred.Status + " - " + deferred.Detail));
+        return false;
     }
 
     private void OnDestroy()
     {
+        if (_lifecycle != null) { _lifecycle.Changed -= OnLifecycle; _lifecycle = null; }
         if (_world != null) _world.Dispose();
         var hud = _hud; _hud = null; hud?.Dispose();
         _travel = null; _world = null;

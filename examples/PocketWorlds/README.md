@@ -6,7 +6,7 @@ your own mining fields, salvage wrecks and hostile encounters — and removable 
 
 A sample/test BepInEx mod for the **VG Mod API** (v0.2.10+). One in-game button opens an authored
 **pocket cluster**; a **Log topology** button prints exactly what was wired; **Delete Cluster**
-dissolves everything it created.
+removes everything it created.
 
 Read it as a tour of the world surface, not just a demo: it is the "show everything" covering of the
 world-creation + ambient-traffic surfaces.
@@ -23,11 +23,11 @@ world-creation + ambient-traffic surfaces.
 | **Static names** | Every system keeps a fixed display name (Cluster Entry, Hub Alpha, …) each spawn. |
 | **Quiet wormholes & systems** (`quiet: true`) | The rifts spawn no decorative passerby traffic and no security patrol at either end; `quiet: true` on a pocket keeps its whole system silent — the cluster is a private place, not a highway. |
 | **Sealed hidden gates** | Each pocket's anchored "gate back" is closed *and* hidden, so the map draws no phantom gate line. (Only the deliberate E→A, E→B gates are open/visible.) |
-| **Resource sites** (`CreateResourceSite`) | A mining field in one off-world and a salvage wreck in the other, both removed when their pocket dissolves. |
+| **Resource sites** (`CreateResourceSite`) | A mining field in one off-world and a salvage wreck in the other, both removed with the pocket that holds them. |
 | **Combat sites** (`RegisterCombatSite` / `CreateCombatSite`) | A persistent owned combat site guarding Anchor Beta, keyed by an author-local occurrence key; the API allocates the native identity and reconciles the same key to the same object after a reload. |
 | **Occurrence state** | The HUD status line reads each occurrence's live reconstruction state, including the combat site's. |
 | **Topology diagnostics** | Spawning (and the **Log topology** button) writes one line per system: the gates and wormholes it holds with their far end, plus any site inside — the ground truth to compare against the in-game map. |
-| **Full cleanup** (`Dissolve`, plural) | **Delete Cluster** resolves each owned wormhole pair then each pocket, so no authored system, gate, wormhole or site remains. |
+| **Full cleanup** (`Remove` / `CanRemove` / `RequestRemoval`) | **Delete Cluster** removes each pair, then the combat site, then each pocket, in the order the API's integrity rules force. Anything not removable yet is queued for the next safe cleanup window instead of acting under the player. |
 
 ## What you see
 
@@ -60,7 +60,18 @@ reconstruction state (`E:A:B:M:S | door:m:s | guard`).
 |---|---|
 | **Spawn Wormhole** | Creates the whole cluster: entry wormhole + E/A/B + the two off-world wormholes + both resource sites + the combat site. |
 | **Log topology** | Writes the authored wiring to `BepInEx/LogOutput.log` — compare it against the in-game map if a connection looks surprising. |
-| **Delete Cluster** | Full cleanup in dependency order: wormhole pairs first (a pocket that is still a wormhole endpoint cannot dissolve), then each pocket with its gate and sites. If you're inside any part of the cluster, a dissolve is refused until you leave — a safe guard, not a silent failure. |
+| **Delete Cluster** | Full cleanup in dependency order: wormhole pairs first (a pocket that is still a wormhole endpoint cannot be removed), then the combat site (a pocket still holding one cannot be removed either), then each pocket with its gate and resource sites. If you are inside any part of the cluster, the affected step is **queued** for the next safe cleanup window rather than acting under you. |
+
+## Occurrences belong to one session
+
+An occurrence object from an ended or replaced session keeps its **last observed state** and never
+resolves against the replacement save. So this example drops every handle on `SessionInvalidated` and
+re-obtains the cluster with `GetPocketSystem` / `GetWormholePair` / `GetResourceSite` /
+`GetCombatSite` at `GameplayInitialized`. Those calls create nothing — the API already restored the
+occurrences from save data; they only hand back a handle. Anything the loaded save does not contain
+stays absent.
+
+Without this the panel would happily report a cluster the loaded save never had.
 
 ## Lifetime note
 
@@ -70,11 +81,25 @@ authenticates the caller against exactly that entry — so acquiring in `Awake()
 Every example in this repository that acquires an instance-authenticated provider (world, story,
 bars, items, recipes) follows the same rule.
 
-## Cleanup asymmetry (deliberate)
+## Teardown order, and why it is not taste
 
-Pocket systems and wormhole pairs expose `Dissolve()`. Resource sites and combat sites do not: they
-live inside a system and are removed with the pocket that holds them. That is why **Delete Cluster**
-only dissolves pairs and pockets, and simply drops its site handles.
+Every authored object exposes `Remove()`, `CanRemove()` and `RequestRemoval()`. The order **Delete
+Cluster** uses is forced by the API's integrity rules:
+
+| Rule | Consequence |
+|---|---|
+| A pocket that is still a wormhole endpoint cannot be removed | all three pairs go first |
+| A pocket that still contains an owned **combat** site cannot be removed | the guard is removed before its anchor |
+| A pocket's **resource** sites *are* removed with it | the mining/salvage site handles are simply dropped |
+
+So combat sites and resource sites behave differently on purpose: one blocks its pocket, the other
+rides along with it.
+
+`Remove()` is the **plain** removal — it refuses only on integrity grounds and does *not* check
+whether the player is standing in what you are deleting. This example therefore asks `CanRemove()`
+before every step and, when the answer is not `Ready`, calls `RequestRemoval()` so the step completes
+at the next safe cleanup window. Any deferral stops the cascade, so a half-torn cluster is never
+reported as cleared.
 
 ## Build & deploy
 

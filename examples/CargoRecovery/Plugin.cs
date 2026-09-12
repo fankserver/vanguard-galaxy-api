@@ -6,8 +6,8 @@ namespace CargoRecovery;
 
 /// <summary>
 /// Sample/test mod demonstrating authored boarding content end to end. It supplies its own target:
-/// one HUD button spawns an owned derelict station, the cargo layout attaches to it, and a second
-/// button removes the whole thing again.
+/// one HUD button spawns an owned derelict station in the system you are already in, the cargo layout
+/// attaches to it, and a second button removes it again, leaving the system as it was found.
 ///
 /// It still works as a general contextual control for vanilla encounters — the panel's
 /// "Attach cargo encounter" action appears on any observed target you select.
@@ -21,6 +21,7 @@ public sealed class Plugin : BaseUnityPlugin
     private CargoAuthorSession? _session;
     private IWorldProvider? _world;
     private ITravelService? _travel;
+    private ILifecycleService? _lifecycle;
     private IHudRegistration? _hud;
     private DerelictSite? _derelict;
     private float _nextAdoptionAttempt;
@@ -49,6 +50,10 @@ public sealed class Plugin : BaseUnityPlugin
             _derelict = new DerelictSite(_world, () => _session?.Encounter, message => Logger.LogInfo(message));
         if (_session != null) _session.OwnInstallation = () => _derelict?.Installation;
         _travel = ModApi.Services.Travel;
+        // Occurrence handles belong to one session: drop them when it ends and re-obtain after a load,
+        // or the HUD reports a derelict the replacement save never had.
+        _lifecycle = ModApi.Services.Lifecycle;
+        _lifecycle.Changed += OnLifecycle;
         _hud = ModApi.Services.Hud.Register(Id, "panel", OnHud);
         RefreshPanel();
     }
@@ -68,6 +73,12 @@ public sealed class Plugin : BaseUnityPlugin
         if (_session.Attached) RefreshPanel();
     }
 
+    private void OnLifecycle(LifecycleEvent message)
+    {
+        if (message.Kind == LifecycleEventKind.SessionInvalidated) { _derelict?.ForgetSession(); RefreshPanel(); }
+        else if (message.Kind == LifecycleEventKind.GameplayInitialized) { _derelict?.Reacquire(); RefreshPanel(); }
+    }
+
     private void RefreshPanel()
     {
         if (_hud == null) return;
@@ -79,21 +90,21 @@ public sealed class Plugin : BaseUnityPlugin
             new[]
             {
                 new HudRow("spawn", spawned ? "Derelict spawned" : "Spawn derelict",
-                    "create an owned derelict station to board",
-                    "Creates a quiet pocket system beside your current one with its gate open, and an owned salvage "
-                    + "site inside it declared withStation, which guarantees a native derelict station. The station is "
-                    + "held enterable so ambient damage cannot ruin it before you arrive.",
+                    "create an owned derelict station in this system",
+                    "Creates an owned salvage site here, declared withStation, which guarantees a native derelict "
+                    + "station. The station is held enterable so ambient damage cannot ruin it before you reach it.",
                     clickable: ready && !spawned),
-                new HudRow("attach", _session?.Attached == true ? "Layout attached" : "Layout attaches on arrival",
+                new HudRow("attach", _session?.Attached == true ? "Layout attached" : "Layout attaches when observed",
                     "the derelict adopts this mod's compartment layout by itself",
-                    "Attaches by installation identity as soon as a live boarding target belongs to the authored station, "
-                    + "which happens when you arrive. Until then the API answers StaleTarget, a temporary refusal that is "
-                    + "simply retried. No vanilla encounter is ever touched.",
+                    "Attaches by installation identity as soon as a live boarding target belongs to the authored station. "
+                    + "Until then the API answers StaleTarget, a temporary refusal that is simply retried. No vanilla "
+                    + "encounter is ever touched.",
                     clickable: false),
                 new HudRow("remove", "Remove derelict",
-                    "dissolve the station, the site and the system together",
-                    "Authored sites have no Dissolve of their own: they are removed with the pocket that holds them. "
-                    + "A dissolve is refused while you are inside, so leave first.",
+                    "remove the station, its site and the cargo attachment",
+                    "Releases the enterable hold, asks CanRemove(), then removes the site. If you are at it, boarding "
+                    + "it, or it has a persisted interior, removal is queued for the next safe cleanup window "
+                    + "instead - Remove() itself does not check player safety.",
                     clickable: spawned),
                 new HudRow("status", StatusLine(),
                     "Board the station, walk airlock -> cargo hold -> control room, then take the shipment choice."),
@@ -106,7 +117,7 @@ public sealed class Plugin : BaseUnityPlugin
         if (_session?.Encounter == null) return "content not registered - check the log for the reward item id";
         var derelict = _derelict;
         if (derelict?.Exists != true) return "ready | at " + (_travel?.CurrentLocation?.SystemName ?? _travel?.CurrentLocation?.SystemId ?? "nowhere");
-        return $"system:{derelict.PocketState} site:{derelict.SiteState} attached:{_session.Attached} | poi:{derelict.StationPoiId ?? "pending"}";
+        return $"site:{derelict.SiteState} attached:{_session.Attached} | poi:{derelict.StationPoiId ?? "pending"}";
     }
 
     private void OnHud(HudInteraction interaction)
@@ -118,7 +129,7 @@ public sealed class Plugin : BaseUnityPlugin
             {
                 case "spawn":
                     var system = _travel?.CurrentLocation?.SystemId;
-                    if (string.IsNullOrEmpty(system)) { Logger.LogWarning("No current system to anchor the derelict to."); break; }
+                    if (string.IsNullOrEmpty(system)) { Logger.LogWarning("No current system to place the derelict in."); break; }
                     _derelict?.Spawn(system!);
                     break;
                 case "remove":
@@ -132,6 +143,7 @@ public sealed class Plugin : BaseUnityPlugin
 
     private void OnDestroy()
     {
+        if (_lifecycle != null) { _lifecycle.Changed -= OnLifecycle; _lifecycle = null; }
         var hud = _hud; _hud = null; hud?.Dispose();
         _derelict?.Dispose(); _derelict = null;
         _session?.Dispose(); _session = null;
