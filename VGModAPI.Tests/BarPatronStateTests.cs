@@ -17,8 +17,12 @@ public sealed class BarPatronStateTests
         Assert.Null(state.Mission);
     }
 
+    /// <summary>
+    /// Definition and run are independent facts: a patron offers a definition, and separately may be
+    /// bound to a run of it. "Offers X, not yet bound to a run" is a real state and must be storable.
+    /// </summary>
     [Fact]
-    public void MissionReferenceIsOwnerScopedAndRequiresBothIdentities()
+    public void MissionDefinitionAndBoundRunAreIndependentAndOwnerScoped()
     {
         var id = new BarPatronId("campaign", "contact");
         var mission = new StoryMissionDefinitionId("campaign", "mission-x");
@@ -26,8 +30,13 @@ public sealed class BarPatronStateTests
         var state = new BarPatronState(id, "station", "Contact", "Description", "seed", mission, missionId);
         Assert.Equal(mission, state.Mission);
         Assert.Equal(missionId, state.MissionId);
-        Assert.Throws<ArgumentException>(() => new BarPatronState(id, "station", "Contact", "Description", "seed", mission));
+        // Offering a definition without a bound run is legal and keeps the definition.
+        var offered = new BarPatronState(id, "station", "Contact", "Description", "seed", mission);
+        Assert.Equal(mission, offered.Mission);
+        Assert.Null(offered.MissionId);
+        // A bound run still needs the definition it runs, a nonempty identity, and its own owner.
         Assert.Throws<ArgumentException>(() => new BarPatronState(id, "station", "Contact", "Description", "seed", mission, Guid.Empty));
+        Assert.Throws<ArgumentException>(() => new BarPatronState(id, "station", "Contact", "Description", "seed", null, missionId));
         Assert.Throws<ArgumentException>(() => new BarPatronState(id, "station", "Contact", "Description", "seed", new StoryMissionDefinitionId("jobs", "mission-x"), missionId));
     }
 

@@ -80,9 +80,11 @@ internal sealed partial class BarService
         }
         foreach (var row in admitted)
         {
-            if (!row.Mission.HasValue) continue;
+            // A patron may offer a definition without being bound to a run. Readiness is a fact about
+            // a BOUND run, so with no run there is nothing to prove and nothing to gate on.
+            if (!row.Mission.HasValue || row.MissionId is not { } boundRun) continue;
             bool ready;
-            try { ready = missionReady != null && missionReady(row.Mission.Value, row.MissionId!.Value); }
+            try { ready = missionReady != null && missionReady(row.Mission.Value, boundRun); }
             catch { ready = false; }
             if (!ready || _disposed || _storage == null || !Availability.IsAvailable || !ReferenceEquals(revision, _revision) || !_persistence.Read(session, out _)) return null;
         }
