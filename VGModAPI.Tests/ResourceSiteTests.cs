@@ -106,11 +106,10 @@ public sealed class ResourceSiteTests
     public void RegistrationIsPreSessionAndCreationIsKeyedToOneInstance()
     {
         using var h = new Harness();
-        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage()).Status);
-        Assert.Equal(WorldContentStatus.Rejected, h.Provider.RegisterResourceSite(Salvage()).Status);
-            Assert.Equal(RegistrationFailureReason.DuplicateDefinition, h.Provider.RegisterResourceSite(Salvage()).Reason);
+        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage()));
+        Assert.Equal(WorldContentStatus.DuplicateDefinition, h.Provider.RegisterResourceSite(Salvage()));
         h.BeginGameplay();
-        Assert.Equal(WorldContentStatus.NotReady, h.Provider.RegisterResourceSite(ResourceSiteDefinition.MiningField("late", 1, "n", 8, 6)).Status);
+        Assert.Equal(WorldContentStatus.NotReady, h.Provider.RegisterResourceSite(ResourceSiteDefinition.MiningField("late", 1, "n", 8, 6)));
         var site = h.Provider.CreateResourceSite("wreck", "act2-refuge", "pocket-system", 10, 4);
         Assert.NotNull(site);
         Assert.True(site!.State.Reconstructed);
@@ -129,7 +128,7 @@ public sealed class ResourceSiteTests
     public void RefusedCreationIsTypedAndDoesNotRetryImplicitly()
     {
         using var h = new Harness();
-        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage()).Status);
+        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage()));
         h.BeginGameplay();
         h.Native.RefuseCreation = true;
         var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0);
@@ -146,8 +145,8 @@ public sealed class ResourceSiteTests
     public void RestoredRowsReconstructAndSettleWithActualOutcomes()
     {
         using var h = new Harness();
-        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage()).Status);
-        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(ResourceSiteDefinition.MiningField("field", 1, "Singer's", 8, 6)).Status);
+        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage()));
+        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(ResourceSiteDefinition.MiningField("field", 1, "Singer's", 8, 6)));
         h.BeginGameplay();
         var wreck = h.Provider.CreateResourceSite("wreck", "a", "system", 0, 0)!;
         var field = h.Provider.CreateResourceSite("field", "b", "system", 5, 5)!;
@@ -155,8 +154,8 @@ public sealed class ResourceSiteTests
         Assert.Equal(2, rows.Length);
 
         using var restored = new Harness();
-        Assert.Equal(WorldContentStatus.Succeeded, restored.Provider.RegisterResourceSite(Salvage()).Status);
-        Assert.Equal(WorldContentStatus.Succeeded, restored.Provider.RegisterResourceSite(ResourceSiteDefinition.MiningField("field", 1, "Singer's", 8, 6)).Status);
+        Assert.Equal(WorldContentStatus.Succeeded, restored.Provider.RegisterResourceSite(Salvage()));
+        Assert.Equal(WorldContentStatus.Succeeded, restored.Provider.RegisterResourceSite(ResourceSiteDefinition.MiningField("field", 1, "Singer's", 8, 6)));
         ResourceSitesSettledEvent? settled = null;
         restored.Provider.ResourceSiteReconstructionSettled += e => settled = e;
         restored.BeginGameplay();
@@ -188,13 +187,13 @@ public sealed class ResourceSiteTests
     public void RevisionMigrationAndMissingDefinitionAreTypedFailures()
     {
         using var h = new Harness();
-        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage()).Status);
+        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage()));
         h.BeginGameplay();
         var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
         var rows = h.Coordinator.CaptureRows();
 
         using var migrated = new Harness();
-        Assert.Equal(WorldContentStatus.Succeeded, migrated.Provider.RegisterResourceSite(Salvage(revision: 2), Salvage(revision: 1)).Status);
+        Assert.Equal(WorldContentStatus.Succeeded, migrated.Provider.RegisterResourceSite(Salvage(revision: 2), Salvage(revision: 1)));
         migrated.BeginGameplay();
         foreach (var pair in h.Native.Created) migrated.Native.Created[pair.Key] = pair.Value;
         migrated.Coordinator.RestoreRows(migrated.Session, rows);
@@ -203,7 +202,7 @@ public sealed class ResourceSiteTests
         Assert.Equal(2, upgraded.Definition.Revision);
 
         using var mismatched = new Harness();
-        Assert.Equal(WorldContentStatus.Succeeded, mismatched.Provider.RegisterResourceSite(Salvage(revision: 3)).Status);
+        Assert.Equal(WorldContentStatus.Succeeded, mismatched.Provider.RegisterResourceSite(Salvage(revision: 3)));
         mismatched.BeginGameplay();
         mismatched.Coordinator.RestoreRows(mismatched.Session, rows);
         Assert.Equal(ReconstructionFailureReason.RevisionMismatch, mismatched.Provider.GetResourceSite("wreck", "k")!.State.Reason);
@@ -213,7 +212,7 @@ public sealed class ResourceSiteTests
     public void StaleSessionObjectsFreezeAndAmbiguityRefuses()
     {
         using var h = new Harness();
-        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage()).Status);
+        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage()));
         h.BeginGameplay();
         var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
         Assert.True(site.State.Reconstructed);
@@ -245,8 +244,8 @@ public sealed class ResourceSiteTests
         using var siteCoordinator = new ResourceSiteCoordinator(hub, sites, native, _ => true, _ => { });
         using var service = new WorldContentService(hub, combat, null!, () => true, null, null, null, null, systems, systemCoordinator, sites, siteCoordinator);
         using var provider = service.AcquireProvider(plugin)!;
-        Assert.Equal(WorldContentStatus.Succeeded, provider.RegisterPocketSystem(new PocketSystemDefinition("outpost", 1, "Pocket")).Status);
-        Assert.Equal(WorldContentStatus.Succeeded, provider.RegisterResourceSite(ResourceSiteDefinition.MiningField("outpost", 1, "Field", 8, 6)).Status);
+        Assert.Equal(WorldContentStatus.Succeeded, provider.RegisterPocketSystem(new PocketSystemDefinition("outpost", 1, "Pocket")));
+        Assert.Equal(WorldContentStatus.Succeeded, provider.RegisterResourceSite(ResourceSiteDefinition.MiningField("outpost", 1, "Field", 8, 6)));
         var session = hub.Begin(SessionOrigin.NewGame, null);
         hub.PlayerReady(session); hub.GameplayInitialized(session);
         Assert.NotNull(provider.CreatePocketSystem("outpost", "k", "anchor"));
@@ -262,7 +261,7 @@ public sealed class ResourceSiteTests
     public void DefinitionFallbackHonorsTheRetainedRowKind()
     {
         using var h = new Harness();
-        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage()).Status);
+        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage()));
         h.BeginGameplay();
         _ = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
         var rows = h.Coordinator.CaptureRows();
@@ -321,7 +320,7 @@ public sealed class ResourceSiteTests
     public void RemoveRemovesTheSiteItsSaveRowAndFreesTheKeyForAFreshInstance()
     {
         using var h = new Harness();
-        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage()).Status);
+        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage()));
         h.BeginGameplay();
         var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
         Assert.True(site.State.Reconstructed);
@@ -352,7 +351,7 @@ public sealed class ResourceSiteTests
     {
         var outcome = (ResourceSiteRemoveOutcome)outcomeValue;
         using var h = new Harness();
-        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage(withStation: true)).Status);
+        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage(withStation: true)));
         h.BeginGameplay();
         var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
         h.Native.RemoveOutcome = outcome;
@@ -371,7 +370,7 @@ public sealed class ResourceSiteTests
     public void NativeFaultIsReportedAsUnavailableAndRetainsTheRow()
     {
         using var h = new Harness();
-        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage()).Status);
+        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage()));
         h.BeginGameplay();
         var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
         h.Native.ThrowOnRemove = true;
@@ -385,7 +384,7 @@ public sealed class ResourceSiteTests
     public void FailedCreationRemovesWithoutNativeRemovalAndFreesTheKey()
     {
         using var h = new Harness();
-        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage()).Status);
+        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage()));
         h.BeginGameplay();
         h.Native.RefuseCreation = true;
         var failed = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
@@ -401,7 +400,7 @@ public sealed class ResourceSiteTests
     public void KeepEnterableHeldReportsHeldEnterableAndRemoveIsPlain()
     {
         using var h = new Harness();
-        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage(withStation: true)).Status);
+        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage(withStation: true)));
         h.BeginGameplay();
         var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
         h.Hub.Installations.Aegis.SetAvailable(true);
@@ -418,7 +417,7 @@ public sealed class ResourceSiteTests
     public void ReplacedSessionRefusesRemoveWithGameEnded()
     {
         using var h = new Harness();
-        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage()).Status);
+        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage()));
         h.BeginGameplay();
         var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
         h.Hub.Invalidate("session replaced by test");
@@ -431,7 +430,7 @@ public sealed class ResourceSiteTests
     public void RemoveDropsAnAttachedDungeonOnlyAfterVerifiedRemoval()
     {
         using var h = new Harness();
-        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage(withStation: true)).Status);
+        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage(withStation: true)));
         h.BeginGameplay();
         var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
         var poi = Guid.NewGuid();
@@ -453,7 +452,7 @@ public sealed class ResourceSiteTests
     public void AttachedDungeonIsNotDroppedWhenTheNativeRemovalIsRefused()
     {
         using var h = new Harness();
-        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage(withStation: true)).Status);
+        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage(withStation: true)));
         h.BeginGameplay();
         var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
         var dropped = new List<Guid>();
@@ -468,7 +467,7 @@ public sealed class ResourceSiteTests
     public void UnreadableAttachedDungeonStateRefusesRemoveWithoutTouchingTheSite()
     {
         using var h = new Harness();
-        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage(withStation: true)).Status);
+        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage(withStation: true)));
         h.BeginGameplay();
         var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
         h.Coordinator.AttachDungeonPrune(_ => throw new InvalidOperationException("read fault"), _ => true);
@@ -481,7 +480,7 @@ public sealed class ResourceSiteTests
     public void FailedDungeonRowDropStillRemovesTheSite()
     {
         using var h = new Harness();
-        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage(withStation: true)).Status);
+        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage(withStation: true)));
         h.BeginGameplay();
         var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
         var dropped = new List<Guid>();
@@ -497,7 +496,7 @@ public sealed class ResourceSiteTests
     {
         bool canAuthor = true;
         using var h = new Harness(canAuthor: () => canAuthor);
-        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage()).Status);
+        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage()));
         h.BeginGameplay();
         var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
         canAuthor = false;

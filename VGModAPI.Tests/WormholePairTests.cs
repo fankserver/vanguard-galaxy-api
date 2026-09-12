@@ -80,9 +80,8 @@ public sealed class WormholePairTests
     public void DefinitionAndCreationAreModderKeyedDomainObjects()
     {
         using var h = new Harness();
-        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterWormholePair(new("rift", 1, "Unstable Rift")).Status);
-        Assert.Equal(WorldContentStatus.Rejected, h.Provider.RegisterWormholePair(new("rift", 1, "Duplicate")).Status);
-            Assert.Equal(RegistrationFailureReason.DuplicateDefinition, h.Provider.RegisterWormholePair(new("rift", 1, "Duplicate")).Reason);
+        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterWormholePair(new("rift", 1, "Unstable Rift")));
+        Assert.Equal(WorldContentStatus.DuplicateDefinition, h.Provider.RegisterWormholePair(new("rift", 1, "Duplicate")));
         h.Begin();
         var first = h.Provider.CreateWormholePair("rift", "daily", "system-a", "system-b")!;
         Assert.True(first.State.Reconstructed); Assert.Equal("wa-1", first.FirstWormholePoiId); Assert.Equal("wb-1", first.SecondWormholePoiId);

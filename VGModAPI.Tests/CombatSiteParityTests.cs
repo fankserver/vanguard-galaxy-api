@@ -156,7 +156,7 @@ public sealed class CombatSiteParityTests
     {
         using var h = new Harness();
         Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(
-            ResourceSiteDefinition.Salvage("wreck", 1, "Failed Refuge", 8, "Monsoon", "Fanatics")).Status);
+            ResourceSiteDefinition.Salvage("wreck", 1, "Failed Refuge", 8, "Monsoon", "Fanatics")));
         h.BeginGameplay();
         // A combat key already claims this (local, key); the authored-site creation must refuse it.
         h.Service.RestoreCombatKeys(h.Session, new[] { new CombatSiteKeyRow("author.a", "wreck", "act2-refuge", Guid.NewGuid()) });

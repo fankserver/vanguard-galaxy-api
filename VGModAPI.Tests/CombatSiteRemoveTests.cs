@@ -50,7 +50,7 @@ public sealed class CombatSiteRemoveTests
             Register();
         }
         internal CombatSiteDefinition Definition => new("PoiX", 1, "Contested Site", FactionId, 2);
-        private void Register() => Assert.Equal(WorldContentStatus.Succeeded, Provider.RegisterCombatSite(Definition).Status);
+        private void Register() => Assert.Equal(WorldContentStatus.Succeeded, Provider.RegisterCombatSite(Definition));
 
         internal void BeginGameplay()
         {

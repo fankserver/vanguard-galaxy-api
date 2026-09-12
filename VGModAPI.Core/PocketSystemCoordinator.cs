@@ -113,8 +113,8 @@ internal sealed class PocketSystemCoordinator : IDisposable
         _hub.CheckThread();
         if (_disposed) return new PocketSystemResult(WorldContentStatus.Unavailable);
         if (provider == null || !_definitions.TryResolve(provider, localId, out var definition) || definition == null)
-            return new PocketSystemResult(WorldContentStatus.Rejected, reason: RegistrationFailureReason.NotRegistered);
-        if (string.IsNullOrWhiteSpace(poiKey)) return new PocketSystemResult(WorldContentStatus.Rejected, reason: RegistrationFailureReason.InvalidDefinition);
+            return new PocketSystemResult(WorldContentStatus.NotRegistered);
+        if (string.IsNullOrWhiteSpace(poiKey)) return new PocketSystemResult(WorldContentStatus.InvalidDefinition);
         var key = (provider.Owner, localId, poiKey);
         var reference = new PocketSystemReference(provider.Owner, localId, poiKey);
         if (_committed.TryGetValue(key, out var owned))
@@ -158,9 +158,9 @@ internal sealed class PocketSystemCoordinator : IDisposable
     {
         _hub.CheckThread();
         if (_disposed) return WorldContentStatus.Unavailable;
-        if (reference == null || provider == null || reference.ProviderId != provider.Owner) return WorldContentStatus.Rejected;
+        if (reference == null || provider == null || reference.ProviderId != provider.Owner) return WorldContentStatus.NotRegistered;
         if (!_committed.TryGetValue((provider.Owner, reference.LocalId, reference.PoiKey), out var poi))
-            return WorldContentStatus.Rejected;
+            return WorldContentStatus.NotRegistered;
         try
         {
             // Apply to the native gate first; only commit the declared persistence state once the apply succeeds.
@@ -180,10 +180,10 @@ internal sealed class PocketSystemCoordinator : IDisposable
     {
         _hub.CheckThread();
         if (_disposed) return (WorldContentStatus.Unavailable, "Resource systems are unavailable.", null);
-        if (reference == null || provider == null || reference.ProviderId != provider.Owner) return (WorldContentStatus.Rejected, "", null);
+        if (reference == null || provider == null || reference.ProviderId != provider.Owner) return (WorldContentStatus.NotRegistered, "", null);
         var key = (provider.Owner, reference.LocalId, reference.PoiKey);
         if (_pending.Remove(key)) return (WorldContentStatus.Succeeded, "", null); // failed creation: nothing native exists
-        if (!_committed.TryGetValue(key, out var poi)) return (WorldContentStatus.Rejected, "", null);
+        if (!_committed.TryGetValue(key, out var poi)) return (WorldContentStatus.NotRegistered, "", null);
         try
         {
             var outcome = _native.RemovePocket(expectedSession, poi.SystemId, poi.EntranceGateId, poi.PocketGateId);

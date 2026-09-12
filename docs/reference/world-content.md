@@ -30,7 +30,7 @@ re-issue `RequestRemoval()`.
 
 ## Declaration facade
 
-Acquire `IWorldProvider` directly from the loaded plugin assembly and register immutable `CombatSiteDefinition` values before starting a session. Definitions identify local content, revision, display name, an existing faction ID and level. A declaration returns a `RegistrationResult` (`WorldContentStatus` + an optional `RegistrationFailureReason`); same-owner duplicate declarations are rejected with `DuplicateDefinition`. Registration does not create a POI. The authenticated lease owns its declarations and must be disposed on provider teardown.
+Acquire `IWorldProvider` directly from the loaded plugin assembly and register immutable `CombatSiteDefinition` values before starting a session. Definitions identify local content, revision, display name, an existing faction ID and level. Same-owner duplicate declarations are rejected; registration does not create a POI. The authenticated lease owns its declarations and must be disposed on provider teardown.
 
 `CreateCombatSite(localId, poiKey, systemId, x, y)` creates — or reconciles — an owned
 persistent combat site in the current game, following the uniform occurrence contract shared with

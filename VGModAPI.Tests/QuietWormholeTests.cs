@@ -55,7 +55,7 @@ public sealed class QuietWormholeTests
         using var service = new WorldContentService(hub, combat, null!, () => true, null, ambient, null, null, systems, coordinator);
         using var provider = service.AcquireProvider(plugin)!;
         Assert.Equal(WorldContentStatus.Succeeded, provider.RegisterPocketSystem(
-            new PocketSystemDefinition("p", 1, "Quiet Cluster", PocketSystemPlacement.Visible, factionId: null, sectorName: null, quiet: true)).Status);
+            new PocketSystemDefinition("p", 1, "Quiet Cluster", PocketSystemPlacement.Visible, factionId: null, sectorName: null, quiet: true)));
         var session = hub.Begin(SessionOrigin.NewGame, null);
         hub.PlayerReady(session); hub.GameplayInitialized(session);
         var pocket = provider.CreatePocketSystem("p", "k", "anchor")!;
@@ -78,7 +78,7 @@ public sealed class QuietWormholeTests
     {
         using var harness = new Harness();
         Assert.Equal(WorldContentStatus.Succeeded, harness.Provider.RegisterWormholePair(
-            new WormholePairDefinition("rift", 1, "Rift", quiet: true)).Status);
+            new WormholePairDefinition("rift", 1, "Rift", quiet: true)));
         harness.Begin();
 
         var pair = harness.Provider.CreateWormholePair("rift", "k1", "sys-a", "sys-b");
@@ -106,7 +106,7 @@ public sealed class QuietWormholeTests
     {
         using var harness = new Harness();
         Assert.Equal(WorldContentStatus.Succeeded, harness.Provider.RegisterWormholePair(
-            new WormholePairDefinition("rift", 1, "Rift")).Status);
+            new WormholePairDefinition("rift", 1, "Rift")));
         harness.Begin();
 
         var pair = harness.Provider.CreateWormholePair("rift", "k1", "sys-a", "sys-b");

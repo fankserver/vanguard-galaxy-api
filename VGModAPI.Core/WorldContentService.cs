@@ -372,20 +372,20 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             }
         }
         public string ProviderId => _provider.Owner;
-        public RegistrationResult RegisterCombatSite(CombatSiteDefinition definition, CombatSiteDefinition? previous = null)
+        public WorldContentStatus RegisterCombatSite(CombatSiteDefinition definition, CombatSiteDefinition? previous = null)
         {
             _service._hub.CheckThread();
-            if (_disposed || _service._disposed) return new RegistrationResult(WorldContentStatus.Unavailable, RegistrationFailureReason.UnknownProvider);
-            if (_service._hub.CurrentSession != null) return new RegistrationResult(WorldContentStatus.NotReady);
-            if (definition == null) return new RegistrationResult(WorldContentStatus.Rejected, RegistrationFailureReason.InvalidDefinition);
+            if (_disposed || _service._disposed) return WorldContentStatus.UnknownProvider;
+            if (_service._hub.CurrentSession != null) return WorldContentStatus.NotReady;
+            if (definition == null) return WorldContentStatus.InvalidDefinition;
             try
             {
                 var native = new WorldCombatDefinition(definition.LocalId, definition.Revision, definition.Name, definition.FactionId, definition.Level);
-                if (_service._definitions.TryResolve(_provider, native.LocalId, out _)) return new RegistrationResult(WorldContentStatus.Rejected, RegistrationFailureReason.DuplicateDefinition);
+                if (_service._definitions.TryResolve(_provider, native.LocalId, out _)) return WorldContentStatus.DuplicateDefinition;
                 var prior = previous == null ? null : new WorldCombatDefinition(previous.LocalId, previous.Revision, previous.Name, previous.FactionId, previous.Level);
-                return new RegistrationResult(_provider.Register(native, prior) ? WorldContentStatus.Succeeded : WorldContentStatus.Rejected);
+                return _provider.Register(native, prior) ? WorldContentStatus.Succeeded : WorldContentStatus.Rejected;
             }
-            catch (ArgumentException) { return new RegistrationResult(WorldContentStatus.Rejected, RegistrationFailureReason.InvalidDefinition); }
+            catch (ArgumentException) { return WorldContentStatus.InvalidDefinition; }
         }
         /// <summary>Uniform poi-key contract: bounded, no control characters.</summary>
         internal static bool ValidPoiKey(string? key)
@@ -496,28 +496,28 @@ internal sealed class WorldContentService : IWorldService, IDisposable
         public CombatSiteResult FindPersistentCombatSite(Guid expectedSessionId, CombatSiteReference reference)
         {
             _service._hub.CheckThread();
-            if (_disposed || _service._disposed) return new CombatSiteResult(WorldContentStatus.Unavailable, reason: RegistrationFailureReason.UnknownProvider);
-            if (reference == null || reference.ProviderId != ProviderId) return new CombatSiteResult(WorldContentStatus.Rejected, reason: RegistrationFailureReason.NotRegistered);
+            if (_disposed || _service._disposed) return new CombatSiteResult(WorldContentStatus.UnknownProvider);
+            if (reference == null || reference.ProviderId != ProviderId) return new CombatSiteResult(WorldContentStatus.NotRegistered);
             if (!_service._canAuthor() || _disposed || _service._disposed) return new CombatSiteResult(WorldContentStatus.Unavailable);
             if (expectedSessionId == Guid.Empty || _service._hub.CurrentSession?.Id != expectedSessionId) return new CombatSiteResult(WorldContentStatus.NotReady);
             try
             {
                 var record = _service._authoring.TryFind(_provider, expectedSessionId, reference.LocalId, reference.InstanceId,
                     () => !_disposed && !_service._disposed && _service._canAuthor() && !_disposed && !_service._disposed);
-                return record == null ? new CombatSiteResult(WorldContentStatus.Rejected, reason: RegistrationFailureReason.NotRegistered) :
+                return record == null ? new CombatSiteResult(WorldContentStatus.NotRegistered) :
                     new CombatSiteResult(WorldContentStatus.Succeeded, new CombatSiteReference(record.Identity.Owner, record.Identity.LocalId, record.Identity.InstanceId), record.Identity.NativeId);
             }
-            catch (ArgumentException) { return new CombatSiteResult(WorldContentStatus.Rejected, reason: RegistrationFailureReason.InvalidDefinition); }
+            catch (ArgumentException) { return new CombatSiteResult(WorldContentStatus.InvalidDefinition); }
         }
         public CombatSiteResult CreatePersistentCombatSite(Guid expectedSessionId, string localId, Guid instanceId, string systemId, float x, float y)
         {
             _service._hub.CheckThread();
-            if (_disposed || _service._disposed) return new CombatSiteResult(WorldContentStatus.Unavailable, reason: RegistrationFailureReason.UnknownProvider);
+            if (_disposed || _service._disposed) return new CombatSiteResult(WorldContentStatus.UnknownProvider);
             if (!_service._canAuthor() || _disposed || _service._disposed) return new CombatSiteResult(WorldContentStatus.Unavailable);
             if (expectedSessionId == Guid.Empty || _service._hub.CurrentSession?.Id != expectedSessionId ||
                 _service._hub.CurrentSession.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks)
                 return new CombatSiteResult(WorldContentStatus.NotReady);
-            if (localId == null || !_service._definitions.TryResolve(_provider, localId, out _)) return new CombatSiteResult(WorldContentStatus.Rejected, reason: RegistrationFailureReason.NotRegistered);
+            if (localId == null || !_service._definitions.TryResolve(_provider, localId, out _)) return new CombatSiteResult(WorldContentStatus.NotRegistered);
             try
             {
                 var identity = new WorldObjectIdentity(new PersistentDeclaration(ProviderId, localId, PersistentKind.WorldObject, PersistenceImpact.ApiDependent), instanceId);
@@ -526,7 +526,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                     () => !_disposed && !_service._disposed && _service._canAuthor() && !_disposed && !_service._disposed) == null
                     ? new CombatSiteResult(WorldContentStatus.Rejected) : success;
             }
-            catch (ArgumentException) { return new CombatSiteResult(WorldContentStatus.Rejected, reason: RegistrationFailureReason.InvalidDefinition); }
+            catch (ArgumentException) { return new CombatSiteResult(WorldContentStatus.InvalidDefinition); }
         }
 
         /// <summary>
@@ -542,7 +542,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             if (session == null || session.Id == Guid.Empty || session.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks)
                 return (WorldContentStatus.NotReady, "The world is not in a safely actionable state yet.");
             var rowKey = (ProviderId, localId, poiKey);
-            if (!_service._combatKeys.ContainsKey(rowKey)) return (WorldContentStatus.Rejected, "");
+            if (!_service._combatKeys.ContainsKey(rowKey)) return (WorldContentStatus.NotRegistered, "");
             var instanceId = SiteInstanceId(ProviderId, localId, poiKey);
             try
             {
@@ -608,20 +608,20 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             { try { ((Action<ResourceSitesSettledEvent>)subscriber)(settled); } catch { /* fail-open per subscriber */ } }
         }
 
-        public RegistrationResult RegisterResourceSite(ResourceSiteDefinition definition, ResourceSiteDefinition? previous = null)
+        public WorldContentStatus RegisterResourceSite(ResourceSiteDefinition definition, ResourceSiteDefinition? previous = null)
         {
             _service._hub.CheckThread();
-            if (_disposed || _service._disposed) return new RegistrationResult(WorldContentStatus.Unavailable, RegistrationFailureReason.UnknownProvider);
-            if (_service._hub.CurrentSession != null) return new RegistrationResult(WorldContentStatus.NotReady);
-            if (_authoredSites == null || _service._siteDefinitions == null || definition == null) return new RegistrationResult(WorldContentStatus.Rejected, RegistrationFailureReason.InvalidDefinition);
+            if (_disposed || _service._disposed) return WorldContentStatus.UnknownProvider;
+            if (_service._hub.CurrentSession != null) return WorldContentStatus.NotReady;
+            if (_authoredSites == null || _service._siteDefinitions == null || definition == null) return WorldContentStatus.InvalidDefinition;
             try
             {
                 var mapped = new ResourceSiteDeclaration(definition);
-                if (_service._siteDefinitions.TryResolve(_authoredSites, definition.LocalId, out _)) return new RegistrationResult(WorldContentStatus.Rejected, RegistrationFailureReason.DuplicateDefinition);
+                if (_service._siteDefinitions.TryResolve(_authoredSites, definition.LocalId, out _)) return WorldContentStatus.DuplicateDefinition;
                 var prior = previous == null ? null : new ResourceSiteDeclaration(previous);
-                return new RegistrationResult(_service._siteDefinitions.Register(_authoredSites, mapped, prior) ? WorldContentStatus.Succeeded : WorldContentStatus.Rejected);
+                return _service._siteDefinitions.Register(_authoredSites, mapped, prior) ? WorldContentStatus.Succeeded : WorldContentStatus.Rejected;
             }
-            catch (ArgumentException) { return new RegistrationResult(WorldContentStatus.Rejected, RegistrationFailureReason.InvalidDefinition); }
+            catch (ArgumentException) { return WorldContentStatus.InvalidDefinition; }
         }
 
         public IResourceSite? CreateResourceSite(string localId, string poiKey, string systemId, float x, float y)
@@ -707,20 +707,20 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             { try { ((Action<MooredShipsSettledEvent>)subscriber)(settled); } catch { /* fail-open per subscriber */ } }
         }
 
-        public RegistrationResult RegisterMooredShip(MooredShipDefinition definition, MooredShipDefinition? previous = null)
+        public WorldContentStatus RegisterMooredShip(MooredShipDefinition definition, MooredShipDefinition? previous = null)
         {
             _service._hub.CheckThread();
-            if (_disposed || _service._disposed) return new RegistrationResult(WorldContentStatus.Unavailable, RegistrationFailureReason.UnknownProvider);
-            if (_service._hub.CurrentSession != null) return new RegistrationResult(WorldContentStatus.NotReady);
-            if (_authoredShips == null || _service._shipDefinitions == null || definition == null) return new RegistrationResult(WorldContentStatus.Rejected, RegistrationFailureReason.InvalidDefinition);
+            if (_disposed || _service._disposed) return WorldContentStatus.UnknownProvider;
+            if (_service._hub.CurrentSession != null) return WorldContentStatus.NotReady;
+            if (_authoredShips == null || _service._shipDefinitions == null || definition == null) return WorldContentStatus.InvalidDefinition;
             try
             {
                 var mapped = new MooredShipDeclaration(definition);
-                if (_service._shipDefinitions.TryResolve(_authoredShips, definition.LocalId, out _)) return new RegistrationResult(WorldContentStatus.Rejected, RegistrationFailureReason.DuplicateDefinition);
+                if (_service._shipDefinitions.TryResolve(_authoredShips, definition.LocalId, out _)) return WorldContentStatus.DuplicateDefinition;
                 var prior = previous == null ? null : new MooredShipDeclaration(previous);
-                return new RegistrationResult(_service._shipDefinitions.Register(_authoredShips, mapped, prior) ? WorldContentStatus.Succeeded : WorldContentStatus.Rejected);
+                return _service._shipDefinitions.Register(_authoredShips, mapped, prior) ? WorldContentStatus.Succeeded : WorldContentStatus.Rejected;
             }
-            catch (ArgumentException) { return new RegistrationResult(WorldContentStatus.Rejected, RegistrationFailureReason.InvalidDefinition); }
+            catch (ArgumentException) { return WorldContentStatus.InvalidDefinition; }
         }
 
         public IMooredShip? CreateMooredShip(string localId, string unitKey, string stationPoiId)
@@ -871,18 +871,18 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             var args = new WormholePairsSettledEvent(session, good, failed);
             foreach (var subscriber in subscribers.GetInvocationList()) try { ((Action<WormholePairsSettledEvent>)subscriber)(args); } catch { }
         }
-        public RegistrationResult RegisterWormholePair(WormholePairDefinition definition, WormholePairDefinition? previous = null)
+        public WorldContentStatus RegisterWormholePair(WormholePairDefinition definition, WormholePairDefinition? previous = null)
         {
             _service._hub.CheckThread();
-            if (_disposed || _service._disposed) return new RegistrationResult(WorldContentStatus.Unavailable, RegistrationFailureReason.UnknownProvider);
-            if (_service._hub.CurrentSession != null) return new RegistrationResult(WorldContentStatus.NotReady);
-            if (_wormholes == null || definition == null) return new RegistrationResult(WorldContentStatus.Rejected, RegistrationFailureReason.InvalidDefinition);
+            if (_disposed || _service._disposed) return WorldContentStatus.UnknownProvider;
+            if (_service._hub.CurrentSession != null) return WorldContentStatus.NotReady;
+            if (_wormholes == null || definition == null) return WorldContentStatus.InvalidDefinition;
             try
             {
-                if (_service._wormholeDefinitions!.TryResolve(_wormholes, definition.LocalId, out _)) return new RegistrationResult(WorldContentStatus.Rejected, RegistrationFailureReason.DuplicateDefinition);
-                return new RegistrationResult(_wormholes.Register(definition, previous) ? WorldContentStatus.Succeeded : WorldContentStatus.Rejected);
+                if (_service._wormholeDefinitions!.TryResolve(_wormholes, definition.LocalId, out _)) return WorldContentStatus.DuplicateDefinition;
+                return _wormholes.Register(definition, previous) ? WorldContentStatus.Succeeded : WorldContentStatus.Rejected;
             }
-            catch (ArgumentException) { return new RegistrationResult(WorldContentStatus.Rejected, RegistrationFailureReason.InvalidDefinition); }
+            catch (ArgumentException) { return WorldContentStatus.InvalidDefinition; }
         }
         public IWormholePair? CreateWormholePair(string localId, string poiKey, string firstSystemId, string secondSystemId)
         {
@@ -914,18 +914,18 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             var handle = new WormholePairHandle(this, localId, poiKey, session, () => _wormholeObjects.Remove(key)); _wormholeObjects.Add(key, handle); handle.Refresh(); return handle;
         }
 
-        public RegistrationResult RegisterPocketSystem(PocketSystemDefinition definition, PocketSystemDefinition? previous = null)
+        public WorldContentStatus RegisterPocketSystem(PocketSystemDefinition definition, PocketSystemDefinition? previous = null)
         {
             _service._hub.CheckThread();
-            if (_disposed || _service._disposed) return new RegistrationResult(WorldContentStatus.Unavailable, RegistrationFailureReason.UnknownProvider);
-            if (_service._hub.CurrentSession != null) return new RegistrationResult(WorldContentStatus.NotReady);
-            if (_authored == null || definition == null) return new RegistrationResult(WorldContentStatus.Rejected, RegistrationFailureReason.InvalidDefinition);
+            if (_disposed || _service._disposed) return WorldContentStatus.UnknownProvider;
+            if (_service._hub.CurrentSession != null) return WorldContentStatus.NotReady;
+            if (_authored == null || definition == null) return WorldContentStatus.InvalidDefinition;
             try
             {
-                if (_service._authoredDefinitions!.TryResolve(_authored, definition.LocalId, out _)) return new RegistrationResult(WorldContentStatus.Rejected, RegistrationFailureReason.DuplicateDefinition);
-                return new RegistrationResult(_authored.Register(definition, previous) ? WorldContentStatus.Succeeded : WorldContentStatus.Rejected);
+                if (_service._authoredDefinitions!.TryResolve(_authored, definition.LocalId, out _)) return WorldContentStatus.DuplicateDefinition;
+                return _authored.Register(definition, previous) ? WorldContentStatus.Succeeded : WorldContentStatus.Rejected;
             }
-            catch (ArgumentException) { return new RegistrationResult(WorldContentStatus.Rejected, RegistrationFailureReason.InvalidDefinition); }
+            catch (ArgumentException) { return WorldContentStatus.InvalidDefinition; }
         }
         public IPocketSystem? CreatePocketSystem(string localId, string poiKey, string anchorSystemId)
         {
@@ -1516,7 +1516,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             {
                 WorldContentStatus.Succeeded => WorldContentStatus.Succeeded,
                 WorldContentStatus.NotReady => WorldContentStatus.NotReady,
-                WorldContentStatus.Rejected => WorldContentStatus.Rejected,
+                WorldContentStatus.Rejected or WorldContentStatus.NotRegistered or WorldContentStatus.InvalidDefinition or WorldContentStatus.DuplicateDefinition => WorldContentStatus.Rejected,
                 _ => WorldContentStatus.Unavailable
             };
 

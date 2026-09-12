@@ -44,8 +44,8 @@ internal sealed class WormholePairCoordinator : IDisposable
         string localId, string poiKey, string firstSystemId, string secondSystemId)
     {
         _hub.CheckThread(); if (_disposed) return (WorldContentStatus.Unavailable, null);
-        if (!_definitions.TryResolve(provider, localId, out var definition) || definition == null) return (WorldContentStatus.Rejected, null);
-        if (string.IsNullOrWhiteSpace(poiKey) || firstSystemId == secondSystemId) return (WorldContentStatus.Rejected, null);
+        if (!_definitions.TryResolve(provider, localId, out var definition) || definition == null) return (WorldContentStatus.NotRegistered, null);
+        if (string.IsNullOrWhiteSpace(poiKey) || firstSystemId == secondSystemId) return (WorldContentStatus.InvalidDefinition, null);
         var key = (provider.Owner, localId, poiKey);
         if (_rows.TryGetValue(key, out var existing)) return Resolve(existing).Reconstructed ? (WorldContentStatus.Succeeded, existing) : (WorldContentStatus.Rejected, existing);
         if (_rows.Count >= WorldSerializationAssociation.MaxObjects) return (WorldContentStatus.Rejected, null);
@@ -67,7 +67,7 @@ internal sealed class WormholePairCoordinator : IDisposable
     internal (WorldContentStatus Status, string Detail) Remove(WormholePairRegistry.Provider provider, Guid session, string local, string key)
     {
         _hub.CheckThread(); if (_disposed) return (WorldContentStatus.Unavailable, "Wormhole pairs are unavailable.");
-        if (provider == null || !_rows.TryGetValue((provider.Owner, local, key), out var row)) return (WorldContentStatus.Rejected, "");
+        if (provider == null || !_rows.TryGetValue((provider.Owner, local, key), out var row)) return (WorldContentStatus.NotRegistered, "");
         try
         {
             var outcome = _native.RemoveWormhole(session, row.FirstPoiId, row.SecondPoiId);
@@ -95,7 +95,7 @@ internal sealed class WormholePairCoordinator : IDisposable
     }
     internal WorldContentStatus SetOpen(WormholePairRegistry.Provider provider, Guid session, string local, string key, bool open)
     {
-        _hub.CheckThread(); if (!_rows.TryGetValue((provider.Owner, local, key), out var row)) return WorldContentStatus.Rejected;
+        _hub.CheckThread(); if (!_rows.TryGetValue((provider.Owner, local, key), out var row)) return WorldContentStatus.NotRegistered;
         if (!Resolve(row).Reconstructed) return WorldContentStatus.Rejected;
         try { if (!_native.ApplyOpen(session, row.FirstPoiId, row.SecondPoiId, open)) return WorldContentStatus.Rejected; row.DeclaredOpen = open; return WorldContentStatus.Succeeded; }
         catch (Exception error) { _report(error); return WorldContentStatus.Unavailable; }
