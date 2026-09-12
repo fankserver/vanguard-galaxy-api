@@ -994,7 +994,8 @@ public sealed partial class StoryMissionTests
     [Fact]
     public void RepeatedOccurrencesKeepSeparateIdentityAndASingleTerminalOutcome()
     {
-        var provider = Provider(out var world, out _, out _, StoryRetention.Campaign);
+        // Repeats live in the TEMPORARY lane; a campaign definition runs once like the game's.
+        var provider = Provider(out var world, out _, out _);
         var first = provider.Offer("salvage-run");
         Assert.True(provider.Activate(first.MissionId).Accepted);
         // The game ends the mission, and that is what records the completion.
@@ -1861,11 +1862,12 @@ public sealed partial class StoryMissionTests
         Assert.True(provider.Activate(mission.MissionId).Accepted);
         Assert.True(world.World.IsActive(identifier));
         Assert.Equal(StoryMissionState.Active, untouched.State);
-        // A second mission has its own identifier, so the game's duplicate refusal does not apply
-        // to it; the world accepts it as its own mission.
-        var again = provider.Offer("salvage-run");
+        // A campaign definition runs once, so a further campaign mission is a further DEFINITION;
+        // it has its own identifier and the world accepts it as its own mission.
+        Assert.True(provider.Register(Definition("relay-run", StoryRetention.Campaign)).Succeeded);
+        var again = provider.Offer("relay-run");
         Assert.True(provider.Activate(again.MissionId).Accepted);
-        Assert.True(world.World.IsActive(FakeWorld.Native(provider, "salvage-run", again.MissionId)));
+        Assert.True(world.World.IsActive(FakeWorld.Native(provider, "relay-run", again.MissionId)));
     }
 
     /// <summary>
@@ -1893,14 +1895,16 @@ public sealed partial class StoryMissionTests
         Assert.True(provider.IsCompleted("salvage-run").Completed);
         Assert.Equal("left", Assert.Single(provider.Missions("salvage-run").Records).Choices["branch"]);
 
-        // Abandonment: the mission is removed from the world before the outcome is recorded.
-        var job = provider.Offer("salvage-run");
-        var jobIdentifier = FakeWorld.Native(provider, "salvage-run", job.MissionId);
+        // Abandonment: the mission is removed from the world before the outcome is recorded. A
+        // campaign definition runs once, so this is observed on its own definition.
+        Assert.True(provider.Register(Definition("relay-run", StoryRetention.Campaign)).Succeeded);
+        var job = provider.Offer("relay-run");
+        var jobIdentifier = FakeWorld.Native(provider, "relay-run", job.MissionId);
         Assert.True(provider.Activate(job.MissionId).Accepted);
         Assert.True(world.World.IsActive(jobIdentifier));
         Assert.True(provider.Retire(job.MissionId, StoryOutcome.Abandoned).Accepted);
         Assert.False(world.World.IsActive(jobIdentifier));
-        Assert.Equal(StoryOutcome.Abandoned, provider.Missions("salvage-run").Records[1].Outcome);
+        Assert.Equal(StoryOutcome.Abandoned, Assert.Single(provider.Missions("relay-run").Records).Outcome);
     }
 
     /// <summary>
@@ -1977,15 +1981,17 @@ public sealed partial class StoryMissionTests
     /// exactly once per save. Each mission therefore needs a distinct identifier.
     /// </summary>
     [Fact]
-    public void EachOccurrenceGetsItsOwnCatalogEntrySoARepeatCanStillBeAccepted()
+    public void EachTemporaryOccurrenceGetsItsOwnCatalogEntrySoARepeatCanStillBeAccepted()
     {
-        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        // Repeats live in the TEMPORARY lane, mirroring the game's procedural missions. A campaign
+        // definition runs once, exactly as the game admits one story mission per identifier, so the
+        // per-mission catalog identifier exists for repeatable content only.
+        var provider = Provider(out var world, out _, out var service);
         var first = provider.Offer("salvage-run");
         var firstIdentifier = FakeWorld.Native(provider, "salvage-run", first.MissionId);
         Assert.True(world.World.IsInstalled(firstIdentifier));
         Assert.True(provider.Activate(first.MissionId).Accepted);
         world.CompleteInGame(provider, "salvage-run", first.MissionId);
-        Assert.True(provider.IsCompleted("salvage-run").Completed);
 
         var second = provider.Offer("salvage-run");
         var secondIdentifier = FakeWorld.Native(provider, "salvage-run", second.MissionId);
@@ -2075,10 +2081,13 @@ public sealed partial class StoryMissionTests
         Assert.Equal(StoryOutcome.Completed, record.Outcome);
         Assert.True(provider.IsCompleted("salvage-run").Completed);
 
+        // A campaign definition runs once, so the rest of this behaviour is observed on a second
+        // definition rather than a second run of the same one.
+        Assert.True(provider.Register(Definition("relay-run", StoryRetention.Campaign)).Succeeded);
         // A neutral removal says nothing about why it ended: the mission stays unresolved.
-        var second = provider.Offer("salvage-run");
+        var second = provider.Offer("relay-run");
         Assert.True(provider.Activate(second.MissionId).Accepted);
-        var secondIdentifier = FakeWorld.Native(provider, "salvage-run", second.MissionId);
+        var secondIdentifier = FakeWorld.Native(provider, "relay-run", second.MissionId);
         world.Missions.Publish(MissionTransitionKind.Removed, secondIdentifier);
         Assert.True(service.Ledger.TryGet(second.MissionId, out var stillActive));
         Assert.Equal(StoryMissionState.Active, stillActive.State);
@@ -2088,11 +2097,11 @@ public sealed partial class StoryMissionTests
         Assert.Equal(StoryMissionState.Active, stillActive.State);
         Assert.True(stillActive.FailureObserved);
         Assert.True(world.World.IsInstalled(secondIdentifier));
-        Assert.Single(provider.Missions("salvage-run").Records);
+        Assert.Empty(provider.Missions("relay-run").Records);
         // The removal that follows the failure is what settles it.
         world.World.CompleteInWorld(secondIdentifier);
         world.Missions.Publish(MissionTransitionKind.Removed, secondIdentifier);
-        Assert.Equal(StoryOutcome.Failed, provider.Missions("salvage-run").Records[1].Outcome);
+        Assert.Equal(StoryOutcome.Failed, Assert.Single(provider.Missions("relay-run").Records).Outcome);
         Assert.False(world.World.IsInstalled(secondIdentifier));
     }
 
