@@ -240,7 +240,7 @@ public sealed class Plugin : BaseUnityPlugin
         if (_world == null || _entryDoor == null) return;
         Logger.LogInfo("=== Pocket Worlds topology ===");
         Logger.LogInfo($"subsector: {ClusterSectorName} (contains {EntryName}, {HubName}, {AnchorName}, {MiningWorldName})");
-        Logger.LogInfo($"subsector: {SalvageSectorName} (contains {SalvageWorldName}) — off-map: exists and works, but the galaxy map cannot pan or zoom to it");
+        Logger.LogInfo($"subsector: {SalvageSectorName} (contains {SalvageWorldName}) - off-map: exists and works, but the galaxy map cannot pan or zoom to it");
         Logger.LogInfo($"origin: {OriginSystemName()} --wormhole[{_entryDoor.Definition.Name}]--> {EntryName}");
         Logger.LogInfo("note: each authored system also holds one SEALED, HIDDEN anchor gate back to the system it "
             + "was anchored to; it is not a usable connection and is deliberately not drawn on the map, so it is "
