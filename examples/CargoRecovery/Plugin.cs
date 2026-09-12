@@ -1,5 +1,6 @@
 using System;
 using BepInEx;
+using UnityEngine;
 using VGModAPI;
 namespace CargoRecovery;
 
@@ -22,6 +23,7 @@ public sealed class Plugin : BaseUnityPlugin
     private ITravelService? _travel;
     private IHudRegistration? _hud;
     private DerelictSite? _derelict;
+    private float _nextAdoptionAttempt;
 
     // Wiring is deferred to Start() for the same reason across every example in this repository:
     // BepInEx only populates Chainloader.PluginInfos[].Instance after Awake returns, and the world
@@ -49,6 +51,21 @@ public sealed class Plugin : BaseUnityPlugin
         _travel = ModApi.Services.Travel;
         _hud = ModApi.Services.Hud.Register(Id, "panel", OnHud);
         RefreshPanel();
+    }
+
+    /// <summary>
+    /// Adoption cannot rely on boarding observations alone. Attaching is a mutation, and the API blocks
+    /// mutations while its own save/settlement/reward/rule work is in flight, so an attach attempted at
+    /// the moment an event arrives can be refused as transiently Unavailable. Retry on a cheap tick
+    /// until it takes, instead of treating one refusal as final.
+    /// </summary>
+    private void Update()
+    {
+        if (_session?.Encounter == null || _session.Attached || Time.unscaledTime < _nextAdoptionAttempt) return;
+        _nextAdoptionAttempt = Time.unscaledTime + 1f;
+        if (_derelict?.Installation == null) return;
+        _session.TryAdoptOwnStation();
+        if (_session.Attached) RefreshPanel();
     }
 
     private void RefreshPanel()

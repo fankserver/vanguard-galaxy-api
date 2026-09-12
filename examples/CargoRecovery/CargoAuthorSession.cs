@@ -30,6 +30,7 @@ public sealed class CargoAuthorSession : IDisposable
     private Action<LifecycleEvent>? _lifecycleHandler;
     private readonly Action<string> _log;
     private readonly Action<string> _warn;
+    private string _lastAdoptionRefusal = "";
 
     /// <summary>The registered encounter, or null until content registration succeeds.</summary>
     public CargoEncounter? Encounter => _author;
@@ -120,10 +121,16 @@ public sealed class CargoAuthorSession : IDisposable
         var result = _author.Attach(installation);
         if (result.Status != DungeonStatus.Attached)
         {
-            // StaleTarget simply means "not there yet"; it is retried on the next observation.
-            if (result.Status != DungeonStatus.StaleTarget) _warn("Cargo attach: " + result.Status + " - " + result.Detail);
+            // StaleTarget simply means "not there yet", and Unavailable/PersistenceUnavailable are
+            // transient mutation-gate states, so every non-success here is retried rather than
+            // treated as final. Report each distinct reason once instead of on every retry.
+            var reason = result.Status + " - " + result.Detail
+                + " | dungeon service: " + (_dungeons?.Availability.Reason.ToString() ?? "unknown");
+            if (result.Status != DungeonStatus.StaleTarget && reason != _lastAdoptionRefusal)
+            { _lastAdoptionRefusal = reason; _warn("Cargo attach not possible yet: " + reason + " (retrying)"); }
             return;
         }
+        _lastAdoptionRefusal = "";
         Attached = true;
         _log("Cargo attach: " + result.Status + " - the authored station now uses this mod's layout.");
         BindOwnedTarget(installation);
