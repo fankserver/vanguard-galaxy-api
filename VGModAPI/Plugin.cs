@@ -45,6 +45,7 @@ public sealed partial class Plugin : BaseUnityPlugin
     private DungeonSettlementService? _dungeonSettlement;
     private DungeonRewardService? _dungeonRewards;
     private DungeonService? _dungeons;
+    private DungeonFacade? _dungeonFacade;
     private DungeonStateStore? _dungeonState;
     private DungeonRecoveryRuntime? _dungeonRecovery;
     private DungeonAdapter? _dungeonAdapter;

@@ -22,7 +22,7 @@ internal sealed class DungeonBindings
         ResolveInstallation = resolveInstallation ?? (_ => null); }
 }
 
-internal sealed class DungeonService : IDungeonService, IDisposable
+internal sealed class DungeonService : IDisposable
 {
     private readonly LifecycleHub _hub;
     private readonly DungeonDefinitionRegistry? _definitions;

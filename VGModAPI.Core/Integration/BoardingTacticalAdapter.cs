@@ -5,7 +5,7 @@ using VGModAPI.Core;
 
 namespace VGModAPI.Runtime;
 
-internal sealed class BoardingTacticalAdapter : IDungeonTacticalService, IDisposable
+internal sealed class BoardingTacticalAdapter : IDisposable
 {
     private readonly LifecycleHub _hub;
     private readonly IBoardingTacticalNativeBindings? _bindings;
@@ -13,11 +13,11 @@ internal sealed class BoardingTacticalAdapter : IDungeonTacticalService, IDispos
     private readonly IServiceStatus _status;
     private bool _disposed;
     private readonly BoardingObserver? _observer;
-    private readonly IDungeonOperationService? _events;
+    private readonly BoardingService? _events;
     private readonly BoardingCommandService? _commands;
-    internal BoardingTacticalAdapter(LifecycleHub hub, GameBindings game, BoardingObserver observer, IDungeonOperationService events, BoardingCommandService commands)
+    internal BoardingTacticalAdapter(LifecycleHub hub, GameBindings game, BoardingObserver observer, BoardingService events, BoardingCommandService commands)
         : this(hub, new BoardingCommandNativeBindings(game, BoardingTacticalBindings.Actions.Concat(BoardingTacticalBindings.Queries).ToArray(), BoardingTacticalBindings.Members), observer, events, commands) { }
-    internal BoardingTacticalAdapter(LifecycleHub hub, IBoardingTacticalNativeBindings? native, BoardingObserver? observer, IDungeonOperationService? events, BoardingCommandService? commands)
+    internal BoardingTacticalAdapter(LifecycleHub hub, IBoardingTacticalNativeBindings? native, BoardingObserver? observer, BoardingService? events, BoardingCommandService? commands)
     {
         _hub = hub; _bindings = native; _observer = observer; _events = events; _commands = commands;
         _status = hub.Services.Get("boarding-tactics");

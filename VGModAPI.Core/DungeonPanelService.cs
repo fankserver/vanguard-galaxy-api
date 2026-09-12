@@ -11,7 +11,7 @@ internal interface IDungeonPanelSource
     DungeonPanelOpenStatus Open(BoardingHandle target);
 }
 
-internal sealed class DungeonPanelService : IDungeonPanelService, IDisposable
+internal sealed class DungeonPanelService : IDisposable
 {
     private readonly LifecycleHub _hub;
     private readonly IDungeonPanelSource? _source;

@@ -24,10 +24,19 @@ public sealed class ServiceRootTests
         var jobs = new CraftingJobService(hub, null, hub.ReportSubscriberFailure);
         var commands = new CraftingCommandService(hub, jobs, null, _ => { });
         var gameplayUi = new GameplayUiService(hub);
-        foreach (var disposable in new IDisposable[] { lifecycle, mods, missions, travel, station, gameplayUi }) hub.Services.AfterStopped(disposable.Dispose);
+        var dungeonCombat = new BoardingCombatService(hub, hub.ReportSubscriberFailure);
+        var dungeonRewards = new DungeonRewardService(hub, hub.ReportSubscriberFailure);
+        var dungeonOperations = new BoardingService(hub, hub.ReportSubscriberFailure);
+        var dungeonSettlement = new DungeonSettlementService(hub, dungeonOperations, hub.ReportSubscriberFailure);
+        var dungeonCommands = new BoardingCommandService(hub, dungeonOperations, null, () => false);
+        var dungeonTactics = new VGModAPI.Runtime.BoardingTacticalAdapter(hub, dungeonCommands);
+        var dungeonPanel = new DungeonPanelService(hub, null, hub.ReportSubscriberFailure);
+        var dungeons = new DungeonService(hub, null, null, null, hub.ReportSubscriberFailure);
+        var dungeonFacade = new DungeonFacade(dungeons, dungeonCombat, dungeonRewards, dungeonCommands, dungeonTactics, dungeonOperations, dungeonSettlement, dungeonPanel);
+        foreach (var disposable in new IDisposable[] { lifecycle, mods, missions, travel, station, gameplayUi, dungeonFacade }) hub.Services.AfterStopped(disposable.Dispose);
         return (ModServices)typeof(ModServices).GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance)[0].Invoke(
             new object[] { lifecycle, mods, new PersistenceService(hub), missions, travel, station,
-                new RecipeCatalogService(hub, null, _ => { }), new RecipeQuoteService(hub, null, _ => { }), jobs, commands, new HudService(hub, hub.ReportSubscriberFailure), new ForgeUiService(hub, null, hub.ReportSubscriberFailure), new BoardingRuleService(hub, hub.ReportSubscriberFailure), new BoardingCombatService(hub, hub.ReportSubscriberFailure), new DungeonRewardService(hub, hub.ReportSubscriberFailure), new BoardingCommandService(hub, null, null, () => false), new VGModAPI.Runtime.BoardingTacticalAdapter(hub, null!), new BoardingService(hub, hub.ReportSubscriberFailure), new DungeonSettlementService(hub, new BoardingService(hub, hub.ReportSubscriberFailure), hub.ReportSubscriberFailure), new DungeonPanelService(hub, null, hub.ReportSubscriberFailure), new DungeonService(hub, null, null, null, hub.ReportSubscriberFailure), new StoryMissionService(hub.Services, null, null, (_, _) => null, checkThread: hub.CheckThread), new BarService(null, hub, (_, _) => null, _ => false, hub.CheckThread),
+                new RecipeCatalogService(hub, null, _ => { }), new RecipeQuoteService(hub, null, _ => { }), jobs, commands, new HudService(hub, hub.ReportSubscriberFailure), new ForgeUiService(hub, null, hub.ReportSubscriberFailure), new BoardingRuleService(hub, hub.ReportSubscriberFailure), dungeonFacade, new StoryMissionService(hub.Services, null, null, (_, _) => null, checkThread: hub.CheckThread), new BarService(null, hub, (_, _) => null, _ => false, hub.CheckThread),
                 new WorldContentService(hub, new WorldDefinitionRegistry((_, _) => null, hub.CheckThread), null!, () => false),
                 new DialogueService(hub.Services.Get("dialogue"), hub.CheckThread, _ => { }, new StoryCharacterService(hub)),
                 new GameService(hub, new NavigationService(hub, _ => null, (_, _, _) => NavigationStatus.Unavailable, (_, _) => null), new InventoryService(hub, () => null), new StoryMissionService(hub.Services, null, hub, (_, _) => null), new BarService(null, hub, (_, _) => null, _ => false, hub.CheckThread)),
@@ -77,9 +86,9 @@ public sealed class ServiceRootTests
         using var hub = new LifecycleHub((_, _) => { });
         using var catalog = new ModInformationCatalog(hub, () => Array.Empty<LoadedPluginInformation>());
         var root = Compose(hub, catalog);
-        Assert.IsType<TargetInvocationException>(ServiceNotificationTests.OnWorker(() => typeof(ModServices).GetProperty("DungeonOperations")!.GetValue(root)));
+        Assert.IsType<TargetInvocationException>(ServiceNotificationTests.OnWorker(() => typeof(ModServices).GetProperty("Dungeons")!.GetValue(root)));
         hub.Dispose();
-        Assert.Equal(ServiceUnavailableReason.ApiStopped, root.DungeonOperations.Availability.Reason);
+        Assert.Equal(ServiceUnavailableReason.ApiStopped, root.Dungeons.Availability.Reason);
     }
 
     [Fact]

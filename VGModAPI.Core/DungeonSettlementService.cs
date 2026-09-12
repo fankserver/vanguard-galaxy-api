@@ -4,7 +4,7 @@ using System.Linq;
 
 namespace VGModAPI.Core;
 
-internal sealed class DungeonSettlementService : IDungeonSettlementService, IDisposable
+internal sealed class DungeonSettlementService : IDisposable
 {
     private readonly LifecycleHub _hub;
     private readonly IServiceStatus _status;

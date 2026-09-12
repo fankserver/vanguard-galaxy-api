@@ -60,7 +60,7 @@ public sealed class BoardingTacticalAdapterTests
         hub.SetCapability("boarding-tactics", false, "Disabled.", ServiceUnavailableReason.Disabled);
         using var commands = new BoardingCommandService(hub, null, null, () => false);
         using var adapter = new BoardingTacticalAdapter(hub, commands);
-        IDungeonTacticalService service = adapter;
+        Runtime.BoardingTacticalAdapter service = adapter;
         Assert.Equal(ServiceUnavailableReason.Disabled, service.Availability.Reason);
         Assert.Null(service.GetSnapshot(new(Guid.NewGuid(), Guid.NewGuid())));
         Assert.Null(typeof(ModApi).GetProperty("BoardingTactics"));

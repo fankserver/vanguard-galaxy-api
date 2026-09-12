@@ -13,8 +13,7 @@ public sealed class Plugin : BaseUnityPlugin
         var reward = Config.Bind("Content", "RewardItemId", "", "Existing game item identifier for shipment rewards. Required; no content is registered while blank.").Value;
         try
         {
-            _session = new CargoAuthorSession(reward, ModApi.Services.Lifecycle, ModApi.Services.DungeonOperations, ModApi.Services.Dungeons,
-                ModApi.Services.DungeonPanel, ModApi.Services.DungeonCommands, ModApi.Services.DungeonTactics, ModApi.Services.DungeonSettlement,
+            _session = new CargoAuthorSession(reward, ModApi.Services.Lifecycle, ModApi.Services.Dungeons,
                 message => Logger.LogInfo(message), message => Logger.LogWarning(message));
         }
         catch (Exception error) { Logger.LogError(error); }

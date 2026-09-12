@@ -35,6 +35,7 @@ public sealed partial class Plugin
         _boardingTactics ??= new Runtime.BoardingTacticalAdapter(hub, _boardingCommands);
         _dungeonPanelService ??= new DungeonPanelService(hub, null, hub.ReportSubscriberFailure);
         _dungeons ??= new DungeonService(hub, null, null, null, hub.ReportSubscriberFailure);
+        _dungeonFacade ??= new DungeonFacade(_dungeons, _boardingCombat, _dungeonRewards, _boardingCommands, _boardingTactics, _boardingService, _dungeonSettlement, _dungeonPanelService);
         _story ??= new StoryMissionService(hub.Services, null, hub, StoryHostAuthentication.Resolve, checkThread: hub.CheckThread);
         _bars ??= new BarService(null, hub, StoryHostAuthentication.Resolve, _ => false, hub.CheckThread);
         _worldDefinitions ??= new WorldDefinitionRegistry((_, _) => null, hub.CheckThread);
@@ -49,10 +50,10 @@ public sealed partial class Plugin
         var storyCharacters = _storyCharacters ??= new StoryCharacterService(hub);
         _dialogueService ??= new DialogueService(hub.Services.Get("dialogue"), hub.CheckThread, error => hub.ReportSubscriberFailure("dialogue", error), storyCharacters);
         var root = new ModServices(lifecycle, mods, (_persistence ??= new PersistenceService(hub)), missions, travel, station,
-            _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService, _boardingCombat, _dungeonRewards, _boardingCommands, _boardingTactics, _boardingService, _dungeonSettlement, _dungeonPanelService, _dungeons, _story, _bars, _worldContent, _dialogueService, new GameService(hub, _navigationService, _inventoryService, _story, _bars), _ownedItems, _ownedRecipes, _gameplayUi);
+            _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService, _dungeonFacade, _story, _bars, _worldContent, _dialogueService, new GameService(hub, _navigationService, _inventoryService, _story, _bars), _ownedItems, _ownedRecipes, _gameplayUi);
         // Deferred cleanup preserves terminal lifecycle delivery when shutdown starts inside a callback.
         // Content owners release their registrations before the save-data coordinator stops.
-        foreach (var service in new IDisposable[] { mods, missions, travel, station, _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService, _boardingCombat, _dungeonRewards, _boardingCommands, _boardingTactics, _boardingService, _dungeonSettlement, _dungeonPanelService, _dungeons, _story, _bars })
+        foreach (var service in new IDisposable[] { mods, missions, travel, station, _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService, _dungeonFacade, _story, _bars })
             hub.Services.AfterStopped(service.Dispose);
         hub.Services.AfterStopped(_gameplayUi.Dispose);
         hub.Services.AfterStopped(ambient.Dispose);

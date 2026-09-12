@@ -12,11 +12,6 @@ public interface IDungeonRewardProvider : IDisposable
     IDisposable Register(string localId, DungeonRewardKind kind, Func<DungeonRewardContext, DungeonRewardAdjustment> policy);
 }
 
-public interface IDungeonRewardService : IServiceStatus
-{
-    bool IsEvaluating { get; }
-    IDungeonRewardProvider AcquireProvider(string pluginId);
-}
 
 public sealed class DungeonRewardContext
 {
@@ -45,11 +40,6 @@ public sealed class DungeonRewardAdjustment
     }
 }
 
-public interface IDungeonSettlementService : IServiceStatus
-{
-    DungeonSettlementSnapshot? Get(BoardingHandle operation);
-    event Action<DungeonSettlementSnapshot>? Changed;
-}
 
 /// <summary>Copied outcome facts. Resolved combat and eventual crew return are separate facts.</summary>
 public sealed class DungeonSettlementSnapshot

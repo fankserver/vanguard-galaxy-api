@@ -69,11 +69,6 @@ public sealed class BoardingCombatContext
     }
 }
 
-public interface IDungeonTacticalService : IServiceStatus
-{
-    BoardingTacticalSnapshot? GetSnapshot(BoardingHandle operation);
-    BoardingCommandResult Execute(IBoardingController controller, BoardingTacticalRequest request);
-}
 
 /// <summary>Provider-instance ownership is independent of exclusive command control.</summary>
 public interface IBoardingCombatProvider : IDisposable
@@ -83,8 +78,4 @@ public interface IBoardingCombatProvider : IDisposable
     IDisposable RegisterVeto(string localId, BoardingRuleScope scope, BoardingCombatPolicyKind kind,
         Func<BoardingCombatContext, bool> allow, int priority = 0);
 }
-public interface IDungeonCombatService : IServiceStatus
-{
-    bool IsEvaluating { get; }
-    IBoardingCombatProvider AcquireProvider(string pluginId);
-}
+

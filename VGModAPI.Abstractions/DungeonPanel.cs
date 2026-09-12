@@ -55,15 +55,3 @@ public sealed class DungeonPanelAction
     }
 }
 
-/// <summary>Main-thread panel presentation. Null presentation hides a contribution for the current phase.
-/// Registrations are disposed by the contributor; view callbacks and activation identities expire on close or session change.
-/// Presenters are reevaluated on activation; gameplay commands must still perform their own validation.</summary>
-public interface IDungeonPanelService : IServiceStatus
-{
-    DungeonPanelCapabilities Capabilities { get; }
-    DungeonPanelSnapshot? Current { get; }
-    DungeonPanelOpenStatus Open(BoardingHandle target);
-    IDisposable RegisterSection(string pluginId, string localId, Func<DungeonPanelSnapshot, DungeonPanelSection?> present, int order = 0);
-    IDisposable RegisterAction(string pluginId, string localId, Func<DungeonPanelSnapshot, DungeonPanelAction?> present,
-        Action<DungeonPanelSnapshot> activate, int order = 0);
-}

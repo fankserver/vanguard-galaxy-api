@@ -81,8 +81,3 @@ public interface IBoardingController : IDisposable
     BoardingCommandResult SetOptions(BoardingCommandOptions options);
 }
 
-/// <summary>Main-thread command entry. Control is runtime-instance scoped and invalidated by target/session replacement.</summary>
-public interface IDungeonCommandService : IServiceStatus
-{
-    BoardingCommandResult AcquireControl(string pluginId, BoardingHandle target, out IBoardingController? controller);
-}
