@@ -59,7 +59,7 @@ public sealed class PocketSystemRemoveTests
         }
         internal IPocketSystem CreatePocket(string key = "k1")
         {
-            Assert.Equal(WorldContentStatus.Succeeded, Provider.RegisterPocketSystem(new PocketSystemDefinition("pocket", 1, "The Hollow")).Status);
+            Assert.Equal(WorldContentStatus.Succeeded, Provider.RegisterPocketSystem(new PocketSystemDefinition("pocket", 1, "The Hollow")));
             BeginGameplay();
             return Provider.CreatePocketSystem("pocket", key, "anchor")!;
         }
@@ -75,8 +75,8 @@ public sealed class PocketSystemRemoveTests
     public void RemoveRefusesWhileThePocketIsStillAWormholeEndpoint()
     {
         using var harness = new Harness();
-        Assert.Equal(WorldContentStatus.Succeeded, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("pocket", 1, "The Hollow")).Status);
-        Assert.Equal(WorldContentStatus.Succeeded, harness.Provider.RegisterWormholePair(new WormholePairDefinition("rift", 1, "Unstable Rift")).Status);
+        Assert.Equal(WorldContentStatus.Succeeded, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("pocket", 1, "The Hollow")));
+        Assert.Equal(WorldContentStatus.Succeeded, harness.Provider.RegisterWormholePair(new WormholePairDefinition("rift", 1, "Unstable Rift")));
         harness.BeginGameplay();
         var pocket = harness.Provider.CreatePocketSystem("pocket", "k1", "anchor")!;
         var hook = harness.Provider.CreateWormholePair("rift", "default", pocket.SystemId!, "other-system");
@@ -203,7 +203,7 @@ public sealed class PocketSystemRemoveTests
     public void FailedCreationRemovesWithoutANativeRemovalAndFreesTheKey()
     {
         using var harness = new Harness();
-        Assert.Equal(WorldContentStatus.Succeeded, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("pocket", 1, "The Hollow")).Status);
+        Assert.Equal(WorldContentStatus.Succeeded, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("pocket", 1, "The Hollow")));
         harness.BeginGameplay();
         harness.Native.FailCreate = true;
         var failed = harness.Provider.CreatePocketSystem("pocket", "k1", "anchor")!;
@@ -230,9 +230,9 @@ public sealed class PocketSystemRemoveTests
     public void ResourceSitesInsideTheRemovedPocketAreDroppedAndTheirObjectsAreTerminal()
     {
         using var harness = new Harness();
-        Assert.Equal(WorldContentStatus.Succeeded, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("pocket", 1, "The Hollow")).Status);
+        Assert.Equal(WorldContentStatus.Succeeded, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("pocket", 1, "The Hollow")));
         Assert.Equal(WorldContentStatus.Succeeded, harness.Provider.RegisterResourceSite(
-            ResourceSiteDefinition.MiningField("field", 1, "Singer's Field", 8, 6)).Status);
+            ResourceSiteDefinition.MiningField("field", 1, "Singer's Field", 8, 6)));
         harness.BeginGameplay();
         var pocket = harness.Provider.CreatePocketSystem("pocket", "k1", "anchor")!;
         var inside = harness.Provider.CreateResourceSite("field", "in-pocket", pocket.SystemId!, 1f, 2f)!;

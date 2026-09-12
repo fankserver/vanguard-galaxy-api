@@ -99,7 +99,6 @@ public sealed class PocketSystemReference
 public sealed class PocketSystemResult
 {
     public WorldContentStatus Status { get; }
-    public RegistrationFailureReason? Reason { get; }
     public PocketSystemReference? Reference { get; }
     /// <summary>Owned pocket-system identity accepted by gameplay travel targets; not an authorization token.</summary>
     public string? SystemId { get; }
@@ -107,10 +106,9 @@ public sealed class PocketSystemResult
     public string? PocketGatePoiId { get; }
     public bool Succeeded => Status == WorldContentStatus.Succeeded;
     public PocketSystemResult(WorldContentStatus status, PocketSystemReference? reference = null,
-        string? systemId = null, string? entranceGatePoiId = null, string? pocketGatePoiId = null,
-        RegistrationFailureReason? reason = null)
+        string? systemId = null, string? entranceGatePoiId = null, string? pocketGatePoiId = null)
     {
-        Status = status; Reason = reason; Reference = reference;
+        Status = status; Reference = reference;
         SystemId = systemId; EntranceGatePoiId = entranceGatePoiId; PocketGatePoiId = pocketGatePoiId;
     }
 }
@@ -145,7 +143,9 @@ public sealed class PocketSystemState
     }
 }
 
-/// <summary>Outcome of an action performed on an owned authored-system poi.</summary>
+/// <summary>Outcome of a world-content operation: a declaration (<c>Register*</c>) or an action
+/// performed on an owned authored-system poi. One outcome axis for both; the lifecycle/state axis is
+/// <see cref="ReconstructionStatus"/> and removal readiness is <see cref="RemovalStatus"/>.</summary>
 public enum WorldContentStatus
 {
     /// <summary>The action was applied to the native state and its declared outcome retained.</summary>
@@ -157,15 +157,7 @@ public enum WorldContentStatus
     /// <summary>The world/service layer is unavailable (no authoring capability or the plugin is gone).</summary>
     Unavailable,
     /// <summary>The owning session ended or was replaced; the poi can no longer act and must be re-obtained for the live game.</summary>
-    GameEnded
-}
-
-/// <summary>Registration-specific reasons for a refused world-content declaration, mirroring how
-/// <see cref="ReconstructionFailureReason"/> splits reasons from status. Attached to a
-/// <see cref="RegistrationResult"/> when <see cref="WorldContentStatus.Rejected"/> or
-/// <see cref="WorldContentStatus.Unavailable"/> is reported.</summary>
-public enum RegistrationFailureReason
-{
+    GameEnded,
     /// <summary>The owning provider is not present or the service is not available.</summary>
     UnknownProvider,
     /// <summary>A declaration with the same author-local key/id already exists.</summary>
@@ -174,17 +166,6 @@ public enum RegistrationFailureReason
     InvalidDefinition,
     /// <summary>No declaration with that identifier is registered by this provider.</summary>
     NotRegistered
-}
-
-/// <summary>Outcome of a world-content declaration (<c>Register*</c>). A refused declaration carries a
-/// <see cref="RegistrationFailureReason"/>; <see cref="Succeeded"/> reports the declaration was applied.</summary>
-public sealed class RegistrationResult
-{
-    public WorldContentStatus Status { get; }
-    public RegistrationFailureReason? Reason { get; }
-    public bool Succeeded => Status == WorldContentStatus.Succeeded;
-    internal RegistrationResult(WorldContentStatus status, RegistrationFailureReason? reason = null)
-    { Status = status; Reason = reason; }
 }
 
 /// <summary>

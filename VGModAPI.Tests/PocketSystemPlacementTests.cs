@@ -65,7 +65,7 @@ public sealed class PocketSystemPlacementTests
     public void OffMapPlacementIsForwardedToTheNativeSeam()
     {
         using var harness = new Harness();
-        Assert.Equal(WorldContentStatus.Succeeded, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("p", 1, "Pocket")).Status);
+        Assert.Equal(WorldContentStatus.Succeeded, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("p", 1, "Pocket")));
         harness.BeginGameplay();
         var pocket = harness.Provider.CreatePocketSystem("p", "k1", "anchor")!;
         Assert.NotNull(pocket);
@@ -78,7 +78,7 @@ public sealed class PocketSystemPlacementTests
     {
         using var harness = new Harness();
         Assert.Equal(WorldContentStatus.Succeeded, harness.Provider.RegisterPocketSystem(
-            new PocketSystemDefinition("p", 1, "Pocket", PocketSystemPlacement.Visible)).Status);
+            new PocketSystemDefinition("p", 1, "Pocket", PocketSystemPlacement.Visible)));
         harness.BeginGameplay();
         var pocket = harness.Provider.CreatePocketSystem("p", "k1", "anchor")!;
         Assert.NotNull(pocket);
@@ -98,18 +98,16 @@ public sealed class PocketSystemPlacementTests
         using var harness = new Harness();
         // A Visible declaration under a local id used before as OffMap is still keyed by (owner, local id):
         // registering the same local id again is a duplicate even when placement differs.
-        Assert.Equal(WorldContentStatus.Succeeded, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("p", 1, "Pocket")).Status);
-        Assert.Equal(WorldContentStatus.Rejected, harness.Provider.RegisterPocketSystem(
-            new PocketSystemDefinition("p", 1, "Pocket", PocketSystemPlacement.Visible)).Status);
-            Assert.Equal(RegistrationFailureReason.DuplicateDefinition, harness.Provider.RegisterPocketSystem(
-            new PocketSystemDefinition("p", 1, "Pocket", PocketSystemPlacement.Visible)).Reason);
+        Assert.Equal(WorldContentStatus.Succeeded, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("p", 1, "Pocket")));
+        Assert.Equal(WorldContentStatus.DuplicateDefinition, harness.Provider.RegisterPocketSystem(
+            new PocketSystemDefinition("p", 1, "Pocket", PocketSystemPlacement.Visible)));
     }
 
     [Fact]
     public void OwnerFactionDefaultsToUnknownAndSurvivesHandleReconstruction()
     {
         using var harness = new Harness();
-        Assert.Equal(WorldContentStatus.Succeeded, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("p", 1, "Pocket")).Status);
+        Assert.Equal(WorldContentStatus.Succeeded, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("p", 1, "Pocket")));
         harness.BeginGameplay();
         var pocket = harness.Provider.CreatePocketSystem("p", "k1", "anchor")!;
         // No owner specified => unknown (null) forwarded to the native seam, and retained as null on the handle.
@@ -121,7 +119,7 @@ public sealed class PocketSystemPlacementTests
     public void FreshPocketGatesAreSealedHiddenNotVisible()
     {
         using var harness = new Harness();
-        Assert.Equal(WorldContentStatus.Succeeded, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("p", 1, "Pocket")).Status);
+        Assert.Equal(WorldContentStatus.Succeeded, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("p", 1, "Pocket")));
         harness.BeginGameplay();
         var pocket = harness.Provider.CreatePocketSystem("p", "k1", "anchor")!;
         // A freshly authored pocket must present sealed gates (closed AND hidden) so the map draws no
@@ -134,7 +132,7 @@ public sealed class PocketSystemPlacementTests
     public void OpeningAPocketUnsealsAndClosagainReseals()
     {
         using var harness = new Harness();
-        Assert.Equal(WorldContentStatus.Succeeded, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("p", 1, "Pocket")).Status);
+        Assert.Equal(WorldContentStatus.Succeeded, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("p", 1, "Pocket")));
         harness.BeginGameplay();
         var pocket = harness.Provider.CreatePocketSystem("p", "k1", "anchor")!;
         Assert.True(pocket.SetEntranceOpen(true).Succeeded);
@@ -148,7 +146,7 @@ public sealed class PocketSystemPlacementTests
     public void ReconcileRepairsAClosedButStillVisiblePocketGate()
     {
         using var harness = new Harness();
-        Assert.Equal(WorldContentStatus.Succeeded, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("p", 1, "Pocket")).Status);
+        Assert.Equal(WorldContentStatus.Succeeded, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("p", 1, "Pocket")));
         harness.BeginGameplay();
         var pocket = harness.Provider.CreatePocketSystem("p", "k1", "anchor")!;
         // Simulate a pocket authored before gates were hidden at create: closed but visible (not sealed).
@@ -165,7 +163,7 @@ public sealed class PocketSystemPlacementTests
     {
         using var harness = new Harness();
         Assert.Equal(WorldContentStatus.Succeeded, harness.Provider.RegisterPocketSystem(
-            new PocketSystemDefinition("p", 1, "Cluster Entry", PocketSystemPlacement.OffMap, factionId: null, sectorName: "Wormhole Cluster")).Status);
+            new PocketSystemDefinition("p", 1, "Cluster Entry", PocketSystemPlacement.OffMap, factionId: null, sectorName: "Wormhole Cluster")));
         harness.BeginGameplay();
         var pocket = harness.Provider.CreatePocketSystem("p", "k1", "anchor")!;
         // The OffMap pocket allocates a remote subsector; its declared name must reach the native seam so
@@ -179,7 +177,7 @@ public sealed class PocketSystemPlacementTests
     {
         using var harness = new Harness();
         Assert.Equal(WorldContentStatus.Succeeded, harness.Provider.RegisterPocketSystem(
-            new PocketSystemDefinition("p", 1, "Pocket", PocketSystemPlacement.OwnSector)).Status);
+            new PocketSystemDefinition("p", 1, "Pocket", PocketSystemPlacement.OwnSector)));
         harness.BeginGameplay();
         var pocket = harness.Provider.CreatePocketSystem("p", "k1", "anchor")!;
         Assert.Equal(PocketSystemPlacement.OwnSector, Assert.Single(harness.Native.CreatedPlacements));
@@ -203,7 +201,7 @@ public sealed class PocketSystemPlacementTests
     {
         using var harness = new Harness();
         Assert.Equal(WorldContentStatus.Succeeded, harness.Provider.RegisterPocketSystem(
-            new PocketSystemDefinition("p", 1, "Cluster Entry")).Status);
+            new PocketSystemDefinition("p", 1, "Cluster Entry")));
         harness.BeginGameplay();
         var pocket = harness.Provider.CreatePocketSystem("p", "k1", "anchor")!;
         // The static Name (requirement 6) is written onto the authored system at create time.
@@ -216,7 +214,7 @@ public sealed class PocketSystemPlacementTests
     {
         using var harness = new Harness();
         Assert.Equal(WorldContentStatus.Succeeded, harness.Provider.RegisterPocketSystem(
-            new PocketSystemDefinition("p", 1, "Pocket", PocketSystemPlacement.OffMap, "Marauders")).Status);
+            new PocketSystemDefinition("p", 1, "Pocket", PocketSystemPlacement.OffMap, "Marauders")));
         harness.BeginGameplay();
         var pocket = harness.Provider.CreatePocketSystem("p", "k1", "anchor")!;
         Assert.Equal("Marauders", Assert.Single(harness.Native.CreatedFactionIds));

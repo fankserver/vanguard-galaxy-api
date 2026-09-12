@@ -57,24 +57,19 @@ public sealed class PocketSystemTests
     public void RegistrationIsPreSessionImmutableRevisionedAndKeyed()
     {
         using var harness = new Harness();
-        Assert.Equal(WorldContentStatus.Succeeded, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("sysA", 1, "Pocket")).Status);
-        Assert.Equal(WorldContentStatus.Rejected, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("sysA", 1, "Pocket")).Status);
-            Assert.Equal(RegistrationFailureReason.DuplicateDefinition, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("sysA", 1, "Pocket")).Reason);
-        Assert.Equal(WorldContentStatus.Rejected, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("sysBad", 0, "Pocket")).Status);
-            Assert.Equal(RegistrationFailureReason.InvalidDefinition, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("sysBad", 0, "Pocket")).Reason);
-        Assert.Equal(WorldContentStatus.Rejected, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("sysBad", 1, "  ")).Status);
-            Assert.Equal(RegistrationFailureReason.InvalidDefinition, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("sysBad", 1, "  ")).Reason);
+        Assert.Equal(WorldContentStatus.Succeeded, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("sysA", 1, "Pocket")));
+        Assert.Equal(WorldContentStatus.DuplicateDefinition, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("sysA", 1, "Pocket")));
+        Assert.Equal(WorldContentStatus.InvalidDefinition, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("sysBad", 0, "Pocket")));
+        Assert.Equal(WorldContentStatus.InvalidDefinition, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("sysBad", 1, "  ")));
         Assert.Equal(WorldContentStatus.Succeeded, harness.Provider.RegisterPocketSystem(
-            new PocketSystemDefinition("mig", 2, "New"), new PocketSystemDefinition("mig", 1, "Old")).Status);
-        Assert.Equal(WorldContentStatus.Rejected, harness.Provider.RegisterPocketSystem(
-            new PocketSystemDefinition("mig2", 2, "New"), new PocketSystemDefinition("mig2", 3, "Down")).Status);
-            Assert.Equal(RegistrationFailureReason.InvalidDefinition, harness.Provider.RegisterPocketSystem(
-            new PocketSystemDefinition("mig2", 2, "New"), new PocketSystemDefinition("mig2", 3, "Down")).Reason);
+            new PocketSystemDefinition("mig", 2, "New"), new PocketSystemDefinition("mig", 1, "Old")));
+        Assert.Equal(WorldContentStatus.InvalidDefinition, harness.Provider.RegisterPocketSystem(
+            new PocketSystemDefinition("mig2", 2, "New"), new PocketSystemDefinition("mig2", 3, "Down")));
         harness.BeginGameplay();
-        Assert.Equal(WorldContentStatus.NotReady, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("late", 1, "Pocket")).Status);
+        Assert.Equal(WorldContentStatus.NotReady, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("late", 1, "Pocket")));
     }
     private static void Register(Harness h) =>
-        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterPocketSystem(new PocketSystemDefinition("sysA", 1, "Pocket")).Status);
+        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterPocketSystem(new PocketSystemDefinition("sysA", 1, "Pocket")));
     private static IPocketSystem Create(Harness h, string key) => h.Provider.CreatePocketSystem("sysA", key, "anchor")!;
 
     [Fact]
@@ -340,8 +335,7 @@ public sealed class PocketSystemTests
         Register(harness);
         harness.BeginGameplay();
         harness.Provider.Dispose(); harness.Provider.Dispose();   // idempotent
-        Assert.Equal(WorldContentStatus.Unavailable, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("x", 1, "Pocket")).Status);
-            Assert.Equal(RegistrationFailureReason.UnknownProvider, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("x", 1, "Pocket")).Reason);
+        Assert.Equal(WorldContentStatus.UnknownProvider, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("x", 1, "Pocket")));
         Assert.Null(harness.Provider.CreatePocketSystem("sysA", "k1", "anchor"));
     }
 
@@ -401,7 +395,7 @@ public sealed class PocketSystemTests
         using (var migrate = new Harness())
         {
             Assert.Equal(WorldContentStatus.Succeeded, migrate.Provider.RegisterPocketSystem(
-                new PocketSystemDefinition("sysA", 2, "New"), new PocketSystemDefinition("sysA", 1, "Old")).Status);
+                new PocketSystemDefinition("sysA", 2, "New"), new PocketSystemDefinition("sysA", 1, "Old")));
             migrate.BeginGameplay();
             migrate.Coordinator.RestoreRows(migrate.Session, new[]
             {
@@ -417,7 +411,7 @@ public sealed class PocketSystemTests
         // Mismatch with no previous declared: a retained older revision is not silently adopted.
         using (var mismatch = new Harness())
         {
-            Assert.Equal(WorldContentStatus.Succeeded, mismatch.Provider.RegisterPocketSystem(new PocketSystemDefinition("sysA", 2, "New")).Status);
+            Assert.Equal(WorldContentStatus.Succeeded, mismatch.Provider.RegisterPocketSystem(new PocketSystemDefinition("sysA", 2, "New")));
             mismatch.BeginGameplay();
             mismatch.Coordinator.RestoreRows(mismatch.Session, new[]
             {

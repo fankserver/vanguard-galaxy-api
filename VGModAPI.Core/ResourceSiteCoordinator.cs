@@ -205,11 +205,11 @@ internal sealed class ResourceSiteCoordinator : IDisposable
         _hub.CheckThread();
         if (_disposed) return (WorldContentStatus.Unavailable, null);
         if (provider == null || !_definitions.TryResolve(provider, localId, out var declaration) || declaration == null)
-            return (WorldContentStatus.Rejected, null);
+            return (WorldContentStatus.NotRegistered, null);
         var key = (provider.Owner, localId, poiKey);
         if (_committed.TryGetValue(key, out var owned)) return (WorldContentStatus.Succeeded, owned);
         if (_failed.Contains(key)) return (WorldContentStatus.Rejected, null);
-        if (string.IsNullOrWhiteSpace(systemId) || WorldStateCodec.TextByteCount(systemId) > 128) return (WorldContentStatus.Rejected, null);
+        if (string.IsNullOrWhiteSpace(systemId) || WorldStateCodec.TextByteCount(systemId) > 128) return (WorldContentStatus.InvalidDefinition, null);
         if (_committed.Count >= WorldSerializationAssociation.MaxObjects) return (WorldContentStatus.Rejected, null);
         try
         {
@@ -236,11 +236,11 @@ internal sealed class ResourceSiteCoordinator : IDisposable
     {
         _hub.CheckThread();
         if (_disposed) return (WorldContentStatus.Unavailable, "Authored sites are unavailable.");
-        if (provider == null) return (WorldContentStatus.Rejected, "");
+        if (provider == null) return (WorldContentStatus.NotRegistered, "");
         var rowKey = (provider.Owner, local, key);
         // A creation that never produced a native POI is still an owned key; removing it frees the key.
         if (_failed.Remove(rowKey)) return (WorldContentStatus.Succeeded, "");
-        if (!_committed.TryGetValue(rowKey, out var row)) return (WorldContentStatus.Rejected, "");
+        if (!_committed.TryGetValue(rowKey, out var row)) return (WorldContentStatus.NotRegistered, "");
         // Resolve any attached authored dungeon poi before removal; the native location is no
         // longer discoverable once the POI is gone.
         Guid? attachedDungeon = null;

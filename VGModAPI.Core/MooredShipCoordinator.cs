@@ -197,11 +197,11 @@ internal sealed class MooredShipCoordinator : IDisposable
         _hub.CheckThread();
         if (_disposed) return (WorldContentStatus.Unavailable, null);
         if (provider == null || !_definitions.TryResolve(provider, localId, out var declaration) || declaration == null)
-            return (WorldContentStatus.Rejected, null);
+            return (WorldContentStatus.NotRegistered, null);
         var key = (provider.Owner, localId, unitKey);
         if (_committed.TryGetValue(key, out var owned)) return (WorldContentStatus.Succeeded, owned);
         if (_failed.Contains(key)) return (WorldContentStatus.Rejected, null);
-        if (string.IsNullOrWhiteSpace(stationPoiId) || WorldStateCodec.TextByteCount(stationPoiId) > 128) return (WorldContentStatus.Rejected, null);
+        if (string.IsNullOrWhiteSpace(stationPoiId) || WorldStateCodec.TextByteCount(stationPoiId) > 128) return (WorldContentStatus.InvalidDefinition, null);
         if (_committed.Count >= WorldSerializationAssociation.MaxObjects) return (WorldContentStatus.Rejected, null);
         try
         {
