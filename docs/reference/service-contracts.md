@@ -96,7 +96,7 @@ Access inventory through `ModApi.Services.Mods`, which implements
 `IModInformationService`. Saved-data integrity checks and supported schema migrations
 remain required. Host-test results do not establish precompiled binary support.
 
-The [service consumer examples](https://github.com/fankserver/vanguard-galaxy-api/tree/main/examples/ServiceConsumers)
+The [service consumer examples](https://github.com/fankserver/vanguard-galaxy-api/tree/main/examples/Observation/Consumers)
 compile during host tests. They demonstrate required mission observation, a genuinely
 optional assembly boundary, and additional custom save data. They are injected logic,
 not deployable BepInEx plugins; the optional loader experiment uses a host load context,

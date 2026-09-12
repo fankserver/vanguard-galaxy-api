@@ -6,22 +6,22 @@ Compile against `VGModAPI.Abstractions`, mark the reference non-copy-local, and 
 
 `make build` compiles the API and every example project. Examples are not deployed or included in the API package. BepInEx references belong in thin bootstrap projects; reusable game logic uses public abstractions. Consumer-owned UI may reference Unity and the optional `VGModAPI.Unity` bridge.
 
+Each example is one self-contained package: its own folder, its own project, and a README describing
+what it demonstrates. See the [examples index](../../examples/README.md).
+
 | Example | Demonstrated behavior |
 |---|---|
-| LifecycleObserver | Thin BepInEx bootstrap and observed lifecycle |
-| ServiceConsumers | Plain .NET mission/travel observers, additional custom counter save data and explicit immediate inventory movement |
-| OwnedStoryJob / OwnedStoryCampaign | Supported objectives, temporary job lifetime versus retained campaign outcomes, without a MissionJournal requirement |
-| OwnedWorldAuthorA / OwnedWorldAuthorB | Independent providers using the same local `PoiX` ID; persistent Combat sites, author-local occurrence keys and lookup after restoration |
-| OwnedGoodsAuthor | Fixed TradeGoods and recipe-first owned dependencies |
-| OwnedBarAuthorA / OwnedBarAuthorB | Independent bar providers and owned roster definitions |
-| ForgeInspector / ForgeInspectorHost | Plain .NET inspection/HUD actions plus thin host integration |
-| GameplayWindow | Gameplay UI lifecycle, owned Unity container and a window created later from a shared HUD launcher |
-| ExampleDungeon / DungeonAuthor | Example dungeon content and host bootstrap |
+| PocketWorlds | Pocket systems, wormhole pairs, placement, named subsectors, quiet traffic, static names, resource and combat sites, and full cleanup |
+| CargoRecovery | Authored boarding content plus contextual panel actions, command leases, tactical requests and observed settlement |
+| StoryMissions | Authored campaign and generated job, mixed objective kinds, declared choices, and a follow-up offered from a completion reaction |
+| StationCommerce | Owned trade goods, recipe-first owned dependencies, story-linked bar contacts, roster ownership, and two independent providers sharing local IDs |
+| UiSurfaces | Gameplay UI lifecycle with an owned Unity container, plus Unity-free Forge inspection and HUD actions |
+| Observation | Observed lifecycle, mission and travel facts, optional-dependency entry points and additional custom counter save data |
 | UpdateParticipant | Optional update metadata integration |
 
-World authors register definitions in Awake and create occurrences only from explicit gameplay logic with an existing system ID. They do not create sites automatically on every load. The two projects have different authenticated plugin IDs, so sharing a local ID or occurrence key cannot bind one owner's occurrence to the other. Persisted native identity, not a retained Unity object, determines restoration.
+Authors register definitions in **`Start()`**, not `Awake()`, and create occurrences only from explicit gameplay logic with an existing system ID. They do not create sites automatically on every load. BepInEx populates `Chainloader.PluginInfos[].Instance` only *after* a plugin's `Awake()` returns, and instance-authenticated providers (world, story, bars, items, recipes) resolve the caller against exactly that entry — acquiring one in `Awake()` returns null and silently registers nothing. Independently loaded projects have different authenticated plugin IDs, so sharing a local ID or occurrence key cannot bind one owner's occurrence to the other. Persisted native identity, not a retained Unity object, determines restoration.
 
-Supported owned story/world/item/recipe/dungeon data is saved by the API. Do not add provider save hooks, codecs or sidecar writers for those fields. `ServiceConsumers/CustomCounter.cs` deliberately shows a different concern: **additional custom mod information**, for which the generic save-data API is appropriate. See each domain contract for supported shapes, missing-provider handling and migrations; arbitrary custom gameplay state is not inferred from a registration.
+Supported owned story/world/item/recipe/dungeon data is saved by the API. Do not add provider save hooks, codecs or sidecar writers for those fields. `Observation/Consumers/CustomCounter.cs` deliberately shows a different concern: **additional custom mod information**, for which the generic save-data API is appropriate. See each domain contract for supported shapes, missing-provider handling and migrations; arbitrary custom gameplay state is not inferred from a registration.
 
 ## Integration boundaries and future official support
 
