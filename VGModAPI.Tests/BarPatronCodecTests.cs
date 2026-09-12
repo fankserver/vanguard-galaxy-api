@@ -30,6 +30,27 @@ public sealed class BarPatronCodecTests
         Assert.True(BarPatronCodec.Validate(bytes));
     }
 
+    /// <summary>
+    /// Definition and bound run are independent, so "offers a definition, not yet bound to a run" has
+    /// to survive a save. An absent run is written as Guid.Empty, which is a free sentinel because a
+    /// nonempty identity was always required before, so no existing payload can carry it.
+    /// </summary>
+    [Fact]
+    public void ADefinitionWithoutABoundRunRoundTrips()
+    {
+        var offered = new BarPatronState(new BarPatronId("campaign", "contact"), "CustomAct3RickoStation",
+            "Élodie", "A contact", "fixed-seed", new StoryMissionDefinitionId("campaign", "mission-x"));
+        Assert.Null(offered.MissionId);
+        var bytes = BarPatronCodec.Encode(new[] { offered });
+        Assert.True(BarPatronCodec.Validate(bytes));
+        var restored = Assert.Single(BarPatronCodec.Decode(bytes));
+        Assert.Equal(offered.Mission, restored.Mission);
+        Assert.Null(restored.MissionId);
+        // A bound run still round-trips to its exact identity alongside it.
+        var bound = Assert.Single(BarPatronCodec.Decode(BarPatronCodec.Encode(new[] { Row() })));
+        Assert.Equal(new Guid("01234567-1234-1234-1234-012345678901"), bound.MissionId);
+    }
+
     [Fact]
     public void DuplicateIdentitiesAndProviderCountLimitsRefuseWithoutTruncation()
     {

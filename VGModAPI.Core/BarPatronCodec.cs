@@ -38,7 +38,10 @@ internal static class BarPatronCodec
             if (row.Mission.HasValue)
             {
                 Write(writer, row.Mission.Value.LocalId);
-                writer.Write(row.MissionId!.Value.ToByteArray());
+                // Definition and bound run are independent. An absent run writes Guid.Empty, which is
+                // a free sentinel: a nonempty identity was always required before, so no existing
+                // payload can carry it and old data still decodes to exactly what it meant.
+                writer.Write((row.MissionId ?? Guid.Empty).ToByteArray());
             }
             if (row.Portrait != null)
             {
@@ -76,7 +79,8 @@ internal static class BarPatronCodec
                 mission = new StoryMissionDefinitionId(id.Provider, Read(reader, 48));
                 var bytes = reader.ReadBytes(16);
                 if (bytes.Length != 16) throw new InvalidDataException("Truncated patron mission.");
-                missionId = new Guid(bytes);
+                var bound = new Guid(bytes);
+                missionId = bound == Guid.Empty ? null : bound;
             }
             CharacterPortrait? portrait = null;
             if ((flags & 2) != 0)
