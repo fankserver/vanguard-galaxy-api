@@ -3,7 +3,22 @@ using System.Collections.Generic;
 
 namespace VGModAPI;
 
-public enum StoryMissionState { Offering, Offered, Active, Completed, Failed, Abandoned, Withdrawn, Unavailable, GameEnded }
+/// <summary>
+/// The real lifecycle state of an owned mission — one game-aligned axis. The three terminals use the
+/// same names as <see cref="StoryOutcome"/> because that is how the game tracks them: a mission stays
+/// in its <c>missions</c> list with a failed bool until it is completed/archived. Why a mission may
+/// not be actionable right now is NOT a state — read <see cref="IStoryMission.Availability"/> for
+/// the derived condition instead.
+/// </summary>
+public enum StoryMissionState { Offered, Active, Failed, Completed, Abandoned }
+
+/// <summary>
+/// A derived, never-persisted condition explaining whether a mission is actionable right now. The
+/// game does not store these (the session ending, a provider definition vanishing, an offer being
+/// withdrawn) — it derives them from the live session. They live on this orthogonal axis so they do
+/// not collide with the persisted <see cref="StoryMissionState"/>.
+/// </summary>
+public enum StoryAvailability { PendingOffering, Live, Withdrawn, Unavailable, GameEnded }
 public enum StoryActionStatus { Queued, Succeeded, Rejected, Unavailable, GameEnded }
 
 public sealed class StoryActionResult
@@ -59,6 +74,8 @@ public interface IStoryMission
     /// </summary>
     string? NativeMissionId { get; }
     StoryMissionState State { get; }
+    /// <summary>Derived, non-persisted condition (game ended / provider gone / withdrawn / not yet offered).</summary>
+    StoryAvailability Availability { get; }
     IReadOnlyDictionary<string, string> Choices { get; }
     StoryActionResult LastAction { get; }
     event Action<IStoryMission>? Changed;

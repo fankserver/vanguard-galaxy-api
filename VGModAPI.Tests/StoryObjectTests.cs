@@ -15,7 +15,7 @@ public sealed partial class StoryMissionTests
         using var intro = f.Register(); using var next = f.Register("next");
         f.Start();
         var mission = f.Game.Story.Offer(intro);
-        Assert.Equal(StoryMissionState.Offering, mission.State);
+        Assert.Equal(StoryAvailability.PendingOffering, mission.Availability);
         var activation = mission.Activate();
         Assert.Equal(StoryActionStatus.Queued, activation.Status);
         f.Tick();
@@ -32,7 +32,7 @@ public sealed partial class StoryMissionTests
         f.Complete(mission);
         Assert.Null(followup); Assert.Equal(StoryMissionState.Completed, mission.State);
         f.Tick();
-        Assert.NotNull(followup); Assert.Equal(StoryMissionState.Offering, followup.State);
+        Assert.NotNull(followup); Assert.Equal(StoryAvailability.PendingOffering, followup.Availability);
         f.Tick();
         Assert.Equal(StoryMissionState.Offered, followup.State);
         Assert.Equal(StoryActionStatus.Succeeded, followup.LastAction.Status);
@@ -104,7 +104,7 @@ public sealed partial class StoryMissionTests
         var game = f.Game; var mission = game.Story.Offer(definition); var activation = mission.Activate();
         var offer = mission.LastAction;
         f.Start();
-        Assert.Equal(StoryMissionState.GameEnded, mission.State);
+        Assert.Equal(StoryAvailability.GameEnded, mission.Availability);
         Assert.Equal(StoryActionStatus.GameEnded, activation.Status);
         Assert.Equal(StoryActionStatus.GameEnded, offer.Status);
         Assert.Equal(StoryActionStatus.GameEnded, mission.GetObjective("answer").SetProgress(1).Status);
@@ -121,7 +121,7 @@ public sealed partial class StoryMissionTests
         var mission = f.Game.Story.Offer(definition); mission.Activate(); f.Tick();
         definition.Accepted -= callback; f.Tick(); Assert.Equal(0, calls);
         definition.Completed += callback; f.Complete(mission); definition.Dispose(); f.Tick(); Assert.Equal(0, calls);
-        Assert.Equal(StoryMissionState.Unavailable, mission.State);
+        Assert.Equal(StoryAvailability.Unavailable, mission.Availability);
         Assert.Equal(StoryActionStatus.Unavailable, mission.Activate().Status);
     }
 
@@ -131,7 +131,7 @@ public sealed partial class StoryMissionTests
         using var f = new StoryObjectsFixture(); var definition = f.Register(); f.Start();
         var mission = f.Game.Story.Offer(definition); var result = mission.LastAction;
         definition.Dispose();
-        Assert.Equal(StoryMissionState.Unavailable, mission.State);
+        Assert.Equal(StoryAvailability.Unavailable, mission.Availability);
         Assert.Equal(StoryActionStatus.Unavailable, result.Status);
         var installs = f.World.Installs; f.Tick(); Assert.Equal(installs, f.World.Installs);
     }
@@ -174,7 +174,7 @@ public sealed partial class StoryMissionTests
         using var replacement = f.Register();
         var current = Assert.Single(f.Game.Story.GetMissions(replacement).Missions);
         Assert.NotSame(oldMission, current); Assert.Equal(oldMission.Id, current.Id);
-        Assert.Equal(StoryMissionState.Unavailable, oldMission.State);
+        Assert.Equal(StoryAvailability.Unavailable, oldMission.Availability);
         Assert.Equal(StoryActionStatus.Unavailable, oldMission.Activate().Status);
         current.Activate(); f.Tick(); Assert.Equal(StoryMissionState.Active, current.State);
     }
@@ -185,14 +185,14 @@ public sealed partial class StoryMissionTests
         using var f = new StoryObjectsFixture(); using var definition = f.Register(); f.Start();
         f.CustomData.Paused = true;
         var mission = f.Game.Story.Offer(definition); var activate = mission.Activate(); f.Tick();
-        Assert.Equal(StoryMissionState.Offering, mission.State); Assert.Equal(0, f.World.Accepts);
+        Assert.Equal(StoryAvailability.PendingOffering, mission.Availability); Assert.Equal(0, f.World.Accepts);
         f.CustomData.Paused = false; f.Tick(); Assert.Equal(StoryActionStatus.Succeeded, activate.Status);
         var completed = 0; definition.Completed += _ => completed++;
         f.CustomData.Paused = true; f.Complete(mission); f.Tick(); Assert.Equal(0, completed);
         f.CustomData.Paused = false; f.Tick(); Assert.Equal(1, completed);
         var pending = f.Game.Story.Offer(definition); var result = pending.LastAction;
         f.CustomData.Dispose(); Assert.Equal(StoryActionStatus.Unavailable, result.Status);
-        Assert.Equal(StoryMissionState.Unavailable, pending.State); f.Tick();
+        Assert.Equal(StoryAvailability.Unavailable, pending.Availability); f.Tick();
     }
 
     [Fact]

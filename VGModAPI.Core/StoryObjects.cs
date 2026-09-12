@@ -163,28 +163,35 @@ internal sealed partial class StoryMissionService
         public StoryActionResult LastAction
         { get { _scope.Service.CheckThread(); return _lastAction; } }
         public StoryMissionState State { get { _scope.Service.CheckThread(); return ReadState(); } }
+        public StoryAvailability Availability { get { _scope.Service.CheckThread(); return ReadAvailability(); } }
         public IReadOnlyDictionary<string, string> Choices { get { _scope.Service.CheckThread(); return _choices; } }
         private void CaptureChoices()
         {
             if (Game.IsActive && Owned.IsLive && _scope.Service._ledger.TryGet(MissionId, out var entry))
-                _choices = new ReadOnlyDictionary<string, string>((entry.State == StoryMissionLedgerState.Retired ? entry.Choices : entry.PendingChoices)
+                _choices = new ReadOnlyDictionary<string, string>((entry.State.IsTerminal() ? entry.Choices : entry.PendingChoices)
                     .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal));
         }
         public event Action<IStoryMission>? Changed { add => _changed.Add(value); remove => _changed.Remove(value); }
         private StoryMissionState ReadState()
         {
-            if (!Game.IsActive) return StoryMissionState.GameEnded;
-            if (!Owned.IsLive) return StoryMissionState.Unavailable;
-            if (_withdrawn) return StoryMissionState.Withdrawn;
-            if (MissionId == Guid.Empty) return Offering.Status == StoryActionStatus.Queued ? StoryMissionState.Offering : StoryMissionState.Unavailable;
-            if (!_scope.Service._ledger.TryGet(MissionId, out var entry)) return _published is StoryMissionState.Completed or StoryMissionState.Failed or StoryMissionState.Abandoned ? _published : StoryMissionState.Unavailable;
-            return entry.Outcome switch
-            {
-                StoryOutcome.Completed => StoryMissionState.Completed,
-                StoryOutcome.Failed => StoryMissionState.Failed,
-                StoryOutcome.Abandoned => StoryMissionState.Abandoned,
-                _ => entry.FailureObserved ? StoryMissionState.Failed : entry.State == StoryMissionLedgerState.Active ? StoryMissionState.Active : StoryMissionState.Offered
-            };
+            if (_scope.Service._ledger.TryGet(MissionId, out var entry))
+                return entry.Outcome switch
+                {
+                    StoryOutcome.Completed => StoryMissionState.Completed,
+                    StoryOutcome.Failed => StoryMissionState.Failed,
+                    StoryOutcome.Abandoned => StoryMissionState.Abandoned,
+                    _ => entry.FailureObserved ? StoryMissionState.Failed
+                       : entry.State == StoryMissionState.Active ? StoryMissionState.Active : StoryMissionState.Offered
+                };
+            return _published;
+        }
+        private StoryAvailability ReadAvailability()
+        {
+            if (!Game.IsActive) return StoryAvailability.GameEnded;
+            if (!Owned.IsLive) return StoryAvailability.Unavailable;
+            if (_withdrawn) return StoryAvailability.Withdrawn;
+            if (MissionId == Guid.Empty) return Offering.Status == StoryActionStatus.Queued ? StoryAvailability.PendingOffering : StoryAvailability.Unavailable;
+            return _scope.Service._ledger.TryGet(MissionId, out _) ? StoryAvailability.Live : StoryAvailability.Unavailable;
         }
         internal void Refresh(bool force = false)
         {

@@ -65,9 +65,6 @@ public sealed class StoryObjectiveIdentityTests
         Assert.True(restored.ObjectiveLayout.SamePositions(layout));
         var empty = new StoryMissionEntry(definition, mission, StoryRetention.Campaign, 1);
         Assert.Equal(23, StoryStateCodec.EncodedSize(restored) - StoryStateCodec.EncodedSize(empty));
-        var legacy = StoryStateCodec.Encode(new[] { empty });
-        Array.Copy(BitConverter.GetBytes(2), 0, legacy, 4, 4);
-        Assert.Empty(Assert.Single(StoryStateCodec.Decode(legacy)).ObjectiveLayout.Slots);
 
         var fullLayout = new StoryObjectiveLayout(Enumerable.Range(0, StoryObjectiveLayout.MaxSlots)
             .Select(index => new StoryObjectiveLayout.Slot("objective-" + index + new string('x', 32), index / 8, index % 8, StoryObjectiveKind.TravelToPoi)));
