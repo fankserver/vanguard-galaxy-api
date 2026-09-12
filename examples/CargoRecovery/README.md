@@ -36,7 +36,7 @@ suitable vanilla derelict for the example to have anything to show.
    that is simply retried, not a failure.
 4. Board it, take the shipment choice, request extraction, watch settlement.
 5. **Remove derelict** releases the enterable hold, checks `CanRemove()`, and removes the site: the
-   native POI, its derelict station, its save row and the attached cargo occurrence all go. Your
+   native POI, its derelict station, its save row and the attached cargo dungeon all go. Your
    system is left exactly as it was found — no leftover POI, no extra system, no gate. If you are
    still at it (or boarding it), removal is queued for the next safe cleanup window instead.
 
@@ -45,12 +45,12 @@ suitable vanilla derelict for the example to have anything to show.
 | Ability | How the example uses it |
 |---|---|
 | **Authored dungeon content** (`IDungeonProvider.Register`) | A three-compartment derelict: airlock → cargo hold (with a defender) → locked control room. |
-| **Authored choices** | A discovered cargo-room event offering "Recover shipment" (crew-gated, yields loot) or "Leave shipment". Choice effects and occurrence state are saved by the API. |
+| **Authored choices** | A discovered cargo-room event offering "Recover shipment" (crew-gated, yields loot) or "Leave shipment". Choice effects and dungeon state are saved by the API. |
 | **Authored boarding target** (`CreateResourceSite` + `withStation`) | The example supplies its own derelict station in the player's current system rather than waiting for a suitable vanilla one. World creation is a separate service from dungeon content, so this composes the two. |
 | **Held enterable** (`KeepEnterable`) | The authored objective cannot be invalidated by ambient damage before the player arrives; the hold is released on cleanup. |
 | **Attachment by installation** (`Attach(IDungeonInstallation)`) | Attaches by persistent installation identity, which exists before any boarding target does — never by display-name matching. `StaleTarget` is treated as "not there yet", not as an error. |
-| **Full cleanup** (`Remove` / `CanRemove` / `RequestRemoval`) | One button removes the POI, the station, the save row and the attached cargo occurrence. `Remove()` is the plain removal and does **not** check player safety, so the example asks `CanRemove()` first and falls back to `RequestRemoval()`, which completes at the next safe cleanup window. |
-| **Restored occurrences** (`SavedOccurrences`) | Reads API-restored occurrence state rather than keeping a private ledger. |
+| **Full cleanup** (`Remove` / `CanRemove` / `RequestRemoval`) | One button removes the POI, the station, the save row and the attached cargo dungeon. `Remove()` is the plain removal and does **not** check player safety, so the example asks `CanRemove()` first and falls back to `RequestRemoval()`, which completes at the next safe cleanup window. |
+| **Restored dungeons** (`SavedDungeons`) | Reads API-restored dungeon state rather than keeping a private ledger. |
 | **Contextual panel actions** (`IDungeonPanelService.RegisterAction`) | Per-target extraction control whose identity includes the target generation, so helpers for distinct targets coexist. |
 | **Command leases** (`AcquireControl`) | Control is acquired **only on activation** and always released; another controller owning the target is reported as a typed refusal, never a forced takeover. |
 | **Tactical requests** (`IDungeonTacticalService`) | Requests extraction only — confirmation, crew arrival and settlement stay separate concerns. |
@@ -64,7 +64,7 @@ suitable vanilla derelict for the example to have anything to show.
 
 | File | Role |
 |---|---|
-| `CargoEncounter.cs` | The authored encounter: layout, choices, attach/choose, restored occurrences. |
+| `CargoEncounter.cs` | The authored encounter: layout, choices, attach/choose, restored dungeons. |
 | `CargoEncounterPanel.cs` | Optional per-target controls: panel action, command lease, tactics, settlement. |
 | `DerelictSite.cs` | Authors the boarding target itself: a salvage site with a guaranteed derelict station, and its teardown. |
 | `CargoAuthorSession.cs` | Main-thread consumer wiring, and the isolation rule. |

@@ -39,7 +39,7 @@ HUD and panel registrations use a plain plugin-id string instead, but every exam
 same rule so nothing depends on which identity a given service happens to use.
 
 **The API owns persistence.** No example registers a save hook, codec or sidecar writer for
-API-owned content; definitions are declared once and the API restores occurrences, progress and
+API-owned content; definitions are declared once and the API restores missions, progress and
 choices. The one deliberate exception is `Observation/Consumers/CustomCounter.cs`, which persists
 *additional custom mod data* — a different concern, and the correct use of the generic save-data API.
 

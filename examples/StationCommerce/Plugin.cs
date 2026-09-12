@@ -127,7 +127,7 @@ public sealed class Plugin : BaseUnityPlugin
                 "An independently authored contact who deals in containers.",
                 new BarPatronPresentation("station-commerce-" + Variant, CharacterPortrait.Named(PortraitName), isMale: PatronIsMale),
                 BarPatronRetention.Persistent,
-                _errand == null ? null : new StoryContentId(_story!.ProviderId, LinkedStoryDef)),
+                _errand == null ? null : new StoryMissionDefinitionId(_story!.ProviderId, LinkedStoryDef)),
             _ => { _interactions++; RefreshPanel(); });
         _patronStatus = result.Status + " @ " + (station.Name ?? station.Id);
     }

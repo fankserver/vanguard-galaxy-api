@@ -16,7 +16,7 @@ assemblies to demonstrate authenticated provider composition.
 | **Cross-provider references** | `RecipeItemReference.FromOwned` points at this plugin's own item; `RecipeItemReference.Vanilla` points at a base-game material. |
 | **Bar contacts** (`IBarProvider.Register`) | A persistent patron with a seeded presentation and a named portrait. The API places the declared contact once the game and its save data are ready — there is **no per-session placement call**. |
 | **Real station discovery** | The station id comes from `game.Navigation.GetStations(visitedOnly: true)`, never an invented GUID. |
-| **Story-linked contacts** (`StoryContentId`) | A small errand is registered through the story provider and linked to the patron, composing two owned providers inside one plugin. |
+| **Story-linked contacts** (`StoryMissionDefinitionId`) | A small errand is registered through the story provider and linked to the patron, composing two owned providers inside one plugin. |
 | **Roster ownership** (`ConfigureStation`) | `Additive` keeps the vanilla roster; `Exclusive` requests sole ownership and is refused unless permitted explicitly in the API configuration. |
 | **Interaction callbacks** | The patron's interact callback increments a counter — deliberately process-local example behavior, *not* persisted narrative state. |
 | **Independent providers, same local IDs** | Variants **A** and **B** register identical author-local IDs (`silo-container`, `contact`, …). Neither can touch the other's rows: the API scopes every declaration to the provider that registered it. |

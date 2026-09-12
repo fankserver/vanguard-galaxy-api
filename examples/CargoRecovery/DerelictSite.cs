@@ -101,7 +101,7 @@ public sealed class DerelictSite : IDisposable
 
     /// <summary>
     /// Full cleanup: removing the site takes its native POI, its derelict station and its save row,
-    /// and drops the attached cargo occurrence.
+    /// and drops the attached cargo dungeon.
     ///
     /// `Remove()` is the PLAIN native removal - it refuses only on integrity grounds and deliberately
     /// does NOT check transient player-safety conditions, so calling it blind could tear the station
@@ -147,7 +147,7 @@ public sealed class DerelictSite : IDisposable
     { var hold = _enterable; _enterable = null; hold?.Dispose(); _installation = null; }
 
     /// <summary>
-    /// Drops handles belonging to a session that has ended. An occurrence from an ended session keeps
+    /// Drops handles belonging to a session that has ended. A POI handle from an ended session keeps
     /// its last observed state forever and never resolves against the replacement save, so holding it
     /// would make the HUD report a derelict that no longer exists.
     /// </summary>
@@ -158,7 +158,7 @@ public sealed class DerelictSite : IDisposable
     }
 
     /// <summary>
-    /// Re-obtains the occurrence for the live game after a load. The API restored it from save data;
+    /// Re-obtains the site for the live game after a load. The API restored it from save data;
     /// this only re-acquires a handle to it, and creates nothing.
     ///
     /// A queued <see cref="IResourceSite.RequestRemoval"/> does NOT survive session replacement: the

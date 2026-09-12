@@ -50,7 +50,7 @@ public sealed class Plugin : BaseUnityPlugin
             _derelict = new DerelictSite(_world, () => _session?.Encounter, message => Logger.LogInfo(message));
         if (_session != null) _session.OwnInstallation = () => _derelict?.Installation;
         _travel = ModApi.Services.Travel;
-        // Occurrence handles belong to one session: drop them when it ends and re-obtain after a load,
+        // POI handles belong to one session: drop them when it ends and re-obtain after a load,
         // or the HUD reports a derelict the replacement save never had.
         _lifecycle = ModApi.Services.Lifecycle;
         _lifecycle.Changed += OnLifecycle;

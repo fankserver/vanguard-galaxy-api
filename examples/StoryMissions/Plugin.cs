@@ -14,7 +14,7 @@ namespace StoryMissions;
 ///   register (Start) -> Offer -> Activate -> SetProgress -> DeclareChoices -> Completed -> follow-up
 ///
 /// The API owns persistence. This plugin has no save hook, serializer or load callback: definitions
-/// are registered once, and the API restores occurrences, progress and declared choices itself.
+/// are registered once, and the API restores missions, progress and declared choices itself.
 /// </summary>
 [BepInPlugin(Id, "Story Missions example", "1.0.0")]
 [BepInDependency(ModApi.PluginId, "0.2.10")]
@@ -153,9 +153,9 @@ public sealed class Plugin : BaseUnityPlugin
                     clickable: _activeJob == null),
                 new HudRow("abandon", "Abandon active missions",
                     "withdraw whatever is active",
-                    "Abandon reports a typed result rather than silently dropping the occurrence.",
+                    "Abandon reports a typed result rather than silently dropping the mission.",
                     clickable: _activeCampaign != null || _activeJob != null),
-                new HudRow("status", StatusLine(), "Live occurrence state; follow-ups offered so far: " + _followUpsOffered),
+                new HudRow("status", StatusLine(), "Live mission state; follow-ups offered so far: " + _followUpsOffered),
             },
             closable: false));
     }

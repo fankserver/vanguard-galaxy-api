@@ -28,7 +28,7 @@ register (Start)  ->  Offer  ->  Activate  ->  SetProgress  ->  DeclareChoices  
 | **Absolute progress** (`SetProgress`) | Progress is read from the snapshot and set absolutely. `Progress` is nullable — unknown is reported as unknown, never assumed to be zero. |
 | **Gameplay reactions** (`Completed`) | Completing the campaign offers the follow-up **in the game that produced the event** (`mission.Game`) — no current-game lookup and no session token. |
 | **Typed results** | Offer/activate/abandon results are surfaced in the status line instead of being treated as fire-and-forget. |
-| **No provider persistence** | No save hook, serializer or load callback anywhere: the API restores occurrences, progress and choices. |
+| **No provider persistence** | No save hook, serializer or load callback anywhere: the API restores missions, progress and choices. |
 
 `StoryReactions.cs` keeps the same pattern in its smallest possible form — a definition-scoped
 `Completed` subscription that offers a follow-up through the completed mission's own game — for
