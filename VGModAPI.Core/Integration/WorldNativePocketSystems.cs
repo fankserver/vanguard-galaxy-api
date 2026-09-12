@@ -352,7 +352,7 @@ internal sealed class WorldNativePocketSystems : IPocketSystemNative
     private bool _system_IsInstance(object value) => value.GetType().FullName == PocketSystemBindings.System;
 
     /// <summary>
-    /// Verifies a dissolution changed membership by EXACTLY the removed pocket system, the parent-side
+    /// Verifies a removal changed membership by EXACTLY the removed pocket system, the parent-side
     /// entrance gate and the POIs parented to the pocket — and removed nothing else and added nothing.
     /// </summary>
     internal static bool VerifyRemoveDelta(WorldMapIndex.Snapshot before, WorldMapIndex.Snapshot after,

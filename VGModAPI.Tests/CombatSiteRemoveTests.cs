@@ -102,7 +102,7 @@ public sealed class CombatSiteRemoveTests
     }
 
     [Fact]
-    public void PlayerAtTheSiteRefusesDissolutionAndRetainsTheKey()
+    public void PlayerAtTheSiteRefusesRemovalAndRetainsTheKey()
     {
         using var h = new Harness();
         h.BeginGameplay();
@@ -120,7 +120,7 @@ public sealed class CombatSiteRemoveTests
     }
 
     [Fact]
-    public void NativelyAbsentSiteRefusesDissolutionWithoutDroppingTheKey()
+    public void NativelyAbsentSiteRefusesRemovalWithoutDroppingTheKey()
     {
         using var h = new Harness();
         h.BeginGameplay();

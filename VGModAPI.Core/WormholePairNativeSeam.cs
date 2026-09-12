@@ -11,7 +11,7 @@ internal sealed class WormholePairInfo
     { FirstPoiId = firstPoiId; SecondPoiId = secondPoiId; Open = open; }
 }
 
-/// <summary>Typed outcome of a native wormhole-pair dissolution attempt.</summary>
+/// <summary>Typed outcome of a native wormhole-pair removal attempt.</summary>
 internal enum WormholeRemoveOutcome
 {
     /// <summary>Both wormhole POIs were removed from their systems; the pair is gone from the live map.</summary>

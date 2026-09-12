@@ -12,7 +12,7 @@ internal sealed class PocketSystemInfo
     { SystemId = systemId; EntranceGateId = entranceGateId; PocketGateId = pocketGateId; }
 }
 
-/// <summary>Typed outcome of a native pocket dissolution attempt.</summary>
+/// <summary>Typed outcome of a native pocket removal attempt.</summary>
 internal enum PocketRemoveOutcome
 {
     /// <summary>The pocket system, both paired gates and its contained POIs were removed from the live map.</summary>

@@ -184,7 +184,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
         }
     }
     /// <summary>
-    /// After a successful native pocket dissolution: drop the retained authored-site rows inside the
+    /// After a successful native pocket removal: drop the retained authored-site rows inside the
     /// removed system (their native POIs were removed with it) and let every provider terminally mark
     /// and release its owned occurrence objects for that pocket.
     /// </summary>
@@ -1265,7 +1265,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             {
                 _service._hub.CheckThread();
                 if (GateAction() is { } refused) return refused;
-                // Never orphan combat-site records: their removal is not supported, so their presence refuses dissolution.
+                // Never orphan combat-site records: their removal is not supported, so their presence refuses removal.
                 var row = _service._authoredCoordinator!.TryGetOccurrence(_authored.Owner, _localId, _occurrenceKey);
                 if (row != null && _service._authoring != null)
                 {
@@ -1278,7 +1278,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                             "The pocket still contains combat sites; they cannot be removed with it.");
                 }
                 // Never orphan wormhole-pair occurrences: a wormhole with an endpoint inside the pocket would lose
-                // its pocket-side POI on remove and leave a permanently-failed persisted row, so its presence refuses dissolution.
+                // its pocket-side POI on remove and leave a permanently-failed persisted row, so its presence refuses removal.
                 if (row != null && _service._wormholeCoordinator != null
                     && _service._wormholeCoordinator.AnyOccurrenceInSystem(row.SystemId))
                     return _lastAction = new WorldContentResult(WorldContentStatus.Rejected,

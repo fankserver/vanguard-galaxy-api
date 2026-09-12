@@ -20,7 +20,7 @@ internal sealed class WorldAuthoringGate
         var record = _creation.Find(session, identity);
         return record != null && _definitions.MatchesRetained(record.Definition) ? record : null;
     }
-    /// <summary>Whether any retained combat-site record lives in the given system (dissolution guard). Null while the inventory is not ready to answer.</summary>
+    /// <summary>Whether any retained combat-site record lives in the given system (removal guard). Null while the inventory is not ready to answer.</summary>
     internal bool? AnyInSystem(string systemId)
     {
         WorldSnapshotInstance[] records;

@@ -5,7 +5,7 @@ using Xunit;
 namespace VGModAPI.Tests;
 
 /// <summary>
-/// Native authored-site dissolution is a structural membership delta: exactly the owned site POI
+/// Native authored-site removal is a structural membership delta: exactly the owned site POI
 /// leaves its host system and nothing else changes. A leftover survivor, an accidental extra
 /// removal, a new POI, or a claimed identity that was never present are all refused so the caller
 /// rolls back rather than leaving the map half-edited.

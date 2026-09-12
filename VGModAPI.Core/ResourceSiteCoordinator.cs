@@ -90,7 +90,7 @@ internal interface IResourceSiteNative
     void EndPass();
 }
 
-/// <summary>Typed outcome of a native authored-site dissolution attempt.</summary>
+/// <summary>Typed outcome of a native authored-site removal attempt.</summary>
 internal enum ResourceSiteRemoveOutcome
 {
     /// <summary>The site POI was removed from its host system; it is gone from the live map.</summary>

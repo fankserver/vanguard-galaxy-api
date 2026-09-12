@@ -114,7 +114,7 @@ public sealed class PocketSystemRemoveTests
     }
 
     [Fact]
-    public void PlayerInsideThePocketRefusesDissolutionAndRetainsTheInstance()
+    public void PlayerInsideThePocketRefusesRemovalAndRetainsTheInstance()
     {
         using var harness = new Harness();
         var pocket = harness.CreatePocket();
@@ -133,7 +133,7 @@ public sealed class PocketSystemRemoveTests
     }
 
     [Fact]
-    public void NativelyAbsentPocketRefusesDissolutionWithoutDroppingTheRow()
+    public void NativelyAbsentPocketRefusesRemovalWithoutDroppingTheRow()
     {
         using var harness = new Harness();
         var pocket = harness.CreatePocket();
@@ -216,7 +216,7 @@ public sealed class PocketSystemRemoveTests
     }
 
     [Fact]
-    public void CombatSitesInsideThePocketRefuseDissolutionUntilTheInventoryCanProveAbsence()
+    public void CombatSitesInsideThePocketRefuseRemovalUntilTheInventoryCanProveAbsence()
     {
         using var harness = new Harness(withCombatGate: true);
         var pocket = harness.CreatePocket();
@@ -224,7 +224,7 @@ public sealed class PocketSystemRemoveTests
         var notReady = pocket.Remove();
         Assert.Equal(WorldContentStatus.NotReady, notReady.Status);
         Assert.Single(harness.Coordinator.CaptureRows());
-        // A retained combat-site record inside the pocket refuses dissolution outright.
+        // A retained combat-site record inside the pocket refuses removal outright.
         harness.Creation!.Reset(harness.Session);
         var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
         var row = new WorldSnapshotInstance(new object(), identity, pocket.SystemId!,

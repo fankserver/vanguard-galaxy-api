@@ -338,10 +338,10 @@ identity.
 
 The action is refused while the player's current system, current location or a waypoint is
 inside the pocket. Relocation or rescue behavior belongs to the consumer mod: move the player
-out, clear the route, then call `Remove` again. Dissolution is also refused while the pocket
+out, clear the route, then call `Remove` again. Removal is also refused while the pocket
 contains persistent Combat-site occurrences, because that older content surface has no removal
 operation. These refusals leave the pocket and its save data unchanged. Expiry scheduling is
-consumer logic; the API supplies the safe dissolution operation rather than a timer.
+consumer logic; the API supplies the safe removal operation rather than a timer.
 
 ### Reconstruction and failures
 
@@ -452,7 +452,7 @@ var result = rift.Remove(); // WorldContentResult: Succeeded / Refused (typed re
 if (result.Succeeded) { /* both wormhole ends are gone; the key can be recreated */ }
 ```
 
-Dissolution is refused (`Refused`) while the player's current location or any waypoint is at
+Removal is refused (`Refused`) while the player's current location or any waypoint is at
 either wormhole end, and when the pair is already gone or the session has ended. On success the
 owned row is dropped, so the occurrence key becomes reusable in the same session. This matters
 for authored cleanup: a pocket system that is still a wormhole endpoint cannot remove, so to
