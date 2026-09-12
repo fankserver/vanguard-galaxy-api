@@ -1,6 +1,6 @@
 using System;
 using System.Linq;
-using ForgeInspector;
+using UiSurfaces;
 using Xunit;
 
 namespace VGModAPI.Tests;

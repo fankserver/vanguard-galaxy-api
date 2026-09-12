@@ -175,7 +175,7 @@ public sealed class DungeonServiceTests
     [Fact]
     public void CargoRecoveryExampleCreatesIndependentSavedAuthoredContent()
     {
-        using var f = new Fixture(); using var example = new ExampleDungeon.CargoRecovery(f.Public, "recovery", "native-item");
+        using var f = new Fixture(); using var example = new CargoRecovery.CargoEncounter(f.Public, "recovery", "native-item");
         var first = example.Attach(f.Target).DungeonId!.Value;
         var second = example.Attach(f.Target).DungeonId!.Value;
         Assert.NotEqual(first, second);

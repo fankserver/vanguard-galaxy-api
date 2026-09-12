@@ -97,7 +97,7 @@ clears the cache. Resolution failures do not disable other launchers or the HUD.
 For a panel-footer action, an optional resolved icon appears alongside the label;
 loading never hides that footer label. Its `Corner` is ignored while its panel exists.
 
-The [GameplayWindow example](https://github.com/fankserver/vanguard-galaxy-api/tree/main/examples/GameplayWindow)
+The [UiSurfaces example](https://github.com/fankserver/vanguard-galaxy-api/tree/main/examples/UiSurfaces)
 uses a top-right storage launcher and a separately owned window container.
 
 ## Presentation is separate from recipe data
@@ -124,4 +124,4 @@ var view = new HudRecipeView("Cannon", new[] { ingredient });
 registration.Update(new HudButton("Show in Forge"), view.ToPanel());
 ```
 
-Use resource identifiers from the catalog rather than guessing display-name identifiers. The consumer decides which quantities to display, when to refresh, whether to include a result, and what row/header actions mean. Batch allocation, producer choice and pin lifetime are not shared presentation policy. Successful recipe selection should not be rendered as a technical status message. The ForgeInspector example demonstrates a quote snapshot using this view.
+Use resource identifiers from the catalog rather than guessing display-name identifiers. The consumer decides which quantities to display, when to refresh, whether to include a result, and what row/header actions mean. Batch allocation, producer choice and pin lifetime are not shared presentation policy. Successful recipe selection should not be rendered as a technical status message. The UiSurfaces example demonstrates a quote snapshot using this view.

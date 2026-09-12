@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Independent example author (variant A). Variant B is the same source built again with
+       AUTHOR_B into a second assembly with a different BepInEx ID, which is what makes the
+       "two independent providers, same local IDs" demonstration real. It is never part of the
+       shipped API package; the package check refuses any unexpected file. -->
+  <PropertyGroup><TargetFramework>netstandard2.1</TargetFramework><IsPackable>false</IsPackable></PropertyGroup>
+  <ItemGroup>
+    <!-- Variant B lives in a subfolder and builds the same Plugin.cs itself; keep its project and
+         build output out of this project's default source glob. -->
+    <Compile Remove="AuthorB/**" />
+    <ProjectReference Include="../../VGModAPI.Abstractions/VGModAPI.Abstractions.csproj" Private="false" />
+    <Reference Include="BepInEx"><HintPath>../../VGModAPI/lib/BepInEx.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine"><HintPath>../../VGModAPI/lib/UnityEngine.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>../../VGModAPI/lib/UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>

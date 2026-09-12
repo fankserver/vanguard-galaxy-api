@@ -112,7 +112,7 @@ icons fixed screen coordinates. The shared corner layouts handle ordering and pl
 mods. Clear session-specific presentation at teardown; HUD registrations and UI
 containers deliberately have different lifetimes.
 
-The compiling [GameplayWindow example](https://github.com/fankserver/vanguard-galaxy-api/tree/main/examples/GameplayWindow)
+The compiling [UiSurfaces example](https://github.com/fankserver/vanguard-galaxy-api/tree/main/examples/UiSurfaces)
 shows subscribe-then-query, a container retained across player actions, a window created
 only when its shared HUD button is clicked, and cleanup on host loss and plugin unload.
 No Harmony patch, native component lookup or polling is needed in the consumer.

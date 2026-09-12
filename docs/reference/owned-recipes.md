@@ -16,4 +16,4 @@ Item/recipe references mark a native snapshot as API-required, including a recip
 
 Revisions coexist without aliasing old jobs to new costs, durations or outputs. Retired/provider-absent recipes remain available internally to already-saved jobs, but are not newly unlocked in the Forge. Provider disposal retires declarations without destroying hosts referenced by live jobs. Existing jobs continue using the saved definition; this fixed-data shape requires the API and its vanilla dependencies, not provider executable code. No arbitrary save migration or safe-uninstall promise is made.
 
-The [OwnedGoodsAuthor example](../../examples/OwnedGoodsAuthor/Plugin.cs) registers a recipe before its item and contains no save/load plumbing. It declares content only; it does not start crafting or modify player inventory automatically.
+The [StationCommerce example](../../examples/StationCommerce/Plugin.cs) registers a recipe before its item and contains no save/load plumbing. It declares content only; it does not start crafting or modify player inventory automatically.

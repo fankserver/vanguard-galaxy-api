@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Independent example author demonstrating authored boarding content plus optional contextual
+       control and observed settlement. It is never part of the shipped API package; the package
+       check refuses any unexpected file.
+
+       CargoEncounter.cs / CargoEncounterPanel.cs deliberately use public contracts only and touch no
+       Unity or BepInEx type, so a consumer can lift them into a non-Unity assembly. The repository
+       host tests compile exactly those two files without BepInEx to keep that property honest. -->
+  <PropertyGroup><TargetFramework>netstandard2.1</TargetFramework><IsPackable>false</IsPackable></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../VGModAPI.Abstractions/VGModAPI.Abstractions.csproj" Private="false" />
+    <Reference Include="BepInEx"><HintPath>../../VGModAPI/lib/BepInEx.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine"><HintPath>../../VGModAPI/lib/UnityEngine.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>../../VGModAPI/lib/UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>
