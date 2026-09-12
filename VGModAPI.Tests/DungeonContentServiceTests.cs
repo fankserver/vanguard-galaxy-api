@@ -213,4 +213,36 @@ public sealed class DungeonContentServiceTests
         id = provider.Attach("id", f.Target).OccurrenceId!.Value;
         Assert.Equal(DungeonContentStatus.Unavailable, provider.Choose(id, "event", "choice").Status); Assert.Equal(0, f.Applied);
     }
+    [Fact]
+    public void UnavailableDetailNamesTheClosedServiceGate()
+    {
+        using var f = new Fixture();
+        using var provider = f.Service.AcquireProvider("owner");
+        using var registration = provider.Register("content", Definition(), _ =>
+        { f.Hub.SetCapability("dungeon-content", false, "Fault.", ServiceUnavailableReason.ObserverFault); return true; });
+        var id = provider.Attach("content", f.Target).OccurrenceId!.Value;
+        var result = provider.Choose(id, "event", "choice");
+        Assert.Equal(DungeonContentStatus.Unavailable, result.Status);
+        // The detail names the actual gate (the service binding fault), not a bare enum name.
+        Assert.Contains("ObserverFault", result.Detail, StringComparison.Ordinal);
+        Assert.Contains("Fault.", result.Detail, StringComparison.Ordinal);
+    }
+    [Fact]
+    public void UnavailableDetailNamesASpecificInjectedMutationGate()
+    {
+        using var hub = new LifecycleHub((_, _) => { });
+        hub.Begin(SessionOrigin.SaveLoad, "save"); hub.PlayerReady(hub.CurrentSession!.Id);
+        hub.SetCapability("dungeon-content", true, "Test bindings.");
+        var bindings = new DungeonContentBindings(
+            (_, _) => DungeonContentStatus.Attached, (_, _) => { }, (_, _, _) => DungeonContentStatus.ChoiceApplied, (_, _, _) => { }, _ => null);
+        using var service = new DungeonContentService(hub, new(_ => true, _ => true, _ => true),
+            new DungeonStateStore(hub, new Persistence()), bindings, (_, _) => { },
+            mutationBlocked: () => true, mutationBlockReason: () => "Boarding combat is evaluating");
+        using var provider = service.AcquireProvider("owner");
+        using var registration = provider.Register("content", Definition(), _ => true);
+        var result = provider.Choose(Guid.NewGuid(), "event", "choice");
+        Assert.Equal(DungeonContentStatus.Unavailable, result.Status);
+        // With no service-level gate closed, the detail comes from the injected mutation gate.
+        Assert.Contains("Boarding combat", result.Detail, StringComparison.Ordinal);
+    }
 }

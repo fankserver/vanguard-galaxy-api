@@ -34,13 +34,14 @@ internal sealed class DungeonContentService : IDungeonContentService, IDisposabl
     private DungeonContentBindings _native => _bindings ?? throw new InvalidOperationException("Dungeon bindings unavailable.");
     private readonly Action<string, Exception> _diagnose;
     private readonly Func<bool> _mutationBlocked;
+    private readonly Func<string?>? _mutationBlockReason;
     private readonly Dictionary<string, Provider> _providers = new(StringComparer.Ordinal);
     private bool _disposed, _closing;
     private int _callbacks;
     internal DungeonContentService(LifecycleHub hub, DungeonDefinitionRegistry? registry, DungeonStateStore? state,
-        DungeonContentBindings? native, Action<string, Exception> diagnose, Func<bool>? mutationBlocked = null)
+        DungeonContentBindings? native, Action<string, Exception> diagnose, Func<bool>? mutationBlocked = null, Func<string?>? mutationBlockReason = null)
     {
-        _hub = hub; _definitions = registry; _store = state; _bindings = native; _diagnose = diagnose; _mutationBlocked = mutationBlocked ?? (() => false);
+        _hub = hub; _definitions = registry; _store = state; _bindings = native; _diagnose = diagnose; _mutationBlocked = mutationBlocked ?? (() => false); _mutationBlockReason = mutationBlockReason;
         _status = hub.Services.Get("dungeon-content");
         if ((registry == null || state == null || native == null) && Availability.IsAvailable) hub.SetCapability("dungeon-content", false, "Dungeon bindings unavailable.");
     }
@@ -94,8 +95,35 @@ internal sealed class DungeonContentService : IDungeonContentService, IDisposabl
             ? Choose(provider, id, eventId, choiceId) : Result(DungeonContentStatus.MissingDefinition);
     }
     private bool MutationBlocked => _disposed || _closing || !Availability.IsAvailable || _bindings == null || _store == null || _callbacks != 0 || _mutationBlocked();
+
+    /// <summary>Names the specific gate that is currently blocking a mutation, so an <c>Unavailable</c>
+    /// result carries the real cause instead of collapsing every fence into a bare enum name. Walks the
+    /// same conditions as <see cref="MutationBlocked"/> and reports the first one that closed.</summary>
+    private string UnavailableDetail()
+    {
+        if (_disposed) return "The dungeon content service is disposed.";
+        if (_closing) return "The dungeon content service is closing.";
+        if (!Availability.IsAvailable)
+            return "Dungeon content is unavailable (" + Availability.Reason
+                + (Availability.Detail.Length > 0 ? ": " + Availability.Detail : "") + ").";
+        if (_bindings == null) return "Native dungeon bindings are not loaded.";
+        if (_store == null) return "Dungeon save data is not loaded.";
+        if (_callbacks != 0) return "Not actionable while callbacks are dispatching.";
+        return _mutationBlockReason?.Invoke()
+            ?? "A persistent mutation fence is closed (a dungeon recovery/return step, settlement dispatch, reward evaluation, or boarding evaluation is in progress).";
+    }
     private bool Live(Provider provider) => !_disposed && _providers.TryGetValue(provider.Id, out var current) && ReferenceEquals(current, provider);
-    private DungeonContentResult Result(DungeonContentStatus status, Guid? id = null) => new(status, status.ToString(), id);
+    private DungeonContentResult Result(DungeonContentStatus status, Guid? id = null)
+    {
+        var detail = status switch
+        {
+            DungeonContentStatus.Unavailable => UnavailableDetail(),
+            DungeonContentStatus.PersistenceUnavailable
+                => "Persisted dungeon state cannot be mutated right now (save not ready, a serialization/checkpoint is in progress, or callbacks are dispatching).",
+            _ => status.ToString()
+        };
+        return new(status, detail, id);
+    }
     private DungeonContentResult Attach(Provider provider, string localId, BoardingHandle target)
     {
         _hub.CheckThread(); if (!Live(provider) || MutationBlocked) return Result(DungeonContentStatus.Unavailable);
