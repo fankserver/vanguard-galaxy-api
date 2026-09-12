@@ -2,6 +2,17 @@
 
 `ModApi.Services.World` initializes automatically and remains a stable, non-null service. Provider authentication refuses when required bindings or persistence are unavailable. Register declarations before starting a session; create persistent Combat sites once the session and automatic persistence owners are ready.
 
+> **Removing authored content — pick the safe path by default.** Every owned kind
+> (`ICombatSite`, `IResourceSite`, `IWormholePair`, `IPocketSystem`) exposes the same three-way
+> teardown surface: `Remove()` is the **plain** native removal (it refuses only when removal would
+> be impossible or corrupt save state — it deliberately does **not** check transient conditions
+> like the player being at/in the content, a live boarding op, a persisted interior, or a
+> `KeepEnterable` hold), `CanRemove()` is a pure readiness query, and `RequestRemoval()` defers the
+> teardown to the next safe cleanup window. Lifelong, safety-conscious mods should call
+> **`RequestRemoval()`** and let the window act once `CanRemove()` is `Ready`; use **`CanRemove()`**
+> to inspect *why* something isn't removable (for relocation/rescue messaging); reserve **`Remove()`**
+> for ownership-confident teardown when you already know the content is clear.
+
 ## Declaration facade
 
 Acquire `IWorldProvider` directly from the loaded plugin assembly and register immutable `CombatSiteDefinition` values before starting a session. Definitions identify local content, revision, display name, an existing faction ID and level. Same-owner duplicate declarations are rejected; registration does not create a POI. The authenticated lease owns its declarations and must be disposed on provider teardown.
