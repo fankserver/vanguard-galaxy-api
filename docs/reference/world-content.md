@@ -15,7 +15,7 @@ same three-way teardown surface. The kind sections below only add what is specif
   longer resolve it, save data records intentional absence instead of a reconstruction failure,
   and the freed occurrence key authors fresh content with fresh native identity. A refusal leaves
   the content and its save data unchanged.
-- **`CanRemove()`** — a pure readiness query (no mutation) returning `WorldContentRemovalStatus`:
+- **`CanRemove()`** — a pure readiness query (no mutation) returning `RemovalStatus`:
   `Ready`, `PlayerInside`, `BoardingActive`, `InteriorPersisted`, `HeldEnterable`, `NotPresent`,
   `CombatSitesPresent`, `WormholeEndpoint`, `SessionEnded`, `NotReady` or `Unavailable`. Use it to
   decide whether to act and to tell the player *why* content is not removable yet.
@@ -30,7 +30,7 @@ re-issue `RequestRemoval()`.
 
 ## Declaration facade
 
-Acquire `IWorldProvider` directly from the loaded plugin assembly and register immutable `CombatSiteDefinition` values before starting a session. Definitions identify local content, revision, display name, an existing faction ID and level. Same-owner duplicate declarations are rejected; registration does not create a POI. The authenticated lease owns its declarations and must be disposed on provider teardown.
+Acquire `IWorldProvider` directly from the loaded plugin assembly and register immutable `CombatSiteDefinition` values before starting a session. Definitions identify local content, revision, display name, an existing faction ID and level. A declaration returns a `RegistrationResult` (`WorldContentStatus` + an optional `RegistrationFailureReason`); same-owner duplicate declarations are rejected with `DuplicateDefinition`. Registration does not create a POI. The authenticated lease owns its declarations and must be disposed on provider teardown.
 
 `CreateCombatSite(localId, poiKey, systemId, x, y)` creates — or reconciles — an owned
 persistent combat site in the current game, following the uniform occurrence contract shared with
@@ -539,7 +539,7 @@ be removable. Site-specific behavior on top of the shared surface:
 var result = site.Remove();
 if (!result.Succeeded) log(result.Detail); // typed refusal, nothing removed
 // Or, to remove on the next safe window once the conditions clear:
-if (site.CanRemove() != WorldContentRemovalStatus.Ready) site.RequestRemoval();
+if (site.CanRemove() != RemovalStatus.Ready) site.RequestRemoval();
 ```
 
 ## Moored authored ships

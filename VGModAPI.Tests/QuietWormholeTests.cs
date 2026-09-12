@@ -54,8 +54,8 @@ public sealed class QuietWormholeTests
         ambient.SetAvailable(true);
         using var service = new WorldContentService(hub, combat, null!, () => true, null, ambient, null, null, systems, coordinator);
         using var provider = service.AcquireProvider(plugin)!;
-        Assert.Equal(WorldStatus.Succeeded, provider.RegisterPocketSystem(
-            new PocketSystemDefinition("p", 1, "Quiet Cluster", PocketSystemPlacement.Visible, factionId: null, sectorName: null, quiet: true)));
+        Assert.Equal(WorldContentStatus.Succeeded, provider.RegisterPocketSystem(
+            new PocketSystemDefinition("p", 1, "Quiet Cluster", PocketSystemPlacement.Visible, factionId: null, sectorName: null, quiet: true)).Status);
         var session = hub.Begin(SessionOrigin.NewGame, null);
         hub.PlayerReady(session); hub.GameplayInitialized(session);
         var pocket = provider.CreatePocketSystem("p", "k", "anchor")!;
@@ -77,8 +77,8 @@ public sealed class QuietWormholeTests
     public void QuietPairQuietsBothEndsAndRemoveReleasesTheQuieting()
     {
         using var harness = new Harness();
-        Assert.Equal(WorldStatus.Succeeded, harness.Provider.RegisterWormholePair(
-            new WormholePairDefinition("rift", 1, "Rift", quiet: true)));
+        Assert.Equal(WorldContentStatus.Succeeded, harness.Provider.RegisterWormholePair(
+            new WormholePairDefinition("rift", 1, "Rift", quiet: true)).Status);
         harness.Begin();
 
         var pair = harness.Provider.CreateWormholePair("rift", "k1", "sys-a", "sys-b");
@@ -105,8 +105,8 @@ public sealed class QuietWormholeTests
     public void AnOrdinaryPairLeavesVanillaTrafficAlone()
     {
         using var harness = new Harness();
-        Assert.Equal(WorldStatus.Succeeded, harness.Provider.RegisterWormholePair(
-            new WormholePairDefinition("rift", 1, "Rift")));
+        Assert.Equal(WorldContentStatus.Succeeded, harness.Provider.RegisterWormholePair(
+            new WormholePairDefinition("rift", 1, "Rift")).Status);
         harness.Begin();
 
         var pair = harness.Provider.CreateWormholePair("rift", "k1", "sys-a", "sys-b");

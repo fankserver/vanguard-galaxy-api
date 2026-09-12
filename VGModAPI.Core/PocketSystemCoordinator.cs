@@ -111,23 +111,23 @@ internal sealed class PocketSystemCoordinator : IDisposable
         string localId, string poiKey, string anchorSystemId)
     {
         _hub.CheckThread();
-        if (_disposed) return new PocketSystemResult(WorldStatus.Unavailable);
+        if (_disposed) return new PocketSystemResult(WorldContentStatus.Unavailable);
         if (provider == null || !_definitions.TryResolve(provider, localId, out var definition) || definition == null)
-            return new PocketSystemResult(WorldStatus.NotRegistered);
-        if (string.IsNullOrWhiteSpace(poiKey)) return new PocketSystemResult(WorldStatus.InvalidDefinition);
+            return new PocketSystemResult(WorldContentStatus.Rejected, reason: RegistrationFailureReason.NotRegistered);
+        if (string.IsNullOrWhiteSpace(poiKey)) return new PocketSystemResult(WorldContentStatus.Rejected, reason: RegistrationFailureReason.InvalidDefinition);
         var key = (provider.Owner, localId, poiKey);
         var reference = new PocketSystemReference(provider.Owner, localId, poiKey);
         if (_committed.TryGetValue(key, out var owned))
         {
             var reconciled = Reconcile(owned);
-            if (reconciled == null) return new PocketSystemResult(WorldStatus.Rejected, reference);
-            return new PocketSystemResult(WorldStatus.Succeeded, reference, reconciled.SystemId, reconciled.EntranceGateId, reconciled.PocketGateId);
+            if (reconciled == null) return new PocketSystemResult(WorldContentStatus.Rejected, reference);
+            return new PocketSystemResult(WorldContentStatus.Succeeded, reference, reconciled.SystemId, reconciled.EntranceGateId, reconciled.PocketGateId);
         }
-        if (_pending.TryGetValue(key, out var attempted)) return new PocketSystemResult(WorldStatus.Rejected, reference,
+        if (_pending.TryGetValue(key, out var attempted)) return new PocketSystemResult(WorldContentStatus.Rejected, reference,
             attempted.SystemId, attempted.EntranceGateId, attempted.PocketGateId);
         // Fail at Create (not save-time) once the owned envelope reaches its encode bound (1024 rows).
         if (_committed.Count + _pending.Count >= WorldSerializationAssociation.MaxObjects)
-            return new PocketSystemResult(WorldStatus.Rejected, reference);
+            return new PocketSystemResult(WorldContentStatus.Rejected, reference);
         // Allocate native identity only here; never adopt a foreign or ambiguous native identity.
         try
         {
@@ -135,14 +135,14 @@ internal sealed class PocketSystemCoordinator : IDisposable
             if (info == null)
             {
                 _pending[key] = Failing(provider.Owner, localId, poiKey, definition.Revision);
-                return new PocketSystemResult(WorldStatus.Rejected, reference);
+                return new PocketSystemResult(WorldContentStatus.Rejected, reference);
             }
             var poi = new PocketSystemPoi(provider.Owner, localId, poiKey, definition.Revision,
                 info.SystemId, info.EntranceGateId, info.PocketGateId, declaredOpen: false);
             _committed[key] = poi;
-            return new PocketSystemResult(WorldStatus.Succeeded, reference, info.SystemId, info.EntranceGateId, info.PocketGateId);
+            return new PocketSystemResult(WorldContentStatus.Succeeded, reference, info.SystemId, info.EntranceGateId, info.PocketGateId);
         }
-        catch (Exception error) { _report(error); return new PocketSystemResult(WorldStatus.Unavailable, reference); }
+        catch (Exception error) { _report(error); return new PocketSystemResult(WorldContentStatus.Unavailable, reference); }
     }
     private static PocketSystemPoi Failing(string owner, string localId, string key, int revision)
         => new(owner, localId, key, revision, PendingSystemId(localId, key), "pending-entrance", "pending-pocket", declaredOpen: false);
@@ -154,21 +154,21 @@ internal sealed class PocketSystemCoordinator : IDisposable
         return "pending." + BitConverter.ToString(hash, 0, 12).Replace("-", "").ToLowerInvariant();
     }
 
-    internal WorldStatus SetOpen(PocketSystemRegistry.Provider provider, Guid expectedSession, PocketSystemReference reference, bool open)
+    internal WorldContentStatus SetOpen(PocketSystemRegistry.Provider provider, Guid expectedSession, PocketSystemReference reference, bool open)
     {
         _hub.CheckThread();
-        if (_disposed) return WorldStatus.Unavailable;
-        if (reference == null || provider == null || reference.ProviderId != provider.Owner) return WorldStatus.NotRegistered;
+        if (_disposed) return WorldContentStatus.Unavailable;
+        if (reference == null || provider == null || reference.ProviderId != provider.Owner) return WorldContentStatus.Rejected;
         if (!_committed.TryGetValue((provider.Owner, reference.LocalId, reference.PoiKey), out var poi))
-            return WorldStatus.NotRegistered;
+            return WorldContentStatus.Rejected;
         try
         {
             // Apply to the native gate first; only commit the declared persistence state once the apply succeeds.
-            if (!_native.ApplyOpen(expectedSession, poi.EntranceGateId, poi.PocketGateId, open)) return WorldStatus.Rejected;
+            if (!_native.ApplyOpen(expectedSession, poi.EntranceGateId, poi.PocketGateId, open)) return WorldContentStatus.Rejected;
             poi.DeclaredOpen = open;
-            return WorldStatus.Succeeded;
+            return WorldContentStatus.Succeeded;
         }
-        catch (Exception error) { _report(error); return WorldStatus.Unavailable; }
+        catch (Exception error) { _report(error); return WorldContentStatus.Unavailable; }
     }
 
     /// <summary>
@@ -176,14 +176,14 @@ internal sealed class PocketSystemCoordinator : IDisposable
     /// save data no longer reconstructs it and the key becomes creatable again. A failed-creation
     /// pending row has no native pocket and is simply dropped. Refusals leave the row untouched.
     /// </summary>
-    internal (WorldStatus Status, string Detail, string? SystemId) Remove(PocketSystemRegistry.Provider provider, Guid expectedSession, PocketSystemReference reference)
+    internal (WorldContentStatus Status, string Detail, string? SystemId) Remove(PocketSystemRegistry.Provider provider, Guid expectedSession, PocketSystemReference reference)
     {
         _hub.CheckThread();
-        if (_disposed) return (WorldStatus.Unavailable, "Resource systems are unavailable.", null);
-        if (reference == null || provider == null || reference.ProviderId != provider.Owner) return (WorldStatus.NotRegistered, "", null);
+        if (_disposed) return (WorldContentStatus.Unavailable, "Resource systems are unavailable.", null);
+        if (reference == null || provider == null || reference.ProviderId != provider.Owner) return (WorldContentStatus.Rejected, "", null);
         var key = (provider.Owner, reference.LocalId, reference.PoiKey);
-        if (_pending.Remove(key)) return (WorldStatus.Succeeded, "", null); // failed creation: nothing native exists
-        if (!_committed.TryGetValue(key, out var poi)) return (WorldStatus.NotRegistered, "", null);
+        if (_pending.Remove(key)) return (WorldContentStatus.Succeeded, "", null); // failed creation: nothing native exists
+        if (!_committed.TryGetValue(key, out var poi)) return (WorldContentStatus.Rejected, "", null);
         try
         {
             var outcome = _native.RemovePocket(expectedSession, poi.SystemId, poi.EntranceGateId, poi.PocketGateId);
@@ -191,28 +191,28 @@ internal sealed class PocketSystemCoordinator : IDisposable
             {
                 case PocketRemoveOutcome.Removed:
                     _committed.Remove(key);
-                    return (WorldStatus.Succeeded, "", poi.SystemId);
+                    return (WorldContentStatus.Succeeded, "", poi.SystemId);
                 case PocketRemoveOutcome.Missing:
-                    return (WorldStatus.Rejected, "The pocket is not currently present natively; wait for reconstruction or check its state.", null);
+                    return (WorldContentStatus.Rejected, "The pocket is not currently present natively; wait for reconstruction or check its state.", null);
                 default:
-                    return (WorldStatus.Rejected, "The native removal could not be performed or verified.", null);
+                    return (WorldContentStatus.Rejected, "The native removal could not be performed or verified.", null);
             }
         }
-        catch (Exception error) { _report(error); return (WorldStatus.Unavailable, "The native removal faulted.", null); }
+        catch (Exception error) { _report(error); return (WorldContentStatus.Unavailable, "The native removal faulted.", null); }
     }
 
     /// <summary>Pure readiness for removing the owned pocket (no mutation): Ready, PlayerInside,
     /// NotPresent or Unavailable. Never mutates native state.</summary>
-    internal WorldContentRemovalStatus CanRemove(PocketSystemRegistry.Provider provider, Guid expectedSession, PocketSystemReference reference)
+    internal RemovalStatus CanRemove(PocketSystemRegistry.Provider provider, Guid expectedSession, PocketSystemReference reference)
     {
         _hub.CheckThread();
-        if (_disposed) return WorldContentRemovalStatus.Unavailable;
-        if (reference == null || provider == null || reference.ProviderId != provider.Owner) return WorldContentRemovalStatus.Unavailable;
+        if (_disposed) return RemovalStatus.Unavailable;
+        if (reference == null || provider == null || reference.ProviderId != provider.Owner) return RemovalStatus.Unavailable;
         var key = (provider.Owner, reference.LocalId, reference.PoiKey);
-        if (_pending.ContainsKey(key)) return WorldContentRemovalStatus.Ready; // failed creation: nothing native exists
-        if (!_committed.TryGetValue(key, out var poi)) return WorldContentRemovalStatus.NotPresent;
+        if (_pending.ContainsKey(key)) return RemovalStatus.Ready; // failed creation: nothing native exists
+        if (!_committed.TryGetValue(key, out var poi)) return RemovalStatus.NotPresent;
         try { return _native.Readiness(expectedSession, poi.SystemId, poi.EntranceGateId, poi.PocketGateId); }
-        catch (Exception error) { _report(error); return WorldContentRemovalStatus.Unavailable; }
+        catch (Exception error) { _report(error); return RemovalStatus.Unavailable; }
     }
 
     internal PocketSystemState ReconstructionState(PocketSystemRegistry.Provider provider, PocketSystemReference reference)

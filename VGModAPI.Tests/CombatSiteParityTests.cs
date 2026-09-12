@@ -155,8 +155,8 @@ public sealed class CombatSiteParityTests
     public void CombatKeysRefuseCrossKindKeyCollisionsAtCreation()
     {
         using var h = new Harness();
-        Assert.Equal(WorldStatus.Succeeded, h.Provider.RegisterResourceSite(
-            ResourceSiteDefinition.Salvage("wreck", 1, "Failed Refuge", 8, "Monsoon", "Fanatics")));
+        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(
+            ResourceSiteDefinition.Salvage("wreck", 1, "Failed Refuge", 8, "Monsoon", "Fanatics")).Status);
         h.BeginGameplay();
         // A combat key already claims this (local, key); the authored-site creation must refuse it.
         h.Service.RestoreCombatKeys(h.Session, new[] { new CombatSiteKeyRow("author.a", "wreck", "act2-refuge", Guid.NewGuid()) });

@@ -129,24 +129,24 @@ internal sealed class WorldNativeAttachment
     }
 
     /// <summary>
-    /// Pure readiness report for removing this owned POI: <see cref="WorldContentRemovalStatus.Ready"/>,
-    /// <see cref="WorldContentRemovalStatus.PlayerInside"/>,
-    /// <see cref="WorldContentRemovalStatus.NotPresent"/>, or
-    /// <see cref="WorldContentRemovalStatus.Unavailable"/> when the world cannot be inspected. Never
+    /// Pure readiness report for removing this owned POI: <see cref="RemovalStatus.Ready"/>,
+    /// <see cref="RemovalStatus.PlayerInside"/>,
+    /// <see cref="RemovalStatus.NotPresent"/>, or
+    /// <see cref="RemovalStatus.Unavailable"/> when the world cannot be inspected. Never
     /// mutates native state.
     /// </summary>
-    internal WorldContentRemovalStatus Readiness(Guid session, WorldSnapshotInstance record)
+    internal RemovalStatus Readiness(Guid session, WorldSnapshotInstance record)
     {
         if (record == null) throw new ArgumentNullException(nameof(record));
-        if (!_game.TryGetCurrentReadyPlayer(session, out var player)) return WorldContentRemovalStatus.Unavailable;
+        if (!_game.TryGetCurrentReadyPlayer(session, out var player)) return RemovalStatus.Unavailable;
         var map = _map.GetValue(player);
-        if (map == null) return WorldContentRemovalStatus.Unavailable;
+        if (map == null) return RemovalStatus.Unavailable;
         var before = _index.Read(map);
         var system = before.FindSystem(record.SystemId);
         if (system == null || !ReferenceEquals(before.FindPoint(record.Identity.NativeId), record.Native) ||
-            !ReferenceEquals(_parent.GetValue(record.Native), system)) return WorldContentRemovalStatus.NotPresent;
-        if (PlayerIsAt(player, record.Native)) return WorldContentRemovalStatus.PlayerInside;
-        return WorldContentRemovalStatus.Ready;
+            !ReferenceEquals(_parent.GetValue(record.Native), system)) return RemovalStatus.NotPresent;
+        if (PlayerIsAt(player, record.Native)) return RemovalStatus.PlayerInside;
+        return RemovalStatus.Ready;
     }
 
     private bool PlayerIsAt(object? player, object poi)

@@ -50,7 +50,7 @@ public sealed class CombatSiteRemoveTests
             Register();
         }
         internal CombatSiteDefinition Definition => new("PoiX", 1, "Contested Site", FactionId, 2);
-        private void Register() => Assert.Equal(WorldStatus.Succeeded, Provider.RegisterCombatSite(Definition));
+        private void Register() => Assert.Equal(WorldContentStatus.Succeeded, Provider.RegisterCombatSite(Definition).Status);
 
         internal void BeginGameplay()
         {
@@ -109,7 +109,7 @@ public sealed class CombatSiteRemoveTests
         var site = h.Provider.CreateCombatSite("PoiX", "encounter", "system", 10, 20)!;
         GamePlayer.current!.currentPointOfInterest = (MapPointOfInterest)h.Host.pointsOfInterest[0];
         // Readiness reports the occupancy; Remove itself is plain and proceeds regardless.
-        Assert.Equal(WorldContentRemovalStatus.PlayerInside, site.CanRemove());
+        Assert.Equal(RemovalStatus.PlayerInside, site.CanRemove());
         Assert.True(site.Remove().Succeeded);
         Assert.Equal(ReconstructionStatus.Removed, site.State.Status);
         Assert.Empty(h.Host.pointsOfInterest);
@@ -127,10 +127,10 @@ public sealed class CombatSiteRemoveTests
         Assert.Equal(WorldContentStatus.Succeeded, site.RequestRemoval().Status); // queued
         Assert.Single(h.Host.pointsOfInterest); // still present; the window won't act while occupied
         Assert.Equal(ReconstructionStatus.Reconstructed, site.State.Status);
-        Assert.True(site.CanRemove() == WorldContentRemovalStatus.PlayerInside);
+        Assert.True(site.CanRemove() == RemovalStatus.PlayerInside);
         // The player leaves; the next cleanup window completes the deferred removal.
         GamePlayer.current.currentPointOfInterest = null;
-        Assert.True(site.CanRemove() == WorldContentRemovalStatus.Ready);
+        Assert.True(site.CanRemove() == RemovalStatus.Ready);
         h.Service.MaintainPocketSystems(h.Session);
         Assert.Equal(ReconstructionStatus.Removed, site.State.Status);
         Assert.Contains("completed at a cleanup window", site.LastAction.Detail, StringComparison.OrdinalIgnoreCase);

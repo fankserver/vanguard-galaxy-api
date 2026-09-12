@@ -191,28 +191,28 @@ internal sealed class MooredShipCoordinator : IDisposable
     internal bool ContainsUnit(string owner, string localId, string unitKey)
     { _hub.CheckThread(); return TryGetUnit(owner, localId, unitKey) != null || _failed.Contains((owner, localId, unitKey)); }
 
-    internal (WorldStatus Status, MooredShipUnit? Row) Create(MooredShipRegistry.Provider provider,
+    internal (WorldContentStatus Status, MooredShipUnit? Row) Create(MooredShipRegistry.Provider provider,
         Guid expectedSession, string localId, string unitKey, string stationPoiId)
     {
         _hub.CheckThread();
-        if (_disposed) return (WorldStatus.Unavailable, null);
+        if (_disposed) return (WorldContentStatus.Unavailable, null);
         if (provider == null || !_definitions.TryResolve(provider, localId, out var declaration) || declaration == null)
-            return (WorldStatus.NotRegistered, null);
+            return (WorldContentStatus.Rejected, null);
         var key = (provider.Owner, localId, unitKey);
-        if (_committed.TryGetValue(key, out var owned)) return (WorldStatus.Succeeded, owned);
-        if (_failed.Contains(key)) return (WorldStatus.Rejected, null);
-        if (string.IsNullOrWhiteSpace(stationPoiId) || WorldStateCodec.TextByteCount(stationPoiId) > 128) return (WorldStatus.InvalidDefinition, null);
-        if (_committed.Count >= WorldSerializationAssociation.MaxObjects) return (WorldStatus.Rejected, null);
+        if (_committed.TryGetValue(key, out var owned)) return (WorldContentStatus.Succeeded, owned);
+        if (_failed.Contains(key)) return (WorldContentStatus.Rejected, null);
+        if (string.IsNullOrWhiteSpace(stationPoiId) || WorldStateCodec.TextByteCount(stationPoiId) > 128) return (WorldContentStatus.Rejected, null);
+        if (_committed.Count >= WorldSerializationAssociation.MaxObjects) return (WorldContentStatus.Rejected, null);
         try
         {
             var unitId = _native.CreateShip(expectedSession, stationPoiId, declaration);
-            if (unitId == null) { _failed.Add(key); return (WorldStatus.Rejected, null); }
+            if (unitId == null) { _failed.Add(key); return (WorldContentStatus.Rejected, null); }
             var unit = new MooredShipUnit(provider.Owner, localId, unitKey, declaration.Revision, stationPoiId, unitId);
             _committed[key] = unit;
             if (declaration.Protect) TryProtect(unit);
-            return (WorldStatus.Succeeded, unit);
+            return (WorldContentStatus.Succeeded, unit);
         }
-        catch (Exception error) { _report(error); return (WorldStatus.Unavailable, null); }
+        catch (Exception error) { _report(error); return (WorldContentStatus.Unavailable, null); }
     }
 
     internal MooredShipState ReconstructionState(string owner, string localId, string unitKey)

@@ -186,7 +186,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
     }
 
     /// <summary>Sweep for <c>RequestRemoval</c> pois: completes a deferred removal once the world
-    /// is safely actionable and the poi reports <see cref="WorldContentRemovalStatus.Ready"/>,
+    /// is safely actionable and the poi reports <see cref="RemovalStatus.Ready"/>,
     /// mirroring the game's ambient cleanup window. A request persists until its conditions clear;
     /// it is evicted when the removal completes, and evicted (abandoned) when the owning session is
     /// replaced/ends, because a handle bound to an ended session can never act again.
@@ -372,20 +372,20 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             }
         }
         public string ProviderId => _provider.Owner;
-        public WorldStatus RegisterCombatSite(CombatSiteDefinition definition, CombatSiteDefinition? previous = null)
+        public RegistrationResult RegisterCombatSite(CombatSiteDefinition definition, CombatSiteDefinition? previous = null)
         {
             _service._hub.CheckThread();
-            if (_disposed || _service._disposed) return WorldStatus.UnknownProvider;
-            if (_service._hub.CurrentSession != null) return WorldStatus.NotReady;
-            if (definition == null) return WorldStatus.InvalidDefinition;
+            if (_disposed || _service._disposed) return new RegistrationResult(WorldContentStatus.Unavailable, RegistrationFailureReason.UnknownProvider);
+            if (_service._hub.CurrentSession != null) return new RegistrationResult(WorldContentStatus.NotReady);
+            if (definition == null) return new RegistrationResult(WorldContentStatus.Rejected, RegistrationFailureReason.InvalidDefinition);
             try
             {
                 var native = new WorldCombatDefinition(definition.LocalId, definition.Revision, definition.Name, definition.FactionId, definition.Level);
-                if (_service._definitions.TryResolve(_provider, native.LocalId, out _)) return WorldStatus.DuplicateDefinition;
+                if (_service._definitions.TryResolve(_provider, native.LocalId, out _)) return new RegistrationResult(WorldContentStatus.Rejected, RegistrationFailureReason.DuplicateDefinition);
                 var prior = previous == null ? null : new WorldCombatDefinition(previous.LocalId, previous.Revision, previous.Name, previous.FactionId, previous.Level);
-                return _provider.Register(native, prior) ? WorldStatus.Succeeded : WorldStatus.Rejected;
+                return new RegistrationResult(_provider.Register(native, prior) ? WorldContentStatus.Succeeded : WorldContentStatus.Rejected);
             }
-            catch (ArgumentException) { return WorldStatus.InvalidDefinition; }
+            catch (ArgumentException) { return new RegistrationResult(WorldContentStatus.Rejected, RegistrationFailureReason.InvalidDefinition); }
         }
         /// <summary>Uniform poi-key contract: bounded, no control characters.</summary>
         internal static bool ValidPoiKey(string? key)
@@ -457,14 +457,14 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             // Keyed reconciliation: an existing poi under this key is the poi; never a duplicate.
             var existing = FindPersistentCombatSite(session.Id, new CombatSiteReference(ProviderId, localId, instanceId));
             var result = existing.Succeeded ? existing : CreatePersistentCombatSite(session.Id, localId, instanceId, systemId, x, y);
-            if (result.Status is not (WorldStatus.Succeeded or WorldStatus.Rejected)) return null;
-            if (result.Status == WorldStatus.Succeeded)
+            if (result.Status is not (WorldContentStatus.Succeeded or WorldContentStatus.Rejected)) return null;
+            if (result.Status == WorldContentStatus.Succeeded)
             {
                 _service.EnsureCombatKeySession(session.Id);
                 _service._combatKeys[(ProviderId, localId, poiKey)] = new CombatSiteKeyRow(ProviderId, localId, poiKey, instanceId);
             }
             var handle = ObtainSite(localId, poiKey, session.Id);
-            handle.RecordAction(result.Status == WorldStatus.Succeeded
+            handle.RecordAction(result.Status == WorldContentStatus.Succeeded
                 ? new WorldContentResult(WorldContentStatus.Succeeded)
                 : new WorldContentResult(WorldContentStatus.Rejected, "The native site could not be created."));
             handle.Refresh();
@@ -496,53 +496,53 @@ internal sealed class WorldContentService : IWorldService, IDisposable
         public CombatSiteResult FindPersistentCombatSite(Guid expectedSessionId, CombatSiteReference reference)
         {
             _service._hub.CheckThread();
-            if (_disposed || _service._disposed) return new CombatSiteResult(WorldStatus.UnknownProvider);
-            if (reference == null || reference.ProviderId != ProviderId) return new CombatSiteResult(WorldStatus.NotRegistered);
-            if (!_service._canAuthor() || _disposed || _service._disposed) return new CombatSiteResult(WorldStatus.Unavailable);
-            if (expectedSessionId == Guid.Empty || _service._hub.CurrentSession?.Id != expectedSessionId) return new CombatSiteResult(WorldStatus.NotReady);
+            if (_disposed || _service._disposed) return new CombatSiteResult(WorldContentStatus.Unavailable, reason: RegistrationFailureReason.UnknownProvider);
+            if (reference == null || reference.ProviderId != ProviderId) return new CombatSiteResult(WorldContentStatus.Rejected, reason: RegistrationFailureReason.NotRegistered);
+            if (!_service._canAuthor() || _disposed || _service._disposed) return new CombatSiteResult(WorldContentStatus.Unavailable);
+            if (expectedSessionId == Guid.Empty || _service._hub.CurrentSession?.Id != expectedSessionId) return new CombatSiteResult(WorldContentStatus.NotReady);
             try
             {
                 var record = _service._authoring.TryFind(_provider, expectedSessionId, reference.LocalId, reference.InstanceId,
                     () => !_disposed && !_service._disposed && _service._canAuthor() && !_disposed && !_service._disposed);
-                return record == null ? new CombatSiteResult(WorldStatus.NotRegistered) :
-                    new CombatSiteResult(WorldStatus.Succeeded, new CombatSiteReference(record.Identity.Owner, record.Identity.LocalId, record.Identity.InstanceId), record.Identity.NativeId);
+                return record == null ? new CombatSiteResult(WorldContentStatus.Rejected, reason: RegistrationFailureReason.NotRegistered) :
+                    new CombatSiteResult(WorldContentStatus.Succeeded, new CombatSiteReference(record.Identity.Owner, record.Identity.LocalId, record.Identity.InstanceId), record.Identity.NativeId);
             }
-            catch (ArgumentException) { return new CombatSiteResult(WorldStatus.InvalidDefinition); }
+            catch (ArgumentException) { return new CombatSiteResult(WorldContentStatus.Rejected, reason: RegistrationFailureReason.InvalidDefinition); }
         }
         public CombatSiteResult CreatePersistentCombatSite(Guid expectedSessionId, string localId, Guid instanceId, string systemId, float x, float y)
         {
             _service._hub.CheckThread();
-            if (_disposed || _service._disposed) return new CombatSiteResult(WorldStatus.UnknownProvider);
-            if (!_service._canAuthor() || _disposed || _service._disposed) return new CombatSiteResult(WorldStatus.Unavailable);
+            if (_disposed || _service._disposed) return new CombatSiteResult(WorldContentStatus.Unavailable, reason: RegistrationFailureReason.UnknownProvider);
+            if (!_service._canAuthor() || _disposed || _service._disposed) return new CombatSiteResult(WorldContentStatus.Unavailable);
             if (expectedSessionId == Guid.Empty || _service._hub.CurrentSession?.Id != expectedSessionId ||
                 _service._hub.CurrentSession.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks)
-                return new CombatSiteResult(WorldStatus.NotReady);
-            if (localId == null || !_service._definitions.TryResolve(_provider, localId, out _)) return new CombatSiteResult(WorldStatus.NotRegistered);
+                return new CombatSiteResult(WorldContentStatus.NotReady);
+            if (localId == null || !_service._definitions.TryResolve(_provider, localId, out _)) return new CombatSiteResult(WorldContentStatus.Rejected, reason: RegistrationFailureReason.NotRegistered);
             try
             {
                 var identity = new WorldObjectIdentity(new PersistentDeclaration(ProviderId, localId, PersistentKind.WorldObject, PersistenceImpact.ApiDependent), instanceId);
-                var success = new CombatSiteResult(WorldStatus.Succeeded, new CombatSiteReference(ProviderId, localId, instanceId), identity.NativeId);
+                var success = new CombatSiteResult(WorldContentStatus.Succeeded, new CombatSiteReference(ProviderId, localId, instanceId), identity.NativeId);
                 return _service._authoring.TryCreate(_provider, expectedSessionId, localId, instanceId, systemId, x, y,
                     () => !_disposed && !_service._disposed && _service._canAuthor() && !_disposed && !_service._disposed) == null
-                    ? new CombatSiteResult(WorldStatus.Rejected) : success;
+                    ? new CombatSiteResult(WorldContentStatus.Rejected) : success;
             }
-            catch (ArgumentException) { return new CombatSiteResult(WorldStatus.InvalidDefinition); }
+            catch (ArgumentException) { return new CombatSiteResult(WorldContentStatus.Rejected, reason: RegistrationFailureReason.InvalidDefinition); }
         }
 
         /// <summary>
         /// Removes the owned combat site: verified native removal first, then the poi key is
         /// dropped so no save record reconstructs it. Leaves the key untouched on any refusal.
         /// </summary>
-        internal (WorldStatus Status, string Detail) RemoveCombatSite(string localId, string poiKey)
+        internal (WorldContentStatus Status, string Detail) RemoveCombatSite(string localId, string poiKey)
         {
             _service._hub.CheckThread();
             if (_disposed || _service._disposed || _service._authoring == null)
-                return (WorldStatus.Unavailable, "World authoring is unavailable.");
+                return (WorldContentStatus.Unavailable, "World authoring is unavailable.");
             var session = _service._hub.CurrentSession;
             if (session == null || session.Id == Guid.Empty || session.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks)
-                return (WorldStatus.NotReady, "The world is not in a safely actionable state yet.");
+                return (WorldContentStatus.NotReady, "The world is not in a safely actionable state yet.");
             var rowKey = (ProviderId, localId, poiKey);
-            if (!_service._combatKeys.ContainsKey(rowKey)) return (WorldStatus.NotRegistered, "");
+            if (!_service._combatKeys.ContainsKey(rowKey)) return (WorldContentStatus.Rejected, "");
             var instanceId = SiteInstanceId(ProviderId, localId, poiKey);
             try
             {
@@ -552,30 +552,30 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 {
                     case WorldRemoveOutcome.Removed:
                         _service._combatKeys.Remove(rowKey);
-                        return (WorldStatus.Succeeded, "");
+                        return (WorldContentStatus.Succeeded, "");
                     case WorldRemoveOutcome.Missing:
-                        return (WorldStatus.Rejected, "The combat site is not currently present natively.");
+                        return (WorldContentStatus.Rejected, "The combat site is not currently present natively.");
                     default:
-                        return (WorldStatus.Rejected, "The native removal could not be performed or verified.");
+                        return (WorldContentStatus.Rejected, "The native removal could not be performed or verified.");
                 }
             }
             catch (Exception error)
-            { _service._hub.ReportSubscriberFailure("world.combat-remove", error); return (WorldStatus.Unavailable, "The native removal faulted."); }
+            { _service._hub.ReportSubscriberFailure("world.combat-remove", error); return (WorldContentStatus.Unavailable, "The native removal faulted."); }
         }
 
         /// <summary>
         /// Pure readiness for removing the owned combat site (no mutation): Ready, PlayerInside,
         /// NotPresent, SessionEnded, NotReady or Unavailable.
         /// </summary>
-        internal WorldContentRemovalStatus CanRemoveCombatSite(string localId, string poiKey)
+        internal RemovalStatus CanRemoveCombatSite(string localId, string poiKey)
         {
             _service._hub.CheckThread();
-            if (_disposed || _service._disposed || _service._authoring == null) return WorldContentRemovalStatus.Unavailable;
+            if (_disposed || _service._disposed || _service._authoring == null) return RemovalStatus.Unavailable;
             var session = _service._hub.CurrentSession;
-            if (session == null || session.Id == Guid.Empty) return WorldContentRemovalStatus.SessionEnded;
-            if (session.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks) return WorldContentRemovalStatus.NotReady;
+            if (session == null || session.Id == Guid.Empty) return RemovalStatus.SessionEnded;
+            if (session.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks) return RemovalStatus.NotReady;
             var rowKey = (ProviderId, localId, poiKey);
-            if (!_service._combatKeys.ContainsKey(rowKey)) return WorldContentRemovalStatus.NotPresent;
+            if (!_service._combatKeys.ContainsKey(rowKey)) return RemovalStatus.NotPresent;
             var instanceId = SiteInstanceId(ProviderId, localId, poiKey);
             try
             {
@@ -583,7 +583,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                     () => !_disposed && !_service._disposed && _service._canAuthor());
             }
             catch (Exception error)
-            { _service._hub.ReportSubscriberFailure("world.combat-canremove", error); return WorldContentRemovalStatus.Unavailable; }
+            { _service._hub.ReportSubscriberFailure("world.combat-canremove", error); return RemovalStatus.Unavailable; }
         }
 
         public event Action<ResourceSitesSettledEvent>? ResourceSiteReconstructionSettled;
@@ -608,20 +608,20 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             { try { ((Action<ResourceSitesSettledEvent>)subscriber)(settled); } catch { /* fail-open per subscriber */ } }
         }
 
-        public WorldStatus RegisterResourceSite(ResourceSiteDefinition definition, ResourceSiteDefinition? previous = null)
+        public RegistrationResult RegisterResourceSite(ResourceSiteDefinition definition, ResourceSiteDefinition? previous = null)
         {
             _service._hub.CheckThread();
-            if (_disposed || _service._disposed) return WorldStatus.UnknownProvider;
-            if (_service._hub.CurrentSession != null) return WorldStatus.NotReady;
-            if (_authoredSites == null || _service._siteDefinitions == null || definition == null) return WorldStatus.InvalidDefinition;
+            if (_disposed || _service._disposed) return new RegistrationResult(WorldContentStatus.Unavailable, RegistrationFailureReason.UnknownProvider);
+            if (_service._hub.CurrentSession != null) return new RegistrationResult(WorldContentStatus.NotReady);
+            if (_authoredSites == null || _service._siteDefinitions == null || definition == null) return new RegistrationResult(WorldContentStatus.Rejected, RegistrationFailureReason.InvalidDefinition);
             try
             {
                 var mapped = new ResourceSiteDeclaration(definition);
-                if (_service._siteDefinitions.TryResolve(_authoredSites, definition.LocalId, out _)) return WorldStatus.DuplicateDefinition;
+                if (_service._siteDefinitions.TryResolve(_authoredSites, definition.LocalId, out _)) return new RegistrationResult(WorldContentStatus.Rejected, RegistrationFailureReason.DuplicateDefinition);
                 var prior = previous == null ? null : new ResourceSiteDeclaration(previous);
-                return _service._siteDefinitions.Register(_authoredSites, mapped, prior) ? WorldStatus.Succeeded : WorldStatus.Rejected;
+                return new RegistrationResult(_service._siteDefinitions.Register(_authoredSites, mapped, prior) ? WorldContentStatus.Succeeded : WorldContentStatus.Rejected);
             }
-            catch (ArgumentException) { return WorldStatus.InvalidDefinition; }
+            catch (ArgumentException) { return new RegistrationResult(WorldContentStatus.Rejected, RegistrationFailureReason.InvalidDefinition); }
         }
 
         public IResourceSite? CreateResourceSite(string localId, string poiKey, string systemId, float x, float y)
@@ -642,10 +642,10 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 && _service._wormholeCoordinator.Contains(_wormholes.Owner, localId, poiKey)) return null;
             if (CombatKeyOwnsKey(localId, poiKey)) return null;
             var (status, _) = _service._siteCoordinator.Create(_authoredSites, session.Id, localId, poiKey, systemId, x, y);
-            if (status != WorldStatus.Succeeded && status != WorldStatus.Rejected) return null;
-            if (_service._siteCoordinator.TryGetPoi(_authoredSites.Owner, localId, poiKey) == null && status != WorldStatus.Rejected) return null;
+            if (status != WorldContentStatus.Succeeded && status != WorldContentStatus.Rejected) return null;
+            if (_service._siteCoordinator.TryGetPoi(_authoredSites.Owner, localId, poiKey) == null && status != WorldContentStatus.Rejected) return null;
             var handle = ObtainSiteHandle(localId, poiKey, session.Id);
-            handle.RecordAction(status == WorldStatus.Succeeded
+            handle.RecordAction(status == WorldContentStatus.Succeeded
                 ? new WorldContentResult(WorldContentStatus.Succeeded)
                 : new WorldContentResult(WorldContentStatus.Rejected, "The native site could not be created."));
             handle.Refresh();
@@ -707,20 +707,20 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             { try { ((Action<MooredShipsSettledEvent>)subscriber)(settled); } catch { /* fail-open per subscriber */ } }
         }
 
-        public WorldStatus RegisterMooredShip(MooredShipDefinition definition, MooredShipDefinition? previous = null)
+        public RegistrationResult RegisterMooredShip(MooredShipDefinition definition, MooredShipDefinition? previous = null)
         {
             _service._hub.CheckThread();
-            if (_disposed || _service._disposed) return WorldStatus.UnknownProvider;
-            if (_service._hub.CurrentSession != null) return WorldStatus.NotReady;
-            if (_authoredShips == null || _service._shipDefinitions == null || definition == null) return WorldStatus.InvalidDefinition;
+            if (_disposed || _service._disposed) return new RegistrationResult(WorldContentStatus.Unavailable, RegistrationFailureReason.UnknownProvider);
+            if (_service._hub.CurrentSession != null) return new RegistrationResult(WorldContentStatus.NotReady);
+            if (_authoredShips == null || _service._shipDefinitions == null || definition == null) return new RegistrationResult(WorldContentStatus.Rejected, RegistrationFailureReason.InvalidDefinition);
             try
             {
                 var mapped = new MooredShipDeclaration(definition);
-                if (_service._shipDefinitions.TryResolve(_authoredShips, definition.LocalId, out _)) return WorldStatus.DuplicateDefinition;
+                if (_service._shipDefinitions.TryResolve(_authoredShips, definition.LocalId, out _)) return new RegistrationResult(WorldContentStatus.Rejected, RegistrationFailureReason.DuplicateDefinition);
                 var prior = previous == null ? null : new MooredShipDeclaration(previous);
-                return _service._shipDefinitions.Register(_authoredShips, mapped, prior) ? WorldStatus.Succeeded : WorldStatus.Rejected;
+                return new RegistrationResult(_service._shipDefinitions.Register(_authoredShips, mapped, prior) ? WorldContentStatus.Succeeded : WorldContentStatus.Rejected);
             }
-            catch (ArgumentException) { return WorldStatus.InvalidDefinition; }
+            catch (ArgumentException) { return new RegistrationResult(WorldContentStatus.Rejected, RegistrationFailureReason.InvalidDefinition); }
         }
 
         public IMooredShip? CreateMooredShip(string localId, string unitKey, string stationPoiId)
@@ -734,9 +734,9 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             // The persistence envelope keys pois per (owner, local, key) across ALL kinds.
             if (OtherKindOwnsKey(exceptShips: true, localId, unitKey) || CombatKeyOwnsKey(localId, unitKey)) return null;
             var (status, _) = _service._shipCoordinator.Create(_authoredShips, session.Id, localId, unitKey, stationPoiId);
-            if (status != WorldStatus.Succeeded && status != WorldStatus.Rejected) return null;
+            if (status != WorldContentStatus.Succeeded && status != WorldContentStatus.Rejected) return null;
             var handle = ObtainShipHandle(localId, unitKey, session.Id);
-            handle.RecordAction(status == WorldStatus.Succeeded
+            handle.RecordAction(status == WorldContentStatus.Succeeded
                 ? new WorldContentResult(WorldContentStatus.Succeeded)
                 : new WorldContentResult(WorldContentStatus.Rejected, "The moored ship could not be created."));
             handle.Refresh();
@@ -871,18 +871,18 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             var args = new WormholePairsSettledEvent(session, good, failed);
             foreach (var subscriber in subscribers.GetInvocationList()) try { ((Action<WormholePairsSettledEvent>)subscriber)(args); } catch { }
         }
-        public WorldStatus RegisterWormholePair(WormholePairDefinition definition, WormholePairDefinition? previous = null)
+        public RegistrationResult RegisterWormholePair(WormholePairDefinition definition, WormholePairDefinition? previous = null)
         {
             _service._hub.CheckThread();
-            if (_disposed || _service._disposed) return WorldStatus.UnknownProvider;
-            if (_service._hub.CurrentSession != null) return WorldStatus.NotReady;
-            if (_wormholes == null || definition == null) return WorldStatus.InvalidDefinition;
+            if (_disposed || _service._disposed) return new RegistrationResult(WorldContentStatus.Unavailable, RegistrationFailureReason.UnknownProvider);
+            if (_service._hub.CurrentSession != null) return new RegistrationResult(WorldContentStatus.NotReady);
+            if (_wormholes == null || definition == null) return new RegistrationResult(WorldContentStatus.Rejected, RegistrationFailureReason.InvalidDefinition);
             try
             {
-                if (_service._wormholeDefinitions!.TryResolve(_wormholes, definition.LocalId, out _)) return WorldStatus.DuplicateDefinition;
-                return _wormholes.Register(definition, previous) ? WorldStatus.Succeeded : WorldStatus.Rejected;
+                if (_service._wormholeDefinitions!.TryResolve(_wormholes, definition.LocalId, out _)) return new RegistrationResult(WorldContentStatus.Rejected, RegistrationFailureReason.DuplicateDefinition);
+                return new RegistrationResult(_wormholes.Register(definition, previous) ? WorldContentStatus.Succeeded : WorldContentStatus.Rejected);
             }
-            catch (ArgumentException) { return WorldStatus.InvalidDefinition; }
+            catch (ArgumentException) { return new RegistrationResult(WorldContentStatus.Rejected, RegistrationFailureReason.InvalidDefinition); }
         }
         public IWormholePair? CreateWormholePair(string localId, string poiKey, string firstSystemId, string secondSystemId)
         {
@@ -914,18 +914,18 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             var handle = new WormholePairHandle(this, localId, poiKey, session, () => _wormholeObjects.Remove(key)); _wormholeObjects.Add(key, handle); handle.Refresh(); return handle;
         }
 
-        public WorldStatus RegisterPocketSystem(PocketSystemDefinition definition, PocketSystemDefinition? previous = null)
+        public RegistrationResult RegisterPocketSystem(PocketSystemDefinition definition, PocketSystemDefinition? previous = null)
         {
             _service._hub.CheckThread();
-            if (_disposed || _service._disposed) return WorldStatus.UnknownProvider;
-            if (_service._hub.CurrentSession != null) return WorldStatus.NotReady;
-            if (_authored == null || definition == null) return WorldStatus.InvalidDefinition;
+            if (_disposed || _service._disposed) return new RegistrationResult(WorldContentStatus.Unavailable, RegistrationFailureReason.UnknownProvider);
+            if (_service._hub.CurrentSession != null) return new RegistrationResult(WorldContentStatus.NotReady);
+            if (_authored == null || definition == null) return new RegistrationResult(WorldContentStatus.Rejected, RegistrationFailureReason.InvalidDefinition);
             try
             {
-                if (_service._authoredDefinitions!.TryResolve(_authored, definition.LocalId, out _)) return WorldStatus.DuplicateDefinition;
-                return _authored.Register(definition, previous) ? WorldStatus.Succeeded : WorldStatus.Rejected;
+                if (_service._authoredDefinitions!.TryResolve(_authored, definition.LocalId, out _)) return new RegistrationResult(WorldContentStatus.Rejected, RegistrationFailureReason.DuplicateDefinition);
+                return new RegistrationResult(_authored.Register(definition, previous) ? WorldContentStatus.Succeeded : WorldContentStatus.Rejected);
             }
-            catch (ArgumentException) { return WorldStatus.InvalidDefinition; }
+            catch (ArgumentException) { return new RegistrationResult(WorldContentStatus.Rejected, RegistrationFailureReason.InvalidDefinition); }
         }
         public IPocketSystem? CreatePocketSystem(string localId, string poiKey, string anchorSystemId)
         {
@@ -944,7 +944,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 && _service._wormholeCoordinator.Contains(_wormholes.Owner, localId, poiKey)) return null;
             if (CombatKeyOwnsKey(localId, poiKey)) return null;
             var result = _service._authoredCoordinator.Create(_authored, session.Id, localId, poiKey, anchorSystemId);
-            if (result.Status != WorldStatus.Succeeded && result.Status != WorldStatus.Rejected) return null;
+            if (result.Status != WorldContentStatus.Succeeded && result.Status != WorldContentStatus.Rejected) return null;
             if (!_service._authoredCoordinator.ContainsPoi(_authored.Owner, localId, poiKey)) return null;
             return ObtainHandle(localId, poiKey, session.Id);
         }
@@ -1045,16 +1045,16 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             public WorldContentResult LastAction { get { _provider._service._hub.CheckThread(); return _lastAction; } }
             public event Action<IResourceSite>? Changed { add => _changed += value; remove => _changed -= value; }
             internal void RecordAction(WorldContentResult result) => _lastAction = result;
-            public WorldContentRemovalStatus CanRemove()
+            public RemovalStatus CanRemove()
             {
                 _provider._service._hub.CheckThread();
-                if (_removed) return WorldContentRemovalStatus.NotPresent;
+                if (_removed) return RemovalStatus.NotPresent;
                 var service = _provider._service;
                 if (_provider._disposed || service._disposed || _provider._authoredSites == null || service._siteCoordinator == null || !service._canAuthor())
-                    return WorldContentRemovalStatus.Unavailable;
-                if (service._hub.CurrentSession?.Id != Session) return WorldContentRemovalStatus.SessionEnded;
+                    return RemovalStatus.Unavailable;
+                if (service._hub.CurrentSession?.Id != Session) return RemovalStatus.SessionEnded;
                 if (service._hub.CurrentSession.Phase != SessionPhase.GameplayInitialized || service._hub.IsDispatchingCallbacks)
-                    return WorldContentRemovalStatus.NotReady;
+                    return RemovalStatus.NotReady;
                 return service._siteCoordinator.CanRemove(_provider._authoredSites, Session, _localId, _poiKey);
             }
             private WorldContentResult? Gate()
@@ -1078,8 +1078,8 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 if (_removed) return _lastAction = new(WorldContentStatus.Rejected, "The poi was removed; create the key again for a fresh site.");
                 if (Gate() is { } refused) return refused;
                 var (status, detail) = _provider._service._siteCoordinator!.Remove(_provider._authoredSites!, Session, _localId, _poiKey);
-                if (status != WorldStatus.Succeeded)
-                    return _lastAction = new(status == WorldStatus.Unavailable ? WorldContentStatus.Unavailable : WorldContentStatus.Rejected, detail);
+                if (status != WorldContentStatus.Succeeded)
+                    return _lastAction = new(status == WorldContentStatus.Unavailable ? WorldContentStatus.Unavailable : WorldContentStatus.Rejected, detail);
                 CompleteRemoval();
                 return _lastAction = new(WorldContentStatus.Succeeded);
             }
@@ -1095,9 +1095,9 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             private bool CompletePendingRemoval()
             {
                 _provider._service._hub.CheckThread();
-                if (_removed || !_removalRequested || CanRemove() != WorldContentRemovalStatus.Ready) return false;
+                if (_removed || !_removalRequested || CanRemove() != RemovalStatus.Ready) return false;
                 var (status, detail) = _provider._service._siteCoordinator!.Remove(_provider._authoredSites!, Session, _localId, _poiKey);
-                if (status != WorldStatus.Succeeded) return false;
+                if (status != WorldContentStatus.Succeeded) return false;
                 CompleteRemoval();
                 _lastAction = new(WorldContentStatus.Succeeded, "The requested removal completed at a cleanup window.");
                 return true;
@@ -1155,15 +1155,15 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             public WorldContentResult LastAction { get { _provider._service._hub.CheckThread(); return _lastAction; } }
             public event Action<ICombatSite>? Changed { add => _changed += value; remove => _changed -= value; }
             internal void RecordAction(WorldContentResult result) => _lastAction = result;
-            public WorldContentRemovalStatus CanRemove()
+            public RemovalStatus CanRemove()
             {
                 _provider._service._hub.CheckThread();
-                if (_removed) return WorldContentRemovalStatus.NotPresent;
+                if (_removed) return RemovalStatus.NotPresent;
                 var service = _provider._service;
-                if (_provider._disposed || service._disposed || !service._canAuthor()) return WorldContentRemovalStatus.Unavailable;
-                if (service._hub.CurrentSession?.Id != Session) return WorldContentRemovalStatus.SessionEnded;
+                if (_provider._disposed || service._disposed || !service._canAuthor()) return RemovalStatus.Unavailable;
+                if (service._hub.CurrentSession?.Id != Session) return RemovalStatus.SessionEnded;
                 if (service._hub.CurrentSession.Phase != SessionPhase.GameplayInitialized || service._hub.IsDispatchingCallbacks)
-                    return WorldContentRemovalStatus.NotReady;
+                    return RemovalStatus.NotReady;
                 return _provider.CanRemoveCombatSite(_localId, _poiKey);
             }
             private WorldContentResult? Gate()
@@ -1188,8 +1188,8 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 if (_removed) return _lastAction = new(WorldContentStatus.Rejected, "The poi was removed; create the key again for a fresh site.");
                 if (Gate() is { } refused) return refused;
                 var (status, detail) = _provider.RemoveCombatSite(_localId, _poiKey);
-                if (status != WorldStatus.Succeeded)
-                    return _lastAction = new(status == WorldStatus.Unavailable ? WorldContentStatus.Unavailable : WorldContentStatus.Rejected, detail);
+                if (status != WorldContentStatus.Succeeded)
+                    return _lastAction = new(status == WorldContentStatus.Unavailable ? WorldContentStatus.Unavailable : WorldContentStatus.Rejected, detail);
                 CompleteRemoval();
                 return _lastAction = new(WorldContentStatus.Succeeded);
             }
@@ -1205,9 +1205,9 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             private bool CompletePendingRemoval()
             {
                 _provider._service._hub.CheckThread();
-                if (_removed || !_removalRequested || CanRemove() != WorldContentRemovalStatus.Ready) return false;
+                if (_removed || !_removalRequested || CanRemove() != RemovalStatus.Ready) return false;
                 var (status, detail) = _provider.RemoveCombatSite(_localId, _poiKey);
-                if (status != WorldStatus.Succeeded) return false;
+                if (status != WorldContentStatus.Succeeded) return false;
                 CompleteRemoval();
                 _lastAction = new(WorldContentStatus.Succeeded, "The requested removal completed at a cleanup window.");
                 return true;
@@ -1266,17 +1266,17 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 if (_provider._service._hub.CurrentSession.Phase != SessionPhase.GameplayInitialized || _provider._service._hub.IsDispatchingCallbacks)
                     return _last = new(WorldContentStatus.NotReady);
                 var status = _provider._service._wormholeCoordinator.SetOpen(_provider._wormholes, Session, _localId, _key, open);
-                return _last = new(status == WorldStatus.Succeeded ? WorldContentStatus.Succeeded : status == WorldStatus.Unavailable ? WorldContentStatus.Unavailable : WorldContentStatus.Rejected);
+                return _last = new(status == WorldContentStatus.Succeeded ? WorldContentStatus.Succeeded : status == WorldContentStatus.Unavailable ? WorldContentStatus.Unavailable : WorldContentStatus.Rejected);
             }
-            public WorldContentRemovalStatus CanRemove()
+            public RemovalStatus CanRemove()
             {
                 _provider._service._hub.CheckThread();
-                if (_removed) return WorldContentRemovalStatus.NotPresent;
+                if (_removed) return RemovalStatus.NotPresent;
                 if (_provider._disposed || _provider._service._disposed || _provider._wormholes == null || _provider._service._wormholeCoordinator == null)
-                    return WorldContentRemovalStatus.Unavailable;
-                if (_provider._service._hub.CurrentSession?.Id != Session) return WorldContentRemovalStatus.SessionEnded;
+                    return RemovalStatus.Unavailable;
+                if (_provider._service._hub.CurrentSession?.Id != Session) return RemovalStatus.SessionEnded;
                 if (_provider._service._hub.CurrentSession.Phase != SessionPhase.GameplayInitialized || _provider._service._hub.IsDispatchingCallbacks)
-                    return WorldContentRemovalStatus.NotReady;
+                    return RemovalStatus.NotReady;
                 return _provider._service._wormholeCoordinator.CanRemove(_provider._wormholes, Session, _localId, _key);
             }
             private WorldContentResult? Gate()
@@ -1302,7 +1302,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 if (_removed) return _last = new(WorldContentStatus.Rejected, "The pair was removed; create the key again for a fresh pair.");
                 if (Gate() is { } refused) return refused;
                 var (status, detail) = _provider._service._wormholeCoordinator!.Remove(_provider._wormholes!, Session, _localId, _key);
-                if (status != WorldStatus.Succeeded) return _last = new(status == WorldStatus.Unavailable ? WorldContentStatus.Unavailable : WorldContentStatus.Rejected, detail);
+                if (status != WorldContentStatus.Succeeded) return _last = new(status == WorldContentStatus.Unavailable ? WorldContentStatus.Unavailable : WorldContentStatus.Rejected, detail);
                 CompleteRemoval();
                 return _last = new(WorldContentStatus.Succeeded);
             }
@@ -1318,9 +1318,9 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             private bool CompletePendingRemoval()
             {
                 _provider._service._hub.CheckThread();
-                if (_removed || !_removalRequested || CanRemove() != WorldContentRemovalStatus.Ready) return false;
+                if (_removed || !_removalRequested || CanRemove() != RemovalStatus.Ready) return false;
                 var (status, detail) = _provider._service._wormholeCoordinator!.Remove(_provider._wormholes!, Session, _localId, _key);
-                if (status != WorldStatus.Succeeded) return false;
+                if (status != WorldContentStatus.Succeeded) return false;
                 CompleteRemoval();
                 _last = new(WorldContentStatus.Succeeded, "The requested removal completed at a cleanup window.");
                 return true;
@@ -1437,27 +1437,27 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 return _lastAction = new WorldContentResult(ToActionStatus(status), "");
             }
 
-            public WorldContentRemovalStatus CanRemove()
+            public RemovalStatus CanRemove()
             {
                 _service._hub.CheckThread();
-                if (_removed) return WorldContentRemovalStatus.NotPresent;
-                if (!_alive()) return WorldContentRemovalStatus.Unavailable;
-                if (!IsCurrentSession()) return WorldContentRemovalStatus.SessionEnded;
-                if (!_service._canAuthor()) return WorldContentRemovalStatus.Unavailable;
+                if (_removed) return RemovalStatus.NotPresent;
+                if (!_alive()) return RemovalStatus.Unavailable;
+                if (!IsCurrentSession()) return RemovalStatus.SessionEnded;
+                if (!_service._canAuthor()) return RemovalStatus.Unavailable;
                 var session = _service._hub.CurrentSession;
                 if (session == null || session.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks)
-                    return WorldContentRemovalStatus.NotReady;
-                if (_service._authoredCoordinator == null) return WorldContentRemovalStatus.Unavailable;
+                    return RemovalStatus.NotReady;
+                if (_service._authoredCoordinator == null) return RemovalStatus.Unavailable;
                 var row = _service._authoredCoordinator.TryGetPoi(_authored.Owner, _localId, _poiKey);
                 if (row != null && _service._authoring != null)
                 {
                     var contains = _service._authoring.AnyInSystem(row.SystemId);
-                    if (contains == null) return WorldContentRemovalStatus.NotReady;
-                    if (contains == true) return WorldContentRemovalStatus.CombatSitesPresent;
+                    if (contains == null) return RemovalStatus.NotReady;
+                    if (contains == true) return RemovalStatus.CombatSitesPresent;
                 }
                 if (row != null && _service._wormholeCoordinator != null && _service._wormholeCoordinator.AnyPoiInSystem(row.SystemId))
-                    return WorldContentRemovalStatus.WormholeEndpoint;
-                if (row == null) return WorldContentRemovalStatus.NotPresent;
+                    return RemovalStatus.WormholeEndpoint;
+                if (row == null) return RemovalStatus.NotPresent;
                 return _service._authoredCoordinator.CanRemove(_authored, _session, Reference);
             }
             private void CompleteRemoval(string? systemId)
@@ -1470,9 +1470,9 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             private bool CompletePendingRemoval()
             {
                 _service._hub.CheckThread();
-                if (_removed || !_removalRequested || CanRemove() != WorldContentRemovalStatus.Ready) return false;
+                if (_removed || !_removalRequested || CanRemove() != RemovalStatus.Ready) return false;
                 var (status, detail, systemId) = _service._authoredCoordinator!.Remove(_authored, _session, Reference);
-                if (status != WorldStatus.Succeeded) return false;
+                if (status != WorldContentStatus.Succeeded) return false;
                 CompleteRemoval(systemId);
                 _lastAction = new WorldContentResult(WorldContentStatus.Succeeded, "The requested removal completed at a cleanup window.");
                 return true;
@@ -1508,15 +1508,15 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                     return _lastAction = new WorldContentResult(WorldContentStatus.Rejected,
                         "The pocket is still the endpoint of a wormhole; remove the wormhole before removing the pocket.");
                 var (status, detail, systemId) = _service._authoredCoordinator.Remove(_authored, _session, Reference);
-                if (status != WorldStatus.Succeeded) return _lastAction = new WorldContentResult(ToActionStatus(status), detail);
+                if (status != WorldContentStatus.Succeeded) return _lastAction = new WorldContentResult(ToActionStatus(status), detail);
                 CompleteRemoval(systemId);
                 return _lastAction = new WorldContentResult(WorldContentStatus.Succeeded);
             }
-            private static WorldContentStatus ToActionStatus(WorldStatus status) => status switch
+            private static WorldContentStatus ToActionStatus(WorldContentStatus status) => status switch
             {
-                WorldStatus.Succeeded => WorldContentStatus.Succeeded,
-                WorldStatus.NotReady => WorldContentStatus.NotReady,
-                WorldStatus.Rejected or WorldStatus.NotRegistered or WorldStatus.InvalidDefinition or WorldStatus.DuplicateDefinition => WorldContentStatus.Rejected,
+                WorldContentStatus.Succeeded => WorldContentStatus.Succeeded,
+                WorldContentStatus.NotReady => WorldContentStatus.NotReady,
+                WorldContentStatus.Rejected => WorldContentStatus.Rejected,
                 _ => WorldContentStatus.Unavailable
             };
 

@@ -56,8 +56,8 @@ public sealed class WorldRuntimeStateTests
             using var bindings = new WorldPersistenceBindings(persistence, hub, loads, snapshots, creation);
             using var world = new WorldContentService(hub, definitions, new WorldAuthoringGate(definitions, creation, bindings.CanMutate), () => true);
             var provider = world.AcquireProvider(new object())!;
-            Assert.Equal(WorldStatus.Succeeded, provider.RegisterCombatSite(new CombatSiteDefinition("PoiX", 2, "Renamed site", "player", 1),
-                new CombatSiteDefinition("PoiX", 1, "Site", "player", 1)));
+            Assert.Equal(WorldContentStatus.Succeeded, provider.RegisterCombatSite(new CombatSiteDefinition("PoiX", 2, "Renamed site", "player", 1),
+                new CombatSiteDefinition("PoiX", 1, "Site", "player", 1)).Status);
             Action? runtimeChange = null;
             using var runtime = new WorldRuntimeState(game, loads, definitions, creation, lifetime, bindings.StateReady, () => { runtimeChange?.Invoke(); return true; });
             var references = new WorldReferenceResolver(hub, creation, definitions, bindings, lifetimeHost);
@@ -110,15 +110,17 @@ public sealed class WorldRuntimeStateTests
                 var created = ((VGModAPI.Core.IWorldProviderEngine)provider).CreatePersistentCombatSite(request.Id, "PoiX", instance, "system", 20, 20);
                 Assert.True(created.Succeeded); Assert.Equal(instance, created.Reference!.InstanceId); Assert.Equal("author.a", created.Reference.ProviderId);
                 Assert.True(((VGModAPI.Core.IWorldProviderEngine)provider).FindPersistentCombatSite(request.Id, created.Reference).Succeeded);
-                Assert.Equal(WorldStatus.NotRegistered, ((VGModAPI.Core.IWorldProviderEngine)provider).FindPersistentCombatSite(request.Id, new CombatSiteReference("other.owner", "PoiX", instance)).Status);
-                Assert.Equal(WorldStatus.NotReady, ((VGModAPI.Core.IWorldProviderEngine)provider).FindPersistentCombatSite(Guid.NewGuid(), created.Reference).Status);
+                Assert.Equal(WorldContentStatus.Rejected, ((VGModAPI.Core.IWorldProviderEngine)provider).FindPersistentCombatSite(request.Id, new CombatSiteReference("other.owner", "PoiX", instance)).Status);
+                Assert.Equal(RegistrationFailureReason.NotRegistered, ((VGModAPI.Core.IWorldProviderEngine)provider).FindPersistentCombatSite(request.Id, new CombatSiteReference("other.owner", "PoiX", instance)).Reason);
+                Assert.Equal(WorldContentStatus.NotReady, ((VGModAPI.Core.IWorldProviderEngine)provider).FindPersistentCombatSite(Guid.NewGuid(), created.Reference).Status);
                 var createdNative = creation.Snapshot()[1].Native;
                 Assert.True(system.pointsOfInterest.Remove((MapPointOfInterest)createdNative));
-                Assert.Equal(WorldStatus.NotRegistered, ((VGModAPI.Core.IWorldProviderEngine)provider).FindPersistentCombatSite(request.Id, created.Reference).Status);
+                Assert.Equal(WorldContentStatus.Rejected, ((VGModAPI.Core.IWorldProviderEngine)provider).FindPersistentCombatSite(request.Id, created.Reference).Status);
+                Assert.Equal(RegistrationFailureReason.NotRegistered, ((VGModAPI.Core.IWorldProviderEngine)provider).FindPersistentCombatSite(request.Id, created.Reference).Reason);
                 system.pointsOfInterest.Add((MapPointOfInterest)createdNative);
                 Assert.True(((VGModAPI.Core.IWorldProviderEngine)provider).FindPersistentCombatSite(request.Id, created.Reference).Succeeded);
-                Assert.Equal(WorldStatus.Rejected, ((VGModAPI.Core.IWorldProviderEngine)provider).CreatePersistentCombatSite(request.Id, "PoiX", instance, "system", 20, 20).Status);
-                Assert.Equal(WorldStatus.NotReady, provider.RegisterCombatSite(new CombatSiteDefinition("Late", 1, "Site", "player", 1)));
+                Assert.Equal(WorldContentStatus.Rejected, ((VGModAPI.Core.IWorldProviderEngine)provider).CreatePersistentCombatSite(request.Id, "PoiX", instance, "system", 20, 20).Status);
+                Assert.Equal(WorldContentStatus.NotReady, provider.RegisterCombatSite(new CombatSiteDefinition("Late", 1, "Site", "player", 1)).Status);
                 Assert.Equal(2, creation.Snapshot().Length);
 
                 // Uniform poi contract: author-local key, API-allocated identity, same-key=same object.

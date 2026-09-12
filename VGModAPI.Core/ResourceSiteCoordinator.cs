@@ -86,7 +86,7 @@ internal interface IResourceSiteNative
     /// refusals). Only succeeds when the post-removal membership delta is exactly this one POI (rollback otherwise).</summary>
     ResourceSiteRemoveOutcome RemoveSite(Guid session, string systemId, string poiId, ResourceSiteKind kind);
     /// <summary>Pure readiness for removing the owned site (no mutation): Ready/PlayerInside/BoardingActive/InteriorPersisted/NotPresent/Unavailable.</summary>
-    WorldContentRemovalStatus Readiness(Guid session, string systemId, string poiId, ResourceSiteKind kind);
+    RemovalStatus Readiness(Guid session, string systemId, string poiId, ResourceSiteKind kind);
     void BeginPass(Guid session);
     void EndPass();
 }
@@ -199,29 +199,29 @@ internal sealed class ResourceSiteCoordinator : IDisposable
         return dropped;
     }
 
-    internal (WorldStatus Status, ResourceSitePoi? Row) Create(ResourceSiteRegistry.Provider provider,
+    internal (WorldContentStatus Status, ResourceSitePoi? Row) Create(ResourceSiteRegistry.Provider provider,
         Guid expectedSession, string localId, string poiKey, string systemId, float x, float y)
     {
         _hub.CheckThread();
-        if (_disposed) return (WorldStatus.Unavailable, null);
+        if (_disposed) return (WorldContentStatus.Unavailable, null);
         if (provider == null || !_definitions.TryResolve(provider, localId, out var declaration) || declaration == null)
-            return (WorldStatus.NotRegistered, null);
+            return (WorldContentStatus.Rejected, null);
         var key = (provider.Owner, localId, poiKey);
-        if (_committed.TryGetValue(key, out var owned)) return (WorldStatus.Succeeded, owned);
-        if (_failed.Contains(key)) return (WorldStatus.Rejected, null);
-        if (string.IsNullOrWhiteSpace(systemId) || WorldStateCodec.TextByteCount(systemId) > 128) return (WorldStatus.InvalidDefinition, null);
-        if (_committed.Count >= WorldSerializationAssociation.MaxObjects) return (WorldStatus.Rejected, null);
+        if (_committed.TryGetValue(key, out var owned)) return (WorldContentStatus.Succeeded, owned);
+        if (_failed.Contains(key)) return (WorldContentStatus.Rejected, null);
+        if (string.IsNullOrWhiteSpace(systemId) || WorldStateCodec.TextByteCount(systemId) > 128) return (WorldContentStatus.Rejected, null);
+        if (_committed.Count >= WorldSerializationAssociation.MaxObjects) return (WorldContentStatus.Rejected, null);
         try
         {
             // Allocate native identity only here; never adopt a foreign or ambiguous native identity.
             var poiId = _native.CreateSite(expectedSession, systemId, x, y, declaration);
-            if (poiId == null) { _failed.Add(key); return (WorldStatus.Rejected, null); }
+            if (poiId == null) { _failed.Add(key); return (WorldContentStatus.Rejected, null); }
             var poi = new ResourceSitePoi(provider.Owner, localId, poiKey, declaration.Revision,
                 declaration.Kind, systemId, poiId);
             _committed[key] = poi;
-            return (WorldStatus.Succeeded, poi);
+            return (WorldContentStatus.Succeeded, poi);
         }
-        catch (Exception error) { _report(error); return (WorldStatus.Unavailable, null); }
+        catch (Exception error) { _report(error); return (WorldContentStatus.Unavailable, null); }
     }
 
     /// <summary>
@@ -232,22 +232,22 @@ internal sealed class ResourceSiteCoordinator : IDisposable
     /// is not mutable at that instant), the site is still removed and the fault reported; the surviving
     /// row can still surface through <c>IDungeonProvider.GetPois()</c>.
     /// </summary>
-    internal (WorldStatus Status, string Detail) Remove(ResourceSiteRegistry.Provider provider, Guid session, string local, string key)
+    internal (WorldContentStatus Status, string Detail) Remove(ResourceSiteRegistry.Provider provider, Guid session, string local, string key)
     {
         _hub.CheckThread();
-        if (_disposed) return (WorldStatus.Unavailable, "Authored sites are unavailable.");
-        if (provider == null) return (WorldStatus.NotRegistered, "");
+        if (_disposed) return (WorldContentStatus.Unavailable, "Authored sites are unavailable.");
+        if (provider == null) return (WorldContentStatus.Rejected, "");
         var rowKey = (provider.Owner, local, key);
         // A creation that never produced a native POI is still an owned key; removing it frees the key.
-        if (_failed.Remove(rowKey)) return (WorldStatus.Succeeded, "");
-        if (!_committed.TryGetValue(rowKey, out var row)) return (WorldStatus.NotRegistered, "");
+        if (_failed.Remove(rowKey)) return (WorldContentStatus.Succeeded, "");
+        if (!_committed.TryGetValue(rowKey, out var row)) return (WorldContentStatus.Rejected, "");
         // Resolve any attached authored dungeon poi before removal; the native location is no
         // longer discoverable once the POI is gone.
         Guid? attachedDungeon = null;
         if (_resolveAttachedDungeon != null && row.PoiId is { Length: > 0 } attachedPoi)
         {
             try { attachedDungeon = _resolveAttachedDungeon(attachedPoi); }
-            catch (Exception error) { _report(error); return (WorldStatus.Unavailable, "The site's attached dungeon state could not be read."); }
+            catch (Exception error) { _report(error); return (WorldContentStatus.Unavailable, "The site's attached dungeon state could not be read."); }
         }
         try
         {
@@ -260,14 +260,14 @@ internal sealed class ResourceSiteCoordinator : IDisposable
                     // leaving a dead poi that could never bind again.
                     if (attachedDungeon.HasValue && _dropDungeon != null && !_dropDungeon(attachedDungeon.Value))
                         _report(new InvalidOperationException("An attached authored dungeon poi could not be dropped after site removal."));
-                    return (WorldStatus.Succeeded, "");
+                    return (WorldContentStatus.Succeeded, "");
                 case ResourceSiteRemoveOutcome.Missing:
-                    return (WorldStatus.Rejected, "The site is not currently present natively; wait for reconstruction or check its state.");
+                    return (WorldContentStatus.Rejected, "The site is not currently present natively; wait for reconstruction or check its state.");
                 default:
-                    return (WorldStatus.Rejected, "The native removal could not be performed or verified.");
+                    return (WorldContentStatus.Rejected, "The native removal could not be performed or verified.");
             }
         }
-        catch (Exception error) { _report(error); return (WorldStatus.Unavailable, "The native removal faulted."); }
+        catch (Exception error) { _report(error); return (WorldContentStatus.Unavailable, "The native removal faulted."); }
     }
 
     /// <summary>
@@ -275,20 +275,20 @@ internal sealed class ResourceSiteCoordinator : IDisposable
     /// InteriorPersisted, HeldEnterable, NotPresent or Unavailable. A failed-creation key is Ready
     /// (removing it only frees the key).
     /// </summary>
-    internal WorldContentRemovalStatus CanRemove(ResourceSiteRegistry.Provider provider, Guid session, string local, string key)
+    internal RemovalStatus CanRemove(ResourceSiteRegistry.Provider provider, Guid session, string local, string key)
     {
         _hub.CheckThread();
-        if (_disposed || provider == null) return WorldContentRemovalStatus.Unavailable;
+        if (_disposed || provider == null) return RemovalStatus.Unavailable;
         var rowKey = (provider.Owner, local, key);
-        if (_failed.Contains(rowKey)) return WorldContentRemovalStatus.Ready;
-        if (!_committed.TryGetValue(rowKey, out var row)) return WorldContentRemovalStatus.NotPresent;
+        if (_failed.Contains(rowKey)) return RemovalStatus.Ready;
+        if (!_committed.TryGetValue(rowKey, out var row)) return RemovalStatus.NotPresent;
         if (row.PoiId is { Length: > 0 } held
             && _hub.Installations.Aegis.DeclaredTargets().Any(poi => string.Equals(poi, held, StringComparison.Ordinal)))
-            return WorldContentRemovalStatus.HeldEnterable;
+            return RemovalStatus.HeldEnterable;
         if (_resolveAttachedDungeon != null && row.PoiId is { Length: > 0 } attachedPoi)
         {
             try { _ = _resolveAttachedDungeon(attachedPoi); }
-            catch (Exception error) { _report(error); return WorldContentRemovalStatus.Unavailable; }
+            catch (Exception error) { _report(error); return RemovalStatus.Unavailable; }
         }
         return _native.Readiness(session, row.SystemId, row.PoiId, row.Kind);
     }
