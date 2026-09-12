@@ -16,6 +16,7 @@ namespace Source.Galaxy
         public System.Collections.Generic.List<MapPointOfInterest> pointsOfInterest = new();
         public System.Collections.Generic.List<SystemMapData> NavigationNeighbors = new();
         public System.Collections.Generic.IEnumerable<SystemMapData> GetAdjacentSystems() => NavigationNeighbors;
+        public void RemovePointOfInterest(MapPointOfInterest poi) => pointsOfInterest.Remove(poi);
     }
     public partial class MapPointOfInterest : MapElement
     {

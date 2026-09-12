@@ -27,6 +27,10 @@ internal sealed class WorldNativeAttachment
     private readonly WorldDetachedCombatFactory _factory;
     private readonly PropertyInfo _map;
     private readonly FieldInfo _points, _parent, _playerCurrentPoi, _playerWaypoints;
+    // The game's own generic teardown for an authored POI: SystemMapData.RemovePointOfInterest(poi)
+    // => pointsOfInterest.Remove(poi). Creation has no generic native op (only typed Add* creators),
+    // so TryAppend mutates the field, but removal does, so we delegate rather than re-implement it.
+    private readonly MethodInfo _removePointOfInterest;
     // Fixed callback-free inspection only; no callbacks or mutation may follow the final admission fence.
     private readonly Action<object>? _profile;
     internal WorldNativeAttachment(GameAdapter game, Action<object>? profile = null)
@@ -40,6 +44,8 @@ internal sealed class WorldNativeAttachment
             ?? throw new MissingFieldException("MapElement.system");
         _points = assembly.GetType("Source.Galaxy.SystemMapData", true)!.GetField("pointsOfInterest", BindingFlags.Public | BindingFlags.Instance)
             ?? throw new MissingFieldException("SystemMapData.pointsOfInterest");
+        _removePointOfInterest = assembly.GetType("Source.Galaxy.SystemMapData", true)!.GetMethod("RemovePointOfInterest", BindingFlags.Public | BindingFlags.Instance)
+            ?? throw new MissingMethodException("SystemMapData.RemovePointOfInterest");
         var player = assembly.GetType("Source.Player.GamePlayer", true)!;
         _playerCurrentPoi = player.GetField("currentPointOfInterest", BindingFlags.Public | BindingFlags.Instance)
             ?? throw new MissingFieldException("GamePlayer.currentPointOfInterest");
@@ -98,13 +104,16 @@ internal sealed class WorldNativeAttachment
             !ReferenceEquals(_parent.GetValue(record.Native), system)) return WorldRemoveOutcome.Missing;
         var members = (IList)_points.GetValue(system)!;
         if (!Contains(members, record.Native)) return WorldRemoveOutcome.Missing;
-        // Remove by reference, never by equality, so a native POI that overrode Equals cannot cause a
-        // different-but-equal member to be removed while the owned POI survives.
+        // Capture the slot for rollback ordering only; the removal itself is the game's own teardown.
         int removalIndex = IndexOf(members, record.Native);
         if (removalIndex < 0) return WorldRemoveOutcome.Missing;
         try
         {
-            members.RemoveAt(removalIndex);
+            // Delegate to the game's removal rather than hand-rolling field surgery. The game removes
+            // by equality (pointsOfInterest.Remove(poi)), so a native POI that overrides Equals is
+            // handled exactly as the game itself would handle it. Our VerifyRemoveDelta + rollback
+            // below remain the atomicity/save-safety net (unchanged by the primitive we delegate to).
+            _removePointOfInterest.Invoke(system, new object[] { record.Native });
             if (!_game.TryGetCurrentReadyPlayer(session, out var current) || !ReferenceEquals(current, player) ||
                 !ReferenceEquals(_map.GetValue(current), map))
             { Rollback(members, record.Native, removalIndex); return WorldRemoveOutcome.Failed; }
