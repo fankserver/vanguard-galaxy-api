@@ -289,10 +289,11 @@ internal sealed class WorldNativeResourceSites : IResourceSiteNative
     }
 
     /// <summary>
-    /// Removes the owned site POI from its host system. Ownership is structural (exact kind, membership
-    /// in the recorded host), the player must not be at or routed to it, a salvage site's station must
-    /// not have a live operation or persisted interior, and the post-removal membership delta must be
-    /// exactly this one POI with nothing else changed; otherwise the POI is restored.
+    /// Removes the owned site POI from its host system. This is the plain native removal: ownership is
+    /// still structural (exact kind, membership in the recorded host) and the post-removal membership
+    /// delta must be exactly this one POI with nothing else changed (otherwise the POI is restored), but
+    /// it does not check transient player-safety conditions (occupancy, boarding, persisted interior) —
+    /// the modder inspects <see cref="Readiness"/> first or uses the deferred removal path.
     /// </summary>
     public ResourceSiteRemoveOutcome RemoveSite(Guid session, string systemId, string poiId, ResourceSiteKind kind)
     {
@@ -309,13 +310,6 @@ internal sealed class WorldNativeResourceSites : IResourceSiteNative
         var members = (System.Collections.IList)_points.GetValue(host)!;
         if (!members.Contains(poi)) return ResourceSiteRemoveOutcome.Missing;
         if (!_game.TryGetObservedPlayer(session, out var player) || player == null) return ResourceSiteRemoveOutcome.Failed;
-        var currentPoi = _playerCurrentPoi.GetValue(player);
-        if (currentPoi != null && ReferenceEquals(currentPoi, poi)) return ResourceSiteRemoveOutcome.PlayerInside;
-        if (_playerWaypoints.GetValue(player) is System.Collections.IEnumerable waypoints)
-            foreach (var waypoint in waypoints)
-                if (waypoint != null && ReferenceEquals(waypoint, poi)) return ResourceSiteRemoveOutcome.PlayerInside;
-        var boarding = StationInUse(poi);
-        if (boarding != ResourceSiteRemoveOutcome.Removed) return boarding;
         // Remove by reference, never by equality: a native POI that overrode Equals must not let the
         // removal pick a different-but-equal member while the owned POI survives.
         int removalIndex = IndexOf(members, poi);
@@ -339,27 +333,50 @@ internal sealed class WorldNativeResourceSites : IResourceSiteNative
 
     /// <summary>The salvage site's derelict station is in use when a boarding operation is live or an
     /// interior simulation is persisted. Other site kinds carry no boarding state.</summary>
-    private ResourceSiteRemoveOutcome StationInUse(object poi)
+    private WorldContentRemovalStatus StationInUse(object poi)
     {
         object? location = null;
         if (_getPersistables.Invoke(poi, null) is System.Collections.IEnumerable persistables)
             foreach (var persistable in persistables)
                 if (persistable != null && _dungeonLocationType.IsInstanceOfType(persistable)) { location = persistable; break; }
-        if (location == null) return ResourceSiteRemoveOutcome.Removed;
+        if (location == null) return WorldContentRemovalStatus.Ready;
         var data = _locationDungeonData.GetValue(location);
         if (data != null)
         {
-            if (_dungeonOperationActive.GetValue(data) is true) return ResourceSiteRemoveOutcome.BoardingActive;
-            if (_dungeonSimulation.GetValue(data) != null) return ResourceSiteRemoveOutcome.InteriorPersisted;
+            if (_dungeonOperationActive.GetValue(data) is true) return WorldContentRemovalStatus.BoardingActive;
+            if (_dungeonSimulation.GetValue(data) != null) return WorldContentRemovalStatus.InteriorPersisted;
         }
         try
         {
             var manager = _dungeonManagerInstance.GetValue(null);
             if (manager != null && _getOperation.Invoke(manager, new[] { location }) != null)
-                return ResourceSiteRemoveOutcome.BoardingActive;
+                return WorldContentRemovalStatus.BoardingActive;
         }
         catch { /* a missing dungeon manager fails open; the persisted-state checks above still apply */ }
-        return ResourceSiteRemoveOutcome.Removed;
+        return WorldContentRemovalStatus.Ready;
+    }
+
+    /// <summary>Pure readiness report for removing the owned site: Ready, PlayerInside, BoardingActive,
+    /// InteriorPersisted, NotPresent or Unavailable. Never mutates native state.</summary>
+    public WorldContentRemovalStatus Readiness(Guid session, string systemId, string poiId, ResourceSiteKind kind)
+    {
+        var map = Map(session);
+        if (map == null) return WorldContentRemovalStatus.Unavailable;
+        var before = _index.Read(map);
+        var poi = before.FindPoint(poiId);
+        var host = before.FindSystem(systemId);
+        if (poi == null || host == null) return WorldContentRemovalStatus.NotPresent;
+        var expected = kind == ResourceSiteKind.SalvageSite ? _salvageType : _miningType;
+        if (!expected.IsInstanceOfType(poi)) return WorldContentRemovalStatus.NotPresent;
+        if (_game.TryGetObservedPlayer(session, out var player) && player != null)
+        {
+            var currentPoi = _playerCurrentPoi.GetValue(player);
+            if (currentPoi != null && ReferenceEquals(currentPoi, poi)) return WorldContentRemovalStatus.PlayerInside;
+            if (_playerWaypoints.GetValue(player) is System.Collections.IEnumerable waypoints)
+                foreach (var waypoint in waypoints)
+                    if (waypoint != null && ReferenceEquals(waypoint, poi)) return WorldContentRemovalStatus.PlayerInside;
+        }
+        return StationInUse(poi);
     }
 
     /// <summary>Best-effort restoration of the site POI at its original list position after a failed removal.</summary>

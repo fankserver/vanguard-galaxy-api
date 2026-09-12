@@ -41,6 +41,15 @@ internal sealed class FakeWormholePairs : IWormholePairNative
         if (FailRemove) return WormholeRemoveOutcome.Failed;
         Pairs.Remove(key); return WormholeRemoveOutcome.Removed;
     }
+    public WorldContentRemovalStatus Readiness(Guid session, string wa, string wb)
+    {
+        string? key = null;
+        foreach (var entry in Pairs) if (entry.Value.A == wa && entry.Value.B == wb) { key = entry.Key; break; }
+        if (key == null) return WorldContentRemovalStatus.NotPresent;
+        if (PlayerInside) return WorldContentRemovalStatus.PlayerInside;
+        if (FailRemove) return WorldContentRemovalStatus.Unavailable;
+        return WorldContentRemovalStatus.Ready;
+    }
 }
 
 public sealed class WormholePairTests

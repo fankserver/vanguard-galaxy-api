@@ -182,7 +182,24 @@ internal sealed class WorldContentService : IWorldService, IDisposable
         {
             try { refresh(session); } catch { /* one provider's fault must not block the others */ }
         }
+        CompletePendingRemovals();
     }
+
+    /// <summary>Sweep for <c>RequestRemoval</c> occurrences: completes a deferred removal once the world
+    /// is safely actionable and the occurrence reports <see cref="WorldContentRemovalStatus.Ready"/>,
+    /// mirroring the game's ambient cleanup window. Each finalizer returns true only when the removal
+    /// actually completed, so a request persists until its conditions clear.</summary>
+    private readonly HashSet<Func<bool>> _pendingRemovals = new();
+    private void CompletePendingRemovals()
+    {
+        if (_disposed) return;
+        foreach (var finalize in _pendingRemovals.ToArray())
+        {
+            try { if (finalize()) _pendingRemovals.Remove(finalize); } catch { /* one request's fault must not block the others */ }
+        }
+    }
+    internal void RegisterPendingRemoval(Func<bool> finalize)
+    { if (finalize != null) _pendingRemovals.Add(finalize); }
     /// <summary>
     /// After a successful native pocket removal: drop the retained authored-site rows inside the
     /// removed system (their native POIs were removed with it) and let every provider terminally mark
@@ -512,15 +529,13 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             var instanceId = SiteInstanceId(ProviderId, localId, occurrenceKey);
             try
             {
-                var outcome = _service._authoring.TryRemove(_provider, session.Id, localId, instanceId,
+                var outcome = _service._authoring.RemoveChecked(_provider, session.Id, localId, instanceId,
                     () => !_disposed && !_service._disposed && _service._canAuthor());
                 switch (outcome)
                 {
                     case WorldRemoveOutcome.Removed:
                         _service._combatKeys.Remove(rowKey);
                         return (WorldStatus.Succeeded, "");
-                    case WorldRemoveOutcome.PlayerInside:
-                        return (WorldStatus.Rejected, "The player is at the combat site; move away before removing it.");
                     case WorldRemoveOutcome.Missing:
                         return (WorldStatus.Rejected, "The combat site is not currently present natively.");
                     default:
@@ -529,6 +544,29 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             }
             catch (Exception error)
             { _service._hub.ReportSubscriberFailure("world.combat-remove", error); return (WorldStatus.Unavailable, "The native removal faulted."); }
+        }
+
+        /// <summary>
+        /// Pure readiness for removing the owned combat site (no mutation): Ready, PlayerInside,
+        /// NotPresent, SessionEnded, NotReady or Unavailable.
+        /// </summary>
+        internal WorldContentRemovalStatus CanRemoveCombatSite(string localId, string occurrenceKey)
+        {
+            _service._hub.CheckThread();
+            if (_disposed || _service._disposed || _service._authoring == null) return WorldContentRemovalStatus.Unavailable;
+            var session = _service._hub.CurrentSession;
+            if (session == null || session.Id == Guid.Empty) return WorldContentRemovalStatus.SessionEnded;
+            if (session.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks) return WorldContentRemovalStatus.NotReady;
+            var rowKey = (ProviderId, localId, occurrenceKey);
+            if (!_service._combatKeys.ContainsKey(rowKey)) return WorldContentRemovalStatus.NotPresent;
+            var instanceId = SiteInstanceId(ProviderId, localId, occurrenceKey);
+            try
+            {
+                return _service._authoring.CanRemove(_provider, session.Id, localId, instanceId,
+                    () => !_disposed && !_service._disposed && _service._canAuthor());
+            }
+            catch (Exception error)
+            { _service._hub.ReportSubscriberFailure("world.combat-canremove", error); return WorldContentRemovalStatus.Unavailable; }
         }
 
         public event Action<ResourceSitesSettledEvent>? ResourceSiteReconstructionSettled;
@@ -990,22 +1028,62 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             public WorldContentResult LastAction { get { _provider._service._hub.CheckThread(); return _lastAction; } }
             public event Action<IResourceSite>? Changed { add => _changed += value; remove => _changed -= value; }
             internal void RecordAction(WorldContentResult result) => _lastAction = result;
-            public WorldContentResult Remove()
+            public WorldContentRemovalStatus CanRemove()
             {
                 _provider._service._hub.CheckThread();
-                if (_removed) return _lastAction = new(WorldContentStatus.Rejected, "The occurrence was removed; create the key again for a fresh site.");
+                if (_removed) return WorldContentRemovalStatus.NotPresent;
+                var service = _provider._service;
+                if (_provider._disposed || service._disposed || _provider._authoredSites == null || service._siteCoordinator == null || !service._canAuthor())
+                    return WorldContentRemovalStatus.Unavailable;
+                if (service._hub.CurrentSession?.Id != Session) return WorldContentRemovalStatus.SessionEnded;
+                if (service._hub.CurrentSession.Phase != SessionPhase.GameplayInitialized || service._hub.IsDispatchingCallbacks)
+                    return WorldContentRemovalStatus.NotReady;
+                return service._siteCoordinator.CanRemove(_provider._authoredSites, Session, _localId, _occurrenceKey);
+            }
+            private WorldContentResult? Gate()
+            {
                 var service = _provider._service;
                 if (_provider._disposed || service._disposed || _provider._authoredSites == null || service._siteCoordinator == null || !service._canAuthor())
                     return _lastAction = new(WorldContentStatus.Unavailable);
                 if (service._hub.CurrentSession?.Id != Session) return _lastAction = new(WorldContentStatus.GameEnded);
                 if (service._hub.CurrentSession.Phase != SessionPhase.GameplayInitialized || service._hub.IsDispatchingCallbacks)
                     return _lastAction = new(WorldContentStatus.NotReady);
-                var (status, detail) = service._siteCoordinator.Remove(_provider._authoredSites, Session, _localId, _occurrenceKey);
-                if (status != WorldStatus.Succeeded)
-                    return _lastAction = new(status == WorldStatus.Unavailable ? WorldContentStatus.Unavailable : WorldContentStatus.Rejected, detail);
+                return null;
+            }
+            private void CompleteRemoval()
+            {
                 _provider._siteObjects.Remove((_localId, _occurrenceKey));
                 MarkRemoved();
+            }
+            public WorldContentResult Remove()
+            {
+                _provider._service._hub.CheckThread();
+                if (_removed) return _lastAction = new(WorldContentStatus.Rejected, "The occurrence was removed; create the key again for a fresh site.");
+                if (Gate() is { } refused) return refused;
+                var (status, detail) = _provider._service._siteCoordinator!.Remove(_provider._authoredSites!, Session, _localId, _occurrenceKey);
+                if (status != WorldStatus.Succeeded)
+                    return _lastAction = new(status == WorldStatus.Unavailable ? WorldContentStatus.Unavailable : WorldContentStatus.Rejected, detail);
+                CompleteRemoval();
                 return _lastAction = new(WorldContentStatus.Succeeded);
+            }
+            public WorldContentResult RequestRemoval()
+            {
+                _provider._service._hub.CheckThread();
+                if (_removed) return _lastAction = new(WorldContentStatus.Rejected, "The occurrence was removed; create the key again for a fresh site.");
+                if (Gate() is { } refused) return refused;
+                _removalRequested = true;
+                _provider._service.RegisterPendingRemoval(CompletePendingRemoval);
+                return _lastAction = new(WorldContentStatus.Succeeded, "Queued for removal; it happens at the next safe cleanup window.");
+            }
+            private bool CompletePendingRemoval()
+            {
+                _provider._service._hub.CheckThread();
+                if (_removed || !_removalRequested || CanRemove() != WorldContentRemovalStatus.Ready) return false;
+                var (status, detail) = _provider._service._siteCoordinator!.Remove(_provider._authoredSites!, Session, _localId, _occurrenceKey);
+                if (status != WorldStatus.Succeeded) return false;
+                CompleteRemoval();
+                _lastAction = new(WorldContentStatus.Succeeded, "The requested removal completed at a cleanup window.");
+                return true;
             }
             /// <summary>The pocket containing this site removed, or the site itself was removed; terminal for its session.</summary>
             internal void MarkRemoved()
@@ -1017,6 +1095,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 if (changed) _changed?.Invoke(this);
             }
             private bool _removed;
+            private bool _removalRequested;
             internal void Refresh()
             {
                 if (_removed) return;
@@ -1041,6 +1120,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             private WorldContentResult _lastAction = new(WorldContentStatus.NotReady, "No action has been taken yet on this occurrence.");
             private event Action<ICombatSite>? _changed;
             private bool _removed;
+            private bool _removalRequested;
             internal CombatSiteHandle(Provider provider, string localId, string occurrenceKey, Guid session)
             { _provider = provider; _localId = localId; _occurrenceKey = occurrenceKey; Session = session; }
             public string OccurrenceKey => _occurrenceKey;
@@ -1058,23 +1138,62 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             public WorldContentResult LastAction { get { _provider._service._hub.CheckThread(); return _lastAction; } }
             public event Action<ICombatSite>? Changed { add => _changed += value; remove => _changed -= value; }
             internal void RecordAction(WorldContentResult result) => _lastAction = result;
-            public WorldContentResult Remove()
+            public WorldContentRemovalStatus CanRemove()
             {
                 _provider._service._hub.CheckThread();
-                if (_removed) return _lastAction = new(WorldContentStatus.Rejected, "The occurrence was removed; create the key again for a fresh site.");
+                if (_removed) return WorldContentRemovalStatus.NotPresent;
+                var service = _provider._service;
+                if (_provider._disposed || service._disposed || !service._canAuthor()) return WorldContentRemovalStatus.Unavailable;
+                if (service._hub.CurrentSession?.Id != Session) return WorldContentRemovalStatus.SessionEnded;
+                if (service._hub.CurrentSession.Phase != SessionPhase.GameplayInitialized || service._hub.IsDispatchingCallbacks)
+                    return WorldContentRemovalStatus.NotReady;
+                return _provider.CanRemoveCombatSite(_localId, _occurrenceKey);
+            }
+            private WorldContentResult? Gate()
+            {
                 var service = _provider._service;
                 if (_provider._disposed || service._disposed || !service._canAuthor()) return _lastAction = new(WorldContentStatus.Unavailable);
                 if (service._hub.CurrentSession?.Id != Session) return _lastAction = new(WorldContentStatus.GameEnded);
                 if (service._hub.CurrentSession.Phase != SessionPhase.GameplayInitialized || service._hub.IsDispatchingCallbacks)
                     return _lastAction = new(WorldContentStatus.NotReady);
-                var (status, detail) = _provider.RemoveCombatSite(_localId, _occurrenceKey);
-                if (status != WorldStatus.Succeeded)
-                    return _lastAction = new(status == WorldStatus.Unavailable ? WorldContentStatus.Unavailable : WorldContentStatus.Rejected, detail);
+                return null;
+            }
+            private void CompleteRemoval()
+            {
                 _removed = true;
                 _provider._sites.Remove((_localId, _occurrenceKey));
                 _state = new CombatSiteState(ReconstructionStatus.Removed);
                 _changed?.Invoke(this);
+            }
+            public WorldContentResult Remove()
+            {
+                _provider._service._hub.CheckThread();
+                if (_removed) return _lastAction = new(WorldContentStatus.Rejected, "The occurrence was removed; create the key again for a fresh site.");
+                if (Gate() is { } refused) return refused;
+                var (status, detail) = _provider.RemoveCombatSite(_localId, _occurrenceKey);
+                if (status != WorldStatus.Succeeded)
+                    return _lastAction = new(status == WorldStatus.Unavailable ? WorldContentStatus.Unavailable : WorldContentStatus.Rejected, detail);
+                CompleteRemoval();
                 return _lastAction = new(WorldContentStatus.Succeeded);
+            }
+            public WorldContentResult RequestRemoval()
+            {
+                _provider._service._hub.CheckThread();
+                if (_removed) return _lastAction = new(WorldContentStatus.Rejected, "The occurrence was removed; create the key again for a fresh site.");
+                if (Gate() is { } refused) return refused;
+                _removalRequested = true;
+                _provider._service.RegisterPendingRemoval(CompletePendingRemoval);
+                return _lastAction = new(WorldContentStatus.Succeeded, "Queued for removal; it happens at the next safe cleanup window.");
+            }
+            private bool CompletePendingRemoval()
+            {
+                _provider._service._hub.CheckThread();
+                if (_removed || !_removalRequested || CanRemove() != WorldContentRemovalStatus.Ready) return false;
+                var (status, detail) = _provider.RemoveCombatSite(_localId, _occurrenceKey);
+                if (status != WorldStatus.Succeeded) return false;
+                CompleteRemoval();
+                _lastAction = new(WorldContentStatus.Succeeded, "The requested removal completed at a cleanup window.");
+                return true;
             }
             internal void Refresh()
             {
@@ -1101,6 +1220,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             private bool _removed;
             private readonly Action _evict;
             private IDisposable? _quietFirst, _quietSecond;
+            private bool _removalRequested;
             private event Action<IWormholePair>? _changed;
             internal WormholePairHandle(Provider provider, string localId, string key, Guid session, Action evict)
             { _provider = provider; _localId = localId; _key = key; Session = session; _evict = evict; }
@@ -1131,24 +1251,62 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 var status = _provider._service._wormholeCoordinator.SetOpen(_provider._wormholes, Session, _localId, _key, open);
                 return _last = new(status == WorldStatus.Succeeded ? WorldContentStatus.Succeeded : status == WorldStatus.Unavailable ? WorldContentStatus.Unavailable : WorldContentStatus.Rejected);
             }
-            public WorldContentResult Remove()
+            public WorldContentRemovalStatus CanRemove()
             {
                 _provider._service._hub.CheckThread();
-                if (_removed) return _last = new(WorldContentStatus.Rejected, "The pair was removed; create the key again for a fresh pair.");
+                if (_removed) return WorldContentRemovalStatus.NotPresent;
+                if (_provider._disposed || _provider._service._disposed || _provider._wormholes == null || _provider._service._wormholeCoordinator == null)
+                    return WorldContentRemovalStatus.Unavailable;
+                if (_provider._service._hub.CurrentSession?.Id != Session) return WorldContentRemovalStatus.SessionEnded;
+                if (_provider._service._hub.CurrentSession.Phase != SessionPhase.GameplayInitialized || _provider._service._hub.IsDispatchingCallbacks)
+                    return WorldContentRemovalStatus.NotReady;
+                return _provider._service._wormholeCoordinator.CanRemove(_provider._wormholes, Session, _localId, _key);
+            }
+            private WorldContentResult? Gate()
+            {
                 if (_provider._disposed || _provider._service._disposed || _provider._wormholes == null || _provider._service._wormholeCoordinator == null)
                     return _last = new(WorldContentStatus.Unavailable);
                 if (_provider._service._hub.CurrentSession?.Id != Session) return _last = new(WorldContentStatus.GameEnded);
                 if (_provider._service._hub.CurrentSession.Phase != SessionPhase.GameplayInitialized || _provider._service._hub.IsDispatchingCallbacks)
                     return _last = new(WorldContentStatus.NotReady);
-                var (status, detail) = _provider._service._wormholeCoordinator.Remove(_provider._wormholes, Session, _localId, _key);
-                if (status != WorldStatus.Succeeded) return _last = new(status == WorldStatus.Unavailable ? WorldContentStatus.Unavailable : WorldContentStatus.Rejected, detail);
+                return null;
+            }
+            private void CompleteRemoval()
+            {
                 _removed = true;
                 _evict();
                 ReleaseQuiet();
-                _last = new(WorldContentStatus.Succeeded);
                 _state = new(ReconstructionStatus.Removed);
                 _changed?.Invoke(this);
-                return _last;
+            }
+            public WorldContentResult Remove()
+            {
+                _provider._service._hub.CheckThread();
+                if (_removed) return _last = new(WorldContentStatus.Rejected, "The pair was removed; create the key again for a fresh pair.");
+                if (Gate() is { } refused) return refused;
+                var (status, detail) = _provider._service._wormholeCoordinator!.Remove(_provider._wormholes!, Session, _localId, _key);
+                if (status != WorldStatus.Succeeded) return _last = new(status == WorldStatus.Unavailable ? WorldContentStatus.Unavailable : WorldContentStatus.Rejected, detail);
+                CompleteRemoval();
+                return _last = new(WorldContentStatus.Succeeded);
+            }
+            public WorldContentResult RequestRemoval()
+            {
+                _provider._service._hub.CheckThread();
+                if (_removed) return _last = new(WorldContentStatus.Rejected, "The pair was removed; create the key again for a fresh pair.");
+                if (Gate() is { } refused) return refused;
+                _removalRequested = true;
+                _provider._service.RegisterPendingRemoval(CompletePendingRemoval);
+                return _last = new(WorldContentStatus.Succeeded, "Queued for removal; it happens at the next safe cleanup window.");
+            }
+            private bool CompletePendingRemoval()
+            {
+                _provider._service._hub.CheckThread();
+                if (_removed || !_removalRequested || CanRemove() != WorldContentRemovalStatus.Ready) return false;
+                var (status, detail) = _provider._service._wormholeCoordinator!.Remove(_provider._wormholes!, Session, _localId, _key);
+                if (status != WorldStatus.Succeeded) return false;
+                CompleteRemoval();
+                _last = new(WorldContentStatus.Succeeded, "The requested removal completed at a cleanup window.");
+                return true;
             }
             internal void Refresh()
             {
@@ -1198,6 +1356,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             private PocketSystemState _state = null!;
             private bool _seeded;
             private bool _removed;
+            private bool _removalRequested;
             private IDisposable? _quiet;
             private readonly Action _evict;
             private WorldContentResult _lastAction = new(WorldContentStatus.NotReady, "No action has been taken yet on this occurrence.");
@@ -1261,6 +1420,54 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 return _lastAction = new WorldContentResult(ToActionStatus(status), "");
             }
 
+            public WorldContentRemovalStatus CanRemove()
+            {
+                _service._hub.CheckThread();
+                if (_removed) return WorldContentRemovalStatus.NotPresent;
+                if (!_alive()) return WorldContentRemovalStatus.Unavailable;
+                if (!IsCurrentSession()) return WorldContentRemovalStatus.SessionEnded;
+                if (!_service._canAuthor()) return WorldContentRemovalStatus.Unavailable;
+                var session = _service._hub.CurrentSession;
+                if (session == null || session.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks)
+                    return WorldContentRemovalStatus.NotReady;
+                if (_service._authoredCoordinator == null) return WorldContentRemovalStatus.Unavailable;
+                var row = _service._authoredCoordinator.TryGetOccurrence(_authored.Owner, _localId, _occurrenceKey);
+                if (row != null && _service._authoring != null)
+                {
+                    var contains = _service._authoring.AnyInSystem(row.SystemId);
+                    if (contains == null) return WorldContentRemovalStatus.NotReady;
+                    if (contains == true) return WorldContentRemovalStatus.CombatSitesPresent;
+                }
+                if (row != null && _service._wormholeCoordinator != null && _service._wormholeCoordinator.AnyOccurrenceInSystem(row.SystemId))
+                    return WorldContentRemovalStatus.WormholeEndpoint;
+                if (row == null) return WorldContentRemovalStatus.NotPresent;
+                return _service._authoredCoordinator.CanRemove(_authored, _session, Reference);
+            }
+            private void CompleteRemoval(string? systemId)
+            {
+                _removed = true;
+                _evict();
+                ReleaseQuiet();
+                if (systemId != null) _service.PocketRemoved(systemId);
+            }
+            private bool CompletePendingRemoval()
+            {
+                _service._hub.CheckThread();
+                if (_removed || !_removalRequested || CanRemove() != WorldContentRemovalStatus.Ready) return false;
+                var (status, detail, systemId) = _service._authoredCoordinator!.Remove(_authored, _session, Reference);
+                if (status != WorldStatus.Succeeded) return false;
+                CompleteRemoval(systemId);
+                _lastAction = new WorldContentResult(WorldContentStatus.Succeeded, "The requested removal completed at a cleanup window.");
+                return true;
+            }
+            public WorldContentResult RequestRemoval()
+            {
+                _service._hub.CheckThread();
+                if (GateAction() is { } refused) return refused;
+                _removalRequested = true;
+                _service.RegisterPendingRemoval(CompletePendingRemoval);
+                return _lastAction = new WorldContentResult(WorldContentStatus.Succeeded, "Queued for removal; it happens at the next safe cleanup window.");
+            }
             public WorldContentResult Remove()
             {
                 _service._hub.CheckThread();
@@ -1285,10 +1492,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                         "The pocket is still the endpoint of a wormhole; remove the wormhole before removing the pocket.");
                 var (status, detail, systemId) = _service._authoredCoordinator.Remove(_authored, _session, Reference);
                 if (status != WorldStatus.Succeeded) return _lastAction = new WorldContentResult(ToActionStatus(status), detail);
-                _removed = true;
-                _evict();
-                ReleaseQuiet();
-                if (systemId != null) _service.PocketRemoved(systemId);
+                CompleteRemoval(systemId);
                 return _lastAction = new WorldContentResult(WorldContentStatus.Succeeded);
             }
             private static WorldContentStatus ToActionStatus(WorldStatus status) => status switch

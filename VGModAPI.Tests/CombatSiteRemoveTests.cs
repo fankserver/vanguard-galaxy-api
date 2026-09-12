@@ -102,21 +102,40 @@ public sealed class CombatSiteRemoveTests
     }
 
     [Fact]
-    public void PlayerAtTheSiteRefusesRemovalAndRetainsTheKey()
+    public void CanRemoveReportsPlayerInsideWhileAtTheSiteAndRemoveIsPlain()
     {
         using var h = new Harness();
         h.BeginGameplay();
         var site = h.Provider.CreateCombatSite("PoiX", "encounter", "system", 10, 20)!;
         GamePlayer.current!.currentPointOfInterest = (MapPointOfInterest)h.Host.pointsOfInterest[0];
-        var refused = site.Remove();
-        Assert.Equal(WorldContentStatus.Rejected, refused.Status);
-        Assert.Contains("player", refused.Detail, StringComparison.OrdinalIgnoreCase);
-        // Nothing was removed; the occurrence stays live and actionable.
-        Assert.Single(h.Host.pointsOfInterest);
-        Assert.Single(h.Service.CaptureCombatKeys());
-        Assert.Equal(ReconstructionStatus.Reconstructed, site.State.Status);
-        GamePlayer.current.currentPointOfInterest = null;
+        // Readiness reports the occupancy; Remove itself is plain and proceeds regardless.
+        Assert.Equal(WorldContentRemovalStatus.PlayerInside, site.CanRemove());
         Assert.True(site.Remove().Succeeded);
+        Assert.Equal(ReconstructionStatus.Removed, site.State.Status);
+        Assert.Empty(h.Host.pointsOfInterest);
+        Assert.Empty(h.Service.CaptureCombatKeys());
+    }
+
+    [Fact]
+    public void RequestRemovalDefersThenCompletesAtACleanupWindow()
+    {
+        using var h = new Harness();
+        h.BeginGameplay();
+        var site = h.Provider.CreateCombatSite("PoiX", "encounter", "system", 10, 20)!;
+        // Player at the site: readiness is PlayerInside, so a deferred removal is queued and waits.
+        GamePlayer.current!.currentPointOfInterest = (MapPointOfInterest)h.Host.pointsOfInterest[0];
+        Assert.Equal(WorldContentStatus.Succeeded, site.RequestRemoval().Status); // queued
+        Assert.Single(h.Host.pointsOfInterest); // still present; the window won't act while occupied
+        Assert.Equal(ReconstructionStatus.Reconstructed, site.State.Status);
+        Assert.True(site.CanRemove() == WorldContentRemovalStatus.PlayerInside);
+        // The player leaves; the next cleanup window completes the deferred removal.
+        GamePlayer.current.currentPointOfInterest = null;
+        Assert.True(site.CanRemove() == WorldContentRemovalStatus.Ready);
+        h.Service.MaintainPocketSystems(h.Session);
+        Assert.Equal(ReconstructionStatus.Removed, site.State.Status);
+        Assert.Contains("completed at a cleanup window", site.LastAction.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(h.Host.pointsOfInterest);
+        Assert.Empty(h.Service.CaptureCombatKeys());
     }
 
     [Fact]

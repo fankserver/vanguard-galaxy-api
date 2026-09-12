@@ -24,10 +24,15 @@ save — re-obtain objects for the live game. Existence still means exact curren
 an object in hand does not establish that the site is present right now; check `State`.
 
 `ICombatSite.Remove()` is the teardown mirror of creation: it removes the native POI from its host
-system (refused while the player is at or routed to it) and drops the occurrence key so save data
-records intentional absence instead of reconstructing a failure. On success the object is terminal
-(`Removed`), `GetCombatSite` no longer resolves it, and the freed key authors a fresh site with a
-fresh native identity.
+system (the native seam refuses while the player is at or routed to it — a competency-level safety,
+not an API guard) and drops the occurrence key so save data records intentional absence instead of
+reconstructing a failure. On success the object is terminal (`Removed`), `GetCombatSite` no longer
+resolves it, and the freed key authors a fresh site with a fresh native identity.
+
+Removal is a *plain* operation: `Remove()` does what the game does. Consumers that need to decide
+whether removal is safe use the two helpers — `CanRemove()` (a pure readiness query returning
+`WorldContentRemovalStatus`) and `RequestRemoval()` (marks the site for removal, completed at the
+next safe cleanup window once readiness is `Ready`).
 
 Keyed combat sites carry the same persisted-key parity as every other authored kind. The author
 keys survive the save (kind-4 rows in the shared authored envelope), so `GetCombatSites(localId)`
@@ -336,12 +341,20 @@ pocket from the live map and from API-owned save data. Existing site objects tra
 identities. A later creation with the same occurrence key returns a new object with fresh native
 identity.
 
-The action is refused while the player's current system, current location or a waypoint is
-inside the pocket. Relocation or rescue behavior belongs to the consumer mod: move the player
-out, clear the route, then call `Remove` again. Removal is also refused while the pocket
-contains persistent Combat-site occurrences, because that older content surface has no removal
-operation. These refusals leave the pocket and its save data unchanged. Expiry scheduling is
-consumer logic; the API supplies the safe removal operation rather than a timer.
+Removing removes the pocket system, both paired gates and authored sites contained in the
+pocket from the live map and from API-owned save data. Existing site objects transition to
+`Removed`; the removed system object also reports `Removed` and no longer exposes native
+identities. A later creation with the same occurrence key returns a new object with fresh native
+identity.
+
+`Remove()` is plain; the native seam itself refuses to tear a system down while the player's
+current system, current location or a waypoint is inside the pocket (relocation or rescue
+behavior belongs to the consumer mod), and removal refuses while the pocket contains persistent
+Combat-site occurrences or is the endpoint of a wormhole, because those surfaces have no removal
+operation that could avoid orphaning their records. These refusals leave the pocket and its save
+data unchanged. Expiry scheduling is consumer logic; the API supplies `RequestRemoval()` — a
+deferred mark-for-removal completed at the next safe cleanup window once `CanRemove()` reports
+`Ready` — instead of a timer.
 
 ### Reconstruction and failures
 
@@ -452,11 +465,12 @@ var result = rift.Remove(); // WorldContentResult: Succeeded / Refused (typed re
 if (result.Succeeded) { /* both wormhole ends are gone; the key can be recreated */ }
 ```
 
-Removal is refused (`Refused`) while the player's current location or any waypoint is at
-either wormhole end, and when the pair is already gone or the session has ended. On success the
-owned row is dropped, so the occurrence key becomes reusable in the same session. This matters
-for authored cleanup: a pocket system that is still a wormhole endpoint cannot remove, so to
-tear a wormhole-linked cluster down, remove every wormhole pair first, then the pockets.
+`Remove()` is plain and the native seam itself refuses while the player's current location or any
+waypoint is at either wormhole end; `CanRemove()` reports the readiness and `RequestRemoval()`
+queues a deferred removal completed at the next safe cleanup window. On success the owned row is
+dropped, so the occurrence key becomes reusable in the same session. This matters for authored
+cleanup: a pocket system that is still a wormhole endpoint cannot remove, so to tear a
+wormhole-linked cluster down, remove every wormhole pair first, then the pockets.
 
 ## Resource sites
 
@@ -503,15 +517,19 @@ event follow the authored-system semantics above; site failures report `MissingD
 `IResourceSite.Remove()` removes the site's native POI from its host system — including a POI
 authored directly into a vanilla system, so a site no longer has to live inside an owned pocket to
 be removable. Before touching anything the API proves structural ownership (exact kind and host
-membership) and refuses while the player is at or routed to the site. A salvage site that carries a
-derelict station is further refused while a boarding operation is live on it or a persisted
-interior simulation exists, and the coordinator refuses while an `IDungeonInstallation.KeepEnterable`
-hold still names the site. Removal succeeds only when the post-removal native membership delta is
-exactly that one POI with nothing else changed; otherwise the POI is restored.
+membership). `Remove()` is plain: it performs the teardown; readiness is the consumer's check via
+`CanRemove()` (which reports e.g. `PlayerInside`, `BoardingActive`, `InteriorPersisted`,
+`HeldEnterable` when those conditions hold) and `RequestRemoval()` defers the removal to the next
+safe cleanup window. A salvage site that carries a derelict station still needs its boarding and
+persisted-interior conditions clear before the native seam can act, and the coordinator drains any
+`IDungeonInstallation.KeepEnterable` hold. Removal succeeds only when the post-removal native
+membership delta is exactly that one POI with nothing else changed; otherwise the POI is restored.
 
 ```csharp
 var result = site.Remove();
 if (!result.Succeeded) log(result.Detail); // typed refusal, nothing removed
+// Or, to remove on the next safe window once the conditions clear:
+if (site.CanRemove() != WorldContentRemovalStatus.Ready) site.RequestRemoval();
 ```
 
 On success the save row is dropped (intentional absence, not a reconstruction failure), the object

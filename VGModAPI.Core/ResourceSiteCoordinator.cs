@@ -82,10 +82,11 @@ internal interface IResourceSiteNative
     string? ResolveSite(Guid session, string systemId, string poiId, ResourceSiteKind kind);
     /// <summary>Number of native POIs currently bearing the given identity (ambiguity detection).</summary>
     int AmbiguousCount(Guid session, string poiId);
-    /// <summary>Removes the owned site POI from its host system. Refuses while the player is at/routed to
-    /// it or while a salvage site's derelict station is in use, and only succeeds when the post-removal
-    /// membership delta is exactly this one POI (rollback otherwise).</summary>
+    /// <summary>Removes the owned site POI from its host system (plain: no transient player-safety
+    /// refusals). Only succeeds when the post-removal membership delta is exactly this one POI (rollback otherwise).</summary>
     ResourceSiteRemoveOutcome RemoveSite(Guid session, string systemId, string poiId, ResourceSiteKind kind);
+    /// <summary>Pure readiness for removing the owned site (no mutation): Ready/PlayerInside/BoardingActive/InteriorPersisted/NotPresent/Unavailable.</summary>
+    WorldContentRemovalStatus Readiness(Guid session, string systemId, string poiId, ResourceSiteKind kind);
     void BeginPass(Guid session);
     void EndPass();
 }
@@ -240,10 +241,6 @@ internal sealed class ResourceSiteCoordinator : IDisposable
         // A creation that never produced a native POI is still an owned key; removing it frees the key.
         if (_failed.Remove(rowKey)) return (WorldStatus.Succeeded, "");
         if (!_committed.TryGetValue(rowKey, out var row)) return (WorldStatus.NotRegistered, "");
-        // A live KeepEnterable hold is the API's own enterability guarantee; release it first.
-        if (row.PoiId is { Length: > 0 } held
-            && _hub.Installations.Aegis.DeclaredTargets().Any(poi => string.Equals(poi, held, StringComparison.Ordinal)))
-            return (WorldStatus.Rejected, "The site's installation is held enterable; dispose the KeepEnterable hold before removing it.");
         // Resolve any attached authored dungeon occurrence before removal; the native location is no
         // longer discoverable once the POI is gone.
         Guid? attachedDungeon = null;
@@ -264,12 +261,6 @@ internal sealed class ResourceSiteCoordinator : IDisposable
                     if (attachedDungeon.HasValue && _dropDungeonOccurrence != null && !_dropDungeonOccurrence(attachedDungeon.Value))
                         _report(new InvalidOperationException("An attached authored dungeon occurrence could not be dropped after site removal."));
                     return (WorldStatus.Succeeded, "");
-                case ResourceSiteRemoveOutcome.PlayerInside:
-                    return (WorldStatus.Rejected, "The player is at the site; move away before removing it.");
-                case ResourceSiteRemoveOutcome.BoardingActive:
-                    return (WorldStatus.Rejected, "A live boarding operation holds the site's station; finish or leave it before removing.");
-                case ResourceSiteRemoveOutcome.InteriorPersisted:
-                    return (WorldStatus.Rejected, "The site's station has a persisted interior; it cannot be removed safely.");
                 case ResourceSiteRemoveOutcome.Missing:
                     return (WorldStatus.Rejected, "The site is not currently present natively; wait for reconstruction or check its state.");
                 default:
@@ -277,6 +268,29 @@ internal sealed class ResourceSiteCoordinator : IDisposable
             }
         }
         catch (Exception error) { _report(error); return (WorldStatus.Unavailable, "The native removal faulted."); }
+    }
+
+    /// <summary>
+    /// Pure readiness for removing the owned site (no mutation): Ready, PlayerInside, BoardingActive,
+    /// InteriorPersisted, HeldEnterable, NotPresent or Unavailable. A failed-creation key is Ready
+    /// (removing it only frees the key).
+    /// </summary>
+    internal WorldContentRemovalStatus CanRemove(ResourceSiteRegistry.Provider provider, Guid session, string local, string key)
+    {
+        _hub.CheckThread();
+        if (_disposed || provider == null) return WorldContentRemovalStatus.Unavailable;
+        var rowKey = (provider.Owner, local, key);
+        if (_failed.Contains(rowKey)) return WorldContentRemovalStatus.Ready;
+        if (!_committed.TryGetValue(rowKey, out var row)) return WorldContentRemovalStatus.NotPresent;
+        if (row.PoiId is { Length: > 0 } held
+            && _hub.Installations.Aegis.DeclaredTargets().Any(poi => string.Equals(poi, held, StringComparison.Ordinal)))
+            return WorldContentRemovalStatus.HeldEnterable;
+        if (_resolveAttachedDungeon != null && row.PoiId is { Length: > 0 } attachedPoi)
+        {
+            try { _ = _resolveAttachedDungeon(attachedPoi); }
+            catch (Exception error) { _report(error); return WorldContentRemovalStatus.Unavailable; }
+        }
+        return _native.Readiness(session, row.SystemId, row.PoiId, row.Kind);
     }
 
     internal ResourceSiteState ReconstructionState(string owner, string localId, string occurrenceKey)

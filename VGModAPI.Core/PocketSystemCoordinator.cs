@@ -192,8 +192,6 @@ internal sealed class PocketSystemCoordinator : IDisposable
                 case PocketRemoveOutcome.Removed:
                     _committed.Remove(key);
                     return (WorldStatus.Succeeded, "", occurrence.SystemId);
-                case PocketRemoveOutcome.PlayerInside:
-                    return (WorldStatus.Rejected, "The player's current system, location or a waypoint is inside the pocket; move the player out first.", null);
                 case PocketRemoveOutcome.Missing:
                     return (WorldStatus.Rejected, "The pocket is not currently present natively; wait for reconstruction or check its state.", null);
                 default:
@@ -201,6 +199,20 @@ internal sealed class PocketSystemCoordinator : IDisposable
             }
         }
         catch (Exception error) { _report(error); return (WorldStatus.Unavailable, "The native removal faulted.", null); }
+    }
+
+    /// <summary>Pure readiness for removing the owned pocket (no mutation): Ready, PlayerInside,
+    /// NotPresent or Unavailable. Never mutates native state.</summary>
+    internal WorldContentRemovalStatus CanRemove(PocketSystemRegistry.Provider provider, Guid expectedSession, PocketSystemReference reference)
+    {
+        _hub.CheckThread();
+        if (_disposed) return WorldContentRemovalStatus.Unavailable;
+        if (reference == null || provider == null || reference.ProviderId != provider.Owner) return WorldContentRemovalStatus.Unavailable;
+        var key = (provider.Owner, reference.LocalId, reference.OccurrenceKey);
+        if (_pending.ContainsKey(key)) return WorldContentRemovalStatus.Ready; // failed creation: nothing native exists
+        if (!_committed.TryGetValue(key, out var occurrence)) return WorldContentRemovalStatus.NotPresent;
+        try { return _native.Readiness(expectedSession, occurrence.SystemId, occurrence.EntranceGateId, occurrence.PocketGateId); }
+        catch (Exception error) { _report(error); return WorldContentRemovalStatus.Unavailable; }
     }
 
     internal PocketSystemState ReconstructionState(PocketSystemRegistry.Provider provider, PocketSystemReference reference)

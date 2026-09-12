@@ -158,6 +158,38 @@ public enum WorldContentStatus
     GameEnded
 }
 
+/// <summary>
+/// A typed, read-only report of why (if at all) an owned world-content occurrence can currently be
+/// removed. Returned by <c>CanRemove()</c>; it never mutates native state. A value of
+/// <see cref="Ready"/> means a cleanup window may act now. The distinct reasons are a joint report
+/// across the four occurrence kinds; a kind only ever reports the reasons that apply to it.
+/// </summary>
+public enum WorldContentRemovalStatus
+{
+    /// <summary>Removal can proceed now; it is safe for a cleanup window to <c>Remove()</c> or complete a <c>RequestRemoval()</c>.</summary>
+    Ready,
+    /// <summary>The player's current location or a waypoint is at the occurrence's POI; synchronous removal would act under the player.</summary>
+    PlayerInside,
+    /// <summary>A live boarding operation holds the occurrence's station; it cannot be removed while boarded.</summary>
+    BoardingActive,
+    /// <summary>The occurrence's station has a persisted interior simulation; it cannot be removed safely.</summary>
+    InteriorPersisted,
+    /// <summary>The occurrence's installation is held enterable by an <c>IDungeonInstallation.KeepEnterable</c> hold.</summary>
+    HeldEnterable,
+    /// <summary>The occurrence is not currently present natively (awaiting reconstruction, or already gone); there is nothing to remove.</summary>
+    NotPresent,
+    /// <summary>The pocket still contains owned combat sites, which cannot be removed with it.</summary>
+    CombatSitesPresent,
+    /// <summary>The pocket is still the endpoint of an owned wormhole pair; remove the pair first.</summary>
+    WormholeEndpoint,
+    /// <summary>The owning session ended or was replaced; re-obtain the occurrence for the live game.</summary>
+    SessionEnded,
+    /// <summary>A transient lifecycle state (not yet in a safely actionable state) blocked the query/removal.</summary>
+    NotReady,
+    /// <summary>The world/service layer is unavailable (no authoring capability or the plugin is gone).</summary>
+    Unavailable
+}
+
 /// <summary>Retained result of an action on an owned occurrence. Terminal outcomes stay stable until the next action.</summary>
 public sealed class WorldContentResult
 {
@@ -205,14 +237,33 @@ public interface IPocketSystem
     WorldContentResult SetEntranceOpen(bool open);
     /// <summary>
     /// Removes the owned pocket: removes the pocket system, both paired gates and this API's
-    /// authored sites inside it from the live map and from save data. Refused while the player's
-    /// current system, current location or any waypoint is inside the pocket — relocating the player
-    /// first is the consumer's responsibility — while the pocket still contains combat sites, and
-    /// while the pocket is still an endpoint of a wormhole (remove the wormhole first).
-    /// On success this object is terminal (<see cref="ReconstructionStatus.Removed"/>);
-    /// creating the same occurrence key again authors a fresh pocket with fresh native identity.
+    /// authored sites inside it from the live map and from save data. This is the plain native
+    /// removal: it refuses only when removal would be impossible or corrupt save state (the pocket
+    /// still contains combat sites, it is still the endpoint of an owned wormhole pair, it is not
+    /// present natively, or the world is not in an actionable state). It does not check transient
+    /// player-safety conditions. To avoid acting while the player is at or inside the pocket, query
+    /// <see cref="CanRemove"/> first, or use <see cref="RequestRemoval"/> to defer to the next safe
+    /// cleanup window. On success this object is terminal
+    /// (<see cref="ReconstructionStatus.Removed"/>); creating the same occurrence key again authors
+    /// a fresh pocket with fresh native identity.
     /// </summary>
     WorldContentResult Remove();
+    /// <summary>
+    /// Pure readiness report, no mutation: why (if at all) the pocket can currently be removed
+    /// (player at/inside, still contains combat sites, still a wormhole endpoint, not present,
+    /// session ended, or not yet actionable). <see cref="WorldContentRemovalStatus.Ready"/> means a
+    /// cleanup window may remove it now.
+    /// </summary>
+    WorldContentRemovalStatus CanRemove();
+    /// <summary>
+    /// Requests deferred removal, mirroring the game's ambient cleanup window: the pocket is marked
+    /// for removal and removed at the next safe maintenance pass once <see cref="CanRemove"/> is
+    /// <see cref="WorldContentRemovalStatus.Ready"/> (offsetting occupancy and gate conditions).
+    /// Returns a retained result; completion is signalled by <see cref="Changed"/> with the object
+    /// becoming terminal (<see cref="ReconstructionStatus.Removed"/>). Refused when the pocket is
+    /// already gone or the world is not actionable.
+    /// </summary>
+    WorldContentResult RequestRemoval();
 }
 
 /// <summary>

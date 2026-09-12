@@ -76,8 +76,6 @@ internal sealed class WormholePairCoordinator : IDisposable
                 case WormholeRemoveOutcome.Removed:
                     _rows.Remove((provider.Owner, local, key));
                     return (WorldStatus.Succeeded, "");
-                case WormholeRemoveOutcome.PlayerInside:
-                    return (WorldStatus.Rejected, "The player is at one of the wormholes; move away before removing the pair.");
                 case WormholeRemoveOutcome.Missing:
                     return (WorldStatus.Rejected, "The pair is not currently present natively; wait for reconstruction or check its state.");
                 default:
@@ -85,6 +83,15 @@ internal sealed class WormholePairCoordinator : IDisposable
             }
         }
         catch (Exception error) { _report(error); return (WorldStatus.Unavailable, "The native removal faulted."); }
+    }
+
+    /// <summary>Pure readiness for removing the pair (no mutation): Ready, PlayerInside, NotPresent or Unavailable.</summary>
+    internal WorldContentRemovalStatus CanRemove(WormholePairRegistry.Provider provider, Guid session, string local, string key)
+    {
+        _hub.CheckThread(); if (_disposed || provider == null) return WorldContentRemovalStatus.Unavailable;
+        if (!_rows.TryGetValue((provider.Owner, local, key), out var row)) return WorldContentRemovalStatus.NotPresent;
+        try { return _native.Readiness(session, row.FirstPoiId, row.SecondPoiId); }
+        catch (Exception error) { _report(error); return WorldContentRemovalStatus.Unavailable; }
     }
     internal WorldStatus SetOpen(WormholePairRegistry.Provider provider, Guid session, string local, string key, bool open)
     {

@@ -81,11 +81,13 @@ internal sealed class WorldNativeAttachment
     }
 
     /// <summary>
-    /// Removes the owned POI from its host system. Ownership is structural (host system membership and
-    /// parent), the player must not be at or routed to it, and the post-removal membership delta must be
-    /// exactly this one POI with nothing else changed; otherwise the POI is restored.
+    /// Removes the owned POI from its host system. This is the plain native removal: ownership is still
+    /// structural (host system membership and parent) and the post-removal membership delta must be
+    /// exactly this one POI with nothing else changed (otherwise the POI is restored), but it does not
+    /// check transient player-safety conditions — the modder inspects <see cref="Readiness"/> first or
+    /// uses the deferred removal path.
     /// </summary>
-    internal WorldRemoveOutcome TryRemove(Guid session, WorldSnapshotInstance record)
+    internal WorldRemoveOutcome RemoveChecked(Guid session, WorldSnapshotInstance record)
     {
         if (record == null) throw new ArgumentNullException(nameof(record));
         if (!_game.TryGetCurrentReadyPlayer(session, out var player)) return WorldRemoveOutcome.Failed;
@@ -94,12 +96,6 @@ internal sealed class WorldNativeAttachment
         var system = before.FindSystem(record.SystemId);
         if (system == null || !ReferenceEquals(before.FindPoint(record.Identity.NativeId), record.Native) ||
             !ReferenceEquals(_parent.GetValue(record.Native), system)) return WorldRemoveOutcome.Missing;
-        // Refuse while the player is at or routed into the POI; relocation is the consumer's move.
-        var currentPoi = _playerCurrentPoi.GetValue(player);
-        if (currentPoi != null && ReferenceEquals(currentPoi, record.Native)) return WorldRemoveOutcome.PlayerInside;
-        if (_playerWaypoints.GetValue(player) is IEnumerable waypoints)
-            foreach (var waypoint in waypoints)
-                if (waypoint != null && ReferenceEquals(waypoint, record.Native)) return WorldRemoveOutcome.PlayerInside;
         var members = (IList)_points.GetValue(system)!;
         if (!Contains(members, record.Native)) return WorldRemoveOutcome.Missing;
         // Remove by reference, never by equality, so a native POI that overrode Equals cannot cause a
@@ -121,6 +117,38 @@ internal sealed class WorldNativeAttachment
             try { Rollback(members, record.Native, removalIndex); } catch { /* rollback is best-effort only */ }
             throw;
         }
+    }
+
+    /// <summary>
+    /// Pure readiness report for removing this owned POI: <see cref="WorldContentRemovalStatus.Ready"/>,
+    /// <see cref="WorldContentRemovalStatus.PlayerInside"/>,
+    /// <see cref="WorldContentRemovalStatus.NotPresent"/>, or
+    /// <see cref="WorldContentRemovalStatus.Unavailable"/> when the world cannot be inspected. Never
+    /// mutates native state.
+    /// </summary>
+    internal WorldContentRemovalStatus Readiness(Guid session, WorldSnapshotInstance record)
+    {
+        if (record == null) throw new ArgumentNullException(nameof(record));
+        if (!_game.TryGetCurrentReadyPlayer(session, out var player)) return WorldContentRemovalStatus.Unavailable;
+        var map = _map.GetValue(player);
+        if (map == null) return WorldContentRemovalStatus.Unavailable;
+        var before = _index.Read(map);
+        var system = before.FindSystem(record.SystemId);
+        if (system == null || !ReferenceEquals(before.FindPoint(record.Identity.NativeId), record.Native) ||
+            !ReferenceEquals(_parent.GetValue(record.Native), system)) return WorldContentRemovalStatus.NotPresent;
+        if (PlayerIsAt(player, record.Native)) return WorldContentRemovalStatus.PlayerInside;
+        return WorldContentRemovalStatus.Ready;
+    }
+
+    private bool PlayerIsAt(object? player, object poi)
+    {
+        if (player == null) return false;
+        var currentPoi = _playerCurrentPoi.GetValue(player);
+        if (currentPoi != null && ReferenceEquals(currentPoi, poi)) return true;
+        if (_playerWaypoints.GetValue(player) is IEnumerable waypoints)
+            foreach (var waypoint in waypoints)
+                if (waypoint != null && ReferenceEquals(waypoint, poi)) return true;
+        return false;
     }
 
     private static bool Contains(IList members, object value)

@@ -92,14 +92,32 @@ public interface IResourceSite
     /// <summary>
     /// Removes the owned site: removes its native POI from the host system (a directly authored
     /// salvage site or mining field, including a pocket system) and drops its save row so it is
-    /// recorded as intentionally absent rather than reconstructed as a failure. Refused while the
-    /// player is at or routed to the site, while a live boarding operation or a persisted interior
-    /// simulation holds a salvage site's derelict station, and while the site's installation is held
-    /// enterable by this API. On success this object is terminal
+    /// recorded as intentionally absent rather than reconstructed as a failure. This is the plain
+    /// native removal: it refuses only when removal would be impossible or corrupt save state (the
+    /// site is not present natively, or the world is not in an actionable state). It does not check
+    /// transient player-safety conditions. To avoid acting while the player is at or inside the
+    /// site, query <see cref="CanRemove"/> first, or use <see cref="RequestRemoval"/> to defer the
+    /// teardown to the next safe cleanup window. On success this object is terminal
     /// (<see cref="ReconstructionStatus.Removed"/>); creating the same occurrence key again authors
     /// a fresh site with fresh native identity.
     /// </summary>
     WorldContentResult Remove();
+    /// <summary>
+    /// Pure readiness report, no mutation: why (if at all) the site can currently be removed
+    /// (player at/routed, live boarding, persisted interior, held enterable, not present, session
+    /// ended, or not yet actionable). <see cref="WorldContentRemovalStatus.Ready"/> means a cleanup
+    /// window may remove it now.
+    /// </summary>
+    WorldContentRemovalStatus CanRemove();
+    /// <summary>
+    /// Requests deferred removal, mirroring the game's ambient cleanup window: the site is marked
+    /// for removal and removed at the next safe maintenance pass once <see cref="CanRemove"/> is
+    /// <see cref="WorldContentRemovalStatus.Ready"/> (offsetting occupancy, boarding, interior and
+    /// hold conditions). Returns a retained result; completion is signalled by <see cref="Changed"/>
+    /// with the object becoming terminal (<see cref="ReconstructionStatus.Removed"/>). Refused when
+    /// the site is already gone or the world is not actionable.
+    /// </summary>
+    WorldContentResult RequestRemoval();
 }
 
 public sealed class ResourceSiteFailure

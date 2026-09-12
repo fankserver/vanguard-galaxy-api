@@ -56,12 +56,30 @@ public interface IWormholePair
     /// <summary>
     /// Removes the owned pair: removes both native wormhole POIs from their systems and clears the
     /// owned row so the pair no longer reconstructs and its occurrence key becomes creatable again.
-    /// Refused while the player's current location or a waypoint is at one of the wormholes — relocating
-    /// the player first is the consumer's responsibility. On success this object is terminal
-    /// (<see cref="ReconstructionStatus.Removed"/>); creating the same occurrence key again authors a
-    /// fresh pair with fresh native identity.
+    /// This is the plain native removal: it refuses only when removal would be impossible or corrupt
+    /// save state (the pair is not present natively, or the world is not in an actionable state). It
+    /// does not check transient player-safety conditions. To avoid acting while the player's current
+    /// location or a waypoint is at a wormhole end, query <see cref="CanRemove"/> first, or use
+    /// <see cref="RequestRemoval"/> to defer to the next safe cleanup window. On success this object
+    /// is terminal (<see cref="ReconstructionStatus.Removed"/>); creating the same occurrence key
+    /// again authors a fresh pair with fresh native identity.
     /// </summary>
     WorldContentResult Remove();
+    /// <summary>
+    /// Pure readiness report, no mutation: why (if at all) the pair can currently be removed (player
+    /// at/routed at an end, not present, session ended, or not yet actionable).
+    /// <see cref="WorldContentRemovalStatus.Ready"/> means a cleanup window may remove it now.
+    /// </summary>
+    WorldContentRemovalStatus CanRemove();
+    /// <summary>
+    /// Requests deferred removal, mirroring the game's ambient cleanup window: the pair is marked
+    /// for removal and removed at the next safe maintenance pass once <see cref="CanRemove"/> is
+    /// <see cref="WorldContentRemovalStatus.Ready"/> (offsetting occupancy). Returns a retained
+    /// result; completion is signalled by <see cref="Changed"/> with the object becoming terminal
+    /// (<see cref="ReconstructionStatus.Removed"/>). Refused when the pair is already gone or the
+    /// world is not actionable.
+    /// </summary>
+    WorldContentResult RequestRemoval();
 }
 
 public sealed class WormholePairsSettledEvent

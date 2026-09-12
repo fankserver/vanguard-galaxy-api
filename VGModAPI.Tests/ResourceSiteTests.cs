@@ -40,6 +40,18 @@ internal sealed class FakeResourceSiteNative : IResourceSiteNative
         return ResourceSiteRemoveOutcome.Removed;
     }
     public int AmbiguousCount(Guid session, string poiId) => Ambiguous > 0 ? Ambiguous : Created.ContainsKey(poiId) ? 1 : 0;
+    public WorldContentRemovalStatus Readiness(Guid session, string systemId, string poiId, ResourceSiteKind kind)
+    {
+        if (!Created.TryGetValue(poiId, out var row) || row.SystemId != systemId || row.Kind != kind) return WorldContentRemovalStatus.NotPresent;
+        switch (RemoveOutcome)
+        {
+            case ResourceSiteRemoveOutcome.Missing: return WorldContentRemovalStatus.NotPresent;
+            case ResourceSiteRemoveOutcome.PlayerInside: return WorldContentRemovalStatus.PlayerInside;
+            case ResourceSiteRemoveOutcome.BoardingActive: return WorldContentRemovalStatus.BoardingActive;
+            case ResourceSiteRemoveOutcome.InteriorPersisted: return WorldContentRemovalStatus.InteriorPersisted;
+            default: return WorldContentRemovalStatus.Ready;
+        }
+    }
     public void BeginPass(Guid session) { }
     public void EndPass() { }
 }
@@ -385,7 +397,7 @@ public sealed class ResourceSiteTests
     }
 
     [Fact]
-    public void KeepEnterableHoldRefusesRemoveUntilReleased()
+    public void KeepEnterableHeldReportsHeldEnterableAndRemoveIsPlain()
     {
         using var h = new Harness();
         Assert.Equal(WorldStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage(withStation: true)));
@@ -394,12 +406,11 @@ public sealed class ResourceSiteTests
         h.Hub.Installations.Aegis.SetAvailable(true);
         var installation = h.Hub.Installations.Get("author.a", site.PoiId!, null);
         using var keep = installation.KeepEnterable();
-        var refused = site.Remove();
-        Assert.Equal(WorldContentStatus.Rejected, refused.Status);
-        Assert.Contains("enterable", refused.Detail, StringComparison.OrdinalIgnoreCase);
-        Assert.Single(h.Coordinator.CaptureRows());
-        keep.Dispose();
+        // Readiness reports the protective hold; Remove itself is plain and proceeds regardless.
+        Assert.Equal(WorldContentRemovalStatus.HeldEnterable, site.CanRemove());
         Assert.True(site.Remove().Succeeded);
+        Assert.Equal(ReconstructionStatus.Removed, site.State.Status);
+        Assert.Empty(h.Coordinator.CaptureRows());
     }
 
     [Fact]

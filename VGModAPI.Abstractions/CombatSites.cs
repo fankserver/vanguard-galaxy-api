@@ -62,9 +62,28 @@ public interface ICombatSite
     /// <summary>
     /// Removes the owned combat site: removes its native POI from the host system and drops its
     /// occurrence key so save data records it as intentionally absent rather than reconstructing it
-    /// as a failure. Refused while the player is at or routed to the site. On success this object is
-    /// terminal (<see cref="ReconstructionStatus.Removed"/>); creating the same occurrence key again
-    /// authors a fresh site with fresh native identity.
+    /// as a failure. This is the plain native removal: it refuses only when removal would be
+    /// impossible or corrupt save state (the site is not present natively, or the world is not in an
+    /// actionable state). It does not check transient player-safety conditions. To avoid acting
+    /// while the player is at or routed to the site, query <see cref="CanRemove"/> first, or use
+    /// <see cref="RequestRemoval"/> to defer to the next safe cleanup window. On success this
+    /// object is terminal (<see cref="ReconstructionStatus.Removed"/>); creating the same
+    /// occurrence key again authors a fresh site with fresh native identity.
     /// </summary>
     WorldContentResult Remove();
+    /// <summary>
+    /// Pure readiness report, no mutation: why (if at all) the combat site can currently be removed
+    /// (player at/routed, not present, session ended, or not yet actionable).
+    /// <see cref="WorldContentRemovalStatus.Ready"/> means a cleanup window may remove it now.
+    /// </summary>
+    WorldContentRemovalStatus CanRemove();
+    /// <summary>
+    /// Requests deferred removal, mirroring the game's ambient cleanup window: the combat site is
+    /// marked for removal and removed at the next safe maintenance pass once
+    /// <see cref="CanRemove"/> is <see cref="WorldContentRemovalStatus.Ready"/> (offsetting
+    /// occupancy). Returns a retained result; completion is signalled by <see cref="Changed"/> with
+    /// the object becoming terminal (<see cref="ReconstructionStatus.Removed"/>). Refused when the
+    /// site is already gone or the world is not actionable.
+    /// </summary>
+    WorldContentResult RequestRemoval();
 }

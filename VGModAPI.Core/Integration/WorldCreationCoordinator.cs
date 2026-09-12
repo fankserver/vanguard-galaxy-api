@@ -143,7 +143,7 @@ internal sealed class WorldCreationCoordinator
     /// Removes the retained occurrence after a verified native removal and drops it from the retained
     /// inventory so no save record reconstructs it. The caller owns the key registry and provider lease.
     /// </summary>
-    internal WorldRemoveOutcome TryRemove(Guid session, WorldObjectIdentity identity)
+    internal WorldRemoveOutcome RemoveChecked(Guid session, WorldObjectIdentity identity)
     {
         _checkThread();
         if (identity == null) throw new ArgumentNullException(nameof(identity));
@@ -152,7 +152,7 @@ internal sealed class WorldCreationCoordinator
         foreach (var occurrence in _instances)
             if (occurrence.Identity.NativeId == identity.NativeId) { found = occurrence; break; }
         if (found == null) return WorldRemoveOutcome.Missing;
-        var outcome = _native.TryRemove(session, found);
+        var outcome = _native.RemoveChecked(session, found);
         if (outcome != WorldRemoveOutcome.Removed) return outcome;
         var next = new WorldSnapshotInstance[_instances.Length - 1];
         int index = 0;
@@ -160,5 +160,21 @@ internal sealed class WorldCreationCoordinator
         _instances = next;
         _revision = checked(_revision + 1);
         return WorldRemoveOutcome.Removed;
+    }
+
+    /// <summary>
+    /// Pure readiness for removing the retained occurrence by native identity, never mutating native
+    /// state: Ready, PlayerInside, NotPresent, NotReady or Unavailable.
+    /// </summary>
+    internal WorldContentRemovalStatus CanRemove(Guid session, WorldObjectIdentity identity)
+    {
+        _checkThread();
+        if (identity == null) throw new ArgumentNullException(nameof(identity));
+        if (_creating || !HasRestoredInventory(session) || session != _session) return WorldContentRemovalStatus.NotReady;
+        WorldSnapshotInstance? found = null;
+        foreach (var occurrence in _instances)
+            if (occurrence.Identity.NativeId == identity.NativeId) { found = occurrence; break; }
+        if (found == null) return WorldContentRemovalStatus.NotPresent;
+        return _native.Readiness(session, found);
     }
 }

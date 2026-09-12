@@ -114,22 +114,39 @@ public sealed class PocketSystemRemoveTests
     }
 
     [Fact]
-    public void PlayerInsideThePocketRefusesRemovalAndRetainsTheInstance()
+    public void CanRemoveReportsPlayerInsideWhileInsideThePocketAndRemoveIsPlainExceptNativeSafety()
     {
         using var harness = new Harness();
         var pocket = harness.CreatePocket();
         harness.Native.PlayerInside = true;
-        var refused = pocket.Remove();
-        Assert.Equal(WorldContentStatus.Rejected, refused.Status);
-        Assert.Contains("player", refused.Detail, StringComparison.OrdinalIgnoreCase);
-        // Nothing was removed; the occurrence stays live and actionable.
-        Assert.Single(harness.Native.Systems);
-        Assert.Single(harness.Coordinator.CaptureRows());
+        // Readiness reports the occupancy. Remove refuses only because the native seam itself
+        // refuses to tear a system down under the player; the API adds no guard of its own.
+        Assert.Equal(WorldContentRemovalStatus.PlayerInside, pocket.CanRemove());
+        Assert.Equal(WorldContentStatus.Rejected, pocket.Remove().Status);
         Assert.Equal(ReconstructionStatus.Reconstructed, pocket.State.Status);
-        Assert.True(pocket.SetEntranceOpen(false).Succeeded);
+        Assert.Single(harness.Native.Systems);
         // Once the consumer relocated the player, the same object removes.
         harness.Native.PlayerInside = false;
         Assert.True(pocket.Remove().Succeeded);
+        Assert.Equal(ReconstructionStatus.Removed, pocket.State.Status);
+        Assert.Empty(harness.Native.Systems);
+        Assert.Empty(harness.Coordinator.CaptureRows());
+    }
+
+    [Fact]
+    public void RequestRemovalDefersUntilTheCleanupWindow()
+    {
+        using var harness = new Harness();
+        var pocket = harness.CreatePocket();
+        Assert.Equal(WorldContentStatus.Succeeded, pocket.RequestRemoval().Status); // queued
+        Assert.Equal(ReconstructionStatus.Reconstructed, pocket.State.Status);
+        Assert.Single(harness.Native.Systems);
+        // The next safe cleanup window completes the deferred removal.
+        harness.Service.MaintainPocketSystems(harness.Session);
+        Assert.Equal(ReconstructionStatus.Removed, pocket.State.Status);
+        Assert.Contains("completed at a cleanup window", pocket.LastAction.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(harness.Native.Systems);
+        Assert.Empty(harness.Coordinator.CaptureRows());
     }
 
     [Fact]
