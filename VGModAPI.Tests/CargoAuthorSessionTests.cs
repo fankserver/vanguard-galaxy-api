@@ -212,7 +212,7 @@ public sealed class CargoAuthorSessionTests
         f.AttachStatus = DungeonStatus.Attached;
         f.Emit(f.Event(target, BoardingEventKind.OperationStarted));
         Assert.True(author.Attached); Assert.Empty(f.Actions); Assert.Equal(0, f.SettlementLeases);
-        Assert.Contains(f.Logs, message => message.Contains("optional contextual control"));
+        Assert.Contains(f.Logs, message => message.Contains("contextual-action renderer is unavailable"));
     }
 
     [Theory]

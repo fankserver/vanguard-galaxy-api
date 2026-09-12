@@ -51,14 +51,14 @@ suitable vanilla derelict for the example to have anything to show.
 | **Attachment by installation** (`Attach(IDungeonInstallation)`) | Attaches by persistent installation identity, which exists before any boarding target does — never by display-name matching. `StaleTarget` is treated as "not there yet", not as an error. |
 | **Full cleanup** (`Remove` / `CanRemove` / `RequestRemoval`) | One button removes the POI, the station, the save row and the attached cargo dungeon. `Remove()` is the plain removal and does **not** check player safety, so the example asks `CanRemove()` first and falls back to `RequestRemoval()`, which completes at the next safe cleanup window. |
 | **Restored dungeons** (`SavedDungeons`) | Reads API-restored dungeon state rather than keeping a private ledger. |
-| **Contextual panel actions** (`IDungeonPanelService.RegisterAction`) | Per-target extraction control whose identity includes the target generation, so helpers for distinct targets coexist. |
+| **Contextual panel actions** (`IDungeonService.RegisterAction`) | Per-target extraction control whose identity includes the target generation, so helpers for distinct targets coexist. |
 | **Command leases** (`AcquireControl`) | Control is acquired **only on activation** and always released; another controller owning the target is reported as a typed refusal, never a forced takeover. |
 | **Tactical requests** (`IDungeonTacticalService`) | Requests extraction only — confirmation, crew arrival and settlement stay separate concerns. |
-| **Observed settlement** (`IDungeonSettlementService`) | Settlement observation is independent of panel visibility: closing the panel must not lose returning-crew facts. `CaptureApplied`, `CrewReturnSettled` and `CrewCountsObserved` mean different things; combat completion is not proof of crew delivery. |
+| **Observed settlement** (`IDungeonService.SettlementChanged`) | Settlement observation is independent of panel visibility: closing the panel must not lose returning-crew facts. `CaptureApplied`, `CrewReturnSettled` and `CrewCountsObserved` mean different things; combat completion is not proof of crew delivery. |
 | **Installation events** (`InstallationStory.cs`) | Subscribes to named campaign station installations once, with no update or session-reset loop. |
-| **Capability gating** | Checks `DungeonPanel.Capabilities.ContextualActions` before wiring; accepting a registration alone does not prove the renderer exists. |
+| **Capability gating** | Checks `Dungeons.Capabilities.ContextualActions` before wiring; accepting a registration alone does not prove the renderer exists. |
 | **Lifetime discipline** | Per-target helpers are disposed on target retirement or session invalidation; the definition registration survives session replacement and is disposed only at plugin shutdown. |
-| **Honest degradation** | Missing panel/command/tactics/settlement services leave the definition registered without contextual controls; missing boarding/content or blank reward configuration prevents registration entirely and logs why. |
+| **Honest degradation** | A renderer without contextual actions leaves the definition registered without contextual controls; missing boarding/content or blank reward configuration prevents registration entirely and logs why. |
 
 ## The files
 
