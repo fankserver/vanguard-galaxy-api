@@ -273,7 +273,7 @@ internal sealed class StoryNativeBindings
                     objective.RequireNewVisit ? LastVisited(objective.TargetPoiId!) : 0f);
                 break;
             case StoryObjectiveKind.ReturnToSource:
-                // The mission's own source location, resolved per occurrence at build time.
+                // The mission's own source location, resolved per mission at build time.
                 var source = _missionSourcePoi.GetValue(mission)
                     ?? throw new InvalidOperationException("A return-to-source objective needs the mission's source location.");
                 Field(native.GetType(), "targetPOI").SetValue(native, PoiGuid(source));
@@ -283,10 +283,10 @@ internal sealed class StoryNativeBindings
             case StoryObjectiveKind.TravelToPocketSystemEntrance:
             case StoryObjectiveKind.TravelToResourceSite:
                 // The definition names author-local identities; the native destination exists only
-                // per occurrence, so an unresolvable one refuses the BUILD - never a broken step.
+                // per mission, so an unresolvable one refuses the BUILD - never a broken step.
                 var destination = resolveContent?.Invoke(objective)
                     ?? throw new InvalidOperationException("The authored destination '" + objective.LocalId
-                        + "/" + objective.OccurrenceKey + "' does not exist in the loaded game.");
+                        + "/" + objective.PoiKey + "' does not exist in the loaded game.");
                 Field(native.GetType(), "targetPOI").SetValue(native, destination);
                 Field(native.GetType(), "requiredVisitTime").SetValue(native,
                     objective.RequireNewVisit ? LastVisited(destination) : 0f);
@@ -434,7 +434,7 @@ internal sealed class StoryNativeBindings
                 progress = (int)Math.Min(expected.RequiredAmount, Math.Max(0L, (long)Property(_player, "credits").GetValue(player)!));
                 break;
             case StoryObjectiveKind.TravelToPoi:
-                // The visit baseline is a per-occurrence timestamp, not identity; the target is.
+                // The visit baseline is a per-mission timestamp, not identity; the target is.
                 if ((string?)Field(objective.GetType(), "targetPOI").GetValue(objective) != expected.TargetPoiId) return null;
                 progress = (bool)objective.GetType().GetMethod("IsComplete", System.Type.EmptyTypes)!.Invoke(objective, null)! ? 1 : 0;
                 break;

@@ -14,7 +14,7 @@ namespace VGModAPI.Tests;
 
 /// <summary>
 /// Owned combat sites get the same direct teardown as the other authored kinds: a verified native
-/// POI removal, then the occurrence key is dropped so save data records intentional absence instead
+/// POI removal, then the poi key is dropped so save data records intentional absence instead
 /// of reconstructing a failure. Refusals leave the key and the native POI untouched.
 /// </summary>
 [Collection("game-double")]
@@ -92,7 +92,7 @@ public sealed class CombatSiteRemoveTests
         Assert.Null(site.PoiId);
         Assert.Null(h.Provider.GetCombatSite("PoiX", "encounter"));
         Assert.Empty(h.Provider.GetCombatSites("PoiX"));
-        // The object is terminal and the freed key authors a fresh occurrence.
+        // The object is terminal and the freed key authors a fresh poi.
         Assert.Equal(WorldContentStatus.Rejected, site.Remove().Status);
         var fresh = h.Provider.CreateCombatSite("PoiX", "encounter", "system", 10, 20);
         Assert.NotNull(fresh);

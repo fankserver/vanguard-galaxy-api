@@ -188,7 +188,7 @@ internal sealed class WorldNativeResourceSites : IResourceSiteNative
         catch (Exception error) { Report(error); return null; }
     }
 
-    /// <summary>Exactly one new POI, it is the created occurrence, it is parented to the host system, and nothing was removed.</summary>
+    /// <summary>Exactly one new POI, it is the created poi, it is parented to the host system, and nothing was removed.</summary>
     internal static bool VerifySiteDelta(WorldMapIndex.Snapshot before, WorldMapIndex.Snapshot after, object created, object host)
     {
         var beforePoints = new System.Collections.Generic.HashSet<object>();

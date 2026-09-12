@@ -10,12 +10,12 @@ public sealed class DungeonPodRecoveryLedgerTests
     [Fact]
     public void AttemptedManifestAndOwnershipCannotBeRewritten()
     {
-        var ledger = new DungeonPodRecoveryLedger(); var id = Guid.NewGuid(); var occurrence = Guid.NewGuid();
+        var ledger = new DungeonPodRecoveryLedger(); var id = Guid.NewGuid(); var dungeon = Guid.NewGuid();
         var crew = new Dictionary<string, int> { ["Marine"] = 2 };
-        ledger.Track(new(id, occurrence, DungeonPodPhase.Returning, true, true, false, crew));
-        Assert.Throws<InvalidOperationException>(() => ledger.Track(new(id, occurrence, DungeonPodPhase.Returning, false, true, false, crew)));
+        ledger.Track(new(id, dungeon, DungeonPodPhase.Returning, true, true, false, crew));
+        Assert.Throws<InvalidOperationException>(() => ledger.Track(new(id, dungeon, DungeonPodPhase.Returning, false, true, false, crew)));
         ledger.BeginReturn(id); crew["Marine"] = 3;
-        Assert.Throws<InvalidOperationException>(() => ledger.Track(new(id, occurrence, DungeonPodPhase.Returning, true, true, false, crew, true)));
+        Assert.Throws<InvalidOperationException>(() => ledger.Track(new(id, dungeon, DungeonPodPhase.Returning, true, true, false, crew, true)));
         Assert.Equal(2, ledger.Get(id)!.ReturnCrew["Marine"]);
     }
     [Fact]

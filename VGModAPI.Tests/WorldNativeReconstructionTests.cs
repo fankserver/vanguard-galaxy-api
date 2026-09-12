@@ -72,7 +72,7 @@ public sealed class WorldNativeReconstructionTests
             Assert.False(coordinator.TryRestorePrepared(request.Id, () =>
             {
                 var plan = Migration();
-                return new WorldRestorationPlan(plan.Occurrences, () => { plan.Apply(); coordinator.Reset(Guid.NewGuid()); }, plan.Rollback);
+                return new WorldRestorationPlan(plan.Pois, () => { plan.Apply(); coordinator.Reset(Guid.NewGuid()); }, plan.Rollback);
             }));
             Assert.Equal("Site", poi.name);
             Assert.Throws<InvalidDataException>(() => reconstruction.Read(prepared, () => false, _ => true));

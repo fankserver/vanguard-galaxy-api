@@ -32,8 +32,8 @@ public sealed class PocketSystemRemoveTests
             Native = new FakePocketSystemNative();
             SiteNative = new FakeResourceSiteNative();
             var plugin = new object();
-            StoryHostAuthenticator auth = (occurrence, caller) =>
-                ReferenceEquals(occurrence, plugin) ? new StoryHostPlugin("author.a", caller) : null;
+            StoryHostAuthenticator auth = (poi, caller) =>
+                ReferenceEquals(poi, plugin) ? new StoryHostPlugin("author.a", caller) : null;
             Combat = new WorldDefinitionRegistry(auth, Hub.CheckThread);
             Systems = new PocketSystemRegistry(auth, Hub.CheckThread);
             Coordinator = new PocketSystemCoordinator(Hub, Systems, Native, () => true, _ => true, _ => { });
@@ -103,7 +103,7 @@ public sealed class PocketSystemRemoveTests
         Assert.Equal(WorldContentStatus.Rejected, pocket.SetEntranceOpen(true).Status);
         Assert.Equal(WorldContentStatus.Rejected, pocket.Remove().Status);
         Assert.Equal(WorldContentStatus.Rejected, pocket.LastAction.Status);
-        // The occurrence is no longer obtainable; the key authors a FRESH pocket with fresh native identity.
+        // The poi is no longer obtainable; the key authors a FRESH pocket with fresh native identity.
         Assert.Null(harness.Provider.GetPocketSystem("pocket", "k1"));
         Assert.Empty(harness.Provider.GetPocketSystems("pocket"));
         var fresh = harness.Provider.CreatePocketSystem("pocket", "k1", "anchor")!;
@@ -241,7 +241,7 @@ public sealed class PocketSystemRemoveTests
         inside.Changed += _ => insideChanged = true;
         Assert.True(pocket.Remove().Succeeded);
         // The contained site row is dropped (intentionally absent, not a reconstruction failure)...
-        Assert.Equal("elsewhere", Assert.Single(harness.SiteCoordinator.CaptureRows()).OccurrenceKey);
+        Assert.Equal("elsewhere", Assert.Single(harness.SiteCoordinator.CaptureRows()).PoiKey);
         Assert.Null(harness.Provider.GetResourceSite("field", "in-pocket"));
         // ...its object is terminal and announced the transition; the unrelated site is untouched.
         Assert.Equal(ReconstructionStatus.Removed, inside.State.Status);

@@ -11,7 +11,7 @@ internal sealed class DungeonStateStore : IDisposable
     private readonly LifecycleHub _hub;
     private readonly ISaveDataRegistration? _registration;
     private readonly IDisposable _lifetime;
-    private Dictionary<Guid, DungeonOccurrence> _entries = new();
+    private Dictionary<Guid, Dungeon> _entries = new();
     private Guid? _restoredSession;
     private bool _disposed;
     private int _serializationDepth;
@@ -42,20 +42,20 @@ internal sealed class DungeonStateStore : IDisposable
         }
     }
     internal bool MutationAllowed => StateReady && _serializationDepth == 0 && _registration!.CanMutate && !_hub.IsDispatchingCallbacks;
-    internal IReadOnlyList<DungeonOccurrence> Entries
-    { get { _hub.CheckThread(); return StateReady ? Array.AsReadOnly(_entries.Values.ToArray()) : Array.Empty<DungeonOccurrence>(); } }
-    internal DungeonOccurrence? Get(Guid id)
+    internal IReadOnlyList<Dungeon> Entries
+    { get { _hub.CheckThread(); return StateReady ? Array.AsReadOnly(_entries.Values.ToArray()) : Array.Empty<Dungeon>(); } }
+    internal Dungeon? Get(Guid id)
     { _hub.CheckThread(); return StateReady && _entries.TryGetValue(id, out var entry) ? entry : null; }
-    internal bool Add(DungeonOccurrence entry)
+    internal bool Add(Dungeon entry)
     {
         _hub.CheckThread(); if (!MutationAllowed) return false;
-        if (_entries.ContainsKey(entry.Id)) throw new InvalidOperationException("Duplicate dungeon occurrence identity.");
+        if (_entries.ContainsKey(entry.Id)) throw new InvalidOperationException("Duplicate dungeon identity.");
         // Refuse before changing the ledger if the complete retained state cannot be saved.
         DungeonStateCodec.Encode(_entries.Values.Concat(new[] { entry }));
         _entries.Add(entry.Id, entry); return true;
     }
     /// <summary>
-    /// Drops an occurrence row so save data records it as intentionally absent rather than
+    /// Drops an dungeon row so save data records it as intentionally absent rather than
     /// reconstructing it. A missing row is a no-op; mutation rules match <see cref="Add"/>.
     /// </summary>
     internal bool Drop(Guid id)
@@ -72,7 +72,7 @@ internal sealed class DungeonStateStore : IDisposable
         var definition = entry.Definition.Events.SingleOrDefault(e => e.Id == eventId);
         if (definition == null || !definition.Choices.Any(c => c.Id == choiceId) || entry.Choices.ContainsKey(eventId)) return false;
         var choices = new Dictionary<string, string>(entry.Choices, StringComparer.Ordinal) { [eventId] = choiceId };
-        var replacement = new DungeonOccurrence(id, entry.DefinitionId, entry.Definition, choices);
+        var replacement = new Dungeon(id, entry.DefinitionId, entry.Definition, choices);
         DungeonStateCodec.Encode(_entries.Values.Where(e => e.Id != id).Concat(new[] { replacement }));
         _entries[id] = replacement; return true;
     }
@@ -86,7 +86,7 @@ internal sealed class DungeonStateStore : IDisposable
     {
         _hub.CheckThread();
         if (_disposed || _hub.CurrentSession?.Id != session.Id) throw new InvalidOperationException("Stale dungeon restore.");
-        var restored = payload == null ? Array.Empty<DungeonOccurrence>() : DungeonStateCodec.Decode(payload);
+        var restored = payload == null ? Array.Empty<Dungeon>() : DungeonStateCodec.Decode(payload);
         var replacement = restored.ToDictionary(e => e.Id);
         _entries = replacement; _restoredSession = session.Id;
     }

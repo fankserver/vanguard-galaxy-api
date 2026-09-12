@@ -51,7 +51,7 @@ internal static class DungeonPodResumeCodec
         var count = Count(reader, MaximumPods); var entries = new List<DungeonPodResumeState>(); var ids = new HashSet<Guid>();
         for (var index = 0; index < count; index++)
         {
-            var id = Id(reader); var occurrence = Id(reader);
+            var id = Id(reader); var dungeon = Id(reader);
             var parentLength = Count(reader, 512); if (parentLength > stream.Length - stream.Position) throw new EndOfStreamException();
             var parent = Utf8.GetString(reader.ReadBytes(parentLength));
             var phase = (DungeonPodPhase)reader.ReadByte(); var flags = reader.ReadByte();
@@ -72,7 +72,7 @@ internal static class DungeonPodResumeCodec
                 for (var c = 0; c < outboundCount; c++) outbound.Add(Text(reader), reader.ReadInt32());
                 transport = new(nativeId, reinforcement == 1, outbound, pose, donor);
             }
-            entries.Add(new(id, occurrence, phase, (flags & 1) != 0, (flags & 2) != 0, (flags & 4) != 0, crew, (flags & 8) != 0, parent, transport));
+            entries.Add(new(id, dungeon, phase, (flags & 1) != 0, (flags & 2) != 0, (flags & 4) != 0, crew, (flags & 8) != 0, parent, transport));
         }
         if (stream.Position != stream.Length) throw new InvalidDataException("Trailing pod recovery data.");
         return entries.AsReadOnly();

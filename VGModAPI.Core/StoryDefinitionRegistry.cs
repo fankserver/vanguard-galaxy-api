@@ -129,7 +129,7 @@ internal sealed class StoryDefinitionRegistry
     internal long EntryOf(StoryContentId id)
         => _entryByIdentifier.TryGetValue(StoryContentPolicy.Identifier(id), out var entry) ? entry : 0;
 
-    /// <summary>Releases every definition of one provider lease. Saved occurrences are untouched.</summary>
+    /// <summary>Releases every definition of one provider lease. Saved missions are untouched.</summary>
     internal void RemoveProvider(string provider)
     {
         Epoch = new object();

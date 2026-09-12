@@ -64,7 +64,7 @@ public sealed class StoryProtectionPatchTests : IDisposable
 
     private (string Identifier, Mission Mission) Hold(string local = "salvage-run")
     {
-        var identifier = StoryContentPolicy.OccurrenceIdentifier(new StoryContentId("anima", local), Guid.NewGuid());
+        var identifier = StoryContentPolicy.MissionIdentifier(new StoryContentId("anima", local), Guid.NewGuid());
         var world = new StoryNativeWorld(new StoryNativeBindings(typeof(StoryMission).Assembly), () => { });
         var definition = new StoryMissionDefinition(local, "Salvage run", "Recover it.", Trading,
             new[] { new StoryStep("Reach the wreck", new[] { StoryObjective.TravelTo("poi-guid-1", requireNewVisit: true) }) },
@@ -227,7 +227,7 @@ public sealed class StoryProtectionPatchTests : IDisposable
         Assert.True((bool)PrefixMethod.Invoke(null, arguments)!);
         var stale = arguments[1];
 
-        // A later session opens its own transaction for the same occurrence identity.
+        // A later session opens its own transaction for the same mission identity.
         _transactions.Stale = true;
         var later = new object?[] { owned.Mission, null };
         Assert.True((bool)PrefixMethod.Invoke(null, later)!);

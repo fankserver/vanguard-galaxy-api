@@ -45,7 +45,7 @@ public sealed class StoryProtectionTests : IDisposable
 
     private (string Identifier, Mission Mission) Hold(string local = "salvage-run")
     {
-        var identifier = StoryContentPolicy.OccurrenceIdentifier(new StoryContentId("anima", local), Guid.NewGuid());
+        var identifier = StoryContentPolicy.MissionIdentifier(new StoryContentId("anima", local), Guid.NewGuid());
         var world = new StoryNativeWorld(new StoryNativeBindings(typeof(StoryMission).Assembly), () => { });
         Assert.True(world.Install(identifier, Definition()).Applied);
         Assert.True(world.Accept(identifier).Applied);
@@ -279,7 +279,7 @@ public sealed class StoryProtectionTests : IDisposable
 
     /// <summary>
     /// A world that cannot be read after the button ran is UNKNOWN, never "it is gone": inventing an
-    /// ending would retire an occurrence and drop its catalog entry over a world nobody could read.
+    /// ending would retire an mission and drop its catalog entry over a world nobody could read.
     /// </summary>
     [Fact]
     public void AnUnreadableOrAmbiguousWorldAfterTheButtonSettlesAsUnknown()
@@ -398,21 +398,21 @@ public sealed class StoryProtectionTests : IDisposable
     }
 
     /// <summary>
-    /// The whole reserved namespace is ours to answer for, not only well-formed occurrence
-    /// identifiers: a base definition id, a malformed one, or an occurrence nobody minted is content
+    /// The whole reserved namespace is ours to answer for, not only well-formed mission
+    /// identifiers: a base definition id, a malformed one, or an mission nobody minted is content
     /// nobody can vouch for. A neighbouring namespace is left alone.
     /// </summary>
     [Fact]
     public void EveryIdentifierInTheReservedNamespaceIsQuarantinedUnlessItIsAdmitted()
     {
-        var admitted = StoryContentPolicy.OccurrenceIdentifier(new StoryContentId("anima", "salvage-run"), Guid.NewGuid());
+        var admitted = StoryContentPolicy.MissionIdentifier(new StoryContentId("anima", "salvage-run"), Guid.NewGuid());
         _protection.Admit(Guid.NewGuid(), new[] { admitted }, "admitted");
         Assert.False(_protection.IsQuarantined(admitted));
         foreach (var identifier in new[]
         {
             StoryContentPolicy.Identifier(new StoryContentId("anima", "salvage-run")),        // the base definition
             StoryContentPolicy.IdentifierPrefix + "anima.salvage-run.not-a-guid",             // malformed
-            StoryContentPolicy.OccurrenceIdentifier(new StoryContentId("anima", "salvage-run"), Guid.NewGuid()),
+            StoryContentPolicy.MissionIdentifier(new StoryContentId("anima", "salvage-run"), Guid.NewGuid()),
             StoryContentPolicy.IdentifierPrefix
         }) Assert.True(_protection.IsQuarantined(identifier), identifier);
         // Ordinal matching: a neighbouring namespace and vanilla content are not ours.

@@ -70,7 +70,7 @@ internal sealed class MissionTransitions : IMissionService, IDisposable
         CheckThread();
         if (_disposed || !_session.HasValue) throw new InvalidOperationException("No active mission identity session.");
         if (!_entries.TryGetValue(identity, out var entry)) { entry = new Entry(); _entries.Add(identity, entry); }
-        if (entry.Removed) throw new InvalidOperationException("Mission reappeared without an observed new occurrence.");
+        if (entry.Removed) throw new InvalidOperationException("Mission reappeared without an observed new mission.");
         if (!entry.SnapshotObserved && entry.Seen.Count == 0) entry.EstablishedOrder = ++_order;
         entry.SnapshotObserved = true;
         return entry.Id;

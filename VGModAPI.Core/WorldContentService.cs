@@ -43,7 +43,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
         _hub.CheckThread();
         if (_disposed || session == Guid.Empty || _hub.CurrentSession?.Id != session) throw new System.IO.InvalidDataException("Stale combat-key restore.");
         _combatKeys.Clear(); _combatKeySession = session; _combatSettledOnce = false;
-        if (rows != null) foreach (var row in rows) _combatKeys[(row.Owner, row.LocalId, row.OccurrenceKey)] = row;
+        if (rows != null) foreach (var row in rows) _combatKeys[(row.Owner, row.LocalId, row.PoiKey)] = row;
     }
     internal CombatSiteKeyRow[] CaptureCombatKeys()
     {
@@ -55,8 +55,8 @@ internal sealed class WorldContentService : IWorldService, IDisposable
         if (_combatKeySession == session) return;
         _combatKeys.Clear(); _combatKeySession = session; _combatSettledOnce = false;
     }
-    internal bool CombatKeyClaimed(string owner, string localId, string occurrenceKey)
-    { _hub.CheckThread(); return _combatKeySession == _hub.CurrentSession?.Id && _combatKeys.ContainsKey((owner, localId, occurrenceKey)); }
+    internal bool CombatKeyClaimed(string owner, string localId, string poiKey)
+    { _hub.CheckThread(); return _combatKeySession == _hub.CurrentSession?.Id && _combatKeys.ContainsKey((owner, localId, poiKey)); }
 
     /// <summary>
     /// True when a point of interest belongs to owned authored content and must therefore stay exactly as
@@ -84,7 +84,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
     private event Action<Guid>? _shipsSettled;
     private readonly bool _ownsAmbient, _ownsProtection, _ownsDroneBays;
     private readonly List<Action<Guid>> _authoredRefreshes = new();
-    private readonly List<Action<string, (string Owner, string LocalId, string OccurrenceKey)[]>> _removeNotifiers = new();
+    private readonly List<Action<string, (string Owner, string LocalId, string PoiKey)[]>> _removeNotifiers = new();
     private event Action<ReconstructionSettledEvent>? _authoredSettled;
     public IAmbientTrafficService AmbientTraffic { get { _hub.CheckThread(); return _ambient; } }
     public IUnitProtectionService UnitProtection { get { _hub.CheckThread(); return _protection; } }
@@ -146,7 +146,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
 
     /// <summary>
     /// Periodic reconciled-invariant maintenance: converges authored gate state via the coordinator, then
-    /// refreshes every provider's owned occurrence objects so their Changed events fire on their own
+    /// refreshes every provider's owned poi objects so their Changed events fire on their own
     /// transitions (e.g. Pending → Reconstructed once native construction surfaces the pocket).
     /// </summary>
     internal void MaintainPocketSystems(Guid session)
@@ -185,8 +185,8 @@ internal sealed class WorldContentService : IWorldService, IDisposable
         CompletePendingRemovals();
     }
 
-    /// <summary>Sweep for <c>RequestRemoval</c> occurrences: completes a deferred removal once the world
-    /// is safely actionable and the occurrence reports <see cref="WorldContentRemovalStatus.Ready"/>,
+    /// <summary>Sweep for <c>RequestRemoval</c> pois: completes a deferred removal once the world
+    /// is safely actionable and the poi reports <see cref="WorldContentRemovalStatus.Ready"/>,
     /// mirroring the game's ambient cleanup window. A request persists until its conditions clear;
     /// it is evicted when the removal completes, and evicted (abandoned) when the owning session is
     /// replaced/ends, because a handle bound to an ended session can never act again.
@@ -220,11 +220,11 @@ internal sealed class WorldContentService : IWorldService, IDisposable
     /// <summary>
     /// After a successful native pocket removal: drop the retained authored-site rows inside the
     /// removed system (their native POIs were removed with it) and let every provider terminally mark
-    /// and release its owned occurrence objects for that pocket.
+    /// and release its owned poi objects for that pocket.
     /// </summary>
     private void PocketRemoved(string systemId)
     {
-        var droppedSites = _siteCoordinator?.DropOccurrencesInSystem(systemId) ?? Array.Empty<(string, string, string)>();
+        var droppedSites = _siteCoordinator?.DropPoisInSystem(systemId) ?? Array.Empty<(string, string, string)>();
         foreach (var notify in _removeNotifiers.ToArray())
         {
             try { notify(systemId, droppedSites); } catch { /* one provider's fault must not block the others */ }
@@ -265,21 +265,21 @@ internal sealed class WorldContentService : IWorldService, IDisposable
     }
     private sealed class Provider : IWorldProvider, IWorldProviderEngine
     {
-        private readonly Dictionary<(string LocalId, string OccurrenceKey), CombatSiteHandle> _sites = new();
+        private readonly Dictionary<(string LocalId, string PoiKey), CombatSiteHandle> _sites = new();
         private readonly IDisposable _siteSubscription;
         private readonly WorldContentService _service;
         private readonly WorldDefinitionRegistry.Provider _provider;
         private readonly PocketSystemRegistry.Provider? _authored;
         private readonly ResourceSiteRegistry.Provider? _authoredSites;
         private readonly WormholePairRegistry.Provider? _wormholes;
-        private readonly Dictionary<(string LocalId, string OccurrenceKey), WormholePairHandle> _wormholeObjects = new();
+        private readonly Dictionary<(string LocalId, string PoiKey), WormholePairHandle> _wormholeObjects = new();
         private readonly MooredShipRegistry.Provider? _authoredShips;
-        private readonly Dictionary<(string LocalId, string OccurrenceKey), MooredShipHandle> _shipObjects = new();
-        private readonly Dictionary<(string LocalId, string OccurrenceKey), ResourceSiteHandle> _siteObjects = new();
-        private readonly Dictionary<(string LocalId, string OccurrenceKey), PocketSystemHandle> _objects = new();
+        private readonly Dictionary<(string LocalId, string PoiKey), MooredShipHandle> _shipObjects = new();
+        private readonly Dictionary<(string LocalId, string PoiKey), ResourceSiteHandle> _siteObjects = new();
+        private readonly Dictionary<(string LocalId, string PoiKey), PocketSystemHandle> _objects = new();
         private readonly IDisposable _objectSubscription;
         private readonly Action<Guid> _refreshesEntry;
-        private readonly Action<string, (string Owner, string LocalId, string OccurrenceKey)[]> _removeEntry;
+        private readonly Action<string, (string Owner, string LocalId, string PoiKey)[]> _removeEntry;
         private readonly Func<bool> _alive;
         private bool _disposed;
         internal Provider(WorldContentService service, WorldDefinitionRegistry.Provider provider, PocketSystemRegistry.Provider? authored, ResourceSiteRegistry.Provider? authoredSites = null, MooredShipRegistry.Provider? authoredShips = null, WormholePairRegistry.Provider? wormholes = null)
@@ -321,15 +321,15 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             _service._hub.CheckThread();
         }
         /// <summary>Terminally marks and releases this provider's site objects dropped with a removed pocket.</summary>
-        private void OnPocketRemoved(string systemId, (string Owner, string LocalId, string OccurrenceKey)[] droppedSites)
+        private void OnPocketRemoved(string systemId, (string Owner, string LocalId, string PoiKey)[] droppedSites)
         {
             if (_disposed || _authoredSites == null) return;
             foreach (var dropped in droppedSites)
             {
                 if (dropped.Owner != _authoredSites.Owner) continue;
-                if (_siteObjects.TryGetValue((dropped.LocalId, dropped.OccurrenceKey), out var handle))
+                if (_siteObjects.TryGetValue((dropped.LocalId, dropped.PoiKey), out var handle))
                 {
-                    _siteObjects.Remove((dropped.LocalId, dropped.OccurrenceKey));
+                    _siteObjects.Remove((dropped.LocalId, dropped.PoiKey));
                     handle.MarkRemoved();
                 }
             }
@@ -347,17 +347,17 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             {
                 var reference = failure.Reference;
                 if (reference == null || reference.ProviderId != _authored.Owner) continue;
-                var handle = ObtainHandle(reference.LocalId, reference.OccurrenceKey, args.SessionId);
+                var handle = ObtainHandle(reference.LocalId, reference.PoiKey, args.SessionId);
                 handle.Refresh();
                 failures.Add(new ReconstructionFailure(handle, failure.Reason));
-                failedKeys.Add((reference.LocalId, reference.OccurrenceKey));
+                failedKeys.Add((reference.LocalId, reference.PoiKey));
             }
             var reconstructed = new List<IPocketSystem>();
-            foreach (var row in _service._authoredCoordinator.Occurrences(_authored.Owner))
+            foreach (var row in _service._authoredCoordinator.Pois(_authored.Owner))
             {
-                if (failedKeys.Contains((row.LocalId, row.OccurrenceKey))) continue;
-                var handle = ObtainHandle(row.LocalId, row.OccurrenceKey, args.SessionId);
-                handle.Refresh();   // Changed fires for each transitioned occurrence
+                if (failedKeys.Contains((row.LocalId, row.PoiKey))) continue;
+                var handle = ObtainHandle(row.LocalId, row.PoiKey, args.SessionId);
+                handle.Refresh();   // Changed fires for each transitioned poi
                 if (handle.State.Reconstructed) reconstructed.Add(handle);
             }
             // Deliver to every consumer handler independently: one faulty handler must not starve the
@@ -387,19 +387,19 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             }
             catch (ArgumentException) { return WorldStatus.InvalidDefinition; }
         }
-        /// <summary>Uniform occurrence-key contract: bounded, no control characters.</summary>
-        internal static bool ValidOccurrenceKey(string? key)
+        /// <summary>Uniform poi-key contract: bounded, no control characters.</summary>
+        internal static bool ValidPoiKey(string? key)
         {
             if (string.IsNullOrWhiteSpace(key) || key!.Length > 128) return false;
             foreach (char character in key) if (char.IsControl(character)) return false;
             return true;
         }
 
-        /// <summary>Deterministic API-allocated native identity for an author-local occurrence key.</summary>
-        internal static Guid SiteInstanceId(string providerId, string localId, string occurrenceKey)
+        /// <summary>Deterministic API-allocated native identity for an author-local poi key.</summary>
+        internal static Guid SiteInstanceId(string providerId, string localId, string poiKey)
         {
             using var sha = System.Security.Cryptography.SHA256.Create();
-            var bytes = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(providerId + "\n" + localId + "\n" + occurrenceKey));
+            var bytes = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(providerId + "\n" + localId + "\n" + poiKey));
             var guid = new byte[16];
             Array.Copy(bytes, guid, 16);
             return new Guid(guid);
@@ -414,7 +414,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             foreach (var row in _service._combatKeys.Values.ToArray())
             {
                 if (row.Owner != ProviderId) continue;
-                var handle = ObtainSite(row.LocalId, row.OccurrenceKey, session);
+                var handle = ObtainSite(row.LocalId, row.PoiKey, session);
                 handle.Refresh();
                 var state = handle.State;
                 if (state.Reconstructed) reconstructed.Add(handle);
@@ -437,33 +437,33 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             foreach (var row in _service._combatKeys.Values.ToArray())
                 if (row.Owner == ProviderId && string.Equals(row.LocalId, localId, StringComparison.Ordinal))
                 {
-                    var handle = ObtainSite(row.LocalId, row.OccurrenceKey, session.Id);
+                    var handle = ObtainSite(row.LocalId, row.PoiKey, session.Id);
                     handle.Refresh();
                     list.Add(handle);
                 }
             return list;
         }
 
-        public ICombatSite? CreateCombatSite(string localId, string occurrenceKey, string systemId, float x, float y)
+        public ICombatSite? CreateCombatSite(string localId, string poiKey, string systemId, float x, float y)
         {
             _service._hub.CheckThread();
             if (_disposed || _service._disposed || !_service._canAuthor()) return null;
             var session = _service._hub.CurrentSession;
             if (session == null || session.Id == Guid.Empty || session.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks) return null;
-            if (localId == null || !ValidOccurrenceKey(occurrenceKey)) return null;
-            if (OtherKindOwnsKey(exceptShips: false, localId, occurrenceKey)) return null;
+            if (localId == null || !ValidPoiKey(poiKey)) return null;
+            if (OtherKindOwnsKey(exceptShips: false, localId, poiKey)) return null;
             if (!_service._definitions.TryResolve(_provider, localId, out _)) return null;
-            var instanceId = SiteInstanceId(ProviderId, localId, occurrenceKey);
-            // Keyed reconciliation: an existing occurrence under this key is the occurrence; never a duplicate.
+            var instanceId = SiteInstanceId(ProviderId, localId, poiKey);
+            // Keyed reconciliation: an existing poi under this key is the poi; never a duplicate.
             var existing = FindPersistentCombatSite(session.Id, new CombatSiteReference(ProviderId, localId, instanceId));
             var result = existing.Succeeded ? existing : CreatePersistentCombatSite(session.Id, localId, instanceId, systemId, x, y);
             if (result.Status is not (WorldStatus.Succeeded or WorldStatus.Rejected)) return null;
             if (result.Status == WorldStatus.Succeeded)
             {
                 _service.EnsureCombatKeySession(session.Id);
-                _service._combatKeys[(ProviderId, localId, occurrenceKey)] = new CombatSiteKeyRow(ProviderId, localId, occurrenceKey, instanceId);
+                _service._combatKeys[(ProviderId, localId, poiKey)] = new CombatSiteKeyRow(ProviderId, localId, poiKey, instanceId);
             }
-            var handle = ObtainSite(localId, occurrenceKey, session.Id);
+            var handle = ObtainSite(localId, poiKey, session.Id);
             handle.RecordAction(result.Status == WorldStatus.Succeeded
                 ? new WorldContentResult(WorldContentStatus.Succeeded)
                 : new WorldContentResult(WorldContentStatus.Rejected, "The native site could not be created."));
@@ -471,24 +471,24 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             return handle;
         }
 
-        public ICombatSite? GetCombatSite(string localId, string occurrenceKey)
+        public ICombatSite? GetCombatSite(string localId, string poiKey)
         {
             _service._hub.CheckThread();
             if (_disposed || _service._disposed || !_service._canAuthor()) return null;
             var session = _service._hub.CurrentSession;
-            if (session == null || session.Id == Guid.Empty || localId == null || !ValidOccurrenceKey(occurrenceKey)) return null;
-            var instanceId = SiteInstanceId(ProviderId, localId, occurrenceKey);
+            if (session == null || session.Id == Guid.Empty || localId == null || !ValidPoiKey(poiKey)) return null;
+            var instanceId = SiteInstanceId(ProviderId, localId, poiKey);
             if (!FindPersistentCombatSite(session.Id, new CombatSiteReference(ProviderId, localId, instanceId)).Succeeded) return null;
-            var handle = ObtainSite(localId, occurrenceKey, session.Id);
+            var handle = ObtainSite(localId, poiKey, session.Id);
             handle.Refresh();
             return handle;
         }
 
-        private CombatSiteHandle ObtainSite(string localId, string occurrenceKey, Guid session)
+        private CombatSiteHandle ObtainSite(string localId, string poiKey, Guid session)
         {
-            var key = (localId, occurrenceKey);
+            var key = (localId, poiKey);
             if (_sites.TryGetValue(key, out var existing) && existing.Session == session) return existing;
-            var handle = new CombatSiteHandle(this, localId, occurrenceKey, session);
+            var handle = new CombatSiteHandle(this, localId, poiKey, session);
             _sites[key] = handle;
             return handle;
         }
@@ -530,10 +530,10 @@ internal sealed class WorldContentService : IWorldService, IDisposable
         }
 
         /// <summary>
-        /// Removes the owned combat site: verified native removal first, then the occurrence key is
+        /// Removes the owned combat site: verified native removal first, then the poi key is
         /// dropped so no save record reconstructs it. Leaves the key untouched on any refusal.
         /// </summary>
-        internal (WorldStatus Status, string Detail) RemoveCombatSite(string localId, string occurrenceKey)
+        internal (WorldStatus Status, string Detail) RemoveCombatSite(string localId, string poiKey)
         {
             _service._hub.CheckThread();
             if (_disposed || _service._disposed || _service._authoring == null)
@@ -541,9 +541,9 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             var session = _service._hub.CurrentSession;
             if (session == null || session.Id == Guid.Empty || session.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks)
                 return (WorldStatus.NotReady, "The world is not in a safely actionable state yet.");
-            var rowKey = (ProviderId, localId, occurrenceKey);
+            var rowKey = (ProviderId, localId, poiKey);
             if (!_service._combatKeys.ContainsKey(rowKey)) return (WorldStatus.NotRegistered, "");
-            var instanceId = SiteInstanceId(ProviderId, localId, occurrenceKey);
+            var instanceId = SiteInstanceId(ProviderId, localId, poiKey);
             try
             {
                 var outcome = _service._authoring.RemoveChecked(_provider, session.Id, localId, instanceId,
@@ -567,16 +567,16 @@ internal sealed class WorldContentService : IWorldService, IDisposable
         /// Pure readiness for removing the owned combat site (no mutation): Ready, PlayerInside,
         /// NotPresent, SessionEnded, NotReady or Unavailable.
         /// </summary>
-        internal WorldContentRemovalStatus CanRemoveCombatSite(string localId, string occurrenceKey)
+        internal WorldContentRemovalStatus CanRemoveCombatSite(string localId, string poiKey)
         {
             _service._hub.CheckThread();
             if (_disposed || _service._disposed || _service._authoring == null) return WorldContentRemovalStatus.Unavailable;
             var session = _service._hub.CurrentSession;
             if (session == null || session.Id == Guid.Empty) return WorldContentRemovalStatus.SessionEnded;
             if (session.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks) return WorldContentRemovalStatus.NotReady;
-            var rowKey = (ProviderId, localId, occurrenceKey);
+            var rowKey = (ProviderId, localId, poiKey);
             if (!_service._combatKeys.ContainsKey(rowKey)) return WorldContentRemovalStatus.NotPresent;
-            var instanceId = SiteInstanceId(ProviderId, localId, occurrenceKey);
+            var instanceId = SiteInstanceId(ProviderId, localId, poiKey);
             try
             {
                 return _service._authoring.CanRemove(_provider, session.Id, localId, instanceId,
@@ -592,9 +592,9 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             if (_authoredSites == null || _service._siteCoordinator == null || _service._hub.CurrentSession?.Id != session) return;
             var reconstructed = new List<IResourceSite>();
             var failures = new List<ResourceSiteFailure>();
-            foreach (var row in _service._siteCoordinator.Occurrences(_authoredSites.Owner))
+            foreach (var row in _service._siteCoordinator.Pois(_authoredSites.Owner))
             {
-                var handle = ObtainSiteHandle(row.LocalId, row.OccurrenceKey, session);
+                var handle = ObtainSiteHandle(row.LocalId, row.PoiKey, session);
                 handle.Refresh();
                 var state = handle.State;
                 if (state.Reconstructed) reconstructed.Add(handle);
@@ -624,27 +624,27 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             catch (ArgumentException) { return WorldStatus.InvalidDefinition; }
         }
 
-        public IResourceSite? CreateResourceSite(string localId, string occurrenceKey, string systemId, float x, float y)
+        public IResourceSite? CreateResourceSite(string localId, string poiKey, string systemId, float x, float y)
         {
             _service._hub.CheckThread();
             if (_disposed || _service._disposed || _authoredSites == null || _service._siteCoordinator == null) return null;
             if (!_service._canAuthor()) return null;
             var session = _service._hub.CurrentSession;
             if (session == null || session.Id == Guid.Empty || session.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks) return null;
-            if (localId == null || !ValidOccurrenceKey(occurrenceKey)) return null;
-            // The persistence envelope keys occurrences per (owner, local, key) across ALL kinds; a
+            if (localId == null || !ValidPoiKey(poiKey)) return null;
+            // The persistence envelope keys pois per (owner, local, key) across ALL kinds; a
             // cross-kind collision must be refused here, not discovered at save time.
             if (_authored != null && _service._authoredCoordinator != null
-                && _service._authoredCoordinator.ContainsOccurrence(_authored.Owner, localId, occurrenceKey)) return null;
+                && _service._authoredCoordinator.ContainsPoi(_authored.Owner, localId, poiKey)) return null;
             if (_authoredShips != null && _service._shipCoordinator != null
-                && _service._shipCoordinator.ContainsOccurrence(_authoredShips.Owner, localId, occurrenceKey)) return null;
+                && _service._shipCoordinator.ContainsUnit(_authoredShips.Owner, localId, poiKey)) return null;
             if (_wormholes != null && _service._wormholeCoordinator != null
-                && _service._wormholeCoordinator.Contains(_wormholes.Owner, localId, occurrenceKey)) return null;
-            if (CombatKeyOwnsKey(localId, occurrenceKey)) return null;
-            var (status, _) = _service._siteCoordinator.Create(_authoredSites, session.Id, localId, occurrenceKey, systemId, x, y);
+                && _service._wormholeCoordinator.Contains(_wormholes.Owner, localId, poiKey)) return null;
+            if (CombatKeyOwnsKey(localId, poiKey)) return null;
+            var (status, _) = _service._siteCoordinator.Create(_authoredSites, session.Id, localId, poiKey, systemId, x, y);
             if (status != WorldStatus.Succeeded && status != WorldStatus.Rejected) return null;
-            if (_service._siteCoordinator.TryGetOccurrence(_authoredSites.Owner, localId, occurrenceKey) == null && status != WorldStatus.Rejected) return null;
-            var handle = ObtainSiteHandle(localId, occurrenceKey, session.Id);
+            if (_service._siteCoordinator.TryGetPoi(_authoredSites.Owner, localId, poiKey) == null && status != WorldStatus.Rejected) return null;
+            var handle = ObtainSiteHandle(localId, poiKey, session.Id);
             handle.RecordAction(status == WorldStatus.Succeeded
                 ? new WorldContentResult(WorldContentStatus.Succeeded)
                 : new WorldContentResult(WorldContentStatus.Rejected, "The native site could not be created."));
@@ -652,14 +652,14 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             return handle;
         }
 
-        public IResourceSite? GetResourceSite(string localId, string occurrenceKey)
+        public IResourceSite? GetResourceSite(string localId, string poiKey)
         {
             _service._hub.CheckThread();
             if (_disposed || _service._disposed || _authoredSites == null || _service._siteCoordinator == null) return null;
             var session = _service._hub.CurrentSession;
-            if (session == null || session.Id == Guid.Empty || localId == null || !ValidOccurrenceKey(occurrenceKey)) return null;
-            if (_service._siteCoordinator.TryGetOccurrence(_authoredSites.Owner, localId, occurrenceKey) == null) return null;
-            var handle = ObtainSiteHandle(localId, occurrenceKey, session.Id);
+            if (session == null || session.Id == Guid.Empty || localId == null || !ValidPoiKey(poiKey)) return null;
+            if (_service._siteCoordinator.TryGetPoi(_authoredSites.Owner, localId, poiKey) == null) return null;
+            var handle = ObtainSiteHandle(localId, poiKey, session.Id);
             handle.Refresh();
             return handle;
         }
@@ -671,17 +671,17 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             var session = _service._hub.CurrentSession;
             if (session == null || session.Id == Guid.Empty) return Array.Empty<IResourceSite>();
             var list = new List<IResourceSite>();
-            foreach (var row in _service._siteCoordinator.Occurrences(_authoredSites.Owner))
+            foreach (var row in _service._siteCoordinator.Pois(_authoredSites.Owner))
                 if (string.Equals(row.LocalId, localId, StringComparison.Ordinal))
-                    list.Add(ObtainSiteHandle(row.LocalId, row.OccurrenceKey, session.Id));
+                    list.Add(ObtainSiteHandle(row.LocalId, row.PoiKey, session.Id));
             return list;
         }
 
-        private ResourceSiteHandle ObtainSiteHandle(string localId, string occurrenceKey, Guid session)
+        private ResourceSiteHandle ObtainSiteHandle(string localId, string poiKey, Guid session)
         {
-            var key = (localId, occurrenceKey);
+            var key = (localId, poiKey);
             if (_siteObjects.TryGetValue(key, out var existing) && existing.Session == session) return existing;
-            var handle = new ResourceSiteHandle(this, localId, occurrenceKey, session);
+            var handle = new ResourceSiteHandle(this, localId, poiKey, session);
             _siteObjects[key] = handle;
             return handle;
         }
@@ -692,9 +692,9 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             if (_authoredShips == null || _service._shipCoordinator == null || _service._hub.CurrentSession?.Id != session) return;
             var reconstructed = new List<IMooredShip>();
             var failures = new List<MooredShipFailure>();
-            foreach (var row in _service._shipCoordinator.Occurrences(_authoredShips.Owner))
+            foreach (var row in _service._shipCoordinator.Units(_authoredShips.Owner))
             {
-                var handle = ObtainShipHandle(row.LocalId, row.OccurrenceKey, session);
+                var handle = ObtainShipHandle(row.LocalId, row.UnitKey, session);
                 handle.Refresh();
                 var state = handle.State;
                 if (state.Reconstructed) reconstructed.Add(handle);
@@ -723,19 +723,19 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             catch (ArgumentException) { return WorldStatus.InvalidDefinition; }
         }
 
-        public IMooredShip? CreateMooredShip(string localId, string occurrenceKey, string stationPoiId)
+        public IMooredShip? CreateMooredShip(string localId, string unitKey, string stationPoiId)
         {
             _service._hub.CheckThread();
             if (_disposed || _service._disposed || _authoredShips == null || _service._shipCoordinator == null) return null;
             if (!_service._canAuthor()) return null;
             var session = _service._hub.CurrentSession;
             if (session == null || session.Id == Guid.Empty || session.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks) return null;
-            if (localId == null || !ValidOccurrenceKey(occurrenceKey)) return null;
-            // The persistence envelope keys occurrences per (owner, local, key) across ALL kinds.
-            if (OtherKindOwnsKey(exceptShips: true, localId, occurrenceKey) || CombatKeyOwnsKey(localId, occurrenceKey)) return null;
-            var (status, _) = _service._shipCoordinator.Create(_authoredShips, session.Id, localId, occurrenceKey, stationPoiId);
+            if (localId == null || !ValidPoiKey(unitKey)) return null;
+            // The persistence envelope keys pois per (owner, local, key) across ALL kinds.
+            if (OtherKindOwnsKey(exceptShips: true, localId, unitKey) || CombatKeyOwnsKey(localId, unitKey)) return null;
+            var (status, _) = _service._shipCoordinator.Create(_authoredShips, session.Id, localId, unitKey, stationPoiId);
             if (status != WorldStatus.Succeeded && status != WorldStatus.Rejected) return null;
-            var handle = ObtainShipHandle(localId, occurrenceKey, session.Id);
+            var handle = ObtainShipHandle(localId, unitKey, session.Id);
             handle.RecordAction(status == WorldStatus.Succeeded
                 ? new WorldContentResult(WorldContentStatus.Succeeded)
                 : new WorldContentResult(WorldContentStatus.Rejected, "The moored ship could not be created."));
@@ -743,33 +743,33 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             return handle;
         }
 
-        public IMooredShip? GetMooredShip(string localId, string occurrenceKey)
+        public IMooredShip? GetMooredShip(string localId, string unitKey)
         {
             _service._hub.CheckThread();
             if (_disposed || _service._disposed || _authoredShips == null || _service._shipCoordinator == null) return null;
             var session = _service._hub.CurrentSession;
-            if (session == null || session.Id == Guid.Empty || localId == null || !ValidOccurrenceKey(occurrenceKey)) return null;
-            if (_service._shipCoordinator.TryGetOccurrence(_authoredShips.Owner, localId, occurrenceKey) == null) return null;
-            var handle = ObtainShipHandle(localId, occurrenceKey, session.Id);
+            if (session == null || session.Id == Guid.Empty || localId == null || !ValidPoiKey(unitKey)) return null;
+            if (_service._shipCoordinator.TryGetUnit(_authoredShips.Owner, localId, unitKey) == null) return null;
+            var handle = ObtainShipHandle(localId, unitKey, session.Id);
             handle.Refresh();
             return handle;
         }
 
-        private bool OtherKindOwnsKey(bool exceptShips, string localId, string occurrenceKey)
+        private bool OtherKindOwnsKey(bool exceptShips, string localId, string unitKey)
         {
             if (_authored != null && _service._authoredCoordinator != null
-                && _service._authoredCoordinator.ContainsOccurrence(_authored.Owner, localId, occurrenceKey)) return true;
+                && _service._authoredCoordinator.ContainsPoi(_authored.Owner, localId, unitKey)) return true;
             if (_authoredSites != null && _service._siteCoordinator != null
-                && _service._siteCoordinator.ContainsOccurrence(_authoredSites.Owner, localId, occurrenceKey)) return true;
+                && _service._siteCoordinator.ContainsPoi(_authoredSites.Owner, localId, unitKey)) return true;
             if (!exceptShips && _authoredShips != null && _service._shipCoordinator != null
-                && _service._shipCoordinator.ContainsOccurrence(_authoredShips.Owner, localId, occurrenceKey)) return true;
+                && _service._shipCoordinator.ContainsUnit(_authoredShips.Owner, localId, unitKey)) return true;
             if (_wormholes != null && _service._wormholeCoordinator != null
-                && _service._wormholeCoordinator.Contains(_wormholes.Owner, localId, occurrenceKey)) return true;
+                && _service._wormholeCoordinator.Contains(_wormholes.Owner, localId, unitKey)) return true;
             return false;
         }
-        private bool CombatKeyOwnsKey(string localId, string occurrenceKey)
+        private bool CombatKeyOwnsKey(string localId, string unitKey)
         {
-            return _service.CombatKeyClaimed(ProviderId, localId, occurrenceKey);
+            return _service.CombatKeyClaimed(ProviderId, localId, unitKey);
         }
 
         public IReadOnlyList<IMooredShip> GetMooredShips(string localId)
@@ -779,34 +779,34 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             var session = _service._hub.CurrentSession;
             if (session == null || session.Id == Guid.Empty) return Array.Empty<IMooredShip>();
             var list = new List<IMooredShip>();
-            foreach (var row in _service._shipCoordinator.Occurrences(_authoredShips.Owner))
+            foreach (var row in _service._shipCoordinator.Units(_authoredShips.Owner))
                 if (string.Equals(row.LocalId, localId, StringComparison.Ordinal))
-                    list.Add(ObtainShipHandle(row.LocalId, row.OccurrenceKey, session.Id));
+                    list.Add(ObtainShipHandle(row.LocalId, row.UnitKey, session.Id));
             return list;
         }
 
-        private MooredShipHandle ObtainShipHandle(string localId, string occurrenceKey, Guid session)
+        private MooredShipHandle ObtainShipHandle(string localId, string unitKey, Guid session)
         {
-            var key = (localId, occurrenceKey);
+            var key = (localId, unitKey);
             if (_shipObjects.TryGetValue(key, out var existing) && existing.Session == session) return existing;
-            var handle = new MooredShipHandle(this, localId, occurrenceKey, session);
+            var handle = new MooredShipHandle(this, localId, unitKey, session);
             _shipObjects[key] = handle;
             return handle;
         }
 
-        /// <summary>The owned moored-ship occurrence object; one occurrence per key per session.</summary>
+        /// <summary>The owned moored-ship poi object; one poi per key per session.</summary>
         private sealed class MooredShipHandle : IMooredShip
         {
             private readonly Provider _provider;
             private readonly string _localId;
-            private readonly string _occurrenceKey;
+            private readonly string _unitKey;
             internal readonly Guid Session;
             private MooredShipState _state = new(ReconstructionStatus.Pending);
-            private WorldContentResult _lastAction = new(WorldContentStatus.NotReady, "No action has been taken yet on this occurrence.");
+            private WorldContentResult _lastAction = new(WorldContentStatus.NotReady, "No action has been taken yet on this poi.");
             private event Action<IMooredShip>? _changed;
-            internal MooredShipHandle(Provider provider, string localId, string occurrenceKey, Guid session)
-            { _provider = provider; _localId = localId; _occurrenceKey = occurrenceKey; Session = session; }
-            public string OccurrenceKey => _occurrenceKey;
+            internal MooredShipHandle(Provider provider, string localId, string unitKey, Guid session)
+            { _provider = provider; _localId = localId; _unitKey = unitKey; Session = session; }
+            public string UnitKey => _unitKey;
             public MooredShipDefinition Definition
             {
                 get
@@ -814,7 +814,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                     if (_provider._service._shipDefinitions != null && _provider._authoredShips != null
                         && _provider._service._shipDefinitions.TryResolve(_provider._authoredShips, _localId, out var declaration) && declaration != null)
                         return declaration.ToDefinition();
-                    var row = _provider._service._shipCoordinator?.TryGetOccurrence(_provider._authoredShips?.Owner ?? "", _localId, _occurrenceKey);
+                    var row = _provider._service._shipCoordinator?.TryGetUnit(_provider._authoredShips?.Owner ?? "", _localId, _unitKey);
                     return new MooredShipDefinition(_localId, row?.Revision ?? 1, "unknown", "unknown", "unknown", 0, 0);
                 }
             }
@@ -827,7 +827,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             {
                 if (Session == Guid.Empty || _provider._service._hub.CurrentSession?.Id != Session) return;
                 if (_provider._disposed || _provider._service._disposed || _provider._authoredShips == null || _provider._service._shipCoordinator == null) return;
-                var updated = _provider._service._shipCoordinator.ReconstructionState(_provider._authoredShips.Owner, _localId, _occurrenceKey);
+                var updated = _provider._service._shipCoordinator.ReconstructionState(_provider._authoredShips.Owner, _localId, _unitKey);
                 bool changed = _state.Status != updated.Status || _state.Reason != updated.Reason || _state.UnitId != updated.UnitId;
                 _state = updated;
                 if (changed) _changed?.Invoke(this);
@@ -862,9 +862,9 @@ internal sealed class WorldContentService : IWorldService, IDisposable
         {
             if (_wormholes == null || _service._wormholeCoordinator == null || _service._hub.CurrentSession?.Id != session) return;
             var good = new List<IWormholePair>(); var failed = new List<IWormholePair>();
-            foreach (var row in _service._wormholeCoordinator.Occurrences(_wormholes.Owner))
+            foreach (var row in _service._wormholeCoordinator.Pois(_wormholes.Owner))
             {
-                var handle = ObtainWormhole(row.LocalId, row.OccurrenceKey, session); handle.Refresh();
+                var handle = ObtainWormhole(row.LocalId, row.PoiKey, session); handle.Refresh();
                 if (handle.State.Reconstructed) good.Add(handle); else failed.Add(handle);
             }
             var subscribers = WormholePairReconstructionSettled; if (subscribers == null) return;
@@ -884,34 +884,34 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             }
             catch (ArgumentException) { return WorldStatus.InvalidDefinition; }
         }
-        public IWormholePair? CreateWormholePair(string localId, string occurrenceKey, string firstSystemId, string secondSystemId)
+        public IWormholePair? CreateWormholePair(string localId, string poiKey, string firstSystemId, string secondSystemId)
         {
             _service._hub.CheckThread();
             if (_disposed || _service._disposed || _wormholes == null || _service._wormholeCoordinator == null || !_service._canAuthor()) return null;
             var session = _service._hub.CurrentSession;
             if (session == null || session.Id == Guid.Empty || session.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks) return null;
-            if (localId == null || !ValidOccurrenceKey(occurrenceKey)) return null;
-            if (_authored != null && _service._authoredCoordinator != null && _service._authoredCoordinator.ContainsOccurrence(_authored.Owner, localId, occurrenceKey)) return null;
-            if (_authoredSites != null && _service._siteCoordinator != null && _service._siteCoordinator.ContainsOccurrence(_authoredSites.Owner, localId, occurrenceKey)) return null;
-            if (_authoredShips != null && _service._shipCoordinator != null && _service._shipCoordinator.ContainsOccurrence(_authoredShips.Owner, localId, occurrenceKey)) return null;
-            if (CombatKeyOwnsKey(localId, occurrenceKey)) return null;
-            var result = _service._wormholeCoordinator.Create(_wormholes, session.Id, localId, occurrenceKey, firstSystemId, secondSystemId);
-            return result.Row == null ? null : ObtainWormhole(localId, occurrenceKey, session.Id);
+            if (localId == null || !ValidPoiKey(poiKey)) return null;
+            if (_authored != null && _service._authoredCoordinator != null && _service._authoredCoordinator.ContainsPoi(_authored.Owner, localId, poiKey)) return null;
+            if (_authoredSites != null && _service._siteCoordinator != null && _service._siteCoordinator.ContainsPoi(_authoredSites.Owner, localId, poiKey)) return null;
+            if (_authoredShips != null && _service._shipCoordinator != null && _service._shipCoordinator.ContainsUnit(_authoredShips.Owner, localId, poiKey)) return null;
+            if (CombatKeyOwnsKey(localId, poiKey)) return null;
+            var result = _service._wormholeCoordinator.Create(_wormholes, session.Id, localId, poiKey, firstSystemId, secondSystemId);
+            return result.Row == null ? null : ObtainWormhole(localId, poiKey, session.Id);
         }
-        public IWormholePair? GetWormholePair(string localId, string occurrenceKey)
+        public IWormholePair? GetWormholePair(string localId, string poiKey)
         {
-            _service._hub.CheckThread(); if (_wormholes == null || _service._wormholeCoordinator?.TryGet(_wormholes.Owner, localId, occurrenceKey) == null) return null;
-            var session = _service._hub.CurrentSession; return session == null ? null : ObtainWormhole(localId, occurrenceKey, session.Id);
+            _service._hub.CheckThread(); if (_wormholes == null || _service._wormholeCoordinator?.TryGet(_wormholes.Owner, localId, poiKey) == null) return null;
+            var session = _service._hub.CurrentSession; return session == null ? null : ObtainWormhole(localId, poiKey, session.Id);
         }
         public IReadOnlyList<IWormholePair> GetWormholePairs(string localId)
         {
             _service._hub.CheckThread(); if (_wormholes == null || _service._wormholeCoordinator == null || _service._hub.CurrentSession is not { } session) return Array.Empty<IWormholePair>();
-            return _service._wormholeCoordinator.Occurrences(_wormholes.Owner).Where(r => r.LocalId == localId).Select(r => (IWormholePair)ObtainWormhole(r.LocalId, r.OccurrenceKey, session.Id)).ToArray();
+            return _service._wormholeCoordinator.Pois(_wormholes.Owner).Where(r => r.LocalId == localId).Select(r => (IWormholePair)ObtainWormhole(r.LocalId, r.PoiKey, session.Id)).ToArray();
         }
-        private WormholePairHandle ObtainWormhole(string localId, string occurrenceKey, Guid session)
+        private WormholePairHandle ObtainWormhole(string localId, string poiKey, Guid session)
         {
-            var key = (localId, occurrenceKey); if (_wormholeObjects.TryGetValue(key, out var found)) return found;
-            var handle = new WormholePairHandle(this, localId, occurrenceKey, session, () => _wormholeObjects.Remove(key)); _wormholeObjects.Add(key, handle); handle.Refresh(); return handle;
+            var key = (localId, poiKey); if (_wormholeObjects.TryGetValue(key, out var found)) return found;
+            var handle = new WormholePairHandle(this, localId, poiKey, session, () => _wormholeObjects.Remove(key)); _wormholeObjects.Add(key, handle); handle.Refresh(); return handle;
         }
 
         public WorldStatus RegisterPocketSystem(PocketSystemDefinition definition, PocketSystemDefinition? previous = null)
@@ -927,26 +927,26 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             }
             catch (ArgumentException) { return WorldStatus.InvalidDefinition; }
         }
-        public IPocketSystem? CreatePocketSystem(string localId, string occurrenceKey, string anchorSystemId)
+        public IPocketSystem? CreatePocketSystem(string localId, string poiKey, string anchorSystemId)
         {
             _service._hub.CheckThread();
             if (_disposed || _service._disposed || _authored == null || _service._authoredCoordinator == null) return null;
             if (!_service._canAuthor() || _disposed || _service._disposed) return null;
             var session = _service._hub.CurrentSession;
             if (session == null || session.Id == Guid.Empty || session.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks) return null;
-            if (localId == null || !ValidOccurrenceKey(occurrenceKey)) return null;
-            // The persistence envelope keys occurrences per (owner, local, key) across ALL kinds.
+            if (localId == null || !ValidPoiKey(poiKey)) return null;
+            // The persistence envelope keys pois per (owner, local, key) across ALL kinds.
             if (_authoredSites != null && _service._siteCoordinator != null
-                && _service._siteCoordinator.ContainsOccurrence(_authoredSites.Owner, localId, occurrenceKey)) return null;
+                && _service._siteCoordinator.ContainsPoi(_authoredSites.Owner, localId, poiKey)) return null;
             if (_authoredShips != null && _service._shipCoordinator != null
-                && _service._shipCoordinator.ContainsOccurrence(_authoredShips.Owner, localId, occurrenceKey)) return null;
+                && _service._shipCoordinator.ContainsUnit(_authoredShips.Owner, localId, poiKey)) return null;
             if (_wormholes != null && _service._wormholeCoordinator != null
-                && _service._wormholeCoordinator.Contains(_wormholes.Owner, localId, occurrenceKey)) return null;
-            if (CombatKeyOwnsKey(localId, occurrenceKey)) return null;
-            var result = _service._authoredCoordinator.Create(_authored, session.Id, localId, occurrenceKey, anchorSystemId);
+                && _service._wormholeCoordinator.Contains(_wormholes.Owner, localId, poiKey)) return null;
+            if (CombatKeyOwnsKey(localId, poiKey)) return null;
+            var result = _service._authoredCoordinator.Create(_authored, session.Id, localId, poiKey, anchorSystemId);
             if (result.Status != WorldStatus.Succeeded && result.Status != WorldStatus.Rejected) return null;
-            if (!_service._authoredCoordinator.ContainsOccurrence(_authored.Owner, localId, occurrenceKey)) return null;
-            return ObtainHandle(localId, occurrenceKey, session.Id);
+            if (!_service._authoredCoordinator.ContainsPoi(_authored.Owner, localId, poiKey)) return null;
+            return ObtainHandle(localId, poiKey, session.Id);
         }
         public IReadOnlyList<IPocketSystem> GetPocketSystems(string localId)
         {
@@ -955,25 +955,25 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             var session = _service._hub.CurrentSession;
             if (session == null || session.Id == Guid.Empty) return Array.Empty<IPocketSystem>();
             var list = new List<IPocketSystem>();
-            foreach (var row in _service._authoredCoordinator.Occurrences(_authored.Owner))
+            foreach (var row in _service._authoredCoordinator.Pois(_authored.Owner))
                 if (string.Equals(row.LocalId, localId, StringComparison.Ordinal))
-                    list.Add(ObtainHandle(row.LocalId, row.OccurrenceKey, session.Id));
+                    list.Add(ObtainHandle(row.LocalId, row.PoiKey, session.Id));
             return list;
         }
-        public IPocketSystem? GetPocketSystem(string localId, string occurrenceKey)
+        public IPocketSystem? GetPocketSystem(string localId, string poiKey)
         {
             _service._hub.CheckThread();
             if (_disposed || _service._disposed || _authored == null || _service._authoredCoordinator == null) return null;
             var session = _service._hub.CurrentSession;
             if (session == null || session.Id == Guid.Empty) return null;
-            if (!_service._authoredCoordinator.ContainsOccurrence(_authored.Owner, localId, occurrenceKey)) return null;
-            return ObtainHandle(localId, occurrenceKey, session.Id);
+            if (!_service._authoredCoordinator.ContainsPoi(_authored.Owner, localId, poiKey)) return null;
+            return ObtainHandle(localId, poiKey, session.Id);
         }
-        private PocketSystemHandle ObtainHandle(string localId, string occurrenceKey, Guid session)
+        private PocketSystemHandle ObtainHandle(string localId, string poiKey, Guid session)
         {
-            var key = (localId, occurrenceKey);
+            var key = (localId, poiKey);
             if (_objects.TryGetValue(key, out var existing)) return existing;
-            var handle = new PocketSystemHandle(_service, _authored!, _service._authoredCoordinator!, _alive, localId, occurrenceKey, session,
+            var handle = new PocketSystemHandle(_service, _authored!, _service._authoredCoordinator!, _alive, localId, poiKey, session,
                 () => _objects.Remove(key));
             _objects[key] = handle;
             handle.Refresh();   // seed the cached state without firing Changed
@@ -1013,19 +1013,19 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             _service._providerReleased?.Invoke();
         }
 
-        /// <summary>The owned authored-site occurrence object; one occurrence per key per session.</summary>
+        /// <summary>The owned authored-site poi object; one poi per key per session.</summary>
         private sealed class ResourceSiteHandle : IResourceSite
         {
             private readonly Provider _provider;
             private readonly string _localId;
-            private readonly string _occurrenceKey;
+            private readonly string _poiKey;
             internal readonly Guid Session;
             private ResourceSiteState _state = new(ReconstructionStatus.Pending);
-            private WorldContentResult _lastAction = new(WorldContentStatus.NotReady, "No action has been taken yet on this occurrence.");
+            private WorldContentResult _lastAction = new(WorldContentStatus.NotReady, "No action has been taken yet on this poi.");
             private event Action<IResourceSite>? _changed;
-            internal ResourceSiteHandle(Provider provider, string localId, string occurrenceKey, Guid session)
-            { _provider = provider; _localId = localId; _occurrenceKey = occurrenceKey; Session = session; }
-            public string OccurrenceKey => _occurrenceKey;
+            internal ResourceSiteHandle(Provider provider, string localId, string poiKey, Guid session)
+            { _provider = provider; _localId = localId; _poiKey = poiKey; Session = session; }
+            public string PoiKey => _poiKey;
             public ResourceSiteDefinition Definition
             {
                 get
@@ -1034,7 +1034,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                         && _provider._service._siteDefinitions.TryResolve(_provider._authoredSites, _localId, out var declaration) && declaration != null)
                         return declaration.ToDefinition();
                     // Honor the retained row's kind; only the declarative detail is unknown.
-                    var row = _provider._service._siteCoordinator?.TryGetOccurrence(_provider._authoredSites?.Owner ?? "", _localId, _occurrenceKey);
+                    var row = _provider._service._siteCoordinator?.TryGetPoi(_provider._authoredSites?.Owner ?? "", _localId, _poiKey);
                     return row?.Kind == ResourceSiteKind.SalvageSite
                         ? ResourceSiteDefinition.Salvage(_localId, row.Revision, "unknown", 1, "unknown", "unknown")
                         : ResourceSiteDefinition.MiningField(_localId, row?.Revision ?? 1, "unknown", 1, 1);
@@ -1055,7 +1055,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 if (service._hub.CurrentSession?.Id != Session) return WorldContentRemovalStatus.SessionEnded;
                 if (service._hub.CurrentSession.Phase != SessionPhase.GameplayInitialized || service._hub.IsDispatchingCallbacks)
                     return WorldContentRemovalStatus.NotReady;
-                return service._siteCoordinator.CanRemove(_provider._authoredSites, Session, _localId, _occurrenceKey);
+                return service._siteCoordinator.CanRemove(_provider._authoredSites, Session, _localId, _poiKey);
             }
             private WorldContentResult? Gate()
             {
@@ -1069,15 +1069,15 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             }
             private void CompleteRemoval()
             {
-                _provider._siteObjects.Remove((_localId, _occurrenceKey));
+                _provider._siteObjects.Remove((_localId, _poiKey));
                 MarkRemoved();
             }
             public WorldContentResult Remove()
             {
                 _provider._service._hub.CheckThread();
-                if (_removed) return _lastAction = new(WorldContentStatus.Rejected, "The occurrence was removed; create the key again for a fresh site.");
+                if (_removed) return _lastAction = new(WorldContentStatus.Rejected, "The poi was removed; create the key again for a fresh site.");
                 if (Gate() is { } refused) return refused;
-                var (status, detail) = _provider._service._siteCoordinator!.Remove(_provider._authoredSites!, Session, _localId, _occurrenceKey);
+                var (status, detail) = _provider._service._siteCoordinator!.Remove(_provider._authoredSites!, Session, _localId, _poiKey);
                 if (status != WorldStatus.Succeeded)
                     return _lastAction = new(status == WorldStatus.Unavailable ? WorldContentStatus.Unavailable : WorldContentStatus.Rejected, detail);
                 CompleteRemoval();
@@ -1086,7 +1086,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             public WorldContentResult RequestRemoval()
             {
                 _provider._service._hub.CheckThread();
-                if (_removed) return _lastAction = new(WorldContentStatus.Rejected, "The occurrence was removed; create the key again for a fresh site.");
+                if (_removed) return _lastAction = new(WorldContentStatus.Rejected, "The poi was removed; create the key again for a fresh site.");
                 if (Gate() is { } refused) return refused;
                 _removalRequested = true;
                 _provider._service.RegisterPendingRemoval(Session, CompletePendingRemoval);
@@ -1096,7 +1096,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             {
                 _provider._service._hub.CheckThread();
                 if (_removed || !_removalRequested || CanRemove() != WorldContentRemovalStatus.Ready) return false;
-                var (status, detail) = _provider._service._siteCoordinator!.Remove(_provider._authoredSites!, Session, _localId, _occurrenceKey);
+                var (status, detail) = _provider._service._siteCoordinator!.Remove(_provider._authoredSites!, Session, _localId, _poiKey);
                 if (status != WorldStatus.Succeeded) return false;
                 CompleteRemoval();
                 _lastAction = new(WorldContentStatus.Succeeded, "The requested removal completed at a cleanup window.");
@@ -1119,28 +1119,28 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 // A replaced session freezes the last observed state; the handle never resolves against the replacement save.
                 if (Session == Guid.Empty || _provider._service._hub.CurrentSession?.Id != Session) return;
                 if (_provider._disposed || _provider._service._disposed || _provider._authoredSites == null || _provider._service._siteCoordinator == null) return;
-                var updated = _provider._service._siteCoordinator.ReconstructionState(_provider._authoredSites.Owner, _localId, _occurrenceKey);
+                var updated = _provider._service._siteCoordinator.ReconstructionState(_provider._authoredSites.Owner, _localId, _poiKey);
                 bool changed = _state.Status != updated.Status || _state.Reason != updated.Reason || _state.PoiId != updated.PoiId;
                 _state = updated;
                 if (changed) _changed?.Invoke(this);
             }
         }
 
-        /// <summary>The owned combat-site occurrence object; one occurrence per key per session.</summary>
+        /// <summary>The owned combat-site poi object; one poi per key per session.</summary>
         private sealed class CombatSiteHandle : ICombatSite
         {
             private readonly Provider _provider;
             private readonly string _localId;
-            private readonly string _occurrenceKey;
+            private readonly string _poiKey;
             internal readonly Guid Session;
             private CombatSiteState _state = new(ReconstructionStatus.Pending);
-            private WorldContentResult _lastAction = new(WorldContentStatus.NotReady, "No action has been taken yet on this occurrence.");
+            private WorldContentResult _lastAction = new(WorldContentStatus.NotReady, "No action has been taken yet on this poi.");
             private event Action<ICombatSite>? _changed;
             private bool _removed;
             private bool _removalRequested;
-            internal CombatSiteHandle(Provider provider, string localId, string occurrenceKey, Guid session)
-            { _provider = provider; _localId = localId; _occurrenceKey = occurrenceKey; Session = session; }
-            public string OccurrenceKey => _occurrenceKey;
+            internal CombatSiteHandle(Provider provider, string localId, string poiKey, Guid session)
+            { _provider = provider; _localId = localId; _poiKey = poiKey; Session = session; }
+            public string PoiKey => _poiKey;
             public CombatSiteDefinition Definition
             {
                 get
@@ -1164,7 +1164,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 if (service._hub.CurrentSession?.Id != Session) return WorldContentRemovalStatus.SessionEnded;
                 if (service._hub.CurrentSession.Phase != SessionPhase.GameplayInitialized || service._hub.IsDispatchingCallbacks)
                     return WorldContentRemovalStatus.NotReady;
-                return _provider.CanRemoveCombatSite(_localId, _occurrenceKey);
+                return _provider.CanRemoveCombatSite(_localId, _poiKey);
             }
             private WorldContentResult? Gate()
             {
@@ -1178,16 +1178,16 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             private void CompleteRemoval()
             {
                 _removed = true;
-                _provider._sites.Remove((_localId, _occurrenceKey));
+                _provider._sites.Remove((_localId, _poiKey));
                 _state = new CombatSiteState(ReconstructionStatus.Removed);
                 _changed?.Invoke(this);
             }
             public WorldContentResult Remove()
             {
                 _provider._service._hub.CheckThread();
-                if (_removed) return _lastAction = new(WorldContentStatus.Rejected, "The occurrence was removed; create the key again for a fresh site.");
+                if (_removed) return _lastAction = new(WorldContentStatus.Rejected, "The poi was removed; create the key again for a fresh site.");
                 if (Gate() is { } refused) return refused;
-                var (status, detail) = _provider.RemoveCombatSite(_localId, _occurrenceKey);
+                var (status, detail) = _provider.RemoveCombatSite(_localId, _poiKey);
                 if (status != WorldStatus.Succeeded)
                     return _lastAction = new(status == WorldStatus.Unavailable ? WorldContentStatus.Unavailable : WorldContentStatus.Rejected, detail);
                 CompleteRemoval();
@@ -1196,7 +1196,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             public WorldContentResult RequestRemoval()
             {
                 _provider._service._hub.CheckThread();
-                if (_removed) return _lastAction = new(WorldContentStatus.Rejected, "The occurrence was removed; create the key again for a fresh site.");
+                if (_removed) return _lastAction = new(WorldContentStatus.Rejected, "The poi was removed; create the key again for a fresh site.");
                 if (Gate() is { } refused) return refused;
                 _removalRequested = true;
                 _provider._service.RegisterPendingRemoval(Session, CompletePendingRemoval);
@@ -1206,7 +1206,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             {
                 _provider._service._hub.CheckThread();
                 if (_removed || !_removalRequested || CanRemove() != WorldContentRemovalStatus.Ready) return false;
-                var (status, detail) = _provider.RemoveCombatSite(_localId, _occurrenceKey);
+                var (status, detail) = _provider.RemoveCombatSite(_localId, _poiKey);
                 if (status != WorldStatus.Succeeded) return false;
                 CompleteRemoval();
                 _lastAction = new(WorldContentStatus.Succeeded, "The requested removal completed at a cleanup window.");
@@ -1219,7 +1219,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 if (Session == Guid.Empty || _provider._service._hub.CurrentSession?.Id != Session) return;
                 if (_provider._disposed || _provider._service._disposed || !_provider._service._canAuthor()) return;
                 var found = _provider.FindPersistentCombatSite(Session,
-                    new CombatSiteReference(_provider.ProviderId, _localId, SiteInstanceId(_provider.ProviderId, _localId, _occurrenceKey)));
+                    new CombatSiteReference(_provider.ProviderId, _localId, SiteInstanceId(_provider.ProviderId, _localId, _poiKey)));
                 var updated = found.Succeeded
                     ? new CombatSiteState(ReconstructionStatus.Reconstructed, poiId: found.PoiId)
                     : new CombatSiteState(ReconstructionStatus.Pending);
@@ -1233,7 +1233,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
         {
             private readonly Provider _provider; private readonly string _localId, _key; internal Guid Session { get; }
             private WormholePairState _state = new(ReconstructionStatus.Pending);
-            private WorldContentResult _last = new(WorldContentStatus.NotReady, "No action has been taken yet on this occurrence.");
+            private WorldContentResult _last = new(WorldContentStatus.NotReady, "No action has been taken yet on this poi.");
             private bool _removed;
             private readonly Action _evict;
             private IDisposable? _quietFirst, _quietSecond;
@@ -1241,7 +1241,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             private event Action<IWormholePair>? _changed;
             internal WormholePairHandle(Provider provider, string localId, string key, Guid session, Action evict)
             { _provider = provider; _localId = localId; _key = key; Session = session; _evict = evict; }
-            public string OccurrenceKey => _key;
+            public string PoiKey => _key;
             public WormholePairDefinition Definition
             {
                 get
@@ -1360,7 +1360,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             }
         }
 
-        /// <summary>The owned occurrence object exposed to consumers; one occurrence per key per session.</summary>
+        /// <summary>The owned poi object exposed to consumers; one poi per key per session.</summary>
         private sealed class PocketSystemHandle : IPocketSystem
         {
             private readonly WorldContentService _service;
@@ -1368,7 +1368,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             private readonly PocketSystemCoordinator _coordinator;
             private readonly Func<bool> _alive;
             private readonly string _localId;
-            private readonly string _occurrenceKey;
+            private readonly string _poiKey;
             private readonly Guid _session;
             private PocketSystemState _state = null!;
             private bool _seeded;
@@ -1376,22 +1376,22 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             private bool _removalRequested;
             private IDisposable? _quiet;
             private readonly Action _evict;
-            private WorldContentResult _lastAction = new(WorldContentStatus.NotReady, "No action has been taken yet on this occurrence.");
+            private WorldContentResult _lastAction = new(WorldContentStatus.NotReady, "No action has been taken yet on this poi.");
             private event Action<IPocketSystem>? _changed;
 
             internal PocketSystemHandle(WorldContentService service, PocketSystemRegistry.Provider authored,
-                PocketSystemCoordinator coordinator, Func<bool> alive, string localId, string occurrenceKey, Guid session, Action evict)
+                PocketSystemCoordinator coordinator, Func<bool> alive, string localId, string poiKey, Guid session, Action evict)
             { _service = service; _authored = authored; _coordinator = coordinator; _alive = alive;
-                _localId = localId; _occurrenceKey = occurrenceKey; _session = session; _evict = evict; }
+                _localId = localId; _poiKey = poiKey; _session = session; _evict = evict; }
 
-            public string OccurrenceKey => _occurrenceKey;
+            public string PoiKey => _poiKey;
             public PocketSystemDefinition Definition
             {
                 get
                 {
                     if (_service._authoredDefinitions != null && _service._authoredDefinitions.TryResolve(_authored, _localId, out var declaration) && declaration != null)
                         return new PocketSystemDefinition(declaration.LocalId, declaration.Revision, declaration.Name, declaration.Placement, declaration.FactionId, declaration.SectorName, declaration.Quiet);
-                    var revision = _coordinator.TryGetOccurrence(_authored.Owner, _localId, _occurrenceKey)?.Revision ?? 1;
+                    var revision = _coordinator.TryGetPoi(_authored.Owner, _localId, _poiKey)?.Revision ?? 1;
                     return new PocketSystemDefinition(_localId, revision, "");
                 }
             }
@@ -1411,16 +1411,16 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             public WorldContentResult LastAction => _lastAction;
             public event Action<IPocketSystem>? Changed { add => _changed += value; remove => _changed -= value; }
 
-            private PocketSystemReference Reference => new(_authored.Owner, _localId, _occurrenceKey);
+            private PocketSystemReference Reference => new(_authored.Owner, _localId, _poiKey);
             private bool IsCurrentSession() => _session != Guid.Empty && _service._hub.CurrentSession?.Id == _session;
 
-            /// <summary>Uniform per-action gating shared by every occurrence action; null means actionable.</summary>
+            /// <summary>Uniform per-action gating shared by every poi action; null means actionable.</summary>
             private WorldContentResult? GateAction()
             {
                 WorldContentResult Fail(WorldContentStatus status, string detail) => _lastAction = new WorldContentResult(status, detail);
-                if (_removed) return Fail(WorldContentStatus.Rejected, "The occurrence was removed; create the key again for a fresh pocket.");
+                if (_removed) return Fail(WorldContentStatus.Rejected, "The poi was removed; create the key again for a fresh pocket.");
                 if (!_alive()) return Fail(WorldContentStatus.Unavailable, "The provider lease is no longer active.");
-                if (!IsCurrentSession()) return Fail(WorldContentStatus.GameEnded, "The owning session ended or was replaced; re-obtain the occurrence for the live game.");
+                if (!IsCurrentSession()) return Fail(WorldContentStatus.GameEnded, "The owning session ended or was replaced; re-obtain the poi for the live game.");
                 if (!_service._canAuthor()) return Fail(WorldContentStatus.Unavailable, "World authoring is unavailable.");
                 var session = _service._hub.CurrentSession;
                 if (session == null || session.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks)
@@ -1448,14 +1448,14 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 if (session == null || session.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks)
                     return WorldContentRemovalStatus.NotReady;
                 if (_service._authoredCoordinator == null) return WorldContentRemovalStatus.Unavailable;
-                var row = _service._authoredCoordinator.TryGetOccurrence(_authored.Owner, _localId, _occurrenceKey);
+                var row = _service._authoredCoordinator.TryGetPoi(_authored.Owner, _localId, _poiKey);
                 if (row != null && _service._authoring != null)
                 {
                     var contains = _service._authoring.AnyInSystem(row.SystemId);
                     if (contains == null) return WorldContentRemovalStatus.NotReady;
                     if (contains == true) return WorldContentRemovalStatus.CombatSitesPresent;
                 }
-                if (row != null && _service._wormholeCoordinator != null && _service._wormholeCoordinator.AnyOccurrenceInSystem(row.SystemId))
+                if (row != null && _service._wormholeCoordinator != null && _service._wormholeCoordinator.AnyPoiInSystem(row.SystemId))
                     return WorldContentRemovalStatus.WormholeEndpoint;
                 if (row == null) return WorldContentRemovalStatus.NotPresent;
                 return _service._authoredCoordinator.CanRemove(_authored, _session, Reference);
@@ -1490,7 +1490,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 _service._hub.CheckThread();
                 if (GateAction() is { } refused) return refused;
                 // Never orphan combat-site records: their removal is not supported, so their presence refuses removal.
-                var row = _service._authoredCoordinator!.TryGetOccurrence(_authored.Owner, _localId, _occurrenceKey);
+                var row = _service._authoredCoordinator!.TryGetPoi(_authored.Owner, _localId, _poiKey);
                 if (row != null && _service._authoring != null)
                 {
                     var contains = _service._authoring.AnyInSystem(row.SystemId);
@@ -1501,10 +1501,10 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                         return _lastAction = new WorldContentResult(WorldContentStatus.Rejected,
                             "The pocket still contains combat sites; they cannot be removed with it.");
                 }
-                // Never orphan wormhole-pair occurrences: a wormhole with an endpoint inside the pocket would lose
+                // Never orphan wormhole-pair pois: a wormhole with an endpoint inside the pocket would lose
                 // its pocket-side POI on remove and leave a permanently-failed persisted row, so its presence refuses removal.
                 if (row != null && _service._wormholeCoordinator != null
-                    && _service._wormholeCoordinator.AnyOccurrenceInSystem(row.SystemId))
+                    && _service._wormholeCoordinator.AnyPoiInSystem(row.SystemId))
                     return _lastAction = new WorldContentResult(WorldContentStatus.Rejected,
                         "The pocket is still the endpoint of a wormhole; remove the wormhole before removing the pocket.");
                 var (status, detail, systemId) = _service._authoredCoordinator.Remove(_authored, _session, Reference);
@@ -1543,7 +1543,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                     if (_quiet != null || !Definition.Quiet || _state.SystemId is not { Length: > 0 } systemId) return;
                     var ambient = _service._ambient;
                     if (ambient == null) return;
-                    _quiet = ambient.SuppressInSystemContaining(systemId, _localId + "|" + _occurrenceKey + "|quiet", includeSecurityPatrols: true);
+                    _quiet = ambient.SuppressInSystemContaining(systemId, _localId + "|" + _poiKey + "|quiet", includeSecurityPatrols: true);
                 }
                 catch (Exception error) { _service._hub.ReportSubscriberFailure("world.quiet-system", error); }
             }

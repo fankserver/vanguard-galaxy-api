@@ -125,10 +125,10 @@ public sealed class WormholePairTests
     [Fact]
     public void SavedPairRoundTripsWithExactSystemsPoiIdsAndGateState()
     {
-        var original = new WormholePairOccurrence("author.a", "rift", "k", 2, "a", "b", "wa", "wb", false);
-        byte[] bytes = PocketSystemStateCodec.Encode(Array.Empty<PocketSystemOccurrence>(), Array.Empty<ResourceSiteOccurrence>(), Array.Empty<MooredShipOccurrence>(), new[] { original });
+        var original = new WormholePairPoi("author.a", "rift", "k", 2, "a", "b", "wa", "wb", false);
+        byte[] bytes = PocketSystemStateCodec.Encode(Array.Empty<PocketSystemPoi>(), Array.Empty<ResourceSitePoi>(), Array.Empty<MooredShipUnit>(), new[] { original });
         var decoded = Assert.Single(PocketSystemStateCodec.DecodeAll(bytes).Wormholes);
-        Assert.Equal(original.Owner, decoded.Owner); Assert.Equal(original.LocalId, decoded.LocalId); Assert.Equal(original.OccurrenceKey, decoded.OccurrenceKey);
+        Assert.Equal(original.Owner, decoded.Owner); Assert.Equal(original.LocalId, decoded.LocalId); Assert.Equal(original.PoiKey, decoded.PoiKey);
         Assert.Equal("a", decoded.FirstSystemId); Assert.Equal("b", decoded.SecondSystemId); Assert.Equal("wa", decoded.FirstPoiId); Assert.Equal("wb", decoded.SecondPoiId); Assert.False(decoded.DeclaredOpen);
     }
 
@@ -181,7 +181,7 @@ public sealed class WormholePairTests
         var pair = h.Provider.CreateWormholePair("rift", "k", "a", "b")!;
         h.Native.Pairs.Clear();
         Assert.Equal(WorldContentStatus.Rejected, pair.Remove().Status);
-        // The row was retained: re-obtaining the key returns the same occurrence and does not create anew.
+        // The row was retained: re-obtaining the key returns the same poi and does not create anew.
         Assert.Same(pair, h.Provider.GetWormholePair("rift", "k"));
         Assert.Equal(1, h.Native.Creates);
     }

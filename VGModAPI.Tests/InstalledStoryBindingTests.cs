@@ -104,7 +104,7 @@ public sealed class InstalledStoryBindingTests
     /// <summary>
     /// A live mission is serialized by vanilla as a full object carrying its story identifier, and a
     /// duplicate story identifier is refused while it is active or archived. Repeated runs are
-    /// therefore later occurrences, which is exactly what the ledger records.
+    /// therefore later missions, which is exactly what the ledger records.
     /// </summary>
     [Fact]
     public void VanillaPersistsMissionsItselfAndRefusesADuplicateStoryIdentifier()

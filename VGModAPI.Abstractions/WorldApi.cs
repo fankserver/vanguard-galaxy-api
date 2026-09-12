@@ -64,16 +64,16 @@ public interface IWorldProvider : IDisposable
     WorldStatus RegisterCombatSite(CombatSiteDefinition definition, CombatSiteDefinition? previous = null);
     /// <summary>
     /// Creates (or reconciles) an owned persistent combat site in an existing system for the current
-    /// game, keyed by an author-local occurrence key. The API allocates and owns the native identity;
+    /// game, keyed by an author-local poi key. The API allocates and owns the native identity;
     /// consumers never supply instance GUIDs or session tokens. Re-declaring the same key returns the
     /// SAME object instance for the life of the session. Returns null while the world cannot author.
     /// Supported state is saved automatically; no provider save hooks are required.
     /// </summary>
-    ICombatSite? CreateCombatSite(string localId, string occurrenceKey, string systemId, float x, float y);
-    /// <summary>Re-obtains the owned occurrence for a key in the current game, or null if it does not exist.</summary>
-    /// <summary>Re-obtains the owned occurrence for a key in the current game, or null if it does not exist.</summary>
-    ICombatSite? GetCombatSite(string localId, string occurrenceKey);
-    /// <summary>All current-game occurrences the provider owns for a registered combat-site definition (including restored rows, no replay).</summary>
+    ICombatSite? CreateCombatSite(string localId, string poiKey, string systemId, float x, float y);
+    /// <summary>Re-obtains the owned poi for a key in the current game, or null if it does not exist.</summary>
+    /// <summary>Re-obtains the owned poi for a key in the current game, or null if it does not exist.</summary>
+    ICombatSite? GetCombatSite(string localId, string poiKey);
+    /// <summary>All current-game pois the provider owns for a registered combat-site definition (including restored rows, no replay).</summary>
     IReadOnlyList<ICombatSite> GetCombatSites(string localId);
     /// <summary>Once-per-session aggregate reconciliation report for this provider's keyed combat sites.</summary>
     event Action<CombatSitesSettledEvent>? CombatSiteReconstructionSettled;
@@ -82,28 +82,28 @@ public interface IWorldProvider : IDisposable
     WorldStatus RegisterPocketSystem(PocketSystemDefinition definition, PocketSystemDefinition? previous = null);
     /// <summary>
     /// Creates (or reconciles) an owned pocket system for the current game, keyed by an author-local
-    /// occurrence key. Returns the owned occurrence object; re-declaring the same key returns the SAME
+    /// poi key. Returns the owned poi object; re-declaring the same key returns the SAME
     /// object instance for the life of the session. Returns null while the world cannot author (no
     /// current gameplay-initialized session, definition not registered, or not authorable).
     /// </summary>
-    IPocketSystem? CreatePocketSystem(string localId, string occurrenceKey, string anchorSystemId);
-    /// <summary>All current-game occurrences the provider owns for a registered local definition (including restored rows, no replay).</summary>
+    IPocketSystem? CreatePocketSystem(string localId, string poiKey, string anchorSystemId);
+    /// <summary>All current-game pois the provider owns for a registered local definition (including restored rows, no replay).</summary>
     IReadOnlyList<IPocketSystem> GetPocketSystems(string localId);
-    /// <summary>Re-obtains the owned occurrence for a key in the current game, or null if it does not exist yet.</summary>
-    IPocketSystem? GetPocketSystem(string localId, string occurrenceKey);
+    /// <summary>Re-obtains the owned poi for a key in the current game, or null if it does not exist yet.</summary>
+    IPocketSystem? GetPocketSystem(string localId, string poiKey);
     /// <summary>
     /// Reports actual reconciliation outcomes once per session at the post-reconstruction safe boundary,
-    /// carrying the owned occurrence objects. An empty failure list means every declared occurrence reconstructed.
+    /// carrying the owned poi objects. An empty failure list means every declared poi reconstructed.
     /// </summary>
     event Action<PocketSystemsSettledEvent>? PocketSystemReconstructionSettled;
 
     /// <summary>Declares an owned pair of exactly connected native wormholes.</summary>
     WorldStatus RegisterWormholePair(WormholePairDefinition definition, WormholePairDefinition? previous = null);
     /// <summary>Creates or reconciles one owned pair between two existing systems for the current game.</summary>
-    IWormholePair? CreateWormholePair(string localId, string occurrenceKey, string firstSystemId, string secondSystemId);
+    IWormholePair? CreateWormholePair(string localId, string poiKey, string firstSystemId, string secondSystemId);
     /// <summary>Re-obtains the owned pair for a key in the current game, or null if it does not exist.</summary>
-    IWormholePair? GetWormholePair(string localId, string occurrenceKey);
-    /// <summary>All current-game occurrences owned for a registered wormhole-pair definition.</summary>
+    IWormholePair? GetWormholePair(string localId, string poiKey);
+    /// <summary>All current-game pois owned for a registered wormhole-pair definition.</summary>
     IReadOnlyList<IWormholePair> GetWormholePairs(string localId);
     /// <summary>Once-per-session reconstruction outcomes for this provider's owned pairs.</summary>
     event Action<WormholePairsSettledEvent>? WormholePairReconstructionSettled;
@@ -112,14 +112,14 @@ public interface IWorldProvider : IDisposable
     WorldStatus RegisterResourceSite(ResourceSiteDefinition definition, ResourceSiteDefinition? previous = null);
     /// <summary>
     /// Creates (or reconciles) an owned site in an existing system — including an owned pocket
-    /// system — keyed by an author-local occurrence key. The API allocates and owns the native identity.
+    /// system — keyed by an author-local poi key. The API allocates and owns the native identity.
     /// Re-declaring the same key returns the SAME object instance for the life of the session. Returns
     /// null while the world cannot author.
     /// </summary>
-    IResourceSite? CreateResourceSite(string localId, string occurrenceKey, string systemId, float x, float y);
-    /// <summary>Re-obtains the owned occurrence for a key in the current game, or null if it does not exist yet.</summary>
-    IResourceSite? GetResourceSite(string localId, string occurrenceKey);
-    /// <summary>All current-game occurrences the provider owns for a registered site definition (including restored rows, no replay).</summary>
+    IResourceSite? CreateResourceSite(string localId, string poiKey, string systemId, float x, float y);
+    /// <summary>Re-obtains the owned poi for a key in the current game, or null if it does not exist yet.</summary>
+    IResourceSite? GetResourceSite(string localId, string poiKey);
+    /// <summary>All current-game pois the provider owns for a registered site definition (including restored rows, no replay).</summary>
     IReadOnlyList<IResourceSite> GetResourceSites(string localId);
     /// <summary>Once-per-session aggregate reconciliation report for this provider's owned sites.</summary>
     event Action<ResourceSitesSettledEvent>? ResourceSiteReconstructionSettled;
@@ -128,14 +128,14 @@ public interface IWorldProvider : IDisposable
     WorldStatus RegisterMooredShip(MooredShipDefinition definition, MooredShipDefinition? previous = null);
     /// <summary>
     /// Creates (or reconciles) the one owned moored ship beside a station POI, keyed by an author-local
-    /// occurrence key. The API owns its persistent unit identity, converges to exactly one instance,
+    /// poi key. The API owns its persistent unit identity, converges to exactly one instance,
     /// maintains the mooring (no docking, no auto-AI, never boardable) and reconstructs after load.
     /// Returns null while the world cannot author.
     /// </summary>
-    IMooredShip? CreateMooredShip(string localId, string occurrenceKey, string stationPoiId);
-    /// <summary>Re-obtains the owned occurrence for a key in the current game, or null if it does not exist yet.</summary>
-    IMooredShip? GetMooredShip(string localId, string occurrenceKey);
-    /// <summary>All current-game occurrences the provider owns for a registered moored-ship definition.</summary>
+    IMooredShip? CreateMooredShip(string localId, string poiKey, string stationPoiId);
+    /// <summary>Re-obtains the owned poi for a key in the current game, or null if it does not exist yet.</summary>
+    IMooredShip? GetMooredShip(string localId, string poiKey);
+    /// <summary>All current-game pois the provider owns for a registered moored-ship definition.</summary>
     IReadOnlyList<IMooredShip> GetMooredShips(string localId);
     /// <summary>Once-per-session aggregate reconciliation report for this provider's owned ships.</summary>
     event Action<MooredShipsSettledEvent>? MooredShipReconstructionSettled;

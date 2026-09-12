@@ -30,8 +30,8 @@ public sealed class CargoRecovery : IDisposable
         })
     }, allowHazards: false, allowScheduledReinforcements: false);
     public DungeonContentResult Attach(BoardingHandle observedTarget) => _provider.Attach("cargo-recovery", observedTarget);
-    public DungeonContentResult Recover(Guid occurrence) => _provider.Choose(occurrence, "recover", "recover");
-    public DungeonContentResult Leave(Guid occurrence) => _provider.Choose(occurrence, "recover", "leave");
-    public IReadOnlyList<DungeonOccurrenceSnapshot> SavedOccurrences => _provider.GetOccurrences();
+    public DungeonContentResult Recover(Guid poi) => _provider.Choose(poi, "recover", "recover");
+    public DungeonContentResult Leave(Guid poi) => _provider.Choose(poi, "recover", "leave");
+    public IReadOnlyList<DungeonSnapshot> SavedDungeons => _provider.GetDungeons();
     public void Dispose() { _definition.Dispose(); _provider.Dispose(); }
 }

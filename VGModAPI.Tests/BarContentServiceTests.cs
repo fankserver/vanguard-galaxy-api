@@ -429,7 +429,7 @@ public sealed partial class BarContentServiceTests
         var provider = service.AcquireProvider("author").Provider!;
         provider.Register(new BarPatronDefinition("contact", "station", "Name", "Description", new BarPatronPresentation("seed"),
             mission: new StoryContentId(provider.ProviderId, "job")));
-        service.ResolveOccurrence = (_, _) => Guid.NewGuid();
+        service.ResolveMission = (_, _) => Guid.NewGuid();
         var session = Ready(hub, storage);
         provider.Place(session, "contact");
         Assert.Null(service.Plan(session, "station"));
@@ -478,7 +478,7 @@ public sealed partial class BarContentServiceTests
         foreach (string local in new[] { "first", "second" })
             author.Register(new BarPatronDefinition(local, "station", local, "Description", new BarPatronPresentation("seed"),
                 mission: new StoryContentId(author.ProviderId, local)));
-        service.ResolveOccurrence = (_, _) => Guid.NewGuid();
+        service.ResolveMission = (_, _) => Guid.NewGuid();
         var session = Ready(hub, storage);
         author.Place(session, "first"); author.Place(session, "second");
         object epoch = new();
@@ -541,12 +541,12 @@ public sealed partial class BarContentServiceTests
         var b = service.AcquireProvider("b").Provider!;
         a.Register(throughMission ? new BarPatronDefinition("contact", "station", "Name", "Description", new BarPatronPresentation("seed"),
             mission: new StoryContentId(a.ProviderId, "job")) : Definition());
-        service.ResolveOccurrence = (_, _) => Guid.NewGuid();
+        service.ResolveMission = (_, _) => Guid.NewGuid();
         a.ConfigureStation("station", BarRosterOwnership.Exclusive);
         if (!throughMission) b.ConfigureStation("station", BarRosterOwnership.Exclusive);
         var session = Ready(hub, storage);
         a.Place(session, "contact");
-        bool Resolve(StoryContentId _, Guid occurrence)
+        bool Resolve(StoryContentId _, Guid mission)
         {
             if (attack) { grantA = false; permissionEpoch = new object(); }
             return true;

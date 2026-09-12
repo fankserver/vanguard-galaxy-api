@@ -55,10 +55,10 @@ public sealed partial class Plugin
             _bars = bars;
             var story = _story;
             var noStory = new object();
-            bars.ResolveOccurrence = (session, id) => story?.CurrentBarOccurrence(session, id);
+            bars.ResolveMission = (session, id) => story?.CurrentBarMission(session, id);
             _barHost = new BarRuntimeHost(bars, native.World, native.Contacts, native.Serialization,
                 station => _hub.CurrentSession is { } session ? bars.Plan(session.Id, station,
-                    (id, occurrence) => story?.IsBarMissionReady(session.Id, id, occurrence) == true,
+                    (id, mission) => story?.IsBarMissionReady(session.Id, id, mission) == true,
                     () => story?.BarDependencyStamp() ?? noStory) : null,
                 bars.CanSerializeCurrent, bars.CanMutateCurrent, _hub.CheckThread,
                 error => { _hub.SetCapability("owned-bars", false, "Bar adapter fault; content guards remain active."); Logger.LogError(error); });

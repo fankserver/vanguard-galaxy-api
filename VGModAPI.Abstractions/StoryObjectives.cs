@@ -24,27 +24,27 @@ public sealed class StoryObjectiveQuery
     { Knowledge = knowledge; Progress = progress; Required = required; ContentRevision = contentRevision; Diagnostic = diagnostic; Outcome = outcome; DestinationLost = destinationLost; }
 }
 
-/// <summary>Stable objective identity within one provider-owned mission occurrence.</summary>
+/// <summary>Stable objective identity within one provider-owned mission.</summary>
 internal readonly struct StoryObjectiveId : IEquatable<StoryObjectiveId>
 {
     public StoryContentId Definition { get; }
-    public Guid OccurrenceId { get; }
+    public Guid MissionId { get; }
     public string LocalKey { get; }
 
-    public StoryObjectiveId(StoryContentId definition, Guid occurrenceId, string localKey)
+    public StoryObjectiveId(StoryContentId definition, Guid missionId, string localKey)
     {
         if (definition.Provider == null) throw new ArgumentException("A definition identity is required.", nameof(definition));
-        if (occurrenceId == Guid.Empty) throw new ArgumentException("An occurrence identity is required.", nameof(occurrenceId));
+        if (missionId == Guid.Empty) throw new ArgumentException("An mission identity is required.", nameof(missionId));
         if (!StoryContentId.IsValidSegment(localKey)) throw new ArgumentException("An objective key uses the story identity segment format.", nameof(localKey));
         Definition = definition;
-        OccurrenceId = occurrenceId;
+        MissionId = missionId;
         LocalKey = localKey;
     }
 
     public bool Equals(StoryObjectiveId other) => Definition.Equals(other.Definition)
-        && OccurrenceId == other.OccurrenceId && string.Equals(LocalKey, other.LocalKey, StringComparison.Ordinal);
+        && MissionId == other.MissionId && string.Equals(LocalKey, other.LocalKey, StringComparison.Ordinal);
     public override bool Equals(object? obj) => obj is StoryObjectiveId other && Equals(other);
-    public override int GetHashCode() => (Definition, OccurrenceId, LocalKey).GetHashCode();
+    public override int GetHashCode() => (Definition, MissionId, LocalKey).GetHashCode();
     public static bool operator ==(StoryObjectiveId left, StoryObjectiveId right) => left.Equals(right);
     public static bool operator !=(StoryObjectiveId left, StoryObjectiveId right) => !left.Equals(right);
 }

@@ -13,13 +13,13 @@ public sealed class MooredShipDefinition
 {
     public string LocalId { get; }
     public int Revision { get; }
-    /// <summary>Display name and commander callsign for this occurrence; the ship class identity is never renamed.</summary>
+    /// <summary>Display name and commander callsign for this unit; the ship class identity is never renamed.</summary>
     public string Name { get; }
     public string ShipClassId { get; }
     public string FactionId { get; }
     public float OffsetX { get; }
     public float OffsetY { get; }
-    /// <summary>Keeps the moored occurrence alive through unit protection while its occurrence is owned.</summary>
+    /// <summary>Keeps the moored unit alive through unit protection while its unit is owned.</summary>
     public bool Protect { get; }
     public MooredShipDefinition(string localId, int revision, string name, string shipClassId, string factionId,
         float offsetX, float offsetY, bool protect = true)
@@ -36,7 +36,7 @@ public sealed class MooredShipDefinition
     }
 }
 
-/// <summary>Typed per-occurrence moored-ship state.</summary>
+/// <summary>Typed per-unit moored-ship state.</summary>
 public sealed class MooredShipState
 {
     public ReconstructionStatus Status { get; }
@@ -48,10 +48,10 @@ public sealed class MooredShipState
     { Status = status; Reason = reason; UnitId = unitId; }
 }
 
-/// <summary>One owned moored-ship occurrence for a single captured game, following the uniform occurrence contract.</summary>
+/// <summary>One owned moored-ship unit for a single captured game, following the uniform unit contract.</summary>
 public interface IMooredShip
 {
-    string OccurrenceKey { get; }
+    string UnitKey { get; }
     MooredShipDefinition Definition { get; }
     MooredShipState State { get; }
     string? UnitId { get; }
@@ -61,10 +61,10 @@ public interface IMooredShip
 
 public sealed class MooredShipFailure
 {
-    public IMooredShip Occurrence { get; }
+    public IMooredShip Unit { get; }
     public ReconstructionFailureReason Reason { get; }
-    public MooredShipFailure(IMooredShip occurrence, ReconstructionFailureReason reason)
-    { Occurrence = occurrence ?? throw new ArgumentNullException(nameof(occurrence)); Reason = reason; }
+    public MooredShipFailure(IMooredShip unit, ReconstructionFailureReason reason)
+    { Unit = unit ?? throw new ArgumentNullException(nameof(unit)); Reason = reason; }
 }
 
 public sealed class MooredShipsSettledEvent

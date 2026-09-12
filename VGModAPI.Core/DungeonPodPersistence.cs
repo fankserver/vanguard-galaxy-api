@@ -165,7 +165,7 @@ internal sealed class DungeonPodPersistence : IDisposable
     internal TerminalAttempt? BeginTerminal(Guid id)
     {
         if (!CanMutate || _operations.Get(id) is not { MayStartTerminalEffects: true } operation) return null;
-        var attempted = new DungeonOperationResumeState(operation.Id, operation.LocationId, operation.ContentOccurrence, operation.AttackerShipId,
+        var attempted = new DungeonOperationResumeState(operation.Id, operation.LocationId, operation.ContentDungeon, operation.AttackerShipId,
             operation.DungeonType, operation.NativePhase, operation.Outcome, operation.MissionProtection, DungeonTerminalProgress.Attempted, operation.Autonomous, operation.Options, operation.Donors, operation.WalkDispatched, operation.WalkReturn, operation.Retired);
         _operations.Track(attempted); _returnDepth++; _terminalOperation = id; _terminalToken = RestoreToken;
         return new TerminalAttempt(this, RestoreToken, attempted);
@@ -178,7 +178,7 @@ internal sealed class DungeonPodPersistence : IDisposable
         {
             _owner._hub.CheckThread();
             if (_disposed || !_owner.Ready || !ReferenceEquals(_token, _owner.RestoreToken) || !ReferenceEquals(_owner._operations.Get(_attempted.Id), _attempted)) return;
-            _owner._operations.Track(new(_attempted.Id, _attempted.LocationId, _attempted.ContentOccurrence, _attempted.AttackerShipId, _attempted.DungeonType,
+            _owner._operations.Track(new(_attempted.Id, _attempted.LocationId, _attempted.ContentDungeon, _attempted.AttackerShipId, _attempted.DungeonType,
                 _attempted.NativePhase, _attempted.Outcome, _attempted.MissionProtection, DungeonTerminalProgress.Completed, _attempted.Autonomous, _attempted.Options, _attempted.Donors, _attempted.WalkDispatched, _attempted.WalkReturn, _attempted.Retired));
         }
         public void Dispose() { _owner._hub.CheckThread(); if (_disposed) return; _disposed = true; _owner._returnDepth--; _owner._terminalOperation = null; }

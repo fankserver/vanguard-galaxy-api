@@ -14,12 +14,12 @@ internal sealed class BarPatronState
     internal CharacterPortrait? Portrait { get; }
     internal bool IsMale { get; }
     internal bool Removed { get; }
-    internal BarPatronState WithRemoved(bool removed) => new(Id, Station, Name, Description, Seed, Mission, Occurrence, Portrait, IsMale, removed);
+    internal BarPatronState WithRemoved(bool removed) => new(Id, Station, Name, Description, Seed, Mission, MissionId, Portrait, IsMale, removed);
     internal StoryContentId? Mission { get; }
-    internal Guid? Occurrence { get; }
+    internal Guid? MissionId { get; }
 
     internal BarPatronState(BarPatronId id, string station, string name, string description, string seed,
-        StoryContentId? mission = null, Guid? occurrence = null, CharacterPortrait? portrait = null, bool isMale = true, bool removed = false)
+        StoryContentId? mission = null, Guid? missionId = null, CharacterPortrait? portrait = null, bool isMale = true, bool removed = false)
     {
         _ = new BarPatronId(id.Provider, id.LocalId);
         Id = id;
@@ -34,14 +34,14 @@ internal sealed class BarPatronState
                 throw new ArgumentException("Borrow portraits from game characters, not introduced ones.", nameof(portrait));
         }
         Portrait = portrait; IsMale = isMale; Removed = removed;
-        if (mission.HasValue != occurrence.HasValue || occurrence == Guid.Empty)
-            throw new ArgumentException("A mission reference needs both definition and nonempty occurrence identity.");
+        if (mission.HasValue != missionId.HasValue || missionId == Guid.Empty)
+            throw new ArgumentException("A mission reference needs both definition and nonempty mission identity.");
         if (mission.HasValue)
         {
             _ = new StoryContentId(mission.Value.Provider, mission.Value.LocalId);
             if (mission.Value.Provider != id.Provider) throw new ArgumentException("A patron cannot claim another provider's mission.");
         }
-        Mission = mission; Occurrence = occurrence;
+        Mission = mission; MissionId = missionId;
     }
 
     private static string Text(string value, int maxBytes, string parameter)

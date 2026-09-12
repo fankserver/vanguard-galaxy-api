@@ -8,15 +8,15 @@ internal sealed class DungeonContentBindings
 {
     internal readonly Func<BoardingHandle, DungeonDefinition, DungeonContentStatus> ValidateAttachment;
     // Bind records identity only; simulation creation is a separate native boundary.
-    internal readonly Action<BoardingHandle, DungeonOccurrence> Bind;
-    internal readonly Func<DungeonOccurrence, DungeonEventDefinition, DungeonChoiceDefinition, DungeonContentStatus> ValidateChoice;
-    internal readonly Action<DungeonOccurrence, DungeonEventDefinition, DungeonChoiceDefinition> ApplyChoice;
+    internal readonly Action<BoardingHandle, Dungeon> Bind;
+    internal readonly Func<Dungeon, DungeonEventDefinition, DungeonChoiceDefinition, DungeonContentStatus> ValidateChoice;
+    internal readonly Action<Dungeon, DungeonEventDefinition, DungeonChoiceDefinition> ApplyChoice;
     /// <summary>The one live boarding target currently belonging to a persistent installation; null when none or ambiguous.</summary>
     internal readonly Func<string, BoardingHandle?> ResolveInstallation;
     internal DungeonContentBindings(Func<BoardingHandle, DungeonDefinition, DungeonContentStatus> validateAttachment,
-        Action<BoardingHandle, DungeonOccurrence> bind,
-        Func<DungeonOccurrence, DungeonEventDefinition, DungeonChoiceDefinition, DungeonContentStatus> validateChoice,
-        Action<DungeonOccurrence, DungeonEventDefinition, DungeonChoiceDefinition> applyChoice,
+        Action<BoardingHandle, Dungeon> bind,
+        Func<Dungeon, DungeonEventDefinition, DungeonChoiceDefinition, DungeonContentStatus> validateChoice,
+        Action<Dungeon, DungeonEventDefinition, DungeonChoiceDefinition> applyChoice,
         Func<string, BoardingHandle?>? resolveInstallation = null)
     { ValidateAttachment = validateAttachment; Bind = bind; ValidateChoice = validateChoice; ApplyChoice = applyChoice;
         ResolveInstallation = resolveInstallation ?? (_ => null); }
@@ -56,32 +56,32 @@ internal sealed class DungeonContentService : IDungeonContentService, IDisposabl
         var provider = new Provider(this, pluginId, saveData); _providers.Add(pluginId, provider); return provider;
     }
     internal bool PanelBusy { get { _hub.CheckThread(); return MutationBlocked || !_state.MutationAllowed; } }
-    /// <summary>Drops one API-owned dungeon occurrence row so it no longer reconstructs. Used when the
+    /// <summary>Drops one API-owned dungeon row so it no longer reconstructs. Used when the
     /// native location that hosted it is intentionally removed. Returns false when persistence cannot
     /// mutate right now.</summary>
-    internal bool DropOccurrence(Guid id)
+    internal bool DropDungeon(Guid id)
     { _hub.CheckThread(); return !_disposed && _store != null && _state.Drop(id); }
-    internal (object? Occurrence, object? Provider, object? Definition) PanelToken(Guid id)
+    internal (object? Dungeon, object? Provider, object? Definition) PanelToken(Guid id)
     {
         _hub.CheckThread(); if (_disposed || _store == null || !Availability.IsAvailable) return (null, null, null);
-        var occurrence = _state.Get(id);
-        if (occurrence == null) return (null, null, null);
-        _providers.TryGetValue(occurrence.DefinitionId.ProviderId, out var provider);
-        _registry.TryGet(occurrence.DefinitionId, out var definition);
-        return (occurrence, provider, definition);
+        var dungeon = _state.Get(id);
+        if (dungeon == null) return (null, null, null);
+        _providers.TryGetValue(dungeon.DefinitionId.ProviderId, out var provider);
+        _registry.TryGet(dungeon.DefinitionId, out var definition);
+        return (dungeon, provider, definition);
     }
     internal IReadOnlyList<(string EventId, string EventText, string ChoiceId, string ChoiceText)> PanelChoices(Guid id, string? eventId = null, string? choiceId = null)
     {
         _hub.CheckThread();
         var result = new List<(string, string, string, string)>();
-        if (_disposed || MutationBlocked || !_state.MutationAllowed || _state.Get(id) is not { } occurrence ||
-            !_providers.TryGetValue(occurrence.DefinitionId.ProviderId, out var provider) || !Live(provider) ||
-            !_registry.TryGet(occurrence.DefinitionId, out var definition) || definition.Version != occurrence.Definition.Version) return result;
-        foreach (var item in occurrence.Definition.Events)
+        if (_disposed || MutationBlocked || !_state.MutationAllowed || _state.Get(id) is not { } dungeon ||
+            !_providers.TryGetValue(dungeon.DefinitionId.ProviderId, out var provider) || !Live(provider) ||
+            !_registry.TryGet(dungeon.DefinitionId, out var definition) || definition.Version != dungeon.Definition.Version) return result;
+        foreach (var item in dungeon.Definition.Events)
         {
-            if (occurrence.Choices.ContainsKey(item.Id) || (eventId != null && item.Id != eventId)) continue;
+            if (dungeon.Choices.ContainsKey(item.Id) || (eventId != null && item.Id != eventId)) continue;
             foreach (var choice in item.Choices)
-                if ((choiceId == null || choice.Id == choiceId) && _native.ValidateChoice(occurrence, item, choice) == DungeonContentStatus.ChoiceApplied)
+                if ((choiceId == null || choice.Id == choiceId) && _native.ValidateChoice(dungeon, item, choice) == DungeonContentStatus.ChoiceApplied)
                     result.Add((item.Id, item.Text, choice.Id, choice.Text));
         }
         return result.AsReadOnly();
@@ -90,8 +90,8 @@ internal sealed class DungeonContentService : IDungeonContentService, IDisposabl
     {
         _hub.CheckThread();
         if (MutationBlocked) return Result(DungeonContentStatus.Unavailable);
-        var occurrence = _state.Get(id);
-        return occurrence != null && _providers.TryGetValue(occurrence.DefinitionId.ProviderId, out var provider)
+        var dungeon = _state.Get(id);
+        return dungeon != null && _providers.TryGetValue(dungeon.DefinitionId.ProviderId, out var provider)
             ? Choose(provider, id, eventId, choiceId) : Result(DungeonContentStatus.MissingDefinition);
     }
     private bool MutationBlocked => _disposed || _closing || !Availability.IsAvailable || _bindings == null || _store == null || _callbacks != 0 || _mutationBlocked();
@@ -131,29 +131,29 @@ internal sealed class DungeonContentService : IDungeonContentService, IDisposabl
         if (!_registry.TryGet(new(provider.Id, localId), out var definition)) return Result(DungeonContentStatus.MissingDefinition);
         var status = _native.ValidateAttachment(target, definition); if (status != DungeonContentStatus.Attached) return Result(status);
         if (!Live(provider) || MutationBlocked) return Result(DungeonContentStatus.Unavailable);
-        var occurrence = new DungeonOccurrence(Guid.NewGuid(), new(provider.Id, localId), definition);
-        if (!_state.Add(occurrence)) return Result(DungeonContentStatus.PersistenceUnavailable);
-        _native.Bind(target, occurrence);
-        return Result(DungeonContentStatus.Attached, occurrence.Id);
+        var dungeon = new Dungeon(Guid.NewGuid(), new(provider.Id, localId), definition);
+        if (!_state.Add(dungeon)) return Result(DungeonContentStatus.PersistenceUnavailable);
+        _native.Bind(target, dungeon);
+        return Result(DungeonContentStatus.Attached, dungeon.Id);
     }
     private DungeonContentResult Choose(Provider provider, Guid id, string eventId, string choiceId)
     {
         _hub.CheckThread(); if (!Live(provider) || MutationBlocked) return Result(DungeonContentStatus.Unavailable);
         if (!_state.MutationAllowed) return Result(DungeonContentStatus.PersistenceUnavailable);
-        var occurrence = _state.Get(id);
-        if (occurrence == null || occurrence.DefinitionId.ProviderId != provider.Id) return Result(DungeonContentStatus.MissingDefinition);
-        if (!_registry.TryGet(occurrence.DefinitionId, out var current)) return Result(DungeonContentStatus.MissingDefinition);
-        if (current.Version != occurrence.Definition.Version) return Result(DungeonContentStatus.VersionMismatch);
-        if (occurrence.Choices.ContainsKey(eventId)) return Result(DungeonContentStatus.AlreadyChosen);
-        var item = occurrence.Definition.Events.SingleOrDefault(e => e.Id == eventId);
+        var dungeon = _state.Get(id);
+        if (dungeon == null || dungeon.DefinitionId.ProviderId != provider.Id) return Result(DungeonContentStatus.MissingDefinition);
+        if (!_registry.TryGet(dungeon.DefinitionId, out var current)) return Result(DungeonContentStatus.MissingDefinition);
+        if (current.Version != dungeon.Definition.Version) return Result(DungeonContentStatus.VersionMismatch);
+        if (dungeon.Choices.ContainsKey(eventId)) return Result(DungeonContentStatus.AlreadyChosen);
+        var item = dungeon.Definition.Events.SingleOrDefault(e => e.Id == eventId);
         var choice = item?.Choices.SingleOrDefault(c => c.Id == choiceId);
         if (item == null || choice == null) return Result(DungeonContentStatus.InvalidChoice);
-        var status = _native.ValidateChoice(occurrence, item, choice); if (status != DungeonContentStatus.ChoiceApplied) return Result(status);
-        if (provider.Behaviors.TryGetValue(occurrence.DefinitionId.LocalId, out var behavior) && behavior.Allow != null)
+        var status = _native.ValidateChoice(dungeon, item, choice); if (status != DungeonContentStatus.ChoiceApplied) return Result(status);
+        if (provider.Behaviors.TryGetValue(dungeon.DefinitionId.LocalId, out var behavior) && behavior.Allow != null)
         {
             bool allowed;
             _callbacks++;
-            try { allowed = behavior.Allow(new(Snapshot(occurrence), eventId, choiceId)); }
+            try { allowed = behavior.Allow(new(Snapshot(dungeon), eventId, choiceId)); }
             catch (Exception error)
             {
                 try { _diagnose(provider.Id, error); } catch (Exception) { /* Diagnostics must not escape a provider callback boundary. */ }
@@ -161,16 +161,16 @@ internal sealed class DungeonContentService : IDungeonContentService, IDisposabl
             }
             finally { _callbacks--; }
             if (!allowed) return Result(DungeonContentStatus.Vetoed);
-            if (!Live(provider) || MutationBlocked || !provider.Behaviors.TryGetValue(occurrence.DefinitionId.LocalId, out var after) || !ReferenceEquals(after, behavior) || !ReferenceEquals(_state.Get(id), occurrence)) return Result(DungeonContentStatus.Unavailable);
-            status = _native.ValidateChoice(occurrence, item, choice); if (status != DungeonContentStatus.ChoiceApplied) return Result(status);
+            if (!Live(provider) || MutationBlocked || !provider.Behaviors.TryGetValue(dungeon.DefinitionId.LocalId, out var after) || !ReferenceEquals(after, behavior) || !ReferenceEquals(_state.Get(id), dungeon)) return Result(DungeonContentStatus.Unavailable);
+            status = _native.ValidateChoice(dungeon, item, choice); if (status != DungeonContentStatus.ChoiceApplied) return Result(status);
         }
         if (!Live(provider) || MutationBlocked) return Result(DungeonContentStatus.Unavailable);
         if (!_state.Choose(id, provider.Id, eventId, choiceId)) return Result(DungeonContentStatus.PersistenceUnavailable);
         // Selected before native effects: a throwing native operation is never retried implicitly.
-        _native.ApplyChoice(occurrence, item, choice);
+        _native.ApplyChoice(dungeon, item, choice);
         return Result(DungeonContentStatus.ChoiceApplied, id);
     }
-    private static DungeonOccurrenceSnapshot Snapshot(DungeonOccurrence occurrence) => new(occurrence.Id, occurrence.DefinitionId, occurrence.Definition.Version, occurrence.Choices);
+    private static DungeonSnapshot Snapshot(Dungeon dungeon) => new(dungeon.Id, dungeon.DefinitionId, dungeon.Definition.Version, dungeon.Choices);
     public void Dispose()
     {
         _hub.CheckThread(); if (_disposed || _closing) return; _closing = true;
@@ -234,10 +234,10 @@ internal sealed class DungeonContentService : IDungeonContentService, IDisposabl
             if (target == null) return Owner.Result(DungeonContentStatus.StaleTarget);
             return Owner.Attach(this, localId, target);
         }
-        public DungeonContentResult Choose(Guid occurrenceId, string eventId, string choiceId) => Owner.Choose(this, occurrenceId, eventId, choiceId);
-        public IReadOnlyList<DungeonOccurrenceSnapshot> GetOccurrences()
+        public DungeonContentResult Choose(Guid dungeonId, string eventId, string choiceId) => Owner.Choose(this, dungeonId, eventId, choiceId);
+        public IReadOnlyList<DungeonSnapshot> GetDungeons()
         {
-            Owner._hub.CheckThread(); return Owner.Live(this) && Owner.Availability.IsAvailable && Owner._store != null ? Array.AsReadOnly(Owner._state.Entries.Where(e => e.DefinitionId.ProviderId == Id).Select(Snapshot).ToArray()) : Array.Empty<DungeonOccurrenceSnapshot>();
+            Owner._hub.CheckThread(); return Owner.Live(this) && Owner.Availability.IsAvailable && Owner._store != null ? Array.AsReadOnly(Owner._state.Entries.Where(e => e.DefinitionId.ProviderId == Id).Select(Snapshot).ToArray()) : Array.Empty<DungeonSnapshot>();
         }
         public void Dispose()
         {

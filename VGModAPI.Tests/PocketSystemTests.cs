@@ -26,8 +26,8 @@ public sealed class PocketSystemTests
             Hub = new LifecycleHub((_, error) => throw error);
             Native = new FakePocketSystemNative();
             var plugin = new object();
-            StoryHostAuthenticator auth = (occurrence, caller) =>
-                ReferenceEquals(occurrence, plugin) && extensionAvailable ? new StoryHostPlugin("author.a", caller) : null;
+            StoryHostAuthenticator auth = (poi, caller) =>
+                ReferenceEquals(poi, plugin) && extensionAvailable ? new StoryHostPlugin("author.a", caller) : null;
             Combat = new WorldDefinitionRegistry(auth, Hub.CheckThread);
             Systems = new PocketSystemRegistry(auth, Hub.CheckThread);
             Coordinator = new PocketSystemCoordinator(Hub, Systems, Native,
@@ -87,14 +87,14 @@ public sealed class PocketSystemTests
         Assert.Equal("en-1", first.EntranceGatePoiId);
         Assert.Equal("pk-1", first.PocketGatePoiId);
         Assert.Equal(1, harness.Native.NextId);
-        // Re-declaring the same key returns the SAME object occurrence (no duplicate native system).
+        // Re-declaring the same key returns the SAME object poi (no duplicate native system).
         var second = Create(harness, "k1");
         Assert.Same(first, second);
         Assert.Equal(1, harness.Native.NextId);
         // Re-obtaining by key also returns the same object.
         Assert.Same(first, harness.Provider.GetPocketSystem("sysA", "k1"));
         Assert.Same(first, Assert.Single(harness.Provider.GetPocketSystems("sysA")));
-        // A different key is a distinct owned occurrence object.
+        // A different key is a distinct owned poi object.
         var other = Create(harness, "k2");
         Assert.NotSame(first, other);
         Assert.Equal("sys-2", other.SystemId);
@@ -109,12 +109,12 @@ public sealed class PocketSystemTests
         harness.BeginGameplay();
         var first = Create(harness, "k1");
         Assert.Equal("sys-1", first.SystemId);
-        // Tamper with the native gate identity so the owned occurrence no longer matches: rejected, not adopted.
+        // Tamper with the native gate identity so the owned poi no longer matches: rejected, not adopted.
         harness.Native.Systems["sys-1"] = ("en-999", "pk-999");
         harness.Service.MaintainPocketSystems(harness.Session);   // reconcile + object refresh
         Assert.Equal(ReconstructionStatus.Failed, first.State.Status);
         Assert.Equal(ReconstructionFailureReason.AmbiguousIdentity, first.State.Reason);
-        // Re-declaring the same key still reconciles to the SAME owned occurrence object.
+        // Re-declaring the same key still reconciles to the SAME owned poi object.
         Assert.Same(first, Create(harness, "k1"));
         // A different key still gets a brand-new owned system.
         var other = Create(harness, "kcopy");
@@ -158,7 +158,7 @@ public sealed class PocketSystemTests
         Assert.NotNull(captured);
         Assert.Single(captured!.Failures);
         Assert.Equal(ReconstructionFailureReason.NativeMissing, captured.Failures[0].Reason);
-        Assert.NotNull(captured.Failures[0].Occurrence);
+        Assert.NotNull(captured.Failures[0].Poi);
     }
 
     [Fact]
@@ -170,11 +170,11 @@ public sealed class PocketSystemTests
             missing.BeginGameplay();
             missing.Coordinator.RestoreRows(missing.Session, new[]
             {
-                new PocketSystemOccurrence("author.a", "ghost", "k", 1, "sys-1", "en-1", "pk-1", false)
+                new PocketSystemPoi("author.a", "ghost", "k", 1, "sys-1", "en-1", "pk-1", false)
             });
-            var occurrence = missing.Provider.GetPocketSystem("ghost", "k");
-            Assert.NotNull(occurrence);
-            Assert.Equal(ReconstructionFailureReason.MissingDefinition, occurrence!.State.Reason);
+            var poi = missing.Provider.GetPocketSystem("ghost", "k");
+            Assert.NotNull(poi);
+            Assert.Equal(ReconstructionFailureReason.MissingDefinition, poi!.State.Reason);
         }
         // RevisionMismatch
         using (var mismatch = new Harness())
@@ -183,10 +183,10 @@ public sealed class PocketSystemTests
             mismatch.BeginGameplay();
             mismatch.Coordinator.RestoreRows(mismatch.Session, new[]
             {
-                new PocketSystemOccurrence("author.a", "sysA", "k", 2, "sys-1", "en-1", "pk-1", false)
+                new PocketSystemPoi("author.a", "sysA", "k", 2, "sys-1", "en-1", "pk-1", false)
             });
-            var occurrence = mismatch.Provider.GetPocketSystem("sysA", "k");
-            Assert.Equal(ReconstructionFailureReason.RevisionMismatch, occurrence!.State.Reason);
+            var poi = mismatch.Provider.GetPocketSystem("sysA", "k");
+            Assert.Equal(ReconstructionFailureReason.RevisionMismatch, poi!.State.Reason);
         }
         // NativeMissing
         using (var native = new Harness())
@@ -195,10 +195,10 @@ public sealed class PocketSystemTests
             native.BeginGameplay();
             native.Coordinator.RestoreRows(native.Session, new[]
             {
-                new PocketSystemOccurrence("author.a", "sysA", "k", 1, "sys-9", "en-9", "pk-9", false)
+                new PocketSystemPoi("author.a", "sysA", "k", 1, "sys-9", "en-9", "pk-9", false)
             });
-            var occurrence = native.Provider.GetPocketSystem("sysA", "k");
-            Assert.Equal(ReconstructionStatus.Pending, occurrence!.State.Status);
+            var poi = native.Provider.GetPocketSystem("sysA", "k");
+            Assert.Equal(ReconstructionStatus.Pending, poi!.State.Status);
             PocketSystemsSettledEvent? captured = null;
             native.Provider.PocketSystemReconstructionSettled += e => captured = e;
             native.Coordinator.Reconcile(native.Session);
@@ -212,11 +212,11 @@ public sealed class PocketSystemTests
             ambiguous.BeginGameplay();
             ambiguous.Coordinator.RestoreRows(ambiguous.Session, new[]
             {
-                new PocketSystemOccurrence("author.a", "sysA", "k", 1, "sys-1", "en-1", "pk-1", false)
+                new PocketSystemPoi("author.a", "sysA", "k", 1, "sys-1", "en-1", "pk-1", false)
             });
             ambiguous.Native.Systems["sys-1"] = ("en-1", "pk-9");   // entry differs from owned gate
-            var occurrence = ambiguous.Provider.GetPocketSystem("sysA", "k");
-            Assert.Equal(ReconstructionFailureReason.AmbiguousIdentity, occurrence!.State.Reason);
+            var poi = ambiguous.Provider.GetPocketSystem("sysA", "k");
+            Assert.Equal(ReconstructionFailureReason.AmbiguousIdentity, poi!.State.Reason);
         }
         // PersistenceUnavailable
         using (var persisted = new Harness(persistenceReady: _ => false))
@@ -225,10 +225,10 @@ public sealed class PocketSystemTests
             persisted.BeginGameplay();
             persisted.Coordinator.RestoreRows(persisted.Session, new[]
             {
-                new PocketSystemOccurrence("author.a", "sysA", "k", 1, "sys-1", "en-1", "pk-1", false)
+                new PocketSystemPoi("author.a", "sysA", "k", 1, "sys-1", "en-1", "pk-1", false)
             });
-            var occurrence = persisted.Provider.GetPocketSystem("sysA", "k");
-            Assert.Equal(ReconstructionFailureReason.PersistenceUnavailable, occurrence!.State.Reason);
+            var poi = persisted.Provider.GetPocketSystem("sysA", "k");
+            Assert.Equal(ReconstructionFailureReason.PersistenceUnavailable, poi!.State.Reason);
             // PersistenceUnavailable is genuinely reportable, not query-only: it reaches the settled event.
             PocketSystemsSettledEvent? capturedPersisted = null;
             persisted.Provider.PocketSystemReconstructionSettled += e => capturedPersisted = e;
@@ -277,10 +277,10 @@ public sealed class PocketSystemTests
         using var harness = new Harness();
         Register(harness);
         harness.BeginGameplay();
-        // A restored occurrence whose native pocket only surfaces later (Pending → Reconstructed on reconcile).
+        // A restored poi whose native pocket only surfaces later (Pending → Reconstructed on reconcile).
         harness.Coordinator.RestoreRows(harness.Session, new[]
         {
-            new PocketSystemOccurrence("author.a", "sysA", "k1", 1, "sys-7", "en-7", "pk-7", false)
+            new PocketSystemPoi("author.a", "sysA", "k1", 1, "sys-7", "en-7", "pk-7", false)
         });
         var occ = harness.Provider.GetPocketSystem("sysA", "k1");
         Assert.NotNull(occ);
@@ -304,7 +304,7 @@ public sealed class PocketSystemTests
         // A brand-new game: the session starts empty; the old object must refuse to act on the replacement save.
         harness.BeginGameplay();
         Assert.Equal(WorldContentStatus.GameEnded, first.SetEntranceOpen(true).Status);
-        Assert.Null(harness.Provider.GetPocketSystem("sysA", "k1"));   // no replayed occurrence in the fresh save
+        Assert.Null(harness.Provider.GetPocketSystem("sysA", "k1"));   // no replayed poi in the fresh save
         var fresh = Create(harness, "k1");
         Assert.Equal("sys-2", fresh.SystemId);
         Assert.NotSame(first, fresh);
@@ -362,18 +362,18 @@ public sealed class PocketSystemTests
         // distinct envelope key: combat + definitions owner bytes are byte-identical, and the authored key
         // only exists when an authored capture is wired (no-authored saves are byte-identical to combat-only).
         var json = new WorldJsonInspection(typeof(JsonObject).Assembly);
-        var occurrences = Array.Empty<WorldSnapshotInstance>();
+        var pois = Array.Empty<WorldSnapshotInstance>();
 
         var plain = new WorldSnapshotRecorder(json);
         var plainRoot = EmptySnapshotRoot();
-        var token = plain.Begin(1, occurrences);
-        Assert.True(plain.Complete(token, 1, occurrences, plainRoot));
+        var token = plain.Begin(1, pois);
+        Assert.True(plain.Complete(token, 1, pois, plainRoot));
         var plainStore = plain.ForStore(plainRoot);
 
-        var authored = new WorldSnapshotRecorder(json, () => PocketSystemStateCodec.Encode(Array.Empty<PocketSystemOccurrence>()));
+        var authored = new WorldSnapshotRecorder(json, () => PocketSystemStateCodec.Encode(Array.Empty<PocketSystemPoi>()));
         var authoredRoot = EmptySnapshotRoot();
-        var token2 = authored.Begin(1, occurrences);
-        Assert.True(authored.Complete(token2, 1, occurrences, authoredRoot));
+        var token2 = authored.Begin(1, pois);
+        Assert.True(authored.Complete(token2, 1, pois, authoredRoot));
         var authoredStore = authored.ForStore(authoredRoot);
 
         Assert.True(plainStore[WorldStateCodec.Owner].SequenceEqual(authoredStore[WorldStateCodec.Owner]));
@@ -399,14 +399,14 @@ public sealed class PocketSystemTests
             migrate.BeginGameplay();
             migrate.Coordinator.RestoreRows(migrate.Session, new[]
             {
-                new PocketSystemOccurrence("author.a", "sysA", "k1", 1, "sys-1", "en-1", "pk-1", false)
+                new PocketSystemPoi("author.a", "sysA", "k1", 1, "sys-1", "en-1", "pk-1", false)
             });
             migrate.Native.Systems["sys-1"] = ("en-1", "pk-1");   // owned pocket is present natively
-            var occurrence = migrate.Provider.GetPocketSystem("sysA", "k1");
-            Assert.NotNull(occurrence);
-            Assert.Equal(ReconstructionStatus.Reconstructed, occurrence!.State.Status);
+            var poi = migrate.Provider.GetPocketSystem("sysA", "k1");
+            Assert.NotNull(poi);
+            Assert.Equal(ReconstructionStatus.Reconstructed, poi!.State.Status);
             byte[] encoded = PocketSystemStateCodec.Encode(migrate.Coordinator.CaptureRows());
-            Assert.Equal(2, PocketSystemStateCodec.Decode(encoded).Single(o => o.OccurrenceKey == "k1").Revision);
+            Assert.Equal(2, PocketSystemStateCodec.Decode(encoded).Single(o => o.PoiKey == "k1").Revision);
         }
         // Mismatch with no previous declared: a retained older revision is not silently adopted.
         using (var mismatch = new Harness())
@@ -415,10 +415,10 @@ public sealed class PocketSystemTests
             mismatch.BeginGameplay();
             mismatch.Coordinator.RestoreRows(mismatch.Session, new[]
             {
-                new PocketSystemOccurrence("author.a", "sysA", "k1", 1, "sys-1", "en-1", "pk-1", false)
+                new PocketSystemPoi("author.a", "sysA", "k1", 1, "sys-1", "en-1", "pk-1", false)
             });
-            var occurrence = mismatch.Provider.GetPocketSystem("sysA", "k1");
-            Assert.Equal(ReconstructionFailureReason.RevisionMismatch, occurrence!.State.Reason);
+            var poi = mismatch.Provider.GetPocketSystem("sysA", "k1");
+            Assert.Equal(ReconstructionFailureReason.RevisionMismatch, poi!.State.Reason);
         }
     }
 

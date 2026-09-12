@@ -14,7 +14,7 @@ public sealed class BarPatronStateTests
         var state = new BarPatronState(new BarPatronId("campaign", "contact"), "CustomAct3RickoStation", "Contact", "Description", "seed");
         Assert.Equal("CustomAct3RickoStation", state.Station);
         Assert.Null(state.Mission);
-        Assert.Null(state.Occurrence);
+        Assert.Null(state.Mission);
     }
 
     [Fact]
@@ -22,13 +22,13 @@ public sealed class BarPatronStateTests
     {
         var id = new BarPatronId("campaign", "contact");
         var mission = new StoryContentId("campaign", "mission-x");
-        var occurrence = Guid.NewGuid();
-        var state = new BarPatronState(id, "station", "Contact", "Description", "seed", mission, occurrence);
+        var missionId = Guid.NewGuid();
+        var state = new BarPatronState(id, "station", "Contact", "Description", "seed", mission, missionId);
         Assert.Equal(mission, state.Mission);
-        Assert.Equal(occurrence, state.Occurrence);
+        Assert.Equal(missionId, state.MissionId);
         Assert.Throws<ArgumentException>(() => new BarPatronState(id, "station", "Contact", "Description", "seed", mission));
         Assert.Throws<ArgumentException>(() => new BarPatronState(id, "station", "Contact", "Description", "seed", mission, Guid.Empty));
-        Assert.Throws<ArgumentException>(() => new BarPatronState(id, "station", "Contact", "Description", "seed", new StoryContentId("jobs", "mission-x"), occurrence));
+        Assert.Throws<ArgumentException>(() => new BarPatronState(id, "station", "Contact", "Description", "seed", new StoryContentId("jobs", "mission-x"), missionId));
     }
 
     [Fact]

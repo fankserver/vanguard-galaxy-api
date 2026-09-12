@@ -51,8 +51,8 @@ public sealed class StoryNativeAdapterTests : IDisposable
             difficulty, StoryRetention.Campaign, canAbandon: true, category: "story", completionText: "done",
             choiceKeys: new[] { "branch" });
 
-    private static string Identifier(string local = "salvage-run", Guid? occurrence = null)
-        => StoryContentPolicy.OccurrenceIdentifier(new StoryContentId("anima", local), occurrence ?? Guid.NewGuid());
+    private static string Identifier(string local = "salvage-run", Guid? mission = null)
+        => StoryContentPolicy.MissionIdentifier(new StoryContentId("anima", local), mission ?? Guid.NewGuid());
 
     [Fact]
     public void ScriptedProgressTargetsCurrentPlayerAndRejectsInactiveSteps()
@@ -139,7 +139,7 @@ public sealed class StoryNativeAdapterTests : IDisposable
             var ever = (Source.MissionSystem.Objectives.TravelToPOI)step.objectives[1];
             Assert.Equal(0f, ever.requiredVisitTime);    // any recorded visit counts
             var back = (Source.MissionSystem.Objectives.TravelToPOI)step.objectives[2];
-            Assert.Equal("embassy", back.targetPOI);     // resolved per occurrence, no authored guid
+            Assert.Equal("embassy", back.targetPOI);     // resolved per mission, no authored guid
             Assert.Equal(41.5f, back.requiredVisitTime); // the player must LEAVE and come back
             // Observation resolves the return target from the mission's own source, and refuses a swap.
             Assert.True(world.Accept(identifier).Applied);
@@ -160,7 +160,7 @@ public sealed class StoryNativeAdapterTests : IDisposable
     {
         string? gate = null;
         using var world = new StoryNativeWorld(new StoryNativeBindings(typeof(StoryMission).Assembly), () => { }, null,
-            (identifier, objective) => objective.LocalId == "margin-pocket" && objective.OccurrenceKey == "act2" ? gate : null);
+            (identifier, objective) => objective.LocalId == "margin-pocket" && objective.PoiKey == "act2" ? gate : null);
         var pocket = new Source.Galaxy.MapPointOfInterest { guid = "gate-poi-7", lastVisitedTime = 11f };
         var galaxy = new Source.Galaxy.GalaxyMapData(); galaxy.AddPoi(pocket);
         Source.Galaxy.GalaxyMapData.current = galaxy;
@@ -177,7 +177,7 @@ public sealed class StoryNativeAdapterTests : IDisposable
             Assert.True(world.Accept(identifier).Applied);
             var mission = (Mission)new StoryNativeBindings(typeof(StoryMission).Assembly).ActiveStory(_player, identifier)!;
             var native = (Source.MissionSystem.Objectives.TravelToPOI)mission.steps[0].objectives[0];
-            Assert.Equal("gate-poi-7", native.targetPOI);   // per-occurrence resolution, no authored guid
+            Assert.Equal("gate-poi-7", native.targetPOI);   // per-mission resolution, no authored guid
             Assert.Equal(11f, native.requiredVisitTime);    // new-visit baseline captured from the gate
             var layout = new StoryObjectiveLayout(definition);
             Assert.True(layout.TryResolve("enter", out var slot));
@@ -554,7 +554,7 @@ public sealed class StoryNativeAdapterTests : IDisposable
 
     /// <summary>
     /// Acceptance is verified against the player, and the game's own duplicate-story refusal is what
-    /// makes a repeated occurrence need its own identifier: the base identifier alone would be
+    /// makes a repeated mission need its own identifier: the base identifier alone would be
     /// accepted exactly once per save.
     /// </summary>
     [Fact]
@@ -572,7 +572,7 @@ public sealed class StoryNativeAdapterTests : IDisposable
         // An identifier this adapter did not install is never accepted.
         Assert.Equal(StoryWorldStatus.Refused, world.Accept(Identifier("other")).Status);
 
-        // Completing it archives the base identity, and a SECOND occurrence still works because it
+        // Completing it archives the base identity, and a SECOND mission still works because it
         // carries its own identifier.
         var mission = _player.GetActiveStoryMission(first)!;
         _player.RemoveMission(mission, completed: true);

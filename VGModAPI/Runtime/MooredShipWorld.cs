@@ -10,7 +10,7 @@ namespace VGModAPI.Runtime;
 /// <summary>
 /// Installed native seam for moored authored ships. Spawning uses the game's own fixed-payload path
 /// (CreateFixedPayload + AddUnit) so the datum persists in the station's unit list like any payload
-/// ship; the API owns the persistent unit identity and converges to exactly one occurrence by that
+/// ship; the API owns the persistent unit identity and converges to exactly one unit by that
 /// identity. Mooring maintenance is idempotent per frame while the station is the current POI:
 /// never boardable, no docking state, no auto-AI, snapped to the authored offset.
 /// </summary>
@@ -140,7 +140,7 @@ internal sealed class MooredShipWorld : IMooredShipNative
             var target = Offset(station, declaration);
             ApplyIdentity(datum, declaration);
             _dockingState.SetValue(datum, null);
-            // Live side: the materialised occurrence, matched by exact persistent identity.
+            // Live side: the materialised unit, matched by exact persistent identity.
             foreach (var found in UnityEngine.Object.FindObjectsByType(_shipType))
             {
                 var unitData = _unitData.GetValue(found);

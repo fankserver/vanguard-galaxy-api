@@ -408,19 +408,19 @@ public sealed partial class Plugin : BaseUnityPlugin
 
     /// <summary>
     /// Resolves a provider's authored-destination objective to the native POI its OWN authored
-    /// occurrence currently holds - entrance gate for systems, site POI for sites - or null while
-    /// the occurrence is absent or not reconstructed in the loaded game.
+    /// poi currently holds - entrance gate for systems, site POI for sites - or null while
+    /// the poi is absent or not reconstructed in the loaded game.
     /// </summary>
     private string? ResolveContentTravelDestination(string hostOwner, StoryObjective objective)
     {
         var session = _hub?.CurrentSession;
-        if (session == null || session.Id == Guid.Empty || objective.LocalId == null || objective.OccurrenceKey == null) return null;
+        if (session == null || session.Id == Guid.Empty || objective.LocalId == null || objective.PoiKey == null) return null;
         return objective.Kind switch
         {
             StoryObjectiveKind.TravelToPocketSystemEntrance
-                => _authoredCoordinator?.ResolveEntranceGate(hostOwner, objective.LocalId, objective.OccurrenceKey),
+                => _authoredCoordinator?.ResolveEntranceGate(hostOwner, objective.LocalId, objective.PoiKey),
             StoryObjectiveKind.TravelToResourceSite
-                => _siteCoordinator?.ResolveDestination(hostOwner, objective.LocalId, objective.OccurrenceKey),
+                => _siteCoordinator?.ResolveDestination(hostOwner, objective.LocalId, objective.PoiKey),
             _ => null
         };
     }
@@ -712,7 +712,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             _dungeonAdapter = new DungeonContentAdapter(_hub, bindings, _boarding, _dungeonState);
             _dungeonRecovery.ValidateInitialOperation = operation => _dungeonAdapter.GuardOperation(operation, true);
             _dungeonRecovery.ObserveInitialOperation = operation => _boarding.RestoredOperationReady(operation);
-            _dungeonRecovery.ContentOccurrence = _dungeonAdapter.Marker;
+            _dungeonRecovery.ContentDungeon = _dungeonAdapter.Marker;
             _dungeons = new DungeonContentService(_hub, _dungeonAdapter.Catalogs(), _dungeonState, _dungeonAdapter.Bindings(), (owner, error) => Logger.LogError($"Dungeon provider '{owner}': {error}"),
                 () => _dungeonRecovery?.State.CanMutate != true || (_dungeonSettlement?.IsDispatchingCallbacks ?? false) || (_dungeonRewards?.IsEvaluating ?? false) || (_boardingCombat?.IsEvaluating ?? false) || (_boardingRuleService?.IsEvaluating ?? false),
                 () => _dungeonRecovery?.State.CanMutate != true
@@ -722,20 +722,20 @@ public sealed partial class Plugin : BaseUnityPlugin
                     : _boardingCombat?.IsEvaluating == true ? "Boarding combat is evaluating"
                     : _boardingRuleService?.IsEvaluating == true ? "Boarding rules are evaluating"
                     : null);
-            // When an authored site is removed, drop the authored dungeon occurrence attached to its
+            // When an authored site is removed, drop the authored dungeon poi attached to its
             // station (if any) so the row is intentionally absent instead of a dead entry that could
             // never bind again. The resolver reads the location before native removal; the drop runs
             // after the verified removal only.
-            _siteCoordinator?.AttachDungeonOccurrencePrune(
+            _siteCoordinator?.AttachDungeonPrune(
                 poiId =>
                 {
                     var location = _dungeonAegisRuntime?.ResolveLocation(poiId);
-                    return location == null ? (Guid?)null : _dungeonAdapter?.AttachedOccurrence(location);
+                    return location == null ? (Guid?)null : _dungeonAdapter?.AttachedDungeon(location);
                 },
-                occurrence =>
+                poi =>
                 {
-                    var dropped = _dungeons?.DropOccurrence(occurrence) ?? false;
-                    if (dropped) { try { _dungeonAdapter?.DetachOccurrence(occurrence); } catch { /* best-effort cleanup */ } }
+                    var dropped = _dungeons?.DropDungeon(poi) ?? false;
+                    if (dropped) { try { _dungeonAdapter?.DetachDungeon(poi); } catch { /* best-effort cleanup */ } }
                     return dropped;
                 });
             DungeonContentPatches.Adapter = _dungeonAdapter; DungeonContentPatches.Json = new DungeonMarkerJson(bindings.Assembly);

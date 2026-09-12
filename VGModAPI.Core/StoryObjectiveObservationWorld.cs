@@ -16,7 +16,7 @@ internal readonly struct StoryObjectiveReading
     internal static StoryObjectiveReading Lost => new(null, true);
 }
 
-/// <summary>Read-only progress from the current vanilla-held occurrence, never a retained native reference.</summary>
+/// <summary>Read-only progress from the current vanilla-held mission, never a retained native reference.</summary>
 internal interface IStoryObjectiveObservationWorld
 {
     StoryObjectiveReading? ReadProgress(string identifier, StoryObjectiveLayout.Slot slot, StoryObjective expected, Func<bool> stillValid);

@@ -16,9 +16,9 @@ public sealed class DungeonStateCodecTests
     [Fact]
     public void IndependentOccurrencesAndProviderNamespacesRoundTripWithoutDefinitionsRegistered()
     {
-        var a = new DungeonOccurrence(Guid.NewGuid(), new("a", "shared"), Definition());
-        var b = new DungeonOccurrence(Guid.NewGuid(), new("a", "shared"), Definition());
-        var c = new DungeonOccurrence(Guid.NewGuid(), new("b", "shared"), Definition());
+        var a = new Dungeon(Guid.NewGuid(), new("a", "shared"), Definition());
+        var b = new Dungeon(Guid.NewGuid(), new("a", "shared"), Definition());
+        var c = new Dungeon(Guid.NewGuid(), new("b", "shared"), Definition());
         var bytes = DungeonStateCodec.Encode(new[] { a, b, c }); var restored = DungeonStateCodec.Decode(bytes);
         Assert.Equal(3, restored.Count); Assert.Equal(3, restored.Select(e => e.Id).Distinct().Count());
         Assert.Equal(2, restored.Count(e => e.DefinitionId.ProviderId == "a"));
@@ -27,7 +27,7 @@ public sealed class DungeonStateCodecTests
     [Fact]
     public void DuplicateIdentitiesAndCorruptPayloadsAreRejected()
     {
-        var entry = new DungeonOccurrence(Guid.NewGuid(), new("a", "id"), Definition());
+        var entry = new Dungeon(Guid.NewGuid(), new("a", "id"), Definition());
         Assert.Throws<InvalidDataException>(() => DungeonStateCodec.Encode(new[] { entry, entry }));
         var bytes = DungeonStateCodec.Encode(new[] { entry });
         Assert.False(DungeonStateCodec.Validate(bytes.Take(bytes.Length - 1).ToArray()));

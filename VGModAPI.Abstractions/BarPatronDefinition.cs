@@ -30,7 +30,7 @@ public sealed class BarPatronDefinition
     public CharacterPortrait? Portrait => Presentation.Portrait;
     public bool IsMale => Presentation.IsMale;
     public BarPatronRetention Retention { get; }
-    /// <summary>Same-owner story definition this contact depends on. The API resolves the current admitted occurrence itself.</summary>
+    /// <summary>Same-owner story definition this contact depends on. The API resolves the current admitted mission itself.</summary>
     public StoryContentId? Mission { get; }
 
     public BarPatronDefinition(string localId, string stationId, string name, string description,

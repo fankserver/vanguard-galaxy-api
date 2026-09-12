@@ -74,7 +74,7 @@ public sealed class OwnedPoiWindowDressingTests
 
         Assert.True(pair.Remove().Succeeded);
 
-        // Ownership ends with the occurrence: nothing lingers claiming a freed identity.
+        // Ownership ends with the poi: nothing lingers claiming a freed identity.
         Assert.False(h.Service.OwnsUndressedPoi(firstPoi, "system-a"));
     }
 }

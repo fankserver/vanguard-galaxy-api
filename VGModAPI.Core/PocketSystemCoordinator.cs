@@ -6,10 +6,10 @@ using System.Linq;
 namespace VGModAPI.Core;
 
 /// <summary>
-/// Keyed-owned reconciliation for authored pocket systems. One occurrence row per (owner, local, key):
-/// occurrence key -> system guid + entrance gate + pocket gate + definition revision + declared gate
+/// Keyed-owned reconciliation for authored pocket systems. One poi row per (owner, local, key):
+/// poi key -> system guid + entrance gate + pocket gate + definition revision + declared gate
 /// state. The API owns every native identity; re-declaring the same key reconciles to the owned
-/// occurrence, never creates a duplicate, and never adopts a foreign or ambiguous native identity.
+/// poi, never creates a duplicate, and never adopts a foreign or ambiguous native identity.
 /// Reconstruction is a reconciled state invariant (load + later ticks converge), and one
 /// ReconstructionSettled event reports actual outcomes once per session.
 /// </summary>
@@ -22,8 +22,8 @@ internal sealed class PocketSystemCoordinator : IDisposable
     private readonly Func<Guid, bool> _persistenceReady;
     private readonly Action<Exception> _report;
     private readonly IDisposable _subscription;
-    private readonly Dictionary<(string Owner, string Local, string Key), PocketSystemOccurrence> _committed = new();
-    private readonly Dictionary<(string Owner, string Local, string Key), PocketSystemOccurrence> _pending = new();
+    private readonly Dictionary<(string Owner, string Local, string Key), PocketSystemPoi> _committed = new();
+    private readonly Dictionary<(string Owner, string Local, string Key), PocketSystemPoi> _pending = new();
     private Action<ReconstructionSettledEvent>? _settled;
     private Guid _session;
     private bool _settledOnce;
@@ -53,18 +53,18 @@ internal sealed class PocketSystemCoordinator : IDisposable
     }
     private Guid Session() => _hub.CurrentSession?.Id ?? Guid.Empty;
 
-    internal void RestoreRows(Guid session, PocketSystemOccurrence[] rows)
+    internal void RestoreRows(Guid session, PocketSystemPoi[] rows)
     {
         _hub.CheckThread();
         if (_disposed || session == Guid.Empty || session != Session()) throw new InvalidDataException("Stale authored-system restore.");
         _committed.Clear();
         if (rows != null)
             foreach (var row in rows)
-                _committed[(row.Owner, row.LocalId, row.OccurrenceKey)] = row;
+                _committed[(row.Owner, row.LocalId, row.PoiKey)] = row;
         _settledOnce = false;
     }
 
-    internal PocketSystemOccurrence[] CaptureRows() { _hub.CheckThread(); return _committed.Values.ToArray(); }
+    internal PocketSystemPoi[] CaptureRows() { _hub.CheckThread(); return _committed.Values.ToArray(); }
 
     /// <summary>True when <paramref name="systemId"/> is an owned authored system. Everything inside an
     /// owned system is author-placed, so the game's first-visit window dressing must not add to it.</summary>
@@ -83,40 +83,40 @@ internal sealed class PocketSystemCoordinator : IDisposable
         return _committed.Values.Any(o => o.EntranceGateId == poiId || o.PocketGateId == poiId);
     }
 
-    /// <summary>Read-only plumbing: the session-scoped occurrence rows this owner currently holds (committed + failed-pending), used to re-obtain surface objects.</summary>
-    internal IReadOnlyList<PocketSystemOccurrence> Occurrences(string owner)
+    /// <summary>Read-only plumbing: the session-scoped poi rows this owner currently holds (committed + failed-pending), used to re-obtain surface objects.</summary>
+    internal IReadOnlyList<PocketSystemPoi> Pois(string owner)
     {
         _hub.CheckThread();
-        if (_disposed) return Array.Empty<PocketSystemOccurrence>();
+        if (_disposed) return Array.Empty<PocketSystemPoi>();
         return _committed.Values.Where(o => o.Owner == owner).Concat(_pending.Values.Where(o => o.Owner == owner)).ToArray();
     }
     /// <summary>Read-only plumbing: whether an owned row (committed or failed-pending) exists for this key.</summary>
-    internal bool ContainsOccurrence(string owner, string localId, string occurrenceKey)
+    internal bool ContainsPoi(string owner, string localId, string poiKey)
     {
         _hub.CheckThread();
         if (_disposed) return false;
-        return _committed.ContainsKey((owner, localId, occurrenceKey)) || _pending.ContainsKey((owner, localId, occurrenceKey));
+        return _committed.ContainsKey((owner, localId, poiKey)) || _pending.ContainsKey((owner, localId, poiKey));
     }
     /// <summary>Read-only plumbing: the owned row for a key (committed or failed-pending), if present.</summary>
-    internal PocketSystemOccurrence? TryGetOccurrence(string owner, string localId, string occurrenceKey)
+    internal PocketSystemPoi? TryGetPoi(string owner, string localId, string poiKey)
     {
         _hub.CheckThread();
         if (_disposed) return null;
-        return _committed.TryGetValue((owner, localId, occurrenceKey), out var committed) ? committed
-            : _pending.TryGetValue((owner, localId, occurrenceKey), out var pending) ? pending
+        return _committed.TryGetValue((owner, localId, poiKey), out var committed) ? committed
+            : _pending.TryGetValue((owner, localId, poiKey), out var pending) ? pending
             : null;
     }
 
     internal PocketSystemResult Create(PocketSystemRegistry.Provider provider, Guid expectedSession,
-        string localId, string occurrenceKey, string anchorSystemId)
+        string localId, string poiKey, string anchorSystemId)
     {
         _hub.CheckThread();
         if (_disposed) return new PocketSystemResult(WorldStatus.Unavailable);
         if (provider == null || !_definitions.TryResolve(provider, localId, out var definition) || definition == null)
             return new PocketSystemResult(WorldStatus.NotRegistered);
-        if (string.IsNullOrWhiteSpace(occurrenceKey)) return new PocketSystemResult(WorldStatus.InvalidDefinition);
-        var key = (provider.Owner, localId, occurrenceKey);
-        var reference = new PocketSystemReference(provider.Owner, localId, occurrenceKey);
+        if (string.IsNullOrWhiteSpace(poiKey)) return new PocketSystemResult(WorldStatus.InvalidDefinition);
+        var key = (provider.Owner, localId, poiKey);
+        var reference = new PocketSystemReference(provider.Owner, localId, poiKey);
         if (_committed.TryGetValue(key, out var owned))
         {
             var reconciled = Reconcile(owned);
@@ -134,17 +134,17 @@ internal sealed class PocketSystemCoordinator : IDisposable
             var info = _native.CreatePocket(expectedSession, anchorSystemId, definition.Placement, definition.FactionId, definition.Name, definition.SectorName);
             if (info == null)
             {
-                _pending[key] = Failing(provider.Owner, localId, occurrenceKey, definition.Revision);
+                _pending[key] = Failing(provider.Owner, localId, poiKey, definition.Revision);
                 return new PocketSystemResult(WorldStatus.Rejected, reference);
             }
-            var occurrence = new PocketSystemOccurrence(provider.Owner, localId, occurrenceKey, definition.Revision,
+            var poi = new PocketSystemPoi(provider.Owner, localId, poiKey, definition.Revision,
                 info.SystemId, info.EntranceGateId, info.PocketGateId, declaredOpen: false);
-            _committed[key] = occurrence;
+            _committed[key] = poi;
             return new PocketSystemResult(WorldStatus.Succeeded, reference, info.SystemId, info.EntranceGateId, info.PocketGateId);
         }
         catch (Exception error) { _report(error); return new PocketSystemResult(WorldStatus.Unavailable, reference); }
     }
-    private static PocketSystemOccurrence Failing(string owner, string localId, string key, int revision)
+    private static PocketSystemPoi Failing(string owner, string localId, string key, int revision)
         => new(owner, localId, key, revision, PendingSystemId(localId, key), "pending-entrance", "pending-pocket", declaredOpen: false);
     /// <summary>Projective, bounded placeholder native id for failed creations — never persisted, so it only needs to stay in the 128-byte encode bound.</summary>
     private static string PendingSystemId(string localId, string key)
@@ -159,20 +159,20 @@ internal sealed class PocketSystemCoordinator : IDisposable
         _hub.CheckThread();
         if (_disposed) return WorldStatus.Unavailable;
         if (reference == null || provider == null || reference.ProviderId != provider.Owner) return WorldStatus.NotRegistered;
-        if (!_committed.TryGetValue((provider.Owner, reference.LocalId, reference.OccurrenceKey), out var occurrence))
+        if (!_committed.TryGetValue((provider.Owner, reference.LocalId, reference.PoiKey), out var poi))
             return WorldStatus.NotRegistered;
         try
         {
             // Apply to the native gate first; only commit the declared persistence state once the apply succeeds.
-            if (!_native.ApplyOpen(expectedSession, occurrence.EntranceGateId, occurrence.PocketGateId, open)) return WorldStatus.Rejected;
-            occurrence.DeclaredOpen = open;
+            if (!_native.ApplyOpen(expectedSession, poi.EntranceGateId, poi.PocketGateId, open)) return WorldStatus.Rejected;
+            poi.DeclaredOpen = open;
             return WorldStatus.Succeeded;
         }
         catch (Exception error) { _report(error); return WorldStatus.Unavailable; }
     }
 
     /// <summary>
-    /// Removes the owned occurrence: removes the native pocket (committed rows) and drops the row so
+    /// Removes the owned poi: removes the native pocket (committed rows) and drops the row so
     /// save data no longer reconstructs it and the key becomes creatable again. A failed-creation
     /// pending row has no native pocket and is simply dropped. Refusals leave the row untouched.
     /// </summary>
@@ -181,17 +181,17 @@ internal sealed class PocketSystemCoordinator : IDisposable
         _hub.CheckThread();
         if (_disposed) return (WorldStatus.Unavailable, "Resource systems are unavailable.", null);
         if (reference == null || provider == null || reference.ProviderId != provider.Owner) return (WorldStatus.NotRegistered, "", null);
-        var key = (provider.Owner, reference.LocalId, reference.OccurrenceKey);
+        var key = (provider.Owner, reference.LocalId, reference.PoiKey);
         if (_pending.Remove(key)) return (WorldStatus.Succeeded, "", null); // failed creation: nothing native exists
-        if (!_committed.TryGetValue(key, out var occurrence)) return (WorldStatus.NotRegistered, "", null);
+        if (!_committed.TryGetValue(key, out var poi)) return (WorldStatus.NotRegistered, "", null);
         try
         {
-            var outcome = _native.RemovePocket(expectedSession, occurrence.SystemId, occurrence.EntranceGateId, occurrence.PocketGateId);
+            var outcome = _native.RemovePocket(expectedSession, poi.SystemId, poi.EntranceGateId, poi.PocketGateId);
             switch (outcome)
             {
                 case PocketRemoveOutcome.Removed:
                     _committed.Remove(key);
-                    return (WorldStatus.Succeeded, "", occurrence.SystemId);
+                    return (WorldStatus.Succeeded, "", poi.SystemId);
                 case PocketRemoveOutcome.Missing:
                     return (WorldStatus.Rejected, "The pocket is not currently present natively; wait for reconstruction or check its state.", null);
                 default:
@@ -208,10 +208,10 @@ internal sealed class PocketSystemCoordinator : IDisposable
         _hub.CheckThread();
         if (_disposed) return WorldContentRemovalStatus.Unavailable;
         if (reference == null || provider == null || reference.ProviderId != provider.Owner) return WorldContentRemovalStatus.Unavailable;
-        var key = (provider.Owner, reference.LocalId, reference.OccurrenceKey);
+        var key = (provider.Owner, reference.LocalId, reference.PoiKey);
         if (_pending.ContainsKey(key)) return WorldContentRemovalStatus.Ready; // failed creation: nothing native exists
-        if (!_committed.TryGetValue(key, out var occurrence)) return WorldContentRemovalStatus.NotPresent;
-        try { return _native.Readiness(expectedSession, occurrence.SystemId, occurrence.EntranceGateId, occurrence.PocketGateId); }
+        if (!_committed.TryGetValue(key, out var poi)) return WorldContentRemovalStatus.NotPresent;
+        try { return _native.Readiness(expectedSession, poi.SystemId, poi.EntranceGateId, poi.PocketGateId); }
         catch (Exception error) { _report(error); return WorldContentRemovalStatus.Unavailable; }
     }
 
@@ -220,7 +220,7 @@ internal sealed class PocketSystemCoordinator : IDisposable
         _hub.CheckThread();
         if (_disposed || provider == null || reference == null || reference.ProviderId != provider.Owner)
             return new PocketSystemState(ReconstructionStatus.Pending);
-        var key = (provider.Owner, reference.LocalId, reference.OccurrenceKey);
+        var key = (provider.Owner, reference.LocalId, reference.PoiKey);
         if (_committed.TryGetValue(key, out var owned)) return Resolve(owned);
         if (_pending.TryGetValue(key, out var attempted))
             return Resolve(attempted);
@@ -235,15 +235,15 @@ internal sealed class PocketSystemCoordinator : IDisposable
         _native.BeginPass(expectedSession);
         try
         {
-            foreach (var occurrence in _committed.Values.ToArray())
+            foreach (var poi in _committed.Values.ToArray())
             {
-                var state = Resolve(occurrence);
+                var state = Resolve(poi);
                 if (state.Status == ReconstructionStatus.Reconstructed)
                 {
                     try
                     {
-                        if (!GateStateMatches(expectedSession, occurrence))
-                            _native.ApplyOpen(expectedSession, occurrence.EntranceGateId, occurrence.PocketGateId, occurrence.DeclaredOpen);
+                        if (!GateStateMatches(expectedSession, poi))
+                            _native.ApplyOpen(expectedSession, poi.EntranceGateId, poi.PocketGateId, poi.DeclaredOpen);
                     }
                     catch (Exception error) { _report(error); }
                 }
@@ -286,49 +286,49 @@ internal sealed class PocketSystemCoordinator : IDisposable
     }
 
     /// <summary>
-    /// The entrance-gate POI of a COMMITTED owned occurrence while it is reconstructed in the loaded
+    /// The entrance-gate POI of a COMMITTED owned poi while it is reconstructed in the loaded
     /// game, or null. Story travel resolves destinations through this: an authored identity is never
     /// handed out while the world does not actually hold it.
     /// </summary>
-    internal string? ResolveEntranceGate(string owner, string localId, string occurrenceKey)
+    internal string? ResolveEntranceGate(string owner, string localId, string poiKey)
     {
         _hub.CheckThread();
-        if (_disposed || !_committed.TryGetValue((owner, localId, occurrenceKey), out var occurrence)) return null;
-        var state = Resolve(occurrence);
+        if (_disposed || !_committed.TryGetValue((owner, localId, poiKey), out var poi)) return null;
+        var state = Resolve(poi);
         return state.Status == ReconstructionStatus.Reconstructed ? state.EntranceGatePoiId : null;
     }
 
-    private PocketSystemOccurrence? Reconcile(PocketSystemOccurrence occurrence)
+    private PocketSystemPoi? Reconcile(PocketSystemPoi poi)
     {
         _hub.CheckThread();
-        if (Resolve(occurrence).Status != ReconstructionStatus.Reconstructed) return null;
+        if (Resolve(poi).Status != ReconstructionStatus.Reconstructed) return null;
         try
         {
-            if (!GateStateMatches(Session(), occurrence))
-                _native.ApplyOpen(Session(), occurrence.EntranceGateId, occurrence.PocketGateId, occurrence.DeclaredOpen);
+            if (!GateStateMatches(Session(), poi))
+                _native.ApplyOpen(Session(), poi.EntranceGateId, poi.PocketGateId, poi.DeclaredOpen);
         }
         catch (Exception error) { _report(error); }
-        return occurrence;
+        return poi;
     }
 
     /// <summary>Whether the native gate pair currently presents the declared state. An open pocket must be
     /// open and visible; a closed pocket must be sealed (closed AND hidden), so a pocket authored before
     /// gates were hidden at create is repaired instead of leaving a phantom gate line on the map.</summary>
-    private bool GateStateMatches(Guid session, PocketSystemOccurrence occurrence)
-        => occurrence.DeclaredOpen
-            ? _native.IsOpen(session, occurrence.EntranceGateId, occurrence.PocketGateId)
-            : _native.IsSealed(session, occurrence.EntranceGateId, occurrence.PocketGateId);
+    private bool GateStateMatches(Guid session, PocketSystemPoi poi)
+        => poi.DeclaredOpen
+            ? _native.IsOpen(session, poi.EntranceGateId, poi.PocketGateId)
+            : _native.IsSealed(session, poi.EntranceGateId, poi.PocketGateId);
 
-    private PocketSystemState Resolve(PocketSystemOccurrence occurrence)
+    private PocketSystemState Resolve(PocketSystemPoi poi)
     {
-        if (!_definitions.TryResolveMigration(occurrence.Owner, occurrence.LocalId, out var liveRevision, out var previousRevision))
+        if (!_definitions.TryResolveMigration(poi.Owner, poi.LocalId, out var liveRevision, out var previousRevision))
             return new PocketSystemState(ReconstructionStatus.Failed, ReconstructionFailureReason.MissingDefinition);
         // Previous-revision migration: a retained row stamped with the immediately-previous revision is
-        // the same owned occurrence under an upgraded definition, so migrate it up rather than failing.
-        if (liveRevision != occurrence.Revision)
+        // the same owned poi under an upgraded definition, so migrate it up rather than failing.
+        if (liveRevision != poi.Revision)
         {
-            if (previousRevision.HasValue && previousRevision.Value == occurrence.Revision && previousRevision.Value < liveRevision)
-                occurrence.MigrateRevision(liveRevision);
+            if (previousRevision.HasValue && previousRevision.Value == poi.Revision && previousRevision.Value < liveRevision)
+                poi.MigrateRevision(liveRevision);
             else
                 return new PocketSystemState(ReconstructionStatus.Failed, ReconstructionFailureReason.RevisionMismatch);
         }
@@ -336,12 +336,12 @@ internal sealed class PocketSystemCoordinator : IDisposable
             return new PocketSystemState(ReconstructionStatus.Failed, ReconstructionFailureReason.PersistenceUnavailable);
         try
         {
-            if (_native.AmbiguousCount(Session(), occurrence.SystemId) > 1)
+            if (_native.AmbiguousCount(Session(), poi.SystemId) > 1)
                 return new PocketSystemState(ReconstructionStatus.Failed, ReconstructionFailureReason.AmbiguousIdentity);
-            var info = _native.ResolvePocket(Session(), occurrence.SystemId);
+            var info = _native.ResolvePocket(Session(), poi.SystemId);
             if (info == null)
                 return new PocketSystemState(ReconstructionStatus.Pending);
-            if (info.EntranceGateId != occurrence.EntranceGateId || info.PocketGateId != occurrence.PocketGateId)
+            if (info.EntranceGateId != poi.EntranceGateId || info.PocketGateId != poi.PocketGateId)
                 return new PocketSystemState(ReconstructionStatus.Failed, ReconstructionFailureReason.AmbiguousIdentity);
             return new PocketSystemState(ReconstructionStatus.Reconstructed,
                 systemId: info.SystemId, entranceGatePoiId: info.EntranceGateId, pocketGatePoiId: info.PocketGateId);

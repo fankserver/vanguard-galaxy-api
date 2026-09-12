@@ -74,7 +74,7 @@ internal sealed class StoryNativeWorld : IStoryWorld, IStoryObjectiveWorld, ISto
         {
             var player = _bindings.CurrentPlayer;
             if (_disposed || player == null || !_owned.TryGetValue(identifier, out var catalog))
-                return new StoryWorldResult(StoryWorldStatus.Unavailable, "No current owned occurrence.");
+                return new StoryWorldResult(StoryWorldStatus.Unavailable, "No current owned mission.");
             var held = _bindings.Held(player);
             if (held.Missions > StoryQuarantine.MaxScannedMissions || held.Objectives > StoryQuarantine.MaxScannedObjectives)
                 return new StoryWorldResult(StoryWorldStatus.Unavailable, "Migration scan exceeds its bound.");
@@ -93,7 +93,7 @@ internal sealed class StoryNativeWorld : IStoryWorld, IStoryObjectiveWorld, ISto
                     && _bindings.ActiveStoryIdentifiers(player).Count(value => value == identifier) == 1;
             }
             if (mission == null || !_bindings.MigrateScripted(mission, player, identifier, definition, source, destination, Stable))
-                return new StoryWorldResult(StoryWorldStatus.Refused, "The current scripted occurrence could not be safely migrated.");
+                return new StoryWorldResult(StoryWorldStatus.Refused, "The current scripted mission could not be safely migrated.");
             return StoryWorldResult.Ok;
         }
         catch (Exception error) { Report(error); return new StoryWorldResult(StoryWorldStatus.Unavailable, "Scripted migration could not be verified."); }
@@ -106,14 +106,14 @@ internal sealed class StoryNativeWorld : IStoryWorld, IStoryObjectiveWorld, ISto
         try
         {
             if (!_owned.TryGetValue(identifier, out var definition) || !ReferenceEquals(_bindings.Catalog[identifier], definition))
-                return new StoryWorldResult(StoryWorldStatus.Refused, "The occurrence catalog entry is no longer owned.");
+                return new StoryWorldResult(StoryWorldStatus.Refused, "The mission catalog entry is no longer owned.");
             var player = _bindings.CurrentPlayer;
             if (player == null) return new StoryWorldResult(StoryWorldStatus.Unavailable, "No current player.");
             var held = _bindings.Held(player);
             if (held.Missions > StoryQuarantine.MaxScannedMissions || held.Objectives > StoryQuarantine.MaxScannedObjectives)
                 return new StoryWorldResult(StoryWorldStatus.Unavailable, "The live objective scan exceeds its bounds.");
             if (_bindings.ActiveStoryIdentifiers(player).Count(value => value == identifier) != 1)
-                return new StoryWorldResult(StoryWorldStatus.Refused, "The current occurrence is missing or ambiguous.");
+                return new StoryWorldResult(StoryWorldStatus.Refused, "The current mission is missing or ambiguous.");
             var mission = _bindings.ActiveStory(player, identifier);
             bool Stable() => (stillValid?.Invoke() ?? true) && !_disposed
                 && ReferenceEquals(_bindings.CurrentPlayer, player)

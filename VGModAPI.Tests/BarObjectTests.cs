@@ -140,8 +140,8 @@ public sealed partial class BarContentServiceTests
     public void WaitingRetriesAreNotChangedEvents()
     {
         using var f = new Objects();
-        Guid? occurrence = null;
-        f.Engine.ResolveOccurrence = (_, _) => occurrence;
+        Guid? mission = null;
+        f.Engine.ResolveMission = (_, _) => mission;
         var definition = f.Provider.Register(new BarPatronDefinition("contact", "station", "Name", "Description", new BarPatronPresentation("seed"),
             mission: new StoryContentId(f.Provider.ProviderId, "job"))).Definition!;
         f.Start();
@@ -152,7 +152,7 @@ public sealed partial class BarContentServiceTests
         Assert.Equal(BarPatronStatus.Waiting, patron.Status);
         Assert.True(changes <= 1); // Entering Waiting may publish once; per-frame retries publish nothing.
         var beforeAssign = changes;
-        occurrence = Guid.NewGuid();
+        mission = Guid.NewGuid();
         f.Pump(); f.Pump(); f.Pump();
         Assert.Equal(BarPatronStatus.Assigned, patron.Status);
         Assert.Equal(beforeAssign + 1, changes);
@@ -194,19 +194,19 @@ public sealed partial class BarContentServiceTests
     public void MissionLinkedContactWaitsUntilTheCurrentOccurrenceResolves()
     {
         using var f = new Objects();
-        Guid? occurrence = null;
-        f.Engine.ResolveOccurrence = (_, _) => occurrence;
+        Guid? mission = null;
+        f.Engine.ResolveMission = (_, _) => mission;
         var definition = f.Provider.Register(new BarPatronDefinition("contact", "station", "Name", "Description", new BarPatronPresentation("seed"),
             mission: new StoryContentId(f.Provider.ProviderId, "job"))).Definition!;
         f.Start(); f.Pump(); f.Pump();
         var patron = f.Games.Current!.Bars.Get(definition);
         Assert.Equal(BarPatronStatus.Waiting, patron.Status);
         Assert.Equal(BarStatus.MissionNotReady, patron.LastAction.Status);
-        occurrence = Guid.NewGuid();
+        mission = Guid.NewGuid();
         f.Pump();
         Assert.Equal(BarPatronStatus.Assigned, patron.Status);
         var row = Assert.Single(BarPatronCodec.Decode(f.Storage.Provider.Capture()));
-        Assert.Equal(occurrence, row.Occurrence);
+        Assert.Equal(mission, row.MissionId);
     }
 
     private sealed class Objects : IDisposable

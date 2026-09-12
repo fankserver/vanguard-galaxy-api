@@ -78,20 +78,20 @@ public sealed class PocketSystemDefinition
 }
 
 /// <summary>
-/// Author-local occurrence key. The API allocates and owns any native identity (system guid and the
-/// paired gate guids); a consumer never supplies a native or occurrence GUID. This type is the internal
-/// coordinator keying shape; consumers address an occurrence through its <see cref="IPocketSystem"/> object.
+/// Author-local poi key. The API allocates and owns any native identity (system guid and the
+/// paired gate guids); a consumer never supplies a native or poi GUID. This type is the internal
+/// coordinator keying shape; consumers address an poi through its <see cref="IPocketSystem"/> object.
 /// </summary>
 public sealed class PocketSystemReference
 {
     public string ProviderId { get; }
     public string LocalId { get; }
-    public string OccurrenceKey { get; }
-    public PocketSystemReference(string providerId, string localId, string occurrenceKey)
+    public string PoiKey { get; }
+    public PocketSystemReference(string providerId, string localId, string poiKey)
     {
         ProviderId = providerId ?? throw new ArgumentNullException(nameof(providerId));
         LocalId = localId ?? throw new ArgumentNullException(nameof(localId));
-        OccurrenceKey = occurrenceKey ?? throw new ArgumentNullException(nameof(occurrenceKey));
+        PoiKey = poiKey ?? throw new ArgumentNullException(nameof(poiKey));
     }
 }
 
@@ -116,7 +116,7 @@ public sealed class PocketSystemResult
 public enum ReconstructionStatus
 {
     Reconstructed, Pending, Failed,
-    /// <summary>The occurrence was removed by its owner; terminal for this object. The same occurrence key may author a fresh pocket later.</summary>
+    /// <summary>The poi was removed by its owner; terminal for this object. The same poi key may author a fresh pocket later.</summary>
     Removed
 }
 
@@ -125,12 +125,12 @@ public enum ReconstructionFailureReason
     MissingDefinition, RevisionMismatch, NativeMissing, AmbiguousIdentity, PersistenceUnavailable
 }
 
-/// <summary>Typed per-occurrence reconciliation state, never a lifecycle marker or an admission token.</summary>
+/// <summary>Typed per-poi reconciliation state, never a lifecycle marker or an admission token.</summary>
 public sealed class PocketSystemState
 {
     public ReconstructionStatus Status { get; }
     public ReconstructionFailureReason? Reason { get; }
-    /// <summary>Four-segment native identity populated only when the owned occurrence is present.</summary>
+    /// <summary>Four-segment native identity populated only when the owned poi is present.</summary>
     public string? SystemId { get; }
     public string? EntranceGatePoiId { get; }
     public string? PocketGatePoiId { get; }
@@ -143,7 +143,7 @@ public sealed class PocketSystemState
     }
 }
 
-/// <summary>Outcome of an action performed on an owned authored-system occurrence.</summary>
+/// <summary>Outcome of an action performed on an owned authored-system poi.</summary>
 public enum WorldContentStatus
 {
     /// <summary>The action was applied to the native state and its declared outcome retained.</summary>
@@ -154,35 +154,35 @@ public enum WorldContentStatus
     NotReady,
     /// <summary>The world/service layer is unavailable (no authoring capability or the plugin is gone).</summary>
     Unavailable,
-    /// <summary>The owning session ended or was replaced; the occurrence can no longer act and must be re-obtained for the live game.</summary>
+    /// <summary>The owning session ended or was replaced; the poi can no longer act and must be re-obtained for the live game.</summary>
     GameEnded
 }
 
 /// <summary>
-/// A typed, read-only report of why (if at all) an owned world-content occurrence can currently be
+/// A typed, read-only report of why (if at all) an owned world-content poi can currently be
 /// removed. Returned by <c>CanRemove()</c>; it never mutates native state. A value of
 /// <see cref="Ready"/> means a cleanup window may act now. The distinct reasons are a joint report
-/// across the four occurrence kinds; a kind only ever reports the reasons that apply to it.
+/// across the four poi kinds; a kind only ever reports the reasons that apply to it.
 /// </summary>
 public enum WorldContentRemovalStatus
 {
     /// <summary>Removal can proceed now; it is safe for a cleanup window to <c>Remove()</c> or complete a <c>RequestRemoval()</c>.</summary>
     Ready,
-    /// <summary>The player's current location or a waypoint is at the occurrence's POI; synchronous removal would act under the player.</summary>
+    /// <summary>The player's current location or a waypoint is at the poi's POI; synchronous removal would act under the player.</summary>
     PlayerInside,
-    /// <summary>A live boarding operation holds the occurrence's station; it cannot be removed while boarded.</summary>
+    /// <summary>A live boarding operation holds the poi's station; it cannot be removed while boarded.</summary>
     BoardingActive,
-    /// <summary>The occurrence's station has a persisted interior simulation; it cannot be removed safely.</summary>
+    /// <summary>The poi's station has a persisted interior simulation; it cannot be removed safely.</summary>
     InteriorPersisted,
-    /// <summary>The occurrence's installation is held enterable by an <c>IDungeonInstallation.KeepEnterable</c> hold.</summary>
+    /// <summary>The poi's installation is held enterable by an <c>IDungeonInstallation.KeepEnterable</c> hold.</summary>
     HeldEnterable,
-    /// <summary>The occurrence is not currently present natively (awaiting reconstruction, or already gone); there is nothing to remove.</summary>
+    /// <summary>The poi is not currently present natively (awaiting reconstruction, or already gone); there is nothing to remove.</summary>
     NotPresent,
     /// <summary>The pocket still contains owned combat sites, which cannot be removed with it.</summary>
     CombatSitesPresent,
     /// <summary>The pocket is still the endpoint of an owned wormhole pair; remove the pair first.</summary>
     WormholeEndpoint,
-    /// <summary>The owning session ended or was replaced; re-obtain the occurrence for the live game.</summary>
+    /// <summary>The owning session ended or was replaced; re-obtain the poi for the live game.</summary>
     SessionEnded,
     /// <summary>A transient lifecycle state (not yet in a safely actionable state) blocked the query/removal.</summary>
     NotReady,
@@ -190,7 +190,7 @@ public enum WorldContentRemovalStatus
     Unavailable
 }
 
-/// <summary>Retained result of an action on an owned occurrence. Terminal outcomes stay stable until the next action.</summary>
+/// <summary>Retained result of an action on an owned poi. Terminal outcomes stay stable until the next action.</summary>
 public sealed class WorldContentResult
 {
     public WorldContentStatus Status { get; }
@@ -201,20 +201,20 @@ public sealed class WorldContentResult
 }
 
 /// <summary>
-/// One owned authored-pocket-system occurrence for a single captured game. The API owns every native
-/// identity; the consumer names the occurrence with an author-local key. Re-creating or re-obtaining the
-/// same key returns the SAME object occurrence for the life of the owning session (keyed reconciliation
-/// surfaces as object identity, never a duplicate). An occurrence from a session that has ended or been
+/// One owned authored-pocket-system poi for a single captured game. The API owns every native
+/// identity; the consumer names the poi with an author-local key. Re-creating or re-obtaining the
+/// same key returns the SAME object poi for the life of the owning session (keyed reconciliation
+/// surfaces as object identity, never a duplicate). An poi from a session that has ended or been
 /// replaced refuses its actions with <see cref="WorldContentStatus.GameEnded"/> rather than touching the
 /// replacement save — re-obtain the objects for the live game explicitly.
 /// </summary>
 public interface IPocketSystem
 {
-    /// <summary>The author-local occurrence key this occurrence is owned under.</summary>
-    string OccurrenceKey { get; }
-    /// <summary>The declaration this occurrence belongs to (live revision after migration).</summary>
+    /// <summary>The author-local poi key this poi is owned under.</summary>
+    string PoiKey { get; }
+    /// <summary>The declaration this poi belongs to (live revision after migration).</summary>
     PocketSystemDefinition Definition { get; }
-    /// <summary>Current typed per-occurrence reconciliation state (Reconstructed / Pending / Failed(reason)).</summary>
+    /// <summary>Current typed per-poi reconciliation state (Reconstructed / Pending / Failed(reason)).</summary>
     PocketSystemState State { get; }
     /// <summary>Owned pocket-system identity; populated only while <see cref="State"/> is <see cref="ReconstructionStatus.Reconstructed"/>.</summary>
     string? SystemId { get; }
@@ -222,10 +222,10 @@ public interface IPocketSystem
     string? EntranceGatePoiId { get; }
     /// <summary>Owned pocket-side gate identity; populated only while reconstructed.</summary>
     string? PocketGatePoiId { get; }
-    /// <summary>The retained result of the most recent action on this occurrence.</summary>
+    /// <summary>The retained result of the most recent action on this poi.</summary>
     WorldContentResult LastAction { get; }
     /// <summary>
-    /// Fired when this occurrence's reconciliation state changes within its own session (for example
+    /// Fired when this poi's reconciliation state changes within its own session (for example
     /// Pending → Reconstructed on load, or Pending → Failed at the settle boundary). Not fired for the
     /// object's own actions; gate application is a retained action result, not a state transition.
     /// </summary>
@@ -244,7 +244,7 @@ public interface IPocketSystem
     /// player-safety conditions. To avoid acting while the player is at or inside the pocket, query
     /// <see cref="CanRemove"/> first, or use <see cref="RequestRemoval"/> to defer to the next safe
     /// cleanup window. On success this object is terminal
-    /// (<see cref="ReconstructionStatus.Removed"/>); creating the same occurrence key again authors
+    /// (<see cref="ReconstructionStatus.Removed"/>); creating the same poi key again authors
     /// a fresh pocket with fresh native identity.
     /// </summary>
     WorldContentResult Remove();
@@ -267,15 +267,15 @@ public interface IPocketSystem
 }
 
 /// <summary>
-/// A single reconciled occurrence that did not settle in a reconstructed state.
-/// Carries the owned occurrence object; the internal coordinator also builds reference-backed occurrences.
+/// A single reconciled poi that did not settle in a reconstructed state.
+/// Carries the owned poi object; the internal coordinator also builds reference-backed pois.
 /// </summary>
 public sealed class ReconstructionFailure
 {
     /// <summary>Internal coordinator keying; null on consumer-built failures.</summary>
     public PocketSystemReference? Reference { get; }
-    /// <summary>The owned occurrence that failed; null on internal coordinator-built failures.</summary>
-    public IPocketSystem? Occurrence { get; }
+    /// <summary>The owned poi that failed; null on internal coordinator-built failures.</summary>
+    public IPocketSystem? Poi { get; }
     public ReconstructionFailureReason Reason { get; }
     /// <summary>Internal coordinator construction.</summary>
     public ReconstructionFailure(PocketSystemReference reference, ReconstructionFailureReason reason)
@@ -283,17 +283,17 @@ public sealed class ReconstructionFailure
         Reference = reference ?? throw new ArgumentNullException(nameof(reference));
         Reason = reason;
     }
-    /// <summary>Consumer construction over an owned occurrence.</summary>
-    public ReconstructionFailure(IPocketSystem occurrence, ReconstructionFailureReason reason)
+    /// <summary>Consumer construction over an owned poi.</summary>
+    public ReconstructionFailure(IPocketSystem poi, ReconstructionFailureReason reason)
     {
-        Occurrence = occurrence ?? throw new ArgumentNullException(nameof(occurrence));
+        Poi = poi ?? throw new ArgumentNullException(nameof(poi));
         Reason = reason;
     }
 }
 
 /// <summary>
 /// Reports actual reconciliation outcomes once per session at the post-reconstruction safe boundary,
-/// carrying the owned occurrence objects. An empty failure list means every declared occurrence
+/// carrying the owned poi objects. An empty failure list means every declared poi
 /// reconstructed. This is the consumer-facing aggregate boundary event.
 /// </summary>
 public sealed class PocketSystemsSettledEvent

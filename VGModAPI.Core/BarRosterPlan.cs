@@ -82,7 +82,7 @@ internal sealed partial class BarContentService
         {
             if (!row.Mission.HasValue) continue;
             bool ready;
-            try { ready = missionReady != null && missionReady(row.Mission.Value, row.Occurrence!.Value); }
+            try { ready = missionReady != null && missionReady(row.Mission.Value, row.MissionId!.Value); }
             catch { ready = false; }
             if (!ready || _disposed || _storage == null || !Availability.IsAvailable || !ReferenceEquals(revision, _revision) || !_persistence.Read(session, out _)) return null;
         }

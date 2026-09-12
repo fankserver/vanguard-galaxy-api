@@ -52,7 +52,7 @@ public sealed class DungeonContentServiceTests
         using var provider = service.AcquireProvider("owner");
         using var registration = provider.Register("content", Definition(), _ =>
         { f.Hub.SetCapability("dungeon-content", false, "Fault.", ServiceUnavailableReason.ObserverFault); return true; });
-        var id = provider.Attach("content", f.Target).OccurrenceId!.Value;
+        var id = provider.Attach("content", f.Target).DungeonId!.Value;
         Assert.Equal(DungeonContentStatus.Unavailable, provider.Choose(id, "event", "choice").Status);
         Assert.Empty(f.State.Get(id)!.Choices); Assert.Equal(0, f.Applied);
         f.Service.Dispose(); Assert.Equal(ServiceUnavailableReason.ObserverFault, service.Availability.Reason);
@@ -82,7 +82,7 @@ public sealed class DungeonContentServiceTests
         using var provider = f.Service.AcquireProvider("owner");
         using var registration = provider.Register("content", new DungeonDefinition(1, "Site", Definition().Layout,
             events: new[] { new DungeonEventDefinition("event", "room", new string('e', 4000), new[] { new DungeonChoiceDefinition("choice", new string('c', 1000)) }) }));
-        var target = f.Target; var id = provider.Attach("content", target).OccurrenceId!.Value;
+        var target = f.Target; var id = provider.Attach("content", target).DungeonId!.Value;
         var source = new PanelSource { Snapshot = new(Guid.NewGuid(), 1, new(target, 1, BoardingEncounterKind.Installation, "Site", null, null, BoardingAvailability.Available, null), null) };
         f.Hub.SetCapability("dungeon-panel-opening", true, "Test bindings.");
         using var panel = new DungeonPanelService(f.Hub, source, (_, error) => throw error);
@@ -97,7 +97,7 @@ public sealed class DungeonContentServiceTests
     {
         using var f = new Fixture(); f.Hub.GameplayInitialized(f.Hub.CurrentSession!.Id);
         using var provider = f.Service.AcquireProvider("owner"); using var registration = provider.Register("content", Definition());
-        var target = f.Target; var id = provider.Attach("content", target).OccurrenceId!.Value;
+        var target = f.Target; var id = provider.Attach("content", target).DungeonId!.Value;
         var source = new PanelSource { Snapshot = new(Guid.NewGuid(), 1, new(target, 1, BoardingEncounterKind.Installation, "Site", null, null, BoardingAvailability.Available, null), null) };
         f.Hub.SetCapability("dungeon-panel-opening", true, "Test bindings.");
         using var panel = new DungeonPanelService(f.Hub, source, (_, error) => throw error);
@@ -116,7 +116,7 @@ public sealed class DungeonContentServiceTests
     {
         using var f = new Fixture(); using var provider = f.Service.AcquireProvider("owner"); var allowed = false;
         using var definition = provider.Register("content", Definition(), _ => allowed);
-        var id = provider.Attach("content", f.Target).OccurrenceId!.Value;
+        var id = provider.Attach("content", f.Target).DungeonId!.Value;
         Assert.Single(f.Service.PanelChoices(id));
         Assert.Equal(DungeonContentStatus.Vetoed, f.Service.ChooseFromPanel(id, "event", "choice").Status); Assert.Equal(0, f.Applied);
         allowed = true; Assert.Equal(DungeonContentStatus.ChoiceApplied, f.Service.ChooseFromPanel(id, "event", "choice").Status);
@@ -135,7 +135,7 @@ public sealed class DungeonContentServiceTests
         f.Resolve = poiId => poiId == "station-poi" ? target : null;
         var attached = provider.Attach("content", installation);
         Assert.Equal(DungeonContentStatus.Attached, attached.Status);
-        Assert.NotNull(attached.OccurrenceId);
+        Assert.NotNull(attached.DungeonId);
         // Ambiguity resolves to null in the adapter and stays a temporary refusal here.
         f.Resolve = _ => null;
         Assert.Equal(DungeonContentStatus.StaleTarget, provider.Attach("content", installation).Status);
@@ -155,18 +155,18 @@ public sealed class DungeonContentServiceTests
     public void CargoRecoveryExampleCreatesIndependentSavedAuthoredContent()
     {
         using var f = new Fixture(); using var example = new ExampleDungeon.CargoRecovery(f.Service, "recovery", "native-item");
-        var first = example.Attach(f.Target).OccurrenceId!.Value;
-        var second = example.Attach(f.Target).OccurrenceId!.Value;
+        var first = example.Attach(f.Target).DungeonId!.Value;
+        var second = example.Attach(f.Target).DungeonId!.Value;
         Assert.NotEqual(first, second);
         Assert.Equal(DungeonContentStatus.ChoiceApplied, example.Recover(first).Status);
         Assert.Equal(DungeonContentStatus.ChoiceApplied, example.Leave(second).Status);
         var restored = DungeonStateCodec.Decode(f.Persistence.Provider.Capture());
         Assert.Equal(2, restored.Count);
-        Assert.All(restored, occurrence =>
+        Assert.All(restored, dungeon =>
         {
-            Assert.Equal(3, occurrence.Definition.Layout.Compartments.Count);
-            Assert.False(occurrence.Definition.AllowHazards);
-            Assert.False(occurrence.Definition.AllowScheduledReinforcements);
+            Assert.Equal(3, dungeon.Definition.Layout.Compartments.Count);
+            Assert.False(dungeon.Definition.AllowHazards);
+            Assert.False(dungeon.Definition.AllowScheduledReinforcements);
         });
     }
     [Fact]
@@ -175,27 +175,27 @@ public sealed class DungeonContentServiceTests
         using var f = new Fixture(); using var a = f.Service.AcquireProvider("a"); using var b = f.Service.AcquireProvider("b");
         using var ar = a.Register("shared", Definition()); using var br = b.Register("shared", Definition());
         var first = a.Attach("shared", f.Target); var second = a.Attach("shared", f.Target); var third = b.Attach("shared", f.Target);
-        Assert.NotEqual(first.OccurrenceId, second.OccurrenceId); Assert.Equal(2, a.GetOccurrences().Count); Assert.Single(b.GetOccurrences());
-        Assert.Equal(DungeonContentStatus.MissingDefinition, b.Choose(first.OccurrenceId!.Value, "event", "choice").Status);
-        Assert.Equal(DungeonContentStatus.ChoiceApplied, a.Choose(first.OccurrenceId.Value, "event", "choice").Status);
-        Assert.Equal(DungeonContentStatus.AlreadyChosen, a.Choose(first.OccurrenceId.Value, "event", "choice").Status); Assert.Equal(1, f.Applied);
+        Assert.NotEqual(first.DungeonId, second.DungeonId); Assert.Equal(2, a.GetDungeons().Count); Assert.Single(b.GetDungeons());
+        Assert.Equal(DungeonContentStatus.MissingDefinition, b.Choose(first.DungeonId!.Value, "event", "choice").Status);
+        Assert.Equal(DungeonContentStatus.ChoiceApplied, a.Choose(first.DungeonId.Value, "event", "choice").Status);
+        Assert.Equal(DungeonContentStatus.AlreadyChosen, a.Choose(first.DungeonId.Value, "event", "choice").Status); Assert.Equal(1, f.Applied);
     }
     [Fact]
     public void MissingAndChangedDefinitionsDoNotSilentlyAdoptSavedOccurrences()
     {
         using var f = new Fixture(); using var provider = f.Service.AcquireProvider("a"); var registration = provider.Register("id", Definition());
-        var id = provider.Attach("id", f.Target).OccurrenceId!.Value; registration.Dispose();
+        var id = provider.Attach("id", f.Target).DungeonId!.Value; registration.Dispose();
         Assert.Equal(DungeonContentStatus.MissingDefinition, provider.Choose(id, "event", "choice").Status);
         using var changed = provider.Register("id", Definition(2));
         Assert.Equal(DungeonContentStatus.VersionMismatch, provider.Choose(id, "event", "choice").Status);
-        Assert.Equal(1, provider.GetOccurrences()[0].DefinitionVersion); Assert.Equal(0, f.Applied);
+        Assert.Equal(1, provider.GetDungeons()[0].DefinitionVersion); Assert.Equal(0, f.Applied);
     }
     [Fact]
     public void CallbackFailureIsIsolatedButNativeFailurePropagatesWithoutRetry()
     {
         using var f = new Fixture(); using var provider = f.Service.AcquireProvider("a");
         var registration = provider.Register("id", Definition(), _ => throw new Exception("provider failure"));
-        var id = provider.Attach("id", f.Target).OccurrenceId!.Value;
+        var id = provider.Attach("id", f.Target).DungeonId!.Value;
         Assert.Equal(DungeonContentStatus.Vetoed, provider.Choose(id, "event", "choice").Status); Assert.Equal(1, f.Diagnosed); Assert.Equal(0, f.Applied);
         registration.Dispose(); using var replacement = provider.Register("id", Definition()); f.ThrowNative = true;
         Assert.Throws<InvalidOperationException>(() => provider.Choose(id, "event", "choice"));
@@ -210,7 +210,7 @@ public sealed class DungeonContentServiceTests
             Assert.Equal(DungeonContentStatus.Unavailable, provider.Choose(id, "event", "choice").Status);
             provider.Dispose(); return true;
         });
-        id = provider.Attach("id", f.Target).OccurrenceId!.Value;
+        id = provider.Attach("id", f.Target).DungeonId!.Value;
         Assert.Equal(DungeonContentStatus.Unavailable, provider.Choose(id, "event", "choice").Status); Assert.Equal(0, f.Applied);
     }
     [Fact]
@@ -220,7 +220,7 @@ public sealed class DungeonContentServiceTests
         using var provider = f.Service.AcquireProvider("owner");
         using var registration = provider.Register("content", Definition(), _ =>
         { f.Hub.SetCapability("dungeon-content", false, "Fault.", ServiceUnavailableReason.ObserverFault); return true; });
-        var id = provider.Attach("content", f.Target).OccurrenceId!.Value;
+        var id = provider.Attach("content", f.Target).DungeonId!.Value;
         var result = provider.Choose(id, "event", "choice");
         Assert.Equal(DungeonContentStatus.Unavailable, result.Status);
         // The detail names the actual gate (the service binding fault), not a bare enum name.

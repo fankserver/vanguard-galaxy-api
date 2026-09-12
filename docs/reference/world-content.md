@@ -32,12 +32,12 @@ re-issue `RequestRemoval()`.
 
 Acquire `IWorldProvider` directly from the loaded plugin assembly and register immutable `CombatSiteDefinition` values before starting a session. Definitions identify local content, revision, display name, an existing faction ID and level. Same-owner duplicate declarations are rejected; registration does not create a POI. The authenticated lease owns its declarations and must be disposed on provider teardown.
 
-`CreateCombatSite(localId, occurrenceKey, systemId, x, y)` creates — or reconciles — an owned
+`CreateCombatSite(localId, poiKey, systemId, x, y)` creates — or reconciles — an owned
 persistent combat site in the current game, following the uniform occurrence contract shared with
 authored systems: the consumer names the occurrence with an author-local key; the API allocates and
 owns the native identity; no session tokens or instance GUIDs are supplied. Re-declaring the same
 key returns the **same** `ICombatSite` object instance for the life of the session, never a
-duplicate site. `GetCombatSite(localId, occurrenceKey)` re-obtains the occurrence in the current
+duplicate site. `GetCombatSite(localId, poiKey)` re-obtains the occurrence in the current
 game (null when it does not exist or the world cannot answer). Creation requires a ready session
 and available persistence; the method returns null while the world cannot author — that is a
 temporary refusal, not existence information.
@@ -59,7 +59,7 @@ enumerates the provider's own keyed occurrences after a reload — from persiste
 handle cache — each with its honest typed state, including un-reconstructed ones. Once per session,
 after reconstruction has settled at the safe boundary, `CombatSiteReconstructionSettled` reports
 the actual outcomes: reconstructed occurrences and typed per-occurrence failures. The keys share
-one cross-kind key space per owner: a `(localId, occurrenceKey)` claimed by a combat site cannot be
+one cross-kind key space per owner: a `(localId, poiKey)` claimed by a combat site cannot be
 claimed by an authored system, site, ship or wormhole pair, and vice versa — the collision refuses
 at creation, and a save carrying a colliding pair refuses to encode. The key rows ride the shared
 authored envelope: if the authored-systems integration failed to bind for this run, combat sites
@@ -530,7 +530,7 @@ be removable. Site-specific behavior on top of the shared surface:
 - For a salvage site with a derelict station, `CanRemove()` reports `BoardingActive`,
   `InteriorPersisted` and `HeldEnterable` while those conditions hold.
 - If an authored dungeon was attached to the site's derelict station, its `DungeonStateStore` row
-  is dropped with the site so `IDungeonProvider.GetOccurrences()` does not keep reporting a dead
+  is dropped with the site so `IDungeonProvider.GetDungeons()` does not keep reporting a dead
   occurrence. The location is resolved before native removal and the row is dropped only after the
   verified removal, so a refused or failed remove never loses dungeon state. (The equivalent prune
   on the pocket-remove path is not implemented yet.)

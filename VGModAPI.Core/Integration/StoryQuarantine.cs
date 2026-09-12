@@ -177,7 +177,7 @@ internal sealed class StoryQuarantine
     /// <summary>
     /// Settles a UI abandon or retry by looking at what the game actually holds afterwards. An
     /// inspection failure is reported as UNKNOWN, never as an ending: inventing "it is gone" would
-    /// retire an occurrence and drop its catalog entry over a world nobody could read.
+    /// retire an mission and drop its catalog entry over a world nobody could read.
     /// </summary>
     internal void EndAbandon(StoryAbandonState state)
     {

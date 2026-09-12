@@ -37,7 +37,7 @@ public sealed class DungeonPodReturnPatchTests
         DungeonRefundPatches.Hooks = new(state, observer, _ =>
         {
             var saved = state.Operation(operationId)!;
-            return state.TrackOperation(new(saved.Id, saved.LocationId, saved.ContentOccurrence, saved.AttackerShipId, saved.DungeonType, saved.NativePhase, saved.Outcome, saved.MissionProtection, saved.TerminalProgress, saved.Autonomous, retired: retired));
+            return state.TrackOperation(new(saved.Id, saved.LocationId, saved.ContentDungeon, saved.AttackerShipId, saved.DungeonType, saved.NativePhase, saved.Outcome, saved.MissionProtection, saved.TerminalProgress, saved.Autonomous, retired: retired));
         }, _ => operationId);
         try
         {

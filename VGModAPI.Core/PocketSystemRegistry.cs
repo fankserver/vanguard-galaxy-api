@@ -4,7 +4,7 @@ using System.Reflection;
 
 namespace VGModAPI.Core;
 
-/// <summary>Host-authenticated live authored-system declarations. Registration neither creates native objects nor overwrites saved occurrences.</summary>
+/// <summary>Host-authenticated live authored-system declarations. Registration neither creates native objects nor overwrites saved pois.</summary>
 internal sealed class PocketSystemRegistry : IDisposable
 {
     internal sealed class Provider : IDisposable

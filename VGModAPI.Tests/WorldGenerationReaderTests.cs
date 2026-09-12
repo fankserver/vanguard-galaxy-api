@@ -110,7 +110,7 @@ public sealed class WorldGenerationReaderTests : IDisposable
         // RestoreFailed -> blocked, so an authored pocket created natively could never resolve its SystemId.
         var store = Store;
         var authoredOwner = "vgmodapi.world-authored-systems";
-        var authoredEnvelope = new OwnerSchemaCodec(authoredOwner, 1, _ => true).Encode(PocketSystemStateCodec.Encode(Array.Empty<PocketSystemOccurrence>()));
+        var authoredEnvelope = new OwnerSchemaCodec(authoredOwner, 1, _ => true).Encode(PocketSystemStateCodec.Encode(Array.Empty<PocketSystemPoi>()));
         store.Publish(Slot, GenerationStore.Hash(_native), Guid.NewGuid(), new Dictionary<string, byte[]>
         {
             [WorldStateCodec.Owner] = Envelope(),

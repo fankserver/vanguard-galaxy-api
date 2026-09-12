@@ -38,7 +38,7 @@ internal static class BarPatronCodec
             if (row.Mission.HasValue)
             {
                 Write(writer, row.Mission.Value.LocalId);
-                writer.Write(row.Occurrence!.Value.ToByteArray());
+                writer.Write(row.MissionId!.Value.ToByteArray());
             }
             if (row.Portrait != null)
             {
@@ -70,13 +70,13 @@ internal static class BarPatronCodec
             var station = Read(reader, 128); var name = Read(reader, 128); var description = Read(reader, 1024); var seed = Read(reader, 128);
             byte flags = reader.ReadByte();
             if (flags > (version == 1 ? 1 : 15)) throw new InvalidDataException("Invalid patron reference flag.");
-            StoryContentId? mission = null; Guid? occurrence = null;
+            StoryContentId? mission = null; Guid? missionId = null;
             if ((flags & 1) != 0)
             {
                 mission = new StoryContentId(id.Provider, Read(reader, 48));
                 var bytes = reader.ReadBytes(16);
-                if (bytes.Length != 16) throw new InvalidDataException("Truncated patron occurrence.");
-                occurrence = new Guid(bytes);
+                if (bytes.Length != 16) throw new InvalidDataException("Truncated patron mission.");
+                missionId = new Guid(bytes);
             }
             CharacterPortrait? portrait = null;
             if ((flags & 2) != 0)
@@ -86,7 +86,7 @@ internal static class BarPatronCodec
                     1 => CharacterPortrait.OfCharacter(Read(reader, 2048)),
                     _ => throw new InvalidDataException("Unknown patron portrait kind.")
                 };
-            rows[index] = new BarPatronState(id, station, name, description, seed, mission, occurrence, portrait, isMale: (flags & 4) == 0, removed: (flags & 8) != 0);
+            rows[index] = new BarPatronState(id, station, name, description, seed, mission, missionId, portrait, isMale: (flags & 4) == 0, removed: (flags & 8) != 0);
         }
         if (stream.Position != stream.Length || !Encode(rows, version).SequenceEqual(payload)) throw new InvalidDataException("Noncanonical patron payload.");
         return rows;

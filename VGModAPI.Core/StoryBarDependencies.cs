@@ -18,14 +18,14 @@ internal sealed partial class StoryContentService
         var registry = _registry.Epoch;
         foreach (var entry in _ledger.Entries.ToArray())
         {
-            if (entry.State == StoryOccurrenceState.Retired) continue;
+            if (entry.State == StoryMissionLedgerState.Retired) continue;
             var definition = entry.RetainedDefinition;
             if (definition == null && !_registry.TryGet(entry.Id, out definition)) continue;
             if (!definition.Steps.SelectMany(step => step.Objectives).Any(objective => WorldObjectIdentity.IsReserved(objective.TargetPoiId))) continue;
             var missing = MissingTargets(entry.Id.Provider, definition, out var unknown);
             if (_disposed || _currentSession()?.Id != session || _restoredSession != session || !ReferenceEquals(registry, _registry.Epoch)) return;
-            if (!_ledger.TryGet(entry.OccurrenceId, out var current) || !ReferenceEquals(entry, current)) return;
-            if (unknown || missing != null) _unrunnable.Add(entry.OccurrenceId);
+            if (!_ledger.TryGet(entry.MissionId, out var current) || !ReferenceEquals(entry, current)) return;
+            if (unknown || missing != null) _unrunnable.Add(entry.MissionId);
         }
         PublishAdmissions();
     }
@@ -45,21 +45,21 @@ internal sealed partial class StoryContentService
         return _barDependencyEpoch;
     }
 
-    /// <summary>The unique currently ready occurrence of an authored definition; null when none or ambiguous.</summary>
-    internal Guid? CurrentBarOccurrence(Guid expectedSession, StoryContentId definition)
+    /// <summary>The unique currently ready mission of an authored definition; null when none or ambiguous.</summary>
+    internal Guid? CurrentBarMission(Guid expectedSession, StoryContentId definition)
     {
         CheckThread();
         Guid? found = null;
         foreach (var entry in _ledger.Entries)
         {
-            if (entry.Id != definition || !IsBarMissionReady(expectedSession, definition, entry.OccurrenceId)) continue;
+            if (entry.Id != definition || !IsBarMissionReady(expectedSession, definition, entry.MissionId)) continue;
             if (found != null) return null;
-            found = entry.OccurrenceId;
+            found = entry.MissionId;
         }
         return found;
     }
 
-    internal bool IsBarMissionReady(Guid expectedSession, StoryContentId definition, Guid occurrence)
+    internal bool IsBarMissionReady(Guid expectedSession, StoryContentId definition, Guid mission)
     {
         CheckThread();
         var session = _currentSession();
@@ -70,8 +70,8 @@ internal sealed partial class StoryContentService
             && session?.Id == expectedSession
             && _leasesBySegment.TryGetValue(definition.Provider, out var lease) && lease.Active
             && _registry.Contains(definition)
-            && _ledger.TryGet(occurrence, out var entry) && entry.Id == definition
-            && entry.State != StoryOccurrenceState.Retired && !_unrunnable.Contains(occurrence)
-            && _protection?.IsAdmitted(expectedSession, StoryContentPolicy.OccurrenceIdentifier(definition, occurrence)) == true;
+            && _ledger.TryGet(mission, out var entry) && entry.Id == definition
+            && entry.State != StoryMissionLedgerState.Retired && !_unrunnable.Contains(mission)
+            && _protection?.IsAdmitted(expectedSession, StoryContentPolicy.MissionIdentifier(definition, mission)) == true;
     }
 }

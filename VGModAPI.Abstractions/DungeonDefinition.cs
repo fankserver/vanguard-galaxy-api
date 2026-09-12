@@ -5,7 +5,7 @@ using System.Linq;
 
 namespace VGModAPI;
 
-/// <summary>Stable namespaced definition identity, distinct from each saved dungeon occurrence.</summary>
+/// <summary>Stable namespaced definition identity, distinct from each saved dungeon.</summary>
 public sealed class DungeonDefinitionId : IEquatable<DungeonDefinitionId>
 {
     public string ProviderId { get; }

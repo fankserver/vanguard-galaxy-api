@@ -43,7 +43,7 @@ internal sealed class WorldAuthoringGate
             ReferenceEquals(current!.Definition, saved.Definition));
     }
 
-    /// <summary>Removes a retained owned world occurrence after a verified native removal.</summary>
+    /// <summary>Removes a retained owned world poi after a verified native removal.</summary>
     internal WorldRemoveOutcome RemoveChecked(WorldDefinitionRegistry.Provider provider, Guid session, string localId, Guid instanceId, Func<bool>? availability = null)
     {
         if (!_definitions.TryResolve(provider, localId, out var definition)) return WorldRemoveOutcome.Missing;
@@ -58,7 +58,7 @@ internal sealed class WorldAuthoringGate
     }
 
     /// <summary>
-    /// Pure readiness for removing the retained occurrence, applying the same admission the remove path
+    /// Pure readiness for removing the retained poi, applying the same admission the remove path
     /// requires (definition tenant, availability, persistence-ready, definition-stable). Never mutates
     /// native state.
     /// </summary>

@@ -24,8 +24,8 @@ public sealed class DungeonPodResumeCodecTests
     [Fact]
     public void EveryNativePodPhaseAndKnownEmptyReturnManifestRoundTrips()
     {
-        var occurrence = Guid.NewGuid();
-        var states = Enum.GetValues<DungeonPodPhase>().Select(phase => new DungeonPodResumeState(Guid.NewGuid(), occurrence, phase, true,
+        var dungeon = Guid.NewGuid();
+        var states = Enum.GetValues<DungeonPodPhase>().Select(phase => new DungeonPodResumeState(Guid.NewGuid(), dungeon, phase, true,
             phase is DungeonPodPhase.Returning or DungeonPodPhase.Arrived, phase == DungeonPodPhase.Arrived, new Dictionary<string, int>())).ToArray();
         var bytes = DungeonPodResumeCodec.Encode(states); var restored = DungeonPodResumeCodec.Decode(bytes);
         Assert.Equal(6, restored.Count); Assert.Equal(bytes, DungeonPodResumeCodec.Encode(restored));

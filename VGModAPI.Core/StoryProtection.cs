@@ -80,8 +80,8 @@ internal sealed class StoryProtection
     {
         _checkThread?.Invoke();
         // EVERY identifier under this API's reserved namespace is ours to answer for, not just a
-        // well-formed occurrence: a base definition identifier, a malformed one, or one carrying an
-        // occurrence this module never minted is exactly the content nobody can vouch for. Anything
+        // well-formed mission: a base definition identifier, a malformed one, or one carrying an
+        // mission this module never minted is exactly the content nobody can vouch for. Anything
         // outside the namespace — vanilla story ids, another mod's, none at all — is left alone, and
         // the match is ordinal, so a neighbouring namespace like "vgmodapi.story-other." is not ours.
         if (storyId == null || !storyId.StartsWith(StoryContentPolicy.IdentifierPrefix, StringComparison.Ordinal)) return false;

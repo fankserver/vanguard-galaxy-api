@@ -44,7 +44,7 @@ internal sealed class DungeonPodResumeAdapter
         if (_ids.TryGetValue(data, out var previous) && previous.Id != id) { _conflicts.Add(previous.Id); _conflicts.Add(id); }
         _ids.Remove(data); _ids.Add(data, new(id)); _objects[id] = new(data);
     }
-    internal bool Observe(object pod, Guid occurrence, string parentShipId, bool returnInitialized = false, DungeonPodTransport? transport = null)
+    internal bool Observe(object pod, Guid dungeon, string parentShipId, bool returnInitialized = false, DungeonPodTransport? transport = null)
     {
         if (!_persistence.CanObserveSnapshots) return false;
         var data = _native.Get(pod, "resumePodData") ?? throw new InvalidOperationException("Pod data unavailable.");
@@ -56,7 +56,7 @@ internal sealed class DungeonPodResumeAdapter
         var known = phase is DungeonPodPhase.Returning or DungeonPodPhase.Arrived;
         var manifest = known ? (returnInitialized ? _native.Get(pod, "resumeReturnCrew") as IReadOnlyDictionary<string, int> : previous?.ReturnManifestKnown == true ? previous.ReturnCrew : null) : null;
         if (known && manifest == null) return false;
-        var state = new DungeonPodResumeState(id, occurrence, phase, _native.Get(data, "resumePodPlayer") is true,
+        var state = new DungeonPodResumeState(id, dungeon, phase, _native.Get(data, "resumePodPlayer") is true,
             known, previous?.ReturnDelivered ?? false, manifest ?? new Dictionary<string, int>(), previous?.ReturnAttempted ?? false, parentShipId, transport ?? previous?.Transport);
         if (!_persistence.Track(state)) return false;
         if (!IdentityFor(data).HasValue) Loaded(data, id);

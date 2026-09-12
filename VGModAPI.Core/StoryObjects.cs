@@ -77,8 +77,8 @@ internal sealed partial class StoryContentService
             if (!Game.IsActive || Service._restoredSession != Session) return;
             foreach (var entry in Service._ledger.Entries)
                 if (Service._authoredDefinitions.TryGetValue(entry.Id, out var definition) && definition.IsLive &&
-                    (!_missions.TryGetValue(entry.OccurrenceId, out var existing) || !ReferenceEquals(existing.Owned, definition)))
-                    _missions[entry.OccurrenceId] = new Mission(this, definition, entry.OccurrenceId);
+                    (!_missions.TryGetValue(entry.MissionId, out var existing) || !ReferenceEquals(existing.Owned, definition)))
+                    _missions[entry.MissionId] = new Mission(this, definition, entry.MissionId);
         }
         public IGame Game { get { Service.CheckThread(); return _game; } }
         private Registration Definition(IStoryDefinition definition)
@@ -98,7 +98,7 @@ internal sealed partial class StoryContentService
                 {
                     var result = Service.Offer(owned.Owner, Session, owned.Id.LocalId);
                     if (result.Accepted)
-                    { mission.Occurrence = result.OccurrenceId; _missions[result.OccurrenceId] = mission; }
+                    { mission.MissionId = result.MissionId; _missions[result.MissionId] = mission; }
                     return result;
                 }
                 finally { _offering.Remove(mission); }
@@ -125,7 +125,7 @@ internal sealed partial class StoryContentService
             foreach (var mission in _missions.Values.ToArray())
             {
                 mission.Refresh();
-                if (!Service._ledger.TryGet(mission.Occurrence, out _) || !mission.Owned.IsLive) _missions.Remove(mission.Occurrence);
+                if (!Service._ledger.TryGet(mission.MissionId, out _) || !mission.Owned.IsLive) _missions.Remove(mission.MissionId);
             }
         }
     }
@@ -134,7 +134,7 @@ internal sealed partial class StoryContentService
     {
         private readonly StoryGame _scope;
         internal readonly Registration Owned;
-        internal Guid Occurrence;
+        internal Guid MissionId;
         private StoryActionResult _lastAction;
         internal StoryActionResult Offering;
         private StoryMissionState _published;
@@ -142,22 +142,22 @@ internal sealed partial class StoryContentService
         private IReadOnlyDictionary<string, string> _choices = new ReadOnlyDictionary<string, string>(new Dictionary<string, string>());
         private readonly GameplayEvent<IStoryMission> _changed;
         private readonly Dictionary<string, Objective> _objectives = new(StringComparer.Ordinal);
-        internal Mission(StoryGame scope, Registration definition, Guid occurrence)
+        internal Mission(StoryGame scope, Registration definition, Guid mission)
         {
-            _scope = scope; Owned = definition; Occurrence = occurrence;
-            _lastAction = new(occurrence == Guid.Empty ? StoryActionStatus.Queued : StoryActionStatus.Succeeded);
+            _scope = scope; Owned = definition; MissionId = mission;
+            _lastAction = new(mission == Guid.Empty ? StoryActionStatus.Queued : StoryActionStatus.Succeeded);
             Offering = _lastAction;
             _changed = new(scope.Service.CheckThread); _published = ReadState(); CaptureChoices();
         }
         public IGame Game => _scope.Game;
         public IStoryDefinition Definition { get { _scope.Service.CheckThread(); return Owned; } }
-        public Guid Id { get { _scope.Service.CheckThread(); return Occurrence; } }
+        public Guid Id { get { _scope.Service.CheckThread(); return MissionId; } }
         public string? NativeMissionId
         {
             get
             {
                 _scope.Service.CheckThread();
-                return Occurrence == Guid.Empty ? null : StoryContentPolicy.OccurrenceIdentifier(Owned.Id, Occurrence);
+                return MissionId == Guid.Empty ? null : StoryContentPolicy.MissionIdentifier(Owned.Id, MissionId);
             }
         }
         public StoryActionResult LastAction
@@ -166,8 +166,8 @@ internal sealed partial class StoryContentService
         public IReadOnlyDictionary<string, string> Choices { get { _scope.Service.CheckThread(); return _choices; } }
         private void CaptureChoices()
         {
-            if (Game.IsActive && Owned.IsLive && _scope.Service._ledger.TryGet(Occurrence, out var entry))
-                _choices = new ReadOnlyDictionary<string, string>((entry.State == StoryOccurrenceState.Retired ? entry.Choices : entry.PendingChoices)
+            if (Game.IsActive && Owned.IsLive && _scope.Service._ledger.TryGet(MissionId, out var entry))
+                _choices = new ReadOnlyDictionary<string, string>((entry.State == StoryMissionLedgerState.Retired ? entry.Choices : entry.PendingChoices)
                     .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal));
         }
         public event Action<IStoryMission>? Changed { add => _changed.Add(value); remove => _changed.Remove(value); }
@@ -176,14 +176,14 @@ internal sealed partial class StoryContentService
             if (!Game.IsActive) return StoryMissionState.GameEnded;
             if (!Owned.IsLive) return StoryMissionState.Unavailable;
             if (_withdrawn) return StoryMissionState.Withdrawn;
-            if (Occurrence == Guid.Empty) return Offering.Status == StoryActionStatus.Queued ? StoryMissionState.Offering : StoryMissionState.Unavailable;
-            if (!_scope.Service._ledger.TryGet(Occurrence, out var entry)) return _published is StoryMissionState.Completed or StoryMissionState.Failed or StoryMissionState.Abandoned ? _published : StoryMissionState.Unavailable;
+            if (MissionId == Guid.Empty) return Offering.Status == StoryActionStatus.Queued ? StoryMissionState.Offering : StoryMissionState.Unavailable;
+            if (!_scope.Service._ledger.TryGet(MissionId, out var entry)) return _published is StoryMissionState.Completed or StoryMissionState.Failed or StoryMissionState.Abandoned ? _published : StoryMissionState.Unavailable;
             return entry.Outcome switch
             {
                 StoryOutcome.Completed => StoryMissionState.Completed,
                 StoryOutcome.Failed => StoryMissionState.Failed,
                 StoryOutcome.Abandoned => StoryMissionState.Abandoned,
-                _ => entry.FailureObserved ? StoryMissionState.Failed : entry.State == StoryOccurrenceState.Active ? StoryMissionState.Active : StoryMissionState.Offered
+                _ => entry.FailureObserved ? StoryMissionState.Failed : entry.State == StoryMissionLedgerState.Active ? StoryMissionState.Active : StoryMissionState.Offered
             };
         }
         internal void Refresh(bool force = false)
@@ -221,19 +221,19 @@ internal sealed partial class StoryContentService
             }, () => Game.IsActive && Owned.IsLive, _scope.Service._persistence, Owned.Owner.SaveData);
             return request;
         }
-        public StoryActionResult Activate() => Schedule(() => Owned.Owner.Activate(_scope.Session, Occurrence));
+        public StoryActionResult Activate() => Schedule(() => Owned.Owner.Activate(_scope.Session, MissionId));
         public StoryActionResult Withdraw() => Schedule(() =>
         {
-            var result = Owned.Owner.Withdraw(_scope.Session, Occurrence);
+            var result = Owned.Owner.Withdraw(_scope.Session, MissionId);
             if (result.Accepted) _withdrawn = true;
             return result;
         });
         public StoryActionResult Fail(IReadOnlyDictionary<string, string>? choices = null)
-            => ScheduleChoices(choices, copy => Owned.Owner.Retire(_scope.Session, Occurrence, StoryOutcome.Failed, copy));
+            => ScheduleChoices(choices, copy => Owned.Owner.Retire(_scope.Session, MissionId, StoryOutcome.Failed, copy));
         public StoryActionResult Abandon(IReadOnlyDictionary<string, string>? choices = null)
-            => ScheduleChoices(choices, copy => Owned.Owner.Retire(_scope.Session, Occurrence, StoryOutcome.Abandoned, copy));
+            => ScheduleChoices(choices, copy => Owned.Owner.Retire(_scope.Session, MissionId, StoryOutcome.Abandoned, copy));
         public StoryActionResult DeclareChoices(IReadOnlyDictionary<string, string> choices)
-            => ScheduleChoices(choices ?? throw new ArgumentNullException(nameof(choices)), copy => Owned.Owner.DeclareChoices(_scope.Session, Occurrence, copy!));
+            => ScheduleChoices(choices ?? throw new ArgumentNullException(nameof(choices)), copy => Owned.Owner.DeclareChoices(_scope.Session, MissionId, copy!));
         private StoryActionResult ScheduleChoices(IReadOnlyDictionary<string, string>? choices, Func<IReadOnlyDictionary<string, string>?, StoryTransitionResult> action)
         {
             _scope.Service.CheckThread();
@@ -283,12 +283,12 @@ internal sealed partial class StoryContentService
             }
             public IStoryMission Mission => _mission;
             public string Key { get { _mission._scope.Service.CheckThread(); return _key; } }
-            public StoryObjectiveQuery Snapshot => !_mission.Game.IsActive || _mission.Occurrence == Guid.Empty
+            public StoryObjectiveQuery Snapshot => !_mission.Game.IsActive || _mission.MissionId == Guid.Empty
                 ? new(StoryKnowledge.Unavailable, null, null, null, "The mission is not available in this game.")
-                : _mission.Owned.Owner.Query(_mission._scope.Session, new StoryObjectiveId(_mission.Owned.Id, _mission.Occurrence, _key));
-            public StoryActionResult SetProgress(int progress) => _mission.Schedule(() => _mission.Occurrence == Guid.Empty
-                ? new StoryTransitionResult(StoryTransitionStatus.UnknownOccurrence, Guid.Empty, "The offer was not admitted.")
-                : _mission.Owned.Owner.SetProgress(_mission._scope.Session, new StoryObjectiveId(_mission.Owned.Id, _mission.Occurrence, _key), progress));
+                : _mission.Owned.Owner.Query(_mission._scope.Session, new StoryObjectiveId(_mission.Owned.Id, _mission.MissionId, _key));
+            public StoryActionResult SetProgress(int progress) => _mission.Schedule(() => _mission.MissionId == Guid.Empty
+                ? new StoryTransitionResult(StoryTransitionStatus.UnknownMission, Guid.Empty, "The offer was not admitted.")
+                : _mission.Owned.Owner.SetProgress(_mission._scope.Session, new StoryObjectiveId(_mission.Owned.Id, _mission.MissionId, _key), progress));
         }
     }
 }

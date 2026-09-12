@@ -121,7 +121,7 @@ public sealed class WorldRuntimeStateTests
                 Assert.Equal(WorldStatus.NotReady, provider.RegisterCombatSite(new CombatSiteDefinition("Late", 1, "Site", "player", 1)));
                 Assert.Equal(2, creation.Snapshot().Length);
 
-                // Uniform occurrence contract: author-local key, API-allocated identity, same-key=same object.
+                // Uniform poi contract: author-local key, API-allocated identity, same-key=same object.
                 var site = provider.CreateCombatSite("PoiX", "encounter", "system", 24, 24);
                 Assert.NotNull(site);
                 Assert.True(site!.State.Reconstructed);
@@ -132,11 +132,11 @@ public sealed class WorldRuntimeStateTests
                 Assert.Same(site, provider.GetCombatSite("PoiX", "encounter"));
                 Assert.Null(provider.GetCombatSite("PoiX", "missing"));
                 // Parity: the persisted key row backs enumeration and the save capture, so the
-                // occurrence outlives the handle cache exactly like every other authored kind.
+                // poi outlives the handle cache exactly like every other authored kind.
                 Assert.Same(site, Assert.Single(provider.GetCombatSites("PoiX")));
                 var capturedKey = Assert.Single(world.CaptureCombatKeys());
                 Assert.Equal("author.a", capturedKey.Owner); Assert.Equal("PoiX", capturedKey.LocalId);
-                Assert.Equal("encounter", capturedKey.OccurrenceKey);
+                Assert.Equal("encounter", capturedKey.PoiKey);
                 Assert.Equal(3, creation.Snapshot().Length);
                 int siteChanges = 0;
                 site.Changed += _ => siteChanges++;

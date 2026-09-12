@@ -3,7 +3,7 @@ using System.IO;
 
 namespace VGModAPI.Core.Integration;
 
-/// <summary>Preallocates occurrence bookkeeping before native append; commits without callbacks after append.</summary>
+/// <summary>Preallocates poi bookkeeping before native append; commits without callbacks after append.</summary>
 internal sealed class WorldCreationCoordinator
 {
     private readonly WorldNativeAttachment _native;
@@ -47,16 +47,16 @@ internal sealed class WorldCreationCoordinator
         try
         {
             var plan = reconstruct() ?? throw new InvalidDataException("Missing reconstruction plan.");
-            var source = plan.Occurrences ?? throw new InvalidDataException("Missing reconstructed inventory.");
+            var source = plan.Pois ?? throw new InvalidDataException("Missing reconstructed inventory.");
             if (source.Length > WorldSerializationAssociation.MaxObjects) throw new InvalidDataException("Reconstructed inventory exceeds bound.");
             var prepared = (WorldSnapshotInstance[])source.Clone();
             var ids = new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal);
             var references = new System.Runtime.CompilerServices.ConditionalWeakTable<object, object>();
-            foreach (var occurrence in prepared)
+            foreach (var poi in prepared)
             {
-                if (occurrence == null || !ids.Add(occurrence.Identity.NativeId) || references.TryGetValue(occurrence.Native, out _))
-                    throw new InvalidDataException("Invalid reconstructed occurrence inventory.");
-                references.Add(occurrence.Native, new object());
+                if (poi == null || !ids.Add(poi.Identity.NativeId) || references.TryGetValue(poi.Native, out _))
+                    throw new InvalidDataException("Invalid reconstructed poi inventory.");
+                references.Add(poi.Native, new object());
             }
             var tracking = _lifetime?.PrepareTracking(session, System.Linq.Enumerable.Select(prepared, item => (item.Native, item.Identity)));
             if (session != _session || revision != _revision || (tracking != null && !tracking.Current)) return false;
@@ -94,7 +94,7 @@ internal sealed class WorldCreationCoordinator
     internal WorldSnapshotInstance[] Snapshot()
     {
         _checkThread();
-        if (_creating || !_restored) throw new InvalidDataException("World occurrence state is not ready for snapshot capture.");
+        if (_creating || !_restored) throw new InvalidDataException("World poi state is not ready for snapshot capture.");
         foreach (var record in _instances) _profile?.Invoke(record.Native);
         return (WorldSnapshotInstance[])_instances.Clone();
     }
@@ -104,14 +104,14 @@ internal sealed class WorldCreationCoordinator
         _checkThread();
         if (admission == null) throw new ArgumentNullException(nameof(admission));
         if (_creating || !_restored || session == Guid.Empty || session != _session || _instances.Length >= WorldSerializationAssociation.MaxObjects) return null;
-        foreach (var occurrence in _instances)
+        foreach (var poi in _instances)
         {
-            if (occurrence.Identity.NativeId == identity.NativeId) return null;
-            if (occurrence.Definition.Owner == definition.Owner && occurrence.Identity.LocalId == definition.Definition.LocalId)
+            if (poi.Identity.NativeId == identity.NativeId) return null;
+            if (poi.Definition.Owner == definition.Owner && poi.Identity.LocalId == definition.Definition.LocalId)
             {
-                var prior = occurrence.Definition.Definition; var next = definition.Definition;
+                var prior = poi.Definition.Definition; var next = definition.Definition;
                 if (prior.Revision != next.Revision || prior.Name != next.Name || prior.FactionId != next.FactionId || prior.Level != next.Level)
-                    throw new InvalidDataException("Live occurrences require explicit definition migration.");
+                    throw new InvalidDataException("Live pois require explicit definition migration.");
             }
         }
         long revision = _revision, committedRevision = checked(_revision + 1);
@@ -140,7 +140,7 @@ internal sealed class WorldCreationCoordinator
     }
 
     /// <summary>
-    /// Removes the retained occurrence after a verified native removal and drops it from the retained
+    /// Removes the retained poi after a verified native removal and drops it from the retained
     /// inventory so no save record reconstructs it. The caller owns the key registry and provider lease.
     /// </summary>
     internal WorldRemoveOutcome RemoveChecked(Guid session, WorldObjectIdentity identity)
@@ -149,21 +149,21 @@ internal sealed class WorldCreationCoordinator
         if (identity == null) throw new ArgumentNullException(nameof(identity));
         if (_creating || !HasRestoredInventory(session) || session != _session) return WorldRemoveOutcome.Missing;
         WorldSnapshotInstance? found = null;
-        foreach (var occurrence in _instances)
-            if (occurrence.Identity.NativeId == identity.NativeId) { found = occurrence; break; }
+        foreach (var poi in _instances)
+            if (poi.Identity.NativeId == identity.NativeId) { found = poi; break; }
         if (found == null) return WorldRemoveOutcome.Missing;
         var outcome = _native.RemoveChecked(session, found);
         if (outcome != WorldRemoveOutcome.Removed) return outcome;
         var next = new WorldSnapshotInstance[_instances.Length - 1];
         int index = 0;
-        foreach (var occurrence in _instances) if (!ReferenceEquals(occurrence, found)) next[index++] = occurrence;
+        foreach (var poi in _instances) if (!ReferenceEquals(poi, found)) next[index++] = poi;
         _instances = next;
         _revision = checked(_revision + 1);
         return WorldRemoveOutcome.Removed;
     }
 
     /// <summary>
-    /// Pure readiness for removing the retained occurrence by native identity, never mutating native
+    /// Pure readiness for removing the retained poi by native identity, never mutating native
     /// state: Ready, PlayerInside, NotPresent, NotReady or Unavailable.
     /// </summary>
     internal WorldContentRemovalStatus CanRemove(Guid session, WorldObjectIdentity identity)
@@ -172,8 +172,8 @@ internal sealed class WorldCreationCoordinator
         if (identity == null) throw new ArgumentNullException(nameof(identity));
         if (_creating || !HasRestoredInventory(session) || session != _session) return WorldContentRemovalStatus.NotReady;
         WorldSnapshotInstance? found = null;
-        foreach (var occurrence in _instances)
-            if (occurrence.Identity.NativeId == identity.NativeId) { found = occurrence; break; }
+        foreach (var poi in _instances)
+            if (poi.Identity.NativeId == identity.NativeId) { found = poi; break; }
         if (found == null) return WorldContentRemovalStatus.NotPresent;
         return _native.Readiness(session, found);
     }

@@ -273,7 +273,7 @@ public sealed partial class StoryContentTests
         Assert.NotNull(native);
         Assert.EndsWith(mission.Id.ToString("N"), native);
         Assert.StartsWith("vgmodapi.story.", native);
-        // Distinct occurrences of one definition highlight distinct identifiers.
+        // Distinct missions of one definition highlight distinct identifiers.
         var second = f.Game.Story.Offer(definition); f.Tick();
         Assert.NotEqual(native, second.NativeMissionId);
     }
@@ -309,7 +309,7 @@ public sealed partial class StoryContentTests
         internal void Tick() => Hub.Gameplay.Tick();
         internal void Complete(IStoryMission mission)
         {
-            var identifier = StoryContentPolicy.OccurrenceIdentifier(mission.Definition.Id, mission.Id);
+            var identifier = StoryContentPolicy.MissionIdentifier(mission.Definition.Id, mission.Id);
             World.CompleteInWorld(identifier); Missions.Publish(MissionTransitionKind.Completed, identifier);
         }
         public void Dispose() { Provider.Dispose(); Games.Dispose(); Engine.Dispose(); Hub.Dispose(); }

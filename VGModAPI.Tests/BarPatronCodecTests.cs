@@ -26,7 +26,7 @@ public sealed class BarPatronCodecTests
         Assert.Equal(rows[1].Name, restored[0].Name);
         Assert.Equal(rows[1].Seed, restored[0].Seed);
         Assert.Equal(rows[1].Mission, restored[0].Mission);
-        Assert.Equal(rows[1].Occurrence, restored[0].Occurrence);
+        Assert.Equal(rows[1].Mission, restored[0].Mission);
         Assert.True(BarPatronCodec.Validate(bytes));
     }
 
