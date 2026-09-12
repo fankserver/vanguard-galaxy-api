@@ -19,7 +19,10 @@ public sealed partial class Plugin
         try
         {
             var methods = AmbientTrafficBindings.Validate(assembly);
-            AmbientTrafficPatches.Runtime = new AmbientTrafficRuntime(assembly, _ambientTraffic, error => Logger.LogError(error));
+            // Resolved lazily on each call: the world content service is constructed after this install
+            // runs, and ownership changes as occurrences are created and dissolved.
+            AmbientTrafficPatches.Runtime = new AmbientTrafficRuntime(assembly, _ambientTraffic, error => Logger.LogError(error),
+                (poiId, systemId) => _worldContent?.OwnsUndressedPoi(poiId, systemId) == true);
             _ambientTrafficHarmony = new Harmony(ModApi.PluginId + ".ambient-traffic");
             _ambientTrafficHarmony.Patch(methods["trafficStationSpawn"],
                 prefix: new HarmonyMethod(typeof(AmbientTrafficPatches.StationVisitor), "Prefix"));
@@ -29,6 +32,10 @@ public sealed partial class Plugin
                 prefix: new HarmonyMethod(typeof(AmbientTrafficPatches.WormholeTraffic), "Prefix"));
             _ambientTrafficHarmony.Patch(methods["trafficSecurityPatrol"],
                 prefix: new HarmonyMethod(typeof(AmbientTrafficPatches.SecurityPatrol), "Prefix"));
+            // Owned authored doors are created empty on purpose, which is exactly what qualifies a POI for
+            // the game's first-visit window dressing; skip it so an owned rift stays just a rift.
+            _ambientTrafficHarmony.Patch(methods["poiWindowDressing"],
+                prefix: new HarmonyMethod(typeof(AmbientTrafficPatches.WindowDressing), "Prefix"));
             _ambientTraffic.SetAvailable(true);
         }
         catch (Exception error) { TeardownAmbientTraffic(); Logger.LogError(error); }

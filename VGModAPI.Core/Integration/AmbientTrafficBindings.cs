@@ -21,7 +21,12 @@ internal static class AmbientTrafficBindings
         new("trafficStationSpawn", "SpacestationExteriorManager", "CreatePasserbyShip", false, "System.Boolean", "Behaviour.Spacestation.Docking.DockingOptionSize"),
         new("trafficGateSpawn", "Behaviour.Travel.JumpGateManager", "CreatePasserbyShip", false, "System.Void"),
         new("trafficWormholeSpawn", "Behaviour.Travel.WormholeManager", "CreatePasserbyShip", false, "System.Void"),
-        new("trafficSecurityPatrol", "Behaviour.Managers.BasePoiManager", "CreateSecurityPatrol", false, "System.Void")
+        new("trafficSecurityPatrol", "Behaviour.Managers.BasePoiManager", "CreateSecurityPatrol", false, "System.Void"),
+        // First-visit decorative content for an empty wormhole/jump-gate POI: gun platform, asteroid field,
+        // cargo containers and a derelict ship. Owned authored doors are created empty on purpose, so this
+        // is skipped for them (see WorldContentService.OwnsUndressedPoi).
+        new("poiWindowDressing", "Source.Galaxy.POI.PoiWindowDressingHelper", "AddWindowDressing", true, "System.Void",
+            "Source.Galaxy.MapPointOfInterest", "System.Nullable`1<Behaviour.Travel.TravelDirection>")
     };
     internal static Dictionary<string, MethodInfo> Validate(Assembly assembly)
     {

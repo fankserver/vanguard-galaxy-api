@@ -66,6 +66,23 @@ internal sealed class PocketSystemCoordinator : IDisposable
 
     internal PocketSystemOccurrence[] CaptureRows() { _hub.CheckThread(); return _committed.Values.ToArray(); }
 
+    /// <summary>True when <paramref name="systemId"/> is an owned authored system. Everything inside an
+    /// owned system is author-placed, so the game's first-visit window dressing must not add to it.</summary>
+    internal bool OwnsSystem(string? systemId)
+    {
+        _hub.CheckThread();
+        if (_disposed || string.IsNullOrEmpty(systemId)) return false;
+        return _committed.Values.Any(o => o.SystemId == systemId);
+    }
+    /// <summary>True when <paramref name="poiId"/> is one of an owned pocket's own gates (the anchor-side
+    /// entrance or the pocket-side gate).</summary>
+    internal bool OwnsGatePoi(string? poiId)
+    {
+        _hub.CheckThread();
+        if (_disposed || string.IsNullOrEmpty(poiId)) return false;
+        return _committed.Values.Any(o => o.EntranceGateId == poiId || o.PocketGateId == poiId);
+    }
+
     /// <summary>Read-only plumbing: the session-scoped occurrence rows this owner currently holds (committed + failed-pending), used to re-obtain surface objects.</summary>
     internal IReadOnlyList<PocketSystemOccurrence> Occurrences(string owner)
     {

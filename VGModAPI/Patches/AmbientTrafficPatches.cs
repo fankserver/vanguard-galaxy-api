@@ -29,4 +29,16 @@ internal static class AmbientTrafficPatches
     {
         internal static bool Prefix(object __instance) => Runtime?.SuppressQuietWormholePatrol(__instance) != true;
     }
+    /// <summary>
+    /// Skips the game's first-visit window dressing for owned authored points of interest.
+    ///
+    /// The game adds a gun platform, an asteroid field, cargo containers and a derelict ship to a wormhole
+    /// or jump gate the first time it is visited while it holds no persistables. An authored door is created
+    /// deliberately empty, so it always matches that condition and would collect random content it never
+    /// declared. Owned content is author-placed only; everything else keeps vanilla dressing.
+    /// </summary>
+    internal static class WindowDressing
+    {
+        internal static bool Prefix(object poi) => Runtime?.SuppressWindowDressing(poi) != true;
+    }
 }

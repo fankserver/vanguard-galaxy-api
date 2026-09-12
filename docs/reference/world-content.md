@@ -421,6 +421,18 @@ no consumer bookkeeping (or `IAmbientTrafficService` call) is required:
 provider.RegisterWormholePair(new WormholePairDefinition("my-rift", 1, "My Rift", quiet: true));
 ```
 
+### Owned doors stay empty
+
+An owned wormhole or pocket gate contains only what you place there — no declaration required.
+
+The game gives a wormhole or jump gate a one-off set of decorative contents the first time it is
+visited while it holds nothing: a gun platform, an asteroid field, cargo containers and a derelict
+ship. An authored door is created deliberately empty, which is exactly the condition that qualifies
+it, so an owned rift would otherwise collect random wrecks, rocks and stations it never declared.
+The API skips that dressing for owned wormhole ends, owned pocket gates and any point of interest
+inside an owned pocket system. Unowned points of interest keep vanilla behaviour, and ownership ends
+with the occurrence, so a dissolved door returns to vanilla.
+
 Docking, services, faction relations and story- or mission-placed ships are unaffected. For finer
 control, `IAmbientTrafficService.SuppressAtWormhole` quiets one wormhole and
 `SuppressInSystemContaining` quiets decorative traffic throughout a system (security presence is

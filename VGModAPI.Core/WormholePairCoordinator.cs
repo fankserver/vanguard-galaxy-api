@@ -33,6 +33,10 @@ internal sealed class WormholePairCoordinator : IDisposable
     internal IReadOnlyList<WormholePairOccurrence> Occurrences(string owner) { _hub.CheckThread(); return _rows.Values.Where(r => r.Owner == owner).ToArray(); }
     /// <summary>True when any owned wormhole occurrence has <paramref name="systemId"/> as one of its endpoints across all providers.</summary>
     internal bool AnyOccurrenceInSystem(string systemId) { _hub.CheckThread(); return !string.IsNullOrEmpty(systemId) && _rows.Values.Any(r => r.FirstSystemId == systemId || r.SecondSystemId == systemId); }
+    /// <summary>True when <paramref name="poiId"/> is one end of an owned wormhole pair. Used to keep an
+    /// owned rift free of the game's first-visit window dressing.</summary>
+    internal bool OwnsWormholePoi(string? poiId)
+    { _hub.CheckThread(); return !string.IsNullOrEmpty(poiId) && _rows.Values.Any(r => r.FirstPoiId == poiId || r.SecondPoiId == poiId); }
     internal WormholePairOccurrence? TryGet(string owner, string local, string key)
         => _rows.TryGetValue((owner, local, key), out var row) ? row : null;
     internal bool Contains(string owner, string local, string key) => _rows.ContainsKey((owner, local, key));
