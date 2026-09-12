@@ -352,11 +352,15 @@ pocket from the live map and from API-owned save data. Existing site objects tra
 identities. A later creation with the same occurrence key returns a new object with fresh native
 identity.
 
-Removing removes the pocket system, both paired gates and authored sites contained in the
-pocket from the live map and from API-owned save data. Existing site objects transition to
-`Removed`; the removed system object also reports `Removed` and no longer exposes native
-identities. A later creation with the same occurrence key returns a new object with fresh native
-identity.
+**Child content and removal.** Owned **resource** sites inside the pocket ride along with it:
+their save rows are dropped and their native POIs are removed with the system, so a mod that tears
+down a pocket gets its resource children for free. Owned **combat** sites do **not** ride along —
+their presence refuses pocket removal (`CombatSitesPresent`), because combat content is
+higher-stakes (it can back story objectives and mission targets) and must be deliberately removed
+by the mod via its own `ICombatSite.Remove()` before the pocket. The asymmetry is intentional:
+force an explicit teardown of combat children rather than silently cascade-deleting them. A
+conservative cluster-teardown removes every owned combat site (and every wormhole endpoint — see
+below) before removing the pockets.
 
 `Remove()` is plain; the native seam itself refuses to tear a system down while the player's
 current system, current location or a waypoint is inside the pocket (relocation or rescue
@@ -366,6 +370,14 @@ operation that could avoid orphaning their records. These refusals leave the poc
 data unchanged. Expiry scheduling is consumer logic; the API supplies `RequestRemoval()` — a
 deferred mark-for-removal completed at the next safe cleanup window once `CanRemove()` reports
 `Ready` — instead of a timer.
+
+Deferred removals are **session-scoped**: a `RequestRemoval()` completes at a cleanup window
+within the same session, and `Changed` fires on that completion (the object becomes `Removed`). It
+does **not** complete across a session boundary — after a save/load that replaces the session, the
+queued removal is abandoned (readiness returns `SessionEnded`), no `Changed` fires, and the object
+is left not-removed. A mod that must finish a cluster teardown across a reload should re-obtain
+the occurrences after loading and re-issue `RequestRemoval()` rather than trust a `Changed` from
+the previous session.
 
 ### Reconstruction and failures
 
