@@ -58,6 +58,26 @@ internal sealed class WorldContentService : IWorldService, IDisposable
     internal bool CombatKeyClaimed(string owner, string localId, string occurrenceKey)
     { _hub.CheckThread(); return _combatKeySession == _hub.CurrentSession?.Id && _combatKeys.ContainsKey((owner, localId, occurrenceKey)); }
 
+    /// <summary>
+    /// True when a point of interest belongs to owned authored content and must therefore stay exactly as
+    /// authored.
+    ///
+    /// On the first visit to a wormhole or jump gate that holds no persistables, the game calls
+    /// <c>PoiWindowDressingHelper.AddWindowDressing</c>, which rolls a gun platform, an asteroid field,
+    /// cargo containers and a derelict ship onto the point of interest. An authored rift or gate is created
+    /// deliberately empty, which is exactly the condition that qualifies it for that dressing, so an owned
+    /// door would otherwise collect random wrecks, rocks and stations it never declared. Owned content is
+    /// author-placed only, so the dressing is skipped for it; every other point of interest keeps vanilla
+    /// behaviour.
+    /// </summary>
+    internal bool OwnsUndressedPoi(string? poiId, string? systemId)
+    {
+        _hub.CheckThread();
+        if (_wormholeCoordinator?.OwnsWormholePoi(poiId) == true) return true;
+        if (_authoredCoordinator == null) return false;
+        return _authoredCoordinator.OwnsGatePoi(poiId) || _authoredCoordinator.OwnsSystem(systemId);
+    }
+
     private readonly MooredShipRegistry? _shipDefinitions;
     private readonly MooredShipCoordinator? _shipCoordinator;
     private readonly VGModAPI.Core.Integration.IEncounterNative? _encounters;

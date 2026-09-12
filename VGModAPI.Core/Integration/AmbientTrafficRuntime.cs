@@ -12,13 +12,17 @@ internal sealed class AmbientTrafficRuntime
 {
     private readonly AmbientTrafficService _service;
     private readonly Action<Exception> _report;
+    /// <summary>Resolves (poiGuid, systemGuid) to "this is owned authored content". Null when the world
+    /// content service is unavailable, which fails open to vanilla dressing.</summary>
+    private readonly Func<string?, string?, bool>? _owned;
     private readonly Type _manager;
     private readonly PropertyInfo _poi, _guid, _current, _allPois, _allSystems;
     private readonly FieldInfo _system;
     private bool _reported;
-    internal AmbientTrafficRuntime(Assembly assembly, AmbientTrafficService service, Action<Exception> report)
+    internal AmbientTrafficRuntime(Assembly assembly, AmbientTrafficService service, Action<Exception> report,
+        Func<string?, string?, bool>? owned = null)
     {
-        _service = service; _report = report;
+        _service = service; _report = report; _owned = owned;
         _manager = assembly.GetType("Behaviour.Managers.BasePoiManager", true)!;
         _poi = Property(_manager, "poi");
         var element = assembly.GetType("Source.Galaxy.MapElement", true)!;
@@ -48,6 +52,27 @@ internal sealed class AmbientTrafficRuntime
             var system = _system.GetValue(poi);
             return _service.ShouldSuppressPatrol(_guid.GetValue(poi) as string,
                 system == null ? null : _guid.GetValue(system) as string, UniqueSystemOf);
+        }
+        catch (Exception error)
+        {
+            if (!_reported) { _reported = true; try { _report(error); } catch { } }
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// True when the point of interest about to receive the game's first-visit window dressing belongs to
+    /// owned authored content. An authored rift or gate is created empty on purpose, and "empty and never
+    /// visited" is exactly the condition the game uses to add a gun platform, asteroids, cargo and a
+    /// derelict ship. Owned doors stay exactly as authored; anything else keeps vanilla dressing.
+    /// </summary>
+    internal bool SuppressWindowDressing(object? poi)
+    {
+        try
+        {
+            if (poi == null || _owned == null) return false;
+            var system = _system.GetValue(poi);
+            return _owned(_guid.GetValue(poi) as string, system == null ? null : _guid.GetValue(system) as string);
         }
         catch (Exception error)
         {
