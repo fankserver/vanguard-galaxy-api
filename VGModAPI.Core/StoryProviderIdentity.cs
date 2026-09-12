@@ -54,7 +54,7 @@ internal static class StoryProviderIdentity
         if (plugin == null) throw new ArgumentNullException(nameof(plugin));
         var slug = Slug(plugin.PluginId);
         var segment = slug + "-" + Digest(plugin.PluginId);
-        if (!StoryContentId.IsValidSegment(segment)) throw new InvalidOperationException("Derived provider segment is not a valid identity segment.");
+        if (!StoryMissionDefinitionId.IsValidSegment(segment)) throw new InvalidOperationException("Derived provider segment is not a valid identity segment.");
         return segment;
     }
 

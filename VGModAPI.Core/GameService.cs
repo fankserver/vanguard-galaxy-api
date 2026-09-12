@@ -8,13 +8,13 @@ internal sealed class GameService : IGameService, IDisposable
     private readonly LifecycleHub _hub;
     private readonly NavigationService _navigation;
     private readonly InventoryService _inventories;
-    private readonly StoryContentService _story;
-    private readonly BarContentService _bars;
+    private readonly StoryMissionService _story;
+    private readonly BarService _bars;
     private readonly IDisposable _lifetime;
     private readonly List<Handler> _handlers = new();
     private Game? _game;
     private bool _disposed;
-    internal GameService(LifecycleHub hub, NavigationService navigation, InventoryService inventories, StoryContentService story, BarContentService bars)
+    internal GameService(LifecycleHub hub, NavigationService navigation, InventoryService inventories, StoryMissionService story, BarService bars)
     {
         _hub = hub; _navigation = navigation ?? throw new ArgumentNullException(nameof(navigation));
         _inventories = inventories ?? throw new ArgumentNullException(nameof(inventories));
@@ -81,7 +81,7 @@ internal sealed class GameService : IGameService, IDisposable
         private readonly IInventories _inventories;
         private readonly IStory _story;
         private readonly IBars _bars;
-        internal Game(GameService owner, LifecycleHub hub, Guid session, NavigationService navigation, InventoryService inventories, StoryContentService story, BarContentService bars)
+        internal Game(GameService owner, LifecycleHub hub, Guid session, NavigationService navigation, InventoryService inventories, StoryMissionService story, BarService bars)
         { _owner = owner; _hub = hub; _session = session; _navigation = navigation.ForGame(session); _inventories = inventories.ForGame(this, session); _story = story.ForGame(this, session, hub); _bars = bars.ForGame(this, session); }
         public bool IsActive
         { get { _hub.CheckThread(); return !_owner._disposed && !_hub.Services.IsStopping && _hub.SessionTracking.Availability.IsAvailable && _hub.CurrentSession?.Id == _session && _hub.CurrentSession.Phase == SessionPhase.GameplayInitialized; } }

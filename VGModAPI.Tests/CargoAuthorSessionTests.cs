@@ -40,13 +40,13 @@ public sealed class CargoAuthorSessionTests
             else { Assert.Equal("remove_Changed", name); Boarding.Remove(callback); }
             return null;
         });
-        internal IDungeonContentService Content => Fake<IDungeonContentService>((name, _) =>
+        internal IDungeonService Content => Fake<IDungeonService>((name, _) =>
         {
             Assert.Equal("AcquireProvider", name);
             return Fake<IDungeonProvider>((method, args) =>
             {
                 if (method == "Register") { RegisterCalls++; if (RejectDefinition) throw new ArgumentException("Catalog unavailable"); return new Lease(() => { }); }
-                if (method == "Attach") { AttachCalls++; return new DungeonContentResult(DungeonContentStatus.TargetInUse, "already attached"); }
+                if (method == "Attach") { AttachCalls++; return new DungeonResult(DungeonStatus.TargetInUse, "already attached"); }
                 Assert.Equal("Dispose", method); ProviderDisposals++; return null;
             });
         });

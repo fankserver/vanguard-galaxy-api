@@ -14,7 +14,7 @@ public sealed class WorldEmptyProfilePublicationTests
         var coordinator = new WorldCreationCoordinator(null!, () => { }, profile: _ =>
         { if (!empty) throw new InvalidDataException("Unsupported profile state."); });
         var session = Guid.NewGuid(); coordinator.Reset(session);
-        var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
+        var identity = new WorldObjectIdentity(new PersistentDeclaration("author.a", "PoiX", PersistentKind.WorldObject, PersistenceImpact.ApiDependent), Guid.NewGuid());
         var row = new WorldSnapshotInstance(new object(), identity, "system", new WorldSavedDefinition(identity.Owner, new WorldCombatDefinition(identity.LocalId, 1, "Site", "player", 1)));
         Assert.Throws<InvalidDataException>(() => coordinator.TryRestorePrepared(session, () => new WorldRestorationPlan(new[] { row },
             () => empty = false, () => { empty = true; rolledBack = true; })));

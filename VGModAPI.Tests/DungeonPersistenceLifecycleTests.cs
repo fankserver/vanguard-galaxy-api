@@ -30,7 +30,7 @@ public sealed class DungeonPersistenceLifecycleTests
             _checkpoint = new(State, () => new object[] { Operation }, _ =>
             {
                 var saved = State.Operation(Operation)!;
-                return State.TrackOperation(new(saved.Id, saved.LocationId, saved.ContentDungeon, saved.AttackerShipId, saved.DungeonType, _livePhase, saved.Outcome, saved.MissionProtection, saved.TerminalProgress, saved.Autonomous));
+                return State.TrackOperation(new(saved.Id, saved.LocationId, saved.DungeonId, saved.AttackerShipId, saved.DungeonType, _livePhase, saved.Outcome, saved.MissionProtection, saved.TerminalProgress, saved.Autonomous));
             }, () => { }, live, (id, pod) => Assert.True(State.RefreshTransportPose(id, (float[])pod)));
         }
         internal void Start(SessionOrigin origin, string? path = null)

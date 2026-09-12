@@ -17,7 +17,7 @@ public sealed class WorldProfileHookTests
         using var host = new WorldLifetimeHookHost(typeof(Source.Galaxy.MapElement).Assembly, hub, guard,
             generationFailure: _ => refused++, stateProfile: _ => { if (contentChanged) throw new InvalidDataException("Profile changed."); });
         var session = hub.Begin(SessionOrigin.NewGame, null);
-        var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
+        var identity = new WorldObjectIdentity(new PersistentDeclaration("author.a", "PoiX", PersistentKind.WorldObject, PersistenceImpact.ApiDependent), Guid.NewGuid());
         var poi = new Source.Galaxy.MapPointOfInterest { guid = identity.NativeId };
         guard.Track(session, poi, identity); guard.Ready(session);
         host.RequireContentMutation(new Source.Galaxy.MapPointOfInterest { guid = "vanilla" });

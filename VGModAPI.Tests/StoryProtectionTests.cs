@@ -45,7 +45,7 @@ public sealed class StoryProtectionTests : IDisposable
 
     private (string Identifier, Mission Mission) Hold(string local = "salvage-run")
     {
-        var identifier = StoryContentPolicy.MissionIdentifier(new StoryContentId("anima", local), Guid.NewGuid());
+        var identifier = StoryMissionPolicy.MissionIdentifier(new StoryMissionDefinitionId("anima", local), Guid.NewGuid());
         var world = new StoryNativeWorld(new StoryNativeBindings(typeof(StoryMission).Assembly), () => { });
         Assert.True(world.Install(identifier, Definition()).Applied);
         Assert.True(world.Accept(identifier).Applied);
@@ -405,15 +405,15 @@ public sealed class StoryProtectionTests : IDisposable
     [Fact]
     public void EveryIdentifierInTheReservedNamespaceIsQuarantinedUnlessItIsAdmitted()
     {
-        var admitted = StoryContentPolicy.MissionIdentifier(new StoryContentId("anima", "salvage-run"), Guid.NewGuid());
+        var admitted = StoryMissionPolicy.MissionIdentifier(new StoryMissionDefinitionId("anima", "salvage-run"), Guid.NewGuid());
         _protection.Admit(Guid.NewGuid(), new[] { admitted }, "admitted");
         Assert.False(_protection.IsQuarantined(admitted));
         foreach (var identifier in new[]
         {
-            StoryContentPolicy.Identifier(new StoryContentId("anima", "salvage-run")),        // the base definition
-            StoryContentPolicy.IdentifierPrefix + "anima.salvage-run.not-a-guid",             // malformed
-            StoryContentPolicy.MissionIdentifier(new StoryContentId("anima", "salvage-run"), Guid.NewGuid()),
-            StoryContentPolicy.IdentifierPrefix
+            StoryMissionPolicy.Identifier(new StoryMissionDefinitionId("anima", "salvage-run")),        // the base definition
+            StoryMissionPolicy.IdentifierPrefix + "anima.salvage-run.not-a-guid",             // malformed
+            StoryMissionPolicy.MissionIdentifier(new StoryMissionDefinitionId("anima", "salvage-run"), Guid.NewGuid()),
+            StoryMissionPolicy.IdentifierPrefix
         }) Assert.True(_protection.IsQuarantined(identifier), identifier);
         // Ordinal matching: a neighbouring namespace and vanilla content are not ours.
         Assert.False(_protection.IsQuarantined("vgmodapi.story-other.anima.thing"));
@@ -474,9 +474,9 @@ public sealed class StoryProtectionTests : IDisposable
         { StoryObjectiveKind.Scripted, StoryObjectiveKind.KillEnemies, StoryObjectiveKind.MineItems };
         foreach (StoryObjectiveKind kind in Enum.GetValues(typeof(StoryObjectiveKind)))
         {
-            if (StoryContentPolicy.RefuseObjective(kind) != null) continue;
+            if (StoryMissionPolicy.RefuseObjective(kind) != null) continue;
             var type = typeof(StoryMission).Assembly.GetType(
-                StoryContentPolicy.ObjectiveNamespace + "." + StoryContentPolicy.ObjectiveTypeName(kind))!;
+                StoryMissionPolicy.ObjectiveNamespace + "." + StoryMissionPolicy.ObjectiveTypeName(kind))!;
             var method = type.GetMethod("ProcessMissionTrigger",
                 System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic
                 | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly);

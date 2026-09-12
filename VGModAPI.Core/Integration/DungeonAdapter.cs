@@ -6,7 +6,7 @@ using VGModAPI.Core;
 
 namespace VGModAPI.Runtime;
 
-internal sealed class DungeonContentAdapter : IDisposable
+internal sealed class DungeonAdapter : IDisposable
 {
     private readonly LifecycleHub _hub;
     private readonly BoardingObserver _observer;
@@ -20,7 +20,7 @@ internal sealed class DungeonContentAdapter : IDisposable
     private ConditionalWeakTable<object, object> _placedDefenders = new();
     private readonly IDisposable _lifetime;
     private bool _disposed;
-    internal DungeonContentAdapter(LifecycleHub hub, GameBindings game, BoardingObserver observer, DungeonStateStore state)
+    internal DungeonAdapter(LifecycleHub hub, GameBindings game, BoardingObserver observer, DungeonStateStore state)
         : this(hub, observer, state, new BoardingCommandNativeBindings(game, DungeonNativeSchema.Methods, DungeonNativeSchema.Members),
             game.Assembly.GetType(DungeonNativeSchema.Room, true)!, game.Assembly.GetType(DungeonNativeSchema.Crew, true)!,
             game.Assembly.GetType(DungeonNativeSchema.Loot, true)!, NativeFactions(game)) { }
@@ -29,7 +29,7 @@ internal sealed class DungeonContentAdapter : IDisposable
         var faction = game.Assembly.GetType("Source.Galaxy.Faction", true)!;
         return game.Assembly.GetTypes().Where(t => t.Namespace == "Source.Galaxy.Factions" && !t.IsAbstract && faction.IsAssignableFrom(t) && t.GetConstructor(Type.EmptyTypes) != null).Select(t => t.Name);
     }
-    internal DungeonContentAdapter(LifecycleHub hub, BoardingObserver observer, DungeonStateStore state,
+    internal DungeonAdapter(LifecycleHub hub, BoardingObserver observer, DungeonStateStore state,
         IBoardingTacticalNativeBindings native, Type room, Type crew, Type loot, IEnumerable<string> factions)
     {
         _hub = hub; _observer = observer; _state = state; _native = native;
@@ -44,7 +44,7 @@ internal sealed class DungeonContentAdapter : IDisposable
     }
     internal void BeginSerialization() => _state.BeginSerialization();
     internal void EndSerialization() => _state.EndSerialization();
-    internal DungeonContentBindings Bindings() => new(ValidateAttachment, Bind, ValidateChoice, ApplyChoice, _observer.HandleForInstallation);
+    internal DungeonBindings Bindings() => new(ValidateAttachment, Bind, ValidateChoice, ApplyChoice, _observer.HandleForInstallation);
     private object? ResolveSimulation(Dungeon dungeon)
     {
         var location = _index.Resolve(dungeon.Id); var handle = _observer.CommandHandleForLocation(location);
@@ -53,19 +53,19 @@ internal sealed class DungeonContentAdapter : IDisposable
     }
     private static int RoomIndex(Dungeon dungeon, DungeonEventDefinition item) => Array.FindIndex(
         dungeon.Definition.Layout.Compartments.OrderBy(c => c.Type == CompartmentType.Airlock ? 0 : 1).ToArray(), c => c.Id == item.CompartmentId);
-    internal DungeonContentStatus ValidateChoice(Dungeon dungeon, DungeonEventDefinition item, DungeonChoiceDefinition choice)
+    internal DungeonStatus ValidateChoice(Dungeon dungeon, DungeonEventDefinition item, DungeonChoiceDefinition choice)
     {
-        _hub.CheckThread(); if (_disposed || !_state.MutationAllowed) return DungeonContentStatus.PersistenceUnavailable;
+        _hub.CheckThread(); if (_disposed || !_state.MutationAllowed) return DungeonStatus.PersistenceUnavailable;
         var simulation = ResolveSimulation(dungeon);
-        if (simulation == null || _native.Get(simulation, "isComplete") is true) return DungeonContentStatus.WrongPhase;
+        if (simulation == null || _native.Get(simulation, "isComplete") is true) return DungeonStatus.WrongPhase;
         var index = RoomIndex(dungeon, item); var rooms = (System.Collections.IList)_native.Get(simulation, "compartments")!;
-        if (index < 0 || index >= rooms.Count) return DungeonContentStatus.WrongPhase;
+        if (index < 0 || index >= rooms.Count) return DungeonStatus.WrongPhase;
         var state = _native.Get(rooms[index], "state")?.ToString();
-        if (state is not ("Friendly" or "Investigating")) return DungeonContentStatus.WrongPhase;
+        if (state is not ("Friendly" or "Investigating")) return DungeonStatus.WrongPhase;
         var crew = ((System.Collections.IList)_native.Get(simulation, "friendlyUnits")!).Cast<object>();
         if (!crew.Any(unit => (int)_native.Get(unit, "compartmentIndex")! == index && _native.Call("dungeonCrewAlive", unit) is true && _native.Get(unit, "authoredTransit") is false && _native.Get(unit, "authoredIncapacitated") is false &&
-            (choice.RequiredCrewId == null || (string)_native.Get(unit, "authoredCrewType")! == choice.RequiredCrewId))) return DungeonContentStatus.WrongPhase;
-        return DungeonContentStatus.ChoiceApplied;
+            (choice.RequiredCrewId == null || (string)_native.Get(unit, "authoredCrewType")! == choice.RequiredCrewId))) return DungeonStatus.WrongPhase;
+        return DungeonStatus.ChoiceApplied;
     }
     internal void ApplyChoice(Dungeon dungeon, DungeonEventDefinition item, DungeonChoiceDefinition choice)
     {
@@ -86,15 +86,15 @@ internal sealed class DungeonContentAdapter : IDisposable
     internal DungeonDefinitionRegistry Catalogs() => new(_native.ValidCrew,
         id => _native.Call("dungeonItem", null, id, null!) is true,
         id => _factions.Contains(id));
-    internal DungeonContentStatus ValidateAttachment(BoardingHandle target, DungeonDefinition definition)
+    internal DungeonStatus ValidateAttachment(BoardingHandle target, DungeonDefinition definition)
     {
-        _hub.CheckThread(); if (_disposed) return DungeonContentStatus.Unavailable;
-        if (!_state.MutationAllowed) return DungeonContentStatus.PersistenceUnavailable;
-        if (!_observer.TryResolveCommandTarget(target, out var location, out _, out var operation) || location == null) return DungeonContentStatus.StaleTarget;
-        if (operation != null || _index.SavedMarker(location).HasValue || _native.Get(_native.Get(location, "authoredLocationData"), "authoredSavedSimulation") != null) return DungeonContentStatus.TargetInUse;
+        _hub.CheckThread(); if (_disposed) return DungeonStatus.Unavailable;
+        if (!_state.MutationAllowed) return DungeonStatus.PersistenceUnavailable;
+        if (!_observer.TryResolveCommandTarget(target, out var location, out _, out var operation) || location == null) return DungeonStatus.StaleTarget;
+        if (operation != null || _index.SavedMarker(location).HasValue || _native.Get(_native.Get(location, "authoredLocationData"), "authoredSavedSimulation") != null) return DungeonStatus.TargetInUse;
         try { _builder.Rooms(definition.Layout, Convert.ToInt32(_native.Get(location, "authoredLocationSize"))); }
-        catch (ArgumentException) { return DungeonContentStatus.InvalidDefinition; }
-        return DungeonContentStatus.Attached;
+        catch (ArgumentException) { return DungeonStatus.InvalidDefinition; }
+        return DungeonStatus.Attached;
     }
     internal void Bind(BoardingHandle target, Dungeon dungeon)
     {

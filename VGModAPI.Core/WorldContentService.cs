@@ -520,7 +520,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             if (localId == null || !_service._definitions.TryResolve(_provider, localId, out _)) return new CombatSiteResult(WorldStatus.NotRegistered);
             try
             {
-                var identity = new WorldObjectIdentity(new ContentDeclaration(ProviderId, localId, PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), instanceId);
+                var identity = new WorldObjectIdentity(new PersistentDeclaration(ProviderId, localId, PersistentKind.WorldObject, PersistenceImpact.ApiDependent), instanceId);
                 var success = new CombatSiteResult(WorldStatus.Succeeded, new CombatSiteReference(ProviderId, localId, instanceId), identity.NativeId);
                 return _service._authoring.TryCreate(_provider, expectedSessionId, localId, instanceId, systemId, x, y,
                     () => !_disposed && !_service._disposed && _service._canAuthor() && !_disposed && !_service._disposed) == null

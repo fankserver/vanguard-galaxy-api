@@ -21,7 +21,7 @@ internal enum StoryLedgerStatus
 
 internal sealed class StoryMissionEntry
 {
-    internal StoryContentId Id { get; }
+    internal StoryMissionDefinitionId Id { get; }
     internal Guid MissionId { get; }
     internal StoryMissionLedgerState State { get; private set; }
     internal StoryOutcome? Outcome { get; private set; }
@@ -66,7 +66,7 @@ internal sealed class StoryMissionEntry
 
     internal void MarkFailureObserved(bool observed) => FailureObserved = observed;
 
-    internal StoryMissionEntry(StoryContentId id, Guid missionId, StoryRetention retention, long sequence,
+    internal StoryMissionEntry(StoryMissionDefinitionId id, Guid missionId, StoryRetention retention, long sequence,
         StoryMissionLedgerState state = StoryMissionLedgerState.Offered, StoryOutcome? outcome = null,
         IEnumerable<KeyValuePair<string, string>>? choices = null, int choiceReservation = 0,
         IEnumerable<KeyValuePair<string, string>>? pendingChoices = null, bool failureObserved = false,
@@ -179,7 +179,7 @@ internal sealed class StoryLedger
     /// reserved from the provider's own budget here, so an accepted offer can always be retired: an
     /// mission is never admitted that the API could not finish.
     /// </summary>
-    internal StoryLedgerStatus Offer(StoryContentId id, StoryRetention retention, Guid missionId, int choiceReservation, out string diagnostic, StoryObjectiveLayout? objectiveLayout = null, StoryMissionDefinition? retainedDefinition = null)
+    internal StoryLedgerStatus Offer(StoryMissionDefinitionId id, StoryRetention retention, Guid missionId, int choiceReservation, out string diagnostic, StoryObjectiveLayout? objectiveLayout = null, StoryMissionDefinition? retainedDefinition = null)
     {
         diagnostic = "";
         if (missionId == Guid.Empty) { diagnostic = "An mission requires its own identity."; return StoryLedgerStatus.InvalidTransition; }
@@ -234,7 +234,7 @@ internal sealed class StoryLedger
         return StoryLedgerStatus.Accepted;
     }
 
-    internal StoryLedgerStatus Activate(StoryContentId caller, Guid missionId, out string diagnostic)
+    internal StoryLedgerStatus Activate(StoryMissionDefinitionId caller, Guid missionId, out string diagnostic)
     {
         var status = Resolve(caller, missionId, out var entry, out diagnostic);
         if (status != StoryLedgerStatus.Accepted) return status;
@@ -251,7 +251,7 @@ internal sealed class StoryLedger
     /// Removes an OFFERED mission that was never accepted. Nothing was ever reconstructed for it,
     /// so it leaves no tombstone; an active or retired mission is refused.
     /// </summary>
-    internal StoryLedgerStatus Withdraw(StoryContentId caller, Guid missionId, out string diagnostic)
+    internal StoryLedgerStatus Withdraw(StoryMissionDefinitionId caller, Guid missionId, out string diagnostic)
     {
         var status = Resolve(caller, missionId, out var entry, out diagnostic);
         if (status != StoryLedgerStatus.Accepted) return status;
@@ -274,7 +274,7 @@ internal sealed class StoryLedger
     /// abandoned in the game would leave the two disagreeing, so the whole retirement is validated
     /// first and the world is only touched once it is known to be recordable.
     /// </summary>
-    internal StoryLedgerStatus CanRetire(StoryContentId caller, Guid missionId, StoryOutcome outcome,
+    internal StoryLedgerStatus CanRetire(StoryMissionDefinitionId caller, Guid missionId, StoryOutcome outcome,
         IReadOnlyDictionary<string, string>? choices, out string diagnostic)
     {
         var status = Resolve(caller, missionId, out var entry, out diagnostic);
@@ -295,7 +295,7 @@ internal sealed class StoryLedger
     /// them so the outcome can always be recorded with them. Declaring again REPLACES the previous
     /// declaration; nothing accumulates.
     /// </summary>
-    internal StoryLedgerStatus DeclareChoices(StoryContentId caller, Guid missionId,
+    internal StoryLedgerStatus DeclareChoices(StoryMissionDefinitionId caller, Guid missionId,
         IReadOnlyDictionary<string, string>? choices, out string diagnostic)
     {
         var status = CanRetire(caller, missionId, StoryOutcome.Completed, choices, out diagnostic);
@@ -310,7 +310,7 @@ internal sealed class StoryLedger
     /// Records that the game reported this mission failed while still holding it. It is not an
     /// outcome: it is remembered so the removal that eventually follows can be attributed.
     /// </summary>
-    internal StoryLedgerStatus ObserveFailure(StoryContentId caller, Guid missionId, out string diagnostic)
+    internal StoryLedgerStatus ObserveFailure(StoryMissionDefinitionId caller, Guid missionId, out string diagnostic)
     {
         var status = Resolve(caller, missionId, out var entry, out diagnostic);
         if (status != StoryLedgerStatus.Accepted) return status;
@@ -337,7 +337,7 @@ internal sealed class StoryLedger
             && ReservedFootprint() + growth <= LedgerPayloadBudget;
     }
 
-    internal StoryLedgerStatus ClearFailure(StoryContentId caller, Guid missionId, out string diagnostic)
+    internal StoryLedgerStatus ClearFailure(StoryMissionDefinitionId caller, Guid missionId, out string diagnostic)
     {
         var status = Resolve(caller, missionId, out var entry, out diagnostic);
         if (status != StoryLedgerStatus.Accepted) return status;
@@ -349,7 +349,7 @@ internal sealed class StoryLedger
     }
 
     /// <summary>Every check <see cref="Activate"/> makes, with no mutation, for the same reason.</summary>
-    internal StoryLedgerStatus CanActivate(StoryContentId caller, Guid missionId, out string diagnostic)
+    internal StoryLedgerStatus CanActivate(StoryMissionDefinitionId caller, Guid missionId, out string diagnostic)
     {
         var status = Resolve(caller, missionId, out var entry, out diagnostic);
         if (status != StoryLedgerStatus.Accepted) return status;
@@ -361,7 +361,7 @@ internal sealed class StoryLedger
         return StoryLedgerStatus.Accepted;
     }
 
-    internal StoryLedgerStatus Retire(StoryContentId caller, Guid missionId, StoryOutcome outcome,
+    internal StoryLedgerStatus Retire(StoryMissionDefinitionId caller, Guid missionId, StoryOutcome outcome,
         IReadOnlyDictionary<string, string>? choices, out string diagnostic)
     {
         var status = CanRetire(caller, missionId, outcome, choices, out diagnostic);
@@ -412,7 +412,7 @@ internal sealed class StoryLedger
     /// still needed to reconstruct live content, and campaign outcomes/choices are never removed.
     /// This is a bounded horizon, not a time-based purge.
     /// </summary>
-    private void PruneTemporary(StoryContentId id)
+    private void PruneTemporary(StoryMissionDefinitionId id)
     {
         var terminal = _byMission.Values
             .Where(entry => entry.Id == id && entry.Retention == StoryRetention.Temporary && entry.State == StoryMissionLedgerState.Retired)
@@ -444,17 +444,17 @@ internal sealed class StoryLedger
     /// still have their outcome to record. The bound covers both, because an unresolved mission
     /// is a retirement that must still fit.
     /// </summary>
-    private int CampaignSlotsUsed(StoryContentId id)
+    private int CampaignSlotsUsed(StoryMissionDefinitionId id)
         => _byMission.Values.Count(entry => entry.Id == id && entry.Retention == StoryRetention.Campaign);
 
     /// <summary>
     /// Ownership resolution for callers that need the entry before deciding anything else. It uses
     /// exactly the transition rules, including hiding another provider's local ID.
     /// </summary>
-    internal StoryLedgerStatus ResolveOwned(StoryContentId caller, Guid missionId, out StoryMissionEntry? entry, out string diagnostic)
+    internal StoryLedgerStatus ResolveOwned(StoryMissionDefinitionId caller, Guid missionId, out StoryMissionEntry? entry, out string diagnostic)
         => Resolve(caller, missionId, out entry, out diagnostic);
 
-    private StoryLedgerStatus Resolve(StoryContentId caller, Guid missionId, out StoryMissionEntry? entry, out string diagnostic)
+    private StoryLedgerStatus Resolve(StoryMissionDefinitionId caller, Guid missionId, out StoryMissionEntry? entry, out string diagnostic)
     {
         diagnostic = "";
         if (!_byMission.TryGetValue(missionId, out entry))
@@ -479,7 +479,7 @@ internal sealed class StoryLedger
     }
 
     /// <summary>Offered and active missions of one definition, oldest first.</summary>
-    internal IReadOnlyList<StoryMissionSnapshot> Unresolved(StoryContentId id)
+    internal IReadOnlyList<StoryMissionSnapshot> Unresolved(StoryMissionDefinitionId id)
         => _byMission.Values
             .Where(entry => entry.Id == id && entry.State != StoryMissionLedgerState.Retired)
             .OrderBy(entry => entry.Sequence)
@@ -489,7 +489,7 @@ internal sealed class StoryLedger
             .ToArray();
 
     /// <summary>Authoritative retained outcomes for one definition, oldest first.</summary>
-    internal IReadOnlyList<StoryMissionRecord> Retained(StoryContentId id)
+    internal IReadOnlyList<StoryMissionRecord> Retained(StoryMissionDefinitionId id)
         => _byMission.Values
             .Where(entry => entry.Id == id && entry.State == StoryMissionLedgerState.Retired)
             .OrderBy(entry => entry.Sequence)
@@ -501,7 +501,7 @@ internal sealed class StoryLedger
     /// Authoritative CAMPAIGN completion. A temporary definition keeps a bounded idempotency
     /// tombstone, not an authoritative outcome, so it never answers true here.
     /// </summary>
-    internal bool IsCompleted(StoryContentId id)
+    internal bool IsCompleted(StoryMissionDefinitionId id)
         => _byMission.Values.Any(entry => entry.Id == id && entry.Retention == StoryRetention.Campaign
             && entry.Outcome == StoryOutcome.Completed);
 
@@ -522,7 +522,7 @@ internal sealed class StoryLedger
             if (row.State == StoryMissionLedgerState.Retired || definition.LocalId != row.Id.LocalId || definition.Retention != row.Retention
                 || definition.ReservedChoiceBytes != row.ChoiceReservation
                 || !row.ObjectiveLayout.SamePositions(new StoryObjectiveLayout(definition))
-                || definition.Steps.SelectMany(step => step.Objectives).Any(objective => StoryContentPolicy.RefuseObjective(objective.Kind) != null))
+                || definition.Steps.SelectMany(step => step.Objectives).Any(objective => StoryMissionPolicy.RefuseObjective(objective.Kind) != null))
                 return "Retained definition does not match its mission.";
         }
         if (StoryStateCodec.HeaderBytes + rows.Sum(StoryStateCodec.EncodedSize) > StoryStateCodec.MaxBytes)

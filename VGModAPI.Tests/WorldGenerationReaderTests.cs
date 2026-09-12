@@ -59,7 +59,7 @@ public sealed class WorldGenerationReaderTests : IDisposable
     [InlineData(2)]
     public void InstancesRequireTheirExactRetainedDefinitionRevision(int revision)
     {
-        var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
+        var identity = new WorldObjectIdentity(new PersistentDeclaration("author.a", "PoiX", PersistentKind.WorldObject, PersistenceImpact.ApiDependent), Guid.NewGuid());
         var row = new WorldSavedObject(identity, "system-a", GenerationStore.Hash(_native), 1);
         var owners = new Dictionary<string, byte[]>
         {

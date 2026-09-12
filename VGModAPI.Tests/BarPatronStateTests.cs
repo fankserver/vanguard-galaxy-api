@@ -21,14 +21,14 @@ public sealed class BarPatronStateTests
     public void MissionReferenceIsOwnerScopedAndRequiresBothIdentities()
     {
         var id = new BarPatronId("campaign", "contact");
-        var mission = new StoryContentId("campaign", "mission-x");
+        var mission = new StoryMissionDefinitionId("campaign", "mission-x");
         var missionId = Guid.NewGuid();
         var state = new BarPatronState(id, "station", "Contact", "Description", "seed", mission, missionId);
         Assert.Equal(mission, state.Mission);
         Assert.Equal(missionId, state.MissionId);
         Assert.Throws<ArgumentException>(() => new BarPatronState(id, "station", "Contact", "Description", "seed", mission));
         Assert.Throws<ArgumentException>(() => new BarPatronState(id, "station", "Contact", "Description", "seed", mission, Guid.Empty));
-        Assert.Throws<ArgumentException>(() => new BarPatronState(id, "station", "Contact", "Description", "seed", new StoryContentId("jobs", "mission-x"), missionId));
+        Assert.Throws<ArgumentException>(() => new BarPatronState(id, "station", "Contact", "Description", "seed", new StoryMissionDefinitionId("jobs", "mission-x"), missionId));
     }
 
     [Fact]

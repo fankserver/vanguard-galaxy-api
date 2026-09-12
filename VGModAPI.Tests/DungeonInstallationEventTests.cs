@@ -23,7 +23,7 @@ public sealed class DungeonInstallationEventTests : IDisposable
     private static IDungeonProvider Provider(LifecycleHub hub, ISaveDataRegistration? registration = null)
     {
         var registry = new DungeonDefinitionRegistry(_ => true, _ => true, _ => true);
-        var service = new DungeonContentService(hub, registry, null, null, (_, _) => { });
+        var service = new DungeonService(hub, registry, null, null, (_, _) => { });
         return service.AcquireProvider("consumer", registration);
     }
 

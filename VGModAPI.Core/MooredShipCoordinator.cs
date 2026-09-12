@@ -20,8 +20,8 @@ internal sealed class MooredShipDeclaration
     internal MooredShipDeclaration(MooredShipDefinition definition)
     {
         if (definition == null) throw new ArgumentNullException(nameof(definition));
-        _ = new ContentDeclaration("vgmodapi.world", definition.LocalId, PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent);
-        _ = new ContentDeclaration("vgmodapi.world", definition.FactionId, PersistentContentKind.Faction, ContentPersistenceImpact.ApiDependent);
+        _ = new PersistentDeclaration("vgmodapi.world", definition.LocalId, PersistentKind.WorldObject, PersistenceImpact.ApiDependent);
+        _ = new PersistentDeclaration("vgmodapi.world", definition.FactionId, PersistentKind.Faction, PersistenceImpact.ApiDependent);
         if (string.IsNullOrWhiteSpace(definition.Name) || definition.Name.IndexOf('\0') >= 0 || WorldStateCodec.TextByteCount(definition.Name) > 64)
             throw new ArgumentException("A bounded moored-ship display name is required.");
         if (WorldStateCodec.TextByteCount(definition.ShipClassId) > 128) throw new ArgumentException("A bounded ship class is required.");

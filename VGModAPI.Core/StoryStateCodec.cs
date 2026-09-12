@@ -213,7 +213,7 @@ internal static class StoryStateCodec
                     throw new InvalidDataException("Invalid retained definition length.");
                 definition = StoryDefinitionCodec.Decode(reader.ReadBytes(length));
             }
-            rows[index] = new StoryMissionEntry(new StoryContentId(provider, local), mission, retention, sequence, state, outcome, choices, reservation, pending, failure, layout, definition);
+            rows[index] = new StoryMissionEntry(new StoryMissionDefinitionId(provider, local), mission, retention, sequence, state, outcome, choices, reservation, pending, failure, layout, definition);
         }
         if (stream.Position != bytes.Length) throw new InvalidDataException("Trailing story state bytes.");
         var refusal = StoryLedger.RefuseBounds(rows);
@@ -240,7 +240,7 @@ internal static class StoryStateCodec
 
     private static void WriteSegment(BinaryWriter writer, string value)
     {
-        if (!StoryContentId.IsValidSegment(value)) throw new InvalidDataException("Invalid story identity segment.");
+        if (!StoryMissionDefinitionId.IsValidSegment(value)) throw new InvalidDataException("Invalid story identity segment.");
         var bytes = Encoding.ASCII.GetBytes(value);
         writer.Write((byte)bytes.Length);
         writer.Write(bytes);
@@ -251,7 +251,7 @@ internal static class StoryStateCodec
         int length = reader.ReadByte();
         if (length is < 1 or > 48) throw new InvalidDataException("Invalid story identity length.");
         var value = Encoding.ASCII.GetString(ReadExact(reader, length));
-        if (!StoryContentId.IsValidSegment(value)) throw new InvalidDataException("Invalid story identity segment.");
+        if (!StoryMissionDefinitionId.IsValidSegment(value)) throw new InvalidDataException("Invalid story identity segment.");
         return value;
     }
 

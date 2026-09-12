@@ -5,9 +5,9 @@ using System.Linq;
 
 namespace VGModAPI.Core;
 
-internal sealed partial class StoryContentService
+internal sealed partial class StoryMissionService
 {
-    private readonly Dictionary<StoryContentId, Registration> _authoredDefinitions = new();
+    private readonly Dictionary<StoryMissionDefinitionId, Registration> _authoredDefinitions = new();
     private StoryGame? _gameObjects;
     internal IStory ForGame(IGame game, Guid session, LifecycleHub hub)
     {
@@ -30,7 +30,7 @@ internal sealed partial class StoryContentService
     internal sealed partial class Registration
     {
         internal Lease Owner => _lease;
-        internal StoryContentService Service => _service;
+        internal StoryMissionService Service => _service;
         internal bool IsLive => Active && Owner.SaveData?.State.Kind != SaveDataStateKind.Disposed;
         private GameplayEvent<IStoryMission> _accepted = null!, _completed = null!, _failed = null!, _abandoned = null!, _changed = null!;
         private void InitializeEvents()
@@ -60,14 +60,14 @@ internal sealed partial class StoryContentService
 
     internal sealed class StoryGame : IStory
     {
-        internal readonly StoryContentService Service;
+        internal readonly StoryMissionService Service;
         internal readonly LifecycleHub Hub;
         internal readonly Guid Session;
         private readonly IGame _game;
         private readonly Dictionary<Guid, Mission> _missions = new();
         private readonly List<Mission> _offering = new();
         internal bool Executing;
-        internal StoryGame(StoryContentService service, IGame game, Guid session, LifecycleHub hub)
+        internal StoryGame(StoryMissionService service, IGame game, Guid session, LifecycleHub hub)
         {
             Service = service; _game = game; Session = session; Hub = hub;
             ReconcileDefinitions();
@@ -157,7 +157,7 @@ internal sealed partial class StoryContentService
             get
             {
                 _scope.Service.CheckThread();
-                return MissionId == Guid.Empty ? null : StoryContentPolicy.MissionIdentifier(Owned.Id, MissionId);
+                return MissionId == Guid.Empty ? null : StoryMissionPolicy.MissionIdentifier(Owned.Id, MissionId);
             }
         }
         public StoryActionResult LastAction
@@ -254,7 +254,7 @@ internal sealed partial class StoryContentService
         public IStoryObjective GetObjective(string key)
         {
             _scope.Service.CheckThread();
-            if (!StoryContentId.IsValidSegment(key)) throw new ArgumentException("An authored objective key is required.", nameof(key));
+            if (!StoryMissionDefinitionId.IsValidSegment(key)) throw new ArgumentException("An authored objective key is required.", nameof(key));
             if (!_objectives.TryGetValue(key, out var objective)) { objective = new Objective(this, key); _objectives.Add(key, objective); }
             return objective;
         }
@@ -268,14 +268,14 @@ internal sealed partial class StoryContentService
             {
                 _mission = mission; _key = key; _changed = new(mission._scope.Service.CheckThread);
                 var baseline = Snapshot; // Changes are observed relative to the object's creation.
-                _published = (baseline.Knowledge, baseline.Progress, baseline.Required, baseline.ContentRevision, baseline.Outcome);
+                _published = (baseline.Knowledge, baseline.Progress, baseline.Required, baseline.MissionRevision, baseline.Outcome);
             }
             public event Action<IStoryObjective>? Changed { add => _changed.Add(value); remove => _changed.Remove(value); }
             internal void RefreshIfObserved()
             {
                 if (!_changed.HasSubscribers) return;
                 var snapshot = Snapshot;
-                var key = (snapshot.Knowledge, snapshot.Progress, snapshot.Required, snapshot.ContentRevision, snapshot.Outcome);
+                var key = (snapshot.Knowledge, snapshot.Progress, snapshot.Required, snapshot.MissionRevision, snapshot.Outcome);
                 if (_published == key) return;
                 _published = key;
                 _changed.Publish(_mission._scope.Hub, _mission._scope.Session, _mission.Owned.Id.Provider, this,

@@ -120,7 +120,7 @@ internal sealed class NavigationService
         if (reference == null) return NavigationStatus.Rejected;
         try
         {
-            var id = new WorldObjectIdentity(new ContentDeclaration(reference.ProviderId, reference.LocalId, PersistentContentKind.WorldObject, ContentPersistenceImpact.ProviderRequired), reference.InstanceId);
+            var id = new WorldObjectIdentity(new PersistentDeclaration(reference.ProviderId, reference.LocalId, PersistentKind.WorldObject, PersistenceImpact.ProviderRequired), reference.InstanceId);
             if (_world(id.Owner, id.NativeId) != true || !Ready(expectedSessionId)) return NavigationStatus.Missing;
             return Focus(expectedSessionId, id.NativeId, () => Ready(expectedSessionId) && _world(id.Owner, id.NativeId) == true);
         }

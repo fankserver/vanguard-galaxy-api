@@ -6,7 +6,7 @@ using Xunit;
 
 namespace VGModAPI.Tests;
 
-public sealed partial class StoryContentTests
+public sealed partial class StoryMissionTests
 {
     [Fact]
     public void StoryDefinitionCompletionCarriesItsGameAndCanOfferTheNextMission()
@@ -286,7 +286,7 @@ public sealed partial class StoryContentTests
         internal readonly FakeMissionEvents Missions = new();
         internal readonly StoryObjectPersistence Persistence;
         internal readonly StoryObjectPersistence CustomData;
-        internal readonly StoryContentService Engine;
+        internal readonly StoryMissionService Engine;
         internal readonly IStoryProvider Provider;
         internal readonly GameService Games;
         internal IGame Game => Games.Current!;
@@ -295,9 +295,9 @@ public sealed partial class StoryContentTests
             Hub = new LifecycleHub((_, error) => Errors.Add(error));
             foreach (var capability in new[] { "owned-story", "session-lifecycle", "save-outcomes" }) Hub.SetCapability(capability, true, "test");
             Persistence = new(Hub); CustomData = new(Hub); var host = new FakeHost(); var plugin = new object(); host.Register(plugin, AnimaPlugin);
-            Engine = new StoryContentService(Hub.Services, Persistence, Hub, host.Authenticate, checkThread: Hub.CheckThread, world: World, missions: Missions);
+            Engine = new StoryMissionService(Hub.Services, Persistence, Hub, host.Authenticate, checkThread: Hub.CheckThread, world: World, missions: Missions);
             Provider = Engine.AcquireProvider(plugin, saveData: CustomData).Provider!;
-            Games = new GameService(Hub, new NavigationService(Hub, _ => null, (_, _, _) => NavigationStatus.Unavailable, (_, _) => null), new InventoryService(Hub, () => null), Engine, new BarContentService(null, Hub, (_, _) => null, _ => false, Hub.CheckThread));
+            Games = new GameService(Hub, new NavigationService(Hub, _ => null, (_, _, _) => NavigationStatus.Unavailable, (_, _) => null), new InventoryService(Hub, () => null), Engine, new BarService(null, Hub, (_, _) => null, _ => false, Hub.CheckThread));
         }
         internal IStoryDefinition Register(string local = "salvage-run") => Provider.Register(Definition(local)).Definition!;
         internal void Start(byte[]? bytes = null)
@@ -309,7 +309,7 @@ public sealed partial class StoryContentTests
         internal void Tick() => Hub.Gameplay.Tick();
         internal void Complete(IStoryMission mission)
         {
-            var identifier = StoryContentPolicy.MissionIdentifier(mission.Definition.Id, mission.Id);
+            var identifier = StoryMissionPolicy.MissionIdentifier(mission.Definition.Id, mission.Id);
             World.CompleteInWorld(identifier); Missions.Publish(MissionTransitionKind.Completed, identifier);
         }
         public void Dispose() { Provider.Dispose(); Games.Dispose(); Engine.Dispose(); Hub.Dispose(); }

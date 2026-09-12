@@ -19,14 +19,14 @@ internal sealed class ResourceSiteDeclaration
     internal ResourceSiteDeclaration(ResourceSiteDefinition definition)
     {
         if (definition == null) throw new ArgumentNullException(nameof(definition));
-        _ = new ContentDeclaration("vgmodapi.world", definition.LocalId, PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent);
+        _ = new PersistentDeclaration("vgmodapi.world", definition.LocalId, PersistentKind.WorldObject, PersistenceImpact.ApiDependent);
         if (string.IsNullOrWhiteSpace(definition.Name) || definition.Name.IndexOf('\0') >= 0 || WorldStateCodec.TextByteCount(definition.Name) > 1024)
             throw new ArgumentException("A bounded world display name is required.");
         if (definition.Kind == ResourceSiteKind.SalvageSite)
         {
             if (string.IsNullOrWhiteSpace(definition.WreckShipId) || WorldStateCodec.TextByteCount(definition.WreckShipId!) > 128)
                 throw new ArgumentException("A bounded exact wreck ship class is required.");
-            _ = new ContentDeclaration("vgmodapi.world", definition.FactionId!, PersistentContentKind.Faction, ContentPersistenceImpact.ApiDependent);
+            _ = new PersistentDeclaration("vgmodapi.world", definition.FactionId!, PersistentKind.Faction, PersistenceImpact.ApiDependent);
         }
         LocalId = definition.LocalId; Revision = definition.Revision; Name = definition.Name; Kind = definition.Kind;
         Level = definition.Level; FactionId = definition.FactionId; WreckShipId = definition.WreckShipId;

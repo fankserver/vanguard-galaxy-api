@@ -227,7 +227,7 @@ public sealed class StoryDefinitionCodecTests
         var bytes = StoryDefinitionCodec.Encode(definition);
         var restored = StoryDefinitionCodec.Decode(bytes);
         Assert.Equal(bytes, StoryDefinitionCodec.Encode(restored));
-        Assert.Equal(2, restored.ContentRevision);
+        Assert.Equal(2, restored.MissionRevision);
         Assert.Equal(1, restored.MigratesFromRevision);
         Assert.Equal("Réponse", restored.Steps[0].Objectives[0].Description);
     }
@@ -248,7 +248,7 @@ public sealed class StoryDefinitionCodecTests
         }
         stream.Position += 3;
         int revisionOffset = (int)stream.Position;
-        var state = StoryStateCodec.Encode(new[] { new StoryMissionEntry(new StoryContentId("author", "job"), Guid.NewGuid(),
+        var state = StoryStateCodec.Encode(new[] { new StoryMissionEntry(new StoryMissionDefinitionId("author", "job"), Guid.NewGuid(),
             StoryRetention.Temporary, 1, retainedDefinition: definition) });
         int payloadOffset = -1;
         for (int index = 0; index <= state.Length - bytes.Length; index++)

@@ -34,9 +34,9 @@ public sealed partial class Plugin
             () => _boardingRuleService.IsEvaluating || _boardingCombat.IsEvaluating || _dungeonRewards.IsEvaluating);
         _boardingTactics ??= new Runtime.BoardingTacticalAdapter(hub, _boardingCommands);
         _dungeonPanelService ??= new DungeonPanelService(hub, null, hub.ReportSubscriberFailure);
-        _dungeons ??= new DungeonContentService(hub, null, null, null, hub.ReportSubscriberFailure);
-        _story ??= new StoryContentService(hub.Services, null, hub, StoryHostAuthentication.Resolve, checkThread: hub.CheckThread);
-        _bars ??= new BarContentService(null, hub, StoryHostAuthentication.Resolve, _ => false, hub.CheckThread);
+        _dungeons ??= new DungeonService(hub, null, null, null, hub.ReportSubscriberFailure);
+        _story ??= new StoryMissionService(hub.Services, null, hub, StoryHostAuthentication.Resolve, checkThread: hub.CheckThread);
+        _bars ??= new BarService(null, hub, StoryHostAuthentication.Resolve, _ => false, hub.CheckThread);
         _worldDefinitions ??= new WorldDefinitionRegistry((_, _) => null, hub.CheckThread);
         var ambient = _ambientTraffic ??= new AmbientTrafficService(hub);
         var protection = _unitProtection ??= new UnitProtectionService(hub);

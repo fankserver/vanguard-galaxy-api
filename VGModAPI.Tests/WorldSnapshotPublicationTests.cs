@@ -22,7 +22,7 @@ public sealed class WorldSnapshotPublicationTests : IDisposable
         var store = new GenerationStore(Path.Combine(_directory, "generations"));
         using var coordinator = new PersistenceCoordinator(hub, store, Path.GetFullPath,
             path => GenerationStore.Hash(File.ReadAllBytes(path)));
-        var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
+        var identity = new WorldObjectIdentity(new PersistentDeclaration("author.a", "PoiX", PersistentKind.WorldObject, PersistenceImpact.ApiDependent), Guid.NewGuid());
         var instance = new WorldSnapshotInstance(new object(), identity, "system-a",
             new WorldSavedDefinition("author.a", new WorldCombatDefinition("PoiX", 1, "世界", "player", 2)));
         using var host = new WorldSnapshotHookHost(hub,

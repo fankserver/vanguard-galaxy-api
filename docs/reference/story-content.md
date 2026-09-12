@@ -128,7 +128,7 @@ objects for restored occurrences.
   campaign progression rather than relying on a temporary tombstone remaining present.
 - Withdrawing an unaccepted offer leaves no tombstone.
 - Removed definitions do not delete saved missions. Provider-required content still needs its owner;
-  see [content safety](content-safety.md).
+  see [content safety](persistence-safety.md).
 
 Limits refuse admission rather than dropping existing state:
 

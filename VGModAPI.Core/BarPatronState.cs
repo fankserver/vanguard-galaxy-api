@@ -15,11 +15,11 @@ internal sealed class BarPatronState
     internal bool IsMale { get; }
     internal bool Removed { get; }
     internal BarPatronState WithRemoved(bool removed) => new(Id, Station, Name, Description, Seed, Mission, MissionId, Portrait, IsMale, removed);
-    internal StoryContentId? Mission { get; }
+    internal StoryMissionDefinitionId? Mission { get; }
     internal Guid? MissionId { get; }
 
     internal BarPatronState(BarPatronId id, string station, string name, string description, string seed,
-        StoryContentId? mission = null, Guid? missionId = null, CharacterPortrait? portrait = null, bool isMale = true, bool removed = false)
+        StoryMissionDefinitionId? mission = null, Guid? missionId = null, CharacterPortrait? portrait = null, bool isMale = true, bool removed = false)
     {
         _ = new BarPatronId(id.Provider, id.LocalId);
         Id = id;
@@ -38,7 +38,7 @@ internal sealed class BarPatronState
             throw new ArgumentException("A mission reference needs both definition and nonempty mission identity.");
         if (mission.HasValue)
         {
-            _ = new StoryContentId(mission.Value.Provider, mission.Value.LocalId);
+            _ = new StoryMissionDefinitionId(mission.Value.Provider, mission.Value.LocalId);
             if (mission.Value.Provider != id.Provider) throw new ArgumentException("A patron cannot claim another provider's mission.");
         }
         Mission = mission; MissionId = missionId;

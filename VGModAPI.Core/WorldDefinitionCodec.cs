@@ -12,7 +12,7 @@ internal sealed class WorldSavedDefinition
     internal WorldSavedDefinition(string owner, WorldCombatDefinition definition)
     {
         Definition = definition ?? throw new ArgumentNullException(nameof(definition));
-        _ = new ContentDeclaration(owner, definition.LocalId, PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent);
+        _ = new PersistentDeclaration(owner, definition.LocalId, PersistentKind.WorldObject, PersistenceImpact.ApiDependent);
         Owner = owner;
     }
 }

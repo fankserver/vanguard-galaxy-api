@@ -104,7 +104,7 @@ public sealed class WorldLifetimeHookTests : IDisposable
         var hub = new LifecycleHub((_, error) => throw error); var guard = new WorldLifetimeGuard();
         using var host = new WorldLifetimeHookHost(typeof(Source.Galaxy.MapElement).Assembly, hub, guard);
         var session = hub.Begin(SessionOrigin.NewGame, null);
-        var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
+        var identity = new WorldObjectIdentity(new PersistentDeclaration("author.a", "PoiX", PersistentKind.WorldObject, PersistenceImpact.ApiDependent), Guid.NewGuid());
         var owned = new Source.Galaxy.MapPointOfInterest { guid = identity.NativeId };
         var vanilla = new Source.Galaxy.MapPointOfInterest { guid = "vanilla" };
         guard.Track(session, owned, identity);

@@ -21,7 +21,7 @@ public sealed class WorldNativeReconstructionTests
         string dir = Path.Combine(Path.GetTempPath(), "vg-world-rebind-" + Guid.NewGuid().ToString("N"));
         try
         {
-            var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
+            var identity = new WorldObjectIdentity(new PersistentDeclaration("author.a", "PoiX", PersistentKind.WorldObject, PersistenceImpact.ApiDependent), Guid.NewGuid());
             byte[] bytes = { 1, 2, 3 }; string path = Path.Combine(dir, "native.save");
             var store = new GenerationStore(Path.Combine(dir, "generations"));
             var row = new WorldSavedObject(identity, "system", GenerationStore.Hash(bytes), 1);

@@ -52,7 +52,7 @@ public sealed class StoryNativeAdapterTests : IDisposable
             choiceKeys: new[] { "branch" });
 
     private static string Identifier(string local = "salvage-run", Guid? mission = null)
-        => StoryContentPolicy.MissionIdentifier(new StoryContentId("anima", local), mission ?? Guid.NewGuid());
+        => StoryMissionPolicy.MissionIdentifier(new StoryMissionDefinitionId("anima", local), mission ?? Guid.NewGuid());
 
     [Fact]
     public void ScriptedProgressTargetsCurrentPlayerAndRejectsInactiveSteps()
@@ -518,7 +518,7 @@ public sealed class StoryNativeAdapterTests : IDisposable
             var identifier = Identifier("tier-" + (int)tier);
             Assert.True(world.Install(identifier, Definition("tier-" + (int)tier, tier)).Applied);
             var mission = StoryMission.Get(_player, identifier);
-            Assert.Equal(StoryContentPolicy.DifficultyName(tier), mission.difficulty.ToString());
+            Assert.Equal(StoryMissionPolicy.DifficultyName(tier), mission.difficulty.ToString());
         }
         Assert.True(world.KnowsFaction("TradingGuild"));
         Assert.False(world.KnowsFaction("NoSuchFaction"));

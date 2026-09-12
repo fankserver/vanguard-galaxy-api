@@ -22,7 +22,7 @@ namespace VGModAPI.Core;
 /// unresolvable reward is SKIPPED with a log line, which is why unsupported rewards are refused here.</item>
 /// </list>
 /// </summary>
-internal static class StoryContentPolicy
+internal static class StoryMissionPolicy
 {
     /// <summary>Namespace prefix of every identifier this API installs. Vanilla identifiers never contain it.</summary>
     internal const string IdentifierPrefix = "vgmodapi.story.";
@@ -98,7 +98,7 @@ internal static class StoryContentPolicy
     /// local ID <c>mission-x</c> produce different identifiers, so neither can capture the other's
     /// saved content.
     /// </summary>
-    internal static string Identifier(StoryContentId id)
+    internal static string Identifier(StoryMissionDefinitionId id)
     {
         if (id.Provider == null) throw new ArgumentException("A default identity has no identifier.", nameof(id));
         var identifier = IdentifierPrefix + id.Provider + "." + id.LocalId;
@@ -114,7 +114,7 @@ internal static class StoryContentPolicy
     /// deterministically from the content identity and the mission, so a reload reinstalls exactly
     /// the same entries without storing the string itself.
     /// </summary>
-    internal static string MissionIdentifier(StoryContentId id, Guid missionId)
+    internal static string MissionIdentifier(StoryMissionDefinitionId id, Guid missionId)
     {
         if (missionId == Guid.Empty) throw new ArgumentException("An mission requires its own identity.", nameof(missionId));
         var identifier = Identifier(id) + "." + missionId.ToString("N");
@@ -123,7 +123,7 @@ internal static class StoryContentPolicy
     }
 
     /// <summary>Parses an mission identifier back to its content identity and mission.</summary>
-    internal static bool TryParseMissionIdentifier(string? identifier, out StoryContentId id, out Guid missionId)
+    internal static bool TryParseMissionIdentifier(string? identifier, out StoryMissionDefinitionId id, out Guid missionId)
     {
         id = default; missionId = Guid.Empty;
         if (identifier == null || identifier.Length < 33) return false;
@@ -133,7 +133,7 @@ internal static class StoryContentPolicy
         return TryParseIdentifier(identifier.Substring(0, separator), out id);
     }
 
-    internal static bool TryParseIdentifier(string? identifier, out StoryContentId id)
+    internal static bool TryParseIdentifier(string? identifier, out StoryMissionDefinitionId id)
     {
         id = default;
         if (identifier == null || identifier.Length > MaxIdentifierLength || !identifier.StartsWith(IdentifierPrefix, StringComparison.Ordinal)) return false;
@@ -142,13 +142,13 @@ internal static class StoryContentPolicy
         if (separator <= 0 || separator == rest.Length - 1) return false;
         var provider = rest.Substring(0, separator);
         var local = rest.Substring(separator + 1);
-        if (!StoryContentId.IsValidSegment(provider) || !StoryContentId.IsValidSegment(local)) return false;
-        id = new StoryContentId(provider, local);
+        if (!StoryMissionDefinitionId.IsValidSegment(provider) || !StoryMissionDefinitionId.IsValidSegment(local)) return false;
+        id = new StoryMissionDefinitionId(provider, local);
         return true;
     }
 
     /// <summary>Null when the definition only uses supported types, otherwise the exact refusal reason.</summary>
-    internal static string? Refuse(StoryContentId id, StoryMissionDefinition definition)
+    internal static string? Refuse(StoryMissionDefinitionId id, StoryMissionDefinition definition)
     {
         if (definition == null) return "A definition is required.";
         if (id.Provider == null || id.LocalId != definition.LocalId) return "The definition's local ID does not match its resolved identity.";

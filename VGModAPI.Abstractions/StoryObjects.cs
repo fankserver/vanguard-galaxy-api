@@ -21,7 +21,7 @@ public sealed class StoryActionResult
 /// <summary>An owned mission definition. Register once; event arguments identify live missions and their games.</summary>
 public interface IStoryDefinition : IDisposable
 {
-    StoryContentId Id { get; }
+    StoryMissionDefinitionId Id { get; }
     event Action<IStoryMission>? Accepted;
     event Action<IStoryMission>? Completed;
     event Action<IStoryMission>? Failed;

@@ -61,7 +61,7 @@ scripted-objective or campaign API.
 See the domain contracts for supported operations and actual limitations:
 [lifecycle](lifecycle-contract.md), [save data](persistence-storage.md),
 [missions](mission-events.md), [travel](travel-events.md), [story](story-content.md),
-[bars](bar-rosters.md), [boarding](boarding-contract.md), [dungeons](dungeon-content.md),
+[bars](bar-rosters.md), [boarding](boarding-contract.md), [dungeons](dungeon.md),
 [crafting](recipes.md), [gameplay UI](gameplay-ui.md) and [mod information](mod-information.md).
 
 ## Correctness checks

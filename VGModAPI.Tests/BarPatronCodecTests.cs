@@ -11,7 +11,7 @@ public sealed class BarPatronCodecTests
 {
     private static BarPatronState Row(string provider = "campaign", string local = "contact") =>
         new(new BarPatronId(provider, local), "CustomAct3RickoStation", "Élodie", "A contact", "fixed-seed",
-            new StoryContentId(provider, "mission-x"), new Guid("01234567-1234-1234-1234-012345678901"));
+            new StoryMissionDefinitionId(provider, "mission-x"), new Guid("01234567-1234-1234-1234-012345678901"));
 
     [Fact]
     public void CanonicalRoundTripRetainsOwnerStateAndMissionReference()

@@ -4,21 +4,21 @@ using System.Collections.ObjectModel;
 
 namespace VGModAPI;
 
-public enum DungeonContentStatus
+public enum DungeonStatus
 {
     Registered, Attached, ChoiceApplied, Unavailable, PersistenceUnavailable, StaleTarget,
     InvalidDefinition, DuplicateId, TargetInUse, MissingDefinition, MissingProvider,
     VersionMismatch, WrongPhase, InvalidChoice, AlreadyChosen, Vetoed, NativeFailure
 }
 
-public sealed class DungeonContentResult
+public sealed class DungeonResult
 {
-    public DungeonContentStatus Status { get; }
+    public DungeonStatus Status { get; }
     public Guid? DungeonId { get; }
     public string Detail { get; }
-    public DungeonContentResult(DungeonContentStatus status, string detail, Guid? dungeonId = null)
+    public DungeonResult(DungeonStatus status, string detail, Guid? dungeonId = null)
     {
-        if (!Enum.IsDefined(typeof(DungeonContentStatus), status) || dungeonId == Guid.Empty) throw new ArgumentException("Invalid dungeon result.");
+        if (!Enum.IsDefined(typeof(DungeonStatus), status) || dungeonId == Guid.Empty) throw new ArgumentException("Invalid dungeon result.");
         Status = status; Detail = detail ?? throw new ArgumentNullException(nameof(detail)); DungeonId = dungeonId;
     }
 }
@@ -56,22 +56,22 @@ public interface IDungeonProvider : IDisposable
     /// <summary>Get a stable installation view, including before its native POI exists. Does not create or own the POI.</summary>
     IDungeonInstallation GetInstallation(string poiId);
     IDisposable Register(string localId, DungeonDefinition definition, Func<DungeonChoiceContext, bool>? allowChoice = null);
-    DungeonContentResult Attach(string localId, BoardingHandle target);
+    DungeonResult Attach(string localId, BoardingHandle target);
     /// <summary>
     /// Attaches by supported persistent installation identity instead of a boarding target handle.
     /// Use the installation object obtained from this provider's <see cref="GetInstallation"/>; a
     /// foreign object is a programming error. The attachment resolves the one live boarding target
     /// currently belonging to that installation; while none (or more than one) is observed the
-    /// result is <see cref="DungeonContentStatus.StaleTarget"/> - a temporary refusal, not a
+    /// result is <see cref="DungeonStatus.StaleTarget"/> - a temporary refusal, not a
     /// display-name match.
     /// </summary>
-    DungeonContentResult Attach(string localId, IDungeonInstallation installation);
-    DungeonContentResult Choose(Guid dungeonId, string eventId, string choiceId);
+    DungeonResult Attach(string localId, IDungeonInstallation installation);
+    DungeonResult Choose(Guid dungeonId, string eventId, string choiceId);
     IReadOnlyList<DungeonSnapshot> GetDungeons();
 }
 
 /// <summary>Authoring attaches persistent dungeon content to supported existing targets; world/POI creation is a separate service.</summary>
-public interface IDungeonContentService : IServiceStatus
+public interface IDungeonService : IServiceStatus
 {
     /// <summary>Acquire once during plugin setup. Optional custom save data is a provider-lifetime
     /// dependency: actionable installation events wait until its mutation gate opens.</summary>

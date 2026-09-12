@@ -24,16 +24,16 @@ namespace VGModAPI.Tests;
 /// </summary>
 internal static class StoryProviderCallExtensions
 {
-    internal static bool InternalActive(this IStoryProvider provider) => ((StoryContentService.Lease)provider).Active;
-    internal static bool InternalActive(this IStoryDefinition definition) => ((StoryContentService.Registration)definition).Active;
-    internal static StoryTransitionResult Offer(this IStoryProvider provider, Guid session, string localId) => ((StoryContentService.Lease)provider).Offer(session, localId);
-    internal static StoryTransitionResult Activate(this IStoryProvider provider, Guid session, Guid mission) => ((StoryContentService.Lease)provider).Activate(session, mission);
-    internal static StoryTransitionResult Withdraw(this IStoryProvider provider, Guid session, Guid mission) => ((StoryContentService.Lease)provider).Withdraw(session, mission);
-    internal static StoryTransitionResult Retire(this IStoryProvider provider, Guid session, Guid mission, StoryOutcome outcome, IReadOnlyDictionary<string, string>? choices = null) => ((StoryContentService.Lease)provider).Retire(session, mission, outcome, choices);
-    internal static StoryTransitionResult DeclareChoices(this IStoryProvider provider, Guid session, Guid mission, IReadOnlyDictionary<string, string> choices) => ((StoryContentService.Lease)provider).DeclareChoices(session, mission, choices);
-    internal static StoryMissionRecordQuery Missions(this IStoryProvider provider, string localId) => ((StoryContentService.Lease)provider).Missions(localId);
-    internal static StoryMissionSnapshotQuery Unresolved(this IStoryProvider provider, string localId) => ((StoryContentService.Lease)provider).Unresolved(localId);
-    internal static StoryCompletionQuery IsCompleted(this IStoryProvider provider, string localId) => ((StoryContentService.Lease)provider).IsCompleted(localId);
+    internal static bool InternalActive(this IStoryProvider provider) => ((StoryMissionService.Lease)provider).Active;
+    internal static bool InternalActive(this IStoryDefinition definition) => ((StoryMissionService.Registration)definition).Active;
+    internal static StoryTransitionResult Offer(this IStoryProvider provider, Guid session, string localId) => ((StoryMissionService.Lease)provider).Offer(session, localId);
+    internal static StoryTransitionResult Activate(this IStoryProvider provider, Guid session, Guid mission) => ((StoryMissionService.Lease)provider).Activate(session, mission);
+    internal static StoryTransitionResult Withdraw(this IStoryProvider provider, Guid session, Guid mission) => ((StoryMissionService.Lease)provider).Withdraw(session, mission);
+    internal static StoryTransitionResult Retire(this IStoryProvider provider, Guid session, Guid mission, StoryOutcome outcome, IReadOnlyDictionary<string, string>? choices = null) => ((StoryMissionService.Lease)provider).Retire(session, mission, outcome, choices);
+    internal static StoryTransitionResult DeclareChoices(this IStoryProvider provider, Guid session, Guid mission, IReadOnlyDictionary<string, string> choices) => ((StoryMissionService.Lease)provider).DeclareChoices(session, mission, choices);
+    internal static StoryMissionRecordQuery Missions(this IStoryProvider provider, string localId) => ((StoryMissionService.Lease)provider).Missions(localId);
+    internal static StoryMissionSnapshotQuery Unresolved(this IStoryProvider provider, string localId) => ((StoryMissionService.Lease)provider).Unresolved(localId);
+    internal static StoryCompletionQuery IsCompleted(this IStoryProvider provider, string localId) => ((StoryMissionService.Lease)provider).IsCompleted(localId);
 
     internal static Guid CurrentSession(this IStoryProvider provider)
         => provider.Missions("session-probe").SessionId ?? Guid.Empty;
@@ -51,7 +51,7 @@ internal static class StoryProviderCallExtensions
         => provider.DeclareChoices(provider.CurrentSession(), missionId, choices);
 }
 
-public sealed partial class StoryContentTests
+public sealed partial class StoryMissionTests
 {
     [Fact]
     public void TypedUnavailableStoryDoesNotAuthenticateOrRegisterSaveData()
@@ -59,7 +59,7 @@ public sealed partial class StoryContentTests
         using var hub = new LifecycleHub((_, _) => { });
         hub.SetCapability("owned-story", false, "Disabled.", ServiceUnavailableReason.Disabled);
         var authentications = 0;
-        using var engine = new StoryContentService(hub.Services, null, hub, (_, _) => { authentications++; return null; }, checkThread: hub.CheckThread);
+        using var engine = new StoryMissionService(hub.Services, null, hub, (_, _) => { authentications++; return null; }, checkThread: hub.CheckThread);
         IStoryService service = engine;
         Assert.Equal(StoryProviderStatus.Unavailable, service.AcquireProvider(new object()).Status);
         Assert.Equal(0, authentications);
@@ -74,7 +74,7 @@ public sealed partial class StoryContentTests
         using var hub = new LifecycleHub((_, _) => { });
         hub.SetCapability("owned-story", true, "Bound.");
         var protection = true;
-        using var service = new StoryContentService(hub.Services, null, hub, (_, _) => null, checkThread: hub.CheckThread, protectionHealthy: () => protection);
+        using var service = new StoryMissionService(hub.Services, null, hub, (_, _) => null, checkThread: hub.CheckThread, protectionHealthy: () => protection);
         var changes = 0; service.AvailabilityChanged += _ => changes++;
         protection = false;
         Assert.Equal(ServiceUnavailableReason.ObserverFault, service.Availability.Reason);
@@ -106,7 +106,7 @@ public sealed partial class StoryContentTests
     public void OwnedTravelTargetsRequireSameOwnerWorldDependencyAdmission()
     {
         var host = new FakeHost(); var world = new FakeWorld(); bool? ready = null;
-        var identity = new WorldObjectIdentity(new ContentDeclaration(AnimaPlugin, "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
+        var identity = new WorldObjectIdentity(new PersistentDeclaration(AnimaPlugin, "PoiX", PersistentKind.WorldObject, PersistenceImpact.ApiDependent), Guid.NewGuid());
         string? seenOwner = null, seenTarget = null;
         using var service = world.Service(host, worldReferences: (owner, target) =>
         { seenOwner = owner; seenTarget = target; return ready; });
@@ -137,7 +137,7 @@ public sealed partial class StoryContentTests
         var definition = Definition(); var registration = provider.Register(definition).Definition!;
         var offered = provider.Offer(definition.LocalId);
         Assert.True(offered.Accepted);
-        var id = new StoryContentId(provider.ProviderId, definition.LocalId);
+        var id = new StoryMissionDefinitionId(provider.ProviderId, definition.LocalId);
         Assert.True(service.IsBarMissionReady(world.SessionId, id, offered.MissionId));
         Assert.False(service.IsBarMissionReady(Guid.NewGuid(), id, offered.MissionId));
         Assert.False(service.IsBarMissionReady(world.SessionId, id, Guid.NewGuid()));
@@ -164,7 +164,7 @@ public sealed partial class StoryContentTests
         var provider = service.AcquireProvider(plugin).Provider!;
         var definition = Definition(); var registration = provider.Register(definition).Definition!;
         var offered = provider.Offer(definition.LocalId);
-        var id = new StoryContentId(provider.ProviderId, definition.LocalId);
+        var id = new StoryMissionDefinitionId(provider.ProviderId, definition.LocalId);
         Assert.True(service.IsBarMissionReady(world.SessionId, id, offered.MissionId));
         registration.Dispose();
         var stamp = service.BarDependencyStamp(); int callbacks = 0;
@@ -188,25 +188,25 @@ public sealed partial class StoryContentTests
     [Fact]
     public void ContentIdentityIsProviderScopedAndRejectsAliasLikeSegments()
     {
-        var first = new StoryContentId("anima", "mission-x");
-        var second = new StoryContentId("custommission", "mission-x");
+        var first = new StoryMissionDefinitionId("anima", "mission-x");
+        var second = new StoryMissionDefinitionId("custommission", "mission-x");
         Assert.NotEqual(first, second);
-        Assert.Equal(first, new StoryContentId("anima", "mission-x"));
-        Assert.NotEqual(StoryContentPolicy.Identifier(first), StoryContentPolicy.Identifier(second));
+        Assert.Equal(first, new StoryMissionDefinitionId("anima", "mission-x"));
+        Assert.NotEqual(StoryMissionPolicy.Identifier(first), StoryMissionPolicy.Identifier(second));
         foreach (var bad in new[] { "", "Anima", "1anima", "an ima", "anima/x", "../x", "an.ima", new string('a', 49) })
-            Assert.Throws<ArgumentException>(() => new StoryContentId(bad, "mission-x"));
+            Assert.Throws<ArgumentException>(() => new StoryMissionDefinitionId(bad, "mission-x"));
     }
 
     [Fact]
     public void TheNamespacedIdentifierRoundTripsAndForeignIdentifiersAreNotOurs()
     {
-        var id = new StoryContentId("anima", "mission-x");
-        var identifier = StoryContentPolicy.Identifier(id);
-        Assert.StartsWith(StoryContentPolicy.IdentifierPrefix, identifier);
-        Assert.True(StoryContentPolicy.TryParseIdentifier(identifier, out var parsed));
+        var id = new StoryMissionDefinitionId("anima", "mission-x");
+        var identifier = StoryMissionPolicy.Identifier(id);
+        Assert.StartsWith(StoryMissionPolicy.IdentifierPrefix, identifier);
+        Assert.True(StoryMissionPolicy.TryParseIdentifier(identifier, out var parsed));
         Assert.Equal(id, parsed);
         foreach (var foreign in new[] { "tutorial_intro", "vgmodapi.story.", "vgmodapi.story.anima", "vgmodapi.story.Anima.x", null })
-            Assert.False(StoryContentPolicy.TryParseIdentifier(foreign, out _));
+            Assert.False(StoryMissionPolicy.TryParseIdentifier(foreign, out _));
     }
 
     /// <summary>
@@ -217,16 +217,16 @@ public sealed partial class StoryContentTests
     [Fact]
     public void ProviderSegmentsAreDerivedDeterministicallyFromTheHostPluginIdentity()
     {
-        var anima = StoryProviderIdentity.Segment(new StoryHostPlugin(AnimaPlugin, typeof(StoryContentTests).Assembly));
-        Assert.Equal(anima, StoryProviderIdentity.Segment(new StoryHostPlugin(AnimaPlugin, typeof(StoryContentTests).Assembly)));
-        Assert.True(StoryContentId.IsValidSegment(anima));
-        Assert.NotEqual(anima, StoryProviderIdentity.Segment(new StoryHostPlugin(OtherPlugin, typeof(StoryContentTests).Assembly)));
+        var anima = StoryProviderIdentity.Segment(new StoryHostPlugin(AnimaPlugin, typeof(StoryMissionTests).Assembly));
+        Assert.Equal(anima, StoryProviderIdentity.Segment(new StoryHostPlugin(AnimaPlugin, typeof(StoryMissionTests).Assembly)));
+        Assert.True(StoryMissionDefinitionId.IsValidSegment(anima));
+        Assert.NotEqual(anima, StoryProviderIdentity.Segment(new StoryHostPlugin(OtherPlugin, typeof(StoryMissionTests).Assembly)));
         // Plugin IDs that slug to the same readable text keep different segments through the digest.
-        Assert.NotEqual(StoryProviderIdentity.Segment(new StoryHostPlugin("com.a.anima", typeof(StoryContentTests).Assembly)),
-            StoryProviderIdentity.Segment(new StoryHostPlugin("com-a-anima", typeof(StoryContentTests).Assembly)));
+        Assert.NotEqual(StoryProviderIdentity.Segment(new StoryHostPlugin("com.a.anima", typeof(StoryMissionTests).Assembly)),
+            StoryProviderIdentity.Segment(new StoryHostPlugin("com-a-anima", typeof(StoryMissionTests).Assembly)));
         // Identities that would otherwise produce an invalid segment still resolve to a valid one.
         foreach (var odd in new[] { "1", ".", "ÄÖÜ", new string('x', 128) })
-            Assert.True(StoryContentId.IsValidSegment(StoryProviderIdentity.Segment(new StoryHostPlugin(odd, typeof(StoryContentTests).Assembly))));
+            Assert.True(StoryMissionDefinitionId.IsValidSegment(StoryProviderIdentity.Segment(new StoryHostPlugin(odd, typeof(StoryMissionTests).Assembly))));
     }
 
     /// <summary>
@@ -238,11 +238,11 @@ public sealed partial class StoryContentTests
     public void ASegmentStaysBoundToItsHostPluginAndAnotherPluginIsRefused()
     {
         var bindings = new StoryProviderBindings();
-        var segment = StoryProviderIdentity.Segment(new StoryHostPlugin(AnimaPlugin, typeof(StoryContentTests).Assembly));
+        var segment = StoryProviderIdentity.Segment(new StoryHostPlugin(AnimaPlugin, typeof(StoryMissionTests).Assembly));
         Assert.Equal(StoryBindingStatus.Bound, bindings.Bind(segment, AnimaPlugin));
         Assert.Equal(StoryBindingStatus.AlreadyBoundToSelf, bindings.Bind(segment, AnimaPlugin));
         Assert.Equal(StoryBindingStatus.Conflict, bindings.Bind(segment, OtherPlugin));
-        Assert.Equal(StoryBindingStatus.Bound, bindings.Bind(StoryProviderIdentity.Segment(new StoryHostPlugin(OtherPlugin, typeof(StoryContentTests).Assembly)), OtherPlugin));
+        Assert.Equal(StoryBindingStatus.Bound, bindings.Bind(StoryProviderIdentity.Segment(new StoryHostPlugin(OtherPlugin, typeof(StoryMissionTests).Assembly)), OtherPlugin));
     }
 
     // --- supported subset -------------------------------------------------------------------
@@ -250,16 +250,16 @@ public sealed partial class StoryContentTests
     [Fact]
     public void OnlyVanillaResolvableObjectivesAndRewardsAreSupported()
     {
-        Assert.Equal("TravelToPOI", StoryContentPolicy.ObjectiveTypeName(StoryObjectiveKind.TravelToPoi));
-        Assert.Equal("KillEnemies", StoryContentPolicy.ObjectiveTypeName(StoryObjectiveKind.KillEnemies));
-        Assert.Equal("CollectCredits", StoryContentPolicy.ObjectiveTypeName(StoryObjectiveKind.CollectCredits));
-        Assert.Equal("Credits", StoryContentPolicy.RewardTypeName(StoryRewardKind.Credits));
-        Assert.Equal("Experience", StoryContentPolicy.RewardTypeName(StoryRewardKind.Experience));
-        Assert.Throws<ArgumentOutOfRangeException>(() => StoryContentPolicy.ObjectiveTypeName((StoryObjectiveKind)99));
-        Assert.Throws<ArgumentOutOfRangeException>(() => StoryContentPolicy.RewardTypeName((StoryRewardKind)99));
-        Assert.Null(StoryContentPolicy.Refuse(new StoryContentId("anima", "salvage-run"), Definition()));
+        Assert.Equal("TravelToPOI", StoryMissionPolicy.ObjectiveTypeName(StoryObjectiveKind.TravelToPoi));
+        Assert.Equal("KillEnemies", StoryMissionPolicy.ObjectiveTypeName(StoryObjectiveKind.KillEnemies));
+        Assert.Equal("CollectCredits", StoryMissionPolicy.ObjectiveTypeName(StoryObjectiveKind.CollectCredits));
+        Assert.Equal("Credits", StoryMissionPolicy.RewardTypeName(StoryRewardKind.Credits));
+        Assert.Equal("Experience", StoryMissionPolicy.RewardTypeName(StoryRewardKind.Experience));
+        Assert.Throws<ArgumentOutOfRangeException>(() => StoryMissionPolicy.ObjectiveTypeName((StoryObjectiveKind)99));
+        Assert.Throws<ArgumentOutOfRangeException>(() => StoryMissionPolicy.RewardTypeName((StoryRewardKind)99));
+        Assert.Null(StoryMissionPolicy.Refuse(new StoryMissionDefinitionId("anima", "salvage-run"), Definition()));
         // A definition whose local ID does not match its resolved identity is refused as invalid.
-        Assert.NotNull(StoryContentPolicy.Refuse(new StoryContentId("anima", "other-run"), Definition()));
+        Assert.NotNull(StoryMissionPolicy.Refuse(new StoryMissionDefinitionId("anima", "other-run"), Definition()));
     }
 
     [Fact]
@@ -290,30 +290,30 @@ public sealed partial class StoryContentTests
     public void RegistrationIsFailClosedForInvalidDefinitionsDuplicatesCollisionsAndLimits()
     {
         var registry = new StoryDefinitionRegistry();
-        var anima = new StoryContentId("anima", "salvage-run");
+        var anima = new StoryMissionDefinitionId("anima", "salvage-run");
         Assert.Equal(StoryRegistrationStatus.Registered, registry.TryRegister(anima, Definition(), out _, out var identifier, out var animaEntry));
         Assert.Equal(StoryRegistrationStatus.DuplicateLocalId, registry.TryRegister(anima, Definition(), out var duplicate, out _, out _));
         Assert.Contains("already registered local ID", duplicate);
         // A different provider with the same local ID is a different identifier and is accepted.
-        var other = new StoryContentId("custommission", "salvage-run");
+        var other = new StoryMissionDefinitionId("custommission", "salvage-run");
         Assert.Equal(StoryRegistrationStatus.Registered, registry.TryRegister(other, Definition(), out _, out var otherIdentifier, out _));
         Assert.NotEqual(identifier, otherIdentifier);
         // A policy refusal is about the definition, NOT about someone owning the identifier.
         Assert.Equal(StoryRegistrationStatus.InvalidDefinition,
-            registry.TryRegister(new StoryContentId("anima", "mismatch"), Definition(), out var invalid, out _, out _));
+            registry.TryRegister(new StoryMissionDefinitionId("anima", "mismatch"), Definition(), out var invalid, out _, out _));
         Assert.Contains("does not match its resolved identity", invalid);
         // Identifiers that already exist in the world are never replaced.
         var reserving = new StoryDefinitionRegistry();
-        reserving.Reserve(new[] { StoryContentPolicy.Identifier(anima) });
+        reserving.Reserve(new[] { StoryMissionPolicy.Identifier(anima) });
         Assert.Equal(StoryRegistrationStatus.IdentifierInUse, reserving.TryRegister(anima, Definition(), out var taken, out _, out _));
         Assert.Contains("never replaces existing content", taken);
         Assert.Equal(0, reserving.Count);
         var bounded = new StoryDefinitionRegistry();
-        for (int index = 0; index < StoryContentPolicy.MaxDefinitions; index++)
+        for (int index = 0; index < StoryMissionPolicy.MaxDefinitions; index++)
             Assert.Equal(StoryRegistrationStatus.Registered,
-                bounded.TryRegister(new StoryContentId("anima", "m" + index), Definition("m" + index), out _, out _, out _));
+                bounded.TryRegister(new StoryMissionDefinitionId("anima", "m" + index), Definition("m" + index), out _, out _, out _));
         Assert.Equal(StoryRegistrationStatus.LimitExceeded,
-            bounded.TryRegister(new StoryContentId("anima", "overflow"), Definition("overflow"), out var limit, out _, out _));
+            bounded.TryRegister(new StoryMissionDefinitionId("anima", "overflow"), Definition("overflow"), out var limit, out _, out _));
         Assert.Contains("nothing was dropped", limit);
         // A registration has its OWN identity, distinct from the definition object: unregistering and
         // registering the very same immutable definition mints a new entry.
@@ -731,7 +731,7 @@ public sealed partial class StoryContentTests
             Assert.Equal(SaveDataStateKind.Inactive, control.State.Kind);
             var host = new FakeHost();
             hub.SetCapability("owned-story", true, "Test bindings.");
-            using var service = new StoryContentService(hub.Services, persistence, hub, host.Authenticate, null, hub.CheckThread);
+            using var service = new StoryMissionService(hub.Services, persistence, hub, host.Authenticate, null, hub.CheckThread);
             var session = hub.Begin(SessionOrigin.NewGame, null);
             hub.PlayerReady(session);
             hub.GameplayInitialized(session);
@@ -774,7 +774,7 @@ public sealed partial class StoryContentTests
             using var persistence = new PersistenceService(hub, new GenerationStore(root), path => path, _ => new string('a', 64));
             var host = new FakeHost();
             hub.SetCapability("owned-story", true, "Test bindings.");
-            using var service = new StoryContentService(hub.Services, persistence, hub, host.Authenticate, null, hub.CheckThread);
+            using var service = new StoryMissionService(hub.Services, persistence, hub, host.Authenticate, null, hub.CheckThread);
             var session = hub.Begin(SessionOrigin.NewGame, null);
             hub.PlayerReady(session);
 
@@ -888,7 +888,7 @@ public sealed partial class StoryContentTests
 
             var host = new FakeHost();
             var failure = Assert.Throws<InvalidOperationException>(
-                () => new StoryContentService(hub.Services, persistence, hub, host.Authenticate, null, hub.CheckThread));
+                () => new StoryMissionService(hub.Services, persistence, hub, host.Authenticate, null, hub.CheckThread));
             Assert.Contains("before a session begins", failure.Message);
             // No story owner exists, and the other registered owner is neither paused nor faulted.
             Assert.True(control.CanMutate);
@@ -909,7 +909,7 @@ public sealed partial class StoryContentTests
         var plugin = new object();
         host.Register(plugin, AnimaPlugin);
         var provider = service.AcquireProvider(plugin).Provider!;
-        var reserved = StoryContentPolicy.Identifier(new StoryContentId(provider.ProviderId, "salvage-run"));
+        var reserved = StoryMissionPolicy.Identifier(new StoryMissionDefinitionId(provider.ProviderId, "salvage-run"));
         service.ReserveExistingIdentifiers(new[] { reserved });
         var refused = provider.Register(Definition());
         Assert.Equal(StoryRegistrationStatus.IdentifierInUse, refused.Status);
@@ -965,7 +965,7 @@ public sealed partial class StoryContentTests
 
     // --- missions ------------------------------------------------------------------------
 
-    private static IStoryProvider Provider(out FakeWorld world, out FakeHost host, out StoryContentService service,
+    private static IStoryProvider Provider(out FakeWorld world, out FakeHost host, out StoryMissionService service,
         StoryRetention retention = StoryRetention.Temporary)
     {
         host = new FakeHost();
@@ -1094,7 +1094,7 @@ public sealed partial class StoryContentTests
         Assert.Equal(StoryLedger.MaxRetainedPerDefinition, provider.Missions("salvage-run").Records.Count);
         // A crafted payload that exceeds the same sum is refused by the shared bounds, not restored.
         var rows = Enumerable.Range(1, StoryLedger.MaxRetainedPerDefinition + 1)
-            .Select(index => new StoryMissionEntry(new StoryContentId("anima", "salvage-run"), Guid.NewGuid(),
+            .Select(index => new StoryMissionEntry(new StoryMissionDefinitionId("anima", "salvage-run"), Guid.NewGuid(),
                 StoryRetention.Campaign, index))
             .ToArray();
         Assert.Contains("campaign mission cap", StoryLedger.RefuseBounds(rows));
@@ -1132,7 +1132,7 @@ public sealed partial class StoryContentTests
 
     private static StoryLedgerStatus TemporaryLedgerChoiceRefusal(out string diagnostic)
     {
-        var id = new StoryContentId("anima", "salvage-run");
+        var id = new StoryMissionDefinitionId("anima", "salvage-run");
         var ledger = new StoryLedger();
         var mission = Guid.NewGuid();
         ledger.Offer(id, StoryRetention.Temporary, mission, 0, out _);
@@ -1369,7 +1369,7 @@ public sealed partial class StoryContentTests
     [Fact]
     public void UnresolvedOccurrencesCarryNoChoicesAndAnOutcomeReplacesThemRatherThanMerging()
     {
-        var id = new StoryContentId("anima", "salvage-run");
+        var id = new StoryMissionDefinitionId("anima", "salvage-run");
         var crafted = new[]
         {
             new StoryMissionEntry(id, Guid.NewGuid(), StoryRetention.Campaign, 1, StoryMissionLedgerState.Offered, null,
@@ -1571,7 +1571,7 @@ public sealed partial class StoryContentTests
         string refusal = "";
         for (int provider = 0; provider < 4 && refusal.Length == 0; provider++)
         {
-            var id = new StoryContentId("fresh" + provider, "salvage-run");
+            var id = new StoryMissionDefinitionId("fresh" + provider, "salvage-run");
             while (true)
             {
                 int before = ledger.Count;
@@ -1625,7 +1625,7 @@ public sealed partial class StoryContentTests
         long sequence = 0;
         for (int provider = 0; provider < providers; provider++)
             for (int index = 0; index < perProvider; index++)
-                rows.Add(new StoryMissionEntry(new StoryContentId("historic" + provider, "salvage-run"),
+                rows.Add(new StoryMissionEntry(new StoryMissionDefinitionId("historic" + provider, "salvage-run"),
                     Guid.NewGuid(), StoryRetention.Campaign, ++sequence,
                     choiceReservation: WorstDefinition().ReservedChoiceBytes));
         return rows.ToArray();
@@ -1785,14 +1785,14 @@ public sealed partial class StoryContentTests
         var plugin = new object();
         host.Register(plugin, AnimaPlugin);
         var provider = service.AcquireProvider(plugin).Provider!;
-        var identifier = StoryContentPolicy.Identifier(new StoryContentId(provider.ProviderId, "salvage-run"));
+        var identifier = StoryMissionPolicy.Identifier(new StoryMissionDefinitionId(provider.ProviderId, "salvage-run"));
 
         world.World.AddForeign(identifier);
         var refused = provider.Register(Definition());
         Assert.Equal(StoryRegistrationStatus.IdentifierInUse, refused.Status);
         Assert.Contains("never replaces existing content", refused.Diagnostic);
         // The registry was rolled back with the world: nothing half-registered survives.
-        Assert.False(service.Registry.Contains(new StoryContentId(provider.ProviderId, "salvage-run")));
+        Assert.False(service.Registry.Contains(new StoryMissionDefinitionId(provider.ProviderId, "salvage-run")));
         Assert.Equal(StoryTransitionStatus.InvalidTransition, provider.Offer("salvage-run").Status);
 
         // The same definition installs once the world no longer holds that identifier.
@@ -1801,7 +1801,7 @@ public sealed partial class StoryContentTests
         clean.StartAndRestore();
         var owner = second.AcquireProvider(plugin).Provider!;
         Assert.True(owner.Register(Definition()).Succeeded);
-        Assert.True(clean.World.IsInstalled(StoryContentPolicy.Identifier(new StoryContentId(owner.ProviderId, "salvage-run"))));
+        Assert.True(clean.World.IsInstalled(StoryMissionPolicy.Identifier(new StoryMissionDefinitionId(owner.ProviderId, "salvage-run"))));
 
         // A world that cannot install anything registers nothing either.
         var blocked = new FakeWorld();
@@ -1811,7 +1811,7 @@ public sealed partial class StoryContentTests
         var refusedOwner = third.AcquireProvider(plugin).Provider!;
         var unavailable = refusedOwner.Register(Definition());
         Assert.Equal(StoryRegistrationStatus.Unavailable, unavailable.Status);
-        Assert.False(third.Registry.Contains(new StoryContentId(refusedOwner.ProviderId, "salvage-run")));
+        Assert.False(third.Registry.Contains(new StoryMissionDefinitionId(refusedOwner.ProviderId, "salvage-run")));
     }
 
     /// <summary>
@@ -1933,8 +1933,8 @@ public sealed partial class StoryContentTests
         var other = service.AcquireProvider(otherPlugin).Provider!;
         var registration = anima.Register(Definition()).Definition!;
         Assert.True(other.Register(Definition()).Succeeded);
-        var animaIdentifier = StoryContentPolicy.Identifier(new StoryContentId(anima.ProviderId, "salvage-run"));
-        var otherIdentifier = StoryContentPolicy.Identifier(new StoryContentId(other.ProviderId, "salvage-run"));
+        var animaIdentifier = StoryMissionPolicy.Identifier(new StoryMissionDefinitionId(anima.ProviderId, "salvage-run"));
+        var otherIdentifier = StoryMissionPolicy.Identifier(new StoryMissionDefinitionId(other.ProviderId, "salvage-run"));
         Assert.True(world.World.IsInstalled(animaIdentifier));
         Assert.True(world.World.IsInstalled(otherIdentifier));
 
@@ -2099,11 +2099,11 @@ public sealed partial class StoryContentTests
         var mission = anima.Offer("salvage-run");
         Assert.True(anima.Activate(mission.MissionId).Accepted);
         var identifier = FakeWorld.Native(anima, "salvage-run", mission.MissionId);
-        var otherIdentifier = StoryContentPolicy.Identifier(new StoryContentId(other.ProviderId, "salvage-run"));
+        var otherIdentifier = StoryMissionPolicy.Identifier(new StoryMissionDefinitionId(other.ProviderId, "salvage-run"));
 
         anima.Dispose();
         // The base definition goes with the lease; the held mission keeps its own entry.
-        Assert.False(world.World.IsInstalled(StoryContentPolicy.Identifier(new StoryContentId(anima.ProviderId, "salvage-run"))));
+        Assert.False(world.World.IsInstalled(StoryMissionPolicy.Identifier(new StoryMissionDefinitionId(anima.ProviderId, "salvage-run"))));
         Assert.True(world.World.IsInstalled(identifier));
         Assert.True(world.World.IsInstalled(otherIdentifier));
 
@@ -2262,7 +2262,7 @@ public sealed partial class StoryContentTests
     [Fact]
     public void TheCodecReadsTheOlderSchemaAndRefusesANewerOne()
     {
-        var id = new StoryContentId("anima", "salvage-run");
+        var id = new StoryMissionDefinitionId("anima", "salvage-run");
         var rows = new[] { new StoryMissionEntry(id, Guid.NewGuid(), StoryRetention.Campaign, 1) };
         var current = StoryStateCodec.Encode(rows);
         Assert.Equal(StoryStateCodec.SchemaVersion, BitConverter.ToInt32(current, 4));
@@ -2289,13 +2289,13 @@ public sealed partial class StoryContentTests
         var root = Path.Combine(Path.GetTempPath(), "vg-story-budget-" + Guid.NewGuid().ToString("N"));
         try
         {
-            var owner = StoryProviderIdentity.Segment(new StoryHostPlugin(AnimaPlugin, typeof(StoryContentTests).Assembly));
+            var owner = StoryProviderIdentity.Segment(new StoryHostPlugin(AnimaPlugin, typeof(StoryMissionTests).Assembly));
             var rows = new List<StoryMissionEntry>();
             int remaining = globalBoundary ? StoryLedger.LedgerPayloadBudget - StoryStateCodec.HeaderBytes : StoryLedger.ProviderPayloadBudget;
             int providers = globalBoundary ? 33 : 1;
             for (int index = 0; index < providers; index++)
             {
-                var id = new StoryContentId(index == 0 ? owner : "provider-" + index, "salvage-run");
+                var id = new StoryMissionDefinitionId(index == 0 ? owner : "provider-" + index, "salvage-run");
                 int allowance = index < 31 ? Math.Min(remaining, StoryLedger.ProviderPayloadBudget) : remaining / (providers - index);
                 var empty = Enumerable.Range(0, 20).Select(_ => new StoryMissionEntry(id, Guid.NewGuid(), StoryRetention.Campaign, rows.Count + 1)).ToArray();
                 int reservation = allowance - empty.Sum(StoryStateCodec.EncodedSize);
@@ -2322,7 +2322,7 @@ public sealed partial class StoryContentTests
             using var persistence = new PersistenceService(hub, store, path => path, _ => hash);
             var host = new FakeHost();
             hub.SetCapability("owned-story", true, "Test bindings.");
-            using var service = new StoryContentService(hub.Services, persistence, hub, host.Authenticate, null, hub.CheckThread);
+            using var service = new StoryMissionService(hub.Services, persistence, hub, host.Authenticate, null, hub.CheckThread);
             var plugin = new object();
             host.Register(plugin, AnimaPlugin);
             Assert.True(service.AcquireProvider(plugin).Provider!.Register(Definition(retention: StoryRetention.Campaign)).Succeeded);
@@ -2353,7 +2353,7 @@ public sealed partial class StoryContentTests
         try
         {
             var mission = Guid.NewGuid();
-            var id = new StoryContentId(StoryProviderIdentity.Segment(new StoryHostPlugin(AnimaPlugin, typeof(StoryContentTests).Assembly)), "salvage-run");
+            var id = new StoryMissionDefinitionId(StoryProviderIdentity.Segment(new StoryHostPlugin(AnimaPlugin, typeof(StoryMissionTests).Assembly)), "salvage-run");
             var current = StoryStateCodec.Encode(new[] { new StoryMissionEntry(id, mission, StoryRetention.Campaign, 1) });
             var legacy = current.Take(current.Length - 2).ToArray();
             Array.Copy(BitConverter.GetBytes(1), 0, legacy, 4, 4);
@@ -2366,7 +2366,7 @@ public sealed partial class StoryContentTests
             using var persistence = new PersistenceService(hub, store, path => path, _ => hash);
             var host = new FakeHost();
             hub.SetCapability("owned-story", true, "Test bindings.");
-            using var service = new StoryContentService(hub.Services, persistence, hub, host.Authenticate, null, hub.CheckThread);
+            using var service = new StoryMissionService(hub.Services, persistence, hub, host.Authenticate, null, hub.CheckThread);
             var plugin = new object();
             host.Register(plugin, AnimaPlugin);
             var provider = service.AcquireProvider(plugin).Provider!;
@@ -2542,7 +2542,7 @@ public sealed partial class StoryContentTests
         Assert.True(world.Protection.IsQuarantined(identifier));
         // The previous save's catalog entries went with it; definitions belong to the process.
         Assert.False(world.World.IsInstalled(identifier));
-        Assert.True(world.World.IsInstalled(StoryContentPolicy.Identifier(new StoryContentId(provider.ProviderId, "salvage-run"))));
+        Assert.True(world.World.IsInstalled(StoryMissionPolicy.Identifier(new StoryMissionDefinitionId(provider.ProviderId, "salvage-run"))));
 
         // A suspension in one session does not outlive it.
         world.World.AdoptInWorld(FakeWorld.Native(provider, "salvage-run", Guid.NewGuid()));
@@ -2652,7 +2652,7 @@ public sealed partial class StoryContentTests
         Assert.Null(transactions.BeginAbandon("vgmodapi.story.anima.salvage-run"));      // a base identifier
         Assert.Null(transactions.BeginAbandon(identifier + "-malformed"));
         Assert.Null(transactions.BeginAbandon(
-            StoryContentPolicy.MissionIdentifier(new StoryContentId(provider.ProviderId, "salvage-run"), Guid.NewGuid())));
+            StoryMissionPolicy.MissionIdentifier(new StoryMissionDefinitionId(provider.ProviderId, "salvage-run"), Guid.NewGuid())));
         // One at a time: a second route cannot open while one is running.
         var token = transactions.BeginAbandon(identifier);
         Assert.NotNull(token);
@@ -2892,7 +2892,7 @@ public sealed partial class StoryContentTests
         host.Register(plugin, AnimaPlugin);
         var provider = service.AcquireProvider(plugin).Provider!;
         var registration = provider.Register(Definition(retention: StoryRetention.Campaign)).Definition!;
-        var baseIdentifier = StoryContentPolicy.Identifier(new StoryContentId(provider.ProviderId, "salvage-run"));
+        var baseIdentifier = StoryMissionPolicy.Identifier(new StoryMissionDefinitionId(provider.ProviderId, "salvage-run"));
         var mission = provider.Offer("salvage-run");
         Assert.True(provider.Activate(mission.MissionId).Accepted);
         var transactions = (IStoryUiTransaction)service;
@@ -3009,7 +3009,7 @@ public sealed partial class StoryContentTests
     [Fact]
     public void TheStateCodecIsBoundedStrictAndRefusesMalformedPayloads()
     {
-        var entry = new StoryMissionEntry(new StoryContentId("anima", "salvage-run"), Guid.NewGuid(),
+        var entry = new StoryMissionEntry(new StoryMissionDefinitionId("anima", "salvage-run"), Guid.NewGuid(),
             StoryRetention.Campaign, 1, StoryMissionLedgerState.Retired, StoryOutcome.Completed,
             new[] { new KeyValuePair<string, string>("branch", "left") });
         var bytes = StoryStateCodec.Encode(new[] { entry });
@@ -3025,7 +3025,7 @@ public sealed partial class StoryContentTests
         Assert.False(StoryStateCodec.Validate(new byte[] { 1, 2, 3 }));
         Assert.False(StoryStateCodec.Validate(Array.Empty<byte>()));
         Assert.Throws<InvalidDataException>(() => StoryStateCodec.Decode(newer));
-        var temporary = new StoryMissionEntry(new StoryContentId("anima", "salvage-run"), Guid.NewGuid(),
+        var temporary = new StoryMissionEntry(new StoryMissionDefinitionId("anima", "salvage-run"), Guid.NewGuid(),
             StoryRetention.Temporary, 2, StoryMissionLedgerState.Retired, StoryOutcome.Completed,
             new[] { new KeyValuePair<string, string>("branch", "left") });
         Assert.Empty(Assert.Single(StoryStateCodec.Decode(StoryStateCodec.Encode(new[] { temporary }))).Choices);
@@ -3035,7 +3035,7 @@ public sealed partial class StoryContentTests
     [Fact]
     public void TheCodecValidatesTheOccurrenceTimelineAndRefusesInvalidText()
     {
-        var id = new StoryContentId("anima", "salvage-run");
+        var id = new StoryMissionDefinitionId("anima", "salvage-run");
         // Non-positive and duplicate sequences are refused on encode: the sequence is the timeline.
         foreach (var bad in new[] { 0L, -1L })
             Assert.Throws<InvalidDataException>(() => StoryStateCodec.Encode(
@@ -3097,7 +3097,7 @@ public sealed partial class StoryContentTests
     [Fact]
     public void DecodeEnforcesEveryLedgerBoundAndTheSequenceCannotWrap()
     {
-        var id = new StoryContentId("anima", "salvage-run");
+        var id = new StoryMissionDefinitionId("anima", "salvage-run");
         var ledger = new StoryLedger();
         ledger.Restore(new[] { new StoryMissionEntry(id, Guid.NewGuid(), StoryRetention.Temporary, StoryLedger.MaxSequence) });
         var refused = ledger.Offer(id, StoryRetention.Temporary, Guid.NewGuid(), 0, out var diagnostic);
@@ -3127,7 +3127,7 @@ public sealed partial class StoryContentTests
     }
 
     private static StoryMissionEntry[] Rows(int count, string provider, string local, StoryRetention retention, bool retired)
-        => Enumerable.Range(1, count).Select(index => new StoryMissionEntry(new StoryContentId(provider, local),
+        => Enumerable.Range(1, count).Select(index => new StoryMissionEntry(new StoryMissionDefinitionId(provider, local),
             Guid.NewGuid(), retention, index, retired ? StoryMissionLedgerState.Retired : StoryMissionLedgerState.Offered,
             retired ? StoryOutcome.Completed : null)).ToArray();
 
@@ -3161,7 +3161,7 @@ public sealed partial class StoryContentTests
     {
         private readonly Dictionary<object, (string PluginId, Assembly Assembly)> _plugins = new();
         internal void Register(object instance, string pluginId, Assembly? assembly = null)
-            => _plugins[instance] = (pluginId, assembly ?? typeof(StoryContentTests).Assembly);
+            => _plugins[instance] = (pluginId, assembly ?? typeof(StoryMissionTests).Assembly);
         internal StoryHostPlugin? Authenticate(object instance, Assembly caller)
             => _plugins.TryGetValue(instance, out var plugin) ? new StoryHostPlugin(plugin.PluginId, plugin.Assembly) : null;
     }
@@ -3208,8 +3208,8 @@ public sealed partial class StoryContentTests
         Assert.True(provider.Register(new StoryMissionDefinition("observed", "Observe", "Description", new StoryFactionId("TradingGuild"),
             new[] { new StoryStep("Credits", new[] { StoryObjective.CollectCredits(100).WithKey("balance") }) })).Succeeded);
         var offered = provider.Offer("observed");
-        var objective = new StoryObjectiveId(new StoryContentId(provider.ProviderId, "observed"), offered.MissionId, "balance");
-        var query = (StoryContentService.Lease)provider;
+        var objective = new StoryObjectiveId(new StoryMissionDefinitionId(provider.ProviderId, "observed"), offered.MissionId, "balance");
+        var query = (StoryMissionService.Lease)provider;
         Assert.Equal(StoryKnowledge.Unavailable, query.Query(world.SessionId, objective).Knowledge);
         Assert.True(provider.Activate(offered.MissionId).Accepted);
         world.World.ObservedObjectiveProgress = 20;
@@ -3245,8 +3245,8 @@ public sealed partial class StoryContentTests
         var offered = provider.Offer("heed");
         Assert.True(offered.Accepted);
         Assert.True(provider.Activate(offered.MissionId).Accepted);
-        var lease = (StoryContentService.Lease)provider;
-        var objectiveId = new StoryObjectiveId(new StoryContentId(provider.ProviderId, "heed"), offered.MissionId, "enter");
+        var lease = (StoryMissionService.Lease)provider;
+        var objectiveId = new StoryObjectiveId(new StoryMissionDefinitionId(provider.ProviderId, "heed"), offered.MissionId, "enter");
         world.World.ObservedObjectiveProgress = 0;
         Assert.Equal(0, lease.Query(world.SessionId, objectiveId).Progress);
         Assert.False(lease.Query(world.SessionId, objectiveId).DestinationLost);
@@ -3260,12 +3260,12 @@ public sealed partial class StoryContentTests
         // The service resolves the world adapter's destinations through the provider's own identity.
         var identifier = FakeWorld.Native(provider, "heed", offered.MissionId);
         var expected = StoryObjective.TravelToPocketSystemEntrance("margin-pocket", "act2");
-        Assert.Equal("gate-poi-7", ServiceOf(provider).ResolveContentDestination(identifier, expected));
+        Assert.Equal("gate-poi-7", ServiceOf(provider).ResolveMissionDestination(identifier, expected));
         gate = null;
-        Assert.Null(ServiceOf(provider).ResolveContentDestination(identifier, expected));
-        Assert.Null(ServiceOf(provider).ResolveContentDestination("vgmodapi.story.someone.else.00000000000000000000000000000000", expected));
+        Assert.Null(ServiceOf(provider).ResolveMissionDestination(identifier, expected));
+        Assert.Null(ServiceOf(provider).ResolveMissionDestination("vgmodapi.story.someone.else.00000000000000000000000000000000", expected));
     }
-    private static StoryContentService ServiceOf(IStoryProvider provider) => (StoryContentService)typeof(StoryContentService.Lease)
+    private static StoryMissionService ServiceOf(IStoryProvider provider) => (StoryMissionService)typeof(StoryMissionService.Lease)
         .GetField("_service", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
         .GetValue(provider)!;
 
@@ -3294,7 +3294,7 @@ public sealed partial class StoryContentTests
         Assert.Equal(1, entry.ObjectiveLayout.Revision);
         Assert.False(entry.ObjectiveLayout.FullyScripted);
         var identity = new StoryObjectiveId(entry.Id, entry.MissionId, "talk");
-        Assert.False(((StoryContentService.Lease)current).SetProgress(later.SessionId, identity, 1).Accepted);
+        Assert.False(((StoryMissionService.Lease)current).SetProgress(later.SessionId, identity, 1).Accepted);
         Assert.Equal(bytes, later.Persistence.Provider!.Capture());
     }
 
@@ -3345,11 +3345,11 @@ public sealed partial class StoryContentTests
                 new StoryStep("Report", new[] { StoryObjective.Scripted("report", "Report") }) });
         Assert.True(provider.Register(DefinitionFor(false)).Succeeded);
         var offered = provider.Offer("conversation");
-        var objective = new StoryObjectiveId(new StoryContentId(provider.ProviderId, "conversation"), offered.MissionId, "talk");
+        var objective = new StoryObjectiveId(new StoryMissionDefinitionId(provider.ProviderId, "conversation"), offered.MissionId, "talk");
         if (active)
         {
             Assert.True(provider.Activate(offered.MissionId).Accepted);
-            Assert.True(((StoryContentService.Lease)provider).SetProgress(world.SessionId, objective, 2).Accepted);
+            Assert.True(((StoryMissionService.Lease)provider).SetProgress(world.SessionId, objective, 2).Accepted);
         }
         var older = world.Persistence.Provider!.Capture();
         var later = new FakeWorld();
@@ -3367,7 +3367,7 @@ public sealed partial class StoryContentTests
         Assert.Equal(1, talk.Step);
         Assert.Equal(active ? 2 : 0, talk.Progress);
         if (!active) Assert.True(currentProvider.Activate(offered.MissionId).Accepted);
-        Assert.True(((StoryContentService.Lease)currentProvider).SetProgress(later.SessionId, objective, 5).Accepted);
+        Assert.True(((StoryMissionService.Lease)currentProvider).SetProgress(later.SessionId, objective, 5).Accepted);
         var upgraded = later.Persistence.Provider!.Capture();
         later.StartAndRestore(upgraded);
         Assert.True(service.Ledger.TryGet(offered.MissionId, out var complete));
@@ -3388,7 +3388,7 @@ public sealed partial class StoryContentTests
             new[] { new StoryStep("Talk", new[] { StoryObjective.Scripted("answer", "Talk", 5) }) })).Succeeded);
         var offered = provider.Offer("conversation");
         Assert.True(provider.Activate(offered.MissionId).Accepted);
-        var objective = new StoryObjectiveId(new StoryContentId(provider.ProviderId, "conversation"), offered.MissionId, "answer");
+        var objective = new StoryObjectiveId(new StoryMissionDefinitionId(provider.ProviderId, "conversation"), offered.MissionId, "answer");
         var before = world.Persistence.Provider!.Capture();
         Assert.True(service.Ledger.TryGet(offered.MissionId, out var original));
         world.World.DuringObjectiveWrite = () =>
@@ -3396,7 +3396,7 @@ public sealed partial class StoryContentTests
             if (disposeLease) provider.Dispose();
             else world.StartAndRestore(before);
         };
-        Assert.False(((StoryContentService.Lease)provider).SetProgress(world.SessionId, objective, 2).Accepted);
+        Assert.False(((StoryMissionService.Lease)provider).SetProgress(world.SessionId, objective, 2).Accepted);
         Assert.Equal(0, world.World.ObjectiveWrites);
         Assert.Equal(0, Assert.Single(original.ObjectiveLayout.Slots).Progress);
         Assert.True(service.Ledger.TryGet(offered.MissionId, out var current));
@@ -3410,8 +3410,8 @@ public sealed partial class StoryContentTests
         Assert.True(provider.Register(new StoryMissionDefinition("conversation", "Conversation", "Description", new StoryFactionId("TradingGuild"),
             new[] { new StoryStep("Talk", new[] { StoryObjective.Scripted("answer", "Talk to the broker", 5) }) })).Succeeded);
         var offered = provider.Offer("conversation");
-        var objective = new StoryObjectiveId(new StoryContentId(provider.ProviderId, "conversation"), offered.MissionId, "answer");
-        var objectives = (StoryContentService.Lease)provider;
+        var objective = new StoryObjectiveId(new StoryMissionDefinitionId(provider.ProviderId, "conversation"), offered.MissionId, "answer");
+        var objectives = (StoryMissionService.Lease)provider;
         Assert.False(objectives.SetProgress(world.SessionId, objective, 2).Accepted);
         Assert.True(provider.Activate(offered.MissionId).Accepted);
         Assert.True(objectives.SetProgress(world.SessionId, objective, 2).Accepted);
@@ -3440,7 +3440,7 @@ public sealed partial class StoryContentTests
         world.ProtectionHealthy = true;
         Assert.True(objectives.SetProgress(world.SessionId, objective, 2).Accepted);
         Assert.Equal(2, Assert.Single(entry.ObjectiveLayout.Slots).Progress);
-        var foreign = new StoryObjectiveId(new StoryContentId("foreign", "conversation"), offered.MissionId, "answer");
+        var foreign = new StoryObjectiveId(new StoryMissionDefinitionId("foreign", "conversation"), offered.MissionId, "answer");
         Assert.False(objectives.SetProgress(world.SessionId, foreign, 5).Accepted);
         Assert.True(objectives.SetProgress(world.SessionId, objective, 5).Accepted);
         world.CompleteInGame(provider, "conversation", offered.MissionId);
@@ -3471,7 +3471,7 @@ public sealed partial class StoryContentTests
         internal readonly StoryProtection Protection = new();
         private readonly LifecycleHub _healthHub = new((_, _) => { });
         internal Func<string, StoryObjective, string?>? AuthoredDestinations;
-        internal StoryContentService Service(FakeHost host, Action? checkThread = null, Func<string, string, bool?>? worldReferences = null)
+        internal StoryMissionService Service(FakeHost host, Action? checkThread = null, Func<string, string, bool?>? worldReferences = null)
         {
             _healthHub.SetCapability("owned-story", true, "Test bindings.");
             return new(_healthHub.Services, Persistence, Lifecycle, host.Authenticate, null, checkThread, World, Missions,
@@ -3481,7 +3481,7 @@ public sealed partial class StoryContentTests
 
         /// <summary>The identifier one mission is installed under, exactly as the module derives it.</summary>
         internal static string Native(IStoryProvider provider, string localId, Guid missionId)
-            => StoryContentPolicy.MissionIdentifier(new StoryContentId(provider.ProviderId, localId), missionId);
+            => StoryMissionPolicy.MissionIdentifier(new StoryMissionDefinitionId(provider.ProviderId, localId), missionId);
 
         /// <summary>The GAME completes an owned mission: it ends there and the observer reports it.</summary>
         internal void CompleteInGame(IStoryProvider provider, string localId, Guid missionId)

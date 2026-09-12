@@ -10,7 +10,7 @@ public readonly struct BarPatronId : IEquatable<BarPatronId>
     public BarPatronId(string provider, string localId)
     {
         // The same restricted segment alphabet keeps all managed-content identities unambiguous.
-        var validated = new StoryContentId(provider, localId);
+        var validated = new StoryMissionDefinitionId(provider, localId);
         Provider = validated.Provider; LocalId = validated.LocalId;
     }
     public bool Equals(BarPatronId other) => string.Equals(Provider, other.Provider, StringComparison.Ordinal)

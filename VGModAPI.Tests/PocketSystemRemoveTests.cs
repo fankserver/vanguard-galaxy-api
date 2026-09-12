@@ -260,7 +260,7 @@ public sealed class PocketSystemRemoveTests
         Assert.Single(harness.Coordinator.CaptureRows());
         // A retained combat-site record inside the pocket refuses removal outright.
         harness.Creation!.Reset(harness.Session);
-        var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
+        var identity = new WorldObjectIdentity(new PersistentDeclaration("author.a", "PoiX", PersistentKind.WorldObject, PersistenceImpact.ApiDependent), Guid.NewGuid());
         var row = new WorldSnapshotInstance(new object(), identity, pocket.SystemId!,
             new WorldSavedDefinition(identity.Owner, new WorldCombatDefinition(identity.LocalId, 1, "Site", "player", 1)));
         Assert.True(harness.Creation.TryRestore(harness.Session, () => new[] { row }));

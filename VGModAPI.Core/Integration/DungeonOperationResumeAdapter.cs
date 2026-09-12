@@ -21,7 +21,7 @@ internal sealed class DungeonOperationResumeAdapter
         if (operationId == Guid.Empty) throw new ArgumentException("Missing saved operation identity.");
         _locations.Remove(location); _locations.Add(location, new(operationId));
     }
-    internal Guid? Created(object operation, Guid? contentDungeon, string missionProtection)
+    internal Guid? Created(object operation, Guid? dungeonId, string missionProtection)
     {
         if (!_state.CanMutate) return null;
         if (OperationId(operation) is { } known) return _conflicts.Contains(known) ? null : known;
@@ -31,7 +31,7 @@ internal sealed class DungeonOperationResumeAdapter
         var id = Guid.NewGuid(); var previous = LocationMarker(location);
         if (previous.HasValue && (_state.Operation(previous.Value) == null || _conflicts.Contains(previous.Value))) return null;
         var locationId = previous.HasValue ? _state.Operation(previous.Value)?.LocationId ?? Guid.NewGuid() : Guid.NewGuid();
-        var state = new DungeonOperationResumeState(id, locationId, contentDungeon, shipId,
+        var state = new DungeonOperationResumeState(id, locationId, dungeonId, shipId,
             _native.Get(location, "dungeonType")?.ToString() ?? "", _native.Get(operation, "phase")?.ToString() ?? "",
             _native.Get(_native.Get(operation, "simulation"), "outcome")?.ToString() ?? "", missionProtection, DungeonTerminalProgress.NotStarted,
             _native.Get(operation, "isAutonomous") is true);

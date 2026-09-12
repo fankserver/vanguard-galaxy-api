@@ -7,14 +7,14 @@ namespace VGModAPI.Core;
 internal sealed class DungeonPanelChoices : IDisposable
 {
     private readonly DungeonPanelService _panel;
-    private readonly DungeonContentService _content;
+    private readonly DungeonService _content;
     private readonly Func<BoardingHandle, Guid?> _dungeon;
     private readonly Dictionary<string, IDisposable> _leases = new(StringComparer.Ordinal);
     private Guid? _lastView, _lastDungeon;
     private long _lastRevision;
     private (object? Dungeon, object? Provider, object? Definition) _lastToken;
     private readonly string _identity = "vgmodapi.choices." + Guid.NewGuid().ToString("N");
-    internal DungeonPanelChoices(DungeonPanelService panel, DungeonContentService content, Func<BoardingHandle, Guid?> dungeon)
+    internal DungeonPanelChoices(DungeonPanelService panel, DungeonService content, Func<BoardingHandle, Guid?> dungeon)
     { _panel = panel; _content = content; _dungeon = dungeon; }
     internal void Refresh()
     {

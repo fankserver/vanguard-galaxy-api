@@ -31,10 +31,10 @@ public sealed class BarPatronDefinition
     public bool IsMale => Presentation.IsMale;
     public BarPatronRetention Retention { get; }
     /// <summary>Same-owner story definition this contact depends on. The API resolves the current admitted mission itself.</summary>
-    public StoryContentId? Mission { get; }
+    public StoryMissionDefinitionId? Mission { get; }
 
     public BarPatronDefinition(string localId, string stationId, string name, string description,
-        BarPatronPresentation presentation, BarPatronRetention retention = BarPatronRetention.Persistent, StoryContentId? mission = null)
+        BarPatronPresentation presentation, BarPatronRetention retention = BarPatronRetention.Persistent, StoryMissionDefinitionId? mission = null)
     {
         Presentation = presentation ?? throw new ArgumentNullException(nameof(presentation));
         _ = new BarPatronId("validation", localId);
@@ -43,7 +43,7 @@ public sealed class BarPatronDefinition
         StationId = Text(stationId, 128, nameof(stationId));
         Name = Text(name, 128, nameof(name));
         Description = Text(description, 1024, nameof(description));
-        if (mission.HasValue) _ = new StoryContentId(mission.Value.Provider, mission.Value.LocalId);
+        if (mission.HasValue) _ = new StoryMissionDefinitionId(mission.Value.Provider, mission.Value.LocalId);
         Mission = mission; Retention = retention;
     }
 

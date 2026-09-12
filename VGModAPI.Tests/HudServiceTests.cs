@@ -73,7 +73,7 @@ public sealed class HudServiceTests
         Assert.False(_service.Visible); Assert.False(_service.Invoke(entry.Token, _surface, entry.Revision, HudInteractionKind.Button));
     }
     [Fact]
-    public void ContentRevisionAndSurfaceReplacementInvalidateRenderedInput()
+    public void MissionRevisionAndSurfaceReplacementInvalidateRenderedInput()
     {
         using var registration = _service.Register("one", "button", _ => { }); registration.Update(new("A"), null);
         var entry = _service.Entries.Single(); var revision = entry.Revision;

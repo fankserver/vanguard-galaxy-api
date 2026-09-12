@@ -27,7 +27,7 @@ internal sealed class StoryObjectiveLayout
     internal StoryObjectiveLayout(StoryMissionDefinition definition)
     {
         if (definition == null) throw new ArgumentNullException(nameof(definition));
-        Revision = definition.ContentRevision;
+        Revision = definition.MissionRevision;
         FullyScripted = definition.Steps.SelectMany(step => step.Objectives).All(item => item.Kind == StoryObjectiveKind.Scripted && item.LocalKey != null);
         _slots = new Dictionary<string, Slot>(StringComparer.Ordinal);
         for (int step = 0; step < definition.Steps.Count; step++)
@@ -52,7 +52,7 @@ internal sealed class StoryObjectiveLayout
         var positions = new HashSet<(int, int)>();
         foreach (var slot in copy)
         {
-            if (!StoryContentId.IsValidSegment(slot.Key) || slot.Step < 0 || slot.Step >= StoryMissionDefinition.MaxSteps
+            if (!StoryMissionDefinitionId.IsValidSegment(slot.Key) || slot.Step < 0 || slot.Step >= StoryMissionDefinition.MaxSteps
                 || slot.Objective < 0 || slot.Objective >= StoryStep.MaxObjectives || !Enum.IsDefined(typeof(StoryObjectiveKind), slot.Kind)
                 || slot.Required is < 1 or > StoryObjective.MaxAmount || slot.Progress < 0 || slot.Progress > slot.Required
                 || _slots.ContainsKey(slot.Key) || !positions.Add((slot.Step, slot.Objective)))
@@ -75,7 +75,7 @@ internal sealed class StoryObjectiveLayout
     internal bool TryMigrate(StoryMissionDefinition definition, out StoryObjectiveLayout migrated)
     {
         migrated = this;
-        if (!FullyScripted || definition.MigratesFromRevision != Revision || definition.ContentRevision <= Revision || Slots.Count == 0
+        if (!FullyScripted || definition.MigratesFromRevision != Revision || definition.MissionRevision <= Revision || Slots.Count == 0
             || Slots.Any(slot => slot.Kind != StoryObjectiveKind.Scripted)) return false;
         var destination = new StoryObjectiveLayout(definition);
         if (!destination.FullyScripted || destination.Slots.Any(slot => slot.Kind != StoryObjectiveKind.Scripted) || !TryMapTo(destination, out _)) return false;

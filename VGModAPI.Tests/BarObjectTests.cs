@@ -4,7 +4,7 @@ using Xunit;
 
 namespace VGModAPI.Tests;
 
-public sealed partial class BarContentServiceTests
+public sealed partial class BarServiceTests
 {
     [Fact]
     public void AutomaticPlacementWaitsForSaveReadinessAndDoesNotDuplicate()
@@ -143,7 +143,7 @@ public sealed partial class BarContentServiceTests
         Guid? mission = null;
         f.Engine.ResolveMission = (_, _) => mission;
         var definition = f.Provider.Register(new BarPatronDefinition("contact", "station", "Name", "Description", new BarPatronPresentation("seed"),
-            mission: new StoryContentId(f.Provider.ProviderId, "job"))).Definition!;
+            mission: new StoryMissionDefinitionId(f.Provider.ProviderId, "job"))).Definition!;
         f.Start();
         var patron = f.Games.Current!.Bars.Get(definition);
         int changes = 0;
@@ -197,7 +197,7 @@ public sealed partial class BarContentServiceTests
         Guid? mission = null;
         f.Engine.ResolveMission = (_, _) => mission;
         var definition = f.Provider.Register(new BarPatronDefinition("contact", "station", "Name", "Description", new BarPatronPresentation("seed"),
-            mission: new StoryContentId(f.Provider.ProviderId, "job"))).Definition!;
+            mission: new StoryMissionDefinitionId(f.Provider.ProviderId, "job"))).Definition!;
         f.Start(); f.Pump(); f.Pump();
         var patron = f.Games.Current!.Bars.Get(definition);
         Assert.Equal(BarPatronStatus.Waiting, patron.Status);
@@ -213,17 +213,17 @@ public sealed partial class BarContentServiceTests
     {
         internal readonly LifecycleHub Hub = new((_, _) => { });
         internal readonly Storage Storage = new();
-        internal readonly BarContentService Engine;
+        internal readonly BarService Engine;
         internal readonly GameService Games;
         internal readonly IBarProvider Provider;
         internal Guid Session;
         internal Objects(ISaveDataRegistration? prerequisite = null)
         {
             Hub.SetCapability("owned-bars", true, "Test bindings.");
-            Engine = new BarContentService(Storage, Hub, (plugin, _) => new StoryHostPlugin((string)plugin, typeof(Objects).Assembly), _ => true, Hub.CheckThread);
+            Engine = new BarService(Storage, Hub, (plugin, _) => new StoryHostPlugin((string)plugin, typeof(Objects).Assembly), _ => true, Hub.CheckThread);
             Provider = Engine.AcquireProvider("author", prerequisite).Provider!;
             Games = new GameService(Hub, new NavigationService(Hub, _ => null, (_, _, _) => NavigationStatus.Unavailable, (_, _) => null), new InventoryService(Hub, () => null),
-                new StoryContentService(Hub.Services, null, Hub, (_, _) => null), Engine);
+                new StoryMissionService(Hub.Services, null, Hub, (_, _) => null), Engine);
         }
         internal void Start(byte[]? bytes = null) => Session = Ready(Hub, Storage, bytes);
         internal void Pump() { Engine.Tick(); Hub.Gameplay.Tick(); }

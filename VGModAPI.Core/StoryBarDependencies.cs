@@ -3,7 +3,7 @@ using System.Linq;
 
 namespace VGModAPI.Core;
 
-internal sealed partial class StoryContentService
+internal sealed partial class StoryMissionService
 {
     private int _barRegistrationDepth;
     private object _barOperationEpoch = new object();
@@ -46,7 +46,7 @@ internal sealed partial class StoryContentService
     }
 
     /// <summary>The unique currently ready mission of an authored definition; null when none or ambiguous.</summary>
-    internal Guid? CurrentBarMission(Guid expectedSession, StoryContentId definition)
+    internal Guid? CurrentBarMission(Guid expectedSession, StoryMissionDefinitionId definition)
     {
         CheckThread();
         Guid? found = null;
@@ -59,7 +59,7 @@ internal sealed partial class StoryContentService
         return found;
     }
 
-    internal bool IsBarMissionReady(Guid expectedSession, StoryContentId definition, Guid mission)
+    internal bool IsBarMissionReady(Guid expectedSession, StoryMissionDefinitionId definition, Guid mission)
     {
         CheckThread();
         var session = _currentSession();
@@ -72,6 +72,6 @@ internal sealed partial class StoryContentService
             && _registry.Contains(definition)
             && _ledger.TryGet(mission, out var entry) && entry.Id == definition
             && entry.State != StoryMissionLedgerState.Retired && !_unrunnable.Contains(mission)
-            && _protection?.IsAdmitted(expectedSession, StoryContentPolicy.MissionIdentifier(definition, mission)) == true;
+            && _protection?.IsAdmitted(expectedSession, StoryMissionPolicy.MissionIdentifier(definition, mission)) == true;
     }
 }

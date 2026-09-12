@@ -33,7 +33,7 @@ public sealed class Plugin : BaseUnityPlugin
     {
         return AcquireBar().Register(new BarPatronDefinition(local, station, "Linked contact " + Id,
             "Mission-dependent presentation", new BarPatronPresentation(seed), BarPatronRetention.Persistent,
-            new StoryContentId(StoryProvider.ProviderId, LinkedStoryId)), _ => Interactions++);
+            new StoryMissionDefinitionId(StoryProvider.ProviderId, LinkedStoryId)), _ => Interactions++);
     }
 
     public void ReleaseStory() { _story?.Dispose(); _story = null; }

@@ -70,10 +70,10 @@ internal static class BarPatronCodec
             var station = Read(reader, 128); var name = Read(reader, 128); var description = Read(reader, 1024); var seed = Read(reader, 128);
             byte flags = reader.ReadByte();
             if (flags > (version == 1 ? 1 : 15)) throw new InvalidDataException("Invalid patron reference flag.");
-            StoryContentId? mission = null; Guid? missionId = null;
+            StoryMissionDefinitionId? mission = null; Guid? missionId = null;
             if ((flags & 1) != 0)
             {
-                mission = new StoryContentId(id.Provider, Read(reader, 48));
+                mission = new StoryMissionDefinitionId(id.Provider, Read(reader, 48));
                 var bytes = reader.ReadBytes(16);
                 if (bytes.Length != 16) throw new InvalidDataException("Truncated patron mission.");
                 missionId = new Guid(bytes);

@@ -7,15 +7,15 @@ namespace VGModAPI.Tests;
 internal static class BarEngineCalls
 {
     internal static BarResult Place(this IBarProvider provider, Guid session, string local)
-        => ((BarContentService.Lease)provider).Place(session, local);
+        => ((BarService.Lease)provider).Place(session, local);
     internal static BarResult Remove(this IBarProvider provider, Guid session, string local)
-        => ((BarContentService.Lease)provider).Remove(session, local);
+        => ((BarService.Lease)provider).Remove(session, local);
     internal static BarResult Unregister(this IBarProvider provider, string local)
-        => ((BarContentService.Lease)provider).Unregister(local);
+        => ((BarService.Lease)provider).Unregister(local);
     internal static BarRegistrationResult RegisterEngine(this IBarProvider provider, BarPatronDefinition definition, Action<BarInteraction> callback)
     {
         var result = provider.Register(definition);
-        if (result.Status == BarStatus.Succeeded) ((BarContentService.Lease)provider).Interactions[definition.LocalId] = callback;
+        if (result.Status == BarStatus.Succeeded) ((BarService.Lease)provider).Interactions[definition.LocalId] = callback;
         return result;
     }
 }

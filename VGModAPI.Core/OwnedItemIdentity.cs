@@ -13,7 +13,7 @@ internal sealed class OwnedItemIdentity
     internal string NativeId { get; }
     internal OwnedItemIdentity(string owner, OwnedItemDefinition definition)
     {
-        _ = new ContentDeclaration(owner, definition.LocalId, PersistentContentKind.Item, ContentPersistenceImpact.ApiDependent);
+        _ = new PersistentDeclaration(owner, definition.LocalId, PersistentKind.Item, PersistenceImpact.ApiDependent);
         if (definition.Revision < 1 || definition.Name.Length < 1 || definition.Name.Length > 128 ||
             definition.Description.Length > 2048 || definition.IconItemId.Length < 1 || definition.IconItemId.Length > 256 ||
             definition.IconItemId.StartsWith("vgmodapi.", StringComparison.Ordinal) ||

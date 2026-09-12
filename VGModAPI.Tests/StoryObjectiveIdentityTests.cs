@@ -54,7 +54,7 @@ public sealed class StoryObjectiveIdentityTests
     [Fact]
     public void OccurrenceCodecPersistsLayoutAndCountsItAgainstAdmissionBudget()
     {
-        var definition = new StoryContentId("campaign", "mission-x");
+        var definition = new StoryMissionDefinitionId("campaign", "mission-x");
         var layout = new StoryObjectiveLayout(new[] { new StoryObjectiveLayout.Slot("visit", 1, 2, StoryObjectiveKind.TravelToPoi) });
         var ledger = new StoryLedger();
         var mission = Guid.NewGuid();
@@ -102,7 +102,7 @@ public sealed class StoryObjectiveIdentityTests
     public void VerifiedRetryResetsProgressWithoutChangingObjectiveIdentity()
     {
         var ledger = new StoryLedger();
-        var id = new StoryContentId("campaign", "mission-x");
+        var id = new StoryMissionDefinitionId("campaign", "mission-x");
         var mission = Guid.NewGuid();
         var layout = new StoryObjectiveLayout(new[] { new StoryObjectiveLayout.Slot("beat", 0, 0, StoryObjectiveKind.Scripted, 5) });
         Assert.Equal(StoryLedgerStatus.Accepted, ledger.Offer(id, StoryRetention.Campaign, mission, 0, out _, layout));
@@ -126,7 +126,7 @@ public sealed class StoryObjectiveIdentityTests
         Assert.Equal(0, Assert.Single(layout.Slots).Progress);
         Assert.Throws<ArgumentOutOfRangeException>(() => partial.WithProgress("beat", 1));
         Assert.Throws<ArgumentOutOfRangeException>(() => partial.WithProgress("beat", 6));
-        var id = new StoryContentId("campaign", "mission-x");
+        var id = new StoryMissionDefinitionId("campaign", "mission-x");
         var mission = Guid.NewGuid();
         byte[] Capture(StoryObjectiveLayout value) => StoryStateCodec.Encode(new[] {
             new StoryMissionEntry(id, mission, StoryRetention.Campaign, 1, objectiveLayout: value) });
@@ -159,10 +159,10 @@ public sealed class StoryObjectiveIdentityTests
     public void OwnerOccurrenceAndKeyAllParticipateInIdentity()
     {
         var mission = Guid.NewGuid();
-        var definition = new StoryContentId("campaign", "mission-x");
+        var definition = new StoryMissionDefinitionId("campaign", "mission-x");
         var id = new StoryObjectiveId(definition, mission, "visit");
         Assert.Equal(id, new StoryObjectiveId(definition, mission, "visit"));
-        Assert.NotEqual(id, new StoryObjectiveId(new StoryContentId("job", "mission-x"), mission, "visit"));
+        Assert.NotEqual(id, new StoryObjectiveId(new StoryMissionDefinitionId("job", "mission-x"), mission, "visit"));
         Assert.NotEqual(id, new StoryObjectiveId(definition, Guid.NewGuid(), "visit"));
         Assert.NotEqual(id, new StoryObjectiveId(definition, mission, "report"));
         Assert.Throws<ArgumentException>(() => new StoryObjectiveId(definition, Guid.Empty, "visit"));

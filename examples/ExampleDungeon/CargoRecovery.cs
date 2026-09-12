@@ -9,7 +9,7 @@ public sealed class CargoRecovery : IDisposable
 {
     private readonly IDungeonProvider _provider;
     private readonly IDisposable _definition;
-    public CargoRecovery(IDungeonContentService content, string pluginId, string existingRewardItemId)
+    public CargoRecovery(IDungeonService content, string pluginId, string existingRewardItemId)
     {
         _provider = content.AcquireProvider(pluginId);
         try { _definition = _provider.Register("cargo-recovery", Definition(existingRewardItemId)); }
@@ -29,9 +29,9 @@ public sealed class CargoRecovery : IDisposable
             new DungeonChoiceDefinition("leave", "Leave shipment")
         })
     }, allowHazards: false, allowScheduledReinforcements: false);
-    public DungeonContentResult Attach(BoardingHandle observedTarget) => _provider.Attach("cargo-recovery", observedTarget);
-    public DungeonContentResult Recover(Guid poi) => _provider.Choose(poi, "recover", "recover");
-    public DungeonContentResult Leave(Guid poi) => _provider.Choose(poi, "recover", "leave");
+    public DungeonResult Attach(BoardingHandle observedTarget) => _provider.Attach("cargo-recovery", observedTarget);
+    public DungeonResult Recover(Guid poi) => _provider.Choose(poi, "recover", "recover");
+    public DungeonResult Leave(Guid poi) => _provider.Choose(poi, "recover", "leave");
     public IReadOnlyList<DungeonSnapshot> SavedDungeons => _provider.GetDungeons();
     public void Dispose() { _definition.Dispose(); _provider.Dispose(); }
 }

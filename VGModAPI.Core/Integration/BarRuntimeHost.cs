@@ -7,7 +7,7 @@ namespace VGModAPI.Core.Integration;
 /// <summary>Connects guarded native hook boundaries to the owning content service.</summary>
 internal sealed class BarRuntimeHost : IBarHookHost
 {
-    private readonly BarContentService _service;
+    private readonly BarService _service;
     private readonly BarNativeWorld _world;
     private readonly BarNativeContacts _contacts;
     private readonly BarNativeSerialization _serialization;
@@ -18,7 +18,7 @@ internal sealed class BarRuntimeHost : IBarHookHost
     private readonly ConditionalWeakTable<object, BarRosterPlan> _applied = new();
     private readonly BarHostHealth _health = new();
 
-    internal BarRuntimeHost(BarContentService service, BarNativeWorld world, BarNativeContacts contacts,
+    internal BarRuntimeHost(BarService service, BarNativeWorld world, BarNativeContacts contacts,
         BarNativeSerialization serialization, Func<string, BarRosterPlan?> plan, Func<bool> canSerialize,
         Func<bool> canMutate, Action checkThread, Action<Exception> report)
     {

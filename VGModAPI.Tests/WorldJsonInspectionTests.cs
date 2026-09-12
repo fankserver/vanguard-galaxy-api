@@ -10,7 +10,7 @@ namespace VGModAPI.Tests;
 
 public sealed class WorldJsonInspectionTests
 {
-    private static WorldObjectIdentity Identity() => new(new ContentDeclaration("author.one", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
+    private static WorldObjectIdentity Identity() => new(new PersistentDeclaration("author.one", "PoiX", PersistentKind.WorldObject, PersistenceImpact.ApiDependent), Guid.NewGuid());
     private static JsonObject Poi(string id, string type = WorldSaveFormat.OwnedCombatType, string parent = "system-a") => new()
     { Text = "serialized-poi", ["guid"] = new(id), ["type"] = new(type), ["systemName"] = new(parent) };
     private static JsonObject Root(JsonObject poi, bool legacy = false)

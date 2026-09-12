@@ -9,7 +9,7 @@ namespace VGModAPI.Tests;
 public sealed class WorldStateCodecTests
 {
     private static WorldSavedObject Row(string owner = "author.one", string system = "系统-é") => new(
-        new WorldObjectIdentity(new ContentDeclaration(owner, "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid()),
+        new WorldObjectIdentity(new PersistentDeclaration(owner, "PoiX", PersistentKind.WorldObject, PersistenceImpact.ApiDependent), Guid.NewGuid()),
         system, new string('a', 64), 2);
 
     [Fact]

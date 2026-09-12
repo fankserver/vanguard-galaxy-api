@@ -10,12 +10,12 @@ namespace VGModAPI;
 /// local ID the provider chooses. Two independently loaded mods may both use the local ID
 /// <c>MissionX</c>; the pair is what identifies content, never the bare local ID.
 /// </summary>
-public readonly struct StoryContentId : IEquatable<StoryContentId>
+public readonly struct StoryMissionDefinitionId : IEquatable<StoryMissionDefinitionId>
 {
     public string Provider { get; }
     public string LocalId { get; }
 
-    public StoryContentId(string provider, string localId)
+    public StoryMissionDefinitionId(string provider, string localId)
     {
         Provider = Validate(provider, nameof(provider));
         LocalId = Validate(localId, nameof(localId));
@@ -29,13 +29,13 @@ public readonly struct StoryContentId : IEquatable<StoryContentId>
     private static string Validate(string value, string name)
         => IsValidSegment(value) ? value : throw new ArgumentException("Story identity segments are 1-48 lowercase ASCII letters/digits/hyphens starting with a letter.", name);
 
-    public bool Equals(StoryContentId other)
+    public bool Equals(StoryMissionDefinitionId other)
         => string.Equals(Provider, other.Provider, StringComparison.Ordinal) && string.Equals(LocalId, other.LocalId, StringComparison.Ordinal);
-    public override bool Equals(object? obj) => obj is StoryContentId other && Equals(other);
+    public override bool Equals(object? obj) => obj is StoryMissionDefinitionId other && Equals(other);
     public override int GetHashCode() => (Provider, LocalId).GetHashCode();
     public override string ToString() => Provider + "/" + LocalId;
-    public static bool operator ==(StoryContentId left, StoryContentId right) => left.Equals(right);
-    public static bool operator !=(StoryContentId left, StoryContentId right) => !left.Equals(right);
+    public static bool operator ==(StoryMissionDefinitionId left, StoryMissionDefinitionId right) => left.Equals(right);
+    public static bool operator !=(StoryMissionDefinitionId left, StoryMissionDefinitionId right) => !left.Equals(right);
 }
 
 /// <summary>
@@ -122,7 +122,7 @@ public sealed class StoryObjective
     /// <summary>Returns an immutable keyed copy. Keys must be unique throughout one mission definition.</summary>
     public StoryObjective WithKey(string localKey)
     {
-        if (!StoryContentId.IsValidSegment(localKey)) throw new ArgumentException("An objective key uses the story identity segment format.", nameof(localKey));
+        if (!StoryMissionDefinitionId.IsValidSegment(localKey)) throw new ArgumentException("An objective key uses the story identity segment format.", nameof(localKey));
         return new StoryObjective(Kind, TargetPoiId, RequiredAmount, RequireNewVisit, localKey, Description, ItemTypeId, EnemyFactionId, LocalId, PoiKey);
     }
 
@@ -171,7 +171,7 @@ public sealed class StoryObjective
     /// <summary>An author-driven counting objective. Progress is absolute, not an incrementing narrative event.</summary>
     public static StoryObjective Scripted(string localKey, string description, int requiredAmount = 1)
     {
-        if (!StoryContentId.IsValidSegment(localKey)) throw new ArgumentException("Invalid objective key.", nameof(localKey));
+        if (!StoryMissionDefinitionId.IsValidSegment(localKey)) throw new ArgumentException("Invalid objective key.", nameof(localKey));
         if (string.IsNullOrWhiteSpace(description) || description.Length > 512) throw new ArgumentException("A bounded description is required.", nameof(description));
         if (requiredAmount is < 1 or > MaxAmount) throw new ArgumentOutOfRangeException(nameof(requiredAmount));
         return new StoryObjective(StoryObjectiveKind.Scripted, null, requiredAmount, false, localKey, description);
@@ -307,9 +307,9 @@ internal static class StoryText
 /// </summary>
 public sealed class StoryMissionDefinition
 {
-    private int _contentRevision = 1;
+    private int _missionRevision = 1;
     private int? _migratesFromRevision;
-    public int ContentRevision => _contentRevision;
+    public int MissionRevision => _missionRevision;
     public int? MigratesFromRevision => _migratesFromRevision;
 
     /// <summary>Returns a revisioned immutable copy with explicit key-preserving migration permission.
@@ -322,7 +322,7 @@ public sealed class StoryMissionDefinition
         if (Steps.SelectMany(step => step.Objectives).Any(objective => objective.Kind != StoryObjectiveKind.Scripted))
             throw new InvalidOperationException("Revision migration requires fully keyed scripted objectives.");
         var copy = (StoryMissionDefinition)MemberwiseClone();
-        copy._contentRevision = revision;
+        copy._missionRevision = revision;
         copy._migratesFromRevision = migratesFromRevision;
         return copy;
     }
@@ -402,7 +402,7 @@ public sealed class StoryMissionDefinition
         StoryRetention retention = StoryRetention.Temporary, bool canAbandon = true,
         string? category = null, string? completionText = null, IEnumerable<string>? choiceKeys = null)
     {
-        if (!StoryContentId.IsValidSegment(localId)) throw new ArgumentException("A local ID is 1-48 lowercase ASCII letters/digits/hyphens starting with a letter.", nameof(localId));
+        if (!StoryMissionDefinitionId.IsValidSegment(localId)) throw new ArgumentException("A local ID is 1-48 lowercase ASCII letters/digits/hyphens starting with a letter.", nameof(localId));
         if (sourceFaction.Value == null) throw new ArgumentException("A source faction identity is required.", nameof(sourceFaction));
         SourceFaction = sourceFaction;
         if (!Enum.IsDefined(typeof(StoryDifficulty), difficulty)) throw new ArgumentOutOfRangeException(nameof(difficulty));
@@ -499,11 +499,11 @@ public sealed class StoryRegistrationResult
 /// </summary>
 internal sealed class StoryMissionRecord
 {
-    public StoryContentId Id { get; }
+    public StoryMissionDefinitionId Id { get; }
     public Guid MissionId { get; }
     public StoryOutcome? Outcome { get; }
     public IReadOnlyDictionary<string, string> Choices { get; }
-    public StoryMissionRecord(StoryContentId id, Guid missionId, StoryOutcome? outcome, IReadOnlyDictionary<string, string>? choices = null)
+    public StoryMissionRecord(StoryMissionDefinitionId id, Guid missionId, StoryOutcome? outcome, IReadOnlyDictionary<string, string>? choices = null)
     {
         if (id.Provider == null) throw new ArgumentException("A default identity is not a content identity.", nameof(id));
         if (missionId == Guid.Empty) throw new ArgumentException("An mission requires its own identity.", nameof(missionId));
@@ -532,12 +532,12 @@ internal enum StoryMissionStage { Offered, Active }
 /// </summary>
 internal sealed class StoryMissionSnapshot
 {
-    public StoryContentId Id { get; }
+    public StoryMissionDefinitionId Id { get; }
     public Guid MissionId { get; }
     public StoryMissionStage Stage { get; }
     public StoryRetention Retention { get; }
 
-    public StoryMissionSnapshot(StoryContentId id, Guid missionId, StoryMissionStage stage, StoryRetention retention)
+    public StoryMissionSnapshot(StoryMissionDefinitionId id, Guid missionId, StoryMissionStage stage, StoryRetention retention)
     {
         if (id.Provider == null) throw new ArgumentException("A default identity is not a content identity.", nameof(id));
         if (missionId == Guid.Empty) throw new ArgumentException("An mission requires its own identity.", nameof(missionId));

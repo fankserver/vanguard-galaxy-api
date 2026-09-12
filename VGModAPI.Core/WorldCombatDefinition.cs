@@ -12,8 +12,8 @@ internal sealed class WorldCombatDefinition
     internal int Level { get; }
     internal WorldCombatDefinition(string localId, int revision, string name, string factionId, int level)
     {
-        _ = new ContentDeclaration("vgmodapi.world", localId, PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent);
-        _ = new ContentDeclaration("vgmodapi.world", factionId, PersistentContentKind.Faction, ContentPersistenceImpact.ApiDependent);
+        _ = new PersistentDeclaration("vgmodapi.world", localId, PersistentKind.WorldObject, PersistenceImpact.ApiDependent);
+        _ = new PersistentDeclaration("vgmodapi.world", factionId, PersistentKind.Faction, PersistenceImpact.ApiDependent);
         if (revision < 1) throw new ArgumentOutOfRangeException(nameof(revision));
         if (level < 1 || level > 100000) throw new ArgumentOutOfRangeException(nameof(level));
         if (string.IsNullOrWhiteSpace(name) || name.IndexOf('\0') >= 0 || WorldStateCodec.TextByteCount(name) > 1024)

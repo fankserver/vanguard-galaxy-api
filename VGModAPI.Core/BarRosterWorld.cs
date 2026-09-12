@@ -32,7 +32,7 @@ internal enum BarRosterApplyStatus { Applied, Unavailable, CapacityExceeded }
 
 internal static class BarRosterApplication
 {
-    internal static BarRosterApplyStatus Apply(BarContentService service, IBarRosterWorld world, BarRosterPlan plan)
+    internal static BarRosterApplyStatus Apply(BarService service, IBarRosterWorld world, BarRosterPlan plan)
     {
         if (!service.IsCurrent(plan)) return BarRosterApplyStatus.Unavailable;
         var snapshot = world.Capture(plan.Station);

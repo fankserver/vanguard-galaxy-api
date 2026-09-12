@@ -13,7 +13,7 @@ namespace VGModAPI;
 
 public sealed partial class Plugin
 {
-    private BarContentService? _bars;
+    private BarService? _bars;
     private BarRuntimeHost? _barHost;
     private Harmony? _barHarmony;
     private ConfigEntry<string>? _barPermissionConfig;
@@ -49,7 +49,7 @@ public sealed partial class Plugin
             var native = new BarNativeBindings(assembly,
                 art => UnityEngine.Resources.Load<UnityEngine.Sprite>("Sprites/NPC/" + art),
                 error => Logger.LogWarning(error.Message));
-            var bars = new BarContentService(_persistence, _hub, StoryHostAuthentication.Resolve,
+            var bars = new BarService(_persistence, _hub, StoryHostAuthentication.Resolve,
                 plugin => _barPermissions.Allowed.Contains(plugin), _hub.CheckThread, () => _barPermissions,
                 (owner, error) => Logger.LogError("Bar observer '" + owner + "' failed: " + error));
             _bars = bars;

@@ -49,25 +49,25 @@ internal sealed class StoryDefinitionRegistry
     /// </summary>
     internal void ResetWorldReservations() => _reserved.Clear();
 
-    internal bool TryGet(StoryContentId id, out StoryMissionDefinition definition)
-        => _byIdentifier.TryGetValue(StoryContentPolicy.Identifier(id), out definition!);
+    internal bool TryGet(StoryMissionDefinitionId id, out StoryMissionDefinition definition)
+        => _byIdentifier.TryGetValue(StoryMissionPolicy.Identifier(id), out definition!);
 
-    internal bool Contains(StoryContentId id) => _byIdentifier.ContainsKey(StoryContentPolicy.Identifier(id));
+    internal bool Contains(StoryMissionDefinitionId id) => _byIdentifier.ContainsKey(StoryMissionPolicy.Identifier(id));
 
     /// <summary>
     /// Attempts to register. The identifier is derived from the owner-scoped identity, so two
     /// providers using the same local ID cannot collide; a duplicate WITHIN one provider is
     /// diagnosed, and an identifier owned by other content is refused.
     /// </summary>
-    internal StoryRegistrationStatus TryRegister(StoryContentId id, StoryMissionDefinition definition, out string diagnostic,
+    internal StoryRegistrationStatus TryRegister(StoryMissionDefinitionId id, StoryMissionDefinition definition, out string diagnostic,
         out string identifier, out long entry)
     {
         identifier = "";
         entry = 0;
         // A policy refusal is about the DEFINITION, never about someone else owning the identifier.
-        var refusal = StoryContentPolicy.Refuse(id, definition);
+        var refusal = StoryMissionPolicy.Refuse(id, definition);
         if (refusal != null) { diagnostic = refusal; return StoryRegistrationStatus.InvalidDefinition; }
-        identifier = StoryContentPolicy.Identifier(id);
+        identifier = StoryMissionPolicy.Identifier(id);
         if (_byIdentifier.ContainsKey(identifier))
         {
             diagnostic = "Provider '" + id.Provider + "' already registered local ID '" + id.LocalId + "'.";
@@ -78,9 +78,9 @@ internal sealed class StoryDefinitionRegistry
             diagnostic = "Identifier '" + identifier + "' already exists in this world; the API never replaces existing content.";
             return StoryRegistrationStatus.IdentifierInUse;
         }
-        if (_byIdentifier.Count >= StoryContentPolicy.MaxDefinitions)
+        if (_byIdentifier.Count >= StoryMissionPolicy.MaxDefinitions)
         {
-            diagnostic = "The registry holds its maximum of " + StoryContentPolicy.MaxDefinitions + " definitions; nothing was dropped.";
+            diagnostic = "The registry holds its maximum of " + StoryMissionPolicy.MaxDefinitions + " definitions; nothing was dropped.";
             return StoryRegistrationStatus.LimitExceeded;
         }
         Epoch = new object();
@@ -93,9 +93,9 @@ internal sealed class StoryDefinitionRegistry
     }
 
     /// <summary>Removes a registration made by THIS identity. Another provider's identity can never remove it.</summary>
-    internal bool Unregister(StoryContentId id)
+    internal bool Unregister(StoryMissionDefinitionId id)
     {
-        var identifier = StoryContentPolicy.Identifier(id);
+        var identifier = StoryMissionPolicy.Identifier(id);
         Epoch = new object();
         _providerByIdentifier.Remove(identifier);
         _entryByIdentifier.Remove(identifier);
@@ -108,9 +108,9 @@ internal sealed class StoryDefinitionRegistry
     /// the same immutable definition object — removes nothing, so releasing a stale handle can never
     /// take down live content.
     /// </summary>
-    internal bool RemoveIfMatches(StoryContentId id, long entry)
+    internal bool RemoveIfMatches(StoryMissionDefinitionId id, long entry)
     {
-        var identifier = StoryContentPolicy.Identifier(id);
+        var identifier = StoryMissionPolicy.Identifier(id);
         if (!_entryByIdentifier.TryGetValue(identifier, out var current) || current != entry) return false;
         Epoch = new object();
         _entryByIdentifier.Remove(identifier);
@@ -126,8 +126,8 @@ internal sealed class StoryDefinitionRegistry
         => _providerByIdentifier.Where(pair => pair.Value == provider).Select(pair => pair.Key).ToArray();
 
     /// <summary>The registration entry that currently owns an identifier, or 0 when nothing does.</summary>
-    internal long EntryOf(StoryContentId id)
-        => _entryByIdentifier.TryGetValue(StoryContentPolicy.Identifier(id), out var entry) ? entry : 0;
+    internal long EntryOf(StoryMissionDefinitionId id)
+        => _entryByIdentifier.TryGetValue(StoryMissionPolicy.Identifier(id), out var entry) ? entry : 0;
 
     /// <summary>Releases every definition of one provider lease. Saved missions are untouched.</summary>
     internal void RemoveProvider(string provider)

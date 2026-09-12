@@ -54,7 +54,7 @@ public sealed class WorldManagerEnumeratorTests
         var guard = new WorldLifetimeGuard();
         using var host = new WorldLifetimeHookHost(typeof(Source.Galaxy.MapElement).Assembly, hub, guard);
         var session = hub.Begin(SessionOrigin.NewGame, null);
-        var identity = new WorldObjectIdentity(new ContentDeclaration("author.one", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
+        var identity = new WorldObjectIdentity(new PersistentDeclaration("author.one", "PoiX", PersistentKind.WorldObject, PersistenceImpact.ApiDependent), Guid.NewGuid());
         var poi = new Source.Galaxy.MapPointOfInterest { guid = identity.NativeId };
         guard.Track(session, poi, identity); guard.Ready(session);
         var manager = new Behaviour.Managers.TestPoiManager { poi = poi };

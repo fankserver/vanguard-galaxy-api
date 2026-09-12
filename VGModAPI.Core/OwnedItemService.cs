@@ -28,7 +28,7 @@ internal sealed class OwnedItemService : IOwnedItemService, IDisposable
         StoryHostPlugin? plugin;
         try { plugin = _authenticate(instance, caller); } catch { return null; }
         if (_disposed || plugin == null || !ReferenceEquals(plugin.Assembly, caller) || _providers.ContainsKey(plugin.PluginId) || _providers.Count >= 32) return null;
-        _ = new ContentDeclaration(plugin.PluginId, "items", PersistentContentKind.Item, ContentPersistenceImpact.ApiDependent);
+        _ = new PersistentDeclaration(plugin.PluginId, "items", PersistentKind.Item, PersistenceImpact.ApiDependent);
         var provider = new Provider(this, plugin.PluginId); _providers.Add(plugin.PluginId, provider); return provider;
     }
     internal OwnedItemIdentity? Find(string owner, string local)

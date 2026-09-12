@@ -30,7 +30,7 @@ internal static class StoryDefinitionCodec
         Text(writer, definition.SourceFaction.Value); Text(writer, definition.Category); Text(writer, definition.CompletionText);
         writer.Write((byte)definition.Difficulty); writer.Write((byte)definition.Retention); writer.Write(definition.CanAbandon);
         writer.Write(definition.AutoComplete);
-        writer.Write(definition.ContentRevision); writer.Write(definition.MigratesFromRevision ?? 0);
+        writer.Write(definition.MissionRevision); writer.Write(definition.MigratesFromRevision ?? 0);
         writer.Write((byte)definition.Steps.Count);
         foreach (var step in definition.Steps)
         {

@@ -4,11 +4,11 @@ using System.Linq;
 
 namespace VGModAPI.Core;
 
-internal sealed partial class BarContentService
+internal sealed partial class BarService
 {
     internal sealed class Lease : IBarProvider
     {
-        private readonly BarContentService _owner;
+        private readonly BarService _owner;
         private readonly string _pluginId;
         internal string PluginId => _pluginId;
         internal readonly Dictionary<string, BarPatronDefinition> Definitions = new(StringComparer.Ordinal);
@@ -16,7 +16,7 @@ internal sealed partial class BarContentService
         internal readonly Dictionary<string, BarRosterOwnership> Stations = new(StringComparer.Ordinal);
         public string ProviderId { get; }
         internal readonly ISaveDataRegistration? SaveData;
-        internal Lease(BarContentService owner, string provider, string pluginId, ISaveDataRegistration? saveData)
+        internal Lease(BarService owner, string provider, string pluginId, ISaveDataRegistration? saveData)
         { _owner = owner; ProviderId = provider; _pluginId = pluginId; SaveData = saveData; }
         internal readonly Dictionary<string, DefinitionRegistration> Registrations = new(StringComparer.Ordinal);
         public BarRegistrationResult Register(BarPatronDefinition definition, Action<IBarPatron>? interact = null)

@@ -4,7 +4,7 @@ using VGModAPI.Core.Integration;
 
 namespace VGModAPI.Core;
 
-internal sealed partial class BarContentService
+internal sealed partial class BarService
 {
     private readonly HashSet<BarPatronId> _interacting = new();
 

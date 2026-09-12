@@ -16,7 +16,7 @@ internal sealed class PocketSystemDeclaration
     internal bool Quiet { get; }
     internal PocketSystemDeclaration(string localId, int revision, string name, PocketSystemPlacement placement = PocketSystemPlacement.OffMap, string? factionId = null, string? sectorName = null, bool quiet = false)
     {
-        _ = new ContentDeclaration("vgmodapi.world", localId, PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent);
+        _ = new PersistentDeclaration("vgmodapi.world", localId, PersistentKind.WorldObject, PersistenceImpact.ApiDependent);
         if (revision < 1) throw new ArgumentOutOfRangeException(nameof(revision));
         if (string.IsNullOrWhiteSpace(name) || name.IndexOf('\0') >= 0 || WorldStateCodec.TextByteCount(name) > 1024)
             throw new ArgumentException("A bounded world display name is required.", nameof(name));
