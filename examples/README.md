@@ -38,8 +38,6 @@ exactly that entry. Acquiring one in `Awake()` returns null and silently registe
 HUD and panel registrations use a plain plugin-id string instead, but every example here follows the
 same rule so nothing depends on which identity a given service happens to use.
 
-**Keep runtime strings ASCII.** The game's `pixel16` font has no glyph for `—`, `→` or `…`; TextMeshPro replaces each one with a space and logs a warning per render, so a fancy dash in a HUD row quietly becomes a gap plus log noise. Use `-`, `->` and `...` in anything the game displays. Prose in comments and READMEs is unaffected.
-
 **The API owns persistence.** No example registers a save hook, codec or sidecar writer for
 API-owned content; definitions are declared once and the API restores occurrences, progress and
 choices. The one deliberate exception is `Observation/Consumers/CustomCounter.cs`, which persists
