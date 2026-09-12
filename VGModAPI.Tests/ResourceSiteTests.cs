@@ -15,6 +15,9 @@ internal sealed class FakeResourceSiteNative : IResourceSiteNative
     internal bool RefuseCreation;
     internal int Ambiguous;
     internal int Creations;
+    internal ResourceSiteRemoveOutcome RemoveOutcome = ResourceSiteRemoveOutcome.Removed;
+    internal bool ThrowOnRemove;
+    internal int RemoveCalls;
     private int _next;
     public string? CreateSite(Guid session, string systemId, float x, float y, ResourceSiteDeclaration declaration)
     {
@@ -26,6 +29,16 @@ internal sealed class FakeResourceSiteNative : IResourceSiteNative
     }
     public string? ResolveSite(Guid session, string systemId, string poiId, ResourceSiteKind kind)
         => !Hidden.Contains(poiId) && Created.TryGetValue(poiId, out var row) && row.SystemId == systemId && row.Kind == kind ? poiId : null;
+    public ResourceSiteRemoveOutcome RemoveSite(Guid session, string systemId, string poiId, ResourceSiteKind kind)
+    {
+        RemoveCalls++;
+        if (ThrowOnRemove) throw new InvalidOperationException("fake remove fault");
+        if (!Created.TryGetValue(poiId, out var row) || row.SystemId != systemId || row.Kind != kind)
+            return ResourceSiteRemoveOutcome.Missing;
+        if (RemoveOutcome != ResourceSiteRemoveOutcome.Removed) return RemoveOutcome;
+        Created.Remove(poiId);
+        return ResourceSiteRemoveOutcome.Removed;
+    }
     public int AmbiguousCount(Guid session, string poiId) => Ambiguous > 0 ? Ambiguous : Created.ContainsKey(poiId) ? 1 : 0;
     public void BeginPass(Guid session) { }
     public void EndPass() { }
@@ -287,5 +300,200 @@ public sealed class ResourceSiteTests
             Text(row.SystemId); Text(row.EntranceGateId); Text(row.PocketGateId); writer.Write(row.DeclaredOpen);
         }
         writer.Flush(); return stream.ToArray();
+    }
+
+    // ---- direct remove -------------------------------------------------------------------
+
+    [Fact]
+    public void RemoveRemovesTheSiteItsSaveRowAndFreesTheKeyForAFreshInstance()
+    {
+        using var h = new Harness();
+        Assert.Equal(WorldStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage()));
+        h.BeginGameplay();
+        var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
+        Assert.True(site.State.Reconstructed);
+        Assert.Equal(WorldContentStatus.Succeeded, site.Remove().Status);
+        // No save row remains, so load reconstructs nothing rather than reporting a failure.
+        Assert.Empty(h.Coordinator.CaptureRows());
+        Assert.Null(h.Provider.GetResourceSite("wreck", "k"));
+        Assert.Empty(h.Provider.GetResourceSites("wreck"));
+        // The object is terminal: Removed state, repeated remove refused with a retained result.
+        Assert.Equal(ReconstructionStatus.Removed, site.State.Status);
+        Assert.Null(site.PoiId);
+        Assert.Equal(WorldContentStatus.Rejected, site.Remove().Status);
+        Assert.Equal(WorldContentStatus.Rejected, site.LastAction.Status);
+        // The freed key authors a FRESH site with fresh native identity.
+        var fresh = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
+        Assert.NotSame(site, fresh);
+        Assert.Equal(ReconstructionStatus.Reconstructed, fresh.State.Status);
+        Assert.Equal(2, h.Native.Creations);
+    }
+
+    [Theory]
+    [InlineData((int)ResourceSiteRemoveOutcome.PlayerInside)]
+    [InlineData((int)ResourceSiteRemoveOutcome.BoardingActive)]
+    [InlineData((int)ResourceSiteRemoveOutcome.InteriorPersisted)]
+    [InlineData((int)ResourceSiteRemoveOutcome.Missing)]
+    [InlineData((int)ResourceSiteRemoveOutcome.Failed)]
+    public void TypedRefusalsRetainTheSiteAndItsSaveRow(int outcomeValue)
+    {
+        var outcome = (ResourceSiteRemoveOutcome)outcomeValue;
+        using var h = new Harness();
+        Assert.Equal(WorldStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage(withStation: true)));
+        h.BeginGameplay();
+        var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
+        h.Native.RemoveOutcome = outcome;
+        var refused = site.Remove();
+        Assert.Equal(WorldContentStatus.Rejected, refused.Status);
+        Assert.False(string.IsNullOrWhiteSpace(refused.Detail));
+        // Nothing was dropped or removed; the occurrence stays live and actionable.
+        Assert.Single(h.Coordinator.CaptureRows());
+        Assert.Same(site, h.Provider.GetResourceSite("wreck", "k"));
+        Assert.True(site.State.Reconstructed);
+        h.Native.RemoveOutcome = ResourceSiteRemoveOutcome.Removed;
+        Assert.True(site.Remove().Succeeded);
+    }
+
+    [Fact]
+    public void NativeFaultIsReportedAsUnavailableAndRetainsTheRow()
+    {
+        using var h = new Harness();
+        Assert.Equal(WorldStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage()));
+        h.BeginGameplay();
+        var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
+        h.Native.ThrowOnRemove = true;
+        Assert.Equal(WorldContentStatus.Unavailable, site.Remove().Status);
+        Assert.Single(h.Coordinator.CaptureRows());
+        h.Native.ThrowOnRemove = false;
+        Assert.True(site.Remove().Succeeded);
+    }
+
+    [Fact]
+    public void FailedCreationRemovesWithoutNativeRemovalAndFreesTheKey()
+    {
+        using var h = new Harness();
+        Assert.Equal(WorldStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage()));
+        h.BeginGameplay();
+        h.Native.RefuseCreation = true;
+        var failed = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
+        Assert.Equal(WorldContentStatus.Rejected, failed.LastAction.Status);
+        Assert.True(failed.Remove().Succeeded);
+        Assert.Equal(0, h.Native.RemoveCalls); // nothing native was ever created
+        Assert.Empty(h.Coordinator.CaptureRows());
+        h.Native.RefuseCreation = false;
+        Assert.True(h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!.State.Reconstructed);
+    }
+
+    [Fact]
+    public void KeepEnterableHoldRefusesRemoveUntilReleased()
+    {
+        using var h = new Harness();
+        Assert.Equal(WorldStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage(withStation: true)));
+        h.BeginGameplay();
+        var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
+        h.Hub.Installations.Aegis.SetAvailable(true);
+        var installation = h.Hub.Installations.Get("author.a", site.PoiId!, null);
+        using var keep = installation.KeepEnterable();
+        var refused = site.Remove();
+        Assert.Equal(WorldContentStatus.Rejected, refused.Status);
+        Assert.Contains("enterable", refused.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.Single(h.Coordinator.CaptureRows());
+        keep.Dispose();
+        Assert.True(site.Remove().Succeeded);
+    }
+
+    [Fact]
+    public void ReplacedSessionRefusesRemoveWithGameEnded()
+    {
+        using var h = new Harness();
+        Assert.Equal(WorldStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage()));
+        h.BeginGameplay();
+        var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
+        h.Hub.Invalidate("session replaced by test");
+        h.BeginGameplay();
+        Assert.Equal(WorldContentStatus.GameEnded, site.Remove().Status);
+        Assert.Equal(0, h.Native.RemoveCalls); // the replacement save was never touched
+    }
+
+    [Fact]
+    public void RemoveDropsAnAttachedDungeonOccurrenceOnlyAfterVerifiedRemoval()
+    {
+        using var h = new Harness();
+        Assert.Equal(WorldStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage(withStation: true)));
+        h.BeginGameplay();
+        var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
+        var occurrence = Guid.NewGuid();
+        var resolved = new List<string>(); var dropped = new List<Guid>();
+        h.Coordinator.AttachDungeonOccurrencePrune(
+            poiId => { resolved.Add(poiId); return occurrence; },
+            id => { dropped.Add(id); return true; });
+        int changes = 0; site.Changed += _ => changes++;
+        var poiId = site.PoiId;
+        Assert.True(site.Remove().Succeeded);
+        // The location is resolved (before removal) and the row dropped (after) exactly once.
+        Assert.Equal(poiId, Assert.Single(resolved));
+        Assert.Equal(occurrence, Assert.Single(dropped));
+        Assert.Empty(h.Coordinator.CaptureRows());
+        Assert.Equal(1, changes);
+    }
+
+    [Fact]
+    public void AttachedDungeonOccurrenceIsNotDroppedWhenTheNativeRemovalIsRefused()
+    {
+        using var h = new Harness();
+        Assert.Equal(WorldStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage(withStation: true)));
+        h.BeginGameplay();
+        var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
+        var dropped = new List<Guid>();
+        h.Coordinator.AttachDungeonOccurrencePrune(_ => Guid.NewGuid(), id => { dropped.Add(id); return true; });
+        h.Native.RemoveOutcome = ResourceSiteRemoveOutcome.BoardingActive;
+        Assert.Equal(WorldContentStatus.Rejected, site.Remove().Status);
+        Assert.Empty(dropped);
+        Assert.Single(h.Coordinator.CaptureRows());
+    }
+
+    [Fact]
+    public void UnreadableAttachedDungeonStateRefusesRemoveWithoutTouchingTheSite()
+    {
+        using var h = new Harness();
+        Assert.Equal(WorldStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage(withStation: true)));
+        h.BeginGameplay();
+        var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
+        h.Coordinator.AttachDungeonOccurrencePrune(_ => throw new InvalidOperationException("read fault"), _ => true);
+        Assert.Equal(WorldContentStatus.Unavailable, site.Remove().Status);
+        Assert.Equal(0, h.Native.RemoveCalls); // nothing native was touched
+        Assert.Single(h.Coordinator.CaptureRows());
+    }
+
+    [Fact]
+    public void FailedDungeonRowDropStillRemovesTheSite()
+    {
+        using var h = new Harness();
+        Assert.Equal(WorldStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage(withStation: true)));
+        h.BeginGameplay();
+        var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
+        var dropped = new List<Guid>();
+        h.Coordinator.AttachDungeonOccurrencePrune(_ => Guid.NewGuid(), id => { dropped.Add(id); return false; });
+        Assert.True(site.Remove().Succeeded);
+        Assert.Single(dropped); // the drop was attempted
+        Assert.Empty(h.Coordinator.CaptureRows());
+        Assert.Equal(ReconstructionStatus.Removed, site.State.Status);
+    }
+
+    [Fact]
+    public void RemoveRefusesWhenWorldAuthoringIsUnavailable()
+    {
+        bool canAuthor = true;
+        using var h = new Harness(canAuthor: () => canAuthor);
+        Assert.Equal(WorldStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage()));
+        h.BeginGameplay();
+        var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
+        canAuthor = false;
+        var refused = site.Remove();
+        Assert.Equal(WorldContentStatus.Unavailable, refused.Status);
+        Assert.Equal(0, h.Native.RemoveCalls); // no native mutation while authoring is unavailable
+        Assert.Single(h.Coordinator.CaptureRows());
+        canAuthor = true;
+        Assert.True(site.Remove().Succeeded);
     }
 }

@@ -55,6 +55,11 @@ internal sealed class DungeonContentService : IDungeonContentService, IDisposabl
         var provider = new Provider(this, pluginId, saveData); _providers.Add(pluginId, provider); return provider;
     }
     internal bool PanelBusy { get { _hub.CheckThread(); return MutationBlocked || !_state.MutationAllowed; } }
+    /// <summary>Drops one API-owned dungeon occurrence row so it no longer reconstructs. Used when the
+    /// native location that hosted it is intentionally removed. Returns false when persistence cannot
+    /// mutate right now.</summary>
+    internal bool DropOccurrence(Guid id)
+    { _hub.CheckThread(); return !_disposed && _store != null && _state.Drop(id); }
     internal (object? Occurrence, object? Provider, object? Definition) PanelToken(Guid id)
     {
         _hub.CheckThread(); if (_disposed || _store == null || !Availability.IsAvailable) return (null, null, null);

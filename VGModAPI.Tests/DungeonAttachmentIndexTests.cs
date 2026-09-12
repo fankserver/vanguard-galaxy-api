@@ -21,4 +21,14 @@ public sealed class DungeonAttachmentIndexTests
         Assert.True(index.Bind(location, first)); Assert.False(index.Bind(location, second));
         Assert.Equal(first, index.Find(location)); Assert.Null(index.Resolve(second));
     }
+    [Fact]
+    public void DetachDropsTheBindingAndFreesTheOccurrenceIdentity()
+    {
+        var index = new DungeonAttachmentIndex(); var location = new object(); var id = Guid.NewGuid();
+        Assert.True(index.Bind(location, id));
+        index.Detach(id);
+        Assert.Null(index.SavedMarker(location)); Assert.Null(index.Resolve(id));
+        // The identity can bind a fresh location after detachment.
+        var other = new object(); Assert.True(index.Bind(other, id));
+    }
 }

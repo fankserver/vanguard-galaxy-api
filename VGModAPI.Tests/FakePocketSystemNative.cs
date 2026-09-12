@@ -18,9 +18,9 @@ internal sealed class FakePocketSystemNative : IPocketSystemNative
     internal readonly Dictionary<string, bool> Hidden = new(StringComparer.Ordinal);
     internal int ApplyCalls;
     internal bool PlayerInside;
-    internal bool FailDissolve;
-    internal bool ThrowOnDissolve;
-    internal int DissolveCalls;
+    internal bool FailRemove;
+    internal bool ThrowOnRemove;
+    internal int RemoveCalls;
     internal readonly List<PocketSystemPlacement> CreatedPlacements = new();
     internal readonly List<string?> CreatedFactionIds = new();
     internal readonly List<string?> CreatedNames = new();
@@ -68,18 +68,18 @@ internal sealed class FakePocketSystemNative : IPocketSystemNative
         return sid != null && Open.TryGetValue(sid, out var openValue) && !openValue
             && Hidden.TryGetValue(sid, out var hiddenValue) && hiddenValue;
     }
-    public PocketDissolveOutcome DissolvePocket(Guid session, string systemId, string entranceGateId, string pocketGateId)
+    public PocketRemoveOutcome RemovePocket(Guid session, string systemId, string entranceGateId, string pocketGateId)
     {
-        DissolveCalls++;
-        if (ThrowOnDissolve) throw new InvalidOperationException("native dissolve fault");
+        RemoveCalls++;
+        if (ThrowOnRemove) throw new InvalidOperationException("native remove fault");
         if (systemId == null || !Systems.TryGetValue(systemId, out var pair) || pair.Entrance != entranceGateId || pair.Pocket != pocketGateId)
-            return PocketDissolveOutcome.Missing;
-        if (PlayerInside) return PocketDissolveOutcome.PlayerInside;
-        if (FailDissolve) return PocketDissolveOutcome.Failed;
+            return PocketRemoveOutcome.Missing;
+        if (PlayerInside) return PocketRemoveOutcome.PlayerInside;
+        if (FailRemove) return PocketRemoveOutcome.Failed;
         Systems.Remove(systemId);
         Open.Remove(systemId);
         Hidden.Remove(systemId);
-        return PocketDissolveOutcome.Dissolved;
+        return PocketRemoveOutcome.Removed;
     }
     public void BeginPass(Guid session) { }
     public void EndPass() { }

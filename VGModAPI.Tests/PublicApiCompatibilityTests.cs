@@ -63,10 +63,17 @@ public sealed class PublicApiCompatibilityTests
     }
 
     [Fact]
-    public void WormholePairKeepItsDissolveAndQuerySurface()
+    public void WormholePairKeepItsRemoveAndQuerySurface()
     {
-        AssertMethod("IWormholePair", "Dissolve");
+        AssertMethod("IWormholePair", "Remove");
         AssertMethod("IWormholePair", "SetOpen", typeof(bool));
+    }
+
+    [Fact]
+    public void AuthoredSiteAndCombatSiteKeepTheirRemoveSurface()
+    {
+        AssertMethod("IResourceSite", "Remove");
+        AssertMethod("ICombatSite", "Remove");
     }
 
     [Fact]

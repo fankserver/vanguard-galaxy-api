@@ -138,4 +138,27 @@ internal sealed class WorldCreationCoordinator
         }
         finally { _creating = false; }
     }
+
+    /// <summary>
+    /// Removes the retained occurrence after a verified native removal and drops it from the retained
+    /// inventory so no save record reconstructs it. The caller owns the key registry and provider lease.
+    /// </summary>
+    internal WorldRemoveOutcome TryRemove(Guid session, WorldObjectIdentity identity)
+    {
+        _checkThread();
+        if (identity == null) throw new ArgumentNullException(nameof(identity));
+        if (_creating || !HasRestoredInventory(session) || session != _session) return WorldRemoveOutcome.Missing;
+        WorldSnapshotInstance? found = null;
+        foreach (var occurrence in _instances)
+            if (occurrence.Identity.NativeId == identity.NativeId) { found = occurrence; break; }
+        if (found == null) return WorldRemoveOutcome.Missing;
+        var outcome = _native.TryRemove(session, found);
+        if (outcome != WorldRemoveOutcome.Removed) return outcome;
+        var next = new WorldSnapshotInstance[_instances.Length - 1];
+        int index = 0;
+        foreach (var occurrence in _instances) if (!ReferenceEquals(occurrence, found)) next[index++] = occurrence;
+        _instances = next;
+        _revision = checked(_revision + 1);
+        return WorldRemoveOutcome.Removed;
+    }
 }

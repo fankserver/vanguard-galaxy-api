@@ -54,6 +54,18 @@ internal sealed class DungeonStateStore : IDisposable
         DungeonStateCodec.Encode(_entries.Values.Concat(new[] { entry }));
         _entries.Add(entry.Id, entry); return true;
     }
+    /// <summary>
+    /// Drops an occurrence row so save data records it as intentionally absent rather than
+    /// reconstructing it. A missing row is a no-op; mutation rules match <see cref="Add"/>.
+    /// </summary>
+    internal bool Drop(Guid id)
+    {
+        _hub.CheckThread(); if (!MutationAllowed) return false;
+        if (!_entries.ContainsKey(id)) return true;
+        // Validate the complete retained state before changing the ledger, mirroring Add/Choose.
+        DungeonStateCodec.Encode(_entries.Values.Where(entry => entry.Id != id));
+        _entries.Remove(id); return true;
+    }
     internal bool Choose(Guid id, string provider, string eventId, string choiceId)
     {
         _hub.CheckThread(); if (!MutationAllowed || !_entries.TryGetValue(id, out var entry) || entry.DefinitionId.ProviderId != provider) return false;

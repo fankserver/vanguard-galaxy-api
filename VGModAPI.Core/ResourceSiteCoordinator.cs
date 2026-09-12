@@ -82,8 +82,29 @@ internal interface IResourceSiteNative
     string? ResolveSite(Guid session, string systemId, string poiId, ResourceSiteKind kind);
     /// <summary>Number of native POIs currently bearing the given identity (ambiguity detection).</summary>
     int AmbiguousCount(Guid session, string poiId);
+    /// <summary>Removes the owned site POI from its host system. Refuses while the player is at/routed to
+    /// it or while a salvage site's derelict station is in use, and only succeeds when the post-removal
+    /// membership delta is exactly this one POI (rollback otherwise).</summary>
+    ResourceSiteRemoveOutcome RemoveSite(Guid session, string systemId, string poiId, ResourceSiteKind kind);
     void BeginPass(Guid session);
     void EndPass();
+}
+
+/// <summary>Typed outcome of a native authored-site removal attempt.</summary>
+internal enum ResourceSiteRemoveOutcome
+{
+    /// <summary>The site POI was removed from its host system; it is gone from the live map.</summary>
+    Removed,
+    /// <summary>The player's current location or a waypoint is at the site; nothing was removed.</summary>
+    PlayerInside,
+    /// <summary>The salvage site's derelict station has a live boarding operation; nothing was removed.</summary>
+    BoardingActive,
+    /// <summary>The salvage site's derelict station has a persisted interior simulation; nothing was removed.</summary>
+    InteriorPersisted,
+    /// <summary>The owned site POI is not currently present natively; nothing was removed.</summary>
+    Missing,
+    /// <summary>The native removal could not be performed or verified; the map may be unchanged.</summary>
+    Failed
 }
 
 /// <summary>
@@ -103,6 +124,8 @@ internal sealed class ResourceSiteCoordinator : IDisposable
     private readonly Dictionary<(string Owner, string Local, string Key), ResourceSiteOccurrence> _committed = new();
     private readonly HashSet<(string Owner, string Local, string Key)> _failed = new();
     private Action<Guid>? _settled;
+    private Func<string, Guid?>? _resolveAttachedDungeon;
+    private Func<Guid, bool>? _dropDungeonOccurrence;
     private Guid _session;
     private bool _settledOnce;
     private bool _disposed;
@@ -118,6 +141,18 @@ internal sealed class ResourceSiteCoordinator : IDisposable
         });
     }
     internal void AttachSettled(Action<Guid> settled) { _hub.CheckThread(); _settled = settled; }
+    /// <summary>
+    /// Bridges the dungeon-content layer so a site's attached authored dungeon occurrence can be
+    /// dropped when the site is removed. The resolver runs before native removal (while the native
+    /// location is still resolvable) and the drop runs only after a verified removal, so a failed
+    /// removal never strands or loses dungeon state.
+    /// </summary>
+    internal void AttachDungeonOccurrencePrune(Func<string, Guid?> resolveAttached, Func<Guid, bool> drop)
+    {
+        _hub.CheckThread();
+        _resolveAttachedDungeon = resolveAttached ?? throw new ArgumentNullException(nameof(resolveAttached));
+        _dropDungeonOccurrence = drop ?? throw new ArgumentNullException(nameof(drop));
+    }
     private void Reset()
     { _committed.Clear(); _failed.Clear(); _session = _hub.CurrentSession?.Id ?? Guid.Empty; _settledOnce = false; }
     private Guid Session() => _hub.CurrentSession?.Id ?? Guid.Empty;
@@ -150,7 +185,7 @@ internal sealed class ResourceSiteCoordinator : IDisposable
     }
 
     /// <summary>
-    /// Drops every retained site row inside a dissolved pocket system (any owner — the native POIs are
+    /// Drops every retained site row inside a removed pocket system (any owner — the native POIs are
     /// removed with the system either way) so save data records them as intentionally absent rather
     /// than reporting them as reconstruction failures. Returns the dropped occurrence identities.
     /// </summary>
@@ -186,6 +221,62 @@ internal sealed class ResourceSiteCoordinator : IDisposable
             return (WorldStatus.Succeeded, occurrence);
         }
         catch (Exception error) { _report(error); return (WorldStatus.Unavailable, null); }
+    }
+
+    /// <summary>
+    /// Removes the owned occurrence: removes the native POI from its host system and drops the row so
+    /// save data records the occurrence as intentionally absent rather than reconstructing it as a
+    /// failure. Refuses typed: the key is creatable again only after a verified removal. Residual risk:
+    /// if an attached authored dungeon row cannot be dropped after a successful site removal (persistence
+    /// is not mutable at that instant), the site is still removed and the fault reported; the surviving
+    /// row can still surface through <c>IDungeonProvider.GetOccurrences()</c>.
+    /// </summary>
+    internal (WorldStatus Status, string Detail) Remove(ResourceSiteRegistry.Provider provider, Guid session, string local, string key)
+    {
+        _hub.CheckThread();
+        if (_disposed) return (WorldStatus.Unavailable, "Authored sites are unavailable.");
+        if (provider == null) return (WorldStatus.NotRegistered, "");
+        var rowKey = (provider.Owner, local, key);
+        // A creation that never produced a native POI is still an owned key; removing it frees the key.
+        if (_failed.Remove(rowKey)) return (WorldStatus.Succeeded, "");
+        if (!_committed.TryGetValue(rowKey, out var row)) return (WorldStatus.NotRegistered, "");
+        // A live KeepEnterable hold is the API's own enterability guarantee; release it first.
+        if (row.PoiId is { Length: > 0 } held
+            && _hub.Installations.Aegis.DeclaredTargets().Any(poi => string.Equals(poi, held, StringComparison.Ordinal)))
+            return (WorldStatus.Rejected, "The site's installation is held enterable; dispose the KeepEnterable hold before removing it.");
+        // Resolve any attached authored dungeon occurrence before removal; the native location is no
+        // longer discoverable once the POI is gone.
+        Guid? attachedDungeon = null;
+        if (_resolveAttachedDungeon != null && row.PoiId is { Length: > 0 } attachedPoi)
+        {
+            try { attachedDungeon = _resolveAttachedDungeon(attachedPoi); }
+            catch (Exception error) { _report(error); return (WorldStatus.Unavailable, "The site's attached dungeon state could not be read."); }
+        }
+        try
+        {
+            var outcome = _native.RemoveSite(session, row.SystemId, row.PoiId, row.Kind);
+            switch (outcome)
+            {
+                case ResourceSiteRemoveOutcome.Removed:
+                    _committed.Remove(rowKey);
+                    // The native site is gone; dropping the attached row records its absence rather than
+                    // leaving a dead occurrence that could never bind again.
+                    if (attachedDungeon.HasValue && _dropDungeonOccurrence != null && !_dropDungeonOccurrence(attachedDungeon.Value))
+                        _report(new InvalidOperationException("An attached authored dungeon occurrence could not be dropped after site removal."));
+                    return (WorldStatus.Succeeded, "");
+                case ResourceSiteRemoveOutcome.PlayerInside:
+                    return (WorldStatus.Rejected, "The player is at the site; move away before removing it.");
+                case ResourceSiteRemoveOutcome.BoardingActive:
+                    return (WorldStatus.Rejected, "A live boarding operation holds the site's station; finish or leave it before removing.");
+                case ResourceSiteRemoveOutcome.InteriorPersisted:
+                    return (WorldStatus.Rejected, "The site's station has a persisted interior; it cannot be removed safely.");
+                case ResourceSiteRemoveOutcome.Missing:
+                    return (WorldStatus.Rejected, "The site is not currently present natively; wait for reconstruction or check its state.");
+                default:
+                    return (WorldStatus.Rejected, "The native removal could not be performed or verified.");
+            }
+        }
+        catch (Exception error) { _report(error); return (WorldStatus.Unavailable, "The native removal faulted."); }
     }
 
     internal ResourceSiteState ReconstructionState(string owner, string localId, string occurrenceKey)

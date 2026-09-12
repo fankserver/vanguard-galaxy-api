@@ -63,7 +63,7 @@ public sealed class OwnedPoiWindowDressingTests
     }
 
     [Fact]
-    public void DissolvingAnOwnedWormholeReturnsItToVanillaDressing()
+    public void RemovingAnOwnedWormholeReturnsItToVanillaDressing()
     {
         using var h = new Harness();
         h.Provider.RegisterWormholePair(new("rift", 1, "Cluster Rift"));
@@ -72,7 +72,7 @@ public sealed class OwnedPoiWindowDressingTests
         var firstPoi = pair.FirstWormholePoiId;
         Assert.True(h.Service.OwnsUndressedPoi(firstPoi, "system-a"));
 
-        Assert.True(pair.Dissolve().Succeeded);
+        Assert.True(pair.Remove().Succeeded);
 
         // Ownership ends with the occurrence: nothing lingers claiming a freed identity.
         Assert.False(h.Service.OwnsUndressedPoi(firstPoi, "system-a"));

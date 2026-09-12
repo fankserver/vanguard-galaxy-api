@@ -54,14 +54,14 @@ public interface IWormholePair
     /// <summary>Shows/enables or hides/disables both ends together without changing their exact pairing.</summary>
     WorldContentResult SetOpen(bool open);
     /// <summary>
-    /// Dissolves the owned pair: removes both native wormhole POIs from their systems and clears the
+    /// Removes the owned pair: removes both native wormhole POIs from their systems and clears the
     /// owned row so the pair no longer reconstructs and its occurrence key becomes creatable again.
     /// Refused while the player's current location or a waypoint is at one of the wormholes — relocating
     /// the player first is the consumer's responsibility. On success this object is terminal
-    /// (<see cref="ReconstructionStatus.Dissolved"/>); creating the same occurrence key again authors a
+    /// (<see cref="ReconstructionStatus.Removed"/>); creating the same occurrence key again authors a
     /// fresh pair with fresh native identity.
     /// </summary>
-    WorldContentResult Dissolve();
+    WorldContentResult Remove();
 }
 
 public sealed class WormholePairsSettledEvent
