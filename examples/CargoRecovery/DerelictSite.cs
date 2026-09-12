@@ -46,7 +46,7 @@ public sealed class DerelictSite : IDisposable
 
     /// <summary>
     /// Construct BEFORE a session exists. World declarations are refused with
-    /// <see cref="WorldStatus.NotReady"/> once a session is running, so registering lazily on first
+    /// <see cref="WorldContentStatus.NotReady"/> once a session is running, so registering lazily on first
     /// use silently leaves nothing to create. Registering declares content; it never creates a
     /// native object, so doing it early costs nothing.
     /// </summary>
@@ -61,11 +61,11 @@ public sealed class DerelictSite : IDisposable
     }
 
     /// <summary>Never ignore a declaration result: a refused declaration cannot create anything later.</summary>
-    private void Declare(string what, WorldStatus status)
+    private void Declare(string what, WorldContentStatus status)
     {
-        if (status == WorldStatus.Succeeded) return;
+        if (status == WorldContentStatus.Succeeded) return;
         _log($"Derelict {what} declaration refused: {status}"
-            + (status == WorldStatus.NotReady ? " (world content must be declared before a session starts)." : "."));
+            + (status == WorldContentStatus.NotReady ? " (world content must be declared before a session starts)." : "."));
     }
 
     public bool Exists => _site != null && _site.State.Status != ReconstructionStatus.Removed;
@@ -119,7 +119,7 @@ public sealed class DerelictSite : IDisposable
         ReleaseHold();
 
         var readiness = _site.CanRemove();
-        if (readiness == WorldContentRemovalStatus.Ready)
+        if (readiness == RemovalStatus.Ready)
         {
             var result = _site.Remove();
             if (result.Succeeded)
@@ -132,7 +132,7 @@ public sealed class DerelictSite : IDisposable
             HoldEnterable();   // still ours and still protected; nothing was deferred
             return false;
         }
-        if (readiness == WorldContentRemovalStatus.NotPresent) { _site = null; return true; }
+        if (readiness == RemovalStatus.NotPresent) { _site = null; return true; }
 
         var deferred = _site.RequestRemoval();
         _removalRequested = deferred.Succeeded;

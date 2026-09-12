@@ -377,10 +377,10 @@ public sealed class Plugin : BaseUnityPlugin
     ///
     /// Returning false stops the cascade, so a half-torn cluster is never reported as cleared.
     /// </summary>
-    private bool Teardown(string label, WorldContentRemovalStatus status, Func<WorldContentResult> remove, Func<WorldContentResult> request)
+    private bool Teardown(string label, RemovalStatus status, Func<WorldContentResult> remove, Func<WorldContentResult> request)
     {
-        if (status == WorldContentRemovalStatus.NotPresent) return true; // nothing there to remove
-        if (status == WorldContentRemovalStatus.Ready)
+        if (status == RemovalStatus.NotPresent) return true; // nothing there to remove
+        if (status == RemovalStatus.Ready)
         {
             var result = remove();
             if (result.Succeeded) return true;
