@@ -42,4 +42,18 @@ internal sealed class WorldAuthoringGate
             _definitions.TryResolve(provider, localId, out var current) &&
             ReferenceEquals(current!.Definition, saved.Definition));
     }
+
+    /// <summary>Removes a retained owned world occurrence after a verified native removal.</summary>
+    internal WorldRemoveOutcome TryRemove(WorldDefinitionRegistry.Provider provider, Guid session, string localId, Guid instanceId, Func<bool>? availability = null)
+    {
+        if (!_definitions.TryResolve(provider, localId, out var definition)) return WorldRemoveOutcome.Missing;
+        long revision = _definitions.Revision;
+        if (availability != null && !availability()) return WorldRemoveOutcome.Failed;
+        if (!_persistenceReady(session) || revision != _definitions.Revision ||
+            !_definitions.TryResolve(provider, localId, out var current) || !ReferenceEquals(current!.Definition, definition!.Definition))
+            return WorldRemoveOutcome.Failed;
+        var identity = new WorldObjectIdentity(new ContentDeclaration(definition!.Owner, localId,
+            PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), instanceId);
+        return _creation.TryRemove(session, identity);
+    }
 }

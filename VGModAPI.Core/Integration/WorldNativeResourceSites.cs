@@ -24,6 +24,11 @@ internal sealed class WorldNativeResourceSites : IResourceSiteNative
     private readonly FieldInfo _points, _hazardField, _asteroidsInitialized,
         _dataShip, _dataAngle, _dataPosition, _dataHazard, _hazardName, _hazardDamage, _hazardChance,
         _fieldSurface, _fieldCore, _vectorX, _vectorY;
+    private readonly MethodInfo _getPersistables, _getOperation;
+    private readonly PropertyInfo _dungeonManagerInstance;
+    private readonly FieldInfo _locationDungeonData, _dungeonOperationActive, _dungeonSimulation,
+        _playerCurrentPoi, _playerWaypoints;
+    private readonly Type _dungeonLocationType;
     private readonly ConstructorInfo _salvagePoi, _miningPoi, _salvageData, _hazardFieldData, _asteroidField;
     private readonly Type _salvageType, _miningType, _vector, _factionType;
     private readonly MethodInfo _factionsGet;
@@ -64,6 +69,24 @@ internal sealed class WorldNativeResourceSites : IResourceSiteNative
             ?? throw new MissingMemberException("MapElement.faction");
         var poi = Get(ResourceSiteBindings.Poi);
         _hazardField = Field(poi, "hazardFieldData"); _asteroidsInitialized = Field(poi, "asteroidsInitialized");
+        // The salvage site's derelict station, when present, is a DungeonLocationData persistable. Its
+        // live operation and persisted simulation are read through the same native shapes the dungeon
+        // aegis uses, so dissolving a site never strands a boarded or persisted interior.
+        _getPersistables = poi.GetMethod("GetPersistables", BindingFlags.Public | BindingFlags.Instance, null, Type.EmptyTypes, null)
+            ?? throw new MissingMethodException(poi.FullName, "GetPersistables");
+        _dungeonLocationType = Get(ResourceSiteBindings.DungeonLocationData);
+        _locationDungeonData = Field(_dungeonLocationType, "dungeonData");
+        var dungeonData = Get("Source.Dungeon.DungeonData");
+        _dungeonOperationActive = Field(dungeonData, "isOperationActive");
+        _dungeonSimulation = Field(dungeonData, "simulation");
+        var dungeonManager = Get("Behaviour.Managers.DungeonManager");
+        _dungeonManagerInstance = dungeonManager.BaseType!.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static)
+            ?? throw new MissingMemberException(dungeonManager.BaseType.FullName, "Instance");
+        _getOperation = dungeonManager.GetMethod("GetOperation", new[] { _dungeonLocationType })
+            ?? throw new MissingMethodException(dungeonManager.FullName, "GetOperation");
+        var playerType = Get("Source.Player.GamePlayer");
+        _playerCurrentPoi = Field(playerType, "currentPointOfInterest");
+        _playerWaypoints = Field(playerType, "waypoints");
         var data = Get(ResourceSiteBindings.SalvageData);
         _dataShip = Field(data, "shipTemplate"); _dataAngle = Field(data, "angle");
         _dataPosition = Field(data, "position"); _dataHazard = Field(data, "hazardData");
@@ -263,6 +286,110 @@ internal sealed class WorldNativeResourceSites : IResourceSiteNative
         // The snapshot indexer already rejects duplicate POI identities while reading; a readable
         // snapshot therefore proves at most one bearer. An unreadable map counts as zero bearers.
         return Snapshot(session)?.FindPoint(poiId) != null ? 1 : 0;
+    }
+
+    /// <summary>
+    /// Removes the owned site POI from its host system. Ownership is structural (exact kind, membership
+    /// in the recorded host), the player must not be at or routed to it, a salvage site's station must
+    /// not have a live operation or persisted interior, and the post-removal membership delta must be
+    /// exactly this one POI with nothing else changed; otherwise the POI is restored.
+    /// </summary>
+    public ResourceSiteDissolveOutcome DissolveSite(Guid session, string systemId, string poiId, ResourceSiteKind kind)
+    {
+        var map = Map(session);
+        if (map == null) return ResourceSiteDissolveOutcome.Failed;
+        // A duplicated native GUID cannot be attributed safely: refuse rather than remove an arbitrary copy.
+        if (AmbiguousCount(session, poiId) > 1) return ResourceSiteDissolveOutcome.Missing;
+        var before = _index.Read(map);
+        var poi = before.FindPoint(poiId);
+        var host = before.FindSystem(systemId);
+        if (poi == null || host == null) return ResourceSiteDissolveOutcome.Missing;
+        var expected = kind == ResourceSiteKind.SalvageSite ? _salvageType : _miningType;
+        if (!expected.IsInstanceOfType(poi)) return ResourceSiteDissolveOutcome.Missing;
+        var members = (System.Collections.IList)_points.GetValue(host)!;
+        if (!members.Contains(poi)) return ResourceSiteDissolveOutcome.Missing;
+        if (!_game.TryGetObservedPlayer(session, out var player) || player == null) return ResourceSiteDissolveOutcome.Failed;
+        // Refuse while the player is at or routed into the site; relocation is the consumer's move.
+        var currentPoi = _playerCurrentPoi.GetValue(player);
+        if (currentPoi != null && ReferenceEquals(currentPoi, poi)) return ResourceSiteDissolveOutcome.PlayerInside;
+        if (_playerWaypoints.GetValue(player) is System.Collections.IEnumerable waypoints)
+            foreach (var waypoint in waypoints)
+                if (waypoint != null && ReferenceEquals(waypoint, poi)) return ResourceSiteDissolveOutcome.PlayerInside;
+        var boarding = StationInUse(poi);
+        if (boarding != ResourceSiteDissolveOutcome.Dissolved) return boarding;
+        try
+        {
+            members.Remove(poi);
+            if (Map(session) == null) { Rollback(members, poi); return ResourceSiteDissolveOutcome.Failed; }
+            var after = _index.Read(map);
+            if (!VerifyDissolveDelta(before, after, poi, host)) { Rollback(members, poi); return ResourceSiteDissolveOutcome.Failed; }
+            return ResourceSiteDissolveOutcome.Dissolved;
+        }
+        catch (Exception error)
+        {
+            try { Rollback(members, poi); } catch { /* rollback is best-effort only */ }
+            Report(error); return ResourceSiteDissolveOutcome.Failed;
+        }
+    }
+
+    /// <summary>The salvage site's derelict station is in use when a boarding operation is live or an
+    /// interior simulation is persisted. Other site kinds carry no boarding state.</summary>
+    private ResourceSiteDissolveOutcome StationInUse(object poi)
+    {
+        object? location = null;
+        if (_getPersistables.Invoke(poi, null) is System.Collections.IEnumerable persistables)
+            foreach (var persistable in persistables)
+                if (persistable != null && _dungeonLocationType.IsInstanceOfType(persistable)) { location = persistable; break; }
+        if (location == null) return ResourceSiteDissolveOutcome.Dissolved;
+        var data = _locationDungeonData.GetValue(location);
+        if (data != null)
+        {
+            if (_dungeonOperationActive.GetValue(data) is true) return ResourceSiteDissolveOutcome.BoardingActive;
+            if (_dungeonSimulation.GetValue(data) != null) return ResourceSiteDissolveOutcome.InteriorPersisted;
+        }
+        try
+        {
+            var manager = _dungeonManagerInstance.GetValue(null);
+            if (manager != null && _getOperation.Invoke(manager, new[] { location }) != null)
+                return ResourceSiteDissolveOutcome.BoardingActive;
+        }
+        catch { /* a missing dungeon manager fails open; the persisted-state checks above still apply */ }
+        return ResourceSiteDissolveOutcome.Dissolved;
+    }
+
+    /// <summary>Best-effort restoration of the site POI after a failed removal.</summary>
+    private static void Rollback(System.Collections.IList members, object poi)
+    {
+        try { if (!members.Contains(poi)) members.Add(poi); } catch { /* best-effort only */ }
+    }
+
+    /// <summary>Exactly the given site POI was removed from the host and nothing else changed.</summary>
+    internal static bool VerifyDissolveDelta(WorldMapIndex.Snapshot before, WorldMapIndex.Snapshot after, object removed, object host)
+    {
+        var beforePoints = new System.Collections.Generic.HashSet<object>();
+        foreach (var pair in before.Points) beforePoints.Add(pair.Value);
+        var afterPoints = new System.Collections.Generic.HashSet<object>();
+        foreach (var pair in after.Points) afterPoints.Add(pair.Value);
+        if (afterPoints.Count != beforePoints.Count - 1) return false;
+        bool removedPresent = false;
+        foreach (var value in beforePoints)
+        {
+            if (ReferenceEquals(value, removed)) { removedPresent = true; continue; }
+            if (!DeltaContains(afterPoints, value)) return false; // an unrelated POI was removed
+        }
+        if (!removedPresent) return false; // the owned site was not present
+        foreach (var value in afterPoints) if (!DeltaContains(beforePoints, value)) return false; // a POI was added
+        var beforeSystems = new System.Collections.Generic.HashSet<object>();
+        foreach (var pair in before.Systems) beforeSystems.Add(pair.Value);
+        var afterSystems = new System.Collections.Generic.HashSet<object>();
+        foreach (var pair in after.Systems) afterSystems.Add(pair.Value);
+        if (afterSystems.Count != beforeSystems.Count) return false;
+        bool hostPresent = false;
+        foreach (var value in afterSystems)
+        { if (!DeltaContains(beforeSystems, value)) return false; if (ReferenceEquals(value, host)) hostPresent = true; }
+        return hostPresent;
+        static bool DeltaContains(System.Collections.Generic.HashSet<object> set, object value)
+        { foreach (var item in set) if (ReferenceEquals(item, value)) return true; return false; }
     }
 
     private void Report(Exception error)

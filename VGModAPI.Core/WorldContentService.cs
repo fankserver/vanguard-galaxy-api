@@ -495,6 +495,42 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             catch (ArgumentException) { return new CombatSiteResult(WorldStatus.InvalidDefinition); }
         }
 
+        /// <summary>
+        /// Dissolves the owned combat site: verified native removal first, then the occurrence key is
+        /// dropped so no save record reconstructs it. Leaves the key untouched on any refusal.
+        /// </summary>
+        internal (WorldStatus Status, string Detail) DissolveCombatSite(string localId, string occurrenceKey)
+        {
+            _service._hub.CheckThread();
+            if (_disposed || _service._disposed || _service._authoring == null)
+                return (WorldStatus.Unavailable, "World authoring is unavailable.");
+            var session = _service._hub.CurrentSession;
+            if (session == null || session.Id == Guid.Empty || session.Phase != SessionPhase.GameplayInitialized || _service._hub.IsDispatchingCallbacks)
+                return (WorldStatus.NotReady, "The world is not in a safely actionable state yet.");
+            var rowKey = (ProviderId, localId, occurrenceKey);
+            if (!_service._combatKeys.ContainsKey(rowKey)) return (WorldStatus.NotRegistered, "");
+            var instanceId = SiteInstanceId(ProviderId, localId, occurrenceKey);
+            try
+            {
+                var outcome = _service._authoring.TryRemove(_provider, session.Id, localId, instanceId,
+                    () => !_disposed && !_service._disposed && _service._canAuthor());
+                switch (outcome)
+                {
+                    case WorldRemoveOutcome.Removed:
+                        _service._combatKeys.Remove(rowKey);
+                        return (WorldStatus.Succeeded, "");
+                    case WorldRemoveOutcome.PlayerInside:
+                        return (WorldStatus.Rejected, "The player is at the combat site; move away before dissolving it.");
+                    case WorldRemoveOutcome.Missing:
+                        return (WorldStatus.Rejected, "The combat site is not currently present natively.");
+                    default:
+                        return (WorldStatus.Rejected, "The native removal could not be performed or verified.");
+                }
+            }
+            catch (Exception error)
+            { _service._hub.ReportSubscriberFailure("world.combat-dissolve", error); return (WorldStatus.Unavailable, "The native removal faulted."); }
+        }
+
         public event Action<ResourceSitesSettledEvent>? ResourceSiteReconstructionSettled;
         private void ForwardSitesSettled(Guid session)
         {
@@ -954,7 +990,24 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             public WorldContentResult LastAction { get { _provider._service._hub.CheckThread(); return _lastAction; } }
             public event Action<IResourceSite>? Changed { add => _changed += value; remove => _changed -= value; }
             internal void RecordAction(WorldContentResult result) => _lastAction = result;
-            /// <summary>The pocket containing this site dissolved; the object is terminal for its session.</summary>
+            public WorldContentResult Dissolve()
+            {
+                _provider._service._hub.CheckThread();
+                if (_dissolved) return _lastAction = new(WorldContentStatus.Rejected, "The occurrence was dissolved; create the key again for a fresh site.");
+                var service = _provider._service;
+                if (_provider._disposed || service._disposed || _provider._authoredSites == null || service._siteCoordinator == null)
+                    return _lastAction = new(WorldContentStatus.Unavailable);
+                if (service._hub.CurrentSession?.Id != Session) return _lastAction = new(WorldContentStatus.GameEnded);
+                if (service._hub.CurrentSession.Phase != SessionPhase.GameplayInitialized || service._hub.IsDispatchingCallbacks)
+                    return _lastAction = new(WorldContentStatus.NotReady);
+                var (status, detail) = service._siteCoordinator.Dissolve(_provider._authoredSites, Session, _localId, _occurrenceKey);
+                if (status != WorldStatus.Succeeded)
+                    return _lastAction = new(status == WorldStatus.Unavailable ? WorldContentStatus.Unavailable : WorldContentStatus.Rejected, detail);
+                _provider._siteObjects.Remove((_localId, _occurrenceKey));
+                MarkDissolved();
+                return _lastAction = new(WorldContentStatus.Succeeded);
+            }
+            /// <summary>The pocket containing this site dissolved, or the site itself was dissolved; terminal for its session.</summary>
             internal void MarkDissolved()
             {
                 if (_dissolved) return;
@@ -987,6 +1040,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             private CombatSiteState _state = new(ReconstructionStatus.Pending);
             private WorldContentResult _lastAction = new(WorldContentStatus.NotReady, "No action has been taken yet on this occurrence.");
             private event Action<ICombatSite>? _changed;
+            private bool _dissolved;
             internal CombatSiteHandle(Provider provider, string localId, string occurrenceKey, Guid session)
             { _provider = provider; _localId = localId; _occurrenceKey = occurrenceKey; Session = session; }
             public string OccurrenceKey => _occurrenceKey;
@@ -999,13 +1053,32 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                     return new CombatSiteDefinition(_localId, 1, "", "", 1);
                 }
             }
-            public CombatSiteState State { get { _provider._service._hub.CheckThread(); return _state; } }
+            public CombatSiteState State { get { _provider._service._hub.CheckThread(); return _dissolved ? new CombatSiteState(ReconstructionStatus.Dissolved) : _state; } }
             public string? PoiId => State.PoiId;
             public WorldContentResult LastAction { get { _provider._service._hub.CheckThread(); return _lastAction; } }
             public event Action<ICombatSite>? Changed { add => _changed += value; remove => _changed -= value; }
             internal void RecordAction(WorldContentResult result) => _lastAction = result;
+            public WorldContentResult Dissolve()
+            {
+                _provider._service._hub.CheckThread();
+                if (_dissolved) return _lastAction = new(WorldContentStatus.Rejected, "The occurrence was dissolved; create the key again for a fresh site.");
+                var service = _provider._service;
+                if (_provider._disposed || service._disposed || !service._canAuthor()) return _lastAction = new(WorldContentStatus.Unavailable);
+                if (service._hub.CurrentSession?.Id != Session) return _lastAction = new(WorldContentStatus.GameEnded);
+                if (service._hub.CurrentSession.Phase != SessionPhase.GameplayInitialized || service._hub.IsDispatchingCallbacks)
+                    return _lastAction = new(WorldContentStatus.NotReady);
+                var (status, detail) = _provider.DissolveCombatSite(_localId, _occurrenceKey);
+                if (status != WorldStatus.Succeeded)
+                    return _lastAction = new(status == WorldStatus.Unavailable ? WorldContentStatus.Unavailable : WorldContentStatus.Rejected, detail);
+                _dissolved = true;
+                _provider._sites.Remove((_localId, _occurrenceKey));
+                _state = new CombatSiteState(ReconstructionStatus.Dissolved);
+                _changed?.Invoke(this);
+                return _lastAction = new(WorldContentStatus.Succeeded);
+            }
             internal void Refresh()
             {
+                if (_dissolved) return;
                 // A replaced session freezes the last observed state; the handle never resolves against the replacement save.
                 if (Session == Guid.Empty || _provider._service._hub.CurrentSession?.Id != Session) return;
                 if (_provider._disposed || _provider._service._disposed || !_provider._service._canAuthor()) return;

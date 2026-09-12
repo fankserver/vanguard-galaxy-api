@@ -82,8 +82,29 @@ internal interface IResourceSiteNative
     string? ResolveSite(Guid session, string systemId, string poiId, ResourceSiteKind kind);
     /// <summary>Number of native POIs currently bearing the given identity (ambiguity detection).</summary>
     int AmbiguousCount(Guid session, string poiId);
+    /// <summary>Removes the owned site POI from its host system. Refuses while the player is at/routed to
+    /// it or while a salvage site's derelict station is in use, and only succeeds when the post-removal
+    /// membership delta is exactly this one POI (rollback otherwise).</summary>
+    ResourceSiteDissolveOutcome DissolveSite(Guid session, string systemId, string poiId, ResourceSiteKind kind);
     void BeginPass(Guid session);
     void EndPass();
+}
+
+/// <summary>Typed outcome of a native authored-site dissolution attempt.</summary>
+internal enum ResourceSiteDissolveOutcome
+{
+    /// <summary>The site POI was removed from its host system; it is gone from the live map.</summary>
+    Dissolved,
+    /// <summary>The player's current location or a waypoint is at the site; nothing was removed.</summary>
+    PlayerInside,
+    /// <summary>The salvage site's derelict station has a live boarding operation; nothing was removed.</summary>
+    BoardingActive,
+    /// <summary>The salvage site's derelict station has a persisted interior simulation; nothing was removed.</summary>
+    InteriorPersisted,
+    /// <summary>The owned site POI is not currently present natively; nothing was removed.</summary>
+    Missing,
+    /// <summary>The native removal could not be performed or verified; the map may be unchanged.</summary>
+    Failed
 }
 
 /// <summary>
@@ -186,6 +207,47 @@ internal sealed class ResourceSiteCoordinator : IDisposable
             return (WorldStatus.Succeeded, occurrence);
         }
         catch (Exception error) { _report(error); return (WorldStatus.Unavailable, null); }
+    }
+
+    /// <summary>
+    /// Dissolves the owned occurrence: removes the native POI from its host system and drops the row so
+    /// save data records the occurrence as intentionally absent rather than reconstructing it as a
+    /// failure. Refuses typed: the key is creatable again only after a verified removal.
+    /// </summary>
+    internal (WorldStatus Status, string Detail) Dissolve(ResourceSiteRegistry.Provider provider, Guid session, string local, string key)
+    {
+        _hub.CheckThread();
+        if (_disposed) return (WorldStatus.Unavailable, "Authored sites are unavailable.");
+        if (provider == null) return (WorldStatus.NotRegistered, "");
+        var rowKey = (provider.Owner, local, key);
+        // A creation that never produced a native POI is still an owned key; dissolving it frees the key.
+        if (_failed.Remove(rowKey)) return (WorldStatus.Succeeded, "");
+        if (!_committed.TryGetValue(rowKey, out var row)) return (WorldStatus.NotRegistered, "");
+        // A live KeepEnterable hold is the API's own enterability guarantee; release it first.
+        if (row.PoiId is { Length: > 0 } held
+            && _hub.Installations.Aegis.DeclaredTargets().Any(poi => string.Equals(poi, held, StringComparison.Ordinal)))
+            return (WorldStatus.Rejected, "The site's installation is held enterable; dispose the KeepEnterable hold before dissolving it.");
+        try
+        {
+            var outcome = _native.DissolveSite(session, row.SystemId, row.PoiId, row.Kind);
+            switch (outcome)
+            {
+                case ResourceSiteDissolveOutcome.Dissolved:
+                    _committed.Remove(rowKey);
+                    return (WorldStatus.Succeeded, "");
+                case ResourceSiteDissolveOutcome.PlayerInside:
+                    return (WorldStatus.Rejected, "The player is at the site; move away before dissolving it.");
+                case ResourceSiteDissolveOutcome.BoardingActive:
+                    return (WorldStatus.Rejected, "A live boarding operation holds the site's station; finish or leave it before dissolving.");
+                case ResourceSiteDissolveOutcome.InteriorPersisted:
+                    return (WorldStatus.Rejected, "The site's station has a persisted interior; it cannot be dissolved safely.");
+                case ResourceSiteDissolveOutcome.Missing:
+                    return (WorldStatus.Rejected, "The site is not currently present natively; wait for reconstruction or check its state.");
+                default:
+                    return (WorldStatus.Rejected, "The native removal could not be performed or verified.");
+            }
+        }
+        catch (Exception error) { _report(error); return (WorldStatus.Unavailable, "The native removal faulted."); }
     }
 
     internal ResourceSiteState ReconstructionState(string owner, string localId, string occurrenceKey)

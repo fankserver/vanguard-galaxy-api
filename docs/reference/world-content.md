@@ -23,6 +23,12 @@ from an ended or replaced session keeps its last state and never resolves agains
 save — re-obtain objects for the live game. Existence still means exact current native membership:
 an object in hand does not establish that the site is present right now; check `State`.
 
+`ICombatSite.Dissolve()` is the teardown mirror of creation: it removes the native POI from its host
+system (refused while the player is at or routed to it) and drops the occurrence key so save data
+records intentional absence instead of reconstructing a failure. On success the object is terminal
+(`Dissolved`), `GetCombatSite` no longer resolves it, and the freed key authors a fresh site with a
+fresh native identity.
+
 Keyed combat sites carry the same persisted-key parity as every other authored kind. The author
 keys survive the save (kind-4 rows in the shared authored envelope), so `GetCombatSites(localId)`
 enumerates the provider's own keyed occurrences after a reload — from persisted state, never a
@@ -491,6 +497,26 @@ a typed `Rejected` retained on the returned object; it is not retried implicitly
 `Changed`, revision migration and the once-per-session `ResourceSiteReconstructionSettled`
 event follow the authored-system semantics above; site failures report `MissingDefinition`,
 `RevisionMismatch`, `NativeMissing`, `AmbiguousIdentity` or `PersistenceUnavailable`.
+
+### Dissolving an authored site
+
+`IResourceSite.Dissolve()` removes the site's native POI from its host system — including a POI
+authored directly into a vanilla system, so a site no longer has to live inside an owned pocket to
+be removable. Before touching anything the API proves structural ownership (exact kind and host
+membership) and refuses while the player is at or routed to the site. A salvage site that carries a
+derelict station is further refused while a boarding operation is live on it or a persisted
+interior simulation exists, and the coordinator refuses while an `IDungeonInstallation.KeepEnterable`
+hold still names the site. Removal succeeds only when the post-removal native membership delta is
+exactly that one POI with nothing else changed; otherwise the POI is restored.
+
+```csharp
+var result = site.Dissolve();
+if (!result.Succeeded) log(result.Detail); // typed refusal, nothing removed
+```
+
+On success the save row is dropped (intentional absence, not a reconstruction failure), the object
+is terminal (`Dissolved`), `GetResourceSite` no longer resolves it, and the freed occurrence key
+authors a fresh site with a fresh native identity. `Changed` fires for the transition.
 
 ## Moored authored ships
 

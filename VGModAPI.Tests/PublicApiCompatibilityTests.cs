@@ -70,6 +70,13 @@ public sealed class PublicApiCompatibilityTests
     }
 
     [Fact]
+    public void AuthoredSiteAndCombatSiteKeepTheirDissolveSurface()
+    {
+        AssertMethod("IResourceSite", "Dissolve");
+        AssertMethod("ICombatSite", "Dissolve");
+    }
+
+    [Fact]
     public void SettledMapBoundsExposeTheAuthoredPlacementBand()
     {
         Assert.Equal(-38f, SettledMapBounds.MinX);
