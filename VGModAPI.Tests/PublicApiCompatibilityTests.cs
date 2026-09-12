@@ -63,10 +63,43 @@ public sealed class PublicApiCompatibilityTests
     }
 
     [Fact]
-    public void WormholePairKeepItsDissolveAndQuerySurface()
+    public void WormholePairKeepItsRemoveAndQuerySurface()
     {
-        AssertMethod("IWormholePair", "Dissolve");
+        AssertMethod("IWormholePair", "Remove");
         AssertMethod("IWormholePair", "SetOpen", typeof(bool));
+        AssertMethod("IWormholePair", "CanRemove");
+        AssertMethod("IWormholePair", "RequestRemoval");
+    }
+
+    [Fact]
+    public void AuthoredSiteAndCombatSiteKeepTheirRemoveSurface()
+    {
+        AssertMethod("IResourceSite", "Remove");
+        AssertMethod("ICombatSite", "Remove");
+        AssertMethod("IResourceSite", "CanRemove");
+        AssertMethod("ICombatSite", "CanRemove");
+        AssertMethod("IResourceSite", "RequestRemoval");
+        AssertMethod("ICombatSite", "RequestRemoval");
+    }
+
+    [Fact]
+    public void PocketSystemKeepsItsRemoveQueryAndDeferredSurface()
+    {
+        AssertMethod("IPocketSystem", "Remove");
+        AssertMethod("IPocketSystem", "CanRemove");
+        AssertMethod("IPocketSystem", "RequestRemoval");
+        AssertMethod("IPocketSystem", "SetEntranceOpen", typeof(bool));
+    }
+
+    [Fact]
+    public void RemovalSurfaceUsesTheReadinessEnum()
+    {
+        // CanRemove returns a typed readiness result, truthfully naming the removal condition rather
+        // than the misleading try-remove idiom.
+        AssertMethod("IResourceSite", "CanRemove");
+        Assert.NotNull(Api.GetType("VGModAPI.WorldContentRemovalStatus"));
+        Assert.Contains("Ready", Api.GetType("VGModAPI.WorldContentRemovalStatus")!.GetEnumNames(), StringComparer.Ordinal);
+        Assert.Contains("PlayerInside", Api.GetType("VGModAPI.WorldContentRemovalStatus")!.GetEnumNames(), StringComparer.Ordinal);
     }
 
     [Fact]

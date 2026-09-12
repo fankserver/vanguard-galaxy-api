@@ -6,7 +6,7 @@ namespace VGModAPI.Tests;
 
 /// <summary>
 /// A pair declared quiet must actually quiet both owned ends through the ambient-traffic service and
-/// release that quieting when the pair dissolves. This exercises the whole wiring (definition ->
+/// release that quieting when the pair removes. This exercises the whole wiring (definition ->
 /// declaration -> handle -> service), which unit tests of either half cannot catch.
 /// </summary>
 public sealed class QuietWormholeTests
@@ -69,12 +69,12 @@ public sealed class QuietWormholeTests
         // Vanilla elsewhere is untouched.
         Assert.False(ambient.ShouldSuppress(AmbientSpawnSite.JumpGate, "vanilla-gate", "other", Resolve));
 
-        Assert.True(pocket.Dissolve().Succeeded);
+        Assert.True(pocket.Remove().Succeeded);
         Assert.False(ambient.ShouldSuppress(AmbientSpawnSite.JumpGate, "cluster-gate", systemId, Resolve));
     }
 
     [Fact]
-    public void QuietPairQuietsBothEndsAndDissolveReleasesTheQuieting()
+    public void QuietPairQuietsBothEndsAndRemoveReleasesTheQuieting()
     {
         using var harness = new Harness();
         Assert.Equal(WorldStatus.Succeeded, harness.Provider.RegisterWormholePair(
@@ -96,7 +96,7 @@ public sealed class QuietWormholeTests
         // Nothing else about those systems changes.
         Assert.False(harness.Ambient.ShouldSuppress(AmbientSpawnSite.Station, "some-station", "sys-a", NoAnchor));
 
-        Assert.True(pair.Dissolve().Succeeded);
+        Assert.True(pair.Remove().Succeeded);
         Assert.False(harness.Ambient.ShouldSuppress(AmbientSpawnSite.Wormhole, first, "sys-a", NoAnchor));
         Assert.False(harness.Ambient.ShouldSuppressPatrol(second, null, NoAnchor));
     }

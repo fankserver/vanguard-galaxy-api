@@ -172,11 +172,11 @@ internal sealed class PocketSystemCoordinator : IDisposable
     }
 
     /// <summary>
-    /// Dissolves the owned occurrence: removes the native pocket (committed rows) and drops the row so
+    /// Removes the owned occurrence: removes the native pocket (committed rows) and drops the row so
     /// save data no longer reconstructs it and the key becomes creatable again. A failed-creation
     /// pending row has no native pocket and is simply dropped. Refusals leave the row untouched.
     /// </summary>
-    internal (WorldStatus Status, string Detail, string? SystemId) Dissolve(PocketSystemRegistry.Provider provider, Guid expectedSession, PocketSystemReference reference)
+    internal (WorldStatus Status, string Detail, string? SystemId) Remove(PocketSystemRegistry.Provider provider, Guid expectedSession, PocketSystemReference reference)
     {
         _hub.CheckThread();
         if (_disposed) return (WorldStatus.Unavailable, "Resource systems are unavailable.", null);
@@ -186,21 +186,33 @@ internal sealed class PocketSystemCoordinator : IDisposable
         if (!_committed.TryGetValue(key, out var occurrence)) return (WorldStatus.NotRegistered, "", null);
         try
         {
-            var outcome = _native.DissolvePocket(expectedSession, occurrence.SystemId, occurrence.EntranceGateId, occurrence.PocketGateId);
+            var outcome = _native.RemovePocket(expectedSession, occurrence.SystemId, occurrence.EntranceGateId, occurrence.PocketGateId);
             switch (outcome)
             {
-                case PocketDissolveOutcome.Dissolved:
+                case PocketRemoveOutcome.Removed:
                     _committed.Remove(key);
                     return (WorldStatus.Succeeded, "", occurrence.SystemId);
-                case PocketDissolveOutcome.PlayerInside:
-                    return (WorldStatus.Rejected, "The player's current system, location or a waypoint is inside the pocket; move the player out first.", null);
-                case PocketDissolveOutcome.Missing:
+                case PocketRemoveOutcome.Missing:
                     return (WorldStatus.Rejected, "The pocket is not currently present natively; wait for reconstruction or check its state.", null);
                 default:
                     return (WorldStatus.Rejected, "The native removal could not be performed or verified.", null);
             }
         }
         catch (Exception error) { _report(error); return (WorldStatus.Unavailable, "The native removal faulted.", null); }
+    }
+
+    /// <summary>Pure readiness for removing the owned pocket (no mutation): Ready, PlayerInside,
+    /// NotPresent or Unavailable. Never mutates native state.</summary>
+    internal WorldContentRemovalStatus CanRemove(PocketSystemRegistry.Provider provider, Guid expectedSession, PocketSystemReference reference)
+    {
+        _hub.CheckThread();
+        if (_disposed) return WorldContentRemovalStatus.Unavailable;
+        if (reference == null || provider == null || reference.ProviderId != provider.Owner) return WorldContentRemovalStatus.Unavailable;
+        var key = (provider.Owner, reference.LocalId, reference.OccurrenceKey);
+        if (_pending.ContainsKey(key)) return WorldContentRemovalStatus.Ready; // failed creation: nothing native exists
+        if (!_committed.TryGetValue(key, out var occurrence)) return WorldContentRemovalStatus.NotPresent;
+        try { return _native.Readiness(expectedSession, occurrence.SystemId, occurrence.EntranceGateId, occurrence.PocketGateId); }
+        catch (Exception error) { _report(error); return WorldContentRemovalStatus.Unavailable; }
     }
 
     internal PocketSystemState ReconstructionState(PocketSystemRegistry.Provider provider, PocketSystemReference reference)

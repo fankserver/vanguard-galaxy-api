@@ -20,7 +20,7 @@ internal sealed class WorldAuthoringGate
         var record = _creation.Find(session, identity);
         return record != null && _definitions.MatchesRetained(record.Definition) ? record : null;
     }
-    /// <summary>Whether any retained combat-site record lives in the given system (dissolution guard). Null while the inventory is not ready to answer.</summary>
+    /// <summary>Whether any retained combat-site record lives in the given system (removal guard). Null while the inventory is not ready to answer.</summary>
     internal bool? AnyInSystem(string systemId)
     {
         WorldSnapshotInstance[] records;
@@ -41,5 +41,36 @@ internal sealed class WorldAuthoringGate
             (availability?.Invoke() ?? true) && _persistenceReady(session) && _definitions.Revision == revision &&
             _definitions.TryResolve(provider, localId, out var current) &&
             ReferenceEquals(current!.Definition, saved.Definition));
+    }
+
+    /// <summary>Removes a retained owned world occurrence after a verified native removal.</summary>
+    internal WorldRemoveOutcome RemoveChecked(WorldDefinitionRegistry.Provider provider, Guid session, string localId, Guid instanceId, Func<bool>? availability = null)
+    {
+        if (!_definitions.TryResolve(provider, localId, out var definition)) return WorldRemoveOutcome.Missing;
+        long revision = _definitions.Revision;
+        if (availability != null && !availability()) return WorldRemoveOutcome.Failed;
+        if (!_persistenceReady(session) || revision != _definitions.Revision ||
+            !_definitions.TryResolve(provider, localId, out var current) || !ReferenceEquals(current!.Definition, definition!.Definition))
+            return WorldRemoveOutcome.Failed;
+        var identity = new WorldObjectIdentity(new ContentDeclaration(definition!.Owner, localId,
+            PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), instanceId);
+        return _creation.RemoveChecked(session, identity);
+    }
+
+    /// <summary>
+    /// Pure readiness for removing the retained occurrence, applying the same admission the remove path
+    /// requires (definition tenant, availability, persistence-ready, definition-stable). Never mutates
+    /// native state.
+    /// </summary>
+    internal WorldContentRemovalStatus CanRemove(WorldDefinitionRegistry.Provider provider, Guid session, string localId, Guid instanceId, Func<bool>? availability = null)
+    {
+        if (!_definitions.TryResolve(provider, localId, out var definition)) return WorldContentRemovalStatus.NotPresent;
+        if (availability != null && !availability()) return WorldContentRemovalStatus.Unavailable;
+        if (!_persistenceReady(session) || _definitions.Revision != _definitions.Revision ||
+            !_definitions.TryResolve(provider, localId, out var current) || !ReferenceEquals(current!.Definition, definition!.Definition))
+            return WorldContentRemovalStatus.NotReady;
+        var identity = new WorldObjectIdentity(new ContentDeclaration(definition!.Owner, localId,
+            PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), instanceId);
+        return _creation.CanRemove(session, identity);
     }
 }

@@ -2,6 +2,32 @@
 
 `ModApi.Services.World` initializes automatically and remains a stable, non-null service. Provider authentication refuses when required bindings or persistence are unavailable. Register declarations before starting a session; create persistent Combat sites once the session and automatic persistence owners are ready.
 
+## Removing owned content
+
+Every owned kind (`ICombatSite`, `IResourceSite`, `IWormholePair`, `IPocketSystem`) exposes the
+same three-way teardown surface. The kind sections below only add what is specific to each kind.
+
+- **`Remove()`** — the plain native removal, the teardown mirror of creation. It refuses only when
+  removal would be impossible or corrupt save state (not present natively, world not actionable,
+  or a kind-specific integrity condition); it deliberately does **not** check transient conditions
+  like the player being at/in the content, a live boarding operation, a persisted interior, or a
+  `KeepEnterable` hold. On success the object is terminal (`Removed`, `Changed` fires), lookups no
+  longer resolve it, save data records intentional absence instead of a reconstruction failure,
+  and the freed occurrence key authors fresh content with fresh native identity. A refusal leaves
+  the content and its save data unchanged.
+- **`CanRemove()`** — a pure readiness query (no mutation) returning `WorldContentRemovalStatus`:
+  `Ready`, `PlayerInside`, `BoardingActive`, `InteriorPersisted`, `HeldEnterable`, `NotPresent`,
+  `CombatSitesPresent`, `WormholeEndpoint`, `SessionEnded`, `NotReady` or `Unavailable`. Use it to
+  decide whether to act and to tell the player *why* content is not removable yet.
+- **`RequestRemoval()`** — marks the content for removal; the next safe cleanup window completes it
+  once `CanRemove()` reports `Ready`, and `Changed` fires with the object becoming terminal.
+
+Default to `RequestRemoval()`; reserve `Remove()` for ownership-confident teardown when the
+content is already known clear. Deferred removals are **session-scoped**: they complete only
+within the session that queued them. After a save/load that replaces the session the request is
+abandoned (readiness reports `SessionEnded`, no `Changed` fires) — re-obtain the occurrence and
+re-issue `RequestRemoval()`.
+
 ## Declaration facade
 
 Acquire `IWorldProvider` directly from the loaded plugin assembly and register immutable `CombatSiteDefinition` values before starting a session. Definitions identify local content, revision, display name, an existing faction ID and level. Same-owner duplicate declarations are rejected; registration does not create a POI. The authenticated lease owns its declarations and must be disposed on provider teardown.
@@ -22,6 +48,10 @@ native membership is lost or restored. `LastAction` retains the creation outcome
 from an ended or replaced session keeps its last state and never resolves against the replacement
 save — re-obtain objects for the live game. Existence still means exact current native membership:
 an object in hand does not establish that the site is present right now; check `State`.
+
+`ICombatSite.Remove()` follows the shared removal surface above; the one combat-specific note is
+that the native seam itself refuses while the player is at or routed to the site — a
+competency-level safety of the game integration, not an API guard.
 
 Keyed combat sites carry the same persisted-key parity as every other authored kind. The author
 keys survive the save (kind-4 rows in the shared authored envelope), so `GetCombatSites(localId)`
@@ -311,12 +341,12 @@ A **closed** pocket is sealed — its paired gates are hidden as well as closed 
 draws no phantom gate line for a pocket that is reached another way (for example through a
 wormhole). Opening the entrance reveals and enables the pair.
 
-### Dissolving a pocket
+### Removing a pocket
 
 A mod can permanently remove an owned pocket after its gameplay has finished:
 
 ```csharp
-var result = reference.Dissolve();
+var result = reference.Remove();
 if (result.Succeeded)
 {
     // This object is terminal. The same key can now create a fresh pocket.
@@ -324,18 +354,22 @@ if (result.Succeeded)
 }
 ```
 
-Dissolving removes the pocket system, both paired gates and authored sites contained in the
-pocket from the live map and from API-owned save data. Existing site objects transition to
-`Dissolved`; the dissolved system object also reports `Dissolved` and no longer exposes native
-identities. A later creation with the same occurrence key returns a new object with fresh native
-identity.
+Removal takes the pocket system, both paired gates and the authored sites contained in the pocket
+off the live map and out of API-owned save data; the contained site objects transition to
+`Removed` alongside the system object, which no longer exposes native identities.
 
-The action is refused while the player's current system, current location or a waypoint is
-inside the pocket. Relocation or rescue behavior belongs to the consumer mod: move the player
-out, clear the route, then call `Dissolve` again. Dissolution is also refused while the pocket
-contains persistent Combat-site occurrences, because that older content surface has no removal
-operation. These refusals leave the pocket and its save data unchanged. Expiry scheduling is
-consumer logic; the API supplies the safe dissolution operation rather than a timer.
+Pocket-specific integrity refusals:
+
+- **Combat children block removal** (`CombatSitesPresent`). Owned **resource** sites ride along —
+  their rows are dropped and their POIs removed with the system — but owned **combat** sites do
+  not, because combat content can back story objectives and mission targets: remove them
+  deliberately via their own `Remove()` first, never by silent cascade.
+- **A pocket that is still a wormhole endpoint refuses** (`WormholeEndpoint`): remove the pairs
+  first, then the pockets.
+- The native seam itself refuses while the player's current system, location or a waypoint is
+  inside the pocket; relocation or rescue behavior belongs to the consumer mod.
+
+Expiry scheduling is consumer logic — use `RequestRemoval()` rather than a timer.
 
 ### Reconstruction and failures
 
@@ -376,7 +410,7 @@ also fires for its own transitions. After that point you can still read each occ
 live `State` or re-obtain it.
 
 Creation is gameplay-intent only; expected-session identity is an internal invariant.
-`RegisterPocketSystem` is pre-session; `CreatePocketSystem`, `SetEntranceOpen`, `Dissolve`
+`RegisterPocketSystem` is pre-session; `CreatePocketSystem`, `SetEntranceOpen`, `Remove`
 and the re-obtain methods require a ready session.
 
 ## Wormhole pairs
@@ -414,7 +448,7 @@ objects once the world settles; each failed object's `State.Reason` gives the ty
 
 A pair declared `quiet: true` is a private door rather than a highway: no decorative passerby
 traffic flies through either end and no security patrol is created there. The API declares that
-quieting itself when the pair's identities are known and releases it when the pair dissolves, so
+quieting itself when the pair's identities are known and releases it when the pair removes, so
 no consumer bookkeeping (or `IAmbientTrafficService` call) is required:
 
 ```csharp
@@ -431,26 +465,18 @@ ship. An authored door is created deliberately empty, which is exactly the condi
 it, so an owned rift would otherwise collect random wrecks, rocks and stations it never declared.
 The API skips that dressing for owned wormhole ends, owned pocket gates and any point of interest
 inside an owned pocket system. Unowned points of interest keep vanilla behaviour, and ownership ends
-with the occurrence, so a dissolved door returns to vanilla.
+with the occurrence, so a removed door returns to vanilla.
 
 Docking, services, faction relations and story- or mission-placed ships are unaffected. For finer
 control, `IAmbientTrafficService.SuppressAtWormhole` quiets one wormhole and
 `SuppressInSystemContaining` quiets decorative traffic throughout a system (security presence is
 left alone there — only a quieted wormhole strips it).
 
-A mod can remove the pair and release both native wormhole POIs (plus the owned occurrence row)
-with `IwWormholePair.Dissolve()` — the teardown mirror of creation:
-
-```csharp
-var result = rift.Dissolve(); // WorldContentResult: Succeeded / Refused (typed reason on .Detail)
-if (result.Succeeded) { /* both wormhole ends are gone; the key can be recreated */ }
-```
-
-Dissolution is refused (`Refused`) while the player's current location or any waypoint is at
-either wormhole end, and when the pair is already gone or the session has ended. On success the
-owned row is dropped, so the occurrence key becomes reusable in the same session. This matters
-for authored cleanup: a pocket system that is still a wormhole endpoint cannot dissolve, so to
-tear a wormhole-linked cluster down, dissolve every wormhole pair first, then the pockets.
+`IWormholePair.Remove()` releases both native wormhole POIs and drops the owned occurrence row
+(the shared removal surface above applies; the native seam itself refuses while the player's
+location or a waypoint is at either end). Teardown order matters for authored cleanup: a pocket
+that is still a wormhole endpoint cannot remove, so remove every wormhole pair first, then the
+pockets.
 
 ## Resource sites
 
@@ -491,6 +517,30 @@ a typed `Rejected` retained on the returned object; it is not retried implicitly
 `Changed`, revision migration and the once-per-session `ResourceSiteReconstructionSettled`
 event follow the authored-system semantics above; site failures report `MissingDefinition`,
 `RevisionMismatch`, `NativeMissing`, `AmbiguousIdentity` or `PersistenceUnavailable`.
+
+### Removing an authored site
+
+`IResourceSite.Remove()` removes the site's native POI from its host system — including a POI
+authored directly into a vanilla system, so a site does not have to live inside an owned pocket to
+be removable. Site-specific behavior on top of the shared surface:
+
+- Before touching anything the API proves structural ownership (exact kind and host membership),
+  and removal succeeds only when the post-removal native membership delta is exactly that one POI
+  with nothing else changed; otherwise the POI is restored.
+- For a salvage site with a derelict station, `CanRemove()` reports `BoardingActive`,
+  `InteriorPersisted` and `HeldEnterable` while those conditions hold.
+- If an authored dungeon was attached to the site's derelict station, its `DungeonStateStore` row
+  is dropped with the site so `IDungeonProvider.GetOccurrences()` does not keep reporting a dead
+  occurrence. The location is resolved before native removal and the row is dropped only after the
+  verified removal, so a refused or failed remove never loses dungeon state. (The equivalent prune
+  on the pocket-remove path is not implemented yet.)
+
+```csharp
+var result = site.Remove();
+if (!result.Succeeded) log(result.Detail); // typed refusal, nothing removed
+// Or, to remove on the next safe window once the conditions clear:
+if (site.CanRemove() != WorldContentRemovalStatus.Ready) site.RequestRemoval();
+```
 
 ## Moored authored ships
 

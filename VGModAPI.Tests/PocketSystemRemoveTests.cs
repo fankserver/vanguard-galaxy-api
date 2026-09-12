@@ -6,7 +6,7 @@ using Xunit;
 
 namespace VGModAPI.Tests;
 
-public sealed class PocketSystemDissolveTests
+public sealed class PocketSystemRemoveTests
 {
     /// <summary>Combined harness: authored systems plus authored sites, optionally a combat-site inventory gate.</summary>
     private sealed class Harness : IDisposable
@@ -72,7 +72,7 @@ public sealed class PocketSystemDissolveTests
     }
 
     [Fact]
-    public void DissolveRefusesWhileThePocketIsStillAWormholeEndpoint()
+    public void RemoveRefusesWhileThePocketIsStillAWormholeEndpoint()
     {
         using var harness = new Harness();
         Assert.Equal(WorldStatus.Succeeded, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("pocket", 1, "The Hollow")));
@@ -82,26 +82,26 @@ public sealed class PocketSystemDissolveTests
         var hook = harness.Provider.CreateWormholePair("rift", "default", pocket.SystemId!, "other-system");
         Assert.NotNull(hook);
         // Orphaning the pocket-side wormhole POI is refused, mirroring the combat-site refusal.
-        Assert.Equal(WorldContentStatus.Rejected, pocket.Dissolve().Status);
+        Assert.Equal(WorldContentStatus.Rejected, pocket.Remove().Status);
         Assert.Equal(WorldContentStatus.Rejected, pocket.LastAction.Status);
     }
 
     [Fact]
-    public void DissolveRemovesThePocketItsSaveRowAndFreesTheKeyForAFreshInstance()
+    public void RemoveRemovesThePocketItsSaveRowAndFreesTheKeyForAFreshInstance()
     {
         using var harness = new Harness();
         var pocket = harness.CreatePocket();
         Assert.True(pocket.SetEntranceOpen(true).Succeeded);
-        var result = pocket.Dissolve();
+        var result = pocket.Remove();
         Assert.True(result.Succeeded);
         // The native pocket is gone and no save row remains to reconstruct it.
         Assert.Empty(harness.Native.Systems);
         Assert.Empty(harness.Coordinator.CaptureRows());
-        // The object is terminal: Dissolved state, no native identity, actions refused with a retained result.
-        Assert.Equal(ReconstructionStatus.Dissolved, pocket.State.Status);
+        // The object is terminal: Removed state, no native identity, actions refused with a retained result.
+        Assert.Equal(ReconstructionStatus.Removed, pocket.State.Status);
         Assert.Null(pocket.SystemId); Assert.Null(pocket.EntranceGatePoiId); Assert.Null(pocket.PocketGatePoiId);
         Assert.Equal(WorldContentStatus.Rejected, pocket.SetEntranceOpen(true).Status);
-        Assert.Equal(WorldContentStatus.Rejected, pocket.Dissolve().Status);
+        Assert.Equal(WorldContentStatus.Rejected, pocket.Remove().Status);
         Assert.Equal(WorldContentStatus.Rejected, pocket.LastAction.Status);
         // The occurrence is no longer obtainable; the key authors a FRESH pocket with fresh native identity.
         Assert.Null(harness.Provider.GetPocketSystem("pocket", "k1"));
@@ -110,35 +110,69 @@ public sealed class PocketSystemDissolveTests
         Assert.NotSame(pocket, fresh);
         Assert.Equal("sys-2", fresh.SystemId);
         Assert.Equal(ReconstructionStatus.Reconstructed, fresh.State.Status);
-        Assert.Equal(ReconstructionStatus.Dissolved, pocket.State.Status);
+        Assert.Equal(ReconstructionStatus.Removed, pocket.State.Status);
     }
 
     [Fact]
-    public void PlayerInsideThePocketRefusesDissolutionAndRetainsTheInstance()
+    public void CanRemoveReportsPlayerInsideWhileInsideThePocketAndRemoveIsPlainExceptNativeSafety()
     {
         using var harness = new Harness();
         var pocket = harness.CreatePocket();
         harness.Native.PlayerInside = true;
-        var refused = pocket.Dissolve();
-        Assert.Equal(WorldContentStatus.Rejected, refused.Status);
-        Assert.Contains("player", refused.Detail, StringComparison.OrdinalIgnoreCase);
-        // Nothing was removed; the occurrence stays live and actionable.
-        Assert.Single(harness.Native.Systems);
-        Assert.Single(harness.Coordinator.CaptureRows());
+        // Readiness reports the occupancy. Remove refuses only because the native seam itself
+        // refuses to tear a system down under the player; the API adds no guard of its own.
+        Assert.Equal(WorldContentRemovalStatus.PlayerInside, pocket.CanRemove());
+        Assert.Equal(WorldContentStatus.Rejected, pocket.Remove().Status);
         Assert.Equal(ReconstructionStatus.Reconstructed, pocket.State.Status);
-        Assert.True(pocket.SetEntranceOpen(false).Succeeded);
-        // Once the consumer relocated the player, the same object dissolves.
+        Assert.Single(harness.Native.Systems);
+        // Once the consumer relocated the player, the same object removes.
         harness.Native.PlayerInside = false;
-        Assert.True(pocket.Dissolve().Succeeded);
+        Assert.True(pocket.Remove().Succeeded);
+        Assert.Equal(ReconstructionStatus.Removed, pocket.State.Status);
+        Assert.Empty(harness.Native.Systems);
+        Assert.Empty(harness.Coordinator.CaptureRows());
     }
 
     [Fact]
-    public void NativelyAbsentPocketRefusesDissolutionWithoutDroppingTheRow()
+    public void RequestRemovalDefersUntilTheCleanupWindow()
+    {
+        using var harness = new Harness();
+        var pocket = harness.CreatePocket();
+        Assert.Equal(WorldContentStatus.Succeeded, pocket.RequestRemoval().Status); // queued
+        Assert.Equal(ReconstructionStatus.Reconstructed, pocket.State.Status);
+        Assert.Single(harness.Native.Systems);
+        // The next safe cleanup window completes the deferred removal.
+        harness.Service.MaintainPocketSystems(harness.Session);
+        Assert.Equal(ReconstructionStatus.Removed, pocket.State.Status);
+        Assert.Contains("completed at a cleanup window", pocket.LastAction.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(harness.Native.Systems);
+        Assert.Empty(harness.Coordinator.CaptureRows());
+    }
+
+    [Fact]
+    public void RequestRemovalIsAbandonedAndEvictedAcrossSessionReplacement()
+    {
+        using var harness = new Harness();
+        var pocket = harness.CreatePocket(); // session A
+        pocket.RequestRemoval();             // queued for session A
+        Assert.Equal(1, harness.Service.PendingRemovalCount);
+        // Replace the session (a save/load re-anchoring to a new session).
+        harness.Hub.Invalidate("replaced");
+        harness.BeginGameplay();             // session B
+        harness.Service.MaintainPocketSystems(harness.Session);
+        // The request queued in the ended session is abandoned: evicted, not leaked.
+        Assert.Equal(0, harness.Service.PendingRemovalCount);
+        // And session B did not complete the stale request against the ended-session handle.
+        Assert.Equal(ReconstructionStatus.Reconstructed, pocket.State.Status);
+    }
+
+    [Fact]
+    public void NativelyAbsentPocketRefusesRemovalWithoutDroppingTheRow()
     {
         using var harness = new Harness();
         var pocket = harness.CreatePocket();
         harness.Native.Systems.Clear();
-        Assert.Equal(WorldContentStatus.Rejected, pocket.Dissolve().Status);
+        Assert.Equal(WorldContentStatus.Rejected, pocket.Remove().Status);
         Assert.Single(harness.Coordinator.CaptureRows());
     }
 
@@ -147,8 +181,8 @@ public sealed class PocketSystemDissolveTests
     {
         using var harness = new Harness();
         var pocket = harness.CreatePocket();
-        harness.Native.FailDissolve = true;
-        Assert.Equal(WorldContentStatus.Rejected, pocket.Dissolve().Status);
+        harness.Native.FailRemove = true;
+        Assert.Equal(WorldContentStatus.Rejected, pocket.Remove().Status);
         Assert.Single(harness.Coordinator.CaptureRows());
         Assert.Equal(ReconstructionStatus.Reconstructed, pocket.State.Status);
     }
@@ -158,15 +192,15 @@ public sealed class PocketSystemDissolveTests
     {
         using var harness = new Harness();
         var pocket = harness.CreatePocket();
-        harness.Native.ThrowOnDissolve = true;
-        Assert.Equal(WorldContentStatus.Unavailable, pocket.Dissolve().Status);
+        harness.Native.ThrowOnRemove = true;
+        Assert.Equal(WorldContentStatus.Unavailable, pocket.Remove().Status);
         Assert.Single(harness.Coordinator.CaptureRows());
-        harness.Native.ThrowOnDissolve = false;
-        Assert.True(pocket.Dissolve().Succeeded);
+        harness.Native.ThrowOnRemove = false;
+        Assert.True(pocket.Remove().Succeeded);
     }
 
     [Fact]
-    public void FailedCreationDissolvesWithoutANativeRemovalAndFreesTheKey()
+    public void FailedCreationRemovesWithoutANativeRemovalAndFreesTheKey()
     {
         using var harness = new Harness();
         Assert.Equal(WorldStatus.Succeeded, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("pocket", 1, "The Hollow")));
@@ -174,8 +208,8 @@ public sealed class PocketSystemDissolveTests
         harness.Native.FailCreate = true;
         var failed = harness.Provider.CreatePocketSystem("pocket", "k1", "anchor")!;
         Assert.NotNull(failed);
-        Assert.True(failed.Dissolve().Succeeded);
-        Assert.Equal(0, harness.Native.DissolveCalls); // nothing native was ever created
+        Assert.True(failed.Remove().Succeeded);
+        Assert.Equal(0, harness.Native.RemoveCalls); // nothing native was ever created
         Assert.Empty(harness.Coordinator.CaptureRows());
         harness.Native.FailCreate = false;
         var fresh = harness.Provider.CreatePocketSystem("pocket", "k1", "anchor")!;
@@ -183,17 +217,17 @@ public sealed class PocketSystemDissolveTests
     }
 
     [Fact]
-    public void ReplacedSessionRefusesDissolveWithGameEnded()
+    public void ReplacedSessionRefusesRemoveWithGameEnded()
     {
         using var harness = new Harness();
         var pocket = harness.CreatePocket();
         harness.Hub.Invalidate("session replaced by test");
         harness.BeginGameplay();
-        Assert.Equal(WorldContentStatus.GameEnded, pocket.Dissolve().Status);
+        Assert.Equal(WorldContentStatus.GameEnded, pocket.Remove().Status);
     }
 
     [Fact]
-    public void ResourceSitesInsideTheDissolvedPocketAreDroppedAndTheirObjectsAreTerminal()
+    public void ResourceSitesInsideTheRemovedPocketAreDroppedAndTheirObjectsAreTerminal()
     {
         using var harness = new Harness();
         Assert.Equal(WorldStatus.Succeeded, harness.Provider.RegisterPocketSystem(new PocketSystemDefinition("pocket", 1, "The Hollow")));
@@ -205,42 +239,42 @@ public sealed class PocketSystemDissolveTests
         var outside = harness.Provider.CreateResourceSite("field", "elsewhere", "other-system", 3f, 4f)!;
         bool insideChanged = false;
         inside.Changed += _ => insideChanged = true;
-        Assert.True(pocket.Dissolve().Succeeded);
+        Assert.True(pocket.Remove().Succeeded);
         // The contained site row is dropped (intentionally absent, not a reconstruction failure)...
         Assert.Equal("elsewhere", Assert.Single(harness.SiteCoordinator.CaptureRows()).OccurrenceKey);
         Assert.Null(harness.Provider.GetResourceSite("field", "in-pocket"));
         // ...its object is terminal and announced the transition; the unrelated site is untouched.
-        Assert.Equal(ReconstructionStatus.Dissolved, inside.State.Status);
+        Assert.Equal(ReconstructionStatus.Removed, inside.State.Status);
         Assert.True(insideChanged);
         Assert.Same(outside, harness.Provider.GetResourceSite("field", "elsewhere"));
     }
 
     [Fact]
-    public void CombatSitesInsideThePocketRefuseDissolutionUntilTheInventoryCanProveAbsence()
+    public void CombatSitesInsideThePocketRefuseRemovalUntilTheInventoryCanProveAbsence()
     {
         using var harness = new Harness(withCombatGate: true);
         var pocket = harness.CreatePocket();
         // The inventory cannot answer yet: fail closed with NotReady rather than guessing.
-        var notReady = pocket.Dissolve();
+        var notReady = pocket.Remove();
         Assert.Equal(WorldContentStatus.NotReady, notReady.Status);
         Assert.Single(harness.Coordinator.CaptureRows());
-        // A retained combat-site record inside the pocket refuses dissolution outright.
+        // A retained combat-site record inside the pocket refuses removal outright.
         harness.Creation!.Reset(harness.Session);
         var identity = new WorldObjectIdentity(new ContentDeclaration("author.a", "PoiX", PersistentContentKind.WorldObject, ContentPersistenceImpact.ApiDependent), Guid.NewGuid());
         var row = new WorldSnapshotInstance(new object(), identity, pocket.SystemId!,
             new WorldSavedDefinition(identity.Owner, new WorldCombatDefinition(identity.LocalId, 1, "Site", "player", 1)));
         Assert.True(harness.Creation.TryRestore(harness.Session, () => new[] { row }));
-        var refused = pocket.Dissolve();
+        var refused = pocket.Remove();
         Assert.Equal(WorldContentStatus.Rejected, refused.Status);
         Assert.Contains("combat", refused.Detail, StringComparison.OrdinalIgnoreCase);
-        // Without combat sites in the pocket the same object dissolves.
+        // Without combat sites in the pocket the same object removes.
         harness.Creation.Reset(harness.Session);
         Assert.True(harness.Creation.TryRestore(harness.Session, Array.Empty<WorldSnapshotInstance>));
-        Assert.True(pocket.Dissolve().Succeeded);
+        Assert.True(pocket.Remove().Succeeded);
     }
 
     [Fact]
-    public void DissolveDeltaVerificationAcceptsOnlyTheExactRemoval()
+    public void RemoveDeltaVerificationAcceptsOnlyTheExactRemoval()
     {
         var index = new WorldMapIndex(typeof(Source.Galaxy.GalaxyMapData).Assembly);
         var map = new Source.Galaxy.GalaxyMapData();
@@ -254,7 +288,7 @@ public sealed class PocketSystemDissolveTests
         anchor.pointsOfInterest.Add(entrance); anchor.pointsOfInterest.Add(other); pocket.pointsOfInterest.Add(peer);
         var before = index.Read(map);
         static object? ParentOf(object poi) => ((Source.Galaxy.MapElement)poi).system;
-        bool Verify(WorldMapIndex.Snapshot after) => WorldNativePocketSystems.VerifyDissolveDelta(before, after, pocket, entrance, ParentOf);
+        bool Verify(WorldMapIndex.Snapshot after) => WorldNativePocketSystems.VerifyRemoveDelta(before, after, pocket, entrance, ParentOf);
         // Removing too little is refused: the pocket and entrance are still present.
         Assert.False(Verify(index.Read(map)));
         anchor.pointsOfInterest.Remove(entrance);

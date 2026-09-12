@@ -52,7 +52,7 @@ public sealed class InstalledPocketSystemBindingTests
         Assert.True(gate.Methods.Single(m => m.Name == "GetTargetPOI").HasBody);
         Assert.Contains(gate.Fields, field => field.Name == "jumpgateOpen");
         Assert.Contains(assembly.MainModule.GetType("Source.Galaxy.MapPointOfInterest").Fields, field => field.Name == "hidden");
-        // Dissolution boundaries: plain membership mutations with no side effects beyond the removal.
+        // Removal boundaries: plain membership mutations with no side effects beyond the removal.
         var removePoi = assembly.MainModule.GetType(PocketSystemBindings.System).Methods.Single(m => m.Name == "RemovePointOfInterest");
         Assert.True(removePoi.HasBody && !removePoi.IsStatic);
     }

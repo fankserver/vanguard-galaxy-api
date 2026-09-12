@@ -36,6 +36,23 @@ public sealed class DungeonStateStoreTests
         persistence.MutationAllowed = true; Assert.True(store.Add(Occurrence()));
     }
     [Fact]
+    public void DropRemovesARowOnlyWhenPersistenceCanMutate()
+    {
+        using var hub = new LifecycleHub((_, _) => { }); var persistence = new Persistence(); using var store = new DungeonStateStore(hub, persistence);
+        var session = hub.Begin(SessionOrigin.SaveLoad, "save"); hub.PlayerReady(session);
+        persistence.Provider.Restore(hub.CurrentSession!, null); persistence.StateReady = persistence.MutationAllowed = true;
+        var occurrence = Occurrence(); Assert.True(store.Add(occurrence));
+        persistence.MutationAllowed = false;
+        Assert.False(store.Drop(occurrence.Id)); Assert.Single(store.Entries);
+        persistence.MutationAllowed = true;
+        Assert.True(store.Drop(occurrence.Id)); Assert.Empty(store.Entries);
+        Assert.True(store.Drop(occurrence.Id)); // a missing row is a no-op
+        // The drop survives capture: nothing reconstructs the intentionally absent occurrence.
+        var payload = persistence.Provider.Capture();
+        persistence.Provider.Restore(hub.CurrentSession!, payload);
+        Assert.Empty(store.Entries);
+    }
+    [Fact]
     public void NestedNativeSerializationBlocksMutationButPreservesReadableState()
     {
         using var hub = new LifecycleHub((_, _) => { }); var persistence = new Persistence(); using var store = new DungeonStateStore(hub, persistence);

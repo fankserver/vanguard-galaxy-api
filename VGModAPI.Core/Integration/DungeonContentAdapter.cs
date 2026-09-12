@@ -106,6 +106,12 @@ internal sealed class DungeonContentAdapter : IDisposable
     { _hub.CheckThread(); return !_disposed && _index.Bind(location, id); }
     internal Guid? Marker(object location)
     { _hub.CheckThread(); return _disposed ? null : _index.SavedMarker(location); }
+    /// <summary>The authored occurrence attached to a native boarding location, or null.</summary>
+    internal Guid? AttachedOccurrence(object location)
+    { _hub.CheckThread(); return _disposed || location == null ? null : _index.SavedMarker(location); }
+    /// <summary>Forgets the session-local binding of an occurrence whose row was intentionally dropped.</summary>
+    internal void DetachOccurrence(Guid occurrence)
+    { _hub.CheckThread(); if (!_disposed) _index.Detach(occurrence); }
     internal bool ReplaceLayout(object simulation, object location)
     {
         _hub.CheckThread(); var id = _index.Find(location); if (_disposed || !id.HasValue) return false;
