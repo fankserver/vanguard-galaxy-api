@@ -18,11 +18,11 @@ namespace VGModAPI.Tests;
 /// of reconstructing a failure. Refusals leave the key and the native POI untouched.
 /// </summary>
 [Collection("game-double")]
-public sealed class CombatSiteDissolveTests
+public sealed class CombatSiteRemoveTests
 {
     private sealed class Harness : IDisposable
     {
-        private const string FactionId = "world.dissolve.test";
+        private const string FactionId = "world.remove.test";
         internal readonly LifecycleHub Hub;
         internal readonly WorldDefinitionRegistry Combat;
         internal readonly WorldCreationCoordinator Creation;
@@ -54,7 +54,7 @@ public sealed class CombatSiteDissolveTests
 
         internal void BeginGameplay()
         {
-            var request = Game.BeginLoad(new SaveGameFile(Path.Combine(Path.GetTempPath(), "combat-dissolve.save")));
+            var request = Game.BeginLoad(new SaveGameFile(Path.Combine(Path.GetTempPath(), "combat-remove.save")));
             IEnumerator Load() { GamePlayer.current = new GamePlayer { map = Map }; Game.PlayerReconstructed(); yield break; }
             var routine = Game.ObserveLoad(Load());
             Game.EndLoadRequest(request, null);
@@ -74,7 +74,7 @@ public sealed class CombatSiteDissolveTests
     }
 
     [Fact]
-    public void DissolveRemovesTheNativePoiAndTheKeyAndFreesTheKeyForAFreshInstance()
+    public void RemoveRemovesTheNativePoiAndTheKeyAndFreesTheKeyForAFreshInstance()
     {
         using var h = new Harness();
         h.BeginGameplay();
@@ -84,16 +84,16 @@ public sealed class CombatSiteDissolveTests
         Assert.Single(h.Host.pointsOfInterest);
         Assert.Single(h.Service.CaptureCombatKeys());
 
-        Assert.True(site.Dissolve().Succeeded);
+        Assert.True(site.Remove().Succeeded);
         // The native POI and the save key are both gone: load reconstructs nothing.
         Assert.Empty(h.Host.pointsOfInterest);
         Assert.Empty(h.Service.CaptureCombatKeys());
-        Assert.Equal(ReconstructionStatus.Dissolved, site.State.Status);
+        Assert.Equal(ReconstructionStatus.Removed, site.State.Status);
         Assert.Null(site.PoiId);
         Assert.Null(h.Provider.GetCombatSite("PoiX", "encounter"));
         Assert.Empty(h.Provider.GetCombatSites("PoiX"));
         // The object is terminal and the freed key authors a fresh occurrence.
-        Assert.Equal(WorldContentStatus.Rejected, site.Dissolve().Status);
+        Assert.Equal(WorldContentStatus.Rejected, site.Remove().Status);
         var fresh = h.Provider.CreateCombatSite("PoiX", "encounter", "system", 10, 20);
         Assert.NotNull(fresh);
         Assert.NotSame(site, fresh);
@@ -108,7 +108,7 @@ public sealed class CombatSiteDissolveTests
         h.BeginGameplay();
         var site = h.Provider.CreateCombatSite("PoiX", "encounter", "system", 10, 20)!;
         GamePlayer.current!.currentPointOfInterest = (MapPointOfInterest)h.Host.pointsOfInterest[0];
-        var refused = site.Dissolve();
+        var refused = site.Remove();
         Assert.Equal(WorldContentStatus.Rejected, refused.Status);
         Assert.Contains("player", refused.Detail, StringComparison.OrdinalIgnoreCase);
         // Nothing was removed; the occurrence stays live and actionable.
@@ -116,7 +116,7 @@ public sealed class CombatSiteDissolveTests
         Assert.Single(h.Service.CaptureCombatKeys());
         Assert.Equal(ReconstructionStatus.Reconstructed, site.State.Status);
         GamePlayer.current.currentPointOfInterest = null;
-        Assert.True(site.Dissolve().Succeeded);
+        Assert.True(site.Remove().Succeeded);
     }
 
     [Fact]
@@ -126,19 +126,19 @@ public sealed class CombatSiteDissolveTests
         h.BeginGameplay();
         var site = h.Provider.CreateCombatSite("PoiX", "encounter", "system", 10, 20)!;
         h.Host.pointsOfInterest.Clear();
-        Assert.Equal(WorldContentStatus.Rejected, site.Dissolve().Status);
+        Assert.Equal(WorldContentStatus.Rejected, site.Remove().Status);
         Assert.Single(h.Service.CaptureCombatKeys());
     }
 
     [Fact]
-    public void ReplacedSessionRefusesDissolveWithGameEnded()
+    public void ReplacedSessionRefusesRemoveWithGameEnded()
     {
         using var h = new Harness();
         h.BeginGameplay();
         var site = h.Provider.CreateCombatSite("PoiX", "encounter", "system", 10, 20)!;
         h.Hub.Invalidate("session replaced by test");
         h.BeginGameplay();
-        Assert.Equal(WorldContentStatus.GameEnded, site.Dissolve().Status);
+        Assert.Equal(WorldContentStatus.GameEnded, site.Remove().Status);
         // The replacement save was never touched: the old native POI is still present.
         Assert.Single(h.Host.pointsOfInterest);
     }

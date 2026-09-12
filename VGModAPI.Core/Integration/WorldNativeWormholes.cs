@@ -120,52 +120,52 @@ internal sealed class WorldNativeWormholes : IWormholePairNative
     /// POI or any waypoint is at either wormhole, and refuses when either GUID is ambiguous (a duplicated
     /// native id means the occurrence's ownership cannot be decided safely). On a post-removal
     /// verification failure the removed POIs are rolled back so the map is left unchanged.</summary>
-    public WormholeDissolveOutcome DissolveWormhole(Guid session, string firstPoiId, string secondPoiId)
+    public WormholeRemoveOutcome RemoveWormhole(Guid session, string firstPoiId, string secondPoiId)
     {
-        var map = Map(false, session); if (map == null) return WormholeDissolveOutcome.Failed;
+        var map = Map(false, session); if (map == null) return WormholeRemoveOutcome.Failed;
         // A duplicated native GUID cannot be attributed safely: refuse rather than remove an arbitrary copy.
         if (AmbiguousCount(session, firstPoiId) > 1 || AmbiguousCount(session, secondPoiId) > 1)
-            return WormholeDissolveOutcome.Missing;
+            return WormholeRemoveOutcome.Missing;
         var before = _index.Read(map);
         var first = before.FindPoint(firstPoiId); var second = before.FindPoint(secondPoiId);
         if (first == null || second == null || !_wormholeType.IsInstanceOfType(first) || !_wormholeType.IsInstanceOfType(second))
-            return WormholeDissolveOutcome.Missing;
+            return WormholeRemoveOutcome.Missing;
         // Verify the pair is exactly as owned (each targets the other) before removing.
         var a = Targets(first); var b = Targets(second);
         if (a.Count != 1 || b.Count != 1 || (string)a[0]! != secondPoiId || (string)b[0]! != firstPoiId)
-            return WormholeDissolveOutcome.Missing;
+            return WormholeRemoveOutcome.Missing;
         // Refuse while the player is at or routed into either wormhole; relocation is the consumer's move.
         try
         {
             if (!_game.TryGetCurrentReadyPlayer(session, out var player) || player == null)
-                return WormholeDissolveOutcome.Failed;
+                return WormholeRemoveOutcome.Failed;
             var currentPoi = _playerCurrentPoi.GetValue(player);
             if (currentPoi != null && (ReferenceEquals(currentPoi, first) || ReferenceEquals(currentPoi, second)))
-                return WormholeDissolveOutcome.PlayerInside;
+                return WormholeRemoveOutcome.PlayerInside;
             if (_playerWaypoints.GetValue(player) is System.Collections.IEnumerable waypoints)
                 foreach (var waypoint in waypoints)
                     if (waypoint != null && (ReferenceEquals(waypoint, first) || ReferenceEquals(waypoint, second)))
-                        return WormholeDissolveOutcome.PlayerInside;
+                        return WormholeRemoveOutcome.PlayerInside;
             var firstSystem = _parent.GetValue(first);
             var secondSystem = _parent.GetValue(second);
-            if (firstSystem == null || secondSystem == null) return WormholeDissolveOutcome.Missing;
+            if (firstSystem == null || secondSystem == null) return WormholeRemoveOutcome.Missing;
             // Remove both wormholes from their systems' point lists.
             Points(firstSystem).Remove(first);
             Points(secondSystem).Remove(second);
             if (Map(false, session) == null)
             {
                 Rollback(firstSystem, secondSystem, first, second);
-                return WormholeDissolveOutcome.Failed;
+                return WormholeRemoveOutcome.Failed;
             }
             var after = _index.Read(map);
             // Verify membership shrank by exactly these two wormhole POIs and nothing else changed.
             if (after.FindPoint(firstPoiId) != null || after.FindPoint(secondPoiId) != null
-                || !VerifyDissolveDelta(before, after, first, second))
+                || !VerifyRemoveDelta(before, after, first, second))
             {
                 Rollback(firstSystem, secondSystem, first, second);
-                return WormholeDissolveOutcome.Failed;
+                return WormholeRemoveOutcome.Failed;
             }
-            return WormholeDissolveOutcome.Dissolved;
+            return WormholeRemoveOutcome.Removed;
         }
         catch (Exception error)
         {
@@ -175,7 +175,7 @@ internal sealed class WorldNativeWormholes : IWormholePairNative
                 if (fs != null && ss != null) Rollback(fs, ss, first, second);
             }
             catch { /* rollback is best-effort only */ }
-            _report(error); return WormholeDissolveOutcome.Failed;
+            _report(error); return WormholeRemoveOutcome.Failed;
         }
     }
     /// <summary>Best-effort restoration of both wormhole POIs into their systems after a failed removal.</summary>
@@ -190,7 +190,7 @@ internal sealed class WorldNativeWormholes : IWormholePairNative
         catch { /* best-effort only */ }
     }
     /// <summary>Exactly the two given wormhole POIs were removed; nothing else was removed and nothing added.</summary>
-    private static bool VerifyDissolveDelta(WorldMapIndex.Snapshot before, WorldMapIndex.Snapshot after,
+    private static bool VerifyRemoveDelta(WorldMapIndex.Snapshot before, WorldMapIndex.Snapshot after,
         object first, object second)
     {
         var beforeSet = new System.Collections.Generic.HashSet<object>();

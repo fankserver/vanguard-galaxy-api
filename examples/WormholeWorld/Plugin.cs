@@ -7,7 +7,7 @@ namespace WormholeWorld;
 
 /// <summary>
 /// Sample/test mod demonstrating pocket-cluster + wormhole + themed-site authoring together, and
-/// the full-cleanup surface (each owned occurrence dissolves back out).
+/// the full-cleanup surface (each owned occurrence removes back out).
 ///
 /// From your current system X you press "Spawn Wormhole" to open a wormhole into a small authored
 /// cluster. The cluster is a chain of owned pockets:
@@ -20,7 +20,7 @@ namespace WormholeWorld;
 ///                                  * off-world "Salvage" (salvage wreck site)
 ///   B  --[gate back to E]--    nothing else (a quiet dead-end anchor)
 ///
-/// Every system has a fixed test name (static, not changing). "Delete Cluster" dissolves each owned
+/// Every system has a fixed test name (static, not changing). "Delete Cluster" removes each owned
 /// occurrence — the wormhole pair first (its endpoints must be freed), then each pocket (its own gate
 /// and site POIs go with it) — so a delete leaves no authored system, gate, wormhole or site behind.
 /// </summary>
@@ -124,11 +124,11 @@ public sealed class Plugin : BaseUnityPlugin
                     "open a wormhole into a 3-system authored cluster",
                     "Creates Cluster Entry (E) anchored to this system, then Hub Alpha (A) and Anchor Beta (B) "
                     + "linked to E by gates. A holds two wormholes into themed off-world instances (mining, salvage). "
-                    + "Everything you spawn is dissolvable later.",
+                    + "Everything you spawn is removable later.",
                     clickable: _entryDoor == null),
                 new HudRow("delete", _entryDoor == null ? "spawn first" : "Delete Cluster",
-                    "dissolve the entry wormhole, then every authored system, gate, wormhole and site",
-                    "Full cleanup: dissolves the wormhole pairs first (their endpoints must be freed), then each "
+                    "remove the entry wormhole, then every authored system, gate, wormhole and site",
+                    "Full cleanup: removes the wormhole pairs first (their endpoints must be freed), then each "
                     + "pocket (its gate and any site POIs go with it). Moving into any part of the cluster first "
                     + "would refuse deletion until you leave.",
                     clickable: _entryDoor != null),
@@ -186,7 +186,7 @@ public sealed class Plugin : BaseUnityPlugin
         // The entry wormhole X <-> E (the "first wormhole").
         _entryDoor = _world.CreateWormholePair(EntryDoorDef, "cluster-door", x, _entry.SystemId);
         if (_entryDoor == null)
-        { Logger.LogWarning("Failed to link the entry wormhole; dissolving the bare entry."); _entry.Dissolve(); _entry = null; return; }
+        { Logger.LogWarning("Failed to link the entry wormhole; removing the bare entry."); _entry.Remove(); _entry = null; return; }
         _entryDoor.SetOpen(true);
 
         // A: Hub Alpha, anchored to E (gate E <-> A). Open it so the gate is a real way to travel.
@@ -277,45 +277,45 @@ public sealed class Plugin : BaseUnityPlugin
         MiningDef => MiningWorldName, SalvageDef => SalvageWorldName, _ => def
     };
 
-    /// <summary>Full cleanup (requirement 8): dissolve the wormhole pairs first (a pocket that is still a
-    /// wormhole endpoint cannot dissolve), then each pocket — its gate and site POIs go with it.</summary>
+    /// <summary>Full cleanup (requirement 8): remove the wormhole pairs first (a pocket that is still a
+    /// wormhole endpoint cannot remove), then each pocket — its gate and site POIs go with it.</summary>
     private void DeleteCluster()
     {
         if (_world == null || _entryDoor == null) return;
 
         // Wormholes first: freeing the pair releases all pocket endpoints that used them. A refused
-        // dissolve (e.g. the player is at a wormhole) leaves the occurrence in place, so keep the handle
+        // remove (e.g. the player is at a wormhole) leaves the occurrence in place, so keep the handle
         // and reflect the real state instead of claiming it is gone.
-        if (!DissolveWormhole(_miningHole)) return;   _miningHole = null;
-        if (!DissolveWormhole(_salvageHole)) return;  _salvageHole = null;
-        if (!DissolveWormhole(_entryDoor)) return;    _entryDoor = null;
+        if (!RemoveWormhole(_miningHole)) return;   _miningHole = null;
+        if (!RemoveWormhole(_salvageHole)) return;  _salvageHole = null;
+        if (!RemoveWormhole(_entryDoor)) return;    _entryDoor = null;
 
         // Off-world pockets (their site rows drop with the pocket).
-        DissolvePocket(_mining); _mining = null; _miningSite = null;
-        DissolvePocket(_salvage); _salvage = null; _salvageSite = null;
+        RemovePocket(_mining); _mining = null; _miningSite = null;
+        RemovePocket(_salvage); _salvage = null; _salvageSite = null;
         // The branch systems, then the entry.
-        DissolvePocket(_hub); _hub = null;
-        DissolvePocket(_anchor); _anchor = null;
-        DissolvePocket(_entry); _entry = null;
+        RemovePocket(_hub); _hub = null;
+        RemovePocket(_anchor); _anchor = null;
+        RemovePocket(_entry); _entry = null;
 
         Logger.LogInfo("Wormhole World deleted: every authored system, gate, wormhole and site is gone.");
     }
 
-    /// <summary>Dissolves a wormhole pair; returns true only when it actually went away. On refusal the
+    /// <summary>Removes a wormhole pair; returns true only when it actually went away. On refusal the
     /// pair is left in place (the cascade stops so a half-torn cluster is never presented as cleared).</summary>
-    private bool DissolveWormhole(IWormholePair? w)
+    private bool RemoveWormhole(IWormholePair? w)
     {
         if (w == null) return true;
-        var result = w.Dissolve();
-        if (!result.Succeeded) Logger.LogWarning("Wormhole dissolve: " + result.Status + " - " + result.Detail);
+        var result = w.Remove();
+        if (!result.Succeeded) Logger.LogWarning("Wormhole remove: " + result.Status + " - " + result.Detail);
         return result.Succeeded;
     }
 
-    private void DissolvePocket(IPocketSystem? p)
+    private void RemovePocket(IPocketSystem? p)
     {
         if (p == null) return;
-        var result = p.Dissolve();
-        if (!result.Succeeded) Logger.LogWarning("Pocket dissolve: " + result.Status + " - " + result.Detail);
+        var result = p.Remove();
+        if (!result.Succeeded) Logger.LogWarning("Pocket remove: " + result.Status + " - " + result.Detail);
     }
 
     private void OnDestroy()

@@ -71,7 +71,7 @@ internal sealed class WorldNativeResourceSites : IResourceSiteNative
         _hazardField = Field(poi, "hazardFieldData"); _asteroidsInitialized = Field(poi, "asteroidsInitialized");
         // The salvage site's derelict station, when present, is a DungeonLocationData persistable. Its
         // live operation and persisted simulation are read through the same native shapes the dungeon
-        // aegis uses, so dissolving a site never strands a boarded or persisted interior.
+        // aegis uses, so removing a site never strands a boarded or persisted interior.
         _getPersistables = poi.GetMethod("GetPersistables", BindingFlags.Public | BindingFlags.Instance, null, Type.EmptyTypes, null)
             ?? throw new MissingMethodException(poi.FullName, "GetPersistables");
         _dungeonLocationType = Get(ResourceSiteBindings.DungeonLocationData);
@@ -294,72 +294,72 @@ internal sealed class WorldNativeResourceSites : IResourceSiteNative
     /// not have a live operation or persisted interior, and the post-removal membership delta must be
     /// exactly this one POI with nothing else changed; otherwise the POI is restored.
     /// </summary>
-    public ResourceSiteDissolveOutcome DissolveSite(Guid session, string systemId, string poiId, ResourceSiteKind kind)
+    public ResourceSiteRemoveOutcome RemoveSite(Guid session, string systemId, string poiId, ResourceSiteKind kind)
     {
         var map = Map(session);
-        if (map == null) return ResourceSiteDissolveOutcome.Failed;
+        if (map == null) return ResourceSiteRemoveOutcome.Failed;
         // A duplicated native GUID cannot be attributed safely: refuse rather than remove an arbitrary copy.
-        if (AmbiguousCount(session, poiId) > 1) return ResourceSiteDissolveOutcome.Missing;
+        if (AmbiguousCount(session, poiId) > 1) return ResourceSiteRemoveOutcome.Missing;
         var before = _index.Read(map);
         var poi = before.FindPoint(poiId);
         var host = before.FindSystem(systemId);
-        if (poi == null || host == null) return ResourceSiteDissolveOutcome.Missing;
+        if (poi == null || host == null) return ResourceSiteRemoveOutcome.Missing;
         var expected = kind == ResourceSiteKind.SalvageSite ? _salvageType : _miningType;
-        if (!expected.IsInstanceOfType(poi)) return ResourceSiteDissolveOutcome.Missing;
+        if (!expected.IsInstanceOfType(poi)) return ResourceSiteRemoveOutcome.Missing;
         var members = (System.Collections.IList)_points.GetValue(host)!;
-        if (!members.Contains(poi)) return ResourceSiteDissolveOutcome.Missing;
-        if (!_game.TryGetObservedPlayer(session, out var player) || player == null) return ResourceSiteDissolveOutcome.Failed;
+        if (!members.Contains(poi)) return ResourceSiteRemoveOutcome.Missing;
+        if (!_game.TryGetObservedPlayer(session, out var player) || player == null) return ResourceSiteRemoveOutcome.Failed;
         var currentPoi = _playerCurrentPoi.GetValue(player);
-        if (currentPoi != null && ReferenceEquals(currentPoi, poi)) return ResourceSiteDissolveOutcome.PlayerInside;
+        if (currentPoi != null && ReferenceEquals(currentPoi, poi)) return ResourceSiteRemoveOutcome.PlayerInside;
         if (_playerWaypoints.GetValue(player) is System.Collections.IEnumerable waypoints)
             foreach (var waypoint in waypoints)
-                if (waypoint != null && ReferenceEquals(waypoint, poi)) return ResourceSiteDissolveOutcome.PlayerInside;
+                if (waypoint != null && ReferenceEquals(waypoint, poi)) return ResourceSiteRemoveOutcome.PlayerInside;
         var boarding = StationInUse(poi);
-        if (boarding != ResourceSiteDissolveOutcome.Dissolved) return boarding;
+        if (boarding != ResourceSiteRemoveOutcome.Removed) return boarding;
         // Remove by reference, never by equality: a native POI that overrode Equals must not let the
         // removal pick a different-but-equal member while the owned POI survives.
         int removalIndex = IndexOf(members, poi);
-        if (removalIndex < 0) return ResourceSiteDissolveOutcome.Missing;
+        if (removalIndex < 0) return ResourceSiteRemoveOutcome.Missing;
         try
         {
             members.RemoveAt(removalIndex);
             if (!_game.TryGetObservedPlayer(session, out var current) || !ReferenceEquals(current, player) ||
                 !ReferenceEquals(_map.GetValue(current), map))
-            { Rollback(members, poi, removalIndex); return ResourceSiteDissolveOutcome.Failed; }
+            { Rollback(members, poi, removalIndex); return ResourceSiteRemoveOutcome.Failed; }
             var after = _index.Read(map);
-            if (!VerifyDissolveDelta(before, after, poi, host)) { Rollback(members, poi, removalIndex); return ResourceSiteDissolveOutcome.Failed; }
-            return ResourceSiteDissolveOutcome.Dissolved;
+            if (!VerifyRemoveDelta(before, after, poi, host)) { Rollback(members, poi, removalIndex); return ResourceSiteRemoveOutcome.Failed; }
+            return ResourceSiteRemoveOutcome.Removed;
         }
         catch (Exception error)
         {
             try { Rollback(members, poi, removalIndex); } catch { /* rollback is best-effort only */ }
-            Report(error); return ResourceSiteDissolveOutcome.Failed;
+            Report(error); return ResourceSiteRemoveOutcome.Failed;
         }
     }
 
     /// <summary>The salvage site's derelict station is in use when a boarding operation is live or an
     /// interior simulation is persisted. Other site kinds carry no boarding state.</summary>
-    private ResourceSiteDissolveOutcome StationInUse(object poi)
+    private ResourceSiteRemoveOutcome StationInUse(object poi)
     {
         object? location = null;
         if (_getPersistables.Invoke(poi, null) is System.Collections.IEnumerable persistables)
             foreach (var persistable in persistables)
                 if (persistable != null && _dungeonLocationType.IsInstanceOfType(persistable)) { location = persistable; break; }
-        if (location == null) return ResourceSiteDissolveOutcome.Dissolved;
+        if (location == null) return ResourceSiteRemoveOutcome.Removed;
         var data = _locationDungeonData.GetValue(location);
         if (data != null)
         {
-            if (_dungeonOperationActive.GetValue(data) is true) return ResourceSiteDissolveOutcome.BoardingActive;
-            if (_dungeonSimulation.GetValue(data) != null) return ResourceSiteDissolveOutcome.InteriorPersisted;
+            if (_dungeonOperationActive.GetValue(data) is true) return ResourceSiteRemoveOutcome.BoardingActive;
+            if (_dungeonSimulation.GetValue(data) != null) return ResourceSiteRemoveOutcome.InteriorPersisted;
         }
         try
         {
             var manager = _dungeonManagerInstance.GetValue(null);
             if (manager != null && _getOperation.Invoke(manager, new[] { location }) != null)
-                return ResourceSiteDissolveOutcome.BoardingActive;
+                return ResourceSiteRemoveOutcome.BoardingActive;
         }
         catch { /* a missing dungeon manager fails open; the persisted-state checks above still apply */ }
-        return ResourceSiteDissolveOutcome.Dissolved;
+        return ResourceSiteRemoveOutcome.Removed;
     }
 
     /// <summary>Best-effort restoration of the site POI at its original list position after a failed removal.</summary>
@@ -372,7 +372,7 @@ internal sealed class WorldNativeResourceSites : IResourceSiteNative
     { for (int i = 0; i < members.Count; i++) if (ReferenceEquals(members[i], value)) return i; return -1; }
 
     /// <summary>Exactly the given site POI was removed from the host and nothing else changed.</summary>
-    internal static bool VerifyDissolveDelta(WorldMapIndex.Snapshot before, WorldMapIndex.Snapshot after, object removed, object host)
+    internal static bool VerifyRemoveDelta(WorldMapIndex.Snapshot before, WorldMapIndex.Snapshot after, object removed, object host)
     {
         var beforePoints = new System.Collections.Generic.HashSet<object>();
         foreach (var pair in before.Points) beforePoints.Add(pair.Value);

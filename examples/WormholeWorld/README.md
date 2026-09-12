@@ -3,7 +3,7 @@
 A sample/test BepInEx mod for the **VG Mod API** (v0.2.10+). It is a deliberately complete
 worked example: one in-game button opens an authored **wormhole cluster** — several owned pocket
 systems chained together and linked to your current system by wormholes — then a **Log topology**
-button prints exactly what was wired, and **Delete Cluster** dissolves everything it created.
+button prints exactly what was wired, and **Delete Cluster** removes everything it created.
 
 Read it as a tour of what the API can do, not just a demo: every capability it touches is the
 "show everything" covering of the world-authoring + ambient-traffic surfaces.
@@ -20,9 +20,9 @@ Read it as a tour of what the API can do, not just a demo: every capability it t
 | **Static names** | Every system keeps a fixed display name (Cluster Entry, Hub Alpha, …) each spawn. |
 | **Quiet wormholes & systems** (`quiet: true`) | The rifts spawn no decorative passerby traffic and no security patrol at either end; `quiet: true` on a pocket keeps its whole system silent — the cluster is a private place, not a highway. |
 | **Sealed hidden gates** | Each pocket's anchored "gate back" is closed *and* hidden, so the map draws no phantom gate line. (Only the deliberate E→A, E→B gates are open/visible.) |
-| **Resource sites** (`CreateResourceSite`) | A mining field in one off-world and a salvage wreck in the other, both removed when their pocket dissolves. |
+| **Resource sites** (`CreateResourceSite`) | A mining field in one off-world and a salvage wreck in the other, both removed when their pocket removes. |
 | **Topology diagnostics** | Spawning (and the **Log topology** button) writes one line per system: the gates and wormholes it holds with their far end, plus any site inside — the ground truth to compare against the in-game map. |
-| **Full cleanup** (`Dissolve`, plural) | **Delete Cluster** resolves each owned wormhole pair then each pocket, so no authored system, gate, wormhole or site remains. |
+| **Full cleanup** (`Remove`, plural) | **Delete Cluster** resolves each owned wormhole pair then each pocket, so no authored system, gate, wormhole or site remains. |
 
 ## What you see
 
@@ -55,7 +55,7 @@ reconstruction state (`E:A:B:M:S | door:m:s`).
 |---|---|
 | **Spawn Wormhole** | Creates the whole cluster: entry wormhole + E/A/B + the two off-world wormholes + both sites. |
 | **Log topology** | Writes the authored wiring to `BepInEx/LogOutput.log` — compare it against the in-game map if a connection looks surprising. |
-| **Delete Cluster** | Full cleanup in dependency order: wormhole pairs first (a pocket that is still a wormhole endpoint cannot dissolve), then each pocket with its gate and site. If you're inside any part of the cluster, a dissolve is refused until you leave — a safe guard, not a silent failure. |
+| **Delete Cluster** | Full cleanup in dependency order: wormhole pairs first (a pocket that is still a wormhole endpoint cannot remove), then each pocket with its gate and site. If you're inside any part of the cluster, a remove is refused until you leave — a safe guard, not a silent failure. |
 
 ## Using it to verify
 

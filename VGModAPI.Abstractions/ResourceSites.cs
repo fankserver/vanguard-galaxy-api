@@ -90,16 +90,16 @@ public interface IResourceSite
     WorldContentResult LastAction { get; }
     event Action<IResourceSite>? Changed;
     /// <summary>
-    /// Dissolves the owned site: removes its native POI from the host system (a directly authored
+    /// Removes the owned site: removes its native POI from the host system (a directly authored
     /// salvage site or mining field, including a pocket system) and drops its save row so it is
     /// recorded as intentionally absent rather than reconstructed as a failure. Refused while the
     /// player is at or routed to the site, while a live boarding operation or a persisted interior
     /// simulation holds a salvage site's derelict station, and while the site's installation is held
     /// enterable by this API. On success this object is terminal
-    /// (<see cref="ReconstructionStatus.Dissolved"/>); creating the same occurrence key again authors
+    /// (<see cref="ReconstructionStatus.Removed"/>); creating the same occurrence key again authors
     /// a fresh site with fresh native identity.
     /// </summary>
-    WorldContentResult Dissolve();
+    WorldContentResult Remove();
 }
 
 public sealed class ResourceSiteFailure

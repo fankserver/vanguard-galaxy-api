@@ -246,7 +246,7 @@ internal sealed class WorldNativePocketSystems : IPocketSystemNative
         if (pocket == null) return null;
         _pocketSystem.SetValue(pocket, true);
         // Sealed identity+traversal scaffolding only (never unlocked): keeps ResolveFromSystem /
-        // VerifyPocketDelta / DissolvePocket structurally intact. The wormhole is the only usable door.
+        // VerifyPocketDelta / RemovePocket structurally intact. The wormhole is the only usable door.
         try { _gatePair.Invoke(null, new[] { parent, pocket, false, false }); }
         catch (Exception e) { ReportInvoke(e); return null; }
         SealGates(pocket);
@@ -355,7 +355,7 @@ internal sealed class WorldNativePocketSystems : IPocketSystemNative
     /// Verifies a dissolution changed membership by EXACTLY the removed pocket system, the parent-side
     /// entrance gate and the POIs parented to the pocket — and removed nothing else and added nothing.
     /// </summary>
-    internal static bool VerifyDissolveDelta(WorldMapIndex.Snapshot before, WorldMapIndex.Snapshot after,
+    internal static bool VerifyRemoveDelta(WorldMapIndex.Snapshot before, WorldMapIndex.Snapshot after,
         object removedSystem, object removedEntrance, Func<object, object?> parentOf)
     {
         var beforeSystems = new System.Collections.Generic.HashSet<object>();
@@ -380,37 +380,37 @@ internal sealed class WorldNativePocketSystems : IPocketSystemNative
         return true;
     }
 
-    public PocketDissolveOutcome DissolvePocket(Guid session, string systemId, string entranceGateId, string pocketGateId)
+    public PocketRemoveOutcome RemovePocket(Guid session, string systemId, string entranceGateId, string pocketGateId)
     {
         var map = Map(false, session, out var player);
-        if (map == null || player == null) return PocketDissolveOutcome.Failed;
+        if (map == null || player == null) return PocketRemoveOutcome.Failed;
         WorldMapIndex.Snapshot before;
         try { before = _index.Read(map); }
-        catch (Exception e) { _report(e); return PocketDissolveOutcome.Failed; }
+        catch (Exception e) { _report(e); return PocketRemoveOutcome.Failed; }
         var system = before.FindSystem(systemId);
         var entrance = before.FindPoint(entranceGateId);
         var peer = before.FindPoint(pocketGateId);
         if (system == null || entrance == null || peer == null
-            || !_jumpGateType.IsInstanceOfType(entrance) || !_jumpGateType.IsInstanceOfType(peer)) return PocketDissolveOutcome.Missing;
+            || !_jumpGateType.IsInstanceOfType(entrance) || !_jumpGateType.IsInstanceOfType(peer)) return PocketRemoveOutcome.Missing;
         try
         {
             var parent = _parent.GetValue(entrance);
             if (parent == null || ReferenceEquals(parent, system) || !ReferenceEquals(_parent.GetValue(peer), system))
-                return PocketDissolveOutcome.Missing;
+                return PocketRemoveOutcome.Missing;
             // Refuse while the player is inside the pocket or routed into it; relocation is the consumer's move.
-            if (ReferenceEquals(_playerCurrentSystem.GetValue(player), system)) return PocketDissolveOutcome.PlayerInside;
+            if (ReferenceEquals(_playerCurrentSystem.GetValue(player), system)) return PocketRemoveOutcome.PlayerInside;
             var currentPoi = _playerCurrentPoi.GetValue(player);
-            if (currentPoi != null && ReferenceEquals(_parent.GetValue(currentPoi), system)) return PocketDissolveOutcome.PlayerInside;
+            if (currentPoi != null && ReferenceEquals(_parent.GetValue(currentPoi), system)) return PocketRemoveOutcome.PlayerInside;
             if (_playerWaypoints.GetValue(player) is System.Collections.IEnumerable waypoints)
                 foreach (var waypoint in waypoints)
                     if (waypoint != null && (ReferenceEquals(waypoint, entrance) || ReferenceEquals(_parent.GetValue(waypoint), system)))
-                        return PocketDissolveOutcome.PlayerInside;
+                        return PocketRemoveOutcome.PlayerInside;
             var sector = _sector.GetValue(system);
             if (sector == null || _sectorSystems.GetValue(sector) is not System.Collections.IList systems)
-                return PocketDissolveOutcome.Missing;
+                return PocketRemoveOutcome.Missing;
             int index = -1;
             for (int i = 0; i < systems.Count; i++) if (ReferenceEquals(systems[i], system)) { index = i; break; }
-            if (index < 0) return PocketDissolveOutcome.Missing;
+            if (index < 0) return PocketRemoveOutcome.Missing;
             _removePoi.Invoke(parent, new[] { entrance });
             systems.RemoveAt(index);
             // Reclaim the remote pocket sector once its only system is gone: it existed solely to give
@@ -418,14 +418,14 @@ internal sealed class WorldNativePocketSystems : IPocketSystemNative
             if (systems.Count == 0 && _galaxySectors.GetValue(map) is System.Collections.IList galaxy)
                 for (int i = 0; i < galaxy.Count; i++)
                     if (ReferenceEquals(galaxy[i], sector)) { galaxy.RemoveAt(i); break; }
-            if (Map(false, session, out var current) == null || !ReferenceEquals(current, player)) return PocketDissolveOutcome.Failed;
+            if (Map(false, session, out var current) == null || !ReferenceEquals(current, player)) return PocketRemoveOutcome.Failed;
             WorldMapIndex.Snapshot after;
             try { after = _index.Read(map); }
-            catch (Exception e) { _report(e); return PocketDissolveOutcome.Failed; }
-            return VerifyDissolveDelta(before, after, system, entrance, o => _parent.GetValue(o))
-                ? PocketDissolveOutcome.Dissolved : PocketDissolveOutcome.Failed;
+            catch (Exception e) { _report(e); return PocketRemoveOutcome.Failed; }
+            return VerifyRemoveDelta(before, after, system, entrance, o => _parent.GetValue(o))
+                ? PocketRemoveOutcome.Removed : PocketRemoveOutcome.Failed;
         }
-        catch (Exception e) { ReportInvoke(e); return PocketDissolveOutcome.Failed; }
+        catch (Exception e) { ReportInvoke(e); return PocketRemoveOutcome.Failed; }
     }
 
     public PocketSystemInfo? ResolvePocket(Guid session, string systemId)

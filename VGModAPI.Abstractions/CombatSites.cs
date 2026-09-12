@@ -60,11 +60,11 @@ public interface ICombatSite
     /// <summary>Fired when this occurrence's observed state changes within its own session.</summary>
     event Action<ICombatSite>? Changed;
     /// <summary>
-    /// Dissolves the owned combat site: removes its native POI from the host system and drops its
+    /// Removes the owned combat site: removes its native POI from the host system and drops its
     /// occurrence key so save data records it as intentionally absent rather than reconstructing it
     /// as a failure. Refused while the player is at or routed to the site. On success this object is
-    /// terminal (<see cref="ReconstructionStatus.Dissolved"/>); creating the same occurrence key again
+    /// terminal (<see cref="ReconstructionStatus.Removed"/>); creating the same occurrence key again
     /// authors a fresh site with fresh native identity.
     /// </summary>
-    WorldContentResult Dissolve();
+    WorldContentResult Remove();
 }

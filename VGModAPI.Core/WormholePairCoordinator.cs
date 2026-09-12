@@ -60,25 +60,25 @@ internal sealed class WormholePairCoordinator : IDisposable
         catch (Exception error) { _report(error); return (WorldStatus.Unavailable, null); }
     }
     /// <summary>
-    /// Dissolves the owned pair: removes both native wormhole POIs and drops the row so save data no
+    /// Removes the owned pair: removes both native wormhole POIs and drops the row so save data no
     /// longer reconstructs it and the key becomes creatable again. Refuses while the player is at/inside
     /// either wormhole. Leaves the row untouched on refusal/failure.
     /// </summary>
-    internal (WorldStatus Status, string Detail) Dissolve(WormholePairRegistry.Provider provider, Guid session, string local, string key)
+    internal (WorldStatus Status, string Detail) Remove(WormholePairRegistry.Provider provider, Guid session, string local, string key)
     {
         _hub.CheckThread(); if (_disposed) return (WorldStatus.Unavailable, "Wormhole pairs are unavailable.");
         if (provider == null || !_rows.TryGetValue((provider.Owner, local, key), out var row)) return (WorldStatus.NotRegistered, "");
         try
         {
-            var outcome = _native.DissolveWormhole(session, row.FirstPoiId, row.SecondPoiId);
+            var outcome = _native.RemoveWormhole(session, row.FirstPoiId, row.SecondPoiId);
             switch (outcome)
             {
-                case WormholeDissolveOutcome.Dissolved:
+                case WormholeRemoveOutcome.Removed:
                     _rows.Remove((provider.Owner, local, key));
                     return (WorldStatus.Succeeded, "");
-                case WormholeDissolveOutcome.PlayerInside:
-                    return (WorldStatus.Rejected, "The player is at one of the wormholes; move away before dissolving the pair.");
-                case WormholeDissolveOutcome.Missing:
+                case WormholeRemoveOutcome.PlayerInside:
+                    return (WorldStatus.Rejected, "The player is at one of the wormholes; move away before removing the pair.");
+                case WormholeRemoveOutcome.Missing:
                     return (WorldStatus.Rejected, "The pair is not currently present natively; wait for reconstruction or check its state.");
                 default:
                     return (WorldStatus.Rejected, "The native removal could not be performed or verified.");

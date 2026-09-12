@@ -20,7 +20,7 @@ public sealed partial class Plugin
         {
             var methods = AmbientTrafficBindings.Validate(assembly);
             // Resolved lazily on each call: the world content service is constructed after this install
-            // runs, and ownership changes as occurrences are created and dissolved.
+            // runs, and ownership changes as occurrences are created and removed.
             AmbientTrafficPatches.Runtime = new AmbientTrafficRuntime(assembly, _ambientTraffic, error => Logger.LogError(error),
                 (poiId, systemId) => _worldContent?.OwnsUndressedPoi(poiId, systemId) == true);
             _ambientTrafficHarmony = new Harmony(ModApi.PluginId + ".ambient-traffic");

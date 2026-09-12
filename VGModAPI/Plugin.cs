@@ -715,7 +715,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             _dungeonRecovery.ContentOccurrence = _dungeonAdapter.Marker;
             _dungeons = new DungeonContentService(_hub, _dungeonAdapter.Catalogs(), _dungeonState, _dungeonAdapter.Bindings(), (owner, error) => Logger.LogError($"Dungeon provider '{owner}': {error}"),
                 () => _dungeonRecovery?.State.CanMutate != true || (_dungeonSettlement?.IsDispatchingCallbacks ?? false) || (_dungeonRewards?.IsEvaluating ?? false) || (_boardingCombat?.IsEvaluating ?? false) || (_boardingRuleService?.IsEvaluating ?? false));
-            // When an authored site is dissolved, drop the authored dungeon occurrence attached to its
+            // When an authored site is removed, drop the authored dungeon occurrence attached to its
             // station (if any) so the row is intentionally absent instead of a dead entry that could
             // never bind again. The resolver reads the location before native removal; the drop runs
             // after the verified removal only.

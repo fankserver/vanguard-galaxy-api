@@ -10,7 +10,7 @@ namespace VGModAPI.Tests;
 /// removal, a new POI, or a claimed identity that was never present are all refused so the caller
 /// rolls back rather than leaving the map half-edited.
 /// </summary>
-public sealed class ResourceSiteDissolveTests
+public sealed class ResourceSiteRemoveTests
 {
     private sealed class MapBook
     {
@@ -43,9 +43,9 @@ public sealed class ResourceSiteDissolveTests
         var site = exact.Add(exact.Host, "site-1");
         exact.Add(exact.Other, "foreign");
         var before = exact.Read();
-        Assert.False(WorldNativeResourceSites.VerifyDissolveDelta(before, exact.Read(), site, exact.Host)); // nothing removed yet
+        Assert.False(WorldNativeResourceSites.VerifyRemoveDelta(before, exact.Read(), site, exact.Host)); // nothing removed yet
         Assert.True(exact.Host.pointsOfInterest.Remove(site));
-        Assert.True(WorldNativeResourceSites.VerifyDissolveDelta(before, exact.Read(), site, exact.Host));
+        Assert.True(WorldNativeResourceSites.VerifyRemoveDelta(before, exact.Read(), site, exact.Host));
 
         // An unrelated POI removed alongside the site is not a clean delta.
         var extra = new MapBook();
@@ -54,7 +54,7 @@ public sealed class ResourceSiteDissolveTests
         var extraBefore = extra.Read();
         extra.Host.pointsOfInterest.Remove(extraSite);
         extra.Other.pointsOfInterest.Remove(foreign);
-        Assert.False(WorldNativeResourceSites.VerifyDissolveDelta(extraBefore, extra.Read(), extraSite, extra.Host));
+        Assert.False(WorldNativeResourceSites.VerifyRemoveDelta(extraBefore, extra.Read(), extraSite, extra.Host));
 
         // Adding anything alongside the removal is refused.
         var added = new MapBook();
@@ -62,12 +62,12 @@ public sealed class ResourceSiteDissolveTests
         var addedBefore = added.Read();
         added.Host.pointsOfInterest.Remove(addedSite);
         added.Add(added.Host, "added");
-        Assert.False(WorldNativeResourceSites.VerifyDissolveDelta(addedBefore, added.Read(), addedSite, added.Host));
+        Assert.False(WorldNativeResourceSites.VerifyRemoveDelta(addedBefore, added.Read(), addedSite, added.Host));
 
         // A claimed identity that was never present is refused.
         var absent = new MapBook();
         absent.Add(absent.Host, "site-1");
         var absentSnapshot = absent.Read();
-        Assert.False(WorldNativeResourceSites.VerifyDissolveDelta(absentSnapshot, absentSnapshot, new object(), absent.Host));
+        Assert.False(WorldNativeResourceSites.VerifyRemoveDelta(absentSnapshot, absentSnapshot, new object(), absent.Host));
     }
 }
