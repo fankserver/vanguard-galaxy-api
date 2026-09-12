@@ -51,7 +51,7 @@ internal static class StoryStateCodec
     internal static int PendingSize(StoryMissionEntry entry)
     {
         if (entry == null) throw new ArgumentNullException(nameof(entry));
-        if (entry.State == StoryMissionLedgerState.Retired) return 0;
+        if (entry.State == StoryMissionLedgerState.Resolved) return 0;
         int size = 0;
         foreach (var pair in entry.PendingChoices)
             try { size += 2 + StrictUtf8.GetByteCount(pair.Key) + 2 + StrictUtf8.GetByteCount(pair.Value); }
@@ -103,7 +103,7 @@ internal static class StoryStateCodec
                     WriteText(writer, pair.Key, StoryMissionDefinition.MaxChoiceKeyBytes);
                     WriteText(writer, pair.Value, StoryMissionDefinition.MaxChoiceValueBytes);
                 }
-                var pending = row.State == StoryMissionLedgerState.Retired ? Empty : row.PendingChoices;
+                var pending = row.State == StoryMissionLedgerState.Resolved ? Empty : row.PendingChoices;
                 if (pending.Count > StoryMissionDefinition.MaxChoiceKeys) throw new InvalidDataException("Too many declared choices to persist.");
                 writer.Write((byte)pending.Count);
                 foreach (var pair in pending.OrderBy(pair => pair.Key, StringComparer.Ordinal))
@@ -165,7 +165,7 @@ internal static class StoryStateCodec
                 if (!Enum.IsDefined(typeof(StoryOutcome), value)) throw new InvalidDataException("Malformed story outcome.");
                 outcome = value;
             }
-            if ((state == StoryMissionLedgerState.Retired) != outcome.HasValue)
+            if ((state == StoryMissionLedgerState.Resolved) != outcome.HasValue)
                 throw new InvalidDataException("A retired mission requires exactly one outcome.");
             int choiceCount = reader.ReadByte();
             if (choiceCount > StoryMissionDefinition.MaxChoiceKeys) throw new InvalidDataException("Malformed story choice count.");

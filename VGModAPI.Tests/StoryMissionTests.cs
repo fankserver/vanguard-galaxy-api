@@ -1380,7 +1380,7 @@ public sealed partial class StoryMissionTests
         // The same state crafted at the byte level, by demoting a terminal row that carries choices.
         var payload = StoryStateCodec.Encode(new[]
         {
-            new StoryMissionEntry(id, Guid.NewGuid(), StoryRetention.Campaign, 1, StoryMissionLedgerState.Retired,
+            new StoryMissionEntry(id, Guid.NewGuid(), StoryRetention.Campaign, 1, StoryMissionLedgerState.Resolved,
                 StoryOutcome.Completed, new[] { new KeyValuePair<string, string>("ghost", "value") })
         });
         int stateOffset = 12 + (1 + 5) + (1 + 11) + 16 + 8;   // header, provider, local, identity, sequence
@@ -3010,7 +3010,7 @@ public sealed partial class StoryMissionTests
     public void TheStateCodecIsBoundedStrictAndRefusesMalformedPayloads()
     {
         var entry = new StoryMissionEntry(new StoryMissionDefinitionId("anima", "salvage-run"), Guid.NewGuid(),
-            StoryRetention.Campaign, 1, StoryMissionLedgerState.Retired, StoryOutcome.Completed,
+            StoryRetention.Campaign, 1, StoryMissionLedgerState.Resolved, StoryOutcome.Completed,
             new[] { new KeyValuePair<string, string>("branch", "left") });
         var bytes = StoryStateCodec.Encode(new[] { entry });
         var decoded = Assert.Single(StoryStateCodec.Decode(bytes));
@@ -3026,7 +3026,7 @@ public sealed partial class StoryMissionTests
         Assert.False(StoryStateCodec.Validate(Array.Empty<byte>()));
         Assert.Throws<InvalidDataException>(() => StoryStateCodec.Decode(newer));
         var temporary = new StoryMissionEntry(new StoryMissionDefinitionId("anima", "salvage-run"), Guid.NewGuid(),
-            StoryRetention.Temporary, 2, StoryMissionLedgerState.Retired, StoryOutcome.Completed,
+            StoryRetention.Temporary, 2, StoryMissionLedgerState.Resolved, StoryOutcome.Completed,
             new[] { new KeyValuePair<string, string>("branch", "left") });
         Assert.Empty(Assert.Single(StoryStateCodec.Decode(StoryStateCodec.Encode(new[] { temporary }))).Choices);
         Assert.True(StoryStateCodec.MaxBytes <= 1024 * 1024);
@@ -3049,7 +3049,7 @@ public sealed partial class StoryMissionTests
         // capture can never produce a payload that its own load would reject.
         Assert.Throws<InvalidDataException>(() => StoryStateCodec.Encode(new[]
         {
-            new StoryMissionEntry(id, Guid.NewGuid(), StoryRetention.Campaign, 1, StoryMissionLedgerState.Retired)
+            new StoryMissionEntry(id, Guid.NewGuid(), StoryRetention.Campaign, 1, StoryMissionLedgerState.Resolved)
         }));
         Assert.Throws<InvalidDataException>(() => StoryStateCodec.Encode(new[]
         {
@@ -3073,7 +3073,7 @@ public sealed partial class StoryMissionTests
         // Invalid UTF-8 in a choice value is refused instead of decoding to replacement characters.
         var campaign = StoryStateCodec.Encode(new[]
         {
-            new StoryMissionEntry(id, Guid.NewGuid(), StoryRetention.Campaign, 1, StoryMissionLedgerState.Retired,
+            new StoryMissionEntry(id, Guid.NewGuid(), StoryRetention.Campaign, 1, StoryMissionLedgerState.Resolved,
                 StoryOutcome.Completed, new[] { new KeyValuePair<string, string>("branch", "left") })
         });
         var index0 = IndexOf(campaign, Encoding.ASCII.GetBytes("left"));
@@ -3084,7 +3084,7 @@ public sealed partial class StoryMissionTests
         // An unpaired surrogate cannot be encoded either.
         Assert.Throws<InvalidDataException>(() => StoryStateCodec.Encode(new[]
         {
-            new StoryMissionEntry(id, Guid.NewGuid(), StoryRetention.Campaign, 1, StoryMissionLedgerState.Retired,
+            new StoryMissionEntry(id, Guid.NewGuid(), StoryRetention.Campaign, 1, StoryMissionLedgerState.Resolved,
                 StoryOutcome.Completed, new[] { new KeyValuePair<string, string>("branch", "\ud800") })
         }));
     }
@@ -3128,7 +3128,7 @@ public sealed partial class StoryMissionTests
 
     private static StoryMissionEntry[] Rows(int count, string provider, string local, StoryRetention retention, bool retired)
         => Enumerable.Range(1, count).Select(index => new StoryMissionEntry(new StoryMissionDefinitionId(provider, local),
-            Guid.NewGuid(), retention, index, retired ? StoryMissionLedgerState.Retired : StoryMissionLedgerState.Offered,
+            Guid.NewGuid(), retention, index, retired ? StoryMissionLedgerState.Resolved : StoryMissionLedgerState.Offered,
             retired ? StoryOutcome.Completed : null)).ToArray();
 
     /// <summary>Builds a structurally valid payload that violates a ledger bound, by encoding rows separately.</summary>

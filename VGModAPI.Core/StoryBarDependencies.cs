@@ -18,7 +18,7 @@ internal sealed partial class StoryMissionService
         var registry = _registry.Epoch;
         foreach (var entry in _ledger.Entries.ToArray())
         {
-            if (entry.State == StoryMissionLedgerState.Retired) continue;
+            if (entry.State == StoryMissionLedgerState.Resolved) continue;
             var definition = entry.RetainedDefinition;
             if (definition == null && !_registry.TryGet(entry.Id, out definition)) continue;
             if (!definition.Steps.SelectMany(step => step.Objectives).Any(objective => WorldObjectIdentity.IsReserved(objective.TargetPoiId))) continue;
@@ -71,7 +71,7 @@ internal sealed partial class StoryMissionService
             && _leasesBySegment.TryGetValue(definition.Provider, out var lease) && lease.Active
             && _registry.Contains(definition)
             && _ledger.TryGet(mission, out var entry) && entry.Id == definition
-            && entry.State != StoryMissionLedgerState.Retired && !_unrunnable.Contains(mission)
+            && entry.State != StoryMissionLedgerState.Resolved && !_unrunnable.Contains(mission)
             && _protection?.IsAdmitted(expectedSession, StoryMissionPolicy.MissionIdentifier(definition, mission)) == true;
     }
 }

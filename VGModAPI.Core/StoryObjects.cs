@@ -167,7 +167,7 @@ internal sealed partial class StoryMissionService
         private void CaptureChoices()
         {
             if (Game.IsActive && Owned.IsLive && _scope.Service._ledger.TryGet(MissionId, out var entry))
-                _choices = new ReadOnlyDictionary<string, string>((entry.State == StoryMissionLedgerState.Retired ? entry.Choices : entry.PendingChoices)
+                _choices = new ReadOnlyDictionary<string, string>((entry.State == StoryMissionLedgerState.Resolved ? entry.Choices : entry.PendingChoices)
                     .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal));
         }
         public event Action<IStoryMission>? Changed { add => _changed.Add(value); remove => _changed.Remove(value); }

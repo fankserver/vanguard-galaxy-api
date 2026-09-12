@@ -307,7 +307,7 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
         // exactly the provider-absence case handled below.
         foreach (var entry in _ledger.Entries)
         {
-            if (entry.State == StoryMissionLedgerState.Retired) continue;
+            if (entry.State == StoryMissionLedgerState.Resolved) continue;
             var identifier = StoryMissionPolicy.MissionIdentifier(entry.Id, entry.MissionId);
             if (!_registry.TryGet(entry.Id, out var definition))
             { Suspend(identifier + ": this save holds owned story content whose provider is not registered."); continue; }
@@ -443,7 +443,7 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
             return;
         }
         _protection.Admit(_restoredSession,
-            _ledger.Entries.Where(entry => entry.State != StoryMissionLedgerState.Retired && !_unrunnable.Contains(entry.MissionId))
+            _ledger.Entries.Where(entry => entry.State != StoryMissionLedgerState.Resolved && !_unrunnable.Contains(entry.MissionId))
                 .Select(entry => StoryMissionPolicy.MissionIdentifier(entry.Id, entry.MissionId)),
             "admitted by the owning module for this session");
     }
@@ -472,7 +472,7 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
     {
         if (_disposed || transition?.Mission?.DefinitionId == null) return;
         if (!StoryMissionPolicy.TryParseMissionIdentifier(transition.Mission.DefinitionId, out var id, out var missionId)) return;
-        if (!_ledger.TryGet(missionId, out var entry) || entry.Id != id || entry.State == StoryMissionLedgerState.Retired) return;
+        if (!_ledger.TryGet(missionId, out var entry) || entry.Id != id || entry.State == StoryMissionLedgerState.Resolved) return;
         // A removal this module is performing is recorded by the operation that asked for it, and a
         // removal the game's own abandon/retry button is performing is settled when that finishes:
         // the very next thing may be the same mission being re-added.
@@ -523,7 +523,7 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
         if (InFlight) return null;
         if (!StoryMissionPolicy.TryParseMissionIdentifier(identifier, out var id, out var missionId)) return null;
         if (!_ledger.TryGet(missionId, out var entry) || entry.Id != id
-            || entry.State == StoryMissionLedgerState.Retired) return null;
+            || entry.State == StoryMissionLedgerState.Resolved) return null;
         _barOperationEpoch = new object();
         _uiAbandon = missionId;
         _uiToken = new StoryUiTransactionToken(Guid.NewGuid(), _restoredSession, missionId);
@@ -569,7 +569,7 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
         try
         {
             if (_disposed || missionId == Guid.Empty) return;
-            if (!_ledger.TryGet(missionId, out var entry) || entry.State == StoryMissionLedgerState.Retired) return;
+            if (!_ledger.TryGet(missionId, out var entry) || entry.State == StoryMissionLedgerState.Resolved) return;
             switch (settlement)
             {
                 case StoryAbandonSettlement.OneReplacementHeld:

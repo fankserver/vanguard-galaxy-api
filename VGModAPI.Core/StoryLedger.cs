@@ -4,7 +4,18 @@ using System.Linq;
 
 namespace VGModAPI.Core;
 
-internal enum StoryMissionLedgerState { Offered, Active, Retired }
+/// <summary>
+/// Durable, API-owned storage state of one mission entry. This is the persisted save model and the
+/// source for the surfaced <see cref="VGModAPI.StoryMissionState"/> projection, not a full lifecycle.
+/// <list type="bullet">
+/// <item><c>Offered</c> — admitted but not yet accepted. This stage is an API addition: vanilla never
+/// persists pending offers, so nothing here implies a vanilla analog exists.</item>
+/// <item><c>Active</c> — accepted/live in the current game.</item>
+/// <item><c>Resolved</c> — terminal. Always paired with the separate <see cref="StoryOutcome"/>
+/// (<c>Completed</c>/<c>Failed</c>/<c>Abandoned</c>) that disambiguates which terminal happened.</item>
+/// </list>
+/// </summary>
+internal enum StoryMissionLedgerState { Offered, Active, Resolved }
 
 /// <summary>Why a ledger operation was refused. A refusal changes nothing.</summary>
 internal enum StoryLedgerStatus
@@ -87,7 +98,7 @@ internal sealed class StoryMissionEntry
     internal void Activate() => State = StoryMissionLedgerState.Active;
     internal void Retire(StoryOutcome outcome, IReadOnlyDictionary<string, string>? choices)
     {
-        State = StoryMissionLedgerState.Retired;
+        State = StoryMissionLedgerState.Resolved;
         Outcome = outcome;
         RetainedDefinition = null;
         // The recorded choices REPLACE whatever the entry carried; they are never merged into it, so
@@ -280,7 +291,7 @@ internal sealed class StoryLedger
         var status = Resolve(caller, missionId, out var entry, out diagnostic);
         if (status != StoryLedgerStatus.Accepted) return status;
         if (!Enum.IsDefined(typeof(StoryOutcome), outcome)) { diagnostic = "Unknown outcome."; return StoryLedgerStatus.InvalidTransition; }
-        if (entry!.State == StoryMissionLedgerState.Retired)
+        if (entry!.State == StoryMissionLedgerState.Resolved)
         {
             diagnostic = "This mission already reported " + entry.Outcome + "; an outcome is recorded once.";
             return StoryLedgerStatus.InvalidTransition;
@@ -314,7 +325,7 @@ internal sealed class StoryLedger
     {
         var status = Resolve(caller, missionId, out var entry, out diagnostic);
         if (status != StoryLedgerStatus.Accepted) return status;
-        if (entry!.State == StoryMissionLedgerState.Retired)
+        if (entry!.State == StoryMissionLedgerState.Resolved)
         { diagnostic = "This mission already reported " + entry.Outcome + "."; return StoryLedgerStatus.InvalidTransition; }
         entry.MarkFailureObserved(true);
         return StoryLedgerStatus.Accepted;
@@ -341,7 +352,7 @@ internal sealed class StoryLedger
     {
         var status = Resolve(caller, missionId, out var entry, out diagnostic);
         if (status != StoryLedgerStatus.Accepted) return status;
-        if (entry!.State == StoryMissionLedgerState.Retired)
+        if (entry!.State == StoryMissionLedgerState.Resolved)
         { diagnostic = "This mission already reported " + entry.Outcome + "."; return StoryLedgerStatus.InvalidTransition; }
         entry.MarkFailureObserved(false);
         entry.ResetObjectiveProgress();
@@ -415,7 +426,7 @@ internal sealed class StoryLedger
     private void PruneTemporary(StoryMissionDefinitionId id)
     {
         var terminal = _byMission.Values
-            .Where(entry => entry.Id == id && entry.Retention == StoryRetention.Temporary && entry.State == StoryMissionLedgerState.Retired)
+            .Where(entry => entry.Id == id && entry.Retention == StoryRetention.Temporary && entry.State == StoryMissionLedgerState.Resolved)
             .OrderByDescending(entry => entry.Sequence)
             .Skip(TemporaryTombstoneHorizon)
             .ToArray();
@@ -431,7 +442,7 @@ internal sealed class StoryLedger
         // Pending choices are already written into the row, so only the UNUSED part of the
         // reservation is still held back; counting the whole reservation as well would double-count.
         => StoryStateCodec.EncodedSize(entry)
-           + (entry.State == StoryMissionLedgerState.Retired ? 0 : entry.ChoiceReservation - StoryStateCodec.PendingSize(entry));
+           + (entry.State == StoryMissionLedgerState.Resolved ? 0 : entry.ChoiceReservation - StoryStateCodec.PendingSize(entry));
 
     private int ProviderFootprint(string provider)
         => _byMission.Values.Where(entry => entry.Id.Provider == provider).Sum(Footprint);
@@ -481,7 +492,7 @@ internal sealed class StoryLedger
     /// <summary>Offered and active missions of one definition, oldest first.</summary>
     internal IReadOnlyList<StoryMissionSnapshot> Unresolved(StoryMissionDefinitionId id)
         => _byMission.Values
-            .Where(entry => entry.Id == id && entry.State != StoryMissionLedgerState.Retired)
+            .Where(entry => entry.Id == id && entry.State != StoryMissionLedgerState.Resolved)
             .OrderBy(entry => entry.Sequence)
             .Select(entry => new StoryMissionSnapshot(entry.Id, entry.MissionId,
                 entry.State == StoryMissionLedgerState.Active ? StoryMissionStage.Active : StoryMissionStage.Offered,
@@ -491,7 +502,7 @@ internal sealed class StoryLedger
     /// <summary>Authoritative retained outcomes for one definition, oldest first.</summary>
     internal IReadOnlyList<StoryMissionRecord> Retained(StoryMissionDefinitionId id)
         => _byMission.Values
-            .Where(entry => entry.Id == id && entry.State == StoryMissionLedgerState.Retired)
+            .Where(entry => entry.Id == id && entry.State == StoryMissionLedgerState.Resolved)
             .OrderBy(entry => entry.Sequence)
             .Select(entry => new StoryMissionRecord(entry.Id, entry.MissionId, entry.Outcome,
                 entry.Retention == StoryRetention.Campaign ? entry.Choices.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal) : null))
@@ -519,7 +530,7 @@ internal sealed class StoryLedger
         {
             var definition = row.RetainedDefinition;
             if (definition == null) continue;
-            if (row.State == StoryMissionLedgerState.Retired || definition.LocalId != row.Id.LocalId || definition.Retention != row.Retention
+            if (row.State == StoryMissionLedgerState.Resolved || definition.LocalId != row.Id.LocalId || definition.Retention != row.Retention
                 || definition.ReservedChoiceBytes != row.ChoiceReservation
                 || !row.ObjectiveLayout.SamePositions(new StoryObjectiveLayout(definition))
                 || definition.Steps.SelectMany(step => step.Objectives).Any(objective => StoryMissionPolicy.RefuseObjective(objective.Kind) != null))
@@ -535,22 +546,22 @@ internal sealed class StoryLedger
         if (rows.Any(row => row.Sequence < 1 || row.Sequence > MaxSequence)) return "Story mission sequence out of range.";
         if (rows.Select(row => row.Sequence).Distinct().Count() != rows.Count) return "Story mission sequences must be unique.";
         if (rows.Select(row => row.MissionId).Distinct().Count() != rows.Count) return "Duplicate story mission identity.";
-        if (rows.Any(row => (row.State == StoryMissionLedgerState.Retired) != row.Outcome.HasValue))
+        if (rows.Any(row => (row.State == StoryMissionLedgerState.Resolved) != row.Outcome.HasValue))
             return "A retired mission requires exactly one outcome.";
-        if (rows.Any(row => row.State != StoryMissionLedgerState.Retired && row.Retention != StoryRetention.Campaign && row.ChoiceReservation > 0))
+        if (rows.Any(row => row.State != StoryMissionLedgerState.Resolved && row.Retention != StoryRetention.Campaign && row.ChoiceReservation > 0))
             return "Only a campaign mission reserves declared-choice space.";
         // Only a terminal record carries choices. An unresolved row with choices is not a state this
         // ledger can produce, and restoring one would let a later outcome grow past its bound.
-        if (rows.Any(row => row.State != StoryMissionLedgerState.Retired && row.Choices.Count > 0))
+        if (rows.Any(row => row.State != StoryMissionLedgerState.Resolved && row.Choices.Count > 0))
             return "An unresolved story mission records no declared choices.";
         // Pending declarations are the mirror image: only an unresolved campaign mission can hold
         // them, and never more than the space its own outcome already reserved.
         if (rows.Any(row => row.PendingChoices.Count > 0
-            && (row.State == StoryMissionLedgerState.Retired || row.Retention != StoryRetention.Campaign)))
+            && (row.State == StoryMissionLedgerState.Resolved || row.Retention != StoryRetention.Campaign)))
             return "Only an unresolved campaign mission holds declared choices for a future outcome.";
         if (rows.Any(row => StoryStateCodec.PendingSize(row) > row.ChoiceReservation))
             return "Declared choices exceed the space reserved for this mission's outcome.";
-        if (rows.Any(row => row.FailureObserved && row.State == StoryMissionLedgerState.Retired))
+        if (rows.Any(row => row.FailureObserved && row.State == StoryMissionLedgerState.Resolved))
             return "A retired mission carries no unresolved failure.";
         foreach (var group in rows.GroupBy(row => row.Id.Provider, StringComparer.Ordinal))
         {
@@ -566,7 +577,7 @@ internal sealed class StoryLedger
             if (group.Count(row => row.Retention == StoryRetention.Campaign) > MaxRetainedPerDefinition)
                 return "Definition '" + group.Key + "' exceeds its campaign mission cap.";
             if (group.Any(row => row.Retention == StoryRetention.Temporary)
-                && group.Count(row => row.Retention == StoryRetention.Temporary && row.State == StoryMissionLedgerState.Retired) > TemporaryTombstoneHorizon)
+                && group.Count(row => row.Retention == StoryRetention.Temporary && row.State == StoryMissionLedgerState.Resolved) > TemporaryTombstoneHorizon)
                 return "Definition '" + group.Key + "' exceeds its temporary tombstone horizon.";
         }
         return null;

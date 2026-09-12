@@ -3,6 +3,13 @@ using System.Collections.Generic;
 
 namespace VGModAPI;
 
+/// <summary>
+/// Surfaced lifecycle state of an owned mission, DERIVED as a projection from the durable internal
+/// <c>StoryMissionLedgerState</c> (the persisted source of truth). Unlike that storage model it
+/// includes deliberately non-persistable presentation states (<c>Offering</c>, <c>Withdrawn</c>,
+/// <c>Unavailable</c>, <c>GameEnded</c>) and expands the storage <c>Resolved</c> into its three
+/// terminal names (<c>Completed</c>/<c>Failed</c>/<c>Abandoned</c>).
+/// </summary>
 public enum StoryMissionState { Offering, Offered, Active, Completed, Failed, Abandoned, Withdrawn, Unavailable, GameEnded }
 public enum StoryActionStatus { Queued, Succeeded, Rejected, Unavailable, GameEnded }
 
