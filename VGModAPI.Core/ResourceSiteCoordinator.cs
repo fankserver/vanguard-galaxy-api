@@ -199,6 +199,43 @@ internal sealed class ResourceSiteCoordinator : IDisposable
         return dropped;
     }
 
+    /// <summary>
+    /// Read-only capture of the authored dungeon pois attached to committed sites inside a system,
+    /// resolved BEFORE that system is removed natively. A site's attached dungeon is found through its
+    /// live native POI, so once the host system is gone nothing can be matched any more. Null means a
+    /// read faulted: the caller must refuse the removal rather than leak a row that could never bind
+    /// again. An empty array means there is nothing attached to drop.
+    /// </summary>
+    internal Guid[]? CaptureDungeonPrune(string systemId)
+    {
+        _hub.CheckThread();
+        if (_disposed || string.IsNullOrEmpty(systemId) || _resolveAttachedDungeon == null) return Array.Empty<Guid>();
+        var captured = new List<Guid>();
+        foreach (var row in _committed.Values)
+        {
+            if (row.SystemId != systemId || row.PoiId is not { Length: > 0 } attachedPoi) continue;
+            try { if (_resolveAttachedDungeon(attachedPoi) is { } attached) captured.Add(attached); }
+            catch (Exception error) { _report(error); return null; }
+        }
+        return captured.ToArray();
+    }
+
+    /// <summary>
+    /// Drops the captured authored dungeon pois after a verified system removal, so each row records
+    /// its absence instead of surviving as a dead entry. Residual risk matches the direct path: if a
+    /// row cannot be dropped at that instant the system is still removed and the fault is reported.
+    /// </summary>
+    internal void CommitDungeonPrune(Guid[] captured)
+    {
+        _hub.CheckThread();
+        if (_disposed || captured == null || _dropDungeon == null) return;
+        foreach (var poi in captured)
+        {
+            if (!_dropDungeon(poi))
+                _report(new InvalidOperationException("An attached authored dungeon poi could not be dropped after pocket removal."));
+        }
+    }
+
     internal (WorldContentStatus Status, ResourceSitePoi? Row) Create(ResourceSiteRegistry.Provider provider,
         Guid expectedSession, string localId, string poiKey, string systemId, float x, float y)
     {
