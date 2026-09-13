@@ -20,9 +20,9 @@ register (Start)  ->  Offer  ->  Activate  ->  SetProgress  ->  DeclareChoices  
 | Ability | How the example uses it |
 |---|---|
 | **Owned story provider** (`AcquireProvider`) | Acquired in `Start()` with its refusal diagnostic reported, not swallowed. |
-| **Hand-authored campaign** | "A witness's account": two steps, a scripted listen objective (×3) and a reply, `StoryRetention.Campaign`, credits + experience rewards, and a `completionText`. |
+| **Hand-authored campaign** | "A witness's account": two steps, a scripted listen objective (×3) and a reply, credits + experience rewards, and a `completionText`. |
 | **Declared choices** (`choiceKeys` / `DeclareChoices`) | The reply records a `witness` choice. The API persists it; this plugin owns no serializer. |
-| **Generated jobs** | The job's pitch text is supplied at runtime and uses exactly the same owner-scoped API as authored content — `StoryRetention.Temporary`, so it is not kept as a campaign outcome. |
+| **Generated jobs** | The job's pitch text is supplied at runtime and uses exactly the same owner-scoped API as authored content. Like every story mission it persists as one permanent entry; the API keeps its outcome. |
 | **Mixed objective kinds** | `Scripted` (mod-driven), `CollectCredits` (game-observed, counting) and `ReturnToSource` (needs no invented POI id). |
 | **Objective keys** (`WithKey`) | The counting objective is addressed by a stable key rather than by position. |
 | **Absolute progress** (`SetProgress`) | Progress is read from the snapshot and set absolutely. `Progress` is nullable — unknown is reported as unknown, never assumed to be zero. |

@@ -87,7 +87,6 @@ public sealed class Plugin : BaseUnityPlugin
             new StoryStep("Choose an answer", new[] { StoryObjective.Scripted(ReportKey, "Promise to investigate") }),
         },
         new[] { StoryReward.Credits(17), StoryReward.Experience(5) },
-        retention: StoryRetention.Campaign,
         completionText: "The witness will remember what you promised.",
         choiceKeys: new[] { "witness" });
 
@@ -96,13 +95,12 @@ public sealed class Plugin : BaseUnityPlugin
         FollowUpDef, "What the witness left out", "Go back and press the contact for the rest of it.",
         new StoryFactionId(Faction),
         new[] { new StoryStep("Return to the contact", new[] { StoryObjective.ReturnToSource() }) },
-        new[] { StoryReward.Credits(23) },
-        retention: StoryRetention.Campaign);
+        new[] { StoryReward.Credits(23) });
 
     /// <summary>
     /// A generated job: the pitch text is supplied at runtime, but it uses exactly the same
-    /// owner-scoped API as hand-authored content. Temporary retention, so it does not persist as a
-    /// campaign outcome.
+    /// owner-scoped API as hand-authored content. Like every story mission it persists as one
+    /// permanent entry; the API keeps its outcome.
     /// </summary>
     private static StoryMissionDefinition JobDefinition(string generatedPitch) => new(
         JobDef, "Generated field report", generatedPitch,
@@ -112,8 +110,7 @@ public sealed class Plugin : BaseUnityPlugin
             new StoryStep("Collect reports", new[] { StoryObjective.Scripted("file", generatedPitch, 3) }),
             new StoryStep("Bank the fee", new[] { StoryObjective.CollectCredits(500).WithKey("fee") }),
         },
-        new[] { StoryReward.Credits(3) },
-        retention: StoryRetention.Temporary);
+        new[] { StoryReward.Credits(3) });
 
     private void OnCampaignCompleted(IStoryMission mission)
     {
@@ -134,8 +131,8 @@ public sealed class Plugin : BaseUnityPlugin
             {
                 new HudRow("offer-campaign", _activeCampaign == null ? "Offer campaign" : "Campaign: " + _activeCampaign.State,
                     "offer and activate the hand-authored campaign beat",
-                    "Offers 'A witness's account' in the current game and activates it. Retention is Campaign, "
-                    + "so its outcome and declared choices are retained by the API.",
+                    "Offers 'A witness's account' in the current game and activates it. Story outcomes and "
+                    + "declared choices are retained by the API; a definition admits one mission.",
                     clickable: _activeCampaign == null),
                 new HudRow("talk", "Hear the witness (+1)",
                     "advance the scripted 'talk' objective by one",
@@ -149,7 +146,7 @@ public sealed class Plugin : BaseUnityPlugin
                     clickable: _activeCampaign != null),
                 new HudRow("offer-job", _activeJob == null ? "Offer generated job" : "Job: " + _activeJob.State,
                     "offer the runtime-generated temporary job",
-                    "Generated text, same owner-scoped API. Temporary retention: it is not kept as a campaign outcome.",
+                    "Generated text, same owner-scoped API; its outcome is retained like any story mission.",
                     clickable: _activeJob == null),
                 new HudRow("abandon", "Abandon active missions",
                     "withdraw whatever is active",
