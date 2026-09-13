@@ -10,7 +10,7 @@ public sealed class WorldContentServiceTests
     public void TypedAvailabilityTracksShutdownWithoutReplacingTheService()
     {
         var hub = new LifecycleHub((_, error) => throw error);
-        hub.SetCapability("world-authoring", true, "Test bindings.");
+        hub.SetAvailable("world-authoring", "Test bindings.");
         using var definitions = new WorldDefinitionRegistry((_, _) => null, hub.CheckThread);
         using var service = new WorldContentService(hub, definitions, null!, () => false);
         IWorldService retained = service;

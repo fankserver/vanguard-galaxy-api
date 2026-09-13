@@ -25,8 +25,8 @@ internal sealed class UnitProtectionService : IUnitProtectionService, IDisposabl
     internal void SetAvailable(bool value, ServiceUnavailableReason reason = ServiceUnavailableReason.BindingFailed)
     {
         _hub.CheckThread(); if (_disposed) return;
-        _hub.SetCapability("unit-protection", value,
-            value ? "Story-critical units can be kept alive." : "Unit-protection integration unavailable.", reason);
+        if (value) _hub.SetAvailable("unit-protection", "Story-critical units can be kept alive.");
+        else _hub.SetUnavailable("unit-protection", reason, "Unit-protection integration unavailable.");
     }
     private readonly KeyedDeclarations _keyed = new();
     [MethodImpl(MethodImplOptions.NoInlining)]
@@ -57,7 +57,7 @@ internal sealed class UnitProtectionService : IUnitProtectionService, IDisposabl
         _disposed = true;
         foreach (var declaration in _declarations.ToArray()) declaration.Dispose();
         _declarations.Clear(); _keyed.Clear();
-        _hub.SetCapability("unit-protection", false, "Unit-protection service stopped.", ServiceUnavailableReason.ApiStopped);
+        _hub.SetUnavailable("unit-protection", ServiceUnavailableReason.ApiStopped, "Unit-protection service stopped.");
     }
     private sealed class Declaration : IDisposable
     {

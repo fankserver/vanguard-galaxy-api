@@ -25,8 +25,8 @@ internal sealed class StoryCharacterService : IStoryCharacterService, IDisposabl
     internal void SetAvailable(bool value, ServiceUnavailableReason reason = ServiceUnavailableReason.BindingFailed)
     {
         _hub.CheckThread(); if (_disposed) return;
-        _hub.SetCapability("story-characters", value,
-            value ? "Owner-scoped story characters resolve through the game registry." : "Story-character integration unavailable.", reason);
+        if (value) _hub.SetAvailable("story-characters", "Owner-scoped story characters resolve through the game registry.");
+        else _hub.SetUnavailable("story-characters", reason, "Story-character integration unavailable.");
     }
 
     public IStoryCharacterRegistration Introduce(string pluginId, StoryCharacterDefinition definition,
@@ -91,7 +91,7 @@ internal sealed class StoryCharacterService : IStoryCharacterService, IDisposabl
         foreach (var introduction in _introductions.ToArray()) introduction.Dispose();
         foreach (var extension in _extensions.ToArray()) extension.Dispose();
         _introductions.Clear(); _extensions.Clear();
-        _hub.SetCapability("story-characters", false, "Story-character service stopped.", ServiceUnavailableReason.ApiStopped);
+        _hub.SetUnavailable("story-characters", ServiceUnavailableReason.ApiStopped, "Story-character service stopped.");
     }
 
     internal sealed class Introduction : IStoryCharacterRegistration

@@ -28,7 +28,7 @@ public sealed class MissionIdentityAdapterTests
         try
         {
             using var hub = new LifecycleHub((_, error) => throw error);
-            hub.SetCapability("session-lifecycle", true, "Bound."); hub.SetCapability("save-outcomes", true, "Bound.");
+            hub.SetAvailable("session-lifecycle", "Bound."); hub.SetAvailable("save-outcomes", "Bound.");
             using var service = new PersistenceService(hub, new GenerationStore(directory), s => s, _ => new string('a', 64));
             using var adapter = new MissionAdapter(hub, new MissionBindings(typeof(GamePlayer).Assembly), error => throw error);
             adapter.EnableIdentity(service, new MissionJsonBindings(typeof(GamePlayer).Assembly));

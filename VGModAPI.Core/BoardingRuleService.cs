@@ -132,7 +132,7 @@ internal sealed class BoardingRuleService : IBoardingRuleService, IDisposable
     public void Dispose()
     {
         _hub.CheckThread(); if (_disposed) return; _disposed = true;
-        if (Availability.IsAvailable) _hub.SetCapability("boarding-rules", false, "Boarding rule service stopped.", ServiceUnavailableReason.ApiStopped);
+        if (Availability.IsAvailable) _hub.SetUnavailable("boarding-rules", ServiceUnavailableReason.ApiStopped, "Boarding rule service stopped.");
         foreach (var provider in _providers.Values.ToArray()) provider.Dispose();
     }
     private enum Kind { Disable, Chance, Encounter, Integrity, Scuttle, Explosion }

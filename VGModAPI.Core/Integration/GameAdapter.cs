@@ -52,8 +52,8 @@ internal sealed class GameAdapter
         if (_faultReconciled) return;
         _faultReconciled = true;
         Hub.Invalidate("Observer fault; lifecycle observation stopped.");
-        Hub.SetCapability("session-lifecycle", false, "Observer fault; see BepInEx log. Restart required.", ServiceUnavailableReason.ObserverFault);
-        Hub.SetCapability("save-outcomes", false, "Observer fault; see BepInEx log. Restart required.", ServiceUnavailableReason.ObserverFault);
+        Hub.SetUnavailable("session-lifecycle", ServiceUnavailableReason.ObserverFault, "Observer fault; see BepInEx log. Restart required.");
+        Hub.SetUnavailable("save-outcomes", ServiceUnavailableReason.ObserverFault, "Observer fault; see BepInEx log. Restart required.");
     }
 
     internal LoadRequest BeginLoad(object file)

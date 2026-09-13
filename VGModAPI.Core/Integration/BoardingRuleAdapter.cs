@@ -70,7 +70,7 @@ internal sealed class BoardingRuleAdapter : IDisposable
         catch (Exception error)
         {
             _stopped = true;
-            try { _hub.SetCapability("boarding-rules", false, "Boarding rule adapter stopped: " + error.GetType().Name); } catch { }
+            try { _hub.SetUnavailable("boarding-rules", ServiceUnavailableReason.ObserverFault, "Boarding rule adapter stopped: " + error.GetType().Name); } catch { }
             try { _fault(error); } catch { }
             return false;
         }

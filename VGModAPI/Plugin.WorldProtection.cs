@@ -48,13 +48,13 @@ public sealed partial class Plugin
     private void InitializeWorldProtection()
     {
         _worldAvailable = false;
-        _hub!.SetCapability("world-authoring", false, "World service is initializing.");
-        _hub.SetCapability("world-load-protection", false, "World service is initializing.");
-        _hub.SetCapability("world-save-protection", false, "World service is initializing.");
+        _hub!.SetUnavailable("world-authoring", ServiceUnavailableReason.BindingFailed, "World service is initializing.");
+        _hub.SetUnavailable("world-load-protection", ServiceUnavailableReason.BindingFailed, "World service is initializing.");
+        _hub.SetUnavailable("world-save-protection", ServiceUnavailableReason.BindingFailed, "World service is initializing.");
         if (_persistence == null || _adapter == null || !_hub.Capabilities.Any(c => c.Name == "session-lifecycle" && c.Available))
-        { _hub.SetCapability("world-load-protection", false, "Inspected lifecycle and persistence are required."); return; }
+        { _hub.SetUnavailable("world-load-protection", ServiceUnavailableReason.DependencyUnavailable, "Inspected lifecycle and persistence are required."); return; }
         if (WorldLoadPatches.Host != null || WorldLifetimePatches.Host != null || WorldSnapshotPatches.Host != null)
-        { _hub.SetCapability("world-load-protection", false, "Process-lived world load guards already exist; restart required."); return; }
+        { _hub.SetUnavailable("world-load-protection", ServiceUnavailableReason.BindingFailed, "Process-lived world load guards already exist; restart required."); return; }
         try
         {
             var assembly = Assembly.Load("Assembly-CSharp");
@@ -110,7 +110,7 @@ public sealed partial class Plugin
                 _wormholeDefinitions?.Dispose(); _wormholeDefinitions = null; _wormholeCoordinator?.Dispose(); _wormholeCoordinator = null;
                 _siteDefinitions?.Dispose(); _siteDefinitions = null; _siteCoordinator?.Dispose(); _siteCoordinator = null;
                 _shipDefinitions?.Dispose(); _shipDefinitions = null; _shipCoordinator?.Dispose(); _shipCoordinator = null;
-                _hub.SetCapability("authored-systems", false, "Resource-system integration unavailable: " + authoredError.GetType().Name);
+                _hub.SetUnavailable("authored-systems", ServiceUnavailableReason.BindingFailed, "Resource-system integration unavailable: " + authoredError.GetType().Name);
                 Logger.LogError(authoredError);
             }
             _worldLifetimeHost = new WorldLifetimeHookHost(assembly, _hub, lifetime, new WorldActorPhysics(assembly).Stop,
@@ -231,11 +231,11 @@ public sealed partial class Plugin
             WorldLifetimePatches.Host = _worldLifetimeHost;
             WorldLoadPatches.Host = _worldLoadHost;
             _worldAvailable = true;
-            _hub.SetCapability("world-save-protection", true, "Owned world state participates in coordinated saves.");
-            _hub.SetCapability("world-load-protection", true, "Owned world state is restored before dependent content.");
-            _hub.SetCapability("world-authoring", true, "Persistent Combat sites are available to authenticated providers in ready sessions.");
+            _hub.SetAvailable("world-save-protection", "Owned world state participates in coordinated saves.");
+            _hub.SetAvailable("world-load-protection", "Owned world state is restored before dependent content.");
+            _hub.SetAvailable("world-authoring", "Persistent Combat sites are available to authenticated providers in ready sessions.");
             if (authored != null)
-                _hub.SetCapability("authored-systems", true, "Resource pocket systems are available to authenticated providers in ready sessions.");
+                _hub.SetAvailable("authored-systems", "Resource pocket systems are available to authenticated providers in ready sessions.");
         }
         catch (Exception error)
         {
@@ -249,8 +249,8 @@ public sealed partial class Plugin
                     if (_worldLoadHost != null) WorldLoadPatches.Host = _worldLoadHost;
                 },
                 cleanup => Logger.LogError(cleanup));
-            _hub.SetCapability("world-save-protection", false, "World guard initialization failed: " + error.GetType().Name);
-            _hub.SetCapability("world-load-protection", false, "World load guard initialization failed: " + error.GetType().Name);
+            _hub.SetUnavailable("world-save-protection", ServiceUnavailableReason.BindingFailed, "World guard initialization failed: " + error.GetType().Name);
+            _hub.SetUnavailable("world-load-protection", ServiceUnavailableReason.BindingFailed, "World load guard initialization failed: " + error.GetType().Name);
             Logger.LogError(error);
         }
     }

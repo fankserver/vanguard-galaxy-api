@@ -292,7 +292,7 @@ public sealed partial class StoryMissionTests
         internal StoryObjectsFixture()
         {
             Hub = new LifecycleHub((_, error) => Errors.Add(error));
-            foreach (var capability in new[] { "owned-story", "session-lifecycle", "save-outcomes" }) Hub.SetCapability(capability, true, "test");
+            foreach (var capability in new[] { "owned-story", "session-lifecycle", "save-outcomes" }) Hub.SetAvailable(capability, "test");
             Persistence = new(Hub); CustomData = new(Hub); var host = new FakeHost(); var plugin = new object(); host.Register(plugin, AnimaPlugin);
             Engine = new StoryMissionService(Hub.Services, Persistence, Hub, host.Authenticate, checkThread: Hub.CheckThread, world: World, missions: Missions);
             Provider = Engine.AcquireProvider(plugin, saveData: CustomData).Provider!;

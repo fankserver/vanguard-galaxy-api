@@ -14,7 +14,7 @@ public sealed class BoardingCombatServiceTests
         internal int Faults;
         internal Fixture()
         {
-            Hub.SetCapability("boarding-combat", true, "Test bindings.");
+            Hub.SetAvailable("boarding-combat", "Test bindings.");
             Rules = new BoardingCombatService(Hub, (_, _) => Faults++);
             Session = Hub.Begin(SessionOrigin.SaveLoad, "save"); Hub.PlayerReady(Session); Hub.GameplayInitialized(Session);
         }
@@ -28,7 +28,7 @@ public sealed class BoardingCombatServiceTests
         using var f = new Fixture(); BoardingCombatService service = f.Rules;
         using var provider = service.AcquireProvider("mod");
         provider.RegisterMultiplier("power", BoardingRuleScope.Both, BoardingCombatPolicyKind.Power, _ =>
-        { f.Hub.SetCapability("boarding-combat", false, "Fault.", ServiceUnavailableReason.ObserverFault); return 3; });
+        { f.Hub.SetUnavailable("boarding-combat", ServiceUnavailableReason.ObserverFault, "Fault."); return 3; });
         Assert.Equal(10, f.Rules.Scale(f.Context(BoardingCombatPolicyKind.Power)));
         var calls = 0;
         provider.RegisterVeto("veto", BoardingRuleScope.Both, BoardingCombatPolicyKind.Surrender, _ => { calls++; return false; });

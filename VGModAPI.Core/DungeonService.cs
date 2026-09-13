@@ -43,7 +43,7 @@ internal sealed class DungeonService : IDisposable
     {
         _hub = hub; _definitions = registry; _store = state; _bindings = native; _diagnose = diagnose; _mutationBlocked = mutationBlocked ?? (() => false); _mutationBlockReason = mutationBlockReason;
         _status = hub.Services.Get("dungeon-content");
-        if ((registry == null || state == null || native == null) && Availability.IsAvailable) hub.SetCapability("dungeon-content", false, "Dungeon bindings unavailable.");
+        if ((registry == null || state == null || native == null) && Availability.IsAvailable) hub.SetUnavailable("dungeon-content", ServiceUnavailableReason.BindingFailed, "Dungeon bindings unavailable.");
     }
     public ServiceAvailability Availability => _status.Availability;
     public event Action<ServiceAvailability>? AvailabilityChanged
@@ -174,7 +174,7 @@ internal sealed class DungeonService : IDisposable
     public void Dispose()
     {
         _hub.CheckThread(); if (_disposed || _closing) return; _closing = true;
-        if (Availability.IsAvailable) _hub.SetCapability("dungeon-content", false, "Dungeon content service stopped.", ServiceUnavailableReason.ApiStopped);
+        if (Availability.IsAvailable) _hub.SetUnavailable("dungeon-content", ServiceUnavailableReason.ApiStopped, "Dungeon content service stopped.");
         foreach (var provider in _providers.Values.ToArray()) provider.Dispose(); _disposed = true;
     }
     private sealed class Behavior : IDisposable

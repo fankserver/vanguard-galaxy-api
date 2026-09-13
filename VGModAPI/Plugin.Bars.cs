@@ -35,11 +35,11 @@ public sealed partial class Plugin
     private void InitializeBars()
     {
         if (!Config.Bind("Bars", "Enabled", false, "Experimental API-owned bar rosters. Back up saves before enabling.").Value)
-        { _hub!.SetCapability("owned-bars", false, "Disabled by configuration."); return; }
+        { _hub!.SetUnavailable("owned-bars", ServiceUnavailableReason.Disabled, "Disabled by configuration."); return; }
         if (_persistence == null || !_hub!.Capabilities.Any(capability => capability.Name == "session-lifecycle" && capability.Available))
-        { _hub!.SetCapability("owned-bars", false, "Inspected lifecycle and API-managed saves are required."); return; }
+        { _hub!.SetUnavailable("owned-bars", ServiceUnavailableReason.DependencyUnavailable, "Inspected lifecycle and API-managed saves are required."); return; }
         if (BarPatches.Host != null)
-        { _hub.SetCapability("owned-bars", false, "Process-lived contact guards are already installed; restart the game."); return; }
+        { _hub.SetUnavailable("owned-bars", ServiceUnavailableReason.BindingFailed, "Process-lived contact guards are already installed; restart the game."); return; }
         try
         {
             _barPermissionConfig = Config.Bind("Bars", "ExclusiveProviders", "", "Comma-separated exact plugin IDs permitted to claim exclusive station rosters. Conflicting claims are denied.");
@@ -61,7 +61,7 @@ public sealed partial class Plugin
                     (id, mission) => story?.IsBarMissionReady(session.Id, id, mission) == true,
                     () => story?.BarDependencyStamp() ?? noStory) : null,
                 bars.CanSerializeCurrent, bars.CanMutateCurrent, _hub.CheckThread,
-                error => { _hub.SetCapability("owned-bars", false, "Bar adapter fault; content guards remain active."); Logger.LogError(error); });
+                error => { _hub.SetUnavailable("owned-bars", ServiceUnavailableReason.BindingFailed, "Bar adapter fault; content guards remain active."); Logger.LogError(error); });
             var targets = new GameBindings(assembly).Resolve(BindingCatalog.Bars);
             var patches = new Dictionary<string, Type>
             {
@@ -84,13 +84,13 @@ public sealed partial class Plugin
             }
             BarHookInstallation.Install(installs, _barHarmony.UnpatchSelf);
             BarPatches.Host = _barHost;
-            _hub.SetCapability("owned-bars", true, "Experimental owned bar rosters with live story-dependency admission.");
+            _hub.SetAvailable("owned-bars", "Experimental owned bar rosters with live story-dependency admission.");
         }
         catch (Exception error)
         {
             StopBars();
             if (BarPatches.Host == null) _barHarmony?.UnpatchSelf();
-            _hub!.SetCapability("owned-bars", false, "Bar initialization failed: " + error.GetType().Name);
+            _hub!.SetUnavailable("owned-bars", ServiceUnavailableReason.BindingFailed, "Bar initialization failed: " + error.GetType().Name);
             Logger.LogError(error);
         }
     }

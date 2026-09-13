@@ -17,8 +17,8 @@ public sealed class PersistenceServiceTests : IDisposable
     private static LifecycleHub Bound()
     {
         var hub = new LifecycleHub((_, _) => { });
-        hub.SetCapability("session-lifecycle", true, "Bound.");
-        hub.SetCapability("save-outcomes", true, "Bound.");
+        hub.SetAvailable("session-lifecycle", "Bound.");
+        hub.SetAvailable("save-outcomes", "Bound.");
         return hub;
     }
 
@@ -42,7 +42,7 @@ public sealed class PersistenceServiceTests : IDisposable
     {
         int errors = 0;
         var hub = new LifecycleHub((_, _) => errors++);
-        hub.SetCapability("session-lifecycle", true, "Bound."); hub.SetCapability("save-outcomes", true, "Bound.");
+        hub.SetAvailable("session-lifecycle", "Bound."); hub.SetAvailable("save-outcomes", "Bound.");
         var store = new GenerationStore(_root);
         using var service = new PersistenceService(hub, store, s => s, _ => new string('a', 64));
         ISaveDataRegistration? registration = null;

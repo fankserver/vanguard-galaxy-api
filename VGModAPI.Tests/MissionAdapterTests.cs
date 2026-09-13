@@ -20,8 +20,8 @@ public sealed class MissionAdapterTests : IDisposable
     public MissionAdapterTests()
     {
         GamePlayer.current = _player;
-        _hub.SetCapability("session-lifecycle", true, "Bound.");
-        _hub.SetCapability("mission-transitions", true, "Bound.");
+        _hub.SetAvailable("session-lifecycle", "Bound.");
+        _hub.SetAvailable("mission-transitions", "Bound.");
         _adapter = new MissionAdapter(_hub, new MissionBindings(typeof(GamePlayer).Assembly), _errors.Add);
         _adapter.Events.Subscribe("test", _events.Add);
         var id = _hub.Begin(SessionOrigin.SaveLoad, "test.save"); _hub.PlayerReady(id); _hub.GameplayInitialized(id);
@@ -183,7 +183,7 @@ public sealed class MissionAdapterTests : IDisposable
     [Fact]
     public void ObserverFaultStopsObservationWithoutThrowingIntoCaller()
     {
-        _hub.SetCapability("mission-continuity", false, "API-managed saves unavailable");
+        _hub.SetUnavailable("mission-continuity", ServiceUnavailableReason.DependencyUnavailable, "API-managed saves unavailable");
         _adapter.Guard(() => throw new InvalidOperationException("injected")); _adapter.Poll();
         Assert.Equal("API-managed saves unavailable", _hub.Capabilities.Single(c => c.Name == "mission-continuity").Detail);
         Assert.Null(_adapter.Begin("accept", _player, new Mission()));

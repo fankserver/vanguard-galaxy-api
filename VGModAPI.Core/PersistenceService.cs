@@ -34,13 +34,11 @@ internal sealed class PersistenceService : ISaveDataService, IDisposable
         _status = hub.Services.Get("save-data");
         if (coordinator != null) coordinator.StateChanged += PublishStates;
         _status.AvailabilityChanged += OnAvailabilityChanged;
-        if (coordinator != null) hub.SetCapability("save-data", true, "Save storage initialized.");
+        if (coordinator != null) hub.SetAvailable("save-data", "Save storage initialized.");
         else
         {
             var diagnosis = _status.Availability;
-            hub.SetCapability("save-data", false,
-                diagnosis.IsAvailable ? "Save storage is unavailable." : diagnosis.Detail,
-                diagnosis.IsAvailable ? ServiceUnavailableReason.BindingFailed : diagnosis.Reason);
+            hub.SetUnavailable("save-data", diagnosis.IsAvailable ? ServiceUnavailableReason.BindingFailed : diagnosis.Reason, diagnosis.IsAvailable ? "Save storage is unavailable." : diagnosis.Detail);
         }
     }
 
@@ -110,8 +108,7 @@ internal sealed class PersistenceService : ISaveDataService, IDisposable
         if (_disposed) return;
         _disposed = true;
         var health = Availability;
-        _hub.SetCapability("save-data", false, health.IsAvailable ? "Save data service stopped." : health.Detail,
-            health.IsAvailable ? ServiceUnavailableReason.ApiStopped : health.Reason);
+        _hub.SetUnavailable("save-data", health.IsAvailable ? ServiceUnavailableReason.ApiStopped : health.Reason, health.IsAvailable ? "Save data service stopped." : health.Detail);
         _coordinator?.Dispose();
         PublishStates();
         if (!_notifying) FinishDispose();

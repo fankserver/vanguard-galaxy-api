@@ -15,7 +15,7 @@ public sealed partial class Plugin
     private void InitializeInventories()
     {
         _inventoryService ??= CreateInventories();
-        _hub!.SetCapability("inventories", false, "Inventory bindings initializing.");
+        _hub!.SetUnavailable("inventories", ServiceUnavailableReason.BindingFailed, "Inventory bindings initializing.");
         try
         {
             var assembly = Assembly.Load("Assembly-CSharp");
@@ -34,12 +34,12 @@ public sealed partial class Plugin
             foreach (var method in methods.Values)
                 _inventoryHarmony.Patch(method, prefix: new HarmonyMethod(typeof(Patches.InventoryPatches).GetMethod("Prefix", BindingFlags.Static | BindingFlags.NonPublic)),
                     finalizer: new HarmonyMethod(typeof(Patches.InventoryPatches).GetMethod("Finalizer", BindingFlags.Static | BindingFlags.NonPublic)));
-            _hub.SetCapability("inventories", true, "Player-owned inventory snapshots and guarded immediate transfers.");
+            _hub.SetAvailable("inventories", "Player-owned inventory snapshots and guarded immediate transfers.");
         }
         catch (Exception error)
         {
             _inventoryHarmony?.UnpatchSelf(); _inventoryBackend = null; Patches.InventoryPatches.Service = null;
-            _hub.SetCapability("inventories", false, error.Message);
+            _hub.SetUnavailable("inventories", ServiceUnavailableReason.BindingFailed, error.Message);
         }
     }
     private void StopInventories()

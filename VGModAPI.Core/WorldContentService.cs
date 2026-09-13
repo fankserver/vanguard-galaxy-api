@@ -1564,7 +1564,6 @@ internal sealed class WorldContentService : IWorldService, IDisposable
         if (_ownsProtection) _protection.Dispose();
         if (_ownsDroneBays) _droneBays.Dispose();
         var health = _status.Availability;
-        _hub.SetCapability("world-authoring", false, health.IsAvailable ? "World service stopped." : health.Detail,
-            health.IsAvailable ? ServiceUnavailableReason.ApiStopped : health.Reason);
+        _hub.SetUnavailable("world-authoring", health.IsAvailable ? ServiceUnavailableReason.ApiStopped : health.Reason, health.IsAvailable ? "World service stopped." : health.Detail);
     }
 }

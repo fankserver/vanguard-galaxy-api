@@ -300,9 +300,9 @@ public sealed class GameAdapterTests
     [Fact]
     public void FaultLatchClosesTypedAndLegacyHealthBeforeMainThreadNotification()
     {
-        _hub.SetCapability("session-lifecycle", true, "Bound.");
-        _hub.SetCapability("save-outcomes", true, "Bound.");
-        _hub.SetCapability("save-data", true, "Bound.");
+        _hub.SetAvailable("session-lifecycle", "Bound.");
+        _hub.SetAvailable("save-outcomes", "Bound.");
+        _hub.SetAvailable("save-data", "Bound.");
         var status = _hub.Services.Get("session-lifecycle");
         var phases = new List<SessionPhase?>();
         status.AvailabilityChanged += _ => phases.Add(_hub.CurrentSession?.Phase);

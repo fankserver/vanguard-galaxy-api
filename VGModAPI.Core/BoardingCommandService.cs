@@ -31,7 +31,7 @@ internal sealed class BoardingCommandService : IDisposable
     {
         _hub = hub; _events = events; _backend = backend; _rulesEvaluating = rulesEvaluating;
         _status = hub.Services.Get("boarding-commands");
-        if ((events == null || backend == null) && Availability.IsAvailable) hub.SetCapability("boarding-commands", false, "Command bindings unavailable.");
+        if ((events == null || backend == null) && Availability.IsAvailable) hub.SetUnavailable("boarding-commands", ServiceUnavailableReason.BindingFailed, "Command bindings unavailable.");
     }
     public ServiceAvailability Availability => _status.Availability;
     public event Action<ServiceAvailability>? AvailabilityChanged
@@ -113,7 +113,7 @@ internal sealed class BoardingCommandService : IDisposable
     public void Dispose()
     {
         _hub.CheckThread(); if (_disposed) return; _disposed = true;
-        if (Availability.IsAvailable) _hub.SetCapability("boarding-commands", false, "Command service stopped.", ServiceUnavailableReason.ApiStopped);
+        if (Availability.IsAvailable) _hub.SetUnavailable("boarding-commands", ServiceUnavailableReason.ApiStopped, "Command service stopped.");
         foreach (var controller in _controllers.Values.ToArray()) Remove(controller);
     }
     internal static BoardingCommandResult Result(BoardingCommandStatus status) => new(status, status.ToString());

@@ -115,7 +115,7 @@ public sealed class ServiceRootTests
     {
         var failures = new List<Exception>();
         using var hub = new LifecycleHub((_, error) => failures.Add(error));
-        hub.SetCapability("session-lifecycle", true, "Bound.");
+        hub.SetAvailable("session-lifecycle", "Bound.");
         ILifecycleService view = hub;
         var seen = new List<string>();
         view.Changed += fact => { if (fact.Kind == LifecycleEventKind.SessionStarting) hub.Dispose(); };

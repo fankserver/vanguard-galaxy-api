@@ -20,8 +20,8 @@ public sealed class WorldShutdownRegistrationTests
         try
         {
             using var hub = new LifecycleHub((_, error) => failures.Add(error));
-            hub.SetCapability("session-lifecycle", true, "Test bindings.");
-            hub.SetCapability("save-outcomes", true, "Test bindings.");
+            hub.SetAvailable("session-lifecycle", "Test bindings.");
+            hub.SetAvailable("save-outcomes", "Test bindings.");
             using var persistence = new PersistenceService(hub, new GenerationStore(directory), Path.GetFullPath, _ => "unused");
             using var world = new WorldPersistenceBindings(persistence, hub, null!, null!, null!);
             var coordinator = (PersistenceCoordinator)typeof(PersistenceService).GetField("_coordinator", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(persistence)!;

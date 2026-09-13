@@ -57,7 +57,7 @@ public sealed partial class StoryMissionTests
     public void TypedUnavailableStoryDoesNotAuthenticateOrRegisterSaveData()
     {
         using var hub = new LifecycleHub((_, _) => { });
-        hub.SetCapability("owned-story", false, "Disabled.", ServiceUnavailableReason.Disabled);
+        hub.SetUnavailable("owned-story", ServiceUnavailableReason.Disabled, "Disabled.");
         var authentications = 0;
         using var engine = new StoryMissionService(hub.Services, null, hub, (_, _) => { authentications++; return null; }, checkThread: hub.CheckThread);
         IStoryService service = engine;
@@ -72,7 +72,7 @@ public sealed partial class StoryMissionTests
     public void TypedStoryHealthReadsProtectionFaultWithoutPumpingCallbacks()
     {
         using var hub = new LifecycleHub((_, _) => { });
-        hub.SetCapability("owned-story", true, "Bound.");
+        hub.SetAvailable("owned-story", "Bound.");
         var protection = true;
         using var service = new StoryMissionService(hub.Services, null, hub, (_, _) => null, checkThread: hub.CheckThread, protectionHealthy: () => protection);
         var changes = 0; service.AvailabilityChanged += _ => changes++;
@@ -739,13 +739,13 @@ public sealed partial class StoryMissionTests
         using var hub = new LifecycleHub((_, error) => throw new Exception("Unexpected subscriber fault", error));
         try
         {
-            hub.SetCapability("session-lifecycle", true, "Bound."); hub.SetCapability("save-outcomes", true, "Bound.");
+            hub.SetAvailable("session-lifecycle", "Bound."); hub.SetAvailable("save-outcomes", "Bound.");
             using var persistence = new PersistenceService(hub, new GenerationStore(root), path => path, _ => new string('a', 64));
             var control = persistence.Register(new PersistenceProvider("vgmodapi.tests.control", 1,
                 capture: () => new byte[] { 1 }, restore: (_, _) => { }, validate: bytes => bytes.Length == 1)).Registration!;
             Assert.Equal(SaveDataStateKind.Inactive, control.State.Kind);
             var host = new FakeHost();
-            hub.SetCapability("owned-story", true, "Test bindings.");
+            hub.SetAvailable("owned-story", "Test bindings.");
             using var service = new StoryMissionService(hub.Services, persistence, hub, host.Authenticate, null, hub.CheckThread);
             var session = hub.Begin(SessionOrigin.NewGame, null);
             hub.PlayerReady(session);
@@ -785,10 +785,10 @@ public sealed partial class StoryMissionTests
         using var hub = new LifecycleHub((_, error) => throw new Exception("Unexpected subscriber fault", error));
         try
         {
-            hub.SetCapability("session-lifecycle", true, "Bound."); hub.SetCapability("save-outcomes", true, "Bound.");
+            hub.SetAvailable("session-lifecycle", "Bound."); hub.SetAvailable("save-outcomes", "Bound.");
             using var persistence = new PersistenceService(hub, new GenerationStore(root), path => path, _ => new string('a', 64));
             var host = new FakeHost();
-            hub.SetCapability("owned-story", true, "Test bindings.");
+            hub.SetAvailable("owned-story", "Test bindings.");
             using var service = new StoryMissionService(hub.Services, persistence, hub, host.Authenticate, null, hub.CheckThread);
             var session = hub.Begin(SessionOrigin.NewGame, null);
             hub.PlayerReady(session);
@@ -892,7 +892,7 @@ public sealed partial class StoryMissionTests
         using var hub = new LifecycleHub((_, error) => throw new Exception("Unexpected subscriber fault", error));
         try
         {
-            hub.SetCapability("session-lifecycle", true, "Bound."); hub.SetCapability("save-outcomes", true, "Bound.");
+            hub.SetAvailable("session-lifecycle", "Bound."); hub.SetAvailable("save-outcomes", "Bound.");
             using var persistence = new PersistenceService(hub, new GenerationStore(root), path => path, _ => new string('a', 64));
             byte[]? restored = null;
             using var control = persistence.Register(new PersistenceProvider("vgmodapi.tests.control", 1,
@@ -2247,10 +2247,10 @@ public sealed partial class StoryMissionTests
             var codec = new OwnerSchemaCodec(StoryStateCodec.Owner, StoryStateCodec.SchemaVersion, StoryStateCodec.Validate);
             store.Publish("slot", hash, Guid.NewGuid(), new Dictionary<string, byte[]> { [StoryStateCodec.Owner] = codec.Encode(payloadBytes) });
             using var hub = new LifecycleHub((_, error) => throw new Exception("Unexpected migration fault", error));
-            hub.SetCapability("session-lifecycle", true, "Bound."); hub.SetCapability("save-outcomes", true, "Bound.");
+            hub.SetAvailable("session-lifecycle", "Bound."); hub.SetAvailable("save-outcomes", "Bound.");
             using var persistence = new PersistenceService(hub, store, path => path, _ => hash);
             var host = new FakeHost();
-            hub.SetCapability("owned-story", true, "Test bindings.");
+            hub.SetAvailable("owned-story", "Test bindings.");
             using var service = new StoryMissionService(hub.Services, persistence, hub, host.Authenticate, null, hub.CheckThread);
             var plugin = new object();
             host.Register(plugin, AnimaPlugin);
@@ -2287,10 +2287,10 @@ public sealed partial class StoryMissionTests
             store.Publish("slot", hash, Guid.NewGuid(), new Dictionary<string, byte[]> { [StoryStateCodec.Owner] =
                 codec.Encode(StoryStateCodec.Encode(new[] { new StoryMissionEntry(id, mission, 1) })) });
             using var hub = new LifecycleHub((_, error) => throw new Exception("Unexpected migration fault", error));
-            hub.SetCapability("session-lifecycle", true, "Bound."); hub.SetCapability("save-outcomes", true, "Bound.");
+            hub.SetAvailable("session-lifecycle", "Bound."); hub.SetAvailable("save-outcomes", "Bound.");
             using var persistence = new PersistenceService(hub, store, path => path, _ => hash);
             var host = new FakeHost();
-            hub.SetCapability("owned-story", true, "Test bindings.");
+            hub.SetAvailable("owned-story", "Test bindings.");
             using var service = new StoryMissionService(hub.Services, persistence, hub, host.Authenticate, null, hub.CheckThread);
             var plugin = new object();
             host.Register(plugin, AnimaPlugin);
@@ -3398,7 +3398,7 @@ public sealed partial class StoryMissionTests
         internal Func<string, StoryObjective, string?>? AuthoredDestinations;
         internal StoryMissionService Service(FakeHost host, Action? checkThread = null, Func<string, string, bool?>? worldReferences = null)
         {
-            _healthHub.SetCapability("owned-story", true, "Test bindings.");
+            _healthHub.SetAvailable("owned-story", "Test bindings.");
             return new(_healthHub.Services, Persistence, Lifecycle, host.Authenticate, null, checkThread, World, Missions,
                 (detail, available) => Reports.Add((available ? "available: " : "unavailable: ") + detail), Protection,
                 () => ProtectionHealthy, worldReferences, (owner, objective) => AuthoredDestinations?.Invoke(owner, objective));

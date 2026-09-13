@@ -35,7 +35,7 @@ internal sealed class ModInformationCatalog : IModInformationService, IDisposabl
         _menu = hub.Services.Get("mod-information-menu");
         _events = new ServiceNotifications<ModInventorySnapshot>(hub.CheckThread, hub.ReportSubscriberFailure, hub.EnterServiceDispatch);
         _status.AvailabilityChanged += OnAvailabilityChanged;
-        hub.SetCapability("mod-information", true, "Local loader inventory.");
+        hub.SetAvailable("mod-information", "Local loader inventory.");
     }
     public ServiceAvailability Availability => _status.Availability;
     public IServiceStatus Menu { get { CheckThread(); return _menu; } }
@@ -156,7 +156,7 @@ internal sealed class ModInformationCatalog : IModInformationService, IDisposabl
         if (_disposed) return;
         _disposed = true;
         _inventory = Stopped;
-        _hub.SetCapability("mod-information", false, "Catalog stopped.", ServiceUnavailableReason.ObserverFault);
+        _hub.SetUnavailable("mod-information", ServiceUnavailableReason.ObserverFault, "Catalog stopped.");
         _status.AvailabilityChanged -= OnAvailabilityChanged;
         _events.Complete(_inventory);
     }

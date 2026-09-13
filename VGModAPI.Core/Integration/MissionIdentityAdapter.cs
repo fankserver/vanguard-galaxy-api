@@ -15,7 +15,9 @@ internal sealed partial class MissionAdapter
         _json = json; _identity = new MissionIdentityPersistence(persistence, () => !_faulted && !_disposed && Current, detail =>
         {
             var capability = _hub.Capabilities.FirstOrDefault(c => c.Name == "save-data");
-            if (capability != null) _hub.SetCapability(capability.Name, capability.Available, detail);
+            if (capability == null) return;
+            if (capability.Available) _hub.SetAvailable(capability.Name, detail);
+            else _hub.SetUnavailable(capability.Name, ServiceUnavailableReason.BindingFailed, detail);
         });
     }
     internal void DisableIdentity()

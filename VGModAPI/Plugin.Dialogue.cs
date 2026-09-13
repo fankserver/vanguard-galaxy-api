@@ -14,7 +14,7 @@ public sealed partial class Plugin
     private void InitializeDialogue()
     {
         _dialogueService = new DialogueService(_hub!.Services.Get("dialogue"), _hub.CheckThread, error => _hub.ReportSubscriberFailure("dialogue", error), _storyCharacters ??= new StoryCharacterService(_hub));
-        _hub.SetCapability("dialogue", false, "Dialogue bindings are initializing.");
+        _hub.SetUnavailable("dialogue", ServiceUnavailableReason.BindingFailed, "Dialogue bindings are initializing.");
         try
         {
             var type = Assembly.Load("Assembly-CSharp").GetType("Behaviour.Dialogues.DialogueManager", true)!;
@@ -26,9 +26,9 @@ public sealed partial class Plugin
                 postfix: new HarmonyMethod(typeof(Patches.DialoguePatches), nameof(Patches.DialoguePatches.Close)));
             SceneManager.sceneUnloaded += DialogueSceneUnloaded;
             _hub.Changed += DialogueLifecycle;
-            _hub.SetCapability("dialogue", true, "Conversation-manager line and closure observations.");
+            _hub.SetAvailable("dialogue", "Conversation-manager line and closure observations.");
         }
-        catch (Exception error) { _dialogueHarmony?.UnpatchSelf(); Patches.DialoguePatches.Clear(); _hub.SetCapability("dialogue", false, error.Message); }
+        catch (Exception error) { _dialogueHarmony?.UnpatchSelf(); Patches.DialoguePatches.Clear(); _hub.SetUnavailable("dialogue", ServiceUnavailableReason.BindingFailed, error.Message); }
     }
     private void DialogueSceneUnloaded(Scene scene)
     { if (scene.name == "UI - Dialogue") _dialogueService?.Close(); }

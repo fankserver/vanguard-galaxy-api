@@ -21,7 +21,7 @@ public sealed class DungeonPanelServiceTests
         {
             var session = Hub.Begin(SessionOrigin.NewGame, null); Hub.PlayerReady(session); Hub.GameplayInitialized(session);
             var target = new BoardingTargetSnapshot(new(session, Guid.NewGuid()), 1, BoardingEncounterKind.Installation, "Site", null, null, BoardingAvailability.Available, null);
-            Hub.SetCapability("dungeon-panel-opening", true, "Test bindings.");
+            Hub.SetAvailable("dungeon-panel-opening", "Test bindings.");
             Source.Snapshot = new(Guid.NewGuid(), 1, target, null); Service = new(Hub, Source, (_, _) => Faults++);
         }
         public void Dispose() { Service.Dispose(); Hub.Dispose(); }
@@ -31,7 +31,7 @@ public sealed class DungeonPanelServiceTests
     {
         using var f = new Fixture(); DungeonPanelService service = f.Service;
         f.Source.OpenCallback = _ =>
-        { f.Hub.SetCapability("dungeon-panel-opening", false, "Fault.", ServiceUnavailableReason.ObserverFault); return DungeonPanelOpenStatus.Opened; };
+        { f.Hub.SetUnavailable("dungeon-panel-opening", ServiceUnavailableReason.ObserverFault, "Fault."); return DungeonPanelOpenStatus.Opened; };
         Assert.Equal(DungeonPanelOpenStatus.Uncertain, service.Open(f.Source.Snapshot!.Target.Handle));
         var reads = f.Source.Reads;
         Assert.Null(service.Current); Assert.Equal(reads, f.Source.Reads);
@@ -44,7 +44,7 @@ public sealed class DungeonPanelServiceTests
     public void MissingSourceRetainsSpecificUnavailableDiagnosis()
     {
         using var hub = new LifecycleHub((_, _) => { });
-        hub.SetCapability("dungeon-panel-opening", false, "Disabled.", ServiceUnavailableReason.Disabled);
+        hub.SetUnavailable("dungeon-panel-opening", ServiceUnavailableReason.Disabled, "Disabled.");
         using var service = new DungeonPanelService(hub, null, (_, _) => { });
         Assert.Equal(ServiceUnavailableReason.Disabled, service.Availability.Reason);
         Assert.Null(service.Current); Assert.False(service.Capabilities.ContextualActions);
