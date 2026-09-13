@@ -18,7 +18,6 @@ internal static class ObservationCase
     internal static IReadOnlyList<TestStep> Steps(ILifecycleService lifecycle, List<LifecycleEvent> events)
     {
         var steps = new List<TestStep>(LiveBoot.Steps(PluginId, lifecycle, events));
-        var session = events.FirstOrDefault(e => e.Kind == LifecycleEventKind.GameplayInitialized)?.Session;
         steps.AddRange(new[]
         {
             new TestStep("lifecycle observation fired for the live session", "Observation.OnLifecycle / LifecycleEvent", () =>
@@ -38,11 +37,16 @@ internal static class ObservationCase
             {
                 var p = NativeGameplay.PluginInstance(PluginId)
                     ?? throw new InvalidOperationException("Observation plugin not loaded.");
-                // Because the observer subscribed at Start(), its recorded session id must be the one
-                // the API reports as current — proving it did not miss the session by loading late.
-                var observed = (string)NativeGameplay.GetField(p, "_lastLifecycle")!;
-                if (session == null || lifecycle.CurrentSession?.Id != session.Id)
+                // Re-read the boot session now (post-boot) — this case is constructed before the
+                // events list fills in — and require the API's current session to still be that same
+                // one, proving the observer did not miss it by loading late.
+                var bootSession = events.LastOrDefault(e => e.Kind == LifecycleEventKind.GameplayInitialized)?.Session
+                    ?? lifecycle.CurrentSession;
+                if (bootSession == null || lifecycle.CurrentSession?.Id != bootSession.Id)
                     throw new InvalidOperationException("API live session changed underneath the test.");
+                var observed = (string)NativeGameplay.GetField(p, "_lastLifecycle")!;
+                if (!observed.Contains("GameplayInitialized"))
+                    throw new InvalidOperationException("Observer last recorded: " + observed);
                 NativeGameplay.Screenshot("observation-live");
                 return true;
             }),

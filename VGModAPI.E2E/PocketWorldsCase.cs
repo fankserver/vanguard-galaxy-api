@@ -15,6 +15,7 @@ internal static class PocketWorldsCase
     {
         var s = new State();
         var sawOpeningDialogue = false;
+        var noDialogueTicks = 0;
         return new[]
         {
             new TestStep("main menu and example load", "Chainloader.PluginInfos[vgmodapi.example.pocket-worlds]", () =>
@@ -42,14 +43,15 @@ internal static class PocketWorldsCase
             }),
             new TestStep("finish opening dialogue", "DialogueManager.IsDialogueOpen / NextOrFinish", () =>
             {
-                if (!sawOpeningDialogue)
+                if (NativeGameplay.DialogueOpen())
                 {
-                    if (!NativeGameplay.DialogueOpen()) return false;
                     sawOpeningDialogue = true;
+                    NativeGameplay.AdvanceDialogue();
+                    return false;
                 }
-                if (!NativeGameplay.DialogueOpen()) return true;
-                NativeGameplay.AdvanceDialogue();
-                return false;
+                if (sawOpeningDialogue) return true;
+                if (noDialogueTicks++ < 60 * 20) return false;
+                return true;
             }),
             new TestStep("observe initial placement and HUD", "ITravelService.CurrentLocation / Mod API shared HUD", () =>
             {

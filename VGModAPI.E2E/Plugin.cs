@@ -70,7 +70,7 @@ public sealed class Plugin : BaseUnityPlugin
                 PocketWorldsCase.Id => new GameTest(PocketWorldsCase.Steps(_lifecycle, _events, _travelEvents), remaining),
                 StoryMissionsCase.Id => new GameTest(StoryMissionsCase.Steps(_lifecycle, _events), remaining),
                 ObservationCase.Id => new GameTest(ObservationCase.Steps(_lifecycle, _events), remaining),
-                CargoRecoveryCase.Id => new GameTest(CargoRecoveryCase.Steps(_lifecycle, _events), remaining),
+                CargoRecoveryCase.Id => new GameTest(CargoRecoveryCase.Steps(_lifecycle, _events, _travelEvents), remaining),
                 StationCommerceCase.Id => new GameTest(StationCommerceCase.Steps(_lifecycle, _events), remaining),
                 UiSurfacesCase.Id => new GameTest(UiSurfacesCase.Steps(_lifecycle, _events), remaining),
                 _ => throw new InvalidOperationException("Unhandled case: " + _caseId),

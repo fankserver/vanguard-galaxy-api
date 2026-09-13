@@ -21,6 +21,7 @@ internal static class LiveBoot
         string pluginId, ILifecycleService lifecycle, List<LifecycleEvent> events)
     {
         var sawOpeningDialogue = false;
+        var noDialogueTicks = 0;
         return new[]
         {
             new TestStep("main menu and example load", "Chainloader.PluginInfos[" + pluginId + "]", () =>
@@ -49,14 +50,19 @@ internal static class LiveBoot
             }),
             new TestStep("finish opening dialogue", DialogueBinding, () =>
             {
-                if (!sawOpeningDialogue)
+                // The vanilla narrated intro does not fire in every new-game scenario. When it is
+                // showing, step through it one line per frame until it closes; otherwise wait a
+                // bounded grace window for it to present and then move on, so onward HUD interaction
+                // stays reliable in both cases rather than polling forever.
+                if (NativeGameplay.DialogueOpen())
                 {
-                    if (!NativeGameplay.DialogueOpen()) return false;
                     sawOpeningDialogue = true;
+                    NativeGameplay.AdvanceDialogue();
+                    return false;                       // keep stepping until it closes
                 }
-                if (!NativeGameplay.DialogueOpen()) return true;
-                NativeGameplay.AdvanceDialogue();
-                return false;
+                if (sawOpeningDialogue) return true;    // it opened and has now closed
+                if (noDialogueTicks++ < 60 * 20) return false;  // up to ~20s for a possibly-late intro
+                return true;                            // no opening dialogue in this scenario
             }),
         };
     }
