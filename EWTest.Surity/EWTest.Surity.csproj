@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    EWTest.Surity: the Surity-based alternative to the self-contained EWTest harness.
+
+    This is a dev-only in-game test assembly. It targets net472 (matching Surity's
+    TFM set under BepInEx 5 / Mono) and references Surity's NuGet packages:
+
+    * Surity.Core     - the [TestClass]/[Test] attributes, attribute discovery and the
+                        in-game TestRunner.
+    * Surity.BepInEx  - the BepInEx plugin that runs all loaded Surity tests only when
+                        the game was started by the Surity CLI (the -runSurityTests
+                        handshake), streams results back, and exits the game.
+
+    Surity already provides the batchmode-launch handshake, streamed results over a
+    connection, and coroutine (IEnumerator) test support -- the plumbing the
+    self-contained EWTest harness must hand-roll. This project only contributes the
+    VGModAPI-specific test content. It is never built by CI and never shipped.
+
+    Dev-time dependency decision: adding Surity (a third-party NuGet framework) to the
+    repo's dev tooling is the tradeoff this PR exists to evaluate against PR #293's
+    dependency-free variant.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <RootNamespace>EWTest.Surity</RootNamespace>
+    <AssemblyName>EWTest.Surity</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Surity.Core" Version="2.2.0" />
+    <PackageReference Include="Surity.BepInEx" Version="2.2.0" />
+    <ProjectReference Include="../VGModAPI.Abstractions/VGModAPI.Abstractions.csproj" Private="false" />
+    <Reference Include="BepInEx"><HintPath>../VGModAPI/lib/BepInEx.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine"><HintPath>../VGModAPI/lib/UnityEngine.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>../VGModAPI/lib/UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>

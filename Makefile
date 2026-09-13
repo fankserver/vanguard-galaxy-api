@@ -8,7 +8,7 @@ RELEASE_VERSION := $(shell python3 -c 'import xml.etree.ElementTree as E; print(
 MANAGED = $(GAME_DIR)/VanguardGalaxy_Data/Managed
 CORE = $(GAME_DIR)/BepInEx/core
 
-.PHONY: link-libs build test check-bindings package check-package check-local clean release-archive
+.PHONY: link-libs build test check-bindings package check-package check-local clean release-archive e2e-surity
 link-libs:
 	@mkdir -p VGModAPI/lib
 	@set -eu; for name in BepInEx 0Harmony; do test -f "$(CORE)/$$name.dll"; ln -sfn "$(CORE)/$$name.dll" "VGModAPI/lib/$$name.dll"; done
@@ -69,5 +69,23 @@ check-local:
 	$(MAKE) test
 	$(MAKE) package
 	$(MAKE) check-bindings
+
+# In-game e2e using the Surity framework (Unity/BepInEx test framework) instead of a
+# self-contained harness. Adds a dev-time third-party dependency (Surity). Surity handles
+# the batchmode launch, -runSurityTests handshake and streamed results; this target adds
+# disposable-save isolation and gating on Surity's exit code. Opt-in developer tool: needs
+# the installed game (like check-bindings), never in public CI, never shipped.
+E2E_SAVE_DIR ?=
+E2E_PLUGINS ?= $(GAME_DIR)/BepInEx/plugins
+SURITY ?= surity
+E2E_SURITY_HARNESS_DIR ?= $(E2E_PLUGINS)/EWTest.Surity
+.PHONY: e2e-surity
+e2e-surity: link-libs build
+	@mkdir -p "$(E2E_SURITY_HARNESS_DIR)"
+	$(DOTNET) build EWTest.Surity/EWTest.Surity.csproj -c $(CONFIGURATION)
+	@for dll in VGModAPI VGModAPI.Core VGModAPI.Abstractions VGModAPI.Unity; do cp VGModAPI/bin/$(CONFIGURATION)/netstandard2.1/$$dll.dll "$(E2E_SURITY_HARNESS_DIR)/"; done
+	@cp EWTest.Surity/bin/$(CONFIGURATION)/net472/EWTest.Surity.dll "$(E2E_SURITY_HARNESS_DIR)/"
+	@set -eu; for f in $$(ls "$$HOME"/.nuget/packages/surity.bepinex/*/lib/*/Surity.BepInEx.dll 2>/dev/null | tail -1); do cp "$$f" "$(E2E_SURITY_HARNESS_DIR)/"; done
+	python3 tools/e2e_surity.py --game-dir '$(GAME_DIR)' --save-dir '$(E2E_SAVE_DIR)' --surity '$(SURITY)'
 clean:
 	$(DOTNET) clean VGModAPI.sln
