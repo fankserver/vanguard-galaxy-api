@@ -57,7 +57,14 @@ budget with controller time reserved for reporting. Additional gameplay cases
 should exercise concrete public operations and assert observable results—not
 just availability, successful registration, or skipped placeholders.
 
-Select a case with `make e2e E2E_CASE=<id>` (or `--case`).
+Select a case by setting the Make variable after the target:
+
+```sh
+make e2e E2E_CASE=wormhole-world
+```
+
+`--case` is an option of the underlying `tools/e2e.py` controller; GNU Make does
+not forward it, so `make e2e --case wormhole-world` is invalid.
 
 ## `wormhole-world` (actual example + gameplay route)
 
