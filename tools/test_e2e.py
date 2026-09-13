@@ -65,6 +65,11 @@ class ProtocolTests(unittest.TestCase):
         with self.assertRaisesRegex(e2e.E2EError, "deadline"):
             e2e.consume(Mock(), e2e.new_report(), "run", time.monotonic() - 1)
 
+    def test_wormhole_world_result_is_accepted_and_unknown_id_rejected(self):
+        e2e.validate_result(dict(type="result", id="wormhole-world", status="pass", detail="ok", binding="", elapsedMs=5))
+        with self.assertRaises(e2e.E2EError):
+            e2e.validate_result(dict(type="result", id="unknown-case", status="pass", detail="ok", binding="", elapsedMs=5))
+
     def test_report_round_trip_keeps_process_state_types(self):
         report = e2e.new_report()
         report.update(finished=True, results=[{k: v for k, v in RESULT.items() if k != "type"}])

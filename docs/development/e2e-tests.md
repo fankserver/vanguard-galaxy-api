@@ -57,9 +57,40 @@ budget with controller time reserved for reporting. Additional gameplay cases
 should exercise concrete public operations and assert observable results—not
 just availability, successful registration, or skipped placeholders.
 
-Only the fresh-session lifecycle case is implemented. This is not full API
-coverage: world authoring, mission/travel/boarding gameplay and persistent
-save/load round trips remain to be implemented.
+Select a case with `make e2e E2E_CASE=<id>` (or `--case`).
+
+## `wormhole-world` (authoring + full cleanup)
+
+`wormhole-world` mirrors `examples/WormholeWorld/Plugin.cs` end-to-end through
+the public API: the same static names, placements, topology and dependency-
+ordered cleanup. Having read that example, this is the live-cheque its whole
+authoring/cleanup surface was written to demonstrate.
+
+- Acquires the world provider at the menu and registers the 10 definitions
+  (5 pockets, 3 wormhole pairs, 2 sites) before the session — `AcquireProvider`
+  only succeeds before a session exists, exactly like the example's `Start()`.
+- Creates the ephemeral player and initializes gameplay (same fixture as
+  `fresh-session`).
+- Anchors at the player's current system `X`, then authors:
+  `E` (entry, `OwnSector`) → `X↔E` door; `A` (hub) and `B` (anchor) gated to
+  `E`; `A → Mining` (site) and `A → Salvage` (off-map site) wormholes.
+- Waits until every pocket / pair / site reconstructs with real native identity,
+  then asserts the authored topology: static names, one owned poi per
+  definition (no replay duplicates), and that the player never left the anchor.
+- Verifies the removal guard: a pocket still used as a wormhole endpoint reports
+  `CanRemove() == WormholeEndpoint`.
+- Cleans up in dependency order (pairs first, then pockets with their sites)
+  and asserts every definition is fully gone with no leftover poi.
+
+Native travel (flying through a rift/gate) and the HUD row-click are UI/UX the
+harness cannot automate, so they are out of scope; the topology and removal
+safety are asserted instead.
+
+## Coverage status
+
+`fresh-session` (lifecycle) and `wormhole-world` (world authoring + cleanup) are
+implemented and pass live. This is not full API coverage: mission/travel/
+boarding gameplay and persistent save/load round trips remain to be implemented.
 
 ## Results and safety
 

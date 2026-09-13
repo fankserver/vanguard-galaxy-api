@@ -15,6 +15,7 @@ import time
 import uuid
 
 CASE = "fresh-session"
+KNOWN_CASES = ("fresh-session", "wormhole-world")
 HANDSHAKE = "--vgmodapi-e2e"
 ASSEMBLIES = ("VGModAPI.dll", "VGModAPI.Core.dll", "VGModAPI.Abstractions.dll",
               "VGModAPI.Unity.dll", "VGModAPI.E2E.dll", "Newtonsoft.Json.dll")
@@ -142,7 +143,7 @@ def read_report(path):
 
 
 def validate_result(result):
-    if not isinstance(result, dict) or result.get("id") != CASE or result.get("status") not in ("pass", "fail"):
+    if not isinstance(result, dict) or result.get("id") not in KNOWN_CASES or result.get("status") not in ("pass", "fail"):
         raise E2EError("Invalid test result or unexpected test ID.")
     if not isinstance(result.get("detail"), str) or not isinstance(result.get("binding"), str):
         raise E2EError("Result requires detail and binding strings.")
@@ -261,13 +262,14 @@ def nonempty_path(value):
 
 
 def main(argv=None):
+    global CASE
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--game-dir", type=nonempty_path)
     parser.add_argument("--build-dir", type=nonempty_path, default=Path("artifacts/e2e/plugin"))
     parser.add_argument("--runtime-dir", type=nonempty_path, default=Path("artifacts/e2e/run"))
     parser.add_argument("--save-dir", type=nonempty_path)
     parser.add_argument("--timeout", type=int, default=90)
-    parser.add_argument("--case", choices=(CASE,), default=CASE)
+    parser.add_argument("--case", choices=KNOWN_CASES, default=CASE)
     parser.add_argument("--launch", action="store_true", help="explicit permission to stage plugins and launch the game")
     parser.add_argument("--report", type=nonempty_path, help="read/gate a previous report without a game")
     args = parser.parse_args(argv)
@@ -279,6 +281,7 @@ def main(argv=None):
         parser.error("--launch and --game-dir are required")
     if args.timeout < 20:
         parser.error("--timeout must be at least 20 seconds (reserves 10 seconds for the in-game failure report)")
+    CASE = args.case
     if os.name != "nt":
         raise E2EError("Run the controller with Windows Python (py.exe under WSL); the game uses Windows loopback.")
     game = args.game_dir.resolve()
