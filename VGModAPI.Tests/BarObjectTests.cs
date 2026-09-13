@@ -219,7 +219,7 @@ public sealed partial class BarServiceTests
         internal Guid Session;
         internal Objects(ISaveDataRegistration? prerequisite = null)
         {
-            Hub.SetCapability("owned-bars", true, "Test bindings.");
+            Hub.SetAvailable("owned-bars", "Test bindings.");
             Engine = new BarService(Storage, Hub, (plugin, _) => new StoryHostPlugin((string)plugin, typeof(Objects).Assembly), _ => true, Hub.CheckThread);
             Provider = Engine.AcquireProvider("author", prerequisite).Provider!;
             Games = new GameService(Hub, new NavigationService(Hub, _ => null, (_, _, _) => NavigationStatus.Unavailable, (_, _) => null), new InventoryService(Hub, () => null),

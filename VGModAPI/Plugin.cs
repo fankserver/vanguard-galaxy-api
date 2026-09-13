@@ -70,34 +70,34 @@ public sealed partial class Plugin : BaseUnityPlugin
     private void Awake()
     {
         _hub = new LifecycleHub((owner, ex) => Logger.LogError($"Subscriber '{owner}' failed: {ex}"));
-        _hub.SetCapability("session-lifecycle", false, "Not bound.");
-        _hub.SetCapability("save-outcomes", false, "Not bound.");
-        _hub.SetCapability("world-ready", false, "No universal POI/UI-ready guarantee; GameplayInitialized is narrower.");
-        _hub.SetCapability("native-travel", false, "Not bound; experimental.");
-        _hub.SetCapability("recipe-catalog", false, "Disabled or not bound; experimental.");
-        _hub.SetCapability("recipe-quotes", false, "Disabled or not bound; experimental.");
-        _hub.SetCapability("hud", false, "Disabled or not bound; experimental.");
-        _hub.SetCapability("gameplay-ui", false, "Not bound.");
-        _hub.SetCapability("ambient-traffic", false, "Not bound.");
-        _hub.SetCapability("unit-protection", false, "Not bound.");
-        _hub.SetCapability("story-characters", false, "Not bound.");
-        _hub.SetCapability("dungeon-enterability", false, "Not bound.");
-        _hub.SetCapability("drone-bays", false, "Not bound.");
-        _hub.SetCapability("forge-ui", false, "Disabled or not bound; experimental.");
-        _hub.SetCapability("crafting-commands", false, "Disabled or not bound; experimental.");
-        _hub.SetCapability("crafting-jobs", false, "Disabled or not bound; experimental.");
-        _hub.SetCapability("save-data", false, "Not initialized; experimental.");
-        _hub.SetCapability("mission-continuity", false, "Not initialized.");
-        _hub.SetCapability("mission-transitions", false, "Not bound.");
-        _hub.SetCapability("owned-story", false, "Not initialized; experimental.");
-        _hub.SetCapability("story-protection", false, "Not bound.");
-        _hub.SetCapability("dungeon-settlement", false, "Disabled or not bound.");
-        _hub.SetCapability("boarding-observation", false, "Disabled by configuration; experimental.");
-        _hub.SetCapability("boarding-tactics", false, "Disabled by configuration; experimental.");
-        _hub.SetCapability("boarding-combat", false, "Disabled by configuration; experimental.");
-        _hub.SetCapability("boarding-commands", false, "Disabled by configuration; experimental.");
-        _hub.SetCapability("boarding-rules", false, "Disabled by configuration; experimental.");
-        _hub.SetCapability("owned-bars", false, "Not initialized; experimental.");
+        _hub.SetUnavailable("session-lifecycle", ServiceUnavailableReason.BindingFailed, "Not bound.");
+        _hub.SetUnavailable("save-outcomes", ServiceUnavailableReason.BindingFailed, "Not bound.");
+        _hub.SetUnavailable("world-ready", ServiceUnavailableReason.BindingFailed, "No universal POI/UI-ready guarantee; GameplayInitialized is narrower.");
+        _hub.SetUnavailable("native-travel", ServiceUnavailableReason.BindingFailed, "Not bound; experimental.");
+        _hub.SetUnavailable("recipe-catalog", ServiceUnavailableReason.BindingFailed, "Not bound; experimental.");
+        _hub.SetUnavailable("recipe-quotes", ServiceUnavailableReason.BindingFailed, "Not bound; experimental.");
+        _hub.SetUnavailable("hud", ServiceUnavailableReason.BindingFailed, "Not bound; experimental.");
+        _hub.SetUnavailable("gameplay-ui", ServiceUnavailableReason.BindingFailed, "Not bound.");
+        _hub.SetUnavailable("ambient-traffic", ServiceUnavailableReason.BindingFailed, "Not bound.");
+        _hub.SetUnavailable("unit-protection", ServiceUnavailableReason.BindingFailed, "Not bound.");
+        _hub.SetUnavailable("story-characters", ServiceUnavailableReason.BindingFailed, "Not bound.");
+        _hub.SetUnavailable("dungeon-enterability", ServiceUnavailableReason.BindingFailed, "Not bound.");
+        _hub.SetUnavailable("drone-bays", ServiceUnavailableReason.BindingFailed, "Not bound.");
+        _hub.SetUnavailable("forge-ui", ServiceUnavailableReason.BindingFailed, "Not bound; experimental.");
+        _hub.SetUnavailable("crafting-commands", ServiceUnavailableReason.BindingFailed, "Not bound; experimental.");
+        _hub.SetUnavailable("crafting-jobs", ServiceUnavailableReason.BindingFailed, "Not bound; experimental.");
+        _hub.SetUnavailable("save-data", ServiceUnavailableReason.BindingFailed, "Not initialized; experimental.");
+        _hub.SetUnavailable("mission-continuity", ServiceUnavailableReason.BindingFailed, "Not initialized.");
+        _hub.SetUnavailable("mission-transitions", ServiceUnavailableReason.BindingFailed, "Not bound.");
+        _hub.SetUnavailable("owned-story", ServiceUnavailableReason.BindingFailed, "Not initialized; experimental.");
+        _hub.SetUnavailable("story-protection", ServiceUnavailableReason.BindingFailed, "Not bound.");
+        _hub.SetUnavailable("dungeon-settlement", ServiceUnavailableReason.BindingFailed, "Not bound.");
+        _hub.SetUnavailable("boarding-observation", ServiceUnavailableReason.Disabled, "Disabled by configuration; experimental.");
+        _hub.SetUnavailable("boarding-tactics", ServiceUnavailableReason.Disabled, "Disabled by configuration; experimental.");
+        _hub.SetUnavailable("boarding-combat", ServiceUnavailableReason.Disabled, "Disabled by configuration; experimental.");
+        _hub.SetUnavailable("boarding-commands", ServiceUnavailableReason.Disabled, "Disabled by configuration; experimental.");
+        _hub.SetUnavailable("boarding-rules", ServiceUnavailableReason.Disabled, "Disabled by configuration; experimental.");
+        _hub.SetUnavailable("owned-bars", ServiceUnavailableReason.BindingFailed, "Not initialized; experimental.");
         _modCatalog = new ModInformationCatalog(_hub, ModInformationSource.Snapshot);
         InitializeUpdates();
         try
@@ -116,7 +116,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             SavePatches.Adapter = _adapter;
             _identityHooksBound = InstallGroup("mission-continuity", bindings, BindingCatalog.MissionSnapshots,
                 new Dictionary<string, Type> { ["missionSnapshot"] = typeof(MissionSerializationPatches) });
-            if (_identityHooksBound) _hub.SetCapability("mission-continuity", false, "Identity provider not initialized.");
+            if (_identityHooksBound) _hub.SetUnavailable("mission-continuity", ServiceUnavailableReason.DependencyUnavailable, "Identity provider not initialized.");
             InstallGroup("session-lifecycle", bindings, BindingCatalog.Session, new Dictionary<string, Type>
             {
                 ["load"] = typeof(LifecyclePatches.Load), ["loadRoutine"] = typeof(LifecyclePatches.LoadRoutine),
@@ -165,18 +165,18 @@ public sealed partial class Plugin : BaseUnityPlugin
             catch (Exception cleanupError) { Logger.LogError($"Patch rollback failed: {cleanupError}"); }
             var reason = ex is NotSupportedException && _inspectedGameAssembly == null
                 ? ServiceUnavailableReason.UnsupportedGame : ServiceUnavailableReason.BindingFailed;
-            _hub.SetCapability("gameplay-ui", false, ex.Message, reason);
-            _hub.SetCapability("ambient-traffic", false, ex.Message, reason);
-            _hub.SetCapability("unit-protection", false, ex.Message, reason);
-            _hub.SetCapability("story-characters", false, ex.Message, reason);
-            _hub.SetCapability("dungeon-enterability", false, ex.Message, reason);
-            _hub.SetCapability("drone-bays", false, ex.Message, reason);
-            _hub.SetCapability("session-lifecycle", false, ex.Message, reason);
-            _hub.SetCapability("save-outcomes", false, ex.Message, reason);
+            _hub.SetUnavailable("gameplay-ui", reason, ex.Message);
+            _hub.SetUnavailable("ambient-traffic", reason, ex.Message);
+            _hub.SetUnavailable("unit-protection", reason, ex.Message);
+            _hub.SetUnavailable("story-characters", reason, ex.Message);
+            _hub.SetUnavailable("dungeon-enterability", reason, ex.Message);
+            _hub.SetUnavailable("drone-bays", reason, ex.Message);
+            _hub.SetUnavailable("session-lifecycle", reason, ex.Message);
+            _hub.SetUnavailable("save-outcomes", reason, ex.Message);
             if (_inspectedGameAssembly == null)
             {
-                _hub.SetCapability("native-travel", false, ex.Message, reason);
-                _hub.SetCapability("mission-continuity", false, ex.Message, reason);
+                _hub.SetUnavailable("native-travel", reason, ex.Message);
+                _hub.SetUnavailable("mission-continuity", reason, ex.Message);
             }
             Logger.LogError(ex);
         }
@@ -211,13 +211,13 @@ public sealed partial class Plugin : BaseUnityPlugin
 
     private void InitializeModMenu()
     {
-        _hub!.SetCapability("mod-information-menu", false, "Not bound; local catalog remains available.");
+        _hub!.SetUnavailable("mod-information-menu", ServiceUnavailableReason.BindingFailed, "Not bound; local catalog remains available.");
         try
         {
             var assembly = _inspectedGameAssembly
                 ?? throw new NotSupportedException("No inspected game assembly; local catalog remains available.");
             _modMenu = new ModMenuModule(assembly, _modCatalog!, DisableModMenu, _updatePresenter);
-            _hub.SetCapability("mod-information-menu", true, "Bound to inspected native menu.");
+            _hub.SetAvailable("mod-information-menu", "Bound to inspected native menu.");
         }
         catch (Exception error) { DisableModMenu(error); }
     }
@@ -229,7 +229,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         catch (Exception) { /* UI cleanup must not fault gameplay/save observation. */ }
         try
         {
-            _hub?.SetCapability("mod-information-menu", false, "Menu unavailable (" + error.GetType().Name + "); local catalog remains available.");
+            _hub?.SetUnavailable("mod-information-menu", ServiceUnavailableReason.BindingFailed, "Menu unavailable (" + error.GetType().Name + "); local catalog remains available.");
             Logger.LogWarning("Mods menu unavailable (" + error.GetType().Name + "). ModApi.Services.Mods remains available; game/save services are unaffected. Check the inspected menu/input layout.");
         }
         catch (Exception) { /* Diagnostic sinks must not propagate UI errors into the game. */ }
@@ -264,7 +264,7 @@ public sealed partial class Plugin : BaseUnityPlugin
     {
         if (_hub!.Capabilities.Count(c => (c.Name == "session-lifecycle" || c.Name == "save-outcomes") && c.Available) != 2)
         {
-            _hub.SetCapability("save-data", false, "Lifecycle capabilities unavailable.", ServiceUnavailableReason.DependencyUnavailable);
+            _hub.SetUnavailable("save-data", ServiceUnavailableReason.DependencyUnavailable, "Lifecycle capabilities unavailable.");
             return;
         }
         try
@@ -274,11 +274,11 @@ public sealed partial class Plugin : BaseUnityPlugin
             var saves = (string)AccessTools.Field(AccessTools.TypeByName("Source.Util.SaveGame"), "SavesPath").GetValue(null)!;
             var files = new PersistenceFiles(saves);
             _persistence = new PersistenceService(_hub, new GenerationStore(root), files.Canonical, files.HashFile);
-            _hub.SetCapability("save-data", true, "Experimental API-managed saves enabled; full in-game acceptance remains pending.");
+            _hub.SetAvailable("save-data", "Experimental API-managed saves enabled; full in-game acceptance remains pending.");
         }
         catch (Exception error)
         {
-            _hub.SetCapability("save-data", false, "Persistence initialization failed: " + error.GetType().Name);
+            _hub.SetUnavailable("save-data", ServiceUnavailableReason.BindingFailed, "Persistence initialization failed: " + error.GetType().Name);
             Logger.LogError("API-managed saves unavailable: " + error.GetType().Name + ": " + error.Message);
         }
     }
@@ -286,7 +286,7 @@ public sealed partial class Plugin : BaseUnityPlugin
     private void InitializeMissions()
     {
         if (!_hub!.Capabilities.Any(c => c.Name == "session-lifecycle" && c.Available))
-        { _hub.SetCapability("mission-transitions", false, "Lifecycle capability unavailable.", ServiceUnavailableReason.DependencyUnavailable); return; }
+        { _hub.SetUnavailable("mission-transitions", ServiceUnavailableReason.DependencyUnavailable, "Lifecycle capability unavailable."); return; }
         try
         {
             var assembly = Assembly.Load("Assembly-CSharp");
@@ -303,23 +303,23 @@ public sealed partial class Plugin : BaseUnityPlugin
         catch (Exception error)
         {
             _missions?.Dispose(); _missions = null; MissionPatches.Adapter = null;
-            _hub.SetCapability("mission-transitions", false, "Mission binding failed: " + error.Message);
+            _hub.SetUnavailable("mission-transitions", ServiceUnavailableReason.BindingFailed, "Mission binding failed: " + error.Message);
             Logger.LogError(error);
         }
     }
 
     private void InitializeMissionIdentity(Assembly assembly)
     {
-        if (_persistence == null) { _hub!.SetCapability("mission-continuity", false, "API-managed saves unavailable.", ServiceUnavailableReason.DependencyUnavailable); return; }
+        if (_persistence == null) { _hub!.SetUnavailable("mission-continuity", ServiceUnavailableReason.DependencyUnavailable, "API-managed saves unavailable."); return; }
         try
         {
             if (!_identityHooksBound) throw new InvalidOperationException("Early snapshot hooks unavailable.");
             _missions!.EnableIdentity(_persistence, new MissionJsonBindings(assembly));
-            _hub!.SetCapability("mission-continuity", true, "Experimental exact-snapshot identity enabled; no persistent history ownership.");
+            _hub!.SetAvailable("mission-continuity", "Experimental exact-snapshot identity enabled; no persistent history ownership.");
         }
         catch (Exception error)
         {
-            _missions!.DisableIdentity(); _hub!.SetCapability("mission-continuity", false, "Mission identity initialization failed: " + error.Message);
+            _missions!.DisableIdentity(); _hub!.SetUnavailable("mission-continuity", ServiceUnavailableReason.BindingFailed, "Mission identity initialization failed: " + error.Message);
             Logger.LogError(error);
         }
     }
@@ -340,7 +340,7 @@ public sealed partial class Plugin : BaseUnityPlugin
     {
         if (!Config.Bind("Story", "Protection", true,
             "Load safety for API-owned story missions restored from a save: they cannot progress or pay out unless the owning module vouches for them. Disable only to diagnose.").Value)
-        { _hub!.SetCapability("story-protection", false, "Disabled by configuration; owned story content in a save would be unguarded."); return; }
+        { _hub!.SetUnavailable("story-protection", ServiceUnavailableReason.Disabled, "Disabled by configuration; owned story content in a save would be unguarded."); return; }
         try
         {
             var guard = new StoryProtectionGuard(assembly);
@@ -353,8 +353,7 @@ public sealed partial class Plugin : BaseUnityPlugin
                 error => Logger.LogError("Story protection fault: " + error),
                 reason =>
                 {
-                    _hub!.SetCapability("story-protection", false,
-                        "Owned story content is refused because the guard could not decide: " + reason);
+                    _hub!.SetUnavailable("story-protection", ServiceUnavailableReason.BindingFailed, "Owned story content is refused because the guard could not decide: " + reason);
                     Logger.LogError("Story protection degraded, refusing owned story content: " + reason);
                 });
             // The guards are session-scoped like the content they protect, and they say so whether or
@@ -366,12 +365,11 @@ public sealed partial class Plugin : BaseUnityPlugin
                     if (!_pendingProtectionRecovery || _quarantine == null) return;
                     if (!_quarantine.VerifyHealthy())
                     {
-                        _hub!.SetCapability("story-protection", false,
-                            "Owned story content is refused because the guard could not decide: " + _quarantine.DegradedReason);
+                        _hub!.SetUnavailable("story-protection", ServiceUnavailableReason.BindingFailed, "Owned story content is refused because the guard could not decide: " + _quarantine.DegradedReason);
                         return;
                     }
                     _pendingProtectionRecovery = false;
-                    _hub!.SetCapability("story-protection", true, "Bound to inspected assembly.");
+                    _hub!.SetAvailable("story-protection", "Bound to inspected assembly.");
                     return;
                 }
                 if (e.Kind is not (LifecycleEventKind.SessionStarting or LifecycleEventKind.SessionInvalidated
@@ -402,7 +400,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         catch (Exception error)
         {
             StoryProtectionPatches.Quarantine = null; _quarantine = null; _protection = null;
-            _hub!.SetCapability("story-protection", false, "Story protection unavailable: " + error.Message);
+            _hub!.SetUnavailable("story-protection", ServiceUnavailableReason.BindingFailed, "Story protection binding failed: " + error.Message);
             Logger.LogError("Owned story content in a save would be unguarded: " + error);
         }
     }
@@ -429,18 +427,18 @@ public sealed partial class Plugin : BaseUnityPlugin
     private void InitializeStory()
     {
         if (!Config.Bind("Story", "Enabled", false, "Experimental API-owned story content installed into the game's catalog; back up saves before enabling.").Value)
-        { _hub!.SetCapability("owned-story", false, "Disabled by configuration."); return; }
-        if (_persistence == null) { _hub!.SetCapability("owned-story", false, "API-managed saves unavailable."); return; }
+        { _hub!.SetUnavailable("owned-story", ServiceUnavailableReason.Disabled, "Disabled by configuration."); return; }
+        if (_persistence == null) { _hub!.SetUnavailable("owned-story", ServiceUnavailableReason.DependencyUnavailable, "API-managed saves unavailable."); return; }
         if (!_hub!.Capabilities.Any(c => c.Name == "session-lifecycle" && c.Available))
-        { _hub.SetCapability("owned-story", false, "Lifecycle capability unavailable."); return; }
+        { _hub.SetUnavailable("owned-story", ServiceUnavailableReason.DependencyUnavailable, "Lifecycle capability unavailable."); return; }
         // Owning content the guards could not protect is worse than owning none: without them an
         // orphan from a later save would run unguarded, so the module does not install content at all.
         if (_protection == null)
-        { _hub.SetCapability("owned-story", false, "Story protection unavailable; owned content would be unguarded in a later session."); return; }
+        { _hub.SetUnavailable("owned-story", ServiceUnavailableReason.DependencyUnavailable, "Story protection unavailable; owned content would be unguarded in a later session."); return; }
         // Without observed mission transitions a completion could never be recorded, and the only
         // alternative would be letting a caller declare one. The capability stays off instead.
         if (_missions == null || !_hub.Capabilities.Any(c => c.Name == "mission-transitions" && c.Available))
-        { _hub.SetCapability("owned-story", false, "Observed mission transitions unavailable; owned story outcomes could not be recorded."); return; }
+        { _hub.SetUnavailable("owned-story", ServiceUnavailableReason.DependencyUnavailable, "Observed mission transitions unavailable; owned story outcomes could not be recorded."); return; }
         try
         {
             var assembly = Assembly.Load("Assembly-CSharp");
@@ -457,7 +455,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             // Only a module that exists can say what a UI abandon or retry of owned content means.
             if (_quarantine != null) _quarantine.Transactions = _story;
             StoryProtectionPatches.ProcessMissionTrigger.ObjectiveActivity = () => _story?.NotifyObjectiveActivity();
-            _hub.SetCapability("owned-story", true, "Experimental owned story content enabled.");
+            _hub.SetAvailable("owned-story", "Experimental owned story content enabled.");
         }
         catch (Exception error)
         {
@@ -465,7 +463,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             StoryProtectionPatches.ProcessMissionTrigger.ObjectiveActivity = null;
             _story?.Dispose(); _story = null;
             _storyWorld?.Dispose(); _storyWorld = null;
-            _hub!.SetCapability("owned-story", false, "Story binding failed: " + error.Message);
+            _hub!.SetUnavailable("owned-story", ServiceUnavailableReason.BindingFailed, "Story binding failed: " + error.Message);
             Logger.LogError(error);
         }
     }
@@ -495,13 +493,13 @@ public sealed partial class Plugin : BaseUnityPlugin
                 touched.Add(target);
                 _harmony!.Patch(target, prefix: Hook("Prefix"), postfix: Hook("Postfix"), finalizer: Hook("Finalizer"));
             }
-            _hub!.SetCapability(name, true, "Bound to inspected assembly.");
+            _hub!.SetAvailable(name, "Bound to inspected assembly.");
             return true;
         }
         catch (Exception ex)
         {
             foreach (var method in touched) _harmony!.Unpatch(method, HarmonyPatchType.All, ModApi.PluginId);
-            _hub!.SetCapability(name, false, "Binding failed: " + ex.Message);
+            _hub!.SetUnavailable(name, ServiceUnavailableReason.BindingFailed, "Binding failed: " + ex.Message);
             Logger.LogError($"Capability {name} disabled: {ex}");
             return false;
         }
@@ -517,24 +515,24 @@ public sealed partial class Plugin : BaseUnityPlugin
                 (prefab, type) => prefab is UnityEngine.GameObject gameObject && gameObject != null ? gameObject.GetComponent(type) : null,
                 text => (string)translate.Invoke(null, new object[] { text, Array.Empty<object>() })!);
             _recipes = new RecipeCatalogService(_hub!, source, error => Logger.LogError(error));
-            _hub!.SetCapability("recipe-catalog", true, "Experimental read-only definitions.");
+            _hub!.SetAvailable("recipe-catalog", "Experimental read-only definitions.");
             try
             {
                 source.BindQuotes();
                 _recipeQuotes = new RecipeQuoteService(_hub, source, error => Logger.LogError(error));
-                _hub.SetCapability("recipe-quotes", true, "Experimental advisory requirements.");
+                _hub.SetAvailable("recipe-quotes", "Experimental advisory requirements.");
             }
             catch (Exception quoteError)
             {
                 _recipeQuotes?.Dispose(); _recipeQuotes = null;
-                _hub.SetCapability("recipe-quotes", false, "Recipe quote binding failed."); Logger.LogError(quoteError);
+                _hub.SetUnavailable("recipe-quotes", ServiceUnavailableReason.BindingFailed, "Recipe quote binding failed."); Logger.LogError(quoteError);
             }
             if (_recipeQuotes != null) { InstallCraftingJobs(assembly, source); InstallForgeUi(assembly, source); }
         }
         catch (Exception error)
         {
             _recipes?.Dispose(); _recipes = null;
-            _hub!.SetCapability("recipe-catalog", false, "Recipe catalog binding failed."); Logger.LogError(error);
+            _hub!.SetUnavailable("recipe-catalog", ServiceUnavailableReason.BindingFailed, "Recipe catalog binding failed."); Logger.LogError(error);
         }
     }
     private void InstallCraftingJobs(Assembly assembly, RecipeCatalogNativeSource source)
@@ -568,7 +566,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         CraftingJobPatches.Keys = new Dictionary<MethodBase, string>();
         try { _craftingJobHarmony?.UnpatchSelf(); } catch (Exception error) { Logger.LogError(error); }
         _craftingJobHarmony = null;
-        _hub?.SetCapability("crafting-jobs", false, "Crafting job observation unavailable.");
+        _hub?.SetUnavailable("crafting-jobs", ServiceUnavailableReason.BindingFailed, "Crafting job observation unavailable.");
     }
     private void InstallCraftingCommands(Assembly assembly, RecipeCatalogNativeSource source)
     {
@@ -588,7 +586,7 @@ public sealed partial class Plugin : BaseUnityPlugin
                 _craftingCommandHarmony.Patch(methods[spec.Key], prefix: new HarmonyMethod(typeof(CraftingCommandPatches).GetMethod("Prefix", flags)),
                     finalizer: new HarmonyMethod(typeof(CraftingCommandPatches).GetMethod("Finalizer", flags)));
             _craftingCommands.SetAvailable(true);
-            _hub!.SetCapability("crafting-commands", true, "Experimental guarded commands.");
+            _hub!.SetAvailable("crafting-commands", "Experimental guarded commands.");
         }
         catch (Exception error) { TeardownCraftingCommands(); Logger.LogError(error); }
     }
@@ -603,13 +601,13 @@ public sealed partial class Plugin : BaseUnityPlugin
             _craftingCommandSource = null;
         }
         try { _craftingCommandHarmony?.UnpatchSelf(); } catch (Exception error) { Logger.LogError(error); }
-        _craftingCommandHarmony = null; _hub?.SetCapability("crafting-commands", false, "Crafting commands unavailable.");
+        _craftingCommandHarmony = null; _hub?.SetUnavailable("crafting-commands", ServiceUnavailableReason.BindingFailed, "Crafting commands unavailable.");
     }
     private void InitializeDungeonPanel()
     {
-        _hub!.SetCapability("dungeon-panel-opening", false, "Boarding integration unavailable.");
-        _hub.SetCapability("dungeon-panel-sections", false, "Panel renderer unavailable.");
-        _hub.SetCapability("dungeon-panel-actions", false, "Panel renderer unavailable.");
+        _hub!.SetUnavailable("dungeon-panel-opening", ServiceUnavailableReason.DependencyUnavailable, "Boarding integration unavailable.");
+        _hub.SetUnavailable("dungeon-panel-sections", ServiceUnavailableReason.DependencyUnavailable, "Panel renderer unavailable.");
+        _hub.SetUnavailable("dungeon-panel-actions", ServiceUnavailableReason.DependencyUnavailable, "Panel renderer unavailable.");
         if (_boarding == null || _boardingService == null) return;
         try
         {
@@ -628,10 +626,10 @@ public sealed partial class Plugin : BaseUnityPlugin
                 _dungeonPanelChoices = new(_dungeonPanelService, _dungeons, target =>
                     _boarding.TryResolveCommandTarget(target, out var location, out _, out _) && location != null ? _dungeonAdapter.Marker(location) : null);
             _dungeonPanelView = new(_dungeonPanel, _dungeonPanelService); _dungeonPanel.PresentationEnabled = true;
-            _hub.SetCapability("dungeon-panel-sections", true, "Native panel status renderer installed.");
-            _hub.SetCapability("dungeon-panel-actions", true, "Native panel action renderer installed.");
+            _hub.SetAvailable("dungeon-panel-sections", "Native panel status renderer installed.");
+            _hub.SetAvailable("dungeon-panel-actions", "Native panel action renderer installed.");
         }
-        catch (Exception error) { StopDungeonPanel(); _hub.SetCapability("dungeon-panel-opening", false, error.Message); Logger.LogError(error); }
+        catch (Exception error) { StopDungeonPanel(); _hub.SetUnavailable("dungeon-panel-opening", ServiceUnavailableReason.BindingFailed, error.Message); Logger.LogError(error); }
     }
     private void StopDungeonPanel()
     {
@@ -643,7 +641,7 @@ public sealed partial class Plugin : BaseUnityPlugin
 
     private void InitializeDungeons()
     {
-        _hub!.SetCapability("dungeon-content", false, "Boarding observation is required.");
+        _hub!.SetUnavailable("dungeon-content", ServiceUnavailableReason.DependencyUnavailable, "Boarding observation is required.");
         if (_boarding == null) return;
         try
         {
@@ -756,7 +754,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         }
         catch (Exception error)
         {
-            StopDungeons(); _hub.SetCapability("dungeon-content", false, error.GetType().Name); Logger.LogError(error);
+            StopDungeons(); _hub.SetUnavailable("dungeon-content", ServiceUnavailableReason.BindingFailed, error.GetType().Name); Logger.LogError(error);
         }
     }
     private void StopDungeons()
@@ -771,7 +769,7 @@ public sealed partial class Plugin : BaseUnityPlugin
 
     private void InstallDungeonRewards(GameBindings bindings)
     {
-        _hub!.SetCapability("dungeon-rewards", false, "Boarding observation required; experimental.");
+        _hub!.SetUnavailable("dungeon-rewards", ServiceUnavailableReason.DependencyUnavailable, "Boarding observation required; experimental.");
         if (_boarding == null) return;
         try
         {
@@ -788,13 +786,13 @@ public sealed partial class Plugin : BaseUnityPlugin
                 ["settlementMasteryScope"] = typeof(DungeonRewardPatches.MasteryScope), ["settlementMastery"] = typeof(DungeonRewardPatches.Mastery)
             });
             if (!_hub.Capabilities.Any(c => c.Name == "dungeon-rewards" && c.Available)) throw new NotSupportedException("Reward hooks unavailable.");
-            _hub.SetCapability("dungeon-settlement", true, "Settlement observations bound.");
+            _hub.SetAvailable("dungeon-settlement", "Settlement observations bound.");
         }
         catch (Exception error)
         {
             DungeonRewardPatches.Crew = null; _dungeonSettlement?.Dispose(); _dungeonSettlement = null;
             DungeonRewardPatches.Adapter = null; _dungeonRewards?.Dispose(); _dungeonRewards = null;
-            _hub.SetCapability("dungeon-rewards", false, error.GetType().Name); Logger.LogError(error);
+            _hub.SetUnavailable("dungeon-rewards", ServiceUnavailableReason.BindingFailed, error.GetType().Name); Logger.LogError(error);
         }
     }
 
@@ -812,7 +810,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         catch (Exception error)
         {
             BoardingTacticalPatches.Adapter = null; _boardingTactics?.Dispose(); _boardingTactics = null;
-            _hub!.SetCapability("boarding-tactics", false, error.GetType().Name); Logger.LogError(error);
+            _hub!.SetUnavailable("boarding-tactics", ServiceUnavailableReason.BindingFailed, error.GetType().Name); Logger.LogError(error);
         }
         try
         {
@@ -835,13 +833,13 @@ public sealed partial class Plugin : BaseUnityPlugin
         catch (Exception error)
         {
             BoardingCombatPatches.Adapter = null; _boardingCombat?.Dispose(); _boardingCombat = null;
-            _hub!.SetCapability("boarding-combat", false, error.GetType().Name); Logger.LogError(error);
+            _hub!.SetUnavailable("boarding-combat", ServiceUnavailableReason.BindingFailed, error.GetType().Name); Logger.LogError(error);
         }
     }
 
     private void InstallBoardingCommands(GameBindings bindings)
     {
-        _hub!.SetCapability("boarding-commands", false, "Boarding observation required; experimental.");
+        _hub!.SetUnavailable("boarding-commands", ServiceUnavailableReason.DependencyUnavailable, "Boarding observation required; experimental.");
         if (_boarding == null || _boardingService == null) return;
         try
         {
@@ -865,7 +863,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         {
             BoardingCommandPatches.Adapter = null; BoardingCommandPatches.Service = null;
             _boardingCommands?.Dispose(); _boardingCommands = null;
-            _hub.SetCapability("boarding-commands", false, error.GetType().Name); Logger.LogError(error);
+            _hub.SetUnavailable("boarding-commands", ServiceUnavailableReason.BindingFailed, error.GetType().Name); Logger.LogError(error);
         }
     }
 
@@ -894,7 +892,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         catch (Exception error)
         {
             BoardingRulePatches.Adapter = null; _boardingRules?.Dispose(); _boardingRules = null; rules?.Dispose();
-            _hub.SetCapability("boarding-rules", false, "Boarding rules unavailable: " + error.GetType().Name); Logger.LogError(error);
+            _hub.SetUnavailable("boarding-rules", ServiceUnavailableReason.BindingFailed, "Boarding rules unavailable: " + error.GetType().Name); Logger.LogError(error);
         }
     }
 
@@ -926,14 +924,14 @@ public sealed partial class Plugin : BaseUnityPlugin
         catch (Exception error)
         {
             BoardingPatches.Observer = null; _boarding?.Dispose(); _boarding = null; service?.Dispose();
-            _hub.SetCapability("boarding-observation", false, "Boarding unavailable: " + error.GetType().Name);
+            _hub.SetUnavailable("boarding-observation", ServiceUnavailableReason.BindingFailed, "Boarding unavailable: " + error.GetType().Name);
             Logger.LogError(error);
         }
     }
 
     private void InstallTravel(Assembly assembly, GameBindings bindings)
     {
-        _hub!.SetCapability("native-travel", false, "Not bound.");
+        _hub!.SetUnavailable("native-travel", ServiceUnavailableReason.BindingFailed, "Not bound.");
         var touched = new List<MethodInfo>();
         try
         {
@@ -981,7 +979,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             }
             _travel = adapter;
             _hub.Services.WatchFault("native-travel", () => adapter.IsFaulted);
-            _hub!.SetCapability("native-travel", true, "Bound to inspected assembly.");
+            _hub!.SetAvailable("native-travel", "Bound to inspected assembly.");
         }
         catch (Exception ex)
         {
@@ -998,7 +996,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             _travel.SetSession(null); _travel.Dispose(); _travel = null;
         }
         TravelPatches.Adapter = null;
-        _hub?.SetCapability("native-travel", false, reason, unavailableReason);
+        _hub?.SetUnavailable("native-travel", unavailableReason, reason);
         Logger.LogError(ex == null ? reason : reason + " " + ex);
     }
 
@@ -1011,8 +1009,8 @@ public sealed partial class Plugin : BaseUnityPlugin
         {
             _dungeonPanelView?.Dispose(); _dungeonPanelView = null;
             if (_dungeonPanel != null) _dungeonPanel.PresentationEnabled = false;
-            _hub?.SetCapability("dungeon-panel-sections", false, "Panel renderer failed.");
-            _hub?.SetCapability("dungeon-panel-actions", false, "Panel renderer failed.");
+            _hub?.SetUnavailable("dungeon-panel-sections", ServiceUnavailableReason.BindingFailed, "Panel renderer failed.");
+            _hub?.SetUnavailable("dungeon-panel-actions", ServiceUnavailableReason.BindingFailed, "Panel renderer failed.");
             Logger.LogError(error);
         }
         _gameplayUiRuntime?.Tick();

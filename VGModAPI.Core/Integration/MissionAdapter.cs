@@ -59,8 +59,8 @@ internal sealed partial class MissionAdapter : IDisposable
         if (_faulted && !_reconciled)
         {
             _reconciled = true; Clear(); _identity?.Reset();
-            if (_identity != null) _hub.SetCapability("mission-continuity", false, "Mission observer fault; restart required.", ServiceUnavailableReason.ObserverFault);
-            _hub.SetCapability("mission-transitions", false, "Mission observer fault; restart required.", ServiceUnavailableReason.ObserverFault);
+            if (_identity != null) _hub.SetUnavailable("mission-continuity", ServiceUnavailableReason.ObserverFault, "Mission observer fault; restart required.");
+            _hub.SetUnavailable("mission-transitions", ServiceUnavailableReason.ObserverFault, "Mission observer fault; restart required.");
         }
     }
     private void Clear() { _player = null; _session = null; _calls.Clear(); _sweeps.Clear(); Events.Reset(null); }

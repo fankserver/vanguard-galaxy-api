@@ -23,7 +23,7 @@ internal sealed class RecipeQuoteService : IRecipeQuoteService, IDisposable
         _hub = hub; _source = source; _report = report;
         _status = hub.Services.Get("recipe-quotes");
         if (source == null && _status.Availability.IsAvailable)
-            hub.SetCapability("recipe-quotes", false, "Quote bindings unavailable.");
+            hub.SetUnavailable("recipe-quotes", ServiceUnavailableReason.BindingFailed, "Quote bindings unavailable.");
         _lifetime = hub.Subscribe("vgmodapi.recipe-quotes", message =>
         {
             if (message.Kind is LifecycleEventKind.SessionStarting or LifecycleEventKind.SessionInvalidated or LifecycleEventKind.SessionStartFailed)
@@ -90,7 +90,7 @@ internal sealed class RecipeQuoteService : IRecipeQuoteService, IDisposable
     {
         _hub.CheckThread(); if (_disposed) return;
         _disposed = true; _lifetime.Dispose();
-        if (Availability.IsAvailable) _hub.SetCapability("recipe-quotes", false, "Recipe quotes stopped.", ServiceUnavailableReason.ApiStopped);
+        if (Availability.IsAvailable) _hub.SetUnavailable("recipe-quotes", ServiceUnavailableReason.ApiStopped, "Recipe quotes stopped.");
         try { _source?.Invalidate(); } catch (Exception exception) { Report(exception); }
     }
 }

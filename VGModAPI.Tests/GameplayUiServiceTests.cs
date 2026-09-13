@@ -16,7 +16,7 @@ public sealed class GameplayUiServiceTests : IDisposable
     public GameplayUiServiceTests()
     {
         _hub = new((_, error) => _errors.Add(error));
-        _hub.SetCapability("session-lifecycle", true, "Test binding.");
+        _hub.SetAvailable("session-lifecycle", "Test binding.");
         _service = new GameplayUiService(_hub);
         _service.SetAvailable(true);
         _session = _hub.Begin(SessionOrigin.NewGame, null);
@@ -145,9 +145,9 @@ public sealed class GameplayUiServiceTests : IDisposable
     {
         _service.Observe(_session, new Surface());
         _service.CreateContainer(_service.Current!, "one", "windows", out var lease);
-        _hub.SetCapability("session-lifecycle", false, "Observer fault.", ServiceUnavailableReason.ObserverFault);
+        _hub.SetUnavailable("session-lifecycle", ServiceUnavailableReason.ObserverFault, "Observer fault.");
         Assert.False(_service.Availability.IsAvailable); Assert.Null(_service.Current); Assert.False(lease!.IsValid);
-        _hub.SetCapability("session-lifecycle", true, "Restored."); Assert.Null(_service.Current);
+        _hub.SetAvailable("session-lifecycle", "Restored."); Assert.Null(_service.Current);
     }
 
     [Fact]

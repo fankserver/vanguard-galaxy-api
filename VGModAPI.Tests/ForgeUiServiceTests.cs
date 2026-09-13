@@ -58,7 +58,7 @@ public sealed class ForgeUiServiceTests
     public void MissingSourcePreservesUnavailableDiagnosis()
     {
         using var hub = new LifecycleHub((_, _) => { });
-        hub.SetCapability("forge-ui", false, "Disabled by configuration.", ServiceUnavailableReason.Disabled);
+        hub.SetUnavailable("forge-ui", ServiceUnavailableReason.Disabled, "Disabled by configuration.");
         using var service = new ForgeUiService(hub, null, (_, _) => { });
         Assert.Equal(ServiceUnavailableReason.Disabled, service.Availability.Reason);
         Assert.Null(service.Current);

@@ -27,8 +27,8 @@ internal sealed class AmbientTrafficService : IAmbientTrafficService, IDisposabl
     internal void SetAvailable(bool value, ServiceUnavailableReason reason = ServiceUnavailableReason.BindingFailed)
     {
         _hub.CheckThread(); if (_disposed) return;
-        _hub.SetCapability("ambient-traffic", value,
-            value ? "Resource locations can quiet decorative traffic." : "Ambient-traffic integration unavailable.", reason);
+        if (value) _hub.SetAvailable("ambient-traffic", "Resource locations can quiet decorative traffic.");
+        else _hub.SetUnavailable("ambient-traffic", reason, "Ambient-traffic integration unavailable.");
     }
     private readonly KeyedDeclarations _keyed = new();
     [MethodImpl(MethodImplOptions.NoInlining)]
@@ -104,7 +104,7 @@ internal sealed class AmbientTrafficService : IAmbientTrafficService, IDisposabl
         _disposed = true;
         foreach (var declaration in _declarations.ToArray()) declaration.Dispose();
         _declarations.Clear(); _keyed.Clear();
-        _hub.SetCapability("ambient-traffic", false, "Ambient-traffic service stopped.", ServiceUnavailableReason.ApiStopped);
+        _hub.SetUnavailable("ambient-traffic", ServiceUnavailableReason.ApiStopped, "Ambient-traffic service stopped.");
     }
     private sealed class Declaration : IDisposable
     {

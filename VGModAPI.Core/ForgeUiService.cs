@@ -30,7 +30,7 @@ internal sealed class ForgeUiService : IForgeUiService, IDisposable
     {
         _hub = hub; _source = source; _report = report;
         _status = hub.Services.Get("forge-ui");
-        if (source == null && Availability.IsAvailable) hub.SetCapability("forge-ui", false, "Forge UI bindings unavailable.");
+        if (source == null && Availability.IsAvailable) hub.SetUnavailable("forge-ui", ServiceUnavailableReason.BindingFailed, "Forge UI bindings unavailable.");
         _handlers = new ServiceSubscriptions<ForgeSelectionChange>(hub, Subscribe,
             change => change.Current == null || Availability.IsAvailable && ReferenceEquals(change.Current, _current));
         _lifetime = hub.Subscribe("vgmodapi.forge-ui", message =>
@@ -47,7 +47,8 @@ internal sealed class ForgeUiService : IForgeUiService, IDisposable
     {
         _hub.CheckThread(); if (_disposed || _closing) return;
         available &= _source != null;
-        _hub.SetCapability("forge-ui", available, available ? "Experimental scoped Forge UI." : "Forge UI unavailable.");
+        if (available) _hub.SetAvailable("forge-ui", "Experimental scoped Forge UI.");
+        else _hub.SetUnavailable("forge-ui", ServiceUnavailableReason.BindingFailed, "Forge UI unavailable.");
         if (!available && !_disposed) { _source?.ClearUi(); Change(null); }
     }
     public ForgeSelectionSnapshot? Current { get { Refresh(); return _current; } }
@@ -151,7 +152,7 @@ internal sealed class ForgeUiService : IForgeUiService, IDisposable
     {
         _hub.CheckThread(); if (_disposed || _closing) return;
         _closing = true;
-        if (Availability.IsAvailable) _hub.SetCapability("forge-ui", false, "Forge UI service stopped.", ServiceUnavailableReason.ApiStopped);
+        if (Availability.IsAvailable) _hub.SetUnavailable("forge-ui", ServiceUnavailableReason.ApiStopped, "Forge UI service stopped.");
         _source?.ClearUi(); Change(null); _disposed = true; _lifetime.Dispose(); _handlers.Dispose();
         foreach (var action in _actions.ToArray()) action.Dispose();
         foreach (var subscriber in _subscribers.ToArray()) subscriber.Dispose();

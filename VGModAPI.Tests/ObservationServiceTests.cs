@@ -10,9 +10,9 @@ public sealed class ObservationServiceTests
     private static LifecycleHub Bound(Action<string, Exception>? report = null)
     {
         var hub = new LifecycleHub(report ?? ((_, _) => { }));
-        hub.SetCapability("session-lifecycle", true, "Bound.");
-        hub.SetCapability("save-outcomes", true, "Bound.");
-        hub.SetCapability("native-travel", true, "Bound.");
+        hub.SetAvailable("session-lifecycle", "Bound.");
+        hub.SetAvailable("save-outcomes", "Bound.");
+        hub.SetAvailable("native-travel", "Bound.");
         return hub;
     }
 
@@ -49,7 +49,7 @@ public sealed class ObservationServiceTests
         service.Changed += fact => facts.Add(fact.Kind);
         hub.Begin(SessionOrigin.NewGame, null);
         Assert.NotNull(service.CurrentSession);
-        hub.SetCapability("session-lifecycle", false, "Tracking fault.", ServiceUnavailableReason.ObserverFault);
+        hub.SetUnavailable("session-lifecycle", ServiceUnavailableReason.ObserverFault, "Tracking fault.");
         Assert.Null(service.CurrentSession);
         facts.Clear();
         hub.Publish(new LifecycleEvent(LifecycleEventKind.PlayerReady, hub.CurrentSession));
@@ -92,7 +92,7 @@ public sealed class ObservationServiceTests
         ITravelService service = source;
         var id = hub.Begin(SessionOrigin.NewGame, null);
         source.SetSession(id);
-        hub.SetCapability("native-travel", false, "Fault.", ServiceUnavailableReason.ObserverFault);
+        hub.SetUnavailable("native-travel", ServiceUnavailableReason.ObserverFault, "Fault.");
         Action<TravelTransition> callback = _ => throw new Exception();
         service.Transitioned += callback;
         service.Transitioned -= callback;

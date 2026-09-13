@@ -11,7 +11,7 @@ public sealed class GameServiceTests
     public void StartedCarriesAnActionableGameAndCapturedNavigationCannotActInReplacementSave()
     {
         using var hub = new LifecycleHub((_, _) => { });
-        foreach (var capability in new[] { "session-lifecycle", "save-outcomes", "navigation" }) hub.SetCapability(capability, true, "Bound");
+        foreach (var capability in new[] { "session-lifecycle", "save-outcomes", "navigation" }) hub.SetAvailable(capability, "Bound");
         var focused = new List<string>();
         var navigation = new NavigationService(hub, _ => null, (_, id, current) =>
         {
@@ -57,7 +57,7 @@ public sealed class GameServiceTests
     public void StartingSubscriptionRemovalSuppressesPendingCallback()
     {
         using var hub = new LifecycleHub((_, _) => { });
-        hub.SetCapability("session-lifecycle", true, "Bound"); hub.SetCapability("save-outcomes", true, "Bound");
+        hub.SetAvailable("session-lifecycle", "Bound"); hub.SetAvailable("save-outcomes", "Bound");
         using var games = new GameService(hub, new NavigationService(hub, _ => null, (_, _, _) => NavigationStatus.Unavailable, (_, _) => null), new InventoryService(hub, () => null), new StoryMissionService(hub.Services, null, hub, (_, _) => null), new BarService(null, hub, (_, _) => null, _ => false, hub.CheckThread));
         Action<IGame> handler = _ => Assert.Fail("Removed"); games.Started += handler;
         var id = hub.Begin(SessionOrigin.NewGame, null); hub.PlayerReady(id); hub.GameplayInitialized(id);

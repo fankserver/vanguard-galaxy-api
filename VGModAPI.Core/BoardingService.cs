@@ -113,7 +113,7 @@ internal sealed class BoardingService : ICallbackDispatch, IDisposable
     {
         _hub.CheckThread(); if (_disposed) return;
         _disposed = true; Invalidate(); _lifecycle.Dispose(); _handlers.Dispose();
-        if (Availability.IsAvailable) _hub.SetCapability("boarding-observation", false, "Boarding service stopped.", ServiceUnavailableReason.ApiStopped);
+        if (Availability.IsAvailable) _hub.SetUnavailable("boarding-observation", ServiceUnavailableReason.ApiStopped, "Boarding service stopped.");
         foreach (var sub in _subscribers) sub.Active = false;
         _subscribers.Clear();
     }

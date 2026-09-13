@@ -30,7 +30,7 @@ internal sealed partial class BarService : IBarService, IDisposable
     {
         _hub = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
         _status = lifecycle.Services.Get("owned-bars");
-        if (persistence == null && Availability.IsAvailable) lifecycle.SetCapability("owned-bars", false, "Bar save data unavailable.");
+        if (persistence == null && Availability.IsAvailable) lifecycle.SetUnavailable("owned-bars", ServiceUnavailableReason.DependencyUnavailable, "Bar save data unavailable.");
         _handlers = new ServiceSubscriptions<BarRosterFinalized>(lifecycle, Subscribe,
             fact => Availability.IsAvailable && ((ILifecycleService)_hub).CurrentSession?.Id == fact.SessionId);
         _reportObserver = reportObserver;
@@ -107,7 +107,7 @@ internal sealed partial class BarService : IBarService, IDisposable
         if (_disposed) return;
         _disposed = true;
         var health = Availability;
-        _hub.SetCapability("owned-bars", false, health.IsAvailable ? "Bar service stopped." : health.Detail, health.IsAvailable ? ServiceUnavailableReason.ApiStopped : health.Reason);
+        _hub.SetUnavailable("owned-bars", health.IsAvailable ? ServiceUnavailableReason.ApiStopped : health.Reason, health.IsAvailable ? "Bar service stopped." : health.Detail);
         _game?.Close(); _game = null;
         _handlers.Dispose();
         Changed();

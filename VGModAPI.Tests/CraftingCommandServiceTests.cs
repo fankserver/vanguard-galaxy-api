@@ -34,7 +34,7 @@ public sealed class CraftingCommandServiceTests : IDisposable
     public void MissingCommandBackendIsAnUnavailableTypedService()
     {
         using var hub = new LifecycleHub((_, _) => { });
-        hub.SetCapability("crafting-commands", false, "Commands disabled.", ServiceUnavailableReason.Disabled);
+        hub.SetUnavailable("crafting-commands", ServiceUnavailableReason.Disabled, "Commands disabled.");
         using var service = new CraftingCommandService(hub, _jobs, null, _ => { });
         Assert.Equal(ServiceUnavailableReason.Disabled, service.Availability.Reason);
         Assert.Equal(CraftingCommandStatus.IntegrationUnavailable, service.Execute(Request()).Status);

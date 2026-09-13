@@ -28,7 +28,7 @@ public sealed class ServiceStatusRegistryTests
     {
         var hub = new LifecycleHub((_, _) => { });
         foreach (var name in new[] { "session-lifecycle", "save-outcomes", "save-data", "mission-transitions", "mission-continuity", "native-travel" })
-            hub.SetCapability(name, true, "Bound.");
+            hub.SetAvailable(name, "Bound.");
         return hub;
     }
 
@@ -44,7 +44,7 @@ public sealed class ServiceStatusRegistryTests
         foreach (var view in new[] { session, save, mission, identity })
             view.AvailabilityChanged += _ => states.Add(!session.Availability.IsAvailable && !save.Availability.IsAvailable &&
                 !mission.Availability.IsAvailable && !identity.Availability.IsAvailable && hub.IsDispatchingCallbacks);
-        hub.SetCapability("session-lifecycle", false, "Unsupported.", ServiceUnavailableReason.UnsupportedGame);
+        hub.SetUnavailable("session-lifecycle", ServiceUnavailableReason.UnsupportedGame, "Unsupported.");
         Assert.Equal(new[] { true, true, true, true }, states);
         Assert.Equal(ServiceUnavailableReason.DependencyUnavailable, identity.Availability.Reason);
         Assert.False(hub.Capabilities.Single(c => c.Name == "native-travel").Available);
@@ -63,12 +63,12 @@ public sealed class ServiceStatusRegistryTests
         Assert.Empty(events);
         Assert.True(view.Availability.IsAvailable);
         hub.Services.Refresh();
-        hub.SetCapability("native-travel", true, "Bound.");
+        hub.SetAvailable("native-travel", "Bound.");
         Assert.Empty(events);
-        hub.SetCapability("native-travel", false, "First.");
-        hub.SetCapability("native-travel", false, "First.");
-        hub.SetCapability("native-travel", false, "Second.");
-        hub.SetCapability("native-travel", false, "Second.", ServiceUnavailableReason.ObserverFault);
+        hub.SetUnavailable("native-travel", ServiceUnavailableReason.BindingFailed, "First.");
+        hub.SetUnavailable("native-travel", ServiceUnavailableReason.BindingFailed, "First.");
+        hub.SetUnavailable("native-travel", ServiceUnavailableReason.BindingFailed, "Second.");
+        hub.SetUnavailable("native-travel", ServiceUnavailableReason.ObserverFault, "Second.");
         Assert.Equal(3, events.Count);
         Assert.Equal("Second.", events[1].Detail);
         Assert.Equal(ServiceUnavailableReason.ObserverFault, events[2].Reason);
@@ -106,10 +106,10 @@ public sealed class ServiceStatusRegistryTests
         primary.AvailabilityChanged += state =>
         {
             seen.Add("primary:" + state.IsAvailable);
-            if (!state.IsAvailable) hub.SetCapability("session-lifecycle", true, "Bound.");
+            if (!state.IsAvailable) hub.SetAvailable("session-lifecycle", "Bound.");
         };
         dependent.AvailabilityChanged += state => seen.Add("dependent:" + state.IsAvailable + ":current=" + dependent.Availability.IsAvailable);
-        hub.SetCapability("session-lifecycle", false, "Failure.");
+        hub.SetUnavailable("session-lifecycle", ServiceUnavailableReason.BindingFailed, "Failure.");
         Assert.Equal(new[] { "primary:False", "dependent:False:current=True", "primary:True", "dependent:True:current=True" }, seen);
     }
 
@@ -150,7 +150,7 @@ public sealed class ServiceStatusRegistryTests
             else stops.Add("primary");
         };
         dependent.AvailabilityChanged += state => { if (state.Reason == ServiceUnavailableReason.ApiStopped) stops.Add("dependent"); };
-        hub.SetCapability("session-lifecycle", false, "Failure.");
+        hub.SetUnavailable("session-lifecycle", ServiceUnavailableReason.BindingFailed, "Failure.");
         Assert.Equal(new[] { "primary", "dependent" }, stops);
         Assert.False(hub.IsDispatchingCallbacks);
     }
@@ -215,6 +215,6 @@ public sealed class ServiceStatusRegistryTests
         Assert.False(view.Availability.IsAvailable);
         foreach (Action action in new Action[] { () => _ = view.Availability, () => hub.Services.Refresh(), () => _ = hub.Capabilities })
             Assert.IsType<InvalidOperationException>(ServiceNotificationTests.OnWorker(action));
-        Assert.Throws<ArgumentException>(() => hub.SetCapability("bad", false, "", ServiceUnavailableReason.None));
+        Assert.Throws<ArgumentException>(() => hub.SetUnavailable("bad", ServiceUnavailableReason.None, ""));
     }
 }

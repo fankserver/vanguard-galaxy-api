@@ -13,8 +13,8 @@ public sealed class GameplayNotificationsTests : IDisposable
     private readonly LifecycleHub _hub = new((_, _) => { });
     private Guid Ready()
     {
-        _hub.SetCapability("session-lifecycle", true, "Bound.");
-        _hub.SetCapability("save-outcomes", true, "Bound.");
+        _hub.SetAvailable("session-lifecycle", "Bound.");
+        _hub.SetAvailable("save-outcomes", "Bound.");
         var session = _hub.Begin(SessionOrigin.SaveLoad, "slot");
         _hub.PlayerReady(session); _hub.GameplayInitialized(session);
         return session;

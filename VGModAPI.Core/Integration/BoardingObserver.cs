@@ -221,7 +221,7 @@ internal sealed class BoardingObserver : IDisposable
     private void Disable()
     {
         _service.Invalidate();
-        _hub.SetCapability("boarding-observation", false, "Boarding observation stopped after an adapter fault.");
+        _hub.SetUnavailable("boarding-observation", ServiceUnavailableReason.ObserverFault, "Boarding observation stopped after an adapter fault.");
     }
     internal void Poll()
     {

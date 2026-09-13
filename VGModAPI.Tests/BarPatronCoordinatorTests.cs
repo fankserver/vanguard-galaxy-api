@@ -11,8 +11,8 @@ public sealed class BarPatronCoordinatorTests
     private static LifecycleHub Bound()
     {
         var hub = new LifecycleHub((_, error) => throw error);
-        hub.SetCapability("session-lifecycle", true, "Bound.");
-        hub.SetCapability("save-outcomes", true, "Bound.");
+        hub.SetAvailable("session-lifecycle", "Bound.");
+        hub.SetAvailable("save-outcomes", "Bound.");
         return hub;
     }
 

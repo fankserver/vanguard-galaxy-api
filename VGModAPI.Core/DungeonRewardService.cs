@@ -55,7 +55,7 @@ internal sealed class DungeonRewardService : IDisposable
     public void Dispose()
     {
         _hub.CheckThread(); if (_disposed) return; _disposed = true;
-        if (Availability.IsAvailable) _hub.SetCapability("dungeon-rewards", false, "Reward service stopped.", ServiceUnavailableReason.ApiStopped);
+        if (Availability.IsAvailable) _hub.SetUnavailable("dungeon-rewards", ServiceUnavailableReason.ApiStopped, "Reward service stopped.");
         foreach (var provider in _providers.Values.ToArray()) provider.Dispose();
     }
     private sealed class Provider : IDungeonRewardProvider

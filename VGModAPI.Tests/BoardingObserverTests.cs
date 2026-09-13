@@ -38,9 +38,9 @@ public sealed class BoardingObserverTests
         internal Func<string, object, bool> Contains = (_, _) => false;
         internal Fixture()
         {
-            Hub.SetCapability("session-lifecycle", true, "Test bindings.");
-            Hub.SetCapability("save-outcomes", true, "Test bindings.");
-            Hub.SetCapability("boarding-observation", true, "Test bindings.");
+            Hub.SetAvailable("session-lifecycle", "Test bindings.");
+            Hub.SetAvailable("save-outcomes", "Test bindings.");
+            Hub.SetAvailable("boarding-observation", "Test bindings.");
             Service = new BoardingService(Hub, (_, _) => { });
             Observer = new BoardingObserver(Hub, Service, (obj, name) => ((Dictionary<string, object?>)obj)[name], obj => !Dead.Contains(obj), _ => Faults++, obj => ReferenceEquals(obj, DataInventory),
                 (id, location) => Contains(id, location));

@@ -21,8 +21,8 @@ internal sealed class DungeonAegisService : IDisposable
     internal void SetAvailable(bool value, ServiceUnavailableReason reason = ServiceUnavailableReason.BindingFailed)
     {
         _hub.CheckThread(); if (_disposed) return;
-        _hub.SetCapability("dungeon-enterability", value,
-            value ? "Owned boarding targets can stay enterable while their objectives are live." : "Enterability integration unavailable.", reason);
+        if (value) _hub.SetAvailable("dungeon-enterability", "Owned boarding targets can stay enterable while their objectives are live.");
+        else _hub.SetUnavailable("dungeon-enterability", reason, "Enterability integration unavailable.");
     }
     internal IDisposable Declare(string owner, string poiId)
     {
@@ -46,7 +46,7 @@ internal sealed class DungeonAegisService : IDisposable
         _disposed = true;
         foreach (var declaration in _declarations.ToArray()) declaration.Dispose();
         _declarations.Clear();
-        _hub.SetCapability("dungeon-enterability", false, "Enterability service stopped.", ServiceUnavailableReason.ApiStopped);
+        _hub.SetUnavailable("dungeon-enterability", ServiceUnavailableReason.ApiStopped, "Enterability service stopped.");
     }
     private sealed class Declaration : IDisposable
     {

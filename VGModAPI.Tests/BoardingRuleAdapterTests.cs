@@ -22,7 +22,7 @@ public sealed class BoardingRuleAdapterTests
         internal Action? OnConvert;
         internal Fixture()
         {
-            Hub.SetCapability("boarding-rules", true, "Test bindings.");
+            Hub.SetAvailable("boarding-rules", "Test bindings.");
             Rules = new BoardingRuleService(Hub, (_, _) => { });
             Adapter = new BoardingRuleAdapter(Hub, Rules, (key, obj) => ((Dictionary<string, object?>)obj)[key],
                 (key, obj, value) => ((Dictionary<string, object?>)obj)[key] = value, _ => Eligible, _ => Live,

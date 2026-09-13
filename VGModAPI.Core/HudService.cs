@@ -30,7 +30,8 @@ internal sealed class HudService : IHudService, IDisposable
     internal void SetAvailable(bool value)
     {
         _hub.CheckThread(); if (_disposed) return;
-        _hub.SetCapability("hud", value, value ? "Experimental shared HUD presentation." : "Shared HUD unavailable.");
+        if (value) _hub.SetAvailable("hud", "Experimental shared HUD presentation.");
+        else _hub.SetUnavailable("hud", ServiceUnavailableReason.BindingFailed, "Shared HUD unavailable.");
         if (!value) SetSurface(null, null);
     }
     internal void SetSurface(Guid? surface, Guid? session)
@@ -77,7 +78,7 @@ internal sealed class HudService : IHudService, IDisposable
     {
         _hub.CheckThread(); if (_disposed) return;
         _disposed = true; _surface = null; _session = null; SurfaceLive = null; _lifetime.Dispose();
-        if (Availability.IsAvailable) _hub.SetCapability("hud", false, "HUD service stopped.", ServiceUnavailableReason.ApiStopped);
+        if (Availability.IsAvailable) _hub.SetUnavailable("hud", ServiceUnavailableReason.ApiStopped, "HUD service stopped.");
         foreach (var entry in _entries.ToArray()) entry.Dispose();
     }
     internal sealed class Entry : IHudRegistration
