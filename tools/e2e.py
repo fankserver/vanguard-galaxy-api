@@ -99,6 +99,15 @@ class GameInstallation:
             target.mkdir()
             for name in ASSEMBLIES:
                 shutil.copy2(self.build / name, target / name)
+            # The staging vacuums the real config/ for isolation, which drops the API back to its
+            # disabled-by-default providers. Enable the ones the example cases exercise (Story drives
+            # station-commerce's errand and the story-missions case; Bars backs the bar-contact examples).
+            # This mirrors what a normal install has, not a product-default change.
+            (self.root / "config" / "vgmodapi.cfg").write_text(
+                "# E2E test config: enable the providers the example cases exercise.\n"
+                "[Story]\nEnabled = true\n"
+                "[Bars]\nEnabled = true\n",
+                encoding="utf-8")
         except BaseException:
             self.restore()
             raise
