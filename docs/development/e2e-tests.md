@@ -63,39 +63,9 @@ Select a case by setting the Make variable after the target:
 make e2e E2E_CASE=wormhole-world
 ```
 
+## `wormhole-world`
 
-## `wormhole-world` (actual example + gameplay route)
-
-`wormhole-world` loads the real `examples/WormholeWorld/WormholeWorld.dll`; it
-does not duplicate the example's registrations or authoring code in the test.
-
-- Creates a normal ephemeral Sandbox player through the real New Game wizard,
-  observes and closes the native opening dialogue, then waits for initial
-  placement.
-- Finds the rendered WormholeWorld HUD row and submits its actual Unity
-  `RevisionButton`, including the same panel-revision validation as a player
-  click. This executes the example's private `OnHud("spawn")` callback.
-- Observes the example's owned handles and native galaxy objects to verify all
-  five pockets, three exact wormhole pairs and two resource sites exist in the
-  documented systems. Both sides of the entry anchor gate must be hidden and
-  closed; the deliberate Hub/Anchor gates and every wormhole must be visible,
-  open and usable.
-- Submits the actual **Log topology** HUD row.
-- Calls the game's normal `TravelManager.SetRouteToPOI` and lets its real travel
-  coroutines, scenes, ship movement and arrival managers complete this route:
-  `X → Entry → Hub → Mining → mining field → Hub → Salvage → salvage wreck →
-  Hub → Entry → Anchor → Entry → X → original POI`. Every leg requires matching
-  ModAPI `Arrived` and `RouteCompleted` facts with the correct mode/system/POI.
-- At Entry, submits **Delete Cluster** and proves the example's atomic safety
-  preflight refuses without removing any content while the player is inside.
-- Back at the original POI (away from the entry rift), submits the actual
-  **Delete Cluster** HUD row, then proves every
-  example handle is cleared, every retained API object is terminal `Removed`,
-  and every captured native POI identity is absent from the galaxy.
-
-The run is visible and normally takes about six minutes. `artifacts/e2e/run/
-screenshots/` contains numbered screenshots for normal gameplay, initial
-placement, authored topology, every journey/site arrival and final cleanup.
+Tests the WormholeWorld example in a real game session.
 
 ## Coverage status
 
