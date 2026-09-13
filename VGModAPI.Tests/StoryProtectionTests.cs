@@ -45,7 +45,7 @@ public sealed class StoryProtectionTests : IDisposable
 
     private (string Identifier, Mission Mission) Hold(string local = "salvage-run")
     {
-        var identifier = StoryMissionPolicy.MissionIdentifier(new StoryMissionDefinitionId("anima", local), Guid.NewGuid());
+        var identifier = StoryMissionPolicy.MissionIdentifier(new StoryMissionDefinitionId("anima", local), Guid.NewGuid(), StoryRetention.Temporary);
         var world = new StoryNativeWorld(new StoryNativeBindings(typeof(StoryMission).Assembly), () => { });
         Assert.True(world.Install(identifier, Definition()).Applied);
         Assert.True(world.Accept(identifier).Applied);
@@ -405,14 +405,14 @@ public sealed class StoryProtectionTests : IDisposable
     [Fact]
     public void EveryIdentifierInTheReservedNamespaceIsQuarantinedUnlessItIsAdmitted()
     {
-        var admitted = StoryMissionPolicy.MissionIdentifier(new StoryMissionDefinitionId("anima", "salvage-run"), Guid.NewGuid());
+        var admitted = StoryMissionPolicy.MissionIdentifier(new StoryMissionDefinitionId("anima", "salvage-run"), Guid.NewGuid(), StoryRetention.Temporary);
         _protection.Admit(Guid.NewGuid(), new[] { admitted }, "admitted");
         Assert.False(_protection.IsQuarantined(admitted));
         foreach (var identifier in new[]
         {
             StoryMissionPolicy.Identifier(new StoryMissionDefinitionId("anima", "salvage-run")),        // the base definition
             StoryMissionPolicy.IdentifierPrefix + "anima.salvage-run.not-a-guid",             // malformed
-            StoryMissionPolicy.MissionIdentifier(new StoryMissionDefinitionId("anima", "salvage-run"), Guid.NewGuid()),
+            StoryMissionPolicy.MissionIdentifier(new StoryMissionDefinitionId("anima", "salvage-run"), Guid.NewGuid(), StoryRetention.Temporary),
             StoryMissionPolicy.IdentifierPrefix
         }) Assert.True(_protection.IsQuarantined(identifier), identifier);
         // Ordinal matching: a neighbouring namespace and vanilla content are not ours.
