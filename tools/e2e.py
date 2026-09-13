@@ -4,60 +4,37 @@
 This is an opt-in local development tool (parallel to ``make check-bindings``).
 It is never part of default CI and never shipped in the release package.
 
-What it does
-------------
-* Launches the real Vanguard Galaxy with the API and the dev-only ``EWTest``
-  harness loaded, configured to auto-run a suite of live assertions against
-  the *running game* (not reflection of ``Assembly-CSharp.dll``).
-* Waits for the harness to write a machine-readable JSON report.
-* Parses and validates the report against the shared protocol, prints a human
-  summary, and returns a non-zero exit status when any check fails. Each failure
-  carries a ``suggestedAction`` that tells the maintainer exactly which binding,
-  contract or behavior must be re-inspected for an unknown/updated game build.
+Architecture (mirrors the proven Surity in-game test pattern, self-contained here)
+---------------------------------------------------------------------------------
+* The driver binds a loopback listener, then launches the real Vanguard Galaxy
+  with the API and the dev-only ``EWTest`` harness loaded, passing
+  ``-batchmode -nographics -runEWTests`` (Unity's documented standalone-player
+  batch arguments + a handshake that only runs the harness when launched by the
+  driver, exactly like Surity's ``-runSurityTests``).
+* The harness connects back to the driver's listener and streams every check
+  result over newline-delimited JSON, then sends a ``finish`` message and exits.
+* The driver assembles a report from the stream, prints a human summary, and
+  returns non-zero when any live check fails. Each failure carries a
+  ``suggestedAction`` naming the binding/contract to re-inspect on an update.
+
+Transport (newline-delimited JSON, one object per line)::
+
+    {"type":"meta","apiVersion":"0.2.0","gameAssemblySha256":"<hex>","gameVersion":"0.8.2.3","unityVersion":"6000.4.7f1"}
+    {"type":"suite-start","suite":{"id":"availability","name":"Public service availability"}}
+    {"type":"result","check":{ "check": "...", "status": "pass|fail|skip", "message": "...",
+                               "expected": "...", "actual": "...", "suggestedAction": "...", "elapsedMs": 12 }}
+    {"type":"finish"}
 
 Save safety
 -----------
 The driver never writes to your real saves. The disposable-save isolation guard
-copies the live save directory into a private workspace, runs there, and after
-the run verifies the real save tree is byte-for-byte unchanged (a manifest
-sha-256 comparison), then discards the workspace copy.
+copies the live save directory into a private workspace and, after the run,
+verifies the real save tree is byte-for-byte unchanged (a manifest sha-256
+comparison), then discards the workspace copy.
 
 No game installed on the current machine? Use ``--preview`` to validate the
-wiring (report parsing, gating, isolation, launch command) without a game.
-
-Report protocol (schema=1)
---------------------------
-.. code-block:: json
-
-    {
-      "schema": 1,
-      "meta": {
-        "apiVersion": "0.2.0",
-        "gameAssemblySha256": "<hex>",
-        "gameVersion": "0.8.2.3",
-        "unityVersion": "6000.4.7f1",
-        "startedUtc": "2026-01-01T00:00:00Z",
-        "finishedUtc": "2026-01-01T00:00:05Z"
-      },
-      "suites": [
-        {
-          "id": "availability",
-          "name": "Public service availability",
-          "results": [
-            {
-              "check": "SessionTracking available",
-              "status": "pass" | "fail" | "skip",
-              "message": "human summary",
-              "expected": "shape/expectation",
-              "actual": "observed value",
-              "suggestedAction": "what to re-inspect to fix (failures only)",
-              "elapsedMs": 12
-            }
-          ]
-        }
-      ],
-      "summary": { "passed": 2, "failed": 0, "skipped": 1, "total": 3 }
-    }
+wiring, or ``--report`` to parse + gate a previously captured report, without
+launching a game.
 """
 
 from __future__ import annotations
@@ -66,15 +43,19 @@ import argparse
 import hashlib
 import json
 import os
+import socket
 import shutil
+import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
-from typing import Iterable, List, Optional
+from typing import List, Optional
 
 SCHEMA = 1
 VALID_STATUS = ("pass", "fail", "skip")
+HANDSHAKE_ARG = "-runEWTests"
 REPORT_FILENAME = "report.json"
 
 
@@ -101,36 +82,24 @@ class CheckResult:
         return self.status == "fail"
 
     def to_dict(self) -> dict:
-        return {
-            "check": self.check,
-            "status": self.status,
-            "message": self.message,
-            "expected": self.expected,
-            "actual": self.actual,
-            "suggestedAction": self.suggestedAction,
-            "elapsedMs": self.elapsedMs,
-        }
+        return {"check": self.check, "status": self.status, "message": self.message,
+                "expected": self.expected, "actual": self.actual,
+                "suggestedAction": self.suggestedAction, "elapsedMs": self.elapsedMs}
 
     @classmethod
     def from_dict(cls, raw: dict) -> "CheckResult":
         check = raw.get("check")
         status = raw.get("status")
         if not isinstance(check, str) or not check:
-            raise E2EError("report: result missing a non-empty 'check' string")
+            raise E2EError("result missing a non-empty 'check' string")
         if status not in VALID_STATUS:
-            raise E2EError("report: invalid result status %r for check %r" % (status, check))
+            raise E2EError("invalid result status %r for check %r" % (status, check))
         elapsed = raw.get("elapsedMs", 0)
         if not isinstance(elapsed, (int, float)) or elapsed < 0:
-            raise E2EError("report: invalid elapsedMs %r for check %r" % (elapsed, check))
-        return cls(
-            check=check,
-            status=status,
-            message=str(raw.get("message", "")),
-            expected=str(raw.get("expected", "")),
-            actual=str(raw.get("actual", "")),
-            suggestedAction=str(raw.get("suggestedAction", "")),
-            elapsedMs=int(elapsed),
-        )
+            raise E2EError("invalid elapsedMs %r for check %r" % (elapsed, check))
+        return cls(check=check, status=status, message=str(raw.get("message", "")),
+                   expected=str(raw.get("expected", "")), actual=str(raw.get("actual", "")),
+                   suggestedAction=str(raw.get("suggestedAction", "")), elapsedMs=int(elapsed))
 
 
 class SuiteResult:
@@ -142,8 +111,7 @@ class SuiteResult:
         self.results = list(results)
 
     def to_dict(self) -> dict:
-        return {"id": self.id, "name": self.name,
-                "results": [r.to_dict() for r in self.results]}
+        return {"id": self.id, "name": self.name, "results": [r.to_dict() for r in self.results]}
 
     @classmethod
     def from_dict(cls, raw: dict) -> "SuiteResult":
@@ -151,23 +119,24 @@ class SuiteResult:
         name = raw.get("name")
         results_raw = raw.get("results")
         if not isinstance(id, str) or not id:
-            raise E2EError("report: suite missing non-empty 'id'")
+            raise E2EError("suite missing non-empty 'id'")
         if not isinstance(name, str):
-            raise E2EError("report: suite %r missing 'name'" % id)
+            raise E2EError("suite %r missing 'name'" % id)
         if not isinstance(results_raw, list):
-            raise E2EError("report: suite %r 'results' must be a list" % id)
+            raise E2EError("suite %r 'results' must be a list" % id)
         return cls(id, name, [CheckResult.from_dict(r) for r in results_raw])
 
 
 class Report:
-    __slots__ = ("schema", "meta", "suites")
+    __slots__ = ("schema", "meta", "suites", "current_suite", "finished")
 
-    def __init__(self, schema, meta, suites):
+    def __init__(self, schema=SCHEMA, meta=None, suites=None):
         self.schema = schema
-        self.meta = meta
-        self.suites = list(suites)
+        self.meta = dict(meta or {})
+        self.suites = list(suites or [])
+        self.current_suite = None  # streaming-only transient state
+        self.finished = False
 
-    # -- derived counts ---------------------------------------------------
     @property
     def results(self) -> List[CheckResult]:
         return [r for s in self.suites for r in s.results]
@@ -188,43 +157,33 @@ class Report:
     def failures(self) -> List[CheckResult]:
         return [r for r in self.results if r.failed]
 
-    # -- serialization -----------------------------------------------------
     def to_dict(self) -> dict:
-        return {
-            "schema": self.schema,
-            "meta": dict(self.meta),
-            "suites": [s.to_dict() for s in self.suites],
-            "summary": {
-                "passed": self.passed,
-                "failed": self.failed,
-                "skipped": self.skipped,
-                "total": len(self.results),
-            },
-        }
+        return {"schema": self.schema, "meta": dict(self.meta),
+                "suites": [s.to_dict() for s in self.suites],
+                "summary": {"passed": self.passed, "failed": self.failed,
+                            "skipped": self.skipped, "total": len(self.results)}}
+
+    def to_json(self) -> str:
+        return json.dumps(self.to_dict(), indent=2)
 
     @classmethod
     def from_dict(cls, raw: dict) -> "Report":
         if not isinstance(raw, dict):
-            raise E2EError("report: root must be a JSON object")
-        schema = raw.get("schema")
-        if schema != SCHEMA:
-            raise E2EError("report: unsupported schema %r (expected %d)"
-                           % (schema, SCHEMA))
+            raise E2EError("report root must be a JSON object")
+        if raw.get("schema") != SCHEMA:
+            raise E2EError("unsupported schema %r (expected %d)" % (raw.get("schema"), SCHEMA))
         meta = raw.get("meta")
         if not isinstance(meta, dict):
-            raise E2EError("report: missing 'meta' object")
+            raise E2EError("missing 'meta' object")
         suites_raw = raw.get("suites")
         if not isinstance(suites_raw, list):
-            raise E2EError("report: 'suites' must be a list")
-        report = cls(schema, {k: str(v) for k, v in meta.items()},
+            raise E2EError("'suites' must be a list")
+        report = cls(SCHEMA, {k: str(v) for k, v in meta.items()},
                      [SuiteResult.from_dict(s) for s in suites_raw])
         summary = raw.get("summary")
-        if isinstance(summary, dict):
-            # Tolerate a summary block, but recompute authoritative counts so a
-            # lying/inconsistent summary cannot mask a failure.
-            expected_total = summary.get("total")
-            if expected_total is not None and not isinstance(expected_total, int):
-                raise E2EError("report: 'summary.total' must be an integer")
+        if isinstance(summary, dict) and summary.get("total") is not None:
+            if not isinstance(summary["total"], int):
+                raise E2EError("'summary.total' must be an integer")
         return report
 
 
@@ -232,7 +191,7 @@ def parse_report(text: str) -> Report:
     try:
         raw = json.loads(text)
     except json.JSONDecodeError as exc:
-        raise E2EError("report: invalid JSON: %s" % exc) from exc
+        raise E2EError("invalid JSON: %s" % exc) from exc
     return Report.from_dict(raw)
 
 
@@ -249,17 +208,12 @@ def gate(report: Report) -> int:
 
 
 def human_summary(report: Report) -> str:
-    lines = [
-        "E2E report: %d passed, %d failed, %d skipped (total %d)"
-        % (report.passed, report.failed, report.skipped, len(report.results)),
-    ]
-    meta = report.meta
-    if meta.get("apiVersion"):
-        lines.append("  api version: %s" % meta["apiVersion"])
-    if meta.get("gameAssemblySha256"):
-        lines.append("  game assembly sha256: %s" % meta["gameAssemblySha256"])
-    if meta.get("gameVersion"):
-        lines.append("  game version: %s" % meta["gameVersion"])
+    lines = ["E2E report: %d passed, %d failed, %d skipped (total %d)"
+             % (report.passed, report.failed, report.skipped, len(report.results))]
+    if report.meta.get("apiVersion"):
+        lines.append("  api version: %s" % report.meta["apiVersion"])
+    if report.meta.get("gameAssemblySha256"):
+        lines.append("  game assembly sha256: %s" % report.meta["gameAssemblySha256"])
     for suite in report.suites:
         failed = [r for r in suite.results if r.failed]
         if not failed:
@@ -277,6 +231,126 @@ def human_summary(report: Report) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Streaming protocol: build a Report from individual wire messages
+# ---------------------------------------------------------------------------
+def apply_message(report: Report, msg: dict) -> None:
+    """Fold one streamed message into a mutable Report (side-effect free helpers
+    are kept pure; this is the one place that mutates the running report)."""
+    msg_type = msg.get("type")
+    if msg_type == "meta":
+        for k, v in msg.items():
+            if k == "type":
+                continue
+            report.meta[str(k)] = str(v)
+    elif msg_type == "suite-start":
+        suite = msg.get("suite")
+        if not isinstance(suite, dict) or not suite.get("id"):
+            raise E2EError("malformed suite-start message")
+        current = SuiteResult(str(suite["id"]), str(suite.get("name", "")), [])
+        report.suites.append(current)
+        report.current_suite = current
+    elif msg_type == "result":
+        current = report.current_suite
+        if current is None:
+            raise E2EError("result message received before any suite-start")
+        current.results.append(CheckResult.from_dict(msg.get("check", {})))
+    elif msg_type == "finish":
+        report.finished = True
+    else:
+        raise E2EError("unknown message type %r" % msg_type)
+
+
+class Listener:
+    """Loopback listener the game connects to and streams results over.
+
+    bind() starts listening on an ephemeral loopback port; accept() blocks until
+    the harness connects (or until timeout), then returns a line-iterator reader.
+    """
+
+    def __init__(self, host="127.0.0.1"):
+        self.host = host
+        self.port = 0
+        self._sock = None
+
+    @property
+    def bound(self) -> bool:
+        return self._sock is not None
+
+    def bind(self) -> int:
+        self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._sock.bind((self.host, 0))
+        self._sock.listen(1)
+        self._sock.settimeout(1)
+        self.port = self._sock.getsockname()[1]
+        return self.port
+
+    def accept(self, timeout_seconds: float) -> Optional[object]:
+        """Accept one client; returns an iterator of newline-delimited message
+        dicts, or None on timeout. Each loop the reader keeps the socket alive
+        so a slow game that connects mid-run is not dropped."""
+        deadline = time.monotonic() + timeout_seconds
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            try:
+                self._sock.settimeout(remaining)
+                conn, _ = self._sock.accept()
+            except socket.timeout:
+                return None
+            except OSError:
+                return None
+            conn.settimeout(timeout_seconds)
+            return _message_reader(conn)
+
+    def close(self) -> None:
+        if self._sock is not None:
+            try:
+                self._sock.close()
+            except OSError:
+                pass
+            self._sock = None
+
+
+def _message_reader(conn):
+    """Adapter so accept() can return something iterable; `conn` is managed here."""
+    def read():
+        try:
+            with conn:
+                buf = b""
+                while True:
+                    chunk = conn.recv(4096)
+                    if not chunk:
+                        break
+                    buf += chunk
+                    while b"\n" in buf:
+                        line, buf = buf.split(b"\n", 1)
+                        if not line.strip():
+                            continue
+                        try:
+                            yield json.loads(line.decode("utf-8"))
+                        except (json.JSONDecodeError, UnicodeDecodeError):
+                            continue
+        finally:
+            pass
+    gen = read()
+    return gen
+
+
+def consume_stream(report: Report, reader, timeout_seconds: float) -> bool:
+    """Consume messages from ``reader`` until a finish message, building report.
+    Returns True if a finish was seen, False on timeout/disconnect."""
+    for msg in reader:
+        try:
+            apply_message(report, msg)
+        except E2EError:
+            continue
+        if getattr(report, "finished", False):
+            return True
+    return False
+
+
+# ---------------------------------------------------------------------------
 # Save safety: the disposable-save isolation guard
 # ---------------------------------------------------------------------------
 class SaveGuardError(E2EError):
@@ -284,11 +358,6 @@ class SaveGuardError(E2EError):
 
 
 def tree_manifest(root: Path) -> dict:
-    """Map of relative path -> sha256 of file content for a directory tree.
-
-    Sorting is deterministic; symlinks are not followed (the game treats them
-    as opaque), and empty directories are ignored consistently by all callers.
-    """
     manifest: dict = {}
     if not root.is_dir():
         return manifest
@@ -308,26 +377,14 @@ def assert_real_saves_unchanged(before: dict, real_dir: Path) -> None:
     after = tree_manifest(real_dir)
     if after == before:
         return
-    changed = []
-    for key in sorted(set(before) | set(after)):
-        if before.get(key) != after.get(key):
-            changed.append(key)
-    detail = ", ".join(changed[:20]) or "(empty)"
+    changed = [k for k in sorted(set(before) | set(after)) if before.get(k) != after.get(k)]
     raise SaveGuardError(
         "real save tree changed during the e2e run (%d path(s): %s) - aborting. "
-        "The harness must run against the disposable profile only."
-        % (len(changed), detail))
+        "The harness must run against the disposable profile only." % (len(changed), ", ".join(changed[:20]) or "(empty)"))
 
 
 class DisposableSaveProfile:
-    """Copies the live save directory into an isolated workspace, verifies the
-    real tree is untouched after the run, then discards the copy.
-
-    Usage::
-
-        with DisposableSaveProfile(real_dir=..., workspace=...) as profile:
-            ...  # launch game pointed at profile.path
-    """
+    """Isolates the disposable profile and verifies the real saves are untouched."""
 
     def __init__(self, real_dir, workspace):
         self.real_dir = Path(real_dir)
@@ -344,8 +401,6 @@ class DisposableSaveProfile:
         self._backup = Path(tempfile.mkdtemp(prefix="vgmodapi-e2e-", dir=str(self.workspace)))
         self.path = self._backup / "disposable"
         self.path.mkdir()
-        # Seed a fresh disposable profile; real saves are never copied in (a
-        # disposable profile must not inherit test-affected state).
         return self
 
     def __exit__(self, exc_type, exc, tb):
@@ -353,70 +408,82 @@ class DisposableSaveProfile:
             shutil.rmtree(self.path, ignore_errors=False)
         if self._backup is not None and self._backup.is_dir():
             shutil.rmtree(self._backup, ignore_errors=False)
-        # Guard regardless of run outcome: never let a run corrupt real saves.
         assert_real_saves_unchanged(self._before, self.real_dir)
         return False
 
 
 # ---------------------------------------------------------------------------
-# Launch command & report wait
+# Launch + run
 # ---------------------------------------------------------------------------
-def build_launch_command(game_dir, executable="VanguardGalaxy.exe"):
-    """Return the argv list used to launch the game with the auto-run harness.
-
-    Pure function (no I/O) so it is deterministic and testable. The harness is
-    configured to auto-run via EWTest's BepInEx config, which the driver primes
-    in the game's plugin folder before this launch.
-    """
+def build_launch_command(game_dir, executable="VanguardGalaxy.exe", extra=None):
+    """argv to launch the game and auto-run the harness. Uses Unity's documented
+    standalone-player batch arguments plus the handshake that only runs the
+    harness when launched by this driver (mirrors Surity's -runSurityTests)."""
     game = Path(game_dir)
     exe = game / executable
     if not exe.is_file():
         raise E2EError("game executable not found: %s (set --game-dir)" % exe)
-    # -nographics keeps the e2e from needing a display; the harness still runs
-    # the real Unity loop. Developers targeting a full window may drop it.
-    return [str(exe), "-nographics", "-screen-fullscreen", "0"]
+    argv = [str(exe), "-batchmode", "-nographics", HANDSHAKE_ARG]
+    if extra:
+        argv.extend(extra)
+    return argv
 
 
-def build_launch_env(report_path, run="1"):
-    """Environment the harness reads to auto-run and where to write the report.
-
-    The EWTest plugin honours EWTEST_RUN (set to '1' to auto-run on launch) and
-    EWTEST_REPORT_PATH (absolute path of the report.json to write). Pure and
-    deterministic so it can be tested.
-    """
+def build_launch_env(port, run="1"):
     env = dict(os.environ)
     env["EWTEST_RUN"] = run
-    env["EWTEST_REPORT_PATH"] = str(report_path)
+    env["EWTEST_PORT"] = str(port)
     return env
 
 
-def wait_for_report(runtime_dir, timeout_seconds=600, poll_seconds=2):
-    """Poll for the harness report under ``runtime_dir`` until timeout.
+def run_streaming(game_dir, executable, listen_timeout, poll_handles):
+    """Bind a listener, launch the game with the handshake, connect, stream a
+    report, and return the assembled Report. Pure orchestration (the pieces are
+    individually unit-tested); no save-touching happens here."""
+    listener = Listener()
+    listener.bind()
+    report = Report()
+    try:
+        env = build_launch_env(listener.port)
+        proc = subprocess.Popen(build_launch_command(game_dir, executable),
+                                cwd=game_dir, env=env,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                stdin=subprocess.DEVNULL)
+        try:
+            reader = listener.accept(listen_timeout)
+            if reader is None:
+                return _timeout_report(report, "the game never connected to the e2e listener")
+            finished = consume_stream(report, reader, listen_timeout)
+            if not finished:
+                return _timeout_report(report, "the game disconnected before sending a finish message")
+            return report
+        finally:
+            try:
+                proc.terminate()
+                proc.wait(timeout=10)
+            except Exception:
+                pass
+    finally:
+        listener.close()
+    return report
 
-    Returns the Path, or None on timeout.
-    """
-    target = Path(runtime_dir) / REPORT_FILENAME
-    deadline = time.monotonic() + timeout_seconds
-    while time.monotonic() < deadline:
-        if target.is_file():
-            return target
-        time.sleep(poll_seconds)
-    return None
+
+def _timeout_report(report, note):
+    report.meta["aborted"] = note
+    if not report.suites:
+        report.suites.append(SuiteResult("aborted", "Run aborted", [
+            CheckResult("run completed", "fail", note, "finish message within timeout",
+                        "timeout/disconnect", "Check the game launched (batchmode support), the harness " +
+                        "connected, and the session-entry control point.")]))
+    return report
 
 
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
-def _load_or_else(report: Optional[Report], path: str) -> Report:
-    if report is not None:
-        return report
-    raise E2EError("no report produced (timeout); see %s" % path)
-
-
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
-        prog="e2e",
-        description="In-game E2E regression driver for VGModAPI (opt-in dev tool).")
+        prog="e2e", description="In-game E2E regression driver for VGModAPI (opt-in dev tool).")
     parser.add_argument("--game-dir", default=os.environ.get("GAME_DIR", ""),
                         help="Vanguard Galaxy install dir (default: $GAME_DIR)")
     parser.add_argument("--executable", default="VanguardGalaxy.exe")
@@ -424,19 +491,16 @@ def main(argv=None) -> int:
                         help="workspace for the disposable profile + report (default: temp)")
     parser.add_argument("--save-dir", default=None,
                         help="real save directory to guard (never modified)")
-    parser.add_argument("--timeout", type=int, default=600)
-    parser.add_argument("--poll", type=float, default=2.0)
+    parser.add_argument("--timeout", type=int, default=600,
+                        help="seconds to wait for the harness to connect + finish (default 600)")
     parser.add_argument("--launch", action="store_true",
-                        help="actually launch the game (default in normal mode)")
+                        help="actually launch the game and run (normal mode)")
     parser.add_argument("--preview", action="store_true",
-                        help="dry-run: build the launch command, seed + guard a "
-                             "disposable profile, exit 0 without launching. CI-safe.")
+                        help="dry-run: build the launch command/env, exit 0 without launching. CI-safe.")
     parser.add_argument("--report", default=None,
-                        help="parse + gate an existing report file, then exit "
-                             "(no launch, no guard)")
+                        help="parse + gate a captured report file, then exit (no launch)")
     args = parser.parse_args(argv)
 
-    # Pure report evaluation mode: parse + validate + gate.
     if args.report:
         report = load_report(args.report)
         print(human_summary(report))
@@ -454,33 +518,31 @@ def main(argv=None) -> int:
         print("e2e:", exc, file=sys.stderr)
         return 2
 
-    report_target = runtime_dir / REPORT_FILENAME
-    env = build_launch_env(report_target)
-
-    def launch_and_wait():
-        print("e2e: launching game and waiting for report (timeout %ss)..." % args.timeout)
-        subprocess.Popen(cmd, cwd=args.game_dir, env=env,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        report_path = wait_for_report(runtime_dir, args.timeout, args.poll)
-        return _load_or_else(report_path, str(runtime_dir))
-
     print("e2e: launch argv: %s" % " ".join(cmd))
 
-    if args.save_dir:
-        with DisposableSaveProfile(real_dir=args.save_dir, workspace=runtime_dir) as profile:
-            print("e2e: disposable profile at %s" % profile.path)
-            if not args.preview and args.launch:
-                report = launch_and_wait()
-            else:
-                print("e2e: --preview / no --launch: skipped game launch and report wait.")
-                return 0
-    else:
-        if not args.preview and args.launch:
-            report = launch_and_wait()
-        else:
-            print("e2e: --preview / no --launch: skipped game launch and report wait.")
-            return 0
+    if not (args.preview or args.launch):
+        print("e2e: neither --launch nor --preview; nothing to do.")
+        return 2
 
+    if args.preview:
+        print("e2e: --preview: wiring OK (no game launched).")
+        return 0
+
+    try:
+        if args.save_dir:
+            with DisposableSaveProfile(real_dir=args.save_dir, workspace=runtime_dir) as profile:
+                report = run_streaming(args.game_dir, args.executable, args.timeout, None)
+        else:
+            report = run_streaming(args.game_dir, args.executable, args.timeout, None)
+    except E2EError as exc:
+        print("e2e:", exc, file=sys.stderr)
+        return 2
+
+    out_dir = runtime_dir / "report"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    report_path = out_dir / REPORT_FILENAME
+    report_path.write_text(report.to_json(), encoding="utf-8")
+    print("e2e: report written to %s" % report_path)
     print(human_summary(report))
     return gate(report)
 

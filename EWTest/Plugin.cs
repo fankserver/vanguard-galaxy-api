@@ -10,11 +10,11 @@ using VGModAPI;
 namespace EWTest;
 
 /// <summary>
-/// Development-only in-game E2E harness. Opt-in: when launched by `make e2e` it receives
-/// EWTEST_RUN=1 and an EWTEST_REPORT_PATH environment variable, then auto-runs a suite of
-/// live assertions against the running game, writes a machine-readable report, and quits.
-/// When left unset it stays idle, so the harness is harmless even if copied into a normal
-/// install (it is never shipped in the release package regardless).
+/// Development-only in-game E2E harness. It is inert unless launched by the driver with the
+/// handshake (EWTEST_RUN=1 / the `-runEWTests` command-line argument) and an EWTEST_PORT. When so
+/// launched it connects back to the driver's loopback listener and streams every check result over
+/// newline-delimited JSON, then sends `finish` and quits. This mirrors the proven Surity in-game
+/// pattern (batchmode launch + handshake + streamed results). EWTest is never shipped.
 /// </summary>
 [BepInPlugin(Id, "VGModAPI E2E harness", "1.0.0")]
 [BepInDependency(ModApi.PluginId)]
@@ -22,35 +22,51 @@ namespace EWTest;
 public sealed class Plugin : BaseUnityPlugin
 {
     public const string Id = "vgmodapi.devtools.e2e";
-    private const string ReportPathEnv = "EWTEST_REPORT_PATH";
+    internal const string HandshakeArg = "-runEWTests";
     private const string RunEnv = "EWTEST_RUN";
+    private const string PortEnv = "EWTEST_PORT";
     internal const int MaxSessionWaitFrames = 18_000; // ~5 min at 60fps
-    internal const int MaxReconstructionWaitFrames = 9_000; // ~2.5 min
 
-    private readonly E2EReport _report = new();
     private readonly List<Func<bool>> _steps = new();
     private readonly List<LifecycleEvent> _lifecycleEvents = new();
 
     private ILifecycleService? _lifecycle;
-    private string? _reportPath;
+    private WireSender? _wire;
     private bool _started;
     private bool _finalized;
     private bool _sessionReached;
 
     private void Awake()
     {
-        _reportPath = Environment.GetEnvironmentVariable(ReportPathEnv);
-        if (Environment.GetEnvironmentVariable(RunEnv) != "1" || string.IsNullOrEmpty(_reportPath))
+        bool handshaken = Environment.GetCommandLineArgs().Contains(HandshakeArg, StringComparer.Ordinal)
+                          || Environment.GetEnvironmentVariable(RunEnv) == "1";
+        if (!handshaken || !int.TryParse(Environment.GetEnvironmentVariable(PortEnv), out int port))
         {
-            Logger.LogInfo("EWTest idle (EWTEST_RUN != 1 or no EWTEST_REPORT_PATH).");
+            Logger.LogInfo("EWTest idle (not launched by the e2e driver).");
             return;
         }
         _started = true;
 
-        PopulateMeta();
+        _wire = WireSender.Connect(port);
+        if (_wire == null)
+        {
+            Logger.LogError("EWTest could not connect to the e2e listener on 127.0.0.1:" + port);
+        }
+        else
+        {
+            _wire.Send(new Dictionary<string, object>
+            {
+                ["type"] = "meta",
+                ["apiVersion"] = ReadApiVersion(),
+                ["gameVersion"] = Application.version ?? "",
+                ["unityVersion"] = Application.unityVersion ?? "",
+                ["gameAssemblySha256"] = ReadAssemblyHash() ?? "",
+                ["startedUtc"] = DateTime.UtcNow.ToString("O"),
+            });
+        }
+
         try
         {
-            // Services are published on the API plugin's Awake; this runs on the main thread too.
             _lifecycle = ModApi.Services.Lifecycle;
             _lifecycle.Changed += OnLifecycle;
         }
@@ -59,18 +75,8 @@ public sealed class Plugin : BaseUnityPlugin
             Logger.LogError("EWTest could not subscribe to lifecycle: " + ex);
         }
 
-        var runner = new EWRunner(this);
-        runner.Build().ForEach(_steps.Add);
-        Logger.LogInfo("EWTest: " + runner.Describe() + " queued.");
-    }
-
-    private void PopulateMeta()
-    {
-        _report.Meta["apiVersion"] = ReadApiVersion();
-        _report.Meta["gameVersion"] = Application.version ?? "";
-        _report.Meta["unityVersion"] = Application.unityVersion ?? "";
-        _report.Meta["gameAssemblySha256"] = ReadAssemblyHash() ?? "";
-        _report.Meta["startedUtc"] = DateTime.UtcNow.ToString("O");
+        new EWRunner(this).Build().ForEach(_steps.Add);
+        Logger.LogInfo("EWTest: e2e suites queued; streaming to port " + port + ".");
     }
 
     private static string ReadApiVersion()
@@ -115,21 +121,16 @@ public sealed class Plugin : BaseUnityPlugin
     private void Finalize()
     {
         _finalized = true;
-        _report.Meta["finishedUtc"] = DateTime.UtcNow.ToString("O");
         try
         {
-            File.WriteAllText(_reportPath!, _report.ToJson());
-            Logger.LogInfo("EWTest: report written to " + _reportPath);
+            _wire?.Send(new Dictionary<string, object> { ["type"] = "finish" });
+            _wire?.Dispose();
         }
-        catch (Exception ex)
-        {
-            Logger.LogError("EWTest: failed to write report: " + ex);
-        }
+        catch (Exception ex) { Logger.LogError("EWTest: finish send failed: " + ex); }
         try { Application.Quit(); }
         catch (Exception ex) { Logger.LogError("EWTest: quit failed: " + ex); }
     }
 
-    internal E2EReport Report => _report;
     internal bool Started => _started;
     internal ILifecycleService? Lifecycle => _lifecycle;
     internal bool SessionReached => _sessionReached;
@@ -137,5 +138,33 @@ public sealed class Plugin : BaseUnityPlugin
     internal List<LifecycleEvent> LifecycleEvents
     {
         get { lock (_lifecycleEvents) return new List<LifecycleEvent>(_lifecycleEvents); }
+    }
+
+    /// <summary>Stream one finished suite out over the wire (suite-start then one result line each).</summary>
+    internal void StreamSuite(SuiteResult suite)
+    {
+        if (_wire == null) return;
+        _wire.Send(new Dictionary<string, object>
+        {
+            ["type"] = "suite-start",
+            ["suite"] = new Dictionary<string, object> { ["id"] = suite.Id, ["name"] = suite.Name },
+        });
+        foreach (var r in suite.Results)
+        {
+            _wire.Send(new Dictionary<string, object>
+            {
+                ["type"] = "result",
+                ["check"] = new Dictionary<string, object>
+                {
+                    ["check"] = r.Check,
+                    ["status"] = r.Status,
+                    ["message"] = r.Message,
+                    ["expected"] = r.Expected,
+                    ["actual"] = r.Actual,
+                    ["suggestedAction"] = r.SuggestedAction,
+                    ["elapsedMs"] = r.ElapsedMs,
+                },
+            });
+        }
     }
 }

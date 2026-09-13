@@ -55,6 +55,51 @@ public static class Json
         }
         return "\"" + sb + "\"";
     }
+
+    /// <summary>Serialize a wire value to JSON. Supports null, string, bool, numbers and
+    /// nested dictionaries/lists (used to build the newline-delimited messages the driver parses).
+    /// The game must not be assumed to provide a JSON library (per CONTRIBUTING).</summary>
+    public static string Serialize(object? value)
+    {
+        switch (value)
+        {
+            case null: return "null";
+            case string s: return Escape(s);
+            case bool b: return b ? "true" : "false";
+            case int i: return i.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            case long l: return l.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            case float f: return f.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+            case double d: return d.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+            case System.Collections.IDictionary dict:
+            {
+                var sb = new StringBuilder();
+                sb.Append('{');
+                bool first = true;
+                foreach (System.Collections.DictionaryEntry entry in dict)
+                {
+                    if (!first) sb.Append(',');
+                    first = false;
+                    sb.Append(Escape(entry.Key?.ToString())).Append(':').Append(Serialize(entry.Value));
+                }
+                return sb.Append('}').ToString();
+            }
+            case System.Collections.IEnumerable seq:
+            {
+                var sb = new StringBuilder();
+                sb.Append('[');
+                bool first = true;
+                foreach (var item in seq)
+                {
+                    if (!first) sb.Append(',');
+                    first = false;
+                    sb.Append(Serialize(item));
+                }
+                return sb.Append(']').ToString();
+            }
+            default:
+                return Escape(Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? "");
+        }
+    }
 }
 
 /// <summary>The machine-readable report written by the harness and parsed by tools/e2e.py.</summary>

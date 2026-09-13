@@ -20,14 +20,13 @@ public sealed class EWRunner
 
     public EWRunner(Plugin plugin) => _plugin = plugin;
 
-    /// <summary>Returns a one-frame step that runs and appends a finished suite.</summary>
+    /// <summary>Returns a one-frame step that runs and streams the finished suite.</summary>
     private Func<bool> RunSuite(string name, Func<SuiteResult> produce)
     {
         _names.Add(name);
         return () =>
         {
-            var suite = produce();
-            _plugin.Report.Suites.Add(suite);
+            _plugin.StreamSuite(produce());
             return true;
         };
     }
