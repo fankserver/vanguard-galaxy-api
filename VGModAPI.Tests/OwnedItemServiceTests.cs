@@ -52,6 +52,21 @@ public sealed class OwnedItemServiceTests
         Assert.Equal(new[] { good.NativeId }, loaded); Assert.Equal(1, reported);
     }
     [Fact]
+    public void DeferredDeclarationIsNotAnErrorAndDoesNotBlockSiblings()
+    {
+        // Register-time publication uses deferMissingIcon: true, so an item whose vanilla icon
+        // sprite isn't materialized yet is silently deferred (no throw, no construction) rather
+        // than failing the registration. A deferral must not be reported as an error and must not
+        // stop the remaining catalog declarations from being visited; only a genuine missing
+        // dependency on a strict (restore) path throws.
+        var deferred = new OwnedItemIdentity("author.a", Item()); var good = new OwnedItemIdentity("author.b", Item());
+        var ensureCalls = new List<string>(); int reported = 0;
+        OwnedItemDeclarationPublication.Publish(new[] { deferred, good }, id =>
+            { ensureCalls.Add(id); /* deferring: no throw, no construction */ }, (_, _) => reported++);
+        Assert.Equal(new[] { deferred.NativeId, good.NativeId }, ensureCalls);
+        Assert.Equal(0, reported);
+    }
+    [Fact]
     public void ItemOnlySaveRequiresBarrierAndRestorationBeforeUnsealing()
     {
         string id = new OwnedItemIdentity("author.a", Item()).NativeId;

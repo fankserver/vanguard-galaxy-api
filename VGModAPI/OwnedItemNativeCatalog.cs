@@ -32,7 +32,7 @@ internal sealed class OwnedItemNativeCatalog : IDisposable
     internal bool Loaded => Catalog.Count != 0;
     private IDictionary Catalog => (IDictionary)_catalog.GetValue(null)!;
     private void Set(Component item, string field, object value) => _fields[field].SetValue(item, _fields[field].FieldType.IsEnum ? Enum.Parse(_fields[field].FieldType, (string)value) : value);
-    internal Component Ensure(string id)
+    internal Component? Ensure(string id, bool deferMissingIcon = false)
     {
         if (_disposed || _busy) throw new InvalidOperationException("Owned item construction unavailable or reentrant.");
         var identity = OwnedItemIdentity.Read(id);
@@ -45,7 +45,14 @@ internal sealed class OwnedItemNativeCatalog : IDisposable
         var d = identity.Definition;
         var iconSource = Catalog[d.IconItemId] as Component;
         if (iconSource == null || _icon.GetValue(iconSource) is not Sprite icon || icon == null)
+        {
+            // The vanilla icon sprite may not be materialized yet even though the catalog is loaded
+            // (item rows exist before their icon assets are fetched). Registering while that is the
+            // case must queue the declaration rather than fail it: construction is retried on the next
+            // catalog rebuild (LoadAll), which is when the icon dependency is guaranteed to be ready.
+            if (deferMissingIcon) return null;
             throw new InvalidOperationException("Vanilla item icon dependency unavailable.");
+        }
         if (Catalog.Contains(id)) throw new InvalidOperationException("Owned item identity collides with another catalog entry.");
         _busy = true; GameObject? child = null;
         try

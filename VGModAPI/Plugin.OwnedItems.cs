@@ -13,7 +13,7 @@ public sealed partial class Plugin
     private OwnedItemService CreateOwnedItems() => new(_hub!, StoryHostAuthentication.Resolve, identity =>
     {
         if (_ownedItemsStopped || !_worldAvailable || _ownedItemCatalog == null) throw new InvalidOperationException("Owned item catalog unavailable.");
-        if (_ownedItemCatalog.Loaded) _ownedItemCatalog.Ensure(identity.NativeId);
+        if (_ownedItemCatalog.Loaded) _ownedItemCatalog.Ensure(identity.NativeId, deferMissingIcon: true);
     });
     private void RestoreOwnedItem(string id)
     {
