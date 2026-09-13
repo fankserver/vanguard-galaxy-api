@@ -38,6 +38,8 @@ internal sealed class FakeTravelService : FakeServiceStatus, ITravelService
 {
     public Guid? SessionId { get; set; }
     public TravelLocation? CurrentLocation { get; set; }
+    public TravelRouteResult RequestRoute(string poiId, float speedMultiplier = 1f)
+        => new(TravelRouteStatus.NativeRejected, "fake");
     public bool IsDispatchingCallbacks { get; set; }
     public event Action<TravelTransition>? Transitioned;
     internal int TransitionListeners => Transitioned?.GetInvocationList().Length ?? 0;

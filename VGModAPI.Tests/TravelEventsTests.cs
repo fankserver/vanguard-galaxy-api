@@ -116,6 +116,43 @@ public sealed class TravelEventsTests
     }
 
     [Fact]
+    public void RouteRequestValidatesAndForwardsRouteScopedSpeed()
+    {
+        var lifecycle = new LifecycleHub((_, error) => throw error);
+        string? poi = null; var speed = 0f;
+        using var travel = new TravelEvents(lifecycle, requestRoute: (id, multiplier) =>
+        {
+            poi = id; speed = multiplier;
+            return new TravelRouteResult(TravelRouteStatus.Accepted, "accepted");
+        });
+        lifecycle.SetAvailable("session-lifecycle", "bound");
+        var session = lifecycle.Begin(SessionOrigin.NewGame, null);
+        lifecycle.PlayerReady(session); lifecycle.GameplayInitialized(session);
+        lifecycle.SetAvailable("native-travel", "bound"); travel.SetSession(session);
+
+        var result = travel.RequestRoute("poi", 7f);
+
+        Assert.True(result.Accepted); Assert.Equal("poi", poi); Assert.Equal(7f, speed);
+        Assert.Throws<ArgumentException>(() => travel.RequestRoute(" "));
+        Assert.Throws<ArgumentOutOfRangeException>(() => travel.RequestRoute("poi", 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => travel.RequestRoute("poi", 8));
+        Assert.Throws<ArgumentOutOfRangeException>(() => travel.RequestRoute("poi", float.NaN));
+    }
+
+    [Fact]
+    public void RouteRequestReportsUnavailableAndMissingSessionWithoutCallingNative()
+    {
+        var lifecycle = new LifecycleHub((_, error) => throw error); var calls = 0;
+        using var travel = new TravelEvents(lifecycle, requestRoute: (_, _) =>
+        { calls++; return new TravelRouteResult(TravelRouteStatus.Accepted, "accepted"); });
+        Assert.Equal(TravelRouteStatus.ServiceUnavailable, travel.RequestRoute("poi").Status);
+        lifecycle.SetAvailable("session-lifecycle", "bound");
+        lifecycle.SetAvailable("native-travel", "bound");
+        Assert.Equal(TravelRouteStatus.SessionUnavailable, travel.RequestRoute("poi").Status);
+        Assert.Equal(0, calls);
+    }
+
+    [Fact]
     public void PublicFactsRequirePlacementVersusOperationIdentityAndActualLocation()
     {
         Assert.Throws<ArgumentException>(() => new TravelTransition(Guid.NewGuid(), Guid.NewGuid(), 1,

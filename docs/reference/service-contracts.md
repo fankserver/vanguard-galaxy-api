@@ -58,6 +58,17 @@ All live service access and notification registration/removal is main-thread-onl
 
 API tests exercise these notification and lifetime requirements.
 
+## Travel
+
+`ITravelService.RequestRoute(poiId, speedMultiplier)` asks the game to route the
+player to an existing POI. The default multiplier is normal game speed; values up
+to 7 apply only to that route and are restored when it completes, is cancelled,
+or its session ends. `Accepted` means the game accepted the route, not that the
+player arrived. Observe `Transitioned` for departure, arrival, cancellation and
+route completion. Invalid, unavailable, missing-destination and native-refusal
+outcomes are distinct. A route request made reentrantly while another request's
+native callbacks are still running returns `Busy` rather than replacing that route.
+
 ## Additional custom save data
 
 `ISaveDataService.Register(PersistenceProvider)` has an explicit result. Only

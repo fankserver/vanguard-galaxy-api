@@ -14,20 +14,25 @@ internal sealed class TravelNativeBindings
     private const string JumpGateType = "Source.Galaxy.POI.JumpGate";
     private const string DockingOptionType = "Behaviour.Spacestation.Docking.DockingOption";
     private const string SpaceShipType = "Behaviour.Unit.SpaceShip";
-    private readonly FieldInfo _player, _currentSystem, _currentPoi, _system, _rawName, _waypoints, _dockingState, _interiorInstance, _travelManagerInstance, _jumpTargetSystemGuid, _jumpTargetPoiGuid;
-    private readonly PropertyInfo _guid, _time, _localManager, _managerPoi, _ready, _target, _localTarget, _currentSpaceShip, _usingJumpgate, _interiorStation, _dockingShip, _shipData;
-    private readonly MethodInfo _travelActive, _travelNextWaypoint;
+    private readonly FieldInfo _player, _currentSystem, _currentPoi, _system, _rawName, _waypoints, _dockingState, _interiorInstance, _travelManagerInstance, _jumpTargetSystemGuid, _jumpTargetPoiGuid, _travelMultiplier;
+    private readonly PropertyInfo _guid, _time, _localManager, _managerPoi, _ready, _target, _localTarget, _currentSpaceShip, _usingJumpgate, _interiorStation, _dockingShip, _shipData, _galaxyCurrent;
+    private readonly MethodInfo _travelActive, _travelNextWaypoint, _getPoi, _setRoute;
     internal TravelNativeBindings(Assembly assembly)
     {
         var player = assembly.GetType(BindingCatalog.Player, true)!;
         var element = assembly.GetType("Source.Galaxy.MapElement", true)!;
         var poiType = assembly.GetType(PoiType, true)!;
         var travel = assembly.GetType(TravelType, true)!;
+        var galaxy = assembly.GetType("Source.Galaxy.GalaxyMapData", true)!;
         // Behaviour.Util.Singleton<TravelManager>.instance is protected static; read the backing
         // field instead of the Instance property so polling never triggers scene FindAnyObjectByType.
         var singleton = assembly.GetType("Behaviour.Util.Singleton`1", true)!.MakeGenericType(travel);
         _travelManagerInstance = singleton.GetField("instance", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.FlattenHierarchy)
             ?? throw new MissingFieldException(singleton.FullName, "instance");
+        _travelMultiplier = Field(travel, "travelMultiplier", "System.Single");
+        _galaxyCurrent = StaticProperty(galaxy, "current", "Source.Galaxy.GalaxyMapData");
+        _getPoi = Method(galaxy, "GetPointOfInterest", PoiType, "System.String");
+        _setRoute = Method(travel, "SetRouteToPOI", "System.Boolean", PoiType);
         var manager = assembly.GetType(ManagerType, true)!;
         var shipData = assembly.GetType("Source.SpaceShip.SpaceShipData", true)!;
         var interior = assembly.GetType("Behaviour.UI.Spacestation.SpaceStationInterior", true)!;
@@ -105,6 +110,10 @@ internal sealed class TravelNativeBindings
     internal object? InteriorStation(object interior) => _interiorStation.GetValue(interior);
     // Live TravelManager singleton (null before gameplay; avoids the Instance property's scene query).
     internal object? TravelManager() => _travelManagerInstance.GetValue(null);
+    internal object? Galaxy() => _galaxyCurrent.GetValue(null);
+    internal object? FindPoi(object galaxy, string id) => _getPoi.Invoke(galaxy, new object[] { id });
+    internal bool SetRoute(object manager, object poi) => (bool)_setRoute.Invoke(manager, new[] { poi })!;
+    internal void SetTravelMultiplier(object manager, float multiplier) => _travelMultiplier.SetValue(manager, multiplier);
     internal int WaypointCount(object player) => ((System.Collections.ICollection)_waypoints.GetValue(player)!).Count;
     // SpaceShipData.dockingState is DockingState?; boxed enum values convert safely to int.
     internal int? DockingState(object player)
@@ -160,6 +169,13 @@ internal sealed class TravelNativeBindings
     {
         var property = type.GetProperty(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly);
         if (property == null || !NativeTypeName.Matches(property.PropertyType, expected) || property.GetMethod == null || property.GetMethod.IsStatic || property.GetIndexParameters().Length != 0)
+            throw new MissingMemberException(type.FullName, name);
+        return property;
+    }
+    private static PropertyInfo StaticProperty(Type type, string name, string expected)
+    {
+        var property = type.GetProperty(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly);
+        if (property == null || !NativeTypeName.Matches(property.PropertyType, expected) || property.GetMethod == null || !property.GetMethod.IsStatic || property.GetIndexParameters().Length != 0)
             throw new MissingMemberException(type.FullName, name);
         return property;
     }
