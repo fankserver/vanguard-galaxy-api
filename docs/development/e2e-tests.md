@@ -14,7 +14,7 @@ With Steam running and the game closed:
 make e2e
 ```
 
-This builds the API, test plugin and WormholeWorld example, stages only those
+This builds the API, test plugin and PocketWorlds example, stages only those
 assemblies in the game, launches the selected case, writes the report and
 screenshots, and stops the owned process before restoring the original plugins
 and BepInEx configuration.
@@ -60,16 +60,21 @@ just availability, successful registration, or skipped placeholders.
 Select a case by setting the Make variable after the target:
 
 ```sh
-make e2e E2E_CASE=wormhole-world
+make e2e E2E_CASE=pocket-worlds
 ```
 
-## `wormhole-world`
+## `pocket-worlds`
 
-Tests the WormholeWorld example in a real game session.
+Tests the PocketWorlds example in a real game session: it clicks the rendered HUD
+to spawn the authored pocket cluster (a wormhole entry, hub and anchor pockets,
+two themed off-world instances and the combat-site guard in the anchor), follows
+real travel routes through every gate and wormhole, verifies the deliberate
+entry-gate sealing, then clicks deletion and asserts full native + API cleanup -
+including the combat site coming down before its anchor pocket.
 
 ## Coverage status
 
-`fresh-session` (normal new-game lifecycle) and `wormhole-world` (actual example,
+`fresh-session` (normal new-game lifecycle) and `pocket-worlds` (actual example,
 world authoring, HUD, native travel and cleanup) are implemented and pass live.
 This is not full ModAPI coverage: mission/boarding gameplay and persistent
 save/load round trips remain to be implemented.

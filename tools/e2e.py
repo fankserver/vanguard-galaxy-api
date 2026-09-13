@@ -15,10 +15,10 @@ import time
 import uuid
 
 CASE = "fresh-session"
-KNOWN_CASES = ("fresh-session", "wormhole-world")
+KNOWN_CASES = ("fresh-session", "pocket-worlds")
 HANDSHAKE = "--vgmodapi-e2e"
 ASSEMBLIES = ("VGModAPI.dll", "VGModAPI.Core.dll", "VGModAPI.Abstractions.dll",
-              "VGModAPI.Unity.dll", "VGModAPI.E2E.dll", "WormholeWorld.dll", "Newtonsoft.Json.dll")
+              "VGModAPI.Unity.dll", "VGModAPI.E2E.dll", "PocketWorlds.dll", "Newtonsoft.Json.dll")
 
 
 class E2EError(Exception):

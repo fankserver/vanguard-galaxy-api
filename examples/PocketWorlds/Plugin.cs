@@ -163,6 +163,7 @@ public sealed class Plugin : BaseUnityPlugin
     private void RefreshPanel()
     {
         if (_hud == null) return;
+        bool hasContent = HasClusterContent();
         string current = _travel?.CurrentLocation?.SystemName is { Length: > 0 } sys ? sys
             : _travel?.CurrentLocation?.SystemId ?? "nowhere";
 
@@ -170,27 +171,32 @@ public sealed class Plugin : BaseUnityPlugin
             new[]
             {
                 new HudRow("location", "You are at " + current + ".", "The cluster is a wormhole-only place reached from here."),
-                new HudRow("spawn", _entryDoor != null ? "Cluster ready" : "Spawn Wormhole",
+                new HudRow("spawn", hasContent ? "Cluster ready" : "Spawn Wormhole",
                     "open a wormhole into a 5-system authored cluster",
                     "Creates Cluster Entry (E) anchored to this system, then Hub Alpha (A) and Anchor Beta (B) "
                     + "linked to E by gates. A holds two wormholes into themed off-world instances (mining, salvage), "
                     + "and B holds an owned combat site. Everything you spawn is removable later.",
-                    clickable: _entryDoor == null),
-                new HudRow("delete", _entryDoor == null ? "spawn first" : "Delete Cluster",
+                    clickable: !hasContent),
+                new HudRow("delete", !hasContent ? "spawn first" : "Delete Cluster",
                     "remove the entry wormhole, then every authored system, gate, wormhole and site",
                     "Full cleanup: removes the wormhole pairs first (their endpoints must be freed), then each "
-                    + "pocket (its gate and any site POIs go with it). Moving into any part of the cluster first "
-                    + "would refuse deletion until you leave.",
-                    clickable: _entryDoor != null),
-                new HudRow("log", _entryDoor == null ? "spawn first" : "Log topology",
+                    + "pocket (its gate and any site POIs go with it) and the combat site. Moving into any part of "
+                    + "the cluster first would refuse deletion until you leave.",
+                    clickable: hasContent),
+                new HudRow("log", !hasContent ? "spawn first" : "Log topology",
                     "write what each spawned system contains and how it is connected, to the log file",
                     "Prints one line per spawned system: the gates and wormholes it holds (with their far "
                     + "ends) and the sites inside it, so the log shows exactly how the cluster is wired.",
-                    clickable: _entryDoor != null),
+                    clickable: hasContent),
                 new HudRow("status", StatusLine(), "Each owned occurrence shows its live reconstruction state."),
             },
             closable: false));
     }
+
+    private bool HasClusterContent()
+        => _entry != null || _hub != null || _anchor != null || _mining != null || _salvage != null
+            || _entryDoor != null || _miningHole != null || _salvageHole != null
+            || _miningSite != null || _salvageSite != null || _guard != null;
 
     private string StatusLine()
     {
@@ -336,7 +342,8 @@ public sealed class Plugin : BaseUnityPlugin
     /// wormhole endpoint cannot be removed), then each pocket — its gate and site POIs go with it.</summary>
     private void DeleteCluster()
     {
-        if (_world == null || _entryDoor == null) return;
+        if (_world == null || !HasClusterContent()) return;
+        if (!CanDeleteCluster()) return;
 
         // Order is dictated by the API's integrity rules, not by taste:
         //   * a pocket that is still a wormhole endpoint cannot be removed, so pairs go first;
@@ -355,6 +362,35 @@ public sealed class Plugin : BaseUnityPlugin
         if (!RemovePocket(EntryName, _entry)) return; _entry = null;
 
         Logger.LogInfo("Pocket Worlds deleted: every authored system, gate, wormhole and site is gone.");
+    }
+
+    /// <summary>Preflight every transient player-safety condition before the first mutation, so a
+    /// refused delete cannot leave a half-torn cluster. Pockets may still report WormholeEndpoint at
+    /// this stage because the pairs are deliberately removed first; the combat site must be removable
+    /// (or already gone) before its anchor pocket is touched.</summary>
+    private bool CanDeleteCluster()
+    {
+        foreach (var pair in new[] { _miningHole, _salvageHole, _entryDoor })
+        {
+            if (pair == null) continue;
+            if (pair.CanRemove() == RemovalStatus.Ready) continue;
+            Logger.LogWarning("Delete Cluster refused: wormhole " + pair.PoiKey + " is " + pair.CanRemove() + ".");
+            return false;
+        }
+        foreach (var pocket in new[] { _mining, _salvage, _hub, _anchor, _entry })
+        {
+            if (pocket == null) continue;
+            var status = pocket.CanRemove();
+            if (status is RemovalStatus.Ready or RemovalStatus.WormholeEndpoint) continue;
+            Logger.LogWarning("Delete Cluster refused: pocket " + pocket.PoiKey + " is " + status + ".");
+            return false;
+        }
+        if (_guard != null && _guard.CanRemove() != RemovalStatus.Ready)
+        {
+            Logger.LogWarning("Delete Cluster refused: combat site " + _guard.PoiKey + " is " + _guard.CanRemove() + ".");
+            return false;
+        }
+        return true;
     }
 
     private bool RemoveWormhole(string label, IWormholePair? w)

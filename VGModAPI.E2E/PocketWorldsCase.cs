@@ -4,11 +4,11 @@ using System.Linq;
 
 namespace VGModAPI.E2E;
 
-/// <summary>Gameplay E2E for the actual examples/WormholeWorld plugin. It clicks the rendered HUD,
+/// <summary>Gameplay E2E for the actual examples/PocketWorlds plugin. It clicks the rendered HUD,
 /// follows real TravelManager routes through every connection and site, then clicks deletion.</summary>
-internal static class WormholeWorldCase
+internal static class PocketWorldsCase
 {
-    internal const string Id = "wormhole-world";
+    internal const string Id = "pocket-worlds";
 
     internal static IReadOnlyList<TestStep> Steps(ILifecycleService lifecycle, List<LifecycleEvent> lifecycleEvents,
         List<TravelTransition> travelEvents)
@@ -17,7 +17,7 @@ internal static class WormholeWorldCase
         var sawOpeningDialogue = false;
         return new[]
         {
-            new TestStep("main menu and example load", "Chainloader.PluginInfos[vgmodapi.example.wormhole-world]", () =>
+            new TestStep("main menu and example load", "Chainloader.PluginInfos[vgmodapi.example.pocket-worlds]", () =>
             {
                 if (!NativeSession.MenuReady()) return false;
                 s.Plugin = NativeGameplay.ExamplePlugin();
@@ -60,12 +60,12 @@ internal static class WormholeWorldCase
                 NativeGameplay.Screenshot("initial-placement");
                 return true;
             }),
-            new TestStep("click Spawn Wormhole", "UnityEngine.UI.Button.onClick / WormholeWorld.OnHud(spawn)", () =>
+            new TestStep("click Spawn Wormhole", "UnityEngine.UI.Button.onClick / PocketWorlds.OnHud(spawn)", () =>
             {
                 NativeSession.RequireEphemeral();
                 return NativeGameplay.ClickHudRow("Spawn Wormhole");
             }),
-            new TestStep("wait for actual example topology", "WormholeWorld.SpawnCluster / owned poi handles", () =>
+            new TestStep("wait for actual example topology", "PocketWorlds.SpawnCluster / owned poi handles", () =>
             {
                 Capture(s);
                 if (!s.AllReady) return false;
@@ -78,13 +78,13 @@ internal static class WormholeWorldCase
                 AssertConnectionState(s);
                 return true;
             }),
-            new TestStep("click Log topology", "UnityEngine.UI.Button.onClick / WormholeWorld.OnHud(log)", () =>
+            new TestStep("click Log topology", "UnityEngine.UI.Button.onClick / PocketWorlds.OnHud(log)", () =>
                 NativeGameplay.ClickHudRow("Log topology")),
 
             // Real routed gameplay: each request enters the destination scene and waits for the API's
             // observed current location. No player/currentSystem field is assigned by the harness.
             TravelStep("travel X to Cluster Entry", s, () => s.EntryDoor!.SecondWormholePoiId!, () => s.Entry!.SystemId!, TravelMode.Wormhole, travelEvents),
-            new TestStep("refuse Delete Cluster while inside", "WormholeWorld.OnHud(delete) / CanRemove", () =>
+            new TestStep("refuse Delete Cluster while inside", "PocketWorlds.OnHud(delete) / CanRemove", () =>
             {
                 if (!NativeGameplay.ClickHudRow("Delete Cluster")) return false;
                 foreach (var id in s.NativePoiIds)
@@ -106,13 +106,13 @@ internal static class WormholeWorldCase
             TravelStep("return Entry to X", s, () => s.EntryDoor!.FirstWormholePoiId!, () => s.OriginSystem, TravelMode.Wormhole, travelEvents),
             TravelStep("leave entry rift at original POI", s, () => s.OriginPoi, () => s.OriginSystem, TravelMode.InSystem, travelEvents),
 
-            new TestStep("click Delete Cluster", "UnityEngine.UI.Button.onClick / WormholeWorld.OnHud(delete)", () =>
+            new TestStep("click Delete Cluster", "UnityEngine.UI.Button.onClick / PocketWorlds.OnHud(delete)", () =>
             {
                 NativeSession.RequireEphemeral();
                 if (ModApi.Services.Travel.CurrentLocation?.SystemId != s.OriginSystem) return false;
                 return NativeGameplay.ClickHudRow("Delete Cluster");
             }),
-            new TestStep("assert native and API cleanup", "WormholeWorld.DeleteCluster / GalaxyMapData.GetPointOfInterest", () =>
+            new TestStep("assert native and API cleanup", "PocketWorlds.DeleteCluster / GalaxyMapData.GetPointOfInterest", () =>
             {
                 if (!FieldsCleared(s.Plugin!)) return false;
                 foreach (var id in s.NativePoiIds)
@@ -123,6 +123,8 @@ internal static class WormholeWorldCase
                     if (pair.State.Status != ReconstructionStatus.Removed) throw new InvalidOperationException(pair.PoiKey + " was not removed.");
                 foreach (var site in s.Sites)
                     if (site.State.Status != ReconstructionStatus.Removed) throw new InvalidOperationException(site.PoiKey + " was not removed with its pocket.");
+                if (s.Guard != null && s.Guard.State.Status != ReconstructionStatus.Removed)
+                    throw new InvalidOperationException(s.Guard.PoiKey + " was not removed before its anchor pocket.");
                 if (lifecycleEvents.Any(e => e.Kind == LifecycleEventKind.SaveSucceeded))
                     throw new InvalidOperationException("An ephemeral player unexpectedly saved.");
                 NativeGameplay.Screenshot("cluster-deleted");
@@ -173,6 +175,7 @@ internal static class WormholeWorldCase
         s.SalvageHole ??= NativeGameplay.Field<IWormholePair>(p, "_salvageHole");
         s.MiningSite ??= NativeGameplay.Field<IResourceSite>(p, "_miningSite");
         s.SalvageSite ??= NativeGameplay.Field<IResourceSite>(p, "_salvageSite");
+        s.Guard ??= NativeGameplay.Field<ICombatSite>(p, "_guard");
         if (s.AllReady && s.NativePoiIds.Count == 0)
         {
             s.NativePoiIds.AddRange(s.Pockets.SelectMany(x => new[] { x.EntranceGatePoiId!, x.PocketGatePoiId! }));
@@ -238,6 +241,7 @@ internal static class WormholeWorldCase
         internal IPocketSystem? Entry, Hub, Anchor, Mining, Salvage;
         internal IWormholePair? EntryDoor, MiningHole, SalvageHole;
         internal IResourceSite? MiningSite, SalvageSite;
+        internal ICombatSite? Guard;
         internal readonly List<string> NativePoiIds = new();
         internal IPocketSystem[] Pockets => new[] { Entry!, Hub!, Anchor!, Mining!, Salvage! };
         internal IWormholePair[] Pairs => new[] { EntryDoor!, MiningHole!, SalvageHole! };
@@ -245,6 +249,7 @@ internal static class WormholeWorldCase
         internal bool AllReady => Pockets.All(p => p != null && p.State.Reconstructed && p.SystemId != null
                 && p.EntranceGatePoiId != null && p.PocketGatePoiId != null)
             && Pairs.All(p => p != null && p.State.Reconstructed && p.FirstWormholePoiId != null && p.SecondWormholePoiId != null)
-            && Sites.All(p => p != null && p.State.Reconstructed && p.PoiId != null);
+            && Sites.All(p => p != null && p.State.Reconstructed && p.PoiId != null)
+            && Guard != null && Guard.State.Reconstructed;
     }
 }

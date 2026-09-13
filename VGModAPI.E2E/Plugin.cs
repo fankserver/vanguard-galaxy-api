@@ -43,7 +43,7 @@ public sealed class Plugin : BaseUnityPlugin
             _caseId = requested switch
             {
                 FreshSessionCase.Id => FreshSessionCase.Id,
-                WormholeWorldCase.Id => WormholeWorldCase.Id,
+                PocketWorldsCase.Id => PocketWorldsCase.Id,
                 _ => throw new InvalidOperationException("Unknown E2E case: " + requested),
             };
             _wire = new WireSender(port);
@@ -62,7 +62,7 @@ public sealed class Plugin : BaseUnityPlugin
             _test = _caseId switch
             {
                 FreshSessionCase.Id => new GameTest(FreshSessionCase.Steps(_lifecycle, _events), remaining),
-                WormholeWorldCase.Id => new GameTest(WormholeWorldCase.Steps(_lifecycle, _events, _travelEvents), remaining),
+                PocketWorldsCase.Id => new GameTest(PocketWorldsCase.Steps(_lifecycle, _events, _travelEvents), remaining),
                 _ => throw new InvalidOperationException("Unhandled case: " + _caseId),
             };
             _clock.Start();

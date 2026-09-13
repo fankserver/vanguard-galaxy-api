@@ -18,7 +18,7 @@ internal static class NativeGameplay
     private static int _screenshot;
 
     internal static object? ExamplePlugin()
-        => Chainloader.PluginInfos.TryGetValue("vgmodapi.example.wormhole-world", out var info) ? info.Instance : null;
+        => Chainloader.PluginInfos.TryGetValue("vgmodapi.example.pocket-worlds", out var info) ? info.Instance : null;
 
     internal static T? Field<T>(object target, string name) where T : class
         => target.GetType().GetField(name, Any)?.GetValue(target) as T;
