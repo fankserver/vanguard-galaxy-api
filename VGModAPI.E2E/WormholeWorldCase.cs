@@ -4,263 +4,246 @@ using System.Linq;
 
 namespace VGModAPI.E2E;
 
-/// <summary>
-/// Mirrors examples/WormholeWorld/Plugin.cs end-to-end through the public API: the same static
-/// test names, placements, topology (X --wormhole--&gt; E --gates--&gt; A/B; A --wormholes--&gt; Mining
-/// / Salvage with a site in each off-world) and the same dependency-ordered full cleanup. It drives
-/// the same <see cref="IWorldProvider"/> surface the example uses, so a future game update that
-/// breaks pocket / wormhole / resource-site authoring, reconstruction, the wormhole-endpoint removal
-/// guard or the cleanup cascade is caught with the failing binding named. Native travel (flying the
-/// player through a rift/gate) and the HUD row-click are UI/UX the harness cannot automate and are
-/// intentionally out of scope; this test asserts the authored topology and removal safety instead.
-/// </summary>
+/// <summary>Gameplay E2E for the actual examples/WormholeWorld plugin. It clicks the rendered HUD,
+/// follows real TravelManager routes through every connection and site, then clicks deletion.</summary>
 internal static class WormholeWorldCase
 {
     internal const string Id = "wormhole-world";
 
-    // Mirrors examples/WormholeWorld/Plugin.cs constants.
-    private const string EntryName = "Cluster Entry";
-    private const string HubName = "Hub Alpha";
-    private const string AnchorName = "Anchor Beta";
-    private const string MiningWorldName = "Mining Instance";
-    private const string SalvageWorldName = "Salvage Instance";
-    private const string EntryDef = "cluster-entry";
-    private const string HubDef = "cluster-hub";
-    private const string AnchorDef = "cluster-anchor";
-    private const string MiningDef = "cluster-mining";
-    private const string SalvageDef = "cluster-salvage";
-    private const string EntryDoorDef = "cluster-door";
-    private const string MiningWormholeDef = "cluster-mining-hole";
-    private const string SalvageWormholeDef = "cluster-salvage-hole";
-    private const string MiningSiteDef = "cluster-mining-site";
-    private const string SalvageSiteDef = "cluster-salvage-site";
-    private const string ClusterSectorName = "Wormhole Cluster";
-    private const string SalvageSectorName = "Salvage Drift";
-
-    internal static IReadOnlyList<TestStep> Steps(ILifecycleService lifecycle, List<LifecycleEvent> events, object plugin)
+    internal static IReadOnlyList<TestStep> Steps(ILifecycleService lifecycle, List<LifecycleEvent> lifecycleEvents,
+        List<TravelTransition> travelEvents)
     {
-        var s = new WorldState();
+        var s = new State();
+        var sawOpeningDialogue = false;
         return new[]
         {
-            new TestStep("main menu", "Behaviour.UI.MainMenuUI.instance", NativeSession.MenuReady),
-            new TestStep("acquire world provider", "IWorldService.AcquireProvider (no session yet)", () =>
+            new TestStep("main menu and example load", "Chainloader.PluginInfos[vgmodapi.example.wormhole-world]", () =>
             {
-                var world = ModApi.Services.World;
-                if (!world.Availability.IsAvailable)
-                    throw new InvalidOperationException("World service unavailable: " + world.Availability.Reason);
-                s.World = world.AcquireProvider(plugin);
-                if (s.World == null) throw new InvalidOperationException("AcquireProvider returned null (must run at menu, before a session).");
-                return true;
+                if (!NativeSession.MenuReady()) return false;
+                s.Plugin = NativeGameplay.ExamplePlugin();
+                return s.Plugin != null;
             }),
-            new TestStep("register definitions", "IWorldProvider.RegisterPocketSystem / RegisterWormholePair / RegisterResourceSite", () =>
-            {
-                var w = s.World!;
-                WorldContentStatus[] chips = {
-                    w.RegisterPocketSystem(new PocketSystemDefinition(EntryDef, 1, EntryName, PocketSystemPlacement.OwnSector, null, ClusterSectorName, quiet: true)),
-                    w.RegisterPocketSystem(new PocketSystemDefinition(HubDef, 1, HubName, PocketSystemPlacement.Visible, null, null, quiet: true)),
-                    w.RegisterPocketSystem(new PocketSystemDefinition(AnchorDef, 1, AnchorName, PocketSystemPlacement.Visible, null, null, quiet: true)),
-                    w.RegisterPocketSystem(new PocketSystemDefinition(MiningDef, 1, MiningWorldName, PocketSystemPlacement.Visible, null, null, quiet: true)),
-                    w.RegisterPocketSystem(new PocketSystemDefinition(SalvageDef, 1, SalvageWorldName, PocketSystemPlacement.OffMap, null, SalvageSectorName, quiet: true)),
-                    w.RegisterWormholePair(new WormholePairDefinition(EntryDoorDef, 1, "Cluster Rift", quiet: true)),
-                    w.RegisterWormholePair(new WormholePairDefinition(MiningWormholeDef, 1, MiningWorldName + " Rift", quiet: true)),
-                    w.RegisterWormholePair(new WormholePairDefinition(SalvageWormholeDef, 1, SalvageWorldName + " Rift", quiet: true)),
-                    w.RegisterResourceSite(ResourceSiteDefinition.MiningField(MiningSiteDef, 1, MiningWorldName + " Field", 12, 8)),
-                    w.RegisterResourceSite(ResourceSiteDefinition.Salvage(SalvageSiteDef, 1, SalvageWorldName + " Wreck", 8, "Monsoon", "Fanatics", withStation: false, null, scatterAsteroids: false)),
-                };
-                var refused = chips.Select((c, i) => c != WorldContentStatus.Succeeded ? "def#" + i + "=" + c : null)
-                    .Where(s2 => s2 != null).Cast<string>().ToArray();
-                if (refused.Length > 0) throw new InvalidOperationException("Registration refused: " + string.Join("; ", refused));
-                return true;
-            }),
-            new TestStep("create ephemeral player", "GamePlayer.CreateNewGamePlayer / GameManager.StartNewGame", () =>
+            new TestStep("open normal New Game", "MainMenuUI.StartGame", () =>
             {
                 var availability = lifecycle.SessionTracking.Availability;
                 if (!availability.IsAvailable)
                     throw new InvalidOperationException("SessionTracking: " + availability.Reason + ": " + availability.Detail);
-                NativeSession.Create();
+                NativeSession.OpenNewGameWizard();
                 return true;
             }),
-            new TestStep("initialize gameplay", "GameplayManager.Start / lifecycle SessionTracking", () =>
+            new TestStep("complete normal New Game", "NewGame.SubmitInput / SaveInputs / GameManager.StartNewGame",
+                NativeSession.AdvanceNewGameWizard),
+            new TestStep("initialize normal gameplay", "GameplayManager.Start / lifecycle SessionTracking", () =>
             {
                 NativeSession.RequireEphemeral();
-                return NativeSession.Initialized() && lifecycle.CurrentSession?.Phase == SessionPhase.GameplayInitialized;
+                if (!NativeSession.Initialized() || lifecycle.CurrentSession?.Phase != SessionPhase.GameplayInitialized) return false;
+                NativeGameplay.Screenshot("normal-gameplay-start");
+                return true;
             }),
-            new TestStep("anchor at current system", "ITravelService.CurrentLocation", () =>
+            new TestStep("finish opening dialogue", "DialogueManager.IsDialogueOpen / NextOrFinish", () =>
             {
-                NativeSession.RequireEphemeral();
+                if (!sawOpeningDialogue)
+                {
+                    if (!NativeGameplay.DialogueOpen()) return false;
+                    sawOpeningDialogue = true;
+                }
+                if (!NativeGameplay.DialogueOpen()) return true;
+                NativeGameplay.AdvanceDialogue();
+                return false;
+            }),
+            new TestStep("observe initial placement and HUD", "ITravelService.CurrentLocation / Mod API shared HUD", () =>
+            {
                 var location = ModApi.Services.Travel.CurrentLocation;
-                if (location == null || string.IsNullOrEmpty(location.SystemId)) return false; // player not placed yet
-                s.Anchor = location.SystemId;
+                if (location?.PoiId == null) return false;
+                s.OriginSystem = location.SystemId;
+                s.OriginPoi = location.PoiId;
+                NativeGameplay.Screenshot("initial-placement");
                 return true;
             }),
-            new TestStep("create entry pocket", "IWorldProvider.CreatePocketSystem", () =>
+            new TestStep("click Spawn Wormhole", "UnityEngine.UI.Button.onClick / WormholeWorld.OnHud(spawn)", () =>
             {
-                s.Entry ??= s.World!.CreatePocketSystem(EntryDef, "cluster", s.Anchor);
-                return Ready(s.Entry);
+                NativeSession.RequireEphemeral();
+                return NativeGameplay.ClickHudRow("Spawn Wormhole");
             }),
-            new TestStep("link entry door", "IWorldProvider.CreateWormholePair", () =>
+            new TestStep("wait for actual example topology", "WormholeWorld.SpawnCluster / owned poi handles", () =>
             {
-                s.EntryDoor ??= s.World!.CreateWormholePair(EntryDoorDef, "cluster-door", s.Anchor, SystemOf(s.Entry));
-                return Ready(s.EntryDoor);
-            }),
-            new TestStep("create hub pocket", "CreatePocketSystem", () =>
-            {
-                s.Hub ??= s.World!.CreatePocketSystem(HubDef, "hub", SystemOf(s.Entry));
-                return Ready(s.Hub);
-            }),
-            new TestStep("create anchor pocket", "CreatePocketSystem", () =>
-            {
-                s.AnchorSystem ??= s.World!.CreatePocketSystem(AnchorDef, "anchor", SystemOf(s.Entry));
-                return Ready(s.AnchorSystem);
-            }),
-            new TestStep("create mining pocket", "CreatePocketSystem", () =>
-            {
-                s.Mining ??= s.World!.CreatePocketSystem(MiningDef, "mining", SystemOf(s.Hub));
-                return Ready(s.Mining);
-            }),
-            new TestStep("link mining hole", "CreateWormholePair", () =>
-            {
-                s.MiningHole ??= s.World!.CreateWormholePair(MiningWormholeDef, "mining-hole", SystemOf(s.Hub), SystemOf(s.Mining));
-                return Ready(s.MiningHole);
-            }),
-            new TestStep("create mining site", "CreateResourceSite", () =>
-            {
-                s.MiningSite ??= s.World!.CreateResourceSite(MiningSiteDef, "mining-site", SystemOf(s.Mining), 0f, 0f);
-                return Ready(s.MiningSite);
-            }),
-            new TestStep("create salvage pocket", "CreatePocketSystem", () =>
-            {
-                s.Salvage ??= s.World!.CreatePocketSystem(SalvageDef, "salvage", SystemOf(s.Hub));
-                return Ready(s.Salvage);
-            }),
-            new TestStep("link salvage hole", "CreateWormholePair", () =>
-            {
-                s.SalvageHole ??= s.World!.CreateWormholePair(SalvageWormholeDef, "salvage-hole", SystemOf(s.Hub), SystemOf(s.Salvage));
-                return Ready(s.SalvageHole);
-            }),
-            new TestStep("create salvage site", "CreateResourceSite", () =>
-            {
-                s.SalvageSite ??= s.World!.CreateResourceSite(SalvageSiteDef, "salvage-site", SystemOf(s.Salvage), 0f, 0f);
-                return Ready(s.SalvageSite);
-            }),
-            new TestStep("open gates and rifts", "IWormholePair.SetOpen / IPocketSystem.SetEntranceOpen", () =>
-            {
-                if (!OpenPair(s.EntryDoor) || !OpenPair(s.MiningHole) || !OpenPair(s.SalvageHole)) return false;
-                if (!OpenPocketGate(s.Hub) || !OpenPocketGate(s.AnchorSystem)) return false;
+                Capture(s);
+                if (!s.AllReady) return false;
+                AssertTopology(s);
+                NativeGameplay.Screenshot("cluster-authored");
                 return true;
             }),
-            new TestStep("assert authored topology", "Pocket/Wormhole/Site reconstruction + wiring", () =>
+            new TestStep("verify sealed and open connections", "JumpGate.canUseJumpGate / hidden / Wormhole.canUseWormhole", () =>
             {
-                var w = s.World!;
-                AssertName(s.Entry, EntryName, "entry");
-                AssertName(s.Hub, HubName, "hub");
-                AssertName(s.AnchorSystem, AnchorName, "anchor");
-                AssertName(s.Mining, MiningWorldName, "mining");
-                AssertName(s.Salvage, SalvageWorldName, "salvage");
-                if (!Ready(s.EntryDoor) || !Ready(s.MiningHole) || !Ready(s.SalvageHole))
-                    throw new InvalidOperationException("A wormhole pair failed to reconstruct.");
-                if (!Ready(s.MiningSite) || !Ready(s.SalvageSite))
-                    throw new InvalidOperationException("A resource site failed to reconstruct.");
-                foreach (var def in new[] { EntryDef, HubDef, AnchorDef, MiningDef, SalvageDef })
-                    if (w.GetPocketSystems(def).Count != 1) throw new InvalidOperationException("Pocket count for " + def + " != 1.");
-                foreach (var def in new[] { EntryDoorDef, MiningWormholeDef, SalvageWormholeDef })
-                    if (w.GetWormholePairs(def).Count != 1) throw new InvalidOperationException("Wormhole count for " + def + " != 1.");
-                foreach (var def in new[] { MiningSiteDef, SalvageSiteDef })
-                    if (w.GetResourceSites(def).Count != 1) throw new InvalidOperationException("Site count for " + def + " != 1.");
-                if (ModApi.Services.Travel.CurrentLocation?.SystemId != s.Anchor)
-                    throw new InvalidOperationException("Player unexpectedly left the anchor system.");
+                AssertConnectionState(s);
                 return true;
             }),
-            new TestStep("wormhole-endpoint removal guard", "IPocketSystem.CanRemove / RemovalStatus.WormholeEndpoint", () =>
+            new TestStep("click Log topology", "UnityEngine.UI.Button.onClick / WormholeWorld.OnHud(log)", () =>
+                NativeGameplay.ClickHudRow("Log topology")),
+
+            // Real routed gameplay: each request enters the destination scene and waits for the API's
+            // observed current location. No player/currentSystem field is assigned by the harness.
+            TravelStep("travel X to Cluster Entry", s, () => s.EntryDoor!.SecondWormholePoiId!, () => s.Entry!.SystemId!, TravelMode.Wormhole, travelEvents),
+            new TestStep("refuse Delete Cluster while inside", "WormholeWorld.OnHud(delete) / CanRemove", () =>
             {
-                foreach (var (label, p) in new[] { ("mining", s.Mining), ("hub", s.Hub), ("entry", s.Entry) })
-                    if (p!.CanRemove() != RemovalStatus.WormholeEndpoint)
-                        throw new InvalidOperationException(label + " CanRemove was not WormholeEndpoint while a pair uses it.");
+                if (!NativeGameplay.ClickHudRow("Delete Cluster")) return false;
+                foreach (var id in s.NativePoiIds)
+                    if (NativeGameplay.Poi(id) == null) throw new InvalidOperationException("Delete Cluster partially removed content while the player was inside: " + id);
+                if (FieldsCleared(s.Plugin!)) throw new InvalidOperationException("Delete Cluster claimed success while the player was inside.");
+                NativeGameplay.Screenshot("delete-refused-inside-cluster");
                 return true;
             }),
-            new TestStep("cleanup wormhole pairs", "IWormholePair.Remove (pairs first)", () =>
+            TravelStep("travel Entry to Hub Alpha", s, () => s.Hub!.PocketGatePoiId!, () => s.Hub!.SystemId!, TravelMode.JumpGate, travelEvents),
+            TravelStep("travel Hub to Mining Instance", s, () => s.MiningHole!.SecondWormholePoiId!, () => s.Mining!.SystemId!, TravelMode.Wormhole, travelEvents),
+            TravelStep("visit mining field", s, () => s.MiningSite!.PoiId!, () => s.Mining!.SystemId!, TravelMode.InSystem, travelEvents),
+            TravelStep("return Mining to Hub", s, () => s.MiningHole!.FirstWormholePoiId!, () => s.Hub!.SystemId!, TravelMode.Wormhole, travelEvents),
+            TravelStep("travel Hub to Salvage Instance", s, () => s.SalvageHole!.SecondWormholePoiId!, () => s.Salvage!.SystemId!, TravelMode.Wormhole, travelEvents),
+            TravelStep("visit salvage wreck", s, () => s.SalvageSite!.PoiId!, () => s.Salvage!.SystemId!, TravelMode.InSystem, travelEvents),
+            TravelStep("return Salvage to Hub", s, () => s.SalvageHole!.FirstWormholePoiId!, () => s.Hub!.SystemId!, TravelMode.Wormhole, travelEvents),
+            TravelStep("return Hub to Entry", s, () => s.Hub!.EntranceGatePoiId!, () => s.Entry!.SystemId!, TravelMode.JumpGate, travelEvents),
+            TravelStep("travel Entry to Anchor Beta", s, () => s.Anchor!.PocketGatePoiId!, () => s.Anchor!.SystemId!, TravelMode.JumpGate, travelEvents),
+            TravelStep("return Anchor to Entry", s, () => s.Anchor!.EntranceGatePoiId!, () => s.Entry!.SystemId!, TravelMode.JumpGate, travelEvents),
+            TravelStep("return Entry to X", s, () => s.EntryDoor!.FirstWormholePoiId!, () => s.OriginSystem, TravelMode.Wormhole, travelEvents),
+            TravelStep("leave entry rift at original POI", s, () => s.OriginPoi, () => s.OriginSystem, TravelMode.InSystem, travelEvents),
+
+            new TestStep("click Delete Cluster", "UnityEngine.UI.Button.onClick / WormholeWorld.OnHud(delete)", () =>
             {
-                RemovePair(s.MiningHole, "mining-hole"); s.MiningHole = null;
-                RemovePair(s.SalvageHole, "salvage-hole"); s.SalvageHole = null;
-                RemovePair(s.EntryDoor, "cluster-door"); s.EntryDoor = null;
-                return true;
+                NativeSession.RequireEphemeral();
+                if (ModApi.Services.Travel.CurrentLocation?.SystemId != s.OriginSystem) return false;
+                return NativeGameplay.ClickHudRow("Delete Cluster");
             }),
-            new TestStep("cleanup pockets", "IPocketSystem.Remove (sites go with pocket)", () =>
+            new TestStep("assert native and API cleanup", "WormholeWorld.DeleteCluster / GalaxyMapData.GetPointOfInterest", () =>
             {
-                RemovePocket(s.Mining, "mining"); s.Mining = null; s.MiningSite = null;
-                RemovePocket(s.Salvage, "salvage"); s.Salvage = null; s.SalvageSite = null;
-                RemovePocket(s.Hub, "hub"); s.Hub = null;
-                RemovePocket(s.AnchorSystem, "anchor"); s.AnchorSystem = null;
-                RemovePocket(s.Entry, "entry"); s.Entry = null;
-                return true;
-            }),
-            new TestStep("assert cluster fully gone", "GetPocketSystems / GetWormholePairs / GetResourceSites", () =>
-            {
-                var w = s.World!;
-                foreach (var def in new[] { EntryDef, HubDef, AnchorDef, MiningDef, SalvageDef })
-                    if (w.GetPocketSystems(def).Count != 0) throw new InvalidOperationException("Pocket " + def + " still present after cleanup.");
-                foreach (var def in new[] { EntryDoorDef, MiningWormholeDef, SalvageWormholeDef })
-                    if (w.GetWormholePairs(def).Count != 0) throw new InvalidOperationException("Wormhole " + def + " still present after cleanup.");
-                foreach (var def in new[] { MiningSiteDef, SalvageSiteDef })
-                    if (w.GetResourceSites(def).Count != 0) throw new InvalidOperationException("Site " + def + " still present after cleanup.");
-                if (ModApi.Services.Travel.CurrentLocation?.SystemId != s.Anchor)
-                    throw new InvalidOperationException("Cleanup moved the player away from the anchor system.");
-                if (events.Any(e => e.Kind == LifecycleEventKind.SaveSucceeded))
+                if (!FieldsCleared(s.Plugin!)) return false;
+                foreach (var id in s.NativePoiIds)
+                    if (NativeGameplay.Poi(id) != null) throw new InvalidOperationException("Native POI still exists after Delete Cluster: " + id);
+                foreach (var pocket in s.Pockets)
+                    if (pocket.State.Status != ReconstructionStatus.Removed) throw new InvalidOperationException(pocket.PoiKey + " was not removed.");
+                foreach (var pair in s.Pairs)
+                    if (pair.State.Status != ReconstructionStatus.Removed) throw new InvalidOperationException(pair.PoiKey + " was not removed.");
+                foreach (var site in s.Sites)
+                    if (site.State.Status != ReconstructionStatus.Removed) throw new InvalidOperationException(site.PoiKey + " was not removed with its pocket.");
+                if (lifecycleEvents.Any(e => e.Kind == LifecycleEventKind.SaveSucceeded))
                     throw new InvalidOperationException("An ephemeral player unexpectedly saved.");
+                NativeGameplay.Screenshot("cluster-deleted");
                 return true;
             }),
         };
     }
 
-    private sealed class WorldState
+    private static TestStep TravelStep(string name, State s, Func<string> poi, Func<string> system,
+        TravelMode mode, List<TravelTransition> events)
     {
-        internal IWorldProvider? World;
-        internal string Anchor = "";
-        internal IPocketSystem? Entry;
-        internal IPocketSystem? Hub;
-        internal IPocketSystem? AnchorSystem;
-        internal IPocketSystem? Mining;
-        internal IPocketSystem? Salvage;
-        internal IWormholePair? EntryDoor;
-        internal IWormholePair? MiningHole;
-        internal IWormholePair? SalvageHole;
-        internal IResourceSite? MiningSite;
-        internal IResourceSite? SalvageSite;
+        var requested = false;
+        var firstSequence = 0L;
+        return new TestStep(name, "TravelManager.SetRouteToPOI / ITravelService.Transitioned", () =>
+        {
+            NativeSession.RequireEphemeral();
+            var targetPoi = poi();
+            var targetSystem = system();
+            if (!requested)
+            {
+                firstSequence = events.Count == 0 ? 0 : events.Max(e => e.Sequence);
+                if (!NativeGameplay.RouteTo(targetPoi)) throw new InvalidOperationException("SetRouteToPOI refused " + targetPoi + ".");
+                requested = true;
+            }
+            var current = ModApi.Services.Travel.CurrentLocation;
+            if (current?.SystemId != targetSystem || current.PoiId != targetPoi) return false;
+            var leg = events.Where(e => e.Sequence > firstSequence).ToArray();
+            if (!leg.Any(e => e.Kind == TravelTransitionKind.Arrived && e.Mode == mode
+                && e.ActualLocation?.SystemId == targetSystem && e.ActualLocation.PoiId == targetPoi))
+                return false;
+            if (!leg.Any(e => e.Kind == TravelTransitionKind.RouteCompleted && e.Mode == mode)) return false;
+            NativeGameplay.Screenshot(name);
+            return true;
+        });
     }
 
-    private static bool Ready(IPocketSystem? p) => p != null && p.State.Reconstructed && p.SystemId != null;
-    private static bool Ready(IWormholePair? w) => w != null && w.State.Reconstructed
-        && w.FirstWormholePoiId != null && w.SecondWormholePoiId != null;
-    private static bool Ready(IResourceSite? r) => r != null && r.State.Reconstructed && r.PoiId != null;
-
-    private static string SystemOf(IPocketSystem? p)
-        => Ready(p) ? p!.SystemId! : throw new InvalidOperationException("Dependency pocket is not reconstructed yet.");
-
-    private static void AssertName(IPocketSystem? p, string expected, string label)
+    private static void Capture(State s)
     {
-        if (!Ready(p)) throw new InvalidOperationException(label + " pocket is not reconstructed.");
-        if (!string.Equals(p!.Definition.Name, expected, StringComparison.Ordinal))
-            throw new InvalidOperationException(label + " pocket name '" + p.Definition.Name + "' != '" + expected + "'.");
+        var p = s.Plugin!;
+        s.Entry ??= NativeGameplay.Field<IPocketSystem>(p, "_entry");
+        s.Hub ??= NativeGameplay.Field<IPocketSystem>(p, "_hub");
+        s.Anchor ??= NativeGameplay.Field<IPocketSystem>(p, "_anchor");
+        s.Mining ??= NativeGameplay.Field<IPocketSystem>(p, "_mining");
+        s.Salvage ??= NativeGameplay.Field<IPocketSystem>(p, "_salvage");
+        s.EntryDoor ??= NativeGameplay.Field<IWormholePair>(p, "_entryDoor");
+        s.MiningHole ??= NativeGameplay.Field<IWormholePair>(p, "_miningHole");
+        s.SalvageHole ??= NativeGameplay.Field<IWormholePair>(p, "_salvageHole");
+        s.MiningSite ??= NativeGameplay.Field<IResourceSite>(p, "_miningSite");
+        s.SalvageSite ??= NativeGameplay.Field<IResourceSite>(p, "_salvageSite");
+        if (s.AllReady && s.NativePoiIds.Count == 0)
+        {
+            s.NativePoiIds.AddRange(s.Pockets.SelectMany(x => new[] { x.EntranceGatePoiId!, x.PocketGatePoiId! }));
+            s.NativePoiIds.AddRange(s.Pairs.SelectMany(x => new[] { x.FirstWormholePoiId!, x.SecondWormholePoiId! }));
+            s.NativePoiIds.AddRange(s.Sites.Select(x => x.PoiId!));
+        }
     }
 
-    // Gate/rift opening may transiently be NotReady while reconstruction completes; retry via `false`
-    // instead of failing, so a durable refusal surfaces only through the deadline.
-    private static bool OpenPair(IWormholePair? pair) => pair != null && Ready(pair) && pair.SetOpen(true).Succeeded;
-    private static bool OpenPocketGate(IPocketSystem? p) => p != null && Ready(p) && p.SetEntranceOpen(true).Succeeded;
-
-    private static void RemovePair(IWormholePair? pair, string label)
+    private static void AssertTopology(State s)
     {
-        if (pair == null) return;
-        var result = pair.Remove();
-        if (!result.Succeeded) throw new InvalidOperationException("wormhole " + label + " remove: " + result.Status + " - " + result.Detail);
-        if (pair.State.Status != ReconstructionStatus.Removed) throw new InvalidOperationException("wormhole " + label + " not terminal after Remove.");
+        var expected = new[] { "Cluster Entry", "Hub Alpha", "Anchor Beta", "Mining Instance", "Salvage Instance" };
+        if (!s.Pockets.Select(p => p.Definition.Name).SequenceEqual(expected))
+            throw new InvalidOperationException("Actual example pocket names/topology differ from the documented topology.");
+        AssertPair(s.EntryDoor!, s.OriginSystem, s.Entry!.SystemId!);
+        AssertPair(s.MiningHole!, s.Hub!.SystemId!, s.Mining!.SystemId!);
+        AssertPair(s.SalvageHole!, s.Hub.SystemId!, s.Salvage!.SystemId!);
+        if (NativeGameplay.SystemId(NativeGameplay.Poi(s.MiningSite!.PoiId!)!) != s.Mining.SystemId
+            || NativeGameplay.SystemId(NativeGameplay.Poi(s.SalvageSite!.PoiId!)!) != s.Salvage.SystemId)
+            throw new InvalidOperationException("A resource site was authored in the wrong system.");
     }
 
-    private static void RemovePocket(IPocketSystem? pocket, string label)
+    private static void AssertPair(IWormholePair pair, string firstSystem, string secondSystem)
     {
-        if (pocket == null) return;
-        var result = pocket.Remove();
-        if (!result.Succeeded) throw new InvalidOperationException("pocket " + label + " remove: " + result.Status + " - " + result.Detail);
-        if (pocket.State.Status != ReconstructionStatus.Removed) throw new InvalidOperationException("pocket " + label + " not terminal after Remove.");
+        var first = NativeGameplay.Poi(pair.FirstWormholePoiId!)!;
+        var second = NativeGameplay.Poi(pair.SecondWormholePoiId!)!;
+        if (NativeGameplay.SystemId(first) != firstSystem || NativeGameplay.SystemId(second) != secondSystem)
+            throw new InvalidOperationException(pair.PoiKey + " endpoints lead to the wrong systems.");
+        if (NativeGameplay.StringListCount(first, "targetWormholeGuids") != 1
+            || NativeGameplay.StringListCount(second, "targetWormholeGuids") != 1)
+            throw new InvalidOperationException(pair.PoiKey + " is not an exact one-to-one wormhole pair.");
+    }
+
+    private static void AssertConnectionState(State s)
+    {
+        // Entry's ordinary anchor gate is deliberately sealed+hidden; the wormhole is the only door.
+        foreach (var id in new[] { s.Entry!.EntranceGatePoiId!, s.Entry.PocketGatePoiId! })
+        {
+            var gate = NativeGameplay.Poi(id)!;
+            if (!NativeGameplay.Bool(gate, "hidden") || NativeGameplay.Bool(gate, "canUseJumpGate"))
+                throw new InvalidOperationException("Entry anchor gate is not sealed and hidden: " + id);
+        }
+        foreach (var id in new[] { s.Hub!.EntranceGatePoiId!, s.Hub.PocketGatePoiId!, s.Anchor!.EntranceGatePoiId!, s.Anchor.PocketGatePoiId! })
+        {
+            var gate = NativeGameplay.Poi(id)!;
+            if (NativeGameplay.Bool(gate, "hidden") || !NativeGameplay.Bool(gate, "canUseJumpGate"))
+                throw new InvalidOperationException("Deliberate cluster gate is not open and visible: " + id);
+        }
+        foreach (var pair in s.Pairs)
+            foreach (var id in new[] { pair.FirstWormholePoiId!, pair.SecondWormholePoiId! })
+                if (!NativeGameplay.Bool(NativeGameplay.Poi(id)!, "canUseWormhole"))
+                    throw new InvalidOperationException("Wormhole is not open/usable: " + id);
+    }
+
+    private static bool FieldsCleared(object plugin) => new[] { "_entry", "_hub", "_anchor", "_mining", "_salvage",
+        "_entryDoor", "_miningHole", "_salvageHole", "_miningSite", "_salvageSite" }
+        .All(name => plugin.GetType().GetField(name, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)?.GetValue(plugin) == null);
+
+    private sealed class State
+    {
+        internal object? Plugin;
+        internal string OriginSystem = "";
+        internal string OriginPoi = "";
+        internal IPocketSystem? Entry, Hub, Anchor, Mining, Salvage;
+        internal IWormholePair? EntryDoor, MiningHole, SalvageHole;
+        internal IResourceSite? MiningSite, SalvageSite;
+        internal readonly List<string> NativePoiIds = new();
+        internal IPocketSystem[] Pockets => new[] { Entry!, Hub!, Anchor!, Mining!, Salvage! };
+        internal IWormholePair[] Pairs => new[] { EntryDoor!, MiningHole!, SalvageHole! };
+        internal IResourceSite[] Sites => new[] { MiningSite!, SalvageSite! };
+        internal bool AllReady => Pockets.All(p => p != null && p.State.Reconstructed && p.SystemId != null
+                && p.EntranceGatePoiId != null && p.PocketGatePoiId != null)
+            && Pairs.All(p => p != null && p.State.Reconstructed && p.FirstWormholePoiId != null && p.SecondWormholePoiId != null)
+            && Sites.All(p => p != null && p.State.Reconstructed && p.PoiId != null);
     }
 }

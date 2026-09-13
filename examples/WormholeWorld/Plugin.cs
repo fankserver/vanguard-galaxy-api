@@ -82,7 +82,7 @@ public sealed class Plugin : BaseUnityPlugin
 
         // Register immutable definitions (pre-session; registering never creates native objects).
         // The cluster lives in its OWN subsector, built by combining placements:
-        //   * Entry (E) is OffMap  -> it creates a fresh, remote subsector: the cluster.
+        //   * Entry (E) is OwnSector -> it creates a fresh, visible subsector: the cluster.
         //   * Hub (A), Anchor (B) and Mining are Visible anchored to a cluster system, and Visible
         //     places a pocket in its ANCHOR's own subsector -> they land inside E's subsector, not yours.
         //   * Salvage is OffMap -> its own separate subsector outside the cluster.
@@ -113,6 +113,7 @@ public sealed class Plugin : BaseUnityPlugin
     private void RefreshPanel()
     {
         if (_hud == null) return;
+        bool hasContent = HasClusterContent();
         string current = _travel?.CurrentLocation?.SystemName is { Length: > 0 } sys ? sys
             : _travel?.CurrentLocation?.SystemId ?? "nowhere";
 
@@ -120,18 +121,18 @@ public sealed class Plugin : BaseUnityPlugin
             new[]
             {
                 new HudRow("location", "You are at " + current + ".", "The cluster is a wormhole-only place reached from here."),
-                new HudRow("spawn", _entryDoor != null ? "Cluster ready" : "Spawn Wormhole",
+                new HudRow("spawn", hasContent ? "Cluster ready" : "Spawn Wormhole",
                     "open a wormhole into a 3-system authored cluster",
                     "Creates Cluster Entry (E) anchored to this system, then Hub Alpha (A) and Anchor Beta (B) "
                     + "linked to E by gates. A holds two wormholes into themed off-world instances (mining, salvage). "
                     + "Everything you spawn is removable later.",
-                    clickable: _entryDoor == null),
-                new HudRow("delete", _entryDoor == null ? "spawn first" : "Delete Cluster",
+                    clickable: !hasContent),
+                new HudRow("delete", !hasContent ? "spawn first" : "Delete Cluster",
                     "remove the entry wormhole, then every authored system, gate, wormhole and site",
                     "Full cleanup: removes the wormhole pairs first (their endpoints must be freed), then each "
                     + "pocket (its gate and any site POIs go with it). Moving into any part of the cluster first "
                     + "would refuse deletion until you leave.",
-                    clickable: _entryDoor != null),
+                    clickable: hasContent),
                 new HudRow("log", _entryDoor == null ? "spawn first" : "Log topology",
                     "write what each spawned system contains and how it is connected, to the log file",
                     "Prints one line per spawned system: the gates and wormholes it holds (with their far "
@@ -141,6 +142,11 @@ public sealed class Plugin : BaseUnityPlugin
             },
             closable: false));
     }
+
+    private bool HasClusterContent()
+        => _entry != null || _hub != null || _anchor != null || _mining != null || _salvage != null
+            || _entryDoor != null || _miningHole != null || _salvageHole != null
+            || _miningSite != null || _salvageSite != null;
 
     private string StatusLine()
     {
@@ -281,7 +287,8 @@ public sealed class Plugin : BaseUnityPlugin
     /// wormhole endpoint cannot remove), then each pocket — its gate and site POIs go with it.</summary>
     private void DeleteCluster()
     {
-        if (_world == null || _entryDoor == null) return;
+        if (_world == null || !HasClusterContent()) return;
+        if (!CanDeleteCluster()) return;
 
         // Wormholes first: freeing the pair releases all pocket endpoints that used them. A refused
         // remove (e.g. the player is at a wormhole) leaves the poi in place, so keep the handle
@@ -290,15 +297,40 @@ public sealed class Plugin : BaseUnityPlugin
         if (!RemoveWormhole(_salvageHole)) return;  _salvageHole = null;
         if (!RemoveWormhole(_entryDoor)) return;    _entryDoor = null;
 
-        // Off-world pockets (their site rows drop with the pocket).
-        RemovePocket(_mining); _mining = null; _miningSite = null;
-        RemovePocket(_salvage); _salvage = null; _salvageSite = null;
+        // Off-world pockets (their site rows drop with the pocket). Keep every handle whose
+        // removal is unexpectedly refused so the HUD continues to reflect native state.
+        if (!RemovePocket(_mining)) return;  _mining = null; _miningSite = null;
+        if (!RemovePocket(_salvage)) return; _salvage = null; _salvageSite = null;
         // The branch systems, then the entry.
-        RemovePocket(_hub); _hub = null;
-        RemovePocket(_anchor); _anchor = null;
-        RemovePocket(_entry); _entry = null;
+        if (!RemovePocket(_hub)) return;    _hub = null;
+        if (!RemovePocket(_anchor)) return; _anchor = null;
+        if (!RemovePocket(_entry)) return;  _entry = null;
 
         Logger.LogInfo("Wormhole World deleted: every authored system, gate, wormhole and site is gone.");
+    }
+
+    /// <summary>Preflight every transient player-safety condition before the first mutation, so a
+    /// refused delete cannot leave a half-torn cluster. Pockets may still report WormholeEndpoint at
+    /// this stage because the pairs are deliberately removed first.</summary>
+    private bool CanDeleteCluster()
+    {
+        foreach (var pair in new[] { _miningHole, _salvageHole, _entryDoor })
+        {
+            if (pair == null) continue;
+            var status = pair.CanRemove();
+            if (status == RemovalStatus.Ready) continue;
+            Logger.LogWarning("Delete Cluster refused: wormhole " + pair.PoiKey + " is " + status + ".");
+            return false;
+        }
+        foreach (var pocket in new[] { _mining, _salvage, _hub, _anchor, _entry })
+        {
+            if (pocket == null) continue;
+            var status = pocket.CanRemove();
+            if (status is RemovalStatus.Ready or RemovalStatus.WormholeEndpoint) continue;
+            Logger.LogWarning("Delete Cluster refused: pocket " + pocket.PoiKey + " is " + status + ".");
+            return false;
+        }
+        return true;
     }
 
     /// <summary>Removes a wormhole pair; returns true only when it actually went away. On refusal the
@@ -311,11 +343,12 @@ public sealed class Plugin : BaseUnityPlugin
         return result.Succeeded;
     }
 
-    private void RemovePocket(IPocketSystem? p)
+    private bool RemovePocket(IPocketSystem? p)
     {
-        if (p == null) return;
+        if (p == null) return true;
         var result = p.Remove();
         if (!result.Succeeded) Logger.LogWarning("Pocket remove: " + result.Status + " - " + result.Detail);
+        return result.Succeeded;
     }
 
     private void OnDestroy()

@@ -17,7 +17,9 @@ public sealed class Plugin : BaseUnityPlugin
 {
     private readonly Stopwatch _clock = new();
     private readonly List<LifecycleEvent> _events = new();
+    private readonly List<TravelTransition> _travelEvents = new();
     private ILifecycleService? _lifecycle;
+    private ITravelService? _travel;
     private WireSender? _wire;
     private GameTest? _test;
     private string _caseId = "";
@@ -53,12 +55,14 @@ public sealed class Plugin : BaseUnityPlugin
                 gameAssemblySha256 = BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "").ToLowerInvariant() });
             _lifecycle = ModApi.Services.Lifecycle;
             _lifecycle.Changed += OnLifecycle;
+            _travel = ModApi.Services.Travel;
+            _travel.Transitioned += OnTravel;
             // Charge player startup against the controller's budget, then use a monotonic clock.
             var remaining = (deadline - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()) / 1000.0;
             _test = _caseId switch
             {
                 FreshSessionCase.Id => new GameTest(FreshSessionCase.Steps(_lifecycle, _events), remaining),
-                WormholeWorldCase.Id => new GameTest(WormholeWorldCase.Steps(_lifecycle, _events, this), remaining),
+                WormholeWorldCase.Id => new GameTest(WormholeWorldCase.Steps(_lifecycle, _events, _travelEvents), remaining),
                 _ => throw new InvalidOperationException("Unhandled case: " + _caseId),
             };
             _clock.Start();
@@ -71,6 +75,7 @@ public sealed class Plugin : BaseUnityPlugin
     }
 
     private void OnLifecycle(LifecycleEvent value) => _events.Add(value);
+    private void OnTravel(TravelTransition value) => _travelEvents.Add(value);
 
     private void Update()
     {
@@ -100,6 +105,7 @@ public sealed class Plugin : BaseUnityPlugin
     private void Release()
     {
         if (_lifecycle != null) { _lifecycle.Changed -= OnLifecycle; _lifecycle = null; }
+        if (_travel != null) { _travel.Transitioned -= OnTravel; _travel = null; }
         try { _wire?.Dispose(); } catch (Exception ex) { Logger.LogWarning(ex.Message); }
         _wire = null;
     }

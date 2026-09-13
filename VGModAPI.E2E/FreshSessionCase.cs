@@ -11,14 +11,16 @@ internal static class FreshSessionCase
     internal static IReadOnlyList<TestStep> Steps(ILifecycleService lifecycle, List<LifecycleEvent> events) => new[]
     {
         new TestStep("main menu", "Behaviour.UI.MainMenuUI.instance", NativeSession.MenuReady),
-        new TestStep("create ephemeral player", "GamePlayer.CreateNewGamePlayer / GameManager.StartNewGame", () =>
+        new TestStep("open normal New Game", "MainMenuUI.StartGame", () =>
         {
             var availability = lifecycle.SessionTracking.Availability;
             if (!availability.IsAvailable)
                 throw new InvalidOperationException("SessionTracking: " + availability.Reason + ": " + availability.Detail);
-            NativeSession.Create();
+            NativeSession.OpenNewGameWizard();
             return true;
         }),
+        new TestStep("complete normal New Game", "NewGame.SubmitInput / SaveInputs / GameManager.StartNewGame",
+            NativeSession.AdvanceNewGameWizard),
         new TestStep("initialize gameplay", "GameplayManager.Start / lifecycle SessionTracking", () =>
         {
             NativeSession.RequireEphemeral();
@@ -27,7 +29,7 @@ internal static class FreshSessionCase
             if (failure != null) throw new InvalidOperationException(failure.Kind + ": " + failure.Detail);
             return NativeSession.Initialized() && lifecycle.CurrentSession?.Phase == SessionPhase.GameplayInitialized;
         }),
-        new TestStep("assert new-game lifecycle", "CreateNewGamePlayer / LoadScenesOnStartGame / GameplayManager.Start", () =>
+        new TestStep("assert new-game lifecycle", "NewGame.SaveInputs / LoadScenesOnStartGame / GameplayManager.Start", () =>
         {
             NativeSession.RequireEphemeral();
             var session = lifecycle.CurrentSession;

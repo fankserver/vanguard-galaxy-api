@@ -14,9 +14,10 @@ With Steam running and the game closed:
 make e2e
 ```
 
-This builds the API and test plugin, stages only those assemblies in the game,
-launches it, executes `fresh-session`, writes the result and stops the owned
-process before restoring the original plugins and BepInEx configuration.
+This builds the API, test plugin and WormholeWorld example, stages only those
+assemblies in the game, launches the selected case, writes the report and
+screenshots, and stops the owned process before restoring the original plugins
+and BepInEx configuration.
 An already running game or a leftover staging backup causes refusal, not a kill
 or overwrite. The controller launches a normal player with the Steam application
 environment; it does not assume Unity batch/headless flags work for this game.
@@ -36,19 +37,18 @@ Newtonsoft.Json is an explicit dev-only dependency, not assumed to exist in the 
 
 ## Current test
 
-`fresh-session` uses the normal native new-player entry, marks the player
-ephemeral before starting scenes, initializes the arena fixture, and asserts:
+`fresh-session` drives the game's real five-step New Game wizard using its
+normal defaults (random commander, Miner history and selected starter ship),
+chooses Sandbox to avoid tutorial-script restrictions, invokes the wizard's own
+`SaveInputs`, marks that newly created player ephemeral before scenes start,
+and enters normal gameplay. It never calls `CreateTestArenaPlayer` or installs
+the `TestArena` storyteller. It asserts:
 
-- The game's native gameplay initialization completed.
+- The game's native gameplay initialization completed with a normal player/ship.
 - ModAPI observes a new, unsaved session.
 - Exactly one `SessionStarting → PlayerReady → GameplayInitialized` sequence
   belongs to the same session identity.
 - The player remains ephemeral and no successful API save event occurred.
-
-Vanilla `CreateTestArenaPlayer` bypasses ModAPI's new-player binding, so the
-fixture uses `CreateNewGamePlayer` and mirrors the arena setup on that same
-player. Fixture reflection failures name the native member; API assertions do
-not bypass the API's readiness or ownership checks.
 
 Each `TestStep` has a name, binding hint and a predicate advanced on the game
 thread. Waiting, assertion exceptions and timeout failures are terminal: no
@@ -59,42 +59,50 @@ just availability, successful registration, or skipped placeholders.
 
 Select a case with `make e2e E2E_CASE=<id>` (or `--case`).
 
-## `wormhole-world` (authoring + full cleanup)
+## `wormhole-world` (actual example + gameplay route)
 
-`wormhole-world` mirrors `examples/WormholeWorld/Plugin.cs` end-to-end through
-the public API: the same static names, placements, topology and dependency-
-ordered cleanup. Having read that example, this is the live-cheque its whole
-authoring/cleanup surface was written to demonstrate.
+`wormhole-world` loads the real `examples/WormholeWorld/WormholeWorld.dll`; it
+does not duplicate the example's registrations or authoring code in the test.
 
-- Acquires the world provider at the menu and registers the 10 definitions
-  (5 pockets, 3 wormhole pairs, 2 sites) before the session — `AcquireProvider`
-  only succeeds before a session exists, exactly like the example's `Start()`.
-- Creates the ephemeral player and initializes gameplay (same fixture as
-  `fresh-session`).
-- Anchors at the player's current system `X`, then authors:
-  `E` (entry, `OwnSector`) → `X↔E` door; `A` (hub) and `B` (anchor) gated to
-  `E`; `A → Mining` (site) and `A → Salvage` (off-map site) wormholes.
-- Waits until every pocket / pair / site reconstructs with real native identity,
-  then asserts the authored topology: static names, one owned poi per
-  definition (no replay duplicates), and that the player never left the anchor.
-- Verifies the removal guard: a pocket still used as a wormhole endpoint reports
-  `CanRemove() == WormholeEndpoint`.
-- Cleans up in dependency order (pairs first, then pockets with their sites)
-  and asserts every definition is fully gone with no leftover poi.
+- Creates a normal ephemeral Sandbox player through the real New Game wizard,
+  observes and closes the native opening dialogue, then waits for initial
+  placement.
+- Finds the rendered WormholeWorld HUD row and submits its actual Unity
+  `RevisionButton`, including the same panel-revision validation as a player
+  click. This executes the example's private `OnHud("spawn")` callback.
+- Observes the example's owned handles and native galaxy objects to verify all
+  five pockets, three exact wormhole pairs and two resource sites exist in the
+  documented systems. Both sides of the entry anchor gate must be hidden and
+  closed; the deliberate Hub/Anchor gates and every wormhole must be visible,
+  open and usable.
+- Submits the actual **Log topology** HUD row.
+- Calls the game's normal `TravelManager.SetRouteToPOI` and lets its real travel
+  coroutines, scenes, ship movement and arrival managers complete this route:
+  `X → Entry → Hub → Mining → mining field → Hub → Salvage → salvage wreck →
+  Hub → Entry → Anchor → Entry → X → original POI`. Every leg requires matching
+  ModAPI `Arrived` and `RouteCompleted` facts with the correct mode/system/POI.
+- At Entry, submits **Delete Cluster** and proves the example's atomic safety
+  preflight refuses without removing any content while the player is inside.
+- Back at the original POI (away from the entry rift), submits the actual
+  **Delete Cluster** HUD row, then proves every
+  example handle is cleared, every retained API object is terminal `Removed`,
+  and every captured native POI identity is absent from the galaxy.
 
-Native travel (flying through a rift/gate) and the HUD row-click are UI/UX the
-harness cannot automate, so they are out of scope; the topology and removal
-safety are asserted instead.
+The run is visible and normally takes about six minutes. `artifacts/e2e/run/
+screenshots/` contains numbered screenshots for normal gameplay, initial
+placement, authored topology, every journey/site arrival and final cleanup.
 
 ## Coverage status
 
-`fresh-session` (lifecycle) and `wormhole-world` (world authoring + cleanup) are
-implemented and pass live. This is not full API coverage: mission/travel/
-boarding gameplay and persistent save/load round trips remain to be implemented.
+`fresh-session` (normal new-game lifecycle) and `wormhole-world` (actual example,
+world authoring, HUD, native travel and cleanup) are implemented and pass live.
+This is not full ModAPI coverage: mission/boarding gameplay and persistent
+save/load round trips remain to be implemented.
 
 ## Results and safety
 
-The runtime directory contains `player.log` and `report.json` (schema 2).
+The runtime directory contains `player.log`, `report.json` (schema 2), and the
+`screenshots/` evidence directory.
 Reports contain the game/API versions, game assembly hash, results and explicit
 stream completion. Each failed result carries `detail` and `binding`. Empty,
 malformed, incomplete, mismatched-run or unexpected-test streams cannot pass.

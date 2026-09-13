@@ -191,11 +191,12 @@ class SafetyTests(unittest.TestCase):
 class ProcessTests(unittest.TestCase):
     def test_steam_context_and_explicit_handshake(self):
         with patch("e2e.time.time", return_value=1000):
-            env = e2e.launch_env(1234, "unique", 80)
+            env = e2e.launch_env(1234, "unique", 80, Path("C:/e2e shots"))
         self.assertEqual(env["SteamAppId"], "3471800")
         self.assertEqual(env["SteamGameId"], "3471800")
         self.assertEqual(env["VGMODAPI_E2E_RUN"], "unique")
         self.assertEqual(env["VGMODAPI_E2E_DEADLINE"], "1080000")
+        self.assertEqual(env["VGMODAPI_E2E_SCREENSHOTS"], "C:/e2e shots")
 
     def test_existing_process_is_refused_not_killed(self):
         with patch("e2e.subprocess.check_output", return_value='"VanguardGalaxy.exe","1234"\n'):

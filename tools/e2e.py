@@ -18,7 +18,7 @@ CASE = "fresh-session"
 KNOWN_CASES = ("fresh-session", "wormhole-world")
 HANDSHAKE = "--vgmodapi-e2e"
 ASSEMBLIES = ("VGModAPI.dll", "VGModAPI.Core.dll", "VGModAPI.Abstractions.dll",
-              "VGModAPI.Unity.dll", "VGModAPI.E2E.dll", "Newtonsoft.Json.dll")
+              "VGModAPI.Unity.dll", "VGModAPI.E2E.dll", "WormholeWorld.dll", "Newtonsoft.Json.dll")
 
 
 class E2EError(Exception):
@@ -190,11 +190,13 @@ def consume(conn, report, run_id, deadline):
                 raise E2EError(f"Unexpected protocol message/order: {kind!r}")
 
 
-def launch_env(port, run_id, timeout):
+def launch_env(port, run_id, timeout, screenshots=None):
     env = dict(os.environ)
     env.update(SteamAppId="3471800", SteamGameId="3471800",
                VGMODAPI_E2E_PORT=str(port), VGMODAPI_E2E_RUN=run_id,
                VGMODAPI_E2E_CASE=CASE, VGMODAPI_E2E_DEADLINE=str(int((time.time() + timeout) * 1000)))
+    if screenshots is not None:
+        env["VGMODAPI_E2E_SCREENSHOTS"] = str(screenshots)
     return env
 
 
@@ -226,7 +228,7 @@ def run_game(game, runtime, timeout, report):
         listener.settimeout(timeout)
         command = [str(game / "VanguardGalaxy.exe"), HANDSHAKE, "-logFile", str(runtime / "player.log")]
         proc = subprocess.Popen(command, cwd=game,
-                                env=launch_env(listener.getsockname()[1], run_id, timeout - 10),
+                                env=launch_env(listener.getsockname()[1], run_id, timeout - 10, runtime / "screenshots"),
                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         try:
             conn, _ = listener.accept()
@@ -302,6 +304,7 @@ def main(argv=None):
         if path == game or game in path.parents or path in game.parents:
             raise E2EError("Build/runtime paths must be outside the game installation.")
     runtime.mkdir(parents=True, exist_ok=True)
+    shutil.rmtree(runtime / "screenshots", ignore_errors=True)
     report = new_report()
     try:
         with SaveGuard(saves, allow_missing=args.save_dir is None), GameInstallation(game, build):
