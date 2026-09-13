@@ -306,7 +306,7 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
         foreach (var entry in _ledger.Entries)
         {
             if (entry.State.IsTerminal()) continue;
-            var identifier = StoryMissionPolicy.MissionIdentifier(entry.Id, entry.MissionId);
+            var identifier = StoryMissionPolicy.MissionIdentifier(entry.Id, entry.MissionId, entry.Retention);
             if (!_registry.TryGet(entry.Id, out var definition))
             { Suspend(identifier + ": this save holds owned story content whose provider is not registered."); continue; }
             var registrationDefinition = definition;
@@ -382,7 +382,7 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
         foreach (var entry in _ledger.Entries)
         {
             if (entry.State != StoryMissionState.Active) continue;
-            var identifier = StoryMissionPolicy.MissionIdentifier(entry.Id, entry.MissionId);
+            var identifier = StoryMissionPolicy.MissionIdentifier(entry.Id, entry.MissionId, entry.Retention);
             admitted.Add(identifier);
             if (active.Contains(identifier)) continue;
             _reconciliation.Add(identifier + ": recorded active, but the world holds no such mission"
@@ -390,7 +390,7 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
         }
         foreach (var identifier in active)
         {
-            if (!StoryMissionPolicy.TryParseMissionIdentifier(identifier, out var id, out var mission)) continue;
+            if (!TryParseInstalled(identifier, out var id)) continue;
             if (admitted.Contains(identifier)) continue;
             // One of OUR identifiers is live in the world without an active mission here: an
             // orphan. It is NOT adopted, because mission identity is minted by this module and
@@ -400,7 +400,6 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
             _reconciliation.Add(identifier + ": the world holds this mission, but no admitted mission claims it.");
             Suspend(identifier + ": this save holds owned story content this module cannot account for"
                 + (_registry.Contains(id) ? "" : "; its provider is not registered") + ".");
-            _ = mission;
         }
     }
 
@@ -442,7 +441,7 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
         }
         _protection.Admit(_restoredSession,
             _ledger.Entries.Where(entry => !entry.State.IsTerminal() && !_unrunnable.Contains(entry.MissionId))
-                .Select(entry => StoryMissionPolicy.MissionIdentifier(entry.Id, entry.MissionId)),
+                .Select(entry => StoryMissionPolicy.MissionIdentifier(entry.Id, entry.MissionId, entry.Retention)),
             "admitted by the owning module for this session");
     }
 
@@ -466,11 +465,36 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
     /// player abandoned. A neutral removal says nothing about why the mission ended: unless this
     /// module caused it, the mission stays unresolved rather than being called complete or failed.
     /// </summary>
+    /// <summary>
+    /// Whether an identifier is one this module installed, and which definition it belongs to. A
+    /// temporary run carries its own mission in the identifier; a campaign definition's identifier is
+    /// its own, the shape the game uses for a story id.
+    /// </summary>
+    private static bool TryParseInstalled(string? identifier, out StoryMissionDefinitionId id)
+        => StoryMissionPolicy.TryParseMissionIdentifier(identifier, out id, out _)
+            || StoryMissionPolicy.TryParseIdentifier(identifier, out id);
+
+    /// <summary>
+    /// Resolves one of this module's installed identifiers to the ledger row that owns it. A campaign
+    /// definition holds exactly one mission, so the definition identifies it the way the game's
+    /// <c>GetMission(storyId)</c> does; a temporary run is found by the mission it carries.
+    /// </summary>
+    private bool TryResolveInstalled(string? identifier, out StoryMissionDefinitionId id, out StoryMissionEntry entry)
+    {
+        entry = null!;
+        if (StoryMissionPolicy.TryParseMissionIdentifier(identifier, out id, out var run)
+            && _ledger.TryGet(run, out var temporary) && temporary.Id == id)
+        { entry = temporary; return true; }
+        if (StoryMissionPolicy.TryParseIdentifier(identifier, out id) && _ledger.TryGetCampaign(id, out var campaign))
+        { entry = campaign; return true; }
+        return false;
+    }
+
     private void OnMissionTransition(MissionTransition transition)
     {
         if (_disposed || transition?.Mission?.DefinitionId == null) return;
-        if (!StoryMissionPolicy.TryParseMissionIdentifier(transition.Mission.DefinitionId, out var id, out var missionId)) return;
-        if (!_ledger.TryGet(missionId, out var entry) || entry.Id != id || entry.State.IsTerminal()) return;
+        if (!TryResolveInstalled(transition.Mission.DefinitionId, out _, out var entry) || entry.State.IsTerminal()) return;
+        var missionId = entry.MissionId;
         // A removal this module is performing is recorded by the operation that asked for it, and a
         // removal the game's own abandon/retry button is performing is settled when that finishes:
         // the very next thing may be the same mission being re-added.
@@ -519,9 +543,8 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
         // much a reason to refuse the game's button as an open button is to refuse a mutation. Refused
         // here, before the game removes anything, and without touching the open transaction.
         if (InFlight) return null;
-        if (!StoryMissionPolicy.TryParseMissionIdentifier(identifier, out var id, out var missionId)) return null;
-        if (!_ledger.TryGet(missionId, out var entry) || entry.Id != id
-            || entry.State.IsTerminal()) return null;
+        if (!TryResolveInstalled(identifier, out _, out var entry) || entry.State.IsTerminal()) return null;
+        var missionId = entry.MissionId;
         _barOperationEpoch = new object();
         _uiAbandon = missionId;
         _uiToken = new StoryUiTransactionToken(Guid.NewGuid(), _restoredSession, missionId);
@@ -556,8 +579,9 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
         // belongs to a later session or a later opening, and must not drain deferred work it never
         // queued. It simply does nothing.
         if (!((IStoryUiTransaction)this).IsTransactionCurrent(token)) return;
-        var identifier = StoryMissionPolicy.MissionIdentifier(
-            _ledger.TryGet(token.MissionId, out var owner) ? owner.Id : default, token.MissionId);
+        bool owned = _ledger.TryGet(token.MissionId, out var owner);
+        var identifier = StoryMissionPolicy.MissionIdentifier(owned ? owner.Id : default, token.MissionId,
+            owned ? owner.Retention : StoryRetention.Temporary);
         var missionId = _uiAbandon;
         // Cleared only once this settlement is known to own the transaction, so the shared boundary
         // always closes for the transaction that actually opened it.
@@ -718,7 +742,7 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
     internal string? ResolveMissionDestination(string identifier, StoryObjective objective)
     {
         if (objective.Kind is not (StoryObjectiveKind.TravelToPocketSystemEntrance or StoryObjectiveKind.TravelToResourceSite)) return null;
-        if (!StoryMissionPolicy.TryParseMissionIdentifier(identifier, out var id, out _)) return null;
+        if (!TryParseInstalled(identifier, out var id)) return null;
         if (_bindings.HostOwner(id.Provider) is not { } host) return null;
         try { return _authoredDestinations?.Invoke(host, objective); } catch { return null; }
     }
@@ -918,10 +942,11 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
         if (result != StoryLedgerStatus.Accepted) return new StoryTransitionResult(Map(result), Guid.Empty, diagnostic);
         if (_world != null)
         {
-            // Every mission gets its OWN catalog entry. The game archives a completed story
-            // identifier and refuses a duplicate of it forever, so a shared identifier could be
-            // accepted exactly once per save; a repeated mission needs an identifier of its own.
-            var identifier = StoryMissionPolicy.MissionIdentifier(id, missionId);
+            // A campaign definition runs once, so it is installed under its own identifier - the
+            // shape the game uses for a story id. A temporary definition is repeatable, and the game
+            // archives a completed story identifier and refuses a duplicate of it forever, so each of
+            // its runs needs an identifier of its own.
+            var identifier = StoryMissionPolicy.MissionIdentifier(id, missionId, definition.Retention);
             var installed = _world.Install(identifier, definition);
             if (!installed.Applied)
             {

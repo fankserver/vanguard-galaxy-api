@@ -1852,7 +1852,7 @@ public sealed partial class StoryMissionTests
         var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
         var mission = provider.Offer("salvage-run");
         Assert.True(mission.Accepted);
-        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId);
+        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId, StoryRetention.Campaign);
 
         world.World.RefuseAccept = true;
         var refused = provider.Activate(mission.MissionId);
@@ -1875,7 +1875,7 @@ public sealed partial class StoryMissionTests
         Assert.True(provider.Register(Definition("relay-run", StoryRetention.Campaign)).Succeeded);
         var again = provider.Offer("relay-run");
         Assert.True(provider.Activate(again.MissionId).Accepted);
-        Assert.True(world.World.IsActive(FakeWorld.Native(provider, "relay-run", again.MissionId)));
+        Assert.True(world.World.IsActive(FakeWorld.Native(provider, "relay-run", again.MissionId, StoryRetention.Campaign)));
     }
 
     /// <summary>
@@ -1888,7 +1888,7 @@ public sealed partial class StoryMissionTests
     {
         var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
         var first = provider.Offer("salvage-run");
-        var identifier = FakeWorld.Native(provider, "salvage-run", first.MissionId);
+        var identifier = FakeWorld.Native(provider, "salvage-run", first.MissionId, StoryRetention.Campaign);
         Assert.True(provider.Activate(first.MissionId).Accepted);
 
         var declared = provider.Retire(first.MissionId, StoryOutcome.Completed);
@@ -1899,7 +1899,7 @@ public sealed partial class StoryMissionTests
         Assert.True(world.World.IsActive(identifier));
 
         Assert.True(provider.DeclareChoices(first.MissionId, new Dictionary<string, string> { ["branch"] = "left" }).Accepted);
-        world.CompleteInGame(provider, "salvage-run", first.MissionId);
+        world.CompleteInGame(provider, "salvage-run", first.MissionId, StoryRetention.Campaign);
         Assert.True(provider.IsCompleted("salvage-run").Completed);
         Assert.Equal("left", Assert.Single(provider.Missions("salvage-run").Records).Choices["branch"]);
 
@@ -1907,7 +1907,7 @@ public sealed partial class StoryMissionTests
         // campaign definition runs once, so this is observed on its own definition.
         Assert.True(provider.Register(Definition("relay-run", StoryRetention.Campaign)).Succeeded);
         var job = provider.Offer("relay-run");
-        var jobIdentifier = FakeWorld.Native(provider, "relay-run", job.MissionId);
+        var jobIdentifier = FakeWorld.Native(provider, "relay-run", job.MissionId, StoryRetention.Campaign);
         Assert.True(provider.Activate(job.MissionId).Accepted);
         Assert.True(world.World.IsActive(jobIdentifier));
         Assert.True(provider.Retire(job.MissionId, StoryOutcome.Abandoned).Accepted);
@@ -1925,7 +1925,7 @@ public sealed partial class StoryMissionTests
     {
         var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
         var mission = provider.Offer("salvage-run");
-        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId);
+        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId, StoryRetention.Campaign);
         Assert.True(provider.Activate(mission.MissionId).Accepted);
         var bytes = world.Persistence.Provider!.Capture();
 
@@ -2084,7 +2084,7 @@ public sealed partial class StoryMissionTests
         Assert.Equal(releases, world.World.Releases);
 
         Assert.True(provider.Activate(neverAccepted.MissionId).Accepted);
-        world.CompleteInGame(provider, "salvage-run", neverAccepted.MissionId);
+        world.CompleteInGame(provider, "salvage-run", neverAccepted.MissionId, StoryRetention.Campaign);
         var record = Assert.Single(provider.Missions("salvage-run").Records);
         Assert.Equal(StoryOutcome.Completed, record.Outcome);
         Assert.True(provider.IsCompleted("salvage-run").Completed);
@@ -2095,7 +2095,7 @@ public sealed partial class StoryMissionTests
         // A neutral removal says nothing about why it ended: the mission stays unresolved.
         var second = provider.Offer("relay-run");
         Assert.True(provider.Activate(second.MissionId).Accepted);
-        var secondIdentifier = FakeWorld.Native(provider, "relay-run", second.MissionId);
+        var secondIdentifier = FakeWorld.Native(provider, "relay-run", second.MissionId, StoryRetention.Campaign);
         world.Missions.Publish(MissionTransitionKind.Removed, secondIdentifier);
         Assert.True(service.Ledger.TryGet(second.MissionId, out var stillActive));
         Assert.Equal(StoryMissionState.Active, stillActive.State);
@@ -2134,17 +2134,18 @@ public sealed partial class StoryMissionTests
         Assert.True(other.Register(Definition(retention: StoryRetention.Campaign)).Succeeded);
         var mission = anima.Offer("salvage-run");
         Assert.True(anima.Activate(mission.MissionId).Accepted);
-        var identifier = FakeWorld.Native(anima, "salvage-run", mission.MissionId);
+        var identifier = FakeWorld.Native(anima, "salvage-run", mission.MissionId, StoryRetention.Campaign);
         var otherIdentifier = StoryMissionPolicy.Identifier(new StoryMissionDefinitionId(other.ProviderId, "salvage-run"));
 
         anima.Dispose();
-        // The base definition goes with the lease; the held mission keeps its own entry.
-        Assert.False(world.World.IsInstalled(StoryMissionPolicy.Identifier(new StoryMissionDefinitionId(anima.ProviderId, "salvage-run"))));
+        // A campaign mission is installed under its definition's own identifier, so the held mission
+        // keeps that one entry alive even though the lease that declared it is gone.
+        Assert.Equal(StoryMissionPolicy.Identifier(new StoryMissionDefinitionId(anima.ProviderId, "salvage-run")), identifier);
         Assert.True(world.World.IsInstalled(identifier));
         Assert.True(world.World.IsInstalled(otherIdentifier));
 
         // The game completes it anyway, and the module still records that.
-        world.CompleteInGame(anima, "salvage-run", mission.MissionId);
+        world.CompleteInGame(anima, "salvage-run", mission.MissionId, StoryRetention.Campaign);
         Assert.True(service.Ledger.TryGet(mission.MissionId, out var recorded));
         Assert.Equal(StoryOutcome.Completed, recorded.Outcome);
         Assert.False(world.World.IsInstalled(identifier));
@@ -2457,7 +2458,7 @@ public sealed partial class StoryMissionTests
         var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
         var mission = provider.Offer("salvage-run");
         Assert.True(provider.Activate(mission.MissionId).Accepted);
-        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId);
+        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId, StoryRetention.Campaign);
         world.Missions.Publish(MissionTransitionKind.Failed, identifier);
 
         Assert.True(service.Ledger.TryGet(mission.MissionId, out var live));
@@ -2476,7 +2477,7 @@ public sealed partial class StoryMissionTests
         Assert.Equal(StoryMissionState.Active, reloaded.State);
 
         // The game completing it after a retry is a completion, not a failure.
-        world.CompleteInGame(provider, "salvage-run", mission.MissionId);
+        world.CompleteInGame(provider, "salvage-run", mission.MissionId, StoryRetention.Campaign);
         Assert.Equal(StoryOutcome.Completed, Assert.Single(provider.Missions("salvage-run").Records).Outcome);
     }
 
@@ -2505,7 +2506,7 @@ public sealed partial class StoryMissionTests
     {
         var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
         var mission = provider.Offer("salvage-run");
-        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId);
+        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId, StoryRetention.Campaign);
         world.World.DuringAccept = () => world.Persistence.MutationsPaused = true;   // a save begins
         var accepted = provider.Activate(mission.MissionId);
 
@@ -2557,19 +2558,21 @@ public sealed partial class StoryMissionTests
         var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
         var mission = provider.Offer("salvage-run");
         Assert.True(provider.Activate(mission.MissionId).Accepted);
-        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId);
+        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId, StoryRetention.Campaign);
         Assert.Equal(1, world.Protection.AdmittedCount);
         Assert.False(world.Protection.IsQuarantined(identifier));
 
         world.StartSession();                              // a new load begins, nothing restored yet
         Assert.Equal(0, world.Protection.AdmittedCount);
         Assert.True(world.Protection.IsQuarantined(identifier));
-        // The previous save's catalog entries went with it; definitions belong to the process.
-        Assert.False(world.World.IsInstalled(identifier));
-        Assert.True(world.World.IsInstalled(StoryMissionPolicy.Identifier(new StoryMissionDefinitionId(provider.ProviderId, "salvage-run"))));
+        // The previous save's ADMISSIONS went with it; the definition's catalog entry belongs to the
+        // process. A campaign mission is installed under its definition's own identifier - the shape
+        // the game uses for a story id - so there is one entry, not a base entry plus a per-run one.
+        Assert.Equal(StoryMissionPolicy.Identifier(new StoryMissionDefinitionId(provider.ProviderId, "salvage-run")), identifier);
+        Assert.True(world.World.IsInstalled(identifier));
 
         // A suspension in one session does not outlive it.
-        world.World.AdoptInWorld(FakeWorld.Native(provider, "salvage-run", Guid.NewGuid()));
+        world.World.AdoptInWorld(FakeWorld.Native(provider, "salvage-run", Guid.NewGuid(), StoryRetention.Campaign));
         world.StartAndRestore();
         Assert.NotNull(service.SuspendedReason);
         Assert.Equal(0, world.Protection.AdmittedCount);
@@ -2610,7 +2613,7 @@ public sealed partial class StoryMissionTests
         var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
         var mission = provider.Offer("salvage-run");
         Assert.True(provider.Activate(mission.MissionId).Accepted);
-        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId);
+        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId, StoryRetention.Campaign);
         world.Missions.Publish(MissionTransitionKind.Failed, identifier);
         Assert.True(service.Ledger.TryGet(mission.MissionId, out var failed));
         Assert.True(failed.FailureObserved);
@@ -2629,7 +2632,7 @@ public sealed partial class StoryMissionTests
         Assert.True(world.World.IsInstalled(identifier));
         Assert.False(world.Protection.IsQuarantined(identifier));
         // A completion after the retry is a completion, once.
-        world.CompleteInGame(provider, "salvage-run", mission.MissionId);
+        world.CompleteInGame(provider, "salvage-run", mission.MissionId, StoryRetention.Campaign);
         Assert.Equal(StoryOutcome.Completed, Assert.Single(provider.Missions("salvage-run").Records).Outcome);
     }
 
@@ -2678,7 +2681,7 @@ public sealed partial class StoryMissionTests
         Assert.Null(transactions.BeginAbandon("vgmodapi.story.anima.salvage-run"));      // a base identifier
         Assert.Null(transactions.BeginAbandon(identifier + "-malformed"));
         Assert.Null(transactions.BeginAbandon(
-            StoryMissionPolicy.MissionIdentifier(new StoryMissionDefinitionId(provider.ProviderId, "salvage-run"), Guid.NewGuid())));
+            StoryMissionPolicy.MissionIdentifier(new StoryMissionDefinitionId(provider.ProviderId, "salvage-run"), Guid.NewGuid(), StoryRetention.Temporary)));
         // One at a time: a second route cannot open while one is running.
         var token = transactions.BeginAbandon(identifier);
         Assert.NotNull(token);
@@ -2722,7 +2725,7 @@ public sealed partial class StoryMissionTests
         var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
         var mission = provider.Offer("salvage-run");
         Assert.True(provider.Activate(mission.MissionId).Accepted);
-        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId);
+        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId, StoryRetention.Campaign);
         var bytes = world.Persistence.Provider!.Capture();
 
         world.World.ForgetPointOfInterest("poi-guid-1");
@@ -2751,7 +2754,7 @@ public sealed partial class StoryMissionTests
         var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
         var mission = provider.Offer("salvage-run");
         Assert.True(provider.Activate(mission.MissionId).Accepted);
-        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId);
+        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId, StoryRetention.Campaign);
         var transactions = (IStoryUiTransaction)service;
         var token = transactions.BeginAbandon(identifier);
         Assert.NotNull(token);
@@ -2796,7 +2799,7 @@ public sealed partial class StoryMissionTests
         var mission = provider.Offer("salvage-run");
         Assert.True(provider.DeclareChoices(mission.MissionId, new Dictionary<string, string> { ["branch"] = "left" }).Accepted);
         Assert.True(provider.Activate(mission.MissionId).Accepted);
-        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId);
+        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId, StoryRetention.Campaign);
         world.Missions.Publish(MissionTransitionKind.Failed, identifier);
         var transactions = (IStoryUiTransaction)service;
 
@@ -2885,7 +2888,7 @@ public sealed partial class StoryMissionTests
     {
         var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
         var mission = provider.Offer("salvage-run");
-        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId);
+        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId, StoryRetention.Campaign);
         var transactions = (IStoryUiTransaction)service;
         StoryUiTransactionToken? reverse = null;
         // The game's mission observers run consumer code inside the native acceptance; the button is
@@ -3210,7 +3213,7 @@ public sealed partial class StoryMissionTests
         Assert.True(current.Register(new StoryMissionDefinition("salvage-run", "Different generated pitch", "Not the saved payload", Faction,
             new[] { new StoryStep("Wrong destination", new[] { StoryObjective.TravelTo("missing-new-target") }) },
             new[] { StoryReward.Credits(999) }, retention: StoryRetention.Campaign)).Succeeded);
-        var native = FakeWorld.Native(current, "salvage-run", offered.MissionId);
+        var native = FakeWorld.Native(current, "salvage-run", offered.MissionId, StoryRetention.Campaign);
         if (active) later.World.AdoptInWorld(native);
         later.StartAndRestore(saved);
         var restored = later.World.InstalledDefinition(native);
@@ -3221,7 +3224,7 @@ public sealed partial class StoryMissionTests
         Assert.Equal(saved, later.Persistence.Provider!.Capture());
         if (!active) Assert.True(current.Activate(offered.MissionId).Accepted);
         Assert.True(current.DeclareChoices(offered.MissionId, new Dictionary<string, string> { ["branch"] = "saved-choice" }).Accepted);
-        later.CompleteInGame(current, "salvage-run", offered.MissionId);
+        later.CompleteInGame(current, "salvage-run", offered.MissionId, StoryRetention.Campaign);
         var completed = Assert.Single(StoryStateCodec.Decode(later.Persistence.Provider!.Capture()));
         Assert.Null(completed.RetainedDefinition);
         Assert.Equal("saved-choice", completed.Choices["branch"]);
@@ -3505,14 +3508,20 @@ public sealed partial class StoryMissionTests
                 () => ProtectionHealthy, worldReferences, (owner, objective) => AuthoredDestinations?.Invoke(owner, objective));
         }
 
-        /// <summary>The identifier one mission is installed under, exactly as the module derives it.</summary>
-        internal static string Native(IStoryProvider provider, string localId, Guid missionId)
-            => StoryMissionPolicy.MissionIdentifier(new StoryMissionDefinitionId(provider.ProviderId, localId), missionId);
+        /// <summary>
+        /// The identifier one mission is installed under, exactly as the module derives it. A campaign
+        /// definition runs once and is installed under the definition's own identifier; a temporary run
+        /// carries its own, so the caller states which lane it means.
+        /// </summary>
+        internal static string Native(IStoryProvider provider, string localId, Guid missionId,
+            StoryRetention retention = StoryRetention.Temporary)
+            => StoryMissionPolicy.MissionIdentifier(new StoryMissionDefinitionId(provider.ProviderId, localId), missionId, retention);
 
         /// <summary>The GAME completes an owned mission: it ends there and the observer reports it.</summary>
-        internal void CompleteInGame(IStoryProvider provider, string localId, Guid missionId)
+        internal void CompleteInGame(IStoryProvider provider, string localId, Guid missionId,
+            StoryRetention retention = StoryRetention.Temporary)
         {
-            var identifier = Native(provider, localId, missionId);
+            var identifier = Native(provider, localId, missionId, retention);
             World.CompleteInWorld(identifier);
             Missions.Publish(MissionTransitionKind.Completed, identifier);
         }

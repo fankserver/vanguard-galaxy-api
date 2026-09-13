@@ -72,6 +72,6 @@ internal sealed partial class StoryMissionService
             && _registry.Contains(definition)
             && _ledger.TryGet(mission, out var entry) && entry.Id == definition
             && !entry.State.IsTerminal() && !_unrunnable.Contains(mission)
-            && _protection?.IsAdmitted(expectedSession, StoryMissionPolicy.MissionIdentifier(definition, mission)) == true;
+            && _protection?.IsAdmitted(expectedSession, StoryMissionPolicy.MissionIdentifier(definition, mission, entry.Retention)) == true;
     }
 }

@@ -471,6 +471,16 @@ internal sealed class StoryLedger
         => _byMission.Values.Any(entry => entry.Id == id && entry.Retention == StoryRetention.Campaign);
 
     /// <summary>
+    /// The one campaign mission a definition holds, if any. A campaign definition runs once, so the
+    /// definition identifies its mission the way the game's <c>GetMission(storyId)</c> does.
+    /// </summary>
+    internal bool TryGetCampaign(StoryMissionDefinitionId id, out StoryMissionEntry entry)
+    {
+        entry = _byMission.Values.FirstOrDefault(row => row.Id == id && row.Retention == StoryRetention.Campaign)!;
+        return entry != null;
+    }
+
+    /// <summary>
     /// Ownership resolution for callers that need the entry before deciding anything else. It uses
     /// exactly the transition rules, including hiding another provider's local ID.
     /// </summary>

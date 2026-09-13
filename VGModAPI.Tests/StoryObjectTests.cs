@@ -309,7 +309,7 @@ public sealed partial class StoryMissionTests
         internal void Tick() => Hub.Gameplay.Tick();
         internal void Complete(IStoryMission mission)
         {
-            var identifier = StoryMissionPolicy.MissionIdentifier(mission.Definition.Id, mission.Id);
+            var identifier = StoryMissionPolicy.MissionIdentifier(mission.Definition.Id, mission.Id, StoryRetention.Temporary);
             World.CompleteInWorld(identifier); Missions.Publish(MissionTransitionKind.Completed, identifier);
         }
         public void Dispose() { Provider.Dispose(); Games.Dispose(); Engine.Dispose(); Hub.Dispose(); }

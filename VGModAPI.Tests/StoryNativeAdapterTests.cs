@@ -52,7 +52,7 @@ public sealed class StoryNativeAdapterTests : IDisposable
             choiceKeys: new[] { "branch" });
 
     private static string Identifier(string local = "salvage-run", Guid? mission = null)
-        => StoryMissionPolicy.MissionIdentifier(new StoryMissionDefinitionId("anima", local), mission ?? Guid.NewGuid());
+        => StoryMissionPolicy.MissionIdentifier(new StoryMissionDefinitionId("anima", local), mission ?? Guid.NewGuid(), StoryRetention.Temporary);
 
     [Fact]
     public void ScriptedProgressTargetsCurrentPlayerAndRejectsInactiveSteps()
