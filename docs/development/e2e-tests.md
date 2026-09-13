@@ -81,7 +81,9 @@ quit handler may force its own process exit; the completed assertions and
 `finish` handshake determine the test outcome.
 
 Ephemeral state suppresses vanilla save writes. `SaveGuard` additionally hashes
-the real save tree before and after the run. This is a **write detector**, not a
+the real save tree before and after the run. If the default save directory does
+not exist yet, the guard verifies it remains absent; an explicitly supplied
+missing save directory is rejected as a likely path error. This is a **write detector**, not a
 sandbox, redirected save directory or rollback mechanism. It neither copies
 nor loads existing saves. Persistent save/load tests need separate disposable
 save-path isolation; do not remove the ephemeral guard to add them.

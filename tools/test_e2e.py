@@ -1,3 +1,4 @@
+import argparse
 import json
 from pathlib import Path
 import socket
@@ -134,6 +135,29 @@ class SafetyTests(unittest.TestCase):
             with e2e.GameInstallation(self.game, self.build):
                 self.fail()
         self.assert_restored()
+
+    def test_missing_default_save_directory_stays_absent(self):
+        saves = self.root / "not-created"
+        with e2e.SaveGuard(saves, allow_missing=True):
+            self.assertFalse(saves.exists())
+        self.assertFalse(saves.exists())
+
+    def test_missing_default_save_directory_creation_is_detected(self):
+        saves = self.root / "not-created"
+        with self.assertRaisesRegex(e2e.E2EError, "changed"):
+            with e2e.SaveGuard(saves, allow_missing=True):
+                saves.mkdir()  # Even an empty directory is a change.
+
+    def test_explicit_missing_save_directory_is_rejected(self):
+        with self.assertRaisesRegex(e2e.E2EError, "does not exist"):
+            with e2e.SaveGuard(self.root / "typo"):
+                self.fail("Must not launch with an invalid explicit save path")
+
+    def test_empty_paths_are_rejected_before_resolution(self):
+        for value in ("", "  "):
+            with self.assertRaises(argparse.ArgumentTypeError):
+                e2e.nonempty_path(value)
+        self.assertEqual(e2e.nonempty_path("directory with spaces"), Path("directory with spaces"))
 
     def test_save_guard_is_read_only_and_detects_changes(self):
         saves = self.root / "Saves"

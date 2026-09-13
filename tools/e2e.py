@@ -43,15 +43,21 @@ def manifest(root):
 
 class SaveGuard:
     """Detects writes; not a sandbox, disposable profile, or rollback mechanism."""
-    def __init__(self, root):
+    def __init__(self, root, allow_missing=False):
         self.root = Path(root)
+        self.allow_missing = allow_missing
+
+    def snapshot(self):
+        if self.allow_missing and not self.root.exists() and not self.root.is_symlink():
+            return None  # Preserve absence, not merely an empty file manifest.
+        return manifest(self.root)
 
     def __enter__(self):
-        self.before = manifest(self.root)
+        self.before = self.snapshot()
         return self
 
     def __exit__(self, *exc):
-        if manifest(self.root) != self.before:
+        if self.snapshot() != self.before:
             raise E2EError("Real save files changed during E2E; inspect the game log. No automatic rollback attempted.")
 
 
@@ -248,16 +254,22 @@ def summary(report):
             print(f"    inspect: {result['binding']}")
 
 
+def nonempty_path(value):
+    if not value.strip():
+        raise argparse.ArgumentTypeError("Path must not be empty.")
+    return Path(value)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--game-dir", type=Path)
-    parser.add_argument("--build-dir", type=Path, default=Path("artifacts/e2e/plugin"))
-    parser.add_argument("--runtime-dir", type=Path, default=Path("artifacts/e2e/run"))
-    parser.add_argument("--save-dir", type=Path)
+    parser.add_argument("--game-dir", type=nonempty_path)
+    parser.add_argument("--build-dir", type=nonempty_path, default=Path("artifacts/e2e/plugin"))
+    parser.add_argument("--runtime-dir", type=nonempty_path, default=Path("artifacts/e2e/run"))
+    parser.add_argument("--save-dir", type=nonempty_path)
     parser.add_argument("--timeout", type=int, default=90)
     parser.add_argument("--case", choices=(CASE,), default=CASE)
     parser.add_argument("--launch", action="store_true", help="explicit permission to stage plugins and launch the game")
-    parser.add_argument("--report", type=Path, help="read/gate a previous report without a game")
+    parser.add_argument("--report", type=nonempty_path, help="read/gate a previous report without a game")
     args = parser.parse_args(argv)
     if args.report:
         report = read_report(args.report)
@@ -287,7 +299,7 @@ def main(argv=None):
     runtime.mkdir(parents=True, exist_ok=True)
     report = new_report()
     try:
-        with SaveGuard(saves), GameInstallation(game, build):
+        with SaveGuard(saves, allow_missing=args.save_dir is None), GameInstallation(game, build):
             run_game(game, runtime, args.timeout, report)
         report["meta"]["realSavesUnchanged"] = True
         report["meta"]["installationRestored"] = True
