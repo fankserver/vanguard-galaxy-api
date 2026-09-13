@@ -558,7 +558,7 @@ public sealed class StoryNativeAdapterTests : IDisposable
     /// accepted exactly once per save.
     /// </summary>
     [Fact]
-    public void AcceptanceIsVerifiedAndRepeatedOccurrencesNeedTheirOwnIdentifiers()
+    public void AcceptanceIsVerifiedAndAnArchivedIdentifierIsRefusedForever()
     {
         using var world = World();
         var first = Identifier();
@@ -572,14 +572,14 @@ public sealed class StoryNativeAdapterTests : IDisposable
         // An identifier this adapter did not install is never accepted.
         Assert.Equal(StoryWorldStatus.Refused, world.Accept(Identifier("other")).Status);
 
-        // Completing it archives the base identity, and a SECOND mission still works because it
-        // carries its own identifier.
+        // Completing it archives that identifier, and the game refuses it forever after - which is
+        // exactly why a definition runs once. Another DEFINITION still works, under its own identifier.
         var mission = _player.GetActiveStoryMission(first)!;
         _player.RemoveMission(mission, completed: true);
         Assert.Contains(first, _player.missionsArchive);
         Assert.Equal(StoryWorldStatus.AlreadyPresent, world.Accept(first).Status);
-        var second = Identifier();
-        Assert.True(world.Install(second, Definition()).Applied);
+        var second = Identifier("relay-run");
+        Assert.True(world.Install(second, Definition("relay-run")).Applied);
         Assert.True(world.Accept(second).Applied);
         Assert.Equal(second, Assert.Single(_player.missions).storyId);
     }

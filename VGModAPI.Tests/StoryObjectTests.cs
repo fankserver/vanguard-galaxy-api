@@ -271,11 +271,10 @@ public sealed partial class StoryMissionTests
         f.Tick();
         var native = mission.NativeMissionId;
         Assert.NotNull(native);
-        Assert.EndsWith(mission.Id.ToString("N"), native);
         Assert.StartsWith("vgmodapi.story.", native);
-        // Distinct missions of one definition highlight distinct identifiers.
-        var second = f.Game.Story.Offer(definition); f.Tick();
-        Assert.NotEqual(native, second.NativeMissionId);
+        // A story mission is highlighted under its definition's own identifier - the shape the game
+        // uses for a story id - and a definition runs once, so there is no second one to distinguish.
+        Assert.Equal(StoryMissionPolicy.Identifier(mission.Definition.Id), native);
     }
 
     private sealed class StoryObjectsFixture : IDisposable

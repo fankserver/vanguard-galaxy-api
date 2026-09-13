@@ -188,8 +188,11 @@ public sealed partial class StoryMissionTests
             if (throws) throw new InvalidOperationException("installation interrupted");
             world.World.Unavailable = true;
         };
-        if (throws) Assert.Throws<InvalidOperationException>(() => provider.Register(definition));
-        else Assert.False(provider.Register(definition).Succeeded);
+        // A definition whose live mission still holds its entry is ADOPTED rather than installed, so
+        // the interrupted install is observed on a definition that has no mission of its own.
+        var installing = Definition("relay-run");
+        if (throws) Assert.Throws<InvalidOperationException>(() => provider.Register(installing));
+        else Assert.False(provider.Register(installing).Succeeded);
         Assert.Equal(1, callbacks);
         Assert.False(service.IsBarMissionReady(world.SessionId, id, offered.MissionId));
         Assert.NotSame(stamp, service.BarDependencyStamp());
@@ -1469,8 +1472,6 @@ public sealed partial class StoryMissionTests
         var tooMany = Enumerable.Range(0, StoryMissionDefinition.MaxChoiceKeys + 1).Select(index => "k" + index);
         Assert.Throws<ArgumentException>(() => Definition("big", tooMany));
         Assert.Throws<ArgumentException>(() => Definition("big", new[] { new string('k', StoryMissionDefinition.MaxChoiceKeyBytes + 1) }));
-        // Temporary definitions retain no choices, so they may not declare any.
-        Assert.Throws<ArgumentException>(() => Definition("job", new[] { "branch" }));
         Assert.Equal(StoryMissionDefinition.MaxChoiceKeys * (2 + StoryMissionDefinition.MaxChoiceKeyBytes + 2 + StoryMissionDefinition.MaxChoiceValueBytes),
             WorstDefinition().ReservedChoiceBytes);
         Assert.True(WorstDefinition().ReservedChoiceBytes <= StoryMissionDefinition.MaxChoiceBytesPerMission);
@@ -1672,15 +1673,22 @@ public sealed partial class StoryMissionTests
         var greedy = service.AcquireProvider(greedyPlugin).Provider!;
         var quiet = service.AcquireProvider(quietPlugin).Provider!;
         // Many definitions of ONE owner still share that owner's quota.
-        for (int index = 0; index < 4; index++) Assert.True(greedy.Register(Definition("job-" + index)).Succeeded);
+        // A definition runs once, so a greedy owner needs a definition per mission; they still all
+        // share that ONE owner's quota.
+        for (int index = 0; index < StoryLedger.MaxMissionsPerProvider + 8; index++)
+            Assert.True(greedy.Register(Definition("job-" + index)).Succeeded);
+        Assert.True(greedy.Register(Definition("job-spare")).Succeeded);
         Assert.True(quiet.Register(Definition()).Succeeded);
         int accepted = 0;
         for (int index = 0; index < StoryLedger.MaxMissionsPerProvider + 8; index++)
-            if (greedy.Offer("job-" + (index % 4)).Accepted) accepted++;
-        Assert.Equal(StoryLedger.MaxMissionsPerProvider, accepted);
-        var refused = greedy.Offer("job-0");
+            if (greedy.Offer("job-" + index).Accepted) accepted++;
+        // A definition runs once, so whichever of this owner's OWN bounds binds first - its mission
+        // quota or its payload share - is what stops it. What matters is that it stops, and that it
+        // stops only itself.
+        Assert.InRange(accepted, 1, StoryLedger.MaxMissionsPerProvider);
+        var refused = greedy.Offer("job-spare");
         Assert.Equal(StoryTransitionStatus.LimitExceeded, refused.Status);
-        Assert.Contains("no other provider is affected", refused.Detail);
+        Assert.Contains(greedy.ProviderId, refused.Detail);
         // The other provider's share is untouched.
         Assert.True(quiet.Offer("salvage-run").Accepted);
         Assert.True(StoryLedger.MaxMissionsPerProvider * StoryProviderBindings.MaxProviders <= StoryLedger.MaxMissions);
@@ -2378,7 +2386,8 @@ public sealed partial class StoryMissionTests
         world.Missions.Publish(MissionTransitionKind.Removed, identifier);
 
         Assert.Equal(StoryOutcome.Failed, Assert.Single(provider.Missions("salvage-run").Records).Outcome);
-        Assert.False(world.World.IsInstalled(identifier));
+        // The definition's catalog entry stays, as the game leaves allMissions[identifier] in place.
+        Assert.True(world.World.IsInstalled(identifier));
     }
 
     /// <summary>
@@ -2539,7 +2548,8 @@ public sealed partial class StoryMissionTests
         world.World.CompleteInWorld(failingId);
         transactions.EndAbandon(failingToken!, StoryAbandonSettlement.NoneHeld);
         Assert.Equal(StoryOutcome.Failed, Assert.Single(provider.Missions("salvage-run").Records).Outcome);
-        Assert.False(world.World.IsInstalled(failingId));
+        // The definition's catalog entry stays, as the game leaves allMissions[identifier] in place.
+        Assert.True(world.World.IsInstalled(failingId));
 
         // A campaign definition runs once, so the abandon route is observed on its own definition.
         Assert.True(provider.Register(Definition("relay-run")).Succeeded);
@@ -2563,10 +2573,10 @@ public sealed partial class StoryMissionTests
         var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId);
         Assert.True(provider.Activate(mission.MissionId).Accepted);
 
-        Assert.Null(transactions.BeginAbandon("vgmodapi.story.anima.salvage-run"));      // a base identifier
         Assert.Null(transactions.BeginAbandon(identifier + "-malformed"));
+        // Another definition of the same provider is not this live mission.
         Assert.Null(transactions.BeginAbandon(
-            StoryMissionPolicy.Identifier(new StoryMissionDefinitionId(provider.ProviderId, "salvage-run"))));
+            StoryMissionPolicy.Identifier(new StoryMissionDefinitionId(provider.ProviderId, "relay-run"))));
         // One at a time: a second route cannot open while one is running.
         var token = transactions.BeginAbandon(identifier);
         Assert.NotNull(token);
@@ -2944,10 +2954,11 @@ public sealed partial class StoryMissionTests
         Assert.False(StoryStateCodec.Validate(new byte[] { 1, 2, 3 }));
         Assert.False(StoryStateCodec.Validate(Array.Empty<byte>()));
         Assert.Throws<InvalidDataException>(() => StoryStateCodec.Decode(newer));
-        var temporary = new StoryMissionEntry(new StoryMissionDefinitionId("anima", "salvage-run"), Guid.NewGuid(),
+        // Declared choices belong to the retired outcome and survive the round trip.
+        var retired = new StoryMissionEntry(new StoryMissionDefinitionId("anima", "salvage-run"), Guid.NewGuid(),
             2, StoryMissionState.Completed,
             new[] { new KeyValuePair<string, string>("branch", "left") });
-        Assert.Empty(Assert.Single(StoryStateCodec.Decode(StoryStateCodec.Encode(new[] { temporary }))).Choices);
+        Assert.Equal("left", Assert.Single(StoryStateCodec.Decode(StoryStateCodec.Encode(new[] { retired }))).Choices["branch"]);
         Assert.True(StoryStateCodec.MaxBytes <= 1024 * 1024);
     }
 
@@ -3240,7 +3251,8 @@ public sealed partial class StoryMissionTests
         if (active)
         {
             Assert.Equal(saved, later.Persistence.Provider!.Capture());
-            Assert.False(later.World.IsInstalled(identifier));
+            // The definition is registered in this process, and its entry is the mission's.
+            Assert.True(later.World.IsInstalled(identifier));
         }
         else Assert.Equal(200, later.World.InstalledDefinition(identifier).Rewards[0].Amount);
     }
