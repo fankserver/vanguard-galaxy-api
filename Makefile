@@ -8,7 +8,7 @@ RELEASE_VERSION := $(shell python3 -c 'import xml.etree.ElementTree as E; print(
 MANAGED = $(GAME_DIR)/VanguardGalaxy_Data/Managed
 CORE = $(GAME_DIR)/BepInEx/core
 
-.PHONY: link-libs build test check-bindings package check-package check-local clean release-archive
+.PHONY: link-libs build test check-bindings package check-package check-local clean release-archive e2e
 link-libs:
 	@mkdir -p VGModAPI/lib
 	@set -eu; for name in BepInEx 0Harmony; do test -f "$(CORE)/$$name.dll"; ln -sfn "$(CORE)/$$name.dll" "VGModAPI/lib/$$name.dll"; done
@@ -69,5 +69,23 @@ check-local:
 	$(MAKE) test
 	$(MAKE) package
 	$(MAKE) check-bindings
+
+# Live in-game end-to-end regression. Opt-in developer tool, parallel to
+# check-bindings: it needs the real installed game and BepInEx refs, so it only
+# runs on the machine that has Vanguard Galaxy (never in public CI, never in the
+# shipped package). It launches the game with the dev-only EWTest harness, waits
+# for the machine-readable report, and fails when any live check breaks.
+E2E_SAVE_DIR ?=
+E2E_TIMEOUT ?= 900
+E2E_RUNTIME ?= artifacts/e2e
+E2E_PLUGINS ?= $(GAME_DIR)/BepInEx/plugins
+E2E_HARNESS_DIR ?= $(E2E_PLUGINS)/EWTest
+.PHONY: e2e
+e2e: link-libs build
+	@mkdir -p $(E2E_RUNTIME) "$(E2E_HARNESS_DIR)"
+	$(DOTNET) build EWTest/EWTest.csproj -c $(CONFIGURATION)
+	@for dll in VGModAPI VGModAPI.Core VGModAPI.Abstractions VGModAPI.Unity; do cp VGModAPI/bin/$(CONFIGURATION)/netstandard2.1/$$dll.dll "$(E2E_HARNESS_DIR)/"; done
+	cp EWTest/bin/$(CONFIGURATION)/netstandard2.1/EWTest.dll "$(E2E_HARNESS_DIR)/"
+	python3 tools/e2e.py --game-dir '$(GAME_DIR)' --save-dir '$(E2E_SAVE_DIR)' --runtime-dir '$(E2E_RUNTIME)' --launch --timeout $(E2E_TIMEOUT)
 clean:
 	$(DOTNET) clean VGModAPI.sln

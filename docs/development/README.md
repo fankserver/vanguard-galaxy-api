@@ -2,6 +2,7 @@
 
 - [Contributing: feature delivery and correctness tests](../../CONTRIBUTING.md)
 - [Native integration constraints](native-integration.md)
+- [In-game end-to-end regression tests](e2e-tests.md)
 - [API reference](../reference/README.md)
 - [Build and test commands](../../Makefile)
 - [Release workflow](../../.github/workflows/release.yml) and [publisher](../../tools/publish_update.py)
