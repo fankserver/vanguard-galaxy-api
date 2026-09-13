@@ -58,19 +58,19 @@ public sealed class StoryObjectiveIdentityTests
         var layout = new StoryObjectiveLayout(new[] { new StoryObjectiveLayout.Slot("visit", 1, 2, StoryObjectiveKind.TravelToPoi) });
         var ledger = new StoryLedger();
         var mission = Guid.NewGuid();
-        Assert.Equal(StoryLedgerStatus.Accepted, ledger.Offer(definition, StoryRetention.Campaign, mission, 0, out _, layout));
+        Assert.Equal(StoryLedgerStatus.Accepted, ledger.Offer(definition, mission, 0, out _, layout));
         var bytes = StoryStateCodec.Encode(ledger.Entries);
         var restored = Assert.Single(StoryStateCodec.Decode(bytes));
         Assert.Equal(mission, restored.MissionId);
         Assert.True(restored.ObjectiveLayout.SamePositions(layout));
-        var empty = new StoryMissionEntry(definition, mission, StoryRetention.Campaign, 1);
+        var empty = new StoryMissionEntry(definition, mission, 1);
         Assert.Equal(23, StoryStateCodec.EncodedSize(restored) - StoryStateCodec.EncodedSize(empty));
 
         var fullLayout = new StoryObjectiveLayout(Enumerable.Range(0, StoryObjectiveLayout.MaxSlots)
             .Select(index => new StoryObjectiveLayout.Slot("objective-" + index + new string('x', 32), index / 8, index % 8, StoryObjectiveKind.TravelToPoi)));
         var bounded = new StoryLedger();
         int admitted = 0;
-        while (bounded.Offer(definition, StoryRetention.Campaign, Guid.NewGuid(), 0, out _, fullLayout) == StoryLedgerStatus.Accepted) admitted++;
+        while (bounded.Offer(definition, Guid.NewGuid(), 0, out _, fullLayout) == StoryLedgerStatus.Accepted) admitted++;
         Assert.InRange(admitted, 1, 10);
         Assert.Equal(admitted, bounded.Entries.Count());
         Assert.True(StoryStateCodec.Validate(StoryStateCodec.Encode(bounded.Entries)));
@@ -102,7 +102,7 @@ public sealed class StoryObjectiveIdentityTests
         var id = new StoryMissionDefinitionId("campaign", "mission-x");
         var mission = Guid.NewGuid();
         var layout = new StoryObjectiveLayout(new[] { new StoryObjectiveLayout.Slot("beat", 0, 0, StoryObjectiveKind.Scripted, 5) });
-        Assert.Equal(StoryLedgerStatus.Accepted, ledger.Offer(id, StoryRetention.Campaign, mission, 0, out _, layout));
+        Assert.Equal(StoryLedgerStatus.Accepted, ledger.Offer(id, mission, 0, out _, layout));
         Assert.Equal(StoryLedgerStatus.Accepted, ledger.Activate(id, mission, out _));
         Assert.True(ledger.TryGet(mission, out var entry));
         entry.SetObjectiveProgress("beat", 3);
@@ -126,7 +126,7 @@ public sealed class StoryObjectiveIdentityTests
         var id = new StoryMissionDefinitionId("campaign", "mission-x");
         var mission = Guid.NewGuid();
         byte[] Capture(StoryObjectiveLayout value) => StoryStateCodec.Encode(new[] {
-            new StoryMissionEntry(id, mission, StoryRetention.Campaign, 1, objectiveLayout: value) });
+            new StoryMissionEntry(id, mission, 1, objectiveLayout: value) });
         var older = Capture(partial);
         Assert.Equal(5, Assert.Single(Assert.Single(StoryStateCodec.Decode(Capture(partial.WithProgress("beat", 5)))).ObjectiveLayout.Slots).Progress);
         Assert.Equal(2, Assert.Single(Assert.Single(StoryStateCodec.Decode(older)).ObjectiveLayout.Slots).Progress);

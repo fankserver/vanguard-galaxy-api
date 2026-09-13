@@ -53,7 +53,6 @@ internal sealed class StoryMissionEntry
     internal Guid MissionId { get; }
     internal StoryMissionState State { get; private set; }
     internal StoryOutcome? Outcome => State.AsOutcome();
-    internal StoryRetention Retention { get; }
     internal long Sequence { get; }
     /// <summary>
     /// Encoded bytes reserved for this mission's declared choices while it is unresolved. It is
@@ -66,7 +65,7 @@ internal sealed class StoryMissionEntry
     internal void ReplaceDefinition(StoryMissionDefinition definition) => RetainedDefinition = definition;
     internal void SetObjectiveProgress(string key, int progress) => ObjectiveLayout = ObjectiveLayout.WithProgress(key, progress);
     internal void ReplaceObjectiveLayout(StoryObjectiveLayout layout) => ObjectiveLayout = layout;
-    internal StoryMissionEntry WithObjectiveLayout(StoryObjectiveLayout layout, StoryMissionDefinition? definition = null) => new(Id, MissionId, Retention, Sequence,
+    internal StoryMissionEntry WithObjectiveLayout(StoryObjectiveLayout layout, StoryMissionDefinition? definition = null) => new(Id, MissionId, Sequence,
         State, Choices, ChoiceReservation, PendingChoices, FailureObserved, layout, definition ?? RetainedDefinition);
     internal void ResetObjectiveProgress() => ObjectiveLayout = new StoryObjectiveLayout(ObjectiveLayout.Slots.Select(slot =>
         new StoryObjectiveLayout.Slot(slot.Key, slot.Step, slot.Objective, slot.Kind, slot.Required)), ObjectiveLayout.Revision, ObjectiveLayout.FullyScripted);
@@ -94,7 +93,7 @@ internal sealed class StoryMissionEntry
 
     internal void MarkFailureObserved(bool observed) => FailureObserved = observed;
 
-    internal StoryMissionEntry(StoryMissionDefinitionId id, Guid missionId, StoryRetention retention, long sequence,
+    internal StoryMissionEntry(StoryMissionDefinitionId id, Guid missionId, long sequence,
         StoryMissionState state = StoryMissionState.Offered,
         IEnumerable<KeyValuePair<string, string>>? choices = null, int choiceReservation = 0,
         IEnumerable<KeyValuePair<string, string>>? pendingChoices = null, bool failureObserved = false,
@@ -103,7 +102,7 @@ internal sealed class StoryMissionEntry
         if (missionId == Guid.Empty) throw new ArgumentException("An mission requires its own identity.", nameof(missionId));
         if (choiceReservation is < 0 or > StoryMissionDefinition.MaxChoiceBytesPerMission)
             throw new ArgumentOutOfRangeException(nameof(choiceReservation));
-        Id = id; MissionId = missionId; Retention = retention; Sequence = sequence; State = state;
+        Id = id; MissionId = missionId; Sequence = sequence; State = state;
         ChoiceReservation = choiceReservation;
         ObjectiveLayout = objectiveLayout ?? new StoryObjectiveLayout(Array.Empty<StoryObjectiveLayout.Slot>());
         RetainedDefinition = retainedDefinition;
@@ -121,8 +120,7 @@ internal sealed class StoryMissionEntry
         // the terminal record is exactly what this outcome declared and can never grow past the
         // bound that was checked for it.
         _choices.Clear();
-        // A temporary definition keeps only the bounded idempotency record, never declared choices.
-        if (Retention == StoryRetention.Campaign && choices != null)
+        if (choices != null)
             foreach (var pair in choices) _choices[pair.Key] = pair.Value;
         // The declaration is TRANSFERRED into the record, never kept alongside it, so a terminal
         // mission costs no more than the space its outcome was already reserved.
@@ -161,13 +159,6 @@ internal sealed class StoryLedger
     /// </summary>
     internal const long MaxSequence = long.MaxValue - MaxMissions;
     /// <summary>
-    /// The idempotency horizon for TEMPORARY definitions: the newest terminal tombstones per
-    /// definition are retained and older ones are pruned. A pruned mission reports
-    /// <see cref="StoryLedgerStatus.UnknownMission"/>; it is never re-offered or re-accepted,
-    /// because mission identities are API-generated and never reused.
-    /// </summary>
-    internal const int TemporaryTombstoneHorizon = 32;
-    /// <summary>
     /// Bytes of persisted payload every bound provider owns outright, including the reservations that
     /// guarantee its offered missions can still record an outcome. The shares of all
     /// <see cref="StoryProviderBindings.MaxProviders"/> providers plus the header fit inside
@@ -200,7 +191,7 @@ internal sealed class StoryLedger
     /// reserved from the provider's own budget here, so an accepted offer can always be retired: an
     /// mission is never admitted that the API could not finish.
     /// </summary>
-    internal StoryLedgerStatus Offer(StoryMissionDefinitionId id, StoryRetention retention, Guid missionId, int choiceReservation, out string diagnostic, StoryObjectiveLayout? objectiveLayout = null, StoryMissionDefinition? retainedDefinition = null)
+    internal StoryLedgerStatus Offer(StoryMissionDefinitionId id, Guid missionId, int choiceReservation, out string diagnostic, StoryObjectiveLayout? objectiveLayout = null, StoryMissionDefinition? retainedDefinition = null)
     {
         diagnostic = "";
         if (missionId == Guid.Empty) { diagnostic = "An mission requires its own identity."; return StoryLedgerStatus.InvalidTransition; }
@@ -222,19 +213,17 @@ internal sealed class StoryLedger
             diagnostic = "The mission sequence reached its bound; refusing rather than wrapping the timeline.";
             return StoryLedgerStatus.LimitExceeded;
         }
-        if (retention == StoryRetention.Campaign && HasCampaignMission(id))
+        if (HasMission(id))
         {
             // The game admits one story mission per identifier, ever: GamePlayer.AddMissionWithLog
             // refuses when HasStoryMission(storyId) reports it already active or archived, and the
             // archive keeps it forever. A campaign definition mirrors that exactly - it runs once,
             // and its outcome is the definition's outcome. Repeatable content is temporary.
-            diagnostic = "Definition '" + id + "' already has a campaign mission (unresolved or retired); "
-                + "a campaign definition runs once, mirroring the game's one story mission per identifier.";
+            diagnostic = "Definition '" + id + "' already has a mission (unresolved or retired); "
+                + "a story definition runs once, mirroring the game's one story mission per identifier.";
             return StoryLedgerStatus.InvalidTransition;
         }
-        if (retention != StoryRetention.Campaign && choiceReservation > 0)
-        { diagnostic = "Only a campaign definition reserves declared-choice space."; return StoryLedgerStatus.InvalidTransition; }
-        var candidate = new StoryMissionEntry(id, missionId, retention, _sequence + 1, choiceReservation: choiceReservation, objectiveLayout: objectiveLayout, retainedDefinition: retainedDefinition);
+        var candidate = new StoryMissionEntry(id, missionId, _sequence + 1, choiceReservation: choiceReservation, objectiveLayout: objectiveLayout, retainedDefinition: retainedDefinition);
         if (ProviderFootprint(id.Provider!) + Footprint(candidate) > ProviderPayloadBudget)
         {
             diagnostic = "Provider '" + id.Provider + "' would exceed its " + ProviderPayloadBudget
@@ -350,7 +339,7 @@ internal sealed class StoryLedger
     internal bool CanReplaceObjectiveLayout(StoryMissionEntry entry, StoryObjectiveLayout layout, StoryMissionDefinition? definition = null)
     {
         if (!_byMission.TryGetValue(entry.MissionId, out var current) || !ReferenceEquals(current, entry)) return false;
-        if (definition != null && (definition.Retention != entry.Retention || definition.ReservedChoiceBytes != entry.ChoiceReservation
+        if (definition != null && (definition.ReservedChoiceBytes != entry.ChoiceReservation
             || (entry.RetainedDefinition != null && !entry.RetainedDefinition.ChoiceKeys.SequenceEqual(definition.ChoiceKeys)))) return false;
         var candidate = entry.WithObjectiveLayout(layout, definition);
         int growth;
@@ -394,15 +383,12 @@ internal sealed class StoryLedger
         // No per-definition bound is applied here: the slot was reserved when the mission was
         // offered, so recording ITS outcome is always possible. Checking again would strand it.
         entry.Retire(outcome, choices);
-        if (entry.Retention == StoryRetention.Temporary) PruneTemporary(entry.Id);
         return StoryLedgerStatus.Accepted;
     }
 
     private string? CheckChoices(StoryMissionEntry entry, IReadOnlyDictionary<string, string>? choices)
     {
         if (choices == null || choices.Count == 0) return null;
-        if (entry.Retention != StoryRetention.Campaign)
-            return "Declared choices are retained for campaign definitions only; '" + entry.Id + "' is temporary.";
         if (choices.Count > StoryMissionDefinition.MaxChoiceKeys)
             return "At most " + StoryMissionDefinition.MaxChoiceKeys + " declared choices per mission.";
         int used = 0;
@@ -430,22 +416,6 @@ internal sealed class StoryLedger
     }
 
     /// <summary>
-    /// Keeps the newest <see cref="TemporaryTombstoneHorizon"/> terminal tombstones of a temporary
-    /// definition. Only TERMINAL TEMPORARY entries are pruned: offered and active missions are
-    /// still needed to reconstruct live content, and campaign outcomes/choices are never removed.
-    /// This is a bounded horizon, not a time-based purge.
-    /// </summary>
-    private void PruneTemporary(StoryMissionDefinitionId id)
-    {
-        var terminal = _byMission.Values
-            .Where(entry => entry.Id == id && entry.Retention == StoryRetention.Temporary && entry.State.IsTerminal())
-            .OrderByDescending(entry => entry.Sequence)
-            .Skip(TemporaryTombstoneHorizon)
-            .ToArray();
-        foreach (var entry in terminal) _byMission.Remove(entry.MissionId);
-    }
-
-    /// <summary>
     /// What one mission costs its provider's budget: the row it writes today plus, while it is
     /// still unresolved, the space held back for the outcome it is still allowed to record. A
     /// recorded outcome releases the reservation and pays only for what it actually wrote.
@@ -467,16 +437,16 @@ internal sealed class StoryLedger
     /// mission that still has its outcome to record. Either one means the definition has run,
     /// matching the game's <c>HasStoryMission</c> (active or archived).
     /// </summary>
-    private bool HasCampaignMission(StoryMissionDefinitionId id)
-        => _byMission.Values.Any(entry => entry.Id == id && entry.Retention == StoryRetention.Campaign);
+    private bool HasMission(StoryMissionDefinitionId id)
+        => _byMission.Values.Any(entry => entry.Id == id);
 
     /// <summary>
     /// The one campaign mission a definition holds, if any. A campaign definition runs once, so the
     /// definition identifies its mission the way the game's <c>GetMission(storyId)</c> does.
     /// </summary>
-    internal bool TryGetCampaign(StoryMissionDefinitionId id, out StoryMissionEntry entry)
+    internal bool TryGetByDefinition(StoryMissionDefinitionId id, out StoryMissionEntry entry)
     {
-        entry = _byMission.Values.FirstOrDefault(row => row.Id == id && row.Retention == StoryRetention.Campaign)!;
+        entry = _byMission.Values.FirstOrDefault(row => row.Id == id)!;
         return entry != null;
     }
 
@@ -517,8 +487,7 @@ internal sealed class StoryLedger
             .Where(entry => entry.Id == id && !entry.State.IsTerminal())
             .OrderBy(entry => entry.Sequence)
             .Select(entry => new StoryMissionSnapshot(entry.Id, entry.MissionId,
-                entry.State == StoryMissionState.Active ? StoryMissionStage.Active : StoryMissionStage.Offered,
-                entry.Retention))
+                entry.State == StoryMissionState.Active ? StoryMissionStage.Active : StoryMissionStage.Offered))
             .ToArray();
 
     /// <summary>Authoritative retained outcomes for one definition, oldest first.</summary>
@@ -527,16 +496,12 @@ internal sealed class StoryLedger
             .Where(entry => entry.Id == id && entry.State.IsTerminal())
             .OrderBy(entry => entry.Sequence)
             .Select(entry => new StoryMissionRecord(entry.Id, entry.MissionId, entry.Outcome,
-                entry.Retention == StoryRetention.Campaign ? entry.Choices.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal) : null))
+                entry.Choices.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)))
             .ToArray();
 
-    /// <summary>
-    /// Authoritative CAMPAIGN completion. A temporary definition keeps a bounded idempotency
-    /// tombstone, not an authoritative outcome, so it never answers true here.
-    /// </summary>
+    /// <summary>Authoritative completion, the way the game answers IsMissionCompleted(storyId).</summary>
     internal bool IsCompleted(StoryMissionDefinitionId id)
-        => _byMission.Values.Any(entry => entry.Id == id && entry.Retention == StoryRetention.Campaign
-            && entry.Outcome == StoryOutcome.Completed);
+        => _byMission.Values.Any(entry => entry.Id == id && entry.Outcome == StoryOutcome.Completed);
 
     /// <summary>
     /// The bounds a persisted record set must satisfy, shared by the encoder and the decoder so the
@@ -552,7 +517,7 @@ internal sealed class StoryLedger
         {
             var definition = row.RetainedDefinition;
             if (definition == null) continue;
-            if (row.State.IsTerminal() || definition.LocalId != row.Id.LocalId || definition.Retention != row.Retention
+            if (row.State.IsTerminal() || definition.LocalId != row.Id.LocalId
                 || definition.ReservedChoiceBytes != row.ChoiceReservation
                 || !row.ObjectiveLayout.SamePositions(new StoryObjectiveLayout(definition))
                 || definition.Steps.SelectMany(step => step.Objectives).Any(objective => StoryMissionPolicy.RefuseObjective(objective.Kind) != null))
@@ -570,17 +535,14 @@ internal sealed class StoryLedger
         if (rows.Select(row => row.MissionId).Distinct().Count() != rows.Count) return "Duplicate story mission identity.";
         if (rows.Any(row => (row.State.IsTerminal()) != row.Outcome.HasValue))
             return "A retired mission requires exactly one outcome.";
-        if (rows.Any(row => !row.State.IsTerminal() && row.Retention != StoryRetention.Campaign && row.ChoiceReservation > 0))
-            return "Only a campaign mission reserves declared-choice space.";
         // Only a terminal record carries choices. An unresolved row with choices is not a state this
         // ledger can produce, and restoring one would let a later outcome grow past its bound.
         if (rows.Any(row => !row.State.IsTerminal() && row.Choices.Count > 0))
             return "An unresolved story mission records no declared choices.";
-        // Pending declarations are the mirror image: only an unresolved campaign mission can hold
-        // them, and never more than the space its own outcome already reserved.
-        if (rows.Any(row => row.PendingChoices.Count > 0
-            && (row.State.IsTerminal() || row.Retention != StoryRetention.Campaign)))
-            return "Only an unresolved campaign mission holds declared choices for a future outcome.";
+        // Pending declarations are the mirror image: only an unresolved mission can hold them, and
+        // never more than the space its own outcome already reserved.
+        if (rows.Any(row => row.PendingChoices.Count > 0 && row.State.IsTerminal()))
+            return "Only an unresolved story mission holds declared choices for a future outcome.";
         if (rows.Any(row => StoryStateCodec.PendingSize(row) > row.ChoiceReservation))
             return "Declared choices exceed the space reserved for this mission's outcome.";
         if (rows.Any(row => row.FailureObserved && row.State.IsTerminal()))
@@ -594,13 +556,10 @@ internal sealed class StoryLedger
         }
         foreach (var group in rows.GroupBy(row => row.Id))
         {
-            // The same rule the ledger applies at offer time: one campaign mission per definition,
-            // whether it is retired or still has an outcome to record.
-            if (group.Count(row => row.Retention == StoryRetention.Campaign) > 1)
-                return "Definition '" + group.Key + "' has more than one campaign mission.";
-            if (group.Any(row => row.Retention == StoryRetention.Temporary)
-                && group.Count(row => row.Retention == StoryRetention.Temporary && row.State.IsTerminal()) > TemporaryTombstoneHorizon)
-                return "Definition '" + group.Key + "' exceeds its temporary tombstone horizon.";
+            // The same rule the ledger applies at offer time: one mission per definition, whether it
+            // is retired or still has an outcome to record.
+            if (group.Count() > 1)
+                return "Definition '" + group.Key + "' has more than one mission.";
         }
         return null;
     }

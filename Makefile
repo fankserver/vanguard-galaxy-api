@@ -36,7 +36,6 @@ build-bar-authors: link-libs
 .PHONY: build-story-authors
 build-story-authors: link-libs
 	$(DOTNET) build examples/OwnedStoryCampaign/OwnedStoryCampaign.csproj -c $(CONFIGURATION)
-	$(DOTNET) build examples/OwnedStoryJob/OwnedStoryJob.csproj -c $(CONFIGURATION)
 test:
 	python3 -m unittest discover -s tools -p 'test_*.py'
 	$(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter '$(TEST_FILTER)' $(TEST_ARGS)

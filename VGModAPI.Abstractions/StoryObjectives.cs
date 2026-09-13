@@ -10,7 +10,7 @@ public sealed class StoryObjectiveQuery
     public int? Required { get; }
     public int? MissionRevision { get; }
     public string Diagnostic { get; }
-    /// <summary>Retained terminal outcome, or null while unresolved. Temporary outcomes expire with their tombstones.</summary>
+    /// <summary>Retained terminal outcome, or null while unresolved.</summary>
     public StoryOutcome? Outcome { get; }
     /// <summary>
     /// True when the session is known but this objective's owned destination no longer exists in

@@ -199,7 +199,7 @@ public sealed partial class StoryMissionTests
     public void StoryChoicesAreBoundedFrozenAtSubmissionAndRetainedOnTheMission()
     {
         using var f = new StoryObjectsFixture();
-        using var definition = f.Provider.Register(Definition(retention: StoryRetention.Campaign)).Definition!;
+        using var definition = f.Provider.Register(Definition()).Definition!;
         f.Start(); var mission = f.Game.Story.Offer(definition); mission.Activate(); f.Tick();
         Assert.Equal(StoryActionStatus.Rejected, mission.DeclareChoices(new EndlessChoices()).Status);
         var choices = new Dictionary<string, string> { ["branch"] = "saved" };
@@ -271,11 +271,10 @@ public sealed partial class StoryMissionTests
         f.Tick();
         var native = mission.NativeMissionId;
         Assert.NotNull(native);
-        Assert.EndsWith(mission.Id.ToString("N"), native);
         Assert.StartsWith("vgmodapi.story.", native);
-        // Distinct missions of one definition highlight distinct identifiers.
-        var second = f.Game.Story.Offer(definition); f.Tick();
-        Assert.NotEqual(native, second.NativeMissionId);
+        // A story mission is highlighted under its definition's own identifier - the shape the game
+        // uses for a story id - and a definition runs once, so there is no second one to distinguish.
+        Assert.Equal(StoryMissionPolicy.Identifier(mission.Definition.Id), native);
     }
 
     private sealed class StoryObjectsFixture : IDisposable
@@ -309,7 +308,7 @@ public sealed partial class StoryMissionTests
         internal void Tick() => Hub.Gameplay.Tick();
         internal void Complete(IStoryMission mission)
         {
-            var identifier = StoryMissionPolicy.MissionIdentifier(mission.Definition.Id, mission.Id, StoryRetention.Temporary);
+            var identifier = StoryMissionPolicy.Identifier(mission.Definition.Id);
             World.CompleteInWorld(identifier); Missions.Publish(MissionTransitionKind.Completed, identifier);
         }
         public void Dispose() { Provider.Dispose(); Games.Dispose(); Engine.Dispose(); Hub.Dispose(); }
