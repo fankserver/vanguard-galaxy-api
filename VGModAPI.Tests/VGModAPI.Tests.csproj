@@ -3,6 +3,7 @@
   <ItemGroup>
     <!-- The actual patch entry points, compiled into the test assembly so their prefix/finalizer flow
          is executed rather than described. The file carries no BepInEx or Unity dependency. -->
+    <Compile Include="../VGModAPI.E2E/GameTest.cs" Link="E2E/GameTest.cs" />
     <Compile Include="../VGModAPI/Patches/StoryProtectionPatches.cs" Link="StoryProtectionPatches.cs" />
     <Compile Include="../VGModAPI/Patches/BarPatches.cs" Link="BarPatches.cs" />
     <Compile Include="../VGModAPI/Patches/WorldLoadPatches.cs" Link="WorldLoadPatches.cs" />

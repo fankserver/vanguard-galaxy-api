@@ -1,65 +1,96 @@
-# In-game end-to-end tests
+# Live-game tests
 
-EWTest is an opt-in, development-only BepInEx plugin. It executes assertions
-against the running game and public ModAPI contracts. It is not shipped or run
-in public CI.
+`VGModAPI.E2E` is an optional BepInEx test plugin, alongside `VGModAPI.Tests`.
+It consumes public API contracts; native fixture setup is confined to
+`NativeSession.cs`. No test hooks or dependencies are added to the shipped API.
+The project inherits the repository's nullable, language, version and
+warnings-as-errors settings. It targets `netstandard2.1` for the game's Mono runtime.
 
-## Run the fresh-session test
+## Run
 
-Build the API with `make build`, then build the separate harness with
-`dotnet build EWTest/EWTest.csproj -c Debug`. Stage the resulting API
-assemblies and EWTest.dll in an isolated BepInEx plugin directory, preserving
-and restoring the installed plugins. Do not run alongside another game instance.
+With Steam running and the game closed:
 
-Run the controller with **Windows Python** when the game runs on Windows:
-
-```text
-py -3 tools/e2e.py --game-dir "C:\path\to\Vanguard Galaxy" --save-dir "C:\path\to\Saves" --runtime-dir "C:\temp\ewtest" --suite fresh-session --launch --timeout 60
+```sh
+make e2e
 ```
 
-The controller launches a normal Unity player, not batch/headless mode. It sets
-`SteamAppId` and `SteamGameId` to the game's application ID, preserving the
-Steam launch context needed for direct executable startup. Steam must be running
-with access to the game. The handshake and port are passed through the child
-process environment. A WSL Python loopback listener is not the Windows game's
-loopback listener; use Windows Python rather than assuming these are shared.
+This builds the API and test plugin, stages only those assemblies in the game,
+launches it, executes `fresh-session`, writes the result and stops the owned
+process before restoring the original plugins and BepInEx configuration.
+An already running game or a leftover staging backup causes refusal, not a kill
+or overwrite. The controller launches a normal player with the Steam application
+environment; it does not assume Unity batch/headless flags work for this game.
 
-The selected test creates a new player using vanilla `CreateNewGamePlayer`,
-marks it ephemeral before starting scenes, supplies the native arena setup,
-and starts gameplay. It asserts:
+Use the [Makefile](../../Makefile) for configuration and command definitions:
+`GAME_DIR`, `CONFIGURATION`, `E2E_PYTHON`, `E2E_SAVE_DIR`, `E2E_TIMEOUT`,
+`E2E_BUILD`, `E2E_RUNTIME`, and `E2E_CASE`. The default save path is the current
+Windows user's game save directory. Under WSL the target uses Windows Python
+and translates paths (including spaces); the TCP listener must run on the same
+OS as the game. `make e2e-build` builds/stages artifacts without changing the
+installed game or launching it.
 
-- The native player remains ephemeral (vanilla save writes are disabled).
-- Native `GameplayManager.initialized` is true.
-- ModAPI emitted `SessionStarting`, `PlayerReady`, and `GameplayInitialized`
-  in that order.
+`make test` includes the controller's Python tests and the frame runner's xUnit
+tests without a game. Neither it nor public CI launches E2E. The optional test
+project is outside the production solution/package; `e2e-build` is its build target.
+Newtonsoft.Json is an explicit dev-only dependency, not assumed to exist in the game.
 
-This is a live new-session/lifecycle test, not a complete gameplay or save/load
-test. The normal new-player entry is deliberate: vanilla `CreateTestArenaPlayer`
-bypasses the new-player method observed by ModAPI.
+## Current test
+
+`fresh-session` uses the normal native new-player entry, marks the player
+ephemeral before starting scenes, initializes the arena fixture, and asserts:
+
+- The game's native gameplay initialization completed.
+- ModAPI observes a new, unsaved session.
+- Exactly one `SessionStarting → PlayerReady → GameplayInitialized` sequence
+  belongs to the same session identity.
+- The player remains ephemeral and no successful API save event occurred.
+
+Vanilla `CreateTestArenaPlayer` bypasses ModAPI's new-player binding, so the
+fixture uses `CreateNewGamePlayer` and mirrors the arena setup on that same
+player. Fixture reflection failures name the native member; API assertions do
+not bypass the API's readiness or ownership checks.
+
+Each `TestStep` has a name, binding hint and a predicate advanced on the game
+thread. Waiting, assertion exceptions and timeout failures are terminal: no
+later mutation/assertion runs after a failure. The run uses a monotonic time
+budget with controller time reserved for reporting. Additional gameplay cases
+should exercise concrete public operations and assert observable results—not
+just availability, successful registration, or skipped placeholders.
+
+Only the fresh-session lifecycle case is implemented. This is not full API
+coverage: world authoring, mission/travel/boarding gameplay and persistent
+save/load round trips remain to be implemented.
 
 ## Results and safety
 
-The harness streams metadata, check results, and a final `finish` message over
-Windows loopback. The controller writes `<runtime-dir>/report/report.json` and
-returns nonzero on failed checks or an incomplete stream. A partial passing
-report must not mask a timeout or disconnect. `exitCodeBeforeCleanup` records
-process state before controller termination; null means it was still running,
-not that it crashed or exited.
+The runtime directory contains `player.log` and `report.json` (schema 2).
+Reports contain the game/API versions, game assembly hash, results and explicit
+stream completion. Each failed result carries `detail` and `binding`. Empty,
+malformed, incomplete, mismatched-run or unexpected-test streams cannot pass.
+A parsed failure or incomplete report returns nonzero:
 
-`--save-dir` hashes the existing save tree before and after execution. The
-fresh-session case never loads those saves. Ephemeral state prevents vanilla
-save writes; hashing detects changes but is not a sandbox or rollback facility.
-The temporary profile directory is not wired to vanilla save storage. Persistent
-save/load testing requires separate disposable save-path isolation.
+```sh
+python3 tools/e2e.py --report artifacts/e2e/run/report.json
+```
 
-The default `--suite all` also runs availability, lifecycle, world-authoring,
-and dungeon-registration checks. These are incomplete coverage: world authoring
-may skip when a provider is unavailable, configuration can fail availability,
-and dungeon registration does not prove dungeon gameplay. The isolated
-`fresh-session` selection does not claim those suites passed.
+`exitCodeBeforeCleanup` distinguishes observed process state from cleanup;
+null means still running at that instant. `terminatedByController` records
+whether the controller terminated its owned process after a grace period.
+A game's exit code alone does not establish a test outcome. The current game's
+quit handler may force its own process exit; the completed assertions and
+`finish` handshake determine the test outcome.
 
-The harness reflects into inspected native game entry points for setup and the
-native-state assertion; API assertions use public contracts. Setup exceptions
-are reported as runner failures. Mutating suites require verified ephemeral
-session state. The framework still needs gameplay operation scenarios and
-isolated persistence tests before it can cover the full ModAPI.
+Ephemeral state suppresses vanilla save writes. `SaveGuard` additionally hashes
+the real save tree before and after the run. This is a **write detector**, not a
+sandbox, redirected save directory or rollback mechanism. It neither copies
+nor loads existing saves. Persistent save/load tests need separate disposable
+save-path isolation; do not remove the ephemeral guard to add them.
+
+Plugins and configuration are backed up under
+`<game>/BepInEx/.vgmodapi-e2e-backup` and restored on ordinary failures as well as
+success. A hard controller interruption can leave that backup; the next run
+refuses to overwrite it. If that happens, first verify the game is stopped,
+then remove the temporary `plugins`/`config` directories and move the corresponding
+backed-up directories back. If a directory did not exist before the run, there
+is no corresponding backup to restore. Remove the empty backup directory only
+after restoration. Never restore files beneath a process that may still be using them.

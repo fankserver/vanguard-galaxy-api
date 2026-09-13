@@ -1,235 +1,190 @@
 import json
+from pathlib import Path
 import socket
+import subprocess
 import tempfile
-import threading
 import time
 import unittest
-from pathlib import Path
+from unittest.mock import Mock, patch
 
-from e2e import (
-    CheckResult, E2EError, SaveGuardError, SuiteResult, DisposableSaveProfile,
-    HANDSHAKE_ARG, Listener, REPORT_FILENAME, Report,
-    apply_message, assert_real_saves_unchanged, build_launch_command,
-    build_launch_env, consume_stream, gate, human_summary, load_report,
-    parse_report, run_streaming, tree_manifest, _timeout_report,
-)
+import e2e
 
 
-def sample_report():
-    return {
-        "schema": 1,
-        "meta": {"apiVersion": "0.2.0", "gameAssemblySha256": "a2aad60b", "gameVersion": "0.8.2.3"},
-        "suites": [{
-            "id": "availability", "name": "Public service availability",
-            "results": [
-                {"check": "SessionTracking available", "status": "pass", "message": "ok",
-                 "expected": "available", "actual": "available", "suggestedAction": "", "elapsedMs": 1},
-                {"check": "World authoring available", "status": "fail", "message": "hook did not bind",
-                 "expected": "available", "actual": "BindingFailed: SessionTracking",
-                 "suggestedAction": "re-inspect SessionTracking in the updated Assembly-CSharp.dll and update BindingCatalog",
-                 "elapsedMs": 5},
-            ],
-        }],
-        "summary": {"passed": 1, "failed": 1, "skipped": 0, "total": 2},
-    }
+RESULT = dict(type="result", id="fresh-session", status="pass", detail="ok", binding="", elapsedMs=10)
+META = dict(type="meta", runId="run", gameVersion="test")
+FINISH = dict(type="finish")
 
 
-def wire_frames(*messages):
-    return "\n".join(json.dumps(m) for m in messages) + "\n"
+class ProtocolTests(unittest.TestCase):
+    def stream(self, messages):
+        reader, writer = socket.socketpair()
+        self.addCleanup(reader.close)
+        self.addCleanup(writer.close)
+        payload = b"".join(json.dumps(m).encode() + b"\n" for m in messages)
+        writer.sendall(payload)
+        writer.shutdown(socket.SHUT_WR)
+        return reader
 
+    def test_complete_test_passes(self):
+        report = e2e.new_report()
+        e2e.consume(self.stream([META, RESULT, FINISH]), report, "run", time.monotonic() + 2)
+        self.assertEqual(e2e.gate(report), 0)
 
-META = {"type": "meta", "apiVersion": "0.2.0", "gameAssemblySha256": "a2aad60b"}
-SUITE = {"type": "suite-start", "suite": {"id": "availability", "name": "Public service availability"}}
-RESULT_PASS = {"type": "result", "check": {"check": "SessionTracking available", "status": "pass",
-                                           "message": "ok", "expected": "available", "actual": "available",
-                                           "suggestedAction": "", "elapsedMs": 1}}
-RESULT_FAIL = {"type": "result", "check": {"check": "World available", "status": "fail", "message": "no",
-                                           "expected": "available", "actual": "BindingFailed",
-                                           "suggestedAction": "re-inspect binding", "elapsedMs": 4}}
-FINISH = {"type": "finish"}
+    def test_disconnect_after_pass_cannot_pass(self):
+        report = e2e.new_report()
+        with self.assertRaisesRegex(e2e.E2EError, "disconnected"):
+            e2e.consume(self.stream([META, RESULT]), report, "run", time.monotonic() + 2)
+        self.assertEqual(e2e.gate(report), 1)
 
+    def test_no_results_cannot_pass(self):
+        report = e2e.new_report()
+        report["finished"] = True
+        self.assertEqual(e2e.gate(report), 1)
+        with self.assertRaises(e2e.E2EError):
+            e2e.consume(self.stream([META, FINISH]), e2e.new_report(), "run", time.monotonic() + 2)
 
-class ReportParseTests(unittest.TestCase):
-    def test_parse_valid_report(self):
-        report = parse_report(json.dumps(sample_report()))
-        self.assertEqual((report.passed, report.failed, report.skipped), (1, 1, 0))
-        self.assertEqual(report.failures[0].check, "World authoring available")
-        self.assertIn("BindingCatalog", report.failures[0].suggestedAction)
+    def test_invalid_order_duplicate_and_unknown_result_fail(self):
+        for messages in ([RESULT, FINISH], [META, META], [META, RESULT, RESULT],
+                         [META, dict(RESULT, id="unrequested")], [META, dict(RESULT, status="skip")],
+                         [META, dict(RESULT, elapsedMs=-1)], [META, []]):
+            with self.subTest(messages=messages), self.assertRaises(e2e.E2EError):
+                e2e.consume(self.stream(messages), e2e.new_report(), "run", time.monotonic() + 2)
 
-    def test_schema_mismatch_rejected(self):
-        raw = sample_report(); raw["schema"] = 2
-        with self.assertRaises(E2EError):
-            parse_report(json.dumps(raw))
+    def test_wrong_run_rejected(self):
+        with self.assertRaisesRegex(e2e.E2EError, "run ID"):
+            e2e.consume(self.stream([META]), e2e.new_report(), "other", time.monotonic() + 2)
 
-    def test_bad_status_rejected(self):
-        raw = sample_report(); raw["suites"][0]["results"][0]["status"] = "warn"
-        with self.assertRaises(E2EError):
-            parse_report(json.dumps(raw))
+    def test_malformed_json_not_silently_ignored(self):
+        conn = Mock()
+        conn.recv.return_value = b"not json\n"
+        with self.assertRaisesRegex(e2e.E2EError, "Malformed"):
+            e2e.consume(conn, e2e.new_report(), "run", time.monotonic() + 2)
 
-    def test_lying_summary_cannot_mask_failure(self):
-        raw = sample_report(); raw["summary"] = {"passed": 2, "failed": 0, "skipped": 0, "total": 2}
-        self.assertEqual(gate(parse_report(json.dumps(raw))), 1)
+    def test_total_deadline_even_when_stream_continues(self):
+        with self.assertRaisesRegex(e2e.E2EError, "deadline"):
+            e2e.consume(Mock(), e2e.new_report(), "run", time.monotonic() - 1)
 
-    def test_load_report_file(self):
+    def test_report_round_trip_keeps_process_state_types(self):
+        report = e2e.new_report()
+        report.update(finished=True, results=[{k: v for k, v in RESULT.items() if k != "type"}])
+        report["meta"]["exitCodeBeforeCleanup"] = None
         with tempfile.TemporaryDirectory() as td:
-            p = Path(td) / REPORT_FILENAME
-            p.write_text(json.dumps(sample_report()))
-            self.assertEqual(load_report(p).failed, 1)
-        with self.assertRaises(E2EError):
-            load_report(Path(td) / "missing.json")
+            path = Path(td) / "report.json"
+            path.write_text(json.dumps(report))
+            loaded = e2e.read_report(path)
+            self.assertIsNone(loaded["meta"]["exitCodeBeforeCleanup"])
+            self.assertEqual(e2e.gate(loaded), 0)
 
 
-class GateAndSummaryTests(unittest.TestCase):
-    def test_gate_single(self):
-        raw = sample_report()
-        raw["suites"][0]["results"] = [raw["suites"][0]["results"][0]]
-        self.assertEqual(gate(parse_report(json.dumps(raw))), 0)
-        self.assertEqual(gate(parse_report(json.dumps(sample_report()))), 1)
+class SafetyTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.game = self.root / "game"
+        self.build = self.root / "build"
+        self.build.mkdir()
+        for name in e2e.ASSEMBLIES:
+            (self.build / name).write_bytes(b"test assembly")
+        self.bep = self.game / "BepInEx"
+        for name in ("core", "plugins", "config"):
+            (self.bep / name).mkdir(parents=True)
+        (self.bep / "core/BepInEx.dll").write_bytes(b"core")
+        (self.bep / "plugins/user.dll").write_bytes(b"user mod")
+        (self.bep / "config/user.cfg").write_text("user config")
 
-    def test_human_summary_lists_failure_and_fix(self):
-        text = human_summary(parse_report(json.dumps(sample_report())))
-        self.assertIn("1 failed", text)
-        self.assertIn("World authoring available", text)
-        self.assertIn("BindingCatalog", text)
+    def assert_restored(self):
+        self.assertEqual((self.bep / "plugins/user.dll").read_bytes(), b"user mod")
+        self.assertEqual((self.bep / "config/user.cfg").read_text(), "user config")
+        self.assertFalse((self.bep / ".vgmodapi-e2e-backup").exists())
+        self.assertFalse((self.bep / "plugins/VGModAPI.E2E").exists())
 
+    def test_stage_only_built_assemblies_and_restore(self):
+        with e2e.GameInstallation(self.game, self.build):
+            self.assertFalse((self.bep / "plugins/user.dll").exists())
+            self.assertEqual(len(list((self.bep / "plugins/VGModAPI.E2E").iterdir())), len(e2e.ASSEMBLIES))
+            (self.bep / "config/vgmodapi.cfg").write_text("generated")
+        self.assert_restored()
 
-class StreamingProtocolTests(unittest.TestCase):
-    def test_apply_message_builds_report(self):
-        report = Report()
-        apply_message(report, META)
-        apply_message(report, SUITE)
-        apply_message(report, RESULT_PASS)
-        apply_message(report, RESULT_FAIL)
-        self.assertEqual(report.meta["gameAssemblySha256"], "a2aad60b")
-        self.assertEqual((report.passed, report.failed), (1, 1))
-        self.assertEqual(report.failures[0].suggestedAction, "re-inspect binding")
+    def test_restore_after_test_exception(self):
+        with self.assertRaises(RuntimeError):
+            with e2e.GameInstallation(self.game, self.build):
+                raise RuntimeError("test failed")
+        self.assert_restored()
 
-    def test_apply_result_before_suite_raises(self):
-        report = Report()
-        with self.assertRaises(E2EError):
-            apply_message(report, RESULT_PASS)
+    def test_partial_staging_failure_restores(self):
+        with patch("e2e.shutil.copy2", side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):
+                with e2e.GameInstallation(self.game, self.build):
+                    self.fail("should not reach test")
+        self.assert_restored()
 
-    def test_apply_unknown_type_raises(self):
-        report = Report()
-        with self.assertRaises(E2EError):
-            apply_message(report, {"type": "bogus"})
+    def test_interrupted_run_backup_blocks_retry(self):
+        with self.assertRaises(e2e.CleanupError):
+            with e2e.GameInstallation(self.game, self.build):
+                raise e2e.CleanupError("still running")
+        self.assertTrue((self.bep / ".vgmodapi-e2e-backup/plugins/user.dll").exists())
+        with self.assertRaisesRegex(e2e.E2EError, "backup exists"):
+            with e2e.GameInstallation(self.game, self.build):
+                self.fail("must not overwrite backup")
 
-    def test_listener_streams_to_report(self):
-        listener = Listener()
-        port = listener.bind()
+    def test_missing_build_does_not_touch_installation(self):
+        (self.build / e2e.ASSEMBLIES[0]).unlink()
+        with self.assertRaises(e2e.E2EError):
+            with e2e.GameInstallation(self.game, self.build):
+                self.fail()
+        self.assert_restored()
 
-        def game():
-            time.sleep(0.05)
-            with socket.create_connection(("127.0.0.1", port), timeout=5) as s:
-                s.sendall(wire_frames(META, SUITE, RESULT_PASS, RESULT_FAIL, FINISH).encode())
-
-        t = threading.Thread(target=game)
-        t.start()
-        reader = listener.accept(5)
-        self.assertIsNotNone(reader)
-        report = Report()
-        finished = consume_stream(report, reader, 5)
-        listener.close()
-        t.join(timeout=5)
-        self.assertTrue(finished)
-        self.assertEqual((report.passed, report.failed), (1, 1))
-
-    def test_listener_accept_timeout_returns_none(self):
-        listener = Listener(); listener.bind()
-        self.assertIsNone(listener.accept(0.1))
-        listener.close()
-
-
-class IsolationTests(unittest.TestCase):
-    def make_real(self, base):
-        real = base / "real-saves"
-        real.mkdir()
-        (real / "slot1.json").write_text("{\"progress\": 7}")
-        (real / "meta.txt").write_text("checksum=x")
-        return real
-
-    def test_tree_manifest_stable_and_rejects_change(self):
-        with tempfile.TemporaryDirectory() as td:
-            real = self.make_real(Path(td))
-            self.assertEqual(len(tree_manifest(real)), 2)
-            original = tree_manifest(real)
-            assert_real_saves_unchanged(original, real)
-            (real / "slot1.json").write_text("tampered")
-            with self.assertRaises(SaveGuardError):
-                assert_real_saves_unchanged(original, real)
-
-    def test_disposable_profile_keeps_real_saves_untouched(self):
-        with tempfile.TemporaryDirectory() as td:
-            base = Path(td); real = self.make_real(base)
-            before = tree_manifest(real)
-            with DisposableSaveProfile(real_dir=real, workspace=base / "work") as profile:
-                (profile.path / "state.bin").write_bytes(b"\x01")
-            self.assertEqual(tree_manifest(real), before)
-            self.assertFalse(profile.path.exists())
-            self.assertEqual(list(Path(base / "work").glob("vgmodapi-e2e-*")), [])
-
-    def test_disposable_profile_detects_real_save_write(self):
-        with tempfile.TemporaryDirectory() as td:
-            base = Path(td); real = self.make_real(base)
-            with self.assertRaises(SaveGuardError):
-                with DisposableSaveProfile(real_dir=real, workspace=base / "work"):
-                    (real / "slot1.json").write_text("overwritten")
+    def test_save_guard_is_read_only_and_detects_changes(self):
+        saves = self.root / "Saves"
+        saves.mkdir()
+        slot = saves / "slot"
+        slot.write_bytes(b"original")
+        with e2e.SaveGuard(saves):
+            self.assertEqual(slot.read_bytes(), b"original")
+        with self.assertRaisesRegex(e2e.E2EError, "changed"):
+            with e2e.SaveGuard(saves):
+                slot.write_bytes(b"changed")
+        self.assertEqual(slot.read_bytes(), b"changed")  # No fabricated isolation/rollback.
 
 
-class LaunchTests(unittest.TestCase):
-    def test_build_launch_command_normal_player_and_handshake(self):
-        with tempfile.TemporaryDirectory() as td:
-            game = Path(td) / "game"; game.mkdir()
-            (game / "VanguardGalaxy.exe").write_bytes(b"MZ")
-            cmd = build_launch_command(str(game))
-            self.assertEqual(cmd[0], str(game / "VanguardGalaxy.exe"))
-            self.assertNotIn("-batchmode", cmd)
-            self.assertNotIn("-nographics", cmd)
-            self.assertIn(HANDSHAKE_ARG, cmd)
-
-    def test_build_launch_command_missing_exe(self):
-        with tempfile.TemporaryDirectory() as td:
-            with self.assertRaises(E2EError):
-                build_launch_command(str(Path(td) / "no-game"))
-
-    def test_build_launch_env_sets_port_contract(self):
-        env = build_launch_env(54321)
-        self.assertEqual(env["EWTEST_RUN"], "1")
-        self.assertEqual(env["EWTEST_PORT"], "54321")
+class ProcessTests(unittest.TestCase):
+    def test_steam_context_and_explicit_handshake(self):
+        with patch("e2e.time.time", return_value=1000):
+            env = e2e.launch_env(1234, "unique", 80)
         self.assertEqual(env["SteamAppId"], "3471800")
         self.assertEqual(env["SteamGameId"], "3471800")
-        self.assertEqual(env["EWTEST_SUITE"], "all")
+        self.assertEqual(env["VGMODAPI_E2E_RUN"], "unique")
+        self.assertEqual(env["VGMODAPI_E2E_DEADLINE"], "1080000")
 
-    def test_select_fresh_session_case(self):
-        self.assertEqual(build_launch_env(54321, suite="fresh-session")["EWTEST_SUITE"], "fresh-session")
+    def test_existing_process_is_refused_not_killed(self):
+        with patch("e2e.subprocess.check_output", return_value='"VanguardGalaxy.exe","1234"\n'):
+            with self.assertRaises(e2e.E2EError):
+                e2e.ensure_game_stopped()
 
-    def test_disconnect_after_passing_check_still_fails(self):
-        report = Report()
-        for message in (META, SUITE, RESULT_PASS):
-            apply_message(report, message)
-        _timeout_report(report, "disconnected without finish")
-        self.assertEqual(report.passed, 1)
-        self.assertEqual(report.failed, 1)
-        self.assertEqual(gate(report), 1)
+    def test_natural_exit_is_not_controller_termination(self):
+        proc = Mock(returncode=-1)
+        proc.poll.return_value = None
+        report = e2e.new_report()
+        e2e.stop_owned_process(proc, report)
+        proc.terminate.assert_not_called()
+        self.assertIsNone(report["meta"]["exitCodeBeforeCleanup"])
+        self.assertFalse(report["meta"]["terminatedByController"])
 
+    def test_timeout_terminates_only_owned_process(self):
+        proc = Mock(returncode=1)
+        proc.poll.return_value = None
+        proc.wait.side_effect = [subprocess.TimeoutExpired("game", 5), 1]
+        report = e2e.new_report()
+        e2e.stop_owned_process(proc, report)
+        proc.terminate.assert_called_once()
+        self.assertTrue(report["meta"]["terminatedByController"])
 
-class CliTests(unittest.TestCase):
-    def test_report_mode_gates(self):
-        import e2e as module
-        with tempfile.TemporaryDirectory() as td:
-            p = Path(td) / REPORT_FILENAME
-            p.write_text(json.dumps(sample_report()))
-            self.assertEqual(module.main(["--report", str(p)]), 1)
-            raw = sample_report(); raw["suites"][0]["results"] = [raw["suites"][0]["results"][0]]
-            p.write_text(json.dumps(raw))
-            self.assertEqual(module.main(["--report", str(p)]), 0)
-
-    def test_preview_mode_is_ci_safe(self):
-        import e2e as module
-        with tempfile.TemporaryDirectory() as td:
-            game = Path(td) / "game"; game.mkdir()
-            (game / "VanguardGalaxy.exe").write_bytes(b"MZ")
-            self.assertEqual(module.main(["--game-dir", str(game), "--preview"]), 0)
+    def test_unstoppable_process_retains_staging(self):
+        proc = Mock()
+        proc.wait.side_effect = subprocess.TimeoutExpired("game", 5)
+        with self.assertRaises(e2e.CleanupError):
+            e2e.stop_owned_process(proc, e2e.new_report())
 
 
 if __name__ == "__main__":
