@@ -58,12 +58,15 @@ public sealed class PocketSystemRemoveTests
             Hub.PlayerReady(Session);
             Hub.GameplayInitialized(Session);
         }
-        /// <summary>A pocket containing one committed site, the shape an attached dungeon needs.</summary>
+        /// <summary>
+        /// A pocket containing one committed STATION-bearing salvage site: only a derelict station can
+        /// carry an attached authored dungeon, so a mining field could never reach this path at all.
+        /// </summary>
         internal IPocketSystem PocketWithSiteInside(out IResourceSite inside)
         {
             Assert.Equal(WorldContentStatus.Succeeded, Provider.RegisterPocketSystem(new PocketSystemDefinition("pocket", 1, "The Hollow")));
             Assert.Equal(WorldContentStatus.Succeeded, Provider.RegisterResourceSite(
-                ResourceSiteDefinition.MiningField("field", 1, "Singer's Field", 8, 6)));
+                ResourceSiteDefinition.Salvage("field", 1, "Failed Refuge", 8, "Monsoon", "Fanatics", withStation: true)));
             BeginGameplay();
             var pocket = Provider.CreatePocketSystem("pocket", "k1", "anchor")!;
             inside = Provider.CreateResourceSite("field", "in-pocket", pocket.SystemId!, 1f, 2f)!;
