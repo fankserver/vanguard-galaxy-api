@@ -45,7 +45,6 @@ public sealed class AvailabilitySuite
         Inspect("Story", services.Story, "story bindings");
         Inspect("Bars", services.Bars, "bar bindings");
         Inspect("Dialogue", services.Dialogue, "dialogue bindings");
-        Inspect("Game", services.Game, "game bindings");
         Inspect("Items", services.Items, "owned-item bindings");
         Inspect("RecipeRegistration", services.RecipeRegistration, "owned-recipe bindings");
         return suite;

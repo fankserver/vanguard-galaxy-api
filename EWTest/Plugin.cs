@@ -75,7 +75,7 @@ public sealed class Plugin : BaseUnityPlugin
             Logger.LogError("EWTest could not subscribe to lifecycle: " + ex);
         }
 
-        new EWRunner(this).Build().ForEach(_steps.Add);
+        foreach (var step in new EWRunner(this).Build()) _steps.Add(step);
         Logger.LogInfo("EWTest: e2e suites queued; streaming to port " + port + ".");
     }
 
@@ -95,7 +95,7 @@ public sealed class Plugin : BaseUnityPlugin
             if (string.IsNullOrEmpty(location) || !File.Exists(location)) return null;
             using var sha = SHA256.Create();
             using var stream = File.OpenRead(location);
-            return Convert.ToHexString(sha.ComputeHash(stream)).ToLowerInvariant();
+            return BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
         }
         catch { return null; }
     }
@@ -115,10 +115,10 @@ public sealed class Plugin : BaseUnityPlugin
         int safety = 0;
         while (_steps.Count > 0 && safety++ < 64 && _steps[0]())
             _steps.RemoveAt(0);
-        if (_steps.Count == 0) Finalize();
+        if (_steps.Count == 0) CompleteRun();
     }
 
-    private void Finalize()
+    private void CompleteRun()
     {
         _finalized = true;
         try
