@@ -276,13 +276,21 @@ public sealed class PocketSystemRemoveTests
         var attached = Guid.NewGuid();
         var dropped = new List<Guid>();
         var resolvedFor = new List<string>();
-        harness.SiteCoordinator.AttachDungeonPrune(
-            poi => { resolvedFor.Add(poi); return attached; },
-            poi => { dropped.Add(poi); return true; });
+        harness.SiteCoordinator.AttachDungeonRemoval(
+            poi =>
+            {
+                Assert.Equal(0, harness.Native.RemoveCalls); // the native locations still exist
+                resolvedFor.Add(poi); return attached;
+            },
+            poi =>
+            {
+                Assert.Equal(1, harness.Native.RemoveCalls); // native removal was verified first
+                dropped.Add(poi); return true;
+            });
         var pocket = harness.PocketWithSiteInside(out var inside);
 
         Assert.True(pocket.Remove().Succeeded);
-        // Resolved while the site's POI still existed, and dropped after the verified removal.
+        // Resolved before native removal and dropped after it, exactly once.
         Assert.NotEmpty(resolvedFor);
         Assert.Equal(attached, Assert.Single(dropped));
         Assert.Null(harness.Provider.GetResourceSite("field", "in-pocket"));
@@ -295,7 +303,7 @@ public sealed class PocketSystemRemoveTests
     {
         using var harness = new Harness();
         var dropped = new List<Guid>();
-        harness.SiteCoordinator.AttachDungeonPrune(_ => Guid.NewGuid(), poi => { dropped.Add(poi); return true; });
+        harness.SiteCoordinator.AttachDungeonRemoval(_ => Guid.NewGuid(), poi => { dropped.Add(poi); return true; });
         var pocket = harness.PocketWithSiteInside(out _);
         harness.Native.FailRemove = true;
 
@@ -312,7 +320,7 @@ public sealed class PocketSystemRemoveTests
     public void AnUnreadableAttachedDungeonRefusesThePocketRemovalInsteadOfLeakingTheRow()
     {
         using var harness = new Harness();
-        harness.SiteCoordinator.AttachDungeonPrune(
+        harness.SiteCoordinator.AttachDungeonRemoval(
             _ => throw new InvalidOperationException("read fault"), _ => true);
         var pocket = harness.PocketWithSiteInside(out _);
 

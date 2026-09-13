@@ -226,7 +226,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
     private void PocketRemoved(string systemId, Guid[] attachedDungeons)
     {
         var droppedSites = _siteCoordinator?.DropPoisInSystem(systemId) ?? Array.Empty<(string, string, string)>();
-        _siteCoordinator?.CommitDungeonPrune(attachedDungeons);
+        _siteCoordinator?.RemoveAttachedDungeons(attachedDungeons);
         foreach (var notify in _removeNotifiers.ToArray())
         {
             try { notify(systemId, droppedSites); } catch { /* one provider's fault must not block the others */ }
@@ -1478,7 +1478,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             private Guid[]? CaptureAttachedDungeons(PocketSystemPoi? row)
                 => row == null || _service._siteCoordinator == null
                     ? Array.Empty<Guid>()
-                    : _service._siteCoordinator.CaptureDungeonPrune(row.SystemId);
+                    : _service._siteCoordinator.GetAttachedDungeonsInSystem(row.SystemId);
             private bool CompletePendingRemoval()
             {
                 _service._hub.CheckThread();

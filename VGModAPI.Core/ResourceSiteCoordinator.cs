@@ -143,12 +143,11 @@ internal sealed class ResourceSiteCoordinator : IDisposable
     }
     internal void AttachSettled(Action<Guid> settled) { _hub.CheckThread(); _settled = settled; }
     /// <summary>
-    /// Bridges the dungeon-content layer so a site's attached authored dungeon poi can be
-    /// dropped when the site is removed. The resolver runs before native removal (while the native
-    /// location is still resolvable) and the drop runs only after a verified removal, so a failed
-    /// removal never strands or loses dungeon state.
+    /// Bridges the dungeon-content layer so retained API state follows the native lifetime of the
+    /// site's boarding location. The resolver runs before native removal, while the location still
+    /// exists; state is removed only after the native removal is verified.
     /// </summary>
-    internal void AttachDungeonPrune(Func<string, Guid?> resolveAttached, Func<Guid, bool> drop)
+    internal void AttachDungeonRemoval(Func<string, Guid?> resolveAttached, Func<Guid, bool> drop)
     {
         _hub.CheckThread();
         _resolveAttachedDungeon = resolveAttached ?? throw new ArgumentNullException(nameof(resolveAttached));
@@ -200,36 +199,32 @@ internal sealed class ResourceSiteCoordinator : IDisposable
     }
 
     /// <summary>
-    /// Read-only capture of the authored dungeon pois attached to committed sites inside a system,
-    /// resolved BEFORE that system is removed natively. A site's attached dungeon is found through its
-    /// live native POI, so once the host system is gone nothing can be matched any more. Null means a
-    /// read faulted: the caller must refuse the removal rather than leak a row that could never bind
-    /// again. An empty array means there is nothing attached to drop.
+    /// Gets the authored dungeons attached to committed sites in a system while their native locations
+    /// still exist. Null means the read faulted; empty means no attached dungeon state.
     /// </summary>
-    internal Guid[]? CaptureDungeonPrune(string systemId)
+    internal Guid[]? GetAttachedDungeonsInSystem(string systemId)
     {
         _hub.CheckThread();
         if (_disposed || string.IsNullOrEmpty(systemId) || _resolveAttachedDungeon == null) return Array.Empty<Guid>();
-        var captured = new List<Guid>();
+        var attached = new List<Guid>();
         foreach (var row in _committed.Values)
         {
             if (row.SystemId != systemId || row.PoiId is not { Length: > 0 } attachedPoi) continue;
-            try { if (_resolveAttachedDungeon(attachedPoi) is { } attached) captured.Add(attached); }
+            try { if (_resolveAttachedDungeon(attachedPoi) is { } dungeon) attached.Add(dungeon); }
             catch (Exception error) { _report(error); return null; }
         }
-        return captured.ToArray();
+        return attached.ToArray();
     }
 
     /// <summary>
-    /// Drops the captured authored dungeon pois after a verified system removal, so each row records
-    /// its absence instead of surviving as a dead entry. Residual risk matches the direct path: if a
-    /// row cannot be dropped at that instant the system is still removed and the fault is reported.
+    /// Removes retained dungeon state after the native locations that owned it were verified removed.
+    /// A persistence refusal is reported; it cannot undo the already-completed native removal.
     /// </summary>
-    internal void CommitDungeonPrune(Guid[] captured)
+    internal void RemoveAttachedDungeons(Guid[] attached)
     {
         _hub.CheckThread();
-        if (_disposed || captured == null || _dropDungeon == null) return;
-        foreach (var poi in captured)
+        if (_disposed || _dropDungeon == null) return;
+        foreach (var poi in attached)
         {
             if (!_dropDungeon(poi))
                 _report(new InvalidOperationException("An attached authored dungeon poi could not be dropped after pocket removal."));
