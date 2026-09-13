@@ -2110,7 +2110,10 @@ public sealed partial class StoryMissionTests
         world.World.CompleteInWorld(secondIdentifier);
         world.Missions.Publish(MissionTransitionKind.Removed, secondIdentifier);
         Assert.Equal(StoryOutcome.Failed, Assert.Single(provider.Missions("relay-run").Records).Outcome);
-        Assert.False(world.World.IsInstalled(secondIdentifier));
+        // The run ended, but a campaign definition's catalog entry belongs to its registration and
+        // stays exactly as the game keeps allMissions[identifier]: completing a story archives its
+        // identifier, it does not unregister the story.
+        Assert.True(world.World.IsInstalled(secondIdentifier));
     }
 
     /// <summary>
@@ -2938,8 +2941,10 @@ public sealed partial class StoryMissionTests
         Assert.Contains("operation is running", refused.Diagnostic);
 
         transactions.EndAbandon(token!, StoryAbandonSettlement.OriginalStillHeld);
-        // The queued removal has now happened, and a fresh registration installs its own entry.
-        Assert.False(world.World.IsInstalled(baseIdentifier));
+        // The mission is still held, and a campaign run shares its definition's entry, so the entry
+        // outlives the registration that declared it rather than being removed under a live mission.
+        Assert.True(world.World.IsInstalled(baseIdentifier));
+        // A fresh registration adopts that entry: it is this module's own, not foreign content.
         var again = provider.Register(Definition(retention: StoryRetention.Campaign));
         Assert.True(again.Succeeded);
         Assert.True(world.World.IsInstalled(baseIdentifier));

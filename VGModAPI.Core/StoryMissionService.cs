@@ -155,6 +155,12 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
     private readonly List<string> _reconciliation = new();
     /// <summary>The catalog identifier each mission is installed under, so ownership survives a lease.</summary>
     private readonly Dictionary<Guid, string> _missionIdentifiers = new();
+    /// <summary>
+    /// Catalog entries a RUN owns and must therefore remove when it ends. A campaign definition's
+    /// entry is not one of them: it belongs to the registration, the way the game's registry keeps
+    /// one permanent entry per story identifier, so only its provider going away removes it.
+    /// </summary>
+    private readonly HashSet<string> _runOwnedIdentifiers = new(StringComparer.Ordinal);
     /// <summary>Mission entries whose removal is waiting for an operation that is still running.</summary>
     private readonly List<string> _deferredUninstall = new();
     /// <summary>Outcomes this module itself is applying, so its own world calls are not re-observed as the game's.</summary>
@@ -253,8 +259,10 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
     private void ResetSession(string reason)
     {
         _barOperationEpoch = new object();
-        foreach (var identifier in _missionIdentifiers.Values.ToArray()) _world?.Uninstall(identifier);
+        foreach (var identifier in _missionIdentifiers.Values.ToArray())
+            if (_runOwnedIdentifiers.Contains(identifier)) _world?.Uninstall(identifier);
         _missionIdentifiers.Clear();
+        _runOwnedIdentifiers.Clear();
         _deferredUninstall.Clear();
         _unrunnable.Clear();
         _intent.Clear();
@@ -332,7 +340,7 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
                 Report("Owned story content is held back: " + identifier + " needs a place this world does not have.");
                 continue;
             }
-            var installed = _world.Install(identifier, definition);
+            var installed = InstallMissionEntry(entry.MissionId, identifier, definition, entry.Retention);
             if (installed.Applied)
             {
                 if (migrated != null)
@@ -488,6 +496,26 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
         if (StoryMissionPolicy.TryParseIdentifier(identifier, out id) && _ledger.TryGetCampaign(id, out var campaign))
         { entry = campaign; return true; }
         return false;
+    }
+
+    /// <summary>
+    /// Installs the catalog entry a mission runs under.
+    ///
+    /// A CAMPAIGN definition has ONE entry, the way the game's registry holds one per identifier
+    /// (<c>StoryMission.Add</c> assigns <c>allMissions[identifier]</c>): its registration installs that
+    /// entry and a run of it never adds another. A run carrying a different saved or generated
+    /// definition replaces the module's OWN entry, which is exactly what re-adding an identifier does
+    /// in the game. A TEMPORARY run installs an entry of its own, because the game archives a
+    /// completed identifier forever and would refuse a duplicate of it.
+    /// </summary>
+    private StoryWorldResult InstallMissionEntry(Guid missionId, string identifier, StoryMissionDefinition definition, StoryRetention retention)
+    {
+        if (retention == StoryRetention.Campaign) _world!.Uninstall(identifier);
+        var installed = _world!.Install(identifier, definition);
+        if (!installed.Applied) return installed;
+        _missionIdentifiers[missionId] = identifier;
+        if (retention != StoryRetention.Campaign) _runOwnedIdentifiers.Add(identifier);
+        return installed;
     }
 
     private void OnMissionTransition(MissionTransition transition)
@@ -830,11 +858,15 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
                 "The native story protection cannot currently decide about owned content, so none is installed.");
         var status = _registry.TryRegister(id, definition, out var diagnostic, out var identifier, out var entry);
         if (status != StoryRegistrationStatus.Registered) return new StoryRegistrationResult(status, null, diagnostic);
-        if (_world != null)
+        // A live campaign run of this definition already holds this very entry, and its ownership
+        // outlives the registration that declared it. That entry is THIS module's, not foreign
+        // content, so a fresh registration adopts it rather than refusing itself over it.
+        if (_world != null && !_missionIdentifiers.ContainsValue(identifier))
         {
             // The base definition is installed so the identifier is visibly ours and a collision with
-            // existing content is refused rather than overwritten. Each OCCURRENCE later gets its own
-            // catalog entry, because the game archives a completed story identifier permanently.
+            // existing content is refused rather than overwritten. A campaign definition keeps this one
+            // entry for its single run; a TEMPORARY run later gets an entry of its own, because the
+            // game archives a completed story identifier permanently.
             var installed = _world.Install(identifier, definition);
             if (!installed.Applied)
             {
@@ -915,6 +947,9 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
             // handle was issued, with the same immutable definition object; only the registration this
             // handle actually made is released. Saved missions are never rewritten or deleted here.
             if (!_service._registry.RemoveIfMatches(Id, _entry)) return;
+            // A live campaign run shares this entry, and ownership of a held mission outlives the
+            // registration that declared it: the run removes it when it ends.
+            if (_service._missionIdentifiers.ContainsValue(NativeIdentifier)) return;
             if (_service.InFlight) _service._deferredUninstall.Add(NativeIdentifier);
             else _service._world?.Uninstall(NativeIdentifier);
         }
@@ -947,7 +982,7 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
             // archives a completed story identifier and refuses a duplicate of it forever, so each of
             // its runs needs an identifier of its own.
             var identifier = StoryMissionPolicy.MissionIdentifier(id, missionId, definition.Retention);
-            var installed = _world.Install(identifier, definition);
+            var installed = InstallMissionEntry(missionId, identifier, definition, definition.Retention);
             if (!installed.Applied)
             {
                 _ledger.Withdraw(id, missionId, out _);
@@ -955,7 +990,6 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
                     installed.Status == StoryWorldStatus.Unavailable ? StoryTransitionStatus.Unavailable : StoryTransitionStatus.InvalidTransition,
                     Guid.Empty, "The world refused this mission: " + installed.Detail);
             }
-            _missionIdentifiers[missionId] = identifier;
         }
         PublishAdmissions();
         return new StoryTransitionResult(StoryTransitionStatus.Accepted, missionId, diagnostic);
@@ -1022,6 +1056,12 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
     {
         if (!_missionIdentifiers.TryGetValue(missionId, out var identifier)) return;
         _missionIdentifiers.Remove(missionId);
+        // A campaign definition's entry belongs to its REGISTRATION, not to this run, so the run
+        // ending leaves it exactly as the game leaves allMissions[identifier]. Only once that
+        // registration is gone - it was held back while this run still needed it - does the ending
+        // run remove what nothing owns any more.
+        if (!_runOwnedIdentifiers.Remove(identifier)
+            && !(_ledger.TryGet(missionId, out var ending) && !_registry.Contains(ending.Id))) return;
         // Deferred while ANY operation is open, including the game's own abandon/retry: removing the
         // catalog entry between its removal and its re-addition is exactly what makes the game's
         // lookup throw.
@@ -1513,6 +1553,9 @@ internal sealed partial class StoryMissionService : IStoryService, IStoryUiTrans
         if (_disposed) return;
         foreach (var identifier in _registry.IdentifiersOf(lease.ProviderId))
         {
+            // A live campaign run shares its definition's entry, and ownership of a held mission
+            // outlives the lease that declared it: the entry stays until that run ends.
+            if (_missionIdentifiers.ContainsValue(identifier)) continue;
             // Held back while an operation is open, for the same reason an mission entry is.
             if (InFlight) _deferredUninstall.Add(identifier); else _world?.Uninstall(identifier);
         }
