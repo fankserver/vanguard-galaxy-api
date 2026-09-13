@@ -14,9 +14,10 @@ With Steam running and the game closed:
 make e2e
 ```
 
-This builds the API and test plugin, stages only those assemblies in the game,
-launches it, executes `fresh-session`, writes the result and stops the owned
-process before restoring the original plugins and BepInEx configuration.
+This builds the API, test plugin and WormholeWorld example, stages only those
+assemblies in the game, launches the selected case, writes the report and
+screenshots, and stops the owned process before restoring the original plugins
+and BepInEx configuration.
 An already running game or a leftover staging backup causes refusal, not a kill
 or overwrite. The controller launches a normal player with the Steam application
 environment; it does not assume Unity batch/headless flags work for this game.
@@ -36,19 +37,18 @@ Newtonsoft.Json is an explicit dev-only dependency, not assumed to exist in the 
 
 ## Current test
 
-`fresh-session` uses the normal native new-player entry, marks the player
-ephemeral before starting scenes, initializes the arena fixture, and asserts:
+`fresh-session` drives the game's real five-step New Game wizard using its
+normal defaults (random commander, Miner history and selected starter ship),
+chooses Sandbox to avoid tutorial-script restrictions, invokes the wizard's own
+`SaveInputs`, marks that newly created player ephemeral before scenes start,
+and enters normal gameplay. It never calls `CreateTestArenaPlayer` or installs
+the `TestArena` storyteller. It asserts:
 
-- The game's native gameplay initialization completed.
+- The game's native gameplay initialization completed with a normal player/ship.
 - ModAPI observes a new, unsaved session.
 - Exactly one `SessionStarting → PlayerReady → GameplayInitialized` sequence
   belongs to the same session identity.
 - The player remains ephemeral and no successful API save event occurred.
-
-Vanilla `CreateTestArenaPlayer` bypasses ModAPI's new-player binding, so the
-fixture uses `CreateNewGamePlayer` and mirrors the arena setup on that same
-player. Fixture reflection failures name the native member; API assertions do
-not bypass the API's readiness or ownership checks.
 
 Each `TestStep` has a name, binding hint and a predicate advanced on the game
 thread. Waiting, assertion exceptions and timeout failures are terminal: no
@@ -57,13 +57,27 @@ budget with controller time reserved for reporting. Additional gameplay cases
 should exercise concrete public operations and assert observable results—not
 just availability, successful registration, or skipped placeholders.
 
-Only the fresh-session lifecycle case is implemented. This is not full API
-coverage: world authoring, mission/travel/boarding gameplay and persistent
+Select a case by setting the Make variable after the target:
+
+```sh
+make e2e E2E_CASE=wormhole-world
+```
+
+## `wormhole-world`
+
+Tests the WormholeWorld example in a real game session.
+
+## Coverage status
+
+`fresh-session` (normal new-game lifecycle) and `wormhole-world` (actual example,
+world authoring, HUD, native travel and cleanup) are implemented and pass live.
+This is not full ModAPI coverage: mission/boarding gameplay and persistent
 save/load round trips remain to be implemented.
 
 ## Results and safety
 
-The runtime directory contains `player.log` and `report.json` (schema 2).
+The runtime directory contains `player.log`, `report.json` (schema 2), and the
+`screenshots/` evidence directory.
 Reports contain the game/API versions, game assembly hash, results and explicit
 stream completion. Each failed result carries `detail` and `binding`. Empty,
 malformed, incomplete, mismatched-run or unexpected-test streams cannot pass.

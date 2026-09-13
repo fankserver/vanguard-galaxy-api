@@ -17,9 +17,12 @@ public sealed class Plugin : BaseUnityPlugin
 {
     private readonly Stopwatch _clock = new();
     private readonly List<LifecycleEvent> _events = new();
+    private readonly List<TravelTransition> _travelEvents = new();
     private ILifecycleService? _lifecycle;
+    private ITravelService? _travel;
     private WireSender? _wire;
     private GameTest? _test;
+    private string _caseId = "";
     private bool _finished;
 
     private void Awake()
@@ -32,11 +35,17 @@ public sealed class Plugin : BaseUnityPlugin
                 throw new InvalidOperationException("Missing controller port.");
             var run = Environment.GetEnvironmentVariable("VGMODAPI_E2E_RUN");
             if (string.IsNullOrEmpty(run)) throw new InvalidOperationException("Missing controller run ID.");
+            var requested = Environment.GetEnvironmentVariable("VGMODAPI_E2E_CASE");
+            if (string.IsNullOrEmpty(requested)) throw new InvalidOperationException("Missing E2E case.");
             if (!long.TryParse(Environment.GetEnvironmentVariable("VGMODAPI_E2E_DEADLINE"),
                 NumberStyles.Integer, CultureInfo.InvariantCulture, out var deadline))
                 throw new InvalidOperationException("Missing controller deadline.");
-            if (Environment.GetEnvironmentVariable("VGMODAPI_E2E_CASE") != FreshSessionCase.Id)
-                throw new InvalidOperationException("Unknown E2E case.");
+            _caseId = requested switch
+            {
+                FreshSessionCase.Id => FreshSessionCase.Id,
+                WormholeWorldCase.Id => WormholeWorldCase.Id,
+                _ => throw new InvalidOperationException("Unknown E2E case: " + requested),
+            };
             _wire = new WireSender(port);
             var assembly = AppDomain.CurrentDomain.GetAssemblies().Single(a => a.GetName().Name == "Assembly-CSharp");
             using var sha = SHA256.Create();
@@ -46,9 +55,16 @@ public sealed class Plugin : BaseUnityPlugin
                 gameAssemblySha256 = BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "").ToLowerInvariant() });
             _lifecycle = ModApi.Services.Lifecycle;
             _lifecycle.Changed += OnLifecycle;
+            _travel = ModApi.Services.Travel;
+            _travel.Transitioned += OnTravel;
             // Charge player startup against the controller's budget, then use a monotonic clock.
             var remaining = (deadline - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()) / 1000.0;
-            _test = new GameTest(FreshSessionCase.Steps(_lifecycle, _events), remaining);
+            _test = _caseId switch
+            {
+                FreshSessionCase.Id => new GameTest(FreshSessionCase.Steps(_lifecycle, _events), remaining),
+                WormholeWorldCase.Id => new GameTest(WormholeWorldCase.Steps(_lifecycle, _events, _travelEvents), remaining),
+                _ => throw new InvalidOperationException("Unhandled case: " + _caseId),
+            };
             _clock.Start();
         }
         catch (Exception ex)
@@ -59,6 +75,7 @@ public sealed class Plugin : BaseUnityPlugin
     }
 
     private void OnLifecycle(LifecycleEvent value) => _events.Add(value);
+    private void OnTravel(TravelTransition value) => _travelEvents.Add(value);
 
     private void Update()
     {
@@ -73,7 +90,7 @@ public sealed class Plugin : BaseUnityPlugin
         _finished = true;
         try
         {
-            _wire?.Send(new { type = "result", id = FreshSessionCase.Id, status = passed ? "pass" : "fail",
+            _wire?.Send(new { type = "result", id = _caseId, status = passed ? "pass" : "fail",
                 detail, binding, elapsedMs = _clock.ElapsedMilliseconds });
             _wire?.Send(new { type = "finish" });
         }
@@ -88,6 +105,7 @@ public sealed class Plugin : BaseUnityPlugin
     private void Release()
     {
         if (_lifecycle != null) { _lifecycle.Changed -= OnLifecycle; _lifecycle = null; }
+        if (_travel != null) { _travel.Transitioned -= OnTravel; _travel = null; }
         try { _wire?.Dispose(); } catch (Exception ex) { Logger.LogWarning(ex.Message); }
         _wire = null;
     }

@@ -65,6 +65,22 @@ class ProtocolTests(unittest.TestCase):
         with self.assertRaisesRegex(e2e.E2EError, "deadline"):
             e2e.consume(Mock(), e2e.new_report(), "run", time.monotonic() - 1)
 
+    def test_wormhole_world_result_is_accepted_and_unknown_id_rejected(self):
+        e2e.validate_result(dict(type="result", id="wormhole-world", status="pass", detail="ok", binding="", elapsedMs=5))
+        with self.assertRaises(e2e.E2EError):
+            e2e.validate_result(dict(type="result", id="unknown-case", status="pass", detail="ok", binding="", elapsedMs=5))
+
+    def test_result_for_a_different_requested_case_is_rejected_live(self):
+        old = e2e.CASE
+        try:
+            e2e.CASE = "wormhole-world"
+            report = e2e.new_report()
+            with self.assertRaisesRegex(e2e.E2EError, "unrequested case"):
+                e2e.consume(self.stream([META, RESULT, FINISH]), report, "run", time.monotonic() + 2)
+            self.assertEqual(e2e.gate(report), 1)
+        finally:
+            e2e.CASE = old
+
     def test_report_round_trip_keeps_process_state_types(self):
         report = e2e.new_report()
         report.update(finished=True, results=[{k: v for k, v in RESULT.items() if k != "type"}])
@@ -175,11 +191,12 @@ class SafetyTests(unittest.TestCase):
 class ProcessTests(unittest.TestCase):
     def test_steam_context_and_explicit_handshake(self):
         with patch("e2e.time.time", return_value=1000):
-            env = e2e.launch_env(1234, "unique", 80)
+            env = e2e.launch_env(1234, "unique", 80, Path("C:/e2e shots"))
         self.assertEqual(env["SteamAppId"], "3471800")
         self.assertEqual(env["SteamGameId"], "3471800")
         self.assertEqual(env["VGMODAPI_E2E_RUN"], "unique")
         self.assertEqual(env["VGMODAPI_E2E_DEADLINE"], "1080000")
+        self.assertEqual(env["VGMODAPI_E2E_SCREENSHOTS"], "C:/e2e shots")
 
     def test_existing_process_is_refused_not_killed(self):
         with patch("e2e.subprocess.check_output", return_value='"VanguardGalaxy.exe","1234"\n'):
