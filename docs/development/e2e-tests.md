@@ -63,8 +63,6 @@ Select a case by setting the Make variable after the target:
 make e2e E2E_CASE=wormhole-world
 ```
 
-`--case` is an option of the underlying `tools/e2e.py` controller; GNU Make does
-not forward it, so `make e2e --case wormhole-world` is invalid.
 
 ## `wormhole-world` (actual example + gameplay route)
 
