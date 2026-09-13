@@ -123,8 +123,6 @@ internal static class PocketWorldsCase
                     if (pair.State.Status != ReconstructionStatus.Removed) throw new InvalidOperationException(pair.PoiKey + " was not removed.");
                 foreach (var site in s.Sites)
                     if (site.State.Status != ReconstructionStatus.Removed) throw new InvalidOperationException(site.PoiKey + " was not removed with its pocket.");
-                if (s.Guard != null && s.Guard.State.Status != ReconstructionStatus.Removed)
-                    throw new InvalidOperationException(s.Guard.PoiKey + " was not removed before its anchor pocket.");
                 if (lifecycleEvents.Any(e => e.Kind == LifecycleEventKind.SaveSucceeded))
                     throw new InvalidOperationException("An ephemeral player unexpectedly saved.");
                 NativeGameplay.Screenshot("cluster-deleted");
@@ -175,7 +173,6 @@ internal static class PocketWorldsCase
         s.SalvageHole ??= NativeGameplay.Field<IWormholePair>(p, "_salvageHole");
         s.MiningSite ??= NativeGameplay.Field<IResourceSite>(p, "_miningSite");
         s.SalvageSite ??= NativeGameplay.Field<IResourceSite>(p, "_salvageSite");
-        s.Guard ??= NativeGameplay.Field<ICombatSite>(p, "_guard");
         if (s.AllReady && s.NativePoiIds.Count == 0)
         {
             s.NativePoiIds.AddRange(s.Pockets.SelectMany(x => new[] { x.EntranceGatePoiId!, x.PocketGatePoiId! }));
@@ -241,7 +238,6 @@ internal static class PocketWorldsCase
         internal IPocketSystem? Entry, Hub, Anchor, Mining, Salvage;
         internal IWormholePair? EntryDoor, MiningHole, SalvageHole;
         internal IResourceSite? MiningSite, SalvageSite;
-        internal ICombatSite? Guard;
         internal readonly List<string> NativePoiIds = new();
         internal IPocketSystem[] Pockets => new[] { Entry!, Hub!, Anchor!, Mining!, Salvage! };
         internal IWormholePair[] Pairs => new[] { EntryDoor!, MiningHole!, SalvageHole! };
@@ -249,7 +245,6 @@ internal static class PocketWorldsCase
         internal bool AllReady => Pockets.All(p => p != null && p.State.Reconstructed && p.SystemId != null
                 && p.EntranceGatePoiId != null && p.PocketGatePoiId != null)
             && Pairs.All(p => p != null && p.State.Reconstructed && p.FirstWormholePoiId != null && p.SecondWormholePoiId != null)
-            && Sites.All(p => p != null && p.State.Reconstructed && p.PoiId != null)
-            && Guard != null && Guard.State.Reconstructed;
+            && Sites.All(p => p != null && p.State.Reconstructed && p.PoiId != null);
     }
 }

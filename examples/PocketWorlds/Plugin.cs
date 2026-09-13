@@ -18,7 +18,7 @@ namespace PocketWorlds;
 ///   A  --[gate back to E]--    + two wormholes into themed off-world instances:
 ///                                  * off-world "Mining"  (mining field site)
 ///                                  * off-world "Salvage" (salvage wreck site)
-///   B  --[gate back to E]--    a guarded dead-end: it holds an owned COMBAT site
+///   B  --[gate back to E]--    nothing else (a quiet dead-end anchor)
 ///
 /// Every system has a fixed test name (static, not changing). "Delete Cluster" removes each owned
 /// occurrence — the wormhole pair first (its endpoints must be freed), then each pocket (its own gate
@@ -53,7 +53,6 @@ public sealed class Plugin : BaseUnityPlugin
     private const string SalvageWormholeDef = "cluster-salvage-hole";
     private const string MiningSiteDef = "cluster-mining-site";
     private const string SalvageSiteDef = "cluster-salvage-site";
-    private const string GuardDef = "cluster-guard";
 
     private IWorldProvider? _world;
     private ITravelService? _travel;
@@ -70,7 +69,6 @@ public sealed class Plugin : BaseUnityPlugin
     private IWormholePair? _salvageHole; // A <-> salvage
     private IResourceSite? _miningSite;
     private IResourceSite? _salvageSite;
-    private ICombatSite? _guard;   // owned combat site inside Anchor Beta
 
     private void Awake()
     {
@@ -107,10 +105,6 @@ public sealed class Plugin : BaseUnityPlugin
         _world.RegisterResourceSite(ResourceSiteDefinition.Salvage(
             SalvageSiteDef, 1, SalvageWorldName + " Wreck", 8, wreckShipId: "Monsoon", factionId: "Fanatics",
             withStation: false, hazard: null, scatterAsteroids: false));
-        // An owned persistent COMBAT site. Like a resource site it lives inside a pocket, so it is
-        // removed with that pocket. A combat site also has its own Remove(), but letting the pocket
-        // take it is simpler and is what this example demonstrates.
-        _world.RegisterCombatSite(new CombatSiteDefinition(GuardDef, 1, AnchorName + " Guard", "Fanatics", 1));
 
         _travel = ModApi.Services.Travel;
         // Occurrence objects belong to ONE session: an occurrence from an ended session keeps its last
@@ -136,7 +130,7 @@ public sealed class Plugin : BaseUnityPlugin
     {
         _entry = _hub = _anchor = _mining = _salvage = null;
         _entryDoor = _miningHole = _salvageHole = null;
-        _miningSite = _salvageSite = null; _guard = null;
+        _miningSite = _salvageSite = null;
     }
 
     /// <summary>
@@ -157,7 +151,6 @@ public sealed class Plugin : BaseUnityPlugin
         _salvageHole = _world.GetWormholePair(SalvageWormholeDef, "salvage-hole");
         _miningSite = _world.GetResourceSite(MiningSiteDef, "mining-site");
         _salvageSite = _world.GetResourceSite(SalvageSiteDef, "salvage-site");
-        _guard = _world.GetCombatSite(GuardDef, "anchor-guard");
     }
 
     private void RefreshPanel()
@@ -196,14 +189,13 @@ public sealed class Plugin : BaseUnityPlugin
     private bool HasClusterContent()
         => _entry != null || _hub != null || _anchor != null || _mining != null || _salvage != null
             || _entryDoor != null || _miningHole != null || _salvageHole != null
-            || _miningSite != null || _salvageSite != null || _guard != null;
+            || _miningSite != null || _salvageSite != null;
 
     private string StatusLine()
     {
         string Pb(IPocketSystem? p) => p == null ? "-" : (p.State.Reconstructed ? "up" : (p.State.Status.ToString().ToLowerInvariant()));
         string Wb(IWormholePair? w) => w == null ? "-" : (w.State.Reconstructed ? "up" : "down");
-        string Cb(ICombatSite? c) => c == null ? "-" : (c.State.Reconstructed ? "up" : c.State.Status.ToString().ToLowerInvariant());
-        return $"E:{Pb(_entry)} A:{Pb(_hub)} B:{Pb(_anchor)} M:{Pb(_mining)} S:{Pb(_salvage)} | door:{Wb(_entryDoor)} m:{Wb(_miningHole)} s:{Wb(_salvageHole)} | guard:{Cb(_guard)}";
+        return $"E:{Pb(_entry)} A:{Pb(_hub)} B:{Pb(_anchor)} M:{Pb(_mining)} S:{Pb(_salvage)} | door:{Wb(_entryDoor)} m:{Wb(_miningHole)} s:{Wb(_salvageHole)}";
     }
 
     private void OnHud(HudInteraction interaction)
@@ -255,9 +247,6 @@ public sealed class Plugin : BaseUnityPlugin
         _anchor = _world.CreatePocketSystem(AnchorDef, "anchor", _entry.SystemId);
         if (_anchor?.SystemId == null) { Logger.LogWarning("Failed to create Anchor Beta."); _anchor = null; return; }
         _anchor.SetEntranceOpen(true);
-        // The dead-end is guarded: an owned combat site keyed by an author-local occurrence key. The
-        // API allocates the native identity; GetCombatSite re-obtains this same object after a reload.
-        _guard = _world.CreateCombatSite(GuardDef, "anchor-guard", _anchor.SystemId, 0f, 0f);
 
         // A has two wormholes into themed off-world instances (mining-only, salvage-only).
         var mining = _world.CreatePocketSystem(MiningDef, "mining", _hub.SystemId);
@@ -324,7 +313,6 @@ public sealed class Plugin : BaseUnityPlugin
         if (system == null) { Logger.LogInfo(name + ": not spawned"); return; }
         string sites = name == MiningWorldName && _miningSite != null ? " | site: mining field"
             : name == SalvageWorldName && _salvageSite != null ? " | site: salvage wreck"
-            : name == AnchorName && _guard != null ? " | site: combat guard (state=" + _guard.State.Status + ")"
             : "";
         Logger.LogInfo($"{name}: {connections.Length} connection(s) -> {string.Join(", ", connections)} | system={system.SystemId} state={system.State.Status}{sites}");
     }
@@ -345,10 +333,9 @@ public sealed class Plugin : BaseUnityPlugin
         if (_world == null || !HasClusterContent()) return;
         if (!CanDeleteCluster()) return;
 
-        // Order is dictated by the API's integrity rules, not by taste:
-        //   * a pocket that is still a wormhole endpoint cannot be removed, so pairs go first;
-        //   * a pocket that still contains an owned COMBAT site cannot be removed either, so the guard
-        //     goes before its anchor. (Resource sites are different: they DO go with their pocket.)
+        // Order is dictated by the API's integrity rules, not by taste: a pocket that is still a
+        // wormhole endpoint cannot be removed, so pairs go first; resource sites drop with their
+        // off-world pocket; then the branch systems, then the entry.
         if (!RemoveWormhole("mining rift", _miningHole)) return;   _miningHole = null;
         if (!RemoveWormhole("salvage rift", _salvageHole)) return; _salvageHole = null;
         if (!RemoveWormhole("entry rift", _entryDoor)) return;     _entryDoor = null;
@@ -357,7 +344,6 @@ public sealed class Plugin : BaseUnityPlugin
         if (!RemovePocket(MiningWorldName, _mining)) return;   _mining = null; _miningSite = null;
         if (!RemovePocket(SalvageWorldName, _salvage)) return; _salvage = null; _salvageSite = null;
         if (!RemovePocket(HubName, _hub)) return; _hub = null;
-        if (!RemoveCombatSite(AnchorName + " guard", _guard)) return; _guard = null;
         if (!RemovePocket(AnchorName, _anchor)) return; _anchor = null;
         if (!RemovePocket(EntryName, _entry)) return; _entry = null;
 
@@ -366,9 +352,7 @@ public sealed class Plugin : BaseUnityPlugin
 
     /// <summary>Preflight every transient player-safety condition before the first mutation, so a
     /// refused delete cannot leave a half-torn cluster. Pockets may still report WormholeEndpoint at
-    /// this stage because the pairs are deliberately removed first; the anchor may report
-    /// CombatSitesPresent because its guard combat site is removed before the anchor itself, as long
-    /// as that guard is removable.</summary>
+    /// this stage because the pairs are deliberately removed first.</summary>
     private bool CanDeleteCluster()
     {
         foreach (var pair in new[] { _miningHole, _salvageHole, _entryDoor })
@@ -383,16 +367,7 @@ public sealed class Plugin : BaseUnityPlugin
             if (pocket == null) continue;
             var status = pocket.CanRemove();
             if (status is RemovalStatus.Ready or RemovalStatus.WormholeEndpoint) continue;
-            // The anchor still holds its combat guard at preflight time; the teardown removes the
-            // guard before the anchor, so CombatSitesPresent is only acceptable when the guard can go.
-            if (status == RemovalStatus.CombatSitesPresent && ReferenceEquals(pocket, _anchor)
-                && (_guard == null || _guard.CanRemove() == RemovalStatus.Ready)) continue;
             Logger.LogWarning("Delete Cluster refused: pocket " + pocket.PoiKey + " is " + status + ".");
-            return false;
-        }
-        if (_guard != null && _guard.CanRemove() != RemovalStatus.Ready)
-        {
-            Logger.LogWarning("Delete Cluster refused: combat site " + _guard.PoiKey + " is " + _guard.CanRemove() + ".");
             return false;
         }
         return true;
@@ -403,9 +378,6 @@ public sealed class Plugin : BaseUnityPlugin
 
     private bool RemovePocket(string label, IPocketSystem? p)
         => p == null || Teardown(label, p.CanRemove(), p.Remove, p.RequestRemoval);
-
-    private bool RemoveCombatSite(string label, ICombatSite? c)
-        => c == null || Teardown(label, c.CanRemove(), c.Remove, c.RequestRemoval);
 
     /// <summary>
     /// Removes one occurrence safely, and returns true only when it actually went away.
