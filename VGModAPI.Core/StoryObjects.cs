@@ -157,7 +157,11 @@ internal sealed partial class StoryMissionService
             get
             {
                 _scope.Service.CheckThread();
-                return MissionId == Guid.Empty ? null : StoryMissionPolicy.MissionIdentifier(Owned.Id, MissionId);
+                // The identifier depends on retention, which the ledger row carries. A row this
+                // object outlived is already being pruned, so it has no installed identifier.
+                // A story mission is installed under its definition's own identifier, the shape the
+                // game uses for a story id.
+                return MissionId == Guid.Empty ? null : StoryMissionPolicy.Identifier(Owned.Id);
             }
         }
         public StoryActionResult LastAction

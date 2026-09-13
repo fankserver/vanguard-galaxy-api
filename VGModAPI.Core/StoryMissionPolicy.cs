@@ -107,32 +107,6 @@ internal static class StoryMissionPolicy
     }
 
     /// <summary>Reads back an identifier this API produced. Foreign identifiers are not ours to interpret.</summary>
-    /// <summary>
-    /// The identifier ONE mission is installed under. The game archives a completed story
-    /// identifier and refuses a duplicate of it forever after, so every mission needs its own:
-    /// a shared base identifier could be accepted exactly once per save. It is derived
-    /// deterministically from the content identity and the mission, so a reload reinstalls exactly
-    /// the same entries without storing the string itself.
-    /// </summary>
-    internal static string MissionIdentifier(StoryMissionDefinitionId id, Guid missionId)
-    {
-        if (missionId == Guid.Empty) throw new ArgumentException("An mission requires its own identity.", nameof(missionId));
-        var identifier = Identifier(id) + "." + missionId.ToString("N");
-        if (identifier.Length > MaxIdentifierLength) throw new ArgumentException("Mission identifier exceeds its bound.", nameof(id));
-        return identifier;
-    }
-
-    /// <summary>Parses an mission identifier back to its content identity and mission.</summary>
-    internal static bool TryParseMissionIdentifier(string? identifier, out StoryMissionDefinitionId id, out Guid missionId)
-    {
-        id = default; missionId = Guid.Empty;
-        if (identifier == null || identifier.Length < 33) return false;
-        var separator = identifier.Length - 33;
-        if (identifier[separator] != '.') return false;
-        if (!Guid.TryParseExact(identifier.Substring(separator + 1), "N", out missionId) || missionId == Guid.Empty) return false;
-        return TryParseIdentifier(identifier.Substring(0, separator), out id);
-    }
-
     internal static bool TryParseIdentifier(string? identifier, out StoryMissionDefinitionId id)
     {
         id = default;

@@ -16,7 +16,7 @@ public sealed class BoardingRuleServiceTests
         internal readonly List<string> Diagnostics = new();
         internal Fixture()
         {
-            Hub.SetCapability("boarding-rules", true, "Test bindings.");
+            Hub.SetAvailable("boarding-rules", "Test bindings.");
             Rules = new BoardingRuleService(Hub, (owner, error) => { Faults++; Diagnostics.Add(owner + ": " + error.Message); });
             Session = Hub.Begin(SessionOrigin.SaveLoad, "save"); Hub.PlayerReady(Session); Hub.GameplayInitialized(Session);
         }
@@ -32,7 +32,7 @@ public sealed class BoardingRuleServiceTests
         var later = 0;
         provider.RegisterEncounter("first", BoardingRuleScope.Both, _ =>
         {
-            f.Hub.SetCapability("boarding-rules", false, "Observer failed.", ServiceUnavailableReason.ObserverFault);
+            f.Hub.SetUnavailable("boarding-rules", ServiceUnavailableReason.ObserverFault, "Observer failed.");
             return new(2, 3);
         }, 10);
         provider.RegisterEncounter("later", BoardingRuleScope.Both, _ => { later++; return new(4, 5); });
@@ -46,7 +46,7 @@ public sealed class BoardingRuleServiceTests
     public void UnavailableServiceAllowsDeclarationsButNeverEvaluatesThem()
     {
         using var f = new Fixture();
-        f.Hub.SetCapability("boarding-rules", false, "Disabled.", ServiceUnavailableReason.Disabled);
+        f.Hub.SetUnavailable("boarding-rules", ServiceUnavailableReason.Disabled, "Disabled.");
         IBoardingRuleService service = f.Rules;
         using var provider = service.AcquireProvider("mod");
         var calls = 0;

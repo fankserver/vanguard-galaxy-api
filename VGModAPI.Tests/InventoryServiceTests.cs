@@ -22,7 +22,7 @@ public sealed class InventoryServiceTests
     [Fact]
     public void DeduplicatesAndRejectsChangedRequestsReentrancySerializationAndStaleSessions()
     {
-        using var hub = new LifecycleHub((_, _) => { }); hub.SetCapability("inventories", true, "test");
+        using var hub = new LifecycleHub((_, _) => { }); hub.SetAvailable("inventories", "test");
         var session = hub.Begin(SessionOrigin.NewGame, null); hub.PlayerReady(session); hub.GameplayInitialized(session);
         var backend = new Backend(); using var service = new InventoryService(hub, () => backend);
         var source = new InventoryHandle(session, new(InventoryKind.StationMaterials, "a"));

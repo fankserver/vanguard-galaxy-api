@@ -11,16 +11,16 @@ public sealed class DungeonSettlementServiceTests
     public void DisposedSettlementCannotReviveWhenDependenciesRecover()
     {
         using var hub = new LifecycleHub((_, _) => { });
-        hub.SetCapability("boarding-observation", true, "Bound.");
-        hub.SetCapability("dungeon-settlement", true, "Bound.");
-        hub.SetCapability("dungeon-rewards", false, "Disabled.", ServiceUnavailableReason.Disabled);
+        hub.SetAvailable("boarding-observation", "Bound.");
+        hub.SetAvailable("dungeon-settlement", "Bound.");
+        hub.SetUnavailable("dungeon-rewards", ServiceUnavailableReason.Disabled, "Disabled.");
         using var boarding = new BoardingService(hub, (_, _) => { });
         using var engine = new DungeonSettlementService(hub, boarding, (_, _) => { });
         DungeonSettlementService service = engine;
         var reason = service.Availability.Reason;
         Assert.False(service.Availability.IsAvailable);
         engine.Dispose();
-        hub.SetCapability("dungeon-rewards", true, "Recovered.");
+        hub.SetAvailable("dungeon-rewards", "Recovered.");
         Assert.False(service.Availability.IsAvailable);
         Assert.Equal(reason, service.Availability.Reason);
         Assert.Null(typeof(ModApi).GetProperty("DungeonSettlement"));
@@ -29,8 +29,8 @@ public sealed class DungeonSettlementServiceTests
     [Fact]
     public void VictoryCaptureAndDelayedReturnRemainSeparateObservedFacts()
     {
-        using var hub = new LifecycleHub((_, _) => { }); hub.SetCapability("boarding-observation", true, "Test bindings."); using var boarding = new BoardingService(hub, (_, _) => { });
-        hub.SetCapability("dungeon-settlement", true, "Test bindings."); hub.SetCapability("dungeon-rewards", true, "Test bindings.");
+        using var hub = new LifecycleHub((_, _) => { }); hub.SetAvailable("boarding-observation", "Test bindings."); using var boarding = new BoardingService(hub, (_, _) => { });
+        hub.SetAvailable("dungeon-settlement", "Test bindings."); hub.SetAvailable("dungeon-rewards", "Test bindings.");
         using var settlement = new DungeonSettlementService(hub, boarding, (_, _) => { });
         var session = hub.Begin(SessionOrigin.SaveLoad, "slot"); hub.PlayerReady(session);
         var target = new BoardingTargetSnapshot(new(session, Guid.NewGuid()), 1, BoardingEncounterKind.Ship, "Ship", "Gold", "Ship", BoardingAvailability.Available, null);

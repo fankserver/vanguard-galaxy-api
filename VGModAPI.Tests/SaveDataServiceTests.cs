@@ -13,7 +13,7 @@ public sealed class SaveDataServiceTests : IDisposable
     private static LifecycleHub Bound()
     {
         var hub = new LifecycleHub((_, _) => { });
-        foreach (var name in new[] { "session-lifecycle", "save-outcomes", "save-data" }) hub.SetCapability(name, true, "Bound.");
+        foreach (var name in new[] { "session-lifecycle", "save-outcomes", "save-data" }) hub.SetAvailable(name, "Bound.");
         return hub;
     }
     private PersistenceService Source(LifecycleHub hub) => new(hub, new GenerationStore(_root), path => path, _ => new string('a', 64));
@@ -32,12 +32,12 @@ public sealed class SaveDataServiceTests : IDisposable
         using var hub = Bound();
         using var source = Source(hub);
         var registration = source.Register(Provider()).Registration!;
-        hub.SetCapability("save-outcomes", false, "Observer failed.", ServiceUnavailableReason.ObserverFault);
+        hub.SetUnavailable("save-outcomes", ServiceUnavailableReason.ObserverFault, "Observer failed.");
         var failure = source.Availability;
         Assert.Equal(ServiceUnavailableReason.DependencyUnavailable, failure.Reason);
         source.Dispose();
         Assert.Equal(failure, source.Availability);
-        hub.SetCapability("save-outcomes", true, "Recovered.");
+        hub.SetAvailable("save-outcomes", "Recovered.");
         Assert.Equal(failure, source.Availability);
         Assert.False(registration.CanRead);
         Assert.False(registration.CanMutate);
@@ -113,15 +113,15 @@ public sealed class SaveDataServiceTests : IDisposable
     {
         using var hub = Bound();
         if (dependencyFailure)
-            hub.SetCapability("session-lifecycle", false, "Inspected lifecycle binding unavailable.");
+            hub.SetUnavailable("session-lifecycle", ServiceUnavailableReason.BindingFailed, "Inspected lifecycle binding unavailable.");
         else
-            hub.SetCapability("save-data", false, "Storage root initialization refused.", ServiceUnavailableReason.BindingFailed);
+            hub.SetUnavailable("save-data", ServiceUnavailableReason.BindingFailed, "Storage root initialization refused.");
         var diagnosis = hub.Services.Get("save-data").Availability;
         using var service = new PersistenceService(hub);
         Assert.Equal(diagnosis.Reason, service.Availability.Reason);
         Assert.Equal(diagnosis.Detail, service.Availability.Detail);
         Assert.Equal(SaveDataRegistrationStatus.Unavailable, service.Register(Provider()).Status);
-        hub.SetCapability("session-lifecycle", true, "Bound.");
+        hub.SetAvailable("session-lifecycle", "Bound.");
         Assert.False(service.Availability.IsAvailable);
         Assert.Equal(SaveDataRegistrationStatus.Unavailable, service.Register(Provider()).Status);
     }

@@ -78,14 +78,6 @@ public enum StoryRewardKind { Credits, Experience, Reputation }
 /// <summary>Mirrors the inspected vanilla mission difficulty names; the API never invents its own scale.</summary>
 public enum StoryDifficulty { Easy, Normal, Hard, VeryHard }
 
-/// <summary>
-/// How much the API must retain for a definition. <see cref="Temporary"/> keeps only what is needed
-/// to reconstruct offered/active content plus a bounded idempotency tombstone; <see cref="Campaign"/>
-/// additionally retains queryable authoritative outcomes and declared choices. Neither retains
-/// narrative history: that stays optional provider data.
-/// </summary>
-public enum StoryRetention { Temporary, Campaign }
-
 /// <summary>Terminal state of one mission. Removal without a terminal proof is not an outcome.</summary>
 public enum StoryOutcome { Completed, Failed, Abandoned }
 
@@ -373,7 +365,6 @@ public sealed class StoryMissionDefinition
         copy.AutoComplete = true;
         return copy;
     }
-    public StoryRetention Retention { get; }
     /// <summary>
     /// The faction this mission comes FROM. It is required because the game writes
     /// <c>sourceFaction.identifier</c> unconditionally when it saves a held mission: a mission without
@@ -399,20 +390,19 @@ public sealed class StoryMissionDefinition
 
     public StoryMissionDefinition(string localId, string title, string description, StoryFactionId sourceFaction, IEnumerable<StoryStep> steps,
         IEnumerable<StoryReward>? rewards = null, StoryDifficulty difficulty = StoryDifficulty.Normal,
-        StoryRetention retention = StoryRetention.Temporary, bool canAbandon = true,
+        bool canAbandon = true,
         string? category = null, string? completionText = null, IEnumerable<string>? choiceKeys = null)
     {
         if (!StoryMissionDefinitionId.IsValidSegment(localId)) throw new ArgumentException("A local ID is 1-48 lowercase ASCII letters/digits/hyphens starting with a letter.", nameof(localId));
         if (sourceFaction.Value == null) throw new ArgumentException("A source faction identity is required.", nameof(sourceFaction));
         SourceFaction = sourceFaction;
         if (!Enum.IsDefined(typeof(StoryDifficulty), difficulty)) throw new ArgumentOutOfRangeException(nameof(difficulty));
-        if (!Enum.IsDefined(typeof(StoryRetention), retention)) throw new ArgumentOutOfRangeException(nameof(retention));
         LocalId = localId;
         Title = StoryText.Require(title, 128, nameof(title));
         Description = StoryText.Require(description, 1024, nameof(description));
         Category = StoryText.Optional(category, 64, nameof(category));
         CompletionText = StoryText.Optional(completionText, 1024, nameof(completionText));
-        Difficulty = difficulty; CanAbandon = canAbandon; Retention = retention;
+        Difficulty = difficulty; CanAbandon = canAbandon;
         var stepCopy = (steps ?? throw new ArgumentNullException(nameof(steps)))
             .Select(step => step ?? throw new ArgumentException("Null step.", nameof(steps))).ToArray();
         if (stepCopy.Length is < 1 or > MaxSteps) throw new ArgumentException("A definition needs 1-" + MaxSteps + " steps.", nameof(steps));
@@ -432,8 +422,6 @@ public sealed class StoryMissionDefinition
             throw new ArgumentException("Duplicate reward kind.", nameof(rewards));
         Rewards = Array.AsReadOnly(rewardCopy);
         var choiceCopy = (choiceKeys ?? Array.Empty<string>()).ToArray();
-        if (choiceCopy.Length > 0 && retention != StoryRetention.Campaign)
-            throw new ArgumentException("Only a campaign definition retains declared choices.", nameof(choiceKeys));
         if (choiceCopy.Length > MaxChoiceKeys) throw new ArgumentException("At most " + MaxChoiceKeys + " declared choice keys.", nameof(choiceKeys));
         if (choiceCopy.Distinct(StringComparer.Ordinal).Count() != choiceCopy.Length)
             throw new ArgumentException("Duplicate declared choice key.", nameof(choiceKeys));
@@ -535,15 +523,13 @@ internal sealed class StoryMissionSnapshot
     public StoryMissionDefinitionId Id { get; }
     public Guid MissionId { get; }
     public StoryMissionStage Stage { get; }
-    public StoryRetention Retention { get; }
 
-    public StoryMissionSnapshot(StoryMissionDefinitionId id, Guid missionId, StoryMissionStage stage, StoryRetention retention)
+    public StoryMissionSnapshot(StoryMissionDefinitionId id, Guid missionId, StoryMissionStage stage)
     {
         if (id.Provider == null) throw new ArgumentException("A default identity is not a content identity.", nameof(id));
         if (missionId == Guid.Empty) throw new ArgumentException("An mission requires its own identity.", nameof(missionId));
         if (!Enum.IsDefined(typeof(StoryMissionStage), stage)) throw new ArgumentOutOfRangeException(nameof(stage));
-        if (!Enum.IsDefined(typeof(StoryRetention), retention)) throw new ArgumentOutOfRangeException(nameof(retention));
-        Id = id; MissionId = missionId; Stage = stage; Retention = retention;
+        Id = id; MissionId = missionId; Stage = stage;
     }
 }
 

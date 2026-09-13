@@ -79,8 +79,8 @@ internal sealed class GameplayUiService : IGameplayUiService, IDisposable
     internal void SetAvailable(bool available, ServiceUnavailableReason reason = ServiceUnavailableReason.BindingFailed)
     {
         _hub.CheckThread(); if (_disposed) return;
-        _hub.SetCapability("gameplay-ui", available,
-            available ? "Observed gameplay UI and consumer containers." : "Gameplay UI integration unavailable.", reason);
+        if (available) _hub.SetAvailable("gameplay-ui", "Observed gameplay UI and consumer containers.");
+        else _hub.SetUnavailable("gameplay-ui", reason, "Gameplay UI integration unavailable.");
     }
 
     private void AvailabilityUpdated(ServiceAvailability status) { if (!status.IsAvailable) Invalidate(); }
@@ -213,7 +213,7 @@ internal sealed class GameplayUiService : IGameplayUiService, IDisposable
         _lifetime.Dispose(); _status.AvailabilityChanged -= AvailabilityUpdated;
         Invalidate();
         _events.Complete();
-        _hub.SetCapability("gameplay-ui", false, "Gameplay UI service stopped.", ServiceUnavailableReason.ApiStopped);
+        _hub.SetUnavailable("gameplay-ui", ServiceUnavailableReason.ApiStopped, "Gameplay UI service stopped.");
     }
 
     internal sealed class ContainerLease : IDisposable

@@ -41,11 +41,11 @@ public sealed class StoryProtectionTests : IDisposable
 
     private static StoryMissionDefinition Definition() => new("salvage-run", "Salvage run", "Recover it.", Trading,
         new[] { new StoryStep("Reach the wreck", new[] { StoryObjective.TravelTo("poi-guid-1", requireNewVisit: true) }) },
-        new[] { StoryReward.Credits(500) }, StoryDifficulty.Normal, StoryRetention.Campaign);
+        new[] { StoryReward.Credits(500) }, StoryDifficulty.Normal);
 
     private (string Identifier, Mission Mission) Hold(string local = "salvage-run")
     {
-        var identifier = StoryMissionPolicy.MissionIdentifier(new StoryMissionDefinitionId("anima", local), Guid.NewGuid());
+        var identifier = StoryMissionPolicy.Identifier(new StoryMissionDefinitionId("anima", local));
         var world = new StoryNativeWorld(new StoryNativeBindings(typeof(StoryMission).Assembly), () => { });
         Assert.True(world.Install(identifier, Definition()).Applied);
         Assert.True(world.Accept(identifier).Applied);
@@ -405,14 +405,14 @@ public sealed class StoryProtectionTests : IDisposable
     [Fact]
     public void EveryIdentifierInTheReservedNamespaceIsQuarantinedUnlessItIsAdmitted()
     {
-        var admitted = StoryMissionPolicy.MissionIdentifier(new StoryMissionDefinitionId("anima", "salvage-run"), Guid.NewGuid());
+        var admitted = StoryMissionPolicy.Identifier(new StoryMissionDefinitionId("anima", "salvage-run"));
         _protection.Admit(Guid.NewGuid(), new[] { admitted }, "admitted");
         Assert.False(_protection.IsQuarantined(admitted));
         foreach (var identifier in new[]
         {
-            StoryMissionPolicy.Identifier(new StoryMissionDefinitionId("anima", "salvage-run")),        // the base definition
+            StoryMissionPolicy.Identifier(new StoryMissionDefinitionId("anima", "relay-run")),   // another definition
             StoryMissionPolicy.IdentifierPrefix + "anima.salvage-run.not-a-guid",             // malformed
-            StoryMissionPolicy.MissionIdentifier(new StoryMissionDefinitionId("anima", "salvage-run"), Guid.NewGuid()),
+            StoryMissionPolicy.Identifier(new StoryMissionDefinitionId("other", "salvage-run")), // another provider
             StoryMissionPolicy.IdentifierPrefix
         }) Assert.True(_protection.IsQuarantined(identifier), identifier);
         // Ordinal matching: a neighbouring namespace and vanilla content are not ours.

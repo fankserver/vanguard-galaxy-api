@@ -21,7 +21,7 @@ internal sealed class BoardingTacticalAdapter : IDisposable
     {
         _hub = hub; _bindings = native; _observer = observer; _events = events; _commands = commands;
         _status = hub.Services.Get("boarding-tactics");
-        if (native == null && Availability.IsAvailable) hub.SetCapability("boarding-tactics", false, "Tactical bindings unavailable.");
+        if (native == null && Availability.IsAvailable) hub.SetUnavailable("boarding-tactics", ServiceUnavailableReason.BindingFailed, "Tactical bindings unavailable.");
     }
     internal BoardingTacticalAdapter(LifecycleHub hub, BoardingCommandService commands)
         : this(hub, (IBoardingTacticalNativeBindings?)null, null, null, commands) { }
@@ -31,7 +31,7 @@ internal sealed class BoardingTacticalAdapter : IDisposable
     public void Dispose()
     {
         _hub.CheckThread(); if (_disposed) return; _disposed = true;
-        if (Availability.IsAvailable) _hub.SetCapability("boarding-tactics", false, "Tactical service stopped.", ServiceUnavailableReason.ApiStopped);
+        if (Availability.IsAvailable) _hub.SetUnavailable("boarding-tactics", ServiceUnavailableReason.ApiStopped, "Tactical service stopped.");
     }
     private bool Flag(object? obj, string key) => _native.Get(obj, key) is true;
     private object? Simulation(BoardingHandle target)

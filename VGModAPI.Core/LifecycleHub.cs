@@ -43,9 +43,15 @@ internal sealed class LifecycleHub : ILifecycleService, IDisposable
     public SessionSnapshot? CurrentSession { get { CheckThread(); return _session; } }
     public IReadOnlyList<CapabilityStatus> Capabilities => Services.Untyped;
 
-    internal void SetCapability(string name, bool available, string detail,
-        ServiceUnavailableReason reason = ServiceUnavailableReason.BindingFailed)
-        => Services.Set(name, available, detail, reason);
+    internal void SetAvailable(string name, string detail)
+        => Services.Set(name, true, detail, ServiceUnavailableReason.None);
+
+    /// <summary>
+    /// The reason is required: an unavailable feature must say WHY, and a default would let a
+    /// deliberate configuration disable report itself as a binding failure.
+    /// </summary>
+    internal void SetUnavailable(string name, ServiceUnavailableReason reason, string detail)
+        => Services.Set(name, false, detail, reason);
 
     internal IDisposable EnterServiceDispatch()
     {

@@ -102,7 +102,7 @@ internal sealed class StationEvents : IStationService, IDisposable
         foreach (var subscription in _subscriptions) subscription.Active = false;
         _subscriptions.Clear();
         if (Availability.IsAvailable)
-            _lifecycle.SetCapability("native-travel", false, "Station service stopped.", ServiceUnavailableReason.ApiStopped);
+            _lifecycle.SetUnavailable("native-travel", ServiceUnavailableReason.ApiStopped, "Station service stopped.");
     }
     private void CheckThread()
     {

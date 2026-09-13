@@ -124,10 +124,10 @@ An unavailable query is distinct from a known empty game. No occurrence IDs need
 mod save data merely to find and control missions after reload. Discovery returns new game-bound
 objects for restored occurrences.
 
-- `Temporary` retains live content and the newest 32 terminal tombstones. It is not durable campaign
-  history and cannot declare campaign choices.
-- `Campaign` retains authoritative outcomes and declared choices without pruning. Use it for
-  campaign progression rather than relying on a temporary tombstone remaining present.
+- A definition runs **once**, exactly as the game admits one story mission per identifier:
+  `GamePlayer.AddMissionWithLog` refuses one whose `HasStoryMission(storyId)` is already active or
+  archived, and the archive keeps it forever. Its outcome and declared choices are the definition's,
+  retained without pruning.
 - Withdrawing an unaccepted offer leaves no tombstone.
 - Removed definitions do not delete saved missions. Provider-required content still needs its owner;
   see [content safety](persistence-safety.md).
@@ -139,7 +139,7 @@ Limits refuse admission rather than dropping existing state:
 | Definitions | 256 |
 | Bound providers | 32 |
 | Occurrences per provider | 64 |
-| Campaign occurrences per definition, including unresolved content | 48 |
+| Missions per definition, including unresolved content | 1 |
 | Global occurrences | 2048 |
 | Persisted payload per provider, including reserved outcome space | 16,383 bytes |
 | Global story payload | 512 KiB |
@@ -147,7 +147,7 @@ Limits refuse admission rather than dropping existing state:
 | Encoded bytes per key / value | 32 / 64 |
 | Reserved choice bytes per occurrence | At most 1024 |
 
-An offer reserves enough space for its declared outcome. Campaign history and inactive providers'
+An offer reserves enough space for its declared outcome. Retained history and inactive providers'
 retained data are not pruned to admit another provider. Global capacity remains a backstop when a
 save contains more historical provider namespaces than can be bound at once.
 
@@ -301,7 +301,7 @@ catalog entry is replaced accidentally. Disposing an old handle cannot remove a 
 The API owns a bounded schema-4 story payload. Schemas 1–3 remain readable through internal save
 migrations. Newly offered occurrences retain immutable definition data, so changed startup text,
 targets or rewards do not replace saved generated content at the same revision. Definition payloads
-are released at retirement; outcomes, choices and keyed progress follow the retention policy.
+are released at retirement; outcomes, choices and keyed progress are retained with the definition.
 Strict encoding and shared ledger/codec bounds reject malformed state rather than truncating it.
 Restoration replaces the ledger with the exact loaded generation; newer outcomes cannot leak into
 an older save. Corrupt or unsupported owner data is preserved, not overwritten with empty state.

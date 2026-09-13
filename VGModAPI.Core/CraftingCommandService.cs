@@ -34,7 +34,7 @@ internal sealed class CraftingCommandService : ICraftingCommandService, IDisposa
         _hub = hub; _jobs = jobs; _backend = backend; _report = report;
         _status = hub.Services.Get("crafting-commands");
         hub.Services.WatchFault("crafting-commands", () => Volatile.Read(ref _fault) != null);
-        if (backend == null && Availability.IsAvailable) hub.SetCapability("crafting-commands", false, "Command bindings unavailable.");
+        if (backend == null && Availability.IsAvailable) hub.SetUnavailable("crafting-commands", ServiceUnavailableReason.BindingFailed, "Command bindings unavailable.");
         _lifetime = hub.Subscribe("vgmodapi.crafting-commands", message =>
         {
             if (message.Kind is LifecycleEventKind.SessionStarting or LifecycleEventKind.SessionInvalidated or LifecycleEventKind.SessionStartFailed)
@@ -50,8 +50,8 @@ internal sealed class CraftingCommandService : ICraftingCommandService, IDisposa
     internal void SetAvailable(bool value)
     {
         _hub.CheckThread(); if (_disposed) return;
-        _hub.SetCapability("crafting-commands", value && _backend != null,
-            value ? "Guarded commands bound." : "Crafting commands unavailable.");
+        if (value && _backend != null) _hub.SetAvailable("crafting-commands", "Guarded commands bound.");
+        else _hub.SetUnavailable("crafting-commands", ServiceUnavailableReason.BindingFailed, "Crafting commands unavailable.");
     }
     internal void BeginSerialization() { _hub.CheckThread(); _serializationDepth++; }
     internal void EndSerialization() { _hub.CheckThread(); if (_serializationDepth > 0) _serializationDepth--; }
@@ -112,7 +112,7 @@ internal sealed class CraftingCommandService : ICraftingCommandService, IDisposa
     {
         _hub.CheckThread(); if (_disposed) return;
         _disposed = true; _lifetime.Dispose(); _requests.Clear();
-        if (Availability.IsAvailable) _hub.SetCapability("crafting-commands", false, "Command service stopped.", ServiceUnavailableReason.ApiStopped);
+        if (Availability.IsAvailable) _hub.SetUnavailable("crafting-commands", ServiceUnavailableReason.ApiStopped, "Command service stopped.");
     }
     private sealed class Entry
     {

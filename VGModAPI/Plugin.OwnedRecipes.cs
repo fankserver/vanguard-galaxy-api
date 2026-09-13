@@ -25,7 +25,7 @@ public sealed partial class Plugin
     private void InitializeOwnedRecipes()
     {
         _ownedRecipes ??= CreateOwnedRecipes();
-        _hub!.SetCapability("owned-recipes", false, "Owned recipe bindings initializing.");
+        _hub!.SetUnavailable("owned-recipes", ServiceUnavailableReason.BindingFailed, "Owned recipe bindings initializing.");
         var harmony = new Harmony(ModApi.PluginId + ".owned-recipes");
         try
         {
@@ -37,9 +37,13 @@ public sealed partial class Plugin
                 prefix: new HarmonyMethod(typeof(Patches.OwnedRecipePatches), nameof(Patches.OwnedRecipePatches.Lookup)));
             harmony.Patch(type.GetMethod("LoadAll"), postfix: new HarmonyMethod(typeof(Patches.OwnedRecipePatches), nameof(Patches.OwnedRecipePatches.Loaded)));
             _ownedItems!.DefinitionsChanged += RefreshOwnedRecipes;
-            _hub.SetCapability("owned-recipes", _worldAvailable && !_ownedItemsStopped && _ownedItemCatalog != null, "Fixed plain-goods recipes with retained job definitions.");
+            if (_worldAvailable && !_ownedItemsStopped && _ownedItemCatalog != null)
+                _hub.SetAvailable("owned-recipes", "Fixed plain-goods recipes with retained job definitions.");
+            else
+                _hub.SetUnavailable("owned-recipes", ServiceUnavailableReason.DependencyUnavailable,
+                    "Owned items and a ready world are required.");
         }
-        catch (Exception error) { harmony.UnpatchSelf(); Patches.OwnedRecipePatches.Resolve = null; Patches.OwnedRecipePatches.Reload = null; _hub.SetCapability("owned-recipes", false, error.Message); }
+        catch (Exception error) { harmony.UnpatchSelf(); Patches.OwnedRecipePatches.Resolve = null; Patches.OwnedRecipePatches.Reload = null; _hub.SetUnavailable("owned-recipes", ServiceUnavailableReason.BindingFailed, error.Message); }
     }
     private void RefreshOwnedRecipes() => _ownedRecipes?.Refresh();
     private void StopOwnedRecipes()

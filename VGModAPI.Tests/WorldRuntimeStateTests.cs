@@ -42,8 +42,8 @@ public sealed class WorldRuntimeStateTests
             });
             var hub = new LifecycleHub((_, _) => { });
             var game = new GameAdapter(hub, new GameBindings(typeof(GamePlayer).Assembly), _ => { });
-            hub.SetCapability("session-lifecycle", true, "Test bindings.");
-            hub.SetCapability("save-outcomes", true, "Test bindings.");
+            hub.SetAvailable("session-lifecycle", "Test bindings.");
+            hub.SetAvailable("save-outcomes", "Test bindings.");
             using var persistence = new PersistenceService(hub, store, Path.GetFullPath, p => GenerationStore.Hash(File.ReadAllBytes(p)));
             using var definitions = new WorldDefinitionRegistry((_, caller) => new StoryHostPlugin("author.a", caller), hub.CheckThread);
             object? nativeForRead = null;

@@ -11,13 +11,13 @@ public sealed class DungeonRewardServiceTests
     {
         using var hub = new LifecycleHub((_, _) => { });
         var session = hub.Begin(SessionOrigin.NewGame, null); hub.PlayerReady(session);
-        hub.SetCapability("dungeon-rewards", true, "Test bindings.");
+        hub.SetAvailable("dungeon-rewards", "Test bindings.");
         using var engine = new DungeonRewardService(hub, (_, _) => { });
         DungeonRewardService service = engine;
         using var provider = service.AcquireProvider("mod");
         var calls = 0;
         provider.Register("reward", DungeonRewardKind.LootAmount, _ =>
-        { calls++; hub.SetCapability("dungeon-rewards", false, "Fault.", ServiceUnavailableReason.ObserverFault); return new(10); });
+        { calls++; hub.SetUnavailable("dungeon-rewards", ServiceUnavailableReason.ObserverFault, "Fault."); return new(10); });
         var context = new DungeonRewardContext(new(session, Guid.NewGuid()), DungeonRewardKind.LootAmount, "HostileVictory", false, 3);
         Assert.Equal(3, engine.Apply(context));
         Assert.Equal(3, engine.Apply(context));
@@ -31,7 +31,7 @@ public sealed class DungeonRewardServiceTests
     public void DisposalClosesRegistrationBeforeHealthNotification()
     {
         using var hub = new LifecycleHub((_, _) => { });
-        hub.SetCapability("dungeon-rewards", true, "Test bindings.");
+        hub.SetAvailable("dungeon-rewards", "Test bindings.");
         using var service = new DungeonRewardService(hub, (_, _) => { });
         Exception? rejection = null;
         service.AvailabilityChanged += _ => { service.Dispose(); rejection = Record.Exception(() => service.AcquireProvider("late")); };
@@ -43,7 +43,7 @@ public sealed class DungeonRewardServiceTests
     public void PoliciesComposeButNeverChangeMissionTokenCaptureRewards()
     {
         using var hub = new LifecycleHub((_, _) => { }); var session = hub.Begin(SessionOrigin.SaveLoad, "save"); hub.PlayerReady(session);
-        hub.SetCapability("dungeon-rewards", true, "Test bindings."); using var service = new DungeonRewardService(hub, (_, _) => { }); using var a = service.AcquireProvider("a"); using var b = service.AcquireProvider("b");
+        hub.SetAvailable("dungeon-rewards", "Test bindings."); using var service = new DungeonRewardService(hub, (_, _) => { }); using var a = service.AcquireProvider("a"); using var b = service.AcquireProvider("b");
         var calls = 0;
         using var ar = a.Register("same", DungeonRewardKind.MasteryExperience, _ => { calls++; return new(2); });
         using var br = b.Register("same", DungeonRewardKind.MasteryExperience, _ => new(0.5));
@@ -55,7 +55,7 @@ public sealed class DungeonRewardServiceTests
     public void CallbackDisposalAndSessionChangeCannotApplyStaleAdjustment()
     {
         using var hub = new LifecycleHub((_, _) => { }); var session = hub.Begin(SessionOrigin.SaveLoad, "save"); hub.PlayerReady(session);
-        hub.SetCapability("dungeon-rewards", true, "Test bindings."); using var service = new DungeonRewardService(hub, (_, _) => { }); var provider = service.AcquireProvider("a");
+        hub.SetAvailable("dungeon-rewards", "Test bindings."); using var service = new DungeonRewardService(hub, (_, _) => { }); var provider = service.AcquireProvider("a");
         var operation = new BoardingHandle(hub.CurrentSession!.Id, Guid.NewGuid());
         using var registration = provider.Register("dispose", DungeonRewardKind.LootAmount, context =>
         {

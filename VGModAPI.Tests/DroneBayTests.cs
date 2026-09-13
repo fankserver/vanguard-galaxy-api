@@ -25,7 +25,7 @@ public sealed class DroneBayTests : IDisposable
 
     public DroneBayTests()
     {
-        _hub.SetCapability("session-lifecycle", true, "Test binding.");
+        _hub.SetAvailable("session-lifecycle", "Test binding.");
         _service = new DroneBayService(_hub); _service.SetAvailable(true);
         _runtime = new DroneBayRuntime(typeof(DroneBayModule).Assembly, _hub, _service,
             () => _ships.ToArray(),

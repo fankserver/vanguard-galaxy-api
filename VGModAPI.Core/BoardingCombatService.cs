@@ -73,7 +73,7 @@ internal sealed class BoardingCombatService : IDisposable
     public void Dispose()
     {
         _hub.CheckThread(); if (_disposed) return; _disposed = true;
-        if (Availability.IsAvailable) _hub.SetCapability("boarding-combat", false, "Combat service stopped.", ServiceUnavailableReason.ApiStopped);
+        if (Availability.IsAvailable) _hub.SetUnavailable("boarding-combat", ServiceUnavailableReason.ApiStopped, "Combat service stopped.");
         foreach (var provider in _providers.Values.ToArray()) provider.Dispose();
     }
     private sealed class Provider : IBoardingCombatProvider

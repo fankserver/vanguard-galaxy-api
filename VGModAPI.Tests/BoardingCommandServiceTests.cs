@@ -21,12 +21,12 @@ public sealed class BoardingCommandServiceTests
     public void HealthLossDuringNativeWorkReportsUncertainAndRevokesAdmission(bool duringPause)
     {
         using var hub = new LifecycleHub((_, _) => { });
-        hub.SetCapability("boarding-observation", true, "Test bindings."); using var events = new BoardingService(hub, (_, _) => { });
+        hub.SetAvailable("boarding-observation", "Test bindings."); using var events = new BoardingService(hub, (_, _) => { });
         var session = hub.Begin(SessionOrigin.NewGame, null); hub.PlayerReady(session);
         var target = new BoardingHandle(session, Guid.NewGuid());
         events.Observe(BoardingEventKind.TargetAvailable, new(target, 1, BoardingEncounterKind.Ship, "ship", null, null, BoardingAvailability.Available, null));
-        hub.SetCapability("boarding-commands", true, "Test bindings.");
-        Action fail = () => hub.SetCapability("boarding-commands", false, "Fault.", ServiceUnavailableReason.ObserverFault);
+        hub.SetAvailable("boarding-commands", "Test bindings.");
+        Action fail = () => hub.SetUnavailable("boarding-commands", ServiceUnavailableReason.ObserverFault, "Fault.");
         var backend = new Backend { Pause = duringPause ? fail : null, ExecuteAction = fail };
         using var commands = new BoardingCommandService(hub, events, backend, () => false);
         var result = commands.AcquireControl("mod", target, out var controller);
@@ -41,7 +41,7 @@ public sealed class BoardingCommandServiceTests
     public void MissingBackendRemainsUnavailableWithoutNativeAdmission()
     {
         using var hub = new LifecycleHub((_, _) => { });
-        hub.SetCapability("boarding-commands", false, "Disabled.", ServiceUnavailableReason.Disabled);
+        hub.SetUnavailable("boarding-commands", ServiceUnavailableReason.Disabled, "Disabled.");
         using var engine = new BoardingCommandService(hub, null, null, () => false);
         BoardingCommandService service = engine;
         Assert.Equal(ServiceUnavailableReason.Disabled, service.Availability.Reason);
@@ -54,11 +54,11 @@ public sealed class BoardingCommandServiceTests
     public void ExclusiveControlIsInstanceScopedAndManualTakeoverRevokesIt()
     {
         using var hub = new LifecycleHub((_, _) => { });
-        hub.SetCapability("boarding-observation", true, "Test bindings."); using var events = new BoardingService(hub, (_, _) => { });
+        hub.SetAvailable("boarding-observation", "Test bindings."); using var events = new BoardingService(hub, (_, _) => { });
         var session = hub.Begin(SessionOrigin.SaveLoad, "save"); hub.PlayerReady(session); hub.GameplayInitialized(session);
         var target = new BoardingHandle(session, Guid.NewGuid());
         events.Observe(BoardingEventKind.TargetAvailable, new(target, 1, BoardingEncounterKind.Ship, "ship", null, null, BoardingAvailability.Available, null));
-        var backend = new Backend(); hub.SetCapability("boarding-commands", true, "Test bindings."); using var commands = new BoardingCommandService(hub, events, backend, () => false);
+        var backend = new Backend(); hub.SetAvailable("boarding-commands", "Test bindings."); using var commands = new BoardingCommandService(hub, events, backend, () => false);
         Assert.True(commands.AcquireControl("a", target, out var first).Admitted);
         Assert.Equal(BoardingCommandStatus.ControlConflict, commands.AcquireControl("a", target, out _).Status);
         commands.ManualTakeover(target); Assert.False(first!.IsActive);
@@ -71,11 +71,11 @@ public sealed class BoardingCommandServiceTests
     public void NativeExceptionsPropagateAndBusyGuardIsReleased()
     {
         using var hub = new LifecycleHub((_, _) => { });
-        hub.SetCapability("boarding-observation", true, "Test bindings."); using var events = new BoardingService(hub, (_, _) => { });
+        hub.SetAvailable("boarding-observation", "Test bindings."); using var events = new BoardingService(hub, (_, _) => { });
         var session = hub.Begin(SessionOrigin.SaveLoad, "save"); hub.PlayerReady(session); hub.GameplayInitialized(session);
         var target = new BoardingHandle(session, Guid.NewGuid());
         events.Observe(BoardingEventKind.TargetAvailable, new(target, 1, BoardingEncounterKind.Ship, "ship", null, null, BoardingAvailability.Available, null));
-        var backend = new Backend(); hub.SetCapability("boarding-commands", true, "Test bindings."); using var commands = new BoardingCommandService(hub, events, backend, () => false);
+        var backend = new Backend(); hub.SetAvailable("boarding-commands", "Test bindings."); using var commands = new BoardingCommandService(hub, events, backend, () => false);
         commands.AcquireControl("a", target, out var controller);
         var error = new InvalidOperationException("native"); backend.ExecuteAction = () => throw error;
         Assert.Same(error, Assert.Throws<InvalidOperationException>(() => controller!.Resume()));
@@ -88,12 +88,12 @@ public sealed class BoardingCommandServiceTests
     public void SessionReplacementDuringArbitrationCannotGrantControl()
     {
         using var hub = new LifecycleHub((_, _) => { });
-        hub.SetCapability("boarding-observation", true, "Test bindings."); using var events = new BoardingService(hub, (_, _) => { });
+        hub.SetAvailable("boarding-observation", "Test bindings."); using var events = new BoardingService(hub, (_, _) => { });
         var session = hub.Begin(SessionOrigin.SaveLoad, "save"); hub.PlayerReady(session); hub.GameplayInitialized(session);
         var target = new BoardingHandle(session, Guid.NewGuid());
         events.Observe(BoardingEventKind.TargetAvailable, new(target, 1, BoardingEncounterKind.Ship, "ship", null, null, BoardingAvailability.Available, null));
         var backend = new Backend { Pause = () => hub.Invalidate("replaced") };
-        hub.SetCapability("boarding-commands", true, "Test bindings."); using var commands = new BoardingCommandService(hub, events, backend, () => false);
+        hub.SetAvailable("boarding-commands", "Test bindings."); using var commands = new BoardingCommandService(hub, events, backend, () => false);
         Assert.Equal(BoardingCommandStatus.StaleHandle, commands.AcquireControl("a", target, out var controller).Status);
         Assert.Null(controller);
     }

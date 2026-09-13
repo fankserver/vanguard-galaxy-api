@@ -25,7 +25,7 @@ public sealed partial class Plugin
     private void InitializeOwnedItems()
     {
         _ownedItems ??= CreateOwnedItems();
-        _hub!.SetCapability("owned-items", false, "Owned item bindings are initializing.");
+        _hub!.SetUnavailable("owned-items", ServiceUnavailableReason.BindingFailed, "Owned item bindings are initializing.");
         try
         {
             _ownedItemCatalog = new OwnedItemNativeCatalog();
@@ -49,12 +49,15 @@ public sealed partial class Plugin
                     prefix: new HarmonyMethod(typeof(Patches.OwnedItemPatches), nameof(Patches.OwnedItemPatches.Lookup)));
             _ownedItemHarmony.Patch(type.GetMethod("LoadAll", BindingFlags.Static | BindingFlags.Public),
                 postfix: new HarmonyMethod(typeof(Patches.OwnedItemPatches), nameof(Patches.OwnedItemPatches.Loaded)));
-            _hub.SetCapability("owned-items", _worldAvailable, "Plain stackable trade goods with API-managed identity reconstruction.");
+            if (_worldAvailable)
+                _hub.SetAvailable("owned-items", "Plain stackable trade goods with API-managed identity reconstruction.");
+            else
+                _hub.SetUnavailable("owned-items", ServiceUnavailableReason.DependencyUnavailable, "A ready world is required.");
         }
         catch (Exception error)
         {
             _ownedItemsStopped = true; Patches.OwnedItemPatches.Resolve = null; Patches.OwnedItemPatches.Rebuild = null;
-            _ownedItemHarmony?.UnpatchSelf(); _hub.SetCapability("owned-items", false, error.Message);
+            _ownedItemHarmony?.UnpatchSelf(); _hub.SetUnavailable("owned-items", ServiceUnavailableReason.BindingFailed, error.Message);
         }
     }
     private void StopOwnedItems()

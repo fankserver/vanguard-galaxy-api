@@ -15,7 +15,7 @@ internal static class StoryDefinitionCodec
         && saved.LocalId == next.LocalId && saved.Title == next.Title && saved.Description == next.Description
         && saved.SourceFaction.Equals(next.SourceFaction) && saved.Category == next.Category
         && saved.CompletionText == next.CompletionText && saved.Difficulty == next.Difficulty
-        && saved.CanAbandon == next.CanAbandon && saved.AutoComplete == next.AutoComplete && saved.Retention == next.Retention
+        && saved.CanAbandon == next.CanAbandon && saved.AutoComplete == next.AutoComplete
         && saved.ChoiceKeys.SequenceEqual(next.ChoiceKeys)
         && saved.Rewards.Select(reward => (reward.Kind, reward.Amount, reward.Faction)).SequenceEqual(next.Rewards.Select(reward => (reward.Kind, reward.Amount, reward.Faction)));
 
@@ -23,12 +23,12 @@ internal static class StoryDefinitionCodec
     {
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream, Utf8, true);
-        // Version 2 added the delivery item identity per objective and the optional reward faction;
-        // version 3 adds the authored-destination identities per objective.
-        writer.Write((byte)3);
+        // Version 4 drops the retention byte. Story state refuses every schema below its own, so no
+        // older definition blob can reach this decoder and older layouts are not read here.
+        writer.Write((byte)4);
         Text(writer, definition.LocalId); Text(writer, definition.Title); Text(writer, definition.Description);
         Text(writer, definition.SourceFaction.Value); Text(writer, definition.Category); Text(writer, definition.CompletionText);
-        writer.Write((byte)definition.Difficulty); writer.Write((byte)definition.Retention); writer.Write(definition.CanAbandon);
+        writer.Write((byte)definition.Difficulty); writer.Write(definition.CanAbandon);
         writer.Write(definition.AutoComplete);
         writer.Write(definition.MissionRevision); writer.Write(definition.MigratesFromRevision ?? 0);
         writer.Write((byte)definition.Steps.Count);
@@ -62,11 +62,11 @@ internal static class StoryDefinitionCodec
         using var stream = new MemoryStream(payload, false);
         using var reader = new BinaryReader(stream, Utf8);
         int version = reader.ReadByte();
-        if (version is not (1 or 2 or 3)) throw new InvalidDataException("Unknown definition format.");
+        if (version != 4) throw new InvalidDataException("Unknown definition format.");
         var local = Required(reader); var title = Required(reader); var description = Required(reader);
         var faction = new StoryFactionId(Required(reader)); var category = Text(reader); var completion = Text(reader);
-        var difficulty = (StoryDifficulty)reader.ReadByte(); var retention = (StoryRetention)reader.ReadByte(); var abandon = Boolean(reader);
-        bool autoComplete = version >= 2 && Boolean(reader);
+        var difficulty = (StoryDifficulty)reader.ReadByte(); var abandon = Boolean(reader);
+        bool autoComplete = Boolean(reader);
         int revision = reader.ReadInt32(), from = reader.ReadInt32();
         var steps = new StoryStep[Count(reader, 1, StoryMissionDefinition.MaxSteps)];
         for (int index = 0; index < steps.Length; index++)
@@ -80,10 +80,10 @@ internal static class StoryDefinitionCodec
                 // The float slot predates the honest travel semantics: 0/1 carries RequireNewVisit;
                 // any legacy nonzero value decodes as new-visit (the strictest compatible reading).
                 bool newVisit = visit != 0;
-                var itemType = version >= 2 ? Text(reader) : null;
-                var enemyFaction = version >= 2 ? Text(reader) : null;
-                var authoredLocal = version >= 3 ? Text(reader) : null;
-                var authoredKey = version >= 3 ? Text(reader) : null;
+                var itemType = Text(reader);
+                var enemyFaction = Text(reader);
+                var authoredLocal = Text(reader);
+                var authoredKey = Text(reader);
                 StoryObjective objective = kind switch
                 {
                     StoryObjectiveKind.TravelToPocketSystemEntrance or StoryObjectiveKind.TravelToResourceSite
@@ -110,7 +110,7 @@ internal static class StoryDefinitionCodec
         for (int index = 0; index < rewards.Length; index++)
         {
             var kind = (StoryRewardKind)reader.ReadByte(); int amount = reader.ReadInt32();
-            var rewardFaction = version >= 2 ? Text(reader) : null;
+            var rewardFaction = Text(reader);
             if (rewardFaction != null && kind != StoryRewardKind.Reputation) throw new InvalidDataException("Invalid retained reward shape.");
             rewards[index] = kind switch
             {
@@ -123,7 +123,7 @@ internal static class StoryDefinitionCodec
         var choices = new string[Count(reader, 0, StoryMissionDefinition.MaxChoiceKeys)];
         for (int index = 0; index < choices.Length; index++) choices[index] = Required(reader);
         if (stream.Position != stream.Length || revision < 1 || from < 0) throw new InvalidDataException("Invalid retained definition trailer.");
-        var result = new StoryMissionDefinition(local, title, description, faction, steps, rewards, difficulty, retention, abandon, category, completion, choices);
+        var result = new StoryMissionDefinition(local, title, description, faction, steps, rewards, difficulty, abandon, category, completion, choices);
         if (autoComplete) result = result.WithAutoComplete();
         try { return revision == 1 && from == 0 ? result : result.WithRevision(revision, from == 0 ? null : from); }
         catch (InvalidOperationException error) { throw new InvalidDataException("Invalid retained revision shape.", error); }

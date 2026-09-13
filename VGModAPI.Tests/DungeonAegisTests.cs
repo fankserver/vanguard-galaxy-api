@@ -28,7 +28,7 @@ public sealed class DungeonAegisTests : IDisposable
 
     public DungeonAegisTests()
     {
-        _hub.SetCapability("session-lifecycle", true, "Test binding.");
+        _hub.SetAvailable("session-lifecycle", "Test binding.");
         _service = new DungeonAegisService(_hub); _service.SetAvailable(true);
         _runtime = new DungeonAegisRuntime(typeof(DungeonLocationData).Assembly, _hub, _service,
             () => _liveParts.Cast<object>().ToArray(), _notices.Add, _reports.Add);

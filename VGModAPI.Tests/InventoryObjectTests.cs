@@ -36,7 +36,7 @@ public sealed class InventoryObjectTests
         internal readonly GameService Games;
         internal Fixture()
         {
-            foreach (var name in new[] { "inventories", "session-lifecycle", "save-outcomes" }) Hub.SetCapability(name, true, "Bound");
+            foreach (var name in new[] { "inventories", "session-lifecycle", "save-outcomes" }) Hub.SetAvailable(name, "Bound");
             Engine = new InventoryService(Hub, () => Backend);
             Games = new GameService(Hub, new NavigationService(Hub, _ => null, (_, _, _) => NavigationStatus.Unavailable, (_, _) => null), Engine, new StoryMissionService(Hub.Services, null, Hub, (_, _) => null), new BarService(null, Hub, (_, _) => null, _ => false, Hub.CheckThread));
             Start();

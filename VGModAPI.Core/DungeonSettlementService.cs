@@ -80,8 +80,7 @@ internal sealed class DungeonSettlementService : IDisposable
         _hub.CheckThread(); if (_disposed) return; _disposed = true;
         _boardingSubscription.Dispose(); _lifetime.Dispose(); _states.Clear(); _handlers.Dispose();
         var health = Availability;
-        _hub.SetCapability("dungeon-settlement", false, health.IsAvailable ? "Settlement service stopped." : health.Detail,
-            health.IsAvailable ? ServiceUnavailableReason.ApiStopped : health.Reason);
+        _hub.SetUnavailable("dungeon-settlement", health.IsAvailable ? ServiceUnavailableReason.ApiStopped : health.Reason, health.IsAvailable ? "Settlement service stopped." : health.Detail);
         foreach (var subscriber in _subscribers.ToArray()) subscriber.Dispose();
     }
     private sealed class Subscription : IDisposable

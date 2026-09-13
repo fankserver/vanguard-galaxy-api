@@ -30,7 +30,7 @@ internal sealed class CraftingJobService : ICraftingJobService, ICallbackDispatc
     {
         _hub = hub; _source = source; _report = report;
         _status = hub.Services.Get("crafting-jobs");
-        if (source == null && Availability.IsAvailable) hub.SetCapability("crafting-jobs", false, "Job bindings unavailable.");
+        if (source == null && Availability.IsAvailable) hub.SetUnavailable("crafting-jobs", ServiceUnavailableReason.BindingFailed, "Job bindings unavailable.");
         _events = new ServiceSubscriptions<CraftingJobEvent>(hub, Subscribe,
             fact => fact.Kind == CraftingJobEventKind.Invalidated || ActiveSession == fact.Job.Handle.Station.SessionId);
         _lifetime = hub.Subscribe("vgmodapi.crafting-jobs", message =>
@@ -52,7 +52,8 @@ internal sealed class CraftingJobService : ICraftingJobService, ICallbackDispatc
     {
         _hub.CheckThread(); if (_disposed) return;
         available &= _source != null;
-        _hub.SetCapability("crafting-jobs", available, available ? "Experimental native job observation." : "Crafting job observation unavailable.");
+        if (available) _hub.SetAvailable("crafting-jobs", "Experimental native job observation.");
+        else _hub.SetUnavailable("crafting-jobs", ServiceUnavailableReason.BindingFailed, "Crafting job observation unavailable.");
         if (!available && !_disposed) Invalidate("Observation unavailable.");
     }
     public CraftingJobListSnapshot Read(RecipeStationHandle station)
@@ -154,7 +155,7 @@ internal sealed class CraftingJobService : ICraftingJobService, ICallbackDispatc
         _disposed = true; _lifetime.Dispose(); _pending.Clear(); _known.Clear(); _queued.Clear(); _events.Dispose();
         foreach (var subscription in _subscriptions) subscription.Active = false;
         _subscriptions.Clear();
-        if (Availability.IsAvailable) _hub.SetCapability("crafting-jobs", false, "Job service stopped.", ServiceUnavailableReason.ApiStopped);
+        if (Availability.IsAvailable) _hub.SetUnavailable("crafting-jobs", ServiceUnavailableReason.ApiStopped, "Job service stopped.");
         _source?.InvalidateJobs();
     }
     private sealed class Subscription : IDisposable

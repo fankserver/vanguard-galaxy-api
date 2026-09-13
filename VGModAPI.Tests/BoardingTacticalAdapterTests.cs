@@ -48,7 +48,7 @@ public sealed class BoardingTacticalAdapterTests
         internal Fixture()
         {
             var session = Hub.Begin(SessionOrigin.SaveLoad, "save"); Hub.PlayerReady(session); Hub.GameplayInitialized(session);
-            Hub.SetCapability("boarding-tactics", true, "Test bindings.");
+            Hub.SetAvailable("boarding-tactics", "Test bindings.");
             Adapter = new BoardingTacticalAdapter(Hub, Native, null!, null!, null!);
         }
         public void Dispose() => Hub.Dispose();
@@ -57,7 +57,7 @@ public sealed class BoardingTacticalAdapterTests
     public void MissingBindingsExposeUnavailableTypedService()
     {
         using var hub = new LifecycleHub((_, _) => { });
-        hub.SetCapability("boarding-tactics", false, "Disabled.", ServiceUnavailableReason.Disabled);
+        hub.SetUnavailable("boarding-tactics", ServiceUnavailableReason.Disabled, "Disabled.");
         using var commands = new BoardingCommandService(hub, null, null, () => false);
         using var adapter = new BoardingTacticalAdapter(hub, commands);
         Runtime.BoardingTacticalAdapter service = adapter;
@@ -97,7 +97,7 @@ public sealed class BoardingTacticalAdapterTests
     [Fact]
     public void SnapshotResolvesRequestedOperationRatherThanTargetsNewestOperation()
     {
-        using var f = new Fixture(); f.Hub.SetCapability("boarding-observation", true, "Test bindings."); using var events = new BoardingService(f.Hub, (_, _) => { });
+        using var f = new Fixture(); f.Hub.SetAvailable("boarding-observation", "Test bindings."); using var events = new BoardingService(f.Hub, (_, _) => { });
         using var observer = new BoardingObserver(f.Hub, events, f.Native.Get, _ => true, error => throw error);
         var location = new Dictionary<string, object?> { ["availability"] = BoardingAvailability.Available, ["shipTemplate"] = "Scout", ["isShipBased"] = true };
         var unit = new Dictionary<string, object?> { ["data"] = location };
@@ -117,7 +117,7 @@ public sealed class BoardingTacticalAdapterTests
         Assert.Equal(2, adapter.GetSnapshot(oldHandle)!.GrenadeCharges);
         Assert.Equal(7, adapter.GetSnapshot(nextHandle)!.GrenadeCharges);
         Assert.Same(oldOp, observer.ResolveCommandOperation(oldHandle));
-        f.Native.OnRead = () => f.Hub.SetCapability("boarding-tactics", false, "Fault.", ServiceUnavailableReason.ObserverFault);
+        f.Native.OnRead = () => f.Hub.SetUnavailable("boarding-tactics", ServiceUnavailableReason.ObserverFault, "Fault.");
         Assert.Null(adapter.GetSnapshot(oldHandle));
         var reads = f.Native.Reads;
         Assert.Null(adapter.GetSnapshot(oldHandle));

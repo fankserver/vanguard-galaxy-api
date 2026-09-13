@@ -13,7 +13,7 @@ public sealed class DungeonInstallationEventTests : IDisposable
     private static LifecycleHub Hub(Action<string, Exception>? report = null)
     {
         var hub = new LifecycleHub(report ?? ((_, _) => { }));
-        hub.SetCapability("session-lifecycle", true, "Bound"); hub.SetCapability("save-outcomes", true, "Bound");
+        hub.SetAvailable("session-lifecycle", "Bound"); hub.SetAvailable("save-outcomes", "Bound");
         return hub;
     }
     private static Guid Ready(LifecycleHub hub)
@@ -170,10 +170,10 @@ public sealed class DungeonInstallationEventTests : IDisposable
         var reports = 0; using var hub = Hub((_, _) => reports++); using var provider = Provider(hub);
         var count = 0; provider.GetInstallation("station-a").ExtractionStarted += () => count++;
         var id = Ready(hub); Extract(hub, id);
-        hub.SetCapability("save-outcomes", false, "Fault");
+        hub.SetUnavailable("save-outcomes", ServiceUnavailableReason.BindingFailed, "Fault");
         hub.Gameplay.Tick(); hub.Gameplay.Tick();
         Assert.Equal(1, reports); Assert.Equal(0, count);
-        hub.SetCapability("save-outcomes", true, "Recovered"); hub.Gameplay.Tick(); Assert.Equal(1, count);
+        hub.SetAvailable("save-outcomes", "Recovered"); hub.Gameplay.Tick(); Assert.Equal(1, count);
     }
 
     [Fact]

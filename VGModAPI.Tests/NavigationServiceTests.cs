@@ -11,7 +11,7 @@ public sealed class NavigationServiceTests
     [Fact]
     public void DirectedJumpCountsDistinguishMissingDisconnectedAndStaleSessions()
     {
-        using var hub = new LifecycleHub((_, _) => { }); hub.SetCapability("navigation", true, "ready");
+        using var hub = new LifecycleHub((_, _) => { }); hub.SetAvailable("navigation", "ready");
         var session = hub.Begin(SessionOrigin.NewGame, null); hub.PlayerReady(session);
         var map = new NavigationMap(new Dictionary<string, string[]> { ["a"] = new[] { "b" }, ["b"] = Array.Empty<string>(), ["c"] = Array.Empty<string>() }, Array.Empty<NavigationStation>(), () => true);
         var api = new NavigationService(hub, _ => map, (_, _, _) => NavigationStatus.Succeeded, (_, _) => null);
@@ -30,7 +30,7 @@ public sealed class NavigationServiceTests
     [Fact]
     public void OwnedDestinationsUseProviderAndInstanceIdentityAndRecheckRestoration()
     {
-        using var hub = new LifecycleHub((_, _) => { }); hub.SetCapability("navigation", true, "ready");
+        using var hub = new LifecycleHub((_, _) => { }); hub.SetAvailable("navigation", "ready");
         var session = hub.Begin(SessionOrigin.NewGame, null); hub.PlayerReady(session);
         bool restored = true; var ids = new List<string>(); Func<bool>? ongoing = null;
         var api = new NavigationService(hub, _ => null, (_, id, current) => { ids.Add(id); ongoing = current; return NavigationStatus.Succeeded; }, (_, _) => restored);
@@ -46,7 +46,7 @@ public sealed class NavigationServiceTests
     [Fact]
     public void StationsAreVisitedOnlyByDefaultAndDoNotExposeMutableCollections()
     {
-        using var hub = new LifecycleHub((_, _) => { }); hub.SetCapability("navigation", true, "ready");
+        using var hub = new LifecycleHub((_, _) => { }); hub.SetAvailable("navigation", "ready");
         var session = hub.Begin(SessionOrigin.NewGame, null); hub.PlayerReady(session);
         var source = new[] { new NavigationStation("visited", "a", "Port", true), new NavigationStation("new", "a", null, false) };
         var map = new NavigationMap(new Dictionary<string, string[]>(), source, () => true);

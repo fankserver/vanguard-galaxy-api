@@ -39,7 +39,7 @@ public sealed class DungeonServiceTests
             State = new(Hub, Persistence);
             var session = Hub.Begin(SessionOrigin.SaveLoad, "save"); Hub.PlayerReady(session);
             Persistence.Provider.Restore(Hub.CurrentSession!, null);
-            Hub.SetCapability("dungeon-content", true, "Test bindings.");
+            Hub.SetAvailable("dungeon-content", "Test bindings.");
             Service = new(Hub, new(_ => true, _ => true, _ => true), State,
                 new((_, _) => DungeonStatus.Attached, (_, _) => { }, (_, _, _) => { ChoiceChecks++; return DungeonStatus.ChoiceApplied; },
                     (_, _, _) => { Applied++; if (ThrowNative) throw new InvalidOperationException("native failure"); },
@@ -72,7 +72,7 @@ public sealed class DungeonServiceTests
         using var f = new Fixture(); var service = f.Service;
         using var provider = service.AcquireProvider("owner");
         using var registration = provider.Register("content", Definition(), _ =>
-        { f.Hub.SetCapability("dungeon-content", false, "Fault.", ServiceUnavailableReason.ObserverFault); return true; });
+        { f.Hub.SetUnavailable("dungeon-content", ServiceUnavailableReason.ObserverFault, "Fault."); return true; });
         var id = provider.Attach("content", f.Target).DungeonId!.Value;
         Assert.Equal(DungeonStatus.Unavailable, provider.Choose(id, "event", "choice").Status);
         Assert.Empty(f.State.Get(id)!.Choices); Assert.Equal(0, f.Applied);
@@ -84,7 +84,7 @@ public sealed class DungeonServiceTests
     public void MissingCatalogRetainsUnavailableDiagnosisAndRefusesDeclarations()
     {
         using var hub = new LifecycleHub((_, _) => { });
-        hub.SetCapability("dungeon-content", false, "Disabled.", ServiceUnavailableReason.Disabled);
+        hub.SetUnavailable("dungeon-content", ServiceUnavailableReason.Disabled, "Disabled.");
         using var service = new DungeonService(hub, null, null, null, (_, _) => { });
         Assert.Equal(ServiceUnavailableReason.Disabled, service.Availability.Reason);
         Assert.Throws<InvalidOperationException>(() => service.AcquireProvider("mod"));
@@ -105,7 +105,7 @@ public sealed class DungeonServiceTests
             events: new[] { new DungeonEventDefinition("event", "room", new string('e', 4000), new[] { new DungeonChoiceDefinition("choice", new string('c', 1000)) }) }));
         var target = f.Target; var id = provider.Attach("content", target).DungeonId!.Value;
         var source = new PanelSource { Snapshot = new(Guid.NewGuid(), 1, new(target, 1, BoardingEncounterKind.Installation, "Site", null, null, BoardingAvailability.Available, null), null) };
-        f.Hub.SetCapability("dungeon-panel-opening", true, "Test bindings.");
+        f.Hub.SetAvailable("dungeon-panel-opening", "Test bindings.");
         using var panel = new DungeonPanelService(f.Hub, source, (_, error) => throw error);
         using var bridge = new DungeonPanelChoices(panel, f.Service, _ => id); bridge.Refresh();
         var rows = panel.Render(); Assert.Equal(2, rows.Count); Assert.Equal(4000, rows[0].Section!.Text.Length); Assert.Equal(1000, rows[1].Action!.Tooltip.Length);
@@ -120,7 +120,7 @@ public sealed class DungeonServiceTests
         using var provider = f.Service.AcquireProvider("owner"); using var registration = provider.Register("content", Definition());
         var target = f.Target; var id = provider.Attach("content", target).DungeonId!.Value;
         var source = new PanelSource { Snapshot = new(Guid.NewGuid(), 1, new(target, 1, BoardingEncounterKind.Installation, "Site", null, null, BoardingAvailability.Available, null), null) };
-        f.Hub.SetCapability("dungeon-panel-opening", true, "Test bindings.");
+        f.Hub.SetAvailable("dungeon-panel-opening", "Test bindings.");
         using var panel = new DungeonPanelService(f.Hub, source, (_, error) => throw error);
         using var bridge = new DungeonPanelChoices(panel, f.Service, _ => id);
         bridge.Refresh(); var checks = f.ChoiceChecks; bridge.Refresh(); Assert.Equal(checks, f.ChoiceChecks);
@@ -240,7 +240,7 @@ public sealed class DungeonServiceTests
         using var f = new Fixture();
         using var provider = f.Service.AcquireProvider("owner");
         using var registration = provider.Register("content", Definition(), _ =>
-        { f.Hub.SetCapability("dungeon-content", false, "Fault.", ServiceUnavailableReason.ObserverFault); return true; });
+        { f.Hub.SetUnavailable("dungeon-content", ServiceUnavailableReason.ObserverFault, "Fault."); return true; });
         var id = provider.Attach("content", f.Target).DungeonId!.Value;
         var result = provider.Choose(id, "event", "choice");
         Assert.Equal(DungeonStatus.Unavailable, result.Status);
@@ -253,7 +253,7 @@ public sealed class DungeonServiceTests
     {
         using var hub = new LifecycleHub((_, _) => { });
         hub.Begin(SessionOrigin.SaveLoad, "save"); hub.PlayerReady(hub.CurrentSession!.Id);
-        hub.SetCapability("dungeon-content", true, "Test bindings.");
+        hub.SetAvailable("dungeon-content", "Test bindings.");
         var bindings = new DungeonBindings(
             (_, _) => DungeonStatus.Attached, (_, _) => { }, (_, _, _) => DungeonStatus.ChoiceApplied, (_, _, _) => { }, _ => null);
         using var service = new DungeonService(hub, new(_ => true, _ => true, _ => true),

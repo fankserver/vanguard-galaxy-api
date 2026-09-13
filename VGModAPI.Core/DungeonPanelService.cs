@@ -22,7 +22,7 @@ internal sealed class DungeonPanelService : IDisposable
     internal DungeonPanelService(LifecycleHub hub, IDungeonPanelSource? source, Action<string, Exception> report)
     {
         _hub = hub; _source = source; _report = report; _status = hub.Services.Get("dungeon-panel-opening");
-        if (source == null && Availability.IsAvailable) hub.SetCapability("dungeon-panel-opening", false, "Panel bindings unavailable.");
+        if (source == null && Availability.IsAvailable) hub.SetUnavailable("dungeon-panel-opening", ServiceUnavailableReason.BindingFailed, "Panel bindings unavailable.");
     }
     public ServiceAvailability Availability => _status.Availability;
     public event Action<ServiceAvailability>? AvailabilityChanged
@@ -102,7 +102,7 @@ internal sealed class DungeonPanelService : IDisposable
     public void Dispose()
     {
         _hub.CheckThread(); if (_disposed) return; _disposed = true; _registrations.Clear();
-        if (Availability.IsAvailable) _hub.SetCapability("dungeon-panel-opening", false, "Panel service stopped.", ServiceUnavailableReason.ApiStopped);
+        if (Availability.IsAvailable) _hub.SetUnavailable("dungeon-panel-opening", ServiceUnavailableReason.ApiStopped, "Panel service stopped.");
     }
     internal sealed class Row
     {

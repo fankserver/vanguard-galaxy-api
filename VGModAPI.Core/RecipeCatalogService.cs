@@ -22,7 +22,7 @@ internal sealed class RecipeCatalogService : IRecipeService, IDisposable
         _hub = hub; _source = source; _report = report;
         _status = hub.Services.Get("recipe-catalog");
         if (source == null && _status.Availability.IsAvailable)
-            hub.SetCapability("recipe-catalog", false, "Recipe bindings unavailable.");
+            hub.SetUnavailable("recipe-catalog", ServiceUnavailableReason.BindingFailed, "Recipe bindings unavailable.");
     }
     public ServiceAvailability Availability => _status.Availability;
     public event Action<ServiceAvailability>? AvailabilityChanged
@@ -59,6 +59,6 @@ internal sealed class RecipeCatalogService : IRecipeService, IDisposable
     {
         _hub.CheckThread(); if (_disposed) return;
         _disposed = true;
-        if (Availability.IsAvailable) _hub.SetCapability("recipe-catalog", false, "Recipe service stopped.", ServiceUnavailableReason.ApiStopped);
+        if (Availability.IsAvailable) _hub.SetUnavailable("recipe-catalog", ServiceUnavailableReason.ApiStopped, "Recipe service stopped.");
     }
 }

@@ -29,7 +29,7 @@ public sealed partial class Plugin
     private void InitializeNavigation()
     {
         _navigationService ??= CreateNavigation();
-        _hub!.SetCapability("navigation", false, "Navigation bindings are initializing.");
+        _hub!.SetUnavailable("navigation", ServiceUnavailableReason.BindingFailed, "Navigation bindings are initializing.");
         try
         {
             var assembly = Assembly.Load("Assembly-CSharp");
@@ -42,9 +42,9 @@ public sealed partial class Plugin
             if (_navigationMap == null || _navigationPanel == null || _navigationTarget == null || _navigationOpen == null)
                 throw new MissingMemberException("Navigation UI bindings unavailable.");
             _hub.Changed += NavigationLifecycle;
-            _hub.SetCapability("navigation", true, "Read-only station metadata, unweighted jump counts and map focus requests.");
+            _hub.SetAvailable("navigation", "Read-only station metadata, unweighted jump counts and map focus requests.");
         }
-        catch (Exception error) { _hub.SetCapability("navigation", false, error.Message); }
+        catch (Exception error) { _hub.SetUnavailable("navigation", ServiceUnavailableReason.BindingFailed, error.Message); }
     }
     private NavigationStatus FocusNavigation(Guid session, string id, Func<bool> admitted)
     {

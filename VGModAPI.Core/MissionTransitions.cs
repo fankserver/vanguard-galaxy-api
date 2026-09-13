@@ -225,6 +225,6 @@ internal sealed class MissionTransitions : IMissionService, IDisposable
         CheckThread(); if (_disposed) return;
         Reset(null); _disposed = true; _events.Dispose(); _subscriptions.Clear();
         if (Availability.IsAvailable)
-            _lifecycle.SetCapability("mission-transitions", false, "Mission service stopped.", ServiceUnavailableReason.ApiStopped);
+            _lifecycle.SetUnavailable("mission-transitions", ServiceUnavailableReason.ApiStopped, "Mission service stopped.");
     }
 }

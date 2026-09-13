@@ -24,8 +24,8 @@ internal sealed class DroneBayService : IDroneBayService, IDisposable
     internal void SetAvailable(bool value, ServiceUnavailableReason reason = ServiceUnavailableReason.BindingFailed)
     {
         _hub.CheckThread(); if (_disposed) return;
-        _hub.SetCapability("drone-bays", value,
-            value ? "Resource encounters can tune exact drone bays." : "Drone-bay integration unavailable.", reason);
+        if (value) _hub.SetAvailable("drone-bays", "Resource encounters can tune exact drone bays.");
+        else _hub.SetUnavailable("drone-bays", reason, "Drone-bay integration unavailable.");
     }
     private readonly KeyedDeclarations _keyed = new();
     [MethodImpl(MethodImplOptions.NoInlining)]
@@ -74,7 +74,7 @@ internal sealed class DroneBayService : IDroneBayService, IDisposable
         _disposed = true;
         foreach (var declaration in _declarations.ToArray()) declaration.Dispose();
         _declarations.Clear(); _keyed.Clear();
-        _hub.SetCapability("drone-bays", false, "Drone-bay service stopped.", ServiceUnavailableReason.ApiStopped);
+        _hub.SetUnavailable("drone-bays", ServiceUnavailableReason.ApiStopped, "Drone-bay service stopped.");
     }
     private sealed class Declaration : IDisposable
     {

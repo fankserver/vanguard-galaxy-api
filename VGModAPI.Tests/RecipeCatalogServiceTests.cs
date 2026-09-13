@@ -9,7 +9,7 @@ public sealed class RecipeCatalogServiceTests
     private static LifecycleHub Bound()
     {
         var hub = new LifecycleHub((_, _) => { });
-        hub.SetCapability("recipe-catalog", true, "Bound.");
+        hub.SetAvailable("recipe-catalog", "Bound.");
         return hub;
     }
     private sealed class Source : IRecipeCatalogSource
@@ -26,8 +26,8 @@ public sealed class RecipeCatalogServiceTests
     public void MissingSourcesPreserveDiagnosisAndRefuseReads()
     {
         using var hub = Bound();
-        hub.SetCapability("recipe-catalog", false, "Recipes disabled.", ServiceUnavailableReason.Disabled);
-        hub.SetCapability("recipe-quotes", false, "Quotes not inspected.", ServiceUnavailableReason.UnsupportedGame);
+        hub.SetUnavailable("recipe-catalog", ServiceUnavailableReason.Disabled, "Recipes disabled.");
+        hub.SetUnavailable("recipe-quotes", ServiceUnavailableReason.UnsupportedGame, "Quotes not inspected.");
         using var recipes = new RecipeCatalogService(hub, null, _ => { });
         using var quotes = new RecipeQuoteService(hub, null, _ => { });
         Assert.Equal(ServiceUnavailableReason.Disabled, recipes.Availability.Reason);
@@ -46,7 +46,7 @@ public sealed class RecipeCatalogServiceTests
     {
         using var hub = Bound();
         var id = hub.Begin(SessionOrigin.NewGame, null); hub.PlayerReady(id); hub.GameplayInitialized(id);
-        var source = new Source { OnRead = () => hub.SetCapability("recipe-catalog", false, "Bindings faulted.", ServiceUnavailableReason.ObserverFault) };
+        var source = new Source { OnRead = () => hub.SetUnavailable("recipe-catalog", ServiceUnavailableReason.ObserverFault, "Bindings faulted.") };
         using var service = new RecipeCatalogService(hub, source, _ => { });
         Assert.Equal(RecipeCatalogStatus.IntegrationUnavailable, service.Read().Status);
         Assert.Equal(RecipeCatalogStatus.IntegrationUnavailable, service.Read().Status);
