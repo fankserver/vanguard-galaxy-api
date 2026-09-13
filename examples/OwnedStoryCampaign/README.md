@@ -4,8 +4,7 @@ Build both independent example plugins with `make build-story-authors CONFIGURAT
 They are not shipped in the API package.
 
 `OwnedStoryCampaign` supplies a hand-authored two-step mission with a `witness`
-decision token. `OwnedStoryJob` takes a generated pitch, destination and reward.
-Both use local ID `mission-x` in separate authenticated provider assemblies.
+decision token, under local ID `mission-x` in an authenticated provider assembly.
 Call their `Register` methods from your own interaction/UI after choosing an
 existing destination. Use the returned `Definition` with `game.Story.Offer`, then
 call `Activate` on the mission. Definition events carry the mission and its game;

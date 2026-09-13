@@ -30,7 +30,7 @@ public sealed class Plugin : BaseUnityPlugin
                 new StoryStep("Reach the rendezvous", new[] { StoryObjective.TravelTo(destinationPoiId) }),
                 new StoryStep("Report to the witness", new[] { StoryObjective.TravelTo(destinationPoiId) })
             }, new[] { StoryReward.Credits(17) },
-            retention: StoryRetention.Campaign, choiceKeys: new[] { "witness" }));
+            choiceKeys: new[] { "witness" }));
     }
 
     public const string ObjectiveLocalId = "objective-x";
@@ -48,7 +48,7 @@ public sealed class Plugin : BaseUnityPlugin
         var report = new StoryStep("Choose an answer", new[] { StoryObjective.Scripted("report", "Promise to investigate") });
         var definition = new StoryMissionDefinition(ObjectiveLocalId, "A witness's account", "Listen, then choose your reply.",
             new StoryFactionId(sourceFaction), revision == 1 ? new[] { talk, report } : new[] { report, talk },
-            new[] { StoryReward.Credits(7) }, retention: StoryRetention.Campaign);
+            new[] { StoryReward.Credits(7) });
         return _provider.Register(revision == 1 ? definition : definition.WithRevision(revision, 1));
     }
 
@@ -57,14 +57,14 @@ public sealed class Plugin : BaseUnityPlugin
             new StoryFactionId(sourceFaction), new[] {
                 new StoryStep("Keep credits", new[] { StoryObjective.CollectCredits(StoryObjective.MaxAmount).WithKey("credits") }),
                 new StoryStep("Visit the destination", new[] { StoryObjective.TravelTo(destination).WithKey("visit") }) },
-            retention: StoryRetention.Temporary));
+            canAbandon: true));
 
     public StoryRegistrationResult RegisterChangedObservedObjectives(string sourceFaction)
         => Provider.Register(new StoryMissionDefinition("observed-x", "Replacement startup title", "Replacement startup description",
             new StoryFactionId(sourceFaction), new[] {
                 new StoryStep("Different credits", new[] { StoryObjective.CollectCredits(101).WithKey("credits") }),
                 new StoryStep("Different destination", new[] { StoryObjective.TravelTo("missing-replacement-poi").WithKey("visit") }) },
-            retention: StoryRetention.Temporary));
+            canAbandon: true));
 
     // Invoked by the consumer's conversation controller when the authored answer is chosen.
     public StoryActionResult AnswerWitness(IStoryMission mission)

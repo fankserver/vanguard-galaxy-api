@@ -14,7 +14,7 @@ public sealed class StoryDefinitionCodecTests
     {
         var definition = new StoryMissionDefinition("generated", "Generated title", "Generated description", new StoryFactionId("TradingGuild"),
             new[] { new StoryStep("Travel", new[] { StoryObjective.TravelTo("original-poi", requireNewVisit: true).WithKey("visit"), StoryObjective.CollectCredits(83) }, false) },
-            new[] { StoryReward.Credits(17) }, StoryDifficulty.Hard, StoryRetention.Campaign, false,
+            new[] { StoryReward.Credits(17) }, StoryDifficulty.Hard, false,
             "category", "completion", new[] { "choice" });
         var bytes = StoryDefinitionCodec.Encode(definition);
         var restored = StoryDefinitionCodec.Decode(bytes);
@@ -249,7 +249,7 @@ public sealed class StoryDefinitionCodecTests
         stream.Position += 3;
         int revisionOffset = (int)stream.Position;
         var state = StoryStateCodec.Encode(new[] { new StoryMissionEntry(new StoryMissionDefinitionId("author", "job"), Guid.NewGuid(),
-            StoryRetention.Temporary, 1, retainedDefinition: definition) });
+            1, retainedDefinition: definition) });
         int payloadOffset = -1;
         for (int index = 0; index <= state.Length - bytes.Length; index++)
             if (state.AsSpan(index, bytes.Length).SequenceEqual(bytes)) { payloadOffset = index; break; }

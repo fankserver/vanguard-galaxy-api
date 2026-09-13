@@ -199,7 +199,7 @@ public sealed partial class StoryMissionTests
     public void StoryChoicesAreBoundedFrozenAtSubmissionAndRetainedOnTheMission()
     {
         using var f = new StoryObjectsFixture();
-        using var definition = f.Provider.Register(Definition(retention: StoryRetention.Campaign)).Definition!;
+        using var definition = f.Provider.Register(Definition()).Definition!;
         f.Start(); var mission = f.Game.Story.Offer(definition); mission.Activate(); f.Tick();
         Assert.Equal(StoryActionStatus.Rejected, mission.DeclareChoices(new EndlessChoices()).Status);
         var choices = new Dictionary<string, string> { ["branch"] = "saved" };
@@ -309,7 +309,7 @@ public sealed partial class StoryMissionTests
         internal void Tick() => Hub.Gameplay.Tick();
         internal void Complete(IStoryMission mission)
         {
-            var identifier = StoryMissionPolicy.MissionIdentifier(mission.Definition.Id, mission.Id, StoryRetention.Temporary);
+            var identifier = StoryMissionPolicy.Identifier(mission.Definition.Id);
             World.CompleteInWorld(identifier); Missions.Publish(MissionTransitionKind.Completed, identifier);
         }
         public void Dispose() { Provider.Dispose(); Games.Dispose(); Engine.Dispose(); Hub.Dispose(); }

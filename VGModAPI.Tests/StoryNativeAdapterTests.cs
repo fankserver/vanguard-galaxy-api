@@ -48,11 +48,11 @@ public sealed class StoryNativeAdapterTests : IDisposable
                 StoryObjective.CollectCredits(250)
             }, requireAllObjectives: true) },
             new[] { StoryReward.Credits(500), StoryReward.Experience(40) },
-            difficulty, StoryRetention.Campaign, canAbandon: true, category: "story", completionText: "done",
+            difficulty, canAbandon: true, category: "story", completionText: "done",
             choiceKeys: new[] { "branch" });
 
     private static string Identifier(string local = "salvage-run", Guid? mission = null)
-        => StoryMissionPolicy.MissionIdentifier(new StoryMissionDefinitionId("anima", local), mission ?? Guid.NewGuid(), StoryRetention.Temporary);
+        => StoryMissionPolicy.Identifier(new StoryMissionDefinitionId("anima", local));
 
     [Fact]
     public void ScriptedProgressTargetsCurrentPlayerAndRejectsInactiveSteps()

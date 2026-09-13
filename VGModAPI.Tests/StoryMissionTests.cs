@@ -88,15 +88,15 @@ public sealed partial class StoryMissionTests
     private static readonly StoryFactionId Faction = new("TradingGuild");
 
     private static StoryMissionDefinition Definition(string local = "salvage-run",
-        StoryRetention retention = StoryRetention.Temporary, IEnumerable<string>? choiceKeys = null)
+        IEnumerable<string>? choiceKeys = null)
         => new(local, "Salvage run", "Recover the drifting cargo.", Faction,
             new[] { new StoryStep("Reach the wreck", new[] { StoryObjective.TravelTo("poi-guid-1", requireNewVisit: true) }) },
-            new[] { StoryReward.Credits(500) }, StoryDifficulty.Normal, retention,
-            choiceKeys: choiceKeys ?? (retention == StoryRetention.Campaign ? new[] { "branch" } : null));
+            new[] { StoryReward.Credits(500) }, StoryDifficulty.Normal,
+            choiceKeys: choiceKeys ?? new[] { "branch" });
 
-    /// <summary>A campaign definition declaring the largest supported choice payload.</summary>
+    /// <summary>A definition declaring the largest supported choice payload.</summary>
     private static StoryMissionDefinition WorstDefinition(string local = "salvage-run")
-        => Definition(local, StoryRetention.Campaign,
+        => Definition(local,
             Enumerable.Range(0, StoryMissionDefinition.MaxChoiceKeys).Select(index => "k" + index + new string('x', StoryMissionDefinition.MaxChoiceKeyBytes - 2)));
 
     /// <summary>
@@ -395,7 +395,7 @@ public sealed partial class StoryMissionTests
         var plugin = new object();
         host.Register(plugin, AnimaPlugin);
         var first = service.AcquireProvider(plugin).Provider!;
-        Assert.True(first.Register(Definition(retention: StoryRetention.Campaign)).Succeeded);
+        Assert.True(first.Register(Definition()).Succeeded);
         var mission = first.Offer("salvage-run");
         Assert.True(first.Retire(mission.MissionId, StoryOutcome.Failed).Accepted);
         Assert.Equal(StoryProviderStatus.AlreadyAcquired, service.AcquireProvider(plugin).Status);
@@ -409,7 +409,7 @@ public sealed partial class StoryMissionTests
         // The ledger kept the mission; only the registration was released with the lease.
         Assert.Equal(first.ProviderId, second.Provider!.ProviderId);
         Assert.Single(service.Ledger.Entries);
-        Assert.True(second.Provider.Register(Definition(retention: StoryRetention.Campaign)).Succeeded);
+        Assert.True(second.Provider.Register(Definition()).Succeeded);
         Assert.Equal(StoryOutcome.Failed, Assert.Single(second.Provider.Missions("salvage-run").Records).Outcome);
     }
 
@@ -509,11 +509,11 @@ public sealed partial class StoryMissionTests
         var plugin = new object();
         host.Register(plugin, AnimaPlugin);
         var first = service.AcquireProvider(plugin).Provider!;
-        var stale = first.Register(Definition(retention: StoryRetention.Campaign)).Definition!;
+        var stale = first.Register(Definition()).Definition!;
         first.Dispose();
 
         var second = service.AcquireProvider(plugin).Provider!;
-        var live = second.Register(Definition(retention: StoryRetention.Campaign)).Definition!;
+        var live = second.Register(Definition()).Definition!;
         stale.Dispose();                                  // ordinary teardown of the old handle
 
         Assert.True(live.InternalActive());
@@ -546,7 +546,7 @@ public sealed partial class StoryMissionTests
         var plugin = new object();
         host.Register(plugin, AnimaPlugin);
         var provider = service.AcquireProvider(plugin).Provider!;
-        var definition = Definition(retention: StoryRetention.Campaign);
+        var definition = Definition();
         var superseded = provider.Register(definition).Definition!;
         var id = superseded.Id;
 
@@ -597,7 +597,7 @@ public sealed partial class StoryMissionTests
             var plugin = new object();
             host.Register(plugin, AnimaPlugin);
             var provider = service.AcquireProvider(plugin).Provider!;
-            provider.Register(Definition(retention: StoryRetention.Campaign));
+            provider.Register(Definition());
             var offer = provider.Offer("salvage-run");
             Assert.True(provider.Activate(offer.MissionId).Accepted);
             world.CompleteInGame(provider, "salvage-run", offer.MissionId);
@@ -634,7 +634,7 @@ public sealed partial class StoryMissionTests
         var plugin = new object();
         host.Register(plugin, AnimaPlugin);
         var provider = service.AcquireProvider(plugin).Provider!;
-        provider.Register(Definition(retention: StoryRetention.Campaign));
+        provider.Register(Definition());
         var mission = provider.Offer("salvage-run");
         Assert.True(provider.Activate(mission.MissionId).Accepted);
         world.CompleteInGame(provider, "salvage-run", mission.MissionId);
@@ -678,7 +678,7 @@ public sealed partial class StoryMissionTests
         var plugin = new object();
         host.Register(plugin, AnimaPlugin);
         var provider = service.AcquireProvider(plugin).Provider!;
-        Assert.True(provider.Register(Definition(retention: StoryRetention.Campaign)).Succeeded);
+        Assert.True(provider.Register(Definition()).Succeeded);
         world.Persistence.StateReady = false;
         Assert.False(world.Persistence.CanRead);
 
@@ -751,7 +751,7 @@ public sealed partial class StoryMissionTests
             var plugin = new object();
             host.Register(plugin, AnimaPlugin);
             var provider = service.AcquireProvider(plugin).Provider!;
-            Assert.True(provider.Register(Definition(retention: StoryRetention.Campaign)).Succeeded);
+            Assert.True(provider.Register(Definition()).Succeeded);
             var mission = provider.Offer("salvage-run");
             Assert.True(mission.Accepted);
             Assert.True(provider.Retire(mission.MissionId, StoryOutcome.Failed).Accepted);
@@ -793,7 +793,7 @@ public sealed partial class StoryMissionTests
             var plugin = new object();
             host.Register(plugin, AnimaPlugin);
             var provider = service.AcquireProvider(plugin).Provider!;
-            Assert.True(provider.Register(Definition(retention: StoryRetention.Campaign)).Succeeded);
+            Assert.True(provider.Register(Definition()).Succeeded);
 
             // A provider rediscovering its content from the GameplayInitialized callback.
             StoryMissionSnapshotQuery? unresolvedInCallback = null;
@@ -852,7 +852,7 @@ public sealed partial class StoryMissionTests
         host.Register(plugin, AnimaPlugin);
         world.StartAndRestore();
         var provider = service.AcquireProvider(plugin).Provider!;
-        provider.Register(Definition(retention: StoryRetention.Campaign));
+        provider.Register(Definition());
         var offer = provider.Offer("salvage-run");
         Assert.True(provider.Activate(offer.MissionId).Accepted);
         world.CompleteInGame(provider, "salvage-run", offer.MissionId);
@@ -977,8 +977,7 @@ public sealed partial class StoryMissionTests
 
     // --- missions ------------------------------------------------------------------------
 
-    private static IStoryProvider Provider(out FakeWorld world, out FakeHost host, out StoryMissionService service,
-        StoryRetention retention = StoryRetention.Temporary)
+    private static IStoryProvider Provider(out FakeWorld world, out FakeHost host, out StoryMissionService service)
     {
         host = new FakeHost();
         world = new FakeWorld();
@@ -987,66 +986,8 @@ public sealed partial class StoryMissionTests
         var plugin = new object();
         host.Register(plugin, AnimaPlugin);
         var provider = service.AcquireProvider(plugin).Provider!;
-        Assert.True(provider.Register(Definition(retention: retention)).Succeeded);
+        Assert.True(provider.Register(Definition()).Succeeded);
         return provider;
-    }
-
-    [Fact]
-    public void RepeatedOccurrencesKeepSeparateIdentityAndASingleTerminalOutcome()
-    {
-        // Repeats live in the TEMPORARY lane; a campaign definition runs once like the game's.
-        var provider = Provider(out var world, out _, out _);
-        var first = provider.Offer("salvage-run");
-        Assert.True(provider.Activate(first.MissionId).Accepted);
-        // The game ends the mission, and that is what records the completion.
-        world.CompleteInGame(provider, "salvage-run", first.MissionId);
-        var second = provider.Offer("salvage-run");
-        Assert.NotEqual(first.MissionId, second.MissionId);
-        Assert.True(provider.Retire(second.MissionId, StoryOutcome.Failed).Accepted);
-        var records = provider.Missions("salvage-run").Records;
-        Assert.Equal(new[] { first.MissionId, second.MissionId }, records.Select(record => record.MissionId).ToArray());
-        // A second terminal call is refused rather than rewriting an authoritative outcome.
-        var repeated = provider.Retire(first.MissionId, StoryOutcome.Abandoned);
-        Assert.Equal(StoryTransitionStatus.InvalidTransition, repeated.Status);
-        Assert.Contains("recorded once", repeated.Detail);
-        Assert.Equal(StoryOutcome.Completed, provider.Missions("salvage-run").Records[0].Outcome);
-        Assert.Equal(StoryTransitionStatus.UnknownMission, provider.Retire(Guid.NewGuid(), StoryOutcome.Failed).Status);
-        Assert.Equal(StoryTransitionStatus.InvalidTransition, provider.Offer("not-registered").Status);
-    }
-
-    /// <summary>
-    /// Temporary retention is a real, bounded policy: an offered job can be withdrawn without leaving
-    /// a tombstone, and terminal tombstones are kept to a fixed horizon per definition so a
-    /// generated-job consumer cannot exhaust the ledger and starve campaign content.
-    /// </summary>
-    [Fact]
-    public void TemporaryRetentionIsBoundedByWithdrawalAndAFixedTombstoneHorizon()
-    {
-        var provider = Provider(out _, out _, out var service);
-        var withdrawn = provider.Offer("salvage-run");
-        Assert.True(provider.Withdraw(withdrawn.MissionId).Accepted);
-        Assert.Empty(service.Ledger.Entries);
-        Assert.Equal(StoryTransitionStatus.UnknownMission, provider.Withdraw(withdrawn.MissionId).Status);
-        // An accepted mission is still needed to reconstruct live content, so it is not withdrawable.
-        var active = provider.Offer("salvage-run");
-        provider.Activate(active.MissionId);
-        Assert.Equal(StoryTransitionStatus.InvalidTransition, provider.Withdraw(active.MissionId).Status);
-
-        var tokens = new List<Guid>();
-        for (int index = 0; index < StoryLedger.TemporaryTombstoneHorizon + 10; index++)
-        {
-            var offer = provider.Offer("salvage-run");
-            Assert.True(offer.Accepted);
-            Assert.True(provider.Retire(offer.MissionId, StoryOutcome.Failed).Accepted);
-            tokens.Add(offer.MissionId);
-        }
-        // Only the newest tombstones are retained; the active mission is untouched.
-        Assert.Equal(StoryLedger.TemporaryTombstoneHorizon, provider.Missions("salvage-run").Records.Count);
-        Assert.True(service.Ledger.TryGet(active.MissionId, out _));
-        // A token past the horizon reports Unknown; it is never re-offered or re-accepted, because
-        // mission identities are API-generated and never reused.
-        Assert.Equal(StoryTransitionStatus.UnknownMission, provider.Retire(tokens[0], StoryOutcome.Failed).Status);
-        Assert.DoesNotContain(tokens[0], provider.Missions("salvage-run").Records.Select(record => record.MissionId));
     }
 
     /// <summary>
@@ -1057,7 +998,7 @@ public sealed partial class StoryMissionTests
     [Fact]
     public void ARetiredCampaignDefinitionRunsOnceSoASecondOfferIsRefused()
     {
-        var provider = Provider(out _, out _, out var service, StoryRetention.Campaign);
+        var provider = Provider(out _, out _, out var service);
         var offer = provider.Offer("salvage-run");
         Assert.True(offer.Accepted);
         Assert.True(provider.Retire(offer.MissionId, StoryOutcome.Failed,
@@ -1082,7 +1023,7 @@ public sealed partial class StoryMissionTests
     [Fact]
     public void AnUnresolvedCampaignOccurrenceAlreadyClaimsItsDefinition()
     {
-        var provider = Provider(out _, out _, out var service, StoryRetention.Campaign);
+        var provider = Provider(out _, out _, out var service);
         var offer = provider.Offer("salvage-run");
         Assert.True(offer.Accepted);
         int before = service.Ledger.Count;
@@ -1090,7 +1031,7 @@ public sealed partial class StoryMissionTests
         Assert.Equal(StoryTransitionStatus.InvalidTransition, refused.Status);
         // The one-run-per-definition rule is what refuses here; a payload-budget or quota refusal
         // must not be able to pass for it.
-        Assert.Contains("already has a campaign mission", refused.Detail);
+        Assert.Contains("already has a mission", refused.Detail);
         Assert.Contains("runs once", refused.Detail);
         Assert.Equal(before, service.Ledger.Count);
         // What was admitted can still record its outcome; nothing is stranded.
@@ -1100,39 +1041,10 @@ public sealed partial class StoryMissionTests
         // A crafted payload holding more than one campaign row is refused, not restored.
         var rows = Enumerable.Range(1, 2)
             .Select(index => new StoryMissionEntry(new StoryMissionDefinitionId("anima", "salvage-run"), Guid.NewGuid(),
-                StoryRetention.Campaign, index))
+                index))
             .ToArray();
-        Assert.Contains("more than one campaign mission", StoryLedger.RefuseBounds(rows));
+        Assert.Contains("more than one mission", StoryLedger.RefuseBounds(rows));
         Assert.Throws<InvalidDataException>(() => StoryStateCodec.Encode(rows));
-    }
-
-    /// <summary>Campaign completion is campaign-only: a temporary tombstone is idempotency, not an authoritative outcome.</summary>
-    [Fact]
-    public void CompletionCountsCampaignOutcomesOnly()
-    {
-        var temporary = Provider(out _, out _, out _);
-        var job = temporary.Offer("salvage-run");
-        Assert.True(temporary.Retire(job.MissionId, StoryOutcome.Failed).Accepted);
-        var temporaryAnswer = temporary.IsCompleted("salvage-run");
-        Assert.Equal(StoryKnowledge.Known, temporaryAnswer.Knowledge);
-        Assert.False(temporaryAnswer.Completed);
-        // The tombstone still exists for idempotency; it just does not answer completion.
-        Assert.Single(temporary.Missions("salvage-run").Records);
-
-        var campaign = Provider(out var campaignWorld, out _, out _, StoryRetention.Campaign);
-        var act = campaign.Offer("salvage-run");
-        Assert.True(campaign.Activate(act.MissionId).Accepted);
-        campaignWorld.CompleteInGame(campaign, "salvage-run", act.MissionId);
-        Assert.True(campaign.IsCompleted("salvage-run").Completed);
-        // A temporary mission may not carry declared choices at all.
-        var rejected = temporary.Offer("salvage-run");
-        var refusal = temporary.Retire(rejected.MissionId, StoryOutcome.Failed,
-            new Dictionary<string, string> { ["branch"] = "left" });
-        Assert.Equal(StoryTransitionStatus.InvalidTransition, refusal.Status);
-        Assert.Contains("not declared by this definition", refusal.Detail);
-        // The ledger refuses the same thing on its own, without the definition in hand.
-        Assert.Equal(StoryLedgerStatus.LimitExceeded, TemporaryLedgerChoiceRefusal(out var ledgerDetail));
-        Assert.Contains("campaign definitions only", ledgerDetail);
     }
 
     private static StoryLedgerStatus TemporaryLedgerChoiceRefusal(out string diagnostic)
@@ -1140,7 +1052,7 @@ public sealed partial class StoryMissionTests
         var id = new StoryMissionDefinitionId("anima", "salvage-run");
         var ledger = new StoryLedger();
         var mission = Guid.NewGuid();
-        ledger.Offer(id, StoryRetention.Temporary, mission, 0, out _);
+        ledger.Offer(id, mission, 0, out _);
         return ledger.Retire(id, mission, StoryOutcome.Completed,
             new Dictionary<string, string> { ["branch"] = "left" }, out diagnostic);
     }
@@ -1163,7 +1075,7 @@ public sealed partial class StoryMissionTests
         host.Register(otherPlugin, OtherPlugin);
         var anima = service.AcquireProvider(animaPlugin).Provider!;
         var other = service.AcquireProvider(otherPlugin).Provider!;
-        Assert.True(anima.Register(Definition("secret-arc", StoryRetention.Campaign)).Succeeded);
+        Assert.True(anima.Register(Definition("secret-arc")).Succeeded);
         var mission = anima.Offer("secret-arc");
         Assert.True(mission.Accepted);
 
@@ -1197,7 +1109,7 @@ public sealed partial class StoryMissionTests
     [Fact]
     public void SuppliedChoicesAreSnapshotOnceSoValidationAndStorageSeeTheSameData()
     {
-        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out var service);
         var first = provider.Offer("salvage-run");
         // Reads valid data once, then would hand out an oversized value, invalid UTF-8 and an
         // undeclared key on every later read.
@@ -1219,7 +1131,7 @@ public sealed partial class StoryMissionTests
 
         // A Count that disagrees with what the collection yields decides nothing. A campaign
         // definition runs once, so this is observed on its own definition.
-        Assert.True(provider.Register(Definition("relay-run", StoryRetention.Campaign)).Succeeded);
+        Assert.True(provider.Register(Definition("relay-run")).Succeeded);
         var second = provider.Offer("relay-run");
         var lying = new ShiftingChoices(new Dictionary<string, string> { ["branch"] = "right" },
             new Dictionary<string, string> { ["branch"] = "right" }, reportedCount: 0);
@@ -1243,7 +1155,7 @@ public sealed partial class StoryMissionTests
     [InlineData(ReentrancyPoint.Dispose)]
     public void DisposingTheLeaseWhileTheSuppliedChoicesAreReadRefusesTheRetirement(ReentrancyPoint point)
     {
-        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out var service);
         var mission = provider.Offer("salvage-run");
         var reentrant = new ReentrantChoices(point, () => provider.Dispose(),
             new Dictionary<string, string> { ["branch"] = "left" });
@@ -1268,7 +1180,7 @@ public sealed partial class StoryMissionTests
     [InlineData(ReentrancyPoint.Dispose)]
     public void ANestedRetirementOfTheSameOccurrenceIsRecordedOnceAndTheOuterCallIsRefused(ReentrancyPoint point)
     {
-        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out var service);
         var mission = provider.Offer("salvage-run");
         StoryTransitionResult nested = default!;
         var reentrant = new ReentrantChoices(point,
@@ -1299,7 +1211,7 @@ public sealed partial class StoryMissionTests
     [InlineData(ReentrancyPoint.Dispose)]
     public void ReloadingTheSaveWhileTheSuppliedChoicesAreReadRefusesTheRetirementAsStale(ReentrancyPoint point)
     {
-        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out var service);
         var mission = provider.Offer("salvage-run");
         var saved = world.Persistence.Provider!.Capture();
         var beforeSession = world.SessionId;
@@ -1329,7 +1241,7 @@ public sealed partial class StoryMissionTests
     [Fact]
     public void UnreadableSuppliedChoicesAreRefusedWithoutMutatingAnything()
     {
-        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out var service);
         var mission = provider.Offer("salvage-run");
         foreach (var hostile in new IReadOnlyDictionary<string, string>[]
         {
@@ -1379,7 +1291,7 @@ public sealed partial class StoryMissionTests
         var id = new StoryMissionDefinitionId("anima", "salvage-run");
         var crafted = new[]
         {
-            new StoryMissionEntry(id, Guid.NewGuid(), StoryRetention.Campaign, 1, StoryMissionState.Offered,
+            new StoryMissionEntry(id, Guid.NewGuid(), 1, StoryMissionState.Offered,
                 new[] { new KeyValuePair<string, string>("ghost", "value") })
         };
         Assert.Contains("records no declared choices", StoryLedger.RefuseBounds(crafted));
@@ -1387,7 +1299,7 @@ public sealed partial class StoryMissionTests
         // The same state crafted at the byte level, by demoting a terminal row that carries choices.
         var payload = StoryStateCodec.Encode(new[]
         {
-            new StoryMissionEntry(id, Guid.NewGuid(), StoryRetention.Campaign, 1, StoryMissionState.Completed,
+            new StoryMissionEntry(id, Guid.NewGuid(), 1, StoryMissionState.Completed,
                 new[] { new KeyValuePair<string, string>("ghost", "value") })
         });
         int stateOffset = 12 + (1 + 5) + (1 + 11) + 16 + 8;   // header, provider, local, identity, sequence + state
@@ -1399,7 +1311,7 @@ public sealed partial class StoryMissionTests
         // A retirement replaces the recorded choices; nothing accumulates across the transition.
         var ledger = new StoryLedger();
         var mission = Guid.NewGuid();
-        Assert.Equal(StoryLedgerStatus.Accepted, ledger.Offer(id, StoryRetention.Campaign, mission, 512, out _));
+        Assert.Equal(StoryLedgerStatus.Accepted, ledger.Offer(id, mission, 512, out _));
         Assert.Equal(StoryLedgerStatus.Accepted, ledger.Retire(id, mission, StoryOutcome.Completed,
             new Dictionary<string, string> { ["branch"] = "left" }, out _));
         Assert.True(ledger.TryGet(mission, out var retired));
@@ -1425,10 +1337,10 @@ public sealed partial class StoryMissionTests
         var anima = service.AcquireProvider(animaPlugin).Provider!;
         var other = service.AcquireProvider(otherPlugin).Provider!;
         // A campaign definition runs once, so each of these missions brings its own definition.
-        Assert.True(anima.Register(Definition(retention: StoryRetention.Campaign)).Succeeded);
-        Assert.True(anima.Register(Definition("relay-run", StoryRetention.Campaign)).Succeeded);
-        Assert.True(anima.Register(Definition("escort-run", StoryRetention.Campaign)).Succeeded);
-        Assert.True(other.Register(Definition(retention: StoryRetention.Campaign)).Succeeded);
+        Assert.True(anima.Register(Definition()).Succeeded);
+        Assert.True(anima.Register(Definition("relay-run")).Succeeded);
+        Assert.True(anima.Register(Definition("escort-run")).Succeeded);
+        Assert.True(other.Register(Definition()).Succeeded);
         var offered = anima.Offer("salvage-run");
         var active = anima.Offer("relay-run");
         Assert.True(anima.Activate(active.MissionId).Accepted);
@@ -1448,7 +1360,6 @@ public sealed partial class StoryMissionTests
         Assert.Equal(StoryMissionStage.Active, Assert.Single(activeUnresolved.Missions).Stage);
         Assert.All(unresolved.Missions.Concat(activeUnresolved.Missions), item =>
         {
-            Assert.Equal(StoryRetention.Campaign, item.Retention);
             Assert.Equal(anima.ProviderId, item.Id.Provider);
         });
         // A retired mission, its outcome and its choices belong to the retained query, and this
@@ -1494,7 +1405,7 @@ public sealed partial class StoryMissionTests
         var plugin = new object();
         host.Register(plugin, AnimaPlugin);
         var provider = service.AcquireProvider(plugin).Provider!;
-        Assert.True(provider.Register(Definition(retention: StoryRetention.Campaign)).Succeeded);
+        Assert.True(provider.Register(Definition()).Succeeded);
         var first = world.SessionId;
         var mission = provider.Offer(first, "salvage-run");
         Assert.True(mission.Accepted);
@@ -1540,7 +1451,7 @@ public sealed partial class StoryMissionTests
     [Fact]
     public void OnlyDeclaredChoicesWithinTheReservedBoundAreAccepted()
     {
-        var provider = Provider(out _, out _, out _, StoryRetention.Campaign);
+        var provider = Provider(out _, out _, out _);
         var mission = provider.Offer("salvage-run");
         var undeclared = provider.Retire(mission.MissionId, StoryOutcome.Failed,
             new Dictionary<string, string> { ["ending"] = "left" });
@@ -1556,10 +1467,10 @@ public sealed partial class StoryMissionTests
 
         // A definition whose declared choices exceed the per-mission bound cannot exist at all.
         var tooMany = Enumerable.Range(0, StoryMissionDefinition.MaxChoiceKeys + 1).Select(index => "k" + index);
-        Assert.Throws<ArgumentException>(() => Definition("big", StoryRetention.Campaign, tooMany));
-        Assert.Throws<ArgumentException>(() => Definition("big", StoryRetention.Campaign, new[] { new string('k', StoryMissionDefinition.MaxChoiceKeyBytes + 1) }));
+        Assert.Throws<ArgumentException>(() => Definition("big", tooMany));
+        Assert.Throws<ArgumentException>(() => Definition("big", new[] { new string('k', StoryMissionDefinition.MaxChoiceKeyBytes + 1) }));
         // Temporary definitions retain no choices, so they may not declare any.
-        Assert.Throws<ArgumentException>(() => Definition("job", StoryRetention.Temporary, new[] { "branch" }));
+        Assert.Throws<ArgumentException>(() => Definition("job", new[] { "branch" }));
         Assert.Equal(StoryMissionDefinition.MaxChoiceKeys * (2 + StoryMissionDefinition.MaxChoiceKeyBytes + 2 + StoryMissionDefinition.MaxChoiceValueBytes),
             WorstDefinition().ReservedChoiceBytes);
         Assert.True(WorstDefinition().ReservedChoiceBytes <= StoryMissionDefinition.MaxChoiceBytesPerMission);
@@ -1588,7 +1499,7 @@ public sealed partial class StoryMissionTests
                 // A campaign definition runs once, so every offer brings its own definition.
                 var id = new StoryMissionDefinitionId("fresh" + provider, "salvage-run-" + local++);
                 int before = ledger.Count;
-                var status = ledger.Offer(id, StoryRetention.Campaign, Guid.NewGuid(), reservation, out var detail);
+                var status = ledger.Offer(id, Guid.NewGuid(), reservation, out var detail);
                 if (status == StoryLedgerStatus.Accepted) continue;
                 Assert.Equal(StoryLedgerStatus.LimitExceeded, status);
                 // Refused BEFORE mutating, whichever bound spoke.
@@ -1641,7 +1552,7 @@ public sealed partial class StoryMissionTests
         for (int provider = 0; provider < providers; provider++)
             for (int index = 0; index < perProvider; index++)
                 rows.Add(new StoryMissionEntry(new StoryMissionDefinitionId("historic" + provider, "salvage-run-" + index),
-                    Guid.NewGuid(), StoryRetention.Campaign, ++sequence,
+                    Guid.NewGuid(), ++sequence,
                     choiceReservation: WorstDefinition().ReservedChoiceBytes));
         return rows.ToArray();
     }
@@ -1711,7 +1622,7 @@ public sealed partial class StoryMissionTests
         var definition = WorstDefinition();
         // A campaign definition runs once, so the modest outcome needs its own definition. It is
         // registered first, while the worst-case definition has not yet claimed the budget.
-        var small = Definition("relay-run", StoryRetention.Campaign, new[] { "branch" });
+        var small = Definition("relay-run", new[] { "branch" });
         Assert.True(provider.Register(small).Succeeded);
         Assert.True(provider.Register(definition).Succeeded);
         var modest = provider.Offer("relay-run");
@@ -1738,7 +1649,7 @@ public sealed partial class StoryMissionTests
         // A smaller outcome releases the reservation it did not use, so the provider can offer again.
         Assert.True(provider.Retire(modest.MissionId, StoryOutcome.Failed,
             new Dictionary<string, string> { ["branch"] = "v" }).Accepted);
-        Assert.True(provider.Register(Definition("escort-run", StoryRetention.Campaign, new[] { "branch" })).Succeeded);
+        Assert.True(provider.Register(Definition("escort-run", new[] { "branch" })).Succeeded);
         Assert.True(provider.Offer("escort-run").Accepted);
     }
 
@@ -1849,10 +1760,10 @@ public sealed partial class StoryMissionTests
     [Fact]
     public void ActivationIsRecordedOnlyAfterTheWorldAcceptsTheMission()
     {
-        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out var service);
         var mission = provider.Offer("salvage-run");
         Assert.True(mission.Accepted);
-        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId, StoryRetention.Campaign);
+        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId);
 
         world.World.RefuseAccept = true;
         var refused = provider.Activate(mission.MissionId);
@@ -1872,10 +1783,10 @@ public sealed partial class StoryMissionTests
         Assert.Equal(StoryMissionState.Active, untouched.State);
         // A campaign definition runs once, so a further campaign mission is a further DEFINITION;
         // it has its own identifier and the world accepts it as its own mission.
-        Assert.True(provider.Register(Definition("relay-run", StoryRetention.Campaign)).Succeeded);
+        Assert.True(provider.Register(Definition("relay-run")).Succeeded);
         var again = provider.Offer("relay-run");
         Assert.True(provider.Activate(again.MissionId).Accepted);
-        Assert.True(world.World.IsActive(FakeWorld.Native(provider, "relay-run", again.MissionId, StoryRetention.Campaign)));
+        Assert.True(world.World.IsActive(FakeWorld.Native(provider, "relay-run", again.MissionId)));
     }
 
     /// <summary>
@@ -1886,9 +1797,9 @@ public sealed partial class StoryMissionTests
     [Fact]
     public void CallerOutcomesEndTheMissionFirstAndCompletionsComeFromTheGame()
     {
-        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out var service);
         var first = provider.Offer("salvage-run");
-        var identifier = FakeWorld.Native(provider, "salvage-run", first.MissionId, StoryRetention.Campaign);
+        var identifier = FakeWorld.Native(provider, "salvage-run", first.MissionId);
         Assert.True(provider.Activate(first.MissionId).Accepted);
 
         var declared = provider.Retire(first.MissionId, StoryOutcome.Completed);
@@ -1899,15 +1810,15 @@ public sealed partial class StoryMissionTests
         Assert.True(world.World.IsActive(identifier));
 
         Assert.True(provider.DeclareChoices(first.MissionId, new Dictionary<string, string> { ["branch"] = "left" }).Accepted);
-        world.CompleteInGame(provider, "salvage-run", first.MissionId, StoryRetention.Campaign);
+        world.CompleteInGame(provider, "salvage-run", first.MissionId);
         Assert.True(provider.IsCompleted("salvage-run").Completed);
         Assert.Equal("left", Assert.Single(provider.Missions("salvage-run").Records).Choices["branch"]);
 
         // Abandonment: the mission is removed from the world before the outcome is recorded. A
         // campaign definition runs once, so this is observed on its own definition.
-        Assert.True(provider.Register(Definition("relay-run", StoryRetention.Campaign)).Succeeded);
+        Assert.True(provider.Register(Definition("relay-run")).Succeeded);
         var job = provider.Offer("relay-run");
-        var jobIdentifier = FakeWorld.Native(provider, "relay-run", job.MissionId, StoryRetention.Campaign);
+        var jobIdentifier = FakeWorld.Native(provider, "relay-run", job.MissionId);
         Assert.True(provider.Activate(job.MissionId).Accepted);
         Assert.True(world.World.IsActive(jobIdentifier));
         Assert.True(provider.Retire(job.MissionId, StoryOutcome.Abandoned).Accepted);
@@ -1923,9 +1834,9 @@ public sealed partial class StoryMissionTests
     [Fact]
     public void ReloadCorrelatesTheLedgerWithTheWorldWithoutInventingOrAdoptingState()
     {
-        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out var service);
         var mission = provider.Offer("salvage-run");
-        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId, StoryRetention.Campaign);
+        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId);
         Assert.True(provider.Activate(mission.MissionId).Accepted);
         var bytes = world.Persistence.Provider!.Capture();
 
@@ -1984,35 +1895,6 @@ public sealed partial class StoryMissionTests
     }
 
     /// <summary>
-    /// Every mission is installed under its OWN identifier. The game archives a completed story
-    /// identifier and refuses a duplicate of it forever, so a shared identifier could be accepted
-    /// exactly once per save. Each mission therefore needs a distinct identifier.
-    /// </summary>
-    [Fact]
-    public void EachTemporaryOccurrenceGetsItsOwnCatalogEntrySoARepeatCanStillBeAccepted()
-    {
-        // Repeats live in the TEMPORARY lane, mirroring the game's procedural missions. A campaign
-        // definition runs once, exactly as the game admits one story mission per identifier, so the
-        // per-mission catalog identifier exists for repeatable content only.
-        var provider = Provider(out var world, out _, out var service);
-        var first = provider.Offer("salvage-run");
-        var firstIdentifier = FakeWorld.Native(provider, "salvage-run", first.MissionId);
-        Assert.True(world.World.IsInstalled(firstIdentifier));
-        Assert.True(provider.Activate(first.MissionId).Accepted);
-        world.CompleteInGame(provider, "salvage-run", first.MissionId);
-
-        var second = provider.Offer("salvage-run");
-        var secondIdentifier = FakeWorld.Native(provider, "salvage-run", second.MissionId);
-        Assert.NotEqual(firstIdentifier, secondIdentifier);
-        // The archived first identifier does not block the second mission.
-        Assert.True(provider.Activate(second.MissionId).Accepted);
-        Assert.True(world.World.IsActive(secondIdentifier));
-        // A retired mission releases its catalog entry; the live one keeps its own.
-        Assert.False(world.World.IsInstalled(firstIdentifier));
-        Assert.True(world.World.IsInstalled(secondIdentifier));
-    }
-
-    /// <summary>
     /// The game's mission observers run consumer code INSIDE the native acceptance. If that code
     /// invalidates the operation, the acceptance is undone: the world must never be left holding a
     /// mission this ledger does not record.
@@ -2020,7 +1902,7 @@ public sealed partial class StoryMissionTests
     [Fact]
     public void AnAcceptanceInvalidatedByReentrantConsumerCodeIsUndoneInTheWorld()
     {
-        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out var service);
         var mission = provider.Offer("salvage-run");
         var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId);
         world.World.DuringAccept = () => provider.Dispose();       // the consumer tears itself down
@@ -2039,7 +1921,7 @@ public sealed partial class StoryMissionTests
     [Fact]
     public void AFailedRollbackBlocksTheModuleForTheSession()
     {
-        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out var service);
         var mission = provider.Offer("salvage-run");
         world.World.RefuseRollback = true;
         world.World.DuringAccept = () => provider.Dispose();
@@ -2056,7 +1938,7 @@ public sealed partial class StoryMissionTests
     [Fact]
     public void AStoryMutationFromInsideANativeCallIsRefusedAsBusy()
     {
-        var provider = Provider(out var world, out _, out _, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out _);
         var mission = provider.Offer("salvage-run");
         StoryTransitionResult reentrant = default!;
         world.World.DuringAccept = () => reentrant = provider.Offer("salvage-run");
@@ -2071,7 +1953,7 @@ public sealed partial class StoryMissionTests
     [Fact]
     public void CompletionsAreObservedFromTheGameAndNeverDeclaredByACaller()
     {
-        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out var service);
         var neverAccepted = provider.Offer("salvage-run");
         var declared = provider.Retire(neverAccepted.MissionId, StoryOutcome.Completed);
         Assert.Equal(StoryTransitionStatus.InvalidTransition, declared.Status);
@@ -2084,18 +1966,18 @@ public sealed partial class StoryMissionTests
         Assert.Equal(releases, world.World.Releases);
 
         Assert.True(provider.Activate(neverAccepted.MissionId).Accepted);
-        world.CompleteInGame(provider, "salvage-run", neverAccepted.MissionId, StoryRetention.Campaign);
+        world.CompleteInGame(provider, "salvage-run", neverAccepted.MissionId);
         var record = Assert.Single(provider.Missions("salvage-run").Records);
         Assert.Equal(StoryOutcome.Completed, record.Outcome);
         Assert.True(provider.IsCompleted("salvage-run").Completed);
 
         // A campaign definition runs once, so the rest of this behaviour is observed on a second
         // definition rather than a second run of the same one.
-        Assert.True(provider.Register(Definition("relay-run", StoryRetention.Campaign)).Succeeded);
+        Assert.True(provider.Register(Definition("relay-run")).Succeeded);
         // A neutral removal says nothing about why it ended: the mission stays unresolved.
         var second = provider.Offer("relay-run");
         Assert.True(provider.Activate(second.MissionId).Accepted);
-        var secondIdentifier = FakeWorld.Native(provider, "relay-run", second.MissionId, StoryRetention.Campaign);
+        var secondIdentifier = FakeWorld.Native(provider, "relay-run", second.MissionId);
         world.Missions.Publish(MissionTransitionKind.Removed, secondIdentifier);
         Assert.True(service.Ledger.TryGet(second.MissionId, out var stillActive));
         Assert.Equal(StoryMissionState.Active, stillActive.State);
@@ -2133,11 +2015,11 @@ public sealed partial class StoryMissionTests
         host.Register(otherPlugin, OtherPlugin);
         var anima = service.AcquireProvider(animaPlugin).Provider!;
         var other = service.AcquireProvider(otherPlugin).Provider!;
-        Assert.True(anima.Register(Definition(retention: StoryRetention.Campaign)).Succeeded);
-        Assert.True(other.Register(Definition(retention: StoryRetention.Campaign)).Succeeded);
+        Assert.True(anima.Register(Definition()).Succeeded);
+        Assert.True(other.Register(Definition()).Succeeded);
         var mission = anima.Offer("salvage-run");
         Assert.True(anima.Activate(mission.MissionId).Accepted);
-        var identifier = FakeWorld.Native(anima, "salvage-run", mission.MissionId, StoryRetention.Campaign);
+        var identifier = FakeWorld.Native(anima, "salvage-run", mission.MissionId);
         var otherIdentifier = StoryMissionPolicy.Identifier(new StoryMissionDefinitionId(other.ProviderId, "salvage-run"));
 
         anima.Dispose();
@@ -2148,7 +2030,7 @@ public sealed partial class StoryMissionTests
         Assert.True(world.World.IsInstalled(otherIdentifier));
 
         // The game completes it anyway, and the module still records that.
-        world.CompleteInGame(anima, "salvage-run", mission.MissionId, StoryRetention.Campaign);
+        world.CompleteInGame(anima, "salvage-run", mission.MissionId);
         Assert.True(service.Ledger.TryGet(mission.MissionId, out var recorded));
         Assert.Equal(StoryOutcome.Completed, recorded.Outcome);
         Assert.False(world.World.IsInstalled(identifier));
@@ -2169,7 +2051,7 @@ public sealed partial class StoryMissionTests
         var plugin = new object();
         host.Register(plugin, AnimaPlugin);
         var provider = service.AcquireProvider(plugin).Provider!;
-        Assert.True(provider.Register(Definition(retention: StoryRetention.Campaign)).Succeeded);
+        Assert.True(provider.Register(Definition()).Succeeded);
         var orphan = FakeWorld.Native(provider, "salvage-run", Guid.NewGuid());
         world.World.AdoptInWorld(orphan);
 
@@ -2195,7 +2077,7 @@ public sealed partial class StoryMissionTests
         var plugin = new object();
         host.Register(plugin, AnimaPlugin);
         var provider = service.AcquireProvider(plugin).Provider!;
-        Assert.True(provider.Register(Definition(retention: StoryRetention.Campaign)).Succeeded);
+        Assert.True(provider.Register(Definition()).Succeeded);
         var mission = provider.Offer("salvage-run");
         Assert.True(provider.Activate(mission.MissionId).Accepted);
         var bytes = world.Persistence.Provider!.Capture();
@@ -2245,7 +2127,7 @@ public sealed partial class StoryMissionTests
     [Fact]
     public void DeclaredChoicesArePersistedWithTheOccurrenceAndSurviveAReload()
     {
-        var provider = Provider(out var world, out var host, out var service, StoryRetention.Campaign);
+        var provider = Provider(out var world, out var host, out var service);
         var mission = provider.Offer("salvage-run");
         Assert.True(provider.Activate(mission.MissionId).Accepted);
         Assert.True(provider.DeclareChoices(mission.MissionId, new Dictionary<string, string> { ["branch"] = "left" }).Accepted);
@@ -2260,7 +2142,7 @@ public sealed partial class StoryMissionTests
         host.Register(plugin, AnimaPlugin);
         reloaded.StartAndRestore();
         var owner = later.AcquireProvider(plugin).Provider!;
-        Assert.True(owner.Register(Definition(retention: StoryRetention.Campaign)).Succeeded);
+        Assert.True(owner.Register(Definition()).Succeeded);
         reloaded.StartAndRestore(bytes);
         Assert.True(later.Ledger.TryGet(mission.MissionId, out var restored));
         Assert.Equal("left", restored.PendingChoices["branch"]);
@@ -2282,7 +2164,7 @@ public sealed partial class StoryMissionTests
     [Fact]
     public void ADeclarationDoesNotLeakIntoASaveThatWasRolledBackBeforeItWasMade()
     {
-        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out var service);
         var mission = provider.Offer("salvage-run");
         Assert.True(provider.Activate(mission.MissionId).Accepted);
         var older = world.Persistence.Provider!.Capture();          // before any declaration
@@ -2303,7 +2185,7 @@ public sealed partial class StoryMissionTests
     public void TheCodecRefusesEverySchemaButItsOwn()
     {
         var id = new StoryMissionDefinitionId("anima", "salvage-run");
-        var rows = new[] { new StoryMissionEntry(id, Guid.NewGuid(), StoryRetention.Campaign, 1) };
+        var rows = new[] { new StoryMissionEntry(id, Guid.NewGuid(), 1) };
         var current = StoryStateCodec.Encode(rows);
         Assert.Equal(StoryStateCodec.SchemaVersion, BitConverter.ToInt32(current, 4));
 
@@ -2337,13 +2219,13 @@ public sealed partial class StoryMissionTests
                 var ids = Enumerable.Range(0, 20)
                     .Select(slot => new StoryMissionDefinitionId(owningProvider, "salvage-run-" + slot)).ToArray();
                 int allowance = index < 31 ? Math.Min(remaining, StoryLedger.ProviderPayloadBudget) : remaining / (providers - index);
-                var empty = ids.Select(id => new StoryMissionEntry(id, Guid.NewGuid(), StoryRetention.Campaign, rows.Count + 1)).ToArray();
+                var empty = ids.Select(id => new StoryMissionEntry(id, Guid.NewGuid(), rows.Count + 1)).ToArray();
                 int reservation = allowance - empty.Sum(StoryStateCodec.EncodedSize);
                 Assert.True(reservation >= 0);
                 for (int slot = 0; slot < empty.Length; slot++)
                 {
                     int reserved = Math.Min(reservation, StoryMissionDefinition.MaxChoiceBytesPerMission);
-                    rows.Add(new StoryMissionEntry(ids[slot], empty[slot].MissionId, StoryRetention.Campaign, rows.Count + 1, choiceReservation: reserved));
+                    rows.Add(new StoryMissionEntry(ids[slot], empty[slot].MissionId, rows.Count + 1, choiceReservation: reserved));
                     reservation -= reserved;
                 }
                 Assert.Equal(0, reservation);
@@ -2364,7 +2246,7 @@ public sealed partial class StoryMissionTests
             using var service = new StoryMissionService(hub.Services, persistence, hub, host.Authenticate, null, hub.CheckThread);
             var plugin = new object();
             host.Register(plugin, AnimaPlugin);
-            Assert.True(service.AcquireProvider(plugin).Provider!.Register(Definition(retention: StoryRetention.Campaign)).Succeeded);
+            Assert.True(service.AcquireProvider(plugin).Provider!.Register(Definition()).Succeeded);
             var session = hub.Begin(SessionOrigin.SaveLoad, "slot");
             hub.PlayerReady(session);
             hub.GameplayInitialized(session);
@@ -2395,7 +2277,7 @@ public sealed partial class StoryMissionTests
             var hash = new string('a', 64);
             var codec = new OwnerSchemaCodec(StoryStateCodec.Owner, StoryStateCodec.SchemaVersion, StoryStateCodec.Validate);
             store.Publish("slot", hash, Guid.NewGuid(), new Dictionary<string, byte[]> { [StoryStateCodec.Owner] =
-                codec.Encode(StoryStateCodec.Encode(new[] { new StoryMissionEntry(id, mission, StoryRetention.Campaign, 1) })) });
+                codec.Encode(StoryStateCodec.Encode(new[] { new StoryMissionEntry(id, mission, 1) })) });
             using var hub = new LifecycleHub((_, error) => throw new Exception("Unexpected migration fault", error));
             hub.SetCapability("session-lifecycle", true, "Bound."); hub.SetCapability("save-outcomes", true, "Bound.");
             using var persistence = new PersistenceService(hub, store, path => path, _ => hash);
@@ -2405,7 +2287,7 @@ public sealed partial class StoryMissionTests
             var plugin = new object();
             host.Register(plugin, AnimaPlugin);
             var provider = service.AcquireProvider(plugin).Provider!;
-            Assert.True(provider.Register(Definition(retention: StoryRetention.Campaign)).Succeeded);
+            Assert.True(provider.Register(Definition()).Succeeded);
             var session = hub.Begin(SessionOrigin.SaveLoad, "slot");
             hub.PlayerReady(session);
             hub.GameplayInitialized(session);
@@ -2430,7 +2312,7 @@ public sealed partial class StoryMissionTests
     [InlineData(true)]
     public void StoredCampaignOccurrenceMigratesThroughTheServiceAndCanStillComplete(bool active)
     {
-        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out var service);
         var offered = provider.Offer("salvage-run");
         Assert.True(offered.Accepted);
         if (active) Assert.True(provider.Activate(offered.MissionId).Accepted);
@@ -2458,10 +2340,10 @@ public sealed partial class StoryMissionTests
     [Fact]
     public void AnObservedFailureKeepsTheOccurrenceLiveUntilTheMissionIsActuallyGone()
     {
-        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out var service);
         var mission = provider.Offer("salvage-run");
         Assert.True(provider.Activate(mission.MissionId).Accepted);
-        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId, StoryRetention.Campaign);
+        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId);
         world.Missions.Publish(MissionTransitionKind.Failed, identifier);
 
         Assert.True(service.Ledger.TryGet(mission.MissionId, out var live));
@@ -2480,14 +2362,14 @@ public sealed partial class StoryMissionTests
         Assert.Equal(StoryMissionState.Active, reloaded.State);
 
         // The game completing it after a retry is a completion, not a failure.
-        world.CompleteInGame(provider, "salvage-run", mission.MissionId, StoryRetention.Campaign);
+        world.CompleteInGame(provider, "salvage-run", mission.MissionId);
         Assert.Equal(StoryOutcome.Completed, Assert.Single(provider.Missions("salvage-run").Records).Outcome);
     }
 
     [Fact]
     public void AFailureFollowedByRemovalIsTheOutcomeThatFailureMeant()
     {
-        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out var service);
         var mission = provider.Offer("salvage-run");
         Assert.True(provider.Activate(mission.MissionId).Accepted);
         var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId);
@@ -2507,9 +2389,9 @@ public sealed partial class StoryMissionTests
     [Fact]
     public void ASaveStartingInsideANativeCallDoesNotRollBackOrBlockAnything()
     {
-        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out var service);
         var mission = provider.Offer("salvage-run");
-        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId, StoryRetention.Campaign);
+        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId);
         world.World.DuringAccept = () => world.Persistence.MutationsPaused = true;   // a save begins
         var accepted = provider.Activate(mission.MissionId);
 
@@ -2522,7 +2404,7 @@ public sealed partial class StoryMissionTests
 
         // The same for a retirement: the world already changed, so the record follows it.
         world.Persistence.MutationsPaused = false;
-        Assert.True(provider.Register(Definition("relay-run", StoryRetention.Campaign)).Succeeded);
+        Assert.True(provider.Register(Definition("relay-run")).Succeeded);
         var second = provider.Offer("relay-run");
         Assert.True(provider.Activate(second.MissionId).Accepted);
         world.World.DuringRelease = () => world.Persistence.MutationsPaused = true;
@@ -2541,7 +2423,7 @@ public sealed partial class StoryMissionTests
         var plugin = new object();
         host.Register(plugin, AnimaPlugin);
         var provider = service.AcquireProvider(plugin).Provider!;
-        Assert.True(provider.Register(Definition(retention: StoryRetention.Campaign)).Succeeded);
+        Assert.True(provider.Register(Definition()).Succeeded);
 
         world.World.Unavailable = true;                    // the world cannot be read
         world.StartAndRestore();
@@ -2558,10 +2440,10 @@ public sealed partial class StoryMissionTests
     [Fact]
     public void AdmissionsAndSessionStateAreWithdrawnAtEverySessionBoundary()
     {
-        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out var service);
         var mission = provider.Offer("salvage-run");
         Assert.True(provider.Activate(mission.MissionId).Accepted);
-        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId, StoryRetention.Campaign);
+        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId);
         Assert.Equal(1, world.Protection.AdmittedCount);
         Assert.False(world.Protection.IsQuarantined(identifier));
 
@@ -2575,7 +2457,7 @@ public sealed partial class StoryMissionTests
         Assert.True(world.World.IsInstalled(identifier));
 
         // A suspension in one session does not outlive it.
-        world.World.AdoptInWorld(FakeWorld.Native(provider, "salvage-run", Guid.NewGuid(), StoryRetention.Campaign));
+        world.World.AdoptInWorld(FakeWorld.Native(provider, "salvage-run", Guid.NewGuid()));
         world.StartAndRestore();
         Assert.NotNull(service.SuspendedReason);
         Assert.Equal(0, world.Protection.AdmittedCount);
@@ -2591,7 +2473,7 @@ public sealed partial class StoryMissionTests
     [Fact]
     public void ATravelTargetTheWorldDoesNotHaveIsRefusedBeforeAnythingIsOffered()
     {
-        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out var service);
         world.World.ForgetPointOfInterest("poi-guid-1");
         var refused = provider.Offer("salvage-run");
         Assert.Equal(StoryTransitionStatus.InvalidTransition, refused.Status);
@@ -2613,10 +2495,10 @@ public sealed partial class StoryMissionTests
     [Fact]
     public void ARetryThroughTheGamesOwnButtonContinuesTheSameOccurrence()
     {
-        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out var service);
         var mission = provider.Offer("salvage-run");
         Assert.True(provider.Activate(mission.MissionId).Accepted);
-        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId, StoryRetention.Campaign);
+        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId);
         world.Missions.Publish(MissionTransitionKind.Failed, identifier);
         Assert.True(service.Ledger.TryGet(mission.MissionId, out var failed));
         Assert.True(failed.FailureObserved);
@@ -2635,7 +2517,7 @@ public sealed partial class StoryMissionTests
         Assert.True(world.World.IsInstalled(identifier));
         Assert.False(world.Protection.IsQuarantined(identifier));
         // A completion after the retry is a completion, once.
-        world.CompleteInGame(provider, "salvage-run", mission.MissionId, StoryRetention.Campaign);
+        world.CompleteInGame(provider, "salvage-run", mission.MissionId);
         Assert.Equal(StoryOutcome.Completed, Assert.Single(provider.Missions("salvage-run").Records).Outcome);
     }
 
@@ -2646,7 +2528,7 @@ public sealed partial class StoryMissionTests
     [Fact]
     public void AButtonRemovalTheGameDoesNotUndoSettlesTheOccurrence()
     {
-        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out var service);
         var failing = provider.Offer("salvage-run");
         Assert.True(provider.Activate(failing.MissionId).Accepted);
         var failingId = FakeWorld.Native(provider, "salvage-run", failing.MissionId);
@@ -2660,7 +2542,7 @@ public sealed partial class StoryMissionTests
         Assert.False(world.World.IsInstalled(failingId));
 
         // A campaign definition runs once, so the abandon route is observed on its own definition.
-        Assert.True(provider.Register(Definition("relay-run", StoryRetention.Campaign)).Succeeded);
+        Assert.True(provider.Register(Definition("relay-run")).Succeeded);
         var abandoned = provider.Offer("relay-run");
         Assert.True(provider.Activate(abandoned.MissionId).Accepted);
         var abandonedId = FakeWorld.Native(provider, "relay-run", abandoned.MissionId);
@@ -2675,7 +2557,7 @@ public sealed partial class StoryMissionTests
     [Fact]
     public void TheButtonRouteIsRefusedForAnythingThisModuleCannotVouchFor()
     {
-        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out var service);
         var transactions = (IStoryUiTransaction)service;
         var mission = provider.Offer("salvage-run");
         var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId);
@@ -2684,7 +2566,7 @@ public sealed partial class StoryMissionTests
         Assert.Null(transactions.BeginAbandon("vgmodapi.story.anima.salvage-run"));      // a base identifier
         Assert.Null(transactions.BeginAbandon(identifier + "-malformed"));
         Assert.Null(transactions.BeginAbandon(
-            StoryMissionPolicy.MissionIdentifier(new StoryMissionDefinitionId(provider.ProviderId, "salvage-run"), Guid.NewGuid(), StoryRetention.Temporary)));
+            StoryMissionPolicy.Identifier(new StoryMissionDefinitionId(provider.ProviderId, "salvage-run"))));
         // One at a time: a second route cannot open while one is running.
         var token = transactions.BeginAbandon(identifier);
         Assert.NotNull(token);
@@ -2704,7 +2586,7 @@ public sealed partial class StoryMissionTests
     [Fact]
     public void ATargetThatDisappearsBetweenOfferAndActivateRefusesTheAcceptance()
     {
-        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out var service);
         var mission = provider.Offer("salvage-run");
         Assert.True(mission.Accepted);
         int accepts = world.World.Accepts;
@@ -2725,10 +2607,10 @@ public sealed partial class StoryMissionTests
     [Fact]
     public void ARestoredOccurrenceWhoseTargetIsGoneIsHeldBackRatherThanRun()
     {
-        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out var service);
         var mission = provider.Offer("salvage-run");
         Assert.True(provider.Activate(mission.MissionId).Accepted);
-        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId, StoryRetention.Campaign);
+        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId);
         var bytes = world.Persistence.Provider!.Capture();
 
         world.World.ForgetPointOfInterest("poi-guid-1");
@@ -2754,10 +2636,10 @@ public sealed partial class StoryMissionTests
     [Fact]
     public void NothingElseMutatesWhileTheGamesAbandonIsOpenAndNoEntryIsReleasedUnderIt()
     {
-        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out var service);
         var mission = provider.Offer("salvage-run");
         Assert.True(provider.Activate(mission.MissionId).Accepted);
-        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId, StoryRetention.Campaign);
+        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId);
         var transactions = (IStoryUiTransaction)service;
         var token = transactions.BeginAbandon(identifier);
         Assert.NotNull(token);
@@ -2798,11 +2680,11 @@ public sealed partial class StoryMissionTests
     [Fact]
     public void AnUnknownSettlementPreservesEverythingAndStopsTheModule()
     {
-        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out var service);
         var mission = provider.Offer("salvage-run");
         Assert.True(provider.DeclareChoices(mission.MissionId, new Dictionary<string, string> { ["branch"] = "left" }).Accepted);
         Assert.True(provider.Activate(mission.MissionId).Accepted);
-        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId, StoryRetention.Campaign);
+        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId);
         world.Missions.Publish(MissionTransitionKind.Failed, identifier);
         var transactions = (IStoryUiTransaction)service;
 
@@ -2828,7 +2710,7 @@ public sealed partial class StoryMissionTests
     [Fact]
     public void AnUnchangedOriginalIsNotARetryAndDoesNotClearTheFailure()
     {
-        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out var service);
         var mission = provider.Offer("salvage-run");
         Assert.True(provider.Activate(mission.MissionId).Accepted);
         var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId);
@@ -2860,14 +2742,14 @@ public sealed partial class StoryMissionTests
         var plugin = new object();
         host.Register(plugin, AnimaPlugin);
         var provider = service.AcquireProvider(plugin).Provider!;
-        Assert.True(provider.Register(Definition(retention: StoryRetention.Campaign)).Succeeded);
+        Assert.True(provider.Register(Definition()).Succeeded);
         var offered = provider.Offer("salvage-run");
         Assert.True(offered.Accepted);
         int accepts = world.World.Accepts, installs = world.World.Installs;
 
         world.DegradeProtection("a scan the guard could not complete");
 
-        Assert.Equal(StoryRegistrationStatus.Unavailable, provider.Register(Definition("other", StoryRetention.Campaign)).Status);
+        Assert.Equal(StoryRegistrationStatus.Unavailable, provider.Register(Definition("other")).Status);
         Assert.Equal(StoryTransitionStatus.Unavailable, provider.Offer("salvage-run").Status);
         Assert.Equal(StoryTransitionStatus.Unavailable, provider.Activate(offered.MissionId).Status);
         Assert.Equal(accepts, world.World.Accepts);
@@ -2889,9 +2771,9 @@ public sealed partial class StoryMissionTests
     [Fact]
     public void TheGamesButtonCannotOpenWhileThisModulesOwnOperationIsRunning()
     {
-        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out var service);
         var mission = provider.Offer("salvage-run");
-        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId, StoryRetention.Campaign);
+        var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId);
         var transactions = (IStoryUiTransaction)service;
         StoryUiTransactionToken? reverse = null;
         // The game's mission observers run consumer code inside the native acceptance; the button is
@@ -2923,7 +2805,7 @@ public sealed partial class StoryMissionTests
         var plugin = new object();
         host.Register(plugin, AnimaPlugin);
         var provider = service.AcquireProvider(plugin).Provider!;
-        var registration = provider.Register(Definition(retention: StoryRetention.Campaign)).Definition!;
+        var registration = provider.Register(Definition()).Definition!;
         var baseIdentifier = StoryMissionPolicy.Identifier(new StoryMissionDefinitionId(provider.ProviderId, "salvage-run"));
         var mission = provider.Offer("salvage-run");
         Assert.True(provider.Activate(mission.MissionId).Accepted);
@@ -2936,7 +2818,7 @@ public sealed partial class StoryMissionTests
         Assert.True(world.World.IsInstalled(baseIdentifier));
         // Re-registering the same local ID now would be deleted by that queued removal, so it is
         // refused rather than accepted into a race.
-        var refused = provider.Register(Definition(retention: StoryRetention.Campaign));
+        var refused = provider.Register(Definition());
         Assert.Equal(StoryRegistrationStatus.Unavailable, refused.Status);
         Assert.Contains("operation is running", refused.Diagnostic);
 
@@ -2945,7 +2827,7 @@ public sealed partial class StoryMissionTests
         // outlives the registration that declared it rather than being removed under a live mission.
         Assert.True(world.World.IsInstalled(baseIdentifier));
         // A fresh registration adopts that entry: it is this module's own, not foreign content.
-        var again = provider.Register(Definition(retention: StoryRetention.Campaign));
+        var again = provider.Register(Definition());
         Assert.True(again.Succeeded);
         Assert.True(world.World.IsInstalled(baseIdentifier));
         Assert.True(again.Definition!.InternalActive());
@@ -2959,7 +2841,7 @@ public sealed partial class StoryMissionTests
     [Fact]
     public void ATransactionFromAReplacedSessionSettlesNothingInTheNewOne()
     {
-        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out var service);
         var mission = provider.Offer("salvage-run");
         Assert.True(provider.Activate(mission.MissionId).Accepted);
         var identifier = FakeWorld.Native(provider, "salvage-run", mission.MissionId);
@@ -2998,12 +2880,12 @@ public sealed partial class StoryMissionTests
     [Fact]
     public void TheModuleRegistersItsOwnPersistenceProviderAndReconstructsItsState()
     {
-        var provider = Provider(out var world, out var host, out var service, StoryRetention.Campaign);
+        var provider = Provider(out var world, out var host, out var service);
         Assert.Equal(StoryStateCodec.Owner, world.Persistence.Provider!.Owner);
         Assert.Equal(StoryStateCodec.SchemaVersion, world.Persistence.Provider.SchemaVersion);
         // A campaign definition runs once, so each mission brings its own definition.
-        Assert.True(provider.Register(Definition("relay-run", StoryRetention.Campaign)).Succeeded);
-        Assert.True(provider.Register(Definition("escort-run", StoryRetention.Campaign)).Succeeded);
+        Assert.True(provider.Register(Definition("relay-run")).Succeeded);
+        Assert.True(provider.Register(Definition("escort-run")).Succeeded);
         var offered = provider.Offer("salvage-run");
         var active = provider.Offer("relay-run");
         provider.Activate(active.MissionId);
@@ -3028,7 +2910,7 @@ public sealed partial class StoryMissionTests
     [Fact]
     public void RestoringAnOlderSaveReplacesStateInsteadOfMergingNewerCompletion()
     {
-        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out var service);
         var early = provider.Offer("salvage-run");
         var older = world.Persistence.Provider!.Capture();
         Assert.True(provider.Activate(early.MissionId).Accepted);
@@ -3047,7 +2929,7 @@ public sealed partial class StoryMissionTests
     public void TheStateCodecIsBoundedStrictAndRefusesMalformedPayloads()
     {
         var entry = new StoryMissionEntry(new StoryMissionDefinitionId("anima", "salvage-run"), Guid.NewGuid(),
-            StoryRetention.Campaign, 1, StoryMissionState.Completed,
+            1, StoryMissionState.Completed,
             new[] { new KeyValuePair<string, string>("branch", "left") });
         var bytes = StoryStateCodec.Encode(new[] { entry });
         var decoded = Assert.Single(StoryStateCodec.Decode(bytes));
@@ -3063,7 +2945,7 @@ public sealed partial class StoryMissionTests
         Assert.False(StoryStateCodec.Validate(Array.Empty<byte>()));
         Assert.Throws<InvalidDataException>(() => StoryStateCodec.Decode(newer));
         var temporary = new StoryMissionEntry(new StoryMissionDefinitionId("anima", "salvage-run"), Guid.NewGuid(),
-            StoryRetention.Temporary, 2, StoryMissionState.Completed,
+            2, StoryMissionState.Completed,
             new[] { new KeyValuePair<string, string>("branch", "left") });
         Assert.Empty(Assert.Single(StoryStateCodec.Decode(StoryStateCodec.Encode(new[] { temporary }))).Choices);
         Assert.True(StoryStateCodec.MaxBytes <= 1024 * 1024);
@@ -3076,25 +2958,25 @@ public sealed partial class StoryMissionTests
         // Non-positive and duplicate sequences are refused on encode: the sequence is the timeline.
         foreach (var bad in new[] { 0L, -1L })
             Assert.Throws<InvalidDataException>(() => StoryStateCodec.Encode(
-                new[] { new StoryMissionEntry(id, Guid.NewGuid(), StoryRetention.Temporary, bad) }));
+                new[] { new StoryMissionEntry(id, Guid.NewGuid(), bad) }));
         Assert.Throws<InvalidDataException>(() => StoryStateCodec.Encode(new[]
         {
-            new StoryMissionEntry(id, Guid.NewGuid(), StoryRetention.Temporary, 5),
-            new StoryMissionEntry(id, Guid.NewGuid(), StoryRetention.Temporary, 5)
+            new StoryMissionEntry(id, Guid.NewGuid(), 5),
+            new StoryMissionEntry(id, Guid.NewGuid(), 5)
         }));
         // The encoder refuses a row its own decoder would reject: an unresolved mission cannot carry
         // declared choices. The old 'terminal requires a separate outcome' invariant is gone — the
         // terminal IS the outcome now, so a terminal state is always valid.
         Assert.Throws<InvalidDataException>(() => StoryStateCodec.Encode(new[]
         {
-            new StoryMissionEntry(id, Guid.NewGuid(), StoryRetention.Campaign, 1, StoryMissionState.Active,
+            new StoryMissionEntry(id, Guid.NewGuid(), 1, StoryMissionState.Active,
                 new[] { new KeyValuePair<string, string>("ghost", "value") })
         }));
         // A payload whose stored sequence is zero or not increasing is refused on decode.
         var bytes = StoryStateCodec.Encode(new[]
         {
-            new StoryMissionEntry(id, Guid.NewGuid(), StoryRetention.Temporary, 1),
-            new StoryMissionEntry(id, Guid.NewGuid(), StoryRetention.Temporary, 2)
+            new StoryMissionEntry(id, Guid.NewGuid(), 1),
+            new StoryMissionEntry(new StoryMissionDefinitionId(id.Provider!, "relay-run"), Guid.NewGuid(), 2)
         });
         // header(12) + provider("anima" with its length byte) + local("salvage-run") + mission GUID(16)
         int sequenceOffset = 12 + (1 + 5) + (1 + 11) + 16;
@@ -3108,7 +2990,7 @@ public sealed partial class StoryMissionTests
         // Invalid UTF-8 in a choice value is refused instead of decoding to replacement characters.
         var campaign = StoryStateCodec.Encode(new[]
         {
-            new StoryMissionEntry(id, Guid.NewGuid(), StoryRetention.Campaign, 1, StoryMissionState.Completed,
+            new StoryMissionEntry(id, Guid.NewGuid(), 1, StoryMissionState.Completed,
                 new[] { new KeyValuePair<string, string>("branch", "left") })
         });
         var index0 = IndexOf(campaign, Encoding.ASCII.GetBytes("left"));
@@ -3119,7 +3001,7 @@ public sealed partial class StoryMissionTests
         // An unpaired surrogate cannot be encoded either.
         Assert.Throws<InvalidDataException>(() => StoryStateCodec.Encode(new[]
         {
-            new StoryMissionEntry(id, Guid.NewGuid(), StoryRetention.Campaign, 1, StoryMissionState.Completed,
+            new StoryMissionEntry(id, Guid.NewGuid(), 1, StoryMissionState.Completed,
                 new[] { new KeyValuePair<string, string>("branch", "\ud800") })
         }));
     }
@@ -3134,36 +3016,33 @@ public sealed partial class StoryMissionTests
     {
         var id = new StoryMissionDefinitionId("anima", "salvage-run");
         var ledger = new StoryLedger();
-        ledger.Restore(new[] { new StoryMissionEntry(id, Guid.NewGuid(), StoryRetention.Temporary, StoryLedger.MaxSequence) });
-        var refused = ledger.Offer(id, StoryRetention.Temporary, Guid.NewGuid(), 0, out var diagnostic);
+        ledger.Restore(new[] { new StoryMissionEntry(id, Guid.NewGuid(), StoryLedger.MaxSequence) });
+        var refused = ledger.Offer(id, Guid.NewGuid(), 0, out var diagnostic);
         Assert.Equal(StoryLedgerStatus.LimitExceeded, refused);
         Assert.Contains("wrapping the timeline", diagnostic);
         // Nothing mutated, so the state stays capturable instead of overflowing into a save block.
         Assert.Single(ledger.Entries);
         Assert.True(StoryStateCodec.Validate(StoryStateCodec.Encode(ledger.Entries)));
         // A stored sequence beyond the bound leaves no headroom and is refused on decode.
-        var beyond = StoryStateCodec.Encode(new[] { new StoryMissionEntry(id, Guid.NewGuid(), StoryRetention.Temporary, 1) });
+        var beyond = StoryStateCodec.Encode(new[] { new StoryMissionEntry(id, Guid.NewGuid(), 1) });
         int sequenceOffset = 12 + (1 + 5) + (1 + 11) + 16;
         Array.Copy(BitConverter.GetBytes(long.MaxValue), 0, beyond, sequenceOffset, 8);
         Assert.False(StoryStateCodec.Validate(beyond));
 
         // Every ledger bound is enforced by BOTH sides, so neither cap is more permissive.
-        var overQuota = Rows(StoryLedger.MaxMissionsPerProvider + 1, "anima", "salvage-run", StoryRetention.Temporary, retired: false);
+        var overQuota = Rows(StoryLedger.MaxMissionsPerProvider + 1, "anima", "salvage-run", retired: false);
         Assert.Throws<InvalidDataException>(() => StoryStateCodec.Encode(overQuota));
         Assert.False(StoryStateCodec.Validate(Craft(overQuota)));
-        var overHorizon = Rows(StoryLedger.TemporaryTombstoneHorizon + 1, "anima", "salvage-run", StoryRetention.Temporary, retired: true);
-        Assert.Throws<InvalidDataException>(() => StoryStateCodec.Encode(overHorizon));
-        Assert.False(StoryStateCodec.Validate(Craft(overHorizon)));
-        var overRetained = Rows(2, "anima", "salvage-run", StoryRetention.Campaign, retired: true);
+        var overRetained = Rows(2, "anima", "salvage-run", retired: true);
         Assert.Throws<InvalidDataException>(() => StoryStateCodec.Encode(overRetained));
         Assert.False(StoryStateCodec.Validate(Craft(overRetained)));
         // A refused payload leaves the owner blocked and its retained bytes intact; nothing is pruned.
         Assert.Throws<InvalidDataException>(() => StoryStateCodec.Decode(Craft(overRetained)));
     }
 
-    private static StoryMissionEntry[] Rows(int count, string provider, string local, StoryRetention retention, bool retired)
+    private static StoryMissionEntry[] Rows(int count, string provider, string local, bool retired)
         => Enumerable.Range(1, count).Select(index => new StoryMissionEntry(new StoryMissionDefinitionId(provider, local),
-            Guid.NewGuid(), retention, index, retired ? StoryMissionState.Completed : StoryMissionState.Offered)).ToArray();
+            Guid.NewGuid(), index, retired ? StoryMissionState.Completed : StoryMissionState.Offered)).ToArray();
 
     /// <summary>Builds a structurally valid payload that violates a ledger bound, by encoding rows separately.</summary>
     private static byte[] Craft(IReadOnlyList<StoryMissionEntry> rows)
@@ -3205,7 +3084,7 @@ public sealed partial class StoryMissionTests
     [InlineData(true)]
     public void ColdRestoreUsesSavedGeneratedDefinitionRatherThanStartupReplacement(bool active)
     {
-        var provider = Provider(out var original, out _, out _, StoryRetention.Campaign);
+        var provider = Provider(out var original, out _, out _);
         var offered = provider.Offer("salvage-run");
         if (active) Assert.True(provider.Activate(offered.MissionId).Accepted);
         var saved = original.Persistence.Provider!.Capture();
@@ -3217,8 +3096,8 @@ public sealed partial class StoryMissionTests
         var current = service.AcquireProvider(plugin).Provider!;
         Assert.True(current.Register(new StoryMissionDefinition("salvage-run", "Different generated pitch", "Not the saved payload", Faction,
             new[] { new StoryStep("Wrong destination", new[] { StoryObjective.TravelTo("missing-new-target") }) },
-            new[] { StoryReward.Credits(999) }, retention: StoryRetention.Campaign)).Succeeded);
-        var native = FakeWorld.Native(current, "salvage-run", offered.MissionId, StoryRetention.Campaign);
+            new[] { StoryReward.Credits(999) })).Succeeded);
+        var native = FakeWorld.Native(current, "salvage-run", offered.MissionId);
         if (active) later.World.AdoptInWorld(native);
         later.StartAndRestore(saved);
         var restored = later.World.InstalledDefinition(native);
@@ -3229,7 +3108,7 @@ public sealed partial class StoryMissionTests
         Assert.Equal(saved, later.Persistence.Provider!.Capture());
         if (!active) Assert.True(current.Activate(offered.MissionId).Accepted);
         Assert.True(current.DeclareChoices(offered.MissionId, new Dictionary<string, string> { ["branch"] = "saved-choice" }).Accepted);
-        later.CompleteInGame(current, "salvage-run", offered.MissionId, StoryRetention.Campaign);
+        later.CompleteInGame(current, "salvage-run", offered.MissionId);
         var completed = Assert.Single(StoryStateCodec.Decode(later.Persistence.Provider!.Capture()));
         Assert.Null(completed.RetainedDefinition);
         Assert.Equal("saved-choice", completed.Choices["branch"]);
@@ -3238,7 +3117,7 @@ public sealed partial class StoryMissionTests
     [Fact]
     public void NativeProgressQueriesResolveAfterReloadWithoutWritingRetainedState()
     {
-        var provider = Provider(out var world, out _, out _, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out _);
         Assert.True(provider.Register(new StoryMissionDefinition("observed", "Observe", "Description", new StoryFactionId("TradingGuild"),
             new[] { new StoryStep("Credits", new[] { StoryObjective.CollectCredits(100).WithKey("balance") }) })).Succeeded);
         var offered = provider.Offer("observed");
@@ -3263,7 +3142,7 @@ public sealed partial class StoryMissionTests
     [Fact]
     public void AuthoredDestinationsGateOfferingAndReportLossAsTypedStateNotRefusal()
     {
-        var provider = Provider(out var world, out _, out _, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out _);
         Assert.True(provider.Register(new StoryMissionDefinition("heed", "Heed the coordinates", "Description", new StoryFactionId("TradingGuild"),
             new[] { new StoryStep("Enter the pocket", new[]
             {
@@ -3308,7 +3187,7 @@ public sealed partial class StoryMissionTests
     [InlineData(true)]
     public void MixedSourceCannotLoseUnkeyedRequirementsDuringRevisionMigration(bool active)
     {
-        var provider = Provider(out var world, out _, out _, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out _);
         Assert.True(provider.Register(new StoryMissionDefinition("mixed", "Mixed", "Description", new StoryFactionId("TradingGuild"),
             new[] { new StoryStep("Both", new[] { StoryObjective.Scripted("talk", "Talk"), StoryObjective.TravelTo("poi-guid-1") }) })).Succeeded);
         var mission = provider.Offer("mixed");
@@ -3337,7 +3216,7 @@ public sealed partial class StoryMissionTests
     [InlineData(true)]
     public void MetadataChangingMigrationRequiresAnOfferedOccurrence(bool active)
     {
-        var provider = Provider(out var world, out _, out _, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out _);
         StoryMissionDefinition DefinitionFor(bool next) => new StoryMissionDefinition("conversation", next ? "New title" : "Old title", "Description", Faction,
             next ? new[] { new StoryStep("B", new[] { StoryObjective.Scripted("b", "B") }), new StoryStep("A", new[] { StoryObjective.Scripted("a", "A") }) }
                 : new[] { new StoryStep("A", new[] { StoryObjective.Scripted("a", "A") }), new StoryStep("B", new[] { StoryObjective.Scripted("b", "B") }) },
@@ -3371,7 +3250,7 @@ public sealed partial class StoryMissionTests
     [InlineData(true)]
     public void RevisionMigrationAndRollbackUseAutomaticOccurrenceRestore(bool active)
     {
-        var provider = Provider(out var world, out _, out _, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out _);
         StoryMissionDefinition DefinitionFor(bool reverse) => new("conversation", "Conversation", "Description", new StoryFactionId("TradingGuild"),
             reverse ? new[] { new StoryStep("Report", new[] { StoryObjective.Scripted("report", "Report") }),
                 new StoryStep("Talk", new[] { StoryObjective.Scripted("talk", "Talk", 5) }) }
@@ -3417,7 +3296,7 @@ public sealed partial class StoryMissionTests
     [InlineData(true)]
     public void ScriptedProgressDoesNotCommitAfterSessionOrLeaseInvalidation(bool disposeLease)
     {
-        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out var service);
         Assert.True(provider.Register(new StoryMissionDefinition("conversation", "Conversation", "Description", new StoryFactionId("TradingGuild"),
             new[] { new StoryStep("Talk", new[] { StoryObjective.Scripted("answer", "Talk", 5) }) })).Succeeded);
         var offered = provider.Offer("conversation");
@@ -3440,7 +3319,7 @@ public sealed partial class StoryMissionTests
     [Fact]
     public void ScriptedProgressUsesAuthenticatedSessionAndAutomaticOwnerCapture()
     {
-        var provider = Provider(out var world, out _, out var service, StoryRetention.Campaign);
+        var provider = Provider(out var world, out _, out var service);
         Assert.True(provider.Register(new StoryMissionDefinition("conversation", "Conversation", "Description", new StoryFactionId("TradingGuild"),
             new[] { new StoryStep("Talk", new[] { StoryObjective.Scripted("answer", "Talk to the broker", 5) }) })).Succeeded);
         var offered = provider.Offer("conversation");
@@ -3515,18 +3394,16 @@ public sealed partial class StoryMissionTests
 
         /// <summary>
         /// The identifier one mission is installed under, exactly as the module derives it. A campaign
-        /// definition runs once and is installed under the definition's own identifier; a temporary run
-        /// carries its own, so the caller states which lane it means.
+        /// mission runs once and is installed under the definition's own identifier - the shape the
+        /// game uses for a story id.
         /// </summary>
-        internal static string Native(IStoryProvider provider, string localId, Guid missionId,
-            StoryRetention retention = StoryRetention.Temporary)
-            => StoryMissionPolicy.MissionIdentifier(new StoryMissionDefinitionId(provider.ProviderId, localId), missionId, retention);
+        internal static string Native(IStoryProvider provider, string localId, Guid missionId)
+            => StoryMissionPolicy.Identifier(new StoryMissionDefinitionId(provider.ProviderId, localId));
 
         /// <summary>The GAME completes an owned mission: it ends there and the observer reports it.</summary>
-        internal void CompleteInGame(IStoryProvider provider, string localId, Guid missionId,
-            StoryRetention retention = StoryRetention.Temporary)
+        internal void CompleteInGame(IStoryProvider provider, string localId, Guid missionId)
         {
-            var identifier = Native(provider, localId, missionId, retention);
+            var identifier = Native(provider, localId, missionId);
             World.CompleteInWorld(identifier);
             Missions.Publish(MissionTransitionKind.Completed, identifier);
         }

@@ -64,11 +64,11 @@ public sealed class StoryProtectionPatchTests : IDisposable
 
     private (string Identifier, Mission Mission) Hold(string local = "salvage-run")
     {
-        var identifier = StoryMissionPolicy.MissionIdentifier(new StoryMissionDefinitionId("anima", local), Guid.NewGuid(), StoryRetention.Temporary);
+        var identifier = StoryMissionPolicy.Identifier(new StoryMissionDefinitionId("anima", local));
         var world = new StoryNativeWorld(new StoryNativeBindings(typeof(StoryMission).Assembly), () => { });
         var definition = new StoryMissionDefinition(local, "Salvage run", "Recover it.", Trading,
             new[] { new StoryStep("Reach the wreck", new[] { StoryObjective.TravelTo("poi-guid-1", requireNewVisit: true) }) },
-            new[] { StoryReward.Credits(500) }, StoryDifficulty.Normal, StoryRetention.Campaign);
+            new[] { StoryReward.Credits(500) }, StoryDifficulty.Normal);
         Assert.True(world.Install(identifier, definition).Applied);
         Assert.True(world.Accept(identifier).Applied);
         return (identifier, _player.missions.Single(mission => mission.storyId == identifier));
