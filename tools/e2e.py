@@ -179,6 +179,8 @@ def consume(conn, report, run_id, deadline):
                     raise E2EError("Unexpected controller run ID.")
                 report["meta"] = {k: v for k, v in msg.items() if k != "type"}
             elif kind == "result" and report["meta"] and not report["results"]:
+                if msg.get("id") != CASE:
+                    raise E2EError(f"Result for unrequested case: {msg.get('id')!r} (requested {CASE!r}).")
                 validate_result(msg)
                 report["results"].append({k: v for k, v in msg.items() if k != "type"})
             elif kind == "finish" and report["results"]:

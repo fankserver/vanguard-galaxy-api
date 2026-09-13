@@ -70,6 +70,17 @@ class ProtocolTests(unittest.TestCase):
         with self.assertRaises(e2e.E2EError):
             e2e.validate_result(dict(type="result", id="unknown-case", status="pass", detail="ok", binding="", elapsedMs=5))
 
+    def test_result_for_a_different_requested_case_is_rejected_live(self):
+        old = e2e.CASE
+        try:
+            e2e.CASE = "wormhole-world"
+            report = e2e.new_report()
+            with self.assertRaisesRegex(e2e.E2EError, "unrequested case"):
+                e2e.consume(self.stream([META, RESULT, FINISH]), report, "run", time.monotonic() + 2)
+            self.assertEqual(e2e.gate(report), 1)
+        finally:
+            e2e.CASE = old
+
     def test_report_round_trip_keeps_process_state_types(self):
         report = e2e.new_report()
         report.update(finished=True, results=[{k: v for k, v in RESULT.items() if k != "type"}])
