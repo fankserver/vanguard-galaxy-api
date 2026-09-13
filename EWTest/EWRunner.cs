@@ -65,7 +65,7 @@ public sealed class EWRunner
         var lifecycleSuite = new LifecycleSuite(_plugin);
         yield return WaitUntil("native fresh session entry", FreshSession.TryStart,
             Plugin.MaxSessionWaitFrames, lifecycleSuite.Sink,
-            "Re-inspect MainMenuUI.instance and StartTestArena in Assembly-CSharp.dll.");
+            "Re-inspect MainMenuUI.instance, GamePlayer.CreateNewGamePlayer and GameManager.StartNewGame in Assembly-CSharp.dll.");
         yield return WaitUntil(
             "session reached (GameplayInitialized)",
             () => _plugin.SessionReached,
@@ -85,10 +85,15 @@ public sealed class EWRunner
                 var initialized = Array.IndexOf(observed, LifecycleEventKind.GameplayInitialized);
                 if (starting < 0 || ready <= starting || initialized <= ready)
                     throw new InvalidOperationException("API lifecycle events missing or out of order: " + string.Join(", ", observed));
-            }, "Inspect GamePlayer.CreateTestArenaPlayer, GameManager.StartNewGame and lifecycle bindings."));
+            }, "Inspect GamePlayer.CreateNewGamePlayer, GameManager.StartNewGame and lifecycle bindings."));
             return result;
         });
-        if (freshOnly) yield break;
+        if (freshOnly)
+        {
+            if (lifecycleSuite.Sink.Results.Count > 0)
+                yield return RunSuite("lifecycle", () => lifecycleSuite.Sink);
+            yield break;
+        }
         yield return RunSuite("lifecycle", () => lifecycleSuite.Finish());
 
         yield return RunSuite("world-authoring", () => new WorldAuthoringSuite(_plugin).Run());
