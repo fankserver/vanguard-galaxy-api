@@ -731,6 +731,7 @@ public sealed partial class Plugin : BaseUnityPlugin
                     var location = _dungeonAegisRuntime?.ResolveLocation(poiId);
                     return location == null ? (Guid?)null : _dungeonAdapter?.AttachedDungeon(location);
                 },
+                () => _dungeons?.CanDropDungeon == true,
                 poi =>
                 {
                     var dropped = _dungeons?.DropDungeon(poi) ?? false;

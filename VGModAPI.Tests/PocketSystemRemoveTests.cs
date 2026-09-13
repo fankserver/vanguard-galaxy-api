@@ -27,8 +27,9 @@ public sealed class PocketSystemRemoveTests
         internal readonly WorldContentService Service;
         internal IWorldProvider Provider = null!;
         internal Guid Session;
-        internal Harness(bool withCombatGate = false)
+        internal Harness(bool withCombatGate = false, Action<Exception>? report = null)
         {
+            var reportError = report ?? (_ => { });
             Hub = new LifecycleHub((_, error) => throw error);
             Native = new FakePocketSystemNative();
             SiteNative = new FakeResourceSiteNative();
@@ -39,7 +40,7 @@ public sealed class PocketSystemRemoveTests
             Systems = new PocketSystemRegistry(auth, Hub.CheckThread);
             Coordinator = new PocketSystemCoordinator(Hub, Systems, Native, () => true, _ => true, _ => { });
             Sites = new ResourceSiteRegistry(auth, Hub.CheckThread);
-            SiteCoordinator = new ResourceSiteCoordinator(Hub, Sites, SiteNative, _ => true, _ => { });
+            SiteCoordinator = new ResourceSiteCoordinator(Hub, Sites, SiteNative, _ => true, reportError);
             Wormholes = new WormholePairRegistry(auth, Hub.CheckThread);
             WormholeCoordinator = new WormholePairCoordinator(Hub, Wormholes, WormholeNative, _ => true, _ => { });
             WorldAuthoringGate gate = null!;
@@ -282,6 +283,7 @@ public sealed class PocketSystemRemoveTests
                 Assert.Equal(0, harness.Native.RemoveCalls); // the native locations still exist
                 resolvedFor.Add(poi); return attached;
             },
+            () => true,
             poi =>
             {
                 Assert.Equal(1, harness.Native.RemoveCalls); // native removal was verified first
@@ -303,7 +305,7 @@ public sealed class PocketSystemRemoveTests
     {
         using var harness = new Harness();
         var dropped = new List<Guid>();
-        harness.SiteCoordinator.AttachDungeonRemoval(_ => Guid.NewGuid(), poi => { dropped.Add(poi); return true; });
+        harness.SiteCoordinator.AttachDungeonRemoval(_ => Guid.NewGuid(), () => true, poi => { dropped.Add(poi); return true; });
         var pocket = harness.PocketWithSiteInside(out _);
         harness.Native.FailRemove = true;
 
@@ -312,16 +314,33 @@ public sealed class PocketSystemRemoveTests
         Assert.NotNull(harness.Provider.GetResourceSite("field", "in-pocket"));
     }
 
+    /// <summary>When retained dungeon state cannot mutate, refuse before touching native state.</summary>
+    [Fact]
+    public void AClosedDungeonSaveFenceRefusesPocketRemovalBeforeNativeMutation()
+    {
+        using var harness = new Harness();
+        var dropped = new List<Guid>();
+        harness.SiteCoordinator.AttachDungeonRemoval(
+            _ => Guid.NewGuid(), () => false, poi => { dropped.Add(poi); return true; });
+        var pocket = harness.PocketWithSiteInside(out _);
+
+        Assert.Equal(RemovalStatus.Unavailable, pocket.CanRemove());
+        Assert.Equal(WorldContentStatus.Unavailable, pocket.Remove().Status);
+        Assert.Equal(0, harness.Native.RemoveCalls);
+        Assert.Empty(dropped);
+        Assert.NotNull(harness.Provider.GetResourceSite("field", "in-pocket"));
+    }
+
     /// <summary>
     /// An unreadable attached dungeon refuses the pocket removal outright, exactly as the direct site
-    /// path refuses: removing the pocket would strand a row that nothing could ever drop.
+    /// path refuses: removing the pocket would strand a row that nothing could ever remove.
     /// </summary>
     [Fact]
     public void AnUnreadableAttachedDungeonRefusesThePocketRemovalInsteadOfLeakingTheRow()
     {
         using var harness = new Harness();
         harness.SiteCoordinator.AttachDungeonRemoval(
-            _ => throw new InvalidOperationException("read fault"), _ => true);
+            _ => throw new InvalidOperationException("read fault"), () => true, _ => true);
         var pocket = harness.PocketWithSiteInside(out _);
 
         Assert.Equal(RemovalStatus.Unavailable, pocket.CanRemove());
@@ -331,6 +350,23 @@ public sealed class PocketSystemRemoveTests
         // Nothing was removed: the pocket and its site are both still there.
         Assert.NotNull(harness.Provider.GetResourceSite("field", "in-pocket"));
         Assert.Equal(ReconstructionStatus.Reconstructed, pocket.State.Status);
+    }
+
+    /// <summary>A post-removal bookkeeping fault is reported but cannot skip site-object invalidation.</summary>
+    [Fact]
+    public void AThrowingDungeonRemovalDoesNotEscapeOrSkipTheSiteRemovalNotification()
+    {
+        var reports = new List<Exception>();
+        using var harness = new Harness(report: reports.Add);
+        harness.SiteCoordinator.AttachDungeonRemoval(
+            _ => Guid.NewGuid(), () => true, _ => throw new InvalidOperationException("drop fault"));
+        var pocket = harness.PocketWithSiteInside(out var inside);
+        var changed = 0; inside.Changed += _ => changed++;
+
+        Assert.True(pocket.Remove().Succeeded);
+        Assert.Equal(ReconstructionStatus.Removed, inside.State.Status);
+        Assert.Equal(1, changed);
+        Assert.Contains(reports, error => error.Message == "drop fault");
     }
 
     [Fact]

@@ -59,8 +59,10 @@ internal sealed class DungeonService : IDisposable
     /// <summary>Drops one API-owned dungeon row so it no longer reconstructs. Used when the
     /// native location that hosted it is intentionally removed. Returns false when persistence cannot
     /// mutate right now.</summary>
+    internal bool CanDropDungeon
+    { get { _hub.CheckThread(); return !_disposed && !MutationBlocked && _store != null && _state.MutationAllowed; } }
     internal bool DropDungeon(Guid id)
-    { _hub.CheckThread(); return !_disposed && _store != null && _state.Drop(id); }
+    { _hub.CheckThread(); return CanDropDungeon && _state.Drop(id); }
     internal (object? Dungeon, object? Provider, object? Definition) PanelToken(Guid id)
     {
         _hub.CheckThread(); if (_disposed || _store == null || !Availability.IsAvailable) return (null, null, null);

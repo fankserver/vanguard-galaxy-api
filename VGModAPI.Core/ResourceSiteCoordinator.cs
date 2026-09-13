@@ -126,6 +126,7 @@ internal sealed class ResourceSiteCoordinator : IDisposable
     private readonly HashSet<(string Owner, string Local, string Key)> _failed = new();
     private Action<Guid>? _settled;
     private Func<string, Guid?>? _resolveAttachedDungeon;
+    private Func<bool>? _canDropDungeon;
     private Func<Guid, bool>? _dropDungeon;
     private Guid _session;
     private bool _settledOnce;
@@ -147,10 +148,11 @@ internal sealed class ResourceSiteCoordinator : IDisposable
     /// site's boarding location. The resolver runs before native removal, while the location still
     /// exists; state is removed only after the native removal is verified.
     /// </summary>
-    internal void AttachDungeonRemoval(Func<string, Guid?> resolveAttached, Func<Guid, bool> drop)
+    internal void AttachDungeonRemoval(Func<string, Guid?> resolveAttached, Func<bool> canDrop, Func<Guid, bool> drop)
     {
         _hub.CheckThread();
         _resolveAttachedDungeon = resolveAttached ?? throw new ArgumentNullException(nameof(resolveAttached));
+        _canDropDungeon = canDrop ?? throw new ArgumentNullException(nameof(canDrop));
         _dropDungeon = drop ?? throw new ArgumentNullException(nameof(drop));
     }
     private void Reset()
@@ -213,7 +215,7 @@ internal sealed class ResourceSiteCoordinator : IDisposable
             try { if (_resolveAttachedDungeon(attachedPoi) is { } dungeon) attached.Add(dungeon); }
             catch (Exception error) { _report(error); return null; }
         }
-        return attached.ToArray();
+        return attached.Count == 0 || _canDropDungeon?.Invoke() == true ? attached.ToArray() : null;
     }
 
     /// <summary>
@@ -226,8 +228,12 @@ internal sealed class ResourceSiteCoordinator : IDisposable
         if (_disposed || _dropDungeon == null) return;
         foreach (var poi in attached)
         {
-            if (!_dropDungeon(poi))
-                _report(new InvalidOperationException("An attached authored dungeon poi could not be dropped after pocket removal."));
+            try
+            {
+                if (!_dropDungeon(poi))
+                    _report(new InvalidOperationException("An attached authored dungeon poi could not be removed after pocket removal."));
+            }
+            catch (Exception error) { _report(error); }
         }
     }
 
@@ -280,6 +286,8 @@ internal sealed class ResourceSiteCoordinator : IDisposable
         {
             try { attachedDungeon = _resolveAttachedDungeon(attachedPoi); }
             catch (Exception error) { _report(error); return (WorldContentStatus.Unavailable, "The site's attached dungeon state could not be read."); }
+            if (attachedDungeon.HasValue && _canDropDungeon?.Invoke() != true)
+                return (WorldContentStatus.Unavailable, "The site's attached dungeon state cannot be changed right now.");
         }
         try
         {
@@ -319,7 +327,11 @@ internal sealed class ResourceSiteCoordinator : IDisposable
             return RemovalStatus.HeldEnterable;
         if (_resolveAttachedDungeon != null && row.PoiId is { Length: > 0 } attachedPoi)
         {
-            try { _ = _resolveAttachedDungeon(attachedPoi); }
+            try
+            {
+                var attached = _resolveAttachedDungeon(attachedPoi);
+                if (attached.HasValue && _canDropDungeon?.Invoke() != true) return RemovalStatus.Unavailable;
+            }
             catch (Exception error) { _report(error); return RemovalStatus.Unavailable; }
         }
         return _native.Readiness(session, row.SystemId, row.PoiId, row.Kind);

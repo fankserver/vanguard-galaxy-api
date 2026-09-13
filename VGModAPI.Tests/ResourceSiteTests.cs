@@ -437,6 +437,7 @@ public sealed class ResourceSiteTests
         var resolved = new List<string>(); var dropped = new List<Guid>();
         h.Coordinator.AttachDungeonRemoval(
             poiId => { resolved.Add(poiId); return poi; },
+            () => true,
             id => { dropped.Add(id); return true; });
         int changes = 0; site.Changed += _ => changes++;
         var poiId = site.PoiId;
@@ -456,7 +457,7 @@ public sealed class ResourceSiteTests
         h.BeginGameplay();
         var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
         var dropped = new List<Guid>();
-        h.Coordinator.AttachDungeonRemoval(_ => Guid.NewGuid(), id => { dropped.Add(id); return true; });
+        h.Coordinator.AttachDungeonRemoval(_ => Guid.NewGuid(), () => true, id => { dropped.Add(id); return true; });
         h.Native.RemoveOutcome = ResourceSiteRemoveOutcome.BoardingActive;
         Assert.Equal(WorldContentStatus.Rejected, site.Remove().Status);
         Assert.Empty(dropped);
@@ -470,7 +471,7 @@ public sealed class ResourceSiteTests
         Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage(withStation: true)));
         h.BeginGameplay();
         var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
-        h.Coordinator.AttachDungeonRemoval(_ => throw new InvalidOperationException("read fault"), _ => true);
+        h.Coordinator.AttachDungeonRemoval(_ => throw new InvalidOperationException("read fault"), () => true, _ => true);
         Assert.Equal(WorldContentStatus.Unavailable, site.Remove().Status);
         Assert.Equal(0, h.Native.RemoveCalls); // nothing native was touched
         Assert.Single(h.Coordinator.CaptureRows());
@@ -484,7 +485,7 @@ public sealed class ResourceSiteTests
         h.BeginGameplay();
         var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
         var dropped = new List<Guid>();
-        h.Coordinator.AttachDungeonRemoval(_ => Guid.NewGuid(), id => { dropped.Add(id); return false; });
+        h.Coordinator.AttachDungeonRemoval(_ => Guid.NewGuid(), () => true, id => { dropped.Add(id); return false; });
         Assert.True(site.Remove().Succeeded);
         Assert.Single(dropped); // the drop was attempted
         Assert.Empty(h.Coordinator.CaptureRows());
