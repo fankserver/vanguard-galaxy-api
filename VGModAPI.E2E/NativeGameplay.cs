@@ -16,9 +16,6 @@ internal static class NativeGameplay
     private static Assembly GameAssembly => AppDomain.CurrentDomain.GetAssemblies().Single(a => a.GetName().Name == "Assembly-CSharp");
     private static Type GameType(string name) => GameAssembly.GetType(name, true)!;
 
-    // Matches the game's own fast-lane multiplier. The TravelManager resets this field after each
-    // ordinary trip, so no ship/save data is changed and all native travel/arrival code still runs.
-    private const float E2ETravelMultiplier = 7f;
     private static int _screenshot;
 
     internal static object? ExamplePlugin()
@@ -112,13 +109,6 @@ internal static class NativeGameplay
         var managers = Resources.FindObjectsOfTypeAll(travelType).OfType<Component>()
             .Where(c => c.gameObject.activeInHierarchy).ToArray();
         if (managers.Length != 1) throw new InvalidOperationException("Expected one active TravelManager, found " + managers.Length + ".");
-        bool accepted = travelType.GetMethod("SetRouteToPOI", Any)!.Invoke(managers[0], new[] { poi }) is true;
-        if (accepted)
-        {
-            var multiplier = travelType.GetField("travelMultiplier", Any)
-                ?? throw new MissingMemberException(travelType.FullName, "travelMultiplier");
-            multiplier.SetValue(managers[0], E2ETravelMultiplier);
-        }
-        return accepted;
+        return travelType.GetMethod("SetRouteToPOI", Any)!.Invoke(managers[0], new[] { poi }) is true;
     }
 }
