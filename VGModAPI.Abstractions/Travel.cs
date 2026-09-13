@@ -5,6 +5,21 @@ namespace VGModAPI;
 public enum TravelTransitionKind { InitialPlacement, Requested, Departed, Arrived, Cancelled, RecoveredPlacement, RouteCompleted }
 public enum TravelMode { Unknown, InSystem, JumpGate, Wormhole }
 
+public enum TravelRouteStatus { Accepted, ServiceUnavailable, SessionUnavailable, DestinationNotFound, Busy, NativeRejected, NativeFailure }
+
+/// <summary>Immediate route admission result. Accepted means native travel accepted the route, not that arrival completed.</summary>
+public sealed class TravelRouteResult
+{
+    public TravelRouteStatus Status { get; }
+    public string Detail { get; }
+    public bool Accepted => Status == TravelRouteStatus.Accepted;
+    public TravelRouteResult(TravelRouteStatus status, string detail)
+    {
+        if (!Enum.IsDefined(typeof(TravelRouteStatus), status)) throw new ArgumentOutOfRangeException(nameof(status));
+        Status = status; Detail = detail ?? throw new ArgumentNullException(nameof(detail));
+    }
+}
+
 /// <summary>Opaque native location keys, not display names or owner-local content registration keys.</summary>
 public sealed class TravelLocation
 {

@@ -136,7 +136,7 @@ internal static class WormholeWorldCase
     {
         var requested = false;
         var firstSequence = 0L;
-        return new TestStep(name, "TravelManager.SetRouteToPOI / ITravelService.Transitioned", () =>
+        return new TestStep(name, "ITravelService.RequestRoute / Transitioned", () =>
         {
             NativeSession.RequireEphemeral();
             var targetPoi = poi();
@@ -144,7 +144,8 @@ internal static class WormholeWorldCase
             if (!requested)
             {
                 firstSequence = events.Count == 0 ? 0 : events.Max(e => e.Sequence);
-                if (!NativeGameplay.RouteTo(targetPoi)) throw new InvalidOperationException("SetRouteToPOI refused " + targetPoi + ".");
+                var result = ModApi.Services.Travel.RequestRoute(targetPoi, 7f);
+                if (!result.Accepted) throw new InvalidOperationException("Travel request refused: " + result.Status + " - " + result.Detail);
                 requested = true;
             }
             var current = ModApi.Services.Travel.CurrentLocation;

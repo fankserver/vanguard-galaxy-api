@@ -20,7 +20,8 @@ public sealed class TravelNativeAdapterTests
 {
     private sealed class World : IDisposable
     {
-        internal readonly Guid Session = Guid.NewGuid();
+        internal readonly Guid Session;
+        internal readonly LifecycleHub Hub;
         internal readonly GamePlayer Player = new();
         internal readonly SystemMapData Origin = new() { guid = "sys-a", name = "Alpha" };
         internal readonly SystemMapData Dest = new() { guid = "sys-b", name = "Beta" };
@@ -40,6 +41,11 @@ public sealed class TravelNativeAdapterTests
 
         internal World()
         {
+            Hub = new LifecycleHub((_, _) => { });
+            Hub.SetAvailable("session-lifecycle", "bound");
+            Session = Hub.Begin(SessionOrigin.NewGame, null);
+            Hub.PlayerReady(Session); Hub.GameplayInitialized(Session);
+            Hub.SetAvailable("native-travel", "bound");
             OriginPoi.system = Origin; OriginPoi.guid = "poi-origin";
             InSystemPoi.system = Origin; InSystemPoi.guid = "poi-insystem";
             DestPoi.system = Dest; DestPoi.guid = "poi-dest";
@@ -47,6 +53,9 @@ public sealed class TravelNativeAdapterTests
             TutorialPoi.system = Origin; TutorialPoi.guid = "poi-tutorial"; // a rewritten actual (non-gate) POI
             SourceGate.system = Origin; SourceGate.guid = "gate-a";
             TargetGate.system = Dest; TargetGate.guid = "gate-b";
+            var galaxy = new GalaxyMapData(); GalaxyMapData.current = galaxy;
+            galaxy.AddSystem(Origin); galaxy.AddSystem(Dest);
+            foreach (var poi in new MapPointOfInterest[] { OriginPoi, InSystemPoi, DestPoi, NominalPoi, TutorialPoi, SourceGate, TargetGate }) galaxy.AddPoi(poi);
             Player.currentSystem = Origin; Player.currentPointOfInterest = OriginPoi;
             Player.currentSpaceShip = new SpaceShipData();
             Player.elapsedTime = 0;
@@ -55,7 +64,7 @@ public sealed class TravelNativeAdapterTests
             Travel.localPoiManager = OriginManager; Travel.localTarget = OriginPoi; Travel.targetPoi = OriginPoi;
             Travel.usingJumpgate = false;
             Behaviour.Util.Singleton<TravelManager>.SetTestInstance = Travel;
-            Adapter = new TravelNativeAdapter(new LifecycleHub((_, _) => { }), new TravelNativeBindings(typeof(GamePlayer).Assembly),
+            Adapter = new TravelNativeAdapter(Hub, new TravelNativeBindings(typeof(GamePlayer).Assembly),
                 (owner, ex) => Faults.Add(owner + ":" + ex.GetType().Name));
             Adapter.SetSession(Session);
             Adapter.Events.Subscribe("test", Transitions.Add);
@@ -83,10 +92,74 @@ public sealed class TravelNativeAdapterTests
         public void Dispose()
         {
             Adapter.SetSession(null); Adapter.Dispose();
-            GamePlayer.current = null;
+            GamePlayer.current = null; GalaxyMapData.current = null;
             SpaceStationInterior.instance = null;
             Behaviour.Util.Singleton<TravelManager>.SetTestInstance = null;
         }
+    }
+
+    [Fact]
+    public void PublicRouteRequestResolvesPoiAppliesScopedSpeedAndRestoresOnSessionEnd()
+    {
+        using var w = new World(); w.Travel.routeAccepted = true;
+
+        var result = w.Adapter.Events.RequestRoute(w.InSystemPoi.guid, 7f);
+
+        Assert.True(result.Accepted); Assert.Same(w.InSystemPoi, w.Travel.routedPoi);
+        Assert.Equal(7f, w.Travel.TestTravelMultiplier);
+        w.Adapter.SetSession(null);
+        Assert.Equal(1f, w.Travel.TestTravelMultiplier);
+    }
+
+    [Fact]
+    public void PublicRouteRequestReportsMissingAndNativeRejectedDestinations()
+    {
+        using var w = new World();
+        Assert.Equal(TravelRouteStatus.DestinationNotFound, w.Adapter.Events.RequestRoute("missing").Status);
+        Assert.Equal(TravelRouteStatus.NativeRejected, w.Adapter.Events.RequestRoute(w.InSystemPoi.guid).Status);
+        Assert.Equal(1f, w.Travel.TestTravelMultiplier);
+        GalaxyMapData.current = null;
+        Assert.Equal(TravelRouteStatus.SessionUnavailable, w.Adapter.Events.RequestRoute(w.InSystemPoi.guid).Status);
+    }
+
+    [Fact]
+    public void PublicRouteRequestRejectsReentrantReplacementAndKeepsOuterSpeed()
+    {
+        using var w = new World(); w.Travel.routeAccepted = true;
+        TravelRouteResult? inner = null;
+        w.Travel.onSetRoute = () =>
+        {
+            w.Travel.onSetRoute = null;
+            inner = w.Adapter.Events.RequestRoute(w.DestPoi.guid, 2f);
+        };
+
+        var outer = w.Adapter.Events.RequestRoute(w.InSystemPoi.guid, 7f);
+
+        Assert.True(outer.Accepted); Assert.Equal(TravelRouteStatus.Busy, inner!.Status);
+        Assert.Same(w.InSystemPoi, w.Travel.routedPoi); Assert.Equal(7f, w.Travel.TestTravelMultiplier);
+    }
+
+    [Fact]
+    public void PublicRouteSpeedRestoresOnBetweenLegCancelAndDispose()
+    {
+        using var w = new World(); w.Travel.routeAccepted = true;
+        Assert.True(w.Adapter.Events.RequestRoute(w.InSystemPoi.guid, 7f).Accepted);
+        w.Adapter.OnTravelCancelled(); // no active tracked leg: the between-hop cancellation shape
+        Assert.Equal(1f, w.Travel.TestTravelMultiplier);
+        Assert.True(w.Adapter.Events.RequestRoute(w.InSystemPoi.guid, 7f).Accepted);
+        w.Adapter.Dispose();
+        Assert.Equal(1f, w.Travel.TestTravelMultiplier);
+    }
+
+    [Fact]
+    public void PublicRouteNativeFailureIsAResultAndDoesNotPoisonNextRequest()
+    {
+        using var w = new World(); w.Travel.routeAccepted = true;
+        w.Travel.onSetRoute = () => throw new InvalidOperationException("native");
+        Assert.Equal(TravelRouteStatus.NativeFailure, w.Adapter.Events.RequestRoute(w.InSystemPoi.guid, 7f).Status);
+        Assert.Equal(1f, w.Travel.TestTravelMultiplier);
+        w.Travel.onSetRoute = null;
+        Assert.True(w.Adapter.Events.RequestRoute(w.InSystemPoi.guid).Accepted);
     }
 
     // --- finding 1: nested-yield lifecycle propagation ---
@@ -596,6 +669,9 @@ public sealed class TravelNativeAdapterTests
     {
         using var w = new World();
         w.Adapter.Tick(w.Player, w.OriginManager); w.Transitions.Clear();
+        w.Travel.routeAccepted = true;
+        Assert.True(w.Adapter.Events.RequestRoute(w.InSystemPoi.guid, 7f).Accepted);
+        Assert.Equal(7f, w.Travel.TestTravelMultiplier);
         w.SetWaypoints(w.InSystemPoi);
         w.Player.elapsedTime = 5;
         w.Adapter.RequestWaypointLeg();   // accepted request for the actual waypoint
@@ -612,6 +688,7 @@ public sealed class TravelNativeAdapterTests
         Assert.Equal(5d, w.Transitions.Single(t => t.Kind == TravelTransitionKind.Departed).DwellSeconds);
         Assert.All(w.Transitions, t => Assert.Equal(TravelMode.InSystem, t.Mode));
         Assert.NotNull(w.Transitions.Single(t => t.Kind == TravelTransitionKind.Arrived).OperationId);
+        Assert.Equal(1f, w.Travel.TestTravelMultiplier);
     }
 
     [Fact]
@@ -637,12 +714,15 @@ public sealed class TravelNativeAdapterTests
     {
         using var w = new World();
         w.Adapter.Tick(w.Player, w.OriginManager); w.Transitions.Clear();
+        w.Travel.routeAccepted = true;
+        Assert.True(w.Adapter.Events.RequestRoute(w.InSystemPoi.guid, 7f).Accepted);
         w.SetWaypoints(w.InSystemPoi);
         w.Adapter.RequestWaypointLeg();
         w.Adapter.OnTravelCancelled();
         w.Adapter.OnTravelCancelled();
         var cancelled = Assert.Single(w.Transitions, t => t.Kind == TravelTransitionKind.Cancelled);
         Assert.Equal("poi-origin", cancelled.ActualLocation!.PoiId);
+        Assert.Equal(1f, w.Travel.TestTravelMultiplier);
         var token = w.Adapter.OnArrivalEnter(w.OriginManager);
         w.Adapter.OnArrivalExit(token, w.OriginManager, null);
         Assert.DoesNotContain(w.Transitions, t => t.Kind == TravelTransitionKind.Arrived);

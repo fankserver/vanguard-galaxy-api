@@ -7,9 +7,8 @@ using UnityEngine;
 
 namespace VGModAPI.E2E;
 
-/// <summary>Native gameplay driver for live E2E only. It uses the rendered Unity HUD button and
-/// the game's normal TravelManager.SetRouteToPOI coroutine boundary; it never edits player/world
-/// location directly.</summary>
+/// <summary>Native live-game assertions and rendered Unity HUD input for E2E only.
+/// Gameplay travel is requested through the public ModAPI service.</summary>
 internal static class NativeGameplay
 {
     private const BindingFlags Any = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
@@ -101,14 +100,4 @@ internal static class NativeGameplay
         ScreenCapture.CaptureScreenshot(Path.Combine(root, (++_screenshot).ToString("00") + "-" + safe + ".png"));
     }
 
-    internal static bool RouteTo(string poiId)
-    {
-        var poi = Poi(poiId);
-        if (poi == null) throw new InvalidOperationException("Native POI not found: " + poiId);
-        var travelType = GameType("Behaviour.Managers.TravelManager");
-        var managers = Resources.FindObjectsOfTypeAll(travelType).OfType<Component>()
-            .Where(c => c.gameObject.activeInHierarchy).ToArray();
-        if (managers.Length != 1) throw new InvalidOperationException("Expected one active TravelManager, found " + managers.Length + ".");
-        return travelType.GetMethod("SetRouteToPOI", Any)!.Invoke(managers[0], new[] { poi }) is true;
-    }
 }

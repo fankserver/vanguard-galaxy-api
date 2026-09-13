@@ -27,6 +27,9 @@ public interface ITravelService : IServiceStatus
 {
     Guid? SessionId { get; }
     TravelLocation? CurrentLocation { get; }
+    /// <summary>Requests native travel to a POI. The optional multiplier applies only to this route;
+    /// use 1 for normal speed. Route completion is reported by Transitioned.</summary>
+    TravelRouteResult RequestRoute(string poiId, float speedMultiplier = 1f);
     event Action<TravelTransition>? Transitioned;
 }
 

@@ -101,12 +101,61 @@ internal sealed class TravelNativeAdapter : IDisposable
     private volatile bool _faulted;
     private Exception? _faultDetail;
     private bool _disposed;
+    private bool _apiTravelSpeed, _requestingRoute;
 
     internal TravelNativeAdapter(LifecycleHub lifecycle, TravelNativeBindings bindings, Action<string, Exception> report)
     {
         _bindings = bindings; _report = report;
-        Events = new TravelEvents(lifecycle, report);
+        Events = new TravelEvents(lifecycle, report, RequestRoute);
         Station = new StationEvents(lifecycle, report);
+    }
+
+    private TravelRouteResult RequestRoute(string poiId, float speedMultiplier)
+    {
+        if (_disposed || _faulted)
+            return new TravelRouteResult(TravelRouteStatus.ServiceUnavailable, "Travel integration is unavailable.");
+        var player = _boundPlayer;
+        if (!IsLive(player))
+            return new TravelRouteResult(TravelRouteStatus.SessionUnavailable, "No bound gameplay player.");
+        if (_requestingRoute)
+            return new TravelRouteResult(TravelRouteStatus.Busy, "A travel request callback is already active.");
+        var manager = _bindings.TravelManager();
+        if (manager == null)
+            return new TravelRouteResult(TravelRouteStatus.SessionUnavailable, "Travel is not initialized.");
+        var galaxy = _bindings.Galaxy();
+        if (galaxy == null)
+            return new TravelRouteResult(TravelRouteStatus.SessionUnavailable, "The current galaxy is not initialized.");
+        _requestingRoute = true;
+        try
+        {
+            var poi = _bindings.FindPoi(galaxy, poiId);
+            if (poi == null)
+                return new TravelRouteResult(TravelRouteStatus.DestinationNotFound, "POI not found in the current galaxy.");
+            if (!_bindings.SetRoute(manager, poi))
+                return new TravelRouteResult(TravelRouteStatus.NativeRejected, "The game rejected the route.");
+            _apiTravelSpeed = speedMultiplier != 1f;
+            _bindings.SetTravelMultiplier(manager, speedMultiplier);
+            return new TravelRouteResult(TravelRouteStatus.Accepted, "Route accepted.");
+        }
+        catch (Exception error)
+        {
+            try { _report("travel-route", error); } catch { }
+            RestoreApiTravelSpeed(manager);
+            return new TravelRouteResult(TravelRouteStatus.NativeFailure, error.GetType().Name);
+        }
+        finally { _requestingRoute = false; }
+    }
+
+    private void RestoreApiTravelSpeed(object? manager = null)
+    {
+        if (!_apiTravelSpeed) return;
+        _apiTravelSpeed = false;
+        try
+        {
+            manager ??= _bindings.TravelManager();
+            if (manager != null) _bindings.SetTravelMultiplier(manager, 1f);
+        }
+        catch (Exception error) { try { _report("travel-speed-restore", error); } catch { } }
     }
 
     private struct LegMeta
@@ -155,6 +204,7 @@ internal sealed class TravelNativeAdapter : IDisposable
                 if (session != null && _boundPlayer == null) _boundPlayer = _bindings.Player;
                 return;
             }
+            RestoreApiTravelSpeed();
             if (session == null) _boundPlayer = null;
             else _boundPlayer = _bindings.Player; // bind at session ready; may be null -> retried above
             _sessionValue = session;
@@ -237,6 +287,7 @@ internal sealed class TravelNativeAdapter : IDisposable
     {
         Guard(() =>
         {
+            RestoreApiTravelSpeed();
             if (_leg == null) return;
             _tracker.Cancel(_leg);
             _leg = null; _pendingMode = TravelMode.Unknown;
@@ -419,6 +470,7 @@ internal sealed class TravelNativeAdapter : IDisposable
                     var mode = _modeByLeg.TryGetValue(completed.LegId, out var m) ? m : TravelMode.Unknown;
                     Events.Emit(completed.Session, completed.LegId, TravelTransitionKind.RouteCompleted, mode,
                         null, null, actual, _bindings.Time(player));
+                    RestoreApiTravelSpeed(travelManager);
                     _routeCompleted.Add(completed.LegId);
                 }
             }
@@ -678,6 +730,7 @@ internal sealed class TravelNativeAdapter : IDisposable
                     actual = LocForPlace(fact.Location); break;
             }
             Events.Emit(batchSession, fact.Operation, ToKind(fact.Transition), mode, origin, requested, actual, now, fact.DwellSeconds);
+            if (fact.Transition == TravelLegTracker.Kind.Cancelled) RestoreApiTravelSpeed();
         }
     }
 
@@ -718,6 +771,7 @@ internal sealed class TravelNativeAdapter : IDisposable
     public void Dispose()
     {
         if (_disposed) return;
+        RestoreApiTravelSpeed();
         _disposed = true;
         // Never retain native option/ship/player references past teardown.
         _dockIntent = null; _dockRequestDepth = 0;

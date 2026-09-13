@@ -83,6 +83,11 @@ namespace Behaviour.Managers
     public sealed class TestPoiManager : BasePoiManager { }
     public sealed class TravelManager
     {
+        private float travelMultiplier = 1f;
+        public bool routeAccepted;
+        public System.Action? onSetRoute;
+        public Source.Galaxy.MapPointOfInterest? routedPoi;
+        public float TestTravelMultiplier => travelMultiplier;
         public bool loadingNextScene;
         public BasePoiManager? localPoiManager { get; set; }
         public Source.Galaxy.MapPointOfInterest? targetPoi { get; set; }
@@ -93,7 +98,7 @@ namespace Behaviour.Managers
         public void TravelToNextWaypoint() { }
         // Source-faithful shapes for the whole travel binding catalog, so a real reflection
         // resolution can be exercised on this assembly. Bodies are irrelevant: only signatures are.
-        public bool SetRouteToPOI(Source.Galaxy.MapPointOfInterest poi) => false;
+        public bool SetRouteToPOI(Source.Galaxy.MapPointOfInterest poi) { routedPoi = poi; onSetRoute?.Invoke(); return routeAccepted; }
         public bool CancelTravel(UnityEngine.Vector2? moveToPosition = null) => false;
         public void UnloadCurrentScene() { }
         private System.Collections.IEnumerator JumpToSystem(Source.Galaxy.POI.JumpGate gate) { yield break; }

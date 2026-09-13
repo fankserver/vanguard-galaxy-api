@@ -21,15 +21,17 @@ internal sealed class TravelEvents : ITravelService, IDisposable
     private readonly LifecycleHub _lifecycle;
     private readonly IServiceStatus _status;
     private readonly ServiceSubscriptions<TravelTransition> _events;
+    private readonly Func<string, float, TravelRouteResult>? _requestRoute;
     private readonly List<Subscription> _subscriptions = new();
     private readonly Queue<(long Epoch, TravelTransition Event)> _queue = new();
     private Guid? _session;
     private TravelLocation? _location;
     private long _epoch, _sequence;
     private bool _dispatching, _disposed;
-    internal TravelEvents(LifecycleHub lifecycle, Action<string, Exception>? report = null)
+    internal TravelEvents(LifecycleHub lifecycle, Action<string, Exception>? report = null,
+        Func<string, float, TravelRouteResult>? requestRoute = null)
     {
-        _lifecycle = lifecycle; _report = report ?? lifecycle.ReportSubscriberFailure;
+        _lifecycle = lifecycle; _report = report ?? lifecycle.ReportSubscriberFailure; _requestRoute = requestRoute;
         _status = lifecycle.Services.Get("native-travel");
         _events = new ServiceSubscriptions<TravelTransition>(lifecycle, Subscribe,
             fact => InSession(fact.SessionId));
@@ -41,6 +43,18 @@ internal sealed class TravelEvents : ITravelService, IDisposable
     Guid? ITravelService.SessionId
     { get { CheckThread(); return _session.HasValue && InSession(_session.Value) ? _session : null; } }
     TravelLocation? ITravelService.CurrentLocation => ((ITravelService)this).SessionId.HasValue ? _location : null;
+    public TravelRouteResult RequestRoute(string poiId, float speedMultiplier = 1f)
+    {
+        CheckThread();
+        if (string.IsNullOrWhiteSpace(poiId)) throw new ArgumentException("POI identity required.", nameof(poiId));
+        if (float.IsNaN(speedMultiplier) || float.IsInfinity(speedMultiplier) || speedMultiplier <= 0 || speedMultiplier > 7)
+            throw new ArgumentOutOfRangeException(nameof(speedMultiplier), "Travel speed multiplier must be greater than 0 and at most 7.");
+        if (_disposed || !Availability.IsAvailable || _requestRoute == null)
+            return new TravelRouteResult(TravelRouteStatus.ServiceUnavailable, Availability.Detail);
+        if (!((ITravelService)this).SessionId.HasValue)
+            return new TravelRouteResult(TravelRouteStatus.SessionUnavailable, "No active gameplay session.");
+        return _requestRoute(poiId, speedMultiplier);
+    }
     private bool InSession(Guid id)
     {
         CheckThread();
