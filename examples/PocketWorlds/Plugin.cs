@@ -366,8 +366,9 @@ public sealed class Plugin : BaseUnityPlugin
 
     /// <summary>Preflight every transient player-safety condition before the first mutation, so a
     /// refused delete cannot leave a half-torn cluster. Pockets may still report WormholeEndpoint at
-    /// this stage because the pairs are deliberately removed first; the combat site must be removable
-    /// (or already gone) before its anchor pocket is touched.</summary>
+    /// this stage because the pairs are deliberately removed first; the anchor may report
+    /// CombatSitesPresent because its guard combat site is removed before the anchor itself, as long
+    /// as that guard is removable.</summary>
     private bool CanDeleteCluster()
     {
         foreach (var pair in new[] { _miningHole, _salvageHole, _entryDoor })
@@ -382,6 +383,10 @@ public sealed class Plugin : BaseUnityPlugin
             if (pocket == null) continue;
             var status = pocket.CanRemove();
             if (status is RemovalStatus.Ready or RemovalStatus.WormholeEndpoint) continue;
+            // The anchor still holds its combat guard at preflight time; the teardown removes the
+            // guard before the anchor, so CombatSitesPresent is only acceptable when the guard can go.
+            if (status == RemovalStatus.CombatSitesPresent && ReferenceEquals(pocket, _anchor)
+                && (_guard == null || _guard.CanRemove() == RemovalStatus.Ready)) continue;
             Logger.LogWarning("Delete Cluster refused: pocket " + pocket.PoiKey + " is " + status + ".");
             return false;
         }

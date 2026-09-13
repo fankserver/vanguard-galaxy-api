@@ -70,6 +70,12 @@ class ProtocolTests(unittest.TestCase):
         with self.assertRaises(e2e.E2EError):
             e2e.validate_result(dict(type="result", id="unknown-case", status="pass", detail="ok", binding="", elapsedMs=5))
 
+    def test_example_case_results_are_accepted(self):
+        for case in ("story-missions", "observation", "cargo-recovery", "station-commerce", "ui-surfaces"):
+            e2e.validate_result(dict(type="result", id=case, status="pass", detail="ok", binding="", elapsedMs=5))
+        with self.assertRaises(e2e.E2EError):
+            e2e.validate_result(dict(type="result", id="cargo-recovery", status="bogus", detail="ok", binding="", elapsedMs=5))
+
     def test_result_for_a_different_requested_case_is_rejected_live(self):
         old = e2e.CASE
         try:

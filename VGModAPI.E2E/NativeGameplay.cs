@@ -17,11 +17,20 @@ internal static class NativeGameplay
 
     private static int _screenshot;
 
+    internal static object? PluginInstance(string id)
+        => Chainloader.PluginInfos.TryGetValue(id, out var info) ? info.Instance : null;
+
     internal static object? ExamplePlugin()
-        => Chainloader.PluginInfos.TryGetValue("vgmodapi.example.pocket-worlds", out var info) ? info.Instance : null;
+        => PluginInstance("vgmodapi.example.pocket-worlds");
 
     internal static T? Field<T>(object target, string name) where T : class
         => target.GetType().GetField(name, Any)?.GetValue(target) as T;
+
+    internal static object? GetField(object target, string name)
+        => target.GetType().GetField(name, Any)?.GetValue(target);
+
+    internal static object? Prop(object target, string name)
+        => target.GetType().GetProperty(name, Any)?.GetValue(target);
 
     internal static bool ClickHudRow(string label)
     {

@@ -66,13 +66,16 @@ E2E_PATH = $(if $(WSL_INTEROP),$(shell wslpath -aw "$(1)"),$(1))
 .PHONY: e2e-build e2e
 e2e-build: link-libs
 	$(DOTNET) build VGModAPI/VGModAPI.csproj -c $(CONFIGURATION)
-	$(DOTNET) build examples/PocketWorlds/PocketWorlds.csproj -c $(CONFIGURATION)
+	@set -eu; for project in $$(find examples -name '*.csproj' -not -path '*/obj/*' -not -path '*/bin/*' | sort); do $(DOTNET) build "$$project" -c $(CONFIGURATION); done
 	$(DOTNET) build VGModAPI.E2E/VGModAPI.E2E.csproj -c $(CONFIGURATION)
 	@mkdir -p "$(E2E_BUILD)" "$(E2E_RUNTIME)"
 	@set -eu; for dll in VGModAPI VGModAPI.Core VGModAPI.Abstractions VGModAPI.Unity; do cp "VGModAPI/bin/$(CONFIGURATION)/netstandard2.1/$$dll.dll" "$(E2E_BUILD)/"; done
 	cp VGModAPI.E2E/bin/$(CONFIGURATION)/netstandard2.1/VGModAPI.E2E.dll "$(E2E_BUILD)/"
 	cp VGModAPI.E2E/bin/$(CONFIGURATION)/netstandard2.1/Newtonsoft.Json.dll "$(E2E_BUILD)/"
-	cp examples/PocketWorlds/bin/$(CONFIGURATION)/netstandard2.1/PocketWorlds.dll "$(E2E_BUILD)/"
+	@set -eu; for dll in PocketWorlds CargoRecovery StoryMissions StationCommerce StationCommerceB UiSurfaces Observation; do \
+		f=$$(find examples -path '*/bin/$(CONFIGURATION)/netstandard2.1/'"$$dll"'.dll' | head -n 1); \
+		if [ -n "$$f" ]; then cp "$$f" "$(E2E_BUILD)/"; else echo "e2e staging missing example dll: $$dll" >&2; exit 1; fi; \
+	done
 e2e: e2e-build
 	$(E2E_PYTHON) tools/e2e.py --game-dir '$(call E2E_PATH,$(GAME_DIR))' --build-dir '$(call E2E_PATH,$(E2E_BUILD))' --runtime-dir '$(call E2E_PATH,$(E2E_RUNTIME))' $(if $(E2E_SAVE_DIR),--save-dir '$(call E2E_PATH,$(E2E_SAVE_DIR))') --case $(E2E_CASE) --launch --timeout $(E2E_TIMEOUT)
 clean:

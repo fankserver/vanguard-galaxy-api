@@ -44,6 +44,11 @@ public sealed class Plugin : BaseUnityPlugin
             {
                 FreshSessionCase.Id => FreshSessionCase.Id,
                 PocketWorldsCase.Id => PocketWorldsCase.Id,
+                StoryMissionsCase.Id => StoryMissionsCase.Id,
+                ObservationCase.Id => ObservationCase.Id,
+                CargoRecoveryCase.Id => CargoRecoveryCase.Id,
+                StationCommerceCase.Id => StationCommerceCase.Id,
+                UiSurfacesCase.Id => UiSurfacesCase.Id,
                 _ => throw new InvalidOperationException("Unknown E2E case: " + requested),
             };
             _wire = new WireSender(port);
@@ -63,6 +68,11 @@ public sealed class Plugin : BaseUnityPlugin
             {
                 FreshSessionCase.Id => new GameTest(FreshSessionCase.Steps(_lifecycle, _events), remaining),
                 PocketWorldsCase.Id => new GameTest(PocketWorldsCase.Steps(_lifecycle, _events, _travelEvents), remaining),
+                StoryMissionsCase.Id => new GameTest(StoryMissionsCase.Steps(_lifecycle, _events), remaining),
+                ObservationCase.Id => new GameTest(ObservationCase.Steps(_lifecycle, _events), remaining),
+                CargoRecoveryCase.Id => new GameTest(CargoRecoveryCase.Steps(_lifecycle, _events), remaining),
+                StationCommerceCase.Id => new GameTest(StationCommerceCase.Steps(_lifecycle, _events), remaining),
+                UiSurfacesCase.Id => new GameTest(UiSurfacesCase.Steps(_lifecycle, _events), remaining),
                 _ => throw new InvalidOperationException("Unhandled case: " + _caseId),
             };
             _clock.Start();
