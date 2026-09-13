@@ -8,7 +8,7 @@ RELEASE_VERSION := $(shell python3 -c 'import xml.etree.ElementTree as E; print(
 MANAGED = $(GAME_DIR)/VanguardGalaxy_Data/Managed
 CORE = $(GAME_DIR)/BepInEx/core
 
-.PHONY: link-libs build test check-bindings package check-package check-local clean release-archive
+.PHONY: link-libs build test check-bindings package check-package check-local clean release-archive e2e
 link-libs:
 	@mkdir -p VGModAPI/lib
 	@set -eu; for name in BepInEx 0Harmony; do test -f "$(CORE)/$$name.dll"; ln -sfn "$(CORE)/$$name.dll" "VGModAPI/lib/$$name.dll"; done
@@ -68,5 +68,24 @@ check-local:
 	$(MAKE) test
 	$(MAKE) package
 	$(MAKE) check-bindings
+
+# Opt-in only: the controller stages/restores the installation and owns the game process.
+E2E_PYTHON ?= $(if $(WSL_INTEROP),py.exe -3,python3)
+E2E_SAVE_DIR ?=
+E2E_TIMEOUT ?= 90
+E2E_CASE ?= fresh-session
+E2E_BUILD ?= artifacts/e2e/plugin
+E2E_RUNTIME ?= artifacts/e2e/run
+E2E_PATH = $(if $(WSL_INTEROP),$(shell wslpath -aw "$(1)"),$(1))
+.PHONY: e2e-build e2e
+e2e-build: link-libs
+	$(DOTNET) build VGModAPI/VGModAPI.csproj -c $(CONFIGURATION)
+	$(DOTNET) build VGModAPI.E2E/VGModAPI.E2E.csproj -c $(CONFIGURATION)
+	@mkdir -p "$(E2E_BUILD)" "$(E2E_RUNTIME)"
+	@set -eu; for dll in VGModAPI VGModAPI.Core VGModAPI.Abstractions VGModAPI.Unity; do cp "VGModAPI/bin/$(CONFIGURATION)/netstandard2.1/$$dll.dll" "$(E2E_BUILD)/"; done
+	cp VGModAPI.E2E/bin/$(CONFIGURATION)/netstandard2.1/VGModAPI.E2E.dll "$(E2E_BUILD)/"
+	cp VGModAPI.E2E/bin/$(CONFIGURATION)/netstandard2.1/Newtonsoft.Json.dll "$(E2E_BUILD)/"
+e2e: e2e-build
+	$(E2E_PYTHON) tools/e2e.py --game-dir '$(call E2E_PATH,$(GAME_DIR))' --build-dir '$(call E2E_PATH,$(E2E_BUILD))' --runtime-dir '$(call E2E_PATH,$(E2E_RUNTIME))' $(if $(E2E_SAVE_DIR),--save-dir '$(call E2E_PATH,$(E2E_SAVE_DIR))') --case $(E2E_CASE) --launch --timeout $(E2E_TIMEOUT)
 clean:
 	$(DOTNET) clean VGModAPI.sln
