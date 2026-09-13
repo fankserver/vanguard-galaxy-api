@@ -346,7 +346,7 @@ public sealed class PocketSystemRemoveTests
         Assert.Equal(RemovalStatus.Unavailable, pocket.CanRemove());
         var refused = pocket.Remove();
         Assert.Equal(WorldContentStatus.Unavailable, refused.Status);
-        Assert.Contains("could not be read", refused.Detail);
+        Assert.Contains("is unavailable", refused.Detail);
         // Nothing was removed: the pocket and its site are both still there.
         Assert.NotNull(harness.Provider.GetResourceSite("field", "in-pocket"));
         Assert.Equal(ReconstructionStatus.Reconstructed, pocket.State.Status);

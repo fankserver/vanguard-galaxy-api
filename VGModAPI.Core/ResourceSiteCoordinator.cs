@@ -298,8 +298,15 @@ internal sealed class ResourceSiteCoordinator : IDisposable
                     _committed.Remove(rowKey);
                     // The native site is gone; dropping the attached row records its absence rather than
                     // leaving a dead poi that could never bind again.
-                    if (attachedDungeon.HasValue && _dropDungeon != null && !_dropDungeon(attachedDungeon.Value))
-                        _report(new InvalidOperationException("An attached authored dungeon poi could not be dropped after site removal."));
+                    if (attachedDungeon.HasValue && _dropDungeon != null)
+                    {
+                        try
+                        {
+                            if (!_dropDungeon(attachedDungeon.Value))
+                                _report(new InvalidOperationException("An attached authored dungeon poi could not be removed after site removal."));
+                        }
+                        catch (Exception error) { _report(error); }
+                    }
                     return (WorldContentStatus.Succeeded, "");
                 case ResourceSiteRemoveOutcome.Missing:
                     return (WorldContentStatus.Rejected, "The site is not currently present natively; wait for reconstruction or check its state.");

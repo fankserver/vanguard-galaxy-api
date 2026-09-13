@@ -1525,7 +1525,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 var captured = CaptureAttachedDungeons(row);
                 if (captured == null)
                     return _lastAction = new WorldContentResult(WorldContentStatus.Unavailable,
-                        "The attached dungeon state of a site inside the pocket could not be read.");
+                        "The attached dungeon state of a site inside the pocket is unavailable.");
                 var (status, detail, systemId) = _service._authoredCoordinator.Remove(_authored, _session, Reference);
                 if (status != WorldContentStatus.Succeeded) return _lastAction = new WorldContentResult(ToActionStatus(status), detail);
                 CompleteRemoval(systemId, captured);

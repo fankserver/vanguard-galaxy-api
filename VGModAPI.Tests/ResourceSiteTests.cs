@@ -69,7 +69,7 @@ public sealed class ResourceSiteTests
         internal IWorldProvider Provider = null!;
         internal Guid Session;
         internal bool PersistenceReady = true;
-        internal Harness(Func<bool>? canAuthor = null)
+        internal Harness(Func<bool>? canAuthor = null, Action<Exception>? report = null)
         {
             Hub = new LifecycleHub((_, error) => throw error);
             Native = new FakeResourceSiteNative();
@@ -77,7 +77,7 @@ public sealed class ResourceSiteTests
             StoryHostAuthenticator auth = (instance, caller) => ReferenceEquals(instance, plugin) ? new StoryHostPlugin("author.a", caller) : null;
             Combat = new WorldDefinitionRegistry(auth, Hub.CheckThread);
             Sites = new ResourceSiteRegistry(auth, Hub.CheckThread);
-            Coordinator = new ResourceSiteCoordinator(Hub, Sites, Native, _ => PersistenceReady, _ => { });
+            Coordinator = new ResourceSiteCoordinator(Hub, Sites, Native, _ => PersistenceReady, report ?? (_ => { }));
             Service = new WorldContentService(Hub, Combat, null!, canAuthor ?? (() => true), null, null, null, null, null, null, Sites, Coordinator);
             Provider = Service.AcquireProvider(plugin)!;
         }
@@ -490,6 +490,23 @@ public sealed class ResourceSiteTests
         Assert.Single(dropped); // the drop was attempted
         Assert.Empty(h.Coordinator.CaptureRows());
         Assert.Equal(ReconstructionStatus.Removed, site.State.Status);
+    }
+
+    [Fact]
+    public void ThrowingDungeonRemovalDoesNotMisreportVerifiedNativeSiteRemoval()
+    {
+        var reports = new List<Exception>();
+        using var h = new Harness(report: reports.Add);
+        Assert.Equal(WorldContentStatus.Succeeded, h.Provider.RegisterResourceSite(Salvage(withStation: true)));
+        h.BeginGameplay();
+        var site = h.Provider.CreateResourceSite("wreck", "k", "system", 0, 0)!;
+        h.Coordinator.AttachDungeonRemoval(
+            _ => Guid.NewGuid(), () => true, _ => throw new InvalidOperationException("drop fault"));
+
+        Assert.Equal(WorldContentStatus.Succeeded, site.Remove().Status);
+        Assert.Equal(ReconstructionStatus.Removed, site.State.Status);
+        Assert.Equal(1, h.Native.RemoveCalls);
+        Assert.Contains(reports, error => error.Message == "drop fault");
     }
 
     [Fact]
