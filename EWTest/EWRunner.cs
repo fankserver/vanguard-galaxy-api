@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using VGModAPI;
 using EWTest.Suites;
 
@@ -56,22 +57,38 @@ public sealed class EWRunner
     {
         // The availability suite needs no session and runs at the menu. It is the fastest,
         // highest-signal detector of a game-update hook-binding break.
-        yield return RunSuite("availability", () => new AvailabilitySuite(_plugin).Run());
+        var freshOnly = Environment.GetEnvironmentVariable("EWTEST_SUITE") == "fresh-session";
+        if (!freshOnly)
+            yield return RunSuite("availability", () => new AvailabilitySuite(_plugin).Run());
 
-        // The session suites need a live gameplay session. `make e2e` launches into a
-        // disposable profile; reaching a session is the scripted-entry control point. A
-        // timeout here names exactly what the maintainer must wire (see docs). We record the
-        // timeout into the lifecycle suite so the report stays self-contained.
+        // Enter fresh ephemeral gameplay through the native new-player boundary.
         var lifecycleSuite = new LifecycleSuite(_plugin);
+        yield return WaitUntil("native fresh session entry", FreshSession.TryStart,
+            Plugin.MaxSessionWaitFrames, lifecycleSuite.Sink,
+            "Re-inspect MainMenuUI.instance and StartTestArena in Assembly-CSharp.dll.");
         yield return WaitUntil(
             "session reached (GameplayInitialized)",
             () => _plugin.SessionReached,
             Plugin.MaxSessionWaitFrames,
             lifecycleSuite.Sink,
-            "The game did not enter a gameplay session. End-to-end gameplay suites require " +
-            "session-entry automation (launching into / auto-continuing a disposable save). " +
-            "Wire that control point in EWTest and re-run; the availability + reflection checks " +
-            "above already cover static build drift.");
+            "Inspect native new-player setup and ModAPI lifecycle bindings; gameplay was not observed.");
+        yield return RunSuite("fresh-session", () =>
+        {
+            var result = new SuiteResult { Id = "fresh-session", Name = "Native ephemeral gameplay session" };
+            result.Results.Add(Check.Run("native Test Arena reaches API gameplay session", "ephemeral player and GameplayInitialized", () =>
+            {
+                if (!FreshSession.IsEphemeral() || !FreshSession.GameplayInitialized() || !_plugin.SessionReached)
+                    throw new InvalidOperationException("Native ephemeral gameplay or API gameplay event missing");
+                var observed = _plugin.LifecycleEvents.Select(e => e.Kind).ToArray();
+                var starting = Array.IndexOf(observed, LifecycleEventKind.SessionStarting);
+                var ready = Array.IndexOf(observed, LifecycleEventKind.PlayerReady);
+                var initialized = Array.IndexOf(observed, LifecycleEventKind.GameplayInitialized);
+                if (starting < 0 || ready <= starting || initialized <= ready)
+                    throw new InvalidOperationException("API lifecycle events missing or out of order: " + string.Join(", ", observed));
+            }, "Inspect GamePlayer.CreateTestArenaPlayer, GameManager.StartNewGame and lifecycle bindings."));
+            return result;
+        });
+        if (freshOnly) yield break;
         yield return RunSuite("lifecycle", () => lifecycleSuite.Finish());
 
         yield return RunSuite("world-authoring", () => new WorldAuthoringSuite(_plugin).Run());

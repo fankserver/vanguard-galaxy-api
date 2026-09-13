@@ -21,6 +21,12 @@ public sealed class DungeonSuite
     {
         var suite = new SuiteResult { Id = "dungeon", Name = "Live dungeon authoring" };
 
+        if (!FreshSession.IsEphemeral() || !_plugin.SessionReached)
+        {
+            suite.Results.Add(Check.Fail("isolated session required", "not verified", "ephemeral gameplay session",
+                "Fix native fresh-session entry before dungeon mutations."));
+            return suite;
+        }
         IDungeonProvider? provider = null;
         try
         {

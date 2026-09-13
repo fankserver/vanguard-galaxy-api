@@ -102,6 +102,7 @@ public sealed class Plugin : BaseUnityPlugin
 
     private void OnLifecycle(LifecycleEvent e)
     {
+        Logger.LogInfo("EWTest lifecycle: " + e.Kind);
         lock (_lifecycleEvents)
         {
             _lifecycleEvents.Add(e);
@@ -113,8 +114,19 @@ public sealed class Plugin : BaseUnityPlugin
     {
         if (!_started || _finalized) return;
         int safety = 0;
-        while (_steps.Count > 0 && safety++ < 64 && _steps[0]())
-            _steps.RemoveAt(0);
+        try
+        {
+            while (_steps.Count > 0 && safety++ < 64 && _steps[0]())
+                _steps.RemoveAt(0);
+        }
+        catch (Exception ex)
+        {
+            var suite = new SuiteResult { Id = "runner", Name = "Runner failure" };
+            suite.Results.Add(Check.Fail("execute game-thread step", ex.ToString(), "no exception",
+                "Inspect the named native entry point in the exception and its current game binding."));
+            StreamSuite(suite);
+            _steps.Clear();
+        }
         if (_steps.Count == 0) CompleteRun();
     }
 

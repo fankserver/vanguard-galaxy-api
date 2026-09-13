@@ -11,7 +11,7 @@ from e2e import (
     HANDSHAKE_ARG, Listener, REPORT_FILENAME, Report,
     apply_message, assert_real_saves_unchanged, build_launch_command,
     build_launch_env, consume_stream, gate, human_summary, load_report,
-    parse_report, run_streaming, tree_manifest,
+    parse_report, run_streaming, tree_manifest, _timeout_report,
 )
 
 
@@ -177,14 +177,14 @@ class IsolationTests(unittest.TestCase):
 
 
 class LaunchTests(unittest.TestCase):
-    def test_build_launch_command_batchmode_and_handshake(self):
+    def test_build_launch_command_normal_player_and_handshake(self):
         with tempfile.TemporaryDirectory() as td:
             game = Path(td) / "game"; game.mkdir()
             (game / "VanguardGalaxy.exe").write_bytes(b"MZ")
             cmd = build_launch_command(str(game))
             self.assertEqual(cmd[0], str(game / "VanguardGalaxy.exe"))
-            self.assertIn("-batchmode", cmd)
-            self.assertIn("-nographics", cmd)
+            self.assertNotIn("-batchmode", cmd)
+            self.assertNotIn("-nographics", cmd)
             self.assertIn(HANDSHAKE_ARG, cmd)
 
     def test_build_launch_command_missing_exe(self):
@@ -196,6 +196,21 @@ class LaunchTests(unittest.TestCase):
         env = build_launch_env(54321)
         self.assertEqual(env["EWTEST_RUN"], "1")
         self.assertEqual(env["EWTEST_PORT"], "54321")
+        self.assertEqual(env["SteamAppId"], "3471800")
+        self.assertEqual(env["SteamGameId"], "3471800")
+        self.assertEqual(env["EWTEST_SUITE"], "all")
+
+    def test_select_fresh_session_case(self):
+        self.assertEqual(build_launch_env(54321, suite="fresh-session")["EWTEST_SUITE"], "fresh-session")
+
+    def test_disconnect_after_passing_check_still_fails(self):
+        report = Report()
+        for message in (META, SUITE, RESULT_PASS):
+            apply_message(report, message)
+        _timeout_report(report, "disconnected without finish")
+        self.assertEqual(report.passed, 1)
+        self.assertEqual(report.failed, 1)
+        self.assertEqual(gate(report), 1)
 
 
 class CliTests(unittest.TestCase):

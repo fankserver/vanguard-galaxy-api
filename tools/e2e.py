@@ -319,7 +319,10 @@ def _message_reader(conn):
             with conn:
                 buf = b""
                 while True:
-                    chunk = conn.recv(4096)
+                    try:
+                        chunk = conn.recv(4096)
+                    except (ConnectionError, socket.timeout):
+                        break
                     if not chunk:
                         break
                     buf += chunk
@@ -423,20 +426,23 @@ def build_launch_command(game_dir, executable="VanguardGalaxy.exe", extra=None):
     exe = game / executable
     if not exe.is_file():
         raise E2EError("game executable not found: %s (set --game-dir)" % exe)
-    argv = [str(exe), "-batchmode", "-nographics", HANDSHAKE_ARG]
+    argv = [str(exe), HANDSHAKE_ARG]
     if extra:
         argv.extend(extra)
     return argv
 
 
-def build_launch_env(port, run="1"):
+def build_launch_env(port, run="1", suite="all"):
     env = dict(os.environ)
+    env["SteamAppId"] = "3471800"
+    env["SteamGameId"] = "3471800"
     env["EWTEST_RUN"] = run
     env["EWTEST_PORT"] = str(port)
+    env["EWTEST_SUITE"] = suite
     return env
 
 
-def run_streaming(game_dir, executable, listen_timeout, poll_handles):
+def run_streaming(game_dir, executable, listen_timeout, poll_handles, suite="all"):
     """Bind a listener, launch the game with the handshake, connect, stream a
     report, and return the assembled Report. Pure orchestration (the pieces are
     individually unit-tested); no save-touching happens here."""
@@ -444,7 +450,7 @@ def run_streaming(game_dir, executable, listen_timeout, poll_handles):
     listener.bind()
     report = Report()
     try:
-        env = build_launch_env(listener.port)
+        env = build_launch_env(listener.port, suite=suite)
         proc = subprocess.Popen(build_launch_command(game_dir, executable),
                                 cwd=game_dir, env=env,
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -458,6 +464,8 @@ def run_streaming(game_dir, executable, listen_timeout, poll_handles):
                 return _timeout_report(report, "the game disconnected before sending a finish message")
             return report
         finally:
+            report.meta["exitCodeBeforeCleanup"] = proc.poll()
+            print("e2e: process status before cleanup:", proc.poll(), flush=True)
             try:
                 proc.terminate()
                 proc.wait(timeout=10)
@@ -470,11 +478,10 @@ def run_streaming(game_dir, executable, listen_timeout, poll_handles):
 
 def _timeout_report(report, note):
     report.meta["aborted"] = note
-    if not report.suites:
-        report.suites.append(SuiteResult("aborted", "Run aborted", [
-            CheckResult("run completed", "fail", note, "finish message within timeout",
-                        "timeout/disconnect", "Check the game launched (batchmode support), the harness " +
-                        "connected, and the session-entry control point.")]))
+    report.suites.append(SuiteResult("aborted", "Run aborted", [
+        CheckResult("run completed", "fail", note, "finish message within timeout",
+                    "timeout/disconnect", "Inspect the game log and exitCodeBeforeCleanup; " +
+                    "a partial report is not a completed run.")]))
     return report
 
 
@@ -493,6 +500,8 @@ def main(argv=None) -> int:
                         help="real save directory to guard (never modified)")
     parser.add_argument("--timeout", type=int, default=600,
                         help="seconds to wait for the harness to connect + finish (default 600)")
+    parser.add_argument("--suite", choices=("all", "fresh-session"), default="all",
+                        help="run all suites or the isolated fresh-game lifecycle test")
     parser.add_argument("--launch", action="store_true",
                         help="actually launch the game and run (normal mode)")
     parser.add_argument("--preview", action="store_true",
@@ -531,9 +540,9 @@ def main(argv=None) -> int:
     try:
         if args.save_dir:
             with DisposableSaveProfile(real_dir=args.save_dir, workspace=runtime_dir) as profile:
-                report = run_streaming(args.game_dir, args.executable, args.timeout, None)
+                report = run_streaming(args.game_dir, args.executable, args.timeout, None, args.suite)
         else:
-            report = run_streaming(args.game_dir, args.executable, args.timeout, None)
+            report = run_streaming(args.game_dir, args.executable, args.timeout, None, args.suite)
     except E2EError as exc:
         print("e2e:", exc, file=sys.stderr)
         return 2

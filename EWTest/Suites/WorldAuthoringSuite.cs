@@ -23,6 +23,12 @@ public sealed class WorldAuthoringSuite
     {
         var suite = new SuiteResult { Id = "world-authoring", Name = "Live world authoring round trip" };
 
+        if (!FreshSession.IsEphemeral() || !_plugin.SessionReached)
+        {
+            suite.Results.Add(Check.Fail("isolated session required", "not verified", "ephemeral gameplay session",
+                "Fix native fresh-session entry before world mutations."));
+            return suite;
+        }
         IWorldProvider? world = null;
         try
         {

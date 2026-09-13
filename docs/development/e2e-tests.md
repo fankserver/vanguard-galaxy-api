@@ -1,134 +1,65 @@
-# In-game end-to-end regression tests
+# In-game end-to-end tests
 
-The unit tests and `make check-bindings` cover the API against the game's
-`Assembly-CSharp.dll` *statically*: they assert exact reflected shapes and the
-accepted assembly hash, but never execute the game. A game update can therefore
-change *runtime* behavior (an early return, a reordered coroutine, a member that
-resolves in IL but misbehaves when called) while the signature still matches —
-reflection passes, but mods break.
+EWTest is an opt-in, development-only BepInEx plugin. It executes assertions
+against the running game and public ModAPI contracts. It is not shipped or run
+in public CI.
 
-The end-to-end harness closes that gap. It launches the real game with the API
-and a dev-only test harness, runs assertions against the **live running game**,
-collects a machine-readable report, and fails on any break. Each failure names the
-binding, contract or behavior to re-inspect, so an upcoming game update is not
-only detected but pointed at what must be fixed.
+## Run the fresh-session test
 
-## Architecture
+Build the API with `make build`, then build the separate harness with
+`dotnet build EWTest/EWTest.csproj -c Debug`. Stage the resulting API
+assemblies and EWTest.dll in an isolated BepInEx plugin directory, preserving
+and restoring the installed plugins. Do not run alongside another game instance.
 
-The driver mirrors the proven in-game test pattern used by
-[Surity](https://github.com/olavim/Surity) (a Unity-mods test framework targeting
-the same BepInEx major): it launches the game with Unity's documented
-standalone-player batch arguments plus a **handshake**, and the in-game harness
-streams results back over a loopback connection rather than writing a shared
-report file (which would be fragile across a WSL↔Windows driver/game boundary):
+Run the controller with **Windows Python** when the game runs on Windows:
 
-1. The driver binds a loopback listener and launches
-   `VanguardGalaxy.exe -batchmode -nographics -runEWTests`. The `-runEWTests`
-   handshake means the harness only runs when launched by the driver — never in a
-   normal session.
-2. The harness connects to `127.0.0.1:{port}` and streams newline-delimited JSON:
-   a `meta` line, then `suite-start` / one `result` line per check, then `finish`.
-3. The driver assembles a report from the stream, prints a human summary, writes
-   `artifacts/e2e/report/report.json`, and returns non-zero on any live failure.
-
-## What it covers
-
-- **Availability** — at the main menu (no session needed): every expected service
-  reports available per the supported build. A service flipping to `BindingFailed`
-  or `UnsupportedGame` after an update fails immediately. This is the fastest
-  detector of a hook-binding break.
-- **Lifecycle** — observed `SessionStarting` → `PlayerReady` → `GameplayInitialized`
-  on the disposable save, so a load/new-game path that stopped emitting events is
-  caught.
-- **World authoring** — a live round trip: register a pocket system, wormhole pair
-  and resource site, create them anchored to the player's current system, verify
-  keyed reconciliation returns the same object, then remove each and confirm the
-  teardown. This exercises the deepest native integration.
-- **Dungeon authoring** — acquire the provider and register a minimal valid
-  authored dungeon.
-- The report's `meta` records the game assembly SHA-256 and game/Unity versions so
-  a run is tied to the exact build that produced it.
-
-Gameplay walk-through suites (scripted travel to a system, accept/complete a
-mission, appear at a bar, board and enter a dungeon) are the stated follow-up for
-this harness; they require the session-entry automation control point described
-below and are iterated on a machine that has the game.
-
-## How to run
-
-This is an opt-in developer tool, parallel to `make check-bindings`: it runs on
-the machine that has the game installed (it needs BepInEx/Unity references and the
-game itself), and it is **never part of public CI or the shipped package**.
-
-```sh
-make e2e GAME_DIR='/path/to/Vanguard Galaxy' E2E_SAVE_DIR='/path/to/saves'
+```text
+py -3 tools/e2e.py --game-dir "C:\path\to\Vanguard Galaxy" --save-dir "C:\path\to\Saves" --runtime-dir "C:\temp\ewtest" --suite fresh-session --launch --timeout 60
 ```
 
-The target builds the dev-only `EWTest` harness, deploys it (with the current API
-build) into the game's `BepInEx/plugins/EWTest`, launches the game with the
-handshake, waits for the streamed report at `artifacts/e2e/report/report.json`, and
-fails when any live check breaks.
+The controller launches a normal Unity player, not batch/headless mode. It sets
+`SteamAppId` and `SteamGameId` to the game's application ID, preserving the
+Steam launch context needed for direct executable startup. Steam must be running
+with access to the game. The handshake and port are passed through the child
+process environment. A WSL Python loopback listener is not the Windows game's
+loopback listener; use Windows Python rather than assuming these are shared.
 
-- `E2E_SAVE_DIR` is the real save directory. The driver never writes to it: it
-  snapshots it, runs against a disposable profile, and aborts if the real tree
-  changes at all.
-- `E2E_TIMEOUT` (seconds, default 900) and `E2E_RUNTIME` are overridable.
+The selected test creates a new player using vanilla `CreateNewGamePlayer`,
+marks it ephemeral before starting scenes, supplies the native arena setup,
+and starts gameplay. It asserts:
 
-To validate the wiring **without a game** (CI-safe):
+- The native player remains ephemeral (vanilla save writes are disabled).
+- Native `GameplayManager.initialized` is true.
+- ModAPI emitted `SessionStarting`, `PlayerReady`, and `GameplayInitialized`
+  in that order.
 
-```sh
-python3 tools/e2e.py --game-dir <fake-game> --preview
-python3 tools/e2e.py --report artifacts/e2e/report/report.json   # parse + gate a captured report
-```
+This is a live new-session/lifecycle test, not a complete gameplay or save/load
+test. The normal new-player entry is deliberate: vanilla `CreateTestArenaPlayer`
+bypasses the new-player method observed by ModAPI.
 
-## Save safety
+## Results and safety
 
-Real saves are never modified. The driver snapshots the save directory tree
-(relative path → file SHA-256), runs the game against a disposable profile, and
-afterwards verifies the real tree is byte-for-byte unchanged; on any divergence it
-aborts. See `DisposableSaveProfile` in `tools/e2e.py` and its tests in
-`tools/test_e2e.py`.
+The harness streams metadata, check results, and a final `finish` message over
+Windows loopback. The controller writes `<runtime-dir>/report/report.json` and
+returns nonzero on failed checks or an incomplete stream. A partial passing
+report must not mask a timeout or disconnect. `exitCodeBeforeCleanup` records
+process state before controller termination; null means it was still running,
+not that it crashed or exited.
 
-## Report protocol
+`--save-dir` hashes the existing save tree before and after execution. The
+fresh-session case never loads those saves. Ephemeral state prevents vanilla
+save writes; hashing detects changes but is not a sandbox or rollback facility.
+The temporary profile directory is not wired to vanilla save storage. Persistent
+save/load testing requires separate disposable save-path isolation.
 
-The driver validates and gates the streamed messages (schema 1 report). Each check
-carries `check`, `status` (`pass`/`fail`/`skip`), `message`, `expected`, `actual`,
-`elapsedMs` and — on failure — a `suggestedAction` naming the binding to
-re-inspect. The driver recomputes the summary from the results, so a lying summary
-cannot mask a failure. The exact message framing and the report JSON are
-documented in `tools/e2e.py` and enforced by `tools/test_e2e.py` against the wire
-sender's expected output.
+The default `--suite all` also runs availability, lifecycle, world-authoring,
+and dungeon-registration checks. These are incomplete coverage: world authoring
+may skip when a provider is unavailable, configuration can fail availability,
+and dungeon registration does not prove dungeon gameplay. The isolated
+`fresh-session` selection does not claim those suites passed.
 
-## Boundaries
-
-- The harness uses only the public `VGModAPI.Abstractions` contract; it treats the
-  game + API as a black box, which is the right posture for update-breakage
-  detection. It does not reference `VGModAPI` internals or `VGModAPI.Unity`.
-- `EWTest` is not part of `VGModAPI.sln` and is never built by `make test` /
-  `make build`; it needs the installed game references and is built only by
-  `make e2e`.
-- The harness is inert unless launched with the handshake, and is never shipped.
-
-## Current limits and follow-ups
-
-- **Session-entry automation** is the one control point still needed to run the
-  gameplay suites unattended: `make e2e` must cause the game to enter a gameplay
-  session (launch into, or auto-continue, a disposable save). Until that is wired,
-  reaching a session is reported as a targeted failure naming it. Do not fabricate
-  reflection into the game's `SceneLoader`/menu without re-inspecting the specific
-  build, per the native-integration constraints.
-- **Batch mode support is game-specific and unverified**: the game must honour
-  `-batchmode -nographics`. Confirm this empirically on the game machine before
-  relying on headless runs.
-- Gameplay walk-through suites (travel / mission / bar / boarding to a dungeon)
-  are additive follow-ups to be iterated on a game machine.
-- A full refresh of the supported-build checks (hash gate, `BindingCatalog`,
-  reference docs) remains the owner-selected step when adopting a new game build.
-
-## Design alternative being evaluated
-
-This self-contained harness has no external dependency. The main architectural
-alternative — using [Surity](https://github.com/olavim/Surity) directly as the
-in-game runner (it already provides the batchmode launch handshake, streamed
-results and coroutine test support) — is being evaluated side-by-side so the repo
-can pick the approach that best fits its dependency and reliability preferences.
+The harness reflects into inspected native game entry points for setup and the
+native-state assertion; API assertions use public contracts. Setup exceptions
+are reported as runner failures. Mutating suites require verified ephemeral
+session state. The framework still needs gameplay operation scenarios and
+isolated persistence tests before it can cover the full ModAPI.
