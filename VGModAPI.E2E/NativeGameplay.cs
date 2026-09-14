@@ -122,13 +122,15 @@ internal static class NativeGameplay
         => type.GetProperty("dialogueContainer", Any)?.GetValue(manager) is Component container
             && container.gameObject.activeInHierarchy;
 
-    internal static void Screenshot(string label)
+    internal static string? Screenshot(string label)
     {
         var root = Environment.GetEnvironmentVariable("VGMODAPI_E2E_SCREENSHOTS");
-        if (string.IsNullOrWhiteSpace(root)) return;
+        if (string.IsNullOrWhiteSpace(root)) return null;
         Directory.CreateDirectory(root);
         var safe = new string(label.Select(c => char.IsLetterOrDigit(c) ? char.ToLowerInvariant(c) : '-').ToArray()).Trim('-');
-        ScreenCapture.CaptureScreenshot(Path.Combine(root, (++_screenshot).ToString("00") + "-" + safe + ".png"));
+        var path = Path.Combine(root, (++_screenshot).ToString("00") + "-" + safe + ".png");
+        ScreenCapture.CaptureScreenshot(path);
+        return path;
     }
 
 }

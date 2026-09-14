@@ -25,6 +25,11 @@ public sealed class Plugin : BaseUnityPlugin
     private string _caseId = "";
     private bool _finished;
     private string _loggedStep = "";
+    private string _reportedObservation = "";
+    private double _nextProgressAt;
+    private bool _failureCaptureQueued;
+    private string? _failureCapturePath;
+    private double _failureCaptureDeadline;
 
     private void Awake()
     {
@@ -91,13 +96,38 @@ public sealed class Plugin : BaseUnityPlugin
     private void Update()
     {
         if (_test == null || _finished) return;
-        if (_test.CurrentStep != _loggedStep)
+        var now = _clock.Elapsed.TotalSeconds;
+        var changedStep = !_test.Finished && _test.CurrentStep != _loggedStep;
+        if (changedStep)
         {
             _loggedStep = _test.CurrentStep;
+            _reportedObservation = "";
+            _nextProgressAt = 0;
             Logger.LogInfo("E2E step: " + _loggedStep);
         }
-        _test.Tick(_clock.Elapsed.TotalSeconds);
-        if (_test.Finished) Complete(_test.Passed, _test.Detail, _test.Binding);
+        _test.Tick(now);
+        if (!_test.Finished && _test.Observation != "not polled yet"
+            && (changedStep || now >= _nextProgressAt && _test.Observation != _reportedObservation))
+        {
+            _reportedObservation = _test.Observation;
+            _nextProgressAt = now + 5;
+            _wire?.Send(new { type = "progress", id = _caseId, step = _test.CurrentStep,
+                binding = _test.Binding, observation = _test.Observation,
+                elapsedMs = (long)(_test.StepElapsedSeconds * 1000), timeoutMs = (long)(_test.StepTimeoutSeconds * 1000) });
+        }
+        if (_test.Finished)
+        {
+            if (!_test.Passed && !_failureCaptureQueued)
+            {
+                _failureCaptureQueued = true;
+                _failureCapturePath = NativeGameplay.Screenshot("failure-" + _loggedStep);
+                _failureCaptureDeadline = now + 2;
+                return;
+            }
+            if (!_test.Passed && _failureCapturePath != null
+                && !File.Exists(_failureCapturePath) && now < _failureCaptureDeadline) return;
+            Complete(_test.Passed, _test.Detail, _test.Binding);
+        }
     }
 
     private void Complete(bool passed, string detail, string binding)

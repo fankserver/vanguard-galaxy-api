@@ -14,6 +14,8 @@ import e2e
 RESULT = dict(type="result", id="fresh-session", status="pass", detail="ok", binding="", elapsedMs=10)
 META = dict(type="meta", runId="run", gameVersion="test")
 FINISH = dict(type="finish")
+PROGRESS = dict(type="progress", id="fresh-session", step="attach dungeon", binding="IDungeonProvider.Attach",
+                observation="status=StaleTarget; targets=0", elapsedMs=5000, timeoutMs=30000)
 
 
 class ProtocolTests(unittest.TestCase):
@@ -31,6 +33,19 @@ class ProtocolTests(unittest.TestCase):
         e2e.consume(self.stream([META, RESULT, FINISH]), report, "run", time.monotonic() + 2)
         self.assertEqual(e2e.gate(report), 0)
 
+    def test_progress_is_retained_before_result(self):
+        report = e2e.new_report()
+        e2e.consume(self.stream([META, PROGRESS, RESULT, FINISH]), report, "run", time.monotonic() + 2)
+        self.assertEqual(report["progress"]["observation"], "status=StaleTarget; targets=0")
+        self.assertEqual(e2e.gate(report), 0)
+
+    def test_controller_failure_includes_last_progress(self):
+        report = e2e.new_report()
+        report["progress"] = {k: PROGRESS[k] for k in ("step", "binding", "observation", "elapsedMs", "timeoutMs")}
+        e2e.failure(report, "Run deadline expired")
+        self.assertIn("status=StaleTarget", report["results"][0]["detail"])
+        self.assertEqual("IDungeonProvider.Attach", report["results"][0]["binding"])
+
     def test_disconnect_after_pass_cannot_pass(self):
         report = e2e.new_report()
         with self.assertRaisesRegex(e2e.E2EError, "disconnected"):
@@ -46,6 +61,7 @@ class ProtocolTests(unittest.TestCase):
 
     def test_invalid_order_duplicate_and_unknown_result_fail(self):
         for messages in ([RESULT, FINISH], [META, META], [META, RESULT, RESULT],
+                         [META, dict(PROGRESS, id="unrequested")], [META, dict(PROGRESS, elapsedMs="bad")],
                          [META, dict(RESULT, id="unrequested")], [META, dict(RESULT, status="skip")],
                          [META, dict(RESULT, elapsedMs=-1)], [META, []]):
             with self.subTest(messages=messages), self.assertRaises(e2e.E2EError):
@@ -81,7 +97,7 @@ class ProtocolTests(unittest.TestCase):
         try:
             e2e.CASE = "pocket-worlds"
             report = e2e.new_report()
-            with self.assertRaisesRegex(e2e.E2EError, "unrequested case"):
+            with self.assertRaisesRegex(e2e.E2EError, "unrequested case.*game detail: 'ok'"):
                 e2e.consume(self.stream([META, RESULT, FINISH]), report, "run", time.monotonic() + 2)
             self.assertEqual(e2e.gate(report), 1)
         finally:

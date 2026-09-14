@@ -50,12 +50,23 @@ the `TestArena` storyteller. It asserts:
   belongs to the same session identity.
 - The player remains ephemeral and no successful API save event occurred.
 
-Each `TestStep` has a name, binding hint and a predicate advanced on the game
-thread. Waiting, assertion exceptions and timeout failures are terminal: no
-later mutation/assertion runs after a failure. The run uses a monotonic time
-budget with controller time reserved for reporting. Additional gameplay cases
-should exercise concrete public operations and assert observable results—not
-just availability, successful registration, or skipped placeholders.
+Each `TestStep` has a name, binding hint, per-step deadline and a poll advanced
+on the game thread. Polls return an explicit `StepResult`: `Wait` with the last
+observed state, `Pass`, or `Fail` with a terminal diagnostic. Older simple
+predicates are bounded to 45 seconds and report their binding while waiting;
+new or failure-prone steps should use `StepResult` to report concrete state.
+`ActionThenWait`
+performs an accepted click/mutation once and then observes its gameplay effect,
+preventing repeated frame-by-frame mutation. Use elapsed `StepContext` time for
+grace periods; never approximate time with frame counts.
+
+The harness sends live progress when a step starts and whenever its observation
+changes (rate-limited to five seconds). The controller prints and retains the
+step, binding, elapsed/limit and observation. Per-step and overall timeouts include
+the last observation, and an in-game failure queues a screenshot before shutdown.
+No later mutation/assertion runs after a failure. Additional gameplay cases should
+exercise concrete public operations and assert observable results—not just
+availability, successful registration, or skipped placeholders.
 
 Select a case by setting the Make variable after the target. Every case shares the same staging
 set (all examples + the E2E harness are deployed), only the driven workflow differs:
@@ -118,9 +129,11 @@ save/load round trips remain to be implemented.
 
 The runtime directory contains `player.log`, `report.json` (schema 2), and the
 `screenshots/` evidence directory.
-Reports contain the game/API versions, game assembly hash, results and explicit
-stream completion. Each failed result carries `detail` and `binding`. Empty,
-malformed, incomplete, mismatched-run or unexpected-test streams cannot pass.
+Reports contain the game/API versions, game assembly hash, latest structured
+progress, results and explicit stream completion. Each failed result carries
+`detail` and `binding`; controller/disconnect failures incorporate the last
+received step observation. Empty, malformed, incomplete, mismatched-run or
+unexpected-test streams cannot pass.
 A parsed failure or incomplete report returns nonzero:
 
 ```sh
