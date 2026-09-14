@@ -52,19 +52,14 @@ public sealed class OwnedItemServiceTests
         Assert.Equal(new[] { good.NativeId }, loaded); Assert.Equal(1, reported);
     }
     [Fact]
-    public void DeferredDeclarationIsNotAnErrorAndDoesNotBlockSiblings()
+    public void IconDependencyDecisionDistinguishesConstructionDeferralAndStrictRejection()
     {
-        // Register-time publication uses deferMissingIcon: true, so an item whose vanilla icon
-        // sprite isn't materialized yet is silently deferred (no throw, no construction) rather
-        // than failing the registration. A deferral must not be reported as an error and must not
-        // stop the remaining catalog declarations from being visited; only a genuine missing
-        // dependency on a strict (restore) path throws.
-        var deferred = new OwnedItemIdentity("author.a", Item()); var good = new OwnedItemIdentity("author.b", Item());
-        var ensureCalls = new List<string>(); int reported = 0;
-        OwnedItemDeclarationPublication.Publish(new[] { deferred, good }, id =>
-            { ensureCalls.Add(id); /* deferring: no throw, no construction */ }, (_, _) => reported++);
-        Assert.Equal(new[] { deferred.NativeId, good.NativeId }, ensureCalls);
-        Assert.Equal(0, reported);
+        // This pure seam verifies the decision truth table. Unity-bound icon detection and the
+        // subsequent LoadAll retry remain covered by the live station-commerce path.
+        Assert.Equal(OwnedItemIconResolution.Construct, OwnedItemIconDependency.Resolve(iconAvailable: true, allowDeferral: false));
+        Assert.Equal(OwnedItemIconResolution.Construct, OwnedItemIconDependency.Resolve(iconAvailable: true, allowDeferral: true));
+        Assert.Equal(OwnedItemIconResolution.Defer, OwnedItemIconDependency.Resolve(iconAvailable: false, allowDeferral: true));
+        Assert.Equal(OwnedItemIconResolution.Reject, OwnedItemIconDependency.Resolve(iconAvailable: false, allowDeferral: false));
     }
     [Fact]
     public void ItemOnlySaveRequiresBarrierAndRestorationBeforeUnsealing()

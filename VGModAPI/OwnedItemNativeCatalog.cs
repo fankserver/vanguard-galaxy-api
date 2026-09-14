@@ -44,14 +44,16 @@ internal sealed class OwnedItemNativeCatalog : IDisposable
         if (_built.Count >= 512) throw new InvalidOperationException("Owned item catalog limit exceeded.");
         var d = identity.Definition;
         var iconSource = Catalog[d.IconItemId] as Component;
-        if (iconSource == null || _icon.GetValue(iconSource) is not Sprite icon || icon == null)
+        var icon = iconSource == null ? null : _icon.GetValue(iconSource) as Sprite;
+        switch (OwnedItemIconDependency.Resolve(icon != null, deferMissingIcon))
         {
-            // The vanilla icon sprite may not be materialized yet even though the catalog is loaded
-            // (item rows exist before their icon assets are fetched). Registering while that is the
-            // case must queue the declaration rather than fail it: construction is retried on the next
-            // catalog rebuild (LoadAll), which is when the icon dependency is guaranteed to be ready.
-            if (deferMissingIcon) return null;
-            throw new InvalidOperationException("Vanilla item icon dependency unavailable.");
+            case OwnedItemIconResolution.Defer:
+                // The definition remains registered and the next native LoadAll republishes every
+                // retained definition. Only the eager register-time path may defer; restore/rebuild
+                // paths call Ensure without this flag and remain strict.
+                return null;
+            case OwnedItemIconResolution.Reject:
+                throw new InvalidOperationException("Vanilla item icon dependency unavailable.");
         }
         if (Catalog.Contains(id)) throw new InvalidOperationException("Owned item identity collides with another catalog entry.");
         _busy = true; GameObject? child = null;
@@ -66,7 +68,7 @@ internal sealed class OwnedItemNativeCatalog : IDisposable
             var item = child.AddComponent(_itemType);
             Set(item, "identifier", id); Set(item, "itemCategory", "TradeGoods");
             Set(item, "storageOverride", d.Storage == OwnedItemStorage.Armory ? "Armory" : "Materials");
-            Set(item, "displayName", d.Name); Set(item, "description", d.Description); Set(item, "icon", icon);
+            Set(item, "displayName", d.Name); Set(item, "description", d.Description); Set(item, "icon", icon!);
             Set(item, "m3", d.Volume); Set(item, "baseCost", d.BaseCost); Set(item, "rarity", "Standard");
             Set(item, "canJettison", true); Set(item, "canSell", true);
             _initialize.Invoke(item, new object?[] { null });
