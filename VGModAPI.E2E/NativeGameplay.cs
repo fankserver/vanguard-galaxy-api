@@ -17,11 +17,20 @@ internal static class NativeGameplay
 
     private static int _screenshot;
 
+    internal static object? PluginInstance(string id)
+        => Chainloader.PluginInfos.TryGetValue(id, out var info) ? info.Instance : null;
+
     internal static object? ExamplePlugin()
-        => Chainloader.PluginInfos.TryGetValue("vgmodapi.example.wormhole-world", out var info) ? info.Instance : null;
+        => PluginInstance("vgmodapi.example.pocket-worlds");
 
     internal static T? Field<T>(object target, string name) where T : class
         => target.GetType().GetField(name, Any)?.GetValue(target) as T;
+
+    internal static object? GetField(object target, string name)
+        => target.GetType().GetField(name, Any)?.GetValue(target);
+
+    internal static object? Prop(object target, string name)
+        => target.GetType().GetProperty(name, Any)?.GetValue(target);
 
     internal static bool ClickHudRow(string label)
     {
@@ -44,6 +53,21 @@ internal static class NativeGameplay
             return true;
         }
         return false;
+    }
+
+    internal static bool ClaimMissionRewards(IStoryMission mission)
+    {
+        var playerType = GameType("Source.Player.GamePlayer");
+        var player = playerType.GetField("current", Any)?.GetValue(null);
+        var nativeId = mission.NativeMissionId;
+        if (player == null || string.IsNullOrEmpty(nativeId)) return false;
+        var native = playerType.GetMethod("GetMission", Any)?.Invoke(player, new object[] { nativeId });
+        if (native == null || native.GetType().GetMethod("CanClaimRewards", Any)?.Invoke(native, null) is not true) return false;
+        var complete = playerType.GetMethods(Any).Single(method => method.Name == "CompleteMission"
+            && method.GetParameters() is var parameters && parameters.Length == 2
+            && parameters[0].ParameterType.IsInstanceOfType(native) && parameters[1].ParameterType == typeof(bool));
+        complete.Invoke(player, new[] { native, (object)false });
+        return true;
     }
 
     internal static object? Poi(string id)
@@ -75,21 +99,28 @@ internal static class NativeGameplay
     internal static bool DialogueOpen()
     {
         var (type, manager) = DialogueManager();
-        return manager != null && type.GetMethod("IsDialogueOpen", Any)!.Invoke(manager, null) is true;
+        return manager != null && DialogueContainerVisible(type, manager)
+            && type.GetMethod("IsDialogueOpen", Any)!.Invoke(manager, null) is true;
     }
 
     internal static void AdvanceDialogue()
     {
         var (type, manager) = DialogueManager();
-        if (manager != null && type.GetMethod("IsDialogueOpen", Any)!.Invoke(manager, null) is true)
+        if (manager != null && DialogueContainerVisible(type, manager)
+            && type.GetMethod("IsDialogueOpen", Any)!.Invoke(manager, null) is true)
             type.GetMethod("NextOrFinish", Any)!.Invoke(manager, null);
     }
 
     private static (Type Type, Component? Manager) DialogueManager()
     {
         var type = GameType("Behaviour.Dialogues.DialogueManager");
-        return (type, Resources.FindObjectsOfTypeAll(type).OfType<Component>().FirstOrDefault());
+        return (type, Resources.FindObjectsOfTypeAll(type).OfType<Component>()
+            .FirstOrDefault(component => component.gameObject.activeInHierarchy));
     }
+
+    private static bool DialogueContainerVisible(Type type, Component manager)
+        => type.GetProperty("dialogueContainer", Any)?.GetValue(manager) is Component container
+            && container.gameObject.activeInHierarchy;
 
     internal static void Screenshot(string label)
     {

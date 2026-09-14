@@ -24,6 +24,7 @@ public sealed class Plugin : BaseUnityPlugin
     private GameTest? _test;
     private string _caseId = "";
     private bool _finished;
+    private string _loggedStep = "";
 
     private void Awake()
     {
@@ -43,7 +44,12 @@ public sealed class Plugin : BaseUnityPlugin
             _caseId = requested switch
             {
                 FreshSessionCase.Id => FreshSessionCase.Id,
-                WormholeWorldCase.Id => WormholeWorldCase.Id,
+                PocketWorldsCase.Id => PocketWorldsCase.Id,
+                StoryMissionsCase.Id => StoryMissionsCase.Id,
+                ObservationCase.Id => ObservationCase.Id,
+                CargoRecoveryCase.Id => CargoRecoveryCase.Id,
+                StationCommerceCase.Id => StationCommerceCase.Id,
+                UiSurfacesCase.Id => UiSurfacesCase.Id,
                 _ => throw new InvalidOperationException("Unknown E2E case: " + requested),
             };
             _wire = new WireSender(port);
@@ -62,7 +68,12 @@ public sealed class Plugin : BaseUnityPlugin
             _test = _caseId switch
             {
                 FreshSessionCase.Id => new GameTest(FreshSessionCase.Steps(_lifecycle, _events), remaining),
-                WormholeWorldCase.Id => new GameTest(WormholeWorldCase.Steps(_lifecycle, _events, _travelEvents), remaining),
+                PocketWorldsCase.Id => new GameTest(PocketWorldsCase.Steps(_lifecycle, _events, _travelEvents), remaining),
+                StoryMissionsCase.Id => new GameTest(StoryMissionsCase.Steps(_lifecycle, _events), remaining),
+                ObservationCase.Id => new GameTest(ObservationCase.Steps(_lifecycle, _events), remaining),
+                CargoRecoveryCase.Id => new GameTest(CargoRecoveryCase.Steps(_lifecycle, _events, _travelEvents), remaining),
+                StationCommerceCase.Id => new GameTest(StationCommerceCase.Steps(_lifecycle, _events), remaining),
+                UiSurfacesCase.Id => new GameTest(UiSurfacesCase.Steps(_lifecycle, _events), remaining),
                 _ => throw new InvalidOperationException("Unhandled case: " + _caseId),
             };
             _clock.Start();
@@ -80,6 +91,11 @@ public sealed class Plugin : BaseUnityPlugin
     private void Update()
     {
         if (_test == null || _finished) return;
+        if (_test.CurrentStep != _loggedStep)
+        {
+            _loggedStep = _test.CurrentStep;
+            Logger.LogInfo("E2E step: " + _loggedStep);
+        }
         _test.Tick(_clock.Elapsed.TotalSeconds);
         if (_test.Finished) Complete(_test.Passed, _test.Detail, _test.Binding);
     }

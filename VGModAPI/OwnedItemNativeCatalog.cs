@@ -32,7 +32,7 @@ internal sealed class OwnedItemNativeCatalog : IDisposable
     internal bool Loaded => Catalog.Count != 0;
     private IDictionary Catalog => (IDictionary)_catalog.GetValue(null)!;
     private void Set(Component item, string field, object value) => _fields[field].SetValue(item, _fields[field].FieldType.IsEnum ? Enum.Parse(_fields[field].FieldType, (string)value) : value);
-    internal Component Ensure(string id)
+    internal Component? Ensure(string id, bool deferMissingIcon = false)
     {
         if (_disposed || _busy) throw new InvalidOperationException("Owned item construction unavailable or reentrant.");
         var identity = OwnedItemIdentity.Read(id);
@@ -44,8 +44,17 @@ internal sealed class OwnedItemNativeCatalog : IDisposable
         if (_built.Count >= 512) throw new InvalidOperationException("Owned item catalog limit exceeded.");
         var d = identity.Definition;
         var iconSource = Catalog[d.IconItemId] as Component;
-        if (iconSource == null || _icon.GetValue(iconSource) is not Sprite icon || icon == null)
-            throw new InvalidOperationException("Vanilla item icon dependency unavailable.");
+        var icon = iconSource == null ? null : _icon.GetValue(iconSource) as Sprite;
+        switch (OwnedItemIconDependency.Resolve(icon != null, deferMissingIcon))
+        {
+            case OwnedItemIconResolution.Defer:
+                // The definition remains registered and the next native LoadAll republishes every
+                // retained definition. Only the eager register-time path may defer; restore/rebuild
+                // paths call Ensure without this flag and remain strict.
+                return null;
+            case OwnedItemIconResolution.Reject:
+                throw new InvalidOperationException("Vanilla item icon dependency unavailable.");
+        }
         if (Catalog.Contains(id)) throw new InvalidOperationException("Owned item identity collides with another catalog entry.");
         _busy = true; GameObject? child = null;
         try
@@ -59,7 +68,7 @@ internal sealed class OwnedItemNativeCatalog : IDisposable
             var item = child.AddComponent(_itemType);
             Set(item, "identifier", id); Set(item, "itemCategory", "TradeGoods");
             Set(item, "storageOverride", d.Storage == OwnedItemStorage.Armory ? "Armory" : "Materials");
-            Set(item, "displayName", d.Name); Set(item, "description", d.Description); Set(item, "icon", icon);
+            Set(item, "displayName", d.Name); Set(item, "description", d.Description); Set(item, "icon", icon!);
             Set(item, "m3", d.Volume); Set(item, "baseCost", d.BaseCost); Set(item, "rarity", "Standard");
             Set(item, "canJettison", true); Set(item, "canSell", true);
             _initialize.Invoke(item, new object?[] { null });

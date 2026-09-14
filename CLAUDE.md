@@ -20,3 +20,17 @@ canonical source for contributor rules, design constraints and documentation pol
   review or a failing test passed.
 - Squash-merge when authorized once the functional scope, relevant tests and source
   review are complete. Deployment and release publication remain separate actions.
+
+## Plugin code: compiles clean, fails in game
+
+Neither the compiler nor the host tests catch these.
+
+- Keep runtime strings ASCII. `pixel16` has no `—`, `→` or `…`; TextMeshPro substitutes
+  a space and warns per render.
+- Acquire instance-authenticated providers (world, story, bars, items, recipes) in
+  `Start()`. `PluginInfos[].Instance` is assigned after `Awake()` returns, so acquiring
+  in `Awake()` returns null and registers nothing.
+- Declare world content before a session exists; `Register*` returns `NotReady` once
+  `CurrentSession != null`. Create occurrences lazily, declare early.
+- Never discard a status result. A swallowed refusal reappears as an unexplained null
+  later. Log it, success included, so a run is verified positively.

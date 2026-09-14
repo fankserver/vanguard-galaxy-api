@@ -14,7 +14,7 @@ With Steam running and the game closed:
 make e2e
 ```
 
-This builds the API, test plugin and WormholeWorld example, stages only those
+This builds the API, test plugin and PocketWorlds example, stages only those
 assemblies in the game, launches the selected case, writes the report and
 screenshots, and stops the owned process before restoring the original plugins
 and BepInEx configuration.
@@ -57,19 +57,59 @@ budget with controller time reserved for reporting. Additional gameplay cases
 should exercise concrete public operations and assert observable results—not
 just availability, successful registration, or skipped placeholders.
 
-Select a case by setting the Make variable after the target:
+Select a case by setting the Make variable after the target. Every case shares the same staging
+set (all examples + the E2E harness are deployed), only the driven workflow differs:
 
 ```sh
-make e2e E2E_CASE=wormhole-world
+make e2e E2E_CASE=pocket-worlds
 ```
 
-## `wormhole-world`
+## `pocket-worlds`
 
-Tests the WormholeWorld example in a real game session.
+Tests the PocketWorlds example in a real game session: it clicks the rendered HUD
+to spawn the authored pocket cluster (a wormhole entry, hub and anchor pockets,
+two themed off-world instances with their resource sites), follows
+real travel routes through every gate and wormhole, verifies the deliberate
+entry-gate sealing, then clicks deletion and asserts full native + API cleanup.
+
+## `story-missions`
+
+Offers and activates the hand-authored campaign beat, advances its scripted
+objective to completion through the real API, declares the reply choice (which
+completes the mission and fires the automatic follow-up), then offers the
+generated job and aborts the active missions. Assertions read live mission state.
+
+## `cargo-recovery`
+
+Spawns the owned derelict station in the current system, waits for the cargo
+layout to auto-attach to the authored boarding target (the retry-on-adoption
+path), then removes it and asserts the site and attachment are cleanly reset.
+In-ship walking is player movement rather than a ModAPI operation, so boarding
+itself is left to the manual run.
+
+## `observation`
+
+Drives a real new game and asserts the observer plugin's lifecycle hooks actually
+fire for that session (it sees the SessionStarting -> PlayerReady ->
+GameplayInitialized sequence and reports the same live session), proving it did
+not miss the session by loading late.
+
+## `station-commerce`
+
+Loads both independent author variants (A and B) and asserts each registers the
+SAME author-local good, recipe and story-errand IDs through its own authenticated
+provider without collision, and that the recipe-before-item declaration resolves
+rather than hard-failing.
+
+## `ui-surfaces`
+
+Waits for the consumer-owned gameplay window container, then clicks the shared
+HUD launcher to create and toggle the owned window, asserting its live visibility.
+The Forge inspector is availability-dependent, so it is not gated here.
 
 ## Coverage status
 
-`fresh-session` (normal new-game lifecycle) and `wormhole-world` (actual example,
+`fresh-session` (normal new-game lifecycle) and `pocket-worlds` (actual example,
 world authoring, HUD, native travel and cleanup) are implemented and pass live.
 This is not full ModAPI coverage: mission/boarding gameplay and persistent
 save/load round trips remain to be implemented.

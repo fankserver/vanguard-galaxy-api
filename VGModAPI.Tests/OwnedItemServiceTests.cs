@@ -52,6 +52,16 @@ public sealed class OwnedItemServiceTests
         Assert.Equal(new[] { good.NativeId }, loaded); Assert.Equal(1, reported);
     }
     [Fact]
+    public void IconDependencyDecisionDistinguishesConstructionDeferralAndStrictRejection()
+    {
+        // This pure seam verifies the decision truth table. Unity-bound icon detection and the
+        // subsequent LoadAll retry remain covered by the live station-commerce path.
+        Assert.Equal(OwnedItemIconResolution.Construct, OwnedItemIconDependency.Resolve(iconAvailable: true, allowDeferral: false));
+        Assert.Equal(OwnedItemIconResolution.Construct, OwnedItemIconDependency.Resolve(iconAvailable: true, allowDeferral: true));
+        Assert.Equal(OwnedItemIconResolution.Defer, OwnedItemIconDependency.Resolve(iconAvailable: false, allowDeferral: true));
+        Assert.Equal(OwnedItemIconResolution.Reject, OwnedItemIconDependency.Resolve(iconAvailable: false, allowDeferral: false));
+    }
+    [Fact]
     public void ItemOnlySaveRequiresBarrierAndRestorationBeforeUnsealing()
     {
         string id = new OwnedItemIdentity("author.a", Item()).NativeId;

@@ -65,15 +65,21 @@ class ProtocolTests(unittest.TestCase):
         with self.assertRaisesRegex(e2e.E2EError, "deadline"):
             e2e.consume(Mock(), e2e.new_report(), "run", time.monotonic() - 1)
 
-    def test_wormhole_world_result_is_accepted_and_unknown_id_rejected(self):
-        e2e.validate_result(dict(type="result", id="wormhole-world", status="pass", detail="ok", binding="", elapsedMs=5))
+    def test_pocket_worlds_result_is_accepted_and_unknown_id_rejected(self):
+        e2e.validate_result(dict(type="result", id="pocket-worlds", status="pass", detail="ok", binding="", elapsedMs=5))
         with self.assertRaises(e2e.E2EError):
             e2e.validate_result(dict(type="result", id="unknown-case", status="pass", detail="ok", binding="", elapsedMs=5))
+
+    def test_example_case_results_are_accepted(self):
+        for case in ("story-missions", "observation", "cargo-recovery", "station-commerce", "ui-surfaces"):
+            e2e.validate_result(dict(type="result", id=case, status="pass", detail="ok", binding="", elapsedMs=5))
+        with self.assertRaises(e2e.E2EError):
+            e2e.validate_result(dict(type="result", id="cargo-recovery", status="bogus", detail="ok", binding="", elapsedMs=5))
 
     def test_result_for_a_different_requested_case_is_rejected_live(self):
         old = e2e.CASE
         try:
-            e2e.CASE = "wormhole-world"
+            e2e.CASE = "pocket-worlds"
             report = e2e.new_report()
             with self.assertRaisesRegex(e2e.E2EError, "unrequested case"):
                 e2e.consume(self.stream([META, RESULT, FINISH]), report, "run", time.monotonic() + 2)

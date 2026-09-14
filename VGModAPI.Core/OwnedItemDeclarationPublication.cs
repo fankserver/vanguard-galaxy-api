@@ -2,6 +2,16 @@ using System;
 using System.Collections.Generic;
 
 namespace VGModAPI.Core;
+
+internal enum OwnedItemIconResolution { Construct, Defer, Reject }
+internal static class OwnedItemIconDependency
+{
+    internal static OwnedItemIconResolution Resolve(bool iconAvailable, bool allowDeferral)
+        => iconAvailable ? OwnedItemIconResolution.Construct
+            : allowDeferral ? OwnedItemIconResolution.Defer
+            : OwnedItemIconResolution.Reject;
+}
+
 internal static class OwnedItemDeclarationPublication
 {
     // Optional declarations must not abort native catalog loading. Actual saved-item lookup remains strict.

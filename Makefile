@@ -17,25 +17,11 @@ build: link-libs
 	$(DOTNET) build VGModAPI.sln -c $(CONFIGURATION)
 	$(MAKE) build-examples
 .PHONY: build-examples
+# Every example package builds from its own folder, including the nested variant/consumer projects
+# (StationCommerce/AuthorB, Observation/Consumers). One target covers them all; there are no
+# per-example targets to keep in sync.
 build-examples: link-libs
-	@set -eu; for project in $(sort $(wildcard examples/*/*.csproj)); do $(DOTNET) build "$$project" -c $(CONFIGURATION); done
-.PHONY: build-dungeon-example build-dungeon-author
-build-dungeon-example:
-	$(DOTNET) build examples/ExampleDungeon/ExampleDungeon.csproj -c $(CONFIGURATION)
-build-dungeon-author: link-libs
-	$(DOTNET) build examples/DungeonAuthor/DungeonAuthor.csproj -c $(CONFIGURATION)
-.PHONY: build-forge-example build-forge-host
-build-forge-example:
-	$(DOTNET) build examples/ForgeInspector/ForgeInspector.csproj -c $(CONFIGURATION)
-build-forge-host: link-libs
-	$(DOTNET) build examples/ForgeInspectorHost/ForgeInspectorHost.csproj -c $(CONFIGURATION)
-.PHONY: build-bar-authors
-build-bar-authors: link-libs
-	$(DOTNET) build examples/OwnedBarAuthorA/OwnedBarAuthorA.csproj -c $(CONFIGURATION)
-	$(DOTNET) build examples/OwnedBarAuthorB/OwnedBarAuthorB.csproj -c $(CONFIGURATION)
-.PHONY: build-story-authors
-build-story-authors: link-libs
-	$(DOTNET) build examples/OwnedStoryCampaign/OwnedStoryCampaign.csproj -c $(CONFIGURATION)
+	@set -eu; for project in $$(find examples -name '*.csproj' -not -path '*/obj/*' -not -path '*/bin/*' | sort); do $(DOTNET) build "$$project" -c $(CONFIGURATION); done
 test:
 	python3 -m unittest discover -s tools -p 'test_*.py'
 	$(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter '$(TEST_FILTER)' $(TEST_ARGS)
@@ -80,13 +66,16 @@ E2E_PATH = $(if $(WSL_INTEROP),$(shell wslpath -aw "$(1)"),$(1))
 .PHONY: e2e-build e2e
 e2e-build: link-libs
 	$(DOTNET) build VGModAPI/VGModAPI.csproj -c $(CONFIGURATION)
-	$(DOTNET) build examples/WormholeWorld/WormholeWorld.csproj -c $(CONFIGURATION)
+	@set -eu; for project in $$(find examples -name '*.csproj' -not -path '*/obj/*' -not -path '*/bin/*' | sort); do $(DOTNET) build "$$project" -c $(CONFIGURATION); done
 	$(DOTNET) build VGModAPI.E2E/VGModAPI.E2E.csproj -c $(CONFIGURATION)
 	@mkdir -p "$(E2E_BUILD)" "$(E2E_RUNTIME)"
 	@set -eu; for dll in VGModAPI VGModAPI.Core VGModAPI.Abstractions VGModAPI.Unity; do cp "VGModAPI/bin/$(CONFIGURATION)/netstandard2.1/$$dll.dll" "$(E2E_BUILD)/"; done
 	cp VGModAPI.E2E/bin/$(CONFIGURATION)/netstandard2.1/VGModAPI.E2E.dll "$(E2E_BUILD)/"
 	cp VGModAPI.E2E/bin/$(CONFIGURATION)/netstandard2.1/Newtonsoft.Json.dll "$(E2E_BUILD)/"
-	cp examples/WormholeWorld/bin/$(CONFIGURATION)/netstandard2.1/WormholeWorld.dll "$(E2E_BUILD)/"
+	@set -eu; for dll in PocketWorlds CargoRecovery StoryMissions StationCommerce StationCommerceB UiSurfaces Observation; do \
+		f=$$(find examples -path '*/bin/$(CONFIGURATION)/netstandard2.1/'"$$dll"'.dll' | head -n 1); \
+		if [ -n "$$f" ]; then cp "$$f" "$(E2E_BUILD)/"; else echo "e2e staging missing example dll: $$dll" >&2; exit 1; fi; \
+	done
 e2e: e2e-build
 	$(E2E_PYTHON) tools/e2e.py --game-dir '$(call E2E_PATH,$(GAME_DIR))' --build-dir '$(call E2E_PATH,$(E2E_BUILD))' --runtime-dir '$(call E2E_PATH,$(E2E_RUNTIME))' $(if $(E2E_SAVE_DIR),--save-dir '$(call E2E_PATH,$(E2E_SAVE_DIR))') --case $(E2E_CASE) --launch --timeout $(E2E_TIMEOUT)
 clean:

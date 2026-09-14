@@ -15,10 +15,13 @@ import time
 import uuid
 
 CASE = "fresh-session"
-KNOWN_CASES = ("fresh-session", "wormhole-world")
+KNOWN_CASES = ("fresh-session", "pocket-worlds", "story-missions", "observation",
+              "cargo-recovery", "station-commerce", "ui-surfaces")
 HANDSHAKE = "--vgmodapi-e2e"
 ASSEMBLIES = ("VGModAPI.dll", "VGModAPI.Core.dll", "VGModAPI.Abstractions.dll",
-              "VGModAPI.Unity.dll", "VGModAPI.E2E.dll", "WormholeWorld.dll", "Newtonsoft.Json.dll")
+              "VGModAPI.Unity.dll", "VGModAPI.E2E.dll", "PocketWorlds.dll", "CargoRecovery.dll",
+              "StoryMissions.dll", "StationCommerce.dll", "StationCommerceB.dll", "UiSurfaces.dll",
+              "Observation.dll", "Newtonsoft.Json.dll")
 
 
 class E2EError(Exception):
@@ -96,6 +99,15 @@ class GameInstallation:
             target.mkdir()
             for name in ASSEMBLIES:
                 shutil.copy2(self.build / name, target / name)
+            # The staging vacuums the real config/ for isolation, which drops the API back to its
+            # disabled-by-default providers. Enable the ones the example cases exercise (Story drives
+            # station-commerce's errand and the story-missions case; Bars backs the bar-contact examples).
+            # This mirrors what a normal install has, not a product-default change.
+            (self.root / "config" / "vgmodapi.cfg").write_text(
+                "# E2E test config: enable the providers the example cases exercise.\n"
+                "[Story]\nEnabled = true\n"
+                "[Bars]\nEnabled = true\n",
+                encoding="utf-8")
         except BaseException:
             self.restore()
             raise
