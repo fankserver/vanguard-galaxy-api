@@ -1016,7 +1016,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
         }
 
         /// <summary>The owned authored-site poi object; one poi per key per session.</summary>
-        private sealed class ResourceSiteHandle : IResourceSite
+        private sealed class ResourceSiteHandle : IResourceSite, IResourceSiteAttachmentTarget
         {
             private readonly Provider _provider;
             private readonly string _localId;
@@ -1044,6 +1044,16 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             }
             public ResourceSiteState State { get { _provider._service._hub.CheckThread(); return _state; } }
             public string? PoiId => State.PoiId;
+            bool IResourceSiteAttachmentTarget.WithStation => Definition.WithStation;
+            bool IResourceSiteAttachmentTarget.TryGetCurrentPoi(out string poiId)
+            {
+                _provider._service._hub.CheckThread();
+                var current = !_removed && !_provider._disposed && !_provider._service._disposed
+                    && _provider._service._hub.CurrentSession?.Id == Session
+                    && _state.Status == ReconstructionStatus.Reconstructed ? _state.PoiId : null;
+                poiId = current ?? "";
+                return current != null;
+            }
             public WorldContentResult LastAction { get { _provider._service._hub.CheckThread(); return _lastAction; } }
             public event Action<IResourceSite>? Changed { add => _changed += value; remove => _changed -= value; }
             internal void RecordAction(WorldContentResult result) => _lastAction = result;

@@ -4,6 +4,13 @@ using System.Linq;
 
 namespace VGModAPI.Core;
 
+/// <summary>Internal provenance/session view implemented only by API-owned resource-site objects.</summary>
+internal interface IResourceSiteAttachmentTarget
+{
+    bool WithStation { get; }
+    bool TryGetCurrentPoi(out string poiId);
+}
+
 internal sealed class DungeonBindings
 {
     internal readonly Func<BoardingHandle, DungeonDefinition, DungeonStatus> ValidateAttachment;
@@ -231,9 +238,11 @@ internal sealed class DungeonService : IDisposable
             Owner._hub.CheckThread();
             if (site == null) throw new ArgumentNullException(nameof(site));
             if (!Owner.Live(this) || Owner.MutationBlocked) return Owner.Result(DungeonStatus.Unavailable);
-            if (!site.Definition.WithStation) return Owner.Result(DungeonStatus.InvalidDefinition);
-            var poiId = site.PoiId;
-            if (poiId == null) return Owner.Result(DungeonStatus.StaleTarget);
+            if (site is not IResourceSiteAttachmentTarget owned)
+                throw new ArgumentException("Use a resource site obtained from the World service.", nameof(site));
+            if (!owned.WithStation)
+                return new DungeonResult(DungeonStatus.InvalidDefinition, "The resource site does not declare a station.");
+            if (!owned.TryGetCurrentPoi(out var poiId)) return Owner.Result(DungeonStatus.StaleTarget);
             var target = Owner._native.ResolveSiteStation(poiId);
             if (target == null) return Owner.Result(DungeonStatus.StaleTarget);
             return Owner.Attach(this, localId, target);
