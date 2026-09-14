@@ -78,7 +78,7 @@ public sealed class Plugin : BaseUnityPlugin
     }
 
     /// <summary>A retained campaign beat: listen, then choose a reply. The reply is a declared choice.</summary>
-    private static StoryMissionDefinition CampaignDefinition() => new(
+    private static StoryMissionDefinition CampaignDefinition() => new StoryMissionDefinition(
         CampaignDef, "A witness's account", "Listen to the witness, then choose your reply.",
         new StoryFactionId(Faction),
         new[]
@@ -211,9 +211,9 @@ public sealed class Plugin : BaseUnityPlugin
     private void Answer()
     {
         if (_activeCampaign == null) return;
-        var progress = _activeCampaign.GetObjective(ReportKey).SetProgress(1);
         var choice = _activeCampaign.DeclareChoices(new System.Collections.Generic.Dictionary<string, string> { ["witness"] = "promised" });
-        _lastAction = $"answer: {progress.Status}; choice: {choice.Status}";
+        var progress = _activeCampaign.GetObjective(ReportKey).SetProgress(1);
+        _lastAction = $"answer: choice: {choice.Status}; progress: {progress.Status}";
     }
 
     private void AbandonAll()

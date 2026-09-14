@@ -23,6 +23,7 @@ internal sealed class GameTest
     internal bool Passed { get; private set; }
     internal string Detail { get; private set; } = "";
     internal string Binding { get; private set; } = "";
+    internal string CurrentStep => Finished ? "" : _steps[_index].Name;
 
     internal GameTest(IReadOnlyList<TestStep> steps, double deadline)
     {

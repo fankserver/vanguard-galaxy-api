@@ -43,7 +43,7 @@ internal static class StoryMissionsCase
                 if (p > 3) throw new InvalidOperationException("Talk objective overshot 3: " + p);
                 return true;
             }),
-            new TestStep("answer the witness and complete the campaign", "StoryMissions.OnHud(answer) / DeclareChoices", () =>
+            new TestStep("answer the witness and complete the campaign", "StoryMissions.OnHud(answer) / DeclareChoices / GamePlayer.CompleteMission", () =>
             {
                 // SetProgress and DeclareChoices are queued one-shot mutations: re-invoking the answer
                 // every tick re-queues them without letting the campaign settle. Click the button once,
@@ -55,7 +55,11 @@ internal static class StoryMissionsCase
                 }
                 var active = NativeGameplay.Field<IStoryMission>(Plugin()!, "_activeCampaign");
                 if (active == null) throw new InvalidOperationException("Campaign ended before it completed after the answer.");
-                if (active.State != StoryMissionState.Completed) return false;
+                if (active.State != StoryMissionState.Completed)
+                {
+                    NativeGameplay.ClaimMissionRewards(active);
+                    return false;
+                }
                 if ((int)NativeGameplay.GetField(Plugin()!, "_followUpsOffered")! != 1)
                     throw new InvalidOperationException("Completed without offering the follow-up.");
                 return true;

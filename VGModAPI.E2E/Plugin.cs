@@ -24,6 +24,7 @@ public sealed class Plugin : BaseUnityPlugin
     private GameTest? _test;
     private string _caseId = "";
     private bool _finished;
+    private string _loggedStep = "";
 
     private void Awake()
     {
@@ -90,6 +91,11 @@ public sealed class Plugin : BaseUnityPlugin
     private void Update()
     {
         if (_test == null || _finished) return;
+        if (_test.CurrentStep != _loggedStep)
+        {
+            _loggedStep = _test.CurrentStep;
+            Logger.LogInfo("E2E step: " + _loggedStep);
+        }
         _test.Tick(_clock.Elapsed.TotalSeconds);
         if (_test.Finished) Complete(_test.Passed, _test.Detail, _test.Binding);
     }
