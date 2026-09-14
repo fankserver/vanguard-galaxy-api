@@ -178,6 +178,22 @@ public sealed class BoardingObserverTests
         Assert.Null(f.Observer.HandleForInstallation("station-a"));
     }
     [Fact]
+    public void SiteStationResolutionIgnoresTheWreckShipInTheSameSalvagePoi()
+    {
+        using var f = new Fixture();
+        var stationLocation = new Dictionary<string, object?>(f.Location) { ["isShipBased"] = false };
+        var stationUnit = new Dictionary<string, object?> { ["data"] = stationLocation };
+        f.Observer.Guard(() => f.Observer.TargetReady(f.Unit));       // salvage wreck ship
+        f.Observer.Guard(() => f.Observer.TargetReady(stationUnit)); // derelict station
+        f.Contains = (id, _) => id == "salvage-poi";                 // both belong to the POI
+
+        Assert.Null(f.Observer.HandleForInstallation("salvage-poi")); // generic membership is ambiguous
+        var station = f.Observer.HandleForSiteStation("salvage-poi");
+        Assert.NotNull(station);
+        Assert.Equal(BoardingEncounterKind.Installation, f.Service.GetTarget(station!)!.Kind);
+    }
+
+    [Fact]
     public void DestroyedIdleTargetIsRetiredAndOldGenerationCannotBeQueried()
     {
         using var f = new Fixture(); f.Observer.Guard(() => f.Observer.TargetReady(f.Unit));

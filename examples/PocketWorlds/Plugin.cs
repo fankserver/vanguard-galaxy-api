@@ -55,6 +55,11 @@ public sealed class Plugin : BaseUnityPlugin
     private const string SalvageSiteDef = "cluster-salvage-site";
 
     private IWorldProvider? _world;
+    private IDungeonService? _dungeons;
+    private IDungeonProvider? _dungeonProvider;
+    private IDisposable? _dungeonDefinition;
+    private Guid? _salvageDungeonId;
+    private string _lastDungeonAttach = "not attempted";
     private ITravelService? _travel;
     private ILifecycleService? _lifecycle;
     private IHudRegistration? _hud;
@@ -104,7 +109,18 @@ public sealed class Plugin : BaseUnityPlugin
         _world.RegisterResourceSite(ResourceSiteDefinition.MiningField(MiningSiteDef, 1, MiningWorldName + " Field", 12, 8));
         _world.RegisterResourceSite(ResourceSiteDefinition.Salvage(
             SalvageSiteDef, 1, SalvageWorldName + " Wreck", 8, wreckShipId: "Monsoon", factionId: "Fanatics",
-            withStation: false, hazard: null, scatterAsteroids: false));
+            withStation: true, hazard: null, scatterAsteroids: false));
+
+        // A dungeon belongs to its boarding location in the game. This example deliberately attaches
+        // one to the salvage station, then removes only the containing pocket: the API transparently
+        // removes the retained dungeon state with its native location.
+        _dungeons = ModApi.Services.Dungeons;
+        if (_dungeons.Availability.IsAvailable)
+        {
+            _dungeonProvider = _dungeons.AcquireProvider(Id);
+            _dungeonDefinition = _dungeonProvider.Register("salvage-station", SalvageDungeon());
+        }
+        else Logger.LogWarning(DisplayName + ": dungeon content unavailable; the pocket cleanup example cannot attach its station layout.");
 
         _travel = ModApi.Services.Travel;
         // Occurrence objects belong to ONE session: an occurrence from an ended session keeps its last
@@ -131,6 +147,7 @@ public sealed class Plugin : BaseUnityPlugin
         _entry = _hub = _anchor = _mining = _salvage = null;
         _entryDoor = _miningHole = _salvageHole = null;
         _miningSite = _salvageSite = null;
+        _salvageDungeonId = null;
     }
 
     /// <summary>
@@ -176,6 +193,12 @@ public sealed class Plugin : BaseUnityPlugin
                     + "pocket (its gate and any site POIs go with it) and the combat site. Moving into any part of "
                     + "the cluster first would refuse deletion until you leave.",
                     clickable: hasContent),
+                new HudRow("dungeon", !hasContent ? "spawn first"
+                        : _salvageDungeonId.HasValue ? "Station layout attached" : "Attach station layout",
+                    "attach authored dungeon content to the salvage station",
+                    "Visit the salvage wreck first, then attach a minimal authored layout to its station. "
+                    + "Deleting the containing pocket later removes the retained dungeon state automatically.",
+                    clickable: hasContent && !_salvageDungeonId.HasValue),
                 new HudRow("log", !hasContent ? "spawn first" : "Log topology",
                     "write what each spawned system contains and how it is connected, to the log file",
                     "Prints one line per spawned system: the gates and wormholes it holds (with their far "
@@ -207,6 +230,7 @@ public sealed class Plugin : BaseUnityPlugin
             {
                 case "spawn": SpawnCluster(); break;
                 case "delete": DeleteCluster(); break;
+                case "dungeon": TryAttachSalvageDungeon(); break;
                 case "log": LogTopology(); break;
             }
             RefreshPanel();
@@ -268,6 +292,28 @@ public sealed class Plugin : BaseUnityPlugin
 
         Logger.LogInfo("Pocket Worlds ready: fly the rift from " + (NameOf(EntryDef)) + " through Hub Alpha into either off-world.");
         LogTopology();
+    }
+
+    private static DungeonDefinition SalvageDungeon() => new(1, "Salvage station", new DungeonLayout(new[]
+    {
+        new DungeonCompartmentDefinition("entry", CompartmentType.Airlock, new[] { "control" }),
+        new DungeonCompartmentDefinition("control", CompartmentType.ControlRoom, new[] { "entry" })
+    }), allowHazards: false, allowScheduledReinforcements: false);
+
+    private void TryAttachSalvageDungeon()
+    {
+        if (_salvageDungeonId.HasValue || _dungeonProvider == null || _salvageSite == null) return;
+        // Pass the authored site itself: the API resolves its non-ship station target without guessing
+        // among unrelated observed installations or the salvage wreck in the same POI.
+        var result = _dungeonProvider.Attach("salvage-station", _salvageSite);
+        _lastDungeonAttach = result.Status + " - " + result.Detail;
+        if (result.Status == DungeonStatus.Attached)
+        {
+            _salvageDungeonId = result.DungeonId;
+            Logger.LogInfo("Pocket Worlds: authored dungeon attached to the salvage station.");
+        }
+        else if (result.Status is not (DungeonStatus.StaleTarget or DungeonStatus.Unavailable or DungeonStatus.PersistenceUnavailable))
+            Logger.LogWarning("Pocket Worlds: salvage dungeon attachment refused: " + _lastDungeonAttach);
     }
 
     /// <summary>
@@ -411,6 +457,9 @@ public sealed class Plugin : BaseUnityPlugin
         if (_lifecycle != null) { _lifecycle.Changed -= OnLifecycle; _lifecycle = null; }
         if (_world != null) _world.Dispose();
         var hud = _hud; _hud = null; hud?.Dispose();
+        _dungeonDefinition?.Dispose(); _dungeonDefinition = null;
+        _dungeonProvider?.Dispose(); _dungeonProvider = null;
+        _dungeons = null;
         _travel = null; _world = null;
     }
 }

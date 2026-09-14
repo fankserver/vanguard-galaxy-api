@@ -23,7 +23,8 @@ world-creation + ambient-traffic surfaces.
 | **Static names** | Every system keeps a fixed display name (Cluster Entry, Hub Alpha, …) each spawn. |
 | **Quiet wormholes & systems** (`quiet: true`) | The rifts spawn no decorative passerby traffic and no security patrol at either end; `quiet: true` on a pocket keeps its whole system silent — the cluster is a private place, not a highway. |
 | **Sealed hidden gates** | Each pocket's anchored "gate back" is closed *and* hidden, so the map draws no phantom gate line. (Only the deliberate E→A, E→B gates are open/visible.) |
-| **Resource sites** (`CreateResourceSite`) | A mining field in one off-world and a salvage wreck in the other, both removed with the pocket that holds them. |
+| **Resource sites** (`CreateResourceSite`) | A mining field in one off-world and a station-bearing salvage wreck in the other, both removed with the pocket that holds them. |
+| **Nested dungeon lifetime** (`IDungeonProvider.Attach`) | At the salvage wreck, **Attach station layout** adds a minimal authored dungeon to its station. Removing the pocket later removes the station and retained dungeon state automatically—no separate cleanup call. |
 | **Occurrence state** | The HUD status line reads each occurrence's live reconstruction state. |
 | **Topology diagnostics** | Spawning (and the **Log topology** button) writes one line per system: the gates and wormholes it holds with their far end, plus any site inside — the ground truth to compare against the in-game map. |
 | **Full cleanup** (`Remove` / `CanRemove` / `RequestRemoval`) | **Delete Cluster** removes each pair, then each pocket, in the order the API's integrity rules force. Anything not removable yet is queued for the next safe cleanup window instead of acting under the player. |
@@ -58,6 +59,7 @@ reconstruction state (`E:A:B:M:S | door:m:s`).
 | Button | What it does |
 |---|---|
 | **Spawn Wormhole** | Creates the whole cluster: entry wormhole + E/A/B + the two off-world wormholes + the two resource sites. |
+| **Attach station layout** | At the salvage wreck, passes the owned `IResourceSite` to `IDungeonProvider.Attach`; the API resolves that site's station rather than guessing among observed targets. |
 | **Log topology** | Writes the authored wiring to `BepInEx/LogOutput.log` — compare it against the in-game map if a connection looks surprising. |
 | **Delete Cluster** | Full cleanup in dependency order: wormhole pairs first (a pocket that is still a wormhole endpoint cannot be removed), then each pocket with its gate and resource sites. If you are inside any part of the cluster, the affected step is **queued** for the next safe cleanup window rather than acting under you. |
 
@@ -89,6 +91,7 @@ Cluster** uses is forced by the API's integrity rules:
 |---|---|
 | A pocket that is still a wormhole endpoint cannot be removed | all three pairs go first |
 | A pocket's **resource** sites *are* removed with it | the mining/salvage site handles are simply dropped |
+| An attached dungeon is part of its boarding location | removing the station-bearing salvage pocket also removes its retained dungeon state |
 
 `Remove()` is the **plain** removal — it refuses only on integrity grounds and does *not* check
 whether the player is standing in what you are deleting. This example therefore asks `CanRemove()`

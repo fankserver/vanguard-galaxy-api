@@ -13,13 +13,16 @@ internal sealed class DungeonBindings
     internal readonly Action<Dungeon, DungeonEventDefinition, DungeonChoiceDefinition> ApplyChoice;
     /// <summary>The one live boarding target currently belonging to a persistent installation; null when none or ambiguous.</summary>
     internal readonly Func<string, BoardingHandle?> ResolveInstallation;
+    /// <summary>The one live non-ship station target inside an authored site POI.</summary>
+    internal readonly Func<string, BoardingHandle?> ResolveSiteStation;
     internal DungeonBindings(Func<BoardingHandle, DungeonDefinition, DungeonStatus> validateAttachment,
         Action<BoardingHandle, Dungeon> bind,
         Func<Dungeon, DungeonEventDefinition, DungeonChoiceDefinition, DungeonStatus> validateChoice,
         Action<Dungeon, DungeonEventDefinition, DungeonChoiceDefinition> applyChoice,
-        Func<string, BoardingHandle?>? resolveInstallation = null)
+        Func<string, BoardingHandle?>? resolveInstallation = null,
+        Func<string, BoardingHandle?>? resolveSiteStation = null)
     { ValidateAttachment = validateAttachment; Bind = bind; ValidateChoice = validateChoice; ApplyChoice = applyChoice;
-        ResolveInstallation = resolveInstallation ?? (_ => null); }
+        ResolveInstallation = resolveInstallation ?? (_ => null); ResolveSiteStation = resolveSiteStation ?? (_ => null); }
 }
 
 internal sealed class DungeonService : IDisposable
@@ -223,6 +226,18 @@ internal sealed class DungeonService : IDisposable
             var behavior = new Behavior(this, localId, registration, allowChoice); Behaviors.Add(localId, behavior); return behavior;
         }
         public DungeonResult Attach(string localId, BoardingHandle target) => Owner.Attach(this, localId, target);
+        public DungeonResult Attach(string localId, IResourceSite site)
+        {
+            Owner._hub.CheckThread();
+            if (site == null) throw new ArgumentNullException(nameof(site));
+            if (!Owner.Live(this) || Owner.MutationBlocked) return Owner.Result(DungeonStatus.Unavailable);
+            if (!site.Definition.WithStation) return Owner.Result(DungeonStatus.InvalidDefinition);
+            var poiId = site.PoiId;
+            if (poiId == null) return Owner.Result(DungeonStatus.StaleTarget);
+            var target = Owner._native.ResolveSiteStation(poiId);
+            if (target == null) return Owner.Result(DungeonStatus.StaleTarget);
+            return Owner.Attach(this, localId, target);
+        }
         public DungeonResult Attach(string localId, IDungeonInstallation installation)
         {
             Owner._hub.CheckThread();

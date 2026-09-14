@@ -44,7 +44,8 @@ internal sealed class DungeonAdapter : IDisposable
     }
     internal void BeginSerialization() => _state.BeginSerialization();
     internal void EndSerialization() => _state.EndSerialization();
-    internal DungeonBindings Bindings() => new(ValidateAttachment, Bind, ValidateChoice, ApplyChoice, _observer.HandleForInstallation);
+    internal DungeonBindings Bindings() => new(ValidateAttachment, Bind, ValidateChoice, ApplyChoice,
+        _observer.HandleForInstallation, _observer.HandleForSiteStation);
     private object? ResolveSimulation(Dungeon dungeon)
     {
         var location = _index.Resolve(dungeon.Id); var handle = _observer.CommandHandleForLocation(location);

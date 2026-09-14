@@ -58,6 +58,13 @@ public interface IDungeonProvider : IDisposable
     IDisposable Register(string localId, DungeonDefinition definition, Func<DungeonChoiceContext, bool>? allowChoice = null);
     DungeonResult Attach(string localId, BoardingHandle target);
     /// <summary>
+    /// Attaches to the station authored inside an owned salvage site. The site must declare
+    /// <see cref="ResourceSiteDefinition.WithStation"/>; while its one native station target is not
+    /// observed the result is <see cref="DungeonStatus.StaleTarget"/>. The dungeon follows that
+    /// station's lifetime automatically, including removal of the containing pocket.
+    /// </summary>
+    DungeonResult Attach(string localId, IResourceSite site);
+    /// <summary>
     /// Attaches by supported persistent installation identity instead of a boarding target handle.
     /// Use the installation object obtained from this provider's <see cref="GetInstallation"/>; a
     /// foreign object is a programming error. The attachment resolves the one live boarding target

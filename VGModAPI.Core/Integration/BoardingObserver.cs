@@ -323,6 +323,13 @@ internal sealed class BoardingObserver : IDisposable
 
     /// <summary>The one live boarding target whose location currently belongs to the installation; null when none or ambiguous.</summary>
     internal BoardingHandle? HandleForInstallation(string poiId)
+        => HandleForPoi(poiId, _ => true);
+
+    /// <summary>Resolves only the game's non-ship boarding location inside the exact site POI.</summary>
+    internal BoardingHandle? HandleForSiteStation(string poiId)
+        => HandleForPoi(poiId, target => !Read<bool>(target.Data, "isShipBased"));
+
+    private BoardingHandle? HandleForPoi(string poiId, Func<Target, bool> accepts)
     {
         _hub.CheckThread();
         BoardingHandle? found = null;
@@ -330,7 +337,7 @@ internal sealed class BoardingObserver : IDisposable
         {
             if (target.Retired || _service.GetTarget(target.Handle) == null) continue;
             bool contains;
-            try { contains = _installationContains(poiId, target.Data); } catch { continue; }
+            try { contains = accepts(target) && _installationContains(poiId, target.Data); } catch { continue; }
             if (!contains) continue;
             if (found != null) return null;
             found = target.Handle;

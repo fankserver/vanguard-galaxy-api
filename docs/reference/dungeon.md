@@ -16,13 +16,23 @@ simulation. This does not create a new world object or POI: world creation belon
 to the world/POI service, not a second dungeon-owned world registry. Target handles
 are session-local; occurrence GUIDs survive save/load.
 
-`Attach(localId, installation)` attaches by supported persistent installation identity instead:
-pass the `IDungeonInstallation` obtained from this provider's `GetInstallation(poiId)`. The API
-resolves the one live boarding target currently belonging to that installation — never a display
-name. While no (or more than one) matching live target is observed the result is `StaleTarget`, a
-temporary refusal to retry when the target world state exists; a foreign provider's installation
-object is a programming error. This is the supported route for attaching authored content to your
-own authored station.
+For a station-bearing authored resource site, pass the gameplay object directly:
+
+```csharp
+var result = dungeons.Attach("my-layout", site);
+```
+
+`site.Definition.WithStation` must be true. The API resolves the game's non-ship station target
+inside that exact site POI, rather than confusing it with the salvage wreck in the same POI or an
+unrelated observed station. While the station is not live the result is `StaleTarget`. The dungeon
+then follows its location's lifetime automatically: removing the site, or its containing pocket,
+removes the retained dungeon state too.
+
+`Attach(localId, installation)` remains the general persistent-installation route: pass the
+`IDungeonInstallation` obtained from this provider's `GetInstallation(poiId)`. The API resolves the
+one live boarding target currently belonging to that POI identity—never a display name. While no
+(or more than one) matching live target is observed the result is `StaleTarget`; a foreign
+provider's installation object is a programming error.
 
 ## Installation reactions
 

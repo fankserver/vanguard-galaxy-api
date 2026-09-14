@@ -69,8 +69,9 @@ make e2e E2E_CASE=pocket-worlds
 Tests the PocketWorlds example in a real game session: it clicks the rendered HUD
 to spawn the authored pocket cluster (a wormhole entry, hub and anchor pockets,
 two themed off-world instances with their resource sites), follows
-real travel routes through every gate and wormhole, verifies the deliberate
-entry-gate sealing, then clicks deletion and asserts full native + API cleanup.
+real travel routes through every gate and wormhole, attaches authored dungeon content to the
+salvage station, verifies the deliberate entry-gate sealing, then clicks deletion and asserts full
+native + API cleanup—including removal of the dungeon state nested under the removed station.
 
 ## `story-missions`
 
