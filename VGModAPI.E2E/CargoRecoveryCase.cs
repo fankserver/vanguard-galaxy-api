@@ -45,18 +45,28 @@ internal static class CargoRecoveryCase
         var originSystem = "";
         steps.AddRange(new[]
         {
-            new TestStep("click Spawn derelict", "CargoRecovery.OnHud(spawn) / WorldProvider.CreateResourceSite", () =>
-            {
-                // Remember where the player first stands so the teardown can step away from the
-                // station again before asking Remove(); boarding-held sites are only safely removed
-                // when the player is not at them.
-                var location = ModApi.Services.Travel.CurrentLocation;
-                originPoi = location?.PoiId ?? "";
-                originSystem = location?.SystemId ?? "";
-                if (!NativeGameplay.ClickHudRow("Spawn derelict")) return false;
-                var p = NativeGameplay.PluginInstance(PluginId);
-                return p != null && Spawned(p) && StationPoi(p) != null;
-            }),
+            TestStep.ActionThenWait("click Spawn derelict", "CargoRecovery.OnHud(spawn) / WorldProvider.CreateResourceSite", 45,
+                () =>
+                {
+                    // Capture a real origin before mutating so teardown can never wait on an empty target.
+                    var location = ModApi.Services.Travel.CurrentLocation;
+                    if (location?.PoiId == null)
+                        return StepResult.Wait($"current location unavailable: {location?.SystemId ?? "null"}/null");
+                    originPoi = location.PoiId;
+                    originSystem = location.SystemId;
+                    return NativeGameplay.ClickHudRow("Spawn derelict")
+                        ? StepResult.Pass($"spawn clicked; origin={originSystem}/{originPoi}")
+                        : StepResult.Wait("Spawn derelict HUD row is not clickable yet");
+                },
+                () =>
+                {
+                    var p = NativeGameplay.PluginInstance(PluginId);
+                    var spawned = p != null && Spawned(p);
+                    var stationPoi = p == null ? null : StationPoi(p);
+                    return spawned && stationPoi != null
+                        ? StepResult.Pass("spawned station=" + stationPoi)
+                        : StepResult.Wait($"pluginLoaded={p != null}; spawned={spawned}; stationPoi={stationPoi ?? "null"}");
+                }),
             // Adoption only fires once a live boarding target belongs to the authored station, which
             // needs the player present, so route in-system to the station to create that target.
             TravelStep("travel to the derelict station",
@@ -91,29 +101,33 @@ internal static class CargoRecoveryCase
     private static TestStep TravelStep(string name, Func<string?> poi, Func<string> system,
         TravelMode mode, List<TravelTransition> events)
     {
-        var requested = false;
         var firstSequence = 0L;
-        return new TestStep(name, "ITravelService.RequestRoute / Transitioned", () =>
-        {
-            NativeSession.RequireEphemeral();
-            var targetPoi = poi();
-            if (string.IsNullOrEmpty(targetPoi)) return false;
-            var targetSystem = system();
-            if (!requested)
+        return TestStep.ActionThenWait(name, "ITravelService.RequestRoute / Transitioned", 180,
+            () =>
             {
+                NativeSession.RequireEphemeral();
+                var targetPoi = poi();
+                if (string.IsNullOrEmpty(targetPoi)) return StepResult.Wait("target POI has not been authored yet");
                 firstSequence = events.Count == 0 ? 0 : events.Max(e => e.Sequence);
                 var result = ModApi.Services.Travel.RequestRoute(targetPoi, 7f);
-                if (!result.Accepted) throw new InvalidOperationException("Travel request refused: " + result.Status + " - " + result.Detail);
-                requested = true;
-            }
-            var current = ModApi.Services.Travel.CurrentLocation;
-            if (current?.SystemId != targetSystem || current.PoiId != targetPoi) return false;
-            var leg = events.Where(e => e.Sequence > firstSequence).ToArray();
-            if (!leg.Any(e => e.Kind == TravelTransitionKind.Arrived && e.Mode == mode
-                && e.ActualLocation?.SystemId == targetSystem && e.ActualLocation.PoiId == targetPoi)) return false;
-            if (!leg.Any(e => e.Kind == TravelTransitionKind.RouteCompleted && e.Mode == mode)) return false;
-            NativeGameplay.Screenshot(name);
-            return true;
-        });
+                return result.Accepted ? StepResult.Pass("route accepted")
+                    : StepResult.Fail("Travel request refused: " + result.Status + " - " + result.Detail);
+            },
+            () =>
+            {
+                var targetPoi = poi()!;
+                var targetSystem = system();
+                var current = ModApi.Services.Travel.CurrentLocation;
+                var leg = events.Where(e => e.Sequence > firstSequence).ToArray();
+                var arrived = leg.Any(e => e.Kind == TravelTransitionKind.Arrived && e.Mode == mode
+                    && e.ActualLocation?.SystemId == targetSystem && e.ActualLocation.PoiId == targetPoi);
+                var completed = leg.Any(e => e.Kind == TravelTransitionKind.RouteCompleted && e.Mode == mode);
+                var observation = $"current={current?.SystemId ?? "null"}/{current?.PoiId ?? "null"}; "
+                    + $"target={targetSystem}/{targetPoi}; arrived={arrived}; completed={completed}; transitions={leg.Length}";
+                if (current?.SystemId != targetSystem || current.PoiId != targetPoi || !arrived || !completed)
+                    return StepResult.Wait(observation);
+                NativeGameplay.Screenshot(name);
+                return StepResult.Pass(observation);
+            });
     }
 }

@@ -127,11 +127,16 @@ class GameInstallation:
 
 
 def failure(report, detail, binding="controller"):
+    progress = report.get("progress")
+    if progress:
+        detail += (f"; last step={progress['step']!r}, observation={progress['observation']!r}, "
+                   f"elapsedMs={progress['elapsedMs']}/{progress['timeoutMs']}")
+        binding = progress["binding"]
     report["results"].append(dict(id=CASE, status="fail", detail=detail, binding=binding, elapsedMs=0))
 
 
 def new_report():
-    return dict(schema=2, meta={}, results=[], finished=False)
+    return dict(schema=2, meta={}, results=[], progress=None, finished=False)
 
 
 def gate(report):
@@ -149,6 +154,8 @@ def read_report(path):
             raise ValueError("missing metadata/results")
         for result in report["results"]:
             validate_result(result)
+        if report.get("progress") is not None:
+            validate_progress(report["progress"])
         return report
     except (OSError, ValueError, TypeError, AttributeError) as error:
         raise E2EError(f"Invalid E2E report: {error}") from error
@@ -162,6 +169,16 @@ def validate_result(result):
     elapsed = result.get("elapsedMs")
     if type(elapsed) is not int or elapsed < 0:
         raise E2EError("Invalid result elapsedMs.")
+
+
+def validate_progress(progress):
+    required = ("step", "binding", "observation", "elapsedMs", "timeoutMs")
+    if not isinstance(progress, dict) or any(key not in progress for key in required):
+        raise E2EError("Invalid progress message.")
+    if not all(isinstance(progress[key], str) for key in ("step", "binding", "observation")):
+        raise E2EError("Progress text fields must be strings.")
+    if not all(type(progress[key]) is int and progress[key] >= 0 for key in ("elapsedMs", "timeoutMs")):
+        raise E2EError("Progress times must be non-negative integers.")
 
 
 def consume(conn, report, run_id, deadline):
@@ -190,9 +207,19 @@ def consume(conn, report, run_id, deadline):
                 if msg.get("runId") != run_id:
                     raise E2EError("Unexpected controller run ID.")
                 report["meta"] = {k: v for k, v in msg.items() if k != "type"}
+            elif kind == "progress" and report["meta"] and not report["results"]:
+                required = ("step", "binding", "observation", "elapsedMs", "timeoutMs")
+                if msg.get("id") != CASE:
+                    raise E2EError("Invalid progress message.")
+                validate_progress(msg)
+                progress = {key: msg[key] for key in required}
+                report["progress"] = progress
+                print(f"  step: {progress['step']} ({progress['elapsedMs']}ms/{progress['timeoutMs']}ms)"
+                      f" - {progress['observation']}", flush=True)
             elif kind == "result" and report["meta"] and not report["results"]:
                 if msg.get("id") != CASE:
-                    raise E2EError(f"Result for unrequested case: {msg.get('id')!r} (requested {CASE!r}).")
+                    raise E2EError(f"Result for unrequested case: {msg.get('id')!r} (requested {CASE!r}); "
+                                   f"game detail: {msg.get('detail')!r}.")
                 validate_result(msg)
                 report["results"].append({k: v for k, v in msg.items() if k != "type"})
             elif kind == "finish" and report["results"]:
