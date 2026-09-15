@@ -72,9 +72,9 @@ feature chunks. Tests verify those behaviors or reproduce actual defects.
   substantive review findings before delivery. Squash-merge only when authorized.
 - Do not bump versions per feature. `Directory.Build.props` stays at development version
   `0.0.0`; the release workflow derives the public assembly/package version from the reviewed
-  numeric tag. Merging a feature does not publish a release. A numeric stable-channel prerelease
-  publishes artifacts without advancing discovery; to promote that same tag later, first mark its
-  GitHub release non-prerelease, then rerun the workflow without the prerelease input.
+  numeric tag. Merging a feature does not publish a release. See the
+  [prerelease process](docs/development/README.md#prereleases); stable promotion is a
+  separate authorized task, not part of the asset workflow.
 - Read the [lifecycle contract](docs/reference/lifecycle-contract.md) and
   [compatibility limits](docs/reference/compatibility.md) before modifying hooks.
 - Run the relevant Makefile checks. Never run reference-bearing checks on untrusted
