@@ -13,7 +13,7 @@ namespace CargoRecovery;
 /// "Attach cargo encounter" action appears on any observed target you select.
 /// </summary>
 [BepInPlugin(Id, "Cargo recovery example", "1.0.0")]
-[BepInDependency(ModApi.PluginId, "0.2.10")]
+[BepInDependency(ModApi.PluginId, "0.2.8")]
 public sealed class Plugin : BaseUnityPlugin
 {
     private const string Id = "vgmodapi.example.cargo";

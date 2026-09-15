@@ -4,7 +4,7 @@
 in the game's gameplay UI and belongs entirely to your mod, plus a Forge inspector that reads the
 recipe catalog and shows requirements and output previews — added to the game's own Forge screen.
 
-A sample/test BepInEx mod for the **VG Mod API** (v0.2.10+).
+A sample/test BepInEx mod for the **VG Mod API** (v0.2.8+).
 
 ## What it demonstrates (the abilities)
 
@@ -50,4 +50,4 @@ dotnet build examples/UiSurfaces/UiSurfaces.csproj
 Deploy `bin/Debug/netstandard2.1/UiSurfaces.dll` into `BepInEx/plugins/`. Do not deploy a duplicate
 `VGModAPI.Abstractions` assembly alongside the separately installed API.
 
-Requires the VG Mod API plugin (≥ **0.2.10**). This example is never part of the shipped API package.
+Requires the VG Mod API plugin (≥ **0.2.8**). This example is never part of the shipped API package.

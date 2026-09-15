@@ -17,7 +17,7 @@ namespace Observation;
 /// The Unity-free injected consumers in `Consumers/` show the same discipline as plain .NET classes.
 /// </summary>
 [BepInPlugin(Id, "Observation example", "1.0.0")]
-[BepInDependency(ModApi.PluginId, "0.2.10")]
+[BepInDependency(ModApi.PluginId, "0.2.8")]
 [BepInProcess("VanguardGalaxy.exe")]
 public sealed class Plugin : BaseUnityPlugin
 {

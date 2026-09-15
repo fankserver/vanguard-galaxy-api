@@ -36,7 +36,7 @@ provider's installation object is a programming error.
 
 ## Installation reactions
 
-Require API **0.2.10** when compiling against the current dungeon provider contract.
+Require API **0.2.8** when compiling against the current dungeon provider contract.
 The dungeon content service must be available; unsupported game bindings cannot
 provide installation events. Subscribe to a particular installation once during plugin setup:
 

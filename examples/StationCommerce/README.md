@@ -4,7 +4,7 @@
 manufactured item, the recipe that produces it, and a bar contact standing in a real station's bar
 with a mission attached — all persisted by the API, with no save hook of your own.
 
-A sample/test BepInEx mod for the **VG Mod API** (v0.2.10+), built **twice** as two separately loaded
+A sample/test BepInEx mod for the **VG Mod API** (v0.2.8+), built **twice** as two separately loaded
 assemblies to demonstrate authenticated provider composition.
 
 ## What it demonstrates (the abilities)
@@ -64,6 +64,6 @@ dotnet build examples/StationCommerce/AuthorB/StationCommerceB.csproj
 Deploy the built DLLs into `BepInEx/plugins/`. Enable the API's `[Bars] Enabled` setting for the
 contact to appear.
 
-Requires the VG Mod API plugin (≥ **0.2.10**). Use disposable saves when trying example content; do
+Requires the VG Mod API plugin (≥ **0.2.8**). Use disposable saves when trying example content; do
 not install it into an existing campaign without explicit intent and backups. These examples are
 never part of the shipped API package.

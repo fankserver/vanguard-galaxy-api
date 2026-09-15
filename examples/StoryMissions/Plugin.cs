@@ -17,7 +17,7 @@ namespace StoryMissions;
 /// are registered once, and the API restores missions, progress and declared choices itself.
 /// </summary>
 [BepInPlugin(Id, "Story Missions example", "1.0.0")]
-[BepInDependency(ModApi.PluginId, "0.2.10")]
+[BepInDependency(ModApi.PluginId, "0.2.8")]
 public sealed class Plugin : BaseUnityPlugin
 {
     private const string Id = "vgmodapi.example.story-missions";

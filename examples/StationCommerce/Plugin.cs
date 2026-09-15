@@ -19,7 +19,7 @@ namespace StationCommerce;
 /// no serializer.
 /// </summary>
 [BepInPlugin(Id, "Station Commerce example (" + Variant + ")", "1.0.0")]
-[BepInDependency(ModApi.PluginId, "0.2.10")]
+[BepInDependency(ModApi.PluginId, "0.2.8")]
 public sealed class Plugin : BaseUnityPlugin
 {
 #if AUTHOR_B

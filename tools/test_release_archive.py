@@ -2,8 +2,15 @@ import os
 import tempfile
 from pathlib import Path
 import unittest
+import xml.etree.ElementTree as ET
 import zipfile
 from release_archive import REQUIRED_FILES, create, validate_layout
+
+
+class DevelopmentVersionTests(unittest.TestCase):
+    def test_checked_in_version_is_never_a_release_number(self):
+        props = Path(__file__).resolve().parent.parent / 'Directory.Build.props'
+        self.assertEqual('0.0.0', ET.parse(props).findtext('PropertyGroup/Version'))
 
 
 class ArchiveTests(unittest.TestCase):

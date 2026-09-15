@@ -4,7 +4,7 @@
 through rooms you laid out, hit an authored decision in the cargo hold, and pull them back out —
 with the outcome saved by the API, not by you.
 
-A sample/test BepInEx mod for the **VG Mod API** (v0.2.10+). It is the full boarding tour: it
+A sample/test BepInEx mod for the **VG Mod API** (v0.2.8+). It is the full boarding tour: it
 **creates its own derelict**, attaches its own layout to it, and surrounds it with the optional
 contextual panel action, command lease, tactical request and observed crew settlement.
 
@@ -132,6 +132,6 @@ dotnet build examples/CargoRecovery/CargoRecovery.csproj
 
 Deploy `bin/Debug/netstandard2.1/CargoRecovery.dll` into `BepInEx/plugins/`.
 
-Requires the VG Mod API plugin (≥ **0.2.10**) and available boarding/dungeon services on the
+Requires the VG Mod API plugin (≥ **0.2.8**) and available boarding/dungeon services on the
 inspected game build. No Unity polling, native casts, Harmony patches or custom save serializer are
 used. This example is never part of the shipped API package.
