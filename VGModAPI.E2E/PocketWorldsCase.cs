@@ -14,53 +14,18 @@ internal static class PocketWorldsCase
         List<TravelTransition> travelEvents)
     {
         var s = new State();
-        var sawOpeningDialogue = false;
-        var noDialogueTicks = 0;
-        return new[]
+        var result = new List<TestStep>(LiveBoot.Steps("vgmodapi.example.pocket-worlds", lifecycle, lifecycleEvents))
         {
-            new TestStep("main menu and example load", "Chainloader.PluginInfos[vgmodapi.example.pocket-worlds]", () =>
+            new TestStep("observe initial placement and HUD", "ITravelService.CurrentLocation / Mod API shared HUD", 30, () =>
             {
-                if (!NativeSession.MenuReady()) return false;
-                s.Plugin = NativeGameplay.ExamplePlugin();
-                return s.Plugin != null;
-            }),
-            new TestStep("open normal New Game", "MainMenuUI.StartGame", () =>
-            {
-                var availability = lifecycle.SessionTracking.Availability;
-                if (!availability.IsAvailable)
-                    throw new InvalidOperationException("SessionTracking: " + availability.Reason + ": " + availability.Detail);
-                NativeSession.OpenNewGameWizard();
-                return true;
-            }),
-            new TestStep("complete normal New Game", "NewGame.SubmitInput / SaveInputs / GameManager.StartNewGame",
-                NativeSession.AdvanceNewGameWizard),
-            new TestStep("initialize normal gameplay", "GameplayManager.Start / lifecycle SessionTracking", () =>
-            {
-                NativeSession.RequireEphemeral();
-                if (!NativeSession.Initialized() || lifecycle.CurrentSession?.Phase != SessionPhase.GameplayInitialized) return false;
-                NativeGameplay.Screenshot("normal-gameplay-start");
-                return true;
-            }),
-            new TestStep("finish opening dialogue", "DialogueManager.IsDialogueOpen / NextOrFinish", () =>
-            {
-                if (NativeGameplay.DialogueOpen())
-                {
-                    sawOpeningDialogue = true;
-                    NativeGameplay.AdvanceDialogue();
-                    return false;
-                }
-                if (sawOpeningDialogue) return true;
-                if (noDialogueTicks++ < 60 * 20) return false;
-                return true;
-            }),
-            new TestStep("observe initial placement and HUD", "ITravelService.CurrentLocation / Mod API shared HUD", () =>
-            {
+                s.Plugin ??= NativeGameplay.ExamplePlugin();
                 var location = ModApi.Services.Travel.CurrentLocation;
-                if (location?.PoiId == null) return false;
+                if (s.Plugin == null || location?.PoiId == null)
+                    return StepResult.Wait($"pluginLoaded={s.Plugin != null}; location={location?.SystemId ?? "null"}/{location?.PoiId ?? "null"}");
                 s.OriginSystem = location.SystemId;
                 s.OriginPoi = location.PoiId;
                 NativeGameplay.Screenshot("initial-placement");
-                return true;
+                return StepResult.Pass($"origin={s.OriginSystem}/{s.OriginPoi}");
             }),
             new TestStep("click Spawn Wormhole", "UnityEngine.UI.Button.onClick / PocketWorlds.OnHud(spawn)", () =>
             {
@@ -151,35 +116,38 @@ internal static class PocketWorldsCase
                 return true;
             }),
         };
+        return result;
     }
 
     private static TestStep TravelStep(string name, State s, Func<string> poi, Func<string> system,
         TravelMode mode, List<TravelTransition> events)
     {
-        var requested = false;
         var firstSequence = 0L;
-        return new TestStep(name, "ITravelService.RequestRoute / Transitioned", () =>
-        {
-            NativeSession.RequireEphemeral();
-            var targetPoi = poi();
-            var targetSystem = system();
-            if (!requested)
+        return TestStep.ActionThenWait(name, "ITravelService.RequestRoute / Transitioned", 180,
+            () =>
             {
+                NativeSession.RequireEphemeral();
                 firstSequence = events.Count == 0 ? 0 : events.Max(e => e.Sequence);
-                var result = ModApi.Services.Travel.RequestRoute(targetPoi, 7f);
-                if (!result.Accepted) throw new InvalidOperationException("Travel request refused: " + result.Status + " - " + result.Detail);
-                requested = true;
-            }
-            var current = ModApi.Services.Travel.CurrentLocation;
-            if (current?.SystemId != targetSystem || current.PoiId != targetPoi) return false;
-            var leg = events.Where(e => e.Sequence > firstSequence).ToArray();
-            if (!leg.Any(e => e.Kind == TravelTransitionKind.Arrived && e.Mode == mode
-                && e.ActualLocation?.SystemId == targetSystem && e.ActualLocation.PoiId == targetPoi))
-                return false;
-            if (!leg.Any(e => e.Kind == TravelTransitionKind.RouteCompleted && e.Mode == mode)) return false;
-            NativeGameplay.Screenshot(name);
-            return true;
-        });
+                var result = ModApi.Services.Travel.RequestRoute(poi(), 7f);
+                return result.Accepted ? StepResult.Pass("route accepted")
+                    : StepResult.Fail("Travel request refused: " + result.Status + " - " + result.Detail);
+            },
+            () =>
+            {
+                var targetPoi = poi();
+                var targetSystem = system();
+                var current = ModApi.Services.Travel.CurrentLocation;
+                var leg = events.Where(e => e.Sequence > firstSequence).ToArray();
+                var arrived = leg.Any(e => e.Kind == TravelTransitionKind.Arrived && e.Mode == mode
+                    && e.ActualLocation?.SystemId == targetSystem && e.ActualLocation.PoiId == targetPoi);
+                var completed = leg.Any(e => e.Kind == TravelTransitionKind.RouteCompleted && e.Mode == mode);
+                var observation = $"current={current?.SystemId ?? "null"}/{current?.PoiId ?? "null"}; "
+                    + $"target={targetSystem}/{targetPoi}; arrived={arrived}; completed={completed}; transitions={leg.Length}";
+                if (current?.SystemId != targetSystem || current.PoiId != targetPoi || !arrived || !completed)
+                    return StepResult.Wait(observation);
+                NativeGameplay.Screenshot(name);
+                return StepResult.Pass(observation);
+            });
     }
 
     private static void Capture(State s)
