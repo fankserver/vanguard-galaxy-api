@@ -725,12 +725,13 @@ public sealed partial class Plugin : BaseUnityPlugin
             // station (if any) so the row is intentionally absent instead of a dead entry that could
             // never bind again. The resolver reads the location before native removal; the drop runs
             // after the verified removal only.
-            _siteCoordinator?.AttachDungeonPrune(
+            _siteCoordinator?.AttachDungeonRemoval(
                 poiId =>
                 {
                     var location = _dungeonAegisRuntime?.ResolveLocation(poiId);
                     return location == null ? (Guid?)null : _dungeonAdapter?.AttachedDungeon(location);
                 },
+                () => _dungeons?.CanDropDungeon == true,
                 poi =>
                 {
                     var dropped = _dungeons?.DropDungeon(poi) ?? false;

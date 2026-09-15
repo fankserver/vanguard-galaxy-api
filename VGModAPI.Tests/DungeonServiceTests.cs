@@ -34,6 +34,7 @@ public sealed class DungeonServiceTests
         internal int Applied, Diagnosed, ChoiceChecks;
         internal bool ThrowNative;
         internal Func<string, BoardingHandle?>? Resolve;
+        internal Func<string, BoardingHandle?>? ResolveSite;
         internal Fixture()
         {
             State = new(Hub, Persistence);
@@ -43,7 +44,7 @@ public sealed class DungeonServiceTests
             Service = new(Hub, new(_ => true, _ => true, _ => true), State,
                 new((_, _) => DungeonStatus.Attached, (_, _) => { }, (_, _, _) => { ChoiceChecks++; return DungeonStatus.ChoiceApplied; },
                     (_, _, _) => { Applied++; if (ThrowNative) throw new InvalidOperationException("native failure"); },
-                    poiId => Resolve?.Invoke(poiId)), (_, _) => Diagnosed++);
+                    poiId => Resolve?.Invoke(poiId), poiId => ResolveSite?.Invoke(poiId)), (_, _) => Diagnosed++);
             _combat = new BoardingCombatService(Hub, Hub.ReportSubscriberFailure);
             _rewards = new DungeonRewardService(Hub, Hub.ReportSubscriberFailure);
             _operations = new BoardingService(Hub, Hub.ReportSubscriberFailure);
@@ -61,6 +62,38 @@ public sealed class DungeonServiceTests
             _commands.Dispose(); _tactics.Dispose(); _panel.Dispose();
         }
     }
+    private sealed class Site : IResourceSite, IResourceSiteAttachmentTarget
+    {
+        private readonly bool _current;
+        internal Site(ResourceSiteDefinition definition, string? poiId, bool current = true)
+        { Definition = definition; PoiId = poiId; _current = current; }
+        public string PoiKey => "site";
+        public ResourceSiteDefinition Definition { get; }
+        public ResourceSiteState State => new(ReconstructionStatus.Reconstructed, poiId: PoiId);
+        public string? PoiId { get; }
+        bool IResourceSiteAttachmentTarget.WithStation => Definition.WithStation;
+        bool IResourceSiteAttachmentTarget.TryGetCurrentPoi(out string poiId)
+        { poiId = PoiId ?? ""; return _current && PoiId != null; }
+        public WorldContentResult LastAction => new(WorldContentStatus.Succeeded);
+        public event Action<IResourceSite>? Changed { add { } remove { } }
+        public WorldContentResult Remove() => new(WorldContentStatus.Rejected);
+        public RemovalStatus CanRemove() => RemovalStatus.NotReady;
+        public WorldContentResult RequestRemoval() => new(WorldContentStatus.Rejected);
+    }
+    private sealed class ForeignSite : IResourceSite
+    {
+        public string PoiKey => "foreign";
+        public ResourceSiteDefinition Definition => Salvage(station: true);
+        public ResourceSiteState State => new(ReconstructionStatus.Reconstructed, poiId: "foreign-poi");
+        public string? PoiId => "foreign-poi";
+        public WorldContentResult LastAction => new(WorldContentStatus.Succeeded);
+        public event Action<IResourceSite>? Changed { add { } remove { } }
+        public WorldContentResult Remove() => new(WorldContentStatus.Rejected);
+        public RemovalStatus CanRemove() => RemovalStatus.NotReady;
+        public WorldContentResult RequestRemoval() => new(WorldContentStatus.Rejected);
+    }
+    private static ResourceSiteDefinition Salvage(bool station) => ResourceSiteDefinition.Salvage(
+        "wreck", 1, "Wreck", 8, "Monsoon", "Fanatics", withStation: station);
     private static DungeonDefinition Definition(int version = 1) => new(version, "Dungeon", new DungeonLayout(new[]
     {
         new DungeonCompartmentDefinition("entry", CompartmentType.Airlock, new[] { "room" }),
@@ -161,6 +194,26 @@ public sealed class DungeonServiceTests
         f.Resolve = _ => null;
         Assert.Equal(DungeonStatus.StaleTarget, provider.Attach("content", installation).Status);
     }
+    [Fact]
+    public void AttachByResourceSiteResolvesItsStationAndRefusesSitesWithoutOne()
+    {
+        using var f = new Fixture(); using var provider = f.Service.AcquireProvider("owner");
+        using var registration = provider.Register("content", Definition());
+        Assert.Throws<ArgumentException>(() => provider.Attach("content", new ForeignSite()));
+        var station = new Site(Salvage(station: true), "salvage-poi");
+        Assert.Equal(DungeonStatus.StaleTarget, provider.Attach("content", station).Status);
+        var target = f.Target;
+        f.ResolveSite = poiId => poiId == "salvage-poi" ? target : null;
+        var attached = provider.Attach("content", station);
+        Assert.Equal(DungeonStatus.Attached, attached.Status);
+        Assert.NotNull(attached.DungeonId);
+        Assert.Equal(DungeonStatus.StaleTarget,
+            provider.Attach("content", new Site(Salvage(station: true), "old-poi", current: false)).Status);
+        var noStation = provider.Attach("content", new Site(Salvage(station: false), "other-poi"));
+        Assert.Equal(DungeonStatus.InvalidDefinition, noStation.Status);
+        Assert.Equal("The resource site does not declare a station.", noStation.Detail);
+    }
+
     [Fact]
     public void ForeignOrUnobtainedInstallationObjectsAreProgrammingErrors()
     {

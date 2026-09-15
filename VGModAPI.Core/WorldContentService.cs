@@ -219,12 +219,14 @@ internal sealed class WorldContentService : IWorldService, IDisposable
     { if (finalize != null) _pendingRemovals.Add(new PendingRemoval(session, finalize)); }
     /// <summary>
     /// After a successful native pocket removal: drop the retained authored-site rows inside the
-    /// removed system (their native POIs were removed with it) and let every provider terminally mark
-    /// and release its owned poi objects for that pocket.
+    /// removed system (their native POIs were removed with it), drop the authored dungeon pois that
+    /// were attached to those sites and captured before the removal, and let every provider terminally
+    /// mark and release its owned poi objects for that pocket.
     /// </summary>
-    private void PocketRemoved(string systemId)
+    private void PocketRemoved(string systemId, Guid[] attachedDungeons)
     {
         var droppedSites = _siteCoordinator?.DropPoisInSystem(systemId) ?? Array.Empty<(string, string, string)>();
+        _siteCoordinator?.RemoveAttachedDungeons(attachedDungeons);
         foreach (var notify in _removeNotifiers.ToArray())
         {
             try { notify(systemId, droppedSites); } catch { /* one provider's fault must not block the others */ }
@@ -1014,7 +1016,7 @@ internal sealed class WorldContentService : IWorldService, IDisposable
         }
 
         /// <summary>The owned authored-site poi object; one poi per key per session.</summary>
-        private sealed class ResourceSiteHandle : IResourceSite
+        private sealed class ResourceSiteHandle : IResourceSite, IResourceSiteAttachmentTarget
         {
             private readonly Provider _provider;
             private readonly string _localId;
@@ -1042,6 +1044,16 @@ internal sealed class WorldContentService : IWorldService, IDisposable
             }
             public ResourceSiteState State { get { _provider._service._hub.CheckThread(); return _state; } }
             public string? PoiId => State.PoiId;
+            bool IResourceSiteAttachmentTarget.WithStation => Definition.WithStation;
+            bool IResourceSiteAttachmentTarget.TryGetCurrentPoi(out string poiId)
+            {
+                _provider._service._hub.CheckThread();
+                var current = !_removed && !_provider._disposed && !_provider._service._disposed
+                    && _provider._service._hub.CurrentSession?.Id == Session
+                    && _state.Status == ReconstructionStatus.Reconstructed ? _state.PoiId : null;
+                poiId = current ?? "";
+                return current != null;
+            }
             public WorldContentResult LastAction { get { _provider._service._hub.CheckThread(); return _lastAction; } }
             public event Action<IResourceSite>? Changed { add => _changed += value; remove => _changed -= value; }
             internal void RecordAction(WorldContentResult result) => _lastAction = result;
@@ -1458,22 +1470,34 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                 if (row != null && _service._wormholeCoordinator != null && _service._wormholeCoordinator.AnyPoiInSystem(row.SystemId))
                     return RemovalStatus.WormholeEndpoint;
                 if (row == null) return RemovalStatus.NotPresent;
+                // A pure read: an attached authored dungeon that cannot be read cannot be dropped later.
+                if (CaptureAttachedDungeons(row) == null) return RemovalStatus.Unavailable;
                 return _service._authoredCoordinator.CanRemove(_authored, _session, Reference);
             }
-            private void CompleteRemoval(string? systemId)
+            private void CompleteRemoval(string? systemId, Guid[] attachedDungeons)
             {
                 _removed = true;
                 _evict();
                 ReleaseQuiet();
-                if (systemId != null) _service.PocketRemoved(systemId);
+                if (systemId != null) _service.PocketRemoved(systemId, attachedDungeons);
             }
+            /// <summary>
+            /// Resolves the dungeon pois attached to sites inside this pocket while its native POIs still
+            /// exist. Null means a read faulted and the removal must be refused instead of leaking rows.
+            /// </summary>
+            private Guid[]? CaptureAttachedDungeons(PocketSystemPoi? row)
+                => row == null || _service._siteCoordinator == null
+                    ? Array.Empty<Guid>()
+                    : _service._siteCoordinator.GetAttachedDungeonsInSystem(row.SystemId);
             private bool CompletePendingRemoval()
             {
                 _service._hub.CheckThread();
                 if (_removed || !_removalRequested || CanRemove() != RemovalStatus.Ready) return false;
+                var captured = CaptureAttachedDungeons(_service._authoredCoordinator!.TryGetPoi(_authored.Owner, _localId, _poiKey));
+                if (captured == null) return false;
                 var (status, detail, systemId) = _service._authoredCoordinator!.Remove(_authored, _session, Reference);
                 if (status != WorldContentStatus.Succeeded) return false;
-                CompleteRemoval(systemId);
+                CompleteRemoval(systemId, captured);
                 _lastAction = new WorldContentResult(WorldContentStatus.Succeeded, "The requested removal completed at a cleanup window.");
                 return true;
             }
@@ -1507,9 +1531,14 @@ internal sealed class WorldContentService : IWorldService, IDisposable
                     && _service._wormholeCoordinator.AnyPoiInSystem(row.SystemId))
                     return _lastAction = new WorldContentResult(WorldContentStatus.Rejected,
                         "The pocket is still the endpoint of a wormhole; remove the wormhole before removing the pocket.");
+                // Capture the attached authored dungeon pois before the pocket takes its sites with it.
+                var captured = CaptureAttachedDungeons(row);
+                if (captured == null)
+                    return _lastAction = new WorldContentResult(WorldContentStatus.Unavailable,
+                        "The attached dungeon state of a site inside the pocket is unavailable.");
                 var (status, detail, systemId) = _service._authoredCoordinator.Remove(_authored, _session, Reference);
                 if (status != WorldContentStatus.Succeeded) return _lastAction = new WorldContentResult(ToActionStatus(status), detail);
-                CompleteRemoval(systemId);
+                CompleteRemoval(systemId, captured);
                 return _lastAction = new WorldContentResult(WorldContentStatus.Succeeded);
             }
             private static WorldContentStatus ToActionStatus(WorldContentStatus status) => status switch

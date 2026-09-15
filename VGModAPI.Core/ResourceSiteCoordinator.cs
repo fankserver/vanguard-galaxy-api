@@ -126,6 +126,7 @@ internal sealed class ResourceSiteCoordinator : IDisposable
     private readonly HashSet<(string Owner, string Local, string Key)> _failed = new();
     private Action<Guid>? _settled;
     private Func<string, Guid?>? _resolveAttachedDungeon;
+    private Func<bool>? _canDropDungeon;
     private Func<Guid, bool>? _dropDungeon;
     private Guid _session;
     private bool _settledOnce;
@@ -143,15 +144,15 @@ internal sealed class ResourceSiteCoordinator : IDisposable
     }
     internal void AttachSettled(Action<Guid> settled) { _hub.CheckThread(); _settled = settled; }
     /// <summary>
-    /// Bridges the dungeon-content layer so a site's attached authored dungeon poi can be
-    /// dropped when the site is removed. The resolver runs before native removal (while the native
-    /// location is still resolvable) and the drop runs only after a verified removal, so a failed
-    /// removal never strands or loses dungeon state.
+    /// Bridges the dungeon-content layer so retained API state follows the native lifetime of the
+    /// site's boarding location. The resolver runs before native removal, while the location still
+    /// exists; state is removed only after the native removal is verified.
     /// </summary>
-    internal void AttachDungeonPrune(Func<string, Guid?> resolveAttached, Func<Guid, bool> drop)
+    internal void AttachDungeonRemoval(Func<string, Guid?> resolveAttached, Func<bool> canDrop, Func<Guid, bool> drop)
     {
         _hub.CheckThread();
         _resolveAttachedDungeon = resolveAttached ?? throw new ArgumentNullException(nameof(resolveAttached));
+        _canDropDungeon = canDrop ?? throw new ArgumentNullException(nameof(canDrop));
         _dropDungeon = drop ?? throw new ArgumentNullException(nameof(drop));
     }
     private void Reset()
@@ -197,6 +198,43 @@ internal sealed class ResourceSiteCoordinator : IDisposable
         var dropped = _committed.Where(pair => pair.Value.SystemId == systemId).Select(pair => pair.Key).ToArray();
         foreach (var key in dropped) { _committed.Remove(key); _failed.Remove(key); }
         return dropped;
+    }
+
+    /// <summary>
+    /// Gets the authored dungeons attached to committed sites in a system while their native locations
+    /// still exist. Null means the read faulted; empty means no attached dungeon state.
+    /// </summary>
+    internal Guid[]? GetAttachedDungeonsInSystem(string systemId)
+    {
+        _hub.CheckThread();
+        if (_disposed || string.IsNullOrEmpty(systemId) || _resolveAttachedDungeon == null) return Array.Empty<Guid>();
+        var attached = new List<Guid>();
+        foreach (var row in _committed.Values)
+        {
+            if (row.SystemId != systemId || row.PoiId is not { Length: > 0 } attachedPoi) continue;
+            try { if (_resolveAttachedDungeon(attachedPoi) is { } dungeon) attached.Add(dungeon); }
+            catch (Exception error) { _report(error); return null; }
+        }
+        return attached.Count == 0 || _canDropDungeon?.Invoke() == true ? attached.ToArray() : null;
+    }
+
+    /// <summary>
+    /// Removes retained dungeon state after the native locations that owned it were verified removed.
+    /// A persistence refusal is reported; it cannot undo the already-completed native removal.
+    /// </summary>
+    internal void RemoveAttachedDungeons(Guid[] attached)
+    {
+        _hub.CheckThread();
+        if (_disposed || _dropDungeon == null) return;
+        foreach (var poi in attached)
+        {
+            try
+            {
+                if (!_dropDungeon(poi))
+                    _report(new InvalidOperationException("An attached authored dungeon poi could not be removed after pocket removal."));
+            }
+            catch (Exception error) { _report(error); }
+        }
     }
 
     internal (WorldContentStatus Status, ResourceSitePoi? Row) Create(ResourceSiteRegistry.Provider provider,
@@ -248,6 +286,8 @@ internal sealed class ResourceSiteCoordinator : IDisposable
         {
             try { attachedDungeon = _resolveAttachedDungeon(attachedPoi); }
             catch (Exception error) { _report(error); return (WorldContentStatus.Unavailable, "The site's attached dungeon state could not be read."); }
+            if (attachedDungeon.HasValue && _canDropDungeon?.Invoke() != true)
+                return (WorldContentStatus.Unavailable, "The site's attached dungeon state cannot be changed right now.");
         }
         try
         {
@@ -258,8 +298,15 @@ internal sealed class ResourceSiteCoordinator : IDisposable
                     _committed.Remove(rowKey);
                     // The native site is gone; dropping the attached row records its absence rather than
                     // leaving a dead poi that could never bind again.
-                    if (attachedDungeon.HasValue && _dropDungeon != null && !_dropDungeon(attachedDungeon.Value))
-                        _report(new InvalidOperationException("An attached authored dungeon poi could not be dropped after site removal."));
+                    if (attachedDungeon.HasValue && _dropDungeon != null)
+                    {
+                        try
+                        {
+                            if (!_dropDungeon(attachedDungeon.Value))
+                                _report(new InvalidOperationException("An attached authored dungeon poi could not be removed after site removal."));
+                        }
+                        catch (Exception error) { _report(error); }
+                    }
                     return (WorldContentStatus.Succeeded, "");
                 case ResourceSiteRemoveOutcome.Missing:
                     return (WorldContentStatus.Rejected, "The site is not currently present natively; wait for reconstruction or check its state.");
@@ -287,7 +334,11 @@ internal sealed class ResourceSiteCoordinator : IDisposable
             return RemovalStatus.HeldEnterable;
         if (_resolveAttachedDungeon != null && row.PoiId is { Length: > 0 } attachedPoi)
         {
-            try { _ = _resolveAttachedDungeon(attachedPoi); }
+            try
+            {
+                var attached = _resolveAttachedDungeon(attachedPoi);
+                if (attached.HasValue && _canDropDungeon?.Invoke() != true) return RemovalStatus.Unavailable;
+            }
             catch (Exception error) { _report(error); return RemovalStatus.Unavailable; }
         }
         return _native.Readiness(session, row.SystemId, row.PoiId, row.Kind);

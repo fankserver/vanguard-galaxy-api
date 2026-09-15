@@ -66,6 +66,23 @@ internal static class PocketWorldsCase
             TravelStep("return Mining to Hub", s, () => s.MiningHole!.FirstWormholePoiId!, () => s.Hub!.SystemId!, TravelMode.Wormhole, travelEvents),
             TravelStep("travel Hub to Salvage Instance", s, () => s.SalvageHole!.SecondWormholePoiId!, () => s.Salvage!.SystemId!, TravelMode.Wormhole, travelEvents),
             TravelStep("visit salvage wreck", s, () => s.SalvageSite!.PoiId!, () => s.Salvage!.SystemId!, TravelMode.InSystem, travelEvents),
+            TestStep.ActionThenWait("attach dungeon to salvage station",
+                "PocketWorlds.Attach(IResourceSite) / IDungeonProvider.GetDungeons", 30,
+                () => NativeGameplay.ClickHudRow("Attach station layout")
+                    ? StepResult.Pass("Attach station layout clicked at " + LocationObservation())
+                    : StepResult.Wait("Attach station layout is not clickable yet; " + LocationObservation()),
+                () =>
+                {
+                    s.DungeonProvider ??= NativeGameplay.Field<IDungeonProvider>(s.Plugin!, "_dungeonProvider");
+                    s.DungeonId ??= NativeGameplay.GetField(s.Plugin!, "_salvageDungeonId") as Guid?;
+                    var last = NativeGameplay.GetField(s.Plugin!, "_lastDungeonAttach") as string ?? "no attach result";
+                    var observed = ModApi.Services.Dungeons.GetTargets().Count;
+                    if (s.DungeonProvider == null || !s.DungeonId.HasValue)
+                        return StepResult.Wait(last + "; observed targets=" + observed + "; " + LocationObservation());
+                    if (!s.DungeonProvider.GetDungeons().Any(dungeon => dungeon.Id == s.DungeonId.Value))
+                        return StepResult.Fail("Attach returned dungeon " + s.DungeonId.Value + " but GetDungeons omitted it; " + last);
+                    return StepResult.Pass("Retained dungeon " + s.DungeonId.Value + "; " + last);
+                }),
             TravelStep("return Salvage to Hub", s, () => s.SalvageHole!.FirstWormholePoiId!, () => s.Hub!.SystemId!, TravelMode.Wormhole, travelEvents),
             TravelStep("return Hub to Entry", s, () => s.Hub!.EntranceGatePoiId!, () => s.Entry!.SystemId!, TravelMode.JumpGate, travelEvents),
             TravelStep("travel Entry to Anchor Beta", s, () => s.Anchor!.PocketGatePoiId!, () => s.Anchor!.SystemId!, TravelMode.JumpGate, travelEvents),
@@ -90,6 +107,9 @@ internal static class PocketWorldsCase
                     if (pair.State.Status != ReconstructionStatus.Removed) throw new InvalidOperationException(pair.PoiKey + " was not removed.");
                 foreach (var site in s.Sites)
                     if (site.State.Status != ReconstructionStatus.Removed) throw new InvalidOperationException(site.PoiKey + " was not removed with its pocket.");
+                if (s.DungeonProvider == null || !s.DungeonId.HasValue
+                    || s.DungeonProvider.GetDungeons().Any(dungeon => dungeon.Id == s.DungeonId.Value))
+                    throw new InvalidOperationException("The removed salvage pocket left its attached dungeon in retained API state.");
                 if (lifecycleEvents.Any(e => e.Kind == LifecycleEventKind.SaveSucceeded))
                     throw new InvalidOperationException("An ephemeral player unexpectedly saved.");
                 NativeGameplay.Screenshot("cluster-deleted");
@@ -97,6 +117,12 @@ internal static class PocketWorldsCase
             }),
         };
         return result;
+    }
+
+    private static string LocationObservation()
+    {
+        var current = ModApi.Services.Travel.CurrentLocation;
+        return "current system=" + (current?.SystemId ?? "null") + ", poi=" + (current?.PoiId ?? "null");
     }
 
     private static TestStep TravelStep(string name, State s, Func<string> poi, Func<string> system,
@@ -208,6 +234,8 @@ internal static class PocketWorldsCase
         internal IPocketSystem? Entry, Hub, Anchor, Mining, Salvage;
         internal IWormholePair? EntryDoor, MiningHole, SalvageHole;
         internal IResourceSite? MiningSite, SalvageSite;
+        internal IDungeonProvider? DungeonProvider;
+        internal Guid? DungeonId;
         internal readonly List<string> NativePoiIds = new();
         internal IPocketSystem[] Pockets => new[] { Entry!, Hub!, Anchor!, Mining!, Salvage! };
         internal IWormholePair[] Pairs => new[] { EntryDoor!, MiningHole!, SalvageHole! };
