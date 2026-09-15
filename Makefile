@@ -49,7 +49,7 @@ release-archive:
 example-update-package: link-libs
 	$(DOTNET) build examples/UpdateParticipant/UpdateParticipant.csproj -c $(CONFIGURATION) -p:ExampleVersion=$(EXAMPLE_VERSION)
 	python3 tools/package_update_example.py examples/UpdateParticipant/bin/$(CONFIGURATION)/netstandard2.1/UpdateParticipant.dll examples/UpdateParticipant/vgmodapi.example.updates.vgmod.json artifacts/UpdateParticipant
-	python3 tools/publish_update.py --repo example/mod --tag v$(EXAMPLE_VERSION) --plugin vgmodapi.example.updates --version $(EXAMPLE_VERSION) --channel stable --archive artifacts/UpdateParticipant.zip --assembly artifacts/UpdateParticipant/UpdateParticipant.dll --dotnet $(DOTNET)
+	python3 tools/validate_update_package.py --repo example/mod --tag v$(EXAMPLE_VERSION) --plugin vgmodapi.example.updates --version $(EXAMPLE_VERSION) --channel stable --archive artifacts/UpdateParticipant.zip --assembly artifacts/UpdateParticipant/UpdateParticipant.dll --dotnet $(DOTNET)
 check-package:
 	python3 tools/release_archive.py --root artifacts/VGModAPI --validate-only
 	VG_PACKAGE_ROOT="$(CURDIR)/artifacts/VGModAPI" $(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter 'Category=Package'
