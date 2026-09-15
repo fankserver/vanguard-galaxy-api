@@ -4,7 +4,7 @@
 and end, missions change state and routes complete — without touching, blocking or corrupting any of
 it. Plus the pattern for depending on this API *optionally*, so your mod still loads when it is absent.
 
-A sample/test BepInEx mod for the **VG Mod API** (v0.2.10+), with a Unity-free consumer library
+A sample/test BepInEx mod for the **VG Mod API** (v0.2.8+), with a Unity-free consumer library
 alongside it.
 
 ## What it demonstrates (the abilities)
@@ -57,6 +57,6 @@ dotnet build examples/Observation/Observation.csproj
 
 Deploy `bin/Debug/netstandard2.1/Observation.dll` into `BepInEx/plugins/`.
 
-Requires the VG Mod API plugin (≥ **0.2.10**). See the
+Requires the VG Mod API plugin (≥ **0.2.8**). See the
 [service contract](../../docs/reference/service-contracts.md) for access, availability and lifetime
 requirements. These examples are never part of the shipped API package.

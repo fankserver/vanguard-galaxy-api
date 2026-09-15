@@ -4,7 +4,7 @@
 chained together, hidden off the drawn map, reachable only through wormholes you placed, filled with
 your own mining fields, salvage wrecks and hostile encounters — and removable again without a trace.
 
-A sample/test BepInEx mod for the **VG Mod API** (v0.2.10+). One in-game button opens an authored
+A sample/test BepInEx mod for the **VG Mod API** (v0.2.8+). One in-game button opens an authored
 **pocket cluster**; a **Log topology** button prints exactly what was wired; **Delete Cluster**
 removes everything it created.
 
@@ -107,4 +107,4 @@ dotnet build examples/PocketWorlds/PocketWorlds.csproj
 
 Deploy `bin/Debug/netstandard2.1/PocketWorlds.dll` into `BepInEx/plugins/`.
 
-Requires the VG Mod API plugin (≥ **0.2.10**). This example is never part of the shipped API package.
+Requires the VG Mod API plugin (≥ **0.2.8**). This example is never part of the shipped API package.

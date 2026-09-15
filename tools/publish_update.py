@@ -63,7 +63,7 @@ def validate_feed(data, plugin, version, channel, release_url):
     return feed
 
 
-def publish(remote, tag, archive, feed_path, plugin, version, channel):
+def publish(remote, tag, archive, feed_path, plugin, version, channel, prerelease=False):
     """Remote adapter calls are intentionally ordered; a retry verifies immutable existing assets."""
     if channel not in ('stable', 'experimental') or tag != 'v' + version + ('-experimental' if channel == 'experimental' else ''):
         raise ValueError('Tag/label/channel mismatch')
@@ -82,10 +82,11 @@ def publish(remote, tag, archive, feed_path, plugin, version, channel):
             if numeric(previous['version']) == numeric(feed['version']) and previous.get('releaseUrl') != release_url:
                 raise ValueError('Same numeric version cannot advertise a different release')
     release = remote.get(tag)
-    if release and bool(release['isPrerelease']) != (channel == 'experimental'):
+    expected_prerelease = prerelease or channel == 'experimental'
+    if release and bool(release['isPrerelease']) != expected_prerelease:
         raise ValueError('Existing release channel disagrees')
     if not release:
-        remote.create(tag, channel == 'experimental')
+        remote.create(tag, expected_prerelease)
     # Archive bytes come from a checked package. Public assets are immutable, including on retry.
     archive_bytes = archive.read_bytes()
     checksum = (hashlib.sha256(archive_bytes).hexdigest() + '  ' + archive.name + '\n').encode('ascii')
@@ -100,6 +101,10 @@ def publish(remote, tag, archive, feed_path, plugin, version, channel):
     public = remote.get(tag)
     if not public or public['isDraft'] or remote.asset(tag, archive.name) != archive_bytes:
         raise ValueError('Public archive verification failed; feed not advanced')
+    # A GitHub prerelease on the stable channel publishes immutable test artifacts but must not
+    # become latest or advertise itself to ordinary update checks.
+    if prerelease and channel == 'stable':
+        return
     existing_feed = remote.asset(tag, 'update.json')
     if existing_feed is not None and existing_feed != feed_bytes:
         raise ValueError('Immutable per-release feed differs')
@@ -198,7 +203,8 @@ def execute(args):
         if not args.publish:
             print('Dry run: packaged metadata validated; no GitHub mutation or feed advertisement.')
         else:
-            publish(GitHub(args.repo), args.tag, args.archive, feed_path, args.plugin, args.version, args.channel)
+            publish(GitHub(args.repo), args.tag, args.archive, feed_path, args.plugin, args.version, args.channel,
+                    prerelease=getattr(args, 'prerelease', False))
 
 
 if __name__ == '__main__':
@@ -209,4 +215,6 @@ if __name__ == '__main__':
     parser.add_argument('--assembly', type=Path, required=True)
     parser.add_argument('--dotnet', default='dotnet')
     parser.add_argument('--publish', action='store_true')
+    parser.add_argument('--prerelease', action='store_true',
+                        help='Publish a GitHub prerelease without advancing stable discovery')
     execute(parser.parse_args())

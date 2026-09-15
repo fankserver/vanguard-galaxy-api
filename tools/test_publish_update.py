@@ -52,11 +52,11 @@ class PublicationTests(unittest.TestCase):
         self.archive.write_bytes(b'checked archive fixture')
         self.feed = self.root / 'update.json'
     def tearDown(self): self.temp.cleanup()
-    def run_release(self, remote, channel='stable', version='1.2.3'):
+    def run_release(self, remote, channel='stable', version='1.2.3', prerelease=False):
         tag = 'v' + version + ('-experimental' if channel == 'experimental' else '')
         self.feed.write_text(json.dumps(dict(schemaVersion=1, pluginId='example.mod', version=version, channel=channel,
             releaseUrl='https://github.com/example/mod/releases/tag/' + tag)))
-        publish(remote, tag, self.archive, self.feed, 'example.mod', version, channel)
+        publish(remote, tag, self.archive, self.feed, 'example.mod', version, channel, prerelease=prerelease)
         return tag
     def test_archive_and_public_page_precede_feed_and_latest(self):
         remote = Remote(); tag = self.run_release(remote)
@@ -66,6 +66,15 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(events[-1], ('promote', tag, ''))
         self.run_release(remote)  # Same bytes are safe on retry.
         self.assertEqual(sum(e == ('upload', tag, 'mod.zip') for e in remote.events), 1)
+    def test_stable_channel_prerelease_publishes_assets_without_advertising(self):
+        remote = Remote(); tag = self.run_release(remote, prerelease=True)
+        self.assertTrue(remote.get(tag)['isPrerelease'])
+        self.assertFalse(remote.get(tag)['isDraft'])
+        self.assertIsNotNone(remote.asset(tag, 'mod.zip'))
+        self.assertIsNotNone(remote.asset(tag, 'mod.zip.sha256'))
+        self.assertIsNone(remote.asset(tag, 'update.json'))
+        self.assertIsNone(remote.latest())
+
     def test_every_partial_failure_is_retryable_without_early_advertisement(self):
         tag = 'v1.2.3'
         for event in [('create', tag, ''), ('upload', tag, 'mod.zip'), ('upload', tag, 'mod.zip.sha256'),

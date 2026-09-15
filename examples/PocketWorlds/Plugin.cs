@@ -25,7 +25,7 @@ namespace PocketWorlds;
 /// and site POIs go with it) — so a delete leaves no authored system, gate, wormhole or site behind.
 /// </summary>
 [BepInPlugin(Id, "Pocket Worlds example", "1.0.0")]
-[BepInDependency(ModApi.PluginId, "0.2.10")]
+[BepInDependency(ModApi.PluginId, "0.2.8")]
 public sealed class Plugin : BaseUnityPlugin
 {
     private const string Id = "vgmodapi.example.pocket-worlds";

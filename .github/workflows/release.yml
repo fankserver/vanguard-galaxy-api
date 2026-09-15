@@ -9,7 +9,12 @@ on:
         required: true
         type: string
       publish:
-        description: 'Authorize public release and feed advancement (otherwise validation only)'
+        description: 'Authorize public release (otherwise validation only)'
+        required: true
+        default: false
+        type: boolean
+      prerelease:
+        description: 'Mark a numeric stable-channel tag as a GitHub prerelease without advancing discovery'
         required: true
         default: false
         type: boolean
@@ -63,6 +68,7 @@ jobs:
           set -euo pipefail
           args=()
           if [[ "$PUBLISH" == true ]]; then args+=(--publish); fi
+          if [[ "${{ inputs.prerelease }}" == true ]]; then args+=(--prerelease); fi
           python3 tools/publish_update.py --repo "$REPO" --tag "$TAG" --plugin vgmodapi \
             --version "$VERSION" --channel "$CHANNEL" \
             --archive "artifacts/VGModAPI-$VERSION-$CHANNEL.zip" \

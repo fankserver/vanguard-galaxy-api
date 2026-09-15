@@ -4,7 +4,8 @@ CONFIGURATION ?= Debug
 TEST_EXCLUDE_CATEGORY ?=
 TEST_ARGS ?=
 TEST_FILTER = Category!=InstalledGame&Category!=Package$(if $(TEST_EXCLUDE_CATEGORY),&Category!=$(TEST_EXCLUDE_CATEGORY))
-RELEASE_VERSION := $(shell python3 -c 'import xml.etree.ElementTree as E; print(E.parse("Directory.Build.props").findtext("PropertyGroup/Version"))')
+RELEASE_VERSION ?=
+VERSION_ARG = $(if $(RELEASE_VERSION),-p:Version=$(RELEASE_VERSION))
 MANAGED = $(GAME_DIR)/VanguardGalaxy_Data/Managed
 CORE = $(GAME_DIR)/BepInEx/core
 
@@ -14,14 +15,14 @@ link-libs:
 	@set -eu; for name in BepInEx 0Harmony; do test -f "$(CORE)/$$name.dll"; ln -sfn "$(CORE)/$$name.dll" "VGModAPI/lib/$$name.dll"; done
 	@set -eu; for name in UnityEngine UnityEngine.CoreModule UnityEngine.UIModule UnityEngine.UI UnityEngine.ScreenCaptureModule Unity.TextMeshPro Unity.InputSystem; do test -f "$(MANAGED)/$$name.dll"; ln -sfn "$(MANAGED)/$$name.dll" "VGModAPI/lib/$$name.dll"; done
 build: link-libs
-	$(DOTNET) build VGModAPI.sln -c $(CONFIGURATION)
+	$(DOTNET) build VGModAPI.sln -c $(CONFIGURATION) $(VERSION_ARG)
 	$(MAKE) build-examples
 .PHONY: build-examples
 # Every example package builds from its own folder, including the nested variant/consumer projects
 # (StationCommerce/AuthorB, Observation/Consumers). One target covers them all; there are no
 # per-example targets to keep in sync.
 build-examples: link-libs
-	@set -eu; for project in $$(find examples -name '*.csproj' -not -path '*/obj/*' -not -path '*/bin/*' | sort); do $(DOTNET) build "$$project" -c $(CONFIGURATION); done
+	@set -eu; for project in $$(find examples -name '*.csproj' -not -path '*/obj/*' -not -path '*/bin/*' | sort); do $(DOTNET) build "$$project" -c $(CONFIGURATION) $(VERSION_ARG); done
 test:
 	python3 -m unittest discover -s tools -p 'test_*.py'
 	$(DOTNET) test VGModAPI.Tests/VGModAPI.Tests.csproj -c $(CONFIGURATION) --filter '$(TEST_FILTER)' $(TEST_ARGS)
@@ -41,7 +42,9 @@ package: build
 	$(MAKE) check-package
 RELEASE_CHANNEL ?= experimental
 EXAMPLE_VERSION ?= 1.0.0
-release-archive: package
+release-archive:
+	@printf '%s' '$(RELEASE_VERSION)' | grep -Eq '^[0-9]+\.[0-9]+(\.[0-9]+){0,2}$$' || { echo 'RELEASE_VERSION must come from the reviewed numeric tag.' >&2; exit 1; }
+	$(MAKE) package RELEASE_VERSION='$(RELEASE_VERSION)' RELEASE_CHANNEL='$(RELEASE_CHANNEL)'
 	python3 tools/release_archive.py --root artifacts/VGModAPI --output artifacts/VGModAPI-$(RELEASE_VERSION)-$(RELEASE_CHANNEL).zip
 example-update-package: link-libs
 	$(DOTNET) build examples/UpdateParticipant/UpdateParticipant.csproj -c $(CONFIGURATION) -p:ExampleVersion=$(EXAMPLE_VERSION)

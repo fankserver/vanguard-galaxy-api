@@ -4,7 +4,7 @@
 player actually makes, jobs generated from runtime text, and follow-up missions that offer themselves
 when an arc completes — all saved and restored by the API, with no save hook of your own.
 
-A sample/test BepInEx mod for the **VG Mod API** (v0.2.10+). One HUD panel drives the whole mission
+A sample/test BepInEx mod for the **VG Mod API** (v0.2.8+). One HUD panel drives the whole mission
 lifecycle so every step is reachable in game.
 
 ## The lifecycle it walks
@@ -61,6 +61,6 @@ dotnet build examples/StoryMissions/StoryMissions.csproj
 
 Deploy `bin/Debug/netstandard2.1/StoryMissions.dll` into `BepInEx/plugins/`.
 
-Requires the VG Mod API plugin (≥ **0.2.10**). Use disposable saves when trying example content; do
+Requires the VG Mod API plugin (≥ **0.2.8**). Use disposable saves when trying example content; do
 not deploy examples into an existing campaign without explicit intent and backups. This example is
 never part of the shipped API package.
