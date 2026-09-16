@@ -17,6 +17,9 @@ internal static class ModSettingsMenuCase
     private const BindingFlags Any = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
     private static Button? FindButton(string text) => Resources.FindObjectsOfTypeAll<Button>().FirstOrDefault(button =>
         button != null && button.gameObject.activeInHierarchy && button.GetComponentsInChildren<TMP_Text>(true).Any(label => label.text == text));
+    private static GameObject? Panel => GameObject.Find("VGModAPI Mods panel");
+    private static Button? FindPanelButton(string text) => Panel?.GetComponentsInChildren<Button>(true).FirstOrDefault(button =>
+        button.gameObject.activeInHierarchy && button.GetComponentsInChildren<TMP_Text>(true).Any(label => label.text == text));
     private static void Invoke(Button button)
     {
         var events = EventSystem.current ?? throw new InvalidOperationException("No EventSystem");
@@ -51,17 +54,18 @@ internal static class ModSettingsMenuCase
             }),
             TestStep.ActionThenWait("open Mods panel", "Mods Button.OnSubmit / ModMenuView.OpenPanel", 10,
                 () => { Invoke(FindButton("Mods") ?? throw new InvalidOperationException("Mods button missing")); return StepResult.Pass("submitted"); },
-                () => GameObject.Find("VGModAPI Mods panel")?.activeInHierarchy == true ? StepResult.Pass("panel visible") : StepResult.Wait("panel closed")),
+                () => Panel?.activeInHierarchy == true ? StepResult.Pass("panel visible") : StepResult.Wait("panel closed")),
             TestStep.ActionThenWait("select UI Surfaces mod", "Mod row / ModInformationPresenter", 10,
-                () => { Invoke(FindButton("UI Surfaces example") ?? throw new InvalidOperationException("UI Surfaces row missing")); return StepResult.Pass("selected"); },
-                () => FindButton("Settings")?.interactable == true ? StepResult.Pass("Settings available") : StepResult.Wait("settings disabled")),
+                () => { Invoke(FindPanelButton("UI Surfaces example") ?? throw new InvalidOperationException("UI Surfaces row missing")); return StepResult.Pass("selected"); },
+                () => FindPanelButton("Settings")?.interactable == true ? StepResult.Pass("Settings available") : StepResult.Wait("settings disabled")),
             TestStep.ActionThenWait("open UI Surfaces settings", "Settings / ModSettingsPresenter", 10,
-                () => { Invoke(FindButton("Settings") ?? throw new InvalidOperationException("Settings button missing")); return StepResult.Pass("submitted"); },
-                () => FindButton("Reset to default")?.gameObject.activeInHierarchy == true && FindButton("Previous setting")?.gameObject.activeInHierarchy == true
+                () => { Invoke(FindPanelButton("Settings") ?? throw new InvalidOperationException("Settings button missing")); return StepResult.Pass("submitted"); },
+                () => FindPanelButton("Reset to default")?.gameObject.activeInHierarchy == true && FindPanelButton("Previous setting")?.gameObject.activeInHierarchy == true
                     ? StepResult.Pass("settings controls visible") : StepResult.Wait("settings controls hidden")),
             new TestStep("settings view renders published preference", "ModSettingsPresenter / TMP text", 10, () =>
             {
-                var labels = Resources.FindObjectsOfTypeAll<TMP_Text>().Where(t => t != null && t.gameObject.activeInHierarchy).Select(t => t.text).ToArray();
+                var labels = Panel?.GetComponentsInChildren<TMP_Text>(true).Where(t => t.gameObject.activeInHierarchy).Select(t => t.text).ToArray()
+                    ?? Array.Empty<string>();
                 if (!labels.Any(t => t.Contains("Count window opens"))) return StepResult.Wait("published setting text absent");
                 _settingsScreenshot = NativeGameplay.Screenshot("ui-surfaces-settings-menu");
                 return StepResult.Pass("Count window opens rendered");
