@@ -15,6 +15,7 @@ public sealed partial class Plugin
             throw new InvalidOperationException("Services can only be published once before a session starts.");
         var lifecycle = hub;
         var mods = _modCatalog!;
+        var settings = _modSettings!;
         var missions = _missions?.Events ?? new MissionTransitions(hub);
         var travel = _travel?.Events ?? new TravelEvents(hub);
         var station = _travel?.Station ?? new StationEvents(hub);
@@ -49,11 +50,11 @@ public sealed partial class Plugin
         _navigationService ??= CreateNavigation();
         var storyCharacters = _storyCharacters ??= new StoryCharacterService(hub);
         _dialogueService ??= new DialogueService(hub.Services.Get("dialogue"), hub.CheckThread, error => hub.ReportSubscriberFailure("dialogue", error), storyCharacters);
-        var root = new ModServices(lifecycle, mods, (_persistence ??= new PersistenceService(hub)), missions, travel, station,
+        var root = new ModServices(lifecycle, mods, settings, (_persistence ??= new PersistenceService(hub)), missions, travel, station,
             _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService, _dungeonFacade, _story, _bars, _worldContent, _dialogueService, new GameService(hub, _navigationService, _inventoryService, _story, _bars), _ownedItems, _ownedRecipes, _gameplayUi);
         // Deferred cleanup preserves terminal lifecycle delivery when shutdown starts inside a callback.
         // Content owners release their registrations before the save-data coordinator stops.
-        foreach (var service in new IDisposable[] { mods, missions, travel, station, _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService, _dungeonFacade, _story, _bars })
+        foreach (var service in new IDisposable[] { mods, settings, missions, travel, station, _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService, _dungeonFacade, _story, _bars })
             hub.Services.AfterStopped(service.Dispose);
         hub.Services.AfterStopped(_gameplayUi.Dispose);
         hub.Services.AfterStopped(ambient.Dispose);
