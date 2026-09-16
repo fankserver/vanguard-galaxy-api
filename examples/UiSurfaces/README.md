@@ -1,53 +1,63 @@
-# UI Surfaces
+# UI Surfaces: settings and saved progress
 
-**What you can build with this: your own interface inside the game.** A real Unity window that lives
-in the game's gameplay UI and belongs entirely to your mod, plus a Forge inspector that reads the
-recipe catalog and shows requirements and output previews — added to the game's own Forge screen.
+A self-contained example combining a hosted Unity window, shared HUD launcher,
+Forge inspector, typed mod settings, and custom per-save data.
 
-A sample/test BepInEx mod for the **VG Mod API** (v0.2.8+).
+**Requires the matching API development build with Mod Settings. Public 0.2.8 does
+not contain the settings surface.** Build this example and the API from the same
+checkout; do not distribute it as a 0.2.8-compatible consumer.
 
-## What it demonstrates (the abilities)
+## Try it
 
-| Ability | How the example uses it |
+1. Open **Mods > UI Surfaces example > Settings**. The example publishes all four
+   setting types: **Count window opens** (bool), **Visit goal** (integer), **Window
+   opacity** (float), and **Color theme** (choice). Reset restores each default.
+2. Start or load a game. Use the top-right **Example window** HUD button. Each open
+   increments this save's counter when counting and save-data mutation are allowed.
+3. Change the goal, opacity, or theme. The existing window updates immediately.
+   Pause counting without clearing the counter.
+4. Save normally, then reopen the window to make another unsaved increment. Reload
+   the saved game: the saved count returns, not the unsaved increment. New games
+   start at zero; loading another save restores that save's own count.
+5. Open the Forge and use **Inspect** to display recipe requirements and output
+   previews. That inspector is observational and is not persisted.
+
+Use a disposable test campaign when exploring saving behavior; the sample does not
+trigger saves, change save paths, or load saves on your behalf.
+
+## Two different kinds of persistence
+
+| Data | Owner / lifetime |
 |---|---|
-| **Gameplay UI containers** (`CreateContainer`) | Requests a consumer-owned container from the game's UI host and parents its own window into it. The API validates the expected host, including during reentrant notification delivery. |
-| **Host lifetime** (`IGameplayUiService.Changed`) | Subscribes, then queries `Current`, so a consumer loaded *after* UI readiness still attaches. Host replacement detaches and re-attaches cleanly. |
-| **Honest refusal** | A refused container is logged and dropped — no retries, guessed timeout, singleton lookup or Harmony patch. |
-| **Consumer-owned content** | All layout, colours and text belong to the mod. Disposing the container destroys every child, so the window is never leaked or orphaned. |
-| **Deferred creation** | The window is built on player input, not during readiness. |
-| **Shared HUD** (`IHudService.Register`) | A HUD button toggles the window; the same shared HUD hosts the inspector's panel. |
-| **Forge actions** (`IForgeUiService.RegisterAction`) | Adds an **Inspect** action to the Forge screen that captures the selected variant. |
-| **Recipe quotes** (`IRecipeQuoteService`) | Shows requirements, accessible amounts and every output preview, with probability stated per batch. Quantities are **batches**, not a one-output assumption. |
-| **Catalog reads** (`IRecipeService`) | Producer counts include alternative variants; the example does not choose a producer by name. |
-| **Explicit overflow** | Above the HUD row limit it reports how many rows are not shown instead of silently truncating. |
-| **Snapshot, not a pin** | The panel is refreshed by Inspect and cleared on session replacement; it issues no crafting commands and installs no save callbacks. |
-| **Availability gating** | The inspector is created only when session, forge, recipe, quote and HUD services are all available, retried on a cheap tick. Missing services mean *unavailable*, not an empty successful catalog. |
+| Count toggle, goal, opacity, theme | BepInEx config (`vgmodapi.example.ui-surfaces.cfg`), global across games and restarts. The settings API uses getter/setter callbacks; it does not store another copy. |
+| Window-open count | VGModAPI `SaveData`, per save. Registered once before a session starts; captured on supported game saves and restored by the API on load/new game. |
+| Window visibility, Forge inspector | Temporary UI state, discarded with the UI host/session. |
 
-## The files
+The window explicitly distinguishes in-memory changes from durable saves. When
+save data is blocked or inaccessible it shows the state and refuses counting. A
+failed registration does not create a fake in-memory persistence fallback.
 
-| File | Role |
-|---|---|
-| `Plugin.cs` | BepInEx entry point: owns the Unity window and hosts the inspector. |
-| `Inspector.cs` | The Forge inspector — **public contracts only, no Unity or BepInEx type**. |
+## Files to copy or adapt
 
-`Inspector.cs` is deliberately Unity-free so it can be lifted into a non-Unity assembly; the
-repository's host tests compile exactly that file without BepInEx, which keeps the property honest.
-You do **not** need a separate host project to get this split — one package, two files.
+- `Plugin.Settings.cs`: four explicit `ConfigEntry`-backed registrations. Settings
+  acquire their authenticated provider in `Start`, after BepInEx's `Awake` setup.
+- `WindowVisits.cs`: Unity-free custom save-data example. Four-byte nonnegative
+  counter, schema version 1; invalid payloads are rejected, not silently reset.
+  Every mutation checks `CanMutate`; inaccessible data is not displayed as zero.
+- `Plugin.cs`: hosted window, subscription cleanup, shared HUD and immediate config
+  updates. Save data registers in `Awake`, before any gameplay session.
+- `Inspector.cs`: Unity-free Forge/recipe/HUD consumer, unchanged by the settings
+  example. Captures the selected variant and reports refusals honestly.
 
-## What you see
+The host tests compile the actual `WindowVisits.cs` and use the API generation
+store to test save/load across service recreation, independent slots/new games,
+unsaved changes, failed saves, blocked writes, invalid data and teardown. They do
+not write to game saves. The `ui-surfaces` live case verifies the window and settings;
+it keeps the player ephemeral and does not claim native disk-save validation.
 
-A HUD button (top-right, storage icon) toggles a consumer-owned window. On the Forge screen, an
-**Inspect** action captures the selected variant into a shared HUD panel with requirements, producer
-counts and output previews; its button navigates back to that exact variant and reports refusal
-rather than substituting another.
+## Build
 
-## Build & deploy
-
-```bash
-dotnet build examples/UiSurfaces/UiSurfaces.csproj
-```
-
-Deploy `bin/Debug/netstandard2.1/UiSurfaces.dll` into `BepInEx/plugins/`. Do not deploy a duplicate
-`VGModAPI.Abstractions` assembly alongside the separately installed API.
-
-Requires the VG Mod API plugin (≥ **0.2.8**). This example is never part of the shipped API package.
+Use `make build` from the API repository to refresh local references and build the
+examples. With maintainer authorization, install `UiSurfaces.dll` alongside the
+matching API, without copying API/reference DLLs into the example folder. Examples
+are excluded from the API release package.
