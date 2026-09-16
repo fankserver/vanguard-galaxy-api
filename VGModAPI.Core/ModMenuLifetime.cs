@@ -25,8 +25,9 @@ internal sealed class ModMenuLifetime : IDisposable
         if (activeMenu == null || viewport == null || canvas == null) { Detach(); return; }
         if (_view == null)
         {
-            // Wait rather than adding/selecting UI behind a native startup/exit popup.
-            if (modalOpen) return;
+            // Attach with the native menu even while a popup is present. The view disables interaction
+            // while modalOpen, but remaining absent indefinitely would make a stale native modal flag
+            // indistinguishable from an unavailable menu.
             _view = _create(activeMenu, viewport, canvas);
             _menu = activeMenu; _viewport = viewport; _canvas = canvas;
         }

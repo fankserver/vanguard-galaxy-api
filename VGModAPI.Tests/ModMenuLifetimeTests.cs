@@ -49,12 +49,13 @@ public sealed class ModMenuLifetimeTests
     }
 
     [Fact]
-    public void ModalDefersFirstAttachmentAndClosesWithoutReopeningOrRecreating()
+    public void ModalAttachesVisibleEntryImmediatelyButClosesWithoutReopeningOrRecreating()
     {
         var created = 0; var view = new View();
         using var lifetime = new ModMenuLifetime((_, _, _) => { ++created; return view; });
         var menu = new object(); var viewport = new object(); var canvas = new object();
-        lifetime.Poll(menu, viewport, canvas, true); Assert.Equal(0, created);
+        lifetime.Poll(menu, viewport, canvas, true);
+        Assert.Equal(1, created); Assert.False(view.Open); Assert.Equal(1, view.Ticks);
         lifetime.Poll(menu, viewport, canvas, false); Assert.Equal(1, created);
         lifetime.Poll(menu, viewport, canvas, true); Assert.False(view.Open);
         lifetime.Poll(menu, viewport, canvas, false); Assert.False(view.Open); Assert.Equal(1, created);
