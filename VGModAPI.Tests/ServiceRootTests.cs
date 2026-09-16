@@ -35,7 +35,7 @@ public sealed class ServiceRootTests
         var dungeonFacade = new DungeonFacade(dungeons, dungeonCombat, dungeonRewards, dungeonCommands, dungeonTactics, dungeonOperations, dungeonSettlement, dungeonPanel);
         foreach (var disposable in new IDisposable[] { lifecycle, mods, missions, travel, station, gameplayUi, dungeonFacade }) hub.Services.AfterStopped(disposable.Dispose);
         return (ModServices)typeof(ModServices).GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance)[0].Invoke(
-            new object[] { lifecycle, mods, new PersistenceService(hub), missions, travel, station,
+            new object[] { lifecycle, mods, new ModSettingsService(hub, (_, _) => null), new PersistenceService(hub), missions, travel, station,
                 new RecipeCatalogService(hub, null, _ => { }), new RecipeQuoteService(hub, null, _ => { }), jobs, commands, new HudService(hub, hub.ReportSubscriberFailure), new ForgeUiService(hub, null, hub.ReportSubscriberFailure), new BoardingRuleService(hub, hub.ReportSubscriberFailure), dungeonFacade, new StoryMissionService(hub.Services, null, null, (_, _) => null, checkThread: hub.CheckThread), new BarService(null, hub, (_, _) => null, _ => false, hub.CheckThread),
                 new WorldContentService(hub, new WorldDefinitionRegistry((_, _) => null, hub.CheckThread), null!, () => false),
                 new DialogueService(hub.Services.Get("dialogue"), hub.CheckThread, _ => { }, new StoryCharacterService(hub)),
@@ -60,6 +60,7 @@ public sealed class ServiceRootTests
             Publish(root);
             Assert.Same(root, ModApi.Services);
             Assert.True(root.Mods.Availability.IsAvailable);
+            Assert.True(root.Settings.Availability.IsAvailable);
             Assert.False(root.SaveData.Availability.IsAvailable);
             Assert.False(root.Missions.Availability.IsAvailable);
             Assert.Same(root.GameplayUi, ModApi.Services.GameplayUi);
