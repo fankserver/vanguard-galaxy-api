@@ -25,6 +25,9 @@ public sealed partial class Plugin
         _craftingCommands ??= new CraftingCommandService(hub, _craftingJobs, null, error => Logger.LogError(error));
         _hudService ??= new HudService(hub, hub.ReportSubscriberFailure);
         _gameplayUi ??= new GameplayUiService(hub);
+        _equipment ??= new EquipmentService(hub);
+        _skillTrees ??= new SkillTreeService(hub);
+        _tooltips ??= new TooltipService(hub);
         _forgeUi ??= new ForgeUiService(hub, null, hub.ReportSubscriberFailure);
         _boardingRuleService ??= new BoardingRuleService(hub, hub.ReportSubscriberFailure);
         _boardingCombat ??= new BoardingCombatService(hub, hub.ReportSubscriberFailure);
@@ -51,12 +54,15 @@ public sealed partial class Plugin
         var storyCharacters = _storyCharacters ??= new StoryCharacterService(hub);
         _dialogueService ??= new DialogueService(hub.Services.Get("dialogue"), hub.CheckThread, error => hub.ReportSubscriberFailure("dialogue", error), storyCharacters);
         var root = new ModServices(lifecycle, mods, settings, (_persistence ??= new PersistenceService(hub)), missions, travel, station,
-            _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService, _dungeonFacade, _story, _bars, _worldContent, _dialogueService, new GameService(hub, _navigationService, _inventoryService, _story, _bars), _ownedItems, _ownedRecipes, _gameplayUi);
+            _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService, _dungeonFacade, _story, _bars, _worldContent, _dialogueService, new GameService(hub, _navigationService, _inventoryService, _story, _bars), _ownedItems, _ownedRecipes, _gameplayUi, _equipment, _skillTrees, _tooltips);
         // Deferred cleanup preserves terminal lifecycle delivery when shutdown starts inside a callback.
         // Content owners release their registrations before the save-data coordinator stops.
         foreach (var service in new IDisposable[] { mods, settings, missions, travel, station, _recipes, _recipeQuotes, _craftingJobs, _craftingCommands, _hudService, _forgeUi, _boardingRuleService, _dungeonFacade, _story, _bars })
             hub.Services.AfterStopped(service.Dispose);
         hub.Services.AfterStopped(_gameplayUi.Dispose);
+        hub.Services.AfterStopped(_equipment.Dispose);
+        hub.Services.AfterStopped(_skillTrees.Dispose);
+        hub.Services.AfterStopped(_tooltips.Dispose);
         hub.Services.AfterStopped(ambient.Dispose);
         hub.Services.AfterStopped(protection.Dispose);
         hub.Services.AfterStopped(droneBays.Dispose);

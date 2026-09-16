@@ -22,6 +22,12 @@ public sealed class ModServices
     private readonly ICraftingJobService _craftingJobs;
     private readonly ICraftingCommandService _craftingCommands;
     private readonly IHudService _hud;
+    private readonly IEquipmentService _equipment;
+    private readonly ISkillTreeService _skillTrees;
+    private readonly ITooltipService _tooltips;
+    public IEquipmentService Equipment { get { CheckThread(); return _equipment; } }
+    public ISkillTreeService SkillTrees { get { CheckThread(); return _skillTrees; } }
+    public ITooltipService Tooltips { get { CheckThread(); return _tooltips; } }
     private readonly IGameplayUiService _gameplayUi;
     private readonly IForgeUiService _forgeUi;
     private readonly IBoardingRuleService _boardingRules;
@@ -65,7 +71,7 @@ public sealed class ModServices
 
     internal ModServices(ILifecycleService lifecycle, IModInformationService mods, IModSettingsService settings, ISaveDataService saveData,
         IMissionService missions, ITravelService travel, IStationService station, IRecipeService recipes, IRecipeQuoteService recipeQuotes,
-        ICraftingJobService craftingJobs, ICraftingCommandService craftingCommands, IHudService hud, IForgeUiService forgeUi, IBoardingRuleService boardingRules, IDungeonService dungeons, IStoryService story, IBarService bars, IWorldService world, IDialogueService dialogue, IGameService game, IOwnedItemService items, IOwnedRecipeService recipeRegistration, IGameplayUiService gameplayUi)
+        ICraftingJobService craftingJobs, ICraftingCommandService craftingCommands, IHudService hud, IForgeUiService forgeUi, IBoardingRuleService boardingRules, IDungeonService dungeons, IStoryService story, IBarService bars, IWorldService world, IDialogueService dialogue, IGameService game, IOwnedItemService items, IOwnedRecipeService recipeRegistration, IGameplayUiService gameplayUi, IEquipmentService equipment, ISkillTreeService skillTrees, ITooltipService tooltips)
     {
         _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
         _mods = mods ?? throw new ArgumentNullException(nameof(mods));
@@ -79,6 +85,9 @@ public sealed class ModServices
         _craftingJobs = craftingJobs ?? throw new ArgumentNullException(nameof(craftingJobs));
         _craftingCommands = craftingCommands ?? throw new ArgumentNullException(nameof(craftingCommands));
         _hud = hud ?? throw new ArgumentNullException(nameof(hud));
+        _equipment = equipment ?? throw new ArgumentNullException(nameof(equipment));
+        _skillTrees = skillTrees ?? throw new ArgumentNullException(nameof(skillTrees));
+        _tooltips = tooltips ?? throw new ArgumentNullException(nameof(tooltips));
         _gameplayUi = gameplayUi ?? throw new ArgumentNullException(nameof(gameplayUi));
         _forgeUi = forgeUi ?? throw new ArgumentNullException(nameof(forgeUi));
         _boardingRules = boardingRules ?? throw new ArgumentNullException(nameof(boardingRules));
