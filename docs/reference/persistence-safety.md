@@ -28,9 +28,9 @@ Placeholders are permitted only as an explicit, independently retained reconstru
 
 No universal safe-uninstall promise exists. Removing the API itself can strand API-dependent reconstruction as well as its hard-dependent consumers. Sidecar-only progression does not imply that vanilla world/type identities are provider-independent.
 
-## Inspected vanilla boundary (game 0.8.2.3)
+## Inspected vanilla boundary (game 0.8.2.4)
 
-Assembly SHA256: `a2aad60bc68c31baccd636587d3c5ba4e651eacda59b0af42cd4f17f864284fb`.
+Assembly SHA256: `71636b8fcfde62e2e00ab64c417e878d1a24d433f1bac10e1ddc8750193a35c2`.
 
 | Saved reference | Inspected reconstruction boundary | Missing identity |
 |---|---|---|

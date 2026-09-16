@@ -13,7 +13,7 @@ internal sealed class MethodBinding
 
 internal static class BindingCatalog
 {
-    internal const string InspectedSha256 = "a2aad60bc68c31baccd636587d3c5ba4e651eacda59b0af42cd4f17f864284fb";
+    internal const string InspectedSha256 = "71636b8fcfde62e2e00ab64c417e878d1a24d433f1bac10e1ddc8750193a35c2";
     internal const string Save = "Source.Util.SaveGame";
     internal const string File = "Source.Util.SaveGameFile";
     internal const string Player = "Source.Player.GamePlayer";
