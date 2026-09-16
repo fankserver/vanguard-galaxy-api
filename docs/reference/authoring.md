@@ -15,7 +15,7 @@ what it demonstrates. See the [examples index](../../examples/README.md).
 | CargoRecovery | Authored boarding content plus contextual panel actions, command leases, tactical requests and observed settlement |
 | StoryMissions | Authored campaign and generated job, mixed objective kinds, declared choices, and a follow-up offered from a completion reaction |
 | StationCommerce | Owned trade goods, recipe-first owned dependencies, story-linked bar contacts, roster ownership, and two independent providers sharing local IDs |
-| UiSurfaces | Gameplay UI lifecycle with an owned Unity container, plus Unity-free Forge inspection and HUD actions |
+| UiSurfaces | Owned Unity window, typed global settings, custom per-save progress, and Unity-free Forge inspection/HUD actions; requires the matching development API |
 | Observation | Observed lifecycle, mission and travel facts, optional-dependency entry points and additional custom counter save data |
 | UpdateParticipant | Optional update metadata integration |
 

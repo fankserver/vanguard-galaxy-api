@@ -31,17 +31,18 @@ Building needs your local game/BepInEx references (`make link-libs`). Deploy a p
 
 ## Two conventions worth knowing
 
-**Acquire providers in `Start()`, never `Awake()`.** BepInEx populates
-`Chainloader.PluginInfos[].Instance` only *after* a plugin's `Awake()` returns, and the
-instance-authenticated providers (world, story, bars, items, recipes) resolve the caller against
-exactly that entry. Acquiring one in `Awake()` returns null and silently registers nothing. Dungeon,
-HUD and panel registrations use a plain plugin-id string instead, but every example here follows the
-same rule so nothing depends on which identity a given service happens to use.
+**Acquire instance-authenticated providers in `Start()`, not `Awake()`.** BepInEx populates
+`Chainloader.PluginInfos[].Instance` only *after* a plugin's `Awake()` returns. Providers such as
+world, story, bars, items, recipes and settings authenticate against that entry; acquiring them in
+`Awake()` is refused. Plugin-id-keyed registrations have different timing: HUD registration can
+happen in `Awake()`, and `SaveData.Register` must happen before a gameplay session starts.
+UiSurfaces therefore registers its save data and HUD in `Awake()`, and acquires settings in `Start()`.
 
-**The API owns persistence.** No example registers a save hook, codec or sidecar writer for
-API-owned content; definitions are declared once and the API restores missions, progress and
-choices. The one deliberate exception is `Observation/Consumers/CustomCounter.cs`, which persists
-*additional custom mod data* — a different concern, and the correct use of the generic save-data API.
+**The API owns persistence for API-owned content.** Definitions are declared once and the API
+restores their missions, progress and choices without consumer save hooks or sidecar writers.
+`Observation/Consumers/CustomCounter.cs` and `UiSurfaces/WindowVisits.cs` instead persist
+*additional custom mod data* through `SaveData`. UiSurfaces' global preferences remain in BepInEx
+config; they are not copied into per-save data.
 
 ## Packages with a second project
 
