@@ -8,10 +8,10 @@ universal safe uninstall or compatibility with arbitrary other mods.
 The adapter accepts this inspected original `Assembly-CSharp.dll` SHA-256:
 
 ```text
-a2aad60bc68c31baccd636587d3c5ba4e651eacda59b0af42cd4f17f864284fb
+71636b8fcfde62e2e00ab64c417e878d1a24d433f1bac10e1ddc8750193a35c2
 ```
 
-The corresponding environment is game **0.8.2.3**, Unity **6000.4.7f1**, BepInEx
+The corresponding environment is game **0.8.2.4**, Unity **6000.4.7f1**, BepInEx
 **5.4.23.5**. Unrecognized assemblies leave diagnostics available but disable game
 integration. Do not bypass the hash gate or update it without checking the affected
 bindings and behavior. The local mod catalog does not require game binding.
