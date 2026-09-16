@@ -15,7 +15,7 @@ internal sealed class PickupPresentationRuntime
     private readonly MethodInfo _rarityColor;
     private readonly FieldInfo _text, _fadeColor;
     private readonly object _standard, _pickup;
-    private Frame? _frame;
+    private readonly PickupPresentationScope _scope = new();
     internal MethodInfo Notify { get; }
     internal MethodInfo Show { get; }
     internal PickupPresentationRuntime(Assembly assembly, PickupPresentationService service, Action<Exception> report)
@@ -56,7 +56,8 @@ internal sealed class PickupPresentationRuntime
     internal IDisposable? Begin(object item, int count)
     {
         // Push even an unreadable frame: never inherit an outer item's tint.
-        var frame = new Frame(this, _frame); _frame = frame;
+        var frame = _scope.Begin();
+        if (frame == null) return null;
         try
         {
             var rarity = _rarity.GetValue(item)!;
@@ -75,9 +76,8 @@ internal sealed class PickupPresentationRuntime
     {
         try
         {
-            var pickup = _frame?.Pickup;
-            if (!_pickup.Equals(type) || pickup == null || pickup.DisplayName != postfix) return;
-            _frame!.Pickup = null; // A single notification, never a later credits float.
+            var pickup = _scope.Consume(_pickup.Equals(type), postfix);
+            if (pickup == null) return;
             var color = _service.Resolve(pickup);
             if (!color.HasValue || _text.GetValue(floating) is not TextMeshPro text || text == null) return;
             var c = color.Value;
@@ -88,14 +88,4 @@ internal sealed class PickupPresentationRuntime
         catch (Exception error) { Report(error); }
     }
     private void Report(Exception error) { try { _report(error); } catch { } }
-    private sealed class Frame : IDisposable
-    {
-        private readonly PickupPresentationRuntime _owner;
-        private readonly Frame? _previous;
-        private bool _disposed;
-        internal ItemPickupPresentation? Pickup;
-        internal Frame(PickupPresentationRuntime owner, Frame? previous) { _owner = owner; _previous = previous; }
-        public void Dispose()
-        { if (_disposed) return; _disposed = true; _owner._frame = _previous; }
-    }
 }

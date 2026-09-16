@@ -177,6 +177,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             _hub.SetUnavailable("equipment", reason, ex.Message);
             _hub.SetUnavailable("skill-trees", reason, ex.Message);
             _hub.SetUnavailable("tooltips", reason, ex.Message);
+            _hub.SetUnavailable("pickup-presentation", reason, ex.Message);
             _hub.SetUnavailable("ambient-traffic", reason, ex.Message);
             _hub.SetUnavailable("unit-protection", reason, ex.Message);
             _hub.SetUnavailable("story-characters", reason, ex.Message);
