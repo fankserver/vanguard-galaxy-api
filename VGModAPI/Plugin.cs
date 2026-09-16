@@ -134,6 +134,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             InstallHud(assembly);
             InstallEquipmentTargeting(assembly);
             InstallTooltips(assembly);
+            InstallPickupPresentation(assembly);
             InstallGameplayUi(assembly);
             InstallAmbientTraffic(assembly);
             InstallUnitProtection(assembly);
@@ -159,6 +160,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             TeardownHud();
             TeardownEquipmentTargeting();
             TeardownTooltips();
+            TeardownPickupPresentation();
             TeardownGameplayUi();
             TeardownAmbientTraffic();
             TeardownUnitProtection();
@@ -1066,6 +1068,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         TeardownEquipmentTargeting();
         TeardownTooltips();
         TeardownHud();
+        TeardownPickupPresentation();
         TeardownGameplayUi();
         TeardownAmbientTraffic();
         TeardownUnitProtection();

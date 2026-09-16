@@ -27,9 +27,11 @@ public sealed class ServiceRootTests
         var equipment = new EquipmentService(hub);
         var skills = new SkillTreeService(hub);
         var tooltips = new TooltipService(hub);
+        var pickups = new PickupPresentationService(hub);
         hub.Services.AfterStopped(equipment.Dispose);
         hub.Services.AfterStopped(skills.Dispose);
         hub.Services.AfterStopped(tooltips.Dispose);
+        hub.Services.AfterStopped(pickups.Dispose);
         var dungeonCombat = new BoardingCombatService(hub, hub.ReportSubscriberFailure);
         var dungeonRewards = new DungeonRewardService(hub, hub.ReportSubscriberFailure);
         var dungeonOperations = new BoardingService(hub, hub.ReportSubscriberFailure);
@@ -48,7 +50,7 @@ public sealed class ServiceRootTests
                 new GameService(hub, new NavigationService(hub, _ => null, (_, _, _) => NavigationStatus.Unavailable, (_, _) => null), new InventoryService(hub, () => null), new StoryMissionService(hub.Services, null, hub, (_, _) => null), new BarService(null, hub, (_, _) => null, _ => false, hub.CheckThread)),
                 new OwnedItemService(hub, (_, _) => null),
                 new OwnedRecipeService(hub, (_, _) => null, _ => null, _ => { }, _ => { }),
-                gameplayUi, equipment, skills, tooltips });
+                gameplayUi, equipment, skills, tooltips, pickups });
     }
 
     [Fact]

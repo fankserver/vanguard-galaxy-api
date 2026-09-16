@@ -25,9 +25,11 @@ public sealed class ModServices
     private readonly IEquipmentService _equipment;
     private readonly ISkillTreeService _skillTrees;
     private readonly ITooltipService _tooltips;
+    private readonly IPickupPresentationService _pickupPresentation;
     public IEquipmentService Equipment { get { CheckThread(); return _equipment; } }
     public ISkillTreeService SkillTrees { get { CheckThread(); return _skillTrees; } }
     public ITooltipService Tooltips { get { CheckThread(); return _tooltips; } }
+    public IPickupPresentationService PickupPresentation { get { CheckThread(); return _pickupPresentation; } }
     private readonly IGameplayUiService _gameplayUi;
     private readonly IForgeUiService _forgeUi;
     private readonly IBoardingRuleService _boardingRules;
@@ -71,7 +73,7 @@ public sealed class ModServices
 
     internal ModServices(ILifecycleService lifecycle, IModInformationService mods, IModSettingsService settings, ISaveDataService saveData,
         IMissionService missions, ITravelService travel, IStationService station, IRecipeService recipes, IRecipeQuoteService recipeQuotes,
-        ICraftingJobService craftingJobs, ICraftingCommandService craftingCommands, IHudService hud, IForgeUiService forgeUi, IBoardingRuleService boardingRules, IDungeonService dungeons, IStoryService story, IBarService bars, IWorldService world, IDialogueService dialogue, IGameService game, IOwnedItemService items, IOwnedRecipeService recipeRegistration, IGameplayUiService gameplayUi, IEquipmentService equipment, ISkillTreeService skillTrees, ITooltipService tooltips)
+        ICraftingJobService craftingJobs, ICraftingCommandService craftingCommands, IHudService hud, IForgeUiService forgeUi, IBoardingRuleService boardingRules, IDungeonService dungeons, IStoryService story, IBarService bars, IWorldService world, IDialogueService dialogue, IGameService game, IOwnedItemService items, IOwnedRecipeService recipeRegistration, IGameplayUiService gameplayUi, IEquipmentService equipment, ISkillTreeService skillTrees, ITooltipService tooltips, IPickupPresentationService pickupPresentation)
     {
         _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
         _mods = mods ?? throw new ArgumentNullException(nameof(mods));
@@ -88,6 +90,7 @@ public sealed class ModServices
         _equipment = equipment ?? throw new ArgumentNullException(nameof(equipment));
         _skillTrees = skillTrees ?? throw new ArgumentNullException(nameof(skillTrees));
         _tooltips = tooltips ?? throw new ArgumentNullException(nameof(tooltips));
+        _pickupPresentation = pickupPresentation ?? throw new ArgumentNullException(nameof(pickupPresentation));
         _gameplayUi = gameplayUi ?? throw new ArgumentNullException(nameof(gameplayUi));
         _forgeUi = forgeUi ?? throw new ArgumentNullException(nameof(forgeUi));
         _boardingRules = boardingRules ?? throw new ArgumentNullException(nameof(boardingRules));
