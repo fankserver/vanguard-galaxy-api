@@ -31,6 +31,9 @@ internal sealed class ModMenuView : IModMenuView
     private readonly List<Selectable> _settingControls = new();
     private readonly List<Action> _settingSync = new();
     private readonly Dictionary<GameObject, int> _settingControlRow = new();
+    private readonly Dictionary<int, RectTransform> _settingRowRects = new();
+    private RectTransform _settingHint = null!;
+    private TMP_Text _settingHintText = null!;
     private bool _syncingSettings;
     private RectTransform _panel = null!, _body = null!, _listContent = null!, _detailsContent = null!, _settingListContent = null!;
     private ScrollRect _list = null!, _details = null!, _settingList = null!;
@@ -131,7 +134,18 @@ internal sealed class ModMenuView : IModMenuView
             _checkUpdate = Button(_body, "Check updates", "Check for updates", () => { _updates.CheckAll(_presenter.Rows); RenderDetails(false); });
         }
         _settingList = Scroll(_body, "Setting rows", out _settingListContent);
-        Stretch((RectTransform)_settingList.transform, .46f, .32f, 1, 1, 8, 4, -8, -70);
+        Stretch((RectTransform)_settingList.transform, .46f, 0, 1, 1, 8, 52, -8, -70);
+        _settingHint = Rect(_panel, "Setting hint");
+        _settingHint.gameObject.AddComponent<LayoutElement>().ignoreLayout = true;
+        var hintBackground = _settingHint.gameObject.AddComponent<Image>();
+        hintBackground.color = new Color(.05f, .075f, .1f, .98f); hintBackground.raycastTarget = false;
+        _settingHintText = Text(_settingHint, "Hint text", "");
+        _settingHintText.fontSize = 13;
+        _settingHintText.textWrappingMode = TextWrappingModes.Normal;
+        _settingHintText.overflowMode = TextOverflowModes.Overflow;
+        _settingHintText.alignment = TextAlignmentOptions.TopLeft;
+        Stretch(_settingHintText.rectTransform, 0, 0, 1, 1, 8, 6, -8, -6);
+        _settingHint.gameObject.SetActive(false);
         _settingBack = Button(_body, "Settings back", "Back", ExitSettings);
         _settingReset = Button(_body, "Reset settings", "Reset all", () => { _settingPresenter.ResetAll(); SyncSettingRows(); });
         Stretch((RectTransform)_settingBack.transform, .46f, 0, .62f, 0, 8, 8, -4, 40);
@@ -209,11 +223,9 @@ internal sealed class ModMenuView : IModMenuView
         if (_events != null && !IsPanelFocus(_events.currentSelectedGameObject)) Select(_close.gameObject);
         if (_settingsMode && _events != null && _events.currentSelectedGameObject != null &&
             _settingControlRow.TryGetValue(_events.currentSelectedGameObject, out var focusedRow) &&
-            focusedRow != _settingPresenter.SelectedIndex && _settingPresenter.Select(focusedRow))
-        {
-            _detailText.text = _settingPresenter.Details();
-            ResizeDetails();
-        }
+            focusedRow != _settingPresenter.SelectedIndex)
+            _settingPresenter.Select(focusedRow);
+        if (_settingsMode) RefreshSettingHint();
         if (Keyboard.current?.tabKey.wasPressedThisFrame == true)
         {
             var selected = _events == null ? null : _events.currentSelectedGameObject;
@@ -348,16 +360,33 @@ internal sealed class ModMenuView : IModMenuView
     private void BuildSettingRows()
     {
         ClearSettingRows();
+        var y = 0;
+        string? group = null;
         for (var index = 0; index < _settingPresenter.Rows.Count; ++index)
         {
             var setting = index;
+            var definitionGroup = _settingPresenter.Rows[index].Definition.Group;
+            if (definitionGroup != group)
+            {
+                group = definitionGroup;
+                var header = Rect(_settingListContent, "Setting group " + group);
+                Stretch(header, 0, 1, 1, 1, 0, -y - SettingHeaderHeight, 0, -y);
+                var caption = Text(header, "Group name", group);
+                caption.fontSize = 15;
+                caption.color = new Color(.75f, .87f, 1, 1);
+                Stretch(caption.rectTransform, 0, 0, 1, 1, 10, 2, -8, 0);
+                var underline = Rect(header, "Underline");
+                Stretch(underline, 0, 0, .6f, 0, 10, 2, 0, 3);
+                var line = underline.gameObject.AddComponent<Image>();
+                line.color = new Color(.35f, .5f, .62f, 1); line.raycastTarget = false;
+                _settingRows.Add(header.gameObject);
+                y += SettingHeaderHeight;
+            }
             var row = Rect(_settingListContent, "Setting row " + setting);
-            Stretch(row, 0, 1, 1, 1, 0, -(setting + 1) * SettingRowHeight + 2, 0, -setting * SettingRowHeight - 2);
-            var background = row.gameObject.AddComponent<Image>();
-            background.color = new Color(.08f, .11f, .145f, setting % 2 == 0 ? .55f : .9f);
-            background.raycastTarget = false;
+            Stretch(row, 0, 1, 1, 1, 0, -y - SettingRowHeight, 0, -y);
             var name = Text(row, "Setting name", _settingPresenter.RowName(setting));
-            Stretch(name.rectTransform, 0, 0, .44f, 1, 12, 0, -4, 0);
+            name.fontSize = 14;
+            Stretch(name.rectTransform, 0, 0, .52f, 1, 14, 0, -4, 0);
             switch (_settingPresenter.Rows[setting].Definition)
             {
                 case BoolModSetting: BuildToggleControl(row, setting); break;
@@ -365,8 +394,10 @@ internal sealed class ModMenuView : IModMenuView
                 case ChoiceModSetting: BuildChoiceControl(row, setting); break;
             }
             _settingRows.Add(row.gameObject);
+            _settingRowRects[setting] = row;
+            y += SettingRowHeight;
         }
-        _settingListContent.sizeDelta = new Vector2(0, _settingPresenter.Rows.Count * SettingRowHeight);
+        _settingListContent.sizeDelta = new Vector2(0, y);
         _settingList.StopMovement();
         _settingListContent.anchoredPosition = Vector2.zero;
         SyncSettingRows();
@@ -375,12 +406,12 @@ internal sealed class ModMenuView : IModMenuView
     private void BuildToggleControl(RectTransform row, int setting)
     {
         var boxRect = Rect(row, "Toggle");
-        Stretch(boxRect, 1, .5f, 1, .5f, -40, -13, -14, 13);
+        Stretch(boxRect, .54f, .5f, .54f, .5f, 0, -10, 20, 10);
         var box = boxRect.gameObject.AddComponent<Image>();
         box.sprite = _sprite; box.type = _imageType; box.pixelsPerUnitMultiplier = _pixelsPerUnitMultiplier;
         box.fillCenter = _fillCenter; box.color = _buttonColor;
         var markRect = Rect(boxRect, "Checkmark");
-        Stretch(markRect, 0, 0, 1, 1, 6, 6, -6, -6);
+        Stretch(markRect, 0, 0, 1, 1, 5, 5, -5, -5);
         var mark = markRect.gameObject.AddComponent<Image>();
         mark.color = new Color(.4f, .85f, 1, 1); mark.raycastTarget = false;
         var toggle = boxRect.gameObject.AddComponent<Toggle>();
@@ -397,19 +428,19 @@ internal sealed class ModMenuView : IModMenuView
     private void BuildSliderControl(RectTransform row, int setting)
     {
         var value = Text(row, "Setting value", "");
-        value.alignment = TextAlignmentOptions.MidlineRight;
+        value.fontSize = 14;
         value.color = new Color(.75f, .85f, .95f, 1);
-        Stretch(value.rectTransform, .86f, 0, 1, 1, 0, 0, -12, 0);
+        Stretch(value.rectTransform, .88f, 0, 1, 1, 4, 0, -8, 0);
         var sliderRect = Rect(row, "Slider");
-        Stretch(sliderRect, .46f, 0, .85f, 1, 0, 10, 0, -10);
+        Stretch(sliderRect, .54f, 0, .87f, 1, 0, 7, 0, -7);
         var track = Rect(sliderRect, "Track");
-        Stretch(track, 0, .5f, 1, .5f, 0, -4, 0, 4);
+        Stretch(track, 0, .5f, 1, .5f, 0, -3, 0, 3);
         track.gameObject.AddComponent<Image>().color = new Color(.12f, .15f, .19f, 1);
         var handleArea = Rect(sliderRect, "Handle area");
-        Stretch(handleArea, 0, 0, 1, 1, 8, 0, -8, 0);
+        Stretch(handleArea, 0, 0, 1, 1, 6, 0, -6, 0);
         var handleRect = Rect(handleArea, "Handle");
         handleRect.anchorMin = new Vector2(0, 0); handleRect.anchorMax = new Vector2(0, 1);
-        handleRect.sizeDelta = new Vector2(16, 0);
+        handleRect.sizeDelta = new Vector2(12, 0);
         var handle = handleRect.gameObject.AddComponent<Image>();
         handle.color = new Color(.55f, .6f, .68f, 1);
         var slider = sliderRect.gameObject.AddComponent<Slider>();
@@ -433,13 +464,14 @@ internal sealed class ModMenuView : IModMenuView
     private void BuildChoiceControl(RectTransform row, int setting)
     {
         var previous = Button(row, "Previous choice", "<", () => { _settingPresenter.CycleChoice(setting, -1); SyncSettingRows(); });
-        Stretch((RectTransform)previous.transform, .46f, .5f, .46f, .5f, 0, -16, 36, 16);
+        Stretch((RectTransform)previous.transform, .54f, .5f, .54f, .5f, 0, -11, 24, 11);
         var value = Text(row, "Setting value", "");
+        value.fontSize = 14;
         value.alignment = TextAlignmentOptions.Midline;
         value.color = new Color(.75f, .85f, .95f, 1);
-        Stretch(value.rectTransform, .46f, 0, 1, 1, 40, 0, -52, 0);
+        Stretch(value.rectTransform, .54f, 0, 1, 1, 26, 0, -34, 0);
         var next = Button(row, "Next choice", ">", () => { _settingPresenter.CycleChoice(setting, 1); SyncSettingRows(); });
-        Stretch((RectTransform)next.transform, 1, .5f, 1, .5f, -48, -16, -12, 16);
+        Stretch((RectTransform)next.transform, 1, .5f, 1, .5f, -32, -11, -8, 11);
         _settingSync.Add(() => value.text = _settingPresenter.RowValue(setting));
         RegisterSettingControl(previous, setting);
         RegisterSettingControl(next, setting);
@@ -456,14 +488,34 @@ internal sealed class ModMenuView : IModMenuView
         _syncingSettings = true;
         try { foreach (var sync in _settingSync) sync(); }
         finally { _syncingSettings = false; }
-        _detailText.text = _settingPresenter.Details();
-        ResizeDetails();
+        RefreshSettingHint();
+    }
+
+    private void RefreshSettingHint()
+    {
+        if (!_settingsMode || _settingHint == null) return;
+        var index = _settingPresenter.SelectedIndex;
+        if (index < 0 || !_settingRowRects.TryGetValue(index, out var row) || row == null)
+        { _settingHint.gameObject.SetActive(false); return; }
+        _settingHint.gameObject.SetActive(true);
+        _settingHint.SetAsLastSibling();
+        _settingHintText.text = _settingPresenter.Details();
+        var width = Mathf.Min(340, Mathf.Max(220, _panel.rect.width * .22f));
+        var height = _settingHintText.GetPreferredValues(_settingHintText.text, width - 16, float.PositiveInfinity).y + 12;
+        var anchor = (Vector3)RectTransformUtility.CalculateRelativeRectTransformBounds(_panel, row).center;
+        var top = Mathf.Min(_panel.rect.yMax - 4, anchor.y + height / 2);
+        var bottom = Mathf.Max(_panel.rect.yMin + 4, top - height);
+        var listLeft = RectTransformUtility.CalculateRelativeRectTransformBounds(_panel, (RectTransform)_settingList.transform).min.x;
+        _settingHint.anchorMin = _settingHint.anchorMax = new Vector2(.5f, .5f);
+        _settingHint.offsetMin = new Vector2(listLeft - width - 6, bottom);
+        _settingHint.offsetMax = new Vector2(listLeft - 6, bottom + height);
     }
 
     private void ClearSettingRows()
     {
         foreach (var row in _settingRows) if (row != null) Object.Destroy(row);
-        _settingRows.Clear(); _settingControls.Clear(); _settingSync.Clear(); _settingControlRow.Clear();
+        _settingRows.Clear(); _settingControls.Clear(); _settingSync.Clear(); _settingControlRow.Clear(); _settingRowRects.Clear();
+        if (_settingHint != null) _settingHint.gameObject.SetActive(false);
     }
 
     private void ExitSettings()
@@ -485,17 +537,18 @@ internal sealed class ModMenuView : IModMenuView
         if (_updates != null) { _checkUpdate.gameObject.SetActive(false); _release.gameObject.SetActive(false); }
         SetSettingsControls(true);
         SyncSettingRows();
-        _details.StopMovement(); _detailsContent.anchoredPosition = Vector2.zero;
-        ResizeDetails(); UpdateScrollbars(); RebuildNavigation();
+        UpdateScrollbars(); RebuildNavigation();
     }
 
-    private const int SettingRowHeight = 52;
+    private const int SettingRowHeight = 30;
+    private const int SettingHeaderHeight = 26;
 
     private void SetSettingsControls(bool visible)
     {
         foreach (var button in new[] { _settingBack, _settingReset })
             if (button != null) button.gameObject.SetActive(visible);
         if (_settingList != null) _settingList.gameObject.SetActive(visible);
+        if (_details != null) _details.gameObject.SetActive(!visible);
         if (!visible) ClearSettingRows();
     }
 
@@ -529,16 +582,7 @@ internal sealed class ModMenuView : IModMenuView
 
     private void ResizeDetails()
     {
-        if (_settingsMode)
-        {
-            Stretch((RectTransform)_details.transform, .46f, 0, 1, .32f, 8, 48, -8, -4);
-            Canvas.ForceUpdateCanvases();
-            var settingsWidth = Mathf.Max(1, _details.viewport.rect.width - 14);
-            var settingsHeight = _detailText.GetPreferredValues(_detailText.text, settingsWidth, float.PositiveInfinity).y + 16;
-            Stretch(_detailText.rectTransform, 0, 1, 1, 1, 8, -settingsHeight, -8, -8);
-            _detailsContent.sizeDelta = new Vector2(0, Mathf.Max(_details.viewport.rect.height, settingsHeight));
-            return;
-        }
+        if (_settingsMode) return;
         _updateStatus.fontSize = _body.rect.width < 800 ? 12 : 14;
         var updateWidth = Mathf.Max(1, _body.rect.width * .54f - 24);
         var updateHeight = Mathf.Max(44, _updateStatus.GetPreferredValues(_updateStatus.text, updateWidth, float.PositiveInfinity).y + 8);
@@ -562,6 +606,7 @@ internal sealed class ModMenuView : IModMenuView
         foreach (var scroll in new[] { _list, _details, _settingList })
         {
             if (scroll == _settingList && !_settingsMode) continue;
+            if (scroll == _details && _settingsMode) continue;
             var visible = scroll.content.rect.height > scroll.viewport.rect.height + 1;
             if (scroll.verticalScrollbar.gameObject.activeSelf == visible) continue;
             scroll.verticalScrollbar.gameObject.SetActive(visible);
