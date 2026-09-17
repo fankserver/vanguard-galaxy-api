@@ -16,10 +16,13 @@ import uuid
 
 CASE = "fresh-session"
 KNOWN_CASES = ("fresh-session", "pocket-worlds", "story-missions", "observation",
-              "cargo-recovery", "station-commerce", "ui-surfaces", "mod-settings-menu", "tractor-module")
+              "cargo-recovery", "station-commerce", "ui-surfaces", "mod-settings-menu",
+              "tractor-module", "tractor-guide")
 HANDSHAKE = "--vgmodapi-e2e"
 ASSEMBLIES = ("VGModAPI.dll", "VGModAPI.Core.dll", "VGModAPI.Abstractions.dll",
-              "VGModAPI.Unity.dll", "VGModAPI.E2E.dll", "UiSurfaces.dll", "VGTractorAuto.dll", "Newtonsoft.Json.dll")
+              "VGModAPI.Unity.dll", "VGModAPI.E2E.dll", "UiSurfaces.dll", "TractorGuide.dll", "Newtonsoft.Json.dll")
+# Consumer-mod DLLs the consumer-migration cases assert on; staged when present in the build dir.
+OPTIONAL_ASSEMBLIES = ("VGTractorAuto.dll",)
 
 
 class E2EError(Exception):
@@ -95,7 +98,7 @@ class GameInstallation:
                 self.created.append(name)
             target = self.root / "plugins" / "VGModAPI.E2E"
             target.mkdir()
-            for name in ASSEMBLIES:
+            for name in ASSEMBLIES + tuple(n for n in OPTIONAL_ASSEMBLIES if (self.build / n).is_file()):
                 shutil.copy2(self.build / name, target / name)
             # The staging vacuums the real config/ for isolation, which drops the API back to its
             # disabled-by-default providers. Enable the ones the example cases exercise (Story drives

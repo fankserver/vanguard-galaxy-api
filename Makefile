@@ -75,7 +75,7 @@ e2e-build: link-libs
 	@set -eu; for dll in VGModAPI VGModAPI.Core VGModAPI.Abstractions VGModAPI.Unity; do cp "VGModAPI/bin/$(CONFIGURATION)/netstandard2.1/$$dll.dll" "$(E2E_BUILD)/"; done
 	cp VGModAPI.E2E/bin/$(CONFIGURATION)/netstandard2.1/VGModAPI.E2E.dll "$(E2E_BUILD)/"
 	cp VGModAPI.E2E/bin/$(CONFIGURATION)/netstandard2.1/Newtonsoft.Json.dll "$(E2E_BUILD)/"
-	@set -eu; for dll in PocketWorlds CargoRecovery StoryMissions StationCommerce StationCommerceB UiSurfaces Observation; do \
+	@set -eu; for dll in PocketWorlds CargoRecovery StoryMissions StationCommerce StationCommerceB UiSurfaces Observation TractorGuide; do \
 		f=$$(find examples -path '*/bin/$(CONFIGURATION)/netstandard2.1/'"$$dll"'.dll' | head -n 1); \
 		if [ -n "$$f" ]; then cp "$$f" "$(E2E_BUILD)/"; else echo "e2e staging missing example dll: $$dll" >&2; exit 1; fi; \
 	done

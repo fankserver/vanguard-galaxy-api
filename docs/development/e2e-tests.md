@@ -82,6 +82,10 @@ set (all examples + the E2E harness are deployed), only the driven workflow diff
 make e2e E2E_CASE=pocket-worlds
 ```
 
+Consumer-mod DLLs outside this repository (e.g. `VGTractorAuto.dll`) are staged when
+present in the build directory; copy the built DLL there before `make e2e`, or the
+case that asserts on it fails with a missing-registration detail.
+
 ## `pocket-worlds`
 
 Tests the PocketWorlds example in a real game session: it clicks the rendered HUD
@@ -125,6 +129,24 @@ rather than hard-failing.
 Waits for the consumer-owned gameplay window container, then clicks the shared
 HUD launcher to create and toggle the owned window, asserting its live visibility.
 The Forge inspector is availability-dependent, so it is not gated here.
+
+## `tractor-module`
+
+Runs against the sibling VGTractorAuto consumer DLL when it is staged (see optional
+assemblies below). Drives the real player tractor module through the public
+Equipment/SkillTrees/Tooltips surfaces: zero/half/max mastery promotion caps, manual
+borrowing, occupied-beam protection, native target eligibility and ordering, plus
+exactly-once contributions on a non-tractor equipment module's stat builder, an
+instantiated item tooltip and a native mastery badge, with the disabled mod adding
+nothing. All fixture state (beams, targets, stats, config) is restored afterwards.
+
+## `tractor-guide`
+
+Runs the in-repo TractorGuide example as the mod under test: the `ExtraAutoBeam`
+setting alone gates one borrowed manual beam (off → vanilla cap), and the example's
+own registrations contribute exactly once on the ship-module stat list, the
+Engineering mastery badge and — gated by the `HighlightItem` setting — an item
+tooltip.
 
 ## Coverage status
 
