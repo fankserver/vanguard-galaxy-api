@@ -9,25 +9,35 @@ using VGModAPI.Unity;
 namespace UiSurfaces;
 
 /// <summary>
-/// Sample/test mod demonstrating the two ways a mod puts its own interface in front of the player:
-/// a consumer-owned **Unity window** hosted inside the game's gameplay UI, and a **Forge inspector**
-/// built from public contracts only (see <see cref="Inspector"/>, which touches no Unity type).
+/// A hosted Unity window with config-backed settings and custom per-save progress, plus a Forge
+/// inspector built from public contracts only (see <see cref="Inspector"/>).
+/// Global preferences and per-save data have deliberately separate owners.
 /// </summary>
 [BepInPlugin(Id, "UI Surfaces example", "1.0.0")]
-[BepInDependency(ModApi.PluginId, "0.2.8")]
-public sealed class Plugin : BaseUnityPlugin
+[BepInDependency(ModApi.PluginId)]
+public sealed partial class Plugin : BaseUnityPlugin
 {
     private const string Id = "vgmodapi.example.ui-surfaces";
     private IGameplayUiService? _ui;
     private IHudRegistration? _launcher;
     private GameplayUiContainer? _container;
     private GameObject? _window;
+    private TextMeshProUGUI? _windowLabel;
+    private WindowVisits? _visits;
+    private string _lastOpen = "";
     private Inspector? _inspector;
     private float _nextInspectorAttempt;
     private bool _warnedInspector;
 
     private void Awake()
     {
+        ConfigurePreferences();
+        try
+        {
+            _visits = new WindowVisits(ModApi.Services.SaveData, Id);
+            _visits.Changed += RefreshWindow;
+        }
+        catch (Exception error) { Logger.LogError(error); } // No in-memory fallback pretending progress is durable.
         _ui = ModApi.Services.GameplayUi;
         _launcher = ModApi.Services.Hud.Register(Id, "window", _ => ToggleWindow());
         _ui.Changed += UiChanged;
@@ -83,7 +93,13 @@ public sealed class Plugin : BaseUnityPlugin
     private void ToggleWindow()
     {
         if (_container?.IsValid != true) return;
-        if (_window != null) { _window.SetActive(!_window.activeSelf); return; }
+        if (_window != null)
+        {
+            var opening = !_window.activeSelf;
+            _window.SetActive(opening);
+            if (opening) RecordOpen();
+            return;
+        }
 
         // Created later on player input, not during readiness. All layout/content belongs to this mod.
         var window = new GameObject("Example window", typeof(RectTransform), typeof(Image));
@@ -93,7 +109,7 @@ public sealed class Plugin : BaseUnityPlugin
             rect.SetParent(_container.Root, false);
             window.layer = _container.Root.gameObject.layer;
             rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.sizeDelta = new Vector2(420, 160);
+            rect.sizeDelta = new Vector2(520, 240);
             window.GetComponent<Image>().color = new Color(0.04f, 0.08f, 0.14f, 0.96f);
             var labelObject = new GameObject("Text", typeof(RectTransform), typeof(TextMeshProUGUI));
             labelObject.layer = window.layer;
@@ -102,22 +118,47 @@ public sealed class Plugin : BaseUnityPlugin
             labelRect.anchorMin = Vector2.zero; labelRect.anchorMax = Vector2.one;
             labelRect.offsetMin = new Vector2(20, 20); labelRect.offsetMax = new Vector2(-20, -20);
             var label = labelObject.GetComponent<TextMeshProUGUI>();
-            label.text = "This window belongs to the consumer mod.\nUse the shared HUD button to hide it.";
+            label.text = "";
             label.fontSize = 22; label.color = Color.white; label.raycastTarget = false;
             _window = window;
+            _windowLabel = label;
+            RecordOpen();
         }
         catch { window.SetActive(false); Destroy(window); throw; }
+    }
+
+    private void RecordOpen()
+    {
+        _lastOpen = !_countOpens.Value ? "Counting paused (global setting)."
+            : _visits?.RecordOpen() == true ? "Recorded in memory; save the game to persist."
+            : "Not recorded: save data is unavailable, read-only, or at its limit.";
+        RefreshWindow();
+    }
+
+    private void RefreshWindow()
+    {
+        if (_window == null || _windowLabel == null) return;
+        var count = _visits?.Count;
+        var progress = count.HasValue ? (_showGoal.Value ? $"{count.Value} / {_goal.Value}" : count.Value.ToString()) : "unavailable";
+        var state = _visits?.State;
+        var status = state == null ? "unregistered" : state.Kind + (state.Kind == SaveDataStateKind.Blocked ? ": " + state.Reason : "");
+        _windowLabel.text = $"Window opens in this save: {progress}\nSave data: {status}\n{_lastOpen}\nGlobal preferences: Mods > UI Surfaces > Settings\nUse the shared HUD button to hide this window.";
+        _window.GetComponent<Image>().color = _theme.Value == "amber"
+            ? new Color(.20f, .10f, .025f, _opacity.Value) : new Color(.04f, .08f, .14f, _opacity.Value);
     }
 
     private void Detach()
     {
         if (_ui?.Availability.Reason != ServiceUnavailableReason.ApiStopped) _launcher?.Update(null, null);
-        _window = null; // Disposing the container also destroys every child, including this window.
+        _window = null; _windowLabel = null; _lastOpen = ""; // The container destroys its children.
         var container = _container; _container = null; container?.Dispose();
     }
 
     private void OnDestroy()
     {
+        Config.SettingChanged -= PreferenceChanged;
+        _settings?.Dispose(); _settings = null;
+        if (_visits != null) { _visits.Changed -= RefreshWindow; _visits.Dispose(); _visits = null; }
         if (_ui != null) _ui.Changed -= UiChanged;
         // API shutdown may already have disposed HUD registrations; do not update them during unload.
         var launcher = _launcher; _launcher = null;

@@ -32,6 +32,7 @@
     <!-- These example sources are compiled directly (not project-referenced) because they must stay
          free of Unity/BepInEx types; compiling them here without those references keeps that honest. -->
     <Compile Include="../examples/UiSurfaces/Inspector.cs" Link="Examples/Inspector.cs" />
+    <Compile Include="../examples/UiSurfaces/WindowVisits.cs" Link="Examples/WindowVisits.cs" />
     <Compile Include="../examples/CargoRecovery/CargoAuthorSession.cs" Link="Examples/CargoAuthorSession.cs" />
     <Compile Include="../examples/CargoRecovery/CargoEncounter.cs" Link="Examples/CargoEncounter.cs" />
     <Compile Include="../examples/CargoRecovery/CargoEncounterPanel.cs" Link="Examples/CargoEncounterPanel.cs" />

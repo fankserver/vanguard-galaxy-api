@@ -14,7 +14,7 @@ None of these are part of the shipped API package.
 | **[CargoRecovery](CargoRecovery/)** | **Your own boarding missions** — a derelict you spawn in your own system, laid out room by room, with an authored decision in the cargo hold, extraction through a contextual panel action, crew settlement observed honestly, and clean removal afterwards. | `Dungeons`, `World` |
 | **[StoryMissions](StoryMissions/)** | **Your own missions** — hand-authored campaign beats with real decisions, jobs generated from runtime text, and follow-ups that offer themselves when an arc completes. | `Story`, `Game` |
 | **[StationCommerce](StationCommerce/)** | **Your own trade goods and the people who deal in them** — a manufactured item, the recipe that makes it, and a bar contact with a mission, placed at a real station. | `Items`, `RecipeRegistration`, `Bars`, `Story`, `Game` |
-| **[UiSurfaces](UiSurfaces/)** | **Your own interface inside the game** — a Unity window owned entirely by your mod, plus a Forge inspector showing requirements and output previews. | `GameplayUi`, `Hud`, `ForgeUi`, `Recipes`, `RecipeQuotes` |
+| **[UiSurfaces](UiSurfaces/)** | **UI, settings and saved progress** — a hosted window with four typed global preferences, a per-save counter, and a Forge inspector. Requires the matching development API, not public 0.2.8. | `GameplayUi`, `Hud`, `Settings`, `SaveData`, `ForgeUi`, `Recipes`, `RecipeQuotes` |
 | **[Observation](Observation/)** | **Mods that react to what the player is doing** — sessions, missions and travel observed without touching them, plus optional-dependency entry points and custom save data. | `Lifecycle`, `Missions`, `Travel`, `SaveData` |
 | **[UpdateParticipant](UpdateParticipant/)** | **Publishing your mod** — update metadata and the packaging dry run. | *(loader metadata only)* |
 
@@ -31,17 +31,18 @@ Building needs your local game/BepInEx references (`make link-libs`). Deploy a p
 
 ## Two conventions worth knowing
 
-**Acquire providers in `Start()`, never `Awake()`.** BepInEx populates
-`Chainloader.PluginInfos[].Instance` only *after* a plugin's `Awake()` returns, and the
-instance-authenticated providers (world, story, bars, items, recipes) resolve the caller against
-exactly that entry. Acquiring one in `Awake()` returns null and silently registers nothing. Dungeon,
-HUD and panel registrations use a plain plugin-id string instead, but every example here follows the
-same rule so nothing depends on which identity a given service happens to use.
+**Acquire instance-authenticated providers in `Start()`, not `Awake()`.** BepInEx populates
+`Chainloader.PluginInfos[].Instance` only *after* a plugin's `Awake()` returns. Providers such as
+world, story, bars, items, recipes and settings authenticate against that entry; acquiring them in
+`Awake()` is refused. Plugin-id-keyed registrations have different timing: HUD registration can
+happen in `Awake()`, and `SaveData.Register` must happen before a gameplay session starts.
+UiSurfaces therefore registers its save data and HUD in `Awake()`, and acquires settings in `Start()`.
 
-**The API owns persistence.** No example registers a save hook, codec or sidecar writer for
-API-owned content; definitions are declared once and the API restores missions, progress and
-choices. The one deliberate exception is `Observation/Consumers/CustomCounter.cs`, which persists
-*additional custom mod data* — a different concern, and the correct use of the generic save-data API.
+**The API owns persistence for API-owned content.** Definitions are declared once and the API
+restores their missions, progress and choices without consumer save hooks or sidecar writers.
+`Observation/Consumers/CustomCounter.cs` and `UiSurfaces/WindowVisits.cs` instead persist
+*additional custom mod data* through `SaveData`. UiSurfaces' global preferences remain in BepInEx
+config; they are not copied into per-save data.
 
 ## Packages with a second project
 
