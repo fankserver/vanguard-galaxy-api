@@ -19,7 +19,7 @@ public sealed class ModSettingsPresenterTests
         var presenter = new ModSettingsPresenter(service);
         Assert.True(presenter.HasSettings("echo"));
         Assert.True(presenter.Open("echo"));
-        Assert.Contains("current: Off", presenter.Details());
+        Assert.Contains("Master switch.", presenter.Details());
         Assert.Equal("Enabled", presenter.RowName(0));
         Assert.Equal("Off", presenter.RowValue(0));
         Assert.True(presenter.TryBool(0, out var initial));

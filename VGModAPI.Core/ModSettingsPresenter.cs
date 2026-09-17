@@ -107,9 +107,8 @@ internal sealed class ModSettingsPresenter
         var row = Selected;
         if (row == null) return "No in-game settings published.";
         var definition = row.Definition;
-        var value = _service.TryRead(row, out var current) ? DisplayValue(definition, current!) : "Unavailable";
         var restart = definition.ApplyMode == ModSettingApplyMode.RestartRequired ? "\n* Applies after restart." : "";
-        return definition.Group + " / " + definition.Name + "  (current: " + value + ")" + restart + "\n" + definition.Description;
+        return definition.Name + restart + "\n" + definition.Description;
     }
 
     private static string DisplayValue(ModSettingDefinition definition, object value) => definition switch
