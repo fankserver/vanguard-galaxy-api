@@ -17,7 +17,7 @@ import uuid
 CASE = "fresh-session"
 KNOWN_CASES = ("fresh-session", "pocket-worlds", "story-missions", "observation",
               "cargo-recovery", "station-commerce", "ui-surfaces", "mod-settings-menu",
-              "equipment-policy", "equipment-targeting")
+              "equipment-policy", "equipment-targeting", "pickup-presentation")
 HANDSHAKE = "--vgmodapi-e2e"
 ASSEMBLIES = ("VGModAPI.dll", "VGModAPI.Core.dll", "VGModAPI.Abstractions.dll",
               "VGModAPI.Unity.dll", "VGModAPI.E2E.dll", "PocketWorlds.dll", "CargoRecovery.dll",
