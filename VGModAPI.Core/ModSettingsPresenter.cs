@@ -107,8 +107,9 @@ internal sealed class ModSettingsPresenter
         var row = Selected;
         if (row == null) return "No in-game settings published.";
         var definition = row.Definition;
-        var restart = definition.ApplyMode == ModSettingApplyMode.RestartRequired ? "\n* Applies after restart." : "";
-        return definition.Name + restart + "\n" + definition.Description;
+        var restart = definition.ApplyMode == ModSettingApplyMode.RestartRequired ? "* Applies after restart." : "";
+        if (definition.Description.Length == 0) return restart;
+        return restart.Length == 0 ? definition.Description : definition.Description + "\n" + restart;
     }
 
     private static string DisplayValue(ModSettingDefinition definition, object value) => definition switch

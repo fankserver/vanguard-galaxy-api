@@ -504,10 +504,11 @@ internal sealed class ModMenuView : IModMenuView
         var index = _hoveredSetting;
         if (index < 0 || !_settingRowRects.TryGetValue(index, out var row) || row == null)
         { _settingHint.gameObject.SetActive(false); return; }
-        if (!_settingPresenter.Select(index)) { _settingHint.gameObject.SetActive(false); return; }
+        var details = _settingPresenter.Select(index) ? _settingPresenter.Details() : "";
+        if (details.Length == 0) { _settingHint.gameObject.SetActive(false); return; }
         _settingHint.gameObject.SetActive(true);
         _settingHint.SetAsLastSibling();
-        _settingHintText.text = _settingPresenter.Details();
+        _settingHintText.text = details;
         var width = Mathf.Min(340, Mathf.Max(220, _panel.rect.width * .22f));
         var height = _settingHintText.GetPreferredValues(_settingHintText.text, width - 16, float.PositiveInfinity).y + 12;
         var anchor = (Vector3)RectTransformUtility.CalculateRelativeRectTransformBounds(_panel, row).center;
