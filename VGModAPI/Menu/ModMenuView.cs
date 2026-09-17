@@ -30,11 +30,18 @@ internal sealed class ModMenuView : IModMenuView
     private readonly List<GameObject> _settingRows = new();
     private readonly List<Selectable> _settingControls = new();
     private readonly List<Action> _settingSync = new();
-    private readonly Dictionary<GameObject, int> _settingControlRow = new();
     private readonly Dictionary<int, RectTransform> _settingRowRects = new();
     private RectTransform _settingHint = null!;
     private TMP_Text _settingHintText = null!;
+    private int _hoveredSetting = -1;
     private bool _syncingSettings;
+
+    private sealed class HoverRelay : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
+    {
+        internal Action? Enter, Exit;
+        public void OnPointerEnter(PointerEventData eventData) => Enter?.Invoke();
+        public void OnPointerExit(PointerEventData eventData) => Exit?.Invoke();
+    }
     private RectTransform _panel = null!, _body = null!, _listContent = null!, _detailsContent = null!, _settingListContent = null!;
     private ScrollRect _list = null!, _details = null!, _settingList = null!;
     private TMP_Text _heading = null!, _summary = null!, _updateStatus = null!, _detailText = null!;
@@ -221,11 +228,7 @@ internal sealed class ModMenuView : IModMenuView
         // All owned selectables use an explicit closed navigation ring; never edit native navigation.
         // Repair foreign/cleared selection without disabling the EventSystem or its input module.
         if (_events != null && !IsPanelFocus(_events.currentSelectedGameObject)) Select(_close.gameObject);
-        if (_settingsMode && _events != null && _events.currentSelectedGameObject != null &&
-            _settingControlRow.TryGetValue(_events.currentSelectedGameObject, out var focusedRow) &&
-            focusedRow != _settingPresenter.SelectedIndex)
-            _settingPresenter.Select(focusedRow);
-        if (_settingsMode) RefreshSettingHint();
+        if (_settingsMode && _hoveredSetting >= 0) RefreshSettingHint();
         if (Keyboard.current?.tabKey.wasPressedThisFrame == true)
         {
             var selected = _events == null ? null : _events.currentSelectedGameObject;
@@ -384,6 +387,11 @@ internal sealed class ModMenuView : IModMenuView
             }
             var row = Rect(_settingListContent, "Setting row " + setting);
             Stretch(row, 0, 1, 1, 1, 0, -y - SettingRowHeight, 0, -y);
+            var hoverSurface = row.gameObject.AddComponent<Image>();
+            hoverSurface.color = Color.clear; hoverSurface.raycastTarget = true;
+            var relay = row.gameObject.AddComponent<HoverRelay>();
+            relay.Enter = () => { _hoveredSetting = setting; if (_settingPresenter.Select(setting)) RefreshSettingHint(); };
+            relay.Exit = () => { if (_hoveredSetting == setting) { _hoveredSetting = -1; RefreshSettingHint(); } };
             var name = Text(row, "Setting name", _settingPresenter.RowName(setting));
             name.fontSize = 14;
             Stretch(name.rectTransform, 0, 0, .52f, 1, 14, 0, -4, 0);
@@ -480,7 +488,6 @@ internal sealed class ModMenuView : IModMenuView
     private void RegisterSettingControl(Selectable control, int setting)
     {
         _settingControls.Add(control);
-        _settingControlRow[control.gameObject] = setting;
     }
 
     private void SyncSettingRows()
@@ -494,9 +501,10 @@ internal sealed class ModMenuView : IModMenuView
     private void RefreshSettingHint()
     {
         if (!_settingsMode || _settingHint == null) return;
-        var index = _settingPresenter.SelectedIndex;
+        var index = _hoveredSetting;
         if (index < 0 || !_settingRowRects.TryGetValue(index, out var row) || row == null)
         { _settingHint.gameObject.SetActive(false); return; }
+        if (!_settingPresenter.Select(index)) { _settingHint.gameObject.SetActive(false); return; }
         _settingHint.gameObject.SetActive(true);
         _settingHint.SetAsLastSibling();
         _settingHintText.text = _settingPresenter.Details();
@@ -514,7 +522,8 @@ internal sealed class ModMenuView : IModMenuView
     private void ClearSettingRows()
     {
         foreach (var row in _settingRows) if (row != null) Object.Destroy(row);
-        _settingRows.Clear(); _settingControls.Clear(); _settingSync.Clear(); _settingControlRow.Clear(); _settingRowRects.Clear();
+        _settingRows.Clear(); _settingControls.Clear(); _settingSync.Clear(); _settingRowRects.Clear();
+        _hoveredSetting = -1;
         if (_settingHint != null) _settingHint.gameObject.SetActive(false);
     }
 
