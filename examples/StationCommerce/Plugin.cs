@@ -19,7 +19,9 @@ namespace StationCommerce;
 /// no serializer.
 /// </summary>
 [BepInPlugin(Id, "Station Commerce example (" + Variant + ")", "1.0.0")]
-[BepInDependency(ModApi.PluginId, "0.2.8")]
+// Version floor omitted on purpose: in-repo examples track the development API, which
+    // is deliberately unversioned (0.0.0); real consumers name the release they require.
+    [BepInDependency(ModApi.PluginId)]
 public sealed class Plugin : BaseUnityPlugin
 {
 #if AUTHOR_B
@@ -46,6 +48,7 @@ public sealed class Plugin : BaseUnityPlugin
     private IStoryProvider? _story;
     private IGameService? _games;
     private IHudRegistration? _hud;
+    private IDisposable? _tip;
 
     private IStoryDefinition? _errand;
     private string _itemStatus = "not registered";
@@ -70,7 +73,7 @@ public sealed class Plugin : BaseUnityPlugin
         else
         {
             var status = _recipes.Register(new OwnedRecipeDefinition(RecipeDef, 1, "Silo Container", 100, 30,
-                new[] { new OwnedRecipeIngredient(RecipeItemReference.Vanilla("Carbon"), 2) },
+                new[] { new OwnedRecipeIngredient(RecipeItemReference.Vanilla("SalvageCarbon"), 2) },
                 new OwnedRecipeIngredient(RecipeItemReference.FromOwned(new OwnedItemReference(Id, ItemDef)), 1)));
             _recipeStatus = status.ToString();
         }
@@ -80,10 +83,17 @@ public sealed class Plugin : BaseUnityPlugin
         else
         {
             var status = _items.Register(new OwnedItemDefinition(ItemDef, 1, "Silo Container",
-                "A manufactured container. Plain trade goods, not an installable silo.", "Carbon", 15, 100,
+                "A manufactured container. Plain trade goods, not an installable silo.", "SalvageCarbon", 15, 100,
                 OwnedItemStorage.Armory));
             _itemStatus = status.ToString();
         }
+        // A maker's mark on your own trade good: match the display name this plugin authored and
+        // add one styled line. Every item tooltip goes through the shared native fill.
+        _tip = ModApi.Services.Tooltips.RegisterItem(Id, (item, tip) =>
+        {
+            if (item.DisplayName == "Silo Container")
+                tip.AddLine("Handmade by Station Commerce " + Variant, TooltipTextStyle.Details);
+        });
 
         // A contact is more interesting with something to say: register a small errand and link it to
         // the patron by content id. Composition across two owned providers of the same plugin.
@@ -196,6 +206,7 @@ public sealed class Plugin : BaseUnityPlugin
     private void OnDestroy()
     {
         var hud = _hud; _hud = null; hud?.Dispose();
+        _tip?.Dispose(); _tip = null;
         // Releasing a provider removes runtime behavior but preserves persistent rows for a later
         // registration; per-save removal is a separate, reversible action on the live patron object.
         _bars?.Dispose(); _bars = null;

@@ -4,7 +4,8 @@
 manufactured item, the recipe that produces it, and a bar contact standing in a real station's bar
 with a mission attached — all persisted by the API, with no save hook of your own.
 
-A sample/test BepInEx mod for the **VG Mod API** (v0.2.8+), built **twice** as two separately loaded
+A sample/test BepInEx mod for the **VG Mod API** (development build; the tooltip tip needs the
+matching unreleased API). Built **twice** as two separately loaded
 assemblies to demonstrate authenticated provider composition.
 
 ## What it demonstrates (the abilities)

@@ -20,7 +20,9 @@ KNOWN_CASES = ("fresh-session", "pocket-worlds", "story-missions", "observation"
               "tractor-module", "tractor-guide")
 HANDSHAKE = "--vgmodapi-e2e"
 ASSEMBLIES = ("VGModAPI.dll", "VGModAPI.Core.dll", "VGModAPI.Abstractions.dll",
-              "VGModAPI.Unity.dll", "VGModAPI.E2E.dll", "UiSurfaces.dll", "TractorGuide.dll", "Newtonsoft.Json.dll")
+              "VGModAPI.Unity.dll", "VGModAPI.E2E.dll", "PocketWorlds.dll", "CargoRecovery.dll",
+              "StoryMissions.dll", "StationCommerce.dll", "StationCommerceB.dll", "UiSurfaces.dll",
+              "Observation.dll", "TractorGuide.dll", "Newtonsoft.Json.dll")
 # Consumer-mod DLLs the consumer-migration cases assert on; staged when present in the build dir.
 OPTIONAL_ASSEMBLIES = ("VGTractorAuto.dll",)
 

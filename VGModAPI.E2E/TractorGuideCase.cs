@@ -7,8 +7,8 @@ using UnityEngine;
 
 namespace VGModAPI.E2E;
 
-// Exercises examples/TractorGuide end to end: the settings-driven equipment policy, and the
-// example's own registrations on the ship-module, skill-tree and item tooltip families.
+// Exercises examples/TractorGuide: the one gameplay decision the example owns. Its settings
+// toggle alone decides whether the autopilot may borrow one free manual beam.
 internal static class TractorGuideCase
 {
     internal const string Id = "tractor-guide";
@@ -25,30 +25,27 @@ internal static class TractorGuideCase
     internal static IReadOnlyList<TestStep> Steps(ILifecycleService lifecycle, List<LifecycleEvent> events)
     {
         var steps = new List<TestStep>(LiveBoot.Steps("vgmodapi.example.tractor-guide", lifecycle, events));
-        steps.Add(new TestStep("guide policy, settings and tooltip contributions", "TractorGuide example", 30, Run));
+        steps.Add(new TestStep("settings-gated beam borrowing", "TractorGuide example", 30, Run));
         return steps;
     }
 
     private static StepResult Run()
     {
-        Require(ModApi.Services.Equipment.Availability.IsAvailable && ModApi.Services.SkillTrees.Availability.IsAvailable && ModApi.Services.Tooltips.Availability.IsAvailable, "API services not bound");
+        Require(ModApi.Services.Equipment.Availability.IsAvailable, "equipment service not bound");
         var a = AppDomain.CurrentDomain.GetAssemblies().Single(x => x.GetName().Name == "Assembly-CSharp");
         var moduleType = a.GetType("Behaviour.Equipment.Module.TractorModule", true)!;
         var module = Resources.FindObjectsOfTypeAll(moduleType).OfType<Component>().FirstOrDefault(m => moduleType.GetMethod("IsPlayer", Any)!.Invoke(m, new object[] { true }) is true);
         if (module == null) return StepResult.Wait("player tractor module not ready");
         var guide = NativeGameplay.PluginInstance("vgmodapi.example.tractor-guide")!;
         var extraEntry = Get(guide, "_extraAutoBeam")!; var extraValue = extraEntry.GetType().GetProperty("Value")!; var oldExtra = extraValue.GetValue(extraEntry);
-        var highlightEntry = Get(guide, "_highlightItem")!; var highlightValue = highlightEntry.GetType().GetProperty("Value")!; var oldHighlight = highlightValue.GetValue(highlightEntry);
         var otherConsumer = NativeGameplay.PluginInstance("vgtractorauto");
         object? otherEnabled = otherConsumer == null ? null : Get(otherConsumer, "_enabled");
         PropertyInfo? otherEnabledValue = otherEnabled?.GetType().GetProperty("Value");
         object? oldOtherEnabled = otherEnabledValue == null ? null : otherEnabledValue.GetValue(otherEnabled);
         Require(otherConsumer == null || otherEnabled != null, "staged VGTractorAuto lacks the _enabled setting the isolation relies on");
 
-        var manualField = Field(moduleType, "amountOfBonusBeams"); var oldManual = manualField.GetValue(module);
         var beams = (IList)Get(module, "tractorBeams")!; int originalBeamCount = beams.Count;
         var originals = beams.Cast<object>().ToDictionary(b => b, b => Get(b, "target"));
-        var statsField = Field(moduleType, "mainSubStats"); var oldStats = statsField.GetValue(module);
         var temporary = new List<GameObject>();
         try
         {
@@ -72,65 +69,13 @@ internal static class TractorGuideCase
             Require(manual.Contains(Request(false)!), "ExtraAutoBeam did not borrow a free manual beam");
             extraValue.SetValue(extraEntry, false);
             Require(Request(false) == null, "ExtraAutoBeam stayed active after being turned off");
-            extraValue.SetValue(extraEntry, true);
-
-            // Ship-module family through the example's own registration.
-            var tree = ModApi.Services.SkillTrees.Get(CommanderSpecialization.Engineering);
-            Require(tree != null && tree.Specialization == CommanderSpecialization.Engineering, "engineering tree not readable through SkillTrees");
-            statsField.SetValue(module, Activator.CreateInstance(statsField.FieldType));
-            moduleType.GetMethod("SetMainSubStats", Any)!.Invoke(module, null);
-            var guideLines = ((IEnumerable)Get(statsField.GetValue(module)!, "subStatsList")!).Cast<object>()
-                .Select(s => (string)Get(s, "mainSubStatName")!).Where(t => t.Contains("(TractorGuide)")).ToArray();
-            Require(guideLines.Length == 1 && guideLines[0] == $"Autopilot mastery {tree!.MasteryLevel}/{tree.MaximumLevel} (TractorGuide)",
-                "example module tooltip missing, duplicated or stale (" + string.Join("|", guideLines) + ")");
-
-            // Skill-tree family through the example's own registration.
-            var nativeTree = a.GetType("Behaviour.Crew.Skilltree", true)!.GetMethod("Get", Any)!.Invoke(null, new object[] { tree!.Identifier })!;
-            var tooltipType = a.GetType("Behaviour.UI.UITooltip", true)!;
-            var prefab = Resources.FindObjectsOfTypeAll(tooltipType).OfType<Component>().First(t => Get(t, "_textPrefab") != null);
-            Component MakeTooltip(out GameObject go)
-            {
-                // A fresh tooltip object per fill: the fill dedupe claims each tooltip per frame,
-                // and the native UI always rebuilds content on a new show.
-                go = UnityEngine.Object.Instantiate(prefab.gameObject); go.SetActive(false); temporary.Add(go);
-                return go.GetComponent(tooltipType)!;
-            }
-            string[] LinesOf(Component tooltip) => ((IEnumerable)Get(tooltip, "_contentList")!).Cast<object>().Select(c => c.GetType().GetProperty("Text", Any)?.GetValue(c)).Where(t => t != null).Select(t => (string)t!.GetType().GetProperty("text", Any)!.GetValue(t)!).ToArray();
-            var badgeGo = new GameObject("guide-e2e-badge"); badgeGo.SetActive(false); temporary.Add(badgeGo);
-            var badgeType = a.GetType("Behaviour.UI.MasteryBadge", true)!;
-            var badge = badgeGo.AddComponent(badgeType);
-            Field(badgeType, "<skillTree>k__BackingField").SetValue(badge, nativeTree);
-            var badgeTooltip = MakeTooltip(out _);
-            badgeType.GetMethod("AddTooltipCustomContent", Any)!.Invoke(badge, new object[] { badgeTooltip });
-            Require(LinesOf(badgeTooltip).Count(t => t.Contains("Engineering also powers the tractor autopilot (TractorGuide)")) == 1, "example skill-tree tooltip missing or duplicated");
-
-            // Item family: the opt-in identifier setting both gates and selects the contribution.
-            var ordinary = ((IEnumerable)a.GetType("Behaviour.Item.InventoryItemType", true)!.GetProperty("all", Any)!.GetValue(null)!).Cast<Component>().First();
-            var expectedId = (string)Get(ordinary, "identifier")!;
-            var sourceGo = new GameObject("guide-e2e-item"); sourceGo.SetActive(false); temporary.Add(sourceGo);
-            var sourceType = a.GetType("Behaviour.UI.Tooltip.ItemTooltipSource", true)!;
-            var source = sourceGo.AddComponent(sourceType);
-            var context = Enum.Parse(a.GetType("Behaviour.UI.Tooltip.ItemTooltipContext", true)!, "InInventory");
-            string[] ShowItem()
-            {
-                var tooltip = MakeTooltip(out _);
-                sourceType.GetMethod("SetItem", Any)!.Invoke(source, new object?[] { ordinary, 2, false, context, false, null });
-                tooltipType.GetProperty("Source", Any)!.SetValue(tooltip, source, null);
-                tooltipType.GetMethod("SetContent", Any)!.Invoke(tooltip, new object[] { source });
-                return LinesOf(tooltip);
-            }
-            highlightValue.SetValue(highlightEntry, "");
-            Require(!ShowItem().Any(t => t.Contains("Easy to ferry")), "item tip shown while HighlightItem is empty");
-            highlightValue.SetValue(highlightEntry, expectedId);
-            Require(ShowItem().Count(t => t.Contains("Easy to ferry with a tractor beam (TractorGuide)") && t.Contains("<color=")) == 1, "example item tooltip missing, duplicated or unstyled");
-            Debug.Log("TractorGuide E2E passed: settings-gated beam borrowing, module/skill-tree/item contributions through the example's own registrations.");
+            Debug.Log("TractorGuide E2E passed: the ExtraAutoBeam setting alone gates borrowing one free manual beam.");
             return StepResult.Pass("TractorGuide example behavior verified");
         }
         finally
         {
-            extraValue.SetValue(extraEntry, oldExtra); highlightValue.SetValue(highlightEntry, oldHighlight);
+            extraValue.SetValue(extraEntry, oldExtra);
             if (otherEnabledValue != null) otherEnabledValue.SetValue(otherEnabled, oldOtherEnabled);
-            manualField.SetValue(module, oldManual); statsField.SetValue(module, oldStats);
             foreach (var entry in originals) Field(entry.Key.GetType(), "target").SetValue(entry.Key, entry.Value);
             foreach (var b in beams.Cast<object>().Except(originals.Keys).ToArray()) Field(b.GetType(), "target").SetValue(b, null);
             while (beams.Count > originalBeamCount)

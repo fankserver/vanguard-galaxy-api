@@ -26,6 +26,8 @@ public sealed partial class Plugin : BaseUnityPlugin
     private WindowVisits? _visits;
     private string _lastOpen = "";
     private Inspector? _inspector;
+    private IDisposable? _moduleTip;
+    private IDisposable? _treeTip;
     private float _nextInspectorAttempt;
     private bool _warnedInspector;
 
@@ -157,6 +159,7 @@ public sealed partial class Plugin : BaseUnityPlugin
     private void OnDestroy()
     {
         Config.SettingChanged -= PreferenceChanged;
+        _moduleTip?.Dispose(); _moduleTip = null; _treeTip?.Dispose(); _treeTip = null;
         _settings?.Dispose(); _settings = null;
         if (_visits != null) { _visits.Changed -= RefreshWindow; _visits.Dispose(); _visits = null; }
         if (_ui != null) _ui.Changed -= UiChanged;

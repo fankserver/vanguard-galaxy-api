@@ -122,13 +122,19 @@ not miss the session by loading late.
 Loads both independent author variants (A and B) and asserts each registers the
 SAME author-local good, recipe and story-errand IDs through its own authenticated
 provider without collision, and that the recipe-before-item declaration resolves
-rather than hard-failing.
+rather than hard-failing. Finally forces the shared item tooltip fill for the
+owned good and asserts each variant's maker tip renders exactly once, styled.
 
 ## `ui-surfaces`
 
 Waits for the consumer-owned gameplay window container, then clicks the shared
 HUD launcher to create and toggle the owned window, asserting its live visibility.
-The Forge inspector is availability-dependent, so it is not gated here.
+Toggles all six typed settings through the settings service, asserting immediate
+window effects and BepInEx config persistence. The tooltip annotations are also
+driven through the example's own registrations: with the setting on, the tractor
+stat list and the Engineering mastery badge each carry the example's line exactly
+once; with it off, neither does. The Forge inspector is availability-dependent, so
+it is not gated here.
 
 ## `tractor-module`
 
@@ -143,10 +149,8 @@ nothing. All fixture state (beams, targets, stats, config) is restored afterward
 ## `tractor-guide`
 
 Runs the in-repo TractorGuide example as the mod under test: the `ExtraAutoBeam`
-setting alone gates one borrowed manual beam (off → vanilla cap), and the example's
-own registrations contribute exactly once on the ship-module stat list, the
-Engineering mastery badge and — gated by the `HighlightItem` setting — an item
-tooltip.
+setting alone gates one borrowed manual beam (off ⇒ vanilla cap, on ⇒ borrows a
+free manual beam), isolated from the optional sibling consumer.
 
 ## Coverage status
 
