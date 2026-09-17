@@ -7,34 +7,17 @@ using VGModAPI.Runtime;
 
 namespace VGModAPI;
 
+/// <summary>Tooltip extensions and the skill-tree reader behind ISkillTreeService: one Harmony
+/// instance per seam, bound fail-closed.</summary>
 public sealed partial class Plugin
 {
-    private EquipmentService? _equipment;
     private SkillTreeService? _skillTrees;
     private TooltipService? _tooltips;
-    private Harmony? _tractorHarmony;
     private Harmony? _tooltipsHarmony;
-    private void InstallTractorBeams(Assembly assembly)
-    {
-        _equipment ??= new EquipmentService(_hub!);
-        _skillTrees ??= new SkillTreeService(_hub!);
-        _tooltips ??= new TooltipService(_hub!);
-        try
-        {
-            var skills = new SkillTreeRuntime(assembly);
-            var runtime = new TractorBeamRuntime(assembly, _equipment, error => Logger.LogError(error));
-            _tractorHarmony = new Harmony(ModApi.PluginId + ".tractor-beams");
-            TractorBeamPatches.Runtime = runtime;
-            _tractorHarmony.Patch(runtime.AvailableBeam, postfix: new HarmonyMethod(typeof(TractorBeamPatches.Available), "Postfix"));
-            _tractorHarmony.Patch(runtime.UpdateTargets, postfix: new HarmonyMethod(typeof(TractorBeamPatches.Targets), "Postfix"));
-            _skillTrees.Bind(skills.Get);
-            _equipment.SetAvailable(true);
-        }
-        catch (Exception error) { TeardownTractorBeams(); Logger.LogError(error); }
-    }
     private void InstallTooltips(Assembly assembly)
     {
         _tooltips ??= new TooltipService(_hub!);
+        _skillTrees ??= new SkillTreeService(_hub!);
         try
         {
             var skills = new SkillTreeRuntime(assembly);
@@ -46,17 +29,10 @@ public sealed partial class Plugin
             _tooltipsHarmony.Patch(runtime.MasteryTooltip, postfix: new HarmonyMethod(typeof(TooltipPatches.MasteryTooltip), "Postfix"));
             foreach (var fill in runtime.ContentFills)
                 _tooltipsHarmony.Patch(fill, postfix: new HarmonyMethod(typeof(TooltipPatches.ItemContent), "Postfix"));
+            _skillTrees.Bind(skills.Get);
             _tooltips.SetAvailable(true);
         }
         catch (Exception error) { TeardownTooltips(); Logger.LogError(error); }
-    }
-    private void TeardownTractorBeams()
-    {
-        TractorBeamPatches.Runtime = null;
-        try { _tractorHarmony?.UnpatchSelf(); }
-        catch (Exception error) { Logger.LogError(error); }
-        _tractorHarmony = null;
-        _equipment?.SetAvailable(false); _skillTrees?.Bind(null);
     }
     private void TeardownTooltips()
     {
@@ -64,6 +40,6 @@ public sealed partial class Plugin
         try { _tooltipsHarmony?.UnpatchSelf(); }
         catch (Exception error) { Logger.LogError(error); }
         _tooltipsHarmony = null;
-        _tooltips?.SetAvailable(false);
+        _tooltips?.SetAvailable(false); _skillTrees?.Bind(null);
     }
 }

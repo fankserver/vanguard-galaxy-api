@@ -132,7 +132,7 @@ public sealed partial class Plugin : BaseUnityPlugin
                 ["writeMetadata"] = typeof(SavePatches.WriteMetadata), ["storeFailure"] = typeof(SavePatches.StoreFailure)
             });
             InstallHud(assembly);
-            InstallTractorBeams(assembly);
+            InstallEquipmentTargeting(assembly);
             InstallTooltips(assembly);
             InstallGameplayUi(assembly);
             InstallAmbientTraffic(assembly);
@@ -157,7 +157,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             // Stop observation even if a failed rollback leaves a detour installed.
             _adapter?.Guard(() => throw new InvalidOperationException("Adapter installation failed.", ex));
             TeardownHud();
-            TeardownTractorBeams();
+            TeardownEquipmentTargeting();
             TeardownTooltips();
             TeardownGameplayUi();
             TeardownAmbientTraffic();
@@ -1063,7 +1063,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         ModApi.ClearServices(_serviceRoot);
         _hub?.Dispose(); // Close gates and preserve queued terminal delivery before releasing service views.
         StopDungeonPanel();
-        TeardownTractorBeams();
+        TeardownEquipmentTargeting();
         TeardownTooltips();
         TeardownHud();
         TeardownGameplayUi();

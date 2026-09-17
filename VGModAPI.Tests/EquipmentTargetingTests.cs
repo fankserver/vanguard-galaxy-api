@@ -4,7 +4,7 @@ using Xunit;
 
 namespace VGModAPI.Tests;
 
-public sealed class TractorBeamTests
+public sealed class EquipmentTargetingTests
 {
     private static TractorModule Module => new(2, 3);
     [Theory]
