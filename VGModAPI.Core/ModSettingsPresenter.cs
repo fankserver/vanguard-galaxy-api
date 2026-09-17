@@ -73,7 +73,7 @@ internal sealed class ModSettingsPresenter
         var definition = row.Definition;
         var value = _service.TryRead(row, out var current) ? DisplayValue(definition, current!) : "Unavailable";
         var restart = definition.ApplyMode == ModSettingApplyMode.RestartRequired ? "\nApplies after restart." : "";
-        return definition.Group + " \u2014 " + definition.Name + "\nCurrent: " + value + restart + "\n\n" + definition.Description;
+        return definition.Group + " / " + definition.Name + "\nCurrent: " + value + restart + "\n\n" + definition.Description;
     }
 
     internal string DecreaseLabel => Selected?.Definition switch
